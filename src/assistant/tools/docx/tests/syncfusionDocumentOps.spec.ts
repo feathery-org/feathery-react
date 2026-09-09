@@ -1688,11 +1688,16 @@ describe('live occurrence search and scoped replacement', () => {
         (occurrence) => occurrence.kind === 'text_frame'
       );
       expect(frame?.anchor).toContain(';S;');
+      // The flat walk reaches the frame and gives it the SAME public anchor
+      // search reports, so the text is readable and addressable from the index
+      // (see textFrameIndexing.spec.ts). The write still goes through the live
+      // search range: the indexed block is a read projection, not a selectable
+      // one.
       expect(
-        flattenSfdt(JSON.parse(ed.serialize())).some((block) =>
-          block.anchor.includes(';S;')
-        )
-      ).toBe(false);
+        flattenSfdt(JSON.parse(ed.serialize())).find(
+          (block) => block.anchor === frame?.anchor
+        )?.text
+      ).toContain('Marlow');
       const serializedBefore = ed.serialize();
 
       const edited = applyDocumentEdits(ed as unknown as LiveEditor, {
@@ -1742,6 +1747,10 @@ describe('live occurrence search and scoped replacement', () => {
         'Email: torrey@example.com',
         'Engineer',
         '',
+        // The frame's own paragraph, walked right after the paragraph that
+        // hosts it - and carrying the rename, which is what proves the frame
+        // edit landed rather than merely being reported as applied.
+        'Torrey in text frame',
         'Body neighbour after'
       ]);
 
@@ -2567,7 +2576,10 @@ describe('styling ops (no silent success)', () => {
     });
     expect(res.results[0]).toMatchObject({ ok: true, op: 'set_char_format' });
     expect(ed.selection.characterFormat.bold).toBe(true);
-    expect(ed.selection.characterFormat.fontColor).toBe('#ff0000');
+    // Canonical `#RRGGBB`, upper case: every model-supplied colour now goes
+    // through one normalizer so a colour WORD can be resolved to something
+    // SyncFusion parses (see normalizeFontColor). The value is the same red.
+    expect(ed.selection.characterFormat.fontColor).toBe('#FF0000');
   });
 
   it('set_char_format with NO recognized field throws missing_format (not silent ok)', () => {

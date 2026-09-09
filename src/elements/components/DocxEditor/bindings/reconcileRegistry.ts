@@ -37,7 +37,25 @@ export type BindingCommand =
       afterTag: string;
       block: SfdtBlock;
     }
-  | { type: 'remove-table'; tableId: string; tag: string };
+  | { type: 'remove-table'; tableId: string; tag: string }
+  | {
+      /**
+       * A formula's expression changed in a control that already exists.
+       *
+       * `set-value` cannot carry this and `add-table` cannot either: the first
+       * moves text, the second only ever carries a WHOLE table being added or
+       * removed. An expression rewritten in an existing control produced no
+       * command at all, so it was dropped between the in-memory projection and
+       * the live document and the two disagreed about what the document said.
+       *
+       * Both tags travel because the old one is the address - it is what the
+       * live control still wears - and the new one is the payload.
+       */
+      type: 'set-expression';
+      name: string;
+      previousTag: string;
+      tag: string;
+    };
 
 /**
  * Present only for an authored assistant batch. Ordinary commands omit this so
@@ -182,6 +200,22 @@ export function diffBindingCommands(
         });
       }
     }
+  }
+  // An expression change never moves a value on its own, so it is diffed by
+  // NAME rather than by tag: the tag is what changed.
+  for (const [name, occurrences] of next.formulas) {
+    const current = occurrences[0];
+    const prior = previous.formulas.get(name)?.[0];
+    if (!current || !prior) continue;
+    if (current.def.kind !== 'formula' || prior.def.kind !== 'formula')
+      continue;
+    if (current.def.expression === prior.def.expression) continue;
+    commands.push({
+      type: 'set-expression',
+      name,
+      previousTag: prior.tag,
+      tag: current.tag
+    });
   }
   for (const [name, occurrences] of next.fields) {
     const occurrence = occurrences[0];

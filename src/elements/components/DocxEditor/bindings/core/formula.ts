@@ -131,9 +131,9 @@ export function parseExpression(src: string): Ast {
   const ast = term();
   if (i !== tokens.length)
     throw new FormulaError(`trailing input in ${JSON.stringify(src)}`);
-  if (!('op' in ast))
+  if ('lit' in ast)
     throw new FormulaError(
-      `expression must be a function call: ${JSON.stringify(src)}`
+      `expression must reference a value: ${JSON.stringify(src)}`
     );
   return ast;
 }

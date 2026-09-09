@@ -14,6 +14,7 @@ import {
 jest.mock('../../../utils/documentEditorPrimitives', () => ({
   findReplaceCounterpart: jest.fn(),
   installRevisionGroupIsolation: jest.fn(),
+  installTrackedContentControlDeletion: jest.fn(),
   preserveDocumentViewDuring: jest.fn((_editor, run) => run()),
   registerWrappingDocumentEditorContainer: jest.fn(),
   disableUserTrackChanges: jest.fn((editor) => {

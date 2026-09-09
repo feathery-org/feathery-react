@@ -1239,8 +1239,10 @@ describe('TrackedChangeGroups', () => {
 });
 
 describe('resolveLiveRevisionGroupsAsOneUndo', () => {
-  // A revision that throws stays at current[0]/current[last] and would be
-  // retried until the budget is gone, starving the rest of the group.
+  // A revision that does not MOVE stays at current[0]/current[last] and would
+  // be retried until the budget is gone, starving the rest of the group. A
+  // throw is only one way to fail to move; see composedSplitAcceptWedge.spec.ts
+  // for the silent one.
   it('does not let one permanently-stuck revision block the rest of the group from resolving', () => {
     const stuck = makeRevision({ getRange: () => [{ text: 'stuck' }] });
     stuck.accept.mockImplementation(() => {
@@ -1268,7 +1270,11 @@ describe('resolveLiveRevisionGroupsAsOneUndo', () => {
     // the other two.
     expect(stuck.accept).toHaveBeenCalledTimes(1);
     expect(revisions).toEqual([stuck]);
-    expect(resolved).toEqual([stuck, first, second]);
+    // The return reads the DOCUMENT, not the attempt log: what left resolved,
+    // and the one that stayed is reported so the rail can say the card stalled
+    // on it. Spread first - the array carries `unresolved` as an own property.
+    expect([...resolved]).toEqual([first, second]);
+    expect(resolved.unresolved).toEqual([stuck]);
   });
 });
 

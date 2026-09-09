@@ -1,0 +1,3722 @@
+{
+ "sections": [
+  {
+   "sectionFormat": {
+    "pageWidth": 612,
+    "pageHeight": 792
+   },
+   "blocks": [
+    {
+     "characterFormat": {},
+     "paragraphFormat": {
+      "styleName": "Title"
+     },
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Flagship Supply Proposal"
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {
+      "styleName": "Subtitle"
+     },
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Prepared for a grocery distribution client"
+      }
+     ]
+    },
+    {
+     "paragraphFormat": {},
+     "characterFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Tax is charged at "
+      },
+      {
+       "contentControlProperties": {
+        "tag": "[[name=tax_rate|type=percent|del=keep]]",
+        "lockContents": false
+       },
+       "inlines": [
+        {
+         "characterFormat": {},
+         "text": "8.5"
+        }
+       ]
+      },
+      {
+       "characterFormat": {},
+       "text": " percent."
+      }
+     ]
+    },
+    {
+     "paragraphFormat": {},
+     "characterFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "This proposal is issued to "
+      },
+      {
+       "contentControlProperties": {
+        "tag": "[[name=client_name|type=text]]",
+        "lockContents": false
+       },
+       "inlines": [
+        {
+         "characterFormat": {},
+         "text": "Northwind Grocers"
+        }
+       ]
+      },
+      {
+       "characterFormat": {},
+       "text": " and is valid from "
+      },
+      {
+       "contentControlProperties": {
+        "tag": "[[name=proposal_date|type=date]]",
+        "lockContents": false
+       },
+       "inlines": [
+        {
+         "characterFormat": {},
+         "text": "2026-09-01"
+        }
+       ]
+      },
+      {
+       "characterFormat": {},
+       "text": "."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {
+      "styleName": "Heading 1"
+     },
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Inventory and Pricing"
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "The table below lists every item, its category, and its line total."
+      }
+     ]
+    },
+    {
+     "contentControlProperties": {
+      "tag": "[[table=inventory]]",
+      "lockContents": false
+     },
+     "blocks": [
+      {
+       "rows": [
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "characterFormat": {},
+             "paragraphFormat": {},
+             "inlines": [
+              {
+               "characterFormat": {},
+               "text": "Item"
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#001B49FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "characterFormat": {},
+             "paragraphFormat": {},
+             "inlines": [
+              {
+               "characterFormat": {},
+               "text": "Category"
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#001B49FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "characterFormat": {},
+             "paragraphFormat": {},
+             "inlines": [
+              {
+               "characterFormat": {},
+               "text": "Qty"
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#001B49FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "characterFormat": {},
+             "paragraphFormat": {},
+             "inlines": [
+              {
+               "characterFormat": {},
+               "text": "Unit cost"
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#001B49FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "characterFormat": {},
+             "paragraphFormat": {},
+             "inlines": [
+              {
+               "characterFormat": {},
+               "text": "Line total"
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#001B49FF"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-1]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Gala apples"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-1]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "fruits"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-1]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "40"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-1]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$1.25"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-1]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$50.00"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-2]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Navel oranges"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-2]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "fruits"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-2]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "24"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-2]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$1.60"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-2]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$38.40"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-3]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Bananas"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-3]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "fruits"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-3]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "60"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-3]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$0.55"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-3]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$33.00"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-4]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Blueberries"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-4]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "fruits"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-4]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "18"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-4]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$3.40"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-4]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$61.20"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "bookmarkType": 0,
+               "name": "strawberry_note"
+              },
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-5]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Strawberries"
+                }
+               ]
+              },
+              {
+               "bookmarkType": 1,
+               "name": "strawberry_note"
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-5]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "fruits"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-5]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "22"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-5]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$2.95"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-5]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$64.90"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-6]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Carrots"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-6]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "vegetables"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-6]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "35"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-6]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$0.80"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-6]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$28.00"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "bookmarkType": 0,
+               "name": "vegetable_band"
+              },
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-7]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Broccoli"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-7]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "vegetables"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-7]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "28"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-7]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$1.75"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-7]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$49.00"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-8]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Spinach"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-8]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "vegetables"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-8]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "30"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-8]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$2.10"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-8]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$63.00"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-9]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Red peppers"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-9]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "vegetables"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-9]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "26"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-9]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$1.95"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-9]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$50.70"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-10]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Potatoes"
+                }
+               ]
+              },
+              {
+               "bookmarkType": 1,
+               "name": "vegetable_band"
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-10]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "vegetables"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-10]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "80"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-10]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$0.45"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-10]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$36.00"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-11]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Whole milk"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-11]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "dairy"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-11]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "48"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-11]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$1.15"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-11]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$55.20"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-12]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Salted butter"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-12]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "dairy"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-12]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "20"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-12]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$3.25"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-12]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$65.00"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-13]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Cheddar"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-13]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "dairy"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-13]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "15"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-13]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$5.50"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-13]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$82.50"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-14]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Greek yoghurt"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-14]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "dairy"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-14]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "32"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-14]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$1.85"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-14]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$59.20"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "shading": {
+             "backgroundColor": "#E6E6E6FF"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_name|type=text|row=r-15]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "Double cream"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=item_category|type=text|row=r-15]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "dairy"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=quantity|type=integer|row=r-15]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "12"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=unit_cost|type=currency|row=r-15]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$2.40"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=line_total|type=currency|expr=mul(quantity,unit_cost)|row=r-15]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$28.80"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "characterFormat": {},
+             "paragraphFormat": {},
+             "inlines": [
+              {
+               "characterFormat": {},
+               "text": "Subtotal"
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 4,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=subtotal|type=currency|expr=sum(inventory.line_total)]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$764.90"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "characterFormat": {},
+             "paragraphFormat": {},
+             "inlines": [
+              {
+               "characterFormat": {},
+               "text": "Tax at 8.5%"
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 4,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=tax|type=currency|expr=mul(subtotal,tax_rate)]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$65.02"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        },
+        {
+         "rowFormat": {},
+         "cells": [
+          {
+           "blocks": [
+            {
+             "characterFormat": {},
+             "paragraphFormat": {},
+             "inlines": [
+              {
+               "characterFormat": {},
+               "text": "Total"
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 4,
+            "rowSpan": 1
+           }
+          },
+          {
+           "blocks": [
+            {
+             "paragraphFormat": {},
+             "characterFormat": {},
+             "inlines": [
+              {
+               "contentControlProperties": {
+                "tag": "[[name=total|type=currency|expr=sum(subtotal,tax)]]",
+                "lockContents": false
+               },
+               "inlines": [
+                {
+                 "characterFormat": {},
+                 "text": "$829.92"
+                }
+               ]
+              }
+             ]
+            }
+           ],
+           "cellFormat": {
+            "columnSpan": 1,
+            "rowSpan": 1
+           }
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": []
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {
+      "styleName": "Heading 1"
+     },
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Deliveries by Region"
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Regional volumes are indicative and carry no bindings."
+      }
+     ]
+    },
+    {
+     "rows": [
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Region"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#001B49FF"
+          }
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Deliveries"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#001B49FF"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "North"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "22"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "South"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#E6E6E6FF"
+          }
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "33"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#E6E6E6FF"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "East"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "44"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "West"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#E6E6E6FF"
+          }
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "55"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#E6E6E6FF"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Central"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "66"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": []
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {
+      "styleName": "Heading 1"
+     },
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Delivery Windows"
+      }
+     ]
+    },
+    {
+     "rows": [
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Delivery window"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 2,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#001B49FF"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "From"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#001B49FF"
+          }
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "To"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#001B49FF"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "06:00"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "10:00"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "14:00"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#E6E6E6FF"
+          }
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "18:00"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#E6E6E6FF"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": []
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 1. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 2. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 3. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 4. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 5. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 6. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 7. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 8. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 9. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 10. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 11. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 12. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 13. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Note 14. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {
+      "styleName": "Heading 1"
+     },
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Depot Breakdown"
+      }
+     ]
+    },
+    {
+     "rows": [
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Depot"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#001B49FF"
+          }
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Breakdown"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#001B49FF"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Central depot"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Split by shift:"
+            }
+           ]
+          },
+          {
+           "rows": [
+            {
+             "rowFormat": {},
+             "cells": [
+              {
+               "blocks": [
+                {
+                 "characterFormat": {},
+                 "paragraphFormat": {},
+                 "inlines": [
+                  {
+                   "characterFormat": {},
+                   "text": "Morning"
+                  }
+                 ]
+                }
+               ],
+               "cellFormat": {
+                "columnSpan": 1,
+                "rowSpan": 1
+               }
+              },
+              {
+               "blocks": [
+                {
+                 "characterFormat": {},
+                 "paragraphFormat": {},
+                 "inlines": [
+                  {
+                   "characterFormat": {},
+                   "text": "12"
+                  }
+                 ]
+                }
+               ],
+               "cellFormat": {
+                "columnSpan": 1,
+                "rowSpan": 1
+               }
+              }
+             ]
+            },
+            {
+             "rowFormat": {},
+             "cells": [
+              {
+               "blocks": [
+                {
+                 "characterFormat": {},
+                 "paragraphFormat": {},
+                 "inlines": [
+                  {
+                   "characterFormat": {},
+                   "text": "Evening"
+                  }
+                 ]
+                }
+               ],
+               "cellFormat": {
+                "columnSpan": 1,
+                "rowSpan": 1
+               }
+              },
+              {
+               "blocks": [
+                {
+                 "characterFormat": {},
+                 "paragraphFormat": {},
+                 "inlines": [
+                  {
+                   "characterFormat": {},
+                   "text": "9"
+                  }
+                 ]
+                }
+               ],
+               "cellFormat": {
+                "columnSpan": 1,
+                "rowSpan": 1
+               }
+              }
+             ]
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": []
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {
+        "revisionIds": [
+         "flagship-foreign-deletion"
+        ]
+       },
+       "text": "This clause is under review by the client."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 1. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 2. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 3. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 4. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 5. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 6. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 7. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 8. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 9. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 10. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 11. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 12. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 13. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {},
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Clause 14. Deliveries are scheduled against the inventory above, and any variance is reconciled against the agreed unit costs before invoicing."
+      }
+     ]
+    },
+    {
+     "characterFormat": {},
+     "paragraphFormat": {
+      "styleName": "Heading 1"
+     },
+     "inlines": [
+      {
+       "characterFormat": {},
+       "text": "Sign-off"
+      }
+     ]
+    },
+    {
+     "rows": [
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Sign-off"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#001B49FF"
+          }
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Date"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#001B49FF"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Prepared by"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "2026-09-01"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1
+         }
+        }
+       ]
+      },
+      {
+       "rowFormat": {},
+       "cells": [
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "Approved by"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#E6E6E6FF"
+          }
+         }
+        },
+        {
+         "blocks": [
+          {
+           "characterFormat": {},
+           "paragraphFormat": {},
+           "inlines": [
+            {
+             "characterFormat": {},
+             "text": "2026-09-04"
+            }
+           ]
+          }
+         ],
+         "cellFormat": {
+          "columnSpan": 1,
+          "rowSpan": 1,
+          "shading": {
+           "backgroundColor": "#E6E6E6FF"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "styles": [
+  {
+   "type": "Paragraph",
+   "name": "Normal",
+   "next": "Normal",
+   "characterFormat": {
+    "fontSize": 11
+   }
+  },
+  {
+   "type": "Paragraph",
+   "name": "Title",
+   "basedOn": "Normal",
+   "next": "Normal",
+   "characterFormat": {
+    "bold": true,
+    "fontSize": 26
+   },
+   "paragraphFormat": {
+    "outlineLevel": "Level1",
+    "beforeSpacing": 18
+   }
+  },
+  {
+   "type": "Paragraph",
+   "name": "Subtitle",
+   "basedOn": "Normal",
+   "next": "Normal",
+   "characterFormat": {
+    "fontSize": 14,
+    "italic": true
+   },
+   "paragraphFormat": {
+    "afterSpacing": 12
+   }
+  },
+  {
+   "type": "Paragraph",
+   "name": "Heading 1",
+   "basedOn": "Normal",
+   "next": "Normal",
+   "characterFormat": {
+    "bold": true,
+    "fontSize": 16
+   },
+   "paragraphFormat": {
+    "outlineLevel": "Level1",
+    "beforeSpacing": 12
+   }
+  }
+ ],
+ "revisions": [
+  {
+   "author": "Ayesha",
+   "date": "2026-08-20T09:00:00Z",
+   "revisionType": "Deletion",
+   "revisionId": "flagship-foreign-deletion"
+  }
+ ]
+}

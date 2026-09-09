@@ -261,11 +261,20 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // shape, and it exists so that shape needs no enumeration: naming a boundary
     // costs one number where listing rows 5..39 would be counting.
     // Exactly one of the two.
+    // A table whose ROWS ARE BOUND is SUGAR for duplicate_table keepRows plus
+    // delete_row, and the engine compiles it that way itself
+    // (compileTableSplit): one card, one group, both writes through the binding
+    // engine. The model sends split_table either way and never picks the path.
+    //
+    // `targetAnchor` is OPTIONAL because placement is engine-owned: the new
+    // table lands immediately after the one it splits. An anchor naming
+    // anywhere else is refused rather than ignored. To place it elsewhere,
+    // split, then move_section the result as its own change.
     op: 'split_table',
     params: {
       rows: 'int>=0[]?',
       splitAtRow: 'int>=0?',
-      targetAnchor: 'string',
+      targetAnchor: 'string?',
       position: 'enum[before,after]?'
     },
     requiresAnchor: true
@@ -294,12 +303,33 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // renders two adjacent tables as one - see `spliceDuplicateAfter`). Moving
     // it elsewhere is a separate, later edit against the copy's own anchor.
     //
-    // One per change set, and last of the anchored edits in it: duplicating a
-    // table inserts a table, so every later anchor may have moved. Re-read the
-    // document before targeting the copy.
+    // `keepRows` filters WHICH data rows the copy keeps, by ABSOLUTE table row
+    // index - the same indices a table_facts read reports, and the same ones
+    // delete_row takes. Omitting it keeps every row. An empty `keepRows: []` is
+    // a deliberate header-and-totals copy with no data rows.
+    //
+    // ON A TABLE WITH LINKED VALUES, it selects among data rows only: the
+    // header band and any totals computed from the table's own rows are always
+    // kept and never need naming, so listing one is refused rather than
+    // silently obeyed.
+    //
+    // ON A TABLE WITHOUT LINKED VALUES, `keepRows` is REFUSED, because there is
+    // no evidence to tell a data row from a total and the guarantee above
+    // cannot be honoured. Duplicate the whole table instead, then delete the
+    // rows you do not want from the copy. The condition is stated here because
+    // an unconditional promise is what would make that failure silent - the
+    // caller would trust it and never re-check.
+    //
+    // TO SPLIT A TABLE: duplicate_table with `keepRows` set to the rows that
+    // should move, then delete_row those same rows from the source.
+    //
+    // One duplicate per change set. Later anchored edits in the same change set
+    // are fine - the copy takes a fresh identity, so the source keeps answering
+    // to its own anchor.
     op: 'duplicate_table',
     params: {
       rows: 'duplicateRows?',
+      keepRows: 'int>=0[]?',
       literal: 'boolean?',
       quotedFrom: 'string?',
       quotedText: 'string?'

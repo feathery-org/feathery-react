@@ -123,8 +123,9 @@ describe('structural ops on a bound table', () => {
     expect(rowIds.slice(0, 2)).toEqual(['r-1', 'r-2']);
     expect(rowIds).toHaveLength(3);
     // A new line item, not a copy: the inputs are empty and its row formula
-    // evaluates over them rather than over the row it was cloned from.
-    expect(textAt(editor, '0;2;3;0;0')).toBe('');
+    // evaluates over them rather than over the row it was cloned from. An
+    // empty text control keeps a zero-width placeholder so it stays a control
+    expect(textAt(editor, '0;2;3;0;0')).toBe('\u200b');
     expect(textAt(editor, '0;2;3;3;0')).toBe('$0.00');
     expect(textAt(editor, '0;2;4;1;0')).toBe('$7,800.00');
   });
@@ -216,7 +217,7 @@ describe('structural ops on a bound table', () => {
       { ok: true, route: 'engine', op: 'insert_row' }
     ]);
     expect(rowIdsOf(editor, 'costs')).toHaveLength(3);
-    expect(textAt(editor, '0;2;3;0;0')).toBe('');
+    expect(textAt(editor, '0;2;3;0;0')).toBe('\u200b');
   });
 
   it('inserts a bound row in a later batch without using the engine write caret', () => {

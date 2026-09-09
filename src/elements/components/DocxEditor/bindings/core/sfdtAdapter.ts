@@ -792,12 +792,26 @@ export interface DeleteTableMutation {
   kind: 'delete-table';
   tag: string;
 }
+/**
+ * A control's identity rewritten in place, tag for tag.
+ *
+ * The one structural mutation that changes no content. A formula's EXPRESSION
+ * lives in its tag, so rewriting an expression in an existing control is a
+ * retag - and SyncFusion revisions content, never tags, which is why the change
+ * set that issues one also binds an inverse to its revision group.
+ */
+export interface RetagControlMutation {
+  kind: 'retag-control';
+  fromTag: string;
+  toTag: string;
+}
 export type NativeStructuralMutation =
   | AdoptedRowMutation
   | InsertRowMutation
   | DeleteRowMutation
   | InsertTableMutation
-  | DeleteTableMutation;
+  | DeleteTableMutation
+  | RetagControlMutation;
 
 /**
  * Indexes of rows that look like the user's own additions: not a header, and

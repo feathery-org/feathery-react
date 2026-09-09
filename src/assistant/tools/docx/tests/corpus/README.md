@@ -1,0 +1,111 @@
+# Document shape corpus
+
+Seventeen synthetic documents, one per structural shape the engine has to survive:
+flat with no headings, inferred headings, multi-level headings, merged cells,
+nested tables, mirrored bindings, ambiguous bindings, pending revisions, comments,
+and so on. Captured as SFDT through the real import path.
+
+NOT headers and footers. This list used to claim that shape and it was never
+here - no document in this directory has a header or footer story, and neither
+does the local corpus's client template. The claim was load-bearing: a
+relocation test selected a `headers-footers` shape, found nothing, silently fell
+through to another shape, and spent its life comparing an empty headersFooters
+to itself. A captured headers-footers document does exist at
+`browser-only/headers-footers.sfdt.json` in the local corpus, and it stays there:
+measured 2026-08-27 with the same probe and harness, `headings-bound` imports and
+serializes in 1.5s while that shape never completes, killed at 150s after an
+earlier run was killed at 600s. Vendoring it would hang CI rather than widen it.
+Tests needing a header story build one inline; see relocationCharacterization.
+
+These are VENDORED so the corpus sweeps run in CI. They used to be read from an
+absolute path on one laptop, which meant the two highest-yield tests in this
+workstream ran nowhere else. Between them they caught insert_hyperlink destroying
+the anchored paragraph on all seventeen shapes, and move_section destroying
+binding tags through a refusal. Neither was caught by any tracked test.
+
+WITHHELD DELIBERATELY: `real-customer-template` is genuine client content and is
+not vendored. Specs that want it must skip when it is absent - see
+corpusShapes.ts. The local corpus at ~/Desktop/docx-test-corpus keeps the full
+set including that document and the .docx sources.
+
+Regenerate a shape by opening its .docx through the real import and serializing.
+
+## flagship-proposal, and why it is the odd one out
+
+Every other shape here was CAPTURED: a .docx opened through the real import path
+and serialized. `flagship-proposal` is AUTHORED, from a specification, by
+`robin-harness/corpus/build-flagship.mjs`, and checked by `verify-flagship.mjs`
+beside it. Regenerate it by running the builder, not by re-importing a .docx.
+
+It is deliberately the hardest shape in the set: fifteen bound item rows in three
+categories, a three-level formula chain (a subtotal summing the table's own
+column through a dotted ref, a tax computed from that subtotal, and a total
+summing both), an unbound striped table, merged header cells, a nested table, two
+bookmarks - one safely inside a row and one spanning four - a foreign author's
+pending deletion, and a real tail table. It exists so schema and partition work
+has something that can actually fail.
+
+It also costs: adding it took the docx suite from about 30 seconds to about 68, varying between 60 and 74 with machine load.
+
+WHAT IT DOES NOT HAVE, and this is not an oversight: header and footer stories.
+The full document, `flagship-proposal.headers.sfdt.json`, is kept in the harness
+and is BROWSER ONLY. Measured 2026-08-27 in this harness, one variable changing:
+
+| variant | result |
+| --- | --- |
+| the body alone, no header or footer stories | 83ms |
+| those header and footer stories on a one-paragraph body | 15ms |
+| both together | never completes, killed at 300s |
+
+Neither ingredient is fatal on its own; the interaction is. jsdom has no text
+metrics, so page height never resolves, and laying a repeating header across a
+body long enough to paginate does not terminate. That is the same reason the
+captured `headers-footers` shape lives under `browser-only/` in the local corpus,
+and the reason no shape in this directory has a header story. A test that needs
+one either builds a single-page document inline - see relocationCharacterization
+- or runs in a browser.
+
+## flagship-v3, the browser document's bound skeleton
+
+`flagship-v3.sfdt.json` is the browser corpus document `flagship-v3.headers`
+(robin-harness) with its narrative prose blocks and headers/footers removed and
+every bound block kept: three schedules, all their rows, and the Premium
+Summary. The reduction is not cosmetic - `DocumentEditor.open()` on the full
+document does not return inside jsdom within nine minutes, while the skeleton
+opens in about half a second - and it removes nothing any binding law reads, so
+the browser's own figures ($11,008.00 / $11,046.40 fragments, $75,667.35 /
+$6,431.72 / $82,099.07 summary) are the oracle in
+`splitConservesDocumentTotals.spec.ts`.
+
+## flagship-v3, and why it is vendored despite being browser-only
+
+`browser-only/flagship-v3.sfdt.json` is the BROWSER document: the full client-shaped proposal
+WITH header and footer stories, 163 content controls, three bound schedules
+(property, liability, motor) whose subtotals feed a Premium Summary through a
+three-level formula chain. It is the shape a real client sends.
+
+It is deliberately the one shape here that the DEFAULT jest run must never open,
+which is why it lives under `browser-only/` rather than beside the others:
+`corpusShapes()` sweeps every `*.sfdt.json` sitting directly in this directory,
+and per the section above, a repeating header over a body long enough to
+paginate never terminates in jsdom - so vendoring it as a direct child would
+HANG `yarn test` rather than fail it. Measured here 2026-09-08.
+It is vendored for the headless real-engine lane instead - `yarn test:headless`,
+`src/assistant/tools/docx/tests/headless/` - which lays it out in a real headless
+Chrome in about a second and measures what layout registers.
+
+Source: `robin-harness/corpus/flagship-v3.headers.sfdt.json`, authored by
+`build-flagship-v3.mjs`. Regenerate it with that builder, not by re-importing a
+.docx.
+
+## browser-only/flagship-v3.browser.sfdt.json, the pristine browser capture
+
+Captured 2026-09-08 straight out of the captain's live editor tab through the
+debug port, before any assistant op ran: 79 content controls, zero revisions,
+`headersFooters` present. It is NOT the same document as
+`browser-only/flagship-v3.sfdt.json` above, which the harness authored with 163
+controls - this one is what the captain actually has open, and it is the primary
+fixture of the headless lane from now on. It carries header stories, so like its
+neighbours it stays under `browser-only/`: `corpusShapes()` sweeps only direct
+children of this directory, and a header-bearing document hangs `open()` in
+jsdom for minutes rather than failing.

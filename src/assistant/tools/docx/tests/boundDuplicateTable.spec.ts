@@ -627,7 +627,12 @@ describe('duplicate_table over bound tables', () => {
       'duplicate_table_one_per_change_set'
     );
 
-    const before = editor.serialize();
+    // RE-POINTED, not deleted. This used to assert
+    // `duplicate_table_must_end_change_set` - that a duplicate had to be the
+    // last anchored edit in its change set. That refusal was replaced by the
+    // resolution law (see detectBatchedDuplicateTables and
+    // anchorResolutionLaw.spec.ts), so the case it guarded now SUCCEEDS, and
+    // this row proves the replacement rather than disappearing with the guard.
     const laterAnchored = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [
         { op: 'duplicate_table', anchor: '0;2;0;0;0', rows: 'copy' },
@@ -639,9 +644,25 @@ describe('duplicate_table over bound tables', () => {
         }
       ]
     });
-    expect(laterAnchored.results[0].error).toBe(
-      'duplicate_table_must_end_change_set'
-    );
-    expect(editor.serialize()).toBe(before);
+    expect(laterAnchored.results.map((entry: any) => entry.error)).toEqual([
+      undefined,
+      undefined
+    ]);
+    // The edit landed where it was aimed. `0;0` is a paragraph ABOVE the
+    // insertion point, so the duplicate does not move it - which is the
+    // easiest half of the law and the half a stale-anchor bug would still get
+    // right. The harder half, an unbound target BELOW the insertion, is clause
+    // 2 of the law and is deliberately not claimed here.
+    //
+    // Read across ALL the paragraph's inlines, not inlines[0]: replace_text is
+    // TRACKED, so the original run survives as a pending deletion beside the
+    // inserted one until the change is accepted. Asserting on inlines[0] reads
+    // the old text and looks like the edit never happened.
+    const firstBlockText = (
+      JSON.parse(editor.serialize()).sections[0].blocks[0].inlines ?? []
+    )
+      .map((inline: any) => inline.text ?? '')
+      .join('');
+    expect(firstBlockText).toContain('Plan');
   });
 });

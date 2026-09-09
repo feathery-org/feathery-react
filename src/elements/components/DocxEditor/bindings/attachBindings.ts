@@ -36,6 +36,10 @@ import {
   registerBindingReconciler,
   unregisterBindingReconciler
 } from './reconcileRegistry';
+import {
+  installTrackedContentControlDeletion,
+  LiveEditor
+} from '../../../../utils/documentEditorPrimitives';
 
 export interface BindingsOptions {
   /**
@@ -132,6 +136,13 @@ export function attachBindings(
   // Best effort - the reliable place is the constructor. When this fails the
   // engine still refuses minified SFDT loudly rather than reading no bindings.
   configureEditorForBindings(editor);
+
+  // Bound-delete safety is fail-closed at this seam: any host that mounts
+  // bindings gets the tracked content-control deletion override, whether or not
+  // it remembered to install it itself (the install is idempotent). Without it
+  // a tracked row delete strips the row's binding tags and reject cannot
+  // restore them - identity must never depend on a host-side call site.
+  installTrackedContentControlDeletion(editor as unknown as LiveEditor);
 
   const report = (event: ControllerEvent): void => {
     onDiagnostics?.(event.controller.diagnostics);

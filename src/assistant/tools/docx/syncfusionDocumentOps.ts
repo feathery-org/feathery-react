@@ -84,6 +84,8 @@ import {
   NoOpWriteReport,
   writeIsNoOp
 } from './writeNoOp';
+import { deriveTableStructure } from './tableStructure';
+import type { TableStructure } from './tableStructure';
 import type {
   BindingInstanceChoice,
   BindingWireIdentity,
@@ -161,6 +163,7 @@ import {
   groupRevisionsAtomic,
   invalidateDocumentLayout,
   installRevisionGroupIsolation,
+  installTrackedContentControlDeletion,
   liveTableWidgetAt,
   paragraphIdentityText,
   parseRevisionGroupTag,
@@ -168,6 +171,7 @@ import {
   rebindRevisionGroups,
   resolveRevisionIndividually,
   revisionGroupTag,
+  revisionIsUnresolvable,
   snapshotRevisions,
   wrappingDocumentEditorContainer,
   writeTableLayout,
@@ -176,6 +180,8 @@ import {
 import type {
   AppearanceRestore,
   AppearanceWrite,
+  BookmarkClampIntent,
+  ExpressionRestore,
   ParagraphStyleRestore,
   BorderWrite,
   CellPropertyFacts,
@@ -192,7 +198,7 @@ export type { LiveEditor } from '../../../utils/documentEditorPrimitives';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
-const ASSISTANT_DOCUMENT_AUTHOR = 'Robin';
+export const ASSISTANT_DOCUMENT_AUTHOR = 'Robin';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -2108,9 +2114,74 @@ function documentStyleLevels(
   return levels;
 }
 
+// A text box is serialized as an inline carrying its own doc-level block list
+// at `textFrame.blocks`. Its paragraphs are content like any other story, so
+// the flat walk must reach them - a projection blind to a story leaves the text
+// unreadable to the model and unaddressable by every op - and it must address
+// them in the public anchor space the write path already resolves:
+// `host;S;shapeOrdinal;frameBlock`, with a 1-based ordinal over the host
+// paragraph's frame-carrying inlines. That is the shape SyncFusion's search
+// reports (see `resolveLiveStoryTarget`) and `currentTextFrameText` reads back,
+// so an anchor taken from the index is directly writable with no text-box
+// special case in any op.
+//
+// Frame paragraphs only, deliberately. A table nested inside a frame, and a
+// shape hung on `block.floatingElements` rather than on an inline, have no
+// anchor in that resolvable space today; synthesizing a deeper one would
+// advertise content no op could actually write to.
+function textFrameBlocksOf(
+  block: any,
+  hostAnchor: string,
+  deletedIds: Set<string>
+): FlatBlock[] {
+  const out: FlatBlock[] = [];
+  let shapeOrdinal = 0;
+  for (const inline of getInlines(block)) {
+    const textFrame = pick(inline, 'textFrame', 'tf');
+    if (!textFrame) continue;
+    shapeOrdinal++;
+    getBlocks(textFrame).forEach((frameBlock: any, frameBlockIndex: number) => {
+      if (getRows(frameBlock)) return;
+      const inlines = getInlines(frameBlock);
+      const text = inlineText(inlines, deletedIds);
+      if (
+        text.length === 0 &&
+        allRevisionIdsIn(paragraphMarkRevisionIds(frameBlock), deletedIds)
+      )
+        return;
+      const format = readFormat(frameBlock);
+      const frameBoundTag = boundTagOf(inlines);
+      const frameBindingRanges = bindingRangesOf(inlines, deletedIds);
+      out.push({
+        anchor: `${hostAnchor};S;${shapeOrdinal};${frameBlockIndex}`,
+        kind: 'text_frame',
+        text,
+        format,
+        ...readBlockFormats(frameBlock),
+        isHeading: false,
+        level: -1,
+        length: text.length,
+        ...(frameBoundTag ? { boundTag: frameBoundTag } : {}),
+        ...(frameBindingRanges.length
+          ? { bindingRanges: frameBindingRanges }
+          : {}),
+        // The frame counts its own offsets, so only a binding control inside
+        // the frame paragraph itself makes them untrustworthy - a control in
+        // the host paragraph is outside this block's offset space.
+        ...(hasBindingContentControl(inlines)
+          ? { offsetsUntrusted: true as const }
+          : {})
+      });
+    });
+  }
+  return out;
+}
+
 // Walk the SFDT into a flat, in-order list of addressable blocks. Paragraphs
 // (top-level and inside table cells) become blocks; a table contributes its
-// cell paragraphs. Anchors follow the SyncFusion hierarchical scheme.
+// cell paragraphs, and a text box the paragraphs of its text frame, each right
+// after the paragraph that hosts it. Anchors follow the SyncFusion hierarchical
+// scheme.
 export function flattenSfdt(
   sfdt: any,
   dropRevisionIds?: Set<string>
@@ -2151,8 +2222,9 @@ export function flattenSfdt(
                   insideControl ||
                   cellEntry.insideControl ||
                   hasBindingContentControl(getInlines(cb));
+                const cellAnchor = `${si};${bi};${ri};${ci};${cbi}`;
                 out.push({
-                  anchor: `${si};${bi};${ri};${ci};${cbi}`,
+                  anchor: cellAnchor,
                   kind: 'table_cell',
                   text,
                   format,
@@ -2166,6 +2238,7 @@ export function flattenSfdt(
                     : {}),
                   ...(cellOffsetsUntrusted ? { offsetsUntrusted: true } : {})
                 });
+                out.push(...textFrameBlocksOf(cb, cellAnchor, deletedIds));
                 paragraphs.push({
                   styleName: format?.styleName ?? '',
                   text,
@@ -2208,6 +2281,10 @@ export function flattenSfdt(
           ...(blockOffsetsUntrusted ? { offsetsUntrusted: true } : {})
         };
         out.push(flat);
+        out.push(...textFrameBlocksOf(block, flat.anchor, deletedIds));
+        // Frame paragraphs are deliberately absent from the typography corpus
+        // below: it measures the BODY text size that heading inference compares
+        // custom styles against, and a text box's sizes are chosen for the box.
         paragraphs.push({
           block: flat,
           styleName: format?.styleName ?? '',
@@ -2392,6 +2469,7 @@ function bindingTablesByAnchor(
   const out = new Map<string, BoundTableFact>();
   if (!index) return out;
   for (const table of index.tables.values()) {
+    if (!table.rows.length) continue;
     const anchor = boundTableAnchor(sfdt, table);
     if (!anchor) continue;
     out.set(anchor, {
@@ -4779,7 +4857,7 @@ export function rejectProjectionStream(sfdt: any): string {
 // inspection can establish either: a write that inserts the replacement beside
 // an untouched target creates a perfectly rejectable Insertion and leaves the
 // document reading "Innovation LearningInnovation Learning LLC".
-function acceptProjectionStream(sfdt: any): string {
+export function acceptProjectionStream(sfdt: any): string {
   return revisionProjectionStream(sfdt, deletedRevisionIds(sfdt));
 }
 
@@ -4874,7 +4952,15 @@ function isLiveStoryTarget(
 // occurrence when the story contains the same spelling more than once.
 function resolveLiveStoryTarget(
   editor: LiveEditor,
-  op: EditOp
+  op: EditOp,
+  /**
+   * The current text of the whole block at this anchor, when the flat index has
+   * it - which it does for a text frame. `expect` is the model's copy of the
+   * BLOCK text at the anchor, one rule for every story, so the staleness guard
+   * below checks it against this. A story with no serialized projection has
+   * only the selected range to check against.
+   */
+  blockText?: string
 ): LiveStoryTarget {
   const anchor = String(op.anchor ?? '');
   const find = String(op.find ?? '');
@@ -4955,11 +5041,12 @@ function resolveLiveStoryTarget(
           text
         )} instead of ${JSON.stringify(find)} at "${anchor}".`
       );
-    if (expectGuardRefuses(op.expect, text))
+    const expectSubject = blockText ?? text;
+    if (expectGuardRefuses(op.expect, expectSubject))
       throw new OpError(
         'expect_mismatch',
         'The live text at this anchor does not match `expect`.',
-        staleAnchorDetails(op.expect, text)
+        staleAnchorDetails(op.expect, expectSubject)
       );
     return {
       anchor,
@@ -5954,6 +6041,111 @@ interface AnchoredOpContext<K extends AnchoredDocumentOp> {
   liveText: string;
 }
 
+interface PasteEffect {
+  /** Sequence index the pasted run starts at. */
+  at: number;
+  /** How many top-level blocks the paste actually added, measured. */
+  blocks: number;
+}
+
+/**
+ * Where a table was, and how to know it is still the same table later.
+ *
+ * A finalizer runs after the LAST edit, but the anchors it must write to have
+ * moved by then - a split inserts a table and a separating paragraph, so every
+ * anchor after the cut shifts. Position alone is therefore not an identity, and
+ * writing striping to whatever now sits at a remembered position is how a
+ * relocation comes to edit the wrong table. Measured on the bound relocation
+ * route: `move_section` already fails that way, reporting `relocation_source_lost`
+ * and writing anyway, duplicating nine binding tags in a document it reported
+ * untouched.
+ *
+ * So a footprint carries three things, and the law is one sentence: the runner
+ * MAINTAINS these anchors - every later structural edit knows its own shift, and
+ * that shift is applied to every previously recorded footprint, the same way a
+ * relocation re-derives its own range today.
+ *
+ * At finalize, resolve by `tableId` when there is one, else by the maintained
+ * anchor; ASSERT the fingerprint still matches; and on a mismatch SKIP that
+ * table with a loud error rather than writing to a guess. The verify step is
+ * what makes a maintained position safe where a raw position was not.
+ *
+ * DEDUPE: several footprints can resolve to the same table in one change set -
+ * a split, then a cell write into the copy. The later edit legitimately changed
+ * the content the earlier fingerprint recorded, so finalize keeps the LATEST
+ * record in edit order per resolved table. Without that, an ordinary follow-up
+ * edit would make the finalizer skip a table it was supposed to stripe.
+ */
+interface TableFootprint {
+  /** The table's anchor as of the moment the recording handler finished. */
+  anchor: string;
+  /**
+   * The bound table's id, when it has one. Identity wins over position at
+   * resolution.
+   *
+   * DORMANT TODAY, and deliberately kept. No caller passes it, because the only
+   * recorder is split_table and splitting a BOUND table is refused outright -
+   * so a footprint with a tableId cannot currently be produced. The field is
+   * part of the ruled contract and costs nothing; it becomes live the moment a
+   * bound recorder exists, which is the same work that retires the bound-split
+   * refusal. Dormant for the same reason as the maintenance code beside it: the
+   * contract was designed whole rather than grown one caller at a time.
+   */
+  tableId?: string;
+  /**
+   * The table's index in the WHOLE-DOCUMENT top-level sequence - the coordinate
+   * the runner maintains.
+   *
+   * Not the anchor, because an anchor is a (section, block) pair and a paste
+   * renumbers sections. A whole-document sequence has no such failure mode: the
+   * paste inserts N entries at one position and everything after keeps its
+   * order, which is why the relocation code already reasons in this coordinate.
+   */
+  sequenceIndex: number;
+  /**
+   * The header-band size from effectiveHeaderRows at record time.
+   *
+   * Carried rather than re-derived: it is what the recording op already asked
+   * the one owner, and the finalizer needs it both to compare shapes and to
+   * know which rows the banding must leave alone.
+   */
+  headerRows: number;
+  /**
+   * The table's SHAPE at record time: row count, column count, header rows.
+   *
+   * Deliberately NOT its content. Two exclusions, and each is a defect this
+   * would otherwise cause:
+   *
+   * CELL TEXT is excluded because ops that write inside a cell - set_cell_text,
+   * set_cell_formula, replace_text, change_case, set_char_format - record no
+   * footprint at all. A text-based fingerprint would therefore stop matching
+   * after an ordinary "split this table and fix that number" change set, and
+   * the finalizer would loudly skip a table it was supposed to stripe. Content
+   * ops cannot invalidate this fingerprint by construction, which is stronger
+   * than requiring every future handler to remember to record one.
+   *
+   * SHADING is excluded because it is the finalizer's own output. A fingerprint
+   * that included what the finalizer writes could be invalidated by the very
+   * work it gates, and appearance ops may legitimately change fills mid-set.
+   *
+   * So the assert means: the same table, of the same shape, at the maintained
+   * anchor. A DIMENSION change with no recorded footprint is then a genuinely
+   * unrecorded structural edit, and skipping loudly is correct rather than a
+   * false alarm.
+   */
+  shapeFingerprint: string;
+  /**
+   * The banding cycle the finalizer must apply, from the AUTHORITATIVE source.
+   *
+   * Not re-detected at finalize, and the reason is circularity: a freshly
+   * pasted copy carries its source's fills at the WRONG phase, so detecting the
+   * cycle from the table about to be restriped just reproduces the error it was
+   * called to fix. The recording op knows the right answer - it read the source
+   * before it changed anything - so it says so here.
+   */
+  banding?: TableBanding;
+}
+
 /**
  * Extra success payload a handler may attach to its ok result (receipts and
  * structured computation reports). Most handlers return nothing.
@@ -5985,6 +6177,31 @@ interface OpSuccessExtras {
   appearanceWrite?: AppearanceWriteOutcome;
   /** Fresh post-write snapshot reused by the executor's integrity checks. */
   postWriteSfdt?: any;
+  /**
+   * Deferred bookmark clamps this op's row removal promised. Engine-internal,
+   * exactly like `appearanceWrite.restores`: the executor binds them to the
+   * op's revision group, where they execute at ACCEPT of the card - never at
+   * pending time - so every failure or reject path leaves bookmarks untouched.
+   * The op's `details` already carry the same promises as receipts.
+   */
+  bookmarkClamps?: BookmarkClampIntent[];
+  /**
+   * The tables this op touched, for the change-set finalizer.
+   *
+   * Engine-internal, exactly like `appearanceWrite`'s `restores` half: the
+   * executor collects these and the model never sees them. A handler that
+   * touches no table returns nothing, so most handlers are unaffected.
+   */
+  tableFootprints?: TableFootprint[];
+  /**
+   * What this op's paste did to top-level block indices, when it pasted.
+   *
+   * The runner needs it to MAINTAIN footprints recorded by EARLIER ops in the
+   * same change set: only a paste shifts indices - a tracked delete marks its
+   * content and leaves it where it was - so this is the whole of the shift.
+   * Engine-internal, like the footprints themselves.
+   */
+  pasteEffect?: PasteEffect;
 }
 
 type AnchoredOpHandler<K extends AnchoredDocumentOp> = (
@@ -7392,10 +7609,76 @@ function sequenceIndexOf(
  * without weakening what it proves. The extent that is actually deleted is the
  * re-derived range's own, so a dropped trailing empty cannot leave one behind.
  */
+/*
+ * Content identity. For the STRUCTURAL question - "is this the same table" -
+ * see `tableShapeFingerprint`: two owners, two questions, each named. Using
+ * this one to answer the structural question false-skips the finalizer as soon
+ * as any op edits a cell.
+ */
 function rangeIdentity(blocks: FlatBlock[]): string {
   const texts = blocks.map((block) => block.text);
   while (texts.length > 1 && texts[texts.length - 1] === '') texts.pop();
   return texts.join('\r');
+}
+
+/**
+ * The table's shape, composed from the owners that already answer each part.
+ *
+ * `collectTableFacts` owns row and column counts; `headerRows` is supplied by
+ * the caller from `effectiveHeaderRows`, the one owner of that question. No new
+ * derivation is invented here - this only joins three existing answers into one
+ * comparable string.
+ */
+function tableShapeFingerprint(
+  sfdt: any,
+  tableAnchor: string,
+  headerRows: number
+): string | null {
+  const facts = collectTableFacts(flattenSfdt(sfdt), sfdt, tableAnchor);
+  if (!facts) return null;
+  return `rows=${facts.rowCount};cols=${facts.columnCount};header=${headerRows}`;
+}
+
+/**
+ * A footprint for the table at `tableAnchor`, as it stands in `sfdt`.
+ *
+ * Returns null when the anchor does not resolve to a table, so a caller records
+ * nothing rather than recording a lie.
+ */
+function captureTableFootprint(
+  sfdt: any,
+  tableAnchor: string,
+  headerRows: number,
+  banding?: TableBanding,
+  tableId?: string
+): TableFootprint | null {
+  try {
+    const shapeFingerprint = tableShapeFingerprint(
+      sfdt,
+      tableAnchor,
+      headerRows
+    );
+    if (!shapeFingerprint) return null;
+    const [section, block] = tableAnchor.split(';').map(Number);
+    const sequenceIndex = sequenceIndexOf(topLevelSequence(sfdt), {
+      section,
+      block
+    });
+    if (sequenceIndex < 0) return null;
+    return {
+      anchor: tableAnchor,
+      ...(tableId ? { tableId } : {}),
+      sequenceIndex,
+      headerRows,
+      shapeFingerprint,
+      ...(banding ? { banding } : {})
+    };
+  } catch {
+    // A footprint is a receipt, never a gate. If the table cannot be read here
+    // the finalizer simply has nothing recorded for it, which is a missed
+    // restripe - not a failed change set.
+    return null;
+  }
 }
 
 /** A resolved, contiguous run of blocks - one section unit, at one moment. */
@@ -7437,18 +7720,6 @@ interface PasteTarget {
    * keeps reject byte-exact.
    */
   appendParagraphAt?: string;
-}
-
-/**
- * What one paste did to the document's top-level block sequence. Positions are
- * indices into `topLevelSequence`, never per-section block numbers - see the
- * note there for the live failure that distinction caused.
- */
-interface PasteEffect {
-  /** Sequence index the pasted run starts at. */
-  at: number;
-  /** How many top-level blocks the paste actually added, measured. */
-  blocks: number;
 }
 
 function relocationAnchorMissing(anchor: string, field: string): OpError {
@@ -7877,11 +8148,7 @@ function assertTableHasNoBindings(
     (candidate) =>
       !!candidate.boundTag && candidate.anchor.startsWith(`${tableAnchor};`)
   );
-  // A table can be bound by its own table-scope marker while no individual cell
-  // carries a field tag - a bound repeating table with no data rows yet. Ask the
-  // binding index about the table itself, not only its cells.
-  const boundTable = bindingTablesByAnchor(sfdt).has(tableAnchor);
-  if (!bound.length && !boundTable) return;
+  if (!bound.length) return;
   throw new OpError(
     'structural_op_would_destroy_bindings',
     `${opName} cannot restructure the table at ${JSON.stringify(
@@ -7892,7 +8159,18 @@ function assertTableHasNoBindings(
     [
       `table: ${tableAnchor}`,
       `bound cells: ${bound.map((candidate) => candidate.anchor).join(', ')}`,
-      'Use insert_row, delete_row or duplicate_table, which the binding engine performs safely, or change values with set_cell_text.'
+      'Use insert_row, delete_row or duplicate_table, which the binding engine performs safely, or change values with set_cell_text.',
+      // THE REMEDIATION THIS REFUSAL USED TO WITHHOLD. Naming the safe ops is
+      // not enough for a split: the caller has to know they COMPOSE into one,
+      // and in which order. Measured in the browser 2026-09-08 - the assistant
+      // hit this refusal on the captain's own Property Premium Detail schedule
+      // and reported "I couldn't complete that split" rather than retrying,
+      // because nothing here told it a bound split has a shape that works. It
+      // does, and the headless lane proves it on that exact document:
+      // duplicate_table + delete_row applies, conserves every total and
+      // accepts clean. Until this refusal is retired outright per the split
+      // law, it must at least be self-correcting.
+      'To SPLIT a bound table, compose it from those primitives instead: send duplicate_table with `keepRows` naming the rows the second table should carry, then delete_row of those same rows from the source. Both route through the binding engine, so the moved rows keep their bindings and every reference outside the table follows them.'
     ]
   );
 }
@@ -8029,6 +8307,43 @@ function shiftedRange(
  * it stood immediately after the paste - every shift is already in it, because
  * the delete that may follow shifts nothing.
  */
+/**
+ * The payload, with a separating paragraph in front of it when it would
+ * otherwise paste a table flush against a table.
+ *
+ * Returns the payload UNCHANGED whenever the question does not arise or cannot
+ * be answered - a non-table payload, a paste at the document head, an
+ * unparseable payload. Failing to add a separator renders two tables as one,
+ * which is bad; adding a spurious empty paragraph to every relocation would be
+ * a different kind of damage, silently applied to callers that never had this
+ * problem. So the rule fires only on the shape that has it.
+ */
+function separatorBeforePastedTable(
+  payload: string,
+  preSfdt: any,
+  sequenceBefore: Array<{ section: number; block: number }>,
+  pasteAt: number
+): string {
+  if (pasteAt <= 0) return payload;
+  const previous = sequenceBefore[pasteAt - 1];
+  if (!previous) return payload;
+  const previousBlock = rawSectionBlocks(preSfdt, previous.section)[
+    previous.block
+  ];
+  if (!firstTableBlockIn(previousBlock)) return payload;
+  let parsed: any;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return payload;
+  }
+  const sections: any[] = pick(parsed, 'sections', 'sec') ?? [];
+  const blocks = getBlocks(sections[0]);
+  if (!blocks.length || !firstTableBlockIn(blocks[0])) return payload;
+  blocks.unshift(emptyParagraphBlock(parsed));
+  return JSON.stringify(parsed);
+}
+
 function relocateBlockRange(
   editor: LiveEditor,
   preSfdt: any,
@@ -8096,8 +8411,35 @@ function relocateBlockRange(
     editor.selection.select(target.appendParagraphAt, target.appendParagraphAt);
     callEditor(editor, 'insertText', '\n');
   }
+  // Word renders two adjacent tables as ONE table. The COPY paths already know
+  // this - copyPasteSegments inserts an empty paragraph wherever a cloned table
+  // would land flush against another - but a relocation never went through that
+  // builder, so split_table's new table landed directly after the source and the
+  // pair read as one table with its rows repeated. The rule was right and its
+  // home was wrong: it belongs at the seam EVERY relocation pastes through, not
+  // in one caller's helper.
+  //
+  // Prepended to the payload rather than written separately on purpose: it
+  // arrives in the same paste, so it shares that paste's history entry and its
+  // rejection. A separator written as its own edit would survive the rejection
+  // of the split it exists to serve. (It is NOT one undo entry for the whole
+  // change set - a split is many; see applyDocumentEdits for why grouping was
+  // reverted.)
+  //
+  // PRECEDING SIDE ONLY, and that is a guarantee rather than an unfinished
+  // migration: a separator is considered for the block BEFORE the paste point,
+  // never after. A trailing flush table is unreachable because
+  // resolveRelocationTarget refuses a caret that is not on a paragraph, so a
+  // relocation can never land immediately in front of a table without a
+  // paragraph of its own to sit at.
+  const separated = separatorBeforePastedTable(
+    payload,
+    preSfdt,
+    sequenceBefore,
+    pasteAt
+  );
   editor.selection.select(target.anchor, target.anchor);
-  callEditor(editor, 'paste', payload);
+  callEditor(editor, 'paste', separated);
   const pastedSfdt = serializeSfdt(editor);
   const paste: PasteEffect = {
     at: pasteAt,
@@ -8115,6 +8457,28 @@ function relocateBlockRange(
 }
 
 /** Resolves `targetAnchor` + `position` into the caret the payload lands at. */
+/**
+ * Where a split's new table goes when the op does not say.
+ *
+ * `targetAnchor` became optional with the composed path, whose placement is
+ * engine-owned - so the native path has to answer the same question, and it
+ * answers it identically: the first caret after the source table, which is
+ * where `duplicate_table` puts a copy.
+ */
+function splitTarget(
+  blocks: FlatBlock[],
+  op: EditOp,
+  source: BlockRange
+): PasteTarget {
+  if (String(op.targetAnchor ?? '').trim())
+    return resolveRelocationTarget(blocks, op, source);
+  const address = topLevelAddress(source.blocks[0].anchor);
+  return {
+    anchor: source.endAnchor,
+    address: { ...address, block: address.block + 1 }
+  };
+}
+
 function resolveRelocationTarget(
   blocks: FlatBlock[],
   op: EditOp,
@@ -8899,6 +9263,66 @@ function refuseBreakInsideTable(op: string, block: FlatBlock): void {
   );
 }
 
+// Bookmark clamp law: a torn end moves onto the nearest surviving row - but
+// only once the removal is REAL. This function is the pure COLLECT half: it
+// reads which bookmarks the removal would tear and what the clamp will say,
+// and returns intents (data, no widget mutation). The move itself is deferred
+// to the accept of the deleting group's review card - see
+// planBookmarkClampMoves/applyBookmarkClampMoves in documentEditorPrimitives
+// and the group binding in
+// groupRevisionsAtomic. A change set that dies on any path (a late refusal, an
+// engine apply failure, a group rollback, a reject, an undo) therefore leaves
+// every bookmark exactly where it was.
+function collectBookmarkClampIntents(
+  editor: LiveEditor,
+  tableBlock: any,
+  removed: number[]
+): BookmarkClampIntent[] {
+  const rows = getRows(tableBlock);
+  const bookmarks = (editor as any).documentHelper?.bookmarks;
+  if (!rows || !bookmarks?.get) return [];
+  const spans = new Map<string, { start?: number; end?: number }>();
+  rows.forEach((row: any, index: number) => {
+    const walk = (node: any): void => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach(walk);
+      const name = pick(node, 'name', 'nm');
+      const type = pick(node, 'bookmarkType', 'bt');
+      if (type !== undefined && name) {
+        const span = spans.get(String(name)) ?? {};
+        if (Number(type) === 0) span.start = index;
+        else span.end = index;
+        spans.set(String(name), span);
+      }
+      for (const value of Object.values(node)) walk(value);
+    };
+    walk(row);
+  });
+  const gone = new Set(removed);
+  const intents: BookmarkClampIntent[] = [];
+  for (const [name, span] of spans) {
+    if (span.start === undefined || span.end === undefined) continue;
+    const startGone = gone.has(span.start);
+    if (startGone === gone.has(span.end)) continue;
+    let start = span.start;
+    let end = span.end;
+    if (startGone) while (gone.has(start)) start++;
+    else while (gone.has(end)) end--;
+    const opening = bookmarks.get(name);
+    const torn = startGone ? opening : opening?.reference;
+    if (!torn?.line) continue;
+    intents.push({
+      name: String(name),
+      receipt: `bookmark "${name}" clamped to rows ${start}-${end}`
+    });
+  }
+  return intents;
+}
+
+/** The receipts a set of clamp intents promises, for the op's details. */
+const bookmarkClampReceipts = (intents: BookmarkClampIntent[]): string[] =>
+  intents.map((intent) => intent.receipt);
+
 export const ANCHORED_OP_HANDLERS: {
   [K in AnchoredDocumentOp]: AnchoredOpHandler<K>;
 } = {
@@ -9252,6 +9676,11 @@ export const ANCHORED_OP_HANDLERS: {
     );
   },
   split_table: ({ editor, op, block, byAnchor }) => {
+    // A refusal decided while compiling the split (see compileTableSplit)
+    // arrives here on the original op, exactly as insert_section's does.
+    const compiled = op.__sectionRefusal;
+    if (compiled)
+      throw new OpError(compiled.code, compiled.message, compiled.details);
     const blocks = Array.from(byAnchor.values());
     const tableAnchor = tableAnchorForBlock(block);
     if (!tableAnchor)
@@ -9269,7 +9698,6 @@ export const ANCHORED_OP_HANDLERS: {
     // the merge spans are all things flattening drops.
     const sfdt = serializeSfdt(editor);
     const tableBlock = tableBlockAt(sfdt, tableAnchor);
-    assertTableHasNoBindings(sfdt, tableAnchor, 'split_table');
     const appearance = collectTableAppearance(tableBlock);
     if (!appearance)
       throw new OpError(
@@ -9294,13 +9722,32 @@ export const ANCHORED_OP_HANDLERS: {
       headerRows,
       tableBlock
     );
+    // AFTER the plan, deliberately. A merged span or a header row named for
+    // extraction is a refusal about THIS split, and it used to be masked by the
+    // generic bindings refusal because that one ran first.
+    //
+    // A table whose ROWS are bound never reaches this line: `compileTableSplit`
+    // compiled it into duplicate_table + delete_row before any handler ran.
+    // What still reaches it is a table carrying cell controls with no binding
+    // route to prove its row roles - no provable roles means no `keepRows`,
+    // which means no composition, and the selection paste below is measured to
+    // destroy exactly those controls. So this refusal is not a leftover.
+    assertTableHasNoBindings(sfdt, tableAnchor, 'split_table');
     // A split DELETES rows from the source, so both source-side refusals apply
     // exactly as they do to a move: rejecting this card would fold away a third
     // party's pending edit, and SyncFusion cannot accept a delete of the last
     // row of a document-tail table.
     assertRangeHasNoForeignEdits(sfdt, source);
     assertRowsAreRemovable(blocks, tableAnchor, plan.extract);
-    const target = resolveRelocationTarget(blocks, op, source);
+    // AFTER every refusal this handler can raise, target resolution included:
+    // even a pure intent must not be collected for a split that is about to
+    // say "nothing was written".
+    const target = splitTarget(blocks, op, source);
+    const bookmarkClamps = collectBookmarkClampIntents(
+      editor,
+      tableBlock,
+      plan.extract
+    );
     const sourceIndex = sequenceIndexOf(
       topLevelSequence(sfdt),
       topLevelAddress(source.blocks[0].anchor)
@@ -9325,7 +9772,7 @@ export const ANCHORED_OP_HANDLERS: {
     // still read back and checked, because `ok: true` from a paste only means the
     // paste did not throw. If the new table is not there reading what it should,
     // this fails and the group rolls back.
-    assertPastedTableMatches(
+    const copyAnchor = assertPastedTableMatches(
       pastedSfdt,
       paste,
       source,
@@ -9343,6 +9790,41 @@ export const ANCHORED_OP_HANDLERS: {
     // so the order is not load-bearing, but it keeps the invariant visible.
     for (const row of [...plan.extract].reverse())
       deleteTableRows(editor, moved.anchor, row);
+    // Banding is NOT settled here any more. The change-set finalizer settles it
+    // once, after the last edit, computing from the accept projection - so rows
+    // this set has tracked-deleted contribute no band and the stripes are right
+    // for the document an accept actually produces. Settling it here as well
+    // wrote the same cells twice and broke reject byte-equality.
+
+    // Both tables this op touched, recorded AFTER the last write so each anchor
+    // and fingerprint describes the table as it now stands. Nothing consumes
+    // these yet - the finalizer does, once it exists - but recording them here
+    // is what lets it find these two tables again after later edits in the same
+    // change set have shifted everything around them.
+    // The authoritative cycle, read from the source BEFORE this op changed it.
+    const sourceBanding = detectTableBanding(appearance) ?? undefined;
+    const finalSfdt = serializeSfdt(editor);
+    const tableFootprints = [
+      captureTableFootprint(
+        finalSfdt,
+        moved.anchor,
+        plan.headerRows,
+        sourceBanding
+      ),
+      captureTableFootprint(
+        finalSfdt,
+        copyAnchor,
+        plan.headerRows,
+        sourceBanding
+      )
+    ].filter((footprint): footprint is TableFootprint => !!footprint);
+    return {
+      ...(tableFootprints.length ? { tableFootprints } : {}),
+      ...(bookmarkClamps.length
+        ? { details: bookmarkClampReceipts(bookmarkClamps), bookmarkClamps }
+        : {}),
+      pasteEffect: paste
+    };
   },
   duplicate_table: ({ editor, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
@@ -9489,12 +9971,28 @@ export const ANCHORED_OP_HANDLERS: {
   set_char_format: ({ editor, op, block, byAnchor }) => {
     selectBlock(editor, block);
     const inherited = applyInheritedFormat(editor, op, byAnchor);
-    applyCharFormat(editor, op, { requireField: !inherited });
+    const requested = applyCharFormat(editor, op, { requireField: !inherited });
+    // The inherited half already proves itself through verifyInheritedFormat;
+    // this proves the direct fields, which had no evidence at all.
+    if (requested)
+      assertDirectFormatApplied(
+        editor,
+        block,
+        { characterFormat: requested },
+        op
+      );
   },
   set_para_format: ({ editor, op, block, byAnchor }) => {
     selectBlock(editor, block);
     const inherited = applyInheritedFormat(editor, op, byAnchor);
-    applyParaFormat(editor, op, { requireField: !inherited });
+    const requested = applyParaFormat(editor, op, { requireField: !inherited });
+    if (requested)
+      assertDirectFormatApplied(
+        editor,
+        block,
+        { paragraphFormat: requested },
+        op
+      );
   },
   indent_step: ({ editor, op, block }) => {
     selectBlock(editor, block);
@@ -9695,6 +10193,40 @@ export const ANCHORED_OP_HANDLERS: {
     // remove rather than only the anchored one - it was written for a row set
     // and was simply being handed one row at a time.
     assertRowsAreRemovable(blocks, tableAnchor, requested);
+    const preWriteSfdt = serializeSfdt(editor);
+    const preWriteTable = tableBlockAt(preWriteSfdt, tableAnchor);
+    const bookmarkClamps = collectBookmarkClampIntents(
+      editor,
+      preWriteTable,
+      requested
+    );
+    // The table's banding, read BEFORE the rows are marked. A row deletion
+    // changes which rows survive, so the change-set finalizer must revisit the
+    // stripes from the accept projection - and it can only revisit a table
+    // someone recorded. The bound split records both fragments from inside
+    // duplicate_table, so a split in ONE change set was already right; a
+    // delete_row arriving on its own (the model composing a split by hand in a
+    // second call, or a plain "delete these rows") never was. Measured on the
+    // browser document: Buildings and Stock marked deleted, Contents still
+    // carrying the second row's shade.
+    const preWriteAppearance = preWriteTable
+      ? collectTableAppearance(preWriteTable)
+      : null;
+    const bandingHeaderRows = preWriteAppearance
+      ? effectiveHeaderRows({
+          blocks,
+          sfdt: preWriteSfdt,
+          tableAnchor,
+          source: preWriteAppearance
+        })
+      : 0;
+    const banding = preWriteAppearance
+      ? detectTableBanding(preWriteAppearance) ?? undefined
+      : undefined;
+    const bandedTableId = bindingRuntime(
+      editor,
+      preWriteSfdt
+    )?.tablesByAnchor.get(tableAnchor)?.tableId;
     // DESCENDING, so that a run whose rows are withdrawn - physically removed,
     // unlike a tracked delete, which leaves them in place - cannot shift the rows
     // a later run still has to address: every run left to do sits above it.
@@ -9716,8 +10248,21 @@ export const ANCHORED_OP_HANDLERS: {
     const withdrew =
       columns.size -
       tableRowColumns(flattenSfdt(postWriteSfdt), tableAnchor).size;
+    const footprint = banding
+      ? captureTableFootprint(
+          postWriteSfdt,
+          tableAnchor,
+          bandingHeaderRows,
+          banding,
+          bandedTableId
+        )
+      : null;
     return {
       postWriteSfdt,
+      ...(footprint ? { tableFootprints: [footprint] } : {}),
+      ...(bookmarkClamps.length
+        ? { details: bookmarkClampReceipts(bookmarkClamps), bookmarkClamps }
+        : {}),
       ...(withdrew > 0 ? { withdrewPendingInsertion: withdrew } : {})
     };
   },
@@ -10442,11 +10987,253 @@ function applyInheritedFormat(
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Direct formatting must be PROVEN, not assumed.
+//
+// The law this closes: a reported `ok` means the document changed as asked. It
+// was already discovered once for the INHERITED format path - the docstring on
+// `verifyInheritedFormat` says it outright ("no-op success is not sufficient
+// evidence that the target now has the source's visible format") - and then
+// applied only there. A DIRECT `set_char_format` has no source block, so it
+// took no evidence at all: the handler assigned onto
+// `editor.selection.characterFormat`, `assertTrackedMutation` returned on its
+// first branch because no format op is in either tracked set, and phase 3
+// reported `ok: true` for anything that did not throw.
+//
+// Live evidence (captain, 2026-09-09, flagship-v4): "change the heading color
+// to red" was reported done and the document did not change - the whole
+// serialize diff was one text-box's re-laid-out height and width, with zero
+// revisions and no card. Measured here on the same document: SyncFusion
+// silently DROPS a `fontColor` it cannot parse, so the CSS name `red` writes
+// nothing while `#FF0000` writes. There was nothing in the path that could tell
+// those two apart, so the model was told the same thing either way.
+//
+// Two halves, and both are needed:
+//
+//   1. `normalizeFontColor` resolves what the model plainly meant. A colour
+//      word is not a malformed request, it is the request spelled the way a
+//      human spells it, and SyncFusion is the only thing in the chain that
+//      cannot read it. What it genuinely cannot resolve is refused as
+//      `invalid_color` rather than written and hoped for.
+//
+//   2. `assertDirectFormatApplied` reads the target back through the same
+//      public selection the write used and compares every field the op
+//      DECLARED. That is the backstop: it needs no list of which values
+//      SyncFusion happens to swallow, so a field this normalizer never heard of
+//      fails loudly instead of silently, which is the only way the guarantee
+//      survives the next unparseable value.
+//
+// Relative ops (`clear_formatting`, `indent_step`, the list ops) declare no
+// target value, so there is nothing to read back and they are deliberately not
+// covered here; only ops that name the state they want are verifiable this way.
+// ---------------------------------------------------------------------------
+
+// The colour words a human uses for text, resolved to what SyncFusion parses.
+// Word's own standard palette plus the CSS basic keywords, which is the whole
+// vocabulary a "make it red" style request draws on.
+const NAMED_FONT_COLORS: Record<string, string> = {
+  black: '#000000',
+  white: '#FFFFFF',
+  red: '#FF0000',
+  darkred: '#8B0000',
+  green: '#008000',
+  lime: '#00FF00',
+  darkgreen: '#006400',
+  blue: '#0000FF',
+  darkblue: '#00008B',
+  navy: '#000080',
+  yellow: '#FFFF00',
+  orange: '#FFA500',
+  purple: '#800080',
+  violet: '#EE82EE',
+  magenta: '#FF00FF',
+  fuchsia: '#FF00FF',
+  pink: '#FFC0CB',
+  cyan: '#00FFFF',
+  aqua: '#00FFFF',
+  teal: '#008080',
+  turquoise: '#40E0D0',
+  brown: '#A52A2A',
+  maroon: '#800000',
+  olive: '#808000',
+  gold: '#FFD700',
+  silver: '#C0C0C0',
+  gray: '#808080',
+  grey: '#808080',
+  darkgray: '#A9A9A9',
+  darkgrey: '#A9A9A9',
+  lightgray: '#D3D3D3',
+  lightgrey: '#D3D3D3'
+};
+
+/**
+ * The one place a model-supplied font colour becomes a value SyncFusion writes.
+ *
+ * Accepts `#RGB`, `#RRGGBB`, `#RRGGBBAA`, the same three without the `#`, and
+ * any name in the palette above. Everything else throws, because the
+ * alternative - assigning it and reporting success - is the defect this exists
+ * to remove.
+ */
+function normalizeFontColor(raw: string): string {
+  const value = String(raw).trim();
+  const named = NAMED_FONT_COLORS[value.toLowerCase()];
+  if (named) return named;
+  const hex = value.replace(/^#/, '');
+  if (/^[0-9a-fA-F]{3}$/.test(hex))
+    return `#${hex
+      .split('')
+      .map((digit) => digit + digit)
+      .join('')}`.toUpperCase();
+  if (/^[0-9a-fA-F]{6}$/.test(hex) || /^[0-9a-fA-F]{8}$/.test(hex))
+    return `#${hex.toUpperCase()}`;
+  throw new OpError(
+    'invalid_color',
+    `${JSON.stringify(raw)} is not a colour this document can be given.`,
+    [
+      'Use a hex string such as "#FF0000", or one of: ' +
+        Object.keys(NAMED_FONT_COLORS).sort().join(', ')
+    ]
+  );
+}
+
+/** True when both values are colours denoting the same RGB. */
+function sameColorValue(expected: any, actual: any): boolean {
+  const rgb = (value: any): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const hex = value.trim().replace(/^#/, '');
+    if (/^[0-9a-fA-F]{6}$/.test(hex)) return hex.toUpperCase();
+    // SyncFusion reports a resolved colour with its alpha byte appended
+    // (`#ff0000ff`). Comparing the raw strings would call every successful
+    // colour write a failure, which is the false alarm that would make this
+    // whole assertion get switched off again.
+    if (/^[0-9a-fA-F]{8}$/.test(hex)) return hex.slice(0, 6).toUpperCase();
+    return undefined;
+  };
+  const left = rgb(expected);
+  const right = rgb(actual);
+  if (left && right) return left === right;
+  // Not both hex. `highlightColor` is a NAMED enum in SyncFusion
+  // (`"Yellow"`), not a hex value, and demanding hex on both sides called a
+  // successful `highlightColor: "Yellow"` write a failure - measured. So a
+  // non-hex value is compared as the name it is.
+  return (
+    String(expected ?? '')
+      .trim()
+      .toLowerCase() ===
+    String(actual ?? '')
+      .trim()
+      .toLowerCase()
+  );
+}
+
+/** The properties whose resolved value is a colour rather than a plain field. */
+const COLOR_FORMAT_PROPS = new Set([
+  'fontColor',
+  'highlightColor',
+  'underlineColor'
+]);
+
+function directFormatEvidence(
+  group: 'characterFormat' | 'paragraphFormat',
+  requested: FormatBag,
+  actual: any
+): string[] {
+  return Object.entries(requested).flatMap(([prop, value]) => {
+    const resolved = actual?.[prop];
+    if (COLOR_FORMAT_PROPS.has(prop))
+      return sameColorValue(value, resolved)
+        ? []
+        : [
+            `${group}.${prop}: asked for ${JSON.stringify(
+              value
+            )}, document reads ${JSON.stringify(resolved ?? null)}`
+          ];
+    // A style name is matched case-insensitively: SyncFusion resolves
+    // "heading 1" to the document's own "Heading 1", and the request was
+    // honoured.
+    if (prop === 'styleName')
+      return String(value).trim().toLowerCase() ===
+        String(resolved ?? '')
+          .trim()
+          .toLowerCase()
+        ? []
+        : [
+            `${group}.styleName: asked for ${JSON.stringify(
+              value
+            )}, document reads ${JSON.stringify(resolved ?? null)}`
+          ];
+    return formatValuesMatch(value, resolved)
+      ? []
+      : [
+          `${group}.${prop}: asked for ${JSON.stringify(
+            comparableFormatValue(value)
+          )}, document reads ${JSON.stringify(comparableFormatValue(resolved))}`
+        ];
+  });
+}
+
+/**
+ * Read the target back and refuse to call a formatting write successful unless
+ * every DECLARED field is now the declared value.
+ *
+ * Read through the public selection, the same surface the write used, so the
+ * evidence is what the document actually resolves for that range rather than
+ * what was assigned to it.
+ */
+function assertDirectFormatApplied(
+  editor: LiveEditor,
+  block: FlatBlock,
+  requested: {
+    characterFormat?: FormatBag;
+    paragraphFormat?: FormatBag;
+  },
+  op: EditOp
+): void {
+  const character = requested.characterFormat ?? {};
+  const paragraph = requested.paragraphFormat ?? {};
+  if (!Object.keys(character).length && !Object.keys(paragraph).length) return;
+  const startOffset = editor.selection?.startOffset;
+  const endOffset = editor.selection?.endOffset;
+  let details: string[];
+  try {
+    const characterEvidence = Object.keys(character).length
+      ? (selectBlock(editor, block),
+        directFormatEvidence(
+          'characterFormat',
+          character,
+          editor.selection?.characterFormat
+        ))
+      : [];
+    // Paragraph properties resolve for the paragraphs the MARK is inside, which
+    // is why the inherited-format reader selects the mark too.
+    const paragraphEvidence = Object.keys(paragraph).length
+      ? (selectParagraph(editor, block),
+        directFormatEvidence(
+          'paragraphFormat',
+          paragraph,
+          editor.selection?.paragraphFormat
+        ))
+      : [];
+    details = [...characterEvidence, ...paragraphEvidence];
+  } finally {
+    if (typeof startOffset === 'string' && typeof endOffset === 'string')
+      editor.selection.select(startOffset, endOffset);
+  }
+  if (!details.length) return;
+  throw new OpError(
+    'format_not_applied',
+    `${op.op} at ${JSON.stringify(
+      block.anchor
+    )} did not change the document: the formatting was assigned but the document still reads its old value, so nothing was kept. Report this rather than describing the change as made.`,
+    details
+  );
+}
+
 function applyCharFormat(
   editor: LiveEditor,
   op: TypedEditOp<'set_char_format'>,
   options: { requireField?: boolean } = {}
-): boolean {
+): FormatBag | undefined {
   const bold = fmtMeaningfulField(op, 'bold');
   const italic = fmtMeaningfulField(op, 'italic');
   const underline = fmtMeaningfulField(op, 'underline');
@@ -10479,30 +11266,38 @@ function applyCharFormat(
         'set_char_format needs at least one formatting field (bold/fontColor/fontSize/...).'
       );
     } else {
-      return false;
+      return undefined;
     }
 
   const cf = editor.selection.characterFormat;
-  if (!cf) return false;
-  if (bold != null) cf.bold = !!bold;
-  if (italic != null) cf.italic = !!italic;
-  if (underline != null) cf.underline = underline ? 'Single' : 'None';
+  if (!cf) return undefined;
+  // Every field this writes is recorded as it is written, so the read-back
+  // assertion is driven by what the op actually declared rather than by a
+  // second, drift-prone transcription of the same mapping.
+  const requested: FormatBag = {};
+  const set = (prop: string, value: any) => {
+    (cf as any)[prop] = value;
+    requested[prop] = value;
+  };
+  if (bold != null) set('bold', !!bold);
+  if (italic != null) set('italic', !!italic);
+  if (underline != null) set('underline', underline ? 'Single' : 'None');
   if (strikethrough != null)
-    cf.strikethrough = strikethrough ? 'SingleStrike' : 'None';
-  if (allCaps != null) cf.allCaps = !!allCaps;
-  if (fontName) cf.fontFamily = fontName;
-  if (fontSize != null) cf.fontSize = Number(fontSize);
-  if (fontColor) cf.fontColor = fontColor;
-  if (highlightColor) cf.highlightColor = highlightColor;
-  if (baseline) cf.baselineAlignment = baseline;
-  return true;
+    set('strikethrough', strikethrough ? 'SingleStrike' : 'None');
+  if (allCaps != null) set('allCaps', !!allCaps);
+  if (fontName) set('fontFamily', String(fontName));
+  if (fontSize != null) set('fontSize', Number(fontSize));
+  if (fontColor) set('fontColor', normalizeFontColor(String(fontColor)));
+  if (highlightColor) set('highlightColor', highlightColor);
+  if (baseline) set('baselineAlignment', baseline);
+  return requested;
 }
 
 function applyParaFormat(
   editor: LiveEditor,
   op: TypedEditOp<'set_para_format'>,
   options: { requireField?: boolean } = {}
-): boolean {
+): FormatBag | undefined {
   const styleName = fmtMeaningfulField(op, 'styleName');
   const alignment = fmtMeaningfulField(op, 'alignment');
   const leftIndent = fmtMeaningfulField(op, 'leftIndent');
@@ -10528,20 +11323,28 @@ function applyParaFormat(
         'set_para_format needs at least one formatting field (alignment/leftIndent/lineSpacing/...).'
       );
     } else {
-      return false;
+      return undefined;
     }
 
   const pf = editor.selection.paragraphFormat;
-  if (!pf) return false;
-  if (styleName) callEditor(editor, 'applyStyle', String(styleName));
-  if (alignment) pf.textAlignment = alignment;
-  if (leftIndent != null) pf.leftIndent = Number(leftIndent);
-  if (rightIndent != null) pf.rightIndent = Number(rightIndent);
-  if (firstLineIndent != null) pf.firstLineIndent = Number(firstLineIndent);
-  if (lineSpacing != null) pf.lineSpacing = Number(lineSpacing);
-  if (beforeSpacing != null) pf.beforeSpacing = Number(beforeSpacing);
-  if (afterSpacing != null) pf.afterSpacing = Number(afterSpacing);
-  return true;
+  if (!pf) return undefined;
+  const requested: FormatBag = {};
+  const set = (prop: string, value: any) => {
+    (pf as any)[prop] = value;
+    requested[prop] = value;
+  };
+  if (styleName) {
+    callEditor(editor, 'applyStyle', String(styleName));
+    requested.styleName = String(styleName);
+  }
+  if (alignment) set('textAlignment', alignment);
+  if (leftIndent != null) set('leftIndent', Number(leftIndent));
+  if (rightIndent != null) set('rightIndent', Number(rightIndent));
+  if (firstLineIndent != null) set('firstLineIndent', Number(firstLineIndent));
+  if (lineSpacing != null) set('lineSpacing', Number(lineSpacing));
+  if (beforeSpacing != null) set('beforeSpacing', Number(beforeSpacing));
+  if (afterSpacing != null) set('afterSpacing', Number(afterSpacing));
+  return requested;
 }
 
 // ---------------------------------------------------------------------------
@@ -11328,6 +12131,242 @@ function applyPlannedRowHeaders(
     }
   });
   return { report, restores: transaction.restores };
+}
+
+/**
+ * EVERY revision id anywhere inside a node - rows, cells, blocks, inlines,
+ * character formats, paragraph marks, row formats.
+ *
+ * One owner on purpose. Three separate guards have now been written against a
+ * PARTIAL view of where revision ids live, and each time the gap was the same
+ * shape: a location nobody listed. A guard reading only `rowFormat` cannot see
+ * a prior change set that edited cell TEXT, because that lands on the inline's
+ * own ids - so the guard passes and the write proceeds into a path already
+ * known to be unsafe.
+ *
+ * A deep walk cannot be wrong by omission, which a hand-kept list of locations
+ * always can.
+ */
+function collectRevisionIdsDeep(
+  node: any,
+  out = new Set<string>()
+): Set<string> {
+  if (!node || typeof node !== 'object') return out;
+  if (Array.isArray(node)) {
+    node.forEach((entry) => collectRevisionIdsDeep(entry, out));
+    return out;
+  }
+  for (const key of ['revisionIds', 'rids']) {
+    const ids = node[key];
+    if (Array.isArray(ids))
+      for (const id of ids) if (typeof id === 'string' && id) out.add(id);
+  }
+  for (const value of Object.values(node)) collectRevisionIdsDeep(value, out);
+  return out;
+}
+
+/**
+ * One appearance pass per change set, after the last edit.
+ *
+ * Banding used to be settled inside the split handler, which is wrong twice: a
+ * LATER op in the same change set can change the table again and nothing
+ * revisits the stripes, and the fills are computed while rows that a tracked
+ * delete has only MARKED are still physically present - so the bands are laid
+ * out for a table that is about to lose rows, and the moment anyone accepts,
+ * they are one row out of phase.
+ *
+ * So this computes from the ACCEPT PROJECTION: the document as it will read
+ * once the change set is accepted, which is exactly what the reader will see.
+ * Rows still present but pending deletion contribute nothing to the phase, and
+ * the fills are written to the rows that will actually survive.
+ *
+ * Nothing here writes to a guessed table. Each footprint is resolved by its
+ * maintained sequence index, its SHAPE is asserted against what was recorded,
+ * and a mismatch skips that table with a warning rather than striping whatever
+ * now sits at the remembered position - the failure that made move_section
+ * write into the wrong place and duplicate nine binding tags.
+ */
+function finalizeTableAppearance(
+  editor: LiveEditor,
+  footprints: TableFootprint[],
+  /**
+   * Revision ids that existed BEFORE this change set.
+   *
+   * Load-bearing for correctness, not bookkeeping. The free-to-write rule is
+   * "this set inserted it, so this set's reject removes it" - and a row
+   * inserted by an EARLIER unaccepted change set is tracked-inserted too, while
+   * being untouched by THIS set's reject. Writing a first-ever colour there is
+   * the irreversible act the decline exists to prevent, and it is reachable on
+   * any review document that already carries pending insertions.
+   */
+  preExistingRevisionIds: Set<string>,
+  record: (restores: AppearanceRestore[]) => void
+): string[] {
+  if (!footprints.length) return [];
+  const warnings: string[] = [];
+  const sfdt = serializeSfdt(editor);
+  const sequence = topLevelSequence(sfdt);
+
+  // DEDUPE, keeping the LAST record per resolved table. Several ops in one
+  // change set can touch the same table, and the later record describes it as
+  // it actually stands. Insertion order is edit order, so "last wins" is simply
+  // the final assignment.
+  const latest = new Map<string, TableFootprint>();
+  for (const footprint of footprints)
+    latest.set(
+      footprint.tableId ?? `seq:${footprint.sequenceIndex}`,
+      footprint
+    );
+
+  const deleted = deletedRevisionIds(sfdt);
+  const documentFormulas = documentFormulaMap(scanBindings(sfdt));
+  // Content THIS CHANGE SET inserted, and only this one. A reject removes it
+  // outright, so anything written to it needs no restore - which is why
+  // appearance may be written there freely. Slice 1's copy invariant,
+  // generalized, and scoped: document-wide insertions would include an earlier
+  // set's pending rows, which this set's reject leaves exactly where they are.
+  const inserted = new Set(
+    [...insertedRevisionIds(sfdt)].filter(
+      (id) => !preExistingRevisionIds.has(id)
+    )
+  );
+
+  for (const footprint of latest.values()) {
+    const address = sequence[footprint.sequenceIndex];
+    if (!address) {
+      warnings.push(
+        `Table appearance not finalized for ${footprint.anchor}: nothing is at ` +
+          `sequence index ${footprint.sequenceIndex} any more.`
+      );
+      continue;
+    }
+    const anchor = `${address.section};${address.block}`;
+
+    const now = tableShapeFingerprint(sfdt, anchor, footprint.headerRows);
+    if (now !== footprint.shapeFingerprint) {
+      // The verify step, and it REFUSES rather than guesses. Content edits
+      // cannot land here - the fingerprint is structural - so a mismatch means
+      // the table changed shape without recording it, and striping it would be
+      // striping something nobody described.
+      warnings.push(
+        `Table appearance not finalized for ${anchor}: expected shape ` +
+          `${footprint.shapeFingerprint}, found ${now ?? 'no table'}.`
+      );
+      continue;
+    }
+
+    const current = liveTableAppearance(editor, anchor);
+    if (!current) continue;
+    const banding = footprint.banding ?? detectTableBanding(current);
+    if (!banding) continue;
+
+    // Which live rows survive an accept, in order. A row wholly marked deleted
+    // contributes no band and takes no fill.
+    const tableBlock = tableBlockAt(sfdt, anchor);
+    const rows = getRows(tableBlock) ?? [];
+    // Only item rows are banded, an aggregate row keeps its own fill
+    const roles = deriveTableStructure({
+      tableBlock,
+      headerRows: footprint.headerRows,
+      tableId: footprint.tableId ?? null,
+      documentFormulas
+    }).rows;
+
+    // INTERIM NARROWING, measured rather than precautionary.
+    //
+    // When the table carries pending revisions from an EARLIER change set, the
+    // appearance restore under-restores: a cell that was #E6E6E6FF comes back
+    // `empty` after a reject. Diagnosed 2026-08-27 - the finalizer's CAPTURE is
+    // correct, verified by logging the recorded prior value against the document
+    // at every written cell through cellAppearanceAt, so the fault is downstream
+    // in the shared binding/restore path that every appearance write uses, and
+    // is not slice 2's to change.
+    //
+    // It was never reachable before because the only prior writer that survived
+    // a reject wrote to wholly-pending copies. So surviving content on such a
+    // table is left alone, loudly and counted, until the shared defect is fixed:
+    // `docx-appearance-restore-prior-revisions`. The reversibility law stays
+    // absolute and the capability narrows honestly.
+    const tableCarriesPriorPendingWork = [
+      ...collectRevisionIdsDeep(tableBlockAt(sfdt, anchor))
+    ].some((id) => preExistingRevisionIds.has(id));
+    const planned: Array<{ row: number; shading: string | null }> = [];
+    let survivorIndex = 0;
+    let skippedKeyless = 0;
+    rows.forEach((row: any, index: number) => {
+      if (allRevisionIdsIn(rowRevisionIds(row), deleted)) return;
+      // The stripe covers the rows the TEMPLATE striped: every item row, and the
+      // totals row too when the source shaded it as the next band.
+      const role = roles[index]?.role;
+      const inBand =
+        role === 'item' ||
+        (role === 'aggregate' && banding.tailInBand === true);
+      if (inBand) {
+        const wanted = bandedShadingForRow(banding, survivorIndex);
+        if (wanted !== undefined) {
+          // ONLY RECOLOUR A CELL THAT ALREADY CARRIES A SHADING KEY.
+          //
+          // Measured on the real editor: no public API can remove a shading key
+          // once a cell has one. `background` set to a colour, to 'empty', to
+          // undefined or to '' all leave `{"backgroundColor":"empty",...}`, and
+          // so do `clearCellFormat()` and `clearFormat()` - the latter grows the
+          // document by 137 characters. A pristine cell serializes as `sd:{}`
+          // with no backgroundColor at all, and the SDK's OWN undo restores that
+          // absence, because undo restores a snapshot while a setter assigns a
+          // value, and only the first can express absence.
+          //
+          // So every prior state of an ALREADY-KEYED cell is reproducible
+          // through the public setter and its restore is byte-exact, while
+          // materializing a first-ever key on a keyless cell is irreversible.
+          // The finalizer therefore never does the second thing to a table that
+          // survives its own rejection. A keyless row whose banding wants a
+          // colour is skipped and counted, not silently ignored.
+          const cells: any[] = pick(row, 'cells', 'c') ?? [];
+          const everColoured = cells.some((cell: any) => {
+            const format = pick(cell, 'cellFormat', 'tcpr', 'cf') ?? {};
+            const shading = pick(format, 'shading', 'sd');
+            // A pristine cell serializes as `sd:{}` - the shading OBJECT is
+            // there and empty. Its presence proves nothing; what separates
+            // reversible from irreversible is whether a background COLOUR was
+            // ever assigned. `sd:{}` is the never-coloured state that no public
+            // setter can restore.
+            return (
+              !!shading && pick(shading, 'backgroundColor', 'bgc') !== undefined
+            );
+          });
+          // Written freely when the row is wholly this change set's own
+          // insertion: a reject deletes it, so there is nothing to restore.
+          // Deep, for the same reason: a row is only free to write if EVERY
+          // revision id anywhere in it belongs to this set's insertions. Reading
+          // rowFormat alone would call a row wholly-inserted while its cell text
+          // carried somebody else's pending edit.
+          const rowIds = collectRevisionIdsDeep(row);
+          const whollyInserted =
+            rowIds.size > 0 && [...rowIds].every((id) => inserted.has(id));
+          // Surviving content is off limits while the table carries an
+          // earlier set's pending work; a wholly-inserted row stays writable
+          // because a reject removes it and no restore has to run.
+          const mayWrite = whollyInserted
+            ? true
+            : everColoured && !tableCarriesPriorPendingWork;
+          if (mayWrite) planned.push({ row: index, shading: wanted });
+          else skippedKeyless++;
+        }
+      }
+      survivorIndex++;
+    });
+    if (skippedKeyless)
+      warnings.push(
+        `Table appearance at ${anchor}: ${skippedKeyless} row(s) left unbanded ` +
+          'because they carry no shading key and adding one could not be undone.'
+      );
+    if (!planned.length) continue;
+
+    const outcome = applyPlannedRowShadings(editor, anchor, current, planned);
+    if (outcome.report.cellsWritten) record(outcome.restores);
+  }
+
+  return warnings;
 }
 
 /** Enforce only the inserted rows' resolved fallback fills. */
@@ -12123,6 +13162,18 @@ interface RevisionGroupingReport {
    * untracked and already applied, which is what `formatTracking` reports.
    */
   appearanceGroups: Set<string>;
+  /**
+   * Revisions this change set created that can be neither accepted nor
+   * rejected, because their range is already empty.
+   *
+   * The post-change-set integrity assertion. SyncFusion deregisters a revision
+   * only from inside `handleAcceptReject`'s `while (getRange().length > 0)`
+   * walk, so a revision authored over a range that does not survive the write
+   * refuses accept and reject alike, forever, and wedges the card it sits in.
+   * A change set that authored one is not reviewable, and must say so loudly
+   * rather than hand the user a card with a permanent edit in it.
+   */
+  unresolvable: number;
 }
 
 // Diff the revisions created by this change set (against a pre-batch snapshot),
@@ -12140,7 +13191,9 @@ function groupNewRevisions(
   changeSetId: string,
   restoresByGroup?: Map<string, AppearanceRestore[]>,
   stylesByGroup?: Map<string, ParagraphStyleRestore[]>,
-  revisionsWereReloaded = false
+  revisionsWereReloaded = false,
+  clampsByGroup?: Map<string, BookmarkClampIntent[]>,
+  expressionsByGroup?: Map<string, ExpressionRestore[]>
 ): RevisionGroupingReport {
   const created = revisionsWereReloaded
     ? (() => {
@@ -12161,7 +13214,18 @@ function groupNewRevisions(
   const revisionsByGroup = new Map<string, number>();
   const appearanceGroups = new Set<string>();
   if (!created.length)
-    return { revisionCount: 0, revisionsByGroup, appearanceGroups };
+    return {
+      revisionCount: 0,
+      revisionsByGroup,
+      appearanceGroups,
+      unresolvable: 0
+    };
+  // Measured on the revisions as authored, before they are bound to cards:
+  // this is the last moment the change set can tell the truth about what it
+  // produced. Counted, not filtered out - the revision is already in the
+  // document, and quietly leaving it out of a card would hide it from the only
+  // UI that could report it.
+  const unresolvable = created.filter(revisionIsUnresolvable).length;
   const partitions = new Map<string, LiveRevision[]>();
   for (const rev of created) {
     const tag = parseRevisionGroupTag(rev.customData);
@@ -12174,11 +13238,19 @@ function groupNewRevisions(
   partitions.forEach((partition, group) => {
     const restores = restoresByGroup?.get(group);
     const styles = stylesByGroup?.get(group);
-    if (restores?.length || styles?.length) {
+    const clamps = clampsByGroup?.get(group);
+    const expressions = expressionsByGroup?.get(group);
+    if (
+      restores?.length ||
+      styles?.length ||
+      clamps?.length ||
+      expressions?.length
+    ) {
       // The live closures below disappear on reload; the same customData that
-      // carries group identity therefore carries the exact appearance inverse.
-      // SyncFusion removes the revision metadata when the group resolves and
-      // revives it with the revision on undo.
+      // carries group identity therefore carries the exact appearance inverse
+      // and the deferred bookmark clamps. SyncFusion removes the revision
+      // metadata when the group resolves and revives it with the revision on
+      // undo.
       for (const revision of partition) {
         const tag = parseRevisionGroupTag(revision.customData);
         if (tag?.changeSetId === changeSetId && tag.group === group)
@@ -12186,24 +13258,34 @@ function groupNewRevisions(
             changeSetId,
             group,
             restores,
-            styles
+            styles,
+            clamps,
+            expressions
           );
       }
     }
     if (restores?.length) appearanceGroups.add(group);
-    // Both inverses belong to the group primitive: it is the only place that
-    // knows when a card is finished and whether anything in it was kept.
+    // Every inverse and every deferred consequence belongs to the group
+    // primitive: it is the only place that knows when a card is finished and
+    // whether anything in it was kept.
     groupRevisionsAtomic(
       editor,
       partition,
       changeSetId,
       group,
       restores,
-      styles
+      styles,
+      clamps,
+      expressions
     );
     revisionsByGroup.set(group, partition.length);
   });
-  return { revisionCount: created.length, revisionsByGroup, appearanceGroups };
+  return {
+    revisionCount: created.length,
+    revisionsByGroup,
+    appearanceGroups,
+    unresolvable
+  };
 }
 
 // changeSet.groups: ops declare the units, the post-write partition supplies
@@ -12613,6 +13695,16 @@ interface EngineMutationOutcome {
   sfdt: any;
   anchor?: string;
   details?: string[];
+  /**
+   * Tables this plan left in a shape the finalizer should restripe.
+   *
+   * The editor route carries these on `OpSuccessExtras`; an engine plan has no
+   * extras, so the same receipt travels on the outcome and is handed to the
+   * same sink. Recorded rather than acted on here: striping is decided once, at
+   * the end of the change set, because an op later in the same set can move or
+   * further edit the very table this one just wrote.
+   */
+  tableFootprints?: TableFootprint[];
 }
 
 interface EngineMutationPlan {
@@ -12632,6 +13724,12 @@ interface EngineMutationPlan {
     identity: BindingWireIdentity;
     canonical: string;
   };
+  /**
+   * The deferred bookmark clamps for the rows this plan removes: pure intent
+   * data, collected once every plan in the set has executed and bound to the
+   * transaction's revision group, where they run at ACCEPT of the card.
+   */
+  collectBookmarkClamps?(): BookmarkClampIntent[];
   execute(state: EngineMutationState): EngineMutationOutcome;
 }
 
@@ -13561,6 +14659,8 @@ function boundInsertRowsPlan(
 }
 
 function boundDeleteRowsPlan(
+  editor: LiveEditor,
+  sfdt: any,
   index: number,
   op: EditOp,
   block: FlatBlock,
@@ -13594,7 +14694,35 @@ function boundDeleteRowsPlan(
     index,
     op,
     anchor: block.anchor,
+    collectBookmarkClamps: () =>
+      collectBookmarkClampIntents(
+        editor,
+        tableBlockAt(sfdt, tableRoute.anchor),
+        requested
+      ),
     execute(state) {
+      // The table's banding and header band, read BEFORE any row is marked and
+      // through the same owners the bound duplicate reads them through. A row
+      // deletion changes which rows survive, so the change-set finalizer must
+      // revisit the stripes from the accept projection - and it can only
+      // revisit a table an op recorded. Measured on the browser document with
+      // Buildings and Stock deleted in a change set of their own: Contents
+      // kept the second row's shade, because nothing had recorded the table.
+      const sourceTableBlock = tableBlockAt(state.sfdt, tableRoute.anchor);
+      const sourceAppearance = sourceTableBlock
+        ? collectTableAppearance(sourceTableBlock)
+        : null;
+      const sourceHeaderRows = sourceAppearance
+        ? effectiveHeaderRows({
+            blocks: flattenSfdt(state.sfdt),
+            sfdt: state.sfdt,
+            tableAnchor: tableRoute.anchor,
+            source: sourceAppearance
+          })
+        : 0;
+      const sourceBanding = sourceAppearance
+        ? detectTableBanding(sourceAppearance) ?? undefined
+        : undefined;
       let next = state.sfdt;
       let nextIndex = state.index;
       for (const { rowId } of rowIds) {
@@ -13622,9 +14750,23 @@ function boundDeleteRowsPlan(
             .map((entry) => entry.rowId)
             .join(', ')} from table "${tableRoute.tableId}". Nothing was kept.`
         );
+      // Recorded from the PRE-WRITE document on purpose. `next` is the engine's
+      // projection with the rows already gone (5 rows); the live document the
+      // finalizer reads still holds them as tracked deletions (7 rows), and a
+      // footprint is matched by its live shape before anything is written.
+      const footprint = sourceBanding
+        ? captureTableFootprint(
+            state.sfdt,
+            tableRoute.anchor,
+            sourceHeaderRows,
+            sourceBanding,
+            tableRoute.tableId
+          )
+        : null;
       return {
         sfdt: next,
         anchor: block.anchor,
+        ...(footprint ? { tableFootprints: [footprint] } : {}),
         details: [
           `table: ${tableRoute.tableId}`,
           `removed row ids: ${rowIds.map((entry) => entry.rowId).join(', ')}`
@@ -13886,6 +15028,219 @@ function rewriteBindingsInClone(
     rewriteBindingsInClone(value, options);
 }
 
+/**
+ * THE LAW: references follow the bindings they name.
+ *
+ * A split moves rows; it destroys nothing. So a split never refuses, and every
+ * binding it moves has a SUCCESSOR: the name that carries that binding after
+ * the change set. Successors are computed, not guessed, and the two cases are
+ * one mechanism rather than two rules:
+ *
+ *   an AGGREGATE of the split table has TWO successors - its own name, kept by
+ *   the surviving fragment and correctly rescoped to that fragment's rows, and
+ *   the copy's minted name - so a reference to it becomes the SUM of both;
+ *
+ *   a moved ITEM binding has ONE successor - the copy's minted name, the
+ *   original having left with its row - so a reference to it becomes that
+ *   single name. A prose mirror (`expr=buildings_premium`) is the everyday
+ *   shape of this case, and following it is a rename, not a total.
+ *
+ * Both are the same rewrite (retag the referencing formula) with the same
+ * group-bound inverse, so reject, undo and a rolled-back change set restore the
+ * original expression the moment the successor leaves the document.
+ *
+ * A split is composed as `duplicate_table` with `keepRows` plus `delete_row` of
+ * the complement, and `duplicate_table` mints FRESH names for the
+ * document-level bindings it copies while rewriting only the CLONE's
+ * expressions. That asymmetry is deliberate for a COPY - a copy must never
+ * steal references that pointed at its source, because the source is still
+ * whole - and it is the whole defect for a SPLIT, where the source is not:
+ * fragment one keeps the original aggregate and recomputes to its own rows, the
+ * moved item's original is deleted outright, and every formula outside the
+ * table still names what shrank or left.
+ *
+ * The discriminator between copy and split is not the op list and not the name:
+ * it is whether the fragments PARTITION the source's rows. A copy leaves the
+ * source whole and nothing outside is touched; a split shrinks it, and every
+ * outside reference follows. Per-fragment aggregates are left alone - they
+ * already rescope to their own items, which is the half of the law the split
+ * gets right and this must not disturb.
+ *
+ * Provenance is what makes the pairing exact rather than inferred: the clone
+ * records `copyOf` on every binding it renames, so the copied binding names its
+ * own original.
+ *
+ * ROW SCOPE IS NOT A DOCUMENT REFERENCE, and this is the second half of the
+ * defect measured on the captain's own proposal. A row-scoped binding (`units`,
+ * `rate`, `line_total`) is one row's own column, shared by name across every
+ * row of every table, and a row formula's `mul(units,rate)` resolves inside its
+ * own row. Successors are therefore keyed only on DOCUMENT-level bindings -
+ * the ones `scanBindings` files under `fields`/`formulas` rather than under a
+ * table's rows - which is why splitting one schedule of a three-schedule
+ * proposal leaves the other two schedules' row formulas alone.
+ */
+interface SplitConservation {
+  sfdt: any;
+  restores: ExpressionRestore[];
+  receipts: string[];
+}
+
+const pathContains = (
+  outer: ReadonlyArray<string | number>,
+  inner: ReadonlyArray<string | number>
+): boolean =>
+  outer.length <= inner.length &&
+  outer.every((segment, index) => String(inner[index]) === String(segment));
+
+/** Every bare reference in an expression, function names excluded. */
+function expressionReferences(expression: string): string[] {
+  const found: string[] = [];
+  String(expression).replace(
+    /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\b/g,
+    (token, offset: number, source: string) => {
+      const after = source.slice(offset + token.length).match(/^\s*(.)/)?.[1];
+      if (after !== '(') found.push(token);
+      return token;
+    }
+  );
+  return found;
+}
+
+/**
+ * The names that carry `name` after the split: the original when the surviving
+ * fragment kept it, plus the name the clone minted for it. Empty when the split
+ * did not touch that binding at all.
+ */
+function splitSuccessors(
+  name: string,
+  minted: Map<string, string>,
+  kept: Set<string>
+): string[] {
+  const copy = minted.get(name);
+  if (!copy) return [];
+  return kept.has(name) ? [name, copy] : [copy];
+}
+
+/** `expression` with every reference replaced by the successors that carry it. */
+function followSuccessors(
+  expression: string,
+  minted: Map<string, string>,
+  kept: Set<string>
+): string {
+  return String(expression).replace(
+    /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\b/g,
+    (token, offset: number, source: string) => {
+      const after = source.slice(offset + token.length).match(/^\s*(.)/)?.[1];
+      if (after === '(') return token;
+      const heirs = splitSuccessors(token, minted, kept);
+      if (!heirs.length) return token;
+      return heirs.length === 1 ? heirs[0] : `sum(${heirs.join(',')})`;
+    }
+  );
+}
+
+function conserveSplitAggregates(before: any, after: any): SplitConservation {
+  const beforeIndex = scanBindings(before);
+  const afterIndex = scanBindings(after);
+  const empty: SplitConservation = { sfdt: after, restores: [], receipts: [] };
+  /** Origin name -> the name the clone minted for it, per split table. */
+  const minted = new Map<string, string>();
+  /** Origins the surviving fragment still carries under their own name. */
+  const kept = new Set<string>();
+  /** Every table a split of this change set produced or shrank. */
+  const splitPaths: Array<ReadonlyArray<string | number>> = [];
+
+  const documentBinding = (index: BindingIndex, name: string) =>
+    index.formulas.get(name)?.[0] ?? index.fields.get(name)?.[0];
+
+  for (const [copyId, copyTable] of afterIndex.tables) {
+    if (beforeIndex.tables.has(copyId) || !copyTable.tablePath) continue;
+    for (const occurrence of afterIndex.occurrences) {
+      if (!pathContains(copyTable.tablePath, occurrence.path)) continue;
+      const origin = (occurrence.def as any)?.options?.copyOf;
+      if (typeof origin !== 'string' || !origin) continue;
+      // Only a DOCUMENT binding is a reference anything outside could name; a
+      // row-scoped one is that row's own column and is filed under its table.
+      const source = documentBinding(beforeIndex, origin);
+      if (!source) continue;
+      const sourceTable = [...beforeIndex.tables].find(
+        ([, table]) =>
+          !!table.tablePath && pathContains(table.tablePath, source.path)
+      );
+      if (!sourceTable) continue;
+      const [sourceId, sourceEntry] = sourceTable;
+      const survivor = afterIndex.tables.get(sourceId);
+      // THE DISCRIMINATOR, and it is arithmetic rather than a guess at intent:
+      // the fragments must PARTITION the original's rows. A split moves rows,
+      // so the two fragments add up to what the source had; a copy duplicates
+      // them, so they add up to more, and adding a copy's aggregate to its
+      // source's would double-count every row they share. Measured on the
+      // composed-probe fixture, which copies a whole table and then deletes one
+      // row from the source: the source did lose rows, and it is still not a
+      // split. Anything that is not a partition is left entirely alone, which
+      // is copyFidelity's law - a copy must never steal references that
+      // pointed at its source.
+      if (
+        !survivor ||
+        !survivor.tablePath ||
+        survivor.rows.length >= sourceEntry.rows.length ||
+        survivor.rows.length + copyTable.rows.length !== sourceEntry.rows.length
+      )
+        continue;
+      minted.set(origin, occurrence.name);
+      // An AGGREGATE survives in fragment one; a MOVED ITEM does not, and the
+      // difference is read off the document rather than assumed from the kind.
+      if (documentBinding(afterIndex, origin)) kept.add(origin);
+      splitPaths.push(survivor.tablePath, copyTable.tablePath);
+    }
+  }
+  if (!minted.size) return empty;
+
+  let sfdt = after;
+  const restores: ExpressionRestore[] = [];
+  const receipts: string[] = [];
+  const seen = new Set<string>();
+  for (const occurrence of afterIndex.occurrences) {
+    if (occurrence.def.kind !== 'formula') continue;
+    if (splitPaths.some((path) => pathContains(path, occurrence.path)))
+      continue;
+    const references = expressionReferences(occurrence.def.expression);
+    const next = followSuccessors(occurrence.def.expression, minted, kept);
+    if (next === occurrence.def.expression) continue;
+    if (seen.has(occurrence.tag)) continue;
+    seen.add(occurrence.tag);
+    const def = parseTag(occurrence.tag);
+    if (!def || def.kind !== 'formula') continue;
+    def.expression = next;
+    const toTag = formatTag(def);
+    // The inverse asks the DOCUMENT, so it is bound to the minted successor:
+    // the rewrite is true exactly while that name is there to be read.
+    const requires = references
+      .map((reference) => minted.get(reference))
+      .find((copy): copy is string => !!copy) as string;
+    const node = getAt(sfdt, occurrence.path) as any;
+    sfdt = setAt(sfdt, occurrence.path, {
+      ...node,
+      contentControlProperties: {
+        ...node.contentControlProperties,
+        tag: toTag
+      }
+    });
+    restores.push({
+      name: occurrence.name,
+      fromTag: occurrence.tag,
+      toTag,
+      requires
+    });
+    const followed = references.filter((reference) => minted.has(reference));
+    receipts.push(
+      `${occurrence.name} follows the split (${next}) so the money it reads is unchanged` +
+        (followed.length ? `: ${[...new Set(followed)].join(', ')}` : '')
+    );
+  }
+  return { sfdt, restores, receipts };
+}
+
 function materializeBoundRows(
   state: EngineMutationState,
   tableId: string,
@@ -14141,6 +15496,119 @@ function clonedBindingTags(
   return { bindings: out, tableIds: tableIdsSeen };
 }
 
+/**
+ * Every formula name to its expression, for the transitive-dependency test.
+ *
+ * `formulas` maps a name to its OCCURRENCES - one definition seen in several
+ * places - so any occurrence carries the expression. The binding engine is what
+ * keeps divergent ones from existing, which is why reading the first is safe
+ * here rather than a silent pick-one.
+ */
+function documentFormulaMap(index: BindingIndex): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [name, occurrences] of index.formulas) {
+    const expression = occurrences[0]?.def;
+    if (expression && expression.kind === 'formula')
+      out.set(name, expression.expression);
+  }
+  return out;
+}
+
+/**
+ * Which physical rows of a duplicate survive, resolved from `keepRows`.
+ *
+ * `null` means the caller said nothing and every row is kept, which is the
+ * behaviour duplicate_table always had.
+ *
+ * THE INDEX SPACE IS ABSOLUTE TABLE ROW INDICES, not item ordinals. Every other
+ * row-addressing op in the surface speaks absolute rows - delete_row,
+ * set_cell_text, a table_facts read - and introducing a second index space for
+ * one parameter is how off-by-one defects arrive in a form nobody can see in a
+ * diff.
+ *
+ * ROLE-BEARING ROWS ARE NOT FILTERABLE. The header band and every aggregate row
+ * belong to BOTH halves of any partition: a fragment with no header is not a
+ * table a person can read, and a fragment whose totals were left behind shows
+ * numbers that silently no longer mean anything. So the caller filters items,
+ * and naming anything else is a refusal rather than a silent correction - a
+ * caller who names a total has misunderstood the primitive, and being told so
+ * is more useful than being quietly obeyed.
+ *
+ * This is the caller-facing half of the derive-roles-from-evidence law, and it
+ * is what makes the same filter safe one tier up, where the equivalent mistake
+ * would behead a section.
+ */
+function resolveKeepRows(
+  op: EditOp,
+  structure: TableStructure,
+  tableId: string
+): { rows: number[]; itemsKept: number } | null {
+  if (op.keepRows === undefined) return null;
+  const where = `table ${tableId}: ${structure.rows.length} rows, header band ${structure.headerRows}`;
+  if (!Array.isArray(op.keepRows))
+    throw new OpError(
+      'keep_rows_not_a_list',
+      `duplicate_table keepRows must be a list of absolute table row indices. Nothing was written.`,
+      [where, `keepRows: ${JSON.stringify(op.keepRows)}`]
+    );
+
+  const asked = [...new Set(op.keepRows.map(Number))];
+  const byIndex = new Map(structure.rows.map((row) => [row.index, row]));
+
+  const notFound = asked.filter(
+    (row) => !Number.isInteger(row) || !byIndex.has(row)
+  );
+  if (notFound.length)
+    throw new OpError(
+      'keep_rows_row_not_found',
+      `duplicate_table keepRows names row ${notFound.join(
+        ', '
+      )}, which this table does not have. Nothing was written.`,
+      [
+        where,
+        `keepRows: ${asked.join(', ')}`,
+        'Re-read the table with a table_facts read and use its current row indices.'
+      ]
+    );
+
+  const askedRoles = asked.map((row) => ({
+    row,
+    role: byIndex.get(row)?.role
+  }));
+  const roleRows = askedRoles
+    .filter((entry) => entry.role !== 'item')
+    .map((entry) => entry.row);
+  if (roleRows.length)
+    throw new OpError(
+      'keep_rows_names_role_row',
+      `duplicate_table keepRows names row ${roleRows.join(
+        ', '
+      )}, which is part of the header band or is a total computed from this table's own rows. Those rows are always kept and never need naming; keepRows selects only the data rows. Nothing was written.`,
+      [
+        where,
+        `keepRows: ${asked.join(', ')}`,
+        `roles: ${askedRoles
+          .filter((entry) => entry.role !== 'item')
+          .map((entry) => `row ${entry.row} is ${entry.role}`)
+          .join(', ')}`,
+        'List only the data rows the copy should keep. The header and any totals come along on their own.'
+      ]
+    );
+
+  // An EMPTY selection is legitimate, not a mistake: header plus totals plus no
+  // data is the natural end state of "move all the items into a new table", and
+  // an empty aggregate recomputes to zero rather than erroring. Refusing it
+  // would force a special case for the partition that is easiest to ask for.
+  const keep = new Set(asked);
+  const surviving = structure.rows.filter(
+    (row) => row.role !== 'item' || keep.has(row.index)
+  );
+  return {
+    rows: surviving.map((row) => row.index),
+    itemsKept: surviving.filter((row) => row.role === 'item').length
+  };
+}
+
 function boundDuplicateTablePlan(
   index: number,
   op: EditOp,
@@ -14174,6 +15642,38 @@ function boundDuplicateTablePlan(
           `duplicate_table could not locate the table block for "${tableRoute.tableId}". Nothing was written.`
         );
       const markerBlock = getAt(state.sfdt, markerPath);
+
+      // WHICH ROWS THE COPY KEEPS, decided before anything is built.
+      //
+      // Roles come from the schema, never from the caller: the header band and
+      // every aggregate row belong to both halves of a partition, so `keepRows`
+      // selects among ITEM rows only and naming anything else is a refusal.
+      // Resolving here means a bad selection refuses before a single row is
+      // cloned.
+      const sourceTableBlock = firstTableBlockIn(getAt(state.sfdt, markerPath));
+      const sourceAppearance = collectTableAppearance(sourceTableBlock);
+      // Through its ONE owner. Re-deriving header-ness here is how a style-only
+      // header and a filled header come to disagree, and every row below the
+      // disagreement then lands one out of phase.
+      const sourceHeaderRows = sourceAppearance
+        ? effectiveHeaderRows({
+            blocks: flattenSfdt(state.sfdt),
+            sfdt: state.sfdt,
+            tableAnchor: tableRoute.anchor,
+            source: sourceAppearance
+          })
+        : 0;
+      const keepIndices = resolveKeepRows(
+        op,
+        deriveTableStructure({
+          tableBlock: sourceTableBlock,
+          headerRows: sourceHeaderRows,
+          tableId: tableRoute.tableId,
+          documentFormulas: documentFormulaMap(state.index)
+        }),
+        tableRoute.tableId
+      );
+
       const clone = clonedWithoutRevisions(
         state.sfdt,
         containerCarryingOnlyTable(
@@ -14250,6 +15750,26 @@ function boundDuplicateTablePlan(
           ...rows.slice(lastData + 1)
         ];
       }
+      // Prune BEFORE the identity rewrite, so the rewrite walks the shape the
+      // copy will actually have. `rowIds` may carry entries for rows that no
+      // longer exist here, which is harmless - it is a lookup, not a worklist.
+      if (keepIndices) {
+        const cloneTable = firstTableBlockIn(clone);
+        const cloneRows = getRows(cloneTable);
+        if (cloneRows) {
+          const kept = keepIndices.rows
+            .map((row) => cloneRows[row])
+            .filter((row) => row !== undefined);
+          // Written through whichever key this dialect actually uses, rather
+          // than assuming `rows`: the live editor serializes optimized SFDT,
+          // where the key is `r`, and assuming the expanded spelling here would
+          // silently leave every row in place.
+          if ('rows' in cloneTable) cloneTable.rows = kept;
+          else if ('r' in cloneTable) cloneTable.r = kept;
+          else if ('rw' in cloneTable) cloneTable.rw = kept;
+        }
+      }
+
       rewriteBindingsInClone(clone, {
         tableIds,
         rowIds,
@@ -14286,7 +15806,23 @@ function boundDuplicateTablePlan(
         );
       const sourceColumns = [...liveTable.columnDefs.keys()];
       const cloneColumns = [...verified.columnDefs.keys()];
-      if (JSON.stringify(sourceColumns) !== JSON.stringify(cloneColumns))
+      // The column comparison asks "did the clone lose a bound column", and it
+      // is answered by the DATA rows, because that is where the `row=` tags
+      // live. A deliberately empty selection has no data rows, so it has no
+      // column defs to compare and this guard would fire on a copy that is
+      // exactly what was asked for.
+      //
+      // KNOWN CONSEQUENCE, recorded rather than hidden: such a copy carries its
+      // header and its totals but no prototype data row, so a later insert_row
+      // into it has no row to pattern itself on. Whether an empty copy should
+      // instead retain a hidden prototype is a design question this narrowing
+      // does not answer; it only stops the guard from refusing the ruled case.
+      const emptiedOnPurpose =
+        keepIndices !== null && keepIndices.itemsKept === 0;
+      if (
+        !emptiedOnPurpose &&
+        JSON.stringify(sourceColumns) !== JSON.stringify(cloneColumns)
+      )
         throw new OpError(
           'duplicate_table_shape_mismatch',
           `duplicate_table cloned "${tableRoute.tableId}" as "${newTableId}", but its columns changed. Nothing was kept.`,
@@ -14300,9 +15836,46 @@ function boundDuplicateTablePlan(
           'duplicate_table_row_count_mismatch',
           `duplicate_table expected ${replacementRows.length} materialized rows but found ${verified.rows.length}. Nothing was kept.`
         );
+      // LAW D: every structural write records a footprint, so the finalizer can
+      // find these tables again after later edits in the same change set have
+      // moved everything around them. BOTH halves, because a duplicate leaves
+      // two tables whose striping is now each other's business - the source
+      // lost rows and the copy is new.
+      //
+      // `tableId` is carried on each, which is the dormant field going live:
+      // identity beats position at resolution, and a duplicate renumbers every
+      // top-level index after it.
+      const cloneAnchor = boundTableAnchor(next, verified);
+      const sourceEntry = nextIndex.tables.get(tableRoute.tableId);
+      const sourceAnchor = sourceEntry
+        ? boundTableAnchor(next, sourceEntry) ?? tableRoute.anchor
+        : tableRoute.anchor;
+      const sourceBanding = sourceAppearance
+        ? detectTableBanding(sourceAppearance) ?? undefined
+        : undefined;
+      const tableFootprints = [
+        captureTableFootprint(
+          next,
+          sourceAnchor,
+          sourceHeaderRows,
+          sourceBanding,
+          tableRoute.tableId
+        ),
+        cloneAnchor
+          ? captureTableFootprint(
+              next,
+              cloneAnchor,
+              sourceHeaderRows,
+              sourceBanding,
+              newTableId
+            )
+          : null
+      ].filter((footprint): footprint is TableFootprint => !!footprint);
+
       return {
         sfdt: next,
-        anchor: boundTableAnchor(next, verified) ?? tableRoute.anchor,
+        anchor: cloneAnchor ?? tableRoute.anchor,
+        ...(tableFootprints.length ? { tableFootprints } : {}),
         details: [
           `source table: ${tableRoute.tableId}`,
           `new table: ${newTableId}`,
@@ -14464,6 +16037,35 @@ function planBindingRoutedOp(
     const tableRoute = tableAnchor
       ? runtime?.tablesByAnchor.get(tableAnchor)
       : undefined;
+    // A table marker with no row bindings proves no roles either
+    const rowsBound = !!tableRoute?.table.rows.length;
+    // `keepRows` NEEDS PROVEN ROLES, and an unbound table cannot supply them.
+    //
+    // Without this the parameter is SILENTLY IGNORED: an unbound table has no
+    // binding route, so the op falls through to the editor handler, which knows
+    // nothing about keepRows and copies every row. Measured before this guard
+    // existed - a keepRows of [1,2] against a six-row unbound table produced a
+    // six-row copy and reported ok.
+    //
+    // Refusing is the honest answer rather than filtering anyway, because
+    // deriveTableStructure's unbound fallback classifies EVERY non-header row
+    // as an item (tableStructure.ts). Filtering on that would let a caller drop
+    // a total while the engine reported it had protected one - a promise it
+    // cannot keep is worse than a capability it does not have.
+    //
+    // This refusal retires itself: once a table carries bindings, roles are
+    // provable and the bound route takes the op, with no change here.
+    if (!rowsBound && op.keepRows !== undefined)
+      throw new OpError(
+        'keep_rows_roles_not_derivable',
+        `duplicate_table keepRows needs to know which rows are data and which are headers or totals, and the table at ${JSON.stringify(
+          tableAnchor ?? op.anchor ?? ''
+        )} has no row bindings to tell them apart. Nothing was written.`,
+        [
+          `table: ${tableAnchor ?? op.anchor ?? '(unresolved)'}`,
+          'Duplicate the whole table without keepRows, then delete the rows you do not want from the copy.'
+        ]
+      );
     return tableRoute
       ? boundDuplicateTablePlan(index, op, target, tableRoute)
       : null;
@@ -14492,7 +16094,9 @@ function planBindingRoutedOp(
     ? boundTableForBlock(maybeRuntime, target)
     : undefined;
   if (tableRoute) {
-    if (op.op === 'insert_row') {
+    // Row ops need row identity, a marker-only table leaves them to the editor route
+    const rowsBound = tableRoute.table.rows.length > 0;
+    if (op.op === 'insert_row' && rowsBound) {
       const plan = boundInsertRowsPlan(index, op, target, tableRoute);
       for (let offset = 0; offset < positiveCount(op.count); offset++)
         createdRows.set(
@@ -14501,8 +16105,8 @@ function planBindingRoutedOp(
         );
       return plan;
     }
-    if (op.op === 'delete_row')
-      return boundDeleteRowsPlan(index, op, target, tableRoute);
+    if (op.op === 'delete_row' && rowsBound)
+      return boundDeleteRowsPlan(editor, sfdt, index, op, target, tableRoute);
     if (op.op === 'delete_table')
       return boundDeleteTablePlan(index, op, target, tableRoute);
   }
@@ -14532,14 +16136,35 @@ function planBindingRoutedOp(
  */
 function collectOpExtras(
   extras: OpSuccessExtras | void,
-  record: (restores: AppearanceRestore[]) => void
+  record: (restores: AppearanceRestore[]) => void,
+  recordFootprints?: (
+    footprints: TableFootprint[],
+    shift?: PasteEffect
+  ) => void,
+  recordBookmarkClamps?: (clamps: BookmarkClampIntent[]) => void
 ): Partial<EditResult> {
   if (!extras) return {};
   const appearanceWrite = extras.appearanceWrite;
+  const footprints = extras.tableFootprints;
+  const bookmarkClamps = extras.bookmarkClamps;
   const rest = { ...extras };
+  // Every engine-internal key is deleted here, and the deletions are the ONLY
+  // thing standing between an internal receipt and the model's result: `rest`
+  // is spread wholesale, so a new field added to OpSuccessExtras reaches the
+  // model unless it is named below. tableFootprints did exactly that when it
+  // was introduced - a split's result came back carrying them.
   delete rest.appearanceWrite;
   delete rest.postWriteSfdt;
+  delete rest.tableFootprints;
+  delete rest.pasteEffect;
+  delete rest.bookmarkClamps;
   if (appearanceWrite) record(appearanceWrite.restores);
+  if (bookmarkClamps?.length) recordBookmarkClamps?.(bookmarkClamps);
+  // Order matters: the paste this op performed shifted the footprints recorded
+  // by EARLIER ops, but not the ones this op is recording now - those were
+  // captured after its own paste. So maintain first, then add.
+  if (extras.pasteEffect) recordFootprints?.([], extras.pasteEffect);
+  if (footprints?.length) recordFootprints?.(footprints);
   return {
     ...rest,
     ...(appearanceWrite ? { appearance: appearanceWrite.report } : {})
@@ -16984,29 +18609,37 @@ function detectBatchedDuplicateTables(edits: EditOp[]): BatchRefusal | null {
       indices
     };
   }
-  const firstDuplicate = indices[0];
-  const laterAnchored = edits
-    .map((op, index) => ({ op, index }))
-    .filter(
-      ({ op, index }) =>
-        index > firstDuplicate &&
-        op?.op &&
-        !ANCHORLESS_OPS.has(op.op) &&
-        op.op !== 'replace_all'
-    )
-    .map(({ index }) => index);
-  if (!laterAnchored.length) return null;
-  return {
-    code: 'duplicate_table_must_end_change_set',
-    message:
-      'duplicate_table must be the last anchored edit in its change set. It inserts a table, so every later anchor may have shifted and can collide with the cloned table. Nothing was written.',
-    details: [
-      `duplicate_table at edit ${firstDuplicate}`,
-      `later anchored edits: ${laterAnchored.join(', ')}`,
-      'Duplicate the table, re-read structure/table_facts, then send follow-up edits against the fresh anchors.'
-    ],
-    indices: [firstDuplicate, ...laterAnchored]
-  };
+  // THE "MUST END THE CHANGE SET" REFUSAL IS GONE, REPLACED BY A LAW.
+  //
+  // It used to refuse any anchored edit after a duplicate, on the reasoning
+  // that the insert shifts every later anchor and a write against a moved
+  // anchor could collide with the clone. Two measurements retired it:
+  //
+  //   1. A CLONE FORKS IDENTITY (uniqueTableId / freshRowIdsFor), so after
+  //      duplicating "costs" the copy is "costs_copy" and the anchor "costs"
+  //      still names exactly one table - the source. The bound route already
+  //      resolves through that identity at execute time against the CURRENT
+  //      state, so the collision the refusal imagined cannot occur for a bound
+  //      target. anchorResolutionLaw.spec.ts (i)-(iii) pin this, including the
+  //      negative control that the copy keeps both its rows.
+  //   2. THE CHANGE SET IS ALL-OR-NOTHING AT PREFLIGHT. The refusal's own
+  //      comment worried that a later write "gets far enough to change the
+  //      document before the set fails". Measured: it does not. A refused op
+  //      aborts the set with nothing written and the failing op carrying its
+  //      own reason (composedChangeSetProbes.spec.ts PROBE 2).
+  //
+  // What replaces it is the resolution law: identity first; maintained
+  // position, fingerprint-asserted, when there is no identity; and a loud
+  // named refusal when resolution does not yield exactly one container.
+  // Identity never silently falls back to position - an expected id that is
+  // missing means the document is not what the change set thought it was.
+  //
+  // STILL GUARDED, and deliberately: several duplicates in one set, above.
+  // Also unchanged is detectAnchorShiftingNotLast, which covers copy_section -
+  // that op has no identity fork, so clause 2 is the only resolution available
+  // to it and clause 2 is not yet proven for an UNBOUND container. Lifting it
+  // needs its own evidence and is not part of this change.
+  return null;
 }
 
 /**
@@ -17628,21 +19261,32 @@ interface CompiledSectionEdit {
   label: string;
 }
 
-interface SectionExpansionEntry {
+interface ComposedExpansionEntry {
   originalIndex: number;
   original: EditOp;
   start: number;
   count: number;
   labels: string[];
-  section: boolean;
+  /**
+   * WHICH high-level op these children were compiled from, empty for an op
+   * that passed through untouched.
+   *
+   * Was `section: boolean` while `insert_section` was the only composed op.
+   * `split_table` is the second - one table becomes two through
+   * `duplicate_table` + `delete_row` - and the collapse below is identical for
+   * both: report the child that failed, labelled, or report one success under
+   * the original op's name. A parallel expansion path for the second op would
+   * have been two mechanisms owning one contract.
+   */
+  composed: '' | 'insert_section' | 'split_table';
   contentBlocks: number;
   tables: number;
   inheritance?: ComposedSectionInheritance;
 }
 
-interface SectionExpansion {
+interface ComposedExpansion {
   edits: EditOp[];
-  entries: SectionExpansionEntry[];
+  entries: ComposedExpansionEntry[];
   expandedToOriginal: number[];
   changed: boolean;
 }
@@ -18819,12 +20463,332 @@ function compileSectionComposer(
   };
 }
 
-function expandSectionComposerEdits(
+/**
+ * A SPLIT IS SUGAR. One table becomes two by copying the rows that move and
+ * deleting them from the source - `duplicate_table` with `keepRows`, then
+ * `delete_row` of those same rows - and both of those route through the
+ * binding engine's own mutation plan.
+ *
+ * WHY THIS EXISTS, and it is not a refactor. The native `split_table` handler
+ * captures the table through a SELECTION and pastes a pruned payload
+ * (`relocateBlockRange`). Measured in a real browser 2026-08-27: that paste
+ * DROPS identified elements - content controls and bookmarks - and the
+ * originals then die with the tracked-deleted source rows on accept, taking ten
+ * of eleven binding tags with them. jsdom's paste preserves them, so no jsdom
+ * test could see it, and `assertTableHasNoBindings` was the standing refusal
+ * that kept a bound table away from that path. The captain hit that refusal on
+ * his own proposal on 2026-09-08.
+ *
+ * `duplicate_table` does not share the defect: it clones SFDT and pastes it as
+ * tracked segments, so the copy carries its own content controls as bytes.
+ * Measured in a REAL headless browser on the captain's own document, at
+ * 98c3a7f5: the composition applies, mints both fragments, conserves every
+ * summary line, and accepts with no surviving revision and no dropped binding
+ * name. That is the evidence class the 2026-08-27 revert lacked, and it is why
+ * the refusal can go for the tables this compiler takes over.
+ *
+ * WHAT IT TAKES OVER, and what it deliberately does not. Only a table whose
+ * rows are BOUND, because `keepRows` needs proven row roles and only bindings
+ * prove them (`keep_rows_roles_not_derivable`). Three categories:
+ *
+ *   bound rows       - compiled here. The refusal never runs.
+ *   cell controls,
+ *   no table route   - NOT compiled: no provable roles, so no `keepRows`, and
+ *                      the native path is exactly what destroys controls. The
+ *                      refusal stays, and it is still correct.
+ *   no controls      - NOT compiled: nothing for a paste to drop, and the
+ *                      native handler is the measured-correct path there.
+ *
+ * PLACEMENT IS ENGINE-OWNED here: the copy lands immediately after its source,
+ * because that is where `duplicate_table` puts it. `targetAnchor` is therefore
+ * optional on the op, and when it is supplied it must name that same position;
+ * anything else is refused rather than silently relocated.
+ *
+ * Returning null is how this compiler declines - the op then passes through
+ * untouched and the native handler owns it, refusals and all. So every
+ * split-plan refusal keeps its existing code and owner; this compiler only ever
+ * takes over a split whose plan already resolved cleanly.
+ */
+function compileTableSplit(
+  original: EditOp,
+  blocks: FlatBlock[],
+  byAnchor: Map<string, FlatBlock>,
+  sfdt: any,
+  editor: LiveEditor
+): { children: CompiledSectionEdit[] } | null {
+  const block = byAnchor.get(String(original.anchor ?? ''));
+  if (!block) return null;
+  const tableAnchor = tableAnchorForBlock(block);
+  if (!tableAnchor) return null;
+  // Bound ROWS, not merely a bound cell: this is the `keepRows` precondition,
+  // read from the same route the duplicate preflight reads it from.
+  const runtime = bindingRuntime(editor, sfdt);
+  const route = runtime?.tablesByAnchor.get(tableAnchor);
+  if (!runtime || !route?.table.rows.length) return null;
+  const tableBlock = tableBlockAt(sfdt, tableAnchor);
+  const appearance = tableBlock ? collectTableAppearance(tableBlock) : null;
+  if (!appearance) return null;
+  let extract: number[];
+  let source: BlockRange;
+  try {
+    source = resolveTableRange(blocks, tableAnchor);
+    // The header band read the SAME way the bound duplicate reads it, without
+    // the rendered-format reader. Not a shortcut: if this disagreed with what
+    // `duplicate_table` computes for the same table, the `keepRows` it is
+    // handed would be one row out of phase with the roles it validates against.
+    const headerRows = effectiveHeaderRows({
+      blocks,
+      sfdt,
+      tableAnchor,
+      source: appearance
+    });
+    const plan = resolveSplitRows(
+      original,
+      tableAnchor,
+      appearance,
+      headerRows,
+      tableBlock
+    );
+    // ITEM ROWS ONLY, and this is a property of what a split IS rather than a
+    // filter for the validator's benefit.
+    //
+    // `resolveSplitRows` calls every row below the header band "data", because
+    // for the native path that is all it can know. A bound table knows more: an
+    // AGGREGATE row is a total over the rows above it, so it belongs to BOTH
+    // fragments - each half gets its own subtotal, which is the whole point of
+    // splitting a schedule. It is therefore never moved, and `resolveKeepRows`
+    // refuses to have one named for exactly that reason.
+    //
+    // Measured before this filter existed: a positional split of the flagship
+    // inventory table at row 8 sent rows 8..18 to keepRows, and 16..18 are its
+    // totals band, so the change set died with `bound_row_not_found`.
+    const items = new Set(
+      deriveTableStructure({
+        tableBlock,
+        headerRows,
+        tableId: route.tableId,
+        documentFormulas: documentFormulaMap(runtime.index)
+      })
+        .rows.filter((row) => row.role === 'item')
+        .map((row) => row.index)
+    );
+    extract = plan.extract.filter((row) => items.has(row));
+    if (!extract.length) return null;
+  } catch {
+    return null;
+  }
+  const refusal = splitPlacementRefusal(blocks, original, source);
+  if (refusal)
+    return {
+      children: [
+        { edit: { ...original, __sectionRefusal: refusal }, label: 'placement' }
+      ]
+    };
+  // ONE group, so the two writes are one card. Absent `group` already means
+  // the change-set-wide unit, which is one card too.
+  const group = original.group ? { group: original.group } : {};
+  return {
+    children: [
+      {
+        edit: {
+          op: 'duplicate_table',
+          anchor: `${tableAnchor};0;0;0`,
+          rows: 'copy',
+          keepRows: extract,
+          ...group
+        } as EditOp,
+        label: 'copyRows'
+      },
+      {
+        edit: {
+          op: 'delete_row',
+          anchor: `${tableAnchor};${extract[0]};0;0`,
+          rows: extract,
+          ...group
+        } as EditOp,
+        label: 'removeMovedRows'
+      }
+    ]
+  };
+}
+
+/**
+ * WHETHER A SUPPLIED `targetAnchor` IS THE SPLIT WE ARE ALREADY DOING.
+ *
+ * `targetAnchor` is NOT a placement on a split, and the engine never treated it
+ * as one for a bound table: `duplicate_table` puts the copy immediately after
+ * its source and takes no destination. But the model always sends one, because
+ * the tool schema asks for `{anchor, splitAtRow, targetAnchor, position}` - so
+ * the only question this can answer is whether what it named IS that same
+ * place, described differently.
+ *
+ * It usually is, in one of three spellings, and all three mean the same split:
+ * the source table's own anchor, a cell inside it, or the block right after it.
+ * Which one the model picks varies run to run, and an earlier version of this
+ * demanded exact equality with "the block after the source" - so the same
+ * prompt on the same document refused about one time in four with
+ * `split_table_target_not_after_source`, and the assistant told the captain
+ * "the editor wouldn't accept the Property Premium Detail table as the target".
+ * That refusal is retired: a spelling of the right answer is the right answer.
+ *
+ * What still fails is a target that names somewhere ELSE - another table, or a
+ * block away from this one - because then the model meant a placement the
+ * composed path cannot honour, and silently ignoring it would report success
+ * about a document that does not exist. The message names what the anchor
+ * actually resolved to, so the model can see it aimed at the wrong thing.
+ */
+function splitPlacementRefusal(
+  blocks: FlatBlock[],
+  op: EditOp,
+  source: BlockRange
+): { code: string; message: string; details?: string[] } | undefined {
+  const named = String(op.targetAnchor ?? '').trim();
+  if (!named) return undefined;
+  const first = topLevelAddress(source.blocks[0].anchor);
+  const last = topLevelAddress(source.blocks[source.blocks.length - 1].anchor);
+  const target = topLevelAddress(named);
+  const describe = (address: { section: number; block: number }) =>
+    `${address.section};${address.block}`;
+  // The source's own blocks, and the one immediately after them. A cell anchor
+  // inside the table reduces to the table's own (section, block), so "inside
+  // it" needs no separate case.
+  if (
+    target.section === first.section &&
+    target.block >= first.block &&
+    target.block <= last.block + 1
+  )
+    return undefined;
+  // A table's flat blocks are its CELLS, with five-part anchors, so a
+  // two-part table anchor matches none of them directly - look for a cell
+  // under that address and ask it which table it belongs to. Without this the
+  // message called a table "the block at 0;10", which is exactly the kind of
+  // unactionable detail the refusal exists to avoid.
+  const landed =
+    blocks.find((block) => block.anchor === named) ??
+    blocks.find((block) => block.anchor.startsWith(`${describe(target)};`));
+  const otherTable = landed ? tableAnchorForBlock(landed) : undefined;
+  return {
+    code: 'split_table_target_elsewhere',
+    message: `split_table puts the new table immediately after the one it splits, so it takes no destination - and ${JSON.stringify(
+      named
+    )} does not name that table or the block after it. It resolves to ${
+      otherTable
+        ? `a different table at ${JSON.stringify(otherTable)}`
+        : `the block at ${describe(target)}`
+    }, while the table being split is at ${JSON.stringify(
+      source.anchor
+    )}. Nothing was written.`,
+    details: [
+      `source table: ${source.anchor} (blocks ${describe(first)}..${describe(
+        last
+      )})`,
+      `targetAnchor: ${named} -> ${
+        otherTable ? `table ${otherTable}` : describe(target)
+      }`,
+      'Omit targetAnchor: the new table always lands immediately after the one it splits. To put it somewhere else, split it first and then move_section the result, which is its own reviewable change.'
+    ]
+  };
+}
+
+/** Ops that address a whole table, and so may arrive naming it rather than a cell. */
+const TABLE_ADDRESSED_OPS = new Set([
+  'split_table',
+  'duplicate_table',
+  'delete_row',
+  'delete_table'
+]);
+
+/**
+ * ONE way to name a table, resolved once, before anything plans against it.
+ *
+ * The tool schema lets the model address a table-scoped op three ways: a cell
+ * anchor of the table ("1;10;0;0;0"), the table's own anchor ("1;10"), or, for
+ * a bound table, its id (`table: "property_premium"`). Every planner below -
+ * the split compiler, the bound duplicate, the bound and native row deletes -
+ * was written against the cell form and read the other two as "no such block".
+ * Measured on the captain's document, one request, four engine calls: the
+ * model's first and correct `split_table {anchor:"1;10", rows:[1,3]}` fell
+ * through to the native path and was refused for carrying bindings; its
+ * recommended `duplicate_table {table} + delete_row {anchor:"1;10"}` failed
+ * with missing_anchor / anchor_not_found; only two separate calls landed, as
+ * two cards. The schema promised those forms; the engine honours them here so
+ * that no planner has to know more than one.
+ *
+ * The row a cell anchor names is the op's first row when it has one (`rows`,
+ * `splitAtRow`), else the first row - which is what every downstream planner
+ * reads it for.
+ */
+function canonicalizeTableOpAnchors(
+  editor: LiveEditor,
+  edits: EditOp[]
+): EditOp[] {
+  if (!Array.isArray(edits)) return edits;
+  const needsWork = edits.some((op) => {
+    if (!op || !TABLE_ADDRESSED_OPS.has(String(op.op))) return false;
+    const anchor = typeof op.anchor === 'string' ? op.anchor.trim() : '';
+    if (!anchor) return typeof (op as any).table === 'string';
+    return anchor.split(';').length === 2;
+  });
+  if (!needsWork) return edits;
+  const sfdt = serializeSfdt(editor);
+  const blocks = flattenSfdt(sfdt);
+  const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
+  let runtime: BindingRuntime | null | undefined;
+  const routeForTableId = (tableId: string): BindingTableRoute | undefined => {
+    if (runtime === undefined) runtime = bindingRuntime(editor, sfdt);
+    if (!runtime) return undefined;
+    for (const route of runtime.tablesByAnchor.values())
+      if (route.tableId === tableId) return route;
+    return undefined;
+  };
+  const firstRowOf = (op: EditOp): number => {
+    const rows = (op as any).rows;
+    if (Array.isArray(rows) && rows.length) {
+      const first = Number(rows[0]);
+      if (Number.isInteger(first) && first >= 0) return first;
+    }
+    const splitAt = (op as any).splitAtRow;
+    if (
+      typeof splitAt === 'number' &&
+      Number.isInteger(splitAt) &&
+      splitAt >= 0
+    )
+      return splitAt;
+    return 0;
+  };
+  return edits.map((op) => {
+    if (!op || !TABLE_ADDRESSED_OPS.has(String(op.op))) return op;
+    let tableAnchor: string | null = null;
+    const anchor = typeof op.anchor === 'string' ? op.anchor.trim() : '';
+    if (!anchor && typeof (op as any).table === 'string') {
+      tableAnchor = routeForTableId((op as any).table)?.anchor ?? null;
+    } else if (anchor && anchor.split(';').length === 2) {
+      tableAnchor = normalizeTableAnchor(anchor);
+    }
+    if (!tableAnchor) return op;
+    // duplicate_table copies the table whatever row is named; the others read
+    // the row off the anchor when the op carries no `rows`.
+    const row = op.op === 'duplicate_table' ? 0 : firstRowOf(op);
+    // Cell anchors are `section;block;row;column;paragraph`.
+    const cell = `${tableAnchor};${row};0;0`;
+    const fallback = `${tableAnchor};0;0;0`;
+    const resolved = byAnchor.has(cell)
+      ? cell
+      : byAnchor.has(fallback)
+      ? fallback
+      : null;
+    return resolved ? ({ ...op, anchor: resolved } as EditOp) : op;
+  });
+}
+
+function expandComposedEdits(
   editor: LiveEditor,
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
-): SectionExpansion {
+): ComposedExpansion {
   const requested = Array.isArray(input?.edits) ? input.edits : [];
-  const changed = requested.some((op) => op?.op === 'insert_section');
+  const changed = requested.some(
+    (op) => op?.op === 'insert_section' || op?.op === 'split_table'
+  );
   if (!changed)
     return {
       edits: requested,
@@ -18834,7 +20798,7 @@ function expandSectionComposerEdits(
         start: originalIndex,
         count: 1,
         labels: [original.op],
-        section: false,
+        composed: '',
         contentBlocks: 0,
         tables: 0
       })),
@@ -18846,10 +20810,31 @@ function expandSectionComposerEdits(
   const blocks = flattenSfdt(sfdt);
   const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
   const edits: EditOp[] = [];
-  const entries: SectionExpansionEntry[] = [];
+  const entries: ComposedExpansionEntry[] = [];
   const expandedToOriginal: number[] = [];
   requested.forEach((original, originalIndex) => {
     const start = edits.length;
+    const split =
+      original?.op === 'split_table'
+        ? compileTableSplit(original, blocks, byAnchor, sfdt, editor)
+        : null;
+    if (split) {
+      for (const child of split.children) {
+        edits.push(child.edit);
+        expandedToOriginal.push(originalIndex);
+      }
+      entries.push({
+        originalIndex,
+        original,
+        start,
+        count: split.children.length,
+        labels: split.children.map((child) => child.label),
+        composed: 'split_table',
+        contentBlocks: 0,
+        tables: 0
+      });
+      return;
+    }
     if (original?.op !== 'insert_section') {
       edits.push(original);
       expandedToOriginal.push(originalIndex);
@@ -18859,7 +20844,7 @@ function expandSectionComposerEdits(
         start,
         count: 1,
         labels: [original?.op ?? 'edit'],
-        section: false,
+        composed: '',
         contentBlocks: 0,
         tables: 0
       });
@@ -18930,7 +20915,7 @@ function expandSectionComposerEdits(
       start,
       count: compiled.children.length,
       labels: compiled.children.map((child) => child.label),
-      section: true,
+      composed: 'insert_section',
       contentBlocks: compiled.contentBlocks,
       tables: compiled.tables,
       ...(compiled.inheritance ? { inheritance: compiled.inheritance } : {})
@@ -18978,9 +20963,34 @@ const GENERIC_GROUP_FAILURES = new Set([
   'change_set_preflight_failed'
 ]);
 
-function collapseSectionComposerResult(
+/**
+ * The assembly sentence, appended only when a SECTION was assembled.
+ *
+ * A composed `split_table` expands through the same seam but assembles no
+ * semantic blocks, and appending an empty list produced "The engine also
+ * assembled ." on every split.
+ */
+function announcementWithAssembly(
+  announcement: string,
+  expansion: ComposedExpansion
+): string {
+  const assembled = expansion.entries.filter(
+    (entry) => entry.composed === 'insert_section'
+  );
+  if (!assembled.length) return announcement;
+  return `${announcement} The engine also assembled ${assembled
+    .map(
+      (entry) =>
+        `${entry.contentBlocks} semantic blocks and ${entry.tables} tables at ${
+          entry.original.anchor ?? '(missing anchor)'
+        }`
+    )
+    .join('; ')}.`;
+}
+
+function collapseComposedResult(
   result: ApplyEditsResult,
-  expansion: SectionExpansion
+  expansion: ComposedExpansion
 ): ApplyEditsResult {
   if (!expansion.changed) return result;
   const results = expansion.entries.map((entry) => {
@@ -18988,7 +20998,7 @@ function collapseSectionComposerResult(
       entry.start,
       entry.start + entry.count
     );
-    if (!entry.section) return children[0];
+    if (!entry.composed) return children[0];
     // A batch-level refusal names ONE child and every sibling carries a generic
     // group code, so the child that failed for a reason is the one to report -
     // otherwise a composed section is refused as `change_set_preflight_failed`
@@ -19000,26 +21010,23 @@ function collapseSectionComposerResult(
     const failureAt = failedIndex >= 0 ? failedIndex : fallbackFailure;
     if (failureAt >= 0) {
       const child = children[failureAt];
-      const label = entry.labels[failureAt] ?? 'sectionSpec';
+      const label = entry.labels[failureAt] ?? entry.composed;
       return {
         ok: false,
-        op: 'insert_section',
+        op: entry.composed,
         ...(entry.original.anchor ? { anchor: entry.original.anchor } : {}),
-        error: child.error ?? 'section_assembly_failed',
-        message: `insert_section failed at ${label}: ${
+        error: child.error ?? 'composed_op_assembly_failed',
+        message: `${entry.composed} failed at ${label}: ${
           child.message ?? 'the engine refused this block'
         }`,
-        details: [
-          `failing section component: ${label}`,
-          ...(child.details ?? [])
-        ],
+        details: [`failing component: ${label}`, ...(child.details ?? [])],
         ...(child.retry ? { retry: child.retry } : {})
       } as EditResult;
     }
     const appearance = combinedComposerAppearance(children);
     return {
       ok: true,
-      op: 'insert_section',
+      op: entry.composed,
       ...(entry.original.anchor ? { anchor: entry.original.anchor } : {}),
       ...(appearance ? { appearance } : {}),
       ...(entry.inheritance ? { inherited: entry.inheritance } : {})
@@ -19038,17 +21045,10 @@ function collapseSectionComposerResult(
             )
           )
         })),
-        announcement: `${
-          result.changeSet.announcement
-        } The engine also assembled ${expansion.entries
-          .filter((entry) => entry.section)
-          .map(
-            (entry) =>
-              `${entry.contentBlocks} semantic blocks and ${
-                entry.tables
-              } tables at ${entry.original.anchor ?? '(missing anchor)'}`
-          )
-          .join('; ')}.`
+        announcement: announcementWithAssembly(
+          result.changeSet.announcement,
+          expansion
+        )
       }
     : undefined;
   return {
@@ -19097,15 +21097,30 @@ export function applyDocumentEdits(
   ed[ASSISTANT_WRITING_KEY] = true;
   const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
   try {
+    // Deliberately NOT wrapped in a grouped undo action. Grouping is an
+    // optimisation; recoverability is correctness. Measured in the real browser
+    // on 2026-08-27: grouping a split_table change set collapses its 13 undo
+    // entries into one, and SyncFusion's replay of that group's inverses throws
+    // in getSplitWidgets partway through the table layout. The throw abandons
+    // the remaining inverses AND the group has already been popped, so the
+    // history is empty and ~115K characters of damage are unreachable by any
+    // number of Ctrl+Z presses. Ungrouped, the same split undoes in 13 clean
+    // steps with no error. Before reintroducing grouping, prove per-op IN THE
+    // BROWSER that the grouped replay does not throw - a passing jsdom test
+    // cannot establish it, because jsdom has no layout to throw from.
     return withSilentEditSelections(editor, () =>
       withSerializationTiming(editor, serializationTiming, () => {
-        const expansion = expandSectionComposerEdits(editor, input);
+        const canonical = canonicalizeTableOpAnchors(editor, input.edits);
+        const expansion = expandComposedEdits(editor, {
+          ...input,
+          edits: canonical
+        });
         const result = applyDocumentEditsMeasured(
           editor,
           { ...input, edits: expansion.edits },
           serializationTiming
         );
-        return collapseSectionComposerResult(result, expansion);
+        return collapseComposedResult(result, expansion);
       })
     );
   } finally {
@@ -19179,6 +21194,7 @@ function applyDocumentEditsMeasured(
   // Adjacent writes from different accept groups must not coalesce into one
   // revision; see installRevisionGroupIsolation. Idempotent.
   installRevisionGroupIsolation(editor);
+  installTrackedContentControlDeletion(editor);
   // The parsed SFDT behind the current block map. Table APPEARANCE lives on
   // cellFormat/rowFormat, which flattening drops, so the banding preserve reads
   // it from here instead of paying a second serialize.
@@ -19257,6 +21273,73 @@ function applyDocumentEditsMeasured(
   // sibling group's. Every appearance write in this change set goes through
   // `recordAppearanceRestores`, so neither collection can miss one.
   const appearanceRestoresByGroup = new Map<string, AppearanceRestore[]>();
+  /**
+   * Every table this change set touched, in edit order.
+   *
+   * Collected the same way appearance restores are - engine-internal, never
+   * returned to the model. Nothing consumes it yet; the appearance finalizer
+   * does, resolving each footprint by tableId or maintained anchor and
+   * asserting its fingerprint before writing anything.
+   *
+   * Edit ORDER is the load-bearing property: several footprints can name the
+   * same table in one change set, because a later op legitimately edits a table
+   * an earlier op touched, and the finalizer keeps the LAST record per resolved
+   * table. Pushing in order is what makes "last" mean "most recent".
+   */
+  const tableFootprints: TableFootprint[] = [];
+  /**
+   * Maintain what is already recorded, then add what this op recorded.
+   *
+   * The shift IS the maintenance law: only a paste moves top-level indices, it
+   * inserts `blocks` entries at `at`, and everything at or after that position
+   * moves by exactly that much. Footprints from THIS op are already post-paste,
+   * so the shift is applied before they are appended rather than to the whole
+   * list afterwards.
+   */
+  const recordTableFootprints = (
+    footprints: TableFootprint[],
+    shift?: PasteEffect
+  ) => {
+    if (shift) {
+      for (const footprint of tableFootprints)
+        if (shift.at <= footprint.sequenceIndex)
+          footprint.sequenceIndex += shift.blocks;
+    }
+    tableFootprints.push(...footprints);
+  };
+  /**
+   * Deferred bookmark clamps, bucketed by revision group exactly like the
+   * appearance restores beside them. They attach to the group at grouping time
+   * (groupNewRevisions), which is what makes every failure path free: a group
+   * whose revisions were rolled back has no partition to attach to, so its
+   * clamps simply evaporate.
+   */
+  const bookmarkClampsByGroup = new Map<string, BookmarkClampIntent[]>();
+  const recordBookmarkClamps = (op: EditOp, clamps: BookmarkClampIntent[]) => {
+    if (!clamps.length) return;
+    const id = opGroupId(op, changeSetId);
+    const bucket = bookmarkClampsByGroup.get(id);
+    if (bucket) bucket.push(...clamps);
+    else bookmarkClampsByGroup.set(id, [...clamps]);
+  };
+  /**
+   * Expression rewrites this change set made outside the tables it split,
+   * bucketed by revision group exactly like the clamps above. Same freedom on
+   * every failure path, for the same reason: a group whose revisions were
+   * rolled back has no partition to attach to, so its inverses evaporate - and
+   * the rewrite itself is rolled back with the rest of the change set.
+   */
+  const expressionRestoresByGroup = new Map<string, ExpressionRestore[]>();
+  const recordExpressionRestores = (
+    op: EditOp,
+    restores: ExpressionRestore[]
+  ) => {
+    if (!restores.length) return;
+    const id = opGroupId(op, changeSetId);
+    const bucket = expressionRestoresByGroup.get(id);
+    if (bucket) bucket.push(...restores);
+    else expressionRestoresByGroup.set(id, [...restores]);
+  };
   const recordAppearanceRestores = (
     op: EditOp,
     restores: AppearanceRestore[]
@@ -19274,7 +21357,17 @@ function applyDocumentEditsMeasured(
     if (bucket) bucket.push(...restores);
     else appearanceRestoresByGroup.set(id, [...restores]);
   };
-  let anchorsMayHaveShifted = false;
+  // What landed ops may have moved, row ops shift anchors only inside their table
+  let documentShifted = false;
+  const shiftedTables = new Set<string>();
+  const anchorMayHaveShifted = (anchor: unknown): boolean =>
+    documentShifted ||
+    shiftedTables.has(
+      String(anchor ?? '')
+        .split(';')
+        .slice(0, 2)
+        .join(';')
+    );
   const refresh = (serializedSfdt?: any) => {
     const sfdt = serializedSfdt ?? serializeSfdt(editor);
     liveSfdt = sfdt;
@@ -19383,6 +21476,17 @@ function applyDocumentEditsMeasured(
     if (revisions.length) attempt(() => rejectRevisions(revisions));
     revisionsByAppliedGroup.delete(groupId);
     attempt(() => refresh());
+    const withdrawn = plans
+      .filter((plan) => opGroupId(plan.op, changeSetId) === groupId)
+      .reduce(
+        (sum, plan) =>
+          sum + (results[plan.index]?.withdrewPendingInsertion ?? 0),
+        0
+      );
+    if (withdrawn)
+      warnings.push(
+        `group_rollback_incomplete: ${groupId}; ${withdrawn} row(s) removed from a pending insertion cannot be restored`
+      );
     if (rollbackErrors.length)
       warnings.push(
         `group_rollback_failed: ${groupId}; ${rollbackErrors.join('; ')}`
@@ -19549,8 +21653,21 @@ function applyDocumentEditsMeasured(
       op.expect != null &&
       indexedTarget != null &&
       !expectTextMatches(op.expect, indexedTarget.text);
-    let target: FlatBlock | LiveStoryTarget | undefined =
-      formatExpectMismatch && hasStructuralEdits ? undefined : indexedTarget;
+    // A story anchor now HAS an indexed block, because the flat walk reaches
+    // text-frame content - that is what makes the text readable and
+    // addressable. But that block is a read projection: a story's range can
+    // only be acted on through the engine's public search offsets, which is
+    // what `resolveLiveStoryTarget` returns and `applyLiveStoryTextOp` writes
+    // through. So a story anchor never takes its own indexed block as the write
+    // target; it always resolves live, exactly as it did when it had no indexed
+    // block at all.
+    let target: FlatBlock | LiveStoryTarget | undefined = isLiveStoryAnchor(
+      op.anchor
+    )
+      ? undefined
+      : formatExpectMismatch && hasStructuralEdits
+      ? undefined
+      : indexedTarget;
     // Search returns public, selection-ready story ranges which SFDT cannot
     // flatten (notably text frames and page-specific headers/footers). Text
     // mutations for those anchors preflight against that same live range.
@@ -19560,7 +21677,7 @@ function applyDocumentEditsMeasured(
       (name === 'replace_text' || name === 'delete_text')
     ) {
       try {
-        target = resolveLiveStoryTarget(editor, op);
+        target = resolveLiveStoryTarget(editor, op, indexedTarget?.text);
       } catch (err) {
         fail(index, op, err);
         return;
@@ -20050,7 +22167,7 @@ function applyDocumentEditsMeasured(
                     blocks,
                     op.anchor,
                     plan.target,
-                    anchorsMayHaveShifted
+                    anchorMayHaveShifted(op.anchor)
                   );
               assertDeferredAnchorIsNewAndEmpty(plan, target);
               writtenOp = { ...op, anchor: target.anchor };
@@ -20102,7 +22219,7 @@ function applyDocumentEditsMeasured(
                       blocks,
                       String(op.inheritFormatFrom),
                       plan.source,
-                      anchorsMayHaveShifted,
+                      anchorMayHaveShifted(op.inheritFormatFrom),
                       true
                     )
                   : undefined;
@@ -20150,9 +22267,6 @@ function applyDocumentEditsMeasured(
                 opExtras = undefined;
               }
             }
-            // A skipped no-op wrote nothing, so it cannot have shifted anything.
-            if (mayShiftAnchors(op) && !(opExtras as OpSuccessExtras)?.noOp)
-              anchorsMayHaveShifted = true;
           }
           // A no-op left the document untouched: there is no revision to
           // assert, nothing to refresh, and - the whole point - no change card.
@@ -20189,6 +22303,20 @@ function applyDocumentEditsMeasured(
             priorAcceptStream
           );
           refresh(postWriteSfdt);
+          if (mayShiftAnchors(op)) {
+            const rowOpTable =
+              op.op === 'insert_row' || op.op === 'delete_row'
+                ? String(writtenOp.anchor ?? '')
+                    .split(';')
+                    .slice(0, 2)
+                    .join(';')
+                : '';
+            const tableKept = blocks.some((block) =>
+              block.anchor.startsWith(`${rowOpTable};`)
+            );
+            if (rowOpTable && tableKept) shiftedTables.add(rowOpTable);
+            else documentShifted = true;
+          }
           assertInsertedTableIsAddressable(
             writtenOp,
             byAnchor,
@@ -20267,8 +22395,11 @@ function applyDocumentEditsMeasured(
             op: op.op,
             anchor: writtenOp.anchor,
             ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
-            ...collectOpExtras(opExtras, (restores) =>
-              recordAppearanceRestores(op, restores)
+            ...collectOpExtras(
+              opExtras,
+              (restores) => recordAppearanceRestores(op, restores),
+              recordTableFootprints,
+              (clamps) => recordBookmarkClamps(op, clamps)
             ),
             ...(inheritanceAppearance
               ? { appearance: inheritanceAppearance.report }
@@ -20393,7 +22524,7 @@ function applyDocumentEditsMeasured(
             target = createdTarget;
           } else if (
             !baselineTarget &&
-            anchorsMayHaveShifted &&
+            anchorMayHaveShifted(op.anchor) &&
             !TABLE_SCOPED_OPS.has(op.op) &&
             op.expect != null
           ) {
@@ -20420,7 +22551,7 @@ function applyDocumentEditsMeasured(
               blocks,
               op.anchor,
               baselineTarget,
-              anchorsMayHaveShifted && !TABLE_SCOPED_OPS.has(op.op)
+              anchorMayHaveShifted(op.anchor) && !TABLE_SCOPED_OPS.has(op.op)
             );
           }
           appliedRelocation =
@@ -20435,7 +22566,7 @@ function applyDocumentEditsMeasured(
                 blocks,
                 String(op.inheritFormatFrom),
                 plan.source,
-                anchorsMayHaveShifted,
+                anchorMayHaveShifted(op.inheritFormatFrom),
                 true
               )
             : undefined;
@@ -20490,8 +22621,11 @@ function applyDocumentEditsMeasured(
             op: op.op,
             anchor: target.anchor,
             ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
-            ...collectOpExtras(extras, (restores) =>
-              recordAppearanceRestores(op, restores)
+            ...collectOpExtras(
+              extras,
+              (restores) => recordAppearanceRestores(op, restores),
+              recordTableFootprints,
+              (clamps) => recordBookmarkClamps(op, clamps)
             ),
             ...(composedDisagreements.has(index)
               ? {
@@ -20595,6 +22729,11 @@ function applyDocumentEditsMeasured(
               }
               const outcome = plan.execute(state);
               outcomes.set(plan.index, outcome);
+              // Same sink, same ordering law as the editor route: an engine
+              // plan's footprints are already current as of its own write, so
+              // they are appended with no shift of their own.
+              if (outcome.tableFootprints?.length)
+                recordTableFootprints(outcome.tableFootprints);
               state = {
                 sfdt: outcome.sfdt,
                 index: scanBindings(outcome.sfdt)
@@ -20602,6 +22741,45 @@ function applyDocumentEditsMeasured(
               if (globalId) appliedGlobalBindings.add(globalId);
             }
             applyingPlan = undefined;
+            // Pure collection only: the clamps are recorded against the
+            // transaction's revision group (the provenance below tags every
+            // revision with the FIRST plan's group) and execute at accept.
+            // Nothing moves before runCommands has succeeded, so an
+            // engine_apply_failed rollback has no clamp to regret.
+            for (const plan of enginePlans) {
+              const clamps = plan.collectBookmarkClamps?.() ?? [];
+              if (!clamps.length) continue;
+              recordBookmarkClamps(enginePlans[0].op, clamps);
+              const outcome = outcomes.get(plan.index);
+              if (outcome)
+                outcome.details = [
+                  ...(outcome.details ?? []),
+                  ...bookmarkClampReceipts(clamps)
+                ];
+            }
+            // THE LAW, applied where it is checkable: at the end of the whole
+            // change set, over the projection, from the copy's own provenance.
+            // A refusal here throws before anything reaches the live document.
+            const conservation = conserveSplitAggregates(
+              beforeCommands,
+              state.sfdt
+            );
+            if (conservation.restores.length) {
+              state = {
+                sfdt: conservation.sfdt,
+                index: scanBindings(conservation.sfdt)
+              };
+              recordExpressionRestores(
+                enginePlans[0].op,
+                conservation.restores
+              );
+              const outcome = outcomes.get(enginePlans[0].index);
+              if (outcome)
+                outcome.details = [
+                  ...(outcome.details ?? []),
+                  ...conservation.receipts
+                ];
+            }
             const engineResult = surface.runCommands(
               diffBindingCommands(beforeCommands, state.sfdt),
               {
@@ -20618,6 +22796,12 @@ function applyDocumentEditsMeasured(
             // assistant operation on a public body position even though every
             // structural handler also resolves and selects its own anchor.
             leaveEngineAtAddressableBodySelection(editor, blocks);
+            // A refused native mutation is a failed change set, not a warning
+            const nativeFailure = engineResult.diagnostics.find(
+              (diagnostic) => diagnostic.code === 'native-mutation-failed'
+            );
+            if (nativeFailure)
+              throw new OpError('engine_apply_failed', nativeFailure.message);
             if (engineResult.diagnostics.length) {
               warnings.push(
                 `binding_engine_diagnostics: ${engineResult.diagnostics
@@ -20714,16 +22898,58 @@ function applyDocumentEditsMeasured(
     });
   }
 
-  const wroteAppearance = appearanceRestores.length > 0;
+  // ONE APPEARANCE PASS, after the last edit and BEFORE the revisions are
+  // grouped - the restores it records must be bound to the card, or a reject
+  // cannot run them. Skipped when the change set failed: a failed set is rolled
+  // back, and settling the appearance of a document that is about to be
+  // restored would write fills nobody asked for.
+  //
+  // KNOWN LIMITATION, flagged rather than hidden: these restores are attributed
+  // to the FIRST edit's group. The finalizer settles the whole change set, so
+  // when a set spans several groups, rejecting one group restores fills the
+  // finalizer wrote for all of them. Correct for the single-group change sets
+  // every current caller produces, and it needs a ruling before a multi-group
+  // set relies on it.
+  // `results` is the live array at this point; a failed op leaves an entry with
+  // ok:false, and a set that failed preflight never ran an op so it recorded no
+  // footprints at all. Either way a rolled-back set must not have its
+  // appearance settled.
+  if (
+    !results.some((result) => result && !result.ok) &&
+    tableFootprints.length
+  ) {
+    const finalizerWarnings = finalizeTableAppearance(
+      editor,
+      tableFootprints,
+      new Set(
+        revisionSnapshot
+          .map((revision) => revision.revisionID)
+          .filter((id): id is string => typeof id === 'string' && !!id)
+      ),
+      (restores) => recordAppearanceRestores(edits[0], restores)
+    );
+    warnings.push(...finalizerWarnings);
+  }
+
   const grouping = groupNewRevisions(
     editor,
     revisionSnapshot,
     changeSetId,
     appearanceRestoresByGroup,
     paragraphStylesByGroup,
-    enginePlans.length > 0
+    enginePlans.length > 0,
+    bookmarkClampsByGroup,
+    expressionRestoresByGroup
   );
   const revisionCount = grouping.revisionCount;
+  // THE ASSERTION, and it fails the change set rather than warning past it: a
+  // set that authored a revision with an empty range has put an edit in the
+  // document that the reviewer can never accept and can never reject. There is
+  // no partial version of that outcome worth reporting as `applied`.
+  if (grouping.unresolvable)
+    warnings.push(
+      `change_set_unresolvable_revision: ${changeSetId}; ${grouping.unresolvable} revision(s) were authored over an empty range and can be neither accepted nor rejected`
+    );
   const materializedResults = Array.from(
     { length: edits.length },
     (_, index) => {
@@ -20740,7 +22966,17 @@ function applyDocumentEditsMeasured(
       };
     }
   );
-  const hasFailure = materializedResults.some((result) => !result.ok);
+  const hasFailure =
+    materializedResults.some((result) => !result.ok) ||
+    grouping.unresolvable > 0;
+
+  // Computed AFTER the finalizer, not before it. The finalizer may be the only
+  // appearance writer in a change set - a re-band with no explicit formatting op
+  // - and reading this beforehand reported such a set as having written no
+  // appearance at all, so its card lost the formatting-tracking flag that tells
+  // a reviewer the fills are part of the change.
+  const wroteAppearance = appearanceRestores.length > 0;
+
   const inventory = readPostEditInventory(editor, warnings);
   warnings.push(
     `document_serialization: count=${

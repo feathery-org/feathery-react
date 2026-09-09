@@ -756,7 +756,7 @@ describe('banding detection', () => {
       BAND_FILL
     ]);
     expect(headerRows).toBe(1);
-    expect(banding).toEqual({
+    expect(banding).toMatchObject({
       headerRows: 1,
       period: 2,
       cycle: [null, BAND_FILL]
@@ -772,7 +772,7 @@ describe('banding detection', () => {
       BAND_FILL
     ]);
     expect(headerRows).toBe(0);
-    expect(banding).toEqual({
+    expect(banding).toMatchObject({
       headerRows: 0,
       period: 2,
       cycle: [BAND_FILL, null]
@@ -791,7 +791,7 @@ describe('banding detection', () => {
       null,
       BAND_FILL
     ]);
-    expect(banding).toEqual({
+    expect(banding).toMatchObject({
       headerRows: 1,
       period: 2,
       cycle: [null, BAND_FILL]
@@ -1711,7 +1711,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
 
       expect(result.results).toHaveLength(16);
       expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
-      expect(result.results[0].appearance?.banding).toEqual({
+      expect(result.results[0].appearance?.banding).toMatchObject({
         headerRows: 1,
         period: 2,
         cycle: [null, BAND_FILL]
@@ -1874,22 +1874,37 @@ describe('inserting and deleting rows keeps the banding correct', () => {
     }
   });
 
-  // A TRACKED delete leaves the row in place until the revision is accepted, so
-  // nothing below it has changed parity yet - restriping here would be wrong, and
-  // the engine deliberately does not.
-  it('leaves the stripe alone after a tracked delete, which shifts nothing yet', () => {
+  // A TRACKED delete leaves the row in place until the revision is accepted, but
+  // the stripes are settled by the change-set finalizer from the ACCEPT
+  // PROJECTION: the document the reader gets once the card is accepted. The
+  // marked row contributes nothing to the phase and keeps its own fill (the
+  // reject inverse restores everything byte for byte); every survivor below it
+  // is written as the item it becomes. Measured on the flagship document with
+  // Buildings and Stock marked: Contents white, Business interruption shaded.
+  it('restripes the survivors of a tracked delete for the document an accept produces', () => {
     const ed = makeEditor(twoTables());
     try {
       const result = apply(ed, [{ op: 'delete_row', anchor: '0;1;2;0;0' }]);
       expect(result.results[0].ok).toBe(true);
       expect(revisions(ed).map((r) => r.revisionType)).toEqual(['Deletion']);
       expect(facts(ed, '0;1').rowCount).toBe(5);
+      // This fixture's white rows carry NO shading key, and a first-ever key
+      // could not be undone on reject, so the finalizer declines to write one
+      // (the standing rule, pinned in finalizerContract) and says so; the
+      // survivor that already carries a key is written for its new phase.
+      // Documents imported from Word carry a key on every cell, and there every
+      // survivor is restriped (pinned in the headless lane).
+      expect(
+        (result.warnings ?? []).some((warning: unknown) =>
+          /left unbanded/.test(String(warning))
+        )
+      ).toBe(true);
       expect(fills(ed, '0;1')).toEqual([
         HEADER_FILL,
         null,
-        BAND_FILL,
-        null,
-        BAND_FILL
+        BAND_FILL, // the marked row keeps its fill until the card resolves
+        null, // keyless survivor: declined, not written
+        null // keyed survivor, now item 2: cleared for its new phase
       ]);
       expect(result.results[0].appearance).toBeUndefined();
     } finally {

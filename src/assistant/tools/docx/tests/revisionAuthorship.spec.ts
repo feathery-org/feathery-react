@@ -42,9 +42,13 @@ if (!(window.SVGElement.prototype as any).getBBox)
   (window.SVGElement.prototype as any).getBBox = () =>
     ({ x: 0, y: 0, width: 0, height: 0 } as DOMRect);
 
-// Mirrors ASSISTANT_DOCUMENT_AUTHOR, which is module-private. Asserted against
-// the live document rather than imported, so this test states the contract the
-// REST of the system depends on rather than echoing the constant back.
+// Mirrors ASSISTANT_DOCUMENT_AUTHOR deliberately rather than importing it.
+//
+// Not because it is unreachable - it is exported - but because importing it
+// would make this test agree with the constant by construction: rename the
+// value and the test renames with it, still green, while every consumer that
+// matched on the old string breaks. Written out, this states the contract the
+// REST of the system depends on, and a change to the constant fails here first.
 const ASSISTANT = 'Robin';
 const OTHER_AUTHOR = 'Ayesha';
 

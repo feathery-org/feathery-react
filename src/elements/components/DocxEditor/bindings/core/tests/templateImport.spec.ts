@@ -17,7 +17,9 @@ describe('convertTemplateTokens', () => {
     const base = buildTemplateTokenDocument();
     const text = JSON.stringify(base);
     expect(text).toContain('[[table=costs]]');
-    expect(text).toContain('[[name=quantity|type=integer|default=12|row=auto]]');
+    expect(text).toContain(
+      '[[name=quantity|type=integer|default=12|row=auto]]'
+    );
     expect(text).not.toContain('contentControlProperties');
     expect(
       (base.sections![0].blocks || []).filter((block) =>
@@ -180,9 +182,37 @@ describe('convertTemplateTokens', () => {
     );
     expect(control!.inlines![0].text).toBe('0%');
     expect(paragraph.inlines![0].text).toBe('Tax: ');
-    expect(
-      paragraph.inlines![paragraph.inlines!.length - 1].text
-    ).toBe(' end');
+    expect(paragraph.inlines![paragraph.inlines!.length - 1].text).toBe(' end');
+  });
+
+  it('keeps a bookmark that shares its paragraph with a token', () => {
+    const base = {
+      sections: [
+        {
+          blocks: [
+            {
+              paragraphFormat: {},
+              inlines: [
+                { bookmarkType: 0, name: 'premium' },
+                { text: 'Premium: [[name=premium|type=currency|default=100]]' },
+                { bookmarkType: 1, name: 'premium' }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const { sfdt, converted, diagnostics } = convertTemplateTokens(base);
+    expect(converted).toBe(1);
+    expect(diagnostics).toEqual([]);
+    const inlines = sfdt.sections![0].blocks![0].inlines!;
+    expect(inlines.map((inline) => (inline as any).bookmarkType)).toEqual([
+      0,
+      undefined,
+      undefined,
+      1
+    ]);
+    expect(inlines[2].contentControlProperties).toBeDefined();
   });
 
   it('shows value, falls back to default, then to one implied by the type', () => {

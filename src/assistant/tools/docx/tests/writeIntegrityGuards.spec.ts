@@ -310,7 +310,14 @@ describe('write-integrity guards', () => {
       ]
     });
 
-    it('DEFECT: refuses to split a bound table, document byte-unchanged', () => {
+    // STILL TRUE, for two reasons that are both about this harness rather than
+    // about bound splits in the product (2026-09-09): this file never calls
+    // attachBindings, so there is no binding runtime for the engine's split
+    // compiler to read, and this fixture's tag carries no `row=` scope, so the
+    // table would have no provable row roles even with one. A bound-ROW table
+    // in the product is compiled into duplicate_table + delete_row and lands -
+    // see gradedCases case 1 and the headless native rows.
+    it('DEFECT: refuses to split a table whose rows cannot be proven, document byte-unchanged', () => {
       const live = open(boundTable());
       const before = serialized();
       const result = apply(
