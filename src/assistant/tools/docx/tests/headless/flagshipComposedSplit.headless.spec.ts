@@ -408,9 +408,22 @@ describe('a composed split of the browser document accepts whole and conserves t
   //
   // Two separate faults, and the plateau is the worse one: undo stops moving
   // the document at all while 93 controls and four revisions are still live, so
-  // no number of presses gets the captain back. That is a violation of the undo
-  // law and it is round-2 work; this row is here so the numbers are pinned and
-  // the row lights up the moment undo reaches pristine.
+  // no number of presses gets the captain back.
+  //
+  // ATTRIBUTED, 2026-09-09, and it is NOT this slice's doing. Measured on
+  // origin/master (8454bcc7) and on this HEAD with the same change set - one
+  // bound `delete_row`, accepted, then twelve presses - in
+  // `undoAttribution.headless.spec.ts`, which is byte-identical in both
+  // worktrees:
+  //
+  //   master   accepted 314697/75/0, undo plateaus at 325638/79/9 from press 1
+  //   this     accepted 314697/75/0, undo reaches 323231/79/1 by press 3, then
+  //            plateaus
+  //
+  // Both accept to the IDENTICAL document and neither reaches the pristine
+  // 322196/79/0. So the plateau is pre-existing: this slice's undo drains ten
+  // of eleven revisions where master's drains none, which is strictly closer
+  // and still short. Whatever fixes it is not a change to the split.
   it.skip('UNDO: pressing undo enough times reaches the pre-change document', async () => {
     const baseline = await openFresh();
     expect((await split()).outcomes).toEqual(['ok', 'ok']);

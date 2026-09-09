@@ -404,6 +404,41 @@ const api = {
     };
   },
 
+  snapshot: (): {
+    len: number;
+    controls: number;
+    revisions: number;
+    serialized: string;
+  } => {
+    const serialized = live().serialize();
+    return {
+      len: serialized.length,
+      controls: (serialized.match(/contentControlProperties/g) || []).length,
+      revisions: live().revisions.length,
+      serialized
+    };
+  },
+
+  /** One tracked delete_row of a bound row, through applyDocumentEdits. */
+  deleteRow(
+    tableId: string,
+    row: number
+  ): { outcomes: string[]; messages: string[] } {
+    const blockIndex = tableBlockIndex(tableId);
+    const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
+      changeSetId: 'undo-attribution',
+      edits: [
+        { op: 'delete_row', anchor: `0;${blockIndex};${row};0;0`, rows: [row] } as any
+      ]
+    });
+    return {
+      outcomes: result.results.map((entry: any) =>
+        entry.ok ? 'ok' : String(entry.error)
+      ),
+      messages: result.results.map((entry: any) => String(entry.message ?? ''))
+    };
+  },
+
   groups: (): any[] =>
     listRevisionGroups(live() as any).map((view: any) => ({
       changeSetId: view.changeSetId,
