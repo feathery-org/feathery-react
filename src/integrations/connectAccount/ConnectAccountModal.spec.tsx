@@ -43,6 +43,21 @@ describe('ConnectAccountModal', () => {
     expect(screen.getByText('respondent@example.com')).toBeTruthy();
   });
 
+  it('confirms the connection when the provider reports no account', () => {
+    // Schwab exposes no account identity, so the line would otherwise be blank.
+    render(
+      <ConnectAccountModal
+        {...baseProps}
+        provider='charles-schwab'
+        accountEmail=''
+      />
+    );
+
+    expect(
+      screen.getByText('Your Charles Schwab account is connected')
+    ).toBeTruthy();
+  });
+
   it('calls onChangeAccount when Change account is clicked', async () => {
     const onChangeAccount = jest.fn();
     render(
@@ -66,9 +81,10 @@ describe('ConnectAccountModal', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders a fallback when the provider has no config component', () => {
+  it('shows only the change-account row when the provider has no config component', () => {
     render(<ConnectAccountModal {...baseProps} provider='unmapped' />);
-    expect(screen.getByText(/no additional setup/i)).toBeTruthy();
+    expect(screen.getByText('Change account')).toBeTruthy();
+    expect(screen.queryByText('Trigger error')).toBeNull();
   });
 
   it('calls onClose from the close control', () => {
