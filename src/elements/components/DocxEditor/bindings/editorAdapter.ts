@@ -127,6 +127,38 @@ export function isContentControlAttached(control: ContentControlLike): boolean {
   return true;
 }
 
+/**
+ * Run with Syncfusion's canEditContentControl gate forced open. The gate makes
+ * every command touching a locked control return silently; callers assert the
+ * operation is a deliberate whole-control one (table delete, history replay).
+ */
+export function withContentControlLocksBypassed<T>(
+  module: object,
+  run: () => T
+): T {
+  const hadOwn = Object.prototype.hasOwnProperty.call(
+    module,
+    'canEditContentControl'
+  );
+  const previous = hadOwn
+    ? Object.getOwnPropertyDescriptor(module, 'canEditContentControl')
+    : undefined;
+  Object.defineProperty(module, 'canEditContentControl', {
+    configurable: true,
+    enumerable: true,
+    get: () => true
+  });
+  try {
+    return run();
+  } finally {
+    if (hadOwn && previous)
+      Object.defineProperty(module, 'canEditContentControl', previous);
+    else
+      delete (module as { canEditContentControl?: unknown })
+        .canEditContentControl;
+  }
+}
+
 /** Drop content controls whose widgets were removed by a table-clone command. */
 export function pruneDetachedContentControls(
   editor: SyncfusionEditorLike
@@ -140,14 +172,12 @@ export function pruneDetachedContentControls(
 
 /**
  * Prune detached entries, then restore DOCUMENT ORDER in the content control
- * collection. A paste (and an undo) registers the arriving controls at the END
- * of the collection, but Syncfusion's lookups assume document order - the
+ * collection. Undo re-registers restored controls at the END of the
+ * collection, but Syncfusion's lookups assume document order — the
  * getContentControls scan early-breaks at the first control past the caret,
  * so an out-of-order entry is never found: selection.currentContentControl
- * returns undefined, canEditContentControl reads the cell as locked, and the
- * control loses its chrome and the engine's writes. Measured on the copied
- * fragment of a table split: fourteen controls appended after the summary's,
- * one order break, every copied cell uneditable. Re-sorting alone restores it.
+ * returns undefined and the control loses its chrome, its lock, and the
+ * engine's writes. Verified live: re-sorting alone restores all three.
  */
 export function normalizeContentControlCollection(
   editor: SyncfusionEditorLike

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { nameProps } from '../../utils/domName';
 
 const PLACEHOLDER_VIDEO =
   'https://feathery.s3.us-west-1.amazonaws.com/video-preview.png';
@@ -53,6 +54,7 @@ function VideoElement({
           height='100%'
           src={getEmbedUrl(props.source_url)}
           css={{ border: 'none' }}
+          name='video'
           {...elementProps}
         />
       );
@@ -66,6 +68,7 @@ function VideoElement({
           muted={props.muted}
           loop={props.loop}
           aria-label={props.aria_label}
+          {...nameProps('video')}
         >
           <source src={props.source_url} type={props.video_extension} />
         </video>
@@ -81,6 +84,7 @@ function VideoElement({
           width: '100%',
           maxHeight: '100%'
         }}
+        name='video'
         {...elementProps}
       />
     );

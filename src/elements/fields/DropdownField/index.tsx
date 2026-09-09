@@ -206,6 +206,7 @@ export default function DropdownField({
             ...responsiveStyles.getTarget('field')
           }}
           id={servar.key}
+          name={servar.key}
           value={fieldVal ?? ''}
           required={required}
           disabled={disabled || loadingDynamicOptions}

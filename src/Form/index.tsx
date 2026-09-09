@@ -81,6 +81,7 @@ import {
   FieldValues,
   fieldValues,
   fileRetryStatus,
+  initInfo,
   initState,
   updateUserId
 } from '../utils/init';
@@ -149,6 +150,7 @@ import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   GetDocusignEnvelopeParams,
+  RunComputerAgentOptions,
   SendDocusignParams,
   UpdateDocusignEnvelopeParams,
   setFormInternalState
@@ -1731,6 +1733,24 @@ function Form({
             processFileValues(data.file_values);
           }
           return data;
+        },
+        runComputerAgent: async (
+          agentId: string,
+          options: RunComputerAgentOptions = {}
+        ) => {
+          const { userId } = initInfo();
+          return client.runComputerAgent(agentId, {
+            ...options,
+            onComplete: (data: any) => {
+              // A run that finishes after the submission changed must not
+              // write into the new session's fields
+              if (data.status === 'complete' && initInfo().userId === userId) {
+                updateFieldValues(data.data ?? {});
+                processFileValues(data.file_values);
+              }
+              options.onComplete?.(data);
+            }
+          });
         },
         forwardInboxEmail: async (options: ForwardInboxEmailOptions) => {
           return client.forwardInboxEmail({ options });

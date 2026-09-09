@@ -18,6 +18,7 @@ import {
   TimerId
 } from './controller';
 import {
+  ContentControlLike,
   configureEditorForBindings,
   createEditorAdapter,
   SyncfusionEditorLike
@@ -25,6 +26,11 @@ import {
 import { installKeystrokeGuard } from './keystrokeGuard';
 import { createCommitTriggers } from './commitTriggers';
 import { watchRowCommands } from './rowCommandWatch';
+import {
+  installTableDeleteGuard,
+  isDeleteGuardBusy,
+  TableDeleteImpact
+} from './tableDeleteGuard';
 import { DocumentPersistence } from './persistence';
 import {
   registerBindingReconciler,
@@ -51,6 +57,25 @@ export interface BindingsOptions {
    * matters: computing a template's formulas is not the user dirtying anything.
    */
   onSuppressContentChange?: (suppressed: boolean) => void;
+  /**
+   * Asked before a table deletion that would orphan formulas elsewhere in the
+   * document (they read values the table holds). Resolving false cancels the
+   * deletion; absent means such deletes proceed without a prompt.
+   */
+  confirmTableDelete?: (impact: TableDeleteImpact) => Promise<boolean>;
+  /**
+   * Fired (debounced) when the user's edit is refused because it lands on a
+   * locked content control - typing into a computed cell, or deleting across a
+   * binding without fully covering it. The host shows a brief "locked" hint so
+   * the refusal is not silent.
+   */
+  onLockedEdit?: () => void;
+  /**
+   * Fired when the caret leaves a refused/locked spot for an editable one, so
+   * the host can hide the locked-edit hint immediately instead of waiting out
+   * its timeout.
+   */
+  onLockedEditResolved?: () => void;
   persistence?: DocumentPersistence | null;
   setTimeoutFn?: (fn: () => void, ms: number) => TimerId;
   clearTimeoutFn?: (id: TimerId) => void;
@@ -100,6 +125,9 @@ export function attachBindings(
     onFieldValues,
     onDiagnostics,
     onSuppressContentChange,
+    confirmTableDelete,
+    onLockedEdit,
+    onLockedEditResolved,
     persistence = null,
     setTimeoutFn,
     clearTimeoutFn
@@ -162,6 +190,21 @@ export function attachBindings(
     ...(clearTimeoutFn ? { clearTimeoutFn } : {})
   });
   const uninstallGuard = installKeystrokeGuard(editor);
+  // Explicit whole-table/row deletion: lift the content-control locks that
+  // made deleteTable/deleteRow silent no-ops, and confirm/unwrap when the
+  // deleted values feed formulas elsewhere (tableDeleteGuard has the full
+  // story). Installed BEFORE watchRowCommands so the row watcher's wrapper
+  // stays outermost and its reconcile runs after the guard's grouped history
+  // entry closes.
+  const uninstallTableDelete = installTableDeleteGuard(editor, {
+    ...(confirmTableDelete ? { confirm: confirmTableDelete } : {}),
+    onDeleted: () => {
+      if (controller.phase !== 'idle') return;
+      const history = editor.editorHistoryModule;
+      if (history?.isUndoing || history?.isRedoing) return;
+      controller.flush({ mode: 'self-heal' });
+    }
+  });
   // Native insertRow/deleteRow bypass runCommands. After the user's command
   // the interceptor adopts and recomputes in the same turn. Replay during
   // undo/redo must not flush: that inserts content controls mid-history and
@@ -192,15 +235,100 @@ export function attachBindings(
     }
   };
   const onContentChange = () => runGuarded(() => triggers.onContentChange());
-  const onSelectionChange = () =>
-    runGuarded(() => triggers.onSelectionChange());
   const onKeyDown = (args: any) =>
-    runGuarded(() => triggers.onKeyDown(args?.event?.key));
-  const onBlur = () => runGuarded(() => triggers.onEditorBlur());
+    runGuarded(() => {
+      const key = args?.event?.key;
+      triggers.onKeyDown(key);
+      // Backspace/Delete inside a locked control is refused by Syncfusion
+      // WITHOUT firing 'contentControl' - canEditContentControl short-circuits
+      // on lockContents before it reaches checkContentControlLocked (the only
+      // thing that fires the event). So surface the hint from here.
+      //
+      // Show it only for an in-cell edit, not a structural row/table delete
+      // (the delete guard owns that gesture and shows its own dialog).
+      // isRowSelected/isTableSelected can't tell them apart - a single locked
+      // cell reports isRowSelected true - so use the same test the guard uses:
+      // a genuine structural selection SPANS MULTIPLE CELLS, an in-cell edit
+      // does not.
+      const sel = editor.selection as {
+        start?: { paragraph?: { associatedCell?: unknown } };
+        end?: { paragraph?: { associatedCell?: unknown } };
+      } | null;
+      const startCell = sel?.start?.paragraph?.associatedCell;
+      const endCell = sel?.end?.paragraph?.associatedCell;
+      const spansMultipleCells =
+        !!startCell && !!endCell && startCell !== endCell;
+      if (
+        (key === 'Backspace' || key === 'Delete') &&
+        !spansMultipleCells &&
+        isLockedControl(caretControl())
+      )
+        showLockedHint();
+    });
+  const onBlur = () =>
+    runGuarded(() => {
+      triggers.onEditorBlur();
+      // Focus left the editor: drop the locked-edit hint so it can't linger.
+      if (lockHintActive) {
+        lockHintActive = false;
+        onLockedEditResolved?.();
+      }
+    });
+
+  // Syncfusion fires 'contentControl' whenever the caret sits in ANY control
+  // marked lockContentControl - which is every control we create - and it fires
+  // it even for the enclosing wrapper while the caret is in an editable inner
+  // field. So the event alone does NOT mean an edit was refused; suppress the
+  // hint when the caret is genuinely inside an editable control.
+  //
+  // Read currentContentControl DIRECTLY - never canEditContentControl. Its
+  // getter calls checkContentControlLocked, which re-fires 'contentControl',
+  // which re-enters this handler: an infinite loop (thanks @lanthony42).
+  let lockedHintTimer: TimerId | null = null;
+  let lockHintActive = false;
+  const scheduleTimeout = setTimeoutFn ?? ((fn, ms) => setTimeout(fn, ms));
+  const cancelTimeout = clearTimeoutFn ?? ((id) => clearTimeout(id as never));
+  const isLockedControl = (control: ContentControlLike | null): boolean => {
+    const props = control?.contentControlProperties as
+      | { lockContents?: boolean; type?: string }
+      | undefined;
+    return !!props && (!!props.lockContents || props.type === 'DropDownList');
+  };
+  const caretControl = (): ContentControlLike | null =>
+    editor.selection?.currentContentControl ?? null;
+  const showLockedHint = (): void => {
+    if (!onLockedEdit || isDeleteGuardBusy()) return;
+    lockHintActive = true;
+    if (lockedHintTimer !== null) return; // debounced: one hint per burst
+    onLockedEdit();
+    lockedHintTimer = scheduleTimeout(() => {
+      lockedHintTimer = null;
+    }, 600);
+  };
+  const onLockedControl = () =>
+    runGuarded(() => {
+      // The event means a lock was hit; the only false positive is the caret
+      // being in an editable inner field (its wrapper is what tripped it).
+      const control = caretControl();
+      if (control && !isLockedControl(control)) return;
+      showLockedHint();
+    });
+
+  // Dismiss the hint once the caret is no longer on a locked control; keep it
+  // up while a locked cell stays selected.
+  const onSelectionChange = () =>
+    runGuarded(() => {
+      triggers.onSelectionChange();
+      if (lockHintActive && !isLockedControl(caretControl())) {
+        lockHintActive = false;
+        onLockedEditResolved?.();
+      }
+    });
 
   eventful.addEventListener?.('contentChange', onContentChange);
   eventful.addEventListener?.('selectionChange', onSelectionChange);
   eventful.addEventListener?.('keyDown', onKeyDown);
+  eventful.addEventListener?.('contentControl', onLockedControl);
   // Clicking into a toolbar or a side panel must not strand an edit.
   const editableDiv = editor.documentHelper?.editableDiv;
   editableDiv?.addEventListener?.('blur', onBlur);
@@ -247,9 +375,16 @@ export function attachBindings(
       step('keyDown', () =>
         eventful.removeEventListener?.('keyDown', onKeyDown)
       );
+      step('contentControl', () =>
+        eventful.removeEventListener?.('contentControl', onLockedControl)
+      );
+      step('lockedHintTimer', () => {
+        if (lockedHintTimer !== null) cancelTimeout(lockedHintTimer);
+      });
       step('blur', () => editableDiv?.removeEventListener?.('blur', onBlur));
       step('guard', () => uninstallGuard());
       step('rowCommands', () => unwatchRowCommands());
+      step('tableDelete', () => uninstallTableDelete());
       step('triggers', () => triggers.dispose());
       // Cancels the deferred view restore, which would otherwise read
       // editor.selection ~60ms after the editor was destroyed.

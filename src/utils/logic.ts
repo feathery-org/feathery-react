@@ -327,7 +327,9 @@ const COMPARISON_FUNCTIONS: {
     l.some((l: any) =>
       someRight(
         (l, r) =>
-          String((l ?? '').toLowerCase()).includes((r ?? '').toLowerCase()),
+          String(l ?? '')
+            .toLowerCase()
+            .includes(String(r ?? '').toLowerCase()),
         l,
         r
       )
@@ -336,7 +338,9 @@ const COMPARISON_FUNCTIONS: {
     l.some((l: any) =>
       everyRight(
         (l, r) =>
-          !String((l ?? '').toLowerCase()).includes((r ?? '').toLowerCase()),
+          !String(l ?? '')
+            .toLowerCase()
+            .includes(String(r ?? '').toLowerCase()),
         l,
         r
       )

@@ -25,12 +25,8 @@ function AudioPlayer({
   const [current, setCurrent] = useState(0);
   const [reportedDuration, setReportedDuration] = useState(0);
 
-  useEffect(() => {
-    setPlaying(false);
-    setCurrent(0);
-    setReportedDuration(0);
-  }, [src]);
-
+  // A new recording arrives as a fresh player, keyed on src, so there is no
+  // reset here to race the duration the element reports on load
   const onLoaded = () => {
     const value = audioRef.current?.duration ?? 0;
     setReportedDuration(isFinite(value) ? value : 0);
