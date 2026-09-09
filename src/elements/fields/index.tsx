@@ -684,8 +684,11 @@ export function applyFieldStyles(field: any, styles: any) {
   // percentage height brings a floor of its own to merge with.
   if (INPUT_BOX_FIELDS.includes(type) || type === MULTISELECT_FIELD)
     styles.applyInputBoxMinHeight(type);
-  // Not the multiselect: applyMultiselectLayout already makes a column of its
-  // element, on its own terms.
+  // Not the multiselect. applyMultiselectLayout makes a column of its element
+  // only once the theme sets a padding or alignment; untouched, it keeps
+  // master's block layout on purpose, so a percentage-height multiselect still
+  // spills by its label's height. Restacking it here would shift chips that
+  // asked for nothing -- a follow-up, not this change.
   if (INPUT_BOX_FIELDS.includes(type)) styles.applyInputBoxLabelFlow();
   return styles;
 }
