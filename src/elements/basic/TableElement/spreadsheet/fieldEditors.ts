@@ -78,6 +78,10 @@ export function seedActionFor(
       // A picker takes a whole date, not a character, so open it on the stored
       // value rather than seeding a fragment it would only discard.
       return 'open';
+    case 'select':
+      // Space opens the menu the way it does on a focused native select. A
+      // letter still opens it, jumping to the first matching choice.
+      return char === ' ' ? 'open' : 'seed';
     default:
       return 'seed';
   }

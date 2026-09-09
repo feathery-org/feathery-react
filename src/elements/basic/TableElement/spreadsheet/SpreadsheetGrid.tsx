@@ -36,7 +36,6 @@ import {
   fillHandleStyle,
   gridStyle,
   headerRowStyle,
-  headerHighlightStyle,
   headerSelectedStyle,
   rowHeaderStyle,
   rowFocusedStyle,
@@ -237,6 +236,16 @@ export const SpreadsheetGrid = React.forwardRef<
           if (!grid) return;
           const active = featheryDoc().activeElement;
           const lost = !active || active === featheryDoc().body;
+          // Never off an editor. A click on cell B while cell A is open
+          // commits A on mousedown and opens B on click, and on a fast click
+          // or a trackpad tap this timeout fires only after B has focused
+          // its control — pulling focus back to the grid would blur, and so
+          // close, the editor the user just opened.
+          const inEditor =
+            !!active &&
+            grid.contains(active) &&
+            active.matches('input, select, textarea');
+          if (inEditor) return;
           if (lost || grid.contains(active)) {
             grid.focus({ preventScroll: true });
           }
@@ -681,7 +690,6 @@ function HeaderCell({
       css={{
         ...columnHeaderStyle,
         ...getColumnPositionStyle(column, columnSizing, left),
-        ...(inSelection ? headerHighlightStyle : {}),
         ...(fullySelected ? headerSelectedStyle : {})
       }}
       onMouseDown={(event) =>
@@ -861,7 +869,6 @@ function SpreadsheetRowView({
         aria-selected={selection.fullySelected}
         css={{
           ...rowHeaderStyle,
-          ...(selection.inSelection ? headerHighlightStyle : {}),
           ...(selection.fullySelected ? headerSelectedStyle : {})
         }}
         onMouseDown={(event) =>
@@ -1020,29 +1027,32 @@ function SpreadsheetCell({
         if (!isEditing) interactions.startEditing(cell.row.id, cell.column.id);
       }}
     >
+      {isEditing ? null : (
+        <span css={cellValueStyle}>
+          {formatCellDisplay(value as CellValue, rule)}
+        </span>
+      )}
       {isEditing ? (
         <CellEditor
           rule={rule}
           draft={interactions.editing?.draft ?? ''}
           seeded={Boolean(interactions.editing?.seeded)}
+          stored={interactions.editing?.stored ?? ''}
           label={`Edit ${cell.column.columnDef.meta?.name ?? ''} row ${
             rowIndex + 1
           }`}
           onChange={interactions.setEditingDraft}
           onCommit={(draft) => interactions.commitEditing(undefined, draft)}
+          onCancel={interactions.cancelEditing}
           onKeyDown={interactions.handleEditorKeyDown}
           onBlur={() => interactions.commitEditing()}
         />
-      ) : (
-        <>
-          <span css={cellValueStyle}>
-            {formatCellDisplay(value as CellValue, rule)}
-          </span>
-          {opensOnClick ? (
-            <span aria-hidden css={cellDropdownIndicatorStyle} />
-          ) : null}
-        </>
-      )}
+      ) : null}
+      {/* Drawn by the cell in both states, so opening the menu changes nothing
+          about how the cell looks except the menu itself. */}
+      {opensOnClick ? (
+        <span aria-hidden css={cellDropdownIndicatorStyle} />
+      ) : null}
       {showTooltip && shading?.message ? (
         <CellErrorTooltip
           message={shading.message}

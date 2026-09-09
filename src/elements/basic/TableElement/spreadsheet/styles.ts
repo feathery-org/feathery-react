@@ -93,7 +93,6 @@ const colors = {
   accent: '#1d4ed8',
   accentDark: '#1e40af',
   accentSoft: '#eff6ff',
-  accentHeader: '#dbeafe',
   accentTint: 'rgba(29, 78, 216, 0.08)'
 } as const;
 
@@ -224,13 +223,6 @@ export const headerSelectedStyle = {
   '&:hover': { backgroundColor: colors.accentDark }
 } as const;
 
-// (6) The headers of a partly-selected row/column, so the selection's extent
-// is readable off the gutter and header strip.
-export const headerHighlightStyle = {
-  backgroundColor: colors.accentHeader,
-  color: colors.gray900
-} as const;
-
 export const columnHeaderStyle = {
   position: 'absolute',
   top: 0,
@@ -350,10 +342,19 @@ export const cellValueStyle = {
 // opens it. A flex sibling of the value span rather than part of it, so the
 // text truncates before the chevron instead of underneath it.
 export const cellDropdownIndicatorStyle = {
+  // Pushed to the right edge whether or not a value span sits before it —
+  // while the cell is being edited the transparent <select> is out of flow
+  // and this is the only in-flow child.
   flex: '0 0 auto',
+  position: 'relative',
+  // Above the editor, which is a positioned sibling earlier in the DOM.
+  zIndex: 1,
   width: '6px',
   height: '6px',
-  marginLeft: '6px',
+  marginLeft: 'auto',
+  // The rotated square overhangs its box, so without this the chevron's
+  // right arm sits almost on the grid line.
+  marginRight: '4px',
   // Rotated into a chevron; nudged up so its visual centre, not its box,
   // sits on the text's centre line.
   transform: 'translateY(-2px) rotate(45deg)',
@@ -441,6 +442,12 @@ export const cellEditorStyle = {
 // The dropdown variant of the editor. Same box as the text input so swapping
 // between them does not shift the cell, but it keeps the native control's own
 // padding for the disclosure arrow.
+// The dropdown editor is the cell with a menu attached, not a control laid
+// over it. So it has no chrome of its own — the cell already draws the focus
+// ring, the selection tint and the chevron — and the picked value sits exactly
+// where the cell's text did. A native <select> would repaint all of that (a
+// white box, its own border, a black arrow, an indented label) and read as a
+// different control appearing on click.
 export const cellSelectStyle = {
   position: 'absolute',
   inset: 0,
@@ -448,13 +455,18 @@ export const cellSelectStyle = {
   height: '100%',
   padding: `0 ${CELL_HORIZONTAL_PADDING / 2}px`,
   boxSizing: 'border-box',
-  backgroundColor: colors.white,
-  border: `2px solid ${colors.accent}`,
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  MozAppearance: 'none',
+  border: 'none',
+  borderRadius: 0,
+  backgroundColor: 'transparent',
   outline: 'none',
   cursor: 'pointer',
-  fontFamily: 'inherit',
-  fontSize: `${FONT_SIZE}px`,
-  color: 'inherit'
+  font: 'inherit',
+  fontVariantNumeric: 'inherit',
+  color: 'inherit',
+  textOverflow: 'ellipsis'
 } as const;
 
 // A range's perimeter is deliberately lighter than the 2px ring on the focused

@@ -25,6 +25,8 @@ export type EditingCell = {
   rowId: string;
   columnId: string;
   draft: string;
+  /** The cell's value as text when the editor opened. */
+  stored: string;
   /**
    * The editor was opened by typing, so `draft` is that first character rather
    * than the cell's stored value. The editor uses this to place the caret
@@ -161,10 +163,12 @@ export function useGridInteractions(options: GridInteractionOptions) {
       // String() form would commit that form back over the real value.
       if (!canEdit || isReadOnly?.(columnId)) return;
       table.setFocusedCell(rowId, columnId);
+      const stored = formatCellValue(valueByIds(rowId, columnId));
       setEditing({
         rowId,
         columnId,
-        draft: replacement ?? formatCellValue(valueByIds(rowId, columnId)),
+        draft: replacement ?? stored,
+        stored,
         seeded: replacement !== undefined
       });
       scrollToCell(rowId, columnId);
