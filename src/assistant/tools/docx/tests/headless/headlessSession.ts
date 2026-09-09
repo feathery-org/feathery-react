@@ -131,7 +131,7 @@ export async function startHeadless(): Promise<HeadlessSession> {
     // Taller than the 900x700 editor host so an element screenshot of it is
     // never clipped by the viewport.
     await page.setViewport({ width: 1200, height: 1000 });
-    page.on('pageerror', (error) => failures.push(String(error)));
+    page.on('pageerror', (error: Error) => failures.push(String(error)));
     await page.goto(`file://${HOST_PAGE}`, { waitUntil: 'load' });
     await page.waitForFunction(
       () => (window as any).fmHeadlessReady === true,

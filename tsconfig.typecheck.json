@@ -2,6 +2,11 @@
   // `yarn typecheck`: a semantic check over src that actually runs. See
   // typecheck/zod-types-stub.d.ts for why the stock tsconfig cannot do this.
   "extends": "./tsconfig.json",
+  // Test helpers ARE checked here, which is the point of a separate config:
+  // the product build excludes src/**/tests/** so a devDependency import can
+  // never reach dist, and this config puts those files back under the semantic
+  // check so they cannot rot. Specs stay out of both.
+  "exclude": ["node_modules", "src/**/*.spec.ts", "src/**/*.spec.js"],
   "compilerOptions": {
     "noEmit": true,
     "baseUrl": ".",
