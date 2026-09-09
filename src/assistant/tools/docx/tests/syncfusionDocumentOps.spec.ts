@@ -2576,7 +2576,10 @@ describe('styling ops (no silent success)', () => {
     });
     expect(res.results[0]).toMatchObject({ ok: true, op: 'set_char_format' });
     expect(ed.selection.characterFormat.bold).toBe(true);
-    expect(ed.selection.characterFormat.fontColor).toBe('#ff0000');
+    // Canonical `#RRGGBB`, upper case: every model-supplied colour now goes
+    // through one normalizer so a colour WORD can be resolved to something
+    // SyncFusion parses (see normalizeFontColor). The value is the same red.
+    expect(ed.selection.characterFormat.fontColor).toBe('#FF0000');
   });
 
   it('set_char_format with NO recognized field throws missing_format (not silent ok)', () => {
