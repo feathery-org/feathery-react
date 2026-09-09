@@ -283,6 +283,68 @@ const api = {
     };
   },
 
+  /**
+   * One `set_char_format` aimed at whatever the INVENTORY says holds the text -
+   * the assistant's real route for "change the heading color to red", so the
+   * colour word reaches the engine exactly as the model sends it.
+   */
+  formatIndexed(
+    find: string,
+    fontColor: string,
+    changeSetId: string
+  ): {
+    anchor: string;
+    kind: string;
+    outcomes: string[];
+    messages: string[];
+    status: string;
+  } {
+    const entry = api
+      .inventory()
+      .find((candidate) => candidate.text.includes(find));
+    if (!entry)
+      throw new Error(`no inventory entry holds ${JSON.stringify(find)}`);
+    const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
+      changeSetId,
+      edits: [
+        {
+          op: 'set_char_format',
+          anchor: entry.anchor,
+          fontColor,
+          expect: entry.text
+        } as any
+      ]
+    });
+    return {
+      anchor: entry.anchor,
+      kind: entry.kind,
+      outcomes: result.results.map((one: any) =>
+        one.ok ? 'ok' : String(one.error)
+      ),
+      messages: result.results.map((one: any) => String(one.message ?? '')),
+      status: String(result.changeSet?.status ?? '')
+    };
+  },
+
+  /**
+   * The colour the LAID-OUT document resolves for the range holding `find`,
+   * read back through the public selection rather than out of the serialized
+   * bytes - the closest this layer gets to what a human sees on the page.
+   */
+  resolvedFontColor(find: string): string {
+    const entry = api
+      .inventory()
+      .find((candidate) => candidate.text.includes(find));
+    if (!entry)
+      throw new Error(`no inventory entry holds ${JSON.stringify(find)}`);
+    const instance = live();
+    instance.selection.select(
+      `${entry.anchor};0`,
+      `${entry.anchor};${entry.text.length}`
+    );
+    return String((instance.selection as any).characterFormat?.fontColor ?? '');
+  },
+
   serialize: (): string => live().serialize(),
 
   serializeLength: (): number => live().serialize().length,

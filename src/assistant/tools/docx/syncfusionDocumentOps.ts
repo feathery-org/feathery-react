@@ -9971,12 +9971,28 @@ export const ANCHORED_OP_HANDLERS: {
   set_char_format: ({ editor, op, block, byAnchor }) => {
     selectBlock(editor, block);
     const inherited = applyInheritedFormat(editor, op, byAnchor);
-    applyCharFormat(editor, op, { requireField: !inherited });
+    const requested = applyCharFormat(editor, op, { requireField: !inherited });
+    // The inherited half already proves itself through verifyInheritedFormat;
+    // this proves the direct fields, which had no evidence at all.
+    if (requested)
+      assertDirectFormatApplied(
+        editor,
+        block,
+        { characterFormat: requested },
+        op
+      );
   },
   set_para_format: ({ editor, op, block, byAnchor }) => {
     selectBlock(editor, block);
     const inherited = applyInheritedFormat(editor, op, byAnchor);
-    applyParaFormat(editor, op, { requireField: !inherited });
+    const requested = applyParaFormat(editor, op, { requireField: !inherited });
+    if (requested)
+      assertDirectFormatApplied(
+        editor,
+        block,
+        { paragraphFormat: requested },
+        op
+      );
   },
   indent_step: ({ editor, op, block }) => {
     selectBlock(editor, block);
@@ -10932,11 +10948,253 @@ function applyInheritedFormat(
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Direct formatting must be PROVEN, not assumed.
+//
+// The law this closes: a reported `ok` means the document changed as asked. It
+// was already discovered once for the INHERITED format path - the docstring on
+// `verifyInheritedFormat` says it outright ("no-op success is not sufficient
+// evidence that the target now has the source's visible format") - and then
+// applied only there. A DIRECT `set_char_format` has no source block, so it
+// took no evidence at all: the handler assigned onto
+// `editor.selection.characterFormat`, `assertTrackedMutation` returned on its
+// first branch because no format op is in either tracked set, and phase 3
+// reported `ok: true` for anything that did not throw.
+//
+// Live evidence (captain, 2026-09-09, flagship-v4): "change the heading color
+// to red" was reported done and the document did not change - the whole
+// serialize diff was one text-box's re-laid-out height and width, with zero
+// revisions and no card. Measured here on the same document: SyncFusion
+// silently DROPS a `fontColor` it cannot parse, so the CSS name `red` writes
+// nothing while `#FF0000` writes. There was nothing in the path that could tell
+// those two apart, so the model was told the same thing either way.
+//
+// Two halves, and both are needed:
+//
+//   1. `normalizeFontColor` resolves what the model plainly meant. A colour
+//      word is not a malformed request, it is the request spelled the way a
+//      human spells it, and SyncFusion is the only thing in the chain that
+//      cannot read it. What it genuinely cannot resolve is refused as
+//      `invalid_color` rather than written and hoped for.
+//
+//   2. `assertDirectFormatApplied` reads the target back through the same
+//      public selection the write used and compares every field the op
+//      DECLARED. That is the backstop: it needs no list of which values
+//      SyncFusion happens to swallow, so a field this normalizer never heard of
+//      fails loudly instead of silently, which is the only way the guarantee
+//      survives the next unparseable value.
+//
+// Relative ops (`clear_formatting`, `indent_step`, the list ops) declare no
+// target value, so there is nothing to read back and they are deliberately not
+// covered here; only ops that name the state they want are verifiable this way.
+// ---------------------------------------------------------------------------
+
+// The colour words a human uses for text, resolved to what SyncFusion parses.
+// Word's own standard palette plus the CSS basic keywords, which is the whole
+// vocabulary a "make it red" style request draws on.
+const NAMED_FONT_COLORS: Record<string, string> = {
+  black: '#000000',
+  white: '#FFFFFF',
+  red: '#FF0000',
+  darkred: '#8B0000',
+  green: '#008000',
+  lime: '#00FF00',
+  darkgreen: '#006400',
+  blue: '#0000FF',
+  darkblue: '#00008B',
+  navy: '#000080',
+  yellow: '#FFFF00',
+  orange: '#FFA500',
+  purple: '#800080',
+  violet: '#EE82EE',
+  magenta: '#FF00FF',
+  fuchsia: '#FF00FF',
+  pink: '#FFC0CB',
+  cyan: '#00FFFF',
+  aqua: '#00FFFF',
+  teal: '#008080',
+  turquoise: '#40E0D0',
+  brown: '#A52A2A',
+  maroon: '#800000',
+  olive: '#808000',
+  gold: '#FFD700',
+  silver: '#C0C0C0',
+  gray: '#808080',
+  grey: '#808080',
+  darkgray: '#A9A9A9',
+  darkgrey: '#A9A9A9',
+  lightgray: '#D3D3D3',
+  lightgrey: '#D3D3D3'
+};
+
+/**
+ * The one place a model-supplied font colour becomes a value SyncFusion writes.
+ *
+ * Accepts `#RGB`, `#RRGGBB`, `#RRGGBBAA`, the same three without the `#`, and
+ * any name in the palette above. Everything else throws, because the
+ * alternative - assigning it and reporting success - is the defect this exists
+ * to remove.
+ */
+function normalizeFontColor(raw: string): string {
+  const value = String(raw).trim();
+  const named = NAMED_FONT_COLORS[value.toLowerCase()];
+  if (named) return named;
+  const hex = value.replace(/^#/, '');
+  if (/^[0-9a-fA-F]{3}$/.test(hex))
+    return `#${hex
+      .split('')
+      .map((digit) => digit + digit)
+      .join('')}`.toUpperCase();
+  if (/^[0-9a-fA-F]{6}$/.test(hex) || /^[0-9a-fA-F]{8}$/.test(hex))
+    return `#${hex.toUpperCase()}`;
+  throw new OpError(
+    'invalid_color',
+    `${JSON.stringify(raw)} is not a colour this document can be given.`,
+    [
+      'Use a hex string such as "#FF0000", or one of: ' +
+        Object.keys(NAMED_FONT_COLORS).sort().join(', ')
+    ]
+  );
+}
+
+/** True when both values are colours denoting the same RGB. */
+function sameColorValue(expected: any, actual: any): boolean {
+  const rgb = (value: any): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const hex = value.trim().replace(/^#/, '');
+    if (/^[0-9a-fA-F]{6}$/.test(hex)) return hex.toUpperCase();
+    // SyncFusion reports a resolved colour with its alpha byte appended
+    // (`#ff0000ff`). Comparing the raw strings would call every successful
+    // colour write a failure, which is the false alarm that would make this
+    // whole assertion get switched off again.
+    if (/^[0-9a-fA-F]{8}$/.test(hex)) return hex.slice(0, 6).toUpperCase();
+    return undefined;
+  };
+  const left = rgb(expected);
+  const right = rgb(actual);
+  if (left && right) return left === right;
+  // Not both hex. `highlightColor` is a NAMED enum in SyncFusion
+  // (`"Yellow"`), not a hex value, and demanding hex on both sides called a
+  // successful `highlightColor: "Yellow"` write a failure - measured. So a
+  // non-hex value is compared as the name it is.
+  return (
+    String(expected ?? '')
+      .trim()
+      .toLowerCase() ===
+    String(actual ?? '')
+      .trim()
+      .toLowerCase()
+  );
+}
+
+/** The properties whose resolved value is a colour rather than a plain field. */
+const COLOR_FORMAT_PROPS = new Set([
+  'fontColor',
+  'highlightColor',
+  'underlineColor'
+]);
+
+function directFormatEvidence(
+  group: 'characterFormat' | 'paragraphFormat',
+  requested: FormatBag,
+  actual: any
+): string[] {
+  return Object.entries(requested).flatMap(([prop, value]) => {
+    const resolved = actual?.[prop];
+    if (COLOR_FORMAT_PROPS.has(prop))
+      return sameColorValue(value, resolved)
+        ? []
+        : [
+            `${group}.${prop}: asked for ${JSON.stringify(
+              value
+            )}, document reads ${JSON.stringify(resolved ?? null)}`
+          ];
+    // A style name is matched case-insensitively: SyncFusion resolves
+    // "heading 1" to the document's own "Heading 1", and the request was
+    // honoured.
+    if (prop === 'styleName')
+      return String(value).trim().toLowerCase() ===
+        String(resolved ?? '')
+          .trim()
+          .toLowerCase()
+        ? []
+        : [
+            `${group}.styleName: asked for ${JSON.stringify(
+              value
+            )}, document reads ${JSON.stringify(resolved ?? null)}`
+          ];
+    return formatValuesMatch(value, resolved)
+      ? []
+      : [
+          `${group}.${prop}: asked for ${JSON.stringify(
+            comparableFormatValue(value)
+          )}, document reads ${JSON.stringify(comparableFormatValue(resolved))}`
+        ];
+  });
+}
+
+/**
+ * Read the target back and refuse to call a formatting write successful unless
+ * every DECLARED field is now the declared value.
+ *
+ * Read through the public selection, the same surface the write used, so the
+ * evidence is what the document actually resolves for that range rather than
+ * what was assigned to it.
+ */
+function assertDirectFormatApplied(
+  editor: LiveEditor,
+  block: FlatBlock,
+  requested: {
+    characterFormat?: FormatBag;
+    paragraphFormat?: FormatBag;
+  },
+  op: EditOp
+): void {
+  const character = requested.characterFormat ?? {};
+  const paragraph = requested.paragraphFormat ?? {};
+  if (!Object.keys(character).length && !Object.keys(paragraph).length) return;
+  const startOffset = editor.selection?.startOffset;
+  const endOffset = editor.selection?.endOffset;
+  let details: string[];
+  try {
+    const characterEvidence = Object.keys(character).length
+      ? (selectBlock(editor, block),
+        directFormatEvidence(
+          'characterFormat',
+          character,
+          editor.selection?.characterFormat
+        ))
+      : [];
+    // Paragraph properties resolve for the paragraphs the MARK is inside, which
+    // is why the inherited-format reader selects the mark too.
+    const paragraphEvidence = Object.keys(paragraph).length
+      ? (selectParagraph(editor, block),
+        directFormatEvidence(
+          'paragraphFormat',
+          paragraph,
+          editor.selection?.paragraphFormat
+        ))
+      : [];
+    details = [...characterEvidence, ...paragraphEvidence];
+  } finally {
+    if (typeof startOffset === 'string' && typeof endOffset === 'string')
+      editor.selection.select(startOffset, endOffset);
+  }
+  if (!details.length) return;
+  throw new OpError(
+    'format_not_applied',
+    `${op.op} at ${JSON.stringify(
+      block.anchor
+    )} did not change the document: the formatting was assigned but the document still reads its old value, so nothing was kept. Report this rather than describing the change as made.`,
+    details
+  );
+}
+
 function applyCharFormat(
   editor: LiveEditor,
   op: TypedEditOp<'set_char_format'>,
   options: { requireField?: boolean } = {}
-): boolean {
+): FormatBag | undefined {
   const bold = fmtMeaningfulField(op, 'bold');
   const italic = fmtMeaningfulField(op, 'italic');
   const underline = fmtMeaningfulField(op, 'underline');
@@ -10969,30 +11227,38 @@ function applyCharFormat(
         'set_char_format needs at least one formatting field (bold/fontColor/fontSize/...).'
       );
     } else {
-      return false;
+      return undefined;
     }
 
   const cf = editor.selection.characterFormat;
-  if (!cf) return false;
-  if (bold != null) cf.bold = !!bold;
-  if (italic != null) cf.italic = !!italic;
-  if (underline != null) cf.underline = underline ? 'Single' : 'None';
+  if (!cf) return undefined;
+  // Every field this writes is recorded as it is written, so the read-back
+  // assertion is driven by what the op actually declared rather than by a
+  // second, drift-prone transcription of the same mapping.
+  const requested: FormatBag = {};
+  const set = (prop: string, value: any) => {
+    (cf as any)[prop] = value;
+    requested[prop] = value;
+  };
+  if (bold != null) set('bold', !!bold);
+  if (italic != null) set('italic', !!italic);
+  if (underline != null) set('underline', underline ? 'Single' : 'None');
   if (strikethrough != null)
-    cf.strikethrough = strikethrough ? 'SingleStrike' : 'None';
-  if (allCaps != null) cf.allCaps = !!allCaps;
-  if (fontName) cf.fontFamily = fontName;
-  if (fontSize != null) cf.fontSize = Number(fontSize);
-  if (fontColor) cf.fontColor = fontColor;
-  if (highlightColor) cf.highlightColor = highlightColor;
-  if (baseline) cf.baselineAlignment = baseline;
-  return true;
+    set('strikethrough', strikethrough ? 'SingleStrike' : 'None');
+  if (allCaps != null) set('allCaps', !!allCaps);
+  if (fontName) set('fontFamily', String(fontName));
+  if (fontSize != null) set('fontSize', Number(fontSize));
+  if (fontColor) set('fontColor', normalizeFontColor(String(fontColor)));
+  if (highlightColor) set('highlightColor', highlightColor);
+  if (baseline) set('baselineAlignment', baseline);
+  return requested;
 }
 
 function applyParaFormat(
   editor: LiveEditor,
   op: TypedEditOp<'set_para_format'>,
   options: { requireField?: boolean } = {}
-): boolean {
+): FormatBag | undefined {
   const styleName = fmtMeaningfulField(op, 'styleName');
   const alignment = fmtMeaningfulField(op, 'alignment');
   const leftIndent = fmtMeaningfulField(op, 'leftIndent');
@@ -11018,20 +11284,28 @@ function applyParaFormat(
         'set_para_format needs at least one formatting field (alignment/leftIndent/lineSpacing/...).'
       );
     } else {
-      return false;
+      return undefined;
     }
 
   const pf = editor.selection.paragraphFormat;
-  if (!pf) return false;
-  if (styleName) callEditor(editor, 'applyStyle', String(styleName));
-  if (alignment) pf.textAlignment = alignment;
-  if (leftIndent != null) pf.leftIndent = Number(leftIndent);
-  if (rightIndent != null) pf.rightIndent = Number(rightIndent);
-  if (firstLineIndent != null) pf.firstLineIndent = Number(firstLineIndent);
-  if (lineSpacing != null) pf.lineSpacing = Number(lineSpacing);
-  if (beforeSpacing != null) pf.beforeSpacing = Number(beforeSpacing);
-  if (afterSpacing != null) pf.afterSpacing = Number(afterSpacing);
-  return true;
+  if (!pf) return undefined;
+  const requested: FormatBag = {};
+  const set = (prop: string, value: any) => {
+    (pf as any)[prop] = value;
+    requested[prop] = value;
+  };
+  if (styleName) {
+    callEditor(editor, 'applyStyle', String(styleName));
+    requested.styleName = String(styleName);
+  }
+  if (alignment) set('textAlignment', alignment);
+  if (leftIndent != null) set('leftIndent', Number(leftIndent));
+  if (rightIndent != null) set('rightIndent', Number(rightIndent));
+  if (firstLineIndent != null) set('firstLineIndent', Number(firstLineIndent));
+  if (lineSpacing != null) set('lineSpacing', Number(lineSpacing));
+  if (beforeSpacing != null) set('beforeSpacing', Number(beforeSpacing));
+  if (afterSpacing != null) set('afterSpacing', Number(afterSpacing));
+  return requested;
 }
 
 // ---------------------------------------------------------------------------
