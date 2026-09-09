@@ -536,9 +536,25 @@ describe('split_table contract - what the recomposition owes', () => {
   // paste drops IDENTIFIED ELEMENTS - content controls and bookmarks alike - and
   // the originals then die with the tracked-deleted source rows on accept. jsdom's
   // paste preserves them, so this harness structurally cannot see the failure.
-  it('(c) JSDOM ONLY: a bound split conserves tags in this harness - the browser disagrees', () => {
-    // Kept because it pins the harness behaviour and would catch a jsdom-side
-    // regression. It must never again be read as licence to retire the guard.
+  // SUPERSEDED IN PART, 2026-09-09, and read this before believing the row.
+  //
+  // The guard no longer decides a bound split in the product: the engine
+  // compiles a bound split into duplicate_table + delete_row before any handler
+  // runs (compileTableSplit in syncfusionDocumentOps.ts), and that composition
+  // was measured in a REAL headless browser on the captain's own document -
+  // both fragments minted, every summary line unchanged, no binding name
+  // dropped across accept, reject byte-identical. That is the evidence class
+  // the 2026-08-27 revert lacked.
+  //
+  // This row still sees the refusal for a reason about the HARNESS, not about
+  // the table: this file never calls attachBindings, so there is no binding
+  // runtime, so the compiler declines and the native path - with its guard -
+  // owns the op. The row is therefore no longer evidence about a bound split at
+  // all. It is evidence that WITHOUT a binding runtime the engine refuses
+  // rather than running the destructive paste, which is worth keeping.
+  it('(c) NO BINDING RUNTIME: a bound-looking split is refused, and writes nothing', () => {
+    // Kept because it pins the no-runtime behaviour and would catch a
+    // jsdom-side regression.
     const live = open(docWith(boundStripedTable()));
     const beforeSerialized = editor.serialize();
     const before = tagsIn(doc()).sort();

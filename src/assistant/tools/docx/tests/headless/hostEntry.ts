@@ -372,6 +372,38 @@ const api = {
     }
   },
 
+  /**
+   * The NATIVE op, one edit, no composition by the caller.
+   *
+   * `splitTable` above issues the two primitives by hand, which is what the
+   * assistant had to do while a bound split was refused. This issues what the
+   * captain's assistant actually sends - a single `split_table` - so the lane
+   * measures the engine's own desugaring rather than a spec's imitation of it.
+   * No `targetAnchor`: placement is engine-owned for a split.
+   */
+  nativeSplitTable(
+    tableId: string,
+    splitAtRow: number
+  ): { outcomes: string[]; messages: string[]; ops: string[] } {
+    const blockIndex = tableBlockIndex(tableId);
+    const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'split_table',
+          anchor: `0;${blockIndex};${splitAtRow};0;0`,
+          splitAtRow
+        } as any
+      ]
+    });
+    return {
+      outcomes: result.results.map((entry: any) =>
+        entry.ok ? 'ok' : String(entry.error)
+      ),
+      messages: result.results.map((entry: any) => String(entry.message ?? '')),
+      ops: result.results.map((entry: any) => String(entry.op ?? ''))
+    };
+  },
+
   groups: (): any[] =>
     listRevisionGroups(live() as any).map((view: any) => ({
       changeSetId: view.changeSetId,

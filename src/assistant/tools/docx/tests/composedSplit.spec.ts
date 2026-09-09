@@ -1,7 +1,17 @@
 /**
  * split_table as a COMPOSITION, over a bound table.
  *
- * The capability this buys: splitting a bound table is refused outright today
+ * DELIVERED, 2026-09-09: the composition below is no longer something a caller
+ * assembles. `split_table` over a table whose ROWS are bound IS this
+ * composition - the engine compiles it (compileTableSplit in
+ * syncfusionDocumentOps.ts) into the same two ops, collapsed back into one
+ * result and one card. This file keeps driving the primitives by hand on
+ * purpose: it is the reference the desugaring is measured against, and the
+ * headless lane asserts the native op reaches an end state indistinguishable
+ * from it. The refusal it was written against survives only for a table whose
+ * row roles cannot be proven - see markerOnlyTable.
+ *
+ * The capability this bought: splitting a bound table WAS refused outright
  * (`structural_op_would_destroy_bindings`), because the selection the bespoke
  * handler uses would delete the content controls rather than move them. The
  * composed path never makes a selection over bindings at all. It is:

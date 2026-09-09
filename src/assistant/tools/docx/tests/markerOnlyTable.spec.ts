@@ -190,6 +190,13 @@ describe('row ops on a marker-only bound table', () => {
     expect(controlTags(editor)).toHaveLength(4);
   });
 
+  // THE REFUSAL THAT SURVIVES, and the only category that still needs it
+  // (2026-09-09). This harness DOES attach bindings, and the table still has no
+  // binding route, because a marker-less table has no row bindings to prove its
+  // roles from. No provable roles means no `keepRows`, which means no
+  // composition - and the native selection paste is measured to destroy exactly
+  // the cell controls this table carries. So refusing is still correct here,
+  // while a bound-ROW table is now compiled and lands.
   it('reads as unbound: no table binding fact, and split_table is refused for its cell controls', () => {
     const inventory: any = getDocumentInventory(editor as unknown as LiveEditor, {
       scope: 'structure'

@@ -113,19 +113,62 @@ const apply = (live: LiveEditor, edits: any[], id: string) =>
   applyDocumentEdits(live, { changeSetId: id, edits }) as any;
 
 describe('graded cases - what the engine reaches today', () => {
-  it('case 1 (BOUND): a positional split of the flagship inventory table is REFUSED', () => {
-    // The flagship's inventory table is bound in every cell, and slice 1
-    // deliberately KEPT the refusal on splitting a bound table rather than
-    // retiring it: browser measurement showed the underlying defect is still
-    // live, destroying ten of eleven binding tags on accept.
+  it('case 1 (BOUND): a positional split of the flagship inventory table LANDS', () => {
+    // THE HEADLINE CASE, and for two slices it could not run: splitting a bound
+    // table was refused outright, because the native op captures the table
+    // through a selection and that paste drops content controls - measured in a
+    // browser destroying ten of eleven binding tags on accept.
     //
-    // So the headline positional case cannot run on the document built for it,
-    // and that is the honest state of the world rather than a gap in the test.
-    // When the composer routes bound content through the binding-aware clone
-    // path, this refusal goes and this row becomes the real case 1.
+    // The engine now COMPILES a bound split into duplicate_table with keepRows
+    // plus delete_row of the same rows (compileTableSplit), both of which route
+    // through the binding engine, so the refusal has nothing left to protect
+    // here. This row is the real case 1 at last.
+    //
+    // No targetAnchor: placement is engine-owned for a split. The row below
+    // pins what happens when one is supplied anyway.
     const live = open();
     const anchor = cellAnchorContaining('Gala apples');
     expect(anchor).not.toBeNull();
+    const before = editor.serialize();
+    const result = apply(
+      live,
+      [{ op: 'split_table', anchor, splitAtRow: 8, group: 'g' }],
+      'graded-case-1'
+    );
+    // ONE result under the op the model sent, not the two children it compiled
+    // into - the collapse is part of the contract, because a split is one card.
+    expect(result.results).toHaveLength(1);
+    expect([result.results[0].ok, result.results[0].op]).toEqual([
+      true,
+      'split_table'
+    ]);
+    expect(editor.serialize()).not.toBe(before);
+    // NOTHING WAS DESTROYED, counted by binding NAME rather than by tag text:
+    // the moved rows arrive under fresh row ids and a reference that named the
+    // shrinking aggregate is rewritten, so tag strings legitimately change
+    // while no name may go missing.
+    const census = (sfdt: string): Map<string, number> => {
+      const out = new Map<string, number>();
+      for (const hit of sfdt.matchAll(/\[\[name=([^|\]]+)/g)) {
+        const name = hit[1];
+        out.set(name, (out.get(name) ?? 0) + 1);
+      }
+      return out;
+    };
+    const was = census(before);
+    const now = census(editor.serialize());
+    expect(
+      [...was].filter(([name, count]) => (now.get(name) ?? 0) < count)
+    ).toEqual([]);
+  });
+
+  it('case 1b (PLACEMENT): a split will not send the new table anywhere but after its source', () => {
+    // `duplicate_table` places a copy immediately after its source and takes no
+    // destination, so a targetAnchor naming anywhere else cannot be honoured.
+    // Refusing beats ignoring it: a silently relocated table would report
+    // success about a document that does not exist.
+    const live = open();
+    const anchor = cellAnchorContaining('Gala apples');
     const before = editor.serialize();
     const result = apply(
       live,
@@ -139,17 +182,12 @@ describe('graded cases - what the engine reaches today', () => {
           group: 'g'
         }
       ],
-      'graded-case-1'
+      'graded-case-1b'
     );
     expect(result.results[0].ok).toBe(false);
-    // The SPECIFIC refusal, not merely "not ok". The first version of this row
-    // asserted only ok === false and passed on `binding_engine_unavailable`,
-    // because the harness had not attached the binding engine - green for a
-    // reason with nothing to do with the property.
     expect(result.results[0].error).toBe(
-      'structural_op_would_destroy_bindings'
+      'split_table_target_not_after_source'
     );
-    // Nothing was written: a refusal that half-edits is worse than no refusal.
     expect(editor.serialize()).toBe(before);
   });
 

@@ -88,6 +88,20 @@ interface Applied {
   moving: number[];
 }
 
+/** The `name=` of a binding tag, or '' for a table marker. */
+const nameOf = (tag: string): string =>
+  /\[\[name=([^|\]]+)/.exec(tag)?.[1] ?? '';
+
+/** How many times each binding NAME is bound in the document. */
+const census = (tags: string[]): Map<string, number> => {
+  const out = new Map<string, number>();
+  for (const tag of tags) {
+    const name = nameOf(tag);
+    if (name) out.set(name, (out.get(name) ?? 0) + 1);
+  }
+  return out;
+};
+
 describe('a composed split of the browser document accepts whole and conserves the summary', () => {
   let session: HeadlessSession;
 
@@ -224,16 +238,6 @@ describe('a composed split of the browser document accepts whole and conserves t
     // What a split may never do is drop a NAME: every name the captain's
     // document arrived with must still be bound, and at no lower a count, so a
     // moved row cannot quietly take a binding out of the document with it.
-    const nameOf = (tag: string): string =>
-      /\[\[name=([^|\]]+)/.exec(tag)?.[1] ?? '';
-    const census = (tags: string[]): Map<string, number> => {
-      const out = new Map<string, number>();
-      for (const tag of tags) {
-        const name = nameOf(tag);
-        if (name) out.set(name, (out.get(name) ?? 0) + 1);
-      }
-      return out;
-    };
     const after = await session.call<string[]>('serializedTags');
     const was = census(baseline.tags);
     const now = census(after);
@@ -285,6 +289,108 @@ describe('a composed split of the browser document accepts whole and conserves t
     );
     // eslint-disable-next-line no-console
     console.log('[headless] evidence:', await shoot(session, 'split-rejected', 'Machinery breakdown'));
+  });
+
+  // THE OP THE ASSISTANT ACTUALLY SENDS.
+  //
+  // Every row above issues the two primitives by hand. This one sends a single
+  // `split_table` - the op the captain's assistant sent on 2026-09-08, and the
+  // one that came back "the table is linked to calculated values, and the
+  // editor rejected the change before anything was written". The engine now
+  // compiles it into those same two primitives itself (compileTableSplit), so
+  // the end state has to be indistinguishable from the composed rows.
+  //
+  // That indistinguishability is the whole assertion: same single card, same
+  // fragments, same untouched summary, same name census, same byte-identical
+  // reject. If the desugaring ever diverges from the composition, this row and
+  // the ones above disagree.
+  describe('the native split_table op, desugared by the engine', () => {
+    const nativeSplit = (): Promise<{
+      outcomes: string[];
+      messages: string[];
+      ops: string[];
+    }> => session.call('nativeSplitTable', TABLE, SPLIT_AT);
+
+    it('APPLY: one card under the op the model sent, and both fragments', async () => {
+      const baseline = await openFresh();
+      const applied = await nativeSplit();
+
+      // ONE result, under `split_table`, not the two children it became. The
+      // collapse is part of the contract: a split is one decision.
+      expect(applied.outcomes).toEqual(['ok']);
+      expect(applied.ops).toEqual(['split_table']);
+      expect(await session.call<any[]>('groups')).toHaveLength(1);
+
+      const fragments = await session.call<Record<string, string>>(
+        'formulaValues'
+      );
+      expect(fragments.property_premium_subtotal).toBe(FIRST_FRAGMENT);
+      expect(fragments.property_premium_copy_subtotal).toBe(SECOND_FRAGMENT);
+      for (const name of SUMMARY_LINES)
+        expect([name, fragments[name]]).toEqual([name, baseline.formulas[name]]);
+    });
+
+    it('ACCEPT: the identical end state the hand-composed split reaches', async () => {
+      const baseline = await openFresh();
+      expect((await nativeSplit()).outcomes).toEqual(['ok']);
+
+      await session.call('resolveGroups', true);
+
+      expect(await session.call<any[]>('revisions')).toEqual([]);
+      expect(await session.call<number>('chipCount')).toBe(0);
+
+      const after = await session.call<string[]>('serializedTags');
+      const was = census(baseline.tags);
+      const now = census(after);
+      expect(
+        [...was].filter(([name, count]) => (now.get(name) ?? 0) < count)
+      ).toEqual([]);
+      expect([...now.keys()].filter((name) => !was.has(name))).toEqual([
+        `${TABLE}_copy_subtotal`
+      ]);
+      const baselineTags = new Set(baseline.tags);
+      expect(
+        after.filter((tag) => !baselineTags.has(tag) && !nameOf(tag))
+      ).toEqual([`[[table=${TABLE}_copy]]`]);
+      expect(await session.call<number>('contentControlCount')).toBe(
+        BASELINE_CONTROLS + 2
+      );
+
+      const accepted = await session.call<Record<string, string>>(
+        'formulaValues'
+      );
+      expect(accepted.property_premium_subtotal).toBe(FIRST_FRAGMENT);
+      expect(accepted.property_premium_copy_subtotal).toBe(SECOND_FRAGMENT);
+      for (const name of SUMMARY_LINES)
+        expect([name, accepted[name]]).toEqual([name, baseline.formulas[name]]);
+
+      // eslint-disable-next-line no-console
+      console.log(
+        '[headless] evidence:',
+        await shoot(session, 'native-split-accepted', 'Machinery breakdown')
+      );
+    });
+
+    it('REJECT: byte-identical, from the native op too', async () => {
+      const baseline = await openFresh();
+      expect((await nativeSplit()).outcomes).toEqual(['ok']);
+      expect((await session.call<any[]>('revisions')).length).toBeGreaterThan(
+        1
+      );
+
+      await session.call('resolveGroups', false);
+
+      expect(await session.call<any[]>('revisions')).toEqual([]);
+      expect(await session.call<string>('serialize')).toBe(baseline.serialized);
+      expect(await session.call<string[]>('tableIds')).not.toContain(
+        `${TABLE}_copy`
+      );
+      // eslint-disable-next-line no-console
+      console.log(
+        '[headless] evidence:',
+        await shoot(session, 'native-split-rejected', 'Machinery breakdown')
+      );
+    });
   });
 
   // CHARACTERIZATION, MEASURED 2026-09-08, NOT YET A FIX.
