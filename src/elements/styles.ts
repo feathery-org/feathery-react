@@ -183,25 +183,71 @@ const blockPaddingCss = (type: string, value: any) =>
 // field's font size.
 const SHRINK_LABEL_MAX_FONT_SIZE = 10;
 
-// The room a pinned floating label needs behind the value when the theme sets
-// no top padding of its own -- computed per render, in the height's own unit, so
-// a box whose height changes keeps a reserve that matches it.
-const shrinkLabelReservePx = (type: string, height: any, fontSize: any) =>
-  type === 'text_area'
-    ? Math.min(fontSize, SHRINK_LABEL_MAX_FONT_SIZE) * 2.5
-    : Number(height) / 3;
+// The font size a field renders with when the theme stores none -- the backend
+// serializer's own default. The reserve needs a number even then: every sibling
+// helper falls back through isNum, and an unguarded NaN here became
+// `padding-top: NaNpx`, which the browser drops and the label overlaps the value.
+const DEFAULT_INPUT_FONT_SIZE = 16;
+
+const fontSizePx = (fontSize: any) => {
+  const n = Number(fontSize);
+  return isNum(fontSize) && Number.isFinite(n) ? n : DEFAULT_INPUT_FONT_SIZE;
+};
+
+// What a pinned label occupies: its own marginTop (half the shrunken font) plus
+// its line box, which inherits the field's font size. So a 16px field's label
+// ends 5 + 16 = 21px below the box top, and a 28px field's at 33px -- measured,
+// and exact at every size.
+export const shrinkLabelFootprint = (fontSize: any) => {
+  const size = fontSizePx(fontSize);
+  return Math.min(size, SHRINK_LABEL_MAX_FONT_SIZE) / 2 + size;
+};
+
+// The room a pinned floating label needs behind the value when the theme sets no
+// top padding of its own: exactly what the label occupies, so the value starts
+// just under it.
+//
+// This used to be height/3, which is not a property of the label at all. The
+// label's footprint does not change with the box, so a ratio drifts: at 50px it
+// reserved 17px for a label needing 21, and at 500px it reserved 167px and left
+// the value 80px below the box's centre. A field is free to be 500px tall; its
+// value should still sit under its label.
+//
+// Clamped so a short box still fits a line of text -- below about 45px the
+// label's own footprint is more room than the box has to give.
+//
+// A whole number, because the builder can store this: inner_padding_top is an
+// integer column (the backend's style serializers declare it as one), so a
+// fractional reserve is a value the builder would have to round to write down.
+// Rounding here instead means the number a field renders unseeded is the same
+// number the builder seeds, and the panel never describes geometry by 0.2px.
+const shrinkLabelReservePx = (
+  type: string,
+  height: any,
+  heightUnit: any,
+  fontSize: any,
+  lineHeight?: any
+): number => {
+  const size = fontSizePx(fontSize);
+  if (type === 'text_area')
+    return Math.round(Math.min(size, SHRINK_LABEL_MAX_FONT_SIZE) * 2.5);
+  const footprint = shrinkLabelFootprint(size);
+  // A percentage or fit height has no pixel box to clamp against, so the
+  // footprint stands on its own.
+  if (heightUnit !== 'px' || !isNum(height)) return Math.round(footprint);
+  const line = inputLineHeight(lineHeight, size);
+  const room = Number(height) - line - RESET_INPUT_PADDING_Y;
+  return Math.round(Math.max(0, Math.min(footprint, room)));
+};
 
 const shrinkLabelReserve = (
   type: string,
   height: any,
   heightUnit: any,
-  fontSize: any
+  fontSize: any,
+  lineHeight?: any
 ) =>
-  type === 'text_area'
-    ? `${shrinkLabelReservePx(type, height, fontSize)}px`
-    : // In the height's own unit, so a percentage box keeps a percentage
-      // reserve rather than a pixel approximation of one.
-      `${height / 3}${heightUnit}`;
+  `${shrinkLabelReservePx(type, height, heightUnit, fontSize, lineHeight)}px`;
 
 // The neutral for a companion that rides the value line with a transform.
 // 'none' rather than a zero translation: any transform other than none creates
@@ -233,6 +279,17 @@ const legacyPaddingY = (type: string) => {
   return RESET_INPUT_PADDING_Y;
 };
 
+// The top padding a placement measures against. A pinned label's floor stands
+// as the clamp left it -- already limited to what the box has to give -- and a
+// floor only exists where nothing is stored, so it replaces the block reset
+// rather than being raised back to it. null is the absence of a floor; a floor
+// of 0 is a real one, from a box too short to hold the label's footprint.
+const flooredTopPadding = (
+  type: string,
+  padTop: any,
+  topFloor: number | null
+) => (topFloor === null ? paddingSide(padTop, legacyPaddingY(type)) : topFloor);
+
 // What a multiselect's value container already insets its chips by: react-
 // select's own 8px inline start, the 10px that composes to the chips' 28px
 // chevron strip, and the block padding it uses once the chips wrap.
@@ -244,10 +301,10 @@ const MULTISELECT_LEGACY_PADDING = {
 };
 
 // A shrink_top label is a fixed overlay pinned to the box top: it takes no room
-// in the content box, so the value renders behind the theme's raw padding and
-// nothing about the label enters the geometry below. An unset inner_padding_top
-// falls back to the reserve production drew, computed below, and a padding low
-// enough to run the value under the label's ink is allowed by design.
+// in the content box. A stored inner_padding_top is what the value renders
+// behind, including one low enough to run it under the label's ink. Unset, the
+// label's reserve stands in for it, and pinnedTopFloor keeps an alignment from
+// cancelling that reserve.
 const offsetFromCenter = (d: number) =>
   d ? `calc(50% ${d > 0 ? '+' : '-'} ${Math.abs(d)}px)` : '50%';
 
@@ -284,7 +341,7 @@ const inputBoxVertical = (
   padBottom: any,
   lineHeight: any,
   fontSize: any,
-  topFloor = 0
+  topFloor: number | null = null
 ): VerticalPlacement | null => {
   // A text area's text already starts at its top padding.
   if (type === 'text_area') return null;
@@ -298,7 +355,7 @@ const inputBoxVertical = (
   const legacy = legacyPaddingY(type);
   // The floor is the room a pinned label needs; it applies only where the
   // theme set no top padding of its own, so a stored value still stands as set.
-  const top = Math.max(paddingSide(padTop, legacy), topFloor);
+  const top = flooredTopPadding(type, padTop, topFloor);
   const bottom = paddingSide(padBottom, legacy);
   return {
     align,
@@ -343,12 +400,12 @@ const valueLineY = (
   padBottom: any,
   lineHeight: any,
   fontSize: any,
-  topFloor = 0
+  topFloor: number | null = null
 ): string | null => {
   const line = inputLineHeight(lineHeight, fontSize);
   if (!line) return null;
   const legacy = legacyPaddingY(type);
-  const top = Math.max(paddingSide(padTop, legacy), topFloor);
+  const top = flooredTopPadding(type, padTop, topFloor);
   const bottom = paddingSide(padBottom, legacy);
 
   if (type === MULTISELECT_FIELD) {
@@ -394,7 +451,7 @@ const inputValueDelta = (
   padBottom: any,
   lineHeight: any,
   fontSize: any,
-  topFloor = 0
+  topFloor: number | null = null
 ): number | null => {
   const line = inputLineHeight(lineHeight, fontSize);
   if (!line) return null;
@@ -414,7 +471,7 @@ const inputValueDelta = (
       ? placement.top + placement.line / 2 - placement.height / 2
       : placement.height / 2 - placement.bottom - placement.line / 2;
   const delta =
-    (Math.max(paddingSide(padTop, legacyPaddingY(type)), topFloor) -
+    (flooredTopPadding(type, padTop, topFloor) -
       paddingSide(padBottom, legacyPaddingY(type))) /
     2;
   return delta || null;
@@ -975,12 +1032,17 @@ export default class ResponsiveStyles {
    *
    * A shrunken label is a fixed overlay at the box top. It takes no room in the
    * content box, so the value has to be held clear of it -- which is what the
-   * height/3 reserve has always done, and what makes the value sit a little
-   * below the box's midline on a floating-label field. An alignment is not a
+   * reserve has always done, and what makes the value sit a little below the
+   * box's midline on a floating-label field. An alignment is not a
    * statement about padding, so it must not cancel that reserve: without this
    * floor, "middle" re-centres the value into the label's ink and no option in
-   * the panel can put it back. Zero wherever there is nothing to clear, so
-   * every other field emits exactly what it emits today.
+   * the panel can put it back.
+   *
+   * null wherever there is nothing to clear, so every other field emits exactly
+   * what it emits today. Not zero: a box too short to hold the label's
+   * footprint clamps to a floor of 0, which is a floor, and reading it as the
+   * absence of one would put the block reset back under a label with no room
+   * for it.
    */
   private pinnedTopFloor(
     type: string,
@@ -988,29 +1050,40 @@ export default class ResponsiveStyles {
     heightUnit: any,
     padTop: any,
     align: any,
-    padBottom: any
-  ) {
+    padBottom: any,
+    fontSize: any,
+    lineHeight: any
+  ): number | null {
     // Only a placement that was actually asked for can cancel the reserve, so
     // only that placement needs the floor. An untouched field is still placed
     // by applyPlaceholderStyles' own reserve and emits nothing here -- the
     // phone flag's anchor is emitted unconditionally, so a floor leaking into
     // it would move every untouched floating-label phone field.
-    if (!verticalPlacementAsked(align, padTop, padBottom)) return 0;
-    if (isSet(padTop)) return 0; // a stored padding stands as set
+    if (!verticalPlacementAsked(align, padTop, padBottom)) return null;
+    if (isSet(padTop)) return null; // a stored padding stands as set
     // Two exclusions. A multiselect's chips are placed by flexbox through
     // applyMultiselectLayout, which knows nothing of this floor, so feeding it
     // to the chevron alone would set the two against each other -- it is absent
     // from INPUT_BOX_FIELDS here for that reason. And a text area's text starts
     // at its top padding rather than being centred against it, so there is no
     // midline for a floor to move.
-    if (!INPUT_BOX_FIELDS.includes(type) || type === 'text_area') return 0;
-    if (this.element?.styles?.placeholder_transition !== 'shrink_top') return 0;
-    if (!rendersPlaceholderStyles(type, this.element?.properties)) return 0;
+    if (!INPUT_BOX_FIELDS.includes(type) || type === 'text_area') return null;
+    // Read off the desktop styles deliberately, unlike the typography below.
+    // applyPlaceholderStyles decides whether to pin a label from this same
+    // desktop key, never through apply(), so a mobile override of it changes
+    // nothing about whether a label is pinned. Resolving it per breakpoint here
+    // would leave the floor disagreeing with the label it is reserving for.
+    if (this.element?.styles?.placeholder_transition !== 'shrink_top')
+      return null;
+    if (!rendersPlaceholderStyles(type, this.element?.properties)) return null;
     // Only a resolved pixel height has a reserve that can be compared.
-    if (heightUnit !== 'px' || !isNum(height)) return 0;
-    // The same definition shrinkLabelReserve is built from, so the floor and
-    // the reserve it floors cannot describe different geometry.
-    return shrinkLabelReservePx(type, height, this.element?.styles?.font_size);
+    if (heightUnit !== 'px' || !isNum(height)) return null;
+    // The same definition the reserve itself is built from, off the same
+    // breakpoint-resolved values apply() hands the caller, so the floor and the
+    // padding it floors can never describe different geometry. Reading the
+    // element's own styles here instead would compute a mobile floor from the
+    // desktop font, and "middle" would move a value the label still sits over.
+    return shrinkLabelReservePx(type, height, heightUnit, fontSize, lineHeight);
   }
 
   // Content alignment for the text inside an input box. Horizontal rides on
@@ -1046,7 +1119,9 @@ export default class ResponsiveStyles {
           heightUnit,
           padTop,
           align,
-          padBottom
+          padBottom,
+          fontSize,
+          lineHeight
         );
         const placement = inputBoxVertical(
           type,
@@ -1059,13 +1134,10 @@ export default class ResponsiveStyles {
           fontSize,
           topFloor
         );
-        // The top padding, shared by the centred and top-aligned branches so
-        // they cannot drift apart. A floor only exists where nothing is stored,
-        // so this is the reserve against the padding the field renders with --
-        // in px, because the reserve is px and the two have to be comparable.
-        const paddingTopCss = topFloor
-          ? `${Math.max(topFloor, legacyPaddingY(type))}px`
-          : blockPaddingCss(type, padTop);
+        // flooredTopPadding as a length, so the padding emitted and the
+        // placement measured against it cannot describe different geometry.
+        const paddingTopCss =
+          topFloor === null ? blockPaddingCss(type, padTop) : `${topFloor}px`;
 
         // Centred, or a top/bottom alignment this box cannot resolve an offset
         // for. The padding the theme asked for stands on its own, and both
@@ -1275,7 +1347,9 @@ export default class ResponsiveStyles {
             heightUnit,
             padTop,
             align,
-            padBottom
+            padBottom,
+            fontSize,
+            lineHeight
           )
         );
         // 'center' is the neutral -- what both components declare inline before
@@ -1343,7 +1417,16 @@ export default class ResponsiveStyles {
             b,
             lineHeight,
             fontSize,
-            this.pinnedTopFloor(type, height, heightUnit, t, align, b)
+            this.pinnedTopFloor(
+              type,
+              height,
+              heightUnit,
+              t,
+              align,
+              b,
+              fontSize,
+              lineHeight
+            )
           );
           // A zero translation is the neutral, so a mobile override can
           // bring the icon back to the box midline.
@@ -1384,7 +1467,16 @@ export default class ResponsiveStyles {
           b,
           lineHeight,
           fontSize,
-          this.pinnedTopFloor('phone_number', height, heightUnit, t, align, b)
+          this.pinnedTopFloor(
+            'phone_number',
+            height,
+            heightUnit,
+            t,
+            align,
+            b,
+            fontSize,
+            lineHeight
+          )
         );
         // Neutral zero translation, so a mobile override can re-centre the flag.
         return { transform: delta ? `translateY(${delta}px)` : NO_TRANSLATE };
@@ -1625,7 +1717,9 @@ export default class ResponsiveStyles {
               heightUnit,
               t,
               align,
-              b
+              b,
+              fontSize,
+              lineHeight
             );
             const placement = inputBoxVertical(
               type,
@@ -1689,13 +1783,10 @@ export default class ResponsiveStyles {
         return pinned;
       });
       // A pinned label is a fixed overlay taking no room in the content box, so
-      // the value needs a reserve behind it. Unset, that reserve is computed
-      // here exactly as production computed it -- height/3 in the height's own
-      // unit, or 2.5x the shrunken label's font size for a text area -- which
-      // is why it keeps tracking a height the builder changes instead of being
-      // frozen into the theme as a px number. Set, the theme's own padding is
-      // what the value renders behind, including a value low enough to run it
-      // under the label's ink.
+      // the value needs a reserve behind it. Unset, that reserve is what the
+      // label occupies, so the value starts just under it at any box height.
+      // Set, the theme's own padding is what the value renders behind,
+      // including a value low enough to run it under the label's ink.
       this.apply(
         'field',
         [
@@ -1718,7 +1809,8 @@ export default class ResponsiveStyles {
             type,
             height,
             heightUnit,
-            fontSize
+            fontSize,
+            lineHeight
           );
           if (!takesInnerPadding(type)) return { paddingTop: reserve };
           // An alignment the box can resolve has already placed the value, and
