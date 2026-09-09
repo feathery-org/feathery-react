@@ -12,6 +12,7 @@ import {
 } from './core/sfdtTypes';
 import {
   isContentControlAttached,
+  normalizeContentControlCollection,
   type SyncfusionEditorLike
 } from './editorAdapter';
 
@@ -170,6 +171,8 @@ function registerPastedContentControls(editor: SyncfusionEditorLike): void {
   } finally {
     if (!layoutWasOn) live.setProperties?.({ enableLayout: false }, true);
   }
+  // Registration appends; the SDK's lookups assume document order.
+  normalizeContentControlCollection(editor);
 }
 
 const rowRevisionsOf = (control: any): number =>
@@ -325,6 +328,9 @@ export function applyNativeStructuralMutations(
     return true;
   } finally {
     nativeApplyDepth -= 1;
+    // Every native structural command that (re)registers controls appends them;
+    // leave the collection in document order whatever path ran.
+    normalizeContentControlCollection(editor);
     if (complex) history?.updateComplexHistory?.();
   }
 }
