@@ -136,6 +136,13 @@ const getFileSourcesText = (fileSources?: any[]) => {
 };
 
 const getFileName = (fileUrl: string) => {
-  const lastSlashIndex = fileUrl.lastIndexOf('/');
-  return fileUrl.substring(lastSlashIndex + 1);
+  // Strip URL metadata before decoding: escaped ? and # belong to the name.
+  const path = fileUrl.split(/[?#]/, 1)[0];
+  const filename = path.substring(path.lastIndexOf('/') + 1);
+  try {
+    return decodeURIComponent(filename);
+  } catch {
+    // A malformed escape in a source URL must not break the progress toast.
+    return filename;
+  }
 };
