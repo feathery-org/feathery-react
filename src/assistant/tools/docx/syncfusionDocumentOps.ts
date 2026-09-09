@@ -2114,9 +2114,74 @@ function documentStyleLevels(
   return levels;
 }
 
+// A text box is serialized as an inline carrying its own doc-level block list
+// at `textFrame.blocks`. Its paragraphs are content like any other story, so
+// the flat walk must reach them - a projection blind to a story leaves the text
+// unreadable to the model and unaddressable by every op - and it must address
+// them in the public anchor space the write path already resolves:
+// `host;S;shapeOrdinal;frameBlock`, with a 1-based ordinal over the host
+// paragraph's frame-carrying inlines. That is the shape SyncFusion's search
+// reports (see `resolveLiveStoryTarget`) and `currentTextFrameText` reads back,
+// so an anchor taken from the index is directly writable with no text-box
+// special case in any op.
+//
+// Frame paragraphs only, deliberately. A table nested inside a frame, and a
+// shape hung on `block.floatingElements` rather than on an inline, have no
+// anchor in that resolvable space today; synthesizing a deeper one would
+// advertise content no op could actually write to.
+function textFrameBlocksOf(
+  block: any,
+  hostAnchor: string,
+  deletedIds: Set<string>
+): FlatBlock[] {
+  const out: FlatBlock[] = [];
+  let shapeOrdinal = 0;
+  for (const inline of getInlines(block)) {
+    const textFrame = pick(inline, 'textFrame', 'tf');
+    if (!textFrame) continue;
+    shapeOrdinal++;
+    getBlocks(textFrame).forEach((frameBlock: any, frameBlockIndex: number) => {
+      if (getRows(frameBlock)) return;
+      const inlines = getInlines(frameBlock);
+      const text = inlineText(inlines, deletedIds);
+      if (
+        text.length === 0 &&
+        allRevisionIdsIn(paragraphMarkRevisionIds(frameBlock), deletedIds)
+      )
+        return;
+      const format = readFormat(frameBlock);
+      const frameBoundTag = boundTagOf(inlines);
+      const frameBindingRanges = bindingRangesOf(inlines, deletedIds);
+      out.push({
+        anchor: `${hostAnchor};S;${shapeOrdinal};${frameBlockIndex}`,
+        kind: 'text_frame',
+        text,
+        format,
+        ...readBlockFormats(frameBlock),
+        isHeading: false,
+        level: -1,
+        length: text.length,
+        ...(frameBoundTag ? { boundTag: frameBoundTag } : {}),
+        ...(frameBindingRanges.length
+          ? { bindingRanges: frameBindingRanges }
+          : {}),
+        // The frame counts its own offsets, so only a binding control inside
+        // the frame paragraph itself makes them untrustworthy - a control in
+        // the host paragraph is outside this block's offset space.
+        ...(hasBindingContentControl(inlines)
+          ? { offsetsUntrusted: true as const }
+          : {})
+      });
+    });
+  }
+  return out;
+}
+
 // Walk the SFDT into a flat, in-order list of addressable blocks. Paragraphs
 // (top-level and inside table cells) become blocks; a table contributes its
-// cell paragraphs. Anchors follow the SyncFusion hierarchical scheme.
+// cell paragraphs, and a text box the paragraphs of its text frame, each right
+// after the paragraph that hosts it. Anchors follow the SyncFusion hierarchical
+// scheme.
 export function flattenSfdt(
   sfdt: any,
   dropRevisionIds?: Set<string>
@@ -2157,8 +2222,9 @@ export function flattenSfdt(
                   insideControl ||
                   cellEntry.insideControl ||
                   hasBindingContentControl(getInlines(cb));
+                const cellAnchor = `${si};${bi};${ri};${ci};${cbi}`;
                 out.push({
-                  anchor: `${si};${bi};${ri};${ci};${cbi}`,
+                  anchor: cellAnchor,
                   kind: 'table_cell',
                   text,
                   format,
@@ -2172,6 +2238,7 @@ export function flattenSfdt(
                     : {}),
                   ...(cellOffsetsUntrusted ? { offsetsUntrusted: true } : {})
                 });
+                out.push(...textFrameBlocksOf(cb, cellAnchor, deletedIds));
                 paragraphs.push({
                   styleName: format?.styleName ?? '',
                   text,
@@ -2214,6 +2281,10 @@ export function flattenSfdt(
           ...(blockOffsetsUntrusted ? { offsetsUntrusted: true } : {})
         };
         out.push(flat);
+        out.push(...textFrameBlocksOf(block, flat.anchor, deletedIds));
+        // Frame paragraphs are deliberately absent from the typography corpus
+        // below: it measures the BODY text size that heading inference compares
+        // custom styles against, and a text box's sizes are chosen for the box.
         paragraphs.push({
           block: flat,
           styleName: format?.styleName ?? '',
@@ -4881,7 +4952,15 @@ function isLiveStoryTarget(
 // occurrence when the story contains the same spelling more than once.
 function resolveLiveStoryTarget(
   editor: LiveEditor,
-  op: EditOp
+  op: EditOp,
+  /**
+   * The current text of the whole block at this anchor, when the flat index has
+   * it - which it does for a text frame. `expect` is the model's copy of the
+   * BLOCK text at the anchor, one rule for every story, so the staleness guard
+   * below checks it against this. A story with no serialized projection has
+   * only the selected range to check against.
+   */
+  blockText?: string
 ): LiveStoryTarget {
   const anchor = String(op.anchor ?? '');
   const find = String(op.find ?? '');
@@ -4962,11 +5041,12 @@ function resolveLiveStoryTarget(
           text
         )} instead of ${JSON.stringify(find)} at "${anchor}".`
       );
-    if (expectGuardRefuses(op.expect, text))
+    const expectSubject = blockText ?? text;
+    if (expectGuardRefuses(op.expect, expectSubject))
       throw new OpError(
         'expect_mismatch',
         'The live text at this anchor does not match `expect`.',
-        staleAnchorDetails(op.expect, text)
+        staleAnchorDetails(op.expect, expectSubject)
       );
     return {
       anchor,
@@ -21123,8 +21203,21 @@ function applyDocumentEditsMeasured(
       op.expect != null &&
       indexedTarget != null &&
       !expectTextMatches(op.expect, indexedTarget.text);
-    let target: FlatBlock | LiveStoryTarget | undefined =
-      formatExpectMismatch && hasStructuralEdits ? undefined : indexedTarget;
+    // A story anchor now HAS an indexed block, because the flat walk reaches
+    // text-frame content - that is what makes the text readable and
+    // addressable. But that block is a read projection: a story's range can
+    // only be acted on through the engine's public search offsets, which is
+    // what `resolveLiveStoryTarget` returns and `applyLiveStoryTextOp` writes
+    // through. So a story anchor never takes its own indexed block as the write
+    // target; it always resolves live, exactly as it did when it had no indexed
+    // block at all.
+    let target: FlatBlock | LiveStoryTarget | undefined = isLiveStoryAnchor(
+      op.anchor
+    )
+      ? undefined
+      : formatExpectMismatch && hasStructuralEdits
+      ? undefined
+      : indexedTarget;
     // Search returns public, selection-ready story ranges which SFDT cannot
     // flatten (notably text frames and page-specific headers/footers). Text
     // mutations for those anchors preflight against that same live range.
@@ -21134,7 +21227,7 @@ function applyDocumentEditsMeasured(
       (name === 'replace_text' || name === 'delete_text')
     ) {
       try {
-        target = resolveLiveStoryTarget(editor, op);
+        target = resolveLiveStoryTarget(editor, op, indexedTarget?.text);
       } catch (err) {
         fail(index, op, err);
         return;
