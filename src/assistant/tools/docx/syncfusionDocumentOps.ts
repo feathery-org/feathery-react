@@ -8079,7 +8079,18 @@ function assertTableHasNoBindings(
     [
       `table: ${tableAnchor}`,
       `bound cells: ${bound.map((candidate) => candidate.anchor).join(', ')}`,
-      'Use insert_row, delete_row or duplicate_table, which the binding engine performs safely, or change values with set_cell_text.'
+      'Use insert_row, delete_row or duplicate_table, which the binding engine performs safely, or change values with set_cell_text.',
+      // THE REMEDIATION THIS REFUSAL USED TO WITHHOLD. Naming the safe ops is
+      // not enough for a split: the caller has to know they COMPOSE into one,
+      // and in which order. Measured in the browser 2026-09-08 - the assistant
+      // hit this refusal on the captain's own Property Premium Detail schedule
+      // and reported "I couldn't complete that split" rather than retrying,
+      // because nothing here told it a bound split has a shape that works. It
+      // does, and the headless lane proves it on that exact document:
+      // duplicate_table + delete_row applies, conserves every total and
+      // accepts clean. Until this refusal is retired outright per the split
+      // law, it must at least be self-correcting.
+      'To SPLIT a bound table, compose it from those primitives instead: send duplicate_table with `keepRows` naming the rows the second table should carry, then delete_row of those same rows from the source. Both route through the binding engine, so the moved rows keep their bindings and every reference outside the table follows them.'
     ]
   );
 }
