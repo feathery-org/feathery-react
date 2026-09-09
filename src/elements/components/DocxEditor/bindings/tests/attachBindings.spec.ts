@@ -221,17 +221,25 @@ describe('attaching bindings to a tokenized template', () => {
     setCaretControl(null);
     (editor as any).trigger('keyDown', { event: { key: 'Backspace' } });
     expect(onLockedEdit).not.toHaveBeenCalled();
+  });
 
-    // A row/table delete can resolve currentContentControl to a locked cell;
-    // the delete guard owns that gesture, so the hint must stay silent.
-    onLockedEdit.mockClear();
+  it('does not show the hint on a multi-cell structural delete', () => {
+    // Fresh attach so the debounce state is clean and a "not called" result is
+    // the exclusion, not a lingering debounce from an earlier fire.
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit
+    });
+
+    // The caret resolves to a locked cell, but the selection spans two cells -
+    // a genuine row/table delete the guard owns. The hint must stay silent.
     setCaretControl(true);
     const sel = (editor as any).selection;
-    const origIsRowSelected = sel.isRowSelected;
-    sel.isRowSelected = () => true;
+    sel.start = { paragraph: { associatedCell: { id: 'A' } } };
+    sel.end = { paragraph: { associatedCell: { id: 'B' } } };
     (editor as any).trigger('keyDown', { event: { key: 'Delete' } });
     expect(onLockedEdit).not.toHaveBeenCalled();
-    sel.isRowSelected = origIsRowSelected;
     setCaretControl(null);
   });
 

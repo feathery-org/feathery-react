@@ -233,22 +233,23 @@ export function attachBindings(
       // on lockContents before it reaches checkContentControlLocked (the only
       // thing that fires the event). So surface the hint from here.
       //
-      // A real row/table delete DOES report a control - the [[table=...]]
-      // wrapper - so currentContentControl is NOT null here. It stays quiet
-      // only because that wrapper is lockContentControl-only (lockContents is
-      // false), so isLockedControl() rejects it. Don't lean on that: a row
-      // selection whose caret sits in a formula cell can resolve to the LOCKED
-      // cell instead, flashing a false "locked" hint on a legitimate structural
-      // delete (the delete guard owns that gesture). Exclude row/table
-      // selections explicitly so the hint fires only for an in-cell edit.
-      const selection = editor.selection as {
-        isTableSelected?: () => boolean;
-        isRowSelected?: () => boolean;
+      // Show it only for an in-cell edit, not a structural row/table delete
+      // (the delete guard owns that gesture and shows its own dialog).
+      // isRowSelected/isTableSelected can't tell them apart - a single locked
+      // cell reports isRowSelected true - so use the same test the guard uses:
+      // a genuine structural selection SPANS MULTIPLE CELLS, an in-cell edit
+      // does not.
+      const sel = editor.selection as {
+        start?: { paragraph?: { associatedCell?: unknown } };
+        end?: { paragraph?: { associatedCell?: unknown } };
       } | null;
+      const startCell = sel?.start?.paragraph?.associatedCell;
+      const endCell = sel?.end?.paragraph?.associatedCell;
+      const spansMultipleCells =
+        !!startCell && !!endCell && startCell !== endCell;
       if (
         (key === 'Backspace' || key === 'Delete') &&
-        !selection?.isTableSelected?.() &&
-        !selection?.isRowSelected?.() &&
+        !spansMultipleCells &&
         isLockedControl(caretControl())
       )
         showLockedHint();
