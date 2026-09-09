@@ -13,6 +13,11 @@ const NodeEnvironment = require('jest-environment-node');
 
 const BORROWED = [
   'AbortController',
+  // `page.screenshot` decodes the CDP response with `atob`, so without these
+  // the evidence shot throws `ReferenceError: atob is not defined` and takes
+  // the assertion that follows it down with it.
+  'atob',
+  'btoa',
   'AbortSignal',
   'Blob',
   'CompressionStream',

@@ -62,6 +62,46 @@ export function readFixture(name: string): string {
   );
 }
 
+/**
+ * Where the lane writes a screenshot of each settled state.
+ *
+ * Gitignored on purpose: it is evidence of a run, not an artifact of the
+ * branch. A PR-viewable copy would have to be committed, and this repo pins
+ * `store_in_repo: false`.
+ */
+export const EVIDENCE_DIR = path.resolve(
+  __dirname,
+  '../../../../../../.headless-evidence'
+);
+
+/**
+ * Photograph the laid-out page at a settled state and return the path.
+ *
+ * The point is not decoration. Every other measurement in this lane reads the
+ * SERIALIZED document, and a serialize can be right while the page a human
+ * looks at is wrong - a split whose second table renders on top of the first,
+ * a fragment that lays out with no rows. This is the only assertion-adjacent
+ * artifact that can catch that, and it costs one file per settled state.
+ */
+export async function shoot(
+  session: HeadlessSession,
+  name: string,
+  focusText?: string
+): Promise<string> {
+  fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+  const file = path.join(EVIDENCE_DIR, `${name}.png`);
+  // A trial build's modal sits over the document, and page one of this
+  // proposal is a title page - so a raw viewport shot of a split would show
+  // neither the dialog's fault nor the split's rows. Clear the furniture, put
+  // the rows under test on screen, and photograph the editor itself.
+  await session.call('dismissTrialNotice');
+  if (focusText) await session.call('focus', focusText);
+  const host = await session.page.$('#fm-editor');
+  if (host) await host.screenshot({ path: file });
+  else await session.page.screenshot({ path: file });
+  return file;
+}
+
 export async function startHeadless(): Promise<HeadlessSession> {
   if (!fs.existsSync(HOST_PAGE))
     throw new Error(
@@ -88,7 +128,9 @@ export async function startHeadless(): Promise<HeadlessSession> {
   const failures: string[] = [];
   try {
     page = await browser.newPage();
-    await page.setViewport({ width: 1200, height: 900 });
+    // Taller than the 900x700 editor host so an element screenshot of it is
+    // never clipped by the viewport.
+    await page.setViewport({ width: 1200, height: 1000 });
     page.on('pageerror', (error) => failures.push(String(error)));
     await page.goto(`file://${HOST_PAGE}`, { waitUntil: 'load' });
     await page.waitForFunction(

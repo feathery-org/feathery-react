@@ -59,3 +59,6 @@ harness/bindings/bundle.js
 
 # The headless real-engine test lane build output (yarn test:headless)
 .headless-build
+
+# Screenshots the headless lane takes at each settled state (yarn test:headless)
+.headless-evidence

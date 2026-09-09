@@ -12,6 +12,7 @@
  * lives in the specs; this is transport plus the two things jsdom cannot do:
  * lay out, and therefore register content controls and walk laid-out widgets.
  */
+import { registerLicense } from '@syncfusion/ej2-base';
 import {
   DocumentEditor,
   Editor,
@@ -33,6 +34,16 @@ import {
   listRevisionGroups,
   resolveLiveRevisionGroupsAsOneUndo
 } from '../../../../../utils/documentEditorPrimitives';
+
+// Declared the way `src/utils/init.ts` declares `__PACKAGE_VERSION__`: the
+// bundler substitutes it (see buildHostBundle's DefinePlugin), so it needs a
+// type here and nothing else.
+declare const __SYNCFUSION_LICENSE_KEY__: string;
+
+// A trial build throws a modal over the document, which makes every screenshot
+// evidence of a dialog rather than of the split. Register when a key is
+// available; `dismissTrialNotice` below is the fallback for when one is not.
+if (__SYNCFUSION_LICENSE_KEY__) registerLicense(__SYNCFUSION_LICENSE_KEY__);
 
 DocumentEditor.Inject(
   Editor,
@@ -283,6 +294,82 @@ const api = {
       messages: result.results.map((entry: any) => String(entry.message ?? '')),
       moving
     };
+  },
+
+  /**
+   * One editor undo, then a settle tick, then the three numbers that say where
+   * the document now stands. `serialized` is returned so a spec can compare
+   * against its own pristine capture without a second round trip.
+   */
+  async undoOnce(): Promise<{
+    ok: boolean;
+    error: string;
+    len: number;
+    controls: number;
+    revisions: number;
+    serialized: string;
+  }> {
+    let ok = true;
+    let error = '';
+    try {
+      live().editorHistory.undo();
+    } catch (thrown) {
+      ok = false;
+      error = String(thrown);
+    }
+    await frame();
+    const serialized = live().serialize();
+    return {
+      ok,
+      error,
+      len: serialized.length,
+      controls: api.contentControlCount(),
+      revisions: live().revisions.length,
+      serialized
+    };
+  },
+
+  /**
+   * Take the trial licence furniture out of the page before a screenshot.
+   *
+   * Without a licence key the engine injects a modal dialog and a banner over
+   * the document, and a shot of those proves nothing about the split. This
+   * removes only that furniture; it touches no editor state, so a shot after it
+   * is the same laid-out document a licensed build would show.
+   */
+  dismissTrialNotice(): number {
+    // EVERY body child except the editor, rather than a class list. The trial
+    // furniture is a banner AND a modal AND its overlay, each injected under
+    // its own generated classes, and a selector list missed them - measured, a
+    // shot taken after one still showed the dialog. This host page has exactly
+    // one thing in it that matters, so naming what to KEEP is the reliable
+    // direction.
+    const host = document.getElementById('fm-editor');
+    const doomed = Array.from(document.body.children).filter(
+      (node) => node !== host && !host?.contains(node)
+    );
+    for (const node of doomed) node.remove();
+    return doomed.length;
+  },
+
+  /**
+   * Scroll the laid-out document to the first occurrence of some text, so a
+   * screenshot shows the rows under test rather than page one.
+   *
+   * Driven through the engine's own Search rather than a scrollTop guess: the
+   * page a widget lands on is not knowable from outside layout.
+   */
+  async focus(text: string): Promise<boolean> {
+    try {
+      const search: any = (live() as any).search;
+      search.findAll(text);
+      if (!search.searchResults?.length) return false;
+      search.searchResults.index = 0;
+      await frame();
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   groups: (): any[] =>
