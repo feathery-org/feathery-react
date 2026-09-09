@@ -10193,11 +10193,40 @@ export const ANCHORED_OP_HANDLERS: {
     // remove rather than only the anchored one - it was written for a row set
     // and was simply being handed one row at a time.
     assertRowsAreRemovable(blocks, tableAnchor, requested);
+    const preWriteSfdt = serializeSfdt(editor);
+    const preWriteTable = tableBlockAt(preWriteSfdt, tableAnchor);
     const bookmarkClamps = collectBookmarkClampIntents(
       editor,
-      tableBlockAt(serializeSfdt(editor), tableAnchor),
+      preWriteTable,
       requested
     );
+    // The table's banding, read BEFORE the rows are marked. A row deletion
+    // changes which rows survive, so the change-set finalizer must revisit the
+    // stripes from the accept projection - and it can only revisit a table
+    // someone recorded. The bound split records both fragments from inside
+    // duplicate_table, so a split in ONE change set was already right; a
+    // delete_row arriving on its own (the model composing a split by hand in a
+    // second call, or a plain "delete these rows") never was. Measured on the
+    // browser document: Buildings and Stock marked deleted, Contents still
+    // carrying the second row's shade.
+    const preWriteAppearance = preWriteTable
+      ? collectTableAppearance(preWriteTable)
+      : null;
+    const bandingHeaderRows = preWriteAppearance
+      ? effectiveHeaderRows({
+          blocks,
+          sfdt: preWriteSfdt,
+          tableAnchor,
+          source: preWriteAppearance
+        })
+      : 0;
+    const banding = preWriteAppearance
+      ? detectTableBanding(preWriteAppearance) ?? undefined
+      : undefined;
+    const bandedTableId = bindingRuntime(
+      editor,
+      preWriteSfdt
+    )?.tablesByAnchor.get(tableAnchor)?.tableId;
     // DESCENDING, so that a run whose rows are withdrawn - physically removed,
     // unlike a tracked delete, which leaves them in place - cannot shift the rows
     // a later run still has to address: every run left to do sits above it.
@@ -10219,8 +10248,18 @@ export const ANCHORED_OP_HANDLERS: {
     const withdrew =
       columns.size -
       tableRowColumns(flattenSfdt(postWriteSfdt), tableAnchor).size;
+    const footprint = banding
+      ? captureTableFootprint(
+          postWriteSfdt,
+          tableAnchor,
+          bandingHeaderRows,
+          banding,
+          bandedTableId
+        )
+      : null;
     return {
       postWriteSfdt,
+      ...(footprint ? { tableFootprints: [footprint] } : {}),
       ...(bookmarkClamps.length
         ? { details: bookmarkClampReceipts(bookmarkClamps), bookmarkClamps }
         : {}),
@@ -14656,6 +14695,28 @@ function boundDeleteRowsPlan(
         requested
       ),
     execute(state) {
+      // The table's banding and header band, read BEFORE any row is marked and
+      // through the same owners the bound duplicate reads them through. A row
+      // deletion changes which rows survive, so the change-set finalizer must
+      // revisit the stripes from the accept projection - and it can only
+      // revisit a table an op recorded. Measured on the browser document with
+      // Buildings and Stock deleted in a change set of their own: Contents
+      // kept the second row's shade, because nothing had recorded the table.
+      const sourceTableBlock = tableBlockAt(state.sfdt, tableRoute.anchor);
+      const sourceAppearance = sourceTableBlock
+        ? collectTableAppearance(sourceTableBlock)
+        : null;
+      const sourceHeaderRows = sourceAppearance
+        ? effectiveHeaderRows({
+            blocks: flattenSfdt(state.sfdt),
+            sfdt: state.sfdt,
+            tableAnchor: tableRoute.anchor,
+            source: sourceAppearance
+          })
+        : 0;
+      const sourceBanding = sourceAppearance
+        ? detectTableBanding(sourceAppearance) ?? undefined
+        : undefined;
       let next = state.sfdt;
       let nextIndex = state.index;
       for (const { rowId } of rowIds) {
@@ -14683,9 +14744,23 @@ function boundDeleteRowsPlan(
             .map((entry) => entry.rowId)
             .join(', ')} from table "${tableRoute.tableId}". Nothing was kept.`
         );
+      // Recorded from the PRE-WRITE document on purpose. `next` is the engine's
+      // projection with the rows already gone (5 rows); the live document the
+      // finalizer reads still holds them as tracked deletions (7 rows), and a
+      // footprint is matched by its live shape before anything is written.
+      const footprint = sourceBanding
+        ? captureTableFootprint(
+            state.sfdt,
+            tableRoute.anchor,
+            sourceHeaderRows,
+            sourceBanding,
+            tableRoute.tableId
+          )
+        : null;
       return {
         sfdt: next,
         anchor: block.anchor,
+        ...(footprint ? { tableFootprints: [footprint] } : {}),
         details: [
           `table: ${tableRoute.tableId}`,
           `removed row ids: ${rowIds.map((entry) => entry.rowId).join(', ')}`

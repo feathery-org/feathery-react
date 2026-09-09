@@ -441,6 +441,38 @@ const api = {
     };
   },
 
+  /** A standalone tracked delete_row of the given item rows, one change set. */
+  deleteRows(tableId: string, rows: number[]): { outcomes: string[]; messages: string[]; warnings: string[] } {
+    const blockIndex = tableBlockIndex(tableId);
+    const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'delete_row',
+          anchor: `0;${blockIndex};${rows[0]};0;0`,
+          rows
+        } as any
+      ]
+    });
+    return {
+      outcomes: result.results.map((entry: any) =>
+        entry.ok ? 'ok' : String(entry.error)
+      ),
+      messages: result.results.map((entry: any) => String(entry.message ?? '')),
+      warnings: (result.warnings ?? []).map((entry: any) => String(entry))
+    };
+  },
+
+  /** Background colour of the first cell of every row of the table, in order. */
+  rowShading(tableId: string): Array<string | null> {
+    const block: any = tableBlockOf(tableId);
+    const rows: any[] = block?.rows ?? [];
+    return rows.map((row: any) => {
+      const cell = row?.cells?.[0];
+      const colour = cell?.cellFormat?.shading?.backgroundColor;
+      return !colour || colour === 'empty' ? null : String(colour);
+    });
+  },
+
   /**
    * One editor undo, then a settle tick, then the three numbers that say where
    * the document now stands. `serialized` is returned so a spec can compare
