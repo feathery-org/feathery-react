@@ -1,6 +1,11 @@
 import internalState from '../../utils/internalState';
 import { getPositionKey } from '../../utils/hideAndRepeats';
 import { InlineErrorEntry, InlineErrors } from '../../utils/inlineErrors';
+import {
+  deriveArrayColumns,
+  deriveArrayFieldValues,
+  parseArrayTableValue
+} from '../../elements/basic/TableElement/arrayTableSource';
 
 export const getLiveStepKey = (state: any): string | undefined =>
   state.latestStepName ?? state.currentStep?.key;
@@ -150,6 +155,9 @@ export type FoundTable = {
   table: any;
   columns: Array<{ name: string; field_key?: string }>;
   rowCount: number;
+  // Set when the rows do not live in form fields (2d_array source), keyed by
+  // the same synthetic column keys the table renders with.
+  columnValues?: Record<string, any[]>;
 };
 
 export type TableLookupResult =
@@ -200,10 +208,35 @@ export const findTableOnCurrentStep = (
       error: `Table '${tableId}' is on the current step but is hidden right now.`
     };
   }
+  const fieldsMap = state.fields ?? {};
+
+  // A 2d_array table stores no columns; both its columns and its rows come out
+  // of the one field holding the array.
+  if (table?.properties?.data_source === '2d_array') {
+    const arrayKey = table.properties.array_field_key;
+    const parsed = parseArrayTableValue(
+      arrayKey ? fieldsMap[arrayKey]?.value : undefined,
+      arrayKey
+    );
+    if (parsed.error) {
+      return { ok: false, errorType: 'shape_mismatch', error: parsed.error };
+    }
+    const columns = deriveArrayColumns(tableId, parsed.rows);
+    return {
+      ok: true,
+      found: {
+        state,
+        table,
+        columns,
+        rowCount: Math.max(parsed.rows.length - 1, 0),
+        columnValues: deriveArrayFieldValues(columns, parsed.rows)
+      }
+    };
+  }
+
   const columns = Array.isArray(table?.properties?.columns)
     ? table.properties.columns
     : [];
-  const fieldsMap = state.fields ?? {};
   const rowCount = columns.reduce((max: number, col: any) => {
     const v = col?.field_key ? fieldsMap[col.field_key]?.value : undefined;
     return Array.isArray(v) ? Math.max(max, v.length) : max;
@@ -230,7 +263,9 @@ export const buildRowData = (
   const rowData: Record<string, any> = {};
   for (const col of found.columns) {
     if (!col?.field_key) continue;
-    const v = found.state.fields?.[col.field_key]?.value;
+    const v = found.columnValues
+      ? found.columnValues[col.field_key]
+      : found.state.fields?.[col.field_key]?.value;
     const cValue = Array.isArray(v) ? v[rowIndex] : v;
     rowData[col.name] = cValue;
   }

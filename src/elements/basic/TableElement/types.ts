@@ -14,5 +14,6 @@ export type Column = {
 
 export type CellCoord = { rowIndex: number; colIndex: number };
 
-// Table row storage lives in a Data Hub instead of form field values.
-export type TableDataSource = 'fields' | 'hub';
+// Where the table's rows come from: form field values, a Data Hub, or a single
+// hidden field holding an array of arrays.
+export type TableDataSource = 'fields' | 'hub' | '2d_array';
