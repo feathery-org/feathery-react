@@ -8377,6 +8377,28 @@ function relocateBlockRange(
 }
 
 /** Resolves `targetAnchor` + `position` into the caret the payload lands at. */
+/**
+ * Where a split's new table goes when the op does not say.
+ *
+ * `targetAnchor` became optional with the composed path, whose placement is
+ * engine-owned - so the native path has to answer the same question, and it
+ * answers it identically: the first caret after the source table, which is
+ * where `duplicate_table` puts a copy.
+ */
+function splitTarget(
+  blocks: FlatBlock[],
+  op: EditOp,
+  source: BlockRange
+): PasteTarget {
+  if (String(op.targetAnchor ?? '').trim())
+    return resolveRelocationTarget(blocks, op, source);
+  const address = topLevelAddress(source.blocks[0].anchor);
+  return {
+    anchor: source.endAnchor,
+    address: { ...address, block: address.block + 1 }
+  };
+}
+
 function resolveRelocationTarget(
   blocks: FlatBlock[],
   op: EditOp,
@@ -9574,6 +9596,11 @@ export const ANCHORED_OP_HANDLERS: {
     );
   },
   split_table: ({ editor, op, block, byAnchor }) => {
+    // A refusal decided while compiling the split (see compileTableSplit)
+    // arrives here on the original op, exactly as insert_section's does.
+    const compiled = op.__sectionRefusal;
+    if (compiled)
+      throw new OpError(compiled.code, compiled.message, compiled.details);
     const blocks = Array.from(byAnchor.values());
     const tableAnchor = tableAnchorForBlock(block);
     if (!tableAnchor)
@@ -9591,7 +9618,6 @@ export const ANCHORED_OP_HANDLERS: {
     // the merge spans are all things flattening drops.
     const sfdt = serializeSfdt(editor);
     const tableBlock = tableBlockAt(sfdt, tableAnchor);
-    assertTableHasNoBindings(sfdt, tableAnchor, 'split_table');
     const appearance = collectTableAppearance(tableBlock);
     if (!appearance)
       throw new OpError(
@@ -9616,6 +9642,17 @@ export const ANCHORED_OP_HANDLERS: {
       headerRows,
       tableBlock
     );
+    // AFTER the plan, deliberately. A merged span or a header row named for
+    // extraction is a refusal about THIS split, and it used to be masked by the
+    // generic bindings refusal because that one ran first.
+    //
+    // A table whose ROWS are bound never reaches this line: `compileTableSplit`
+    // compiled it into duplicate_table + delete_row before any handler ran.
+    // What still reaches it is a table carrying cell controls with no binding
+    // route to prove its row roles - no provable roles means no `keepRows`,
+    // which means no composition, and the selection paste below is measured to
+    // destroy exactly those controls. So this refusal is not a leftover.
+    assertTableHasNoBindings(sfdt, tableAnchor, 'split_table');
     // A split DELETES rows from the source, so both source-side refusals apply
     // exactly as they do to a move: rejecting this card would fold away a third
     // party's pending edit, and SyncFusion cannot accept a delete of the last
@@ -9625,7 +9662,7 @@ export const ANCHORED_OP_HANDLERS: {
     // AFTER every refusal this handler can raise, target resolution included:
     // even a pure intent must not be collected for a split that is about to
     // say "nothing was written".
-    const target = resolveRelocationTarget(blocks, op, source);
+    const target = splitTarget(blocks, op, source);
     const bookmarkClamps = collectBookmarkClampIntents(
       editor,
       tableBlock,
@@ -18789,21 +18826,32 @@ interface CompiledSectionEdit {
   label: string;
 }
 
-interface SectionExpansionEntry {
+interface ComposedExpansionEntry {
   originalIndex: number;
   original: EditOp;
   start: number;
   count: number;
   labels: string[];
-  section: boolean;
+  /**
+   * WHICH high-level op these children were compiled from, empty for an op
+   * that passed through untouched.
+   *
+   * Was `section: boolean` while `insert_section` was the only composed op.
+   * `split_table` is the second - one table becomes two through
+   * `duplicate_table` + `delete_row` - and the collapse below is identical for
+   * both: report the child that failed, labelled, or report one success under
+   * the original op's name. A parallel expansion path for the second op would
+   * have been two mechanisms owning one contract.
+   */
+  composed: '' | 'insert_section' | 'split_table';
   contentBlocks: number;
   tables: number;
   inheritance?: ComposedSectionInheritance;
 }
 
-interface SectionExpansion {
+interface ComposedExpansion {
   edits: EditOp[];
-  entries: SectionExpansionEntry[];
+  entries: ComposedExpansionEntry[];
   expandedToOriginal: number[];
   changed: boolean;
 }
@@ -19980,12 +20028,227 @@ function compileSectionComposer(
   };
 }
 
-function expandSectionComposerEdits(
+/**
+ * A SPLIT IS SUGAR. One table becomes two by copying the rows that move and
+ * deleting them from the source - `duplicate_table` with `keepRows`, then
+ * `delete_row` of those same rows - and both of those route through the
+ * binding engine's own mutation plan.
+ *
+ * WHY THIS EXISTS, and it is not a refactor. The native `split_table` handler
+ * captures the table through a SELECTION and pastes a pruned payload
+ * (`relocateBlockRange`). Measured in a real browser 2026-08-27: that paste
+ * DROPS identified elements - content controls and bookmarks - and the
+ * originals then die with the tracked-deleted source rows on accept, taking ten
+ * of eleven binding tags with them. jsdom's paste preserves them, so no jsdom
+ * test could see it, and `assertTableHasNoBindings` was the standing refusal
+ * that kept a bound table away from that path. The captain hit that refusal on
+ * his own proposal on 2026-09-08.
+ *
+ * `duplicate_table` does not share the defect: it clones SFDT and pastes it as
+ * tracked segments, so the copy carries its own content controls as bytes.
+ * Measured in a REAL headless browser on the captain's own document, at
+ * 98c3a7f5: the composition applies, mints both fragments, conserves every
+ * summary line, and accepts with no surviving revision and no dropped binding
+ * name. That is the evidence class the 2026-08-27 revert lacked, and it is why
+ * the refusal can go for the tables this compiler takes over.
+ *
+ * WHAT IT TAKES OVER, and what it deliberately does not. Only a table whose
+ * rows are BOUND, because `keepRows` needs proven row roles and only bindings
+ * prove them (`keep_rows_roles_not_derivable`). Three categories:
+ *
+ *   bound rows       - compiled here. The refusal never runs.
+ *   cell controls,
+ *   no table route   - NOT compiled: no provable roles, so no `keepRows`, and
+ *                      the native path is exactly what destroys controls. The
+ *                      refusal stays, and it is still correct.
+ *   no controls      - NOT compiled: nothing for a paste to drop, and the
+ *                      native handler is the measured-correct path there.
+ *
+ * PLACEMENT IS ENGINE-OWNED here: the copy lands immediately after its source,
+ * because that is where `duplicate_table` puts it. `targetAnchor` is therefore
+ * optional on the op, and when it is supplied it must name that same position;
+ * anything else is refused rather than silently relocated.
+ *
+ * Returning null is how this compiler declines - the op then passes through
+ * untouched and the native handler owns it, refusals and all. So every
+ * split-plan refusal keeps its existing code and owner; this compiler only ever
+ * takes over a split whose plan already resolved cleanly.
+ */
+function compileTableSplit(
+  original: EditOp,
+  blocks: FlatBlock[],
+  byAnchor: Map<string, FlatBlock>,
+  sfdt: any,
+  editor: LiveEditor
+): { children: CompiledSectionEdit[] } | null {
+  const block = byAnchor.get(String(original.anchor ?? ''));
+  if (!block) return null;
+  const tableAnchor = tableAnchorForBlock(block);
+  if (!tableAnchor) return null;
+  // Bound ROWS, not merely a bound cell: this is the `keepRows` precondition,
+  // read from the same route the duplicate preflight reads it from.
+  const runtime = bindingRuntime(editor, sfdt);
+  const route = runtime?.tablesByAnchor.get(tableAnchor);
+  if (!runtime || !route?.table.rows.length) return null;
+  const tableBlock = tableBlockAt(sfdt, tableAnchor);
+  const appearance = tableBlock ? collectTableAppearance(tableBlock) : null;
+  if (!appearance) return null;
+  let extract: number[];
+  let source: BlockRange;
+  try {
+    source = resolveTableRange(blocks, tableAnchor);
+    // The header band read the SAME way the bound duplicate reads it, without
+    // the rendered-format reader. Not a shortcut: if this disagreed with what
+    // `duplicate_table` computes for the same table, the `keepRows` it is
+    // handed would be one row out of phase with the roles it validates against.
+    const headerRows = effectiveHeaderRows({
+      blocks,
+      sfdt,
+      tableAnchor,
+      source: appearance
+    });
+    const plan = resolveSplitRows(
+      original,
+      tableAnchor,
+      appearance,
+      headerRows,
+      tableBlock
+    );
+    // ITEM ROWS ONLY, and this is a property of what a split IS rather than a
+    // filter for the validator's benefit.
+    //
+    // `resolveSplitRows` calls every row below the header band "data", because
+    // for the native path that is all it can know. A bound table knows more: an
+    // AGGREGATE row is a total over the rows above it, so it belongs to BOTH
+    // fragments - each half gets its own subtotal, which is the whole point of
+    // splitting a schedule. It is therefore never moved, and `resolveKeepRows`
+    // refuses to have one named for exactly that reason.
+    //
+    // Measured before this filter existed: a positional split of the flagship
+    // inventory table at row 8 sent rows 8..18 to keepRows, and 16..18 are its
+    // totals band, so the change set died with `bound_row_not_found`.
+    const items = new Set(
+      deriveTableStructure({
+        tableBlock,
+        headerRows,
+        tableId: route.tableId,
+        documentFormulas: documentFormulaMap(runtime.index)
+      })
+        .rows.filter((row) => row.role === 'item')
+        .map((row) => row.index)
+    );
+    extract = plan.extract.filter((row) => items.has(row));
+    if (!extract.length) return null;
+  } catch {
+    return null;
+  }
+  const refusal = splitPlacementRefusal(blocks, original, source);
+  if (refusal)
+    return {
+      children: [
+        { edit: { ...original, __sectionRefusal: refusal }, label: 'placement' }
+      ]
+    };
+  // ONE group, so the two writes are one card. Absent `group` already means
+  // the change-set-wide unit, which is one card too.
+  const group = original.group ? { group: original.group } : {};
+  return {
+    children: [
+      {
+        edit: {
+          op: 'duplicate_table',
+          anchor: `${tableAnchor};0;0;0`,
+          rows: 'copy',
+          keepRows: extract,
+          ...group
+        } as EditOp,
+        label: 'copyRows'
+      },
+      {
+        edit: {
+          op: 'delete_row',
+          anchor: `${tableAnchor};${extract[0]};0;0`,
+          rows: extract,
+          ...group
+        } as EditOp,
+        label: 'removeMovedRows'
+      }
+    ]
+  };
+}
+
+/**
+ * The one thing a composed split cannot honour: a destination that is not
+ * where the copy goes.
+ *
+ * `duplicate_table` places the copy immediately after its source and takes no
+ * target, so a `targetAnchor` naming anywhere else would be silently ignored -
+ * and a silently ignored placement is worse than a refusal, because the model
+ * is told the table went somewhere it did not.
+ */
+function splitPlacementRefusal(
+  blocks: FlatBlock[],
+  op: EditOp,
+  source: BlockRange
+): { code: string; message: string; details?: string[] } | undefined {
+  if (!String(op.targetAnchor ?? '').trim()) return undefined;
+  const afterSource = topLevelAddress(source.blocks[0].anchor);
+  const expected = { ...afterSource, block: afterSource.block + 1 };
+  const describe = (address: { section: number; block: number }) =>
+    `${address.section};${address.block}`;
+  let wanted: PasteTarget;
+  try {
+    wanted = resolveRelocationTarget(blocks, op, source);
+  } catch (error) {
+    // ONE headline code for every way a supplied target is not the engine's
+    // placement, with the underlying reason kept as a detail. Propagating the
+    // relocation code instead told the model its anchor landed in a table cell,
+    // which is true and useless: the actionable fact is that a split does not
+    // take a destination at all.
+    return {
+      code: 'split_table_target_not_after_source',
+      message: `split_table puts the new table immediately after the one it splits, and ${JSON.stringify(
+        op.targetAnchor
+      )} does not name ${describe(expected)}. Nothing was written.`,
+      details: [
+        `source table: ${source.anchor}`,
+        `engine placement: ${describe(expected)}`,
+        `targetAnchor could not be resolved as that position: ${
+          isOpError(error) ? `${error.code}: ${error.message}` : String(error)
+        }`,
+        'Omit targetAnchor - placement is engine-owned for a split. To put the new table somewhere else, split it first and then move_section the result, which is its own reviewable change.'
+      ]
+    };
+  }
+  if (
+    wanted.address.section === expected.section &&
+    wanted.address.block === expected.block
+  )
+    return undefined;
+  return {
+    code: 'split_table_target_not_after_source',
+    message: `split_table puts the new table immediately after the one it splits, and ${JSON.stringify(
+      op.targetAnchor
+    )} names ${describe(wanted.address)} instead of ${describe(
+      expected
+    )}. Nothing was written.`,
+    details: [
+      `source table: ${source.anchor}`,
+      `engine placement: ${describe(expected)}`,
+      `targetAnchor resolved to: ${describe(wanted.address)}`,
+      'Omit targetAnchor - placement is engine-owned for a split. To put the new table somewhere else, split it first and then move_section the result, which is its own reviewable change.'
+    ]
+  };
+}
+
+function expandComposedEdits(
   editor: LiveEditor,
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
-): SectionExpansion {
+): ComposedExpansion {
   const requested = Array.isArray(input?.edits) ? input.edits : [];
-  const changed = requested.some((op) => op?.op === 'insert_section');
+  const changed = requested.some(
+    (op) => op?.op === 'insert_section' || op?.op === 'split_table'
+  );
   if (!changed)
     return {
       edits: requested,
@@ -19995,7 +20258,7 @@ function expandSectionComposerEdits(
         start: originalIndex,
         count: 1,
         labels: [original.op],
-        section: false,
+        composed: '',
         contentBlocks: 0,
         tables: 0
       })),
@@ -20007,10 +20270,31 @@ function expandSectionComposerEdits(
   const blocks = flattenSfdt(sfdt);
   const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
   const edits: EditOp[] = [];
-  const entries: SectionExpansionEntry[] = [];
+  const entries: ComposedExpansionEntry[] = [];
   const expandedToOriginal: number[] = [];
   requested.forEach((original, originalIndex) => {
     const start = edits.length;
+    const split =
+      original?.op === 'split_table'
+        ? compileTableSplit(original, blocks, byAnchor, sfdt, editor)
+        : null;
+    if (split) {
+      for (const child of split.children) {
+        edits.push(child.edit);
+        expandedToOriginal.push(originalIndex);
+      }
+      entries.push({
+        originalIndex,
+        original,
+        start,
+        count: split.children.length,
+        labels: split.children.map((child) => child.label),
+        composed: 'split_table',
+        contentBlocks: 0,
+        tables: 0
+      });
+      return;
+    }
     if (original?.op !== 'insert_section') {
       edits.push(original);
       expandedToOriginal.push(originalIndex);
@@ -20020,7 +20304,7 @@ function expandSectionComposerEdits(
         start,
         count: 1,
         labels: [original?.op ?? 'edit'],
-        section: false,
+        composed: '',
         contentBlocks: 0,
         tables: 0
       });
@@ -20091,7 +20375,7 @@ function expandSectionComposerEdits(
       start,
       count: compiled.children.length,
       labels: compiled.children.map((child) => child.label),
-      section: true,
+      composed: 'insert_section',
       contentBlocks: compiled.contentBlocks,
       tables: compiled.tables,
       ...(compiled.inheritance ? { inheritance: compiled.inheritance } : {})
@@ -20139,9 +20423,34 @@ const GENERIC_GROUP_FAILURES = new Set([
   'change_set_preflight_failed'
 ]);
 
-function collapseSectionComposerResult(
+/**
+ * The assembly sentence, appended only when a SECTION was assembled.
+ *
+ * A composed `split_table` expands through the same seam but assembles no
+ * semantic blocks, and appending an empty list produced "The engine also
+ * assembled ." on every split.
+ */
+function announcementWithAssembly(
+  announcement: string,
+  expansion: ComposedExpansion
+): string {
+  const assembled = expansion.entries.filter(
+    (entry) => entry.composed === 'insert_section'
+  );
+  if (!assembled.length) return announcement;
+  return `${announcement} The engine also assembled ${assembled
+    .map(
+      (entry) =>
+        `${entry.contentBlocks} semantic blocks and ${entry.tables} tables at ${
+          entry.original.anchor ?? '(missing anchor)'
+        }`
+    )
+    .join('; ')}.`;
+}
+
+function collapseComposedResult(
   result: ApplyEditsResult,
-  expansion: SectionExpansion
+  expansion: ComposedExpansion
 ): ApplyEditsResult {
   if (!expansion.changed) return result;
   const results = expansion.entries.map((entry) => {
@@ -20149,7 +20458,7 @@ function collapseSectionComposerResult(
       entry.start,
       entry.start + entry.count
     );
-    if (!entry.section) return children[0];
+    if (!entry.composed) return children[0];
     // A batch-level refusal names ONE child and every sibling carries a generic
     // group code, so the child that failed for a reason is the one to report -
     // otherwise a composed section is refused as `change_set_preflight_failed`
@@ -20161,26 +20470,23 @@ function collapseSectionComposerResult(
     const failureAt = failedIndex >= 0 ? failedIndex : fallbackFailure;
     if (failureAt >= 0) {
       const child = children[failureAt];
-      const label = entry.labels[failureAt] ?? 'sectionSpec';
+      const label = entry.labels[failureAt] ?? entry.composed;
       return {
         ok: false,
-        op: 'insert_section',
+        op: entry.composed,
         ...(entry.original.anchor ? { anchor: entry.original.anchor } : {}),
-        error: child.error ?? 'section_assembly_failed',
-        message: `insert_section failed at ${label}: ${
+        error: child.error ?? 'composed_op_assembly_failed',
+        message: `${entry.composed} failed at ${label}: ${
           child.message ?? 'the engine refused this block'
         }`,
-        details: [
-          `failing section component: ${label}`,
-          ...(child.details ?? [])
-        ],
+        details: [`failing component: ${label}`, ...(child.details ?? [])],
         ...(child.retry ? { retry: child.retry } : {})
       } as EditResult;
     }
     const appearance = combinedComposerAppearance(children);
     return {
       ok: true,
-      op: 'insert_section',
+      op: entry.composed,
       ...(entry.original.anchor ? { anchor: entry.original.anchor } : {}),
       ...(appearance ? { appearance } : {}),
       ...(entry.inheritance ? { inherited: entry.inheritance } : {})
@@ -20199,17 +20505,10 @@ function collapseSectionComposerResult(
             )
           )
         })),
-        announcement: `${
-          result.changeSet.announcement
-        } The engine also assembled ${expansion.entries
-          .filter((entry) => entry.section)
-          .map(
-            (entry) =>
-              `${entry.contentBlocks} semantic blocks and ${
-                entry.tables
-              } tables at ${entry.original.anchor ?? '(missing anchor)'}`
-          )
-          .join('; ')}.`
+        announcement: announcementWithAssembly(
+          result.changeSet.announcement,
+          expansion
+        )
       }
     : undefined;
   return {
@@ -20271,13 +20570,13 @@ export function applyDocumentEdits(
     // cannot establish it, because jsdom has no layout to throw from.
     return withSilentEditSelections(editor, () =>
       withSerializationTiming(editor, serializationTiming, () => {
-        const expansion = expandSectionComposerEdits(editor, input);
+        const expansion = expandComposedEdits(editor, input);
         const result = applyDocumentEditsMeasured(
           editor,
           { ...input, edits: expansion.edits },
           serializationTiming
         );
-        return collapseSectionComposerResult(result, expansion);
+        return collapseComposedResult(result, expansion);
       })
     );
   } finally {

@@ -261,13 +261,20 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // shape, and it exists so that shape needs no enumeration: naming a boundary
     // costs one number where listing rows 5..39 would be counting.
     // Exactly one of the two.
-    // Unbound tables only, a bound table is split by duplicate_table keepRows
-    // plus delete_row
+    // A table whose ROWS ARE BOUND is SUGAR for duplicate_table keepRows plus
+    // delete_row, and the engine compiles it that way itself
+    // (compileTableSplit): one card, one group, both writes through the binding
+    // engine. The model sends split_table either way and never picks the path.
+    //
+    // `targetAnchor` is OPTIONAL because placement is engine-owned: the new
+    // table lands immediately after the one it splits. An anchor naming
+    // anywhere else is refused rather than ignored. To place it elsewhere,
+    // split, then move_section the result as its own change.
     op: 'split_table',
     params: {
       rows: 'int>=0[]?',
       splitAtRow: 'int>=0?',
-      targetAnchor: 'string',
+      targetAnchor: 'string?',
       position: 'enum[before,after]?'
     },
     requiresAnchor: true
