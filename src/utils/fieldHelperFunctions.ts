@@ -1,3 +1,7 @@
+import {
+  normalizePhoneValues,
+  phoneServarsFromSteps
+} from './normalizePhoneValues';
 import { findCountryByID } from '../elements/components/data/countries';
 import { formatDateString } from '../elements/fields/DateSelectorField/utils';
 import { featheryWindow } from './browser';
@@ -548,7 +552,14 @@ export function saveInitialValuesAndUrlParams({
     });
   }
   if (!isObjectEmpty(valuesToSubmit)) {
-    updateFieldValues(valuesToSubmit, { rerender: rerenderRequired });
+    valuesToSubmit = normalizePhoneValues(
+      valuesToSubmit,
+      phoneServarsFromSteps(steps)
+    );
+    updateFieldValues(valuesToSubmit, {
+      rerender: rerenderRequired,
+      preserveCanonicalPhones: true
+    });
     client.submitCustom(valuesToSubmit, { override: false });
   }
 }

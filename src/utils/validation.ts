@@ -1,3 +1,4 @@
+import { isCanonicalPhoneNumber, normalizePhoneNumber } from './phoneNumber';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { setFormElementError } from './formHelperFunctions';
 import { InlineErrors } from './inlineErrors';
@@ -190,10 +191,15 @@ let phoneLibPromise: Promise<any> = Promise.resolve();
 const loadPhoneValidator = () => {
   phoneLibPromise = import(
     /* webpackChunkName: "libphonenumber" */ 'libphonenumber-js'
-  ).then((mod) => {
-    phoneLib = mod;
-    return mod;
-  });
+  )
+    .then((mod) => {
+      phoneLib = mod;
+      return mod;
+    })
+    // Form loading awaits this promise. A blocked or failed chunk download must
+    // degrade to "no parser" (values pass through unchanged) rather than
+    // preventing the form from rendering.
+    .catch(() => null);
 };
 
 const validators = {
@@ -208,14 +214,7 @@ const validators = {
 
     return emailPattern.test(a);
   },
-  phone: (a: string) => {
-    try {
-      return phoneLib.isValidPhoneNumber(`+${a}`);
-    } catch (e) {
-      // Invalid phone number
-      return false;
-    }
-  },
+  phone: (a: string) => isCanonicalPhoneNumber(a, phoneLib),
   url: (a: string) => {
     if (!isUrl(a)) return false;
     try {
@@ -311,20 +310,21 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
 
   const defaultErr = defaultErrors[servar.type];
   // Check if value is badly formatted
-  if (servar.type === 'phone_number' && !validators.phone(value)) {
-    // A custom logic rule may erroneously store a leading '+'. If the number
-    // is otherwise valid, strip it so validation and step submission see the
-    // digits-only value
-    const stripped =
-      typeof value === 'string' ? value.replace(/^\++/, '') : value;
-    if (stripped !== value && validators.phone(stripped)) {
+  if (servar.type === 'phone_number') {
+    // Canonical values may have an explicit foreign country chosen by a rule.
+    // Do not reinterpret those digits using this field's default country.
+    const normalized =
+      /^\d+$/.test(value) && validators.phone(value)
+        ? value
+        : normalizePhoneNumber(value, servar.metadata, phoneLib);
+    if (!validators.phone(normalized)) return defaultErr;
+    if (normalized !== value) {
       if (servar.repeated) {
-        // @ts-ignore
-        fieldValues[servar.key][repeat] = stripped;
-      } else fieldValues[servar.key] = stripped;
-      return '';
+        fieldValues[servar.key] = (fieldValues[servar.key] as any[]).map(
+          (entry, index) => (index === repeat ? normalized : entry)
+        );
+      } else fieldValues[servar.key] = normalized;
     }
-    return defaultErr;
   } else if (servar.type === 'email' && !validators.email(value)) {
     return defaultErr;
   } else if (servar.type === 'url' && !validators.url(value)) {
