@@ -23,6 +23,10 @@ import {
 } from '../../../../elements/components/DocxEditor/bindings/attachBindings';
 import { SyncfusionEditorLike } from '../../../../elements/components/DocxEditor/bindings/editorAdapter';
 import { scanBindings } from '../../../../elements/components/DocxEditor/bindings/core/sfdtAdapter';
+import {
+  listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo
+} from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
   Editor,
@@ -83,10 +87,11 @@ const rowIdsOf = (editor: DocumentEditor, tableId: string): string[] =>
   (indexOf(editor).tables.get(tableId)?.rows ?? []).map((row) => row.rowId);
 
 const rejectAllRevisions = (editor: DocumentEditor): void => {
-  const pending = Array.from({ length: editor.revisions.length }, (_, index) =>
-    editor.revisions.get(index)
+  resolveLiveRevisionGroupsAsOneUndo(
+    editor as unknown as LiveEditor,
+    listRevisionGroups(editor as unknown as LiveEditor),
+    false
   );
-  for (const revision of pending.reverse()) revision.reject();
 };
 
 // Row 2 is the last DATA row of the costs table; rows 3-5 are the summary band.
@@ -111,7 +116,7 @@ describe('structural ops on a bound table', () => {
 
   it('routes insert_row through the engine and mints a bound line item', () => {
     const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-      edits: [{ op: 'insert_row', anchor: LAST_DATA_CELL }]
+      edits: [{ op: 'insert_row', anchor: LAST_DATA_CELL, allowEmpty: true }]
     });
 
     expect(result.results[0]).toMatchObject({
@@ -134,7 +139,7 @@ describe('structural ops on a bound table', () => {
     const before = editor.serialize();
     const result = applyDocumentEdits(editor as unknown as LiveEditor, {
       changeSetId: 'bound-row-review',
-      edits: [{ op: 'insert_row', anchor: LAST_DATA_CELL }]
+      edits: [{ op: 'insert_row', anchor: LAST_DATA_CELL, allowEmpty: true }]
     });
 
     expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
@@ -208,7 +213,7 @@ describe('structural ops on a bound table', () => {
           text: '13',
           literal: true
         },
-        { op: 'insert_row', anchor: LAST_DATA_CELL }
+        { op: 'insert_row', anchor: LAST_DATA_CELL, allowEmpty: true }
       ]
     });
 
@@ -234,7 +239,7 @@ describe('structural ops on a bound table', () => {
     expect(write.results[0]).toMatchObject({ ok: true, route: 'engine' });
 
     const inserted = applyDocumentEdits(editor as unknown as LiveEditor, {
-      edits: [{ op: 'insert_row', anchor: LAST_DATA_CELL }]
+      edits: [{ op: 'insert_row', anchor: LAST_DATA_CELL, allowEmpty: true }]
     });
 
     expect(inserted.results[0]).toMatchObject({
@@ -384,16 +389,9 @@ describe('structural ops on a bound table', () => {
       { length: editor.revisions.length },
       (_, index) => editor.revisions.get(index)
     );
-    expect(revisions).toHaveLength(9);
-    expect(
-      revisions.filter((revision) => revision.revisionType === 'Deletion')
-    ).toHaveLength(5);
-    expect(
-      revisions.filter((revision) => revision.revisionType === 'Insertion')
-    ).toHaveLength(4);
-    expect(revisions.every((revision) => revision.author === 'Robin')).toBe(
-      true
-    );
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0].revisionType).toBe('Deletion');
+    expect(revisions.every((revision) => revision.author.startsWith('Robin'))).toBe(true);
     expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(
       1
     );

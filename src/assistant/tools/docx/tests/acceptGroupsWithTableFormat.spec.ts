@@ -178,13 +178,17 @@ const rejectStream = (ed: DocumentEditor) =>
 const apply = (ed: DocumentEditor, edits: any[], changeSetId: string) =>
   applyDocumentEdits(ed as unknown as LiveEditor, { edits, changeSetId });
 
-/** Reject the group with this id by clicking ONE of its member revisions. */
+/** Reject the review card with this group id through the production resolver. */
 const rejectGroup = (ed: DocumentEditor, group: string) => {
   const view = listRevisionGroups(ed as unknown as LiveEditor).find(
     (entry) => entry.group === group
   );
   expect(view).toBeDefined();
-  (view as any).items[0].revision.reject();
+  resolveLiveRevisionGroupsAsOneUndo(
+    ed as unknown as LiveEditor,
+    [view as any],
+    false
+  );
 };
 
 /**
@@ -268,7 +272,7 @@ describe('one change set that edits content AND restripes a table', () => {
       const result = apply(
         ed,
         [
-          { op: 'insert_row', anchor: '0;1;2;0;0' },
+          { op: 'insert_row', anchor: '0;1;2;0;0', allowEmpty: true },
           {
             op: 'set_cell_text',
             anchor: '0;1;1;0;0',
@@ -303,7 +307,7 @@ describe('one change set that edits content AND restripes a table', () => {
       const result = apply(
         ed,
         [
-          { op: 'insert_row', anchor: '0;1;2;0;0' },
+          { op: 'insert_row', anchor: '0;1;2;0;0', allowEmpty: true },
           {
             op: 'set_cell_text',
             anchor: '0;1;1;0;0',
@@ -372,7 +376,7 @@ describe('one change set that edits content AND restripes a table', () => {
       const result = apply(
         ed,
         [
-          { op: 'insert_row', anchor: '0;1;2;0;0' },
+          { op: 'insert_row', anchor: '0;1;2;0;0', allowEmpty: true },
           // An EXISTING cell above the insert point: a tracked replace, so this
           // op is a Deletion revision plus an Insertion revision of its own and
           // the batch really does have several cards to bind into one.
@@ -408,7 +412,11 @@ describe('one change set that edits content AND restripes a table', () => {
       expect(rejectStream(ed)).not.toBe(ed.serialize());
 
       // One decision, taken from one member of the group.
-      revisions(ed)[0].reject();
+      resolveLiveRevisionGroupsAsOneUndo(
+        ed as unknown as LiveEditor,
+        listRevisionGroups(ed as unknown as LiveEditor),
+        false
+      );
 
       expect(fills(ed, '0;1')).toEqual(originalFills);
       expect(facts(ed, '0;1').rowCount).toBe(originalRowCount);
@@ -419,13 +427,13 @@ describe('one change set that edits content AND restripes a table', () => {
     }
   });
 
-  it('accepts everything from one member too, appearance included', () => {
+  it('accepts everything through one review card, appearance included', () => {
     const ed = makeEditor(twoTables());
     try {
       const result = apply(
         ed,
         [
-          { op: 'insert_row', anchor: '0;1;2;0;0' },
+          { op: 'insert_row', anchor: '0;1;2;0;0', allowEmpty: true },
           { op: 'set_cell_text', anchor: '0;1;3;0;0', text: '2a' }
         ],
         'accept-all'
@@ -433,7 +441,11 @@ describe('one change set that edits content AND restripes a table', () => {
       expect(result.results.every((entry) => entry.ok)).toBe(true);
       const acceptedFills = fills(ed, '0;1');
 
-      revisions(ed)[0].accept();
+      resolveLiveRevisionGroupsAsOneUndo(
+        ed as unknown as LiveEditor,
+        listRevisionGroups(ed as unknown as LiveEditor),
+        true
+      );
 
       // Accepting resolves the whole group - no card is left behind - and the
       // appearance the batch wrote simply stays, since accepting an appearance
@@ -456,7 +468,7 @@ describe('one change set that edits content AND restripes a table', () => {
 describe('appearance restores belong to their own group and no other', () => {
   const edits = [
     // 'sched-a' disturbs the banded table's stripe and repairs it.
-    { op: 'insert_row', anchor: '0;1;2;0;0', group: 'sched-a' },
+    { op: 'insert_row', anchor: '0;1;2;0;0', group: 'sched-a', allowEmpty: true },
     // 'sched-b' is pure content, in the OTHER table.
     {
       op: 'set_cell_text',
@@ -561,7 +573,7 @@ describe('the grouped card survives a save and reload', () => {
       apply(
         ed,
         [
-          { op: 'insert_row', anchor: '0;1;2;0;0', group: 'sched-a' },
+          { op: 'insert_row', anchor: '0;1;2;0;0', group: 'sched-a', allowEmpty: true },
           {
             op: 'set_cell_text',
             anchor: '0;2;1;0;0',
@@ -680,7 +692,7 @@ describe('the grouped card survives a save and reload', () => {
       const result = apply(
         ed,
         [
-          { op: 'insert_row', anchor: '0;2;2;0;0' },
+          { op: 'insert_row', anchor: '0;2;2;0;0', allowEmpty: true },
           {
             op: 'copy_table_format',
             anchor: '0;2;0;0;0',
@@ -701,7 +713,11 @@ describe('the grouped card survives a save and reload', () => {
 
       reloaded = reopen(ed);
       rebindRevisionGroups(reloaded as unknown as LiveEditor);
-      revisions(reloaded)[0].reject();
+      resolveLiveRevisionGroupsAsOneUndo(
+        reloaded as unknown as LiveEditor,
+        listRevisionGroups(reloaded as unknown as LiveEditor),
+        false
+      );
 
       expect(facts(reloaded, '0;2').rowCount).toBe(originalRowCount);
       expect(appearanceSnapshot(reloaded, '0;2')).toEqual(originalAppearance);
@@ -727,7 +743,7 @@ describe('a rejected card puts back the layout the DOCUMENT stated', () => {
       const result = apply(
         ed,
         [
-          { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0' },
+          { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0', allowEmpty: true },
           {
             op: 'copy_table_format',
             group: 'sched',
@@ -767,7 +783,7 @@ describe('a rejected card puts back the layout the DOCUMENT stated', () => {
       const result = apply(
         ed,
         [
-          { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0' },
+          { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0', allowEmpty: true },
           {
             op: 'set_cell_text',
             group: 'sched',
@@ -814,7 +830,7 @@ describe('a rejected card puts back the layout the DOCUMENT stated', () => {
       apply(
         ed,
         [
-          { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0' },
+          { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0', allowEmpty: true },
           { op: 'set_cell_text', group: 'sched', anchor: '0;2;2;1;0', text: 'Z St' },
           {
             op: 'copy_table_format',
@@ -1126,7 +1142,7 @@ describe('a card whose row moved before its snapshot replayed', () => {
       // the first card is still pending.
       const inserted = apply(
         ed,
-        [{ op: 'insert_row', group: 'ins', anchor: '0;1;1;0;0' }],
+        [{ op: 'insert_row', group: 'ins', anchor: '0;1;1;0;0', allowEmpty: true }],
         'inserted-row'
       );
       expect(inserted.results.every((entry) => entry.ok)).toBe(true);

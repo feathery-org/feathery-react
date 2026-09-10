@@ -1,8 +1,8 @@
 // Two rollback behaviors that had no spec: a native-mutation failure inside
 // the binding-engine transaction fails the WHOLE change set and rolls back the
-// editor-routed revisions that already landed (engine_apply_failed), and a
-// group rollback that cannot restore withdrawn pending-insertion rows says so
-// (group_rollback_incomplete).
+// editor-routed revisions that already landed (engine_apply_failed). A later
+// case proves engine preflight does not withdraw a pending row before a sibling
+// failure is known.
 import 'jest-canvas-mock';
 import {
   DocumentEditor,
@@ -172,23 +172,22 @@ describe('engine_apply_failed: a native-mutation failure fails the change set', 
   });
 });
 
-describe('group_rollback_incomplete: withdrawn rows cannot come back', () => {
-  it('is warned when a rolled-back group withdrew pending-insertion rows', () => {
+describe('pending inserted rows remain intact when a later delete cannot preflight', () => {
+  it('refuses the whole engine batch before withdrawing the pending row', () => {
     const editor = open(plainDocument());
     try {
       // Change set 1 leaves a PENDING inserted row at index 4.
       const seeded = applyDocumentEdits(editor as unknown as LiveEditor, {
         changeSetId: 'seed-insert',
         edits: [
-          { op: 'insert_row', anchor: '0;1;3;0;0', group: 'seed' } as any
+          { op: 'insert_row', anchor: '0;1;3;0;0', group: 'seed', allowEmpty: true } as any
         ]
       }) as any;
       expect(okCodes(seeded)).toEqual(['ok']);
       expect(tableRows(editor, 1)).toHaveLength(5);
 
-      // Change set 2, one group: deleting the pending row WITHDRAWS it (a
-      // physical removal, not a tracked mark), then a sibling fails, so the
-      // group rolls back - and the withdrawal cannot be restored.
+      // Change set 2, one group: the second delete is invalid, so engine
+      // preflight must stop the first delete before it withdraws the pending row.
       const result = applyDocumentEdits(editor as unknown as LiveEditor, {
         changeSetId: 'withdraw-then-fail',
         edits: [
@@ -207,15 +206,12 @@ describe('group_rollback_incomplete: withdrawn rows cannot come back', () => {
         ]
       }) as any;
       expect(okCodes(result)).toEqual(['change_set_failed', 'row_not_found']);
-      const warning = result.warnings.find((entry: string) =>
-        entry.startsWith('group_rollback_incomplete')
-      );
-      expect(warning).toBeDefined();
-      expect(warning).toContain(
-        '1 row(s) removed from a pending insertion cannot be restored'
-      );
-      // The withdrawn row is gone for good; the original rows all survive.
-      expect(tableRows(editor, 1)).toHaveLength(4);
+      expect(
+        result.warnings.some((entry: string) =>
+          entry.startsWith('group_rollback_incomplete')
+        )
+      ).toBe(false);
+      expect(tableRows(editor, 1)).toHaveLength(5);
     } finally {
       close(editor);
     }
