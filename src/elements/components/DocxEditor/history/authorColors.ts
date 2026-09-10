@@ -49,6 +49,18 @@ export function colorForAuthor(author: AuthorLike): string {
   return AUTHOR_PALETTE[fnv1a(identity) % AUTHOR_PALETTE.length];
 }
 
+// A version's synthetic revisions carry the author as a bare key string
+// ('you' | 'robin'), and formatting changes prefix it with 'fmt:'. Map that
+// string to the same stable colour the avatars use, so the highlight renderer
+// tints each author's edits their own colour.
+const FMT_PREFIX = 'fmt:';
+export function colorForRevisionAuthor(author: string): string {
+  let key = author || '';
+  if (key.startsWith(FMT_PREFIX)) key = key.slice(FMT_PREFIX.length);
+  const kind = key === 'robin' ? 'assistant' : 'user';
+  return colorForAuthor({ kind, key, label: key });
+}
+
 /** Two initials for an avatar; Robin renders an icon instead, so this is for
  *  humans. */
 export function initialsForAuthor(author: AuthorLike): string {

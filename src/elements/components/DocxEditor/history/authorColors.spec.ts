@@ -3,6 +3,7 @@ import {
   AUTHOR_PALETTE,
   CURRENT_USER_COLOR,
   colorForAuthor,
+  colorForRevisionAuthor,
   initialsForAuthor
 } from './authorColors';
 
@@ -39,6 +40,24 @@ describe('colorForAuthor', () => {
     const a = colorForAuthor({ kind: 'user', label: 'alice@co.com' });
     const b = colorForAuthor({ kind: 'user', label: 'bob@co.com' });
     expect(a).not.toBe(b);
+  });
+});
+
+describe('colorForRevisionAuthor', () => {
+  it('maps a revision author key to the matching brand colour', () => {
+    expect(colorForRevisionAuthor('you')).toBe(CURRENT_USER_COLOR);
+    expect(colorForRevisionAuthor('robin')).toBe(ASSISTANT_COLOR);
+  });
+
+  it('ignores the fmt: prefix on a formatting-change author', () => {
+    expect(colorForRevisionAuthor('fmt:you')).toBe(CURRENT_USER_COLOR);
+    expect(colorForRevisionAuthor('fmt:robin')).toBe(ASSISTANT_COLOR);
+  });
+
+  it('gives a named human a stable palette colour', () => {
+    const a = colorForRevisionAuthor('sam@co.com');
+    expect(a).toBe(colorForRevisionAuthor('sam@co.com'));
+    expect(AUTHOR_PALETTE).toContain(a);
   });
 });
 
