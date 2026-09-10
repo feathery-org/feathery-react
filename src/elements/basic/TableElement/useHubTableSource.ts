@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { featheryWindow } from '../../../utils/browser';
+import { fieldValues } from '../../../utils/init';
 import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
 import { CellRules, hubCellRules } from './spreadsheet/validation';
 import { CellWrite, Column } from './types';
@@ -30,12 +31,31 @@ type HubRow = {
   errors?: Record<string, string>;
 };
 
+export type HubFilterOperator = 'equals' | 'in';
+
+// A builder-configured row filter: keep the rows whose hub column matches the
+// live value of a form field. `field_key` is filled in server-side from
+// `field_id`/`field_type`, like a column's, and is absent once that field has
+// been deleted.
+export type HubFilter = {
+  hub_field_id: string;
+  hub_field_key: string;
+  operator: HubFilterOperator;
+  field_id: string;
+  field_type: string;
+  field_key?: string;
+};
+
+export type HubWhereCondition =
+  | { entryId: string }
+  | { fieldId: string; value?: any; operator?: HubFilterOperator };
+
 type DataHubAction = (options: {
   hubId: string;
   operation: 'get' | 'create' | 'update' | 'delete';
   entryId?: string;
   data?: Record<string, any>;
-  where?: Array<{ entryId: string } | { fieldId: string; value?: any }>;
+  where?: HubWhereCondition[];
   verification?: HubVerification;
 }) => Promise<any>;
 
@@ -48,6 +68,7 @@ type UseHubTableSourceProps = {
       hidden_hub_fields?: string[];
       readonly_hub_fields?: string[];
       hub_verification?: HubVerification;
+      hub_filters?: HubFilter[];
     };
   };
   client:
@@ -146,6 +167,19 @@ export function useHubTableSource({
   // table's own row filter is the best guess: a verified-only table has
   // nothing to distinguish.
   const showStatusColumn = unverifiedEnabled ?? verification !== 'verified';
+
+  // Row filters read the global `fieldValues`, which is mutated outside React
+  // state, so the conditions are rebuilt every render and keyed by content:
+  // the reference only changes (and the rows only reload) when a compared
+  // field's value actually changed.
+  const hubFilters = element.properties?.hub_filters;
+  const whereKey = JSON.stringify(
+    hubFilterWhere(hubFilters, schemaFields, fieldValues)
+  );
+  const where: HubWhereCondition[] = useMemo(
+    () => JSON.parse(whereKey),
+    [whereKey]
+  );
 
   // Columns derive from the live Hub schema minus the hidden (blacklisted)
   // fields, so fields added to the Hub later show up without republishing the
@@ -268,7 +302,14 @@ export function useHubTableSource({
         client.getHubSchemas
           ? client.getHubSchemas([hubId]).catch(() => null)
           : Promise.resolve(null),
-        client.dataHubAction({ hubId, operation: 'get', verification })
+        client.dataHubAction({
+          hubId,
+          operation: 'get',
+          verification,
+          // Omitted when there are no filters, so an unfiltered table's
+          // request is unchanged.
+          ...(where.length ? { where } : {})
+        })
       ]);
       const hubSchema = schemas?.hubs?.find((h) => h.id === hubId);
       if (Array.isArray(hubSchema?.fields)) setSchemaFields(hubSchema.fields);
@@ -291,7 +332,7 @@ export function useHubTableSource({
     } finally {
       setLoading(false);
     }
-  }, [enabled, hubId, client, commitRows, verification]);
+  }, [enabled, hubId, client, commitRows, verification, where]);
 
   const blockRefetchRef = useRef(blockRefetch);
   blockRefetchRef.current = blockRefetch;
@@ -619,4 +660,60 @@ function omitKeys(
     ([key]) => !keys.includes(key)
   );
   return remaining.length ? Object.fromEntries(remaining) : undefined;
+}
+
+/**
+ * The `where` conditions a table's row filters currently resolve to. The hub
+ * column is addressed by key (what the Hub API takes), taken from the live
+ * schema when it has loaded so a renamed column keeps filtering, and from the
+ * key stored on the filter otherwise. A filter whose form field no longer
+ * exists has no key to read and is skipped; the backend drops such filters
+ * when the field is deleted.
+ */
+export function hubFilterWhere(
+  filters: HubFilter[] | undefined,
+  schemaFields: HubFieldSchema[] | null,
+  values: Record<string, any>
+): HubWhereCondition[] {
+  if (!filters?.length) return [];
+  const conditions: HubWhereCondition[] = [];
+  filters.forEach((filter) => {
+    if (!filter.field_key) return;
+    const hubFieldKey =
+      schemaFields?.find((field) => field.id === filter.hub_field_id)?.key ??
+      filter.hub_field_key;
+    if (!hubFieldKey) return;
+    const raw = values[filter.field_key];
+    if (filter.operator === 'in') {
+      conditions.push({
+        fieldId: hubFieldKey,
+        operator: 'in',
+        value: hubFilterList(raw)
+      });
+    } else {
+      // An unset field compares as empty rather than being left off: the Hub
+      // requires a value, and a filter must never widen to every row.
+      conditions.push({ fieldId: hubFieldKey, value: raw ?? '' });
+    }
+  });
+  return conditions;
+}
+
+/**
+ * The list an `in` filter matches against. A multi-value field is already a
+ * list; a single text value (e.g. a hidden field set from a URL parameter)
+ * is read as comma-separated.
+ */
+export function hubFilterList(raw: any): any[] {
+  if (raw == null || raw === '') return [];
+  if (Array.isArray(raw)) {
+    return raw.filter((item) => item != null && item !== '');
+  }
+  if (typeof raw === 'string') {
+    return raw
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item !== '');
+  }
+  return [raw];
 }
