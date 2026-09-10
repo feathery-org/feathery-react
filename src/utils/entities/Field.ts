@@ -1,4 +1,5 @@
 import { normalizePhoneNumber } from '../phoneNumber';
+import { markPendingPhoneInference } from '../normalizePhoneValues';
 import { phoneLib } from '../validation';
 import { defaultClient, FeatheryFieldTypes, fieldValues } from '../init';
 import debounce from 'lodash.debounce';
@@ -457,6 +458,16 @@ export function parseUserVal(
       .flatMap((state) => Object.values(state.steps ?? {}))
       .flatMap((step: any) => step.servar_fields ?? [])
       .find((field: any) => field.servar.key === key)?.servar;
+  if (
+    !preserveCanonicalPhones &&
+    ['string', 'number'].includes(typeof val) &&
+    (!servar || (servar.type === 'phone_number' && !phoneLib))
+  ) {
+    // No form (or no parser) can interpret this yet. Remember it so the value
+    // is inferred as fresh input once its schema arrives, instead of being
+    // preserved as if it were saved canonical digits.
+    markPendingPhoneInference(key, val);
+  }
   if (servar?.type === 'phone_number') {
     const previous = fieldValues[key];
     // Reassigning or reordering existing values must not reinterpret their

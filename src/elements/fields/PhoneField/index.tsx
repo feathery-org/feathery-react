@@ -451,11 +451,29 @@ function PhoneField({
                     LPN
                   );
                 const complete = isCanonicalPhoneNumber(normalized, LPN);
+                // A locked country dropdown keeps the input on its own calling
+                // code: a complete number from another country is ignored, as
+                // it was before replacements could switch the country.
+                if (
+                  complete &&
+                  !countriesEnabled &&
+                  !String(normalized).startsWith(phoneCode)
+                )
+                  return;
                 if (replacingNumber.current) {
                   const cleaned = cleanPhoneNumberInput(newNum, LPN);
                   // A lone + is a meaningful intermediate international input.
                   if (cleaned === null && newNum !== '+') return;
                   const draft = cleaned ?? '+';
+                  // Locked fields also refuse a foreign prefix while it is typed.
+                  const draftPrefix = `+${LPN.parseDigits(draft)}`;
+                  if (
+                    !countriesEnabled &&
+                    draft.startsWith('+') &&
+                    !draftPrefix.startsWith(`+${phoneCode}`) &&
+                    !`+${phoneCode}`.startsWith(draftPrefix)
+                  )
+                    return;
                   setReplacementDraft(draft);
                   setRawNumber(complete ? normalized : draft);
                   if (complete) {

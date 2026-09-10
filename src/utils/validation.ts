@@ -191,10 +191,15 @@ let phoneLibPromise: Promise<any> = Promise.resolve();
 const loadPhoneValidator = () => {
   phoneLibPromise = import(
     /* webpackChunkName: "libphonenumber" */ 'libphonenumber-js'
-  ).then((mod) => {
-    phoneLib = mod;
-    return mod;
-  });
+  )
+    .then((mod) => {
+      phoneLib = mod;
+      return mod;
+    })
+    // Form loading awaits this promise. A blocked or failed chunk download must
+    // degrade to "no parser" (values pass through unchanged) rather than
+    // preventing the form from rendering.
+    .catch(() => null);
 };
 
 const validators = {

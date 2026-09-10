@@ -1229,8 +1229,12 @@ function Form({
 
   // For audio AI only right now
   const [pollFuserData, setPollFuserData] = useState(_pollFuserData);
+  // The poll interval captures its callback once; read the latest
+  // updateFieldValues through a ref so it sees the current schema (servarByKey).
+  const updateFieldValuesRef = useRef(updateFieldValues);
+  updateFieldValuesRef.current = updateFieldValues;
   usePollFuserData(pollFuserData, client, (values: any) =>
-    updateFieldValues(values, { preserveCanonicalPhones: true })
+    updateFieldValuesRef.current(values, { preserveCanonicalPhones: true })
   );
 
   const eventCallbackMap: Record<string, any> = {

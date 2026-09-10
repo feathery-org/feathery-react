@@ -1,4 +1,5 @@
 import {
+  applyPendingPhoneInference,
   normalizePhoneValues,
   phoneServarsFromSteps
 } from '../normalizePhoneValues';
@@ -499,10 +500,17 @@ export default class FeatheryClient extends IntegrationClient {
     });
     registerKnownFieldKeys({ servars: Object.keys(values) });
     const servars = phoneServarsFromSteps(steps);
-    Object.assign(fieldValues, {
+    const hydrated = {
       ...normalizePhoneValues({ ...values, ...additionalValues }, servars),
       ...normalizePhoneValues(fieldValues, servars, true)
-    });
+    };
+    // Values set through setFieldValues before this schema existed are fresh
+    // input, not saved digits, so they get the same inference as initial values.
+    Object.assign(
+      fieldValues,
+      hydrated,
+      applyPendingPhoneInference(hydrated, servars)
+    );
   }
 
   _loadFormPackages(res: any) {

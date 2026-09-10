@@ -180,15 +180,18 @@ describe('PhoneField with real phone metadata', () => {
 });
 
 describe('PhoneField input events and field properties', () => {
-  it.each([false, true])(
-    'accepts explicit foreign numbers with locked country=%s',
-    async (locked) => {
-      const { input, props, getByTestId } = await setup('US', locked);
-      fireEvent.input(input, { target: { value: '+44 (20) 7946-0018' } });
-      expect(props.onComplete).toHaveBeenLastCalledWith('442079460018');
-      expect(getByTestId('country-trigger')).toHaveTextContent('🇬🇧');
-    }
-  );
+  it('accepts explicit foreign numbers and switches the country', async () => {
+    const { input, props, getByTestId } = await setup('US');
+    fireEvent.input(input, { target: { value: '+44 (20) 7946-0018' } });
+    expect(props.onComplete).toHaveBeenLastCalledWith('442079460018');
+    expect(getByTestId('country-trigger')).toHaveTextContent('🇬🇧');
+  });
+  it('ignores explicit foreign numbers when the country is locked', async () => {
+    const { input, props, getByTestId } = await setup('US', true);
+    fireEvent.input(input, { target: { value: '+44 (20) 7946-0018' } });
+    expect(props.onComplete).not.toHaveBeenCalled();
+    expect(getByTestId('country-trigger')).toHaveTextContent('🇺🇸');
+  });
   it.each(['on', 'off'])(
     'accepts native input autofill when autocomplete=%s',
     async (autoComplete) => {
@@ -452,12 +455,16 @@ describe('PhoneField complete international keyboard replacements', () => {
       await user.click(input);
       await user.keyboard('{Control>}a{/Control}');
       await user.keyboard(value);
-      expect(input.value.replace(/\D/g, '')).toBe(
-        value.includes('44') ? '442079460018' : '12025550123'
-      );
-      expect(props.onComplete).toHaveBeenLastCalledWith(
-        value.includes('44') ? '442079460018' : '12025550123'
-      );
+      const canonical = value.includes('44') ? '442079460018' : '12025550123';
+      const foreign = value.includes('44') !== (country === 'GB');
+      if (locked && foreign) {
+        // A locked dropdown keeps the input on its own country.
+        expect(input.value.replace(/\D/g, '')).not.toBe(canonical);
+        expect(props.onComplete).not.toHaveBeenCalledWith(canonical);
+        return;
+      }
+      expect(input.value.replace(/\D/g, '')).toBe(canonical);
+      expect(props.onComplete).toHaveBeenLastCalledWith(canonical);
     }
   );
   it.each([
@@ -589,3 +596,42 @@ it.each([
     }
   }
 );
+
+describe('PhoneField with a locked country dropdown', () => {
+  it('ignores a pasted or autofilled number from another country', async () => {
+    const { input, props } = await setup('US', true);
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '+44 20 7946 0018' } });
+    expect(props.onComplete).not.toHaveBeenCalledWith('442079460018');
+    expect(input.value.replace(/\D/g, '')).toBe('1');
+  });
+
+  it('still accepts a complete number for its own country', async () => {
+    const { input, props } = await setup('US', true);
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '(202) 555-0123' } });
+    expect(props.onComplete).toHaveBeenLastCalledWith('12025550123');
+  });
+
+  it('refuses a foreign prefix typed over a selected value', async () => {
+    const { input, props } = await setup('US', true, '12025550123');
+    const user = userEvent.setup();
+    await user.click(input);
+    await user.keyboard('{Control>}a{/Control}');
+    await user.keyboard('+44 20 7946 0018');
+    expect(props.onComplete).not.toHaveBeenCalledWith('442079460018');
+    // Rejected keystrokes never enter the draft, so the foreign country code
+    // cannot accumulate; only digits compatible with +1 survive.
+    expect(input.value.replace(/\D/g, '')).toMatch(/^1?\d?$/);
+    expect(input.value.replace(/\D/g, '')).not.toMatch(/^44/);
+  });
+
+  it('lets a selected value be retyped for its own country', async () => {
+    const { input, props } = await setup('US', true, '12025550123');
+    const user = userEvent.setup();
+    await user.click(input);
+    await user.keyboard('{Control>}a{/Control}');
+    await user.keyboard('+1 202 555 0199');
+    expect(props.onComplete).toHaveBeenLastCalledWith('12025550199');
+  });
+});
