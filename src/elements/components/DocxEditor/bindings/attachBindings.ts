@@ -21,7 +21,8 @@ import {
   ContentControlLike,
   configureEditorForBindings,
   createEditorAdapter,
-  SyncfusionEditorLike
+  SyncfusionEditorLike,
+  isAdapterWriting
 } from './editorAdapter';
 import { installKeystrokeGuard } from './keystrokeGuard';
 import { createCommitTriggers } from './commitTriggers';
@@ -38,7 +39,8 @@ import {
 } from './reconcileRegistry';
 import {
   installTrackedContentControlDeletion,
-  LiveEditor
+  LiveEditor,
+  isProgrammaticSelection
 } from '../../../../utils/documentEditorPrimitives';
 
 export interface BindingsOptions {
@@ -234,6 +236,16 @@ export function attachBindings(
       console.error('Feathery: document bindings event handler failed', error);
     }
   };
+  // Derived values follow the document, so they must be recomputed the moment
+  // a card is accepted or rejected, not on the next keystroke. The resolvers in
+  // documentEditorPrimitives call this after they settle (see
+  // ROBIN_RECOMPUTE_AFTER_RESOLVE); it is the same self-heal flush the row
+  // and table guards use.
+  (editor as any).__robinRecomputeAfterResolve = () =>
+    runGuarded(() => {
+      if (controller.phase !== 'idle') return;
+      controller.flush({ mode: 'self-heal' });
+    });
   const onContentChange = () => runGuarded(() => triggers.onContentChange());
   const onKeyDown = (args: any) =>
     runGuarded(() => {
@@ -318,6 +330,9 @@ export function attachBindings(
   // up while a locked cell stays selected.
   const onSelectionChange = () =>
     runGuarded(() => {
+      // The adapter's own selections are not the user's caret: see
+      // isAdapterWriting. A flush from here mid-write is re-entrant.
+      if (isAdapterWriting() || isProgrammaticSelection()) return;
       triggers.onSelectionChange();
       if (lockHintActive && !isLockedControl(caretControl())) {
         lockHintActive = false;
@@ -366,6 +381,9 @@ export function attachBindings(
         }
       };
       step('unregister', () => unregisterBindingReconciler(editor));
+      step('recomputeHook', () => {
+        delete (editor as any).__robinRecomputeAfterResolve;
+      });
       step('contentChange', () =>
         eventful.removeEventListener?.('contentChange', onContentChange)
       );

@@ -534,6 +534,11 @@ describe('the native path guards on APIs that exist', () => {
     [
       'editorModule.updateContentControl',
       (e: any) => e.editorModule?.updateContentControl
+    ],
+    ['editorModule.insertText', (e: any) => e.editorModule?.insertText],
+    [
+      'selection.selectContentControlInternal',
+      (e: any) => e.selection?.selectContentControlInternal
     ]
   ])(
     'the native structural path depends on %s, and it exists',

@@ -8,10 +8,15 @@
 // Findings, all asserted below:
 //   1. `updateContentControl` writes a control's contents and keeps the control.
 //      It ignores lockContents, which is exactly what makes tamper-revert work.
-//   2. `selectContentControl` + `insertText` DESTROYS the control - tag and all -
-//      whether or not it is locked. So the assistant engine's write primitive
-//      (select a range, replaceSelectedText) must never be aimed at a bound
-//      control: it would silently delete the binding, not just its value.
+//   2. The PUBLIC `selectContentControl` + `insertText` DESTROYS the control -
+//      tag and all - whether or not it is locked, because that selection spans
+//      the boundary marks. So the assistant engine's write primitive (select a
+//      range, replaceSelectedText) must never be aimed at a bound control: it
+//      would silently delete the binding, not just its value.
+//   2b. The SDK's own `selectContentControlInternal` stops at the marks. That
+//      selection + `insertText` writes INSIDE the control and keeps it, locked
+//      or not, without the paragraph-format residue updateContentControl's
+//      RichText paste leaves behind. It is the adapter's write for RichText.
 //   3. Deletion is not gated by lockContents. `deleteRow` takes row-scoped
 //      bindings with it (the POC's intent) and select-all + delete wipes every
 //      binding, so reconcile has to tolerate a document whose tags are gone.
@@ -118,7 +123,34 @@ describe('S3 updateContentControl is the safe write primitive', () => {
   });
 });
 
-describe('S3 selection + insertText destroys a bound control', () => {
+describe('S3 interior selection + insertText writes inside a bound control', () => {
+  it.each([
+    ['a locked control', true],
+    ['an unlocked control', false]
+  ])('replaces the contents of %s and keeps the binding', (_label, locked) => {
+    const editor = makeRealDocumentEditor(simpleDocument(locked as boolean));
+    try {
+      const [control] = controlsByTag(editor, LOCKED_TAG);
+      const before = editor.serialize();
+
+      (editor.selection as any).selectContentControlInternal(control);
+      editor.editor.insertText('REPLACED');
+
+      expect(textOf(editor, LOCKED_TAG)).toBe('REPLACED');
+      expect(tagsOf(editor)).toContain(LOCKED_TAG);
+
+      // Writing the original value back leaves no trace: same bytes as before.
+      const [again] = controlsByTag(editor, LOCKED_TAG);
+      (editor.selection as any).selectContentControlInternal(again);
+      editor.editor.insertText('VALUE');
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(editor);
+    }
+  });
+});
+
+describe('S3 public selection + insertText destroys a bound control', () => {
   it.each([
     ['a locked control', true],
     ['an unlocked control', false]
