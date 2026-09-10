@@ -5,6 +5,7 @@
 // a hash mismatch). An old docx-only row falls back to its stored docx.
 import { useEffect, useRef, useState } from 'react';
 
+import { populateVersionBindings } from './populateVersionBindings';
 import { applyHunks, ChangeList } from './sfdtDiff/index';
 import { DocxHistoryHost, DocxVersion } from './types';
 
@@ -63,6 +64,20 @@ export function useVersionDocument(
           const finalSfdt = await gunzip(
             await host.fetchVersionFile(version.final_sfdt)
           );
+          const finalDoc = JSON.parse(finalSfdt);
+
+          // The plain (no-highlights) document with its [[field]] / {{ jinja }}
+          // tokens populated, like the live editor does on open. A no-op for a
+          // document that came from a live edit session (already content-
+          // controlled), so it only fixes versions stored as a raw template.
+          const plainSfdt = () => {
+            try {
+              const populated = populateVersionBindings(finalDoc);
+              return populated === finalDoc ? finalSfdt : JSON.stringify(populated);
+            } catch {
+              return finalSfdt;
+            }
+          };
 
           // With a change list, apply the hunks so the viewer shows highlights.
           if (version.changes && version.change_count != null) {
@@ -70,7 +85,6 @@ export function useVersionDocument(
               const changes: ChangeList = JSON.parse(
                 await gunzip(await host.fetchVersionFile(version.changes))
               );
-              const finalDoc = JSON.parse(finalSfdt);
               // A hash mismatch means the hunks no longer describe this SFDT;
               // show the document plain rather than mis-anchored highlights.
               if (
@@ -78,7 +92,13 @@ export function useVersionDocument(
                 version.final_sha256 &&
                 changes.final_sha256 !== version.final_sha256
               ) {
-                done({ error: false, sfdt: finalSfdt, degraded: true });
+                done({ error: false, sfdt: plainSfdt(), degraded: true });
+                return;
+              }
+              // An empty change list carries no highlights; show it plain and
+              // degraded rather than a "highlights on" view that paints nothing.
+              if (!changes.hunks?.length) {
+                done({ error: false, sfdt: plainSfdt(), degraded: true });
                 return;
               }
               const display = applyHunks(finalDoc, changes);
@@ -92,12 +112,12 @@ export function useVersionDocument(
               return;
             } catch {
               // Corrupt/failed change list: fall back to the plain document.
-              done({ error: false, sfdt: finalSfdt, degraded: true });
+              done({ error: false, sfdt: plainSfdt(), degraded: true });
               return;
             }
           }
 
-          done({ error: false, sfdt: finalSfdt, degraded: true });
+          done({ error: false, sfdt: plainSfdt(), degraded: true });
           return;
         }
 

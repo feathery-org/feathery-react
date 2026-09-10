@@ -97,7 +97,15 @@ describe('useVersionDocument', () => {
       v: 1,
       sessionId: 's',
       final_sha256: '',
-      hunks: [],
+      // A real inline insertion over "hi" (sections[0].blocks[0], offset 0..2).
+      hunks: [
+        {
+          id: 1,
+          author: 'you',
+          type: 'ins',
+          at: { block: [0, 'blocks', 0], offset: 0, length: 2 }
+        }
+      ],
       changeCount: 2,
       formatChangeCount: 1,
       authors: ['you']
@@ -113,6 +121,32 @@ describe('useVersionDocument', () => {
     expect(result.current.degraded).toBe(false);
     expect(result.current.editCount).toBe(2);
     expect(result.current.formatCount).toBe(1);
+    expect(result.current.sfdt).toContain('sections');
+    // The applied hunk produced a synthetic revision to render.
+    expect(result.current.sfdt).toContain('revisionId');
+  });
+
+  it('degrades to the plain document when the change list has no hunks', async () => {
+    const changes = JSON.stringify({
+      v: 1,
+      sessionId: 's',
+      final_sha256: '',
+      hunks: [],
+      changeCount: 0,
+      formatChangeCount: 0,
+      authors: ['you']
+    });
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(buf(url === 'chg' ? changes : FINAL))
+    );
+    const h = host({ fetchVersionFile });
+    const ver = version({ final_sfdt: 'fin', changes: 'chg', change_count: 0 });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    // No hunks → nothing to highlight → plain, degraded view (not a false
+    // "highlights on" that paints nothing).
+    expect(result.current.degraded).toBe(true);
     expect(result.current.sfdt).toContain('sections');
   });
 
