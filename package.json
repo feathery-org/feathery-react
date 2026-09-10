@@ -107,7 +107,7 @@
     "rollup-plugin-typescript2": "^0.36.0",
     "standard-version": "^9.5.0",
     "ts-loader": "^9.3.0",
-    "typescript": "^4.7.3",
+    "typescript": "5.9.3",
     "webpack": "^5.11.0",
     "webpack-bundle-analyzer": "^4.5.0",
     "webpack-cli": "^4.2.0"
@@ -130,6 +130,9 @@
     "@stripe/react-stripe-js": "3.7.0",
     "@stripe/stripe-js": "7.3.0",
     "@stytch/vanilla-js": "5.23.1",
+    "@tanstack/react-hotkeys": "0.10.0",
+    "@tanstack/react-table": "9.2.4",
+    "@tanstack/react-virtual": "3.14.10",
     "@uiw/react-color-sketch": "^2.5.4",
     "acorn": "^8.15.0",
     "acorn-loose": "^8.5.2",
@@ -178,29 +181,13 @@
     ],
     "setupFilesAfterEnv": [
       "<rootDir>/src/setupTests.ts"
+    ],
+    "moduleNameMapper": {
+      "^@tanstack/(react-table|table-core)$": "<rootDir>/node_modules/@tanstack/$1/dist/index.js",
+      "^@tanstack/(react-table|table-core)/(.+)$": "<rootDir>/node_modules/@tanstack/$1/dist/$2.js"
+    },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!@tanstack/(react-table|table-core)/)"
     ]
-  },
-  "babel": {
-    "presets": [
-      "@babel/preset-env",
-      "@babel/preset-typescript",
-      "@babel/preset-react",
-      "@emotion/babel-preset-css-prop"
-    ],
-    "plugins": [
-      [
-        "@babel/transform-runtime",
-        {
-          "regenerator": true
-        }
-      ]
-    ],
-    "env": {
-      "test": {
-        "plugins": [
-          "babel-plugin-transform-import-meta"
-        ]
-      }
-    }
   }
 }

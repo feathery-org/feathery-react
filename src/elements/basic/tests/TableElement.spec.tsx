@@ -3,6 +3,7 @@ import { TABLE_CLASS } from '../TableElement/classNames';
 
 const mockResponsiveStyles = {
   addTargets: jest.fn().mockReturnThis(),
+  apply: jest.fn(),
   applyCorners: jest.fn(),
   applyWidth: jest.fn(),
   getTarget: jest.fn().mockReturnValue({})
