@@ -642,7 +642,14 @@ export function addLineItem(
   tableId: string,
   afterRowId: string | null = null,
   index: BindingIndex = scanBindings(sfdt),
-  rowId: string = freshRowId()
+  rowId: string = freshRowId(),
+  /**
+   * Where the new row goes, as an index into the table's rows. Defaults to
+   * right after the prototype. The prototype is only the row to CLONE: a line
+   * item can be placed anywhere - above the first item, after the totals row -
+   * and it still copies a bound data row (captain, 2026-09-09).
+   */
+  insertAt?: number
 ): { sfdt: SfdtDocument; rowId: string } {
   const table = index.tables.get(tableId);
   if (!table || !table.rows.length)
@@ -662,7 +669,10 @@ export function addLineItem(
   rewriteRowClone(clone, rowId);
   const rowsPath = prototype.path.slice(0, -1);
   const rows = getAt(sfdt, rowsPath) as SfdtRow[];
-  const at = Number(prototype.path[prototype.path.length - 1]) + 1;
+  const at =
+    insertAt !== undefined
+      ? Math.max(0, Math.min(rows.length, insertAt))
+      : Number(prototype.path[prototype.path.length - 1]) + 1;
   const nextRows = [...rows.slice(0, at), clone, ...rows.slice(at)];
   return { sfdt: setAt(sfdt, rowsPath, nextRows), rowId };
 }

@@ -14724,7 +14724,20 @@ function fieldOccurrenceAtColumn(
   return undefined;
 }
 
+/** The bound data row nearest to a visual row, to clone a new line item from. */
+function nearestBoundRowId(table: TableEntry, rowIndex: number): string | null {
+  let best: { rowId: string; distance: number } | null = null;
+  for (const row of table.rows) {
+    if (!row.path || !row.rowId) continue;
+    const at = Number(row.path[row.path.length - 1]);
+    const distance = Math.abs(at - rowIndex);
+    if (!best || distance < best.distance) best = { rowId: row.rowId, distance };
+  }
+  return best?.rowId ?? null;
+}
+
 function boundInsertRowsPlan(
+  editor: LiveEditor,
   index: number,
   op: EditOp,
   block: FlatBlock,
@@ -14738,14 +14751,18 @@ function boundInsertRowsPlan(
     );
   const count = positiveCount(op.count);
   const above = op.above === true;
+  // A line item can go ANYWHERE in the table - above the first item, after
+  // the totals row - and it always clones a bound data row: the one on the
+  // anchor's side when there is one, otherwise the nearest (captain,
+  // 2026-09-09: "we should be able to add anywhere in the table").
   const afterVisualRow = above ? rowIndex - 1 : rowIndex;
-  const afterRowId = rowIdAtVisualRow(tableRoute.table, afterVisualRow);
+  const afterRowId =
+    rowIdAtVisualRow(tableRoute.table, afterVisualRow) ??
+    nearestBoundRowId(tableRoute.table, rowIndex);
   if (!afterRowId)
     throw new OpError(
       'bound_row_insert_unroutable',
-      `insert_row cannot add a bound line item ${
-        above ? 'above' : 'below'
-      } row ${rowIndex} because there is no bound data row on that side to clone from. Anchor a data row and insert below it, or read table_facts for current row ids.`,
+      `insert_row cannot add a bound line item to table "${tableRoute.tableId}" because it has no bound data row to clone from.`,
       [`table: ${tableRoute.tableId}`, `anchor: ${block.anchor}`]
     );
   const firstVisualRow = above ? rowIndex : rowIndex + 1;
@@ -14760,14 +14777,49 @@ function boundInsertRowsPlan(
     firstVisualRow,
     createdRowIds: [],
     execute(state) {
+      // The stripe, read before the rows go in, so the finalizer restripes the
+      // table for its new length (same recording as delete_row).
+      const sourceTableBlock = tableBlockAt(state.sfdt, tableRoute.anchor);
+      const sourceAppearance = sourceTableBlock
+        ? collectTableAppearance(sourceTableBlock)
+        : null;
+      const sourceHeaderRows = sourceAppearance
+        ? effectiveHeaderRows({
+            blocks: flattenSfdt(state.sfdt),
+            sfdt: state.sfdt,
+            tableAnchor: tableRoute.anchor,
+            source: sourceAppearance
+          })
+        : 0;
+      const sourceBanding = sourceAppearance
+        ? detectTableBanding(sourceAppearance) ?? undefined
+        : undefined;
+      const footprint = sourceBanding
+        ? captureTableFootprint(
+            serializeSfdt(editor),
+            tableRoute.anchor,
+            sourceHeaderRows,
+            sourceBanding,
+            tableRoute.tableId
+          )
+        : null;
       let next = state.sfdt;
       let nextIndex = state.index;
       let after = afterRowId;
+      let at = firstVisualRow;
       plan.createdRowIds.splice(0, plan.createdRowIds.length);
       for (let offset = 0; offset < count; offset++) {
-        const added = addLineItem(next, tableRoute.tableId, after, nextIndex);
+        const added = addLineItem(
+          next,
+          tableRoute.tableId,
+          after,
+          nextIndex,
+          undefined,
+          at
+        );
         next = added.sfdt;
         after = added.rowId;
+        at += 1;
         plan.createdRowIds.push(added.rowId);
         nextIndex = scanBindings(next);
       }
@@ -14787,6 +14839,7 @@ function boundInsertRowsPlan(
       return {
         sfdt: next,
         anchor: block.anchor,
+        ...(footprint ? { tableFootprints: [footprint] } : {}),
         details: [
           `table: ${tableRoute.tableId}`,
           `created row ids: ${plan.createdRowIds.join(', ')}`
@@ -16243,7 +16296,7 @@ function planBindingRoutedOp(
     // Row ops need row identity, a marker-only table leaves them to the editor route
     const rowsBound = tableRoute.table.rows.length > 0;
     if (op.op === 'insert_row' && rowsBound) {
-      const plan = boundInsertRowsPlan(index, op, target, tableRoute);
+      const plan = boundInsertRowsPlan(editor, index, op, target, tableRoute);
       for (let offset = 0; offset < positiveCount(op.count); offset++)
         createdRows.set(
           `${tableRoute.anchor};${plan.firstVisualRow + offset}`,
