@@ -31,7 +31,26 @@ type HubRow = {
   errors?: Record<string, string>;
 };
 
-export type HubFilterOperator = 'equals' | 'in';
+export type HubFilterOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'in'
+  | 'not_in'
+  | 'greater_than'
+  | 'greater_than_or_equal'
+  | 'less_than'
+  | 'less_than_or_equal'
+  | 'contains'
+  | 'not_contains'
+  | 'starts_with'
+  | 'ends_with'
+  | 'is_empty'
+  | 'is_filled';
+
+// Operators whose value is a list of alternatives.
+const LIST_OPERATORS: HubFilterOperator[] = ['in', 'not_in'];
+// Operators that test the hub column alone and bind no form field.
+const VALUELESS_OPERATORS: HubFilterOperator[] = ['is_empty', 'is_filled'];
 
 // A builder-configured row filter: keep the rows whose hub column matches the
 // live value of a form field. `field_key` is filled in server-side from
@@ -682,18 +701,29 @@ export function hubFilterWhere(
   if (!filters?.length) return [];
   const conditions: HubWhereCondition[] = [];
   filters.forEach((filter) => {
-    if (!filter.field_key) return;
     const hubFieldKey =
       schemaFields?.find((field) => field.id === filter.hub_field_id)?.key ??
       filter.hub_field_key;
     if (!hubFieldKey) return;
+    const operator = filter.operator;
+    if (VALUELESS_OPERATORS.includes(operator)) {
+      conditions.push({ fieldId: hubFieldKey, operator });
+      return;
+    }
+    if (!filter.field_key) return;
     const raw = values[filter.field_key];
-    if (filter.operator === 'in') {
+    if (LIST_OPERATORS.includes(operator)) {
       const list = hubFilterList(raw);
       if (!list.length) return;
-      conditions.push({ fieldId: hubFieldKey, operator: 'in', value: list });
+      conditions.push({ fieldId: hubFieldKey, operator, value: list });
     } else if (raw != null && raw !== '') {
-      conditions.push({ fieldId: hubFieldKey, value: raw });
+      // Exact match is the Hub's default, so plain filters keep the request
+      // shape they had before other operators existed.
+      conditions.push({
+        fieldId: hubFieldKey,
+        ...(operator === 'equals' ? {} : { operator }),
+        value: raw
+      });
     }
   });
   return conditions;

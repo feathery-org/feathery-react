@@ -79,6 +79,36 @@ describe('hubFilterWhere', () => {
     expect(hubFilterWhere(undefined, null, {})).toEqual([]);
   });
 
+  test('sends every operator, omitting the default one and binding no field for emptiness tests', () => {
+    const op = (operator: any, field_key = 'account_id') =>
+      ({ ...equalsFilter, operator, field_key } as HubFilter);
+    expect(
+      hubFilterWhere(
+        [
+          op('not_equals'),
+          op('contains'),
+          op('greater_than'),
+          op('not_in', 'account_ids'),
+          { ...op('is_empty'), field_key: undefined, field_id: '' },
+          op('is_filled')
+        ],
+        null,
+        { account_id: '5', account_ids: 'a,b' }
+      )
+    ).toEqual([
+      { fieldId: 'account', operator: 'not_equals', value: '5' },
+      { fieldId: 'account', operator: 'contains', value: '5' },
+      { fieldId: 'account', operator: 'greater_than', value: '5' },
+      { fieldId: 'account', operator: 'not_in', value: ['a', 'b'] },
+      { fieldId: 'account', operator: 'is_empty' },
+      { fieldId: 'account', operator: 'is_filled' }
+    ]);
+    // Emptiness tests do not depend on any form field value.
+    expect(hubFilterWhere([op('is_empty')], null, {})).toEqual([
+      { fieldId: 'account', operator: 'is_empty' }
+    ]);
+  });
+
   test('hubFilterList reads lists as-is and single values as comma-separated', () => {
     expect(hubFilterList(['a', '', null, 'b'])).toEqual(['a', 'b']);
     expect(hubFilterList('a,b , c')).toEqual(['a', 'b', 'c']);
