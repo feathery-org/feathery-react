@@ -104,7 +104,7 @@ describe('bound row operations while a source split is still pending', () => {
     expect(pendingFormulas.grand_total).toBe('$82,782.62');
 
     const pendingRows = await session.call<string[]>('tableRowTexts', SOURCE);
-    expect(pendingRows[3]).toContain('Signage');
+    expect(pendingRows[3]).toBe('Signage3$210.00$630.00');
     expect(pendingRows[4]).toContain('Stock');
     expect(pendingRows[5]).toContain('Business interruption');
     expect(pendingRows[6]).toContain('Machinery breakdown');
@@ -127,7 +127,7 @@ describe('bound row operations while a source split is still pending', () => {
     expect(await session.call<string[]>('tableRowIds', COPY)).toHaveLength(3);
     expect(
       await session.call<Array<string | null>>('rowShading', SOURCE)
-    ).toEqual(['#001B49FF', null, '#E6E6E6FF', null, null]);
+    ).toEqual(['#001B49FF', null, '#E6E6E6FF', null, '#E6E6E6FF']);
     expect(
       await session.call<Array<string | null>>('rowShading', COPY)
     ).toEqual(['#001B49FF', null, '#E6E6E6FF', null, null]);
@@ -140,6 +140,24 @@ describe('bound row operations while a source split is still pending', () => {
     expect(formulas.summary_subtotal).toBe('$76,297.35');
     expect(formulas.summary_tax).toBe('$6,485.27');
     expect(formulas.grand_total).toBe('$82,782.62');
+  }, 120000);
+
+  it('rejects only the added row back to the exact pending split', async () => {
+    const source = await openWithPendingSplit();
+    const beforeInsert = await session.call<string>('serialize');
+
+    const inserted = await session.call<any>(
+      'applyEdits',
+      addSignage(source),
+      'pending-source-insert'
+    );
+    expect(inserted.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
+
+    await session.call('resolveGroupsOf', 'pending-source-insert', false);
+    expect(await session.call<string>('serialize')).toBe(beforeInsert);
+    const groups = await session.call<any[]>('groups');
+    expect(groups).toHaveLength(1);
+    expect(groups[0].changeSetId).toBe('pending-source-split');
   }, 120000);
 
   it('can accept an added row and then delete it while the split stays pending', async () => {

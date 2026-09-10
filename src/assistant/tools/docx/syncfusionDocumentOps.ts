@@ -12326,24 +12326,6 @@ function finalizeTableAppearance(
       documentFormulas
     }).rows;
 
-    // INTERIM NARROWING, measured rather than precautionary.
-    //
-    // When the table carries pending revisions from an EARLIER change set, the
-    // appearance restore under-restores: a cell that was #E6E6E6FF comes back
-    // `empty` after a reject. Diagnosed 2026-08-27 - the finalizer's CAPTURE is
-    // correct, verified by logging the recorded prior value against the document
-    // at every written cell through cellAppearanceAt, so the fault is downstream
-    // in the shared binding/restore path that every appearance write uses, and
-    // is not slice 2's to change.
-    //
-    // It was never reachable before because the only prior writer that survived
-    // a reject wrote to wholly-pending copies. So surviving content on such a
-    // table is left alone, loudly and counted, until the shared defect is fixed:
-    // `docx-appearance-restore-prior-revisions`. The reversibility law stays
-    // absolute and the capability narrows honestly.
-    const tableCarriesPriorPendingWork = [
-      ...collectRevisionIdsDeep(tableBlockAt(sfdt, anchor))
-    ].some((id) => preExistingRevisionIds.has(id));
     const planned: Array<{ row: number; shading: string | null }> = [];
     let survivorIndex = 0;
     let skippedKeyless = 0;
@@ -12397,12 +12379,12 @@ function finalizeTableAppearance(
           const rowIds = collectRevisionIdsDeep(row);
           const whollyInserted =
             rowIds.size > 0 && [...rowIds].every((id) => inserted.has(id));
-          // Surviving content is off limits while the table carries an
-          // earlier set's pending work; a wholly-inserted row stays writable
-          // because a reject removes it and no restore has to run.
+          const rowCarriesPriorPendingWork = [...rowIds].some((id) =>
+            preExistingRevisionIds.has(id)
+          );
           const mayWrite = whollyInserted
             ? true
-            : everColoured && !tableCarriesPriorPendingWork;
+            : everColoured && !rowCarriesPriorPendingWork;
           if (mayWrite) planned.push({ row: index, shading: wanted });
           else skippedKeyless++;
         }
@@ -14804,8 +14786,13 @@ function boundInsertRowsPlan(
       // The stripe, read before the rows go in, so the finalizer restripes the
       // table for its new length (same recording as delete_row).
       const sourceTableBlock = tableBlockAt(state.sfdt, tableRoute.anchor);
-      const sourceAppearance = sourceTableBlock
+      const physicalSourceAppearance = sourceTableBlock
         ? collectTableAppearance(sourceTableBlock)
+        : null;
+      const sourceAppearance = sourceTableBlock
+        ? collectTableAppearance(
+            clonedWithoutRevisions(state.sfdt, sourceTableBlock)
+          )
         : null;
       const sourceHeaderRows = sourceAppearance
         ? effectiveHeaderRows({
@@ -14815,18 +14802,25 @@ function boundInsertRowsPlan(
             source: sourceAppearance
           })
         : 0;
-      const sourceBanding = sourceAppearance
+      const physicalBanding = physicalSourceAppearance
+        ? detectTableBanding(physicalSourceAppearance)
+        : null;
+      const projectedBody = sourceAppearance
+        ? rowShadings(sourceAppearance).slice(sourceHeaderRows)
+        : [];
+      const sourceBanding = physicalBanding
+        ? {
+            ...physicalBanding,
+            tailInBand:
+              projectedBody.length > 0 &&
+              projectedBody[projectedBody.length - 1] ===
+                physicalBanding.cycle[
+                  (projectedBody.length - 1) % physicalBanding.period
+                ]
+          }
+        : sourceAppearance
         ? detectTableBanding(sourceAppearance) ?? undefined
         : undefined;
-      const footprint = sourceBanding
-        ? captureTableFootprint(
-            serializeSfdt(editor),
-            tableRoute.anchor,
-            sourceHeaderRows,
-            sourceBanding,
-            tableRoute.tableId
-          )
-        : null;
       let next = state.sfdt;
       let nextIndex = state.index;
       let after = afterRowId;
@@ -14860,6 +14854,15 @@ function boundInsertRowsPlan(
             `insert_row reported new row "${rowId}", but it was not present after the engine transaction. Nothing was kept.`
           );
       }
+      const footprint = sourceBanding
+        ? captureTableFootprint(
+            next,
+            tableRoute.anchor,
+            sourceHeaderRows,
+            sourceBanding,
+            tableRoute.tableId
+          )
+        : null;
       return {
         sfdt: next,
         anchor: block.anchor,

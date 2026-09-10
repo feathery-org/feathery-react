@@ -478,6 +478,9 @@ export class ReconciliationController {
       ...result.structuralMutations
     ];
     const authoredWrites: EngineWrite[] = [];
+    const existedBefore = new Set(
+      beforeCommands.occurrences.map((occurrence) => occurrence.tag)
+    );
     for (const occurrence of result.index.occurrences) {
       const priorTag = retagged.get(occurrence.tag) ?? occurrence.tag;
       const previous = beforeCommands.occurrences.find(
@@ -493,9 +496,15 @@ export class ReconciliationController {
         kind: occurrence.def.kind === 'formula' ? 'formula' : 'field'
       });
     }
+    const writesForExistingControls = result.writes.filter((write) =>
+      existedBefore.has(retagged.get(write.tag) ?? write.tag)
+    );
     result.writes = [
       ...new Map(
-        [...authoredWrites, ...result.writes].map((write) => [write.tag, write])
+        [...authoredWrites, ...writesForExistingControls].map((write) => [
+          write.tag,
+          write
+        ])
       ).values()
     ];
     // An authored batch takes the SAME native route as every other command.
