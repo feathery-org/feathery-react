@@ -209,6 +209,114 @@ describe('a composed split of the browser document accepts whole and conserves t
       expect([name, fragments[name]]).toEqual([name, baseline.formulas[name]]);
   });
 
+  it('APPLY ACROSS CALLS: the assistant may duplicate and delete separately without losing the summary', async () => {
+    const baseline = await openFresh();
+    const source = await session.call<string>('tableAnchor', TABLE);
+
+    const duplicated = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'duplicate_table',
+          group: 'g01-copy-split-fragment',
+          anchor: source,
+          rows: 'copy',
+          keepRows: [3, 4, 5]
+        }
+      ],
+      'assistant-split-copy'
+    );
+    expect(duplicated.outcomes).toEqual(['ok']);
+
+    const deleted = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'delete_row',
+          group: 'g02-remove-split-fragment',
+          anchor: `${source};3;0;0`,
+          rows: [3, 4, 5]
+        }
+      ],
+      'assistant-split-delete'
+    );
+    expect(deleted.outcomes).toEqual(['ok']);
+
+    const pending = await session.call<Record<string, string>>(
+      'formulaValues'
+    );
+    expect(pending.property_premium_subtotal).toBe(FIRST_FRAGMENT);
+    expect(pending.property_premium_copy_subtotal).toBe(SECOND_FRAGMENT);
+    for (const name of SUMMARY_LINES)
+      expect([name, pending[name]]).toEqual([name, baseline.formulas[name]]);
+
+    const groups = await session.call<any[]>('groups');
+    expect(
+      groups.find(
+        (group) => group.changeSetId === 'assistant-split-delete'
+      )?.derivedChanges
+    ).toEqual([
+      {
+        name: 'property_premium_subtotal',
+        beforeText: BASELINE_SUBTOTAL,
+        afterText: FIRST_FRAGMENT
+      }
+    ]);
+
+    await session.call('resolveGroups', true);
+    const accepted = await session.call<Record<string, string>>(
+      'formulaValues'
+    );
+    for (const name of SUMMARY_LINES)
+      expect([name, accepted[name]]).toEqual([name, baseline.formulas[name]]);
+  });
+
+  it('CONTROL ACROSS CALLS: a later unrelated delete does not turn a copy into a split', async () => {
+    const baseline = await openFresh();
+    const source = await session.call<string>('tableAnchor', TABLE);
+
+    expect(
+      (
+        await session.call<any>(
+          'applyEdits',
+          [
+            {
+              op: 'duplicate_table',
+              anchor: source,
+              rows: 'copy',
+              keepRows: [3, 4, 5]
+            }
+          ],
+          'standalone-copy'
+        )
+      ).outcomes
+    ).toEqual(['ok']);
+    expect(
+      (
+        await session.call<any>(
+          'applyEdits',
+          [
+            {
+              op: 'delete_row',
+              anchor: `${source};2;0;0`,
+              rows: [2]
+            }
+          ],
+          'unrelated-delete'
+        )
+      ).outcomes
+    ).toEqual(['ok']);
+
+    const expressions = await session.call<Record<string, string>>(
+      'formulaExpressions'
+    );
+    expect(expressions.summary_property).not.toContain(
+      'property_premium_copy_subtotal'
+    );
+    const values = await session.call<Record<string, string>>('formulaValues');
+    expect(values.summary_property).not.toBe(baseline.formulas.summary_property);
+  });
+
   it('ACCEPT: the split lands, destroys no binding, and the Premium Summary does not move', async () => {
     const baseline = await openFresh();
     expect((await split()).outcomes).toEqual(['ok', 'ok']);

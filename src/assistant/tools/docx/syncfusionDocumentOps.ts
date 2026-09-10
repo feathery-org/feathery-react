@@ -183,6 +183,7 @@ import type {
   AppearanceRestore,
   AppearanceWrite,
   BookmarkClampIntent,
+  DerivedValueChange,
   ExpressionRestore,
   ParagraphStyleRestore,
   BorderWrite,
@@ -13280,7 +13281,8 @@ function groupNewRevisions(
   stylesByGroup?: Map<string, ParagraphStyleRestore[]>,
   revisionsWereReloaded = false,
   clampsByGroup?: Map<string, BookmarkClampIntent[]>,
-  expressionsByGroup?: Map<string, ExpressionRestore[]>
+  expressionsByGroup?: Map<string, ExpressionRestore[]>,
+  derivedChangesByGroup?: Map<string, DerivedValueChange[]>
 ): RevisionGroupingReport {
   const createdAll = revisionsWereReloaded
     ? (() => {
@@ -13328,11 +13330,13 @@ function groupNewRevisions(
     const styles = stylesByGroup?.get(group);
     const clamps = clampsByGroup?.get(group);
     const expressions = expressionsByGroup?.get(group);
+    const derivedChanges = derivedChangesByGroup?.get(group);
     if (
       restores?.length ||
       styles?.length ||
       clamps?.length ||
-      expressions?.length
+      expressions?.length ||
+      derivedChanges?.length
     ) {
       // The live closures below disappear on reload; the same customData that
       // carries group identity therefore carries the exact appearance inverse
@@ -13348,7 +13352,8 @@ function groupNewRevisions(
             restores,
             styles,
             clamps,
-            expressions
+            expressions,
+            derivedChanges
           );
       }
     }
@@ -13374,6 +13379,24 @@ function groupNewRevisions(
     appearanceGroups,
     unresolvable
   };
+}
+
+function changedFormulaValues(before: any, after: any): DerivedValueChange[] {
+  const beforeFormulas = scanBindings(before).formulas;
+  const afterFormulas = scanBindings(after).formulas;
+  const changes: DerivedValueChange[] = [];
+  for (const [name, beforeOccurrences] of beforeFormulas) {
+    const beforeText = beforeOccurrences[0]?.text;
+    const afterText = afterFormulas.get(name)?.[0]?.text;
+    if (
+      typeof beforeText !== 'string' ||
+      typeof afterText !== 'string' ||
+      beforeText === afterText
+    )
+      continue;
+    changes.push({ name, beforeText, afterText });
+  }
+  return changes.sort((left, right) => left.name.localeCompare(right.name));
 }
 
 // changeSet.groups: ops declare the units, the post-write partition supplies
@@ -15334,6 +15357,39 @@ function followSuccessors(
   );
 }
 
+function rowPartitionSignature(row: TableEntry['rows'][number]): string {
+  return JSON.stringify(
+    [...row.bindings.values()]
+      .map((occurrence) => [
+        occurrence.def.options?.copyOf ?? occurrence.name,
+        occurrence.def.kind,
+        occurrence.text
+      ])
+      .sort(([left], [right]) => String(left).localeCompare(String(right)))
+  );
+}
+
+function copyMatchesRowsRemovedFromSource(
+  sourceBefore: TableEntry,
+  survivorAfter: TableEntry,
+  copyAfter: TableEntry
+): boolean {
+  const surviving = new Set(
+    survivorAfter.rows
+      .map((row) => row.rowId)
+      .filter((rowId): rowId is string => !!rowId)
+  );
+  const removed = sourceBefore.rows.filter(
+    (row) => !!row.rowId && !surviving.has(row.rowId)
+  );
+  if (removed.length !== copyAfter.rows.length) return false;
+  const sourceSignatures = removed.map(rowPartitionSignature).sort();
+  const copySignatures = copyAfter.rows.map(rowPartitionSignature).sort();
+  return sourceSignatures.every(
+    (signature, index) => signature === copySignatures[index]
+  );
+}
+
 function conserveSplitAggregates(before: any, after: any): SplitConservation {
   const beforeIndex = scanBindings(before);
   const afterIndex = scanBindings(after);
@@ -15348,8 +15404,8 @@ function conserveSplitAggregates(before: any, after: any): SplitConservation {
   const documentBinding = (index: BindingIndex, name: string) =>
     index.formulas.get(name)?.[0] ?? index.fields.get(name)?.[0];
 
-  for (const [copyId, copyTable] of afterIndex.tables) {
-    if (beforeIndex.tables.has(copyId) || !copyTable.tablePath) continue;
+  for (const [, copyTable] of afterIndex.tables) {
+    if (!copyTable.tablePath) continue;
     for (const occurrence of afterIndex.occurrences) {
       if (!pathContains(copyTable.tablePath, occurrence.path)) continue;
       const origin = (occurrence.def as any)?.options?.copyOf;
@@ -15365,21 +15421,17 @@ function conserveSplitAggregates(before: any, after: any): SplitConservation {
       if (!sourceTable) continue;
       const [sourceId, sourceEntry] = sourceTable;
       const survivor = afterIndex.tables.get(sourceId);
-      // THE DISCRIMINATOR, and it is arithmetic rather than a guess at intent:
-      // the fragments must PARTITION the original's rows. A split moves rows,
-      // so the two fragments add up to what the source had; a copy duplicates
-      // them, so they add up to more, and adding a copy's aggregate to its
-      // source's would double-count every row they share. Measured on the
-      // composed-probe fixture, which copies a whole table and then deletes one
-      // row from the source: the source did lose rows, and it is still not a
-      // split. Anything that is not a partition is left entirely alone, which
-      // is copyFidelity's law - a copy must never steal references that
-      // pointed at its source.
+      // THE DISCRIMINATOR is the row partition, not whether the copy happened
+      // in this call. The assistant may issue duplicate_table and delete_row as
+      // two tool calls. Provenance identifies the family; the source must have
+      // shrunk in THIS call; and the copied rows must match exactly the rows
+      // that disappeared from it. A standalone copy never shrinks its source,
+      // while an unrelated later delete cannot pass the row-content match.
       if (
         !survivor ||
         !survivor.tablePath ||
         survivor.rows.length >= sourceEntry.rows.length ||
-        survivor.rows.length + copyTable.rows.length !== sourceEntry.rows.length
+        !copyMatchesRowsRemovedFromSource(sourceEntry, survivor, copyTable)
       )
         continue;
       minted.set(origin, occurrence.name);
@@ -21580,6 +21632,7 @@ function applyDocumentEditsMeasured(
    * easy to see. An op added later is covered by construction.
    */
   const paragraphStylesByGroup = new Map<string, ParagraphStyleRestore[]>();
+  const derivedChangesByGroup = new Map<string, DerivedValueChange[]>();
   const recordParagraphStyles = (op: EditOp, anchors: unknown[]) => {
     // Only ops that can create or remove a paragraph can trigger the merge.
     if (!mayShiftAnchors(op)) return;
@@ -23155,6 +23208,15 @@ function applyDocumentEditsMeasured(
             );
             if (nativeFailure)
               throw new OpError('engine_apply_failed', nativeFailure.message);
+            const derivedChanges = changedFormulaValues(
+              beforeCommands,
+              engineResult.sfdt
+            );
+            if (derivedChanges.length)
+              derivedChangesByGroup.set(
+                opGroupId(enginePlans[0].op, changeSetId),
+                derivedChanges
+              );
             if (engineResult.diagnostics.length) {
               warnings.push(
                 `binding_engine_diagnostics: ${engineResult.diagnostics
@@ -23292,7 +23354,8 @@ function applyDocumentEditsMeasured(
     paragraphStylesByGroup,
     enginePlans.length > 0,
     bookmarkClampsByGroup,
-    expressionRestoresByGroup
+    expressionRestoresByGroup,
+    derivedChangesByGroup
   );
   const revisionCount = grouping.revisionCount;
   // THE ASSERTION, and it fails the change set rather than warning past it: a

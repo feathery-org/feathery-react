@@ -224,6 +224,13 @@ export interface ExpressionRestore {
   requires: string;
 }
 
+/** A calculated value changed by the reviewed edits in the same card. */
+export interface DerivedValueChange {
+  name: string;
+  beforeText: string;
+  afterText: string;
+}
+
 /** How much paragraph text identifies a restore. Long enough to be unique. */
 const PARAGRAPH_IDENTITY_LIMIT = 200;
 
@@ -368,6 +375,7 @@ interface RevisionGroupTag {
   paragraphStyles?: ParagraphStyleRestore[];
   bookmarkClamps?: PersistedBookmarkClamp[];
   expressionRestores?: ExpressionRestore[];
+  derivedChanges?: DerivedValueChange[];
 }
 
 export function revisionGroupTag(
@@ -376,7 +384,8 @@ export function revisionGroupTag(
   appearanceRestores?: AppearanceRestore[],
   paragraphStyles?: ParagraphStyleRestore[],
   bookmarkClamps?: PersistedBookmarkClamp[],
-  expressionRestores?: ExpressionRestore[]
+  expressionRestores?: ExpressionRestore[],
+  derivedChanges?: DerivedValueChange[]
 ): string {
   return JSON.stringify({
     v: REVISION_GROUP_TAG_VERSION,
@@ -386,8 +395,34 @@ export function revisionGroupTag(
     ...(appearanceRestores?.length ? { appearanceRestores } : {}),
     ...(paragraphStyles?.length ? { paragraphStyles } : {}),
     ...(bookmarkClamps?.length ? { bookmarkClamps } : {}),
-    ...(expressionRestores?.length ? { expressionRestores } : {})
+    ...(expressionRestores?.length ? { expressionRestores } : {}),
+    ...(derivedChanges?.length ? { derivedChanges } : {})
   });
+}
+
+function parseDerivedValueChanges(
+  value: unknown
+): DerivedValueChange[] | undefined {
+  if (!Array.isArray(value) || !value.length) return undefined;
+  const changes: DerivedValueChange[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item))
+      return undefined;
+    const raw = item as Record<string, unknown>;
+    if (
+      typeof raw.name !== 'string' ||
+      !raw.name ||
+      typeof raw.beforeText !== 'string' ||
+      typeof raw.afterText !== 'string'
+    )
+      return undefined;
+    changes.push({
+      name: raw.name,
+      beforeText: raw.beforeText,
+      afterText: raw.afterText
+    });
+  }
+  return changes;
 }
 
 function parsePersistedExpressionRestores(
@@ -729,13 +764,15 @@ export function parseRevisionGroupTag(
       const expressionRestores = parsePersistedExpressionRestores(
         parsed.expressionRestores
       );
+      const derivedChanges = parseDerivedValueChanges(parsed.derivedChanges);
       return {
         changeSetId: parsed.changeSetId,
         group: parsed.group,
         ...(appearanceRestores ? { appearanceRestores } : {}),
         ...(paragraphStyles ? { paragraphStyles } : {}),
         ...(bookmarkClamps ? { bookmarkClamps } : {}),
-        ...(expressionRestores ? { expressionRestores } : {})
+        ...(expressionRestores ? { expressionRestores } : {}),
+        ...(derivedChanges ? { derivedChanges } : {})
       };
     }
   } catch {
@@ -2412,6 +2449,7 @@ interface RevisionGroupView {
   changeSetId: string;
   group: string;
   untagged?: boolean;
+  derivedChanges?: DerivedValueChange[];
   items: RevisionGroupItem[];
 }
 
@@ -2513,7 +2551,14 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
     let view = views.get(key);
     if (!view) {
       view = tag
-        ? { changeSetId: tag.changeSetId, group: tag.group, items: [] }
+        ? {
+            changeSetId: tag.changeSetId,
+            group: tag.group,
+            ...(tag.derivedChanges
+              ? { derivedChanges: tag.derivedChanges }
+              : {}),
+            items: []
+          }
         : { changeSetId: '', group: author, untagged: true, items: [] };
       views.set(key, view);
     }

@@ -215,6 +215,7 @@ function TrackedChangeGroups({
         // A human view's "group" IS the author name; keep it verbatim.
         title: view.untagged ? view.group : humanizeGroupId(view.group),
         untagged: view.untagged,
+        derivedChanges: view.derivedChanges,
         chips: view.items.map((item) => ({
           revision: item.revision,
           revisions: item.revisions,

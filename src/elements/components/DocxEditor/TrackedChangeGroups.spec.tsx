@@ -52,8 +52,22 @@ if (!(testWindow.SVGElement.prototype as any).getBBox) {
 // A minimal live-editor stand-in: tagged revisions in a collection, plus the
 // event surface the panel subscribes to. Group tags use the same JSON shape
 // the ops engine stamps through revisionSettings.customData.
-const tag = (changeSetId: string, group: string) =>
-  JSON.stringify({ v: 1, source: 'robin', changeSetId, group });
+const tag = (
+  changeSetId: string,
+  group: string,
+  derivedChanges?: Array<{
+    name: string;
+    beforeText: string;
+    afterText: string;
+  }>
+) =>
+  JSON.stringify({
+    v: 1,
+    source: 'robin',
+    changeSetId,
+    group,
+    ...(derivedChanges ? { derivedChanges } : {})
+  });
 
 function makeEditor(revisions: any[]): any {
   const listeners: Record<string, Array<() => void>> = {};
@@ -196,6 +210,32 @@ describe('TrackedChangeGroups', () => {
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
     expect(screen.getByText('Robin (assistant)')).toBeInTheDocument();
+  });
+
+  it('shows calculated before and after values on the card that caused them', () => {
+    const editor = makeEditor([
+      makeRevision({
+        customData: tag('cs-1', 'split-property-table', [
+          {
+            name: 'property_premium_subtotal',
+            beforeText: '$22,054.40',
+            afterText: '$11,008.00'
+          }
+        ])
+      })
+    ]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    expect(screen.getByText('1 edit · 1 calculated')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Calculated values updated')
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Split property table' })
+    );
+    expect(screen.getByText('Calculated values updated')).toBeInTheDocument();
+    expect(screen.getByText('property premium subtotal')).toBeInTheDocument();
+    expect(screen.getByText('$22,054.40 → $11,008.00')).toBeInTheDocument();
   });
 
   it('keeps every review control from submitting the surrounding form', () => {

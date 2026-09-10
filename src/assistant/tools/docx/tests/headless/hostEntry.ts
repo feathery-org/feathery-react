@@ -743,7 +743,8 @@ const api = {
     listRevisionGroups(live() as any).map((view: any) => ({
       changeSetId: view.changeSetId,
       group: view.group,
-      untagged: view.untagged
+      untagged: view.untagged,
+      derivedChanges: view.derivedChanges
     })),
 
   chipCount: (): number =>
