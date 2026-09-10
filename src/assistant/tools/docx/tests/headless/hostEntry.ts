@@ -450,7 +450,12 @@ const api = {
   applyEdits(
     edits: any[],
     changeSetId?: string
-  ): { outcomes: string[]; messages: string[]; groups: number; revisions: number } {
+  ): {
+    outcomes: string[];
+    messages: string[];
+    groups: number;
+    revisions: number;
+  } {
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits,
       ...(changeSetId ? { changeSetId } : {})
@@ -469,11 +474,20 @@ const api = {
   nativeSplitRows(
     tableId: string,
     rows: number[]
-  ): { outcomes: string[]; messages: string[]; ops: string[]; warnings: string[] } {
+  ): {
+    outcomes: string[];
+    messages: string[];
+    ops: string[];
+    warnings: string[];
+  } {
     const blockIndex = tableBlockIndex(tableId);
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits: [
-        { op: 'split_table', anchor: `0;${blockIndex};${rows[0]};0;0`, rows } as any
+        {
+          op: 'split_table',
+          anchor: `0;${blockIndex};${rows[0]};0;0`,
+          rows
+        } as any
       ]
     });
     return {
@@ -500,7 +514,11 @@ const api = {
           rows: 'copy',
           keepRows: rows
         } as any,
-        { op: 'delete_row', anchor: `0;${blockIndex};${rows[0]};0;0`, rows } as any
+        {
+          op: 'delete_row',
+          anchor: `0;${blockIndex};${rows[0]};0;0`,
+          rows
+        } as any
       ]
     });
     return {
@@ -513,7 +531,10 @@ const api = {
   },
 
   /** A standalone tracked delete_row of the given item rows, one change set. */
-  deleteRows(tableId: string, rows: number[]): { outcomes: string[]; messages: string[]; warnings: string[] } {
+  deleteRows(
+    tableId: string,
+    rows: number[]
+  ): { outcomes: string[]; messages: string[]; warnings: string[] } {
     const blockIndex = tableBlockIndex(tableId);
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits: [
@@ -685,7 +706,11 @@ const api = {
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       changeSetId: 'undo-attribution',
       edits: [
-        { op: 'delete_row', anchor: `0;${blockIndex};${row};0;0`, rows: [row] } as any
+        {
+          op: 'delete_row',
+          anchor: `0;${blockIndex};${row};0;0`,
+          rows: [row]
+        } as any
       ]
     });
     return {
@@ -710,6 +735,20 @@ const api = {
     ),
 
   /** Accept (`true`) or reject (`false`) every live group as one undo. */
+  /** Resolve only the groups one change set created, as one undo. */
+  async resolveGroupsOf(changeSetId: string, accept: boolean): Promise<number> {
+    const groups = api
+      .groups()
+      .filter((group: any) => group.changeSetId === changeSetId);
+    const attempts = resolveLiveRevisionGroupsAsOneUndo(
+      live() as any,
+      groups,
+      accept
+    );
+    await frame();
+    return typeof attempts === 'number' ? attempts : -1;
+  },
+
   async resolveGroups(accept: boolean): Promise<number> {
     const attempts = resolveLiveRevisionGroupsAsOneUndo(
       live() as any,
