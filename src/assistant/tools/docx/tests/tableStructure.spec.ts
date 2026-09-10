@@ -209,4 +209,33 @@ describe('deriveTableStructure - roles from evidence', () => {
     });
     expect(structure.rows.map((r) => r.role)).toEqual(['header']);
   });
+
+  it('(k) recognizes a row binding carried by the cell wrapper', () => {
+    const structure = deriveTableStructure({
+      tableBlock: {
+        rows: [
+          { cells: [{ blocks: [] }] },
+          {
+            cells: [
+              {
+                contentControlProperties: {
+                  tag: '[[name=item|type=text|row=r-created]]'
+                },
+                inlines: [{ text: 'Signage' }],
+                blocks: []
+              }
+            ]
+          }
+        ]
+      },
+      headerRows: 1,
+      tableId: 'costs',
+      documentFormulas: new Map()
+    });
+
+    expect(structure.rows).toEqual([
+      { index: 0, role: 'header' },
+      { index: 1, role: 'item', rowId: 'r-created' }
+    ]);
+  });
 });

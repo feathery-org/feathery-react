@@ -103,12 +103,17 @@ function nodeText(node: any): string {
   return out;
 }
 
-function tableBlockIndex(tableId: string): number {
-  const found = parsed().sections[0].blocks.findIndex((block: any) =>
-    JSON.stringify(block).includes(`[[table=${tableId}]]`)
-  );
-  if (found < 0) throw new Error(`no marker for table "${tableId}"`);
-  return found;
+function tableBlockAnchor(tableId: string): string {
+  const path = indexOf().tables.get(tableId)?.markerPath as
+    | Array<string | number>
+    | undefined;
+  const sectionKey = path?.indexOf('sections') ?? -1;
+  const blockKey = path?.indexOf('blocks', sectionKey + 2) ?? -1;
+  const section = sectionKey >= 0 ? Number(path?.[sectionKey + 1]) : NaN;
+  const block = blockKey >= 0 ? Number(path?.[blockKey + 1]) : NaN;
+  if (!Number.isInteger(section) || !Number.isInteger(block))
+    throw new Error(`no body marker for table "${tableId}"`);
+  return `${section};${block}`;
 }
 
 /** The table node for a bound id, reached by the scanner's own indexed path. */
@@ -382,6 +387,12 @@ const api = {
 
   tableIds: (): string[] => Array.from(indexOf().tables.keys()).map(String),
 
+  /** Bound row identities in document order, used to catch stale or duplicated controls. */
+  tableRowIds: (tableId: string): string[] =>
+    (indexOf().tables.get(tableId)?.rows ?? []).map((row: any) =>
+      String(row.rowId)
+    ),
+
   /** The roles `deriveTableStructure` assigns, row by row. */
   tableRoles: (tableId: string, headerRows: number): string[] =>
     deriveTableStructure({
@@ -416,18 +427,18 @@ const api = {
       .map((row: any) => row.index);
     if (!moving.length)
       throw new Error(`no item rows at or below ${splitAtRow} in "${tableId}"`);
-    const blockIndex = tableBlockIndex(tableId);
+    const tableAnchor = tableBlockAnchor(tableId);
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits: [
         {
           op: 'duplicate_table',
-          anchor: `0;${blockIndex};0;0;0`,
+          anchor: `${tableAnchor};0;0;0`,
           rows: 'copy',
           keepRows: moving
         } as any,
         {
           op: 'delete_row',
-          anchor: `0;${blockIndex};${moving[0]};0;0`,
+          anchor: `${tableAnchor};${moving[0]};0;0`,
           rows: moving
         } as any
       ]
@@ -443,7 +454,7 @@ const api = {
 
   /** The table's own anchor ("section;block"), the way the model names a whole table. */
   tableAnchor(tableId: string): string {
-    return `0;${tableBlockIndex(tableId)}`;
+    return tableBlockAnchor(tableId);
   },
 
   /** Any raw edits array, exactly as the model would send it; outcomes plus group count. */
@@ -480,12 +491,12 @@ const api = {
     ops: string[];
     warnings: string[];
   } {
-    const blockIndex = tableBlockIndex(tableId);
+    const tableAnchor = tableBlockAnchor(tableId);
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits: [
         {
           op: 'split_table',
-          anchor: `0;${blockIndex};${rows[0]};0;0`,
+          anchor: `${tableAnchor};${rows[0]};0;0`,
           rows
         } as any
       ]
@@ -505,18 +516,18 @@ const api = {
     tableId: string,
     rows: number[]
   ): { outcomes: string[]; messages: string[]; warnings: string[] } {
-    const blockIndex = tableBlockIndex(tableId);
+    const tableAnchor = tableBlockAnchor(tableId);
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits: [
         {
           op: 'duplicate_table',
-          anchor: `0;${blockIndex};0;0;0`,
+          anchor: `${tableAnchor};0;0;0`,
           rows: 'copy',
           keepRows: rows
         } as any,
         {
           op: 'delete_row',
-          anchor: `0;${blockIndex};${rows[0]};0;0`,
+          anchor: `${tableAnchor};${rows[0]};0;0`,
           rows
         } as any
       ]
@@ -535,12 +546,12 @@ const api = {
     tableId: string,
     rows: number[]
   ): { outcomes: string[]; messages: string[]; warnings: string[] } {
-    const blockIndex = tableBlockIndex(tableId);
+    const tableAnchor = tableBlockAnchor(tableId);
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits: [
         {
           op: 'delete_row',
-          anchor: `0;${blockIndex};${rows[0]};0;0`,
+          anchor: `${tableAnchor};${rows[0]};0;0`,
           rows
         } as any
       ]
@@ -659,12 +670,12 @@ const api = {
     ops: string[];
     warnings: string[];
   } {
-    const blockIndex = tableBlockIndex(tableId);
+    const tableAnchor = tableBlockAnchor(tableId);
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits: [
         {
           op: 'split_table',
-          anchor: `0;${blockIndex};${splitAtRow};0;0`,
+          anchor: `${tableAnchor};${splitAtRow};0;0`,
           splitAtRow
         } as any
       ]
@@ -702,13 +713,13 @@ const api = {
     tableId: string,
     row: number
   ): { outcomes: string[]; messages: string[] } {
-    const blockIndex = tableBlockIndex(tableId);
+    const tableAnchor = tableBlockAnchor(tableId);
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       changeSetId: 'undo-attribution',
       edits: [
         {
           op: 'delete_row',
-          anchor: `0;${blockIndex};${row};0;0`,
+          anchor: `${tableAnchor};${row};0;0`,
           rows: [row]
         } as any
       ]

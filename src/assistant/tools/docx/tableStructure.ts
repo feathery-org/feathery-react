@@ -63,25 +63,29 @@ const inlinesOf = (node: any): any[] => node?.inlines ?? node?.i ?? [];
  */
 function tagsInRow(row: any): string[] {
   const found: string[] = [];
+  const addTag = (node: any): void => {
+    const tag = node?.contentControlProperties?.tag ?? node?.ccp?.tg ?? null;
+    if (typeof tag === 'string') found.push(tag);
+  };
   const walkInlines = (inlines: any[]): void => {
     for (const inline of inlines ?? []) {
-      const tag =
-        inline?.contentControlProperties?.tag ?? inline?.ccp?.tg ?? null;
-      if (typeof tag === 'string') found.push(tag);
+      addTag(inline);
       walkInlines(inlinesOf(inline));
     }
   };
   const walkBlocks = (blocks: any[]): void => {
     for (const block of blocks ?? []) {
-      const tag =
-        block?.contentControlProperties?.tag ?? block?.ccp?.tg ?? null;
-      if (typeof tag === 'string') found.push(tag);
+      addTag(block);
       walkInlines(inlinesOf(block));
       walkBlocks(blocksOf(block));
       // A nested table's own rows belong to that table, not to this row.
     }
   };
-  for (const cell of cellsOf(row)) walkBlocks(blocksOf(cell));
+  for (const cell of cellsOf(row)) {
+    addTag(cell);
+    walkInlines(inlinesOf(cell));
+    walkBlocks(blocksOf(cell));
+  }
   return found;
 }
 
