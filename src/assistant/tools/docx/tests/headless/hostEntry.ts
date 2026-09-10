@@ -473,6 +473,7 @@ const api = {
     messages: string[];
     groups: number;
     revisions: number;
+    warnings: string[];
   } {
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits,
@@ -484,7 +485,8 @@ const api = {
       ),
       messages: result.results.map((entry: any) => String(entry.message ?? '')),
       groups: listRevisionGroups(live() as unknown as LiveEditor).length,
-      revisions: (live() as any).revisions?.length ?? 0
+      revisions: (live() as any).revisions?.length ?? 0,
+      warnings: (result.warnings ?? []).map((entry: any) => String(entry))
     };
   },
 

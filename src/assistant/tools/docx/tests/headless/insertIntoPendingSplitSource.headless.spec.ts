@@ -40,6 +40,38 @@ const addSignage = (source: string) => [
   }
 ];
 
+const addGlass = (copy: string) => [
+  {
+    op: 'insert_row',
+    group: 'g02-add-glass',
+    anchor: `${copy};1;0;0`,
+    expect: 'Stock'
+  },
+  {
+    op: 'set_cell_text',
+    group: 'g02-add-glass',
+    anchor: `${copy};2;0;0`,
+    expect: '',
+    text: 'Glass'
+  },
+  {
+    op: 'set_cell_text',
+    group: 'g02-add-glass',
+    anchor: `${copy};2;1;0`,
+    expect: '',
+    text: '1',
+    literal: true
+  },
+  {
+    op: 'set_cell_text',
+    group: 'g02-add-glass',
+    anchor: `${copy};2;2;0`,
+    expect: '',
+    text: '200.00',
+    literal: true
+  }
+];
+
 describe('bound row operations while a source split is still pending', () => {
   let session: HeadlessSession;
 
@@ -77,6 +109,165 @@ describe('bound row operations while a source split is still pending', () => {
     expect(await session.call<any[]>('groups')).toHaveLength(1);
     return source;
   };
+
+  const openWithNativePendingSplit = async (): Promise<{
+    original: string;
+    source: string;
+    copy: string;
+  }> => {
+    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    const original = await session.call<string>('serialize');
+    const source = await session.call<string>('tableAnchor', SOURCE);
+    const split = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'split_table',
+          group: 'g01-split-tail',
+          anchor: `${source};3;0;0`,
+          splitAtRow: 3
+        }
+      ],
+      'pending-source-split'
+    );
+    expect(split.outcomes).toEqual(['ok']);
+    expect(await session.call<any[]>('groups')).toHaveLength(1);
+    return {
+      original,
+      source,
+      copy: await session.call<string>('tableAnchor', COPY)
+    };
+  };
+
+  it('restripes and exactly rejects an ordinary mid-table insertion', async () => {
+    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    const original = await session.call<string>('serialize');
+    const source = await session.call<string>('tableAnchor', SOURCE);
+    const edits = [
+      {
+        op: 'insert_row',
+        group: 'g01-add-signage',
+        anchor: `${source};2;0;0`,
+        expect: 'Contents'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-signage',
+        anchor: `${source};3;0;0`,
+        expect: '',
+        text: 'Signage'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-signage',
+        anchor: `${source};3;1;0`,
+        expect: '',
+        text: '3',
+        literal: true
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-signage',
+        anchor: `${source};3;2;0`,
+        expect: '',
+        text: '210.00',
+        literal: true
+      }
+    ];
+    const inserted = await session.call<any>(
+      'applyEdits',
+      edits,
+      'ordinary-source-insert'
+    );
+    expect(inserted.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
+    expect(inserted.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/left unbanded/)])
+    );
+    expect(
+      await session.call<Array<string | null>>('rowShading', SOURCE)
+    ).toEqual([
+      '#001B49FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      '#E6E6E6FF',
+      null
+    ]);
+    await session.call('resolveGroupsOf', 'ordinary-source-insert', false);
+    expect(await session.call<string>('serialize')).toBe(original);
+
+    expect(
+      (
+        await session.call<any>(
+          'applyEdits',
+          edits,
+          'ordinary-source-insert-again'
+        )
+      ).outcomes
+    ).toEqual(['ok', 'ok', 'ok', 'ok']);
+    await session.call('resolveGroups', true);
+    expect(
+      await session.call<Array<string | null>>('rowShading', SOURCE)
+    ).toEqual([
+      '#001B49FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      '#E6E6E6FF',
+      null
+    ]);
+  }, 120000);
+
+  it('restripes and exactly rejects an ordinary mid-table deletion', async () => {
+    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    const original = await session.call<string>('serialize');
+    const source = await session.call<string>('tableAnchor', SOURCE);
+    const deletion = [
+      {
+        op: 'delete_row',
+        group: 'g01-delete-contents',
+        anchor: `${source};2;0;0`,
+        expect: 'Contents',
+        rows: [2]
+      }
+    ];
+    const deleted = await session.call<any>(
+      'applyEdits',
+      deletion,
+      'ordinary-source-delete'
+    );
+    expect(deleted.outcomes).toEqual(['ok']);
+    expect(deleted.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/left unbanded/)])
+    );
+    await session.call('resolveGroupsOf', 'ordinary-source-delete', false);
+    expect(await session.call<string>('serialize')).toBe(original);
+
+    expect(
+      (
+        await session.call<any>(
+          'applyEdits',
+          deletion,
+          'ordinary-source-delete-again'
+        )
+      ).outcomes
+    ).toEqual(['ok']);
+    await session.call('resolveGroups', true);
+    expect(
+      await session.call<Array<string | null>>('rowShading', SOURCE)
+    ).toEqual([
+      '#001B49FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      '#E6E6E6FF',
+      null
+    ]);
+  }, 120000);
 
   it('creates a new green row instead of writing into a struck-through row', async () => {
     const source = await openWithPendingSplit();
@@ -158,6 +349,221 @@ describe('bound row operations while a source split is still pending', () => {
     const groups = await session.call<any[]>('groups');
     expect(groups).toHaveLength(1);
     expect(groups[0].changeSetId).toBe('pending-source-split');
+  }, 120000);
+
+  it('restripes the copied table subtotal when a row is added before accepting the split', async () => {
+    const { copy } = await openWithNativePendingSplit();
+    const inserted = await session.call<any>(
+      'applyEdits',
+      addGlass(copy),
+      'pending-copy-insert'
+    );
+    expect(inserted.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
+    expect(inserted.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/left unbanded/)])
+    );
+    expect(
+      (await session.call<string[]>('tableRowTexts', COPY))[2]
+    ).toBe('Glass1$200.00$200.00');
+    expect(
+      await session.call<Array<string | null>>('rowShading', COPY)
+    ).toEqual([
+      '#001B49FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      '#E6E6E6FF',
+      null
+    ]);
+
+    await session.call('resolveGroups', true);
+    expect(
+      await session.call<Array<string | null>>('rowShading', COPY)
+    ).toEqual([
+      '#001B49FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      '#E6E6E6FF',
+      null
+    ]);
+    const formulas = await session.call<Record<string, string>>(
+      'formulaValues'
+    );
+    expect(formulas.property_premium_copy_subtotal).toBe('$11,246.40');
+    expect(formulas.summary_subtotal).toBe('$75,867.35');
+    expect(formulas.summary_tax).toBe('$6,448.72');
+    expect(formulas.grand_total).toBe('$82,316.07');
+  }, 120000);
+
+  it('rejects a copied-table row back through the pending split to the exact original', async () => {
+    const { copy, original } = await openWithNativePendingSplit();
+    const beforeRows = await session.call<string[]>('tableRowTexts', COPY);
+    const beforeShading = await session.call<Array<string | null>>(
+      'rowShading',
+      COPY
+    );
+    const beforeFormulas = await session.call<Record<string, string>>(
+      'formulaValues'
+    );
+    expect(
+      (
+        await session.call<any>(
+          'applyEdits',
+          addGlass(copy),
+          'pending-copy-insert'
+        )
+      ).outcomes
+    ).toEqual(['ok', 'ok', 'ok', 'ok']);
+
+    await session.call('resolveGroupsOf', 'pending-copy-insert', false);
+    expect(await session.call<string[]>('tableRowTexts', COPY)).toEqual(
+      beforeRows
+    );
+    expect(
+      await session.call<Array<string | null>>('rowShading', COPY)
+    ).toEqual(beforeShading);
+    expect(
+      await session.call<Record<string, string>>('formulaValues')
+    ).toEqual(beforeFormulas);
+    const groups = await session.call<any[]>('groups');
+    expect(groups).toHaveLength(1);
+    expect(groups[0].changeSetId).toBe('pending-source-split');
+
+    await session.call('resolveGroupsOf', 'pending-source-split', false);
+    expect(await session.call<string>('serialize')).toBe(original);
+  }, 120000);
+
+  it('restripes after deleting from the copied table before accepting the split', async () => {
+    const { copy } = await openWithNativePendingSplit();
+    const deleted = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'delete_row',
+          group: 'g02-delete-business',
+          anchor: `${copy};2;0;0`,
+          expect: 'Business interruption',
+          rows: [2]
+        }
+      ],
+      'pending-copy-delete'
+    );
+    expect(deleted.outcomes).toEqual(['ok']);
+    expect(deleted.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/left unbanded/)])
+    );
+    expect(
+      await session.call<Array<string | null>>('rowShading', COPY)
+    ).toEqual([
+      '#001B49FF',
+      null,
+      '#E6E6E6FF',
+      '#E6E6E6FF',
+      null
+    ]);
+
+    await session.call('resolveGroups', true);
+    expect(await session.call<string[]>('tableRowTexts', COPY)).toEqual([
+      'ItemUnitsRateLine total',
+      'Stock15$288.40$4,326.00',
+      'Machinery breakdown6$372.90$2,237.40',
+      'Subsection subtotal$6,563.40'
+    ]);
+    expect(
+      await session.call<Array<string | null>>('rowShading', COPY)
+    ).toEqual(['#001B49FF', null, '#E6E6E6FF', null]);
+    const formulas = await session.call<Record<string, string>>(
+      'formulaValues'
+    );
+    expect(formulas.property_premium_copy_subtotal).toBe('$6,563.40');
+    expect(formulas.summary_subtotal).toBe('$71,184.35');
+    expect(formulas.summary_tax).toBe('$6,050.67');
+    expect(formulas.grand_total).toBe('$77,235.02');
+  }, 120000);
+
+  it('rejects a copied-table deletion back through the split to the exact original', async () => {
+    const { copy, original } = await openWithNativePendingSplit();
+    const beforeRows = await session.call<string[]>('tableRowTexts', COPY);
+    const beforeShading = await session.call<Array<string | null>>(
+      'rowShading',
+      COPY
+    );
+    const beforeFormulas = await session.call<Record<string, string>>(
+      'formulaValues'
+    );
+    expect(
+      (
+        await session.call<any>(
+          'applyEdits',
+          [
+            {
+              op: 'delete_row',
+              group: 'g02-delete-business',
+              anchor: `${copy};2;0;0`,
+              expect: 'Business interruption',
+              rows: [2]
+            }
+          ],
+          'pending-copy-delete'
+        )
+      ).outcomes
+    ).toEqual(['ok']);
+
+    await session.call('resolveGroupsOf', 'pending-copy-delete', false);
+    expect(await session.call<string[]>('tableRowTexts', COPY)).toEqual(
+      beforeRows
+    );
+    expect(
+      await session.call<Array<string | null>>('rowShading', COPY)
+    ).toEqual(beforeShading);
+    expect(
+      await session.call<Record<string, string>>('formulaValues')
+    ).toEqual(beforeFormulas);
+    const groups = await session.call<any[]>('groups');
+    expect(groups).toHaveLength(1);
+    expect(groups[0].changeSetId).toBe('pending-source-split');
+
+    await session.call('resolveGroupsOf', 'pending-source-split', false);
+    expect(await session.call<string>('serialize')).toBe(original);
+  }, 120000);
+
+  it('restripes after deleting from the original table before accepting the split', async () => {
+    const { source } = await openWithNativePendingSplit();
+    const deleted = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'delete_row',
+          group: 'g02-delete-contents',
+          anchor: `${source};2;0;0`,
+          expect: 'Contents',
+          rows: [2]
+        }
+      ],
+      'pending-source-delete'
+    );
+    expect(deleted.outcomes).toEqual(['ok']);
+    expect(deleted.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/left unbanded/)])
+    );
+
+    await session.call('resolveGroups', true);
+    const rows = await session.call<string[]>('tableRowTexts', SOURCE);
+    expect(rows).toHaveLength(3);
+    expect(rows[1]).toContain('Buildings');
+    expect(rows[2]).toContain('$7,686.00');
+    expect(
+      await session.call<Array<string | null>>('rowShading', SOURCE)
+    ).toEqual(['#001B49FF', null, '#E6E6E6FF']);
+    const formulas = await session.call<Record<string, string>>(
+      'formulaValues'
+    );
+    expect(formulas.property_premium_subtotal).toBe('$7,686.00');
+    expect(formulas.property_premium_copy_subtotal).toBe('$11,046.40');
+    expect(formulas.summary_subtotal).toBe('$72,345.35');
+    expect(formulas.summary_tax).toBe('$6,149.35');
+    expect(formulas.grand_total).toBe('$78,494.70');
   }, 120000);
 
   it('can accept an added row and then delete it while the split stays pending', async () => {

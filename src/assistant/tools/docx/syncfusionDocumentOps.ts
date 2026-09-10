@@ -1727,6 +1727,10 @@ function allRevisionIdsIn(rids: unknown, ids: Set<string>): boolean {
   );
 }
 
+function anyRevisionIdIn(rids: unknown, ids: Set<string>): boolean {
+  return Array.isArray(rids) && rids.some((id) => ids.has(String(id)));
+}
+
 function paragraphMarkRevisionIds(block: any): unknown {
   return pick(pick(block, 'characterFormat', 'cf'), 'revisionIds', 'rids');
 }
@@ -4943,7 +4947,7 @@ function revisionProjectionStream(sfdt: any, dropIds: Set<string>): string {
       const rows = getRows(block);
       if (rows) {
         for (const row of rows) {
-          if (allRevisionIdsIn(rowRevisionIds(row), dropIds)) continue;
+          if (anyRevisionIdIn(rowRevisionIds(row), dropIds)) continue;
           const cells: any[] = pick(row, 'cells', 'c') ?? [];
           for (const cell of cells) {
             for (const cellBlock of getBlocks(cell)) pushParagraph(cellBlock);
@@ -12279,10 +12283,9 @@ function finalizeTableAppearance(
   // appearance may be written there freely. Slice 1's copy invariant,
   // generalized, and scoped: document-wide insertions would include an earlier
   // set's pending rows, which this set's reject leaves exactly where they are.
+  const allInserted = insertedRevisionIds(sfdt);
   const inserted = new Set(
-    [...insertedRevisionIds(sfdt)].filter(
-      (id) => !preExistingRevisionIds.has(id)
-    )
+    [...allInserted].filter((id) => !preExistingRevisionIds.has(id))
   );
 
   for (const footprint of latest.values()) {
@@ -12313,6 +12316,7 @@ function finalizeTableAppearance(
     if (!current) continue;
     const banding = footprint.banding ?? detectTableBanding(current);
     if (!banding) continue;
+    const currentShadings = rowShadings(current);
 
     // Which live rows survive an accept, in order. A row wholly marked deleted
     // contributes no band and takes no fill.
@@ -12326,11 +12330,15 @@ function finalizeTableAppearance(
       documentFormulas
     }).rows;
 
-    const planned: Array<{ row: number; shading: string | null }> = [];
+    const planned: Array<{
+      row: number;
+      shading: string | null;
+      materialize?: boolean;
+    }> = [];
     let survivorIndex = 0;
     let skippedKeyless = 0;
     rows.forEach((row: any, index: number) => {
-      if (allRevisionIdsIn(rowRevisionIds(row), deleted)) return;
+      if (anyRevisionIdIn(rowRevisionIds(row), deleted)) return;
       // The stripe covers the rows the TEMPLATE striped: every item row, and the
       // totals row too when the source shaded it as the next band.
       const role = roles[index]?.role;
@@ -12382,10 +12390,27 @@ function finalizeTableAppearance(
           const rowCarriesPriorPendingWork = [...rowIds].some((id) =>
             preExistingRevisionIds.has(id)
           );
+          const whollyPriorInsertion =
+            rowIds.size > 0 &&
+            [...rowIds].every(
+              (id) => preExistingRevisionIds.has(id) && allInserted.has(id)
+            );
+          // Give a row this change set created an explicit no-fill key while
+          // rejection can still remove the whole row. A later change set can
+          // then recolour and restore that row without trying to recreate the
+          // impossible keyless state.
+          const materialize =
+            whollyInserted && !everColoured && wanted === null;
+          if (currentShadings[index] === wanted && !materialize) {
+            survivorIndex++;
+            return;
+          }
           const mayWrite = whollyInserted
             ? true
-            : everColoured && !rowCarriesPriorPendingWork;
-          if (mayWrite) planned.push({ row: index, shading: wanted });
+            : everColoured &&
+              (!rowCarriesPriorPendingWork || whollyPriorInsertion);
+          if (mayWrite)
+            planned.push({ row: index, shading: wanted, materialize });
           else skippedKeyless++;
         }
       }
@@ -12410,16 +12435,20 @@ function applyPlannedRowShadings(
   editor: LiveEditor,
   tableAnchor: string,
   current: TableAppearance,
-  planned: Array<{ row: number; shading: string | null }>
+  planned: Array<{
+    row: number;
+    shading: string | null;
+    materialize?: boolean;
+  }>
 ): AppearanceWriteOutcome {
   const report = emptyAppearanceReport();
   const transaction = runAppearanceTransaction(editor, (record) => {
-    for (const { row, shading } of planned) {
+    for (const { row, shading, materialize } of planned) {
       const cells = current.rows[row]?.cells ?? [];
       let rowTouched = false;
       for (let column = 0; column < cells.length; column++) {
         const before = cellAppearanceAt(current, row, column);
-        if ((before?.shading ?? null) === shading) {
+        if ((before?.shading ?? null) === shading && !materialize) {
           report.cellsUnchanged++;
           continue;
         }
@@ -13921,11 +13950,54 @@ function dropDeletedRevisionContent(node: any, deleted: Set<string>): void {
       Array.isArray(node[candidate])
     ) as string;
     node[key] = node[key].filter(
-      (row: any) => !allRevisionIdsIn(rowRevisionIds(row), deleted)
+      // An inserted row deleted by a later pending card carries both ids. A
+      // deletion id on the row format still removes the whole row.
+      (row: any) => !anyRevisionIdIn(rowRevisionIds(row), deleted)
     );
   }
   for (const value of Object.values(node))
     dropDeletedRevisionContent(value, deleted);
+}
+
+function bandingForAcceptedTableProjection(
+  sfdt: any,
+  tableAnchor: string
+): { headerRows: number; banding?: TableBanding } {
+  const tableBlock = tableBlockAt(sfdt, tableAnchor);
+  const physicalAppearance = tableBlock
+    ? collectTableAppearance(tableBlock)
+    : null;
+  const projectedAppearance = tableBlock
+    ? collectTableAppearance(clonedWithoutRevisions(sfdt, tableBlock))
+    : null;
+  const headerRows = projectedAppearance
+    ? effectiveHeaderRows({
+        blocks: flattenSfdt(sfdt),
+        sfdt,
+        tableAnchor,
+        source: projectedAppearance
+      })
+    : 0;
+  const physicalBanding = physicalAppearance
+    ? detectTableBanding(physicalAppearance)
+    : null;
+  const projectedBody = projectedAppearance
+    ? rowShadings(projectedAppearance).slice(headerRows)
+    : [];
+  const banding = physicalBanding
+    ? {
+        ...physicalBanding,
+        tailInBand:
+          projectedBody.length > 0 &&
+          projectedBody[projectedBody.length - 1] ===
+            physicalBanding.cycle[
+              (projectedBody.length - 1) % physicalBanding.period
+            ]
+      }
+    : projectedAppearance
+    ? detectTableBanding(projectedAppearance) ?? undefined
+    : undefined;
+  return { headerRows, banding };
 }
 
 function pathHasPrefix(prefix: unknown[], path: unknown[]): boolean {
@@ -14785,42 +14857,8 @@ function boundInsertRowsPlan(
     execute(state) {
       // The stripe, read before the rows go in, so the finalizer restripes the
       // table for its new length (same recording as delete_row).
-      const sourceTableBlock = tableBlockAt(state.sfdt, tableRoute.anchor);
-      const physicalSourceAppearance = sourceTableBlock
-        ? collectTableAppearance(sourceTableBlock)
-        : null;
-      const sourceAppearance = sourceTableBlock
-        ? collectTableAppearance(
-            clonedWithoutRevisions(state.sfdt, sourceTableBlock)
-          )
-        : null;
-      const sourceHeaderRows = sourceAppearance
-        ? effectiveHeaderRows({
-            blocks: flattenSfdt(state.sfdt),
-            sfdt: state.sfdt,
-            tableAnchor: tableRoute.anchor,
-            source: sourceAppearance
-          })
-        : 0;
-      const physicalBanding = physicalSourceAppearance
-        ? detectTableBanding(physicalSourceAppearance)
-        : null;
-      const projectedBody = sourceAppearance
-        ? rowShadings(sourceAppearance).slice(sourceHeaderRows)
-        : [];
-      const sourceBanding = physicalBanding
-        ? {
-            ...physicalBanding,
-            tailInBand:
-              projectedBody.length > 0 &&
-              projectedBody[projectedBody.length - 1] ===
-                physicalBanding.cycle[
-                  (projectedBody.length - 1) % physicalBanding.period
-                ]
-          }
-        : sourceAppearance
-        ? detectTableBanding(sourceAppearance) ?? undefined
-        : undefined;
+      const { headerRows: sourceHeaderRows, banding: sourceBanding } =
+        bandingForAcceptedTableProjection(state.sfdt, tableRoute.anchor);
       let next = state.sfdt;
       let nextIndex = state.index;
       let after = afterRowId;
@@ -14927,21 +14965,8 @@ function boundDeleteRowsPlan(
       // revisit a table an op recorded. Measured on the browser document with
       // Buildings and Stock deleted in a change set of their own: Contents
       // kept the second row's shade, because nothing had recorded the table.
-      const sourceTableBlock = tableBlockAt(state.sfdt, tableRoute.anchor);
-      const sourceAppearance = sourceTableBlock
-        ? collectTableAppearance(sourceTableBlock)
-        : null;
-      const sourceHeaderRows = sourceAppearance
-        ? effectiveHeaderRows({
-            blocks: flattenSfdt(state.sfdt),
-            sfdt: state.sfdt,
-            tableAnchor: tableRoute.anchor,
-            source: sourceAppearance
-          })
-        : 0;
-      const sourceBanding = sourceAppearance
-        ? detectTableBanding(sourceAppearance) ?? undefined
-        : undefined;
+      const { headerRows: sourceHeaderRows, banding: sourceBanding } =
+        bandingForAcceptedTableProjection(state.sfdt, tableRoute.anchor);
       let next = state.sfdt;
       let nextIndex = state.index;
       for (const { rowId } of rowIds) {
