@@ -582,11 +582,22 @@ export const ChangesIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
-// Version history: a clock with a counter-clockwise "rewind" arrow.
+// Version history: a clock with a counter-clockwise "rewind" arrow. Outline
+// style (fill:none + stroke) to match the Sections NotebookIcon weight so the
+// two rail buttons read as one set.
 export const HistoryIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
-    <path d='M12 5a7 7 0 1 1-6.7 9 1 1 0 0 1 1.9-.6A5 5 0 1 0 7 9.6l1.3 1.3a.6.6 0 0 1-.4 1H4.3a.6.6 0 0 1-.6-.6V7.5a.6.6 0 0 1 1-.4l1 1A7 7 0 0 1 12 5Z' />
-    <path d='M12 8a1 1 0 0 1 1 1v3l2 1.2a1 1 0 1 1-1 1.7l-2.5-1.5A1 1 0 0 1 11 12V9a1 1 0 0 1 1-1Z' />
+    <g
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='1.7'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    >
+      <path d='M3 12a9 9 0 1 0 3-6.7L3 8' />
+      <path d='M3 3v5h5' />
+      <path d='M12 7.5v5l3.5 2' />
+    </g>
   </Svg>
 );
 

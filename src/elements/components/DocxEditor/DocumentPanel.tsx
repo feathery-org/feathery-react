@@ -3,10 +3,16 @@ import TrackedChangeGroups from './TrackedChangeGroups';
 import SectionList from './sections/SectionPanel';
 import { RailErrorBoundary } from './RailErrorBoundary';
 import { INK, INK_3, LINE, PANEL, PANEL_2 } from './TrackedChangeGroups/styles';
+import { FEATHERY_RED } from './DocxToolbar/styles';
 import HistoryPanel from './history/HistoryPanel';
 import { DocxHistoryHost, DocxVersion, VersionAuthor } from './history/types';
 
 export type PanelTab = 'changes' | 'sections' | 'history';
+
+// The panel's typographic system, matched to the version-history design (DM
+// Sans, falling back to the system stack when the face is not loaded).
+const SANS =
+  "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
 // Shared right-hand side panel. The slim edge rail decides which panel is open;
 // this component just shows the active one with a matching title (no in-panel
@@ -18,7 +24,7 @@ const PANEL_WIDTH = 341;
 const TITLES: Record<PanelTab, string> = {
   changes: 'Suggested changes',
   sections: 'Sections',
-  history: 'History'
+  history: 'Version History'
 };
 
 interface Props {
@@ -37,6 +43,14 @@ interface Props {
   history?: DocxHistoryHost;
   currentUser?: VersionAuthor;
   onSelectVersion?: (version: DocxVersion) => void;
+  /** Reports the loaded version list up (for auto-selecting the latest). */
+  onVersionsLoaded?: (versions: DocxVersion[]) => void;
+  /** Restore the version currently open in the viewer (footer button). */
+  onRestoreVersion?: () => void;
+  /** Whether a version is open in the viewer, enabling the Restore button. */
+  versionSelected?: boolean;
+  /** Id of the version open in the viewer (highlights its row). */
+  selectedVersionId?: string | null;
   /** Bump to reload the version list (e.g. after a session closes). */
   historyRefreshKey?: number | string;
 }
@@ -53,6 +67,10 @@ export default function DocumentPanel({
   history,
   currentUser,
   onSelectVersion,
+  onVersionsLoaded,
+  onRestoreVersion,
+  versionSelected,
+  selectedVersionId,
   historyRefreshKey
 }: Props) {
   return (
@@ -74,7 +92,8 @@ export default function DocumentPanel({
           background: PANEL,
           display: 'flex',
           flexDirection: 'column',
-          minHeight: 0
+          minHeight: 0,
+          fontFamily: SANS
         }}
       >
         {/* Header — title reflects the panel the rail opened */}
@@ -150,12 +169,74 @@ export default function DocumentPanel({
                     currentUser ?? { kind: 'user', key: 'you', label: 'You' }
                   }
                   onSelect={onSelectVersion}
+                  onVersionsLoaded={onVersionsLoaded}
+                  selectedId={selectedVersionId}
                   refreshKey={historyRefreshKey}
                 />
               </RailErrorBoundary>
             </div>
           )}
         </div>
+
+        {/* Footer (version history): Close returns to the live editor; Restore
+            replaces the current document with the open version. Mirrors the
+            design's bottom action bar. */}
+        {open && tab === 'history' && (
+          <div
+            css={{
+              display: 'flex',
+              flex: '0 0 auto',
+              gap: 8,
+              justifyContent: 'flex-end',
+              padding: '12px 14px',
+              borderTop: `1px solid ${LINE}`,
+              background: PANEL
+            }}
+          >
+            <button
+              type='button'
+              onClick={onClose}
+              css={{
+                height: 32,
+                padding: '0 14px',
+                border: `1px solid ${LINE}`,
+                borderRadius: 6,
+                background: '#fff',
+                fontFamily: SANS,
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: INK,
+                cursor: 'pointer',
+                '&:hover': { background: PANEL_2 }
+              }}
+            >
+              Close
+            </button>
+            <button
+              type='button'
+              onClick={onRestoreVersion}
+              disabled={!versionSelected}
+              css={{
+                height: 32,
+                padding: '0 14px',
+                border: `1px solid ${FEATHERY_RED}`,
+                borderRadius: 6,
+                background: FEATHERY_RED,
+                fontFamily: SANS,
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: '#fff',
+                cursor: versionSelected ? 'pointer' : 'default',
+                opacity: versionSelected ? 1 : 0.5,
+                '&:hover': versionSelected
+                  ? { filter: 'brightness(0.95)' }
+                  : {}
+              }}
+            >
+              Restore version
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

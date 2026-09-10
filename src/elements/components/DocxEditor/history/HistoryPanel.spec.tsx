@@ -46,8 +46,19 @@ const makeHost = (rows: DocxVersion[]): jest.Mocked<DocxHistoryHost> => ({
   renameVersion: jest.fn()
 });
 
-const renderPanel = (host: DocxHistoryHost, onSelect?: any) =>
-  render(<HistoryPanel host={host} currentUser={YOU} onSelect={onSelect} />);
+const renderPanel = (
+  host: DocxHistoryHost,
+  onSelect?: any,
+  onVersionsLoaded?: any
+) =>
+  render(
+    <HistoryPanel
+      host={host}
+      currentUser={YOU}
+      onSelect={onSelect}
+      onVersionsLoaded={onVersionsLoaded}
+    />
+  );
 
 beforeEach(() => {
   seq = 0;
@@ -59,33 +70,43 @@ describe('HistoryPanel', () => {
     expect(await findByText('No versions yet.')).toBeTruthy();
   });
 
-  it('lists versions under a month header and tags the newest Current', async () => {
+  it('shows an avatar for the baseline version even with no authors', async () => {
+    // The baseline (initial upload) has an empty authors list; it must still
+    // render an avatar (falls back to the current viewer's "Y").
     const host = makeHost([
-      v({ name: 'Latest', seq: 3 }),
-      v({ name: 'Draft', seq: 2, ended_at: '2026-08-10T09:00:00Z' })
+      v({ name: 'Baseline', seq: 0, authors: [] as any })
+    ]);
+    const { findByText, getByTitle } = renderPanel(host);
+    await findByText('Baseline');
+    expect(getByTitle('You')).toBeTruthy();
+  });
+
+  it('lists versions under a month header and tags the newest Current', async () => {
+    // Past-year dates so labels are stable ('Month Year') regardless of today.
+    const host = makeHost([
+      v({ name: 'Latest', seq: 3, ended_at: '2020-09-05T09:00:00Z' }),
+      v({ name: 'Draft', seq: 2, ended_at: '2020-08-10T09:00:00Z' })
     ]);
     const { findByText, getByText } = renderPanel(host);
 
     expect(await findByText('Latest')).toBeTruthy();
-    expect(getByText('September 2026')).toBeTruthy();
-    expect(getByText('August 2026')).toBeTruthy();
+    expect(getByText('September 2020')).toBeTruthy();
+    expect(getByText('August 2020')).toBeTruthy();
     // The highest-seq version is Current.
     expect(getByText('Current')).toBeTruthy();
   });
 
-  it('expands a cluster to reveal the earlier versions', async () => {
+  it('lists every version as its own flat row (no clustering/expand)', async () => {
     const host = makeHost([
       v({ name: 'Recent', seq: 2, ended_at: '2026-09-02T12:00:00Z' }),
       v({ name: 'FiveMinsBefore', seq: 1, ended_at: '2026-09-02T11:55:00Z' })
     ]);
-    const { findByText, queryByText, getByLabelText } = renderPanel(host);
+    const { findByText, queryByLabelText } = renderPanel(host);
 
-    await findByText('Recent');
-    // The earlier version is hidden until the cluster is expanded.
-    expect(queryByText('FiveMinsBefore')).toBeNull();
-
-    fireEvent.click(getByLabelText('Expand'));
+    // Both close-in-time versions are visible at once — no expand affordance.
+    expect(await findByText('Recent')).toBeTruthy();
     expect(await findByText('FiveMinsBefore')).toBeTruthy();
+    expect(queryByLabelText('Expand')).toBeNull();
   });
 
   it('calls onSelect when a version row is clicked', async () => {
@@ -99,27 +120,27 @@ describe('HistoryPanel', () => {
     );
   });
 
-  it('renames a version through the host', async () => {
-    // A different day so it is its own (visible, non-current) cluster row.
+  it('offers no rename affordance on version rows', async () => {
     const older = v({
       name: 'Old name',
       seq: 1,
       ended_at: '2026-08-10T12:00:00Z'
     });
     const host = makeHost([v({ name: 'Current one', seq: 2 }), older]);
-    host.renameVersion.mockResolvedValue({ ...older, name: 'Renamed' });
-    const { findByText, getByLabelText, getByDisplayValue } = renderPanel(host);
+    const { findByText, queryByLabelText } = renderPanel(host);
 
     await findByText('Old name');
-    // Only non-current rows offer rename; the current row shows the Current tag.
-    fireEvent.click(getByLabelText('Rename version'));
-    const input = getByDisplayValue('Old name');
-    fireEvent.change(input, { target: { value: 'Renamed' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(queryByLabelText('Rename version')).toBeNull();
+  });
 
-    await waitFor(() =>
-      expect(host.renameVersion).toHaveBeenCalledWith(older.id, 'Renamed')
-    );
+  it('reports the loaded versions up for auto-selecting the latest', async () => {
+    const rows = [v({ name: 'Current one', seq: 2 }), v({ name: 'Older', seq: 1 })];
+    const host = makeHost(rows);
+    const onVersionsLoaded = jest.fn();
+    const { findByText } = renderPanel(host, undefined, onVersionsLoaded);
+
+    await findByText('Current one');
+    expect(onVersionsLoaded).toHaveBeenCalledWith(rows);
   });
 
   it('shows a retry on load failure', async () => {

@@ -43,58 +43,27 @@ describe('VersionBar', () => {
     expect(onExit).toHaveBeenCalled();
   });
 
-  it('disables Restore until the restore flow is wired', () => {
+  it('summarizes changes when highlights are available', () => {
     const { getByText } = render(
-      <VersionBar version={version()} onExit={jest.fn()} />
-    );
-    const restore = getByText('Restore this version').closest('button')!;
-    expect(restore.disabled).toBe(true);
-  });
-
-  it('enables Restore when a handler is provided', () => {
-    const onRestore = jest.fn();
-    const { getByText } = render(
-      <VersionBar
-        version={version()}
-        onExit={jest.fn()}
-        onRestore={onRestore}
-      />
-    );
-    const restore = getByText('Restore this version').closest('button')!;
-    expect(restore.disabled).toBe(false);
-    fireEvent.click(restore);
-    expect(onRestore).toHaveBeenCalled();
-  });
-
-  it('summarizes changes and toggles highlights when available', () => {
-    const onToggle = jest.fn();
-    const { getByText, getByRole } = render(
       <VersionBar
         version={version()}
         onExit={jest.fn()}
         editCount={3}
         formatCount={2}
         highlightsAvailable
-        highlightsOn
-        onToggleHighlights={onToggle}
       />
     );
     expect(getByText(/3 edits · 2 formatting/)).toBeTruthy();
-    const toggle = getByRole('checkbox') as HTMLInputElement;
-    expect(toggle.checked).toBe(true);
-    fireEvent.click(toggle);
-    expect(onToggle).toHaveBeenCalledWith(false);
   });
 
-  it('hides the change summary and toggle when highlights are unavailable', () => {
-    const { queryByText, queryByRole } = render(
+  it('hides the change summary when highlights are unavailable', () => {
+    const { queryByText } = render(
       <VersionBar
         version={version()}
         onExit={jest.fn()}
         highlightsAvailable={false}
       />
     );
-    expect(queryByRole('checkbox')).toBeNull();
     expect(queryByText(/edits/)).toBeNull();
   });
 });

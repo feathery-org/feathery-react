@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
-  ACCENT_LINE,
-  ACCENT_WASH,
   INK,
   INK_2,
   INK_3,
@@ -10,9 +8,9 @@ import {
   PANEL_2,
   PAPER
 } from '../TrackedChangeGroups/styles';
-import { ChevronDownIcon, RobinIcon } from '../icons';
+import { RobinIcon } from '../icons';
 import { colorForAuthor, initialsForAuthor } from './authorColors';
-import { groupVersions, MonthSection, VersionCluster } from './versionGrouping';
+import { groupVersions, MonthSection } from './versionGrouping';
 import { DocxHistoryHost, DocxVersion, VersionAuthor } from './types';
 
 interface Props {
@@ -20,26 +18,39 @@ interface Props {
   currentUser: VersionAuthor;
   /** Selecting a version opens it in the viewer (later PR). */
   onSelect?: (version: DocxVersion) => void;
+  /** Reports the loaded version list up (for auto-selecting the latest). */
+  onVersionsLoaded?: (versions: DocxVersion[]) => void;
+  /** Id of the version currently open in the viewer (highlights that row). */
+  selectedId?: string | null;
   /** Bump to reload the list (e.g. after a session closes). */
   refreshKey?: number | string;
 }
 
 type Author = { kind: string; label: string };
 
-function formatWhen(iso: string): string {
+// "Current" pill + selected/hover row backgrounds, matched to the design.
+const PILL_BLUE = '#2563eb';
+const PILL_WASH = '#eff6ff';
+const ROW_ACTIVE = '#f4f4f5';
+
+// A version's timestamp label. Only the latest version reads "Just now" (and
+// only when truly recent); every other row shows its actual time — full month,
+// day and time for past days, just the time for earlier today.
+function formatWhen(iso: string, relative = false): string {
   const d = new Date(iso);
+  const now = new Date();
+  if (relative && now.getTime() - d.getTime() < 60_000) return 'Just now';
   const time = d.toLocaleTimeString(undefined, {
     hour: 'numeric',
     minute: '2-digit'
   });
-  const today = new Date();
   const sameDay =
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate();
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
   if (sameDay) return time;
   const day = d.toLocaleDateString(undefined, {
-    month: 'short',
+    month: 'long',
     day: 'numeric'
   });
   return `${day}, ${time}`;
@@ -74,234 +85,103 @@ function Avatar({ author }: { author: Author }) {
   );
 }
 
-function Avatars({ authors }: { authors: Author[] }) {
-  const shown = authors.slice(0, 3);
-  return (
-    <span css={{ display: 'inline-flex', marginRight: 2 }}>
-      {shown.map((a, i) => (
-        <span
-          key={`${a.kind}:${a.label}`}
-          css={{ marginLeft: i === 0 ? 0 : -6 }}
-        >
-          <Avatar author={a} />
-        </span>
-      ))}
-    </span>
-  );
-}
+const authorName = (a: Author): string =>
+  a.kind === 'assistant' ? 'Robin' : a.label || 'You';
 
-function authorSummary(authors: Author[]): string {
-  const names = authors.map((a) =>
-    a.kind === 'assistant' ? 'Robin' : a.label || 'You'
-  );
-  if (names.length <= 1) return names[0] ?? 'You';
-  if (names.length === 2) return `${names[0]} and ${names[1]}`;
-  return `${names[0]}, ${names[1]} +${names.length - 2}`;
-}
-
-function VersionRow({
-  version,
-  authors,
-  isCurrent,
-  indented,
-  host,
-  onSelect,
-  onRenamed
-}: {
-  version: DocxVersion;
-  authors: Author[];
-  isCurrent: boolean;
-  indented?: boolean;
-  host: DocxHistoryHost;
-  onSelect?: (v: DocxVersion) => void;
-  onRenamed: (v: DocxVersion) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(version.name);
-
-  const commit = async () => {
-    setEditing(false);
-    const name = draft.trim();
-    if (name === version.name) return;
-    try {
-      const updated = await host.renameVersion(version.id, name);
-      onRenamed(updated);
-    } catch {
-      setDraft(version.name); // revert on failure
-    }
-  };
-
+// One author line: avatar + name, stacked (a version can list several).
+function AuthorLine({ author }: { author: Author }) {
   return (
     <div
       css={{
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        padding: indented ? '6px 12px 6px 34px' : '8px 12px',
-        cursor: onSelect ? 'pointer' : 'default',
-        '&:hover': { background: PANEL_2 }
+        fontSize: 13,
+        color: INK_2
       }}
-      onClick={() => !editing && onSelect?.(version)}
     >
-      {!indented && <Avatars authors={authors} />}
-      <span css={{ flex: 1, minWidth: 0 }}>
-        {editing ? (
-          <input
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commit();
-              if (e.key === 'Escape') {
-                setDraft(version.name);
-                setEditing(false);
-              }
-            }}
-            css={{
-              width: '100%',
-              font: 'inherit',
-              border: `1px solid ${ACCENT_LINE}`,
-              borderRadius: 4,
-              padding: '2px 4px'
-            }}
-          />
-        ) : (
-          <>
-            <div
-              css={{
-                fontSize: 13,
-                color: INK,
-                fontWeight: version.name ? 600 : 500,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}
-            >
-              {version.name || formatWhen(version.ended_at)}
-            </div>
-            <div css={{ fontSize: 11, color: INK_3 }}>
-              {version.name ? formatWhen(version.ended_at) : null}
-              {version.name ? ' · ' : ''}
-              {authorSummary(authors)}
-              {version.restored_from_at
-                ? ` · Restored from ${formatWhen(version.restored_from_at)}`
-                : ''}
-            </div>
-          </>
-        )}
-      </span>
-      {isCurrent && (
-        <span
-          css={{
-            fontSize: 10,
-            fontWeight: 600,
-            color: INK_2,
-            background: ACCENT_WASH,
-            border: `1px solid ${ACCENT_LINE}`,
-            borderRadius: 10,
-            padding: '1px 7px',
-            flex: '0 0 auto'
-          }}
-        >
-          Current
-        </span>
-      )}
-      {!indented && !isCurrent && !editing && (
-        <button
-          type='button'
-          aria-label='Rename version'
-          title='Rename'
-          onClick={(e) => {
-            e.stopPropagation();
-            setDraft(version.name);
-            setEditing(true);
-          }}
-          css={{
-            border: 'none',
-            background: 'transparent',
-            color: INK_3,
-            cursor: 'pointer',
-            fontSize: 12,
-            padding: 2,
-            '&:hover': { color: INK }
-          }}
-        >
-          ✎
-        </button>
-      )}
+      <Avatar author={author} />
+      <span>{authorName(author)}</span>
     </div>
   );
 }
 
-function Cluster({
-  cluster,
-  currentSeq,
-  host,
-  onSelect,
-  onRenamed
+function VersionRow({
+  version,
+  authors,
+  isCurrent,
+  selected,
+  onSelect
 }: {
-  cluster: VersionCluster;
-  currentSeq: number | null;
-  host: DocxHistoryHost;
+  version: DocxVersion;
+  authors: Author[];
+  isCurrent: boolean;
+  selected?: boolean;
   onSelect?: (v: DocxVersion) => void;
-  onRenamed: (v: DocxVersion) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const hasEarlier = cluster.earlier.length > 0;
+  // The baseline (initial upload) has no session, so its authors list is empty
+  // and it would render with no avatar. Attribute it to the current viewer so
+  // every row shows one, consistent with the rest of the list.
+  const effectiveAuthors: Author[] = authors.length
+    ? authors
+    : [{ kind: 'user', label: 'You' }];
   return (
-    <div css={{ borderBottom: `1px solid ${LINE}` }}>
-      <div css={{ display: 'flex', alignItems: 'stretch' }}>
-        <div css={{ flex: 1, minWidth: 0 }}>
-          <VersionRow
-            version={cluster.primary}
-            authors={cluster.authors}
-            isCurrent={cluster.primary.seq === currentSeq}
-            host={host}
-            onSelect={onSelect}
-            onRenamed={onRenamed}
-          />
-        </div>
-        {hasEarlier && (
-          <button
-            type='button'
-            aria-label={expanded ? 'Collapse' : 'Expand'}
-            aria-expanded={expanded}
-            onClick={() => setExpanded((v) => !v)}
+    <div
+      onClick={() => onSelect?.(version)}
+      css={{
+        // No dividers; spacing comes from the padding + rounded active fill.
+        padding: '10px 12px',
+        borderRadius: 8,
+        cursor: onSelect ? 'pointer' : 'default',
+        background: selected ? ROW_ACTIVE : 'transparent',
+        '&:hover': { background: selected ? ROW_ACTIVE : PANEL_2 }
+      }}
+    >
+      <div css={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <span
+          css={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: 15,
+            fontWeight: 600,
+            color: INK
+          }}
+        >
+          {version.name || formatWhen(version.ended_at, isCurrent)}
+        </span>
+        {isCurrent && (
+          <span
             css={{
-              border: 'none',
-              background: 'transparent',
-              color: INK_3,
-              cursor: 'pointer',
-              padding: '0 10px',
-              '&:hover': { color: INK }
+              flex: '0 0 auto',
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: PILL_BLUE,
+              background: PILL_WASH,
+              borderRadius: 10,
+              padding: '2px 9px'
             }}
           >
-            <ChevronDownIcon
-              width={16}
-              height={16}
-              css={{
-                transform: expanded ? 'none' : 'rotate(-90deg)',
-                transition: 'transform .12s ease'
-              }}
-            />
-          </button>
+            Current
+          </span>
         )}
       </div>
-      {expanded &&
-        cluster.earlier.map((v) => (
-          <VersionRow
-            key={v.id}
-            version={v}
-            authors={v.authors}
-            isCurrent={v.seq === currentSeq}
-            indented
-            host={host}
-            onSelect={onSelect}
-            onRenamed={onRenamed}
-          />
+      {version.restored_from_at && (
+        <div css={{ marginTop: 2, fontSize: 13, color: INK_3 }}>
+          Restored from {formatWhen(version.restored_from_at)}
+        </div>
+      )}
+      <div
+        css={{
+          marginTop: 8,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6
+        }}
+      >
+        {effectiveAuthors.map((a) => (
+          <AuthorLine key={`${a.kind}:${a.label}`} author={a} />
         ))}
+      </div>
     </div>
   );
 }
@@ -312,17 +192,28 @@ const Message = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-export default function HistoryPanel({ host, onSelect, refreshKey }: Props) {
+export default function HistoryPanel({
+  host,
+  onSelect,
+  onVersionsLoaded,
+  selectedId,
+  refreshKey
+}: Props) {
   const [versions, setVersions] = useState<DocxVersion[] | null>(null);
   const [error, setError] = useState(false);
   const reqId = useRef(0);
+  const onVersionsLoadedRef = useRef(onVersionsLoaded);
+  onVersionsLoadedRef.current = onVersionsLoaded;
 
   const load = useCallback(async () => {
     const id = ++reqId.current;
     setError(false);
     try {
       const rows = await host.listVersions();
-      if (id === reqId.current) setVersions(rows);
+      if (id === reqId.current) {
+        setVersions(rows);
+        onVersionsLoadedRef.current?.(rows);
+      }
     } catch {
       if (id === reqId.current) setError(true);
     }
@@ -331,12 +222,6 @@ export default function HistoryPanel({ host, onSelect, refreshKey }: Props) {
   useEffect(() => {
     load();
   }, [load, refreshKey]);
-
-  const onRenamed = useCallback((updated: DocxVersion) => {
-    setVersions((rows) =>
-      rows ? rows.map((r) => (r.id === updated.id ? updated : r)) : rows
-    );
-  }, []);
 
   if (error) {
     return (
@@ -375,34 +260,30 @@ export default function HistoryPanel({ host, onSelect, refreshKey }: Props) {
   const sections: MonthSection[] = groupVersions(versions);
 
   return (
-    <div css={{ overflowY: 'auto', height: '100%' }}>
+    <div css={{ overflowY: 'auto', height: '100%', padding: '6px 8px 12px' }}>
       {sections.map((section) => (
         <div key={section.key}>
           <div
             css={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 1,
-              padding: '8px 12px 4px',
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: 0.4,
-              textTransform: 'uppercase',
+              padding: '14px 8px 8px',
+              fontSize: 14,
+              fontWeight: 600,
               color: INK_3,
-              background: PAPER,
-              borderBottom: `1px solid ${LINE}`
+              background: PAPER
             }}
           >
             {section.label}
           </div>
           {section.clusters.map((cluster) => (
-            <Cluster
+            <VersionRow
               key={cluster.primary.id}
-              cluster={cluster}
-              currentSeq={currentSeq}
-              host={host}
+              version={cluster.primary}
+              authors={cluster.authors}
+              isCurrent={cluster.primary.seq === currentSeq}
+              selected={
+                selectedId != null && cluster.primary.id === selectedId
+              }
               onSelect={onSelect}
-              onRenamed={onRenamed}
             />
           ))}
         </div>
