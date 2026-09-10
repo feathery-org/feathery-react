@@ -1,10 +1,9 @@
 // Pure grouping for the History panel. The list endpoint returns versions
-// newest-first; this collapses a burst of same-day saves into one row (with the
-// older ones tucked behind a chevron) and buckets rows under month headers.
+// newest-first; this buckets them under month headers as a FLAT list — one row
+// per version, no clustering. (The VersionCluster shape is kept so the panel's
+// row renderer is unchanged; `earlier` is always empty, so no expand chevron
+// ever shows.)
 import { DocxVersion } from './types';
-
-// Same-day versions whose ends fall within this window are one cluster.
-export const CLUSTER_GAP_MS = 15 * 60 * 1000;
 
 const MONTHS = [
   'January',
@@ -36,11 +35,6 @@ export interface MonthSection {
   clusters: VersionCluster[];
 }
 
-const sameDay = (a: Date, b: Date): boolean =>
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
-
 const mergeAuthors = (into: VersionCluster, version: DocxVersion): void => {
   for (const author of version.authors ?? []) {
     if (
@@ -53,41 +47,46 @@ const mergeAuthors = (into: VersionCluster, version: DocxVersion): void => {
   }
 };
 
-/** Group versions (newest-first) into month sections of 15-minute clusters. */
-export function groupVersions(versions: DocxVersion[]): MonthSection[] {
+const isSameDay = (a: Date, b: Date): boolean =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
+// The bucket a version falls into: today gets its own "Today" header; older
+// versions bucket by month (bare month name in the current year, month + year
+// otherwise), matching the design.
+function sectionFor(ended: Date, now: Date): { key: string; label: string } {
+  if (isSameDay(ended, now)) return { key: 'today', label: 'Today' };
+  const month = MONTHS[ended.getMonth()];
+  const label =
+    ended.getFullYear() === now.getFullYear()
+      ? month
+      : `${month} ${ended.getFullYear()}`;
+  return { key: `${ended.getFullYear()}-${ended.getMonth()}`, label };
+}
+
+/** Group versions (newest-first) into Today + month sections — flat, one row
+ *  each. `now` is injectable for tests. */
+export function groupVersions(
+  versions: DocxVersion[],
+  now: Date = new Date()
+): MonthSection[] {
   const sections: MonthSection[] = [];
   let section: MonthSection | null = null;
-  let cluster: VersionCluster | null = null;
-  let prevEnded: Date | null = null;
 
   for (const version of versions) {
     const ended = new Date(version.ended_at);
-    const monthKey = `${ended.getFullYear()}-${ended.getMonth()}`;
+    const { key, label } = sectionFor(ended, now);
 
-    if (!section || section.key !== monthKey) {
-      section = {
-        key: monthKey,
-        label: `${MONTHS[ended.getMonth()]} ${ended.getFullYear()}`,
-        clusters: []
-      };
+    if (!section || section.key !== key) {
+      section = { key, label, clusters: [] };
       sections.push(section);
-      cluster = null; // a month boundary always breaks the cluster
     }
 
-    const withinGap =
-      prevEnded !== null &&
-      sameDay(prevEnded, ended) &&
-      prevEnded.getTime() - ended.getTime() <= CLUSTER_GAP_MS;
-
-    if (cluster && withinGap) {
-      cluster.earlier.push(version);
-      mergeAuthors(cluster, version);
-    } else {
-      cluster = { primary: version, earlier: [], authors: [] };
-      mergeAuthors(cluster, version);
-      section.clusters.push(cluster);
-    }
-    prevEnded = ended;
+    // One version per row: its own cluster with no `earlier` entries.
+    const cluster: VersionCluster = { primary: version, earlier: [], authors: [] };
+    mergeAuthors(cluster, version);
+    section.clusters.push(cluster);
   }
 
   return sections;
