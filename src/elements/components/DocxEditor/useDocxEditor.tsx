@@ -45,6 +45,17 @@ const DELETION_TEXT_COLOR = '#b0302b';
 // fully INSIDE the highlight box, flush with its edge.
 const RING_LINE = 'rgba(43, 49, 52, 0.34)';
 const RING_WIDTH = 2;
+// Alpha for an author-coloured insertion wash (the mockup's `+1c` ≈ 0x1c/255).
+const AUTHOR_WASH_ALPHA = 0.11;
+
+// '#rrggbb' → 'rgba(r,g,b,a)'. Returns the input untouched if it is not a plain
+// 6-digit hex (already an rgba() string, say).
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
 const RING_RADIUS = 4;
 
 // Editor-instance keys shared with the review UI and overlays.
@@ -100,7 +111,14 @@ export function setAfterRenderCallback(ed: any, cb: (() => void) | null): void {
 }
 
 // Exported for tests (installed automatically at editor create).
-export function installRevisionHighlightRendering(ed: any) {
+export function installRevisionHighlightRendering(
+  ed: any,
+  // Optional per-author colouring. Given a revision's author, return that
+  // author's brand colour; the version viewer passes this so each person's
+  // edits are tinted their own colour (following the design mockup). Omitted by
+  // the live editor, which keeps the classic green-insert / red-delete washes.
+  colorForRevision?: (author: string) => string | undefined
+) {
   const renderer = ed?.documentHelper?.render;
   if (!renderer || renderer[REVISION_RENDER_PATCH]) return;
   renderer[REVISION_RENDER_PATCH] = true;
@@ -171,6 +189,10 @@ export function installRevisionHighlightRendering(ed: any) {
     underlineY: number
   ) => {
     const info = elementBox?.width > 0 ? classifyBox(elementBox) : undefined;
+    // The author's brand colour for this box, when per-author colouring is on.
+    const authorColor = info
+      ? colorForRevision?.(info.revision?.author ?? '')
+      : undefined;
     let box: { x: number; y: number; w: number; h: number } | undefined;
     if (info) {
       box = {
@@ -185,9 +207,19 @@ export function installRevisionHighlightRendering(ed: any) {
       };
       try {
         const ctx = renderer.pageContext;
-        ctx.fillStyle =
-          info.kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
-        ctx.fillRect(box.x, box.y, box.w, box.h);
+        // Author-coloured: insertions get a faint author wash, deletions stay
+        // transparent (colour lives in the strikethrough glyphs). Otherwise the
+        // classic fixed green/red washes.
+        if (authorColor) {
+          if (info.kind !== 'del') {
+            ctx.fillStyle = hexToRgba(authorColor, AUTHOR_WASH_ALPHA);
+            ctx.fillRect(box.x, box.y, box.w, box.h);
+          }
+        } else {
+          ctx.fillStyle =
+            info.kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
+          ctx.fillRect(box.x, box.y, box.w, box.h);
+        }
       } catch {
         // Highlight is decoration only; the text itself must still render.
       }
@@ -195,12 +227,24 @@ export function installRevisionHighlightRendering(ed: any) {
     }
     let out;
     if (info?.kind === 'del') {
-      // Per-call swap: the fake Deletion entry makes the engine itself draw
-      // red glyphs + its baseline-aware single strike (no Insertion type in
-      // the entry → no underline).
+      // Per-call swap: the fake Deletion entry makes the engine itself draw the
+      // glyphs in the deletion colour + its baseline-aware single strike (no
+      // Insertion type in the entry → no underline).
       const prevCheck = renderer.checkRevisionType;
       renderer.checkRevisionType = () => [
-        { type: 'Deletion', color: DELETION_TEXT_COLOR }
+        { type: 'Deletion', color: authorColor ?? DELETION_TEXT_COLOR }
+      ];
+      try {
+        out = originalRenderText(elementBox, left, top, underlineY);
+      } finally {
+        renderer.checkRevisionType = prevCheck;
+      }
+    } else if (info && authorColor) {
+      // Author-coloured insertion: draw the glyphs in the author's colour and
+      // underlined (an Insertion entry adds the underline the mockup shows).
+      const prevCheck = renderer.checkRevisionType;
+      renderer.checkRevisionType = () => [
+        { type: 'Insertion', color: authorColor }
       ];
       try {
         out = originalRenderText(elementBox, left, top, underlineY);
@@ -259,9 +303,17 @@ export function installRevisionHighlightRendering(ed: any) {
       // Same choice the engine makes: the row's LAST revision decides.
       let wash = INSERTION_HIGHLIGHT;
       try {
-        const type = rowFormat.getRevision?.(count - 1)?.revisionType;
-        if (type === 'Deletion' || type === 'MoveFrom')
+        const rev = rowFormat.getRevision?.(count - 1);
+        const type = rev?.revisionType;
+        const isDel = type === 'Deletion' || type === 'MoveFrom';
+        const authorColor = colorForRevision?.(rev?.author ?? '');
+        if (authorColor) {
+          // Author-coloured: a faint wash for either kind (a deleted row still
+          // needs a visible tint since its glyphs are struck, not removed).
+          wash = hexToRgba(authorColor, AUTHOR_WASH_ALPHA);
+        } else if (isDel) {
           wash = DELETION_HIGHLIGHT;
+        }
       } catch {
         // Unreadable revision: keep the insertion wash.
       }
@@ -446,15 +498,91 @@ export function installRevisionHighlightRendering(ed: any) {
 // Keep every shared-surface review customization behind the same predicate as
 // the rail. Gated-off editors retain Syncfusion's native rendering, Changes
 // pane, and revision merge behavior.
-export function configureTrackedChangeReview(ed: any, enabled: boolean): void {
+export function configureTrackedChangeReview(
+  ed: any,
+  enabled: boolean,
+  // Optional per-author colouring, forwarded to the highlight renderer. The
+  // version viewer passes this; the live editor omits it (classic green/red).
+  colorForRevision?: (author: string) => string | undefined
+): void {
   if (!enabled) return;
+  // Inline highlights only — never Syncfusion's own tracked-change markup or its
+  // Changes/review pane. showRevisions:false suppresses the default markup; the
+  // custom renderer draws our washes instead.
   ed.showRevisions = false;
   // Assist is the only author that may turn tracking on, and only inside a
   // synchronous write batch. User typing in a review host starts untracked.
   disableUserTrackChanges(ed);
-  if (ed.commentReviewPane) ed.commentReviewPane.isUserClosed = true;
+  closeTrackedChangeReviewPane(ed);
   installRevisionGroupIsolation(ed);
-  installRevisionHighlightRendering(ed);
+  installRevisionHighlightRendering(ed, colorForRevision);
+}
+
+// Permanently suppress Syncfusion's native Changes/Comments review pane. We
+// render our OWN tracked-change UI (TrackedChangeGroups), so the built-in pane
+// must never appear — not on the version viewer, and not on the live editor
+// when the assistant makes tracked edits (which would otherwise pop it open).
+//
+// Patching showHidePane to ignore "show" is what makes it permanent: a one-time
+// close is undone the moment a new revision is added. The pane is created
+// lazily, so we also trap the property to patch it the instant Syncfusion
+// assigns it — before it can ever paint.
+function patchReviewPaneInstance(pane: any): any {
+  if (!pane || pane.__featheryReviewSuppressed) return pane;
+  pane.__featheryReviewSuppressed = true;
+  const original =
+    typeof pane.showHidePane === 'function'
+      ? pane.showHidePane.bind(pane)
+      : null;
+  try {
+    pane.isUserClosed = true;
+  } catch {
+    /* read-only in this build */
+  }
+  if (original) {
+    try {
+      pane.showHidePane = (show: boolean, tab?: any) => {
+        if (show) {
+          // Refuse to open; keep it marked closed and hide if mid-open.
+          try {
+            pane.isUserClosed = true;
+          } catch {
+            /* no-op */
+          }
+          try {
+            original(false, tab);
+          } catch {
+            /* no-op */
+          }
+          return;
+        }
+        return original(show, tab);
+      };
+    } catch {
+      /* method not writable: isUserClosed still discourages it */
+    }
+  }
+  return pane;
+}
+
+export function closeTrackedChangeReviewPane(ed: any): void {
+  if (!ed) return;
+  patchReviewPaneInstance(ed.commentReviewPane);
+  if (ed.__featheryReviewPaneTrap) return;
+  ed.__featheryReviewPaneTrap = true;
+  // Trap lazy (re)assignment so the pane is patched before it can be shown.
+  let current = ed.commentReviewPane;
+  try {
+    Object.defineProperty(ed, 'commentReviewPane', {
+      configurable: true,
+      get: () => current,
+      set: (value) => {
+        current = patchReviewPaneInstance(value);
+      }
+    });
+  } catch {
+    /* non-configurable: the direct patch + per-edit re-apply still cover it */
+  }
 }
 
 export function resizeDocxEditor(
@@ -836,7 +964,13 @@ export function useDocxEditor({
           | undefined;
         if (viewer) viewer.style.overflowAnchor = 'none';
         ed.isReadOnly = isReadOnly;
+        // Suppress Syncfusion's native review pane for every host (not just
+        // review-gated ones) — we render our own tracked-change UI.
+        closeTrackedChangeReviewPane(ed);
         ed.addEventListener('contentChange', () => {
+          // A tracked edit (e.g. the assistant's) can spawn/reopen the native
+          // pane; keep it suppressed. Idempotent once patched.
+          closeTrackedChangeReviewPane(ed);
           if (ignoreContentChangeRef.current) return;
           unsavedRef.current = true;
           onDirtyRef.current?.();
