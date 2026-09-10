@@ -141,6 +141,11 @@ const api = {
   async open(sfdt: string, headerRowsHint = 1): Promise<void> {
     void headerRowsHint;
     api.close();
+    (globalThis as any).__featheryDocumentEditTraceLog = [];
+    (globalThis as any).__featheryDocumentEditTrace = (entry: unknown) =>
+      (globalThis as any).__featheryDocumentEditTraceLog.push(
+        JSON.parse(JSON.stringify(entry))
+      );
     const host = document.createElement('div');
     host.id = 'fm-editor';
     host.style.width = '900px';
@@ -386,6 +391,8 @@ const api = {
     Object.fromEntries(documentFormulas()),
 
   tableIds: (): string[] => Array.from(indexOf().tables.keys()).map(String),
+
+  traces: (): any[] => (globalThis as any).__featheryDocumentEditTraceLog ?? [],
 
   /** Bound row identities in document order, used to catch stale or duplicated controls. */
   tableRowIds: (tableId: string): string[] =>

@@ -21264,6 +21264,17 @@ const ASSISTANT_WRITING_KEY = '__featheryAssistantWriting';
 // Guards the gaps BETWEEN tool calls in one editing turn: set by the docx
 // bridge on the first write of a turn, cleared by AssistantChat at turn end.
 const ASSISTANT_SESSION_KEY = '__featheryAssistantSession';
+const DOCUMENT_EDIT_TRACE_HOOK = '__featheryDocumentEditTrace';
+
+function emitDocumentEditTrace(entry: Record<string, unknown>): void {
+  const hook = (globalThis as any)[DOCUMENT_EDIT_TRACE_HOOK];
+  if (typeof hook !== 'function') return;
+  try {
+    hook(entry);
+  } catch {
+    // Diagnostics must not change document behavior.
+  }
+}
 
 /** True while `applyDocumentEdits` is mid-batch, or the editing turn driving
  *  it is still in flight. */
@@ -21296,6 +21307,8 @@ export function applyDocumentEdits(
   const ed = editor as any;
   ed[ASSISTANT_WRITING_KEY] = true;
   const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
+  let canonical: EditOp[] | undefined;
+  let executed: EditOp[] | undefined;
   try {
     // Deliberately NOT wrapped in a grouped undo action. Grouping is an
     // optimisation; recoverability is correctness. Measured in the real browser
@@ -21308,21 +21321,50 @@ export function applyDocumentEdits(
     // steps with no error. Before reintroducing grouping, prove per-op IN THE
     // BROWSER that the grouped replay does not throw - a passing jsdom test
     // cannot establish it, because jsdom has no layout to throw from.
-    return withSilentEditSelections(editor, () =>
+    const output = withSilentEditSelections(editor, () =>
       withSerializationTiming(editor, serializationTiming, () => {
-        const canonical = canonicalizeTableOpAnchors(editor, input.edits);
+        canonical = canonicalizeTableOpAnchors(editor, input.edits);
         const expansion = expandComposedEdits(editor, {
           ...input,
           edits: canonical
         });
-        const result = applyDocumentEditsMeasured(
+        executed = expansion.edits;
+        const raw = applyDocumentEditsMeasured(
           editor,
           { ...input, edits: expansion.edits },
           serializationTiming
         );
-        return collapseComposedResult(result, expansion);
+        const result = collapseComposedResult(raw, expansion);
+        emitDocumentEditTrace({
+          version: 1,
+          changeSetId: input.changeSetId ?? 'document-edit-change-set',
+          requested: input.edits,
+          canonical,
+          executed,
+          applied: raw.results.map((entry, index) => ({
+            op: expansion.edits[index]?.op,
+            route: entry.route,
+            mechanism: entry.route === 'engine' ? 'sfdt' : 'syncfusion_editor',
+            outcome: entry.ok ? 'ok' : entry.error,
+            ...(entry.details ? { details: entry.details } : {})
+          })),
+          status: result.changeSet?.status,
+          warnings: result.warnings
+        });
+        return result;
       })
     );
+    return output;
+  } catch (error) {
+    emitDocumentEditTrace({
+      version: 1,
+      changeSetId: input.changeSetId ?? 'document-edit-change-set',
+      requested: input.edits,
+      ...(canonical ? { canonical } : {}),
+      ...(executed ? { executed } : {}),
+      error: describeUnexpectedError(error)
+    });
+    throw error;
   } finally {
     // Synchronous clear: the session flag owns the gaps between calls.
     ed[ASSISTANT_WRITING_KEY] = false;
