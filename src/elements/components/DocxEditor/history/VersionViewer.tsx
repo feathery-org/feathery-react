@@ -1,10 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import { INK_3, PAPER } from '../TrackedChangeGroups/styles';
 import { loadStyles, waitForDocumentLoad, waitForEj } from '../ejLoader';
 import { stampMissingContentControlColors } from '../contentControlSafety';
-import { installRevisionHighlightRendering } from '../useDocxEditor';
-import { useVersionDocument } from './useVersionDocument';
+import {
+  closeTrackedChangeReviewPane,
+  installRevisionHighlightRendering
+} from '../useDocxEditor';
+import { colorForRevisionAuthor } from './authorColors';
+import { populateVersionBindings } from './populateVersionBindings';
+import { useVersionDocument, VersionDocument } from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
 
 const DOCX_MIME =
@@ -25,6 +30,11 @@ interface Props {
    *  changes accepted (plain final state). The parent keys the viewer on this,
    *  so toggling remounts and re-opens. */
   highlightsOn?: boolean;
+  /** A ready-resolved document to open directly, bypassing the version fetch.
+   *  Used for the in-progress current version, which has no stored files yet:
+   *  the parent supplies a live-diffed display document (highlights baked in via
+   *  applyHunks) so it renders exactly like a stored version. */
+  liveDoc?: VersionDocument;
   /** Reports the version's edit counts + whether highlights are available, so
    *  the version bar can label them. */
   onMeta?: (meta: VersionMeta) => void;
@@ -39,13 +49,19 @@ export default function VersionViewer({
   serviceUrl,
   headers,
   highlightsOn = true,
+  liveDoc,
   onMeta
 }: Props) {
   const hostElRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<any>(null);
   const editorRef = useRef<any>(null);
   const [editorReady, setEditorReady] = useState(false);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
-  const doc = useVersionDocument(host, version);
+  // With a live document (the in-progress current version — no stored files),
+  // use it directly and skip the fetch. It carries the applyHunks display SFDT,
+  // so the normal highlight path renders it exactly like a stored version.
+  const fetched = useVersionDocument(host, liveDoc ? null : version);
+  const doc = liveDoc ?? fetched;
 
   // Report the version's counts up to the bar once resolved.
   const onMetaRef = useRef(onMeta);
@@ -59,94 +75,55 @@ export default function VersionViewer({
     });
   }, [doc.loading, doc.editCount, doc.formatCount, doc.degraded]);
 
-  // Size the editor to the host element in PIXELS. A bare DocumentEditor does
-  // not reliably honour a '100%' height against an absolutely-positioned host,
-  // so measure and set an explicit height/width, then let it re-layout.
-  const fitToHost = useCallback(() => {
-    const el = hostElRef.current;
-    const viewer = editorRef.current;
-    if (!el || !viewer) return;
-    // appendTo turns hostElRef INTO the editor element (Syncfusion pins it to a
-    // ~200px default), so measure its PARENT — the full-height overlay — not the
-    // host itself.
-    const box = el.parentElement ?? el;
-    const h = box.clientHeight;
-    const w = box.clientWidth;
-    try {
-      // resize(w, h) is the DocumentEditor's explicit-size API and only sets the
-      // height when it exceeds 200; fall back to a bare resize() before layout.
-      if (h > 200 && w > 0) viewer.resize(w, h);
-      else viewer.resize();
-    } catch {
-      /* torn down mid-resize */
-    }
-  }, []);
-
-  // The pane often reaches its full height a few frames AFTER the document
-  // loads; a single fit runs too early (parent still ~200px) and the
-  // ResizeObserver alone misses the settle, so re-fit across several ticks.
-  const scheduleFits = useCallback(() => {
-    const raf =
-      typeof requestAnimationFrame === 'function'
-        ? requestAnimationFrame
-        : (fn: FrameRequestCallback) => setTimeout(fn, 16);
-    fitToHost();
-    raf(() => {
-      fitToHost();
-      raf(() => fitToHost());
-    });
-    [80, 250, 600].forEach((ms) => setTimeout(fitToHost, ms));
-  }, [fitToHost]);
-
-  // Create the bare read-only editor once.
+  // Create the read-only editor once. Use a DocumentEditorContainer (as the
+  // live editor does) rather than a bare DocumentEditor: the container reliably
+  // fills a height:100% host and sizes its inner editor correctly, so the page
+  // lays out at the right scale instead of appearing zoomed in.
   useEffect(() => {
     let cancelled = false;
-    let observer: ResizeObserver | undefined;
     (async () => {
       const ej = await waitForEj();
       loadStyles();
       if (cancelled || !hostElRef.current) return;
-      const viewer = new ej.documenteditor.DocumentEditor({
-        isReadOnly: true,
-        enableSelection: true,
-        enableSfdtExport: true,
-        enableEditorHistory: false,
-        enableAutoFocus: false,
-        // A bare DocumentEditor defaults to a fixed ~200px height; fill the
-        // host element (which is inset:0 in the pane) instead.
+      const container = new ej.documenteditor.DocumentEditorContainer({
+        enableToolbar: false,
+        showPropertiesPane: false,
         height: '100%',
-        width: '100%',
         serviceUrl: serviceUrl || '',
+        headers: headers || [],
         documentEditorSettings: { optimizeSfdt: false }
       });
-      if (headers) viewer.headers = headers;
-      viewer.appendTo(hostElRef.current);
-      editorRef.current = viewer;
-      scheduleFits();
-      setEditorReady(true);
-
-      // Keep it full-height as the pane changes (window resize, panel toggle).
-      // Observe the PARENT — hostElRef is now the fixed-size editor element.
-      try {
-        const box = hostElRef.current.parentElement ?? hostElRef.current;
-        observer = new ResizeObserver(() => fitToHost());
-        observer.observe(box);
-      } catch {
-        /* ResizeObserver unavailable: the initial fit still sizes it */
+      // Wait until Syncfusion finishes creating the inner DocumentEditor before
+      // touching it — opening a doc before `created` leaves a blank default.
+      await new Promise<void>((resolve) => {
+        container.addEventListener('created', () => resolve());
+        container.appendTo(hostElRef.current);
+      });
+      if (cancelled) {
+        try {
+          container.destroy();
+        } catch {
+          /* already torn down */
+        }
+        return;
       }
+      const ed = container.documentEditor;
+      ed.isReadOnly = true;
+      ed.enableSfdtExport = true;
+      ed.enableEditorHistory = false;
+      ed.enableAutoFocus = false;
+      containerRef.current = container;
+      editorRef.current = ed;
+      setEditorReady(true);
     })();
     return () => {
       cancelled = true;
       try {
-        observer?.disconnect();
-      } catch {
-        /* no-op */
-      }
-      try {
-        editorRef.current?.destroy();
+        containerRef.current?.destroy();
       } catch {
         /* already torn down */
       }
+      containerRef.current = null;
       editorRef.current = null;
     };
     // serviceUrl/headers are stable for a given mount (the parent keys us by
@@ -166,10 +143,17 @@ export default function VersionViewer({
       try {
         // With highlights available and enabled, patch the renderer and show
         // revisions BEFORE opening so the first paint carries the highlights.
-        if (!doc.degraded && highlightsOn) {
+        const wantHighlights = !doc.degraded && highlightsOn;
+        if (wantHighlights) {
           try {
-            installRevisionHighlightRendering(viewer);
+            // Inline author-coloured highlights. showRevisions stays ON so the
+            // re-inserted deleted text lays out (false would show the accepted
+            // doc and hide deletions); the custom renderer overrides Syncfusion's
+            // default track-change styling with our washes, and we keep the
+            // Changes/review pane shut so no tracked-change panel appears.
+            installRevisionHighlightRendering(viewer, colorForRevisionAuthor);
             viewer.showRevisions = true;
+            closeTrackedChangeReviewPane(viewer);
           } catch {
             /* highlights are decoration; the document must still open */
           }
@@ -187,11 +171,29 @@ export default function VersionViewer({
         }
         await loaded;
         if (cancelled) return;
+        if (wantHighlights) {
+          // Opening can re-open the review pane; keep it shut.
+          closeTrackedChangeReviewPane(viewer);
+        }
+        // The raw-docx fallback still holds [[field]] / {{ jinja }} tokens (it
+        // never went through the binding engine); populate them the way the live
+        // editor does before showing the read-only version. The SFDT path is
+        // already populated upstream in useVersionDocument.
+        if (doc.docxUrl) {
+          try {
+            const parsed = JSON.parse(viewer.serialize());
+            const populated = populateVersionBindings(parsed);
+            if (populated !== parsed) {
+              const reloaded = waitForDocumentLoad(viewer);
+              viewer.open(JSON.stringify(populated));
+              await reloaded;
+              if (cancelled) return;
+            }
+          } catch {
+            /* population is best-effort; show the raw document if it fails */
+          }
+        }
         stampMissingContentControlColors(viewer);
-        // Size to the pane before fitting the page. The pane can still be
-        // growing to full height, so re-fit across the next few frames.
-        scheduleFits();
-        viewer.fitPage?.('FitPageWidth');
         const container = viewer.documentHelper?.viewerContainer as
           | HTMLElement
           | undefined;

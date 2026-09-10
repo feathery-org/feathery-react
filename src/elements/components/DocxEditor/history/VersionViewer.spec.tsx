@@ -20,29 +20,42 @@ const open = jest.fn();
 const openAsync = jest.fn().mockResolvedValue(undefined);
 const destroy = jest.fn();
 
-class FakeDocumentEditor {
-  documentHelper = { viewerContainer: { style: {} as Record<string, string> } };
+// The inner DocumentEditor a DocumentEditorContainer exposes. The viewer sets
+// its read-only/export flags after `created`, so keep a handle to the last one
+// to assert against.
+let lastEditor: any;
+const makeInnerEditor = () => ({
+  isReadOnly: false,
+  enableSfdtExport: false,
+  enableEditorHistory: true,
+  enableAutoFocus: true,
+  showRevisions: false,
+  documentHelper: { viewerContainer: { style: {} as Record<string, string> } },
+  open: (sfdt: string) => open(sfdt),
+  openAsync,
+  serialize: () => '{"sfdt":"v"}',
+  fitPage() {
+    /* no-op */
+  },
+  resize() {
+    /* no-op */
+  }
+});
+
+class FakeDocumentEditorContainer {
+  documentEditor = (lastEditor = makeInnerEditor());
 
   constructor(opts: any) {
     construct(opts);
   }
 
+  addEventListener(event: string, cb: () => void) {
+    // The viewer waits for `created` before touching the inner editor.
+    if (event === 'created') cb();
+  }
+
   appendTo() {
     /* no DOM work in the fake */
-  }
-
-  open(sfdt: string) {
-    open(sfdt);
-  }
-
-  openAsync = openAsync;
-
-  fitPage() {
-    /* no-op */
-  }
-
-  resize() {
-    /* no-op */
   }
 
   destroy() {
@@ -94,7 +107,7 @@ beforeEach(() => {
   open.mockClear();
   destroy.mockClear();
   (globalThis as any).ej = {
-    documenteditor: { DocumentEditor: FakeDocumentEditor }
+    documenteditor: { DocumentEditorContainer: FakeDocumentEditorContainer }
   };
 });
 
@@ -109,8 +122,8 @@ describe('VersionViewer', () => {
     );
 
     await waitFor(() => expect(construct).toHaveBeenCalled());
-    expect(construct.mock.calls[0][0].isReadOnly).toBe(true);
     await waitFor(() => expect(open).toHaveBeenCalledWith('{"sfdt":"v"}'));
+    expect(lastEditor.isReadOnly).toBe(true);
   });
 
   it('destroys the editor on unmount', async () => {
@@ -120,5 +133,25 @@ describe('VersionViewer', () => {
     await waitFor(() => expect(construct).toHaveBeenCalled());
     view.unmount();
     expect(destroy).toHaveBeenCalled();
+  });
+
+  it('opens a provided liveDoc directly, without fetching the version', async () => {
+    const h = host();
+    render(
+      <VersionViewer
+        host={h}
+        version={version({ is_current: true })}
+        liveDoc={{
+          loading: false,
+          error: false,
+          sfdt: '{"live":true}',
+          degraded: false
+        }}
+      />
+    );
+
+    await waitFor(() => expect(open).toHaveBeenCalledWith('{"live":true}'));
+    // The live document bypasses the version-file fetch entirely.
+    expect(h.fetchVersionFile).not.toHaveBeenCalled();
   });
 });
