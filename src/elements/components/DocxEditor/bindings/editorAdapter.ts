@@ -25,13 +25,10 @@
 //     updateContentControl stays the write for every other control type; it is
 //     the SDK's per-type dispatcher and RichText is the one type it pastes.
 //
-// History is the other half of the contract. Only 'field' writes - normalization
-// of the cell the user just edited - are recorded, because a suppressed rewrite
-// of a cell that has a live history entry corrupts that entry ("200" normalized
-// invisibly to "$200.00" made one Ctrl+Z restore "$150.000.00"). Fan-out and
-// formula writes stay invisible: recording them makes undo peel engine output
-// instead of the user's edit, which the next reconcile immediately re-applies -
-// an unwinnable undo/Enter loop.
+// History is the other half of the contract. Mechanical reconciliation records
+// only field normalization and keeps formula output out of the user's undo
+// stack. An authored assistant batch tracks changed formula output with the
+// same review identity as the edit that caused it.
 //
 // Everything runs in ONE synchronous turn, selection restore included. An async
 // restore was tried and reverted: it yanked the caret out from under a user
@@ -150,6 +147,14 @@ export function pendingInsertionAuthorAround(
   const own =
     insertionAuthor(start?.revisions) ?? insertionAuthor(end?.revisions);
   if (own !== undefined) return own;
+  const seen = new Set<unknown>();
+  let inline = start?.nextNode;
+  while (inline && inline !== end && !seen.has(inline)) {
+    seen.add(inline);
+    const author = insertionAuthor(inline.revisions);
+    if (author !== undefined) return author;
+    inline = inline.nextNode;
+  }
   const paragraph = start?.line?.paragraph;
   const mark = insertionAuthor(paragraph?.characterFormat?.revisions);
   if (mark !== undefined) return mark;
@@ -528,35 +533,11 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         }
         if (!apply(fieldWrites)) return false;
         if (!authoredDepth) editor.enableEditorHistory = false;
-        // DERIVED VALUES ARE NOT REVIEWED EDITS. A formula output follows the
-        // document; it is not a decision anyone accepts or rejects. Writing it
-        // as a tracked revision made two cards collide on every shared total
-        // (measured 2026-09-09: split then delete, five accept/reject orders,
-        // every one left a subtotal stale), because the editor cannot keep two
-        // identities' pending edits on one run. So formula outputs are written
-        // untracked inside an assistant change set exactly as they already were
-        // for the user's own typing: the card tracks the causes (rows, values),
-        // and the totals recompute after every change, accept and reject.
-        //
-        // ONE EXCEPTION, and it is the editor's, not ours: a plain run cannot
-        // live inside a tracked insertion. Writing one there splits the
-        // insertion's range around it, and rejecting that insertion afterwards
-        // removes far more than the insertion (measured 2026-09-09: a row
-        // inserted by a card, its line total recomputed untracked into it, the
-        // card rejected - every text run in the document gone). A derived value
-        // whose cell sits inside a pending insertion is therefore written AS
-        // THAT INSERTION: tracked, under the insertion's own author, so the
-        // editor replaces the run inside the insertion instead of splitting it
-        // (a second identity layered inside the first splits it, and the split
-        // tail is a fragment no card can own cleanly). The value then follows
-        // the insertion - kept with it, discarded with it - which is what a
-        // total inside a pending row or table means.
-        //
-        // Such a write keeps HISTORY on as well: measured on this SDK (and
-        // recorded above for the authored batch), a tracked write with history
-        // disabled loses its insertion outright - the old run goes, nothing
-        // replaces it, the control reads empty. One undo entry for a derived
-        // value inside a pending card is the price of the value existing.
+        // Formula output caused by an authored batch is reviewable too. If the
+        // formula already sits in a pending insertion, keep updating that same
+        // insertion identity instead of layering a second card onto one run.
+        // Mechanical reconciles stay untracked except inside a pending
+        // insertion, where a plain write would break rejection of that range.
         const derivedWrites = applicableWrites.filter(
           (write) => write.kind !== 'field'
         );
@@ -583,8 +564,10 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
                 );
                 continue;
               }
-              editor.enableTrackChanges = false;
-              editor.enableEditorHistory = priorHistoryForDerived;
+              editor.enableTrackChanges = authoredDepth > 0;
+              editor.enableEditorHistory = authoredDepth
+                ? true
+                : priorHistoryForDerived;
               editor.currentUser = priorUserForDerived;
               writeControl(control, write.text);
             }

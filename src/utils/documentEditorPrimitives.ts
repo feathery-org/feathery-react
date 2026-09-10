@@ -2120,16 +2120,14 @@ export interface RevisionGroupIdentity {
 }
 
 /**
- * The outermost live table widgets a set of revisions sits in, read from the
- * SDK widget tree BEFORE those revisions resolve. A revision's range holds
- * text boxes (line -> paragraph), paragraph marks (ownerBase -> paragraph) and
- * row formats (ownerBase -> row); each leads to its cell's table. A table in a
- * cell climbs to the table that holds it, and a table laid across pages is one
- * identity: its first piece.
+ * The outermost tables whose ROW STRUCTURE a set of revisions changes. Text
+ * replacements inside a table do not affect banding and must not cause that
+ * table to be restriped when the revision resolves.
  */
 export function tablesTouchedByRevisions(revisions: LiveRevision[]): Set<any> {
   const tables = new Set<any>();
   for (const revision of revisions) {
+    if (!revisionSpansRow(revision)) continue;
     let range: any[] = [];
     try {
       range =

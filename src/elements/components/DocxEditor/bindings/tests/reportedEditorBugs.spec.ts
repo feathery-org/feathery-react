@@ -358,4 +358,31 @@ describe('pending tracked content-control values', () => {
       )
     ).toEqual(['20', '25']);
   });
+
+  it('excludes a pending-deleted row that is itself still a pending insertion', () => {
+    const doc = boundDoc();
+    const dataRow = firstTable(doc).rows[1] as any;
+    dataRow.rowFormat.revisionIds = ['insert-row', 'delete-row'];
+    (doc as any).revisions = [
+      {
+        author: 'Robin split',
+        revisionType: 'Insertion',
+        revisionId: 'insert-row'
+      },
+      {
+        author: 'Robin delete',
+        revisionType: 'Deletion',
+        revisionId: 'delete-row'
+      }
+    ];
+
+    const result = applyRules(doc, {});
+
+    expect(result.index.tables.get('costs')?.rows).toHaveLength(0);
+    expect(
+      result.index.occurrences.find(
+        (occurrence) => occurrence.name === 'costs_subtotal'
+      )?.text
+    ).toBe('$0.00');
+  });
 });

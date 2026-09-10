@@ -29,6 +29,7 @@ describe('two messages, two cards: the later card can be rejected on its own', (
 
   async function splitThenDelete() {
     await session.call('open', readFixture('flagship-v3.browser.sfdt.json'));
+    const baseline = await session.call<string>('serialize');
     const table = await session.call<string>('tableAnchor', SOURCE);
     const split = await session.call<any>(
       'applyEdits',
@@ -43,7 +44,6 @@ describe('two messages, two cards: the later card can be rejected on its own', (
       'stacked-split'
     );
     expect(split.outcomes).toEqual(['ok']);
-    const afterSplit = await session.call<string>('serialize');
     const formulasAfterSplit = await session.call<Record<string, string>>(
       'formulaValues'
     );
@@ -65,7 +65,12 @@ describe('two messages, two cards: the later card can be rejected on its own', (
       'stacked-delete'
     );
     expect(deleted.outcomes).toEqual(['ok']);
-    return { afterSplit, formulasAfterSplit, groupsAfterSplit, rowsAfterSplit };
+    return {
+      baseline,
+      formulasAfterSplit,
+      groupsAfterSplit,
+      rowsAfterSplit
+    };
   }
 
   it('the second card lands as its own card and moves the figures it should', async () => {
@@ -88,12 +93,11 @@ describe('two messages, two cards: the later card can be rejected on its own', (
   }, 120000);
 
   it("rejecting only the second card restores the first card's document", async () => {
-    const { afterSplit, formulasAfterSplit, rowsAfterSplit } =
+    const { baseline, formulasAfterSplit, rowsAfterSplit } =
       await splitThenDelete();
     await session.call('resolveGroupsOf', 'stacked-delete', false);
-    // Byte for byte: the second card's own tracking identity, its derived
-    // values written untracked and recomputed after the resolve, and the
-    // touched tables restriped from their rows leave nothing behind.
+    // The subtotal replacement keeps the split card's identity while the later
+    // card is pending, so rejecting the later card restores the split state.
     expect(await session.call<any[]>('groups')).toHaveLength(1);
     expect(await session.call<Record<string, string>>('formulaValues')).toEqual(
       formulasAfterSplit
@@ -101,7 +105,10 @@ describe('two messages, two cards: the later card can be rejected on its own', (
     expect(await session.call<string[]>('tableRowTexts', SOURCE)).toEqual(
       rowsAfterSplit
     );
-    expect(await session.call<string>('serialize')).toBe(afterSplit);
+    await session.call('resolveGroupsOf', 'stacked-split', false);
+    expect(await session.call<any[]>('groups')).toHaveLength(0);
+    const final = await session.call<string>('serialize');
+    expect(final).toBe(baseline);
   }, 120000);
 
   it('accepting both cards gives the final document with every total consistent', async () => {

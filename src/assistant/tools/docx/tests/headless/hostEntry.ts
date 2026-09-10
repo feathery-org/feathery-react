@@ -184,6 +184,10 @@ const api = {
     }
   },
 
+  reconcileBindings(): void {
+    attached?.controller.flush();
+  },
+
   /** Laid-out pages. Zero means layout never ran, which is the jsdom failure. */
   pageCount: (): number => (live().documentHelper as any).pages?.length ?? 0,
 
@@ -747,6 +751,17 @@ const api = {
       group: view.group,
       untagged: view.untagged,
       derivedChanges: view.derivedChanges
+    })),
+
+  groupItems: (): any[] =>
+    listRevisionGroups(live() as any).map((view: any) => ({
+      changeSetId: view.changeSetId,
+      group: view.group,
+      items: view.items.map((item: any) => ({
+        revisionType: item.revisionType,
+        text: item.text,
+        beforeText: item.beforeText
+      }))
     })),
 
   chipCount: (): number =>

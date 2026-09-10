@@ -333,9 +333,23 @@ describe('bound row operations while a source split is still pending', () => {
     expect(formulas.grand_total).toBe('$82,782.62');
   }, 120000);
 
-  it('rejects only the added row back to the exact pending split', async () => {
+  it('rejects only the added row back to the pending split, then rejects all to exact original', async () => {
+    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    const original = await session.call<string>('serialize');
     const source = await openWithPendingSplit();
-    const beforeInsert = await session.call<string>('serialize');
+    const beforeRows = await session.call<string[]>('tableRowTexts', SOURCE);
+    const beforeCopyRows = await session.call<string[]>('tableRowTexts', COPY);
+    const beforeShading = await session.call<Array<string | null>>(
+      'rowShading',
+      SOURCE
+    );
+    const beforeCopyShading = await session.call<Array<string | null>>(
+      'rowShading',
+      COPY
+    );
+    const beforeFormulas = await session.call<Record<string, string>>(
+      'formulaValues'
+    );
 
     const inserted = await session.call<any>(
       'applyEdits',
@@ -345,10 +359,26 @@ describe('bound row operations while a source split is still pending', () => {
     expect(inserted.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
 
     await session.call('resolveGroupsOf', 'pending-source-insert', false);
-    expect(await session.call<string>('serialize')).toBe(beforeInsert);
+    expect(await session.call<string[]>('tableRowTexts', SOURCE)).toEqual(
+      beforeRows
+    );
+    expect(await session.call<string[]>('tableRowTexts', COPY)).toEqual(
+      beforeCopyRows
+    );
+    expect(
+      await session.call<Array<string | null>>('rowShading', SOURCE)
+    ).toEqual(beforeShading);
+    expect(
+      await session.call<Array<string | null>>('rowShading', COPY)
+    ).toEqual(beforeCopyShading);
+    expect(await session.call<Record<string, string>>('formulaValues')).toEqual(
+      beforeFormulas
+    );
     const groups = await session.call<any[]>('groups');
     expect(groups).toHaveLength(1);
     expect(groups[0].changeSetId).toBe('pending-source-split');
+    await session.call('resolveGroupsOf', 'pending-source-split', false);
+    expect(await session.call<string>('serialize')).toBe(original);
   }, 120000);
 
   it('restripes the copied table subtotal when a row is added before accepting the split', async () => {
@@ -453,6 +483,11 @@ describe('bound row operations while a source split is still pending', () => {
     expect(deleted.warnings).not.toEqual(
       expect.arrayContaining([expect.stringMatching(/left unbanded/)])
     );
+    // The full React host can deliver a late content-change event after the
+    // authored transaction. Its follow-up reconcile must preserve the current
+    // view of a row that was inserted by the split and then deleted by this
+    // second card.
+    await session.call('reconcileBindings');
     expect(
       await session.call<Array<string | null>>('rowShading', COPY)
     ).toEqual([

@@ -146,6 +146,13 @@ function hasOnlyRevisionIds(node: any, ids: Set<string>): boolean {
   );
 }
 
+function hasRevisionId(node: any, ids: Set<string>): boolean {
+  return (
+    Array.isArray(node?.revisionIds) &&
+    node.revisionIds.some((id: unknown) => ids.has(String(id)))
+  );
+}
+
 function ccText(node: any, deletedRevisionIds: Set<string>): string {
   let out = '';
   const inlines =
@@ -333,7 +340,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
           if (
             rawTable?.rows?.length &&
             rawTable.rows.every((row: SfdtRow) =>
-              hasOnlyRevisionIds(row.rowFormat, deletedRevisionIds)
+              hasRevisionId(row.rowFormat, deletedRevisionIds)
             )
           )
             return;
@@ -372,7 +379,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
         walkBlocks(block.blocks, [...path, 'blocks'], innerCtx, rowPath);
       } else if (Array.isArray(block.rows)) {
         block.rows.forEach((row: SfdtRow, r: number) => {
-          if (hasOnlyRevisionIds(row.rowFormat, deletedRevisionIds)) return;
+          if (hasRevisionId(row.rowFormat, deletedRevisionIds)) return;
           const currentRowPath = [...path, 'rows', r];
           (row.cells || []).forEach((cell, c) => {
             if ((cell as any).contentControlProperties) {
