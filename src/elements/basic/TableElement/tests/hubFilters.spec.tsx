@@ -59,12 +59,23 @@ describe('hubFilterWhere', () => {
     );
   });
 
-  test('an unset field compares as empty and a filter without a field is skipped', () => {
-    expect(hubFilterWhere([equalsFilter], null, {})).toEqual([
-      { fieldId: 'account', value: '' }
-    ]);
+  test('an empty field drops its filter, so the table shows all rows', () => {
+    expect(hubFilterWhere([equalsFilter], null, {})).toEqual([]);
+    expect(hubFilterWhere([equalsFilter], null, { account_id: '' })).toEqual(
+      []
+    );
+    expect(hubFilterWhere([inFilter], null, { account_ids: ' , ' })).toEqual(
+      []
+    );
+    // Other filters still apply while one is empty.
+    expect(
+      hubFilterWhere([equalsFilter, inFilter], null, { account_ids: 'a' })
+    ).toEqual([{ fieldId: 'account', operator: 'in', value: ['a'] }]);
+  });
+
+  test('a filter without a form field is skipped', () => {
     const orphan = { ...equalsFilter, field_key: undefined };
-    expect(hubFilterWhere([orphan], null, {})).toEqual([]);
+    expect(hubFilterWhere([orphan], null, { account_id: 'x' })).toEqual([]);
     expect(hubFilterWhere(undefined, null, {})).toEqual([]);
   });
 

@@ -663,12 +663,16 @@ function omitKeys(
 }
 
 /**
- * The `where` conditions a table's row filters currently resolve to. The hub
- * column is addressed by key (what the Hub API takes), taken from the live
- * schema when it has loaded so a renamed column keeps filtering, and from the
- * key stored on the filter otherwise. A filter whose form field no longer
- * exists has no key to read and is skipped; the backend drops such filters
- * when the field is deleted.
+ * The `where` conditions a table's row filters currently resolve to. Every
+ * filter must match (the Hub ANDs its conditions). The hub column is
+ * addressed by key (what the Hub API takes), taken from the live schema when
+ * it has loaded so a renamed column keeps filtering, and from the key stored
+ * on the filter otherwise.
+ *
+ * A filter is left off while its form field is empty, so an unfilled field
+ * behaves like no filter (all rows) rather than matching nothing. A filter
+ * whose form field no longer exists has no key to read and is skipped too;
+ * the backend drops such filters when the field is deleted.
  */
 export function hubFilterWhere(
   filters: HubFilter[] | undefined,
@@ -685,15 +689,11 @@ export function hubFilterWhere(
     if (!hubFieldKey) return;
     const raw = values[filter.field_key];
     if (filter.operator === 'in') {
-      conditions.push({
-        fieldId: hubFieldKey,
-        operator: 'in',
-        value: hubFilterList(raw)
-      });
-    } else {
-      // An unset field compares as empty rather than being left off: the Hub
-      // requires a value, and a filter must never widen to every row.
-      conditions.push({ fieldId: hubFieldKey, value: raw ?? '' });
+      const list = hubFilterList(raw);
+      if (!list.length) return;
+      conditions.push({ fieldId: hubFieldKey, operator: 'in', value: list });
+    } else if (raw != null && raw !== '') {
+      conditions.push({ fieldId: hubFieldKey, value: raw });
     }
   });
   return conditions;
