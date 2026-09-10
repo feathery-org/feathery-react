@@ -18879,6 +18879,43 @@ function detectAnchorShiftingNotLast(edits: EditOp[]): BatchRefusal | null {
   };
 }
 
+function detectUnpopulatedRowInsertions(edits: EditOp[]): BatchRefusal | null {
+  const missing: number[] = [];
+  edits.forEach((op, index) => {
+    if (op?.op !== 'insert_row' || op.allowEmpty === true) return;
+    const parts = String(op.anchor ?? '').split(';');
+    if (parts.length !== 5) return;
+    const anchorRow = Number(parts[2]);
+    if (!Number.isInteger(anchorRow)) return;
+    const firstRow = op.above === true ? anchorRow : anchorRow + 1;
+    const count = positiveCount(op.count);
+    const table = parts.slice(0, 2).join(';');
+    const group = typeof op.group === 'string' ? op.group : undefined;
+    const populated = new Set<number>();
+    for (const candidate of edits.slice(index + 1)) {
+      if (candidate?.op !== 'set_cell_text' || candidate.group !== group)
+        continue;
+      const candidateParts = String(candidate.anchor ?? '').split(';');
+      if (
+        candidateParts.length !== 5 ||
+        candidateParts.slice(0, 2).join(';') !== table
+      )
+        continue;
+      const row = Number(candidateParts[2]);
+      if (Number.isInteger(row) && row >= firstRow && row < firstRow + count)
+        populated.add(row);
+    }
+    if (populated.size !== count) missing.push(index);
+  });
+  if (!missing.length) return null;
+  return {
+    code: 'row_insert_requires_values',
+    message:
+      'insert_row must include at least one set_cell_text write for every new row in the same change set and review group. Nothing was written. Use allowEmpty:true only when the user explicitly requested a blank row.',
+    indices: missing
+  };
+}
+
 function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
   const emptyTables: Array<{
     index: number;
@@ -21864,6 +21901,7 @@ function applyDocumentEditsMeasured(
     detectBatchedSplits(edits) ??
     detectBatchedDuplicateTables(edits) ??
     detectAnchorShiftingNotLast(edits) ??
+    detectUnpopulatedRowInsertions(edits) ??
     detectEmptyInsertedTables(edits) ??
     detectMultilineAuthoredCells(edits) ??
     detectUnsourcedAuthoredFigures(edits) ??
