@@ -15,7 +15,12 @@ import {
 } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
 import { isOpeningDocument } from '../useDocxEditor';
 import { createAutosaveScheduler } from './autosaveScheduler';
-import { contentHash, diffSession, normalizeForDiff } from './sfdtDiff/index';
+import {
+  applyHunks,
+  contentHash,
+  diffSession,
+  normalizeForDiff
+} from './sfdtDiff/index';
 import { createSessionTracker } from './sessionTracker';
 import { createSliceStore } from './sliceStore';
 import {
@@ -50,6 +55,14 @@ export interface UseDocxHistorySessionOptions {
   canSave?: () => boolean;
 }
 
+/** The current session's live change list, as the viewer would render a stored
+ *  version: `sfdt` is the applyHunks display document (highlights baked in). */
+export interface SessionPreview {
+  sfdt: string;
+  editCount: number;
+  formatCount: number;
+}
+
 export interface UseDocxHistorySessionResult {
   status: SaveStatus;
   savedAt: Date | null;
@@ -59,6 +72,10 @@ export interface UseDocxHistorySessionResult {
   /** Explicit Save: close the session now and resolve when it has persisted. */
   save: () => Promise<void>;
   retry: () => void;
+  /** Diff the OPEN session live (same inputs as the close-time diff) and return
+   *  a highlighted display document for the in-progress current version, which
+   *  has no stored files yet. Null when no session is open or nothing changed. */
+  previewSession: () => SessionPreview | null;
 }
 
 async function gzip(text: string): Promise<Blob> {
@@ -104,8 +121,14 @@ export function useDocxHistorySession(
   canSaveRef.current = canSave;
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
-  // The document as the session began, for the unchanged-session hash. (An
-  // exact pre-first-edit S0 arrives with the diff PR; this is a close proxy.)
+  // The document as the session began — the diff baseline (S0). This MUST be the
+  // pristine document from BEFORE the first edit: the diff attributes S0 → F to
+  // the authors, so a post-first-edit S0 loses that edit (and, for a same-author
+  // session with no boundary slices, loses ALL highlights). It cannot be captured
+  // in onEdit, which fires on contentChange AFTER the edit applies — so we snapshot
+  // it when the document finishes opening (below) and refresh it after each close.
+  const baselineRef = useRef<string | null>(null);
+  // The starting document copied into s0 for the currently-open session.
   const s0Ref = useRef<string | null>(null);
   // The author of the final segment (last boundary → close): the F slice's
   // author for the diff. Updated on every edit.
@@ -206,6 +229,12 @@ export function useDocxHistorySession(
       await closeSession(meta.sessionId, meta.authors);
       slices.clear();
       s0Ref.current = null;
+      // The just-closed document is the baseline for the NEXT session's diff.
+      try {
+        baselineRef.current = editorRef.current?.serialize() ?? null;
+      } catch {
+        baselineRef.current = null;
+      }
     };
 
     const scheduler = createAutosaveScheduler({
@@ -241,6 +270,9 @@ export function useDocxHistorySession(
           scheduler.cancel();
           slices.clear();
           s0Ref.current = null;
+          // A new document invalidates the old baseline; the open-capture effect
+          // snapshots the fresh one.
+          baselineRef.current = null;
           return;
         }
         finalizeRef.current = finalizeSession(meta);
@@ -252,11 +284,29 @@ export function useDocxHistorySession(
 
   const { scheduler, tracker } = engine;
 
+  // Snapshot the pristine document as the diff baseline once it finishes opening
+  // and no session is in flight. This is the true pre-edit S0 the diff needs;
+  // capturing it at edit time is too late (contentChange fires post-edit).
+  useEffect(() => {
+    if (readOnly || loading || !editor) return;
+    if (tracker.isOpen()) return; // Mid-session: don't clobber the baseline.
+    try {
+      baselineRef.current = editor.serialize();
+    } catch {
+      /* keep whatever baseline we had */
+    }
+  }, [editor, loading, readOnly, tracker]);
+
   const onEdit = useCallback(
     (info: { assistant: boolean }) => {
       if (readOnly || !hostRef.current) return;
       const ed = editorRef.current;
-      if (!tracker.isOpen() && ed) s0Ref.current = ed.serialize();
+      // Start of a new session: baseline it on the pristine pre-edit document
+      // snapshot. Fall back to a live serialize only if no baseline was captured
+      // (keeps behaviour no worse than before on that edge).
+      if (!tracker.isOpen() && ed) {
+        s0Ref.current = baselineRef.current ?? ed.serialize();
+      }
       const actor = info.assistant ? ROBIN : currentUserRef.current;
       currentAuthorRef.current = actor.key;
       tracker.noteEdit(actor);
@@ -297,5 +347,39 @@ export function useDocxHistorySession(
 
   const retry = useCallback(() => scheduler.touch(), [scheduler]);
 
-  return { status, savedAt, onEdit, save: explicitSave, retry };
+  // Live equivalent of closeSession's diff, but returns the display document
+  // instead of uploading. Used to show highlights for the in-progress current
+  // version (no stored files yet). Reuses the exact same inputs and engine.
+  const previewSession = useCallback((): SessionPreview | null => {
+    const ed = editorRef.current;
+    if (!ed || !s0Ref.current) return null;
+    try {
+      const fDoc = JSON.parse(ed.serialize());
+      const sessionId = tracker.currentMeta()?.sessionId ?? 'preview';
+      const diffSlices = [
+        ...engine.slices.all().map((s) => ({
+          sfdt: JSON.parse(s.sfdt as string),
+          author: s.author,
+          endedAt: s.endedAt
+        })),
+        { sfdt: fDoc, author: currentAuthorRef.current }
+      ];
+      const changes = diffSession(
+        JSON.parse(s0Ref.current),
+        diffSlices,
+        sessionId,
+        { timeBudgetMs: 4000 }
+      );
+      if (!changes.hunks.length) return null;
+      return {
+        sfdt: JSON.stringify(applyHunks(fDoc, changes)),
+        editCount: changes.changeCount,
+        formatCount: changes.formatChangeCount
+      };
+    } catch {
+      return null;
+    }
+  }, [engine, tracker]);
+
+  return { status, savedAt, onEdit, save: explicitSave, retry, previewSession };
 }

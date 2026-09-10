@@ -77,14 +77,14 @@ describe('useDocxHistorySession', () => {
   });
 
   it('diffs the session and uploads real hunks when the document changed', async () => {
-    // The editor serializes S0 on the first edit, then a changed F at close.
+    // Baseline is snapshotted at open (pristine 'hello'); F is 'hello world'.
     let doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
     });
     const editor = { serialize: () => doc };
     const { view, host } = setup({}, editor);
 
-    act(() => view.result.current.onEdit({ assistant: false })); // captures S0
+    act(() => view.result.current.onEdit({ assistant: false }));
     doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello world' }] }] }]
     });
@@ -95,6 +95,56 @@ describe('useDocxHistorySession', () => {
     const closePayload = host.closeVersion.mock.calls[0][1];
     expect(closePayload.changeCount).toBeGreaterThan(0);
     expect(closePayload.changesJson).toBeInstanceOf(Blob);
+  });
+
+  it('diffs the first edit even though contentChange fires after it applies', async () => {
+    // The real editor fires contentChange (→ onEdit) AFTER the edit is applied,
+    // so by then serialize() already returns the CHANGED document. If S0 were
+    // taken here it would equal F and the edit would vanish. The baseline must
+    // come from the pristine document captured at open.
+    let doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
+    });
+    const editor = { serialize: () => doc };
+    const { view, host } = setup({}, editor);
+    await flush(); // let the open-capture effect snapshot the pristine baseline
+
+    // The edit has already been applied by the time onEdit runs.
+    doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello world' }] }] }]
+    });
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+
+    const closePayload = host.closeVersion.mock.calls[0][1];
+    expect(closePayload.changeCount).toBeGreaterThan(0);
+  });
+
+  it('previewSession returns a highlighted display document for the open session', async () => {
+    let doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
+    });
+    const editor = { serialize: () => doc };
+    const { view } = setup({}, editor);
+    await flush(); // capture the pristine baseline
+
+    doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello world' }] }] }]
+    });
+    act(() => view.result.current.onEdit({ assistant: false }));
+
+    const preview = view.result.current.previewSession();
+    expect(preview).not.toBeNull();
+    expect(preview!.editCount).toBeGreaterThan(0);
+    // applyHunks baked synthetic revisions into the display document.
+    expect(preview!.sfdt).toContain('revisionId');
+  });
+
+  it('previewSession is null with no open session', () => {
+    const { view } = setup();
+    expect(view.result.current.previewSession()).toBeNull();
   });
 
   it('autosaves with the session id (no close flag) after the idle window', async () => {
