@@ -12390,11 +12390,10 @@ function finalizeTableAppearance(
           const rowCarriesPriorPendingWork = [...rowIds].some((id) =>
             preExistingRevisionIds.has(id)
           );
-          const whollyPriorInsertion =
-            rowIds.size > 0 &&
-            [...rowIds].every(
-              (id) => preExistingRevisionIds.has(id) && allInserted.has(id)
-            );
+          // Recalculation can mint a new fragment for an earlier table-copy
+          // insertion, so lineage is defined by revision type, not snapshot age.
+          const insertionOnlyLineage =
+            rowIds.size > 0 && [...rowIds].every((id) => allInserted.has(id));
           // Give a row this change set created an explicit no-fill key while
           // rejection can still remove the whole row. A later change set can
           // then recolour and restore that row without trying to recreate the
@@ -12408,7 +12407,7 @@ function finalizeTableAppearance(
           const mayWrite = whollyInserted
             ? true
             : everColoured &&
-              (!rowCarriesPriorPendingWork || whollyPriorInsertion);
+              (!rowCarriesPriorPendingWork || insertionOnlyLineage);
           if (mayWrite)
             planned.push({ row: index, shading: wanted, materialize });
           else skippedKeyless++;
