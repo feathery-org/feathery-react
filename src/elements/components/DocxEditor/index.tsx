@@ -9,6 +9,7 @@ import PanelRail from './PanelRail';
 import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
 import { TableDeleteImpact } from './bindings/tableDeleteGuard';
 import { useDocxHistorySession } from './history/useDocxHistorySession';
+import { VersionDocument } from './history/useVersionDocument';
 import VersionViewer from './history/VersionViewer';
 import VersionBar from './history/VersionBar';
 import {
@@ -187,8 +188,16 @@ function DocxEditor({
   const [viewingVersion, setViewingVersion] = useState<DocxVersion | null>(
     null
   );
-  // Highlight toggle + resolved counts for the version bar. Reset per version.
-  const [highlightsOn, setHighlightsOn] = useState(true);
+  // A live-diffed display document for the in-progress current version (no
+  // stored files yet): highlights baked in, so the viewer renders it like any
+  // stored version. Null for stored versions (they fetch their own files).
+  const [liveDoc, setLiveDoc] = useState<VersionDocument | null>(null);
+  // The version list reported up by the History panel, for auto-selecting the
+  // latest (Current) version when the panel opens.
+  const [historyVersions, setHistoryVersions] = useState<DocxVersion[]>([]);
+  // Version highlights are always shown when available (no user toggle). The
+  // resolved counts below drive the version bar's summary; reset per version.
+  const highlightsOn = true;
   const [versionMeta, setVersionMeta] = useState<{
     editCount?: number;
     formatCount?: number;
@@ -318,8 +327,10 @@ function DocxEditor({
     if (!viewingVersion && activePanel === null) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (viewingVersion) setViewingVersion(null);
-      else setActivePanel(null);
+      if (viewingVersion) {
+        setViewingVersion(null);
+        setLiveDoc(null);
+      } else setActivePanel(null);
     };
     const doc = featheryDoc();
     doc.addEventListener('keydown', onKey);
@@ -450,6 +461,67 @@ function DocxEditor({
     }
   });
   historyOnEditRef.current = historySession.onEdit;
+
+  // Open a version read-only in the viewer. The in-progress current version has
+  // no stored files, so build a live display document for it (its session diffed
+  // live → highlights); stored versions fetch their own files (liveDoc null).
+  const selectVersion = useCallback(
+    (version: DocxVersion) => {
+      const hasStoredDoc =
+        !!version.final_sfdt || !!version.editor_file || !!version.file;
+      let live: VersionDocument | null = null;
+      if (version.is_current && !hasStoredDoc) {
+        const preview = historySession.previewSession();
+        if (preview) {
+          live = {
+            loading: false,
+            error: false,
+            sfdt: preview.sfdt,
+            degraded: false,
+            editCount: preview.editCount,
+            formatCount: preview.formatCount
+          };
+        } else {
+          // No session edits to diff: show the current document plain.
+          try {
+            const sfdt = editor?.serialize?.();
+            if (sfdt) {
+              live = { loading: false, error: false, sfdt, degraded: true };
+            }
+          } catch {
+            live = null;
+          }
+        }
+      }
+      setLiveDoc(live);
+      setViewingVersion(version);
+      setVersionMeta(null);
+    },
+    [editor, historySession]
+  );
+
+  // Back to the live editor (its toolbar returns because viewingVersion clears).
+  const exitVersionView = useCallback(() => {
+    setViewingVersion(null);
+    setLiveDoc(null);
+  }, []);
+
+  // When the History panel opens, select the latest (Current) version by default
+  // so the viewer shows it read-only straight away. Fires once per open; a manual
+  // "back to current" while the panel stays open does not re-trigger it.
+  const historyAutoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (activePanel !== 'history') {
+      historyAutoSelectedRef.current = false;
+      return;
+    }
+    if (historyAutoSelectedRef.current) return;
+    const current = historyVersions.find((v) => v.is_current);
+    if (current) {
+      historyAutoSelectedRef.current = true;
+      selectVersion(current);
+    }
+  }, [activePanel, historyVersions, selectVersion]);
 
   // Flash a save toast and auto-dismiss it. Re-showing while one is already up
   // resets the timer so a second save reads as fresh feedback. Errors linger a
@@ -610,6 +682,33 @@ function DocxEditor({
     }
   };
 
+  // Restore the version currently open in the viewer. Confirms first (the
+  // current document is saved as a version, so the restore is undoable), then
+  // restores and returns to the live editor. Triggered by the floating action
+  // in the viewer's bottom-right corner.
+  const restoreViewingVersion = () => {
+    if (!history || !viewingVersion) return;
+    const target = viewingVersion;
+    setGateWarning({
+      message:
+        'Restore this version? Your current document is saved ' +
+        'as a version first, so you can undo this.',
+      confirmLabel: 'Restore',
+      confirmTitle: 'Restore this version',
+      proceed: async () => {
+        setGateWarning(null);
+        try {
+          await history.restoreVersion(target.id);
+          exitVersionView();
+          flashSaveToast('success', 'Restored — saved as a new version');
+        } catch (err) {
+          flashSaveToast('error', 'Could not restore this version');
+          onError?.((err as Error).message || String(err));
+        }
+      }
+    });
+  };
+
   if (!visible) return null;
 
   return (
@@ -631,43 +730,10 @@ function DocxEditor({
       {editor && viewingVersion && (
         <VersionBar
           version={viewingVersion}
-          onExit={() => setViewingVersion(null)}
+          onExit={exitVersionView}
           editCount={versionMeta?.editCount}
           formatCount={versionMeta?.formatCount}
           highlightsAvailable={!!versionMeta && !versionMeta.degraded}
-          highlightsOn={highlightsOn}
-          onToggleHighlights={setHighlightsOn}
-          onRestore={
-            history
-              ? () => {
-                  const target = viewingVersion;
-                  setGateWarning({
-                    message:
-                      'Restore this version? Your current document is saved ' +
-                      'as a version first, so you can undo this.',
-                    confirmLabel: 'Restore',
-                    confirmTitle: 'Restore this version',
-                    proceed: async () => {
-                      setGateWarning(null);
-                      try {
-                        await history.restoreVersion(target.id);
-                        setViewingVersion(null);
-                        flashSaveToast(
-                          'success',
-                          'Restored — saved as a new version'
-                        );
-                      } catch (err) {
-                        flashSaveToast(
-                          'error',
-                          'Could not restore this version'
-                        );
-                        onError?.((err as Error).message || String(err));
-                      }
-                    }
-                  });
-                }
-              : undefined
-          }
         />
       )}
       {editor && !viewingVersion && (
@@ -771,6 +837,9 @@ function DocxEditor({
               serviceUrl={serviceUrl}
               headers={headers}
               highlightsOn={highlightsOn}
+              // Present only for the in-progress current version: a live-diffed
+              // display document to open directly (no stored files exist).
+              liveDoc={liveDoc ?? undefined}
               onMeta={setVersionMeta}
             />
           )}
@@ -784,24 +853,27 @@ function DocxEditor({
             editor={editor}
             open={activePanel !== null}
             tab={activePanel ?? 'sections'}
-            onClose={() => setActivePanel(null)}
+            // Closing the panel (its X) returns to the live editor: clear the
+            // version view so the editing toolbar comes back.
+            onClose={() => {
+              setActivePanel(null);
+              exitVersionView();
+            }}
             reviewChanges={!!reviewChanges}
             onChangesCount={setChangesCount}
             markDirty={markDirty}
             boundaryKey={`${railGeneration}:${openNonce ?? 0}`}
             history={history}
             currentUser={currentUser ?? DEFAULT_CURRENT_USER}
-            // Selecting the current version just closes any open viewer (its
-            // bytes are the live editor beneath); an older one opens read-only.
-            onSelectVersion={(version) => {
-              if (version.is_current) {
-                setViewingVersion(null);
-                return;
-              }
-              setViewingVersion(version);
-              setHighlightsOn(true);
-              setVersionMeta(null);
-            }}
+            // Every version opens read-only in the viewer with highlights; the
+            // in-progress current version is diffed live inside selectVersion.
+            onSelectVersion={selectVersion}
+            // Report the loaded list up so the panel can auto-select the latest.
+            onVersionsLoaded={setHistoryVersions}
+            // Footer actions: Restore the open version; enabled while viewing.
+            onRestoreVersion={restoreViewingVersion}
+            versionSelected={!!viewingVersion}
+            selectedVersionId={viewingVersion?.id ?? null}
             // Reload the list whenever a save lands so a new version and the
             // "Current" tag stay fresh while the panel is open.
             historyRefreshKey={historySession.savedAt?.getTime() ?? 0}
@@ -816,7 +888,12 @@ function DocxEditor({
             changesCount={changesCount}
             showHistory={!!history}
             onToggle={(panel) =>
-              setActivePanel((p) => (p === panel ? null : panel))
+              setActivePanel((p) => {
+                const next = p === panel ? null : panel;
+                // Leaving the History panel returns to the live editor.
+                if (p === 'history' && next !== 'history') exitVersionView();
+                return next;
+              })
             }
           />
         )}
