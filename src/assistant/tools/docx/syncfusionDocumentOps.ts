@@ -161,6 +161,7 @@ import {
   createdRevisions,
   disableUserTrackChanges,
   groupRevisionsAtomic,
+  adoptRevisionsIntoAuthorsCard,
   invalidateDocumentLayout,
   installRevisionGroupIsolation,
   installTrackedContentControlDeletion,
@@ -173,6 +174,7 @@ import {
   revisionGroupTag,
   revisionIsUnresolvable,
   snapshotRevisions,
+  withLiveSelection,
   wrappingDocumentEditorContainer,
   writeTableLayout,
   writeTableProperties
@@ -199,6 +201,49 @@ export type { LiveEditor } from '../../../utils/documentEditorPrimitives';
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
 export const ASSISTANT_DOCUMENT_AUTHOR = 'Robin';
+
+/**
+ * ONE TRACKING IDENTITY PER CHANGE SET, ONE CARD PER MESSAGE.
+ *
+ * Word-style tracking keeps edits apart by AUTHOR. Under a single author,
+ * Syncfusion does not stack a second pending edit on content a pending
+ * insertion already covers: a same-author write over a pending insertion
+ * removes that insertion outright, with nothing left to reject. Measured on the
+ * browser document: a split left its subtotal recompute pending, a later
+ * delete_row's recompute wrote that cell, the split's card lost two edits on
+ * the spot, and rejecting the delete could not bring them back.
+ *
+ * So every change set writes as its own tracking identity: the display name
+ * followed by an invisible suffix derived from the change set id (two
+ * default-ignorable code points carrying its hash). Two cards stay two cards:
+ * card 2 writing over card 1 marks card 1's text deleted-by-card-2 instead of
+ * erasing it, rejecting card 2 restores card 1 exactly, accepting both is the
+ * final state. Everything that shows an author shows the display name; every
+ * check for "one of ours" uses `isAssistantAuthor`, never string equality.
+ */
+const AUTHOR_SUFFIX_ZERO = '\u2060';
+const AUTHOR_SUFFIX_ONE = '\u2061';
+
+export function changeSetAuthor(changeSetId: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < changeSetId.length; i++) {
+    hash ^= changeSetId.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  let suffix = '';
+  for (let bit = 0; bit < 24; bit++)
+    suffix += (hash >>> bit) & 1 ? AUTHOR_SUFFIX_ONE : AUTHOR_SUFFIX_ZERO;
+  return `${ASSISTANT_DOCUMENT_AUTHOR}${suffix}`;
+}
+
+/** The author as a reader sees it: the invisible identity suffix removed. */
+export function displayAuthor(author: unknown): string {
+  return String(author ?? '').replace(/[\u2060\u2061]/g, '');
+}
+
+export function isAssistantAuthor(author: unknown): boolean {
+  return displayAuthor(author) === ASSISTANT_DOCUMENT_AUTHOR;
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -858,7 +903,9 @@ export interface LiteralNumberWrite {
    * a figure quoted verbatim out of a document the user supplied, whose
    * excerpt the engine checked actually contains it.
    */
-  source: 'user_stated' | 'attachment';
+  source: 'user_stated' | 'attachment' | 'document';
+  /** `document` only: the bound value the figure was read out of. */
+  copiedFrom?: string;
   /** `attachment` only: the attachment the figure was read out of. */
   quotedFrom?: string;
   /** `attachment` only: the verbatim excerpt the figure was quoted from. */
@@ -7155,6 +7202,9 @@ function resolveQuantityCellFormat(
 const LITERAL_NUMBER_NOTE =
   'Written verbatim as a literal figure (literal: true), NOT computed by the engine. Only valid for a figure the user stated; anything derived from other cells must go through set_cell_formula.';
 
+const DOCUMENT_NUMBER_NOTE =
+  'Copied verbatim from a value the document already holds in the same column (the engine verified the match and records the source), NOT computed by the engine. Anything derived from other cells must go through set_cell_formula.';
+
 const QUOTED_NUMBER_NOTE =
   'Quoted verbatim from an attachment the user supplied (quotedFrom / quotedText), NOT computed by the engine. The engine verified the figure appears in the quoted excerpt; it cannot verify the excerpt came from that attachment, so the citation is recorded for review. Anything derived from other cells must go through set_cell_formula.';
 
@@ -7881,7 +7931,7 @@ function foreignPendingAuthorInBlocks(
   for (const block of rawBlocks) collectRevisionIds(block, ids);
   for (const id of Array.from(ids)) {
     const author = authorById.get(id);
-    if (author && author !== ASSISTANT_DOCUMENT_AUTHOR) return author;
+    if (author && !isAssistantAuthor(author)) return author;
   }
   return undefined;
 }
@@ -11576,8 +11626,11 @@ function selectForAppearance(
   cellAnchor: string,
   extent: 'cell' | 'row'
 ): void {
-  editor.selection.select(`${cellAnchor};0`, `${cellAnchor};0`);
-  callSelection(editor, extent === 'row' ? 'selectRow' : 'selectCell');
+  // A real selection even mid-resolve: see withLiveSelection.
+  withLiveSelection(editor, () => {
+    editor.selection.select(`${cellAnchor};0`, `${cellAnchor};0`);
+    callSelection(editor, extent === 'row' ? 'selectRow' : 'selectCell');
+  });
 }
 
 /**
@@ -13176,6 +13229,40 @@ interface RevisionGroupingReport {
   unresolvable: number;
 }
 
+/**
+ * A CHANGE SET OWNS THE REVISIONS ITS IDENTITY AUTHORED, AND NO OTHERS.
+ *
+ * Every revision this batch writes carries the batch's tracking identity
+ * (`changeSetAuthor`). SyncFusion can also mint a revision object DURING the
+ * batch that is not ours: writing into a cell that sits inside an earlier
+ * card's pending insertion splits that insertion's range around the new run,
+ * and the tail (a lone content-control mark, in the measured case) becomes a
+ * new Revision carrying the EARLIER card's author. Claiming it for this card
+ * bound a fragment of card 1 into card 2, and rejecting card 2 then removed a
+ * lone control mark of card 1's table - which the engine turned into the
+ * removal of every text run in the document (measured 2026-09-09).
+ *
+ * So the diff is filtered by author, and a foreign fragment is handed to the
+ * card whose identity it carries: it takes the tag of a sibling revision with
+ * the same author, and that card's resolve then carries it along.
+ */
+function ownRevisionsOnly(
+  editor: LiveEditor,
+  created: LiveRevision[],
+  changeSetId: string
+): LiveRevision[] {
+  const own = changeSetAuthor(changeSetId);
+  const mine: LiveRevision[] = [];
+  const foreign: LiveRevision[] = [];
+  for (const revision of created)
+    (String(revision.author ?? '') === own ? mine : foreign).push(revision);
+  // A fragment may arrive wearing THIS batch's tag if it was created before the
+  // batch tagged its own: clear it so the adoption reads the author, not us.
+  for (const fragment of foreign) fragment.customData = undefined;
+  adoptRevisionsIntoAuthorsCard(editor, foreign);
+  return mine;
+}
+
 // Diff the revisions created by this change set (against a pre-batch snapshot),
 // partition them by the group tag each revision carries in `customData`, and
 // bind each partition atomically. Revisions with no readable tag (test fakes,
@@ -13195,7 +13282,7 @@ function groupNewRevisions(
   clampsByGroup?: Map<string, BookmarkClampIntent[]>,
   expressionsByGroup?: Map<string, ExpressionRestore[]>
 ): RevisionGroupingReport {
-  const created = revisionsWereReloaded
+  const createdAll = revisionsWereReloaded
     ? (() => {
         // Binding commands reload one SFDT. Syncfusion recreates live Revision
         // objects during open(), so persisted ids are their stable identity.
@@ -13211,6 +13298,7 @@ function groupNewRevisions(
         );
       })()
     : createdRevisions(editor, before);
+  const created = ownRevisionsOnly(editor, createdAll, changeSetId);
   const revisionsByGroup = new Map<string, number>();
   const appearanceGroups = new Set<string>();
   if (!created.length)
@@ -14009,10 +14097,59 @@ function boundNumericWriteNeedsProvenance(
  * within a change set, and the plan that carries the record is what lets the
  * boundary see a figure being spent twice.
  */
+/**
+ * Document provenance for a figure written into a row this change set is
+ * CREATING: the same column, somewhere in the document, already shows exactly
+ * this value.
+ *
+ * The provenance rule exists so a number the model produced never lands as if
+ * it were a fact: a total it estimated, a figure it misread. A figure the
+ * document itself already displays in this column is a fact the engine can
+ * check, and the check is exact-text equality against a live bound value of the
+ * same field name - the strongest source there is, stronger than a dictation.
+ * Measured need: moving a row between two tables is delete_row plus insert_row
+ * plus the row's own values, and the model was made to ask the user to dictate
+ * figures it had just read off the page (captain, 2026-09-09). Scoped to rows
+ * this change set creates on purpose: writing a copied figure into an EXISTING
+ * quantity cell is exactly where a plausible-looking total replaces a real one,
+ * and that path keeps demanding a formula or a declared source.
+ */
+function documentProvenanceFor(
+  candidates: Occurrence[] | undefined,
+  occurrence: Occurrence,
+  value: string
+): LiteralNumberWrite | undefined {
+  if (!candidates?.length) return undefined;
+  const wanted = value.trim();
+  if (!wanted) return undefined;
+  // The row being copied may itself be the template the created row was typed
+  // from, so identity is no exclusion; a live value of the same field showing
+  // exactly this text is the whole test.
+  const match = candidates.find(
+    (candidate) =>
+      candidate.name === occurrence.name &&
+      candidate.def.kind === 'field' &&
+      candidate.text.trim() === wanted
+  );
+  if (!match) return undefined;
+  const where = match.tableId
+    ? `${match.tableId}${match.rowId ? ` row ${match.rowId}` : ''}`
+    : 'document';
+  return {
+    text: wanted,
+    previousText: occurrence.text,
+    source: 'document',
+    copiedFrom: `${match.name} in ${where}`,
+    note: DOCUMENT_NUMBER_NOTE
+  };
+}
+
 function guardBoundNumericReplacement(
   op: EditOp,
   occurrence: Occurrence,
-  value: string
+  value: string,
+  /** Bound values a copied figure may be verified against; only for rows this change set creates. */
+  createdRowCandidates?: Occurrence[]
 ): LiteralNumberWrite | undefined {
   if (!boundNumericWriteNeedsProvenance(occurrence, value)) return undefined;
   const { record, citationFailure } = resolveNumberProvenance(
@@ -14021,13 +14158,15 @@ function guardBoundNumericReplacement(
     occurrence.text
   );
   if (record) return record;
+  const copied = documentProvenanceFor(createdRowCandidates, occurrence, value);
+  if (copied) return copied;
   throw new OpError(
     'model_authored_number',
     `Refusing to write the numeric value ${JSON.stringify(
       value.trim()
     )} into bound input "${occurrence.name}" through ${
       op.op
-    }: the engine did not compute it, so the request must say where it came from. Add \`literal: true\` if the user stated this exact value, or provide both \`quotedFrom\` and \`quotedText\` with an excerpt containing the figure.${citationFailure}`,
+    }: the engine did not compute it, so the request must say where it came from. Add \`literal: true\` if the user stated this exact value, or provide both \`quotedFrom\` and \`quotedText\` with an excerpt containing the figure. A figure the document already shows in this same column may be sent as-is into a row this change set is creating; the engine verifies it.${citationFailure}`,
     [
       `binding: ${occurrence.tag}`,
       `field: ${occurrence.name}`,
@@ -14750,13 +14889,15 @@ function boundDeleteRowsPlan(
             .map((entry) => entry.rowId)
             .join(', ')} from table "${tableRoute.tableId}". Nothing was kept.`
         );
-      // Recorded from the PRE-WRITE document on purpose. `next` is the engine's
-      // projection with the rows already gone (5 rows); the live document the
-      // finalizer reads still holds them as tracked deletions (7 rows), and a
-      // footprint is matched by its live shape before anything is written.
+      // Recorded from the LIVE pre-write document on purpose. The finalizer
+      // resolves a footprint by sequence index against the live document, and
+      // `next` is the engine's projection: its rows are already gone where the
+      // live document still holds them as tracked deletions, and its block
+      // sequence need not match the live one. Measured: a footprint taken from
+      // the projection resolved five blocks off and restriped a different table.
       const footprint = sourceBanding
         ? captureTableFootprint(
-            state.sfdt,
+            serializeSfdt(editor),
             tableRoute.anchor,
             sourceHeaderRows,
             sourceBanding,
@@ -15308,10 +15449,13 @@ function validateBoundDuplicateRows(
       if (occurrence.def.kind === 'formula')
         throw formulaRedirect(op, occurrence);
       const display = String(rawValue ?? '');
+      // A replacement row is a row this change set creates; a copied figure is
+      // verified against this table's own column.
       const literalNumber = guardBoundNumericReplacement(
         op,
         occurrence,
-        display
+        display,
+        tableRoute.table.rows.flatMap((row) => [...row.bindings.values()])
       );
       let canonical: string;
       try {
@@ -15929,10 +16073,12 @@ function planCreatedBoundRowWrite(
       [`anchor: ${op.anchor ?? ''}`]
     );
   const display = String(op.text ?? '');
+  // The target row is one this change set is creating (see the guard above).
   const literalNumber = guardBoundNumericReplacement(
     op,
     templateOccurrence,
-    display
+    display,
+    runtime.index.occurrences
   );
   let canonical: string;
   try {
@@ -21129,18 +21275,86 @@ export function applyDocumentEdits(
   }
 }
 
+/**
+ * APPEARANCE FOLLOWS THE DOCUMENT.
+ *
+ * Stripes are derived from a table's rows the way totals are derived from its
+ * values. Snapshot restores replayed per card fight each other the moment two
+ * cards touch one table and resolve out of order (measured 2026-09-09: split,
+ * then delete, reject both, one survivor row lost its band). So after any
+ * accept or reject the tables the resolved revisions lived in are restriped
+ * from the document as it now stands, pending-deleted rows excluded, the same
+ * computation the change-set finalizer runs. Only those tables (`onlyAnchors`,
+ * from the resolver): a resolve changes nothing outside its change sets, and a
+ * template's untouched table is not the finalizer's to reinterpret. For a table
+ * whose rows the stripe genuinely covers, restriping the pristine shape writes
+ * nothing, because a stripe write of the value a cell already holds is skipped.
+ * The unbound fallback in deriveTableStructure (every non-header row an item)
+ * is the known limit: an unbound table whose plain totals rows sit under the
+ * stripe would have them banded, which is why an untouched one is never read.
+ */
+export function restripeBandedTables(
+  editor: LiveEditor,
+  onlyAnchors?: ReadonlySet<string>
+): string[] {
+  const sfdt = serializeSfdt(editor);
+  const blocks = flattenSfdt(sfdt);
+  const runtime = bindingRuntime(editor, sfdt);
+  const footprints: TableFootprint[] = [];
+  const seen = new Set<string>();
+  for (const block of blocks) {
+    const tableAnchor = tableAnchorForBlock(block);
+    if (!tableAnchor || seen.has(tableAnchor)) continue;
+    seen.add(tableAnchor);
+    if (onlyAnchors && !onlyAnchors.has(tableAnchor)) continue;
+    const tableBlock = tableBlockAt(sfdt, tableAnchor);
+    const appearance = tableBlock ? collectTableAppearance(tableBlock) : null;
+    if (!appearance) continue;
+    const banding = detectTableBanding(appearance);
+    if (!banding) continue;
+    const headerRows = effectiveHeaderRows({
+      blocks,
+      sfdt,
+      tableAnchor,
+      source: appearance
+    });
+    const footprint = captureTableFootprint(
+      sfdt,
+      tableAnchor,
+      headerRows,
+      banding,
+      runtime?.tablesByAnchor.get(tableAnchor)?.tableId
+    );
+    if (footprint) footprints.push(footprint);
+  }
+  if (!footprints.length) return [];
+  // Nothing is "prior pending work" here: this is a recomputation, not a write
+  // that needs an inverse, so every surviving row is writable (keyed cells only,
+  // as always).
+  return finalizeTableAppearance(editor, footprints, new Set(), () => {});
+}
+
+const RESTRIPE_HOOK_KEY = '__robinRestripeAfterResolve';
+
 function applyDocumentEditsMeasured(
   editor: LiveEditor,
   input: { edits: EditOp[]; changeSetId?: string; plan?: string },
   serializationTiming: SerializationTiming
 ): ApplyEditsResult {
-  const edits = Array.isArray(input?.edits) ? input.edits : [];
-  const results: Array<EditResult | undefined> = new Array(edits.length);
-  const warnings: string[] = [];
-  const changeSetId =
+  const requestedEdits = Array.isArray(input?.edits) ? input.edits : [];
+  const requestedChangeSetId =
     typeof input?.changeSetId === 'string' && input.changeSetId.trim()
       ? input.changeSetId.trim()
       : 'document-edit-change-set';
+  const changeSetId = requestedChangeSetId;
+  const edits: EditOp[] = requestedEdits;
+  // The resolvers live in utils and cannot import this module; they find the
+  // restripe through this hook, installed once a change set has run here.
+  if (typeof (editor as any)[RESTRIPE_HOOK_KEY] !== 'function')
+    (editor as any)[RESTRIPE_HOOK_KEY] = (anchors?: ReadonlySet<string>) =>
+      restripeBandedTables(editor, anchors);
+  const results: Array<EditResult | undefined> = new Array(edits.length);
+  const warnings: string[] = [];
   const plan = typeof input?.plan === 'string' ? input.plan.trim() : '';
   // What the engine, reading the ops, says this change set does. Always
   // computed - it is a fact of the batch, not a claim by the model.
@@ -21156,16 +21370,18 @@ function applyDocumentEditsMeasured(
   // A revision that existed BEFORE this change set is not ours to reject, however
   // the bucket came to contain it. Persisted ids are the stable identity here -
   // the same reason `groupNewRevisions` diffs by `revisionID` after a reload.
+  //
+  // EVERY earlier pending revision is off limits, the assistant's own earlier
+  // cards included. This used to exempt our own author on the theory that
+  // re-authoring our own revision "loses nothing the user decided". Measured
+  // false (2026-09-09): the user decides per CARD. A split left its subtotal
+  // recompute pending; a later delete_row's recompute wrote that cell, and
+  // Syncfusion removed the same-author pending insertion outright - the split's
+  // card lost two edits on the spot, and rejecting the delete could not bring
+  // them back. The unit of decision is the card, so the boundary is the
+  // change set, not the author.
   const preExistingRevisionIds = new Set(
     snapshotRevisions(editor)
-      // Only somebody ELSE's pending work is off limits. The assistant's own
-      // revisions from an earlier change set are ordinary iterative editing -
-      // "now also tweak that paragraph" before the last card is accepted - and
-      // re-authoring our own revision loses nothing the user decided.
-      .filter(
-        (revision) =>
-          !!revision.author && revision.author !== ASSISTANT_DOCUMENT_AUTHOR
-      )
       .map((revision) => revision.revisionID)
       .filter((id): id is string => typeof id === 'string' && !!id)
   );
@@ -21397,7 +21613,11 @@ function applyDocumentEditsMeasured(
     };
   };
   const rememberGroupRevisions = (op: EditOp, before: LiveRevision[]) => {
-    const created = createdRevisions(editor, before);
+    const created = ownRevisionsOnly(
+      editor,
+      createdRevisions(editor, before),
+      changeSetId
+    );
     if (!created.length) return;
     const id = opGroupId(op, changeSetId);
     const bucket = revisionsByAppliedGroup.get(id) ?? new Set<LiveRevision>();
@@ -21470,8 +21690,7 @@ function applyDocumentEditsMeasured(
       // author, and rejecting that would delete text the user wrote.
       // Explicitly ours, or not ours to reject. An author-less revision is
       // KEPT: guessing wrong in that direction deletes somebody's text.
-      (revision) =>
-        live.has(revision) && revision.author === ASSISTANT_DOCUMENT_AUTHOR
+      (revision) => live.has(revision) && isAssistantAuthor(revision.author)
     );
     if (revisions.length) attempt(() => rejectRevisions(revisions));
     revisionsByAppliedGroup.delete(groupId);
@@ -22070,7 +22289,7 @@ function applyDocumentEditsMeasured(
   try {
     if (suspendLayout) setLayoutWithoutPropertyChange(false);
     editor.enableTrackChanges = true;
-    editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
+    editor.currentUser = changeSetAuthor(changeSetId);
     if (batchRefusal || engineBatchPreflightFailure) {
       warnings.push(
         `change_set_preflight_failed: ${changeSetId}; no structural or formatting writes were attempted.`
@@ -22784,7 +23003,7 @@ function applyDocumentEditsMeasured(
               diffBindingCommands(beforeCommands, state.sfdt),
               {
                 provenance: {
-                  author: ASSISTANT_DOCUMENT_AUTHOR,
+                  author: changeSetAuthor(changeSetId),
                   changeSetId,
                   group: opGroupId(enginePlans[0].op, changeSetId)
                 }

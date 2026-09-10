@@ -230,6 +230,47 @@ const PARAGRAPH_IDENTITY_LIMIT = 200;
 export const paragraphIdentityText = (text: string): string =>
   text.slice(0, PARAGRAPH_IDENTITY_LIMIT);
 
+let programmaticSelectionDepth = 0;
+/**
+ * True while the engine is resolving cards: every selection change in that
+ * window is the engine's, not the user's caret, and the bindings' commit
+ * triggers must not act on it (a flush from there runs structural mutations
+ * in the middle of a resolve).
+ */
+export function isProgrammaticSelection(): boolean {
+  return programmaticSelectionDepth > 0;
+}
+export function withProgrammaticSelection<T>(run: () => T): T {
+  programmaticSelectionDepth += 1;
+  try {
+    return run();
+  } finally {
+    programmaticSelectionDepth -= 1;
+  }
+}
+
+/**
+ * Run a selection the SDK must treat as REAL, even inside a resolve that has
+ * set `isModifyingSelectionInternally`. Under that flag the SDK skips the
+ * selection-changed work that appearance writes depend on: the selected-cell
+ * set (`getSelectedCells`, what a cell-format setter writes to) and the cached
+ * selection format (whose setter is a no-op when the cached value already
+ * matches). Measured 2026-09-09: appearance restores replayed under the flag
+ * landed on the previously selected cells or were skipped, one restore per
+ * row surviving - the defect the finalizer's interim narrowing was written
+ * around. The flag is put back as it was.
+ */
+export function withLiveSelection<T>(editor: LiveEditor, run: () => T): T {
+  const selection: any = (editor as any).selection;
+  const prior = selection?.isModifyingSelectionInternally;
+  if (selection) selection.isModifyingSelectionInternally = false;
+  try {
+    return run();
+  } finally {
+    if (selection) selection.isModifyingSelectionInternally = prior ?? false;
+  }
+}
+
 export function preserveDocumentViewDuring<T>(
   editor: LiveEditor,
   operation: () => T,
@@ -929,11 +970,25 @@ const captureNativeResolvers = (revision: LiveRevision): NativeResolvers => ({
       : undefined
 });
 
+/**
+ * Resolve one revision through the SDK, as a member of a GROUP when asked.
+ *
+ * The SDK has two resolution paths. The group path (`isGroupAcceptOrReject`
+ * true) is what "accept/reject all changes by this author" runs: members are
+ * resolved inside one selection and one complex-history entry, and a revision
+ * nested in another identity's pending edit is settled coherently. The single
+ * path settles one revision in isolation. Measured on two stacked cards (a
+ * delete over a pending split): the single path, member by member, kept the
+ * later card's figure and dropped the earlier card's; the group path restored
+ * the earlier card. Every change set writes as its own identity, so a card IS
+ * an author group and resolves through the group path.
+ */
 const resolveSingleRevision = (
   resolvers: NativeResolvers,
-  isAccept: boolean
+  isAccept: boolean,
+  asGroupMember = false
 ): void => {
-  if (resolvers.single) resolvers.single(isAccept, false);
+  if (resolvers.single) resolvers.single(isAccept, asGroupMember);
   else (isAccept ? resolvers.accept : resolvers.reject)?.();
 };
 
@@ -980,6 +1035,16 @@ const widgetTreeAttached = (widget: any): boolean => {
   while (current) {
     if (seen.has(current)) return false;
     seen.add(current);
+    // A text frame hangs off its shape element's line, not off a container
+    // widget (its indexInOwner reads -1): continue from the anchoring paragraph.
+    if (current.containerShape) {
+      current = current.containerShape.line?.paragraph;
+      if (!current) return false;
+      continue;
+    }
+    // A header or footer is a root (indexInOwner -1 by design), and its
+    // content is attached: a revision in a header is not a leak.
+    if (typeof current.headerFooterType === 'string') return true;
     if (current.indexInOwner === -1) return false;
     current = current.containerWidget;
   }
@@ -1560,12 +1625,32 @@ export function groupRevisionsAtomic(
     }
     if (acceptedAlone.size > 0) applyBookmarkClamps();
   };
-  const resolveAll = (isAccept: boolean) => {
+  const resolveAll = (isAccept: boolean) =>
+    withProgrammaticSelection(() => resolveAllInner(isAccept));
+  const resolveAllInner = (isAccept: boolean) => {
     if (state.resolved) return;
     state.resolved = true;
+    const touchedTables = tablesTouchedByRevisions(members);
     if (isAccept) planBookmarkClamps();
-    for (let index = 0; index < members.length; index++) {
+    // Internal selection moves (see resolveRevisionsAsOneUndo).
+    const selectionForFlag: any = (editor as any).selection ?? null;
+    const priorFlag = selectionForFlag?.isModifyingSelectionInternally;
+    if (selectionForFlag)
+      selectionForFlag.isModifyingSelectionInternally = true;
+    const order = [
+      ...members
+        .map((_, index) => index)
+        .filter((index) => revisionSpansRow(members[index])),
+      ...members
+        .map((_, index) => index)
+        .filter((index) => !revisionSpansRow(members[index]))
+    ];
+    for (const index of order) {
       if (resolvedAlone.has(index)) continue;
+      if (revisionIsUnresolvable(members[index])) {
+        purgeUnresolvableRevisions(editor);
+        continue;
+      }
       if (isAccept) acceptedAlone.add(index);
       try {
         resolveSingleRevision(members[index], isAccept);
@@ -1573,15 +1658,21 @@ export function groupRevisionsAtomic(
         // A later member can become stale after the first resolves.
       }
     }
+    if (selectionForFlag)
+      selectionForFlag.isModifyingSelectionInternally = priorFlag ?? false;
     settleIfFinished();
     if (members.length > 1) invalidateDocumentLayout(editor);
+    recomputeDerivedValuesAfterResolve(editor, touchedTables);
   };
   group.forEach((revision, index) => {
     if (changeSetId) (revision as any).robinChangeSetId = changeSetId;
     if (groupId) (revision as any).robinGroupId = groupId;
     (revision as any).robinGroupBound = true;
     (revision as any).robinGroupToken = token;
-    (revision as any).robinResolveSelf = (isAccept: boolean) => {
+    (revision as any).robinResolveSelf = (
+      isAccept: boolean,
+      asGroupMember = false
+    ) => {
       if (state.resolved || resolvedAlone.has(index)) return;
       // The non-cascading path the review rail resolves every card through:
       // per-chip, per-card and rail-wide all arrive here, member by member.
@@ -1590,7 +1681,7 @@ export function groupRevisionsAtomic(
         acceptedAlone.add(index);
         planBookmarkClamps();
       }
-      resolveSingleRevision(members[index], isAccept);
+      resolveSingleRevision(members[index], isAccept, asGroupMember);
       settleIfFinished();
     };
     (revision as any).robinReviveSelf = () => {
@@ -1609,11 +1700,17 @@ export function groupRevisionsAtomic(
 
 export function resolveRevisionIndividually(
   revision: LiveRevision,
-  isAccept: boolean
+  isAccept: boolean,
+  asGroupMember = false
 ): void {
   const resolveSelf = (revision as any).robinResolveSelf;
-  if (typeof resolveSelf === 'function') resolveSelf(isAccept);
-  else resolveSingleRevision(captureNativeResolvers(revision), isAccept);
+  if (typeof resolveSelf === 'function') resolveSelf(isAccept, asGroupMember);
+  else
+    resolveSingleRevision(
+      captureNativeResolvers(revision),
+      isAccept,
+      asGroupMember
+    );
 }
 
 type RevisionMemberIdentity = {
@@ -1699,12 +1796,116 @@ export const revisionRangeLength = (revision: LiveRevision): number => {
   }
 };
 
-/** A revision that can be neither accepted nor rejected: its range is empty. */
-export const revisionIsUnresolvable = (revision: LiveRevision): boolean =>
-  revisionRangeLength(revision) === 0;
+/**
+ * Whether one item of a revision's range is still in the document: a text box
+ * or control mark still on its line, in a paragraph still in the tree; a
+ * paragraph mark or row format whose owner is still in the tree.
+ */
+const rangeItemAttached = (item: any): boolean => {
+  if (!item) return false;
+  const owner = item.ownerBase;
+  if (owner && !item.line) return widgetTreeAttached(owner);
+  const line = item.line;
+  if (!line || !Array.isArray(line.children)) return false;
+  if (!line.children.includes(item)) return false;
+  return widgetTreeAttached(line.paragraph);
+};
 
 /**
- * Deregister every revision the document is holding over an EMPTY RANGE.
+ * A revision that can be neither accepted nor rejected: its range is empty, or
+ * nothing in its range is in the document any more.
+ *
+ * The second shape is the dangerous one. A revision keeps its range array when
+ * the elements leave the document - a row rejected out from under the text
+ * inside it, a run replaced by a later write into the same control - and the
+ * engine's accept/reject then SELECTS that range by walking from detached
+ * widgets. Measured 2026-09-09: rejecting one such revision removed every text
+ * run in the document. Nothing in the document points at the revision, so it
+ * claims nothing, and retiring it is the whole repair.
+ */
+export const revisionIsUnresolvable = (revision: LiveRevision): boolean => {
+  const length = revisionRangeLength(revision);
+  if (length === 0) return true;
+  if (length < 0) return false;
+  try {
+    const range =
+      typeof revision.getRange === 'function' ? revision.getRange() : [];
+    return range.every((item: any) => !rangeItemAttached(item));
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Whether a revision spans a table row (a row insertion or deletion). Rows are
+ * CONTAINERS: resolving one takes or restores everything inside it, so the
+ * revisions inside resolve after it - see the containment law in the resolvers.
+ */
+export const revisionSpansRow = (revision: LiveRevision): boolean => {
+  try {
+    const range =
+      typeof revision.getRange === 'function' ? revision.getRange() : [];
+    return (
+      Array.isArray(range) &&
+      range.some((item: any) => item?.constructor?.name === 'WRowFormat')
+    );
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * THE CONTAINMENT LAW: containers before contents. A row's revision is resolved
+ * before any revision of the text inside it. Rejecting the row removes that
+ * text wholesale and the inner revisions are then retired as unresolvable; the
+ * other order asks the engine to edit text inside a row it is about to remove,
+ * and the engine's own removal of that text has been measured to take the
+ * document with it (2026-09-09, a recomputed cell inside a card's new row).
+ */
+export const containersFirst = <T extends LiveRevision>(
+  revisions: T[]
+): T[] => [
+  ...revisions.filter(revisionSpansRow),
+  ...revisions.filter((revision) => !revisionSpansRow(revision))
+];
+
+/**
+ * A REVISION BELONGS TO THE CARD WHOSE IDENTITY AUTHORED IT.
+ *
+ * The SDK mints revision objects of its own: a tail split off an insertion
+ * when text lands inside it, or a fresh insertion when a derived value is
+ * rewritten inside a pending row or table under that insertion's author. Such
+ * a revision carries the author and nothing else, so it would surface as an
+ * orphan group. It is handed to its card here: it takes the group tag of a
+ * sibling revision with the same author, and that card's resolve carries it.
+ * Revisions that already carry a tag, and revisions whose author has no tagged
+ * sibling (a real user's own tracked typing), are left alone.
+ */
+export function adoptRevisionsIntoAuthorsCard(
+  editor: LiveEditor,
+  created: LiveRevision[]
+): void {
+  if (!created.length) return;
+  const live = snapshotRevisions(editor);
+  for (const revision of created) {
+    if (parseRevisionGroupTag(revision.customData)) continue;
+    const author = String(revision.author ?? '');
+    const sibling = live.find(
+      (candidate) =>
+        candidate !== revision &&
+        String(candidate.author ?? '') === author &&
+        !!parseRevisionGroupTag(candidate.customData)
+    );
+    const tag = sibling ? parseRevisionGroupTag(sibling.customData) : undefined;
+    // The identity only: the sibling's payload (appearance snapshots, clamps)
+    // describes the sibling's own edits and must not be replayed twice.
+    if (tag) revision.customData = revisionGroupTag(tag.changeSetId, tag.group);
+  }
+}
+
+/**
+ * Deregister every revision the document is holding over an EMPTY RANGE, or a
+ * range nothing in the document holds any more (revisionIsUnresolvable).
  *
  * THE LAW: a revision is a claim about a span of the document.
  * A registered revision with no span claims nothing, so there is no edit for a
@@ -1785,6 +1986,16 @@ export function resolveRevisionsAsOneUndo(
   revisions: LiveRevision[],
   isAccept: boolean
 ): RevisionResolveOutcome {
+  return withProgrammaticSelection(() =>
+    resolveRevisionsAsOneUndoInner(editor, revisions, isAccept)
+  );
+}
+
+function resolveRevisionsAsOneUndoInner(
+  editor: LiveEditor,
+  revisions: LiveRevision[],
+  isAccept: boolean
+): RevisionResolveOutcome {
   const identities = revisions.map(revisionMemberIdentity);
   const editorModule: any = (editor as any).editorModule ?? editor.editor;
   const history: any =
@@ -1804,20 +2015,42 @@ export function resolveRevisionsAsOneUndo(
   const index = buildRevisionIndex(editor);
   const resolved: LiveRevision[] = [];
   const attempted: LiveRevision[] = [];
+  const touchedTables = tablesTouchedByRevisions(
+    identities
+      .map((identity) => lookupRevision(index, identity))
+      .filter(Boolean) as LiveRevision[]
+  );
+  // The engine's own selection moves during a resolve are internal: with this
+  // flag the SDK skips the selectionChange dispatch for them, so no listener
+  // (commit triggers, adoption) runs in the middle of a resolve.
+  const selectionForFlag: any = (editor as any).selection ?? null;
+  const priorFlag = selectionForFlag?.isModifyingSelectionInternally;
+  if (selectionForFlag) selectionForFlag.isModifyingSelectionInternally = true;
   try {
-    for (const identity of [...identities].reverse()) {
-      const revision = lookupRevision(index, identity);
-      if (!revision) continue;
+    const ordered = containersFirst(
+      [...identities]
+        .reverse()
+        .map((identity) => lookupRevision(index, identity))
+        .filter(Boolean) as LiveRevision[]
+    );
+    for (const revision of ordered) {
+      // Retired by an earlier member's resolution (its row went): not an edit.
+      if (revisionIsUnresolvable(revision)) {
+        purgeUnresolvableRevisions(editor);
+        continue;
+      }
       attempted.push(revision);
       (revision as any).robinReviveSelf?.();
       try {
-        resolveRevisionIndividually(revision, isAccept);
+        resolveRevisionIndividually(revision, isAccept, false);
         resolved.push(revision);
       } catch {
         // A stale member does not stop the remaining unit.
       }
     }
   } finally {
+    if (selectionForFlag)
+      selectionForFlag.isModifyingSelectionInternally = priorFlag ?? false;
     if (complex) {
       try {
         history?.updateComplexHistory?.();
@@ -1831,6 +2064,7 @@ export function resolveRevisionsAsOneUndo(
   // `purgeUnresolvableRevisions`).
   const purged = new Set(purgeUnresolvableRevisions(editor));
   if (revisions.length > 1) invalidateDocumentLayout(editor);
+  recomputeDerivedValuesAfterResolve(editor, touchedTables);
   // Same law as the group path, read the same way: what is still registered
   // after the pass did not move, whether it threw or refused in silence. This
   // list is one edit's worth here, so a chip that cannot resolve says so
@@ -1848,7 +2082,149 @@ export interface RevisionGroupIdentity {
   untagged?: boolean;
 }
 
+/**
+ * The outermost live table widgets a set of revisions sits in, read from the
+ * SDK widget tree BEFORE those revisions resolve. A revision's range holds
+ * text boxes (line -> paragraph), paragraph marks (ownerBase -> paragraph) and
+ * row formats (ownerBase -> row); each leads to its cell's table. A table in a
+ * cell climbs to the table that holds it, and a table laid across pages is one
+ * identity: its first piece.
+ */
+export function tablesTouchedByRevisions(revisions: LiveRevision[]): Set<any> {
+  const tables = new Set<any>();
+  for (const revision of revisions) {
+    let range: any[] = [];
+    try {
+      range =
+        typeof revision.getRange === 'function'
+          ? revision.getRange()
+          : Array.isArray(revision.range)
+          ? revision.range
+          : [];
+    } catch {
+      range = [];
+    }
+    for (const item of range) {
+      const table = outermostTableOf(item);
+      if (table) tables.add(table);
+    }
+  }
+  return tables;
+}
+
+const outermostTableOf = (item: any): any => {
+  const owner = item?.ownerBase;
+  let table: any = owner?.ownerTable ?? null;
+  if (!table) {
+    const paragraph = item?.line?.paragraph ?? owner ?? null;
+    table = paragraph?.associatedCell?.ownerTable ?? null;
+  }
+  if (!table) return null;
+  while (table.containerWidget?.ownerTable)
+    table = table.containerWidget.ownerTable;
+  const pieces =
+    typeof table.getSplitWidgets === 'function'
+      ? table.getSplitWidgets()
+      : null;
+  return pieces?.[0] ?? table;
+};
+
+/** The position of `widget` among a section's top-level blocks, or -1. */
+const topLevelBlockPosition = (
+  pages: any[],
+  section: number,
+  widget: any
+): number => {
+  let counted = 0;
+  for (const page of pages) {
+    for (const body of page?.bodyWidgets ?? []) {
+      if (body.sectionIndex !== section) continue;
+      for (const child of body.childWidgets ?? []) {
+        if (child.previousSplitWidget) continue;
+        if (child === widget) return counted;
+        counted++;
+      }
+    }
+  }
+  return -1;
+};
+
+/**
+ * The engine anchors ("section;block") of the tables that are still in the
+ * document, read AFTER a resolve. Counted over the live body widgets rather
+ * than read off the SDK's cached block index, which a resolve that removed a
+ * block above has not necessarily refreshed yet; a block split across pages is
+ * counted once, at its first piece. A table that left the document (a rejected
+ * insertion) or sits inside another table has no top-level anchor.
+ */
+export function liveTableAnchorsOf(
+  editor: LiveEditor,
+  tables: Iterable<any>
+): Set<string> {
+  const anchors = new Set<string>();
+  const pages: any[] = (editor as any).documentHelper?.pages ?? [];
+  for (const table of tables) {
+    const first = table?.getSplitWidgets?.()?.[0] ?? table;
+    if (!widgetTreeAttached(first)) continue;
+    const container = first.containerWidget;
+    if (!container || container.ownerTable) continue;
+    const section = container.sectionIndex ?? container.index;
+    if (!Number.isInteger(section)) continue;
+    let block = topLevelBlockPosition(pages, section, first);
+    if (block < 0 && Number.isInteger(first.index)) block = first.index;
+    if (block >= 0) anchors.add(`${section};${block}`);
+  }
+  return anchors;
+}
+
+/**
+ * Derived state follows the document, so every resolve path ends here:
+ * formula outputs are written untracked and recompute at once (the binding
+ * runtime installs that hook when it attaches, attachBindings), and the stripe
+ * of every table the resolved revisions lived in is re-laid from its current
+ * rows (installed by the change-set runner; see restripeBandedTables). Only
+ * THOSE tables: a resolve must never change content outside the change sets it
+ * resolved, so untouched tables are not re-read, let alone repainted.
+ */
+function recomputeDerivedValuesAfterResolve(
+  editor: LiveEditor,
+  touchedTables: Iterable<any>
+): void {
+  const hook = (editor as any).__robinRecomputeAfterResolve;
+  if (typeof hook === 'function') {
+    try {
+      hook();
+    } catch {
+      // A failed recompute is reported by the runtime's own diagnostics.
+    }
+  }
+  const restripe = (editor as any).__robinRestripeAfterResolve;
+  if (typeof restripe !== 'function') return;
+  let anchors: Set<string>;
+  try {
+    anchors = liveTableAnchorsOf(editor, touchedTables);
+  } catch {
+    return;
+  }
+  if (!anchors.size) return;
+  try {
+    restripe(anchors);
+  } catch {
+    // A failed restripe leaves the previous fills; the next change revisits.
+  }
+}
+
 export function resolveLiveRevisionGroupsAsOneUndo(
+  editor: LiveEditor,
+  groups: RevisionGroupIdentity[],
+  isAccept: boolean
+): RevisionResolveOutcome {
+  return withProgrammaticSelection(() =>
+    resolveLiveRevisionGroupsAsOneUndoInner(editor, groups, isAccept)
+  );
+}
+
+function resolveLiveRevisionGroupsAsOneUndoInner(
   editor: LiveEditor,
   groups: RevisionGroupIdentity[],
   isAccept: boolean
@@ -1888,6 +2264,27 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   const failed = new Set<LiveRevision>();
   const attempted = new Set<LiveRevision>();
   const members = () => liveRevisionsRaw(editor).filter(matchesGroup);
+  // Read before anything resolves: an accepted deletion takes its rows' widgets
+  // out of the tree, and the table they were in is exactly the one to restripe.
+  const touchedTables = tablesTouchedByRevisions(initial);
+  // The SDK's own group path: one selection over the card, members resolved as
+  // group members (see resolveSingleRevision), the table relaid once at the end.
+  const selection: any = (editor as any).selection ?? null;
+  const selectionModule: any = (editor as any).selectionModule ?? selection;
+  const priorSelection =
+    selection && typeof selection.startOffset === 'string'
+      ? {
+          start: selection.startOffset,
+          end: selection.endOffset || selection.startOffset
+        }
+      : null;
+  try {
+    if (initial.length && typeof selectionModule?.selectRevision === 'function')
+      selectionModule.selectRevision(initial[0]);
+  } catch {
+    // Selection is a courtesy to the SDK's layout; resolution does not need it.
+  }
+  if (selection) selection.isModifyingSelectionInternally = true;
   try {
     let budget = Math.max(20, initial.length * 4);
     // THE LAW: the loop advances on NON-PROGRESS, not only on a throw.
@@ -1903,15 +2300,20 @@ export function resolveLiveRevisionGroupsAsOneUndo(
     // target left the document, or the group got smaller (a cascade took a
     // neighbour). Neither means one bad member costs more than one edit.
     while (budget-- > 0) {
+      // A member the previous step emptied or detached is retired here, not
+      // resolved: see revisionIsUnresolvable.
+      purgeUnresolvableRevisions(editor);
       const before = members();
-      const current = before.filter((revision) => !failed.has(revision));
+      const current = containersFirst(
+        before.filter((revision) => !failed.has(revision))
+      );
       if (!current.length) break;
-      const revision = isAccept ? current[0] : current[current.length - 1];
+      const revision = current[0];
       (revision as any).robinReviveSelf?.();
       attempted.add(revision);
       let threw = false;
       try {
-        resolveRevisionIndividually(revision, isAccept);
+        resolveRevisionIndividually(revision, isAccept, false);
       } catch {
         threw = true;
         // The bounded loop can continue with the next current member.
@@ -1925,6 +2327,22 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       if (!progressed) failed.add(revision);
     }
   } finally {
+    if (selection) selection.isModifyingSelectionInternally = false;
+    try {
+      const paragraph = selection?.start?.paragraph;
+      const table = paragraph?.isInsideTable
+        ? paragraph.containerWidget?.ownerTable
+        : null;
+      if (table) (editor as any).documentHelper?.layout?.reLayoutTable?.(table);
+    } catch {
+      // A failed relayout leaves the SDK's own lazy relayout to run.
+    }
+    try {
+      if (priorSelection && typeof selection?.select === 'function')
+        selection.select(priorSelection.start, priorSelection.end);
+    } catch {
+      // The prior selection may no longer exist after a structural resolve.
+    }
     if (complex) {
       try {
         history?.updateComplexHistory?.();
@@ -1939,6 +2357,7 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   // so an accept that finished cannot leave an edit nobody can ever resolve.
   const purged = new Set(purgeUnresolvableRevisions(editor));
   if (initial.length) invalidateDocumentLayout(editor);
+  recomputeDerivedValuesAfterResolve(editor, touchedTables);
   // Read the document, not the bookkeeping. What is STILL a member of this
   // group is what did not resolve - whether it threw, refused in silence, or
   // was simply never reached because the budget died - and an attempted member
@@ -2085,7 +2504,11 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   const views = new Map<string, RevisionGroupView>();
   for (const revision of snapshotRevisions(editor)) {
     const tag = parseRevisionGroupTag(revision.customData);
-    const author = String(revision.author ?? '').trim() || 'Unknown author';
+    // The invisible per-change-set identity suffix is not for readers.
+    const author =
+      String(revision.author ?? '')
+        .replace(/[\u2060\u2061]/g, '')
+        .trim() || 'Unknown author';
     const key = tag ? `${tag.changeSetId} ${tag.group}` : `author ${author}`;
     let view = views.get(key);
     if (!view) {
@@ -2149,11 +2572,12 @@ const selectForAppearance = (
   editor: LiveEditor,
   cellAnchor: string,
   extent: 'cell' | 'row'
-) => {
-  editor.selection.select(`${cellAnchor};0`, `${cellAnchor};0`);
-  const method = extent === 'row' ? 'selectRow' : 'selectCell';
-  editor.selection?.[method]?.();
-};
+) =>
+  withLiveSelection(editor, () => {
+    editor.selection.select(`${cellAnchor};0`, `${cellAnchor};0`);
+    const method = extent === 'row' ? 'selectRow' : 'selectCell';
+    editor.selection?.[method]?.();
+  });
 
 const applyBorders = (editor: LiveEditor, borders: BorderWrite[]) => {
   for (const border of borders) {
