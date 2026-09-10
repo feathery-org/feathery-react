@@ -499,6 +499,20 @@ export function readLineItems(
  * run's characterFormat so styling survives the rewrite.
  */
 function withCcText(node: any, text: string): any {
+  // Read and write the same representation. A cell-level content control can
+  // carry both the cell's ordinary paragraph blocks and its own control
+  // inlines. `ccText` prefers the latter, so writing the blocks would leave the
+  // binding's canonical value unchanged even though visible cell text moved.
+  // Syncfusion produces this shape when a row cloned by an earlier operation
+  // becomes the prototype for a later insert.
+  if (Array.isArray(node.inlines)) {
+    const first = node.inlines.find(
+      (inline: SfdtInline) => inline && typeof inline.text === 'string'
+    );
+    const run: SfdtInline = { text: String(text) };
+    if (first?.characterFormat) run.characterFormat = first.characterFormat;
+    return { ...node, inlines: [run] };
+  }
   if (Array.isArray(node.blocks) && node.blocks.length) {
     const blocks = [...node.blocks];
     const paragraph = blocks[0] || {};
@@ -510,13 +524,7 @@ function withCcText(node: any, text: string): any {
     blocks[0] = { ...paragraph, inlines: [run] };
     return { ...node, blocks };
   }
-  const first = (node.inlines || []).find(
-    (inline: SfdtInline) => inline && typeof inline.text === 'string'
-  );
-  const run: SfdtInline = { text: String(text) };
-  if (first && first.characterFormat)
-    run.characterFormat = first.characterFormat;
-  return { ...node, inlines: [run] };
+  return { ...node, inlines: [{ text: String(text) }] };
 }
 
 export function setOccurrenceText(

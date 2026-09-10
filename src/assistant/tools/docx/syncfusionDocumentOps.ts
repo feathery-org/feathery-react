@@ -14731,7 +14731,8 @@ function nearestBoundRowId(table: TableEntry, rowIndex: number): string | null {
     if (!row.path || !row.rowId) continue;
     const at = Number(row.path[row.path.length - 1]);
     const distance = Math.abs(at - rowIndex);
-    if (!best || distance < best.distance) best = { rowId: row.rowId, distance };
+    if (!best || distance < best.distance)
+      best = { rowId: row.rowId, distance };
   }
   return best?.rowId ?? null;
 }
