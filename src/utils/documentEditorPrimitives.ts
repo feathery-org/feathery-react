@@ -1711,14 +1711,18 @@ function installAtomicRevisionCollectionResolution(editor: LiveEditor): void {
   const collection = editor.revisions as LiveRevisionCollection | undefined;
   if (!collection || collection[ATOMIC_COLLECTION_RESOLUTION_INSTALLED]) return;
   collection[ATOMIC_COLLECTION_RESOLUTION_INSTALLED] = true;
+  const nativeAcceptAll = collection.acceptAll?.bind(collection);
+  const nativeRejectAll = collection.rejectAll?.bind(collection);
   collection.acceptAll = () => {
     const groups = listRevisionGroups(editor);
     if (groups.length) resolveLiveRevisionGroupsAsOneUndo(editor, groups, true);
+    nativeAcceptAll?.();
   };
   collection.rejectAll = () => {
     const groups = listRevisionGroups(editor);
     if (groups.length)
       resolveLiveRevisionGroupsAsOneUndo(editor, groups, false);
+    nativeRejectAll?.();
   };
 }
 

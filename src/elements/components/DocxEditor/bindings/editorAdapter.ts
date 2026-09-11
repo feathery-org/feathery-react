@@ -492,11 +492,18 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       const apply = (list: EngineWrite[]): boolean => {
         for (const write of list) {
           const matches = controlsForTag(collection, write.tag);
-          if (!matches.length) return false;
           for (const control of matches) writeControl(control, write.text);
         }
         return true;
       };
+      const allWrites = [
+        ...fieldWrites,
+        ...applicableWrites.filter((write) => write.kind !== 'field')
+      ];
+      if (
+        allWrites.some((write) => !controlsForTag(collection, write.tag).length)
+      )
+        return false;
 
       adapterWriteDepth += 1;
       try {
@@ -547,7 +554,6 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         try {
           for (const write of derivedWrites) {
             const matches = controlsForTag(collection, write.tag);
-            if (!matches.length) return false;
             for (const control of matches) {
               const insertionAuthor = pendingInsertionAuthorAround(control);
               if (insertionAuthor !== undefined) {
