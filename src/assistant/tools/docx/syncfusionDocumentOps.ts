@@ -1221,6 +1221,27 @@ function getRowsKey(block: any): 'rows' | 'r' | 'rw' | undefined {
     | undefined;
 }
 
+function getCellsKey(block: any): 'cells' | 'c' | undefined {
+  return ['cells', 'c'].find((key) => Array.isArray(block?.[key])) as
+    | 'cells'
+    | 'c'
+    | undefined;
+}
+
+function getBlocksKey(block: any): 'blocks' | 'b' | undefined {
+  return ['blocks', 'b'].find((key) => Array.isArray(block?.[key])) as
+    | 'blocks'
+    | 'b'
+    | undefined;
+}
+
+function getInlinesKey(block: any): 'inlines' | 'i' | undefined {
+  return ['inlines', 'i'].find((key) => Array.isArray(block?.[key])) as
+    | 'inlines'
+    | 'i'
+    | undefined;
+}
+
 /**
  * Revision ids carried by the inlines of one anchored block.
  *
@@ -16230,7 +16251,8 @@ function boundDeleteColumnPlan(
 }
 
 function physicalCellIndexAt(row: any, logicalColumn: number): number | null {
-  const cells = Array.isArray(row?.cells) ? row.cells : [];
+  const cellsKey = getCellsKey(row);
+  const cells = cellsKey ? row[cellsKey] : [];
   let grid = 0;
   for (let index = 0; index < cells.length; index++) {
     if (grid === logicalColumn) return index;
@@ -16251,7 +16273,9 @@ function setCellContent(
       'stable_ref_target_unaddressable',
       'The referenced table has no SFDT path. Nothing was written.'
     );
-  const rowPath = [...table.tablePath, 'rows', rowIndex];
+  const tableNode = getAt(sfdt, table.tablePath);
+  const rowsKey = getRowsKey(tableNode);
+  const rowPath = rowsKey ? [...table.tablePath, rowsKey, rowIndex] : [];
   const row = getAt(sfdt, rowPath);
   const physicalColumn = physicalCellIndexAt(row, columnIndex);
   if (physicalColumn == null)
@@ -16259,22 +16283,22 @@ function setCellContent(
       'stable_ref_target_unaddressable',
       `The referenced logical cell at row ${rowIndex}, column ${columnIndex} does not exist. Nothing was written.`
     );
-  const cellPath = [
-    ...table.tablePath,
-    'rows',
-    rowIndex,
-    'cells',
-    physicalColumn
-  ];
+  const cellsKey = getCellsKey(row);
+  const cellPath = cellsKey
+    ? [...rowPath, cellsKey, physicalColumn]
+    : [];
   const cell = getAt(sfdt, cellPath);
   if (!cell)
     throw new OpError(
       'stable_ref_target_unaddressable',
       `The referenced cell at row ${rowIndex}, column ${columnIndex} does not exist. Nothing was written.`
     );
-  const blocks = Array.isArray(cell.blocks) ? [...cell.blocks] : [];
-  const paragraph = { ...(blocks[0] ?? {}), inlines: [content] };
-  return setAt(sfdt, cellPath, { ...cell, blocks: [paragraph] });
+  const blocksKey = getBlocksKey(cell) ?? 'blocks';
+  const blocks = [...getBlocks(cell)];
+  const paragraph = { ...(blocks[0] ?? {}) };
+  const inlinesKey = getInlinesKey(paragraph) ?? 'inlines';
+  paragraph[inlinesKey] = [content];
+  return setAt(sfdt, cellPath, { ...cell, [blocksKey]: [paragraph] });
 }
 
 function createBindingInCell(
@@ -16349,19 +16373,28 @@ function createBindingInCell(
   if (kind === 'input' && op.initial !== undefined)
     canonical = parseDisplay(fieldType, String(op.initial));
   const text = renderDisplay(fieldType, canonical);
-  const rowNode = table.tablePath
-    ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
+  const tableNode = table.tablePath
+    ? getAt(state.sfdt, table.tablePath)
+    : undefined;
+  const rowsKey = getRowsKey(tableNode);
+  const rowNode = table.tablePath && rowsKey
+    ? getAt(state.sfdt, [...table.tablePath, rowsKey, rowIndex])
     : undefined;
   const physicalColumn = physicalCellIndexAt(rowNode, columnIndex);
   const cell =
     table.tablePath && physicalColumn != null
-      ? getAt(state.sfdt, [
-          ...table.tablePath,
-          'rows',
-          rowIndex,
-          'cells',
-          physicalColumn
-        ])
+      ? (() => {
+          const cellsKey = getCellsKey(rowNode);
+          return cellsKey
+            ? getAt(state.sfdt, [
+                ...table.tablePath!,
+                rowsKey!,
+                rowIndex,
+                cellsKey,
+                physicalColumn
+              ])
+            : undefined;
+        })()
       : undefined;
   const characterFormat = firstTextRun(cell)?.characterFormat;
   return setCellContent(state.sfdt, table, rowIndex, columnIndex, {
@@ -16506,27 +16539,32 @@ function stableTableReferencePlan(
           return resolvedPlan.execute(state);
         }
         if (op.op === 'set_cell_text') {
-          const row = table.tablePath
-            ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
+          const tableNode = table.tablePath
+            ? getAt(state.sfdt, table.tablePath)
+            : undefined;
+          const rowsKey = getRowsKey(tableNode);
+          const row = table.tablePath && rowsKey
+            ? getAt(state.sfdt, [...table.tablePath, rowsKey, rowIndex])
             : undefined;
           const physicalColumn = physicalCellIndexAt(row, resource.columnIndex);
+          const cellsKey = getCellsKey(row);
           const cell =
-            table.tablePath && physicalColumn != null
+            table.tablePath && rowsKey && cellsKey && physicalColumn != null
               ? getAt(state.sfdt, [
                   ...table.tablePath,
-                  'rows',
+                  rowsKey,
                   rowIndex,
-                  'cells',
+                  cellsKey,
                   physicalColumn
                 ])
               : undefined;
           const neighbouring =
-            table.tablePath && physicalColumn != null
+            table.tablePath && rowsKey && cellsKey && physicalColumn != null
               ? getAt(state.sfdt, [
                   ...table.tablePath,
-                  'rows',
+                  rowsKey,
                   rowIndex,
-                  'cells',
+                  cellsKey,
                   Math.max(0, physicalColumn - 1)
                 ])
               : undefined;
