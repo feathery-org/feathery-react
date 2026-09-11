@@ -350,6 +350,101 @@ describe('bound row operations while a source split is still pending', () => {
     expect(formulas.grand_total).toBe('$82,782.62');
   }, 120000);
 
+  it('restripes a new row against noncontiguous pending deletions', async () => {
+    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    const source = await session.call<string>('tableAnchor', SOURCE);
+    expect(
+      (
+        await session.call<any>(
+          'applyEdits',
+          [
+            {
+              op: 'duplicate_table',
+              group: 'g01-split-alternating',
+              anchor: source,
+              rows: 'copy',
+              resultRef: '@copy'
+            },
+            {
+              op: 'delete_row',
+              group: 'g01-split-alternating',
+              anchor: '@copy',
+              rows: [2, 4]
+            },
+            {
+              op: 'delete_row',
+              group: 'g01-split-alternating',
+              anchor: source,
+              rows: [1, 3, 5]
+            }
+          ],
+          'pending-alternating-split'
+        )
+      ).outcomes
+    ).toEqual(['ok', 'ok', 'ok']);
+
+    const inserted = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_row',
+          group: 'g02-add-signage',
+          anchor: `${source};4;0;0`,
+          expect: 'Business interruption'
+        },
+        {
+          op: 'set_cell_text',
+          group: 'g02-add-signage',
+          anchor: `${source};5;0;0`,
+          expect: '',
+          text: 'Signage'
+        },
+        {
+          op: 'set_cell_text',
+          group: 'g02-add-signage',
+          anchor: `${source};5;1;0`,
+          expect: '',
+          text: '3',
+          literal: true
+        },
+        {
+          op: 'set_cell_text',
+          group: 'g02-add-signage',
+          anchor: `${source};5;2;0`,
+          expect: '',
+          text: '210.00',
+          literal: true
+        }
+      ],
+      'pending-alternating-insert'
+    );
+    expect(inserted.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
+    expect(
+      await session.call<Array<string | null>>('rowShading', SOURCE)
+    ).toEqual([
+      '#001B49FF',
+      null,
+      null,
+      null,
+      '#E6E6E6FF',
+      null,
+      null,
+      '#E6E6E6FF'
+    ]);
+
+    await session.call('resolveGroups', true);
+    expect(await session.call<string[]>('tableRowTexts', SOURCE)).toEqual([
+      'ItemUnitsRateLine total',
+      'Contents8$415.25$3,322.00',
+      'Business interruption4$1,120.75$4,483.00',
+      'Signage3$210.00$630.00',
+      'Subsection subtotal$8,435.00'
+    ]);
+    expect(
+      await session.call<Array<string | null>>('rowShading', SOURCE)
+    ).toEqual(['#001B49FF', null, '#E6E6E6FF', null, '#E6E6E6FF']);
+  }, 120000);
+
   it('refuses cell writes into a row the pending split deleted', async () => {
     const source = await openWithPendingSplit();
     const pending = await session.call<string>('serialize');

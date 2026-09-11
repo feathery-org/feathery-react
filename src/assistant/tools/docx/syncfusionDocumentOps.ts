@@ -12005,7 +12005,17 @@ function finalizeTableAppearance(
     }
 
     const now = tableShapeFingerprint(sfdt, anchor, footprint.headerRows);
-    if (now !== footprint.shapeFingerprint) {
+    const acceptedNow = footprint.tableId
+      ? tableShapeFingerprint(
+          clonedWithoutRevisions(sfdt, sfdt),
+          anchor,
+          footprint.headerRows
+        )
+      : null;
+    if (
+      now !== footprint.shapeFingerprint &&
+      acceptedNow !== footprint.shapeFingerprint
+    ) {
       warnings.push(
         `Table appearance not finalized for ${anchor}: expected shape ` +
           `${footprint.shapeFingerprint}, found ${now ?? 'no table'}.`
@@ -13829,6 +13839,7 @@ function bandingForAcceptedTableProjection(
     : projectedAppearance
     ? detectTableBanding(projectedAppearance) ??
       shortInsertBanding(projectedAppearance) ??
+      documentInsertBanding(sfdt, tableAnchor, projectedAppearance) ??
       undefined
     : undefined;
   return { headerRows, banding };
