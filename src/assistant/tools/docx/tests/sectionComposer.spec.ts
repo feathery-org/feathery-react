@@ -377,12 +377,8 @@ describe('insert_section deterministic composer', () => {
           op: 'insert_section'
         });
         const flattened = flattenSfdt(JSON.parse(editor.serialize()));
-        const inserted = flattened.find(
-          (block) => block.text === titleText
-        );
-        const insertedBody = flattened.find(
-          (block) => block.text === bodyText
-        );
+        const inserted = flattened.find((block) => block.text === titleText);
+        const insertedBody = flattened.find((block) => block.text === bodyText);
         if (!inserted || !insertedBody)
           throw new Error('inserted sibling was not found');
         expect(inserted.level).toBe(expectedLevel);
@@ -1248,31 +1244,28 @@ describe('insert_section deterministic composer', () => {
       },
       'multiline_authored_cell'
     ]
-  ])(
-    'refuses a line break in %s, writing nothing',
-    (_where, spec, error) => {
-      const editor = makeEditor();
-      try {
-        const before = editor.serialize();
-        const result = applyDocumentEdits(editor as LiveEditor, {
-          changeSetId: 'multiline-section-content',
-          edits: [
-            {
-              op: 'insert_section',
-              anchor: targetAnchor(editor),
-              position: 'before',
-              sectionSpec: spec
-            }
-          ]
-        });
+  ])('refuses a line break in %s, writing nothing', (_where, spec, error) => {
+    const editor = makeEditor();
+    try {
+      const before = editor.serialize();
+      const result = applyDocumentEdits(editor as LiveEditor, {
+        changeSetId: 'multiline-section-content',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: targetAnchor(editor),
+            position: 'before',
+            sectionSpec: spec
+          }
+        ]
+      });
 
-        expect(result.results[0]).toMatchObject({ ok: false, error });
-        expect(result.changeSet).toMatchObject({ status: 'failed' });
-        expect(editor.revisions.length).toBe(0);
-        expect(editor.serialize()).toBe(before);
-      } finally {
-        destroyEditor(editor);
-      }
+      expect(result.results[0]).toMatchObject({ ok: false, error });
+      expect(result.changeSet).toMatchObject({ status: 'failed' });
+      expect(editor.revisions.length).toBe(0);
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyEditor(editor);
     }
-  );
+  });
 });

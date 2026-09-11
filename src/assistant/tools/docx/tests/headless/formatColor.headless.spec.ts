@@ -15,11 +15,7 @@
  * reject, and that is asserted here so a future SyncFusion that starts
  * authoring one fails this row loudly.
  */
-import {
-  HeadlessSession,
-  shoot,
-  startHeadless
-} from './headlessSession';
+import { HeadlessSession, shoot, startHeadless } from './headlessSession';
 
 const HEADING = 'Section 1 - Property';
 const TITLE = 'Commercial Combined Insurance Proposal';

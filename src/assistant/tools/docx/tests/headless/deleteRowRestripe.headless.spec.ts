@@ -24,14 +24,24 @@ describe('a standalone delete_row leaves the survivors striped for the document 
   it('Buildings and Stock deleted: Contents white, Business interruption shaded, Machinery white', async () => {
     await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
     const pristine = await session.call<string>('serialize');
-    const before = await session.call<Array<string | null>>('rowShading', 'property_premium');
+    const before = await session.call<Array<string | null>>(
+      'rowShading',
+      'property_premium'
+    );
     // header, Buildings, Contents, Stock, Business interruption, Machinery, subtotal
     expect(before.slice(1, 6)).toEqual([null, STRIPE, null, STRIPE, null]);
 
-    const applied = await session.call<any>('deleteRows', 'property_premium', [1, 3]);
+    const applied = await session.call<any>(
+      'deleteRows',
+      'property_premium',
+      [1, 3]
+    );
     expect(applied.outcomes).toEqual(['ok']);
 
-    const pending = await session.call<Array<string | null>>('rowShading', 'property_premium');
+    const pending = await session.call<Array<string | null>>(
+      'rowShading',
+      'property_premium'
+    );
     // Rows 1 and 3 are marked, not gone; the survivors 2, 4, 5 read as items 0, 1, 2.
     expect(pending.length).toBe(before.length);
     expect([pending[2], pending[4], pending[5]]).toEqual([null, STRIPE, null]);
@@ -39,7 +49,9 @@ describe('a standalone delete_row leaves the survivors striped for the document 
     expect(pending[6]).toBe(before[6]);
 
     // Reject restores every fill byte for byte.
-    const rejected = await session.call<number>('resolveGroups', false).catch(() => null);
+    const rejected = await session
+      .call<number>('resolveGroups', false)
+      .catch(() => null);
     if (rejected !== null) {
       expect(await session.call<string>('serialize')).toBe(pristine);
     }
