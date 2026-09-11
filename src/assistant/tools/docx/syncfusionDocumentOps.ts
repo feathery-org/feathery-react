@@ -1213,35 +1213,6 @@ function getRows(block: any): any[] | undefined {
   return Array.isArray(rows) ? rows : undefined;
 }
 
-function getRowsKey(block: any): 'rows' | 'r' | 'rw' | undefined {
-  return ['rows', 'r', 'rw'].find((key) => Array.isArray(block?.[key])) as
-    | 'rows'
-    | 'r'
-    | 'rw'
-    | undefined;
-}
-
-function getCellsKey(block: any): 'cells' | 'c' | undefined {
-  return ['cells', 'c'].find((key) => Array.isArray(block?.[key])) as
-    | 'cells'
-    | 'c'
-    | undefined;
-}
-
-function getBlocksKey(block: any): 'blocks' | 'b' | undefined {
-  return ['blocks', 'b'].find((key) => Array.isArray(block?.[key])) as
-    | 'blocks'
-    | 'b'
-    | undefined;
-}
-
-function getInlinesKey(block: any): 'inlines' | 'i' | undefined {
-  return ['inlines', 'i'].find((key) => Array.isArray(block?.[key])) as
-    | 'inlines'
-    | 'i'
-    | undefined;
-}
-
 /**
  * Revision ids carried by the inlines of one anchored block.
  *
@@ -14655,7 +14626,6 @@ function boundBlankRowPlan(
         ? getAt(state.sfdt, liveTable.tablePath)
         : undefined;
       const rows = getRows(tableNode);
-      const rowsKey = getRowsKey(tableNode);
       const prototypeEntry = liveTable?.rows
         .filter((row) => row.path)
         .sort(
@@ -14666,7 +14636,7 @@ function boundBlankRowPlan(
       const prototype = prototypeEntry?.path
         ? getAt(state.sfdt, prototypeEntry.path)
         : undefined;
-      if (!liveTable?.tablePath || !rows || !rowsKey || !prototype)
+      if (!liveTable?.tablePath || !rows || !prototype)
         throw new OpError(
           'blank_row_insert_unroutable',
           `insert_row could not derive a blank row shape in table "${tableRoute.tableId}". Nothing was written.`
@@ -14678,7 +14648,7 @@ function boundBlankRowPlan(
       const blankRow = clonedWithoutRevisions(state.sfdt, prototype);
       blankRow.cells = (blankRow.cells ?? []).map(blankColumnCell);
       const tableClone = cloneJson(tableNode);
-      tableClone[rowsKey] = [
+      tableClone.rows = [
         ...rows.slice(0, insertAt),
         blankRow,
         ...rows.slice(insertAt)
@@ -15645,13 +15615,12 @@ function boundDuplicateTablePlan(
         const sourceTable = firstTableBlockIn(getAt(state.sfdt, markerPath));
         const rows = getRows(rawTable);
         const sourceRows = getRows(sourceTable);
-        const rowsKey = getRowsKey(rawTable);
         const dataIndices = liveTable.rows
           .map((row) => (row.path ? Number(row.path[row.path.length - 1]) : -1))
           .filter((row) => row >= 0);
         const firstData = Math.min(...dataIndices);
         const lastData = Math.max(...dataIndices);
-        if (!rows || !rowsKey || !sourceRows || !Number.isFinite(firstData))
+        if (!rows || !sourceRows || !Number.isFinite(firstData))
           throw new OpError(
             'duplicate_table_no_prototype_row',
             `duplicate_table could not find a bound prototype row in "${tableRoute.tableId}". Nothing was written.`
@@ -15683,7 +15652,7 @@ function boundDuplicateTablePlan(
           });
           return rowClone;
         });
-        rawTable[rowsKey] = [
+        rawTable.rows = [
           ...rows.slice(0, firstData),
           ...dataRows,
           ...rows.slice(lastData + 1)
@@ -16251,8 +16220,7 @@ function boundDeleteColumnPlan(
 }
 
 function physicalCellIndexAt(row: any, logicalColumn: number): number | null {
-  const cellsKey = getCellsKey(row);
-  const cells = cellsKey ? row[cellsKey] : [];
+  const cells = Array.isArray(row?.cells) ? row.cells : [];
   let grid = 0;
   for (let index = 0; index < cells.length; index++) {
     if (grid === logicalColumn) return index;
@@ -16273,9 +16241,7 @@ function setCellContent(
       'stable_ref_target_unaddressable',
       'The referenced table has no SFDT path. Nothing was written.'
     );
-  const tableNode = getAt(sfdt, table.tablePath);
-  const rowsKey = getRowsKey(tableNode);
-  const rowPath = rowsKey ? [...table.tablePath, rowsKey, rowIndex] : [];
+  const rowPath = [...table.tablePath, 'rows', rowIndex];
   const row = getAt(sfdt, rowPath);
   const physicalColumn = physicalCellIndexAt(row, columnIndex);
   if (physicalColumn == null)
@@ -16283,20 +16249,22 @@ function setCellContent(
       'stable_ref_target_unaddressable',
       `The referenced logical cell at row ${rowIndex}, column ${columnIndex} does not exist. Nothing was written.`
     );
-  const cellsKey = getCellsKey(row);
-  const cellPath = cellsKey ? [...rowPath, cellsKey, physicalColumn] : [];
+  const cellPath = [
+    ...table.tablePath,
+    'rows',
+    rowIndex,
+    'cells',
+    physicalColumn
+  ];
   const cell = getAt(sfdt, cellPath);
   if (!cell)
     throw new OpError(
       'stable_ref_target_unaddressable',
       `The referenced cell at row ${rowIndex}, column ${columnIndex} does not exist. Nothing was written.`
     );
-  const blocksKey = getBlocksKey(cell) ?? 'blocks';
-  const blocks = [...getBlocks(cell)];
-  const paragraph = { ...(blocks[0] ?? {}) };
-  const inlinesKey = getInlinesKey(paragraph) ?? 'inlines';
-  paragraph[inlinesKey] = [content];
-  return setAt(sfdt, cellPath, { ...cell, [blocksKey]: [paragraph] });
+  const blocks = Array.isArray(cell.blocks) ? [...cell.blocks] : [];
+  const paragraph = { ...(blocks[0] ?? {}), inlines: [content] };
+  return setAt(sfdt, cellPath, { ...cell, blocks: [paragraph] });
 }
 
 function createBindingInCell(
@@ -16371,29 +16339,19 @@ function createBindingInCell(
   if (kind === 'input' && op.initial !== undefined)
     canonical = parseDisplay(fieldType, String(op.initial));
   const text = renderDisplay(fieldType, canonical);
-  const tableNode = table.tablePath
-    ? getAt(state.sfdt, table.tablePath)
+  const rowNode = table.tablePath
+    ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
     : undefined;
-  const rowsKey = getRowsKey(tableNode);
-  const rowNode =
-    table.tablePath && rowsKey
-      ? getAt(state.sfdt, [...table.tablePath, rowsKey, rowIndex])
-      : undefined;
   const physicalColumn = physicalCellIndexAt(rowNode, columnIndex);
   const cell =
     table.tablePath && physicalColumn != null
-      ? (() => {
-          const cellsKey = getCellsKey(rowNode);
-          return cellsKey
-            ? getAt(state.sfdt, [
-                ...table.tablePath!,
-                rowsKey!,
-                rowIndex,
-                cellsKey,
-                physicalColumn
-              ])
-            : undefined;
-        })()
+      ? getAt(state.sfdt, [
+          ...table.tablePath,
+          'rows',
+          rowIndex,
+          'cells',
+          physicalColumn
+        ])
       : undefined;
   const characterFormat = firstTextRun(cell)?.characterFormat;
   return setCellContent(state.sfdt, table, rowIndex, columnIndex, {
@@ -16538,33 +16496,27 @@ function stableTableReferencePlan(
           return resolvedPlan.execute(state);
         }
         if (op.op === 'set_cell_text') {
-          const tableNode = table.tablePath
-            ? getAt(state.sfdt, table.tablePath)
+          const row = table.tablePath
+            ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
             : undefined;
-          const rowsKey = getRowsKey(tableNode);
-          const row =
-            table.tablePath && rowsKey
-              ? getAt(state.sfdt, [...table.tablePath, rowsKey, rowIndex])
-              : undefined;
           const physicalColumn = physicalCellIndexAt(row, resource.columnIndex);
-          const cellsKey = getCellsKey(row);
           const cell =
-            table.tablePath && rowsKey && cellsKey && physicalColumn != null
+            table.tablePath && physicalColumn != null
               ? getAt(state.sfdt, [
                   ...table.tablePath,
-                  rowsKey,
+                  'rows',
                   rowIndex,
-                  cellsKey,
+                  'cells',
                   physicalColumn
                 ])
               : undefined;
           const neighbouring =
-            table.tablePath && rowsKey && cellsKey && physicalColumn != null
+            table.tablePath && physicalColumn != null
               ? getAt(state.sfdt, [
                   ...table.tablePath,
-                  rowsKey,
+                  'rows',
                   rowIndex,
-                  cellsKey,
+                  'cells',
                   Math.max(0, physicalColumn - 1)
                 ])
               : undefined;
