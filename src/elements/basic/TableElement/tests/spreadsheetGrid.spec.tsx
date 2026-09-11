@@ -931,3 +931,42 @@ describe('tab order across rows', () => {
     selected('Bob');
   });
 });
+
+test('updates virtual row offsets and fit height when responsive geometry changes', async () => {
+  const original = window.getComputedStyle.bind(window);
+  let variables: Record<string, string> = {};
+  const spy = jest
+    .spyOn(window, 'getComputedStyle')
+    .mockImplementation((element) => {
+      const style = original(element);
+      return new Proxy(style, {
+        get(target, key) {
+          if (key === 'getPropertyValue') {
+            return (name: string) =>
+              variables[name] ?? target.getPropertyValue(name);
+          }
+          return Reflect.get(target, key);
+        }
+      });
+    });
+  try {
+    renderTable();
+    const row = () => cell('Bob').closest('[role="row"]')!;
+    const fitHeight = () => parseFloat(original(grid().parentElement!).height);
+    expect(original(row()).transform).toBe('translateY(66px)');
+    const before = fitHeight();
+    variables = {
+      '--feathery-table-row-height': '60px',
+      '--feathery-table-header-height': '48px'
+    };
+    fireEvent(window, new Event('resize'));
+    await waitFor(() =>
+      expect(original(row()).transform).toBe('translateY(108px)')
+    );
+    // Header grew 34 -> 48 and each of the three rows 32 -> 60; the mocked
+    // scrollbar height stays whatever jsdom reports.
+    expect(fitHeight()).toBe(before + 14 + 3 * 28);
+  } finally {
+    spy.mockRestore();
+  }
+});

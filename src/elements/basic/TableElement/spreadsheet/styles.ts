@@ -1,7 +1,9 @@
+import { CSSProperties } from 'react';
+import { tableVariable as v } from '../appearance';
 import { TABLE_CLASS } from '../classNames';
 
-// Layout constants. Rows and the header are fixed-height because the row
-// virtualizer and the drag hit-testing both size themselves from these numbers.
+// Legacy defaults; configured dimensions are resolved by the geometry hook
+// and shared by the rendered cells, virtualizer and selection hit testing.
 export const ROW_HEIGHT = 32;
 export const HEADER_HEIGHT = 34;
 export const ROW_HEADER_WIDTH = 46;
@@ -13,17 +15,12 @@ export const FONT_SIZE = 16;
 export const HEADER_FONT_SIZE = FONT_SIZE - 2;
 export const HEADER_FONT_WEIGHT = 600;
 
-// The grid pins its own typography rather than inheriting the form's theme:
-// a display font, letter-spacing or an inherited line-height would break the
-// fixed row height the virtualizer and drag hit-testing depend on.
+// Use a predictable font until the table has an explicit font override.
 export const GRID_FONT_FAMILY =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 export const DEFAULT_COLUMN_WIDTH = 160;
 export const MIN_COLUMN_WIDTH = 64;
 export const CELL_HORIZONTAL_PADDING = 10;
-// Width of the grid lines between cells. The selection border is pulled out by
-// exactly this much to land on top of them.
-export const GRID_LINE_WIDTH = 1;
 
 // With no sized height there is nothing to scroll inside, so an unbounded grid
 // is capped here instead of growing down the page forever.
@@ -87,11 +84,13 @@ export type SpreadsheetChrome = {
 export function spreadsheetViewportHeight(
   heightUnit: string | undefined,
   rowCount: number,
-  chrome: SpreadsheetChrome = {}
+  chrome: SpreadsheetChrome = {},
+  geometry = { rowHeight: ROW_HEIGHT, headerHeight: HEADER_HEIGHT }
 ): number | undefined {
   if (heightUnit === 'px') return undefined;
   const content =
-    HEADER_HEIGHT + (rowCount + (chrome.addRow ? 1 : 0)) * ROW_HEIGHT;
+    geometry.headerHeight +
+    (rowCount + (chrome.addRow ? 1 : 0)) * geometry.rowHeight;
   return Math.min(content, FIT_MAX_HEIGHT) + (chrome.scrollbarHeight ?? 0);
 }
 
@@ -121,16 +120,16 @@ export const gridStyle = {
   // Cells paint their own white, so whatever the columns and rows do not
   // cover — to the right of the last column, below the last row — reads as
   // the unused area outside the sheet rather than as more blank cells.
-  backgroundColor: colors.gray100,
+  backgroundColor: v('background_color', colors.gray100),
   cursor: 'default',
   userSelect: 'none',
   WebkitUserSelect: 'none',
   // Every text property the form theme could inherit down is stated here, so
   // the grid renders identically whatever the surrounding form looks like.
   // Descendants inherit from the grid instead.
-  fontFamily: GRID_FONT_FAMILY,
-  fontSize: `${FONT_SIZE}px`,
-  fontWeight: 400,
+  fontFamily: v('font_family', GRID_FONT_FAMILY),
+  fontSize: v('font_size', `${FONT_SIZE}px`),
+  fontWeight: v('font_weight', 400),
   fontStyle: 'normal',
   fontVariant: 'normal',
   // Digits share one width, so numbers in a column line up the way they do in
@@ -143,8 +142,8 @@ export const gridStyle = {
   textTransform: 'none',
   textDecoration: 'none',
   textShadow: 'none',
-  textAlign: 'start',
-  color: colors.gray900
+  textAlign: v('cell_text_align', 'start') as CSSProperties['textAlign'],
+  color: v('font_color', colors.gray900)
 } as const;
 
 export const canvasStyle = {
@@ -160,7 +159,32 @@ export const rowStyle = {
   insetInlineStart: 0,
   top: 0,
   display: 'flex',
-  width: '100%'
+  width: '100%',
+  '--feathery-table-current-row-background': v(
+    'row_background_color',
+    colors.white
+  ),
+  '&[data-alternate-row="true"]': {
+    '--feathery-table-current-row-background': v(
+      'alternate_row_background_color',
+      v('row_background_color', colors.white)
+    )
+  },
+  '&:hover': {
+    '--feathery-table-current-row-background': v(
+      'row_hover_background_color',
+      v('row_background_color', colors.white)
+    )
+  },
+  '&[data-alternate-row="true"]:hover': {
+    '--feathery-table-current-row-background': v(
+      'row_hover_background_color',
+      v(
+        'alternate_row_background_color',
+        v('row_background_color', colors.white)
+      )
+    )
+  }
 } as const;
 
 export const headerRowStyle = {
@@ -173,9 +197,12 @@ export const headerRowStyle = {
   // already positioned at exactly HEADER_HEIGHT. Measured in Chrome: 35px
   // rendered against a 34px offset, hiding the top of a row-0 selection ring.
   boxSizing: 'border-box',
-  height: `${HEADER_HEIGHT}px`,
-  backgroundColor: colors.gray100,
-  borderBottom: `1px solid ${colors.gray300}`
+  height: v('effective_header_height', `${HEADER_HEIGHT}px`),
+  backgroundColor: v('header_background_color', colors.gray100),
+  borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
+    'grid_horizontal_color',
+    colors.gray300
+  )}`
 } as const;
 
 /**
@@ -202,11 +229,17 @@ const gutterBase = {
   padding: 0,
   margin: 0,
   boxSizing: 'border-box',
-  color: colors.gray700,
-  backgroundColor: colors.gray50,
+  color: v('header_font_color', colors.gray700),
+  backgroundColor: v('header_background_color', colors.gray50),
   border: 0,
-  borderRight: `1px solid ${colors.gray300}`,
-  borderBottom: `1px solid ${colors.gray200}`,
+  borderRight: `${v('grid_vertical_width', '1px')} solid ${v(
+    'grid_vertical_color',
+    colors.gray300
+  )}`,
+  borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
+    'grid_horizontal_color',
+    colors.gray200
+  )}`,
   fontSize: `${FONT_SIZE - 4}px`,
   fontVariantNumeric: 'tabular-nums',
   textAlign: 'center',
@@ -215,7 +248,7 @@ const gutterBase = {
 
 export const cornerHeaderStyle = {
   ...gutterBase,
-  height: `${HEADER_HEIGHT}px`,
+  height: v('effective_header_height', `${HEADER_HEIGHT}px`),
   zIndex: 40,
   cursor: 'default',
   '&:hover': { backgroundColor: colors.gray200 }
@@ -224,17 +257,17 @@ export const cornerHeaderStyle = {
 export const rowHeaderStyle = {
   ...gutterBase,
   zIndex: 26,
-  height: `${ROW_HEIGHT}px`,
+  height: v('effective_row_height', `${ROW_HEIGHT}px`),
   cursor: 'default',
   '&:hover': { backgroundColor: colors.gray200 }
 } as const;
 
 export const headerSelectedStyle = {
-  color: colors.white,
-  backgroundColor: colors.accent,
+  color: v('selected_font_color', colors.white),
+  backgroundColor: v('accent_color', colors.accent),
   // The base header's hover rule would otherwise repaint the background grey
   // and leave the selected white text unreadable.
-  '&:hover': { backgroundColor: colors.accentDark }
+  '&:hover': { backgroundColor: v('accent_color', colors.accentDark) }
 } as const;
 
 export const columnHeaderStyle = {
@@ -243,14 +276,23 @@ export const columnHeaderStyle = {
   flex: '0 0 auto',
   display: 'grid',
   placeItems: 'center',
-  height: `${HEADER_HEIGHT}px`,
-  padding: '0 5px',
+  height: v('effective_header_height', `${HEADER_HEIGHT}px`),
+  padding: `${v('cell_padding_vertical', '0px')} ${v(
+    'cell_padding_horizontal',
+    '5px'
+  )}`,
   boxSizing: 'border-box',
   // Deliberately NOT `overflow: hidden`: the resize grip sits across the right
   // border and would be clipped. The label span truncates itself instead.
-  backgroundColor: colors.gray100,
-  borderRight: `1px solid ${colors.gray300}`,
-  borderBottom: `1px solid ${colors.gray300}`,
+  backgroundColor: v('header_background_color', colors.gray100),
+  borderRight: `${v('grid_vertical_width', '1px')} solid ${v(
+    'grid_vertical_color',
+    colors.gray300
+  )}`,
+  borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
+    'grid_horizontal_color',
+    colors.gray300
+  )}`,
   cursor: 'default',
   userSelect: 'none',
   '&:hover': { backgroundColor: colors.gray200 }
@@ -270,10 +312,10 @@ export const columnHeaderLabelStyle = {
   display: 'block',
   minWidth: 0,
   overflow: 'hidden',
-  color: colors.gray900,
-  fontSize: `${HEADER_FONT_SIZE}px`,
-  fontWeight: HEADER_FONT_WEIGHT,
-  textAlign: 'center',
+  color: v('header_font_color', colors.gray900),
+  fontSize: v('header_font_size', `${HEADER_FONT_SIZE}px`),
+  fontWeight: v('header_font_weight', HEADER_FONT_WEIGHT),
+  textAlign: v('header_text_align', 'center') as CSSProperties['textAlign'],
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap'
 } as const;
@@ -301,11 +343,11 @@ export const columnResizerStyle = {
     width: `${RESIZER_LINE_WIDTH}px`,
     backgroundColor: 'transparent'
   },
-  '&:hover::after': { backgroundColor: colors.accent }
+  '&:hover::after': { backgroundColor: v('accent_color', colors.accent) }
 } as const;
 
 export const columnResizerActiveStyle = {
-  '&::after': { backgroundColor: colors.accent }
+  '&::after': { backgroundColor: v('accent_color', colors.accent) }
 } as const;
 
 export const dropIndicatorStyle = {
@@ -323,8 +365,11 @@ export const cellStyle = {
   flex: '0 0 auto',
   display: 'flex',
   alignItems: 'center',
-  height: `${ROW_HEIGHT}px`,
-  padding: `0 ${CELL_HORIZONTAL_PADDING / 2}px`,
+  height: v('effective_row_height', `${ROW_HEIGHT}px`),
+  padding: `${v('cell_padding_vertical', '0px')} ${v(
+    'cell_padding_horizontal',
+    `${CELL_HORIZONTAL_PADDING / 2}px`
+  )}`,
   // NOT `overflow: hidden`: that clips the fill handle straddling the corner.
   // The value span truncates the text instead.
   // The virtualizer lays cells out every `width` px, so the padding and the
@@ -332,30 +377,42 @@ export const cellStyle = {
   // overlap its right-hand neighbour and push the selection border past the
   // column boundary.
   boxSizing: 'border-box',
-  backgroundColor: colors.white,
-  borderRight: `${GRID_LINE_WIDTH}px solid ${colors.gray200}`,
-  borderBottom: `${GRID_LINE_WIDTH}px solid ${colors.gray200}`,
+  backgroundColor: 'var(--feathery-table-current-row-background, #ffffff)',
+  borderRight: `${v('grid_vertical_width', '1px')} solid ${v(
+    'grid_vertical_color',
+    colors.gray200
+  )}`,
+  borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
+    'grid_horizontal_color',
+    colors.gray200
+  )}`,
   outline: 'none',
   cursor: 'default',
-  fontSize: `${FONT_SIZE}px`,
+  fontSize: v('font_size', `${FONT_SIZE}px`),
   whiteSpace: 'nowrap',
   // The selection outline is drawn on a pseudo-element so it can appear on any
   // subset of edges without shifting the cell's box.
   //
-  // `inset: -1px` is load-bearing. An absolutely positioned pseudo-element is
-  // laid out against the PADDING box, which sits inside this cell's own 1px
-  // grid line — at `inset: 0` the blue is drawn one pixel in and the grey line
-  // still shows outside it. Pulling out by 1px puts the border exactly on the
-  // grid line it replaces. Safe because the cell no longer clips its overflow
-  // and both the cell and its row are raised above their neighbours.
+  // The negative inset is load-bearing. An absolutely positioned
+  // pseudo-element is laid out against the PADDING box, which sits inside this
+  // cell's own grid line — at `inset: 0` the blue is drawn one pixel in and the
+  // grey line still shows outside it. Pulling out by the grid line's width puts
+  // the border exactly on the line it replaces. Safe because the cell no longer
+  // clips its overflow and both the cell and its row are raised above their
+  // neighbours.
   '&::after': {
     position: 'absolute',
     zIndex: 3,
-    top: `var(--edge-inset-top, -${GRID_LINE_WIDTH}px)`,
-    right: `-${GRID_LINE_WIDTH}px`,
-    bottom: `-${GRID_LINE_WIDTH}px`,
-    left: `-${GRID_LINE_WIDTH}px`,
-    borderColor: colors.accent,
+    // Pulled out by whatever the themed grid line actually measures, so the
+    // ring keeps landing on that line when the width is restyled.
+    top: `var(--edge-inset-top, calc(-1 * ${v(
+      'grid_horizontal_width',
+      '1px'
+    )}))`,
+    right: `calc(-1 * ${v('grid_vertical_width', '1px')})`,
+    bottom: `calc(-1 * ${v('grid_horizontal_width', '1px')})`,
+    left: `calc(-1 * ${v('grid_vertical_width', '1px')})`,
+    borderColor: v('accent_color', colors.accent),
     borderStyle: 'solid',
     borderWidth:
       'var(--edge-top, 0) var(--edge-right, 0) var(--edge-bottom, 0) var(--edge-left, 0)',
@@ -376,7 +433,8 @@ export const cellValueStyle = {
 } as const;
 
 export const cellSelectedStyle = {
-  backgroundColor: colors.accentSoft
+  backgroundColor: v('selected_background_color', colors.accentSoft),
+  color: v('selected_font_color', v('font_color', colors.gray900))
 } as const;
 
 /**
@@ -399,7 +457,7 @@ export function cellZIndex(raised: boolean, focused = false) {
 
 export const cellFillPreviewStyle = {
   backgroundImage: `repeating-linear-gradient(135deg, ${colors.accentTint} 0 4px, rgba(29, 78, 216, 0.16) 4px 8px)`,
-  outline: `1px dashed ${colors.accent}`,
+  outline: `1px dashed ${v('accent_color', colors.accent)}`,
   outlineOffset: '-2px'
 } as const;
 
@@ -418,8 +476,14 @@ export const fillHandleStyle = {
   // putting the handle's midpoint on the intersection itself. Possible because
   // the cell no longer clips its overflow (the value span truncates instead)
   // and both the cell and its row are raised above their neighbours.
-  right: `-${FILL_HANDLE_SIZE / 2 + GRID_LINE_WIDTH - FILL_HANDLE_NUDGE}px`,
-  bottom: `-${FILL_HANDLE_SIZE / 2 + GRID_LINE_WIDTH - FILL_HANDLE_NUDGE}px`,
+  right: `calc(-1 * (${FILL_HANDLE_SIZE / 2 - FILL_HANDLE_NUDGE}px + ${v(
+    'grid_vertical_width',
+    '1px'
+  )}))`,
+  bottom: `calc(-1 * (${FILL_HANDLE_SIZE / 2 - FILL_HANDLE_NUDGE}px + ${v(
+    'grid_horizontal_width',
+    '1px'
+  )}))`,
   zIndex: 8,
   // A true square: border-box keeps the white ring inside the given size, and
   // the radius is stated so no ambient rounding can reach it.
@@ -427,7 +491,7 @@ export const fillHandleStyle = {
   width: `${FILL_HANDLE_SIZE}px`,
   height: `${FILL_HANDLE_SIZE}px`,
   borderRadius: 0,
-  backgroundColor: colors.accent,
+  backgroundColor: v('accent_color', colors.accent),
   border: `1px solid ${colors.white}`,
   cursor: 'crosshair'
 } as const;
@@ -439,16 +503,22 @@ export const cellEditorStyle = {
   width: 'calc(100% + 2px)',
   minWidth: '100%',
   height: 'calc(100% + 2px)',
-  padding: `0 ${CELL_HORIZONTAL_PADDING / 2}px`,
+  padding: `${v('cell_padding_vertical', '0px')} ${v(
+    'cell_padding_horizontal',
+    `${CELL_HORIZONTAL_PADDING / 2}px`
+  )}`,
   boxSizing: 'border-box',
-  backgroundColor: colors.white,
-  border: `2px solid ${colors.accent}`,
+  backgroundColor: v('editor_background_color', colors.white),
+  border: `2px solid ${v('accent_color', colors.accent)}`,
   outline: 'none',
   cursor: 'text',
-  fontSize: `${FONT_SIZE}px`,
+  fontSize: v('font_size', `${FONT_SIZE}px`),
   fontFamily: 'inherit',
   userSelect: 'text',
-  WebkitUserSelect: 'text'
+  WebkitUserSelect: 'text',
+  fontWeight: v('font_weight', 400),
+  textAlign: v('cell_text_align', 'inherit') as CSSProperties['textAlign'],
+  color: v('editor_font_color', v('font_color', colors.gray900))
 } as const;
 
 // The menu under a dropdown cell. Inside the cell (so it scrolls with the
@@ -466,7 +536,7 @@ export const choiceMenuStyle = (above: boolean) =>
     overflowY: 'auto',
     padding: '4px',
     boxSizing: 'border-box',
-    backgroundColor: colors.white,
+    backgroundColor: v('editor_background_color', colors.white),
     border: `1px solid ${colors.gray300}`,
     borderRadius: '6px',
     boxShadow: '0 6px 16px rgba(0, 0, 0, 0.18)',
@@ -481,8 +551,12 @@ export const choiceOptionStyle = (highlighted: boolean, empty: boolean) =>
     padding: '5px 10px',
     borderRadius: '4px',
     whiteSpace: 'nowrap',
-    color: empty ? colors.gray500 : colors.gray900,
-    backgroundColor: highlighted ? colors.accentSoft : 'transparent',
+    color: empty
+      ? colors.gray500
+      : v('editor_font_color', v('font_color', colors.gray900)),
+    backgroundColor: highlighted
+      ? v('selected_background_color', colors.accentSoft)
+      : 'transparent',
     '&:hover': { backgroundColor: colors.gray100 }
   } as const);
 
@@ -536,19 +610,20 @@ export function cellEdgeVars(
 }
 
 export const rowMenuStyle = {
+  fontWeight: v('controls_font_weight', 400),
   position: 'fixed',
   zIndex: 1000,
   display: 'flex',
   flexDirection: 'column',
   minWidth: '180px',
   padding: '4px',
-  backgroundColor: colors.white,
-  border: `1px solid ${colors.gray300}`,
-  borderRadius: '6px',
+  backgroundColor: v('controls_background_color', colors.white),
+  border: `1px solid ${v('controls_border_color', colors.gray300)}`,
+  borderRadius: v('controls_border_radius', '6px'),
   boxShadow: '0 6px 16px rgba(0, 0, 0, 0.18)',
-  fontFamily: GRID_FONT_FAMILY,
-  fontSize: `${FONT_SIZE - 2}px`,
-  color: colors.gray900
+  fontFamily: v('font_family', GRID_FONT_FAMILY),
+  fontSize: v('controls_font_size', '14px'),
+  color: v('controls_font_color', colors.gray900)
 } as const;
 
 export const rowMenuItemStyle = {
@@ -557,33 +632,39 @@ export const rowMenuItemStyle = {
   padding: '7px 10px',
   backgroundColor: 'transparent',
   border: 0,
-  borderRadius: '4px',
+  borderRadius: v('controls_border_radius', '4px'),
   cursor: 'pointer',
   fontFamily: 'inherit',
   fontSize: 'inherit',
   color: 'inherit',
   textAlign: 'start',
-  '&:hover': { backgroundColor: colors.accentSoft }
+  '&:hover': {
+    backgroundColor: v('controls_hover_background_color', colors.accentSoft)
+  }
 } as const;
 
 // The trailing "add a row" strip, styled as an affordance rather than data.
 export const addRowStripStyle = {
   ...rowStyle,
+  fontWeight: v('controls_font_weight', 400),
   display: 'flex',
   alignItems: 'center',
-  height: `${ROW_HEIGHT}px`,
+  height: v('effective_row_height', `${ROW_HEIGHT}px`),
   padding: 0,
-  backgroundColor: colors.gray50,
+  backgroundColor: v('controls_background_color', colors.gray50),
   border: 0,
-  borderTop: `1px solid ${colors.gray200}`,
-  borderBottom: `1px solid ${colors.gray200}`,
+  borderTop: `1px solid ${v('controls_border_color', colors.gray200)}`,
+  borderBottom: `1px solid ${v('controls_border_color', colors.gray200)}`,
   boxSizing: 'border-box',
   cursor: 'pointer',
-  fontFamily: GRID_FONT_FAMILY,
-  fontSize: `${FONT_SIZE - 2}px`,
-  color: colors.gray500,
+  fontFamily: v('font_family', GRID_FONT_FAMILY),
+  fontSize: v('controls_font_size', '14px'),
+  color: v('controls_font_color', colors.gray500),
   textAlign: 'start',
-  '&:hover': { backgroundColor: colors.accentSoft, color: colors.accent }
+  '&:hover': {
+    backgroundColor: v('controls_background_color', colors.accentSoft),
+    color: v('accent_color', colors.accent)
+  }
 } as const;
 
 export const addRowStripLabelStyle = {
@@ -600,12 +681,12 @@ export const addRowStripLabelStyle = {
 // (unverified) rows are not held to the hub's field rules until they are
 // verified, so a bad value there is a warning the user may still save.
 export const validationColors = {
-  errorText: '#b42318',
+  errorText: v('error_font_color', '#b42318'),
   errorBorder: '#f04438',
-  errorSurface: '#fef3f2',
-  warningText: '#b54708',
+  errorSurface: v('error_background_color', '#fef3f2'),
+  warningText: v('warning_font_color', '#b54708'),
   warningBorder: '#f79009',
-  warningSurface: '#fffaeb'
+  warningSurface: v('warning_background_color', '#fffaeb')
 } as const;
 
 // Single-line height of the bar: 8px padding twice plus one 21px line. Only
@@ -620,19 +701,20 @@ export const pendingBarStyle = {
   gap: '8px 12px',
   flex: '0 0 auto',
   padding: '8px 12px',
-  backgroundColor: colors.accentSoft,
-  borderBottom: `1px solid ${colors.gray200}`,
-  fontFamily: GRID_FONT_FAMILY,
-  fontSize: `${FONT_SIZE - 3}px`,
+  backgroundColor: v('controls_background_color', colors.accentSoft),
+  borderBottom: `1px solid ${v('controls_border_color', colors.gray200)}`,
+  fontFamily: v('font_family', GRID_FONT_FAMILY),
+  fontSize: v('controls_font_size', '13px'),
+  fontWeight: v('controls_font_weight', 400),
   lineHeight: 1.4,
-  color: colors.gray900
+  color: v('controls_font_color', colors.gray900)
 } as const;
 
 export const pendingCountStyle = {
   fontWeight: 600,
   whiteSpace: 'nowrap',
   // Reads as the label on the Save/Discard pair it sits beside.
-  color: colors.gray700
+  color: v('controls_font_color', colors.gray700)
 } as const;
 
 // The issue counter and its stepper read as one control, so the count is
@@ -680,7 +762,7 @@ export const issueStepperStyle = (blocking: boolean) =>
         : validationColors.warningSurface
     },
     '&:focus-visible': {
-      outline: `2px solid ${colors.accent}`,
+      outline: `2px solid ${v('accent_color', colors.accent)}`,
       outlineOffset: '1px'
     },
     '&:disabled': { opacity: 0.4, cursor: 'default' }
@@ -696,14 +778,14 @@ export const pendingActionsStyle = {
 
 const pendingButtonBase = {
   padding: '5px 12px',
-  borderRadius: '4px',
+  borderRadius: v('controls_border_radius', '4px'),
   cursor: 'pointer',
   fontFamily: 'inherit',
   fontSize: 'inherit',
-  fontWeight: 600,
+  fontWeight: v('controls_font_weight', 600),
   lineHeight: 1.4,
   '&:focus-visible': {
-    outline: `2px solid ${colors.accent}`,
+    outline: `2px solid ${v('accent_color', colors.accent)}`,
     outlineOffset: '1px'
   },
   '&:disabled': { opacity: 0.5, cursor: 'default' }
@@ -711,18 +793,28 @@ const pendingButtonBase = {
 
 export const discardButtonStyle = {
   ...pendingButtonBase,
-  backgroundColor: 'transparent',
-  border: `1px solid ${colors.gray300}`,
-  color: colors.gray700,
-  '&:hover:not(:disabled)': { backgroundColor: colors.white }
+  backgroundColor: v('controls_background_color', 'transparent'),
+  border: `1px solid ${v('controls_border_color', colors.gray300)}`,
+  color: v('controls_font_color', colors.gray700),
+  '&:hover:not(:disabled)': {
+    backgroundColor: v('controls_hover_background_color', colors.white)
+  }
 } as const;
 
 export const saveButtonStyle = {
   ...pendingButtonBase,
-  backgroundColor: colors.accent,
-  border: `1px solid ${colors.accent}`,
-  color: colors.white,
-  '&:hover:not(:disabled)': { backgroundColor: colors.accentDark }
+  backgroundColor: v(
+    'controls_background_color',
+    v('accent_color', colors.accent)
+  ),
+  border: `1px solid ${v('accent_color', colors.accent)}`,
+  color: v('controls_font_color', colors.white),
+  '&:hover:not(:disabled)': {
+    backgroundColor: v(
+      'controls_hover_background_color',
+      v('accent_color', colors.accentDark)
+    )
+  }
 } as const;
 
 /**
@@ -748,7 +840,7 @@ export const cellTooltipStyle = (blocking: boolean, above: boolean) =>
       ? validationColors.errorText
       : validationColors.warningText,
     color: colors.white,
-    fontFamily: GRID_FONT_FAMILY,
+    fontFamily: v('font_family', GRID_FONT_FAMILY),
     fontSize: `${FONT_SIZE - 3}px`,
     fontWeight: 400,
     lineHeight: 1.35,
