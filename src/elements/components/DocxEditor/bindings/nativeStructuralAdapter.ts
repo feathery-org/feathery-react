@@ -214,9 +214,7 @@ function rollbackFailedNativeBatch(
       return;
     }
   }
-  editor.open(before);
-  if (editor.serialize() !== before)
-    throw new Error('native structural rollback did not restore the document');
+  throw new Error('native structural rollback did not restore the document');
 }
 
 export function applyNativeStructuralMutations(
