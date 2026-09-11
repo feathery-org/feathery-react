@@ -166,4 +166,64 @@ describe('section creation on the flagship document', () => {
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(acceptedSection);
   }, 120000);
+
+  it('keeps a numbered subsection inside its parent Word section', async () => {
+    const propertyTable = await session.call<string>(
+      'tableAnchor',
+      'property_premium'
+    );
+    const sectionSpec = {
+      title: '1.4 Equipment Costs',
+      blocks: [
+        {
+          role: 'table',
+          table: {
+            columnHeaders: ['Equipment', 'Quantity', 'Unit Cost'],
+            rows: [
+              ['Laptop', '2', '$1,000'],
+              ['Monitor', '3', '$400']
+            ]
+          }
+        }
+      ]
+    };
+
+    const beforeMisplaced = await session.call<string>('serialize');
+    const misplaced = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_section',
+          group: 'g01-misplaced-equipment',
+          anchor: '2;0',
+          position: 'before',
+          sectionSpec
+        }
+      ],
+      'misplaced-equipment'
+    );
+    expect(misplaced.outcomes[0]).toContain('section_parent_mismatch');
+    expect(await session.call<string>('serialize')).toBe(beforeMisplaced);
+
+    const placed = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_section',
+          group: 'g01-place-equipment',
+          anchor: propertyTable,
+          position: 'after',
+          sectionSpec
+        }
+      ],
+      'place-equipment'
+    );
+    expect(placed.outcomes).toEqual(['ok']);
+    const inventory = await session.call<
+      Array<{ anchor: string; kind: string; text: string }>
+    >('inventory');
+    expect(
+      inventory.find((entry) => entry.text === '1.4 Equipment Costs')?.anchor
+    ).toMatch(/^1;/);
+  }, 120000);
 });

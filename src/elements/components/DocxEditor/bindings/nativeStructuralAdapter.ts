@@ -13,6 +13,7 @@ import {
 import {
   isContentControlAttached,
   normalizeContentControlCollection,
+  refreshContentControlCollection,
   type SyncfusionEditorLike
 } from './editorAdapter';
 
@@ -161,18 +162,7 @@ function applyRowAdoptions(
  * idempotent (the SDK guards the push with indexOf) and registers everything.
  */
 function registerPastedContentControls(editor: SyncfusionEditorLike): void {
-  const live = editor as any;
-  const layout = live.documentHelper?.layout;
-  if (typeof layout?.layoutWholeDocument !== 'function') return;
-  const layoutWasOn = live.enableLayout === true;
-  if (!layoutWasOn) live.setProperties?.({ enableLayout: true }, true);
-  try {
-    layout.layoutWholeDocument();
-  } finally {
-    if (!layoutWasOn) live.setProperties?.({ enableLayout: false }, true);
-  }
-  // Registration appends; the SDK's lookups assume document order.
-  normalizeContentControlCollection(editor);
+  refreshContentControlCollection(editor);
 }
 
 const rowRevisionsOf = (control: any): number =>

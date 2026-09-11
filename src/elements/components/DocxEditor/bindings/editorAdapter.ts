@@ -292,6 +292,22 @@ export function normalizeContentControlCollection(
   collection.splice(0, collection.length, ...positioned.map((e) => e.control));
 }
 
+export function refreshContentControlCollection(
+  editor: SyncfusionEditorLike
+): void {
+  const live = editor as any;
+  const layout = live.documentHelper?.layout;
+  if (typeof layout?.layoutWholeDocument !== 'function') return;
+  const layoutWasOn = live.enableLayout === true;
+  if (!layoutWasOn) live.setProperties?.({ enableLayout: true }, true);
+  try {
+    layout.layoutWholeDocument();
+  } finally {
+    if (!layoutWasOn) live.setProperties?.({ enableLayout: false }, true);
+  }
+  normalizeContentControlCollection(editor);
+}
+
 /**
  * Ask the editor for verbose SFDT.
  *

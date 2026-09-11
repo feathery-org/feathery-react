@@ -22,7 +22,8 @@ import {
   configureEditorForBindings,
   createEditorAdapter,
   SyncfusionEditorLike,
-  isAdapterWriting
+  isAdapterWriting,
+  refreshContentControlCollection
 } from './editorAdapter';
 import { installKeystrokeGuard } from './keystrokeGuard';
 import { createCommitTriggers } from './commitTriggers';
@@ -244,6 +245,7 @@ export function attachBindings(
   (editor as any).__robinRecomputeAfterResolve = () =>
     runGuarded(() => {
       if (controller.phase !== 'idle') return;
+      refreshContentControlCollection(editor);
       controller.flush({ mode: 'self-heal' });
     });
   const onContentChange = () => runGuarded(() => triggers.onContentChange());

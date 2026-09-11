@@ -21429,6 +21429,28 @@ function compileSectionComposer(
     : resolvedTarget;
   if (needsSeedAnchor) position = 'before';
   const spec = validatedSectionSpec(op.sectionSpec);
+  const numberedSubsection = /^\s*(\d+)\.(\d+)\b/.exec(spec.title);
+  if (numberedSubsection) {
+    const parentNumber = numberedSubsection[1];
+    const parentHeading = blocks.find(
+      (block) =>
+        block.isHeading &&
+        new RegExp(`^\\s*Section\\s+${parentNumber}\\b`, 'i').test(block.text)
+    );
+    const parentSection = parentHeading?.anchor.split(';')[0];
+    const targetSection = target.anchor.split(';')[0];
+    if (parentSection && targetSection !== parentSection)
+      sectionSpecError(
+        'section_parent_mismatch',
+        'anchor',
+        `${JSON.stringify(spec.title)} belongs inside ${JSON.stringify(
+          parentHeading?.text
+        )}, but the anchor resolves to another Word section.`,
+        [
+          `use an anchor in Word section ${parentSection}, after the final existing block of the parent section`
+        ]
+      );
+  }
   const group =
     typeof op.group === 'string'
       ? op.group
