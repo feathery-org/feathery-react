@@ -33,14 +33,7 @@ import {
   LiveEditor
 } from '../syncfusionDocumentOps';
 
-DocumentEditor.Inject(
-  Editor,
-  Selection,
-  SfdtExport,
-  EditorHistory,
-  ImageResizer,
-  Search
-);
+DocumentEditor.Inject(Editor, Selection, SfdtExport, EditorHistory, ImageResizer, Search);
 
 if (!window.crypto?.getRandomValues)
   Object.defineProperty(window, 'crypto', {
@@ -149,15 +142,7 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
       expect(before).toContain('delta');
       const result = apply(
         live,
-        [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: 'delta',
-            replace: 'omega',
-            group: 'g'
-          }
-        ],
+        [{ op: 'replace_text', anchor: '0;0', find: 'delta', replace: 'omega', group: 'g' }],
         'far-from-foreign'
       );
       expect(result.results[0].error).not.toBe('pending_revision_in_range');
@@ -170,15 +155,7 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
       const before = editor.serialize();
       const result = apply(
         live,
-        [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: 'INSERTED',
-            replace: 'MINE',
-            group: 'g'
-          }
-        ],
+        [{ op: 'replace_text', anchor: '0;0', find: 'INSERTED', replace: 'MINE', group: 'g' }],
         'onto-foreign'
       );
       expect(result.results[0].ok).toBe(false);
@@ -221,15 +198,7 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
       const before = editor.serialize();
       const result = apply(
         live,
-        [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: 'gamma',
-            replace: 'GAMMA',
-            group: 'g'
-          }
-        ],
+        [{ op: 'replace_text', anchor: '0;0', find: 'gamma', replace: 'GAMMA', group: 'g' }],
         'deletion-forces-block-granularity'
       );
       expect(result.results[0].ok).toBe(false);
@@ -250,15 +219,7 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
       });
       const result = apply(
         live,
-        [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: 'delta',
-            replace: 'omega',
-            group: 'g'
-          }
-        ],
+        [{ op: 'replace_text', anchor: '0;0', find: 'delta', replace: 'omega', group: 'g' }],
         'insertion-only-still-narrows'
       );
       expect(result.results[0].ok).toBe(true);
@@ -278,9 +239,7 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
       // A paragraph-mark revision lives on the block's own characterFormat, not
       // in any run - which is exactly why walking inlines never saw it.
       const doc = JSON.parse(editor.serialize());
-      const block =
-        (doc.sections ?? doc.sec)[0].blocks?.[0] ??
-        (doc.sections ?? doc.sec)[0].b?.[0];
+      const block = (doc.sections ?? doc.sec)[0].blocks?.[0] ?? (doc.sections ?? doc.sec)[0].b?.[0];
       const id = 'foreign-mark-1';
       (doc.revisions ??= []).push({
         author: OTHER_AUTHOR,
@@ -294,15 +253,7 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
       const before = editor.serialize();
       const result = apply(
         live,
-        [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: 'delta',
-            replace: 'omega',
-            group: 'g'
-          }
-        ],
+        [{ op: 'replace_text', anchor: '0;0', find: 'delta', replace: 'omega', group: 'g' }],
         'foreign-paragraph-mark'
       );
       // "delta" carries no revision, so the range filter alone would allow this.
@@ -335,15 +286,7 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
       const before = editor.serialize();
       const result = apply(
         live,
-        [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: 'delta',
-            replace: 'omega',
-            group: 'g'
-          }
-        ],
+        [{ op: 'replace_text', anchor: '0;0', find: 'delta', replace: 'omega', group: 'g' }],
         'foreign-tracked-formatting'
       );
       expect(result.results[0].ok).toBe(false);
@@ -387,9 +330,7 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
                             {
                               paragraphFormat: {},
                               characterFormat: {},
-                              inlines: [
-                                { characterFormat: {}, text: 'Website build' }
-                              ]
+                              inlines: [{ characterFormat: {}, text: 'Website build' }]
                             }
                           ]
                         }
@@ -464,7 +405,9 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
                             {
                               paragraphFormat: {},
                               characterFormat: {},
-                              inlines: [{ characterFormat: {}, text: 'Stock' }]
+                              inlines: [
+                                { characterFormat: {}, text: 'Stock' }
+                              ]
                             }
                           ]
                         }
@@ -520,14 +463,7 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
       const before = editor.serialize();
       const result = apply(
         live,
-        [
-          {
-            op: 'change_case',
-            anchor: '0;0',
-            caseType: 'uppercase',
-            group: 'g'
-          }
-        ],
+        [{ op: 'change_case', anchor: '0;0', caseType: 'uppercase', group: 'g' }],
         'whole-block-op'
       );
       expect(result.results[0].ok).toBe(false);

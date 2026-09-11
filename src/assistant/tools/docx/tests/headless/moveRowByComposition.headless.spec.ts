@@ -208,9 +208,10 @@ describe('a row moves between tables by delete_row plus insert_row with the valu
     expect(groups).toHaveLength(2);
     expect(
       groups.map((group: any) => group.changeSetIds.sort()).sort()
-    ).toEqual(
-      [['three-split', 'three-move'].sort(), ['three-unrelated']].sort()
-    );
+    ).toEqual([
+      ['three-split', 'three-move'].sort(),
+      ['three-unrelated']
+    ].sort());
     await session.call('resolveGroupsOf', 'three-move', false);
     expect(
       (await session.call<any[]>('groups'))

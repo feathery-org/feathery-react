@@ -34,14 +34,7 @@ import {
   LiveEditor
 } from '../syncfusionDocumentOps';
 
-DocumentEditor.Inject(
-  Editor,
-  Selection,
-  SfdtExport,
-  EditorHistory,
-  ImageResizer,
-  Search
-);
+DocumentEditor.Inject(Editor, Selection, SfdtExport, EditorHistory, ImageResizer, Search);
 
 if (!window.crypto?.getRandomValues)
   Object.defineProperty(window, 'crypto', {
@@ -123,10 +116,7 @@ const revisionList = (): Array<{ id: string; author: string }> => {
   for (let i = 0; i < (revisions?.length ?? 0); i++) {
     const revision = revisions[i] ?? revisions.get?.(i);
     if (revision)
-      out.push({
-        id: String(revision.revisionID),
-        author: String(revision.author)
-      });
+      out.push({ id: String(revision.revisionID), author: String(revision.author) });
   }
   return out;
 };
@@ -138,40 +128,16 @@ const apply = (live: LiveEditor, edits: any[], id: string) =>
 // replacement, a deletion, a cell write, and an additive insertion. If a future
 // op introduces a new write primitive, it belongs here.
 const OPS: Array<{ name: string; edit: any }> = [
-  {
-    name: 'replace_text',
-    edit: {
-      op: 'replace_text',
-      anchor: '0;0',
-      find: 'beta',
-      replace: 'BETA',
-      group: 'g'
-    }
-  },
-  {
-    name: 'delete_text',
-    edit: { op: 'delete_text', anchor: '0;0', find: 'gamma ', group: 'g' }
-  },
-  {
-    name: 'set_cell_text',
-    edit: { op: 'set_cell_text', anchor: '0;2;1;1;0', text: '9900', group: 'g' }
-  },
-  {
-    name: 'insert_text',
-    edit: {
-      op: 'insert_text',
-      anchor: '0;1',
-      position: 'end',
-      text: ' Added.',
-      group: 'g'
-    }
-  }
+  { name: 'replace_text', edit: { op: 'replace_text', anchor: '0;0', find: 'beta', replace: 'BETA', group: 'g' } },
+  { name: 'delete_text', edit: { op: 'delete_text', anchor: '0;0', find: 'gamma ', group: 'g' } },
+  { name: 'set_cell_text', edit: { op: 'set_cell_text', anchor: '0;2;1;1;0', text: '9900', group: 'g' } },
+  { name: 'insert_text', edit: { op: 'insert_text', anchor: '0;1', position: 'end', text: ' Added.', group: 'g' } }
 ];
 
 describe('revision authorship', () => {
   afterEach(teardown);
 
-  describe("MINE: every revision the engine creates is the assistant's", () => {
+  describe('MINE: every revision the engine creates is the assistant\'s', () => {
     it.each(OPS.map((o) => [o.name, o.edit] as const))(
       '%s attributes its revisions to the assistant',
       (name, edit) => {
@@ -193,7 +159,7 @@ describe('revision authorship', () => {
   });
 
   describe('THEIRS: a foreign revision never changes hands', () => {
-    it("another author's pending change keeps its author across a change set", () => {
+    it('another author\'s pending change keeps its author across a change set', () => {
       const live = open();
       editor.currentUser = OTHER_AUTHOR;
       editor.enableTrackChanges = true;
@@ -201,9 +167,7 @@ describe('revision authorship', () => {
       editor.editor.insertText('THEIRS ');
       editor.enableTrackChanges = false;
 
-      const foreignBefore = revisionList().filter(
-        (r) => r.author === OTHER_AUTHOR
-      );
+      const foreignBefore = revisionList().filter((r) => r.author === OTHER_AUTHOR);
       expect(foreignBefore.length).toBeGreaterThan(0);
 
       // Aimed at the FOREIGN REVISION'S OWN TEXT, not merely its block.
@@ -214,15 +178,7 @@ describe('revision authorship', () => {
       // guard refused.
       const result = apply(
         live,
-        [
-          {
-            op: 'replace_text',
-            anchor: '0;1',
-            find: 'THEIRS',
-            replace: 'OURS',
-            group: 'g'
-          }
-        ],
+        [{ op: 'replace_text', anchor: '0;1', find: 'THEIRS', replace: 'OURS', group: 'g' }],
         'authorship-foreign-untouched'
       );
       // Refusing is the CORRECT outcome here - the point is what happens to

@@ -865,12 +865,7 @@ describe('a rejected card puts back the layout the DOCUMENT stated', () => {
         ed,
         [
           { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0' },
-          {
-            op: 'set_cell_text',
-            group: 'sched',
-            anchor: '0;2;2;1;0',
-            text: 'Z St'
-          },
+          { op: 'set_cell_text', group: 'sched', anchor: '0;2;2;1;0', text: 'Z St' },
           {
             op: 'copy_table_format',
             group: 'sched',
@@ -925,40 +920,17 @@ const styledFixture = () => ({
   sections: [
     {
       blocks: [
-        {
-          paragraphFormat: { styleName: 'Heading 1' },
-          inlines: [{ text: 'How We Support Clients' }]
-        },
-        {
-          paragraphFormat: { styleName: 'Normal' },
-          inlines: [{ text: 'Our service model has two halves.' }]
-        },
-        {
-          paragraphFormat: { styleName: 'Heading 2' },
-          inlines: [{ text: 'National Capabilities' }]
-        },
-        {
-          paragraphFormat: { styleName: 'Normal' },
-          inlines: [{ text: 'National scale, local team.' }]
-        },
-        {
-          paragraphFormat: { styleName: 'Heading 1' },
-          inlines: [{ text: 'Next Steps' }]
-        },
-        {
-          paragraphFormat: { styleName: 'Normal' },
-          inlines: [{ text: 'Confirm by Friday.' }]
-        }
+        { paragraphFormat: { styleName: 'Heading 1' }, inlines: [{ text: 'How We Support Clients' }] },
+        { paragraphFormat: { styleName: 'Normal' }, inlines: [{ text: 'Our service model has two halves.' }] },
+        { paragraphFormat: { styleName: 'Heading 2' }, inlines: [{ text: 'National Capabilities' }] },
+        { paragraphFormat: { styleName: 'Normal' }, inlines: [{ text: 'National scale, local team.' }] },
+        { paragraphFormat: { styleName: 'Heading 1' }, inlines: [{ text: 'Next Steps' }] },
+        { paragraphFormat: { styleName: 'Normal' }, inlines: [{ text: 'Confirm by Friday.' }] }
       ]
     }
   ],
   styles: [
-    {
-      type: 'Paragraph',
-      name: 'Normal',
-      next: 'Normal',
-      characterFormat: { fontSize: 11 }
-    },
+    { type: 'Paragraph', name: 'Normal', next: 'Normal', characterFormat: { fontSize: 11 } },
     {
       type: 'Paragraph',
       name: 'Heading 1',
@@ -1035,7 +1007,9 @@ describe('a rejected card leaves no paragraph wearing the wrong style', () => {
       expect(styledBefore[0]).toBe('Heading 1');
 
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
-        edits: [{ op: 'move_section', anchor: '0;2', targetAnchor: '0;0' }],
+        edits: [
+          { op: 'move_section', anchor: '0;2', targetAnchor: '0;0' }
+        ],
         changeSetId: 'move-style-leak'
       });
       expect(result.results[0].ok).toBe(true);
@@ -1215,12 +1189,7 @@ describe('a card whose row moved before its snapshot replayed', () => {
             anchor: '0;1;3;0;0',
             shading: '#FF00FF'
           },
-          {
-            op: 'set_cell_text',
-            group: 'paint',
-            anchor: '0;1;4;1;0',
-            text: 'Z'
-          }
+          { op: 'set_cell_text', group: 'paint', anchor: '0;1;4;1;0', text: 'Z' }
         ],
         'painted-row'
       );

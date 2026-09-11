@@ -26,20 +26,9 @@ import {
   Selection,
   SfdtExport
 } from '@syncfusion/ej2-documenteditor';
-import {
-  applyDocumentEdits,
-  flattenSfdt,
-  LiveEditor
-} from '../syncfusionDocumentOps';
+import { applyDocumentEdits, flattenSfdt, LiveEditor } from '../syncfusionDocumentOps';
 
-DocumentEditor.Inject(
-  Editor,
-  Selection,
-  SfdtExport,
-  EditorHistory,
-  ImageResizer,
-  Search
-);
+DocumentEditor.Inject(Editor, Selection, SfdtExport, EditorHistory, ImageResizer, Search);
 
 if (!window.crypto?.getRandomValues)
   Object.defineProperty(window, 'crypto', {
@@ -120,13 +109,7 @@ describe('write-integrity guards', () => {
       sections: [
         {
           sectionFormat: { pageWidth: 612, pageHeight: 792 },
-          blocks: [
-            para('Intro.'),
-            table([
-              ['A1', 'B1'],
-              ['A2', 'B2']
-            ])
-          ]
+          blocks: [para('Intro.'), table([['A1', 'B1'], ['A2', 'B2']])]
         }
       ]
     });
@@ -134,14 +117,7 @@ describe('write-integrity guards', () => {
       sections: [
         {
           sectionFormat: { pageWidth: 612, pageHeight: 792 },
-          blocks: [
-            para('Intro.'),
-            table([
-              ['A1', 'B1'],
-              ['A2', 'B2']
-            ]),
-            para('Trailing paragraph.')
-          ]
+          blocks: [para('Intro.'), table([['A1', 'B1'], ['A2', 'B2']]), para('Trailing paragraph.')]
         }
       ]
     });
@@ -149,11 +125,7 @@ describe('write-integrity guards', () => {
     it('DEFECT: refuses to duplicate the tail table, document byte-unchanged', () => {
       const live = open(tailTableDoc());
       const before = serialized();
-      const result = apply(
-        live,
-        [{ op: 'duplicate_table', anchor: '0;1', group: 'g' }],
-        'dup-tail'
-      );
+      const result = apply(live, [{ op: 'duplicate_table', anchor: '0;1', group: 'g' }], 'dup-tail');
       expect(result.results[0].ok).toBe(false);
       // The CODE, not just the failure. `ok === false` passes for any error at
       // all, including an unrelated crash, so it would keep passing on a day the
@@ -166,11 +138,7 @@ describe('write-integrity guards', () => {
       // The guard must key on "is the document's last block", not on "is a
       // table". Same table, one trailing paragraph, and it must succeed.
       const live = open(middleTableDoc());
-      const result = apply(
-        live,
-        [{ op: 'duplicate_table', anchor: '0;1', group: 'g' }],
-        'dup-middle'
-      );
+      const result = apply(live, [{ op: 'duplicate_table', anchor: '0;1', group: 'g' }], 'dup-middle');
       expect(result.results[0].ok).toBe(true);
     });
   });
@@ -192,21 +160,11 @@ describe('write-integrity guards', () => {
       const live = open(doc());
       const result = apply(
         live,
-        [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: 'beta ',
-            replace: '',
-            group: 'g'
-          }
-        ],
+        [{ op: 'replace_text', anchor: '0;0', find: 'beta ', replace: '', group: 'g' }],
         'empty-replace'
       );
       expect(result.results[0].ok).toBe(true);
-      const text = anchorsOf()
-        .map((b) => String(b.text ?? ''))
-        .join(' ');
+      const text = anchorsOf().map((b) => String(b.text ?? '')).join(' ');
       expect(text).not.toContain('beta');
       expect(text).toContain('Alpha');
       expect(text).toContain('gamma');
@@ -238,24 +196,14 @@ describe('write-integrity guards', () => {
       const live = open(doc());
       const result = apply(
         live,
-        [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: 'Alpha',
-            replace: '',
-            group: 'g'
-          }
-        ],
+        [{ op: 'replace_text', anchor: '0;0', find: 'Alpha', replace: '', group: 'g' }],
         'leading-space-artifact'
       );
       // Deleting the FIRST word leaves a lone leading space that the SDK drops.
       // The tolerance exists so this legitimate delete verifies rather than
       // failing on an artefact nobody can control.
       expect(result.results[0].ok).toBe(true);
-      const text = anchorsOf()
-        .map((b) => String(b.text ?? ''))
-        .join(' ');
+      const text = anchorsOf().map((b) => String(b.text ?? '')).join(' ');
       expect(text).not.toContain('Alpha');
       expect(text).toContain('beta gamma');
     });
@@ -306,9 +254,7 @@ describe('write-integrity guards', () => {
       // Either it succeeds, or it refuses for a reason that is NOT the bindings
       // guard - what must not happen is a bindings refusal on a table with none.
       if (!result.results[0].ok)
-        expect(result.results[0].error).not.toBe(
-          'structural_op_would_destroy_bindings'
-        );
+        expect(result.results[0].error).not.toBe('structural_op_would_destroy_bindings');
     });
   });
 
@@ -397,23 +343,14 @@ describe('write-integrity guards', () => {
       sections: [
         {
           sectionFormat: { pageWidth: 612, pageHeight: 792 },
-          blocks: [
-            para('Before the table.'),
-            table([
-              ['A1', 'B1'],
-              ['A2', 'B2']
-            ]),
-            para('After.')
-          ]
+          blocks: [para('Before the table.'), table([['A1', 'B1'], ['A2', 'B2']]), para('After.')]
         }
       ]
     });
 
     it('DEFECT: refuses a column break at a table row, document byte-unchanged', () => {
       const live = open(doc());
-      const cellAnchor = anchorsOf().find(
-        (b) => b.kind === 'table_cell'
-      )?.anchor;
+      const cellAnchor = anchorsOf().find((b) => b.kind === 'table_cell')?.anchor;
       expect(cellAnchor).toBeDefined();
       const before = serialized();
       const result = apply(

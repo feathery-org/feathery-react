@@ -133,9 +133,10 @@ export async function startHeadless(): Promise<HeadlessSession> {
     await page.setViewport({ width: 1200, height: 1000 });
     page.on('pageerror', (error: Error) => failures.push(String(error)));
     await page.goto(`file://${HOST_PAGE}`, { waitUntil: 'load' });
-    await page.waitForFunction(() => (window as any).fmHeadlessReady === true, {
-      timeout: 30000
-    });
+    await page.waitForFunction(
+      () => (window as any).fmHeadlessReady === true,
+      { timeout: 30000 }
+    );
   } catch (error) {
     await browser.close();
     throw new Error(

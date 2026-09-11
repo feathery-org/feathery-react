@@ -502,11 +502,9 @@ describe('bound row operations while a source split is still pending', () => {
     const groups = await session.call<any[]>('groups');
     expect(groups).toHaveLength(1);
     expect(
-      groups
-        .find((group) =>
-          group.changeSetIds?.includes('pending-copy-after-shift')
-        )
-        ?.changeSetIds.sort()
+      groups.find((group) =>
+        group.changeSetIds?.includes('pending-copy-after-shift')
+      )?.changeSetIds.sort()
     ).toEqual(['pending-copy-after-shift', 'pending-source-split']);
 
     await session.call('resolveGroupsOf', 'pending-copy-after-shift', false);

@@ -13,7 +13,11 @@
  * the new title, reject restores the document byte for byte.
  */
 import fs from 'fs';
-import { HeadlessSession, shoot, startHeadless } from './headlessSession';
+import {
+  HeadlessSession,
+  shoot,
+  startHeadless
+} from './headlessSession';
 
 const TITLE = 'Commercial Combined Insurance Proposal';
 const NEW_TITLE = 'Commercial Combined Insurance Quote';

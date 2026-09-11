@@ -111,16 +111,13 @@ function mapTags(node: any, edit: (def: any) => any | null): void {
       def = null;
     }
     const next = def && edit(def);
-    if (next)
-      node.contentControlProperties = { ...props, tag: formatTag(next) };
+    if (next) node.contentControlProperties = { ...props, tag: formatTag(next) };
   }
   for (const value of Object.values(node)) mapTags(value, edit);
 }
 
 const withGlobal = (sfdt: any, name: string): any => {
-  mapTags(sfdt, (def) =>
-    def.name === name ? { ...def, isGlobal: true } : null
-  );
+  mapTags(sfdt, (def) => (def.name === name ? { ...def, isGlobal: true } : null));
   return sfdt;
 };
 
@@ -357,6 +354,7 @@ describe('duplicate_table keeps the copy separate from adjacent tables', () => {
       destroy(editor);
     }
   });
+
 });
 
 // ---------------------------------------------------------------------------
@@ -547,10 +545,7 @@ describe('a copy landing in another Word section adopts its geometry', () => {
 // ---------------------------------------------------------------------------
 
 /** Multiset of every binding tag in the document, tag -> occurrence count. */
-function tagCounts(
-  node: any,
-  out: Map<string, number> = new Map()
-): Map<string, number> {
+function tagCounts(node: any, out: Map<string, number> = new Map()): Map<string, number> {
   if (Array.isArray(node)) {
     node.forEach((entry) => tagCounts(entry, out));
     return out;
@@ -582,18 +577,10 @@ describe('a copied section gets its own binding identities', () => {
     return sfdt;
   };
   const copyToTail: EditOp[] = [
-    {
-      op: 'copy_section',
-      anchor: '0;0',
-      targetAnchor: '0;3',
-      position: 'after'
-    }
+    { op: 'copy_section', anchor: '0;0', targetAnchor: '0;3', position: 'after' }
   ];
 
-  const run = (
-    doc: any,
-    assert: (editor: DocumentEditor, before: Map<string, number>) => void
-  ) => {
+  const run = (doc: any, assert: (editor: DocumentEditor, before: Map<string, number>) => void) => {
     const editor = makeEditor(doc);
     const attached: AttachedBindings = attachBindings(
       editor as unknown as SyncfusionEditorLike,
@@ -672,9 +659,9 @@ describe('a copied section gets its own binding identities', () => {
       const index = scanBindings(parsed(editor));
       const copied = index.fields.get('project.name_2');
       expect(copied).toHaveLength(2);
-      expect(copied?.every((entry) => entry.def.isDeletable === false)).toBe(
-        true
-      );
+      expect(
+        copied?.every((entry) => entry.def.isDeletable === false)
+      ).toBe(true);
     });
   });
 });
@@ -753,12 +740,7 @@ describe('copy_section over a block-wrapped table', () => {
   it('keeps a global field shared across the copy', () => {
     runWrapped(
       buildCostsFixture({ globalTaxRate: true }),
-      {
-        op: 'copy_section',
-        anchor: '0;0',
-        targetAnchor: '0;8',
-        position: 'after'
-      },
+      { op: 'copy_section', anchor: '0;0', targetAnchor: '0;8', position: 'after' },
       (editor) => {
         const index = scanBindings(parsed(editor));
         const occurrences = index.fields.get('tax_rate');
@@ -789,12 +771,7 @@ describe('copy_section over a block-wrapped table', () => {
     ];
     runWrapped(
       doc,
-      {
-        op: 'copy_section',
-        anchor: '0;0',
-        targetAnchor: '0;5',
-        position: 'after'
-      },
+      { op: 'copy_section', anchor: '0;0', targetAnchor: '0;5', position: 'after' },
       (editor) => {
         expect(blockPattern(editor, 7, 6)).toBe('PPWPWP');
         const index = scanBindings(parsed(editor));
@@ -809,12 +786,7 @@ describe('copy_section over a block-wrapped table', () => {
     (doc.sections[0].blocks as any[]).splice(3, 2);
     runWrapped(
       doc,
-      {
-        op: 'copy_section',
-        anchor: '0;0',
-        targetAnchor: '0;6',
-        position: 'after'
-      },
+      { op: 'copy_section', anchor: '0;0', targetAnchor: '0;6', position: 'after' },
       (editor) => {
         expect(blockPattern(editor, 8, 3)).toBe('PPW');
         expect(scanBindings(parsed(editor)).tables.has('costs_copy')).toBe(

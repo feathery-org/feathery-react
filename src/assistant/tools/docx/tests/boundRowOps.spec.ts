@@ -391,9 +391,9 @@ describe('structural ops on a bound table', () => {
     expect(
       revisions.filter((revision) => revision.revisionType === 'Insertion')
     ).toHaveLength(4);
-    expect(
-      revisions.every((revision) => isAssistantAuthor(revision.author))
-    ).toBe(true);
+    expect(revisions.every((revision) => isAssistantAuthor(revision.author))).toBe(
+      true
+    );
     expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(
       1
     );

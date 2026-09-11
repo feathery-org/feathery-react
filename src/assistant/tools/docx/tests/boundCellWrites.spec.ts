@@ -246,9 +246,9 @@ describe('writes aimed at a bound cell', () => {
     expect(
       revisions.filter((revision) => revision.revisionType === 'Insertion')
     ).toHaveLength(6);
-    expect(
-      revisions.every((revision) => isAssistantAuthor(revision.author))
-    ).toBe(true);
+    expect(revisions.every((revision) => isAssistantAuthor(revision.author))).toBe(
+      true
+    );
     expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(
       1
     );

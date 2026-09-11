@@ -302,9 +302,7 @@ describe("the captain's request: five of ten pending rows, in one op", () => {
       // onwards failed to re-resolve its anchor and the change set rolled back,
       // which is what left four of the captain's five rows in the document.
       expect(rowTexts(editor).filter((row) => row === '[|]')).toHaveLength(10);
-      expect(
-        rowsAfterAcceptingAll(editor).filter((row) => row === '[|]')
-      ).toHaveLength(5);
+      expect(rowsAfterAcceptingAll(editor).filter((row) => row === '[|]')).toHaveLength(5);
     } finally {
       destroyEditor(editor);
     }
