@@ -2163,28 +2163,25 @@ function recomputeDerivedValuesAfterResolve(
   editor: LiveEditor,
   touchedTables: Iterable<any>
 ): void {
+  const failures: unknown[] = [];
   const hook = (editor as any).__robinRecomputeAfterResolve;
   if (typeof hook === 'function') {
     try {
       hook();
-    } catch {
-      // A failed recompute is reported by the runtime's own diagnostics.
+    } catch (error) {
+      failures.push(error);
     }
   }
   const restripe = (editor as any).__robinRestripeAfterResolve;
-  if (typeof restripe !== 'function') return;
-  let anchors: Set<string>;
-  try {
-    anchors = liveTableAnchorsOf(editor, touchedTables);
-  } catch {
-    return;
+  if (typeof restripe === 'function') {
+    try {
+      const anchors = liveTableAnchorsOf(editor, touchedTables);
+      if (anchors.size) restripe(anchors);
+    } catch (error) {
+      failures.push(error);
+    }
   }
-  if (!anchors.size) return;
-  try {
-    restripe(anchors);
-  } catch {
-    // A failed restripe leaves the previous fills; the next change revisits.
-  }
+  if (failures.length) throw failures[0];
 }
 
 export function resolveLiveRevisionGroupsAsOneUndo(

@@ -262,6 +262,56 @@ const plainCell = (text: string) => ({
 // ---------------------------------------------------------------------------
 
 describe('one change set that edits content AND restripes a table', () => {
+  it('surfaces derived-state failure after accepting revisions', () => {
+    const ed = makeEditor(twoTables());
+    try {
+      apply(
+        ed,
+        [{ op: 'set_cell_text', anchor: '0;1;1;0;0', text: 'A1 rewritten' }],
+        'accept-derived-failure'
+      );
+      (ed as any).__robinRecomputeAfterResolve = () => {
+        throw new Error('recompute failed');
+      };
+
+      expect(() =>
+        resolveLiveRevisionGroupsAsOneUndo(
+          ed as unknown as LiveEditor,
+          listRevisionGroups(ed as unknown as LiveEditor),
+          true
+        )
+      ).toThrow('recompute failed');
+      expect(revisions(ed)).toHaveLength(0);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('surfaces derived-state failure after rejecting revisions', () => {
+    const ed = makeEditor(twoTables());
+    try {
+      apply(
+        ed,
+        [{ op: 'set_cell_text', anchor: '0;1;1;0;0', text: 'A1 rewritten' }],
+        'reject-derived-failure'
+      );
+      (ed as any).__robinRecomputeAfterResolve = () => {
+        throw new Error('recompute failed');
+      };
+
+      expect(() =>
+        resolveLiveRevisionGroupsAsOneUndo(
+          ed as unknown as LiveEditor,
+          listRevisionGroups(ed as unknown as LiveEditor),
+          false
+        )
+      ).toThrow('recompute failed');
+      expect(revisions(ed)).toHaveLength(0);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
   it('rebuilds layout once after accepting a multi-revision table group', () => {
     const ed = makeEditor(twoTables());
     try {
