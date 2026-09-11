@@ -1213,6 +1213,14 @@ function getRows(block: any): any[] | undefined {
   return Array.isArray(rows) ? rows : undefined;
 }
 
+function getRowsKey(block: any): 'rows' | 'r' | 'rw' | undefined {
+  return ['rows', 'r', 'rw'].find((key) => Array.isArray(block?.[key])) as
+    | 'rows'
+    | 'r'
+    | 'rw'
+    | undefined;
+}
+
 /**
  * Revision ids carried by the inlines of one anchored block.
  *
@@ -14626,6 +14634,7 @@ function boundBlankRowPlan(
         ? getAt(state.sfdt, liveTable.tablePath)
         : undefined;
       const rows = getRows(tableNode);
+      const rowsKey = getRowsKey(tableNode);
       const prototypeEntry = liveTable?.rows
         .filter((row) => row.path)
         .sort(
@@ -14636,7 +14645,7 @@ function boundBlankRowPlan(
       const prototype = prototypeEntry?.path
         ? getAt(state.sfdt, prototypeEntry.path)
         : undefined;
-      if (!liveTable?.tablePath || !rows || !prototype)
+      if (!liveTable?.tablePath || !rows || !rowsKey || !prototype)
         throw new OpError(
           'blank_row_insert_unroutable',
           `insert_row could not derive a blank row shape in table "${tableRoute.tableId}". Nothing was written.`
@@ -14648,7 +14657,7 @@ function boundBlankRowPlan(
       const blankRow = clonedWithoutRevisions(state.sfdt, prototype);
       blankRow.cells = (blankRow.cells ?? []).map(blankColumnCell);
       const tableClone = cloneJson(tableNode);
-      tableClone.rows = [
+      tableClone[rowsKey] = [
         ...rows.slice(0, insertAt),
         blankRow,
         ...rows.slice(insertAt)
@@ -15615,12 +15624,13 @@ function boundDuplicateTablePlan(
         const sourceTable = firstTableBlockIn(getAt(state.sfdt, markerPath));
         const rows = getRows(rawTable);
         const sourceRows = getRows(sourceTable);
+        const rowsKey = getRowsKey(rawTable);
         const dataIndices = liveTable.rows
           .map((row) => (row.path ? Number(row.path[row.path.length - 1]) : -1))
           .filter((row) => row >= 0);
         const firstData = Math.min(...dataIndices);
         const lastData = Math.max(...dataIndices);
-        if (!rows || !sourceRows || !Number.isFinite(firstData))
+        if (!rows || !rowsKey || !sourceRows || !Number.isFinite(firstData))
           throw new OpError(
             'duplicate_table_no_prototype_row',
             `duplicate_table could not find a bound prototype row in "${tableRoute.tableId}". Nothing was written.`
@@ -15652,7 +15662,7 @@ function boundDuplicateTablePlan(
           });
           return rowClone;
         });
-        rawTable.rows = [
+        rawTable[rowsKey] = [
           ...rows.slice(0, firstData),
           ...dataRows,
           ...rows.slice(lastData + 1)
