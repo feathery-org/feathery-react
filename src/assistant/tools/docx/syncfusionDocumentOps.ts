@@ -16284,9 +16284,7 @@ function setCellContent(
       `The referenced logical cell at row ${rowIndex}, column ${columnIndex} does not exist. Nothing was written.`
     );
   const cellsKey = getCellsKey(row);
-  const cellPath = cellsKey
-    ? [...rowPath, cellsKey, physicalColumn]
-    : [];
+  const cellPath = cellsKey ? [...rowPath, cellsKey, physicalColumn] : [];
   const cell = getAt(sfdt, cellPath);
   if (!cell)
     throw new OpError(
@@ -16377,9 +16375,10 @@ function createBindingInCell(
     ? getAt(state.sfdt, table.tablePath)
     : undefined;
   const rowsKey = getRowsKey(tableNode);
-  const rowNode = table.tablePath && rowsKey
-    ? getAt(state.sfdt, [...table.tablePath, rowsKey, rowIndex])
-    : undefined;
+  const rowNode =
+    table.tablePath && rowsKey
+      ? getAt(state.sfdt, [...table.tablePath, rowsKey, rowIndex])
+      : undefined;
   const physicalColumn = physicalCellIndexAt(rowNode, columnIndex);
   const cell =
     table.tablePath && physicalColumn != null
@@ -16543,9 +16542,10 @@ function stableTableReferencePlan(
             ? getAt(state.sfdt, table.tablePath)
             : undefined;
           const rowsKey = getRowsKey(tableNode);
-          const row = table.tablePath && rowsKey
-            ? getAt(state.sfdt, [...table.tablePath, rowsKey, rowIndex])
-            : undefined;
+          const row =
+            table.tablePath && rowsKey
+              ? getAt(state.sfdt, [...table.tablePath, rowsKey, rowIndex])
+              : undefined;
           const physicalColumn = physicalCellIndexAt(row, resource.columnIndex);
           const cellsKey = getCellsKey(row);
           const cell =
