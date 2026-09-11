@@ -14,10 +14,24 @@ Rebuild after changing anything under `src/elements/components/DocxEditor/bindin
 npx webpack --config harness/bindings/webpack.config.js
 ```
 
+## Headless tests
+
+The browser-backed regression suite runs the same binding and document
+primitives against a real Chromium page:
+
+```
+yarn test:headless
+```
+
+It covers plain and bound table primitives, row and column layout changes,
+reversible banding, live value columns, table movement, and section creation.
+The suite launches its own local host and does not require the harness server
+above.
+
 ## Why it exists
 
-Every automated test for this engine runs in jsdom, which cannot reproduce the
-parts most likely to break:
+The regular automated tests for this engine run in jsdom, which cannot
+reproduce the parts most likely to break:
 
 - **no real caret** — so how far the keystroke guard actually reaches is unproven
 - **no hidden editable div** — its `textInput` and `blur` events never fire, and
