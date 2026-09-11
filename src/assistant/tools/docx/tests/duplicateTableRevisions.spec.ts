@@ -253,9 +253,9 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
     expect(duplicated.results[0]).toMatchObject({ ok: true });
     const revisions = revisionsOf(editor);
     expect(revisions.length).toBeGreaterThan(0);
-    expect(new Set(revisions.map((revision) => displayAuthor(revision.author)))).toEqual(
-      new Set(['Robin'])
-    );
+    expect(
+      new Set(revisions.map((revision) => displayAuthor(revision.author)))
+    ).toEqual(new Set(['Robin']));
 
     revisions[0].accept();
     expect(editor.revisions.length).toBe(0);
@@ -462,9 +462,7 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
       expect(revisions.length).toBeGreaterThan(0);
       expect(
         new Set(revisions.map((revision) => displayAuthor(revision.author)))
-      ).toEqual(
-        new Set(['Robin'])
-      );
+      ).toEqual(new Set(['Robin']));
       expect(
         new Set(revisions.map((revision) => revision.revisionType))
       ).toEqual(new Set(revisionTypes));
@@ -491,14 +489,17 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
       'formula-refusal'
     );
 
-    expect(result.results[0]).toMatchObject({ ok: false, error: 'no_reference' });
+    expect(result.results[0]).toMatchObject({
+      ok: false,
+      error: 'no_reference'
+    });
     expect(editor.revisions.length).toBe(0);
     expect(documentContentOf(editor)).toEqual(before);
     expect(editor.enableTrackChanges).toBe(false);
     expect(container.enableTrackChanges).toBe(false);
   });
 
-  it('refuses column insertion in an unbound table without changing content and forces both flags off', () => {
+  it('refuses an unroutable column insertion without changing content and forces both flags off', () => {
     const before = documentContentOf(editor);
     const result = apply(
       editor,
@@ -514,7 +515,7 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
 
     expect(result.results[0]).toMatchObject({
       ok: false,
-      error: 'insert_column_requires_bound_table'
+      error: 'insert_column_unroutable'
     });
     expect(editor.revisions.length).toBe(0);
     expect(documentContentOf(editor)).toEqual(before);

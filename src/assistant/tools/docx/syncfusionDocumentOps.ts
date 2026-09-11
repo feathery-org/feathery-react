@@ -113,6 +113,7 @@ import {
   collectRefs,
   parseExpression
 } from '../../../elements/components/DocxEditor/bindings/core/formula';
+import { applyRules } from '../../../elements/components/DocxEditor/bindings/core/engine';
 import { analyzeBindingOrphans } from '../../../elements/components/DocxEditor/bindings/core/tableDeleteImpact';
 import {
   addLineItem,
@@ -163,6 +164,7 @@ import {
   UNSTATED_TABLE_LAYOUT
 } from './tableAppearance';
 import {
+  clearCellShading,
   createdRevisions,
   disableUserTrackChanges,
   groupRevisionsAtomic,
@@ -2434,6 +2436,44 @@ interface TableContainerRef {
   blockIndex: number;
   blocks: any[];
   block: any;
+}
+
+interface PlainTablePromotion {
+  anchor: string;
+  tableId: string;
+}
+
+function liveTableMarkerProperties(tableId: string): Record<string, unknown> {
+  return {
+    lockContentControl: true,
+    lockContents: false,
+    tag: formatTag({ version: 2, kind: 'table', tableId }),
+    title: 'Live table',
+    type: 'RichText',
+    hasPlaceHolderText: false,
+    multiline: false,
+    isTemporary: false,
+    color: '#00000000',
+    appearance: 'BoundingBox'
+  };
+}
+
+function wrapPlainTableContainer(container: any, tableId: string): any {
+  const marker = {
+    contentControlProperties: liveTableMarkerProperties(tableId)
+  };
+  if (getRows(container)) return { ...marker, blocks: [container] };
+  const blocks = getBlocks(container);
+  const tableIndex = blocks.findIndex((block: any) => getRows(block));
+  if (tableIndex < 0) return null;
+  return {
+    ...container,
+    blocks: [
+      ...blocks.slice(0, tableIndex),
+      { ...marker, blocks: [blocks[tableIndex]] },
+      ...blocks.slice(tableIndex + 1)
+    ]
+  };
 }
 
 /**
@@ -8871,6 +8911,46 @@ function replacePlainTableColumn(
   };
 }
 
+function promotePlainTableInEditor(
+  editor: LiveEditor,
+  promotion: PlainTablePromotion,
+  blocks: FlatBlock[],
+  projectedMarker: any
+): { anchor: string; postWriteSfdt: any; paste: PasteEffect } {
+  const sfdt = serializeSfdt(editor);
+  const sourceTable = tableBlockAt(sfdt, promotion.anchor);
+  const container = tableContainerAt(sfdt, promotion.anchor);
+  if (!sourceTable || !container)
+    throw new OpError(
+      'plain_table_promotion_lost',
+      `No table answers to "${promotion.anchor}". Nothing was written.`
+    );
+  const source = resolveTableRange(blocks, promotion.anchor);
+  const promotedBlock = clonedWithoutRevisions(sfdt, projectedMarker);
+  const sourceAddress = topLevelAddress(source.blocks[0].anchor);
+  const target: PasteTarget = {
+    anchor: source.endAnchor,
+    address: { ...sourceAddress, block: sourceAddress.block + 1 }
+  };
+  const { paste } = pasteBlocksAsTrackedSegments(
+    editor,
+    sfdt,
+    copyPasteSegments([promotedBlock], sfdt, target),
+    target
+  );
+  selectBlock(editor, source.blocks[0]);
+  callEditor(editor, 'deleteTable');
+  const postWriteSfdt = serializeSfdt(editor);
+  const promoted = scanBindings(postWriteSfdt).tables.get(promotion.tableId);
+  const anchor = promoted ? boundTableAnchor(postWriteSfdt, promoted) : null;
+  if (!promoted || !anchor)
+    throw new OpError(
+      'plain_table_promotion_unreadable',
+      `The promoted table "${promotion.tableId}" was not readable after the tracked replacement. Nothing was kept.`
+    );
+  return { anchor, postWriteSfdt, paste };
+}
+
 // Exported for the registry parity spec: the spec re-asserts at runtime what
 // the mapped types already guarantee at compile time, guarding the emitted JS
 // against an `as any` regression at the table itself.
@@ -9921,10 +10001,7 @@ export const ANCHORED_OP_HANDLERS: {
     const current = liveTableAppearance(editor, tableAnchor);
     const before = cellAppearanceAt(current, row, column);
     const transaction = runAppearanceTransaction(editor, (record) => {
-      record({
-        cellAnchor: block.anchor,
-        write: restoreWriteFor(before, write)
-      });
+      record(appearanceRestoreFor(editor, block.anchor, before, write));
       writeAppearance(editor, block.anchor, write, 'cell');
       return { ...emptyAppearanceReport(), cellsWritten: 1 };
     });
@@ -9973,7 +10050,7 @@ export const ANCHORED_OP_HANDLERS: {
         for (let column = 0; column < cells.length; column++) {
           const cellAnchor = cellAnchorOf(tableAnchor, row, column);
           const before = cellAppearanceAt(current, row, column);
-          record({ cellAnchor, write: restoreWriteFor(before, write) });
+          record(appearanceRestoreFor(editor, cellAnchor, before, write));
           writeAppearance(editor, cellAnchor, write, 'cell');
           cellsWritten++;
         }
@@ -11100,6 +11177,30 @@ function restoreWriteFor(
   });
 }
 
+function appearanceRestoreFor(
+  editor: LiveEditor,
+  cellAnchor: string,
+  before: AppearanceFacts | undefined,
+  applied: AppearanceWrite
+): AppearanceRestore {
+  let clearShading = false;
+  if (applied.shading !== undefined && before?.shading === undefined) {
+    selectForAppearance(editor, cellAnchor, 'cell');
+    const shading = (editor as any).selection?.start?.paragraph?.associatedCell
+      ?.cellFormat?.shading;
+    clearShading =
+      typeof shading?.hasValue === 'function' &&
+      !shading.hasValue('backgroundColor') &&
+      !shading.hasValue('foregroundColor') &&
+      !shading.hasValue('textureStyle');
+  }
+  return {
+    cellAnchor,
+    write: restoreWriteFor(before, applied),
+    ...(clearShading ? { clearShading: true } : {})
+  };
+}
+
 const BORDER_TYPES = new Set([
   'AllBorders',
   'OutsideBorders',
@@ -11691,6 +11792,7 @@ function rollbackAppearanceWrites(
       writeRowIsHeader(editor, restore.cellAnchor, restore.rowIsHeader);
     if (restore.write)
       writeAppearance(editor, restore.cellAnchor, restore.write, 'cell');
+    if (restore.clearShading) clearCellShading(editor, restore.cellAnchor);
   }
 }
 
@@ -11764,7 +11866,7 @@ function applyBandingRows(
         const cellAnchor = cellAnchorOf(tableAnchor, row, column);
         const before = cellAppearanceAt(current, row, column);
         const write: AppearanceWrite = { shading: wanted };
-        record({ cellAnchor, write: restoreWriteFor(before, write) });
+        record(appearanceRestoreFor(editor, cellAnchor, before, write));
         writeAppearance(editor, cellAnchor, write, 'cell');
         report.cellsWritten++;
       }
@@ -11797,7 +11899,7 @@ function applyInsertedColumnAppearance(
         borders: true
       });
       const cellAnchor = cellAnchorOf(tableAnchor, row, inserted.column);
-      record({ cellAnchor, write: restoreWriteFor(before, write) });
+      record(appearanceRestoreFor(editor, cellAnchor, before, write));
       writeAppearance(editor, cellAnchor, write, 'cell');
       report.cellsWritten++;
       report.rowsWritten++;
@@ -12040,7 +12142,7 @@ function applyPlannedRowShadings(
         }
         const cellAnchor = cellAnchorOf(tableAnchor, row, column);
         const write: AppearanceWrite = { shading };
-        record({ cellAnchor, write: restoreWriteFor(before, write) });
+        record(appearanceRestoreFor(editor, cellAnchor, before, write));
         writeAppearance(editor, cellAnchor, write, 'cell');
         report.cellsWritten++;
         rowTouched = true;
@@ -12102,7 +12204,7 @@ function applyCopiedTableAppearance(
   source: TableAppearance,
   targetAnchor: string,
   resolvedTarget?: TableAppearance,
-  options: { banding?: TableBanding } = {}
+  options: { banding?: TableBanding; materializeNoFill?: boolean } = {}
 ): AppearanceWriteOutcome & { postWriteSfdt?: any } {
   const target = resolvedTarget ?? liveTableAppearance(editor, targetAnchor);
   const banding = options.banding ?? detectTableBanding(source);
@@ -12255,6 +12357,20 @@ function applyCopiedTableAppearance(
             write: { borders: borderWritesFor(before.borders) }
           });
         if (appearanceEquals(desiredCell, beforeCell)) {
+          if (
+            options.materializeNoFill &&
+            banding &&
+            row >= headerRows &&
+            desiredCell?.shading === undefined &&
+            beforeCell?.shading === undefined
+          ) {
+            const write: AppearanceWrite = { shading: null };
+            record(appearanceRestoreFor(editor, cellAnchor, before, write));
+            writeAppearance(editor, cellAnchor, write, 'cell');
+            report.cellsWritten++;
+            rowTouched = true;
+            continue;
+          }
           if (borderChanged) {
             report.cellsWritten++;
             rowTouched = true;
@@ -12268,7 +12384,7 @@ function applyCopiedTableAppearance(
           verticalAlignment: true,
           borders: !uniformAllBorder
         });
-        record({ cellAnchor, write: restoreWriteFor(before, write) });
+        record(appearanceRestoreFor(editor, cellAnchor, before, write));
         writeAppearance(editor, cellAnchor, write, 'cell');
         report.cellsWritten++;
         rowTouched = true;
@@ -13763,6 +13879,94 @@ function bindingRuntime(editor: LiveEditor, sfdt: any): BindingRuntime | null {
     });
   }
   return { surface, index, occurrencesByTag, tablesByAnchor };
+}
+
+function editTableRoot(
+  op: EditOp,
+  creators: Map<string, EditOp>,
+  seen: Set<string> = new Set()
+): string | null {
+  const stable = stableResourceAnchor(op.anchor);
+  if (stable) {
+    if (seen.has(stable.ref)) return null;
+    seen.add(stable.ref);
+    const creator = creators.get(stable.ref);
+    return creator ? editTableRoot(creator, creators, seen) : null;
+  }
+  return normalizeTableAnchor(op.anchor);
+}
+
+function plannedPlainTablePromotions(
+  sfdt: any,
+  edits: EditOp[]
+): Map<string, PlainTablePromotion> {
+  const creators = new Map<string, EditOp>();
+  for (const op of edits) {
+    const ref = stableResourceRef(op?.resultRef);
+    if (ref) creators.set(ref, op);
+  }
+  const index = scanBindings(sfdt);
+  const boundAnchors = new Set<string>();
+  for (const table of index.tables.values()) {
+    const anchor = boundTableAnchor(sfdt, table);
+    if (anchor) boundAnchors.add(anchor);
+  }
+  const roots = new Set<string>();
+  for (const op of edits) {
+    if (op?.op !== 'create_binding') continue;
+    const anchor = editTableRoot(op, creators);
+    if (anchor && !boundAnchors.has(anchor) && tableBlockAt(sfdt, anchor))
+      roots.add(anchor);
+  }
+  const used = new Set(index.tables.keys());
+  const promotions = new Map<string, PlainTablePromotion>();
+  for (const anchor of roots) {
+    const base = `table_${anchor.replace(/[^A-Za-z0-9_]/g, '_')}`;
+    let tableId = base;
+    let suffix = 2;
+    while (used.has(tableId)) tableId = `${base}_${suffix++}`;
+    used.add(tableId);
+    promotions.set(anchor, { anchor, tableId });
+  }
+  return promotions;
+}
+
+function ensurePlainTablePromotion(
+  state: EngineMutationState,
+  promotion: PlainTablePromotion
+): EngineMutationState {
+  if (state.index.tables.has(promotion.tableId)) return state;
+  const container = tableContainerAt(state.sfdt, promotion.anchor);
+  if (!container)
+    throw new OpError(
+      'plain_table_promotion_lost',
+      `The table at "${promotion.anchor}" moved before its live bindings could be created. Nothing was written.`
+    );
+  const replacement = wrapPlainTableContainer(
+    container.block,
+    promotion.tableId
+  );
+  if (!replacement)
+    throw new OpError(
+      'plain_table_promotion_lost',
+      `The block at "${promotion.anchor}" no longer contains a table. Nothing was written.`
+    );
+  const next = setAt(
+    state.sfdt,
+    ['sections', container.sectionIndex, 'blocks'],
+    [
+      ...container.blocks.slice(0, container.blockIndex),
+      replacement,
+      ...container.blocks.slice(container.blockIndex + 1)
+    ]
+  );
+  const nextIndex = scanBindings(next);
+  if (!nextIndex.tables.has(promotion.tableId))
+    throw new OpError(
+      'plain_table_promotion_unreadable',
+      `The promoted table "${promotion.tableId}" was not readable by the binding engine. Nothing was written.`
+    );
+  return { sfdt: next, index: nextIndex, refs: state.refs };
 }
 
 function reviewResourceKeys(
@@ -16164,7 +16368,8 @@ function boundInsertColumnPlan(
   index: number,
   op: EditOp,
   block: FlatBlock,
-  tableRoute: BindingTableRoute
+  tableRoute: BindingTableRoute,
+  tableCreatedInChangeSet = false
 ): EngineMutationPlan {
   const addressed = columnIndexFromAnchor(block.anchor);
   if (addressed == null)
@@ -16215,11 +16420,12 @@ function boundInsertColumnPlan(
           getBlocks(markerBlock).find((candidate: any) => getRows(candidate))
         )
       );
-      rebuildPendingInsertedRowsForPaste(
-        state.sfdt,
-        firstTableBlockIn(clone),
-        liveTable
-      );
+      if (!tableCreatedInChangeSet)
+        rebuildPendingInsertedRowsForPaste(
+          state.sfdt,
+          firstTableBlockIn(clone),
+          liveTable
+        );
       insertColumnIntoTable(firstTableBlockIn(clone), columnIndex);
       const withReplacement = spliceDuplicateAfter(
         state.sfdt,
@@ -16457,7 +16663,8 @@ function createBindingInCell(
   op: EditOp,
   table: TableEntry,
   rowIndex: number,
-  columnIndex: number
+  columnIndex: number,
+  promotedRowId?: string | null
 ): any {
   const kind = op.kind === 'input' ? 'input' : 'formula';
   const name = String(op.name ?? '').trim();
@@ -16474,7 +16681,8 @@ function createBindingInCell(
     (entry) =>
       entry.path && Number(entry.path[entry.path.length - 1]) === rowIndex
   );
-  if (op.global === true && row?.rowId)
+  const rowId = row?.rowId ?? promotedRowId ?? null;
+  if (op.global === true && rowId)
     throw new OpError(
       'global_row_binding_invalid',
       'A row-scoped binding cannot be global. Nothing was written.'
@@ -16502,7 +16710,7 @@ function createBindingInCell(
           isEditable: false,
           isDeletable: false,
           isGlobal: op.global === true,
-          options: row?.rowId ? { row: row.rowId } : {}
+          options: rowId ? { row: rowId } : {}
         }
       : {
           version: 2,
@@ -16512,7 +16720,7 @@ function createBindingInCell(
           isEditable: true,
           isDeletable: true,
           isGlobal: op.global === true,
-          options: row?.rowId ? { row: row.rowId } : {}
+          options: rowId ? { row: rowId } : {}
         };
   const templateOccurrence = row
     ? [...row.bindings.values()][0]
@@ -16555,6 +16763,92 @@ function createBindingInCell(
     },
     inlines: [{ text, ...(characterFormat ? { characterFormat } : {}) }]
   });
+}
+
+function promotedPlainTablePlan(
+  index: number,
+  op: EditOp,
+  block: FlatBlock,
+  promotion: PlainTablePromotion
+): EngineMutationPlan {
+  return {
+    route: 'engine',
+    index,
+    op,
+    anchor: block.anchor,
+    execute(state) {
+      const promoted = ensurePlainTablePromotion(state, promotion);
+      const table = promoted.index.tables.get(promotion.tableId);
+      if (!table)
+        throw new OpError(
+          'plain_table_promotion_lost',
+          `The promoted table "${promotion.tableId}" is no longer present. Nothing was written.`
+        );
+      const route: BindingTableRoute = {
+        anchor: promotion.anchor,
+        tableId: promotion.tableId,
+        table
+      };
+      if (op.op === 'insert_column')
+        return boundInsertColumnPlan(index, op, block, route, true).execute(
+          promoted
+        );
+      if (op.op === 'delete_column')
+        return boundDeleteColumnPlan(index, op, block, route).execute(promoted);
+      if (op.op !== 'create_binding')
+        throw new OpError(
+          'plain_table_promotion_op_unsupported',
+          `${op.op} cannot initialize live bindings on a plain table. Nothing was written.`
+        );
+      const rowIndex = rowIndexFromAnchor(block.anchor);
+      const columnIndex = columnIndexFromAnchor(block.anchor);
+      if (rowIndex == null || columnIndex == null)
+        throw new OpError(
+          'not_a_cell_anchor',
+          'create_binding in a table needs a cell anchor. Nothing was written.'
+        );
+      const expression = String(op.expression ?? '');
+      const aggregate =
+        op.kind === 'formula' &&
+        (/\btable\./.test(expression) ||
+          new RegExp(
+            `\\b${promotion.tableId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.`
+          ).test(expression));
+      const rowId =
+        op.global === true || aggregate
+          ? null
+          : `${promotion.tableId}_r${rowIndex}`;
+      const liveTableAnchor = boundTableAnchor(promoted.sfdt, table);
+      const liveCellAnchor = liveTableAnchor
+        ? `${liveTableAnchor};${rowIndex};${columnIndex};0`
+        : block.anchor;
+      const current = flattenSfdt(promoted.sfdt).find(
+        (candidate) => candidate.anchor === liveCellAnchor
+      );
+      const bindingOp =
+        op.kind === 'input' && op.initial === undefined
+          ? { ...op, initial: current?.text ?? block.text }
+          : op;
+      const next = createBindingInCell(
+        promoted,
+        bindingOp,
+        table,
+        rowIndex,
+        columnIndex,
+        rowId
+      );
+      return {
+        sfdt: next,
+        anchor: liveCellAnchor,
+        details: [
+          `promoted plain table ${promotion.anchor} as ${promotion.tableId}`,
+          `created ${String(op.kind ?? 'input')} binding ${String(
+            op.name ?? ''
+          )}`
+        ]
+      };
+    }
+  };
 }
 
 function stableTableReferencePlan(
@@ -17768,10 +18062,10 @@ function documentTableBanding(
 }
 
 /**
- * Resolve a two-colour document convention for a table with only one data row.
- * The recurring-section read already establishes document table banding with
- * `detectTableBanding`; row insertion reuses the same evidence across sibling
- * tables when its target is too short to prove a stripe by itself.
+ * Resolve a two-colour document convention for a table whose own rows do not
+ * prove a stripe. The recurring-section read already establishes document
+ * table banding with `detectTableBanding`; row insertion reuses that evidence
+ * when every existing target row agrees with the candidate cycle.
  *
  * The target's observed data fill fixes the cycle phase, and the inserted row
  * takes the OTHER member. If no sibling proves an alternating pair containing
@@ -17788,28 +18082,34 @@ function documentInsertBanding(
       (banding) =>
         banding.period === 2 &&
         banding.cycle[0] !== banding.cycle[1] &&
-        source.rows.length === banding.headerRows + 1
+        inferHeaderRows(source) === banding.headerRows &&
+        source.rows.length > banding.headerRows
     );
   if (!candidates.length) return null;
 
   const shadings = rowShadings(source);
-  const matching = candidates.filter((banding) =>
-    banding.cycle.includes(shadings[banding.headerRows] ?? null)
-  );
-  const selected = modal(matching, (banding) =>
-    JSON.stringify(
-      [...banding.cycle].sort((left, right) =>
-        String(left).localeCompare(String(right))
-      )
+  const phased = candidates.flatMap((banding) => {
+    const first = shadings[banding.headerRows];
+    if (first === undefined) return [];
+    const phase = banding.cycle.indexOf(first);
+    if (phase < 0) return [];
+    const cycle = [
+      ...banding.cycle.slice(phase),
+      ...banding.cycle.slice(0, phase)
+    ];
+    const candidate = { ...banding, cycle };
+    const body = shadings.slice(banding.headerRows);
+    return body.every(
+      (shading, index) =>
+        shading !== undefined && shading === cycle[index % cycle.length]
     )
+      ? [candidate]
+      : [];
+  });
+  const selected = modal(phased, (banding) =>
+    JSON.stringify([banding.headerRows, ...banding.cycle])
   )?.value;
-  if (!selected) return null;
-
-  const first = shadings[selected.headerRows];
-  if (first === undefined) return null;
-  const other = selected.cycle.find((shading) => shading !== first);
-  if (other === undefined) return null;
-  return { headerRows: selected.headerRows, period: 2, cycle: [first, other] };
+  return selected ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -18984,7 +19284,7 @@ function applyInsertInheritance(
             appearance.source,
             appearance.targetTableAnchor,
             undefined,
-            { banding: appearance.banding }
+            { banding: appearance.banding, materializeNoFill: true }
           );
           appearanceOutcomes.push(outcome);
           outcome.restores.forEach(record);
@@ -22152,6 +22452,12 @@ function applyDocumentEditsMeasured(
     acceptStream = acceptProjectionStream(sfdt);
   };
   refresh();
+  const stableRefCreators = new Map<string, EditOp>();
+  for (const edit of edits) {
+    const ref = stableResourceRef(edit?.resultRef);
+    if (ref) stableRefCreators.set(ref, edit);
+  }
+  const plainTablePromotions = plannedPlainTablePromotions(liveSfdt, edits);
   const reviewBundle = reviewBundleForResources(
     editor,
     changeSetId,
@@ -22737,14 +23043,23 @@ function applyDocumentEditsMeasured(
       return;
     }
     try {
-      const routed = planBindingRoutedOp(
-        editor,
-        liveSfdt,
-        index,
-        op,
-        target,
-        createdBoundRows
+      const promotion = plainTablePromotions.get(
+        editTableRoot(op, stableRefCreators) ?? ''
       );
+      const routed =
+        promotion &&
+        target &&
+        !isLiveStoryTarget(target) &&
+        ['create_binding', 'insert_column', 'delete_column'].includes(op.op)
+          ? promotedPlainTablePlan(index, op, target, promotion)
+          : planBindingRoutedOp(
+              editor,
+              liveSfdt,
+              index,
+              op,
+              target,
+              createdBoundRows
+            );
       if (routed) {
         setRoute(index, routed.route);
         const resultRef = stableResourceRef(op.resultRef);
@@ -23578,13 +23893,6 @@ function applyDocumentEditsMeasured(
           let applyingPlan: EngineMutationPlan | undefined;
           let appliedEngineGroup: string | undefined;
           try {
-            // Provenance makes the command layer author the review records in
-            // SFDT. Native tracking must be off before that SFDT is opened;
-            // the outer finally also leaves it off for subsequent user input.
-            disableUserTrackChanges(
-              editor,
-              wrappingDocumentEditorContainer(editor)
-            );
             const surface = bindingCommandSurfaceFor(editor);
             if (!surface)
               throw new OpError(
@@ -23669,16 +23977,83 @@ function applyDocumentEditsMeasured(
                 ];
             }
             const revisionsBeforeEngine = snapshotRevisions(editor);
-            const engineResult = surface.runCommands(
-              diffBindingCommands(beforeCommands, state.sfdt),
-              {
-                provenance: {
-                  author: changeSetAuthor(changeSetId),
-                  changeSetId,
-                  group: opGroupId(enginePlans[0].op, changeSetId)
+            let engineResult;
+            if (plainTablePromotions.size) {
+              const calculated = applyRules(state.sfdt);
+              stampRevisionGroup(
+                editor,
+                changeSetId,
+                enginePlans[0].op,
+                reviewBundle
+              );
+              appliedEngineGroup = opGroupId(enginePlans[0].op, changeSetId);
+              try {
+                for (const promotion of plainTablePromotions.values()) {
+                  const table = calculated.index.tables.get(promotion.tableId);
+                  if (!table)
+                    throw new OpError(
+                      'plain_table_promotion_lost',
+                      `The calculated table "${promotion.tableId}" is no longer present. Nothing was written.`
+                    );
+                  const marker = getAt(calculated.sfdt, table.markerPath);
+                  const promoted = promotePlainTableInEditor(
+                    editor,
+                    promotion,
+                    blocks,
+                    marker
+                  );
+                  promotion.anchor = promoted.anchor;
+                  refresh(promoted.postWriteSfdt);
+                  recordTableFootprints([], promoted.paste);
                 }
+              } finally {
+                rememberGroupRevisions(
+                  enginePlans[0].op,
+                  revisionsBeforeEngine
+                );
               }
-            );
+              disableUserTrackChanges(
+                editor,
+                wrappingDocumentEditorContainer(editor)
+              );
+              surface.flush();
+              const promotedSfdt = serializeSfdt(editor);
+              const remainingCommands = diffBindingCommands(
+                promotedSfdt,
+                calculated.sfdt
+              );
+              engineResult = remainingCommands.length
+                ? surface.runCommands(remainingCommands, {
+                    provenance: {
+                      author: changeSetAuthor(changeSetId),
+                      changeSetId,
+                      group: opGroupId(enginePlans[0].op, changeSetId)
+                    }
+                  })
+                : {
+                    ...calculated,
+                    sfdt: promotedSfdt,
+                    index: scanBindings(promotedSfdt)
+                  };
+            } else {
+              // Provenance makes the command layer author the review records in
+              // SFDT. Native tracking must be off before that SFDT is opened;
+              // the outer finally also leaves it off for subsequent user input.
+              disableUserTrackChanges(
+                editor,
+                wrappingDocumentEditorContainer(editor)
+              );
+              engineResult = surface.runCommands(
+                diffBindingCommands(beforeCommands, state.sfdt),
+                {
+                  provenance: {
+                    author: changeSetAuthor(changeSetId),
+                    changeSetId,
+                    group: opGroupId(enginePlans[0].op, changeSetId)
+                  }
+                }
+              );
+            }
             refresh(engineResult.sfdt);
             appliedEngineGroup = opGroupId(enginePlans[0].op, changeSetId);
             rememberGroupRevisions(enginePlans[0].op, revisionsBeforeEngine);
@@ -23757,10 +24132,16 @@ function applyDocumentEditsMeasured(
             }
             for (const plan of enginePlans) {
               const outcome = outcomes.get(plan.index);
+              const promotedTableWrite = plainTablePromotions.has(
+                editTableRoot(plan.op, stableRefCreators) ?? ''
+              );
               results[plan.index] = {
                 ok: true,
                 op: plan.op.op,
                 route: plan.resultRoute ?? 'engine',
+                ...(promotedTableWrite
+                  ? { mechanism: 'sfdt_via_syncfusion_editor' as const }
+                  : {}),
                 ...(outcome?.anchor ?? plan.anchor ?? plan.op.anchor
                   ? { anchor: outcome?.anchor ?? plan.anchor ?? plan.op.anchor }
                   : {}),

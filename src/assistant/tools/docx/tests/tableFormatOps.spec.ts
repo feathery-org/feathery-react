@@ -1950,9 +1950,9 @@ describe('inserting and deleting rows keeps the banding correct', () => {
         HEADER_FILL,
         null,
         BAND_FILL,
-        BAND_FILL,
         null,
-        BAND_FILL
+        null,
+        null
       ]);
     } finally {
       destroyEditor(ed);

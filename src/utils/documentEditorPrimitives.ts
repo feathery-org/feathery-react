@@ -150,6 +150,8 @@ export interface AppearanceRestore {
    */
   seq?: number;
   write?: AppearanceWrite;
+  /** Restore the cell's original unstated shading instead of serializing defaults. */
+  clearShading?: true;
   rowIsHeader?: boolean;
   tableBorders?: BorderWrite[];
   /** Row-level border topology captured before a sibling-format copy. */
@@ -655,6 +657,8 @@ function parsePersistedAppearanceRestores(
       return undefined;
     if (raw.rowIsHeader !== undefined && typeof raw.rowIsHeader !== 'boolean')
       return undefined;
+    if (raw.clearShading !== undefined && raw.clearShading !== true)
+      return undefined;
     const write =
       raw.write === undefined
         ? undefined
@@ -683,6 +687,7 @@ function parsePersistedAppearanceRestores(
     if (raw.tableProperties !== undefined && !tableProperties) return undefined;
     if (
       raw.rowIsHeader === undefined &&
+      raw.clearShading !== true &&
       !write &&
       !tableBorders &&
       !rowBorders &&
@@ -701,6 +706,7 @@ function parsePersistedAppearanceRestores(
       ...(typeof raw.rowIsHeader === 'boolean'
         ? { rowIsHeader: raw.rowIsHeader }
         : {}),
+      ...(raw.clearShading === true ? { clearShading: true as const } : {}),
       ...(write ? { write } : {}),
       ...(tableBorders ? { tableBorders } : {}),
       ...(rowBorders ? { rowBorders } : {}),
@@ -2729,6 +2735,16 @@ const cellParagraphAt = (editor: LiveEditor, cellAnchor: string): unknown => {
   }
 };
 
+export const clearCellShading = (
+  editor: LiveEditor,
+  cellAnchor: string
+): void => {
+  selectForAppearance(editor, cellAnchor, 'cell');
+  const shading = (editor as any).selection?.start?.paragraph?.associatedCell
+    ?.cellFormat?.shading;
+  if (typeof shading?.destroy === 'function') shading.destroy();
+};
+
 /**
  * Bind every restore to its live cell, while the anchors it names still hold.
  * Called before the first member of a group resolves, which is the last moment
@@ -2825,6 +2841,7 @@ const replayAppearanceRestores = (
         selectForAppearance(editor, anchor, 'cell');
       }
     }
+    if (restore.clearShading) clearCellShading(editor, anchor);
   }
 };
 
