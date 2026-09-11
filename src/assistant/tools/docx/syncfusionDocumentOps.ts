@@ -16795,6 +16795,8 @@ function promotedPlainTablePlan(
         );
       if (op.op === 'delete_column')
         return boundDeleteColumnPlan(index, op, block, route).execute(promoted);
+      if (op.op === 'insert_row' && op.shape === 'blank')
+        return boundBlankRowPlan(index, op, block, route).execute(promoted);
       if (op.op !== 'create_binding')
         throw new OpError(
           'plain_table_promotion_op_unsupported',
@@ -23050,7 +23052,8 @@ function applyDocumentEditsMeasured(
         promotion &&
         target &&
         !isLiveStoryTarget(target) &&
-        ['create_binding', 'insert_column', 'delete_column'].includes(op.op)
+        (['create_binding', 'insert_column', 'delete_column'].includes(op.op) ||
+          (op.op === 'insert_row' && op.shape === 'blank'))
           ? promotedPlainTablePlan(index, op, target, promotion)
           : planBindingRoutedOp(
               editor,

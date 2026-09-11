@@ -26,6 +26,18 @@ function plainCostsFixture(): any {
   return sfdt;
 }
 
+function plainThreeColumnCostsFixture(): any {
+  const sfdt = plainCostsFixture();
+  const table = sfdt.sections[0].blocks.find((block: any) =>
+    Array.isArray(block?.rows)
+  );
+  table.rows = table.rows.slice(0, 3);
+  for (const row of table.rows) row.cells = row.cells.slice(0, 3);
+  table.grid = table.grid.slice(0, 3);
+  table.columnCount = 3;
+  return sfdt;
+}
+
 const edits = (anchor: string) => [
   {
     op: 'insert_column',
@@ -302,6 +314,108 @@ describe('live value-column primitives', () => {
       ])
     );
 
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
+  it('targets a new subtotal row after promoting and extending a plain table', async () => {
+    await session.call('open', JSON.stringify(plainThreeColumnCostsFixture()));
+    const baseline = await session.call<string>('serialize');
+    const source = await session.call<string>('tableAnchorContaining', 'Item');
+    const operations = [
+      ...[1, 2].flatMap((row) => [
+        {
+          op: 'create_binding',
+          group: 'g01-add-value-column',
+          anchor: `${source};${row};0;0`,
+          kind: 'input',
+          name: 'item',
+          valueType: 'text'
+        },
+        {
+          op: 'create_binding',
+          group: 'g01-add-value-column',
+          anchor: `${source};${row};1;0`,
+          kind: 'input',
+          name: 'quantity',
+          valueType: 'integer'
+        },
+        {
+          op: 'create_binding',
+          group: 'g01-add-value-column',
+          anchor: `${source};${row};2;0`,
+          kind: 'input',
+          name: 'price',
+          valueType: 'currency:USD:0'
+        }
+      ]),
+      {
+        op: 'insert_column',
+        group: 'g01-add-value-column',
+        anchor: `${source};0;2;0`,
+        position: 'after',
+        resultRef: '@value_col'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-value-column',
+        anchor: '@value_col;0;0',
+        text: 'Value'
+      },
+      ...[1, 2].map((row) => ({
+        op: 'create_binding',
+        group: 'g01-add-value-column',
+        anchor: `@value_col;${row};0`,
+        kind: 'formula',
+        name: 'value',
+        valueType: 'currency:USD:0',
+        expression: 'mul(quantity,price)'
+      })),
+      {
+        op: 'insert_row',
+        group: 'g01-add-value-column',
+        anchor: `${source};2;0;0`,
+        shape: 'blank',
+        resultRef: '@subtotal'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-value-column',
+        anchor: '@subtotal;0;0',
+        text: 'Subtotal'
+      },
+      {
+        op: 'create_binding',
+        group: 'g01-add-value-column',
+        anchor: '@subtotal;3;0',
+        kind: 'formula',
+        name: 'subtotal_value',
+        valueType: 'currency:USD:0',
+        expression: 'sum(table.value)'
+      }
+    ];
+
+    const result = await session.call<any>(
+      'applyEdits',
+      operations,
+      'promote-extend-and-subtotal'
+    );
+
+    if (result.outcomes.some((outcome: string) => outcome !== 'ok'))
+      throw new Error(JSON.stringify(result));
+    expect(result.outcomes).toEqual(operations.map(() => 'ok'));
+    expect(result.groups).toBe(1);
+    const promoted = (await session.call<string[]>('tableIds')).find((id) =>
+      id.startsWith('table_')
+    );
+    expect(await session.call<string[]>('tableRowTexts', promoted)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Value'),
+        expect.stringContaining('$1,800'),
+        expect.stringContaining('$6,000'),
+        expect.stringContaining('Subtotal$7,800')
+      ])
+    );
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(baseline);
   }, 120000);
