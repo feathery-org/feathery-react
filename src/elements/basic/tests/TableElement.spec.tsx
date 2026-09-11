@@ -209,7 +209,8 @@ describe('TableElement targetable class names', () => {
   // exactly as it renders in a live form.
   async function renderResponsive(
     styles: Record<string, any>,
-    mobileStyles: Record<string, any>
+    mobileStyles: Record<string, any>,
+    propsOverride: Record<string, any> = {}
   ) {
     const TableElement = (await import('../TableElement')).default;
     const responsiveStyles = new ResponsiveStyles(
@@ -221,7 +222,12 @@ describe('TableElement targetable class names', () => {
       <TableElement
         element={{
           id: 'tbl',
-          properties: { columns: baseColumns, actions: [], pagination: 0 },
+          properties: {
+            columns: baseColumns,
+            actions: [],
+            pagination: 0,
+            ...propsOverride
+          },
           styles,
           mobile_styles: mobileStyles
         }}
@@ -264,6 +270,70 @@ describe('TableElement targetable class names', () => {
     const table = responsiveStyles.getTarget('table');
     expect(table.tableLayout).toBe('auto');
     expect(table[MOBILE_MEDIA].tableLayout).toBe('fixed');
+  });
+
+  it('does not pin the action column in the viewport that is still auto', async () => {
+    // Desktop auto + mobile equal still renders the colgroup (the DOM can't be
+    // media-queried), so the action column's fixed width has to be scoped to
+    // mobile or it constrains the auto desktop layout too.
+    const { container } = await renderResponsive(
+      { column_sizing: 'auto' },
+      { column_sizing: 'equal' },
+      { actions: [{ type: 'button', label: 'Go' }] }
+    );
+
+    const cols = container.querySelectorAll('colgroup col');
+    const actionCol = cols[cols.length - 1] as HTMLElement;
+    const rules = getComputedStyle(actionCol);
+    expect(rules.width).toBe('auto');
+  });
+
+  it('drops fixed layout when row data turns the table transposed', async () => {
+    // isTransposed tracks the row count, so it flips after the element has
+    // already rendered. The style target is memoized per element, so a stale
+    // 'fixed' would survive onto the transposed table.
+    const TableElement = (await import('../TableElement')).default;
+    const styles = { column_sizing: 'equal' };
+    const responsiveStyles = new ResponsiveStyles(
+      { styles, mobile_styles: {} },
+      ['container', 'table'],
+      true
+    );
+    const element = (transpose: boolean) => ({
+      id: 'tbl',
+      properties: {
+        columns: baseColumns,
+        actions: [],
+        pagination: 0,
+        transpose
+      },
+      styles,
+      mobile_styles: {}
+    });
+
+    const { rerender, container } = render(
+      <TableElement
+        element={element(false)}
+        responsiveStyles={responsiveStyles}
+        editMode
+      />
+    );
+    await waitFor(() => {
+      expect(container.querySelector(`.${TABLE_CLASS.table}`)).toBeTruthy();
+    });
+    expect(responsiveStyles.getTarget('table').tableLayout).toBe('fixed');
+
+    rerender(
+      <TableElement
+        element={element(true)}
+        responsiveStyles={responsiveStyles}
+        editMode
+      />
+    );
+    await waitFor(() => {
+      expect(container.querySelector('colgroup')).toBeFalsy();
+    });
+    expect(responsiveStyles.getTarget('table').tableLayout).toBe('auto');
   });
 
   it('applies the empty state class when there is no data', async () => {

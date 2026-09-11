@@ -678,17 +678,34 @@ function TableElement({
   // (`styles`) and mobile (`mobile_styles`) can differ via a media query; never
   // applied to transposed tables. The colgroup keeps the action/delete columns
   // at fixed widths while data columns stay unsized, so only the data columns
-  // split. It's rendered whenever either viewport is equal, since the DOM
-  // structure can't itself be media-queried.
-  if (!isTransposed) {
-    styles.apply('table', 'column_sizing', (columnSizing: any) => ({
-      tableLayout: columnSizing === 'equal' ? 'fixed' : 'auto'
-    }));
-  }
-  const useFixedColumns =
-    !isTransposed &&
-    (element.styles?.column_sizing === 'equal' ||
-      element.mobile_styles?.column_sizing === 'equal');
+  // split. The colgroup renders whenever either viewport is equal, since DOM
+  // structure can't be media-queried; its widths are, so that the viewport
+  // still on auto keeps sizing those columns to their content.
+  //
+  // `isTransposed` tracks the row count, so it flips as data loads. The apply
+  // stays unconditional to overwrite the memoized target — guarding it would
+  // strand a stale `fixed` on a table that has since become transposed.
+  styles.apply('table', 'column_sizing', (columnSizing: any) => ({
+    tableLayout: !isTransposed && columnSizing === 'equal' ? 'fixed' : 'auto'
+  }));
+  const desktopEqual = element.styles?.column_sizing === 'equal';
+  const mobileSizing = element.mobile_styles?.column_sizing;
+  // An absent mobile override inherits desktop, matching `apply`.
+  const mobileEqual =
+    mobileSizing === undefined ? desktopEqual : mobileSizing === 'equal';
+  const useFixedColumns = !isTransposed && (desktopEqual || mobileEqual);
+  // Pin the action/delete columns only in the viewport that is actually fixed;
+  // `auto` elsewhere so an auto-layout viewport still sizes them to content.
+  const utilityColStyle = (width: string) => ({
+    width: desktopEqual ? width : 'auto',
+    ...(styles.handleMobile && mobileSizing !== undefined
+      ? {
+          [styles.mobileBreakpointKey]: {
+            width: mobileEqual ? width : 'auto'
+          }
+        }
+      : {})
+  });
 
   return (
     <div
@@ -782,9 +799,9 @@ function TableElement({
                 {columns.map((col: any) => (
                   <col key={col.field_key} />
                 ))}
-                {actions.length > 0 && <col style={{ width: '80px' }} />}
+                {actions.length > 0 && <col css={utilityColStyle('80px')} />}
                 {showStandaloneDeleteColumn && (
-                  <col style={{ width: '40px' }} />
+                  <col css={utilityColStyle('40px')} />
                 )}
               </colgroup>
             )}
