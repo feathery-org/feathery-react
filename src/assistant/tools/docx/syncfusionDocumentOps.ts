@@ -1404,6 +1404,23 @@ function structuralRevisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
   return found;
 }
 
+function pendingDeletedTableRow(
+  sfdt: any,
+  block: FlatBlock
+): { tableAnchor: string; rowIndex: number } | null {
+  if (block.kind !== 'table_cell') return null;
+  const parts = block.anchor.split(';');
+  if (parts.length < 5) return null;
+  const rowIndex = Number(parts[2]);
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) return null;
+  const tableAnchor = parts.slice(0, 2).join(';');
+  const row = getRows(tableBlockAt(sfdt, tableAnchor))?.[rowIndex];
+  if (!row) return null;
+  return anyRevisionIdIn(rowRevisionIds(row), deletedRevisionIds(sfdt))
+    ? { tableAnchor, rowIndex }
+    : null;
+}
+
 /** The revisions that already existed when this change set began. */
 const PRE_EXISTING_REVISIONS_KEY = '__fmPreExistingRevisionIds';
 
@@ -22340,6 +22357,26 @@ function applyDocumentEditsMeasured(
         .some(
           (earlier) => earlier?.op && PARAGRAPH_CREATING_OPS.has(earlier.op)
         );
+    if (name === 'set_cell_text' && target && !isLiveStoryTarget(target)) {
+      const deletedRow = pendingDeletedTableRow(liveSfdt, target);
+      if (deletedRow) {
+        setRoute(index, 'engine');
+        results[index] = {
+          ok: false,
+          op: name,
+          anchor: op.anchor,
+          error: 'target_row_pending_deletion',
+          message:
+            `set_cell_text targets row ${deletedRow.rowIndex} in table "${deletedRow.tableAnchor}", but that row is pending deletion. ` +
+            'Use insert_row to create a new row, then target the row it created. Nothing was written.',
+          details: [
+            `table: ${deletedRow.tableAnchor}`,
+            `row: ${deletedRow.rowIndex}`
+          ]
+        };
+        return;
+      }
+    }
     // A formatting target created by this batch has no pre-write identity yet,
     // so a zero-match attempt remains deferred to phase 3. If the expected
     // content already exists exactly once, though, this is ordinary anchor

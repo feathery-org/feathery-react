@@ -26,7 +26,12 @@ import {
   Selection,
   SfdtExport
 } from '@syncfusion/ej2-documenteditor';
-import { applyDocumentEdits, flattenSfdt, LiveEditor } from '../syncfusionDocumentOps';
+import {
+  applyDocumentEdits,
+  ASSISTANT_DOCUMENT_AUTHOR,
+  flattenSfdt,
+  LiveEditor
+} from '../syncfusionDocumentOps';
 
 DocumentEditor.Inject(Editor, Selection, SfdtExport, EditorHistory, ImageResizer, Search);
 
@@ -364,6 +369,83 @@ describe('foreign pending revisions are judged by RANGE, not by block', () => {
       );
       expect(result.results[0].ok).toBe(false);
       expect(result.results[0].error).toBe('pending_revision_in_range');
+      expect(editor.serialize()).toBe(before);
+    });
+
+    it('refuses a cell write into an assistant-deleted row', () => {
+      const host = document.createElement('div');
+      host.style.width = '900px';
+      host.style.height = '700px';
+      document.body.appendChild(host);
+      editor = new DocumentEditor({
+        isReadOnly: false,
+        enableEditor: true,
+        enableSelection: true,
+        enableSfdtExport: true,
+        enableEditorHistory: true,
+        enableSearch: true,
+        documentEditorSettings: { optimizeSfdt: false }
+      });
+      editor.appendTo(host);
+      const id = 'assistant-row-deletion-1';
+      editor.open(
+        JSON.stringify({
+          sections: [
+            {
+              sectionFormat: { pageWidth: 612, pageHeight: 792 },
+              blocks: [
+                {
+                  rows: [
+                    {
+                      rowFormat: { revisionIds: [id] },
+                      cells: [
+                        {
+                          cellFormat: { columnSpan: 1, rowSpan: 1 },
+                          blocks: [
+                            {
+                              paragraphFormat: {},
+                              characterFormat: {},
+                              inlines: [
+                                { characterFormat: {}, text: 'Stock' }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              headersFooters: {}
+            }
+          ],
+          revisions: [
+            {
+              author: ASSISTANT_DOCUMENT_AUTHOR,
+              date: '2020-01-01T00:00:00Z',
+              revisionType: 'Deletion',
+              revisionId: id
+            }
+          ]
+        })
+      );
+      const live = editor as unknown as LiveEditor;
+      const before = editor.serialize();
+      const result = apply(
+        live,
+        [
+          {
+            op: 'set_cell_text',
+            anchor: '0;0;0;0;0',
+            expect: '',
+            text: 'Cyber',
+            group: 'g'
+          }
+        ],
+        'assistant-row-deletion'
+      );
+      expect(result.results[0].ok).toBe(false);
+      expect(result.results[0].error).toBe('target_row_pending_deletion');
       expect(editor.serialize()).toBe(before);
     });
   });

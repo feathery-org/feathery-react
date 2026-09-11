@@ -350,6 +350,47 @@ describe('bound row operations while a source split is still pending', () => {
     expect(formulas.grand_total).toBe('$82,782.62');
   }, 120000);
 
+  it('refuses cell writes into a row the pending split deleted', async () => {
+    const source = await openWithPendingSplit();
+    const pending = await session.call<string>('serialize');
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'set_cell_text',
+          group: 'g02-bad-row-fill',
+          anchor: `${source};3;0;0`,
+          expect: '',
+          text: 'Cyber'
+        },
+        {
+          op: 'set_cell_text',
+          group: 'g02-bad-row-fill',
+          anchor: `${source};3;1;0`,
+          expect: '',
+          text: '2',
+          literal: true
+        },
+        {
+          op: 'set_cell_text',
+          group: 'g02-bad-row-fill',
+          anchor: `${source};3;2;0`,
+          expect: '',
+          text: '500',
+          literal: true
+        }
+      ],
+      'pending-source-bad-fill'
+    );
+    expect(result.outcomes[0]).toBe('target_row_pending_deletion');
+    expect(result.outcomes).toEqual([
+      'target_row_pending_deletion',
+      'target_row_pending_deletion',
+      'target_row_pending_deletion'
+    ]);
+    expect(await session.call<string>('serialize')).toBe(pending);
+  }, 120000);
+
   it('rejects the added-row family back to the exact original', async () => {
     await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
     const original = await session.call<string>('serialize');
