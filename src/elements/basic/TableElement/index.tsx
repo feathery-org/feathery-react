@@ -55,9 +55,11 @@ import {
   deleteIconStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
+import { applyTableAppearance, tableVariable } from './appearance';
 
 function applyTableStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('table', 'thead', 'tbody', 'th', 'td', 'tr');
+  applyTableAppearance(responsiveStyles);
   // A fixed pixel height caps the table so its rows scroll inside it. The
   // element wrapper ignores px heights on element nodes, so the element has to
   // apply its own; % is capped by the wrapper and filled by `height: 100%`.
@@ -571,13 +573,23 @@ function TableElement({
     return ({ rowIndex, fieldKey }) => {
       const issue = cellIssues[cellErrorKey(rowIndex, fieldKey)];
       if (!issue) return null;
-      // Background only: an outline here competes with the selection border,
+      // Avoid an outline here: it competes with the selection border,
       // which is the one ring in the grid that means "you are here".
       return {
         backgroundColor:
           issue.severity === 'error'
             ? validationColors.errorSurface
             : validationColors.warningSurface,
+        textColor:
+          issue.severity === 'error'
+            ? tableVariable(
+                'error_font_color',
+                tableVariable('font_color', '#111827')
+              )
+            : tableVariable(
+                'warning_font_color',
+                tableVariable('font_color', '#111827')
+              ),
         message: issue.message,
         severity: issue.severity
       };
@@ -849,8 +861,21 @@ function TableElement({
                       const cellCss = isFirstColInTranspose
                         ? {
                             ...thStyle,
-                            backgroundColor: '#f9fafb',
-                            borderRight: '1px solid #e5e7eb',
+                            backgroundColor: tableVariable(
+                              'header_background_color',
+                              '#f9fafb'
+                            ),
+                            color: tableVariable(
+                              'header_font_color',
+                              '#4b5563'
+                            ),
+                            borderRight: `${tableVariable(
+                              'grid_vertical_width',
+                              '1px'
+                            )} solid ${tableVariable(
+                              'grid_vertical_color',
+                              '#e5e7eb'
+                            )}`,
                             width: '1px',
                             whiteSpace: 'nowrap',
                             ...styles.getTarget('th'),
@@ -862,10 +887,20 @@ function TableElement({
                             ...(isTransposed
                               ? isSecondColumn
                                 ? {}
-                                : { paddingLeft: 0 }
+                                : {
+                                    paddingLeft: tableVariable(
+                                      'cell_padding_horizontal',
+                                      '0px'
+                                    )
+                                  }
                               : isFirstColumn
                               ? {}
-                              : { paddingLeft: 0 }),
+                              : {
+                                  paddingLeft: tableVariable(
+                                    'cell_padding_horizontal',
+                                    '0px'
+                                  )
+                                }),
                             ...(isTransposed && !isFirstColInTranspose
                               ? { cursor: 'pointer' }
                               : {}),
@@ -1063,8 +1098,18 @@ function TableElement({
                     className={TABLE_CLASS.headerCell}
                     css={{
                       ...thStyle,
-                      backgroundColor: '#f9fafb',
-                      borderRight: '1px solid #e5e7eb',
+                      backgroundColor: tableVariable(
+                        'header_background_color',
+                        '#f9fafb'
+                      ),
+                      color: tableVariable('header_font_color', '#4b5563'),
+                      borderRight: `${tableVariable(
+                        'grid_vertical_width',
+                        '1px'
+                      )} solid ${tableVariable(
+                        'grid_vertical_color',
+                        '#e5e7eb'
+                      )}`,
                       width: '1px',
                       whiteSpace: 'nowrap',
                       ...styles.getTarget('th')
@@ -1078,7 +1123,14 @@ function TableElement({
                       className={TABLE_CLASS.cell}
                       css={{
                         ...(cellStyle as any),
-                        ...(idx === 0 ? {} : { paddingLeft: 0 }),
+                        ...(idx === 0
+                          ? {}
+                          : {
+                              paddingLeft: tableVariable(
+                                'cell_padding_horizontal',
+                                '0px'
+                              )
+                            }),
                         ...styles.getTarget('td')
                       }}
                     >

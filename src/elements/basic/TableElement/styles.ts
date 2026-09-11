@@ -1,3 +1,6 @@
+import { CSSProperties } from 'react';
+import { tableVariable as v } from './appearance';
+
 const colors = {
   white: '#ffffff',
   gray50: '#f9fafb',
@@ -38,12 +41,13 @@ export const sortArrowStyle = {
   color: colors.gray400,
   opacity: 0.3,
   '&[data-active="true"]': {
-    color: colors.blue700,
+    color: v('accent_color', colors.blue700),
     opacity: 1
   }
 } as const;
 
 export const sortHeaderContentStyle = {
+  justifyContent: v('header_text_align', 'flex-start'),
   display: 'flex',
   alignItems: 'center',
   gap: '8px'
@@ -53,14 +57,18 @@ export const containerStyle = {
   position: 'relative',
   overflowX: 'auto',
   overflowY: 'auto',
-  backgroundColor: colors.white,
+  backgroundColor: v('background_color', colors.white),
   boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-  borderRadius: '8px',
-  border: `1px solid ${colors.gray200}`,
+  borderRadius: v('border_radius', '8px'),
+  border: `${v('border_width', '1px')} solid ${v(
+    'border_color',
+    colors.gray200
+  )}`,
   minWidth: '100%',
   maxWidth: '100%',
   height: '100%',
-  boxSizing: 'border-box'
+  boxSizing: 'border-box',
+  fontFamily: v('font_family', 'inherit')
 } as const;
 
 /**
@@ -85,8 +93,8 @@ export const emptyStateContainerStyle = {
 } as const;
 
 export const emptyStateTextStyle = {
-  color: colors.gray600,
-  fontSize: '16px',
+  color: v('font_color', colors.gray600),
+  fontSize: v('font_size', '16px'),
   fontWeight: '500',
   margin: 0
 } as const;
@@ -108,6 +116,8 @@ export const searchIconWrapperStyle = {
 } as const;
 
 export const searchInputStyle = {
+  fontWeight: v('controls_font_weight', 'normal'),
+  fontFamily: v('font_family', 'inherit'),
   display: 'block',
   width: '100%',
   maxWidth: '384px',
@@ -115,30 +125,34 @@ export const searchInputStyle = {
   paddingRight: '12px',
   paddingTop: '10px',
   paddingBottom: '10px',
-  backgroundColor: colors.gray50,
-  border: `1px solid ${colors.gray200}`,
-  color: colors.gray900,
-  fontSize: '14px',
-  borderRadius: '8px',
+  backgroundColor: v('controls_background_color', colors.gray50),
+  border: `1px solid ${v('controls_border_color', colors.gray200)}`,
+  color: v('controls_font_color', colors.gray900),
+  fontSize: v('controls_font_size', '14px'),
+  borderRadius: v('controls_border_radius', '8px'),
   boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
   boxSizing: 'border-box' as const
 } as const;
 
 export const tableStyle = {
   width: '100%',
-  fontSize: '14px',
-  textAlign: 'left',
-  color: colors.gray600,
+  fontSize: v('font_size', '14px'),
+  textAlign: v('cell_text_align', 'left') as CSSProperties['textAlign'],
+  color: v('font_color', colors.gray600),
   textIndent: 0,
   borderColor: 'inherit',
-  borderCollapse: 'collapse'
+  borderCollapse: 'collapse',
+  fontWeight: v('font_weight', 400)
 } as const;
 
 export const theadStyle = {
-  fontSize: '14px',
-  color: colors.gray600,
-  backgroundColor: colors.gray50,
-  borderBottom: `1px solid ${colors.gray200}`
+  fontSize: v('header_font_size', '14px'),
+  color: v('header_font_color', colors.gray600),
+  backgroundColor: v('header_background_color', colors.gray50),
+  borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
+    'grid_horizontal_color',
+    colors.gray200
+  )}`
 } as const;
 
 // Data columns never shrink below this; the table overflows into the
@@ -148,22 +162,64 @@ export const dataColumnMinWidthStyle = {
 } as const;
 
 export const thStyle = {
-  padding: '12px 24px',
-  fontWeight: '500',
+  padding: `${v('cell_padding_vertical', '12px')} ${v(
+    'cell_padding_horizontal',
+    '24px'
+  )}`,
+  fontWeight: v('header_font_weight', 500),
   userSelect: 'none',
-  whiteSpace: 'nowrap'
+  whiteSpace: 'nowrap',
+  height: v('header_height', 'auto'),
+  boxSizing: 'border-box',
+  fontSize: v('header_font_size', '14px'),
+  color: v('header_font_color', colors.gray600),
+  textAlign: v('header_text_align', 'inherit') as CSSProperties['textAlign'],
+  borderRight: `${v('grid_vertical_width', '1px')} solid ${v(
+    'grid_vertical_color',
+    colors.gray200
+  )}`,
+  '&:last-child': { borderRight: 'none' }
 } as const;
 
 export const rowStyle = {
-  backgroundColor: colors.white,
-  borderBottom: `1px solid ${colors.gray200}`,
-  transition: 'background-color 0.2s'
+  '--feathery-table-current-row-background': v(
+    'row_background_color',
+    colors.white
+  ),
+  backgroundColor: 'var(--feathery-table-current-row-background)',
+  borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
+    'grid_horizontal_color',
+    colors.gray200
+  )}`,
+  transition: 'background-color 0.2s',
+  height: v('row_height', 'auto'),
+  '&:nth-of-type(even)': {
+    '--feathery-table-current-row-background': v(
+      'alternate_row_background_color',
+      v('row_background_color', colors.white)
+    )
+  },
+  '&:hover': {
+    backgroundColor: v(
+      'row_hover_background_color',
+      'var(--feathery-table-current-row-background)'
+    )
+  }
 } as const;
 
 export const cellStyle = {
-  padding: '16px 24px',
+  padding: `${v('cell_padding_vertical', '16px')} ${v(
+    'cell_padding_horizontal',
+    '24px'
+  )}`,
   wordBreak: 'break-word',
-  overflowWrap: 'anywhere'
+  overflowWrap: 'anywhere',
+  boxSizing: 'border-box',
+  borderRight: `${v('grid_vertical_width', '1px')} solid ${v(
+    'grid_vertical_color',
+    colors.gray200
+  )}`,
+  '&:last-child': { borderRight: 'none' }
 } as const;
 
 export const navStyle = {
@@ -172,18 +228,19 @@ export const navStyle = {
   flexWrap: 'wrap',
   justifyContent: 'space-between',
   padding: '16px',
-  gap: '8px'
+  gap: '8px',
+  backgroundColor: v('controls_background_color', 'transparent')
 } as const;
 
 export const navTextStyle = {
-  fontSize: '14px',
-  fontWeight: 'normal',
-  color: colors.gray600
+  fontSize: v('controls_font_size', '14px'),
+  fontWeight: v('controls_font_weight', 'normal'),
+  color: v('controls_font_color', colors.gray600)
 } as const;
 
 export const navTextBoldStyle = {
   fontWeight: '600',
-  color: colors.gray900
+  color: v('controls_font_color', colors.gray900)
 } as const;
 
 export const paginationListStyle = {
@@ -196,34 +253,35 @@ export const paginationListStyle = {
 } as const;
 
 export const buttonStyle = {
+  fontFamily: v('font_family', 'inherit'),
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: colors.gray600,
-  backgroundColor: colors.gray50,
+  color: v('controls_font_color', colors.gray600),
+  backgroundColor: v('controls_background_color', colors.gray50),
   boxSizing: 'border-box' as const,
-  border: `1px solid ${colors.gray200}`,
-  fontWeight: '500',
-  fontSize: '14px',
+  border: `1px solid ${v('controls_border_color', colors.gray200)}`,
+  fontWeight: v('controls_font_weight', 500),
+  fontSize: v('controls_font_size', '14px'),
   textDecoration: 'none',
   cursor: 'pointer',
   height: '36px',
   wordBreak: 'keep-all',
   overflowWrap: 'normal',
   '&:hover': {
-    backgroundColor: colors.gray100,
-    color: colors.gray900
+    backgroundColor: v('controls_hover_background_color', colors.gray100),
+    color: v('controls_font_color', colors.gray900)
   },
   '&:disabled:hover': {
-    color: colors.gray600,
-    backgroundColor: colors.gray50,
+    color: v('controls_font_color', colors.gray600),
+    backgroundColor: v('controls_background_color', colors.gray50),
     cursor: 'auto'
   }
 } as const;
 
 export const actionButtonStyle = {
   ...buttonStyle,
-  borderRadius: '4px',
+  borderRadius: v('controls_border_radius', '4px'),
   paddingInline: '8px',
   paddingBlock: '4px',
   width: 'auto',
@@ -235,20 +293,23 @@ export const actionButtonStyle = {
 export const menuIconStyle = {
   width: '16px',
   height: '16px',
-  color: colors.gray600
+  color: v('controls_font_color', colors.gray600)
 } as const;
 
 export const actionMenuStyle = {
+  fontFamily: v('font_family', 'inherit'),
   position: 'fixed' as const,
-  backgroundColor: colors.white,
-  border: `1px solid ${colors.gray300}`,
-  borderRadius: '4px',
+  backgroundColor: v('controls_background_color', colors.white),
+  border: `1px solid ${v('controls_border_color', colors.gray300)}`,
+  borderRadius: v('controls_border_radius', '4px'),
   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
   zIndex: 9999,
   minWidth: '120px'
 } as const;
 
 export const actionMenuItemStyle = {
+  fontWeight: v('controls_font_weight', 'normal'),
+  fontFamily: v('font_family', 'inherit'),
   display: 'block',
   width: '100%',
   textAlign: 'left' as const,
@@ -256,15 +317,15 @@ export const actionMenuItemStyle = {
   paddingRight: '12px',
   paddingTop: '8px',
   paddingBottom: '8px',
-  fontSize: '14px',
-  color: colors.gray700,
+  fontSize: v('controls_font_size', '14px'),
+  color: v('controls_font_color', colors.gray700),
   backgroundColor: 'transparent',
   border: 'none',
   cursor: 'pointer',
   whiteSpace: 'nowrap' as const,
   position: 'relative',
   '&:hover': {
-    backgroundColor: colors.gray100
+    backgroundColor: v('controls_hover_background_color', colors.gray100)
   },
   '&:disabled:hover': {
     backgroundColor: 'transparent',
@@ -281,7 +342,7 @@ export const actionMenuItemStyle = {
 } as const;
 
 export const actionMenuSeparatorStyle = {
-  borderTop: `1px solid ${colors.gray200}`,
+  borderTop: `1px solid ${v('controls_border_color', colors.gray200)}`,
   margin: '4px 0'
 } as const;
 
@@ -334,9 +395,9 @@ export const pageButtonNextStyle = {
 
 export const pageButtonActiveStyle = {
   ...pageButtonStyle,
-  color: colors.blue700,
-  backgroundColor: colors.blue50,
-  border: `1px solid ${colors.gray200}`
+  color: v('selected_font_color', v('accent_color', colors.blue700)),
+  backgroundColor: v('selected_background_color', colors.blue50),
+  border: `1px solid ${v('controls_border_color', colors.gray200)}`
 } as const;
 
 export const pageButtonDisabledStyle = {
@@ -375,13 +436,17 @@ export const toolbarStyle = {
   alignItems: 'center',
   justifyContent: 'space-between',
   padding: '16px',
-  borderBottom: `1px solid ${colors.gray200}`,
-  gap: '12px'
+  borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
+    'controls_border_color',
+    v('grid_horizontal_color', colors.gray200)
+  )}`,
+  gap: '12px',
+  backgroundColor: v('controls_background_color', 'transparent')
 } as const;
 
 export const addRowButtonStyle = {
   ...buttonStyle,
-  borderRadius: '8px',
+  borderRadius: v('controls_border_radius', '8px'),
   paddingLeft: '12px',
   paddingRight: '12px',
   whiteSpace: 'nowrap' as const
@@ -389,8 +454,8 @@ export const addRowButtonStyle = {
 
 export const errorBannerStyle = {
   padding: '10px 16px',
-  color: colors.red600,
-  backgroundColor: colors.red50,
+  color: v('error_font_color', colors.red600),
+  backgroundColor: v('error_background_color', colors.red50),
   borderBottom: `1px solid ${colors.red500}`,
   fontSize: '13px',
   '& ul': {
@@ -400,28 +465,31 @@ export const errorBannerStyle = {
 } as const;
 
 export const clickToEditStyle = {
-  color: colors.gray400,
+  color: v('controls_font_color', colors.gray400),
   cursor: 'pointer',
   userSelect: 'none' as const,
-  fontSize: '14px'
+  fontSize: v('controls_font_size', '14px')
 } as const;
 
 export const cellInputStyle = {
+  backgroundColor: v('editor_background_color', 'white'),
   display: 'block',
   width: '100%',
   minWidth: 0,
   maxWidth: '100%',
   padding: '4px 8px',
-  border: `1px solid ${colors.blue700}`,
-  borderRadius: '4px',
-  fontSize: '14px',
-  color: colors.gray900,
+  border: `1px solid ${v('accent_color', colors.blue700)}`,
+  borderRadius: v('controls_border_radius', '4px'),
+  fontSize: v('font_size', '14px'),
+  color: v('editor_font_color', v('font_color', colors.gray900)),
   outline: 'none',
   boxSizing: 'border-box' as const,
   resize: 'none' as const,
   overflowY: 'auto' as const,
   fontFamily: 'inherit',
-  lineHeight: 1.5
+  lineHeight: 1.5,
+  fontWeight: v('font_weight', 400),
+  textAlign: v('cell_text_align', 'inherit') as CSSProperties['textAlign']
 } as const;
 
 export const editableCellContentStyle = {
@@ -490,10 +558,11 @@ export const deleteIconStyle = {
 } as const;
 
 export const confirmPopoverStyle = {
+  fontFamily: v('font_family', 'inherit'),
   position: 'fixed' as const,
-  backgroundColor: colors.white,
-  border: `1px solid ${colors.gray300}`,
-  borderRadius: '8px',
+  backgroundColor: v('controls_background_color', colors.white),
+  border: `1px solid ${v('controls_border_color', colors.gray300)}`,
+  borderRadius: v('controls_border_radius', '8px'),
   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
   zIndex: 9999,
   padding: '12px 16px'
@@ -501,9 +570,9 @@ export const confirmPopoverStyle = {
 
 export const confirmTextStyle = {
   margin: '0 0 12px 0',
-  fontSize: '14px',
-  fontWeight: '500',
-  color: colors.gray900
+  fontSize: v('controls_font_size', '14px'),
+  fontWeight: v('controls_font_weight', 500),
+  color: v('controls_font_color', colors.gray900)
 } as const;
 
 export const confirmButtonRowStyle = {
@@ -514,7 +583,7 @@ export const confirmButtonRowStyle = {
 
 export const confirmCancelButtonStyle = {
   ...buttonStyle,
-  borderRadius: '6px',
+  borderRadius: v('controls_border_radius', '6px'),
   paddingLeft: '12px',
   paddingRight: '12px',
   height: '32px'

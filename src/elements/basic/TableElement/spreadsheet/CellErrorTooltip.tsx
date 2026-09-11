@@ -1,7 +1,8 @@
 import React from 'react';
 import { featheryWindow } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
-import { cellTooltipStyle, HEADER_HEIGHT } from './styles';
+import { cellTooltipStyle } from './styles';
+import { SpreadsheetGeometryContext } from './useSpreadsheetGeometry';
 import { placeCellTooltip } from './tooltipPlacement';
 
 type CellErrorTooltipProps = {
@@ -21,6 +22,7 @@ type CellErrorTooltipProps = {
  */
 export function CellErrorTooltip({ message, blocking }: CellErrorTooltipProps) {
   const ref = React.useRef<HTMLSpanElement>(null);
+  const { headerHeight } = React.useContext(SpreadsheetGeometryContext);
   const [above, setAbove] = React.useState(false);
 
   React.useLayoutEffect(() => {
@@ -35,7 +37,7 @@ export function CellErrorTooltip({ message, blocking }: CellErrorTooltipProps) {
     const gridRect = measured && measured.height > 0 ? measured : undefined;
     // The visible box is the window clipped to the grid, minus the sticky
     // header a bubble flipped above row 0 would otherwise hide behind.
-    const boxTop = Math.max(0, (gridRect?.top ?? 0) + HEADER_HEIGHT);
+    const boxTop = Math.max(0, (gridRect?.top ?? 0) + headerHeight);
     const boxBottom = Math.min(win.innerHeight, gridRect?.bottom ?? Infinity);
     const rect = cell.getBoundingClientRect();
     const placement = placeCellTooltip({
@@ -58,7 +60,7 @@ export function CellErrorTooltip({ message, blocking }: CellErrorTooltipProps) {
       const target = gridIsTheEdge ? grid : win;
       target?.scrollBy?.({ top: placement.scrollBy, behavior: 'smooth' });
     }
-  }, [message]);
+  }, [message, headerHeight]);
 
   return (
     <span
