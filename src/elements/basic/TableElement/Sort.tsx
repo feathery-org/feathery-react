@@ -7,6 +7,7 @@ import {
   sortHeaderContentStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
+import { tableVariable } from './appearance';
 import { Column } from './types';
 
 type SortHeaderProps = {
@@ -79,7 +80,11 @@ export function SortHeader({
             css={{
               ...thStyle,
               ...dataColumnMinWidthStyle,
-              ...(isFirstColumn ? {} : { paddingLeft: 0 }),
+              ...(isFirstColumn
+                ? {}
+                : {
+                    paddingLeft: tableVariable('cell_padding_horizontal', '0px')
+                  }),
               ...styles.getTarget('th'),
               ...(isSortable ? { cursor: 'pointer' } : {})
             }}
