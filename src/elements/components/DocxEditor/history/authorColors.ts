@@ -57,7 +57,11 @@ const FMT_PREFIX = 'fmt:';
 export function colorForRevisionAuthor(author: string): string {
   let key = author || '';
   if (key.startsWith(FMT_PREFIX)) key = key.slice(FMT_PREFIX.length);
-  const kind = key === 'robin' ? 'assistant' : 'user';
+  // Robin is the assistant no matter how the author was spelled: the diff uses
+  // the key 'robin', but a live tracked change carries the document author
+  // string 'Robin' (ASSISTANT_DOCUMENT_AUTHOR). Match case-insensitively so the
+  // assistant's edits always get the brand red, never a palette colour.
+  const kind = key.toLowerCase() === 'robin' ? 'assistant' : 'user';
   return colorForAuthor({ kind, key, label: key });
 }
 

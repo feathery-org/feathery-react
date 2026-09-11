@@ -83,7 +83,9 @@ describe('groupVersions', () => {
     // Flat: one month section, three separate rows, none nested.
     expect(sections).toHaveLength(1);
     expect(sections[0].clusters).toHaveLength(3);
-    expect(sections[0].clusters.every((c) => c.earlier.length === 0)).toBe(true);
+    expect(sections[0].clusters.every((c) => c.earlier.length === 0)).toBe(
+      true
+    );
   });
 
   it('keeps versions newest-first within a month', () => {
@@ -97,10 +99,13 @@ describe('groupVersions', () => {
 
   it('lists each version with its own author(s)', () => {
     const base = '2026-09-02T12:00:00Z';
-    const sections = groupVersions([
-      v(base, { authors: [{ kind: 'user', label: 'You' }] }),
-      v(at(base, 5), { authors: [{ kind: 'assistant', label: 'Robin' }] })
-    ], NOW);
+    const sections = groupVersions(
+      [
+        v(base, { authors: [{ kind: 'user', label: 'You' }] }),
+        v(at(base, 5), { authors: [{ kind: 'assistant', label: 'Robin' }] })
+      ],
+      NOW
+    );
     expect(sections[0].clusters[0].authors).toEqual([
       { kind: 'user', label: 'You' }
     ]);

@@ -5,6 +5,7 @@ import {
   installRevisionGroupIsolation
 } from '../../../utils/documentEditorPrimitives';
 import { dynamicImport } from '../../../integrations/utils';
+import { featheryDoc } from '../../../utils/browser';
 import {
   configureTrackedChangeReview,
   resizeDocxEditor,
@@ -25,36 +26,37 @@ jest.mock('../../../integrations/utils', () => ({
 }));
 
 describe('configureTrackedChangeReview', () => {
+  const PANE_STYLE_ID = 'feathery-hide-de-review-pane';
   beforeEach(() => jest.clearAllMocks());
+  afterEach(() => featheryDoc().getElementById(PANE_STYLE_ID)?.remove());
 
   it('leaves a gated-off editor fully native', () => {
-    const editor = {
-      showRevisions: true,
-      enableTrackChanges: true,
-      commentReviewPane: { isUserClosed: false }
-    };
+    const editor = { showRevisions: true, enableTrackChanges: true };
 
     configureTrackedChangeReview(editor, false);
 
     expect(editor.showRevisions).toBe(true);
     expect(editor.enableTrackChanges).toBe(true);
-    expect(editor.commentReviewPane.isUserClosed).toBe(false);
+    // No native-pane suppression style is injected for a gated-off editor.
+    expect(featheryDoc().getElementById(PANE_STYLE_ID)).toBeNull();
     expect(installRevisionGroupIsolation).not.toHaveBeenCalled();
     expect(disableUserTrackChanges).not.toHaveBeenCalled();
   });
 
   it('installs review behavior only when the rail is enabled', () => {
-    const editor = {
-      showRevisions: true,
-      enableTrackChanges: true,
-      commentReviewPane: { isUserClosed: false }
-    };
+    const editor = { showRevisions: true, enableTrackChanges: true };
 
     configureTrackedChangeReview(editor, true);
 
     expect(editor.showRevisions).toBe(false);
     expect(editor.enableTrackChanges).toBe(false);
-    expect(editor.commentReviewPane.isUserClosed).toBe(true);
+    // The native Changes/Comments pane and the Restrict Editing pane (which
+    // Syncfusion auto-opens on click in a read-only editor) are hidden via an
+    // injected stylesheet rule.
+    const style = featheryDoc().getElementById(PANE_STYLE_ID);
+    expect(style).toBeTruthy();
+    expect(style?.textContent).toContain('.e-de-review-pane');
+    expect(style?.textContent).toContain('.e-de-restrict-pane');
     expect(installRevisionGroupIsolation).toHaveBeenCalledWith(editor);
     expect(disableUserTrackChanges).toHaveBeenCalledWith(editor);
   });

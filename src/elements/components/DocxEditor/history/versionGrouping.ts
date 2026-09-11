@@ -84,7 +84,11 @@ export function groupVersions(
     }
 
     // One version per row: its own cluster with no `earlier` entries.
-    const cluster: VersionCluster = { primary: version, earlier: [], authors: [] };
+    const cluster: VersionCluster = {
+      primary: version,
+      earlier: [],
+      authors: []
+    };
     mergeAuthors(cluster, version);
     section.clusters.push(cluster);
   }

@@ -43,21 +43,53 @@ describe('VersionBar', () => {
     expect(onExit).toHaveBeenCalled();
   });
 
-  it('summarizes changes when highlights are available', () => {
-    const { getByText } = render(
+  it('shows the highlight toggle, edit count and steppers when available', () => {
+    const onToggle = jest.fn();
+    const onPrev = jest.fn();
+    const onNext = jest.fn();
+    const { getByText, getByRole, getByLabelText } = render(
       <VersionBar
         version={version()}
         onExit={jest.fn()}
         editCount={3}
-        formatCount={2}
         highlightsAvailable
+        highlightsOn
+        onToggleHighlights={onToggle}
+        onPrevChange={onPrev}
+        onNextChange={onNext}
       />
     );
-    expect(getByText(/3 edits · 2 formatting/)).toBeTruthy();
+    expect(getByText('3 edits')).toBeTruthy();
+    // Toggle reflects state and flips it.
+    const toggle = getByRole('switch');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(toggle);
+    expect(onToggle).toHaveBeenCalledWith(false);
+    // Steppers navigate.
+    fireEvent.click(getByLabelText('Next change'));
+    fireEvent.click(getByLabelText('Previous change'));
+    expect(onNext).toHaveBeenCalled();
+    expect(onPrev).toHaveBeenCalled();
   });
 
-  it('hides the change summary when highlights are unavailable', () => {
-    const { queryByText } = render(
+  it('disables the steppers while highlights are toggled off', () => {
+    const onNext = jest.fn();
+    const { getByLabelText } = render(
+      <VersionBar
+        version={version()}
+        onExit={jest.fn()}
+        editCount={3}
+        highlightsAvailable
+        highlightsOn={false}
+        onNextChange={onNext}
+      />
+    );
+    fireEvent.click(getByLabelText('Next change'));
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it('hides the change controls when highlights are unavailable', () => {
+    const { queryByText, queryByRole } = render(
       <VersionBar
         version={version()}
         onExit={jest.fn()}
@@ -65,5 +97,6 @@ describe('VersionBar', () => {
       />
     );
     expect(queryByText(/edits/)).toBeNull();
+    expect(queryByRole('switch')).toBeNull();
   });
 });

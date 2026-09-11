@@ -22,6 +22,9 @@ interface Props {
   onVersionsLoaded?: (versions: DocxVersion[]) => void;
   /** Id of the version currently open in the viewer (highlights that row). */
   selectedId?: string | null;
+  /** Assistant edits still tracked (unapproved) in the in-progress current
+   *  version; shown as a "pending" chip on its row. 0/undefined hides it. */
+  currentPendingCount?: number;
   /** Bump to reload the list (e.g. after a session closes). */
   refreshKey?: number | string;
 }
@@ -32,6 +35,10 @@ type Author = { kind: string; label: string };
 const PILL_BLUE = '#2563eb';
 const PILL_WASH = '#eff6ff';
 const ROW_ACTIVE = '#f4f4f5';
+// "N pending" chip — dashed red, echoing the viewer's pending-edit outline.
+const PENDING_RED = '#b0302b';
+const PENDING_WASH = 'rgba(176, 48, 43, 0.10)';
+const PENDING_BORDER = 'rgba(176, 48, 43, 0.55)';
 
 // A version's timestamp label. Only the latest version reads "Just now" (and
 // only when truly recent); every other row shows its actual time — full month,
@@ -111,12 +118,14 @@ function VersionRow({
   authors,
   isCurrent,
   selected,
+  pendingCount,
   onSelect
 }: {
   version: DocxVersion;
   authors: Author[];
   isCurrent: boolean;
   selected?: boolean;
+  pendingCount?: number;
   onSelect?: (v: DocxVersion) => void;
 }) {
   // The baseline (initial upload) has no session, so its authors list is empty
@@ -164,6 +173,26 @@ function VersionRow({
             Current
           </span>
         )}
+        {pendingCount != null && pendingCount > 0 && (
+          <span
+            title={`${pendingCount} unapproved Robin ${
+              pendingCount === 1 ? 'edit' : 'edits'
+            } still tracked`}
+            css={{
+              flex: '0 0 auto',
+              fontSize: 12,
+              fontWeight: 600,
+              color: PENDING_RED,
+              background: PENDING_WASH,
+              border: `1px dashed ${PENDING_BORDER}`,
+              borderRadius: 10,
+              padding: '1px 8px',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {pendingCount} pending
+          </span>
+        )}
       </div>
       {version.restored_from_at && (
         <div css={{ marginTop: 2, fontSize: 13, color: INK_3 }}>
@@ -197,6 +226,7 @@ export default function HistoryPanel({
   onSelect,
   onVersionsLoaded,
   selectedId,
+  currentPendingCount,
   refreshKey
 }: Props) {
   const [versions, setVersions] = useState<DocxVersion[] | null>(null);
@@ -268,8 +298,7 @@ export default function HistoryPanel({
               padding: '14px 8px 8px',
               fontSize: 14,
               fontWeight: 600,
-              color: INK_3,
-              background: PAPER
+              color: INK_3
             }}
           >
             {section.label}
@@ -280,8 +309,11 @@ export default function HistoryPanel({
               version={cluster.primary}
               authors={cluster.authors}
               isCurrent={cluster.primary.seq === currentSeq}
-              selected={
-                selectedId != null && cluster.primary.id === selectedId
+              selected={selectedId != null && cluster.primary.id === selectedId}
+              pendingCount={
+                cluster.primary.seq === currentSeq
+                  ? currentPendingCount
+                  : undefined
               }
               onSelect={onSelect}
             />

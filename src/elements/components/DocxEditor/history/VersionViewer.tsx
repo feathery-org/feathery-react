@@ -18,6 +18,8 @@ const DOCX_MIME =
 export interface VersionMeta {
   editCount?: number;
   formatCount?: number;
+  /** Assistant edits still tracked (unapproved) in this version. */
+  pendingCount?: number;
   degraded: boolean;
 }
 
@@ -38,6 +40,9 @@ interface Props {
   /** Reports the version's edit counts + whether highlights are available, so
    *  the version bar can label them. */
   onMeta?: (meta: VersionMeta) => void;
+  /** Exposes the read-only editor once ready (null on unmount) so the version
+   *  bar can step the caret through tracked changes. */
+  onViewerEditor?: (editor: any | null) => void;
 }
 
 // A second, read-only DocumentEditor overlaid on the live editor's pane. It is
@@ -50,7 +55,8 @@ export default function VersionViewer({
   headers,
   highlightsOn = true,
   liveDoc,
-  onMeta
+  onMeta,
+  onViewerEditor
 }: Props) {
   const hostElRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<any>(null);
@@ -66,14 +72,23 @@ export default function VersionViewer({
   // Report the version's counts up to the bar once resolved.
   const onMetaRef = useRef(onMeta);
   onMetaRef.current = onMeta;
+  const onViewerEditorRef = useRef(onViewerEditor);
+  onViewerEditorRef.current = onViewerEditor;
   useEffect(() => {
     if (doc.loading) return;
     onMetaRef.current?.({
       editCount: doc.editCount,
       formatCount: doc.formatCount,
+      pendingCount: doc.pendingCount,
       degraded: doc.degraded
     });
-  }, [doc.loading, doc.editCount, doc.formatCount, doc.degraded]);
+  }, [
+    doc.loading,
+    doc.editCount,
+    doc.formatCount,
+    doc.pendingCount,
+    doc.degraded
+  ]);
 
   // Create the read-only editor once. Use a DocumentEditorContainer (as the
   // live editor does) rather than a bare DocumentEditor: the container reliably
@@ -114,10 +129,12 @@ export default function VersionViewer({
       ed.enableAutoFocus = false;
       containerRef.current = container;
       editorRef.current = ed;
+      onViewerEditorRef.current?.(ed);
       setEditorReady(true);
     })();
     return () => {
       cancelled = true;
+      onViewerEditorRef.current?.(null);
       try {
         containerRef.current?.destroy();
       } catch {
@@ -153,7 +170,7 @@ export default function VersionViewer({
             // Changes/review pane shut so no tracked-change panel appears.
             installRevisionHighlightRendering(viewer, colorForRevisionAuthor);
             viewer.showRevisions = true;
-            closeTrackedChangeReviewPane(viewer);
+            closeTrackedChangeReviewPane();
           } catch {
             /* highlights are decoration; the document must still open */
           }
@@ -173,7 +190,7 @@ export default function VersionViewer({
         if (cancelled) return;
         if (wantHighlights) {
           // Opening can re-open the review pane; keep it shut.
-          closeTrackedChangeReviewPane(viewer);
+          closeTrackedChangeReviewPane();
         }
         // The raw-docx fallback still holds [[field]] / {{ jinja }} tokens (it
         // never went through the binding engine); populate them the way the live

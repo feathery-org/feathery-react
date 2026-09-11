@@ -51,6 +51,8 @@ interface Props {
   versionSelected?: boolean;
   /** Id of the version open in the viewer (highlights its row). */
   selectedVersionId?: string | null;
+  /** Unapproved Robin edits still tracked in the current version (its chip). */
+  currentPendingCount?: number;
   /** Bump to reload the version list (e.g. after a session closes). */
   historyRefreshKey?: number | string;
 }
@@ -71,6 +73,7 @@ export default function DocumentPanel({
   onRestoreVersion,
   versionSelected,
   selectedVersionId,
+  currentPendingCount,
   historyRefreshKey
 }: Props) {
   return (
@@ -171,6 +174,7 @@ export default function DocumentPanel({
                   onSelect={onSelectVersion}
                   onVersionsLoaded={onVersionsLoaded}
                   selectedId={selectedVersionId}
+                  currentPendingCount={currentPendingCount}
                   refreshKey={historyRefreshKey}
                 />
               </RailErrorBoundary>
@@ -228,9 +232,7 @@ export default function DocumentPanel({
                 color: '#fff',
                 cursor: versionSelected ? 'pointer' : 'default',
                 opacity: versionSelected ? 1 : 0.5,
-                '&:hover': versionSelected
-                  ? { filter: 'brightness(0.95)' }
-                  : {}
+                '&:hover': versionSelected ? { filter: 'brightness(0.95)' } : {}
               }}
             >
               Restore version

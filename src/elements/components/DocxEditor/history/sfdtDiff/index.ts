@@ -410,6 +410,135 @@ function rebuildInlines(chars: DisplayChar[]): any[] {
   }
 }
 
+interface PendingRun {
+  kind: 'ins' | 'del';
+  text: string;
+  /** The revision's author key ('robin' for the assistant), for re-attribution. */
+  author: AuthorKey;
+}
+
+// The assistant writes tracked changes under the document author 'Robin'; the
+// diff's author key is 'robin'. Normalise a live-revision author to that key so
+// a re-attributed edit gets the assistant's brand colour, not a palette one.
+function authorKeyOf(author: string): AuthorKey {
+  return author.toLowerCase() === 'robin' ? 'robin' : author;
+}
+
+/**
+ * Every LIVE tracked change still in F — the assistant's edits the user has not
+ * accepted yet. Our own display revisions use `vh-` ids and are skipped, so what
+ * remains is the pending suggestions. Each run is one live revision's
+ * concatenated text with its author, tagged insert or delete; applyHunks matches
+ * a hunk's text against these to mark it pending AND re-attribute it to the real
+ * author (the diff can mis-credit a still-tracked assistant edit to the viewer).
+ */
+function collectPendingRuns(doc: any): PendingRun[] {
+  const revs: any[] = Array.isArray(doc?.revisions) ? doc.revisions : [];
+  const metaById = new Map<string, { kind: 'ins' | 'del'; author: string }>();
+  for (const r of revs) {
+    const id = r?.revisionId != null ? String(r.revisionId) : null;
+    if (!id || id.startsWith('vh-')) continue;
+    const type = String(r?.revisionType);
+    const author = String(r?.author ?? '');
+    if (type === 'Insertion' || type === 'MoveTo')
+      metaById.set(id, { kind: 'ins', author });
+    else if (type === 'Deletion' || type === 'MoveFrom')
+      metaById.set(id, { kind: 'del', author });
+  }
+  if (!metaById.size) return [];
+  const textById = new Map<string, string>();
+  const visitInlines = (inlines: any[]) => {
+    for (const inline of inlines ?? []) {
+      if (!inline || typeof inline !== 'object') continue;
+      if (Array.isArray(inline.inlines)) {
+        visitInlines(inline.inlines);
+        continue;
+      }
+      const ids: string[] = Array.isArray(inline.revisionIds)
+        ? inline.revisionIds.map(String)
+        : [];
+      if (typeof inline.text === 'string' && ids.length) {
+        for (const id of ids) {
+          if (metaById.has(id))
+            textById.set(id, (textById.get(id) ?? '') + inline.text);
+        }
+      }
+    }
+  };
+  const visitBlocks = (blocks: any[]) => {
+    for (const b of blocks ?? []) {
+      if (!b || typeof b !== 'object') continue;
+      if (Array.isArray(b.inlines)) visitInlines(b.inlines);
+      if (Array.isArray(b.blocks)) visitBlocks(b.blocks);
+      if (Array.isArray(b.rows))
+        for (const row of b.rows)
+          for (const cell of row?.cells ?? []) visitBlocks(cell?.blocks ?? []);
+    }
+  };
+  for (const section of doc?.sections ?? []) visitBlocks(section?.blocks ?? []);
+  const runs: PendingRun[] = [];
+  for (const [id, text] of textById) {
+    const meta = metaById.get(id);
+    if (meta && text.trim())
+      runs.push({ kind: meta.kind, text, author: authorKeyOf(meta.author) });
+  }
+  return runs;
+}
+
+/**
+ * The bucket a display revision steps/counts under. A replace's halves share
+ * their hunk group; every assistant revision (content or formatting) collapses
+ * into ONE bucket — a Robin turn is a single logical edit, and a session holds
+ * at most one turn. Returns null for revisions that are not ours.
+ */
+export function editGroupKey(revision: any): string | null {
+  let cd: any;
+  try {
+    cd = JSON.parse(revision?.customData ?? '{}');
+  } catch {
+    return null;
+  }
+  if (cd.source !== 'history') return null;
+  const author = String(revision?.author ?? '');
+  if (authorKeyOf(author.replace(FMT_AUTHOR_PREFIX, '')) === 'robin')
+    return 'robin-turn';
+  return String(cd.group ?? revision.revisionId ?? '');
+}
+
+/**
+ * Count the distinct EDITS in a display document the way the version bar and
+ * the prev/next steppers present them: one per edit group (see editGroupKey),
+ * with formatting-only revisions excluded — they are counted separately.
+ */
+export function countEditGroups(displayDoc: any): number {
+  const groups = new Set<string>();
+  for (const r of displayDoc?.revisions ?? []) {
+    const author = String(r?.author ?? '');
+    if (author.startsWith(FMT_AUTHOR_PREFIX)) continue;
+    const key = editGroupKey(r);
+    if (key != null) groups.add(key);
+  }
+  return groups.size;
+}
+
+/**
+ * Count the distinct pending edits in an applyHunks display document — the
+ * assistant suggestions still awaiting the user's approval — grouped so a
+ * replace (its delete + insert) counts once. Drives the "N pending" label.
+ */
+export function countPendingGroups(displayDoc: any): number {
+  const groups = new Set<string>();
+  for (const r of displayDoc?.revisions ?? []) {
+    try {
+      const cd = JSON.parse(r?.customData ?? '{}');
+      if (cd.pending) groups.add(cd.group ?? String(r.revisionId));
+    } catch {
+      /* a revision without our customData is not one of ours */
+    }
+  }
+  return groups.size;
+}
+
 /**
  * Build the display document: the final document plus synthetic revisions for
  * every hunk. Deleted text is re-inserted as Deletion runs, inserted ranges
@@ -418,17 +547,41 @@ function rebuildInlines(chars: DisplayChar[]): any[] {
  * keys off the prefix).
  */
 export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
-  const doc = JSON.parse(JSON.stringify(finalSfdt));
-  const revisions: any[] = Array.isArray(doc.revisions)
-    ? [...doc.revisions]
-    : [];
+  // The assistant's edits arrive as live tracked changes; the user's edits are
+  // not tracked, so any revision already in F (i.e. NOT one of our synthetic
+  // `vh-` history revisions) is an assistant suggestion the user has not yet
+  // accepted. Read those from the RAW document first — they tell us both which
+  // edits are still pending AND who really made them.
+  const raw = JSON.parse(JSON.stringify(finalSfdt));
+  const pendingRuns = collectPendingRuns(raw);
+  // Build the display on the ACCEPTED document: dropping the live revisions (and
+  // their markup) leaves only our synthetic revisions to render — no orphaned
+  // originals mis-colouring the text, and offsets that line up with the hunks
+  // (which are anchored to the accepted document). Keep real image bytes.
+  const doc = normalizeForDiff(raw, { digestImages: false });
+  const revisions: any[] = [];
+  // A hunk's pending match, if its text belongs to a still-tracked edit. Used to
+  // both flag it pending and re-attribute it to that edit's real author.
+  const matchPending = (
+    kind: 'ins' | 'del',
+    text: string
+  ): PendingRun | undefined => {
+    if (!pendingRuns.length) return undefined;
+    const t = text.trim();
+    if (!t) return undefined;
+    return pendingRuns.find(
+      (r) =>
+        r.kind === kind && (r.text.includes(t) || t.includes(r.text.trim()))
+    );
+  };
   const date = new Date().toISOString();
   const changeSetId = `version:${changes.sessionId}`;
   let seq = 0;
   const newRevision = (
     type: 'Insertion' | 'Deletion',
     author: string,
-    hunkId: number
+    hunkId: number,
+    pending = false
   ): Mark => {
     const revisionId = `vh-${hunkId}-${(seq++).toString(36)}`;
     revisions.push({
@@ -440,7 +593,8 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
         v: 1,
         source: 'history',
         changeSetId,
-        group: `h${hunkId}`
+        group: `h${hunkId}`,
+        ...(pending ? { pending: true } : {})
       })
     });
     return { revisionId };
@@ -467,7 +621,24 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
           hunk.type === 'fmt'
             ? `${FMT_AUTHOR_PREFIX}${hunk.author}`
             : hunk.author;
-        const mark = newRevision('Insertion', author, hunk.id);
+        // Pending only for genuine content insertions (formatting revisions
+        // aren't tracked-change suggestions the user accepts/rejects here). A
+        // match also re-attributes the edit to its real author.
+        const insText =
+          hunk.type === 'ins'
+            ? chars
+                .slice(hunk.at.offset, hunk.at.offset + hunk.at.length)
+                .map((c) => c.ch)
+                .join('')
+            : '';
+        const match =
+          hunk.type === 'ins' ? matchPending('ins', insText) : undefined;
+        const mark = newRevision(
+          'Insertion',
+          match ? match.author : author,
+          hunk.id,
+          !!match
+        );
         for (let k = hunk.at.offset; k < hunk.at.offset + hunk.at.length; k++) {
           chars[k]?.revisionIds.push(mark.revisionId);
         }
@@ -491,7 +662,13 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
       .filter((h): h is Extract<Hunk, { type: 'del' }> => h.type === 'del')
       .sort((a, b) => b.at.offset - a.at.offset);
     for (const hunk of dels) {
-      const mark = newRevision('Deletion', hunk.author, hunk.id);
+      const match = matchPending('del', hunk.text);
+      const mark = newRevision(
+        'Deletion',
+        match ? match.author : hunk.author,
+        hunk.id,
+        !!match
+      );
       // Inherit the surrounding char's content control so re-inserted deleted
       // text stays inside its field rather than splitting the wrapper.
       const neighbor = chars[hunk.at.offset] ?? chars[hunk.at.offset - 1];
@@ -512,7 +689,25 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
   // Whole-block insertions: mark every inline and the paragraph mark.
   for (const hunk of changes.hunks) {
     if (hunk.type !== 'ins_block') continue;
-    const mark = newRevision('Insertion', hunk.author, hunk.id);
+    // Gather the inserted paragraphs' text up front so the whole block can be
+    // marked pending when it matches a still-open assistant suggestion.
+    let insBlockText = '';
+    for (let k = 0; k < hunk.count; k++) {
+      const p = [...hunk.at.block];
+      p[p.length - 1] = (p[p.length - 1] as number) + k;
+      const para = getBlock(doc, p);
+      if (para && Array.isArray(para.inlines))
+        insBlockText += flattenForDisplay(para)
+          .map((c) => c.ch)
+          .join('');
+    }
+    const insBlockMatch = matchPending('ins', insBlockText);
+    const mark = newRevision(
+      'Insertion',
+      insBlockMatch ? insBlockMatch.author : hunk.author,
+      hunk.id,
+      !!insBlockMatch
+    );
     for (let k = 0; k < hunk.count; k++) {
       const path = [...hunk.at.block];
       path[path.length - 1] = (path[path.length - 1] as number) + k;
@@ -539,7 +734,20 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
     )
     .sort((a, b) => comparePaths(b.at.block, a.at.block));
   for (const hunk of delBlocks) {
-    const mark = newRevision('Deletion', hunk.author, hunk.id);
+    const delBlockText = hunk.blocks
+      .map((raw: any) =>
+        flattenForDisplay(JSON.parse(JSON.stringify(raw)))
+          .map((c) => c.ch)
+          .join('')
+      )
+      .join('');
+    const delBlockMatch = matchPending('del', delBlockText);
+    const mark = newRevision(
+      'Deletion',
+      delBlockMatch ? delBlockMatch.author : hunk.author,
+      hunk.id,
+      !!delBlockMatch
+    );
     const { arr, index } = containerOf(doc, hunk.at.block);
     if (!Array.isArray(arr)) continue;
     const paras = hunk.blocks.map((raw: any) => {

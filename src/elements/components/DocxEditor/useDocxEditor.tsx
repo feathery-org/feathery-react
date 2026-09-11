@@ -45,8 +45,11 @@ const DELETION_TEXT_COLOR = '#b0302b';
 // fully INSIDE the highlight box, flush with its edge.
 const RING_LINE = 'rgba(43, 49, 52, 0.34)';
 const RING_WIDTH = 2;
-// Alpha for an author-coloured insertion wash (the mockup's `+1c` ≈ 0x1c/255).
-const AUTHOR_WASH_ALPHA = 0.11;
+// Alpha for an author-coloured wash. Insertions carry the full wash so the
+// edit clearly reads in the author's colour; deletions are a touch lighter
+// because their glyphs are additionally struck through.
+const AUTHOR_WASH_ALPHA = 0.22;
+const AUTHOR_WASH_ALPHA_DEL = 0.16;
 
 // '#rrggbb' → 'rgba(r,g,b,a)'. Returns the input untouched if it is not a plain
 // 6-digit hex (already an rgba() string, say).
@@ -61,6 +64,22 @@ const RING_RADIUS = 4;
 // Editor-instance keys shared with the review UI and overlays.
 const ACTIVE_REVISION_KEY = '__robinActiveRevision';
 const ACTIVE_BOXES_KEY = '__robinActiveBoxes';
+// Boxes belonging to still-pending (unapproved) assistant edits, ringed with a
+// dashed outline so they read apart from approved edits' solid wash.
+const PENDING_BOXES_KEY = '__robinPendingBoxes';
+const PENDING_DASH: [number, number] = [4, 3];
+
+// True when a revision is one of our synthetic history revisions marked pending
+// (customData.pending) — an assistant suggestion the user has not accepted yet.
+function isPendingRevision(rev: any): boolean {
+  if (!rev?.customData) return false;
+  try {
+    return JSON.parse(rev.customData).pending === true;
+  } catch {
+    return false;
+  }
+}
+
 const REVISION_RECTS_KEY = '__robinRevisionRects';
 const AFTER_RENDER_KEY = '__robinAfterRender';
 // Opening a document plants Syncfusion's default caret, firing a
@@ -207,14 +226,16 @@ export function installRevisionHighlightRendering(
       };
       try {
         const ctx = renderer.pageContext;
-        // Author-coloured: insertions get a faint author wash, deletions stay
-        // transparent (colour lives in the strikethrough glyphs). Otherwise the
-        // classic fixed green/red washes.
+        // Author-coloured: BOTH insertions and deletions get the author's wash
+        // so every edit is visibly highlighted in that author's colour (Robin's
+        // brand red), with deletions a touch lighter since their glyphs are also
+        // struck. Otherwise the classic fixed green/red washes.
         if (authorColor) {
-          if (info.kind !== 'del') {
-            ctx.fillStyle = hexToRgba(authorColor, AUTHOR_WASH_ALPHA);
-            ctx.fillRect(box.x, box.y, box.w, box.h);
-          }
+          ctx.fillStyle = hexToRgba(
+            authorColor,
+            info.kind === 'del' ? AUTHOR_WASH_ALPHA_DEL : AUTHOR_WASH_ALPHA
+          );
+          ctx.fillRect(box.x, box.y, box.w, box.h);
         } else {
           ctx.fillStyle =
             info.kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
@@ -266,6 +287,18 @@ export function installRevisionHighlightRendering(
           (ed[ACTIVE_BOXES_KEY] ?? (ed[ACTIVE_BOXES_KEY] = [])).push({
             ...box,
             line: elementBox.line
+          });
+        }
+        // Still-pending (unapproved) assistant edits get a persistent dashed
+        // outline, drawn the same way but always on (not only when stepped).
+        if (
+          isPendingRevision(info.revision) ||
+          isPendingRevision(info.counterpart)
+        ) {
+          (ed[PENDING_BOXES_KEY] ?? (ed[PENDING_BOXES_KEY] = [])).push({
+            ...box,
+            line: elementBox.line,
+            color: authorColor ?? DELETION_TEXT_COLOR
           });
         }
       } catch {
@@ -367,20 +400,27 @@ export function installRevisionHighlightRendering(
     };
   }
 
-  // Active-edit boundary ring, drawn after page content. Boxes group by LINE
-  // (the ±1px fudge overlaps adjacent lines vertically — cross-line unions
-  // would ring the whole paragraph) and only TOUCHING runs merge within a
-  // line, so a replace rings as one while disjoint runs ring separately.
-  const drawActiveRing = (fromIndex: number) => {
-    const boxes: Array<{
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-      line: any;
-    }> = (ed[ACTIVE_BOXES_KEY] ?? []).slice(fromIndex);
-    if (!boxes.length) return;
-    const byLine = new Map<any, typeof boxes>();
+  // Merge boxes into per-LINE unions of TOUCHING runs. Grouping by line (the
+  // ±1px fudge overlaps adjacent lines vertically — cross-line unions would ring
+  // the whole paragraph) keeps a replace ringed as one while disjoint runs ring
+  // separately. Each union carries the first box's colour.
+  type OutlineBox = {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    line: any;
+    color?: string;
+  };
+  type Union = {
+    x: number;
+    y: number;
+    right: number;
+    bottom: number;
+    color?: string;
+  };
+  const unionBoxesByLine = (boxes: OutlineBox[]): Union[] => {
+    const byLine = new Map<any, OutlineBox[]>();
     for (const b of boxes) {
       // Fall back to a coarse y-bucket if the line widget is unavailable.
       const key = b.line ?? `y:${Math.round(b.y / 8)}`;
@@ -388,15 +428,10 @@ export function installRevisionHighlightRendering(
       if (group) group.push(b);
       else byLine.set(key, [b]);
     }
-    const unions: Array<{
-      x: number;
-      y: number;
-      right: number;
-      bottom: number;
-    }> = [];
+    const unions: Union[] = [];
     const TOUCH_GAP = 3;
     for (const group of byLine.values()) {
-      const lineUnions: typeof unions = [];
+      const lineUnions: Union[] = [];
       for (const b of group.sort((a, z) => a.x - z.x)) {
         const u = lineUnions[lineUnions.length - 1];
         if (u && b.x <= u.right + TOUCH_GAP) {
@@ -409,21 +444,34 @@ export function installRevisionHighlightRendering(
             x: b.x,
             y: b.y,
             right: b.x + b.w,
-            bottom: b.y + b.h
+            bottom: b.y + b.h,
+            color: b.color
           });
         }
       }
       unions.push(...lineUnions);
     }
+    return unions;
+  };
+
+  const strokeUnions = (
+    unions: Union[],
+    stroke: string,
+    dash: number[] | null,
+    perUnionColor: boolean
+  ) => {
+    if (!unions.length) return;
     try {
       const ctx = renderer.pageContext;
       ctx.save();
-      ctx.strokeStyle = RING_LINE;
+      ctx.strokeStyle = stroke;
       ctx.lineWidth = RING_WIDTH;
+      if (dash) ctx.setLineDash(dash);
       // Strokes straddle the path: inset by half the width so the ring's
       // OUTER edge lands on the highlight boundary (no gap, no bleed).
       const inset = RING_WIDTH / 2;
       for (const u of unions) {
+        if (perUnionColor && u.color) ctx.strokeStyle = u.color;
         const x = u.x + inset;
         const y = u.y + inset;
         const w = u.right - u.x - RING_WIDTH;
@@ -443,6 +491,24 @@ export function installRevisionHighlightRendering(
     }
   };
 
+  // Active-edit boundary ring (the stepped edit): solid, neutral.
+  const drawActiveRing = (fromIndex: number) => {
+    const boxes: OutlineBox[] = (ed[ACTIVE_BOXES_KEY] ?? []).slice(fromIndex);
+    strokeUnions(unionBoxesByLine(boxes), RING_LINE, null, false);
+  };
+
+  // Persistent dashed outline on every still-pending (unapproved) assistant
+  // edit, in the author's colour — so pending reads apart from approved.
+  const drawPendingOutline = (fromIndex: number) => {
+    const boxes: OutlineBox[] = (ed[PENDING_BOXES_KEY] ?? []).slice(fromIndex);
+    strokeUnions(
+      unionBoxesByLine(boxes),
+      DELETION_TEXT_COLOR,
+      PENDING_DASH,
+      true
+    );
+  };
+
   // Per-page hook (renderWidgets renders ONE page): reset collections on the
   // first visible page, ring each page after its content, publish after the
   // last. Hooking the renderer — not the viewer — survives every render path.
@@ -458,9 +524,12 @@ export function installRevisionHighlightRendering(
     if (!visible.length || visible[0] === page) {
       ed[REVISION_RECTS_KEY] = new Map();
       ed[ACTIVE_BOXES_KEY] = [];
+      ed[PENDING_BOXES_KEY] = [];
     }
     const startCount = (ed[ACTIVE_BOXES_KEY] ?? []).length;
+    const pendingStart = (ed[PENDING_BOXES_KEY] ?? []).length;
     const out = originalRenderWidgets(page, left, top, width, height);
+    drawPendingOutline(pendingStart);
     drawActiveRing(startCount);
     if (!visible.length || visible[visible.length - 1] === page) {
       try {
@@ -513,75 +582,37 @@ export function configureTrackedChangeReview(
   // Assist is the only author that may turn tracking on, and only inside a
   // synchronous write batch. User typing in a review host starts untracked.
   disableUserTrackChanges(ed);
-  closeTrackedChangeReviewPane(ed);
+  closeTrackedChangeReviewPane();
   installRevisionGroupIsolation(ed);
   installRevisionHighlightRendering(ed, colorForRevision);
 }
 
-// Permanently suppress Syncfusion's native Changes/Comments review pane. We
-// render our OWN tracked-change UI (TrackedChangeGroups), so the built-in pane
-// must never appear — not on the version viewer, and not on the live editor
-// when the assistant makes tracked edits (which would otherwise pop it open).
-//
-// Patching showHidePane to ignore "show" is what makes it permanent: a one-time
-// close is undone the moment a new revision is added. The pane is created
-// lazily, so we also trap the property to patch it the instant Syncfusion
-// assigns it — before it can ever paint.
-function patchReviewPaneInstance(pane: any): any {
-  if (!pane || pane.__featheryReviewSuppressed) return pane;
-  pane.__featheryReviewSuppressed = true;
-  const original =
-    typeof pane.showHidePane === 'function'
-      ? pane.showHidePane.bind(pane)
-      : null;
-  try {
-    pane.isUserClosed = true;
-  } catch {
-    /* read-only in this build */
-  }
-  if (original) {
-    try {
-      pane.showHidePane = (show: boolean, tab?: any) => {
-        if (show) {
-          // Refuse to open; keep it marked closed and hide if mid-open.
-          try {
-            pane.isUserClosed = true;
-          } catch {
-            /* no-op */
-          }
-          try {
-            original(false, tab);
-          } catch {
-            /* no-op */
-          }
-          return;
-        }
-        return original(show, tab);
-      };
-    } catch {
-      /* method not writable: isUserClosed still discourages it */
-    }
-  }
-  return pane;
-}
+const REVIEW_PANE_STYLE_ID = 'feathery-hide-de-review-pane';
 
-export function closeTrackedChangeReviewPane(ed: any): void {
-  if (!ed) return;
-  patchReviewPaneInstance(ed.commentReviewPane);
-  if (ed.__featheryReviewPaneTrap) return;
-  ed.__featheryReviewPaneTrap = true;
-  // Trap lazy (re)assignment so the pane is patched before it can be shown.
-  let current = ed.commentReviewPane;
+// Suppress Syncfusion's native side panes. We render our own tracked-change UI
+// (TrackedChangeGroups), so the built-in Changes/Comments review pane must
+// never appear; every path that opens it (the showRevisions handler, the
+// assistant's tracked edits) ends by setting inline display:block on its
+// wrapper (.e-de-review-pane), and a stylesheet rule with !important overrides
+// that in every case — no per-instance monkey-patching. The Restrict Editing
+// pane (.e-de-restrict-pane) is suppressed the same way: Syncfusion auto-opens
+// it on the LEFT of the document the first time someone clicks or types in a
+// read-only editor (Editor.checkAndShowRestrictPane) and whenever a protected
+// document opens — the read-only version viewer trips it constantly, and its
+// editing-restriction controls have no place in our product. Layout is safe:
+// the viewer only subtracts the pane's computed width, which is 0 while
+// display:none. Injected once, idempotent.
+export function closeTrackedChangeReviewPane(): void {
+  const doc = featheryWindow().document;
+  if (!doc || doc.getElementById(REVIEW_PANE_STYLE_ID)) return;
   try {
-    Object.defineProperty(ed, 'commentReviewPane', {
-      configurable: true,
-      get: () => current,
-      set: (value) => {
-        current = patchReviewPaneInstance(value);
-      }
-    });
+    const style = doc.createElement('style');
+    style.id = REVIEW_PANE_STYLE_ID;
+    style.textContent =
+      '.e-de-review-pane,.e-de-restrict-pane{display:none!important}';
+    (doc.head ?? doc.documentElement).appendChild(style);
   } catch {
-    /* non-configurable: the direct patch + per-edit re-apply still cover it */
+    /* no document (SSR/tests): the pane cannot render there anyway */
   }
 }
 
@@ -966,11 +997,11 @@ export function useDocxEditor({
         ed.isReadOnly = isReadOnly;
         // Suppress Syncfusion's native review pane for every host (not just
         // review-gated ones) — we render our own tracked-change UI.
-        closeTrackedChangeReviewPane(ed);
+        closeTrackedChangeReviewPane();
         ed.addEventListener('contentChange', () => {
           // A tracked edit (e.g. the assistant's) can spawn/reopen the native
           // pane; keep it suppressed. Idempotent once patched.
-          closeTrackedChangeReviewPane(ed);
+          closeTrackedChangeReviewPane();
           if (ignoreContentChangeRef.current) return;
           unsavedRef.current = true;
           onDirtyRef.current?.();

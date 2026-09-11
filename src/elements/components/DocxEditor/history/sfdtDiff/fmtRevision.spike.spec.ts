@@ -29,11 +29,14 @@ const FORMATTING = 'Formatting'; // deliberately outside the 4 known types
 function docWithFormattingRevision() {
   return {
     ...docWith(
-      para({ text: 'Plain lead-in. ' }, {
-        text: 'Now bold.',
-        revisionIds: ['f1'],
-        characterFormat: { bold: true }
-      })
+      para(
+        { text: 'Plain lead-in. ' },
+        {
+          text: 'Now bold.',
+          revisionIds: ['f1'],
+          characterFormat: { bold: true }
+        }
+      )
     ),
     revisions: [
       {
@@ -61,7 +64,9 @@ describe('sfdtDiff fmt-revision spike', () => {
     const editor = makeRealDocumentEditor(docWithFormattingRevision());
     try {
       const changes = (editor as any).revisions?.changes ?? [];
-      const mine = changes.find((r: any) => r.revisionID === 'f1' || r.author === 'user');
+      const mine = changes.find(
+        (r: any) => r.revisionID === 'f1' || r.author === 'user'
+      );
       // The revision is present...
       expect(mine).toBeTruthy();
       // ...its type survived as our non-standard string (not coerced to a known one)...
@@ -69,7 +74,9 @@ describe('sfdtDiff fmt-revision spike', () => {
       // ...and it is bound to at least one rendered element. checkRevisionType()
       // walks elementBox.getRevision(i); a non-empty range is what makes
       // getRevisionColor() colour the glyph. This is the key precondition.
-      expect(Array.isArray(mine.range) ? mine.range.length : 0).toBeGreaterThan(0);
+      expect(Array.isArray(mine.range) ? mine.range.length : 0).toBeGreaterThan(
+        0
+      );
     } finally {
       destroyRealDocumentEditor(editor);
     }

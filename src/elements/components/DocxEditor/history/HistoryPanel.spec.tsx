@@ -134,7 +134,10 @@ describe('HistoryPanel', () => {
   });
 
   it('reports the loaded versions up for auto-selecting the latest', async () => {
-    const rows = [v({ name: 'Current one', seq: 2 }), v({ name: 'Older', seq: 1 })];
+    const rows = [
+      v({ name: 'Current one', seq: 2 }),
+      v({ name: 'Older', seq: 1 })
+    ];
     const host = makeHost(rows);
     const onVersionsLoaded = jest.fn();
     const { findByText } = renderPanel(host, undefined, onVersionsLoaded);

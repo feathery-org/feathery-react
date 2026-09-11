@@ -6,7 +6,12 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { populateVersionBindings } from './populateVersionBindings';
-import { applyHunks, ChangeList } from './sfdtDiff/index';
+import {
+  applyHunks,
+  ChangeList,
+  countEditGroups,
+  countPendingGroups
+} from './sfdtDiff/index';
 import { DocxHistoryHost, DocxVersion } from './types';
 
 export interface VersionDocument {
@@ -20,6 +25,8 @@ export interface VersionDocument {
   editCount?: number;
   /** Formatting-change count for this version. */
   formatCount?: number;
+  /** Assistant edits still tracked (not yet accepted) in this version. */
+  pendingCount?: number;
   /** True when detailed per-author highlights are unavailable (no change list,
    *  pruned highlights, or a hash mismatch) — the document still opens plain. */
   degraded: boolean;
@@ -73,7 +80,9 @@ export function useVersionDocument(
           const plainSfdt = () => {
             try {
               const populated = populateVersionBindings(finalDoc);
-              return populated === finalDoc ? finalSfdt : JSON.stringify(populated);
+              return populated === finalDoc
+                ? finalSfdt
+                : JSON.stringify(populated);
             } catch {
               return finalSfdt;
             }
@@ -105,8 +114,11 @@ export function useVersionDocument(
               done({
                 error: false,
                 sfdt: JSON.stringify(display),
-                editCount: changes.changeCount,
+                // Count edits the way the steppers walk them: a replace once,
+                // a whole Robin turn once (not per stored hunk).
+                editCount: countEditGroups(display),
                 formatCount: changes.formatChangeCount,
+                pendingCount: countPendingGroups(display),
                 degraded: false
               });
               return;

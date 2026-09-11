@@ -148,7 +148,17 @@ export interface WordOp {
   text: string;
 }
 
-const TOKEN = /\s+|[A-Za-z0-9À-￿]+|[^\sA-Za-z0-9À-￿]/g;
+// A whole monetary/numeric value is ONE token — optional currency symbol, the
+// digits with thousands/decimal separators, and a trailing percent — so a
+// changed number diffs as a single unit (strike the old value, write the new)
+// instead of fragmenting into the differing digits. The trailing lookahead
+// keeps it from swallowing part of an alphanumeric word (e.g. "3rd", "v2").
+// Ordered before the alphanumeric run so it wins when it starts on a number.
+const NUMBER = String.raw`[$€£¥]?\d(?:[\d.,]*\d)?%?(?![A-Za-z0-9À-￿])`;
+const TOKEN = new RegExp(
+  `\\s+|${NUMBER}|[A-Za-z0-9À-￿]+|[^\\sA-Za-z0-9À-￿]`,
+  'g'
+);
 
 export function tokenize(text: string): string[] {
   return text.match(TOKEN) ?? [];

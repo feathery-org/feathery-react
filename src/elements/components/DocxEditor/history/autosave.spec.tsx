@@ -48,6 +48,15 @@ const flush = async () => {
   });
 };
 
+// jsdom's Blob has no .text(); read it the long way.
+const blobText = (b: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsText(b);
+  });
+
 describe('useDocxHistorySession', () => {
   afterEach(() => jest.useRealTimers());
 
@@ -81,7 +90,7 @@ describe('useDocxHistorySession', () => {
     let doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
     });
-    const editor = { serialize: () => doc };
+    const editor: any = { serialize: () => doc };
     const { view, host } = setup({}, editor);
 
     act(() => view.result.current.onEdit({ assistant: false }));
@@ -105,7 +114,7 @@ describe('useDocxHistorySession', () => {
     let doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
     });
-    const editor = { serialize: () => doc };
+    const editor: any = { serialize: () => doc };
     const { view, host } = setup({}, editor);
     await flush(); // let the open-capture effect snapshot the pristine baseline
 
@@ -126,7 +135,7 @@ describe('useDocxHistorySession', () => {
     let doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
     });
-    const editor = { serialize: () => doc };
+    const editor: any = { serialize: () => doc };
     const { view } = setup({}, editor);
     await flush(); // capture the pristine baseline
 
@@ -178,6 +187,83 @@ describe('useDocxHistorySession', () => {
       { kind: 'assistant', label: 'Robin' }
     ]);
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it('attributes Robin’s first op to Robin via the pre-turn snapshot', async () => {
+    // contentChange (→ onEdit) fires AFTER an op applies, so at the user→Robin
+    // boundary the document already holds Robin's first op. The slice must come
+    // from the snapshot taken at the turn-START edge, or that op is credited to
+    // the user.
+    (globalThis as any).CompressionStream = undefined; // changesJson as raw JSON
+    let doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
+    });
+    const editor: any = { serialize: () => doc };
+    const { view, host } = setup({}, editor);
+    await flush(); // pristine baseline
+
+    // The user types first.
+    doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello user' }] }] }]
+    });
+    act(() => view.result.current.onEdit({ assistant: false }));
+
+    // Robin's turn starts (snapshot taken), THEN its first op applies.
+    act(() => setAssistantSessionActive(editor, true));
+    doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello user robin' }] }] }]
+    });
+    act(() => view.result.current.onEdit({ assistant: true }));
+    act(() => setAssistantSessionActive(editor, false)); // turn end → close
+    await flush();
+
+    const payload = host.closeVersion.mock.calls[0][1];
+    const changes = JSON.parse(await blobText(payload.changesJson!));
+    const authorsOf = (needle: string) =>
+      changes.hunks
+        .filter((h: any) => JSON.stringify(h).includes(needle))
+        .map((h: any) => h.author);
+    expect(authorsOf('robin')).toContain('robin');
+    // The user's own insertion stays the user's.
+    expect(changes.hunks.some((h: any) => h.author === 'you')).toBe(true);
+  });
+
+  it('keeps Robin as the closing author when a user-attributed change fires during the close', async () => {
+    // The live mis-attribution: after the turn-end close begins, an engine
+    // write (or the user's next keystroke) fires onEdit(assistant=false) while
+    // the PATCH is in flight. The closing session's F and author are captured
+    // synchronously at close, so the stored hunks stay Robin's.
+    (globalThis as any).CompressionStream = undefined;
+    let doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
+    });
+    const editor: any = { serialize: () => doc };
+    const { view, host, save } = setup({}, editor);
+    await flush();
+
+    act(() => setAssistantSessionActive(editor, true));
+    doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello robin' }] }] }]
+    });
+    act(() => view.result.current.onEdit({ assistant: true }));
+
+    save.mockImplementation(async () => {
+      // Lands mid-close, after the turn ended.
+      doc = JSON.stringify({
+        sections: [{ blocks: [{ inlines: [{ text: 'hello robin later' }] }] }]
+      });
+      view.result.current.onEdit({ assistant: false });
+    });
+    act(() => setAssistantSessionActive(editor, false));
+    await flush();
+
+    const payload = host.closeVersion.mock.calls[0][1];
+    const changes = JSON.parse(await blobText(payload.changesJson!));
+    expect(changes.hunks.length).toBeGreaterThan(0);
+    expect(changes.hunks.every((h: any) => h.author === 'robin')).toBe(true);
+    // The mid-close edit is NOT part of the closed version's document.
+    const finalSfdt = await blobText(payload.finalSfdtGz!);
+    expect(finalSfdt).not.toContain('later');
   });
 
   it('does nothing on a read-only editor', async () => {

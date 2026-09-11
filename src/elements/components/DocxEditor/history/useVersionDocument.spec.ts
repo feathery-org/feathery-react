@@ -119,7 +119,9 @@ describe('useVersionDocument', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.degraded).toBe(false);
-    expect(result.current.editCount).toBe(2);
+    // editCount counts EDIT GROUPS in the display document (one hunk here),
+    // not the stored changeCount — a replace or a whole Robin turn counts once.
+    expect(result.current.editCount).toBe(1);
     expect(result.current.formatCount).toBe(1);
     expect(result.current.sfdt).toContain('sections');
     // The applied hunk produced a synthetic revision to render.

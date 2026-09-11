@@ -252,7 +252,18 @@ export function hash32(input: string): string {
 export const IMAGE_DIGEST_MIN_LENGTH = 64;
 export const IMAGE_DIGEST_PREFIX = 'sha:';
 
-export function normalizeForDiff(sfdt: any): any {
+export interface NormalizeOptions {
+  /** Replace long image payloads with a short digest. On for diffing (keeps
+   *  snapshots small/comparable); OFF when normalising a document for DISPLAY,
+   *  which must keep the real image bytes. Default true. */
+  digestImages?: boolean;
+}
+
+export function normalizeForDiff(
+  sfdt: any,
+  options: NormalizeOptions = {}
+): any {
+  const digestImages = options.digestImages ?? true;
   const doc = JSON.parse(JSON.stringify(sfdt ?? {}));
   const deletions = revisionIdsOfType(doc, 'Deletion');
   const moveFrom = revisionIdsOfType(doc, 'MoveFrom');
@@ -269,6 +280,7 @@ export function normalizeForDiff(sfdt: any): any {
         const next = { ...inline };
         delete next.revisionIds;
         if (
+          digestImages &&
           typeof next.imageString === 'string' &&
           next.imageString.length > IMAGE_DIGEST_MIN_LENGTH
         ) {

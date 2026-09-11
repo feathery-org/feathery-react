@@ -6,8 +6,13 @@ import { CheckIcon, CloseIcon } from './icons';
 import { FEATHERY_RED, TOOLBAR_HEIGHT } from './DocxToolbar/styles';
 import DocumentPanel, { PanelTab } from './DocumentPanel';
 import PanelRail from './PanelRail';
-import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
+import {
+  DocxBindingsConfig,
+  setActiveInlineRevisions,
+  useDocxEditor
+} from './useDocxEditor';
 import { TableDeleteImpact } from './bindings/tableDeleteGuard';
+import { editGroupKey } from './history/sfdtDiff/index';
 import { useDocxHistorySession } from './history/useDocxHistorySession';
 import { VersionDocument } from './history/useVersionDocument';
 import VersionViewer from './history/VersionViewer';
@@ -197,10 +202,17 @@ function DocxEditor({
   const [historyVersions, setHistoryVersions] = useState<DocxVersion[]>([]);
   // Version highlights are always shown when available (no user toggle). The
   // resolved counts below drive the version bar's summary; reset per version.
-  const highlightsOn = true;
+  // Highlight-changes toggle (version bar). Toggling remounts the viewer.
+  const [highlightsOn, setHighlightsOn] = useState(true);
+  // The read-only version viewer's editor, for stepping through its changes.
+  const viewerEditorRef = useRef<any>(null);
+  // Which change group the steppers are on (index into orderedChangeGroups);
+  // -1 before the first step. Reset when the viewer's editor changes.
+  const changeStepRef = useRef(-1);
   const [versionMeta, setVersionMeta] = useState<{
     editCount?: number;
     formatCount?: number;
+    pendingCount?: number;
     degraded: boolean;
   } | null>(null);
   // Pending tracked-change count, reported by the (always-mounted) rail; drives
@@ -479,7 +491,8 @@ function DocxEditor({
             sfdt: preview.sfdt,
             degraded: false,
             editCount: preview.editCount,
-            formatCount: preview.formatCount
+            formatCount: preview.formatCount,
+            pendingCount: preview.pendingCount
           };
         } else {
           // No session edits to diff: show the current document plain.
@@ -504,6 +517,59 @@ function DocxEditor({
   const exitVersionView = useCallback(() => {
     setViewingVersion(null);
     setLiveDoc(null);
+  }, []);
+
+  // Step the viewer through EDIT GROUPS, not raw revisions: one click = one
+  // logical edit. editGroupKey buckets a replace's delete+insert together and
+  // collapses the WHOLE Robin turn into a single group (a session holds at most
+  // one turn), so the assistant's changes step as one edit however many places
+  // it touched. setActiveInlineRevisions rings every revision in the group (so
+  // both the strikethrough and the rewritten text are ringed, not just the
+  // deletion), and selectRevision scrolls the group into view (skipGroupSelect
+  // keeps it on this exact edit; the native pane it would open is hidden by
+  // closeTrackedChangeReviewPane's rule).
+  const stepChange = useCallback((direction: 1 | -1) => {
+    const ed = viewerEditorRef.current;
+    const revisions: any[] = ed?.revisions?.revisions ?? [];
+    if (!revisions.length) return;
+    // Bucket every revision under its group, preserving document order and the
+    // order groups first appear.
+    const order: string[] = [];
+    const byGroup = new Map<string, any[]>();
+    revisions.forEach((rev, i) => {
+      const key = editGroupKey(rev) ?? rev?.revisionId ?? String(i);
+      let bucket = byGroup.get(key);
+      if (!bucket) {
+        bucket = [];
+        byGroup.set(key, bucket);
+        order.push(key);
+      }
+      bucket.push(rev);
+    });
+    if (!order.length) return;
+    const prev = changeStepRef.current;
+    let next =
+      prev < 0 ? (direction === 1 ? 0 : order.length - 1) : prev + direction;
+    // Wrap so the steppers never dead-end.
+    if (next < 0) next = order.length - 1;
+    if (next >= order.length) next = 0;
+    changeStepRef.current = next;
+    const group = byGroup.get(order[next]) ?? [];
+    // Ring the full edit (deletion + insertion), then scroll to it.
+    try {
+      setActiveInlineRevisions(ed, group);
+    } catch {
+      /* highlighting is decoration; navigation must still run */
+    }
+    try {
+      const selection = ed.selection;
+      selection?.selectRevision?.(group[0], undefined, undefined, true);
+      if (selection?.start && selection?.end) {
+        ed.documentHelper?.scrollToPosition?.(selection.start, selection.end);
+      }
+    } catch {
+      /* selection unavailable mid-teardown */
+    }
   }, []);
 
   // When the History panel opens, select the latest (Current) version by default
@@ -733,7 +799,12 @@ function DocxEditor({
           onExit={exitVersionView}
           editCount={versionMeta?.editCount}
           formatCount={versionMeta?.formatCount}
+          pendingCount={versionMeta?.pendingCount}
           highlightsAvailable={!!versionMeta && !versionMeta.degraded}
+          highlightsOn={highlightsOn}
+          onToggleHighlights={setHighlightsOn}
+          onPrevChange={() => stepChange(-1)}
+          onNextChange={() => stepChange(1)}
         />
       )}
       {editor && !viewingVersion && (
@@ -841,6 +912,11 @@ function DocxEditor({
               // display document to open directly (no stored files exist).
               liveDoc={liveDoc ?? undefined}
               onMeta={setVersionMeta}
+              onViewerEditor={(ed) => {
+                viewerEditorRef.current = ed;
+                // Fresh editor (new version / highlight toggle): restart stepping.
+                changeStepRef.current = -1;
+              }}
             />
           )}
         </div>
@@ -874,6 +950,11 @@ function DocxEditor({
             onRestoreVersion={restoreViewingVersion}
             versionSelected={!!viewingVersion}
             selectedVersionId={viewingVersion?.id ?? null}
+            // Unapproved Robin edits still tracked in the in-progress current
+            // version — surfaced on its row while it's the one being viewed.
+            currentPendingCount={
+              viewingVersion?.is_current ? versionMeta?.pendingCount : undefined
+            }
             // Reload the list whenever a save lands so a new version and the
             // "Current" tag stay fresh while the panel is open.
             historyRefreshKey={historySession.savedAt?.getTime() ?? 0}

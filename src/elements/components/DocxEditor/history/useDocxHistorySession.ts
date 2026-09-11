@@ -18,6 +18,8 @@ import { createAutosaveScheduler } from './autosaveScheduler';
 import {
   applyHunks,
   contentHash,
+  countEditGroups,
+  countPendingGroups,
   diffSession,
   normalizeForDiff
 } from './sfdtDiff/index';
@@ -27,6 +29,7 @@ import {
   DocxHistoryHost,
   DocxSaveMeta,
   SaveStatus,
+  Slice,
   VersionAuthor
 } from './types';
 
@@ -61,6 +64,8 @@ export interface SessionPreview {
   sfdt: string;
   editCount: number;
   formatCount: number;
+  /** Assistant edits still tracked (not yet accepted) in this preview. */
+  pendingCount: number;
 }
 
 export interface UseDocxHistorySessionResult {
@@ -133,6 +138,12 @@ export function useDocxHistorySession(
   // The author of the final segment (last boundary → close): the F slice's
   // author for the diff. Updated on every edit.
   const currentAuthorRef = useRef<string>('you');
+  // The document serialized at the instant an assistant turn STARTS. The
+  // user→Robin slice boundary only fires on Robin's first contentChange — by
+  // then the document already holds that first assistant op, so serializing at
+  // the boundary would attribute it to the user. This pre-batch snapshot is the
+  // correct end of the user's slice.
+  const preTurnSnapshotRef = useRef<string | null>(null);
   const finalizeRef = useRef<Promise<void>>(Promise.resolve());
 
   // Build the engine exactly once; its inner functions read the refs above.
@@ -143,18 +154,30 @@ export function useDocxHistorySession(
   function buildEngine() {
     const slices = createSliceStore();
 
+    // The closing session's diff inputs, captured SYNCHRONOUSLY at close time.
+    // Anything serialized later (after the PATCH round-trip) can already carry
+    // the next session's edits — or a binding/engine write that flipped the
+    // last-edit author to the viewer — which is exactly how assistant edits
+    // were being mis-attributed.
+    interface CloseSnapshot {
+      fStr: string | null;
+      fAuthor: string;
+      s0: string | null;
+      slices: Slice[];
+    }
+
     const closeSession = async (
       sessionId: string,
-      authors: DocxSaveMeta['authors']
+      authors: DocxSaveMeta['authors'],
+      snap: CloseSnapshot
     ) => {
       const h = hostRef.current;
-      const ed = editorRef.current;
-      if (!h || !ed) return;
-      const fStr = ed.serialize();
+      if (!h || !snap.fStr) return;
+      const fStr = snap.fStr;
       const fDoc = JSON.parse(fStr);
       const finalSha256 = contentHash(normalizeForDiff(fDoc));
-      const startSha256 = s0Ref.current
-        ? contentHash(normalizeForDiff(JSON.parse(s0Ref.current)))
+      const startSha256 = snap.s0
+        ? contentHash(normalizeForDiff(JSON.parse(snap.s0)))
         : finalSha256;
 
       // Diff the session into per-author hunks. The stored slices are the
@@ -164,20 +187,22 @@ export function useDocxHistorySession(
       let changeCount: number | null = null;
       let formatChangeCount: number | null = null;
       try {
-        if (s0Ref.current) {
+        if (snap.s0) {
           const diffSlices = [
-            ...slices.all().map((s) => ({
+            ...snap.slices.map((s) => ({
               sfdt: JSON.parse(s.sfdt as string),
               author: s.author,
               endedAt: s.endedAt
             })),
-            { sfdt: fDoc, author: currentAuthorRef.current }
+            { sfdt: fDoc, author: snap.fAuthor }
           ];
           const changes = diffSession(
-            JSON.parse(s0Ref.current),
+            JSON.parse(snap.s0),
             diffSlices,
             sessionId,
-            { timeBudgetMs: 4000 }
+            {
+              timeBudgetMs: 4000
+            }
           );
           changeCount = changes.changeCount;
           formatChangeCount = changes.formatChangeCount;
@@ -213,6 +238,29 @@ export function useDocxHistorySession(
       authors: DocxSaveMeta['authors'];
     }) => {
       scheduler.cancel();
+      // Capture the closing session's diff inputs before the first await: F,
+      // its author, S0 and the boundary slices all belong to THIS session, and
+      // the PATCH round-trip below leaves plenty of time for the next session's
+      // edits (or an engine write) to corrupt them.
+      let fStr: string | null = null;
+      try {
+        fStr = editorRef.current?.serialize() ?? null;
+      } catch {
+        fStr = null; // Serialize failed: the row keeps its docx pair only.
+      }
+      const snap = {
+        fStr,
+        fAuthor: currentAuthorRef.current,
+        s0: s0Ref.current,
+        slices: slices.all()
+      };
+      slices.clear();
+      s0Ref.current = null;
+      preTurnSnapshotRef.current = null;
+      // The just-closed document is the baseline for the NEXT session's diff —
+      // set it now so edits landing while this close is in flight diff cleanly
+      // into their own session.
+      baselineRef.current = fStr;
       try {
         const blob = await exportRef.current();
         await saveRef.current(blob, {
@@ -226,15 +274,7 @@ export function useDocxHistorySession(
       } catch {
         setStatus('error');
       }
-      await closeSession(meta.sessionId, meta.authors);
-      slices.clear();
-      s0Ref.current = null;
-      // The just-closed document is the baseline for the NEXT session's diff.
-      try {
-        baselineRef.current = editorRef.current?.serialize() ?? null;
-      } catch {
-        baselineRef.current = null;
-      }
+      await closeSession(meta.sessionId, meta.authors, snap);
     };
 
     const scheduler = createAutosaveScheduler({
@@ -263,13 +303,26 @@ export function useDocxHistorySession(
     const tracker = createSessionTracker({
       onSliceBoundary: (author) => {
         const ed = editorRef.current;
-        if (ed) slices.push(ed.serialize(), author.key);
+        if (!ed) return;
+        // The boundary fires on the incoming author's FIRST contentChange, so
+        // the live document already contains that edit. For the user→Robin
+        // switch we snapshotted the document at the turn-start edge — use it so
+        // the outgoing user slice ends exactly where the user stopped and
+        // Robin's first op is attributed to Robin, not the user.
+        const preTurn = preTurnSnapshotRef.current;
+        preTurnSnapshotRef.current = null;
+        try {
+          slices.push(preTurn ?? ed.serialize(), author.key);
+        } catch {
+          // Slice lost: the diff falls back to coarser attribution.
+        }
       },
       onClose: (reason, meta) => {
         if (reason === 'reset') {
           scheduler.cancel();
           slices.clear();
           s0Ref.current = null;
+          preTurnSnapshotRef.current = null;
           // A new document invalidates the old baseline; the open-capture effect
           // snapshots the fresh one.
           baselineRef.current = null;
@@ -315,11 +368,21 @@ export function useDocxHistorySession(
     [readOnly, scheduler, tracker]
   );
 
-  // Assistant turn end closes the session.
+  // Assistant turn START snapshots the pre-batch document (the user→Robin
+  // slice boundary); turn END closes the session.
   useEffect(() => {
     if (!editor || !host || readOnly) return undefined;
     return onAssistantSessionChange(editor, (active) => {
-      if (!active) tracker.noteTurnEnd();
+      if (active) {
+        try {
+          preTurnSnapshotRef.current = editor.serialize();
+        } catch {
+          preTurnSnapshotRef.current = null;
+        }
+      } else {
+        preTurnSnapshotRef.current = null;
+        tracker.noteTurnEnd();
+      }
     });
   }, [editor, host, readOnly, tracker]);
 
@@ -371,10 +434,13 @@ export function useDocxHistorySession(
         { timeBudgetMs: 4000 }
       );
       if (!changes.hunks.length) return null;
+      const display = applyHunks(fDoc, changes);
       return {
-        sfdt: JSON.stringify(applyHunks(fDoc, changes)),
-        editCount: changes.changeCount,
-        formatCount: changes.formatChangeCount
+        sfdt: JSON.stringify(display),
+        // Same grouping as the steppers: a Robin turn counts as one edit.
+        editCount: countEditGroups(display),
+        formatCount: changes.formatChangeCount,
+        pendingCount: countPendingGroups(display)
       };
     } catch {
       return null;
