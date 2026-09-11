@@ -264,7 +264,7 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // renders two adjacent tables as one - see `spliceDuplicateAfter`). Moving
     // it elsewhere is a separate, later edit against the copy's own anchor.
     //
-    // `resultRef` gives a bound copy a stable name for later primitives in the
+    // `resultRef` gives any copy a stable name for later primitives in the
     // same change set. To split, duplicate the whole table as `@copy`, delete
     // the complementary rows from `@copy`, then delete the selected rows from
     // the source. The engine resolves the created identity after each step, so

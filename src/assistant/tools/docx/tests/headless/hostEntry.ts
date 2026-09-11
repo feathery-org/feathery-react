@@ -127,6 +127,23 @@ function tableBlockOf(tableId: string): any {
   return node;
 }
 
+function tableBlockAtAnchor(anchor: string): any {
+  const [section, block] = anchor.split(';').map(Number);
+  const topLevel = parsed()?.sections?.[section]?.blocks?.[block];
+  const find = (node: any): any => {
+    if (!node || typeof node !== 'object') return undefined;
+    if (Array.isArray(node.rows)) return node;
+    for (const child of node.blocks ?? []) {
+      const table = find(child);
+      if (table) return table;
+    }
+    return undefined;
+  };
+  const table = find(topLevel);
+  if (!table) throw new Error(`no table at "${anchor}"`);
+  return table;
+}
+
 function documentFormulas(): Map<string, string> {
   const out = new Map<string, string>();
   for (const [name, occurrences] of indexOf().formulas) {
@@ -395,6 +412,55 @@ const api = {
     Object.fromEntries(documentFormulas()),
 
   tableIds: (): string[] => Array.from(indexOf().tables.keys()).map(String),
+
+  tableAnchorContaining(text: string): string {
+    const cell = api
+      .inventory()
+      .find(
+        (entry) => entry.kind === 'table_cell' && entry.text.includes(text)
+      );
+    if (!cell)
+      throw new Error(`no table cell contains ${JSON.stringify(text)}`);
+    return cell.anchor.split(';').slice(0, 2).join(';');
+  },
+
+  tableRowTextsAt(anchor: string): string[] {
+    return tableBlockAtAnchor(anchor).rows.map((row: any) => nodeText(row));
+  },
+
+  tableColumnCountAt(anchor: string): number {
+    return Math.max(
+      0,
+      ...tableBlockAtAnchor(anchor).rows.map((row: any) =>
+        Array.isArray(row?.cells) ? row.cells.length : 0
+      )
+    );
+  },
+
+  columnWidthsAt(anchor: string): number[] {
+    const instance: any = live();
+    instance.selection.select(`${anchor};0;0;0;0`, `${anchor};0;0;0;0`);
+    const rows: any[] =
+      instance.selection?.start?.paragraph?.associatedCell?.ownerTable
+        ?.childWidgets ?? [];
+    const cells: any[] =
+      [...rows].sort(
+        (left, right) =>
+          (right.childWidgets?.length ?? 0) - (left.childWidgets?.length ?? 0)
+      )[0]?.childWidgets ?? [];
+    return cells.map((cell) =>
+      Number(
+        cell?.cellFormat?.preferredWidth || cell?.cellFormat?.cellWidth || 0
+      )
+    );
+  },
+
+  rowShadingAt(anchor: string): Array<string | null> {
+    return tableBlockAtAnchor(anchor).rows.map((row: any) => {
+      const colour = row?.cells?.[0]?.cellFormat?.shading?.backgroundColor;
+      return !colour || colour === 'empty' ? null : String(colour);
+    });
+  },
 
   traces: (): any[] => (globalThis as any).__featheryDocumentEditTraceLog ?? [],
 

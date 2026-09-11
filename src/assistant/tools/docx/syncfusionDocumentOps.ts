@@ -952,6 +952,7 @@ export interface EditResult {
    * but `editor`.
    */
   route?: 'engine' | 'editor';
+  mechanism?: 'sfdt' | 'syncfusion_editor' | 'sfdt_via_syncfusion_editor';
   error?: string;
   /** The stable content identity moved from the requested anchor before write. */
   relocated?: { from: string; to: string };
@@ -6129,6 +6130,8 @@ interface TableFootprint {
  */
 interface OpSuccessExtras {
   anchor?: string;
+  createdRef?: EditResult['createdRef'];
+  mechanism?: EditResult['mechanism'];
   details?: string[];
   formula?: FormulaCellReport;
   column?: ColumnFormulaReport;
@@ -8734,6 +8737,140 @@ function assertPastedTableMatches(
   );
 }
 
+function logicalColumnCount(table: any): number {
+  return Math.max(
+    0,
+    ...(getRows(table) ?? []).map((row: any) =>
+      (row?.cells ?? []).reduce(
+        (count: number, cell: any) =>
+          count + Math.max(1, Number(cell?.cellFormat?.columnSpan) || 1),
+        0
+      )
+    )
+  );
+}
+
+function replacePlainTableColumn(
+  editor: LiveEditor,
+  op: TypedEditOp<'insert_column'> | TypedEditOp<'delete_column'>,
+  block: FlatBlock,
+  byAnchor: Map<string, FlatBlock>
+): OpSuccessExtras {
+  const blocks = Array.from(byAnchor.values());
+  const tableAnchor = tableAnchorForBlock(block);
+  const addressed = columnIndexFromAnchor(block.anchor);
+  if (!tableAnchor || addressed == null)
+    throw new OpError(
+      `${op.op}_requires_cell`,
+      `${op.op} must anchor a cell in the target column. Nothing was written.`
+    );
+  const sfdt = serializeSfdt(editor);
+  const sourceTable = tableBlockAt(sfdt, tableAnchor);
+  if (!sourceTable)
+    throw new OpError(
+      'table_not_found',
+      `No table answers to "${tableAnchor}". Nothing was written.`
+    );
+  const beforeColumns = logicalColumnCount(sourceTable);
+  if (op.op === 'delete_column' && beforeColumns <= 1)
+    throw new OpError(
+      'delete_column_last_column',
+      'delete_column cannot remove the only column in a table. Delete the table instead. Nothing was written.'
+    );
+  const source = resolveTableRange(blocks, tableAnchor);
+  const container = tableContainerAt(sfdt, tableAnchor);
+  if (!container)
+    throw new OpError(
+      'table_not_found',
+      `No table answers to "${tableAnchor}". Nothing was written.`
+    );
+  const appearance = collectTableAppearance(sourceTable);
+  const headerRows = appearance
+    ? effectiveHeaderRows({ blocks, sfdt, tableAnchor, source: appearance })
+    : 0;
+  const banding = appearance
+    ? detectTableBanding(appearance) ?? undefined
+    : undefined;
+  const clone = clonedWithoutRevisions(
+    sfdt,
+    containerCarryingOnlyTable(container.block, sourceTable)
+  );
+  const cloneTable = firstTableBlockIn(clone);
+  const position =
+    op.op === 'insert_column' && op.position === 'before' ? 'before' : 'after';
+  const columnIndex =
+    op.op === 'insert_column'
+      ? addressed + (position === 'after' ? 1 : 0)
+      : addressed;
+  if (op.op === 'insert_column') insertColumnIntoTable(cloneTable, columnIndex);
+  else deleteColumnFromTable(cloneTable, columnIndex);
+
+  const sourceAddress = topLevelAddress(source.blocks[0].anchor);
+  const target: PasteTarget = {
+    anchor: source.endAnchor,
+    address: { ...sourceAddress, block: sourceAddress.block + 1 }
+  };
+  const { paste, pastedSfdt } = pasteBlocksAsTrackedSegments(
+    editor,
+    sfdt,
+    copyPasteSegments([clone], sfdt, target),
+    target
+  );
+  const replacementAnchor = assertPastedTableMatches(
+    pastedSfdt,
+    paste,
+    source,
+    flattenSfdt({ sections: [{ blocks: [clone] }] })
+  );
+  selectBlock(editor, block);
+  callEditor(editor, 'deleteTable');
+  const postWriteSfdt = serializeSfdt(editor);
+  const replacement = tableBlockAt(postWriteSfdt, replacementAnchor);
+  const expectedColumns = beforeColumns + (op.op === 'insert_column' ? 1 : -1);
+  if (!replacement || logicalColumnCount(replacement) !== expectedColumns)
+    throw new OpError(
+      `${op.op}_replacement_lost`,
+      `${op.op} could not verify the replacement table. Nothing was kept.`
+    );
+  const footprint = captureTableFootprint(
+    postWriteSfdt,
+    replacementAnchor,
+    headerRows,
+    banding,
+    undefined,
+    true
+  );
+  if (footprint && op.op === 'insert_column')
+    footprint.insertedColumn = {
+      column: columnIndex,
+      sourceColumn: columnIndex === 0 ? 1 : columnIndex - 1
+    };
+  const resultRef =
+    op.op === 'insert_column' && typeof op.resultRef === 'string'
+      ? op.resultRef.trim()
+      : '';
+  return {
+    anchor: `${replacementAnchor};0;${Math.min(
+      columnIndex,
+      expectedColumns - 1
+    )};0`,
+    postWriteSfdt,
+    pasteEffect: paste,
+    mechanism: 'sfdt_via_syncfusion_editor',
+    ...(footprint ? { tableFootprints: [footprint] } : {}),
+    ...(resultRef
+      ? {
+          createdRef: {
+            ref: resultRef,
+            kind: 'column',
+            id: replacementAnchor,
+            columnIndex
+          }
+        }
+      : {})
+  };
+}
+
 // Exported for the registry parity spec: the spec re-asserts at runtime what
 // the mapped types already guarantee at compile time, guarding the emitted JS
 // against an `as any` regression at the table itself.
@@ -8827,18 +8964,10 @@ const bookmarkClampReceipts = (intents: BookmarkClampIntent[]): string[] =>
 export const ANCHORED_OP_HANDLERS: {
   [K in AnchoredDocumentOp]: AnchoredOpHandler<K>;
 } = {
-  insert_column: () => {
-    throw new OpError(
-      'insert_column_requires_bound_table',
-      'insert_column currently requires a bound table so the engine can replace its subtree as one tracked change. Nothing was written.'
-    );
-  },
-  delete_column: () => {
-    throw new OpError(
-      'delete_column_requires_bound_table',
-      'delete_column currently requires a bound table so the engine can validate formula dependencies and replace its subtree as one tracked change. Nothing was written.'
-    );
-  },
+  insert_column: ({ editor, op, block, byAnchor }) =>
+    replacePlainTableColumn(editor, op, block, byAnchor),
+  delete_column: ({ editor, op, block, byAnchor }) =>
+    replacePlainTableColumn(editor, op, block, byAnchor),
   create_binding: ({ editor, op, block, liveText }) => {
     if (op.kind !== 'input')
       throw new OpError(
@@ -9289,7 +9418,7 @@ export const ANCHORED_OP_HANDLERS: {
       pasteAtRangeStart(earlier)
     );
   },
-  duplicate_table: ({ editor, block, byAnchor }) => {
+  duplicate_table: ({ editor, op, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
     const sfdt = serializeSfdt(editor);
     const tableAnchor = tableAnchorForBlock(block);
@@ -9325,6 +9454,8 @@ export const ANCHORED_OP_HANDLERS: {
         tableBlockAt(sfdt, tableAnchor)
       )
     );
+    const sourceIndex = scanReadableBindings(sfdt);
+    if (sourceIndex) rewriteCloneIdentities([clone], sourceIndex);
     const { paste, pastedSfdt } = pasteBlocksAsTrackedSegments(
       editor,
       sfdt,
@@ -9337,9 +9468,21 @@ export const ANCHORED_OP_HANDLERS: {
       source,
       source.blocks
     );
+    const resultRef =
+      typeof op.resultRef === 'string' ? op.resultRef.trim() : '';
     return {
       anchor,
-      postWriteSfdt: pastedSfdt
+      postWriteSfdt: pastedSfdt,
+      mechanism: 'sfdt_via_syncfusion_editor',
+      ...(resultRef
+        ? {
+            createdRef: {
+              ref: resultRef,
+              kind: 'table' as const,
+              id: anchor
+            }
+          }
+        : {})
     };
   },
   insert_text: ({ editor, op, block }) => {
@@ -9530,8 +9673,25 @@ export const ANCHORED_OP_HANDLERS: {
   // and silently dropped: every insert_row was one row below, every
   // insert_table was 1x1. Every op maps its arguments explicitly now.
   insert_row: ({ editor, op, block }) => {
+    const tableAnchor = tableAnchorForBlock(block);
+    const addressedRow = Number(block.anchor.split(';')[2]);
+    const rowIndex = addressedRow + (op.above === true ? 0 : 1);
     selectBlock(editor, block);
     callEditor(editor, 'insertRow', op.above === true, positiveCount(op.count));
+    const resultRef =
+      op.shape === 'blank' && typeof op.resultRef === 'string'
+        ? op.resultRef.trim()
+        : '';
+    return resultRef && tableAnchor && Number.isInteger(rowIndex)
+      ? {
+          createdRef: {
+            ref: resultRef,
+            kind: 'row' as const,
+            id: tableAnchor,
+            rowIndex
+          }
+        }
+      : undefined;
   },
   insert_table: ({ editor, op, block, byAnchor }) => {
     if (block.kind === 'table_cell')
@@ -9592,10 +9752,9 @@ export const ANCHORED_OP_HANDLERS: {
   },
   // Structural table removal. SyncFusion operates on the table or row
   // containing the selection, which selectBlock placed at the anchor.
-  // Raw `delete_column`, `merge_cells` and `insert_column` remain absent:
-  // SyncFusion has no tracked route for them under track changes. Bound column
-  // operations are routed through the verified table-subtree replacement
-  // engine before this dispatch table is reached.
+  // Raw column mutations and merge_cells remain absent because SyncFusion does
+  // not track them. Column handlers replace the table through tracked paste and
+  // deletion instead.
   delete_table: ({ editor, block, byAnchor }) => {
     // The whole-table shape of the deletion SyncFusion cannot accept. Guarded
     // only when the anchor really is a cell, exactly as delete_row below: a
@@ -12404,6 +12563,8 @@ export const TRACKED_TEXT_OPS = new Set([
 export const TRACKED_STRUCTURAL_OPS = new Map([
   ['insert_row', 'insertion'],
   ['delete_row', 'deletion'],
+  ['insert_column', 'insertion'],
+  ['delete_column', 'deletion'],
   ['delete_table', 'deletion'],
   ['delete_paragraph', 'deletion']
 ]);
@@ -12954,6 +13115,7 @@ interface ChangeSetPlan {
   index: number;
   op: EditOp;
   target?: FlatBlock | LiveStoryTarget;
+  deferredStableRef?: { ref: string; offsets: number[] };
   /** Preflight relocation, extended at write time if another structural op moves it again. */
   relocated?: { from: string; to: string };
   source?: FlatBlock;
@@ -19256,6 +19418,41 @@ function stableResourceAnchor(
   };
 }
 
+function editorStableRefAnchor(
+  op: EditOp,
+  parsed: { ref: string; offsets: number[] },
+  refs: Map<string, NonNullable<EditResult['createdRef']>>
+): string {
+  const resource = refs.get(parsed.ref);
+  if (!resource)
+    throw new OpError(
+      'stable_ref_not_found',
+      `The same-change-set table reference ${JSON.stringify(
+        parsed.ref
+      )} was not created before this edit. Nothing was written.`
+    );
+  const tableAnchor = normalizeTableAnchor(resource.id);
+  if (!tableAnchor)
+    throw new OpError(
+      'stable_ref_target_unaddressable',
+      `The resource created as ${JSON.stringify(
+        parsed.ref
+      )} has no addressable table anchor. Nothing was written.`
+    );
+  if (resource.kind === 'column') {
+    const [row = 0, paragraph = 0] = parsed.offsets;
+    return `${tableAnchor};${row};${resource.columnIndex ?? 0};${paragraph}`;
+  }
+  if (resource.kind === 'row') {
+    const [column = 0, paragraph = 0] = parsed.offsets;
+    return `${tableAnchor};${resource.rowIndex ?? 0};${column};${paragraph}`;
+  }
+  const requested = Array.isArray(op.rows) ? Number(op.rows[0]) : NaN;
+  const [offsetRow = 0, column = 0, paragraph = 0] = parsed.offsets;
+  const row = Number.isInteger(requested) ? requested : offsetRow;
+  return `${tableAnchor};${row};${column};${paragraph}`;
+}
+
 /**
  * Same-change-set references are declarations, not guessed future anchors.
  * Validate their complete dependency order before any plan executes so a typo,
@@ -21617,7 +21814,9 @@ export function applyDocumentEdits(
           applied: raw.results.map((entry, index) => ({
             op: expansion.edits[index]?.op,
             route: entry.route,
-            mechanism: entry.route === 'engine' ? 'sfdt' : 'syncfusion_editor',
+            mechanism:
+              entry.mechanism ??
+              (entry.route === 'engine' ? 'sfdt' : 'syncfusion_editor'),
             tracking: !entry.ok
               ? 'not_applied'
               : FORMAT_OPS.has(expansion.edits[index]?.op)
@@ -21778,6 +21977,11 @@ function applyDocumentEditsMeasured(
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
   const enginePlans: EngineMutationPlan[] = [];
+  const resultRefRoutes = new Map<string, DocxEditRoute>();
+  const createdEditorRefs = new Map<
+    string,
+    NonNullable<EditResult['createdRef']>
+  >();
   const createdBoundRows = new Map<string, CreatedBoundRowTarget>();
   const routeByIndex = new Map<number, DocxEditRoute>();
   const routeForIndex = (index: number): DocxEditRoute =>
@@ -21905,14 +22109,17 @@ function applyDocumentEditsMeasured(
   // What landed ops may have moved, row ops shift anchors only inside their table
   let documentShifted = false;
   const shiftedTables = new Set<string>();
-  const anchorMayHaveShifted = (anchor: unknown): boolean =>
-    documentShifted ||
-    shiftedTables.has(
-      String(anchor ?? '')
-        .split(';')
-        .slice(0, 2)
-        .join(';')
+  const preservedTableAnchors = new Set<string>();
+  const anchorMayHaveShifted = (anchor: unknown): boolean => {
+    const tableAnchor = String(anchor ?? '')
+      .split(';')
+      .slice(0, 2)
+      .join(';');
+    return (
+      shiftedTables.has(tableAnchor) ||
+      (documentShifted && !preservedTableAnchors.has(tableAnchor))
     );
+  };
   const refresh = (serializedSfdt?: any) => {
     const sfdt = serializedSfdt ?? serializeSfdt(editor);
     liveSfdt = sfdt;
@@ -22196,9 +22403,14 @@ function applyDocumentEditsMeasured(
     }
     const stableRef = stableResourceAnchor(op.anchor);
     if (stableRef) {
-      const routed = stableTableReferencePlan(editor, index, op);
-      setRoute(index, routed.resultRoute ?? routed.route);
-      enginePlans.push(routed);
+      if (resultRefRoutes.get(stableRef.ref) === 'editor') {
+        setRoute(index, 'editor');
+        plans.push({ index, op, deferredStableRef: stableRef });
+      } else {
+        const routed = stableTableReferencePlan(editor, index, op);
+        setRoute(index, routed.resultRoute ?? routed.route);
+        enginePlans.push(routed);
+      }
       observeMutationGuardBoundary(op, 'block_expect');
       return;
     }
@@ -22512,6 +22724,8 @@ function applyDocumentEditsMeasured(
       );
       if (routed) {
         setRoute(index, routed.route);
+        const resultRef = stableResourceRef(op.resultRef);
+        if (resultRef) resultRefRoutes.set(resultRef, routed.route);
         const globalWrite = routed.bindingWrite?.identity.global
           ? routed.bindingWrite
           : undefined;
@@ -22613,6 +22827,8 @@ function applyDocumentEditsMeasured(
           ? { targetBefore: readEffectiveSourceFormat(editor, target) }
           : {})
       });
+      const resultRef = stableResourceRef(op.resultRef);
+      if (resultRef) resultRefRoutes.set(resultRef, 'editor');
       if (target && !isLiveStoryTarget(target)) {
         const simulatedTarget = simulatedByAnchor.get(target.anchor) ?? target;
         const nextText = simulateStableTextOp(op, simulatedTarget);
@@ -22722,6 +22938,15 @@ function applyDocumentEditsMeasured(
         // would be stripped again by eslint's no-undef-init rule.
         let opExtras!: OpSuccessExtras | void;
         try {
+          if (plan.deferredStableRef)
+            writtenOp = {
+              ...op,
+              anchor: editorStableRefAnchor(
+                op,
+                plan.deferredStableRef,
+                createdEditorRefs
+              )
+            };
           if (op.op === 'replace_all') {
             // Untyped->typed boundary, same contract as the dispatch sites.
             const count = applyReplaceAll(
@@ -22734,7 +22959,7 @@ function applyDocumentEditsMeasured(
           } else if (ANCHORLESS_OPS.has(op.op)) {
             applyAnchorlessOp(editor, op);
           } else {
-            if (!op.anchor)
+            if (!writtenOp.anchor)
               throw new OpError(
                 'missing_anchor',
                 'Structural edit needs an anchor.'
@@ -22759,7 +22984,7 @@ function applyDocumentEditsMeasured(
               // Stories the projection genuinely cannot see (footnote/endnote
               // markers) keep the revision assertion; headers/footers never get
               // this far (`story_write_unverified` refuses them at preflight).
-              if (isTextFrameAnchor(op.anchor)) {
+              if (isTextFrameAnchor(String(op.anchor))) {
                 priorRejectStream = rejectStream;
                 priorAcceptStream = acceptStream;
               }
@@ -22769,6 +22994,7 @@ function applyDocumentEditsMeasured(
                 typeof op.__sectionBoundaryAnchor === 'string'
                   ? op.__sectionBoundaryAnchor.trim()
                   : '';
+              const requestedAnchor = String(writtenOp.anchor);
               const target = sectionBoundaryAnchor
                 ? resolveSectionBoundary(
                     blocks,
@@ -22780,15 +23006,15 @@ function applyDocumentEditsMeasured(
                   )
                 : resolveChangeSetBlock(
                     blocks,
-                    op.anchor,
+                    requestedAnchor,
                     plan.target,
-                    anchorMayHaveShifted(op.anchor)
+                    anchorMayHaveShifted(requestedAnchor)
                   );
               assertDeferredAnchorIsNewAndEmpty(plan, target);
               writtenOp = { ...op, anchor: target.anchor };
-              if (target.anchor !== op.anchor)
+              if (target.anchor !== requestedAnchor)
                 appliedRelocation = {
-                  from: plan.relocated?.from ?? op.anchor,
+                  from: plan.relocated?.from ?? requestedAnchor,
                   to: target.anchor
                 };
               insertInheritance = rebasePlannedInsertInheritance(
@@ -22930,7 +23156,13 @@ function applyDocumentEditsMeasured(
               block.anchor.startsWith(`${rowOpTable};`)
             );
             if (rowOpTable && tableKept) shiftedTables.add(rowOpTable);
-            else documentShifted = true;
+            else {
+              documentShifted = true;
+              if (op.op === 'duplicate_table') {
+                const sourceTable = normalizeTableAnchor(writtenOp.anchor);
+                if (sourceTable) preservedTableAnchors.add(sourceTable);
+              } else preservedTableAnchors.clear();
+            }
           }
           assertInsertedTableIsAddressable(
             writtenOp,
@@ -23005,17 +23237,18 @@ function applyDocumentEditsMeasured(
             // snapshot). Keep the content snapshot instead of serializing the
             // whole document again.
           }
+          const reportedExtras = collectOpExtras(
+            opExtras,
+            (restores) => recordAppearanceRestores(op, restores),
+            recordTableFootprints,
+            (clamps) => recordBookmarkClamps(op, clamps)
+          );
           results[index] = {
             ok: true,
             op: op.op,
             anchor: writtenOp.anchor,
             ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
-            ...collectOpExtras(
-              opExtras,
-              (restores) => recordAppearanceRestores(op, restores),
-              recordTableFootprints,
-              (clamps) => recordBookmarkClamps(op, clamps)
-            ),
+            ...reportedExtras,
             ...(inheritanceAppearance
               ? { appearance: inheritanceAppearance.report }
               : {}),
@@ -23031,6 +23264,11 @@ function applyDocumentEditsMeasured(
                 }
               : {})
           };
+          if (reportedExtras.createdRef)
+            createdEditorRefs.set(
+              reportedExtras.createdRef.ref,
+              reportedExtras.createdRef
+            );
         } catch (err) {
           fail(index, op, err);
           if (appliedRelocation)
@@ -23063,7 +23301,14 @@ function applyDocumentEditsMeasured(
         const revisionsBeforeOp = snapshotRevisions(editor);
         let appliedRelocation = plan.relocated;
         try {
-          if (!op.anchor)
+          const requestedAnchor = plan.deferredStableRef
+            ? editorStableRefAnchor(
+                op,
+                plan.deferredStableRef,
+                createdEditorRefs
+              )
+            : op.anchor;
+          if (!requestedAnchor)
             throw new OpError(
               'missing_anchor',
               'Formatting edit needs an anchor.'
@@ -23139,7 +23384,7 @@ function applyDocumentEditsMeasured(
             target = createdTarget;
           } else if (
             !baselineTarget &&
-            anchorMayHaveShifted(op.anchor) &&
+            anchorMayHaveShifted(requestedAnchor) &&
             !TABLE_SCOPED_OPS.has(op.op) &&
             op.expect != null
           ) {
@@ -23164,15 +23409,16 @@ function applyDocumentEditsMeasured(
           } else {
             target = resolveChangeSetBlock(
               blocks,
-              op.anchor,
+              requestedAnchor,
               baselineTarget,
-              anchorMayHaveShifted(op.anchor) && !TABLE_SCOPED_OPS.has(op.op)
+              anchorMayHaveShifted(requestedAnchor) &&
+                !TABLE_SCOPED_OPS.has(op.op)
             );
           }
           appliedRelocation =
-            target.anchor !== op.anchor
+            target.anchor !== requestedAnchor
               ? {
-                  from: plan.relocated?.from ?? op.anchor,
+                  from: plan.relocated?.from ?? requestedAnchor,
                   to: target.anchor
                 }
               : plan.relocated;

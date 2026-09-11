@@ -792,9 +792,7 @@ const CONTRACTS: Record<string, ContractCase> = {
   },
   set_column_layout: {
     fixture: bandedTablesFixture,
-    edits: [
-      { op: 'set_column_layout', anchor: '0;2;0;1;0', width: 180 }
-    ],
+    edits: [{ op: 'set_column_layout', anchor: '0;2;0;1;0', width: 180 }],
     verify: (ed, result) => {
       ed.selection.select('0;2;0;1;0;0', '0;2;0;1;0;0');
       expect(Number(ed.selection.cellFormat.preferredWidth)).toBeCloseTo(
@@ -1890,24 +1888,6 @@ describe('op contracts: every advertised op works over its real route', () => {
         error: 'stale_anchor',
         details: ['detail preserved']
       });
-    } finally {
-      destroyEditor(editor);
-    }
-  });
-
-  it('insert_column refuses a plain table because only the tracked bound route is supported', () => {
-    const editor = makeEditor(tableFixture());
-    try {
-      const before = editor.serialize();
-      const result = applyDocumentEdits(editor as any, {
-        edits: [{ op: 'insert_column', anchor: '0;1;0;1;0', count: 1 }]
-      });
-      expect(result.results[0].ok).toBe(false);
-      expect(result.results[0].error).toBe(
-        'insert_column_requires_bound_table'
-      );
-      expect(editor.revisions.length).toBe(0);
-      expect(editor.serialize()).toBe(before);
     } finally {
       destroyEditor(editor);
     }
