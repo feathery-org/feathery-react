@@ -673,6 +673,40 @@ function TableElement({
   const showEmptyState = !hasData || !hasSearchResults;
   const showToolbar = enableSearch || showAddRow;
 
+  // Column sizing: 'equal' uses a fixed table layout so data columns share the
+  // width evenly. Resolved through the responsive style path so desktop
+  // (`styles`) and mobile (`mobile_styles`) can differ via a media query; never
+  // applied to transposed tables. The colgroup keeps the action/delete columns
+  // at fixed widths while data columns stay unsized, so only the data columns
+  // split. The colgroup renders whenever either viewport is equal, since DOM
+  // structure can't be media-queried; its widths are, so that the viewport
+  // still on auto keeps sizing those columns to their content.
+  //
+  // `isTransposed` tracks the row count, so it flips as data loads. The apply
+  // stays unconditional to overwrite the memoized target — guarding it would
+  // strand a stale `fixed` on a table that has since become transposed.
+  styles.apply('table', 'column_sizing', (columnSizing: any) => ({
+    tableLayout: !isTransposed && columnSizing === 'equal' ? 'fixed' : 'auto'
+  }));
+  const desktopEqual = element.styles?.column_sizing === 'equal';
+  const mobileSizing = element.mobile_styles?.column_sizing;
+  // An absent mobile override inherits desktop, matching `apply`.
+  const mobileEqual =
+    mobileSizing === undefined ? desktopEqual : mobileSizing === 'equal';
+  const useFixedColumns = !isTransposed && (desktopEqual || mobileEqual);
+  // Pin the action/delete columns only in the viewport that is actually fixed;
+  // `auto` elsewhere so an auto-layout viewport still sizes them to content.
+  const utilityColStyle = (width: string) => ({
+    width: desktopEqual ? width : 'auto',
+    ...(styles.handleMobile && mobileSizing !== undefined
+      ? {
+          [styles.mobileBreakpointKey]: {
+            width: mobileEqual ? width : 'auto'
+          }
+        }
+      : {})
+  });
+
   return (
     <div
       className={TABLE_CLASS.container}
@@ -760,6 +794,17 @@ function TableElement({
               ...styles.getTarget('table')
             }}
           >
+            {useFixedColumns && (
+              <colgroup>
+                {columns.map((col: any) => (
+                  <col key={col.field_key} />
+                ))}
+                {actions.length > 0 && <col css={utilityColStyle('80px')} />}
+                {showStandaloneDeleteColumn && (
+                  <col css={utilityColStyle('40px')} />
+                )}
+              </colgroup>
+            )}
             {!isTransposed && (
               <thead className={TABLE_CLASS.header} css={theadStyle}>
                 <tr>
