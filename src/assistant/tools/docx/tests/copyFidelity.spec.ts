@@ -21,6 +21,7 @@ import {
 import {
   applyDocumentEdits,
   flattenSfdt,
+  isAssistantAuthor,
   EditOp,
   LiveEditor
 } from '../syncfusionDocumentOps';
@@ -300,7 +301,8 @@ describe('copy_section carries every block of a wrapper-free range', () => {
       expect(
         revisions.every(
           (revision) =>
-            revision.author === 'Robin' && revision.revisionType === 'Insertion'
+            isAssistantAuthor(revision.author) &&
+            revision.revisionType === 'Insertion'
         )
       ).toBe(true);
 

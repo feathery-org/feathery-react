@@ -648,7 +648,7 @@ describe('insert_section deterministic composer', () => {
         error: 'op_failed',
         message: expect.stringContaining('block 5 (table)'),
         details: expect.arrayContaining([
-          'failing section component: block 5 (table)',
+          'failing component: block 5 (table)',
           'injected second-table failure'
         ])
       });

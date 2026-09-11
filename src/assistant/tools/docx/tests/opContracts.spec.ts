@@ -33,6 +33,7 @@ import {
   applyDocumentEdits,
   flattenSfdt,
   getDocumentInventory,
+  displayAuthor,
   ApplyEditsResult,
   EditOp,
   MODEL_AUTHORED_TEXT_FIELDS,
@@ -43,6 +44,12 @@ import {
   TableFacts
 } from '../syncfusionDocumentOps';
 import { DOCUMENT_EDITOR_CAPABILITIES } from '../../../capabilities/registry';
+import { buildCostsFixture } from '../../../../elements/components/DocxEditor/bindings/core/tests/fixtures/costsFixture';
+import { attachBindings } from '../../../../elements/components/DocxEditor/bindings/attachBindings';
+import {
+  getAt,
+  scanBindings
+} from '../../../../elements/components/DocxEditor/bindings/core/sfdtAdapter';
 
 DocumentEditor.Inject(
   Editor,
@@ -148,32 +155,6 @@ const tableFixture = () => ({
           ]
         },
         para('End')
-      ]
-    }
-  ]
-});
-
-// A header row plus three data rows, so a split can take a NON-contiguous set
-// and still leave something behind - the shape the captain asked for.
-const splittableTableFixture = () => ({
-  sections: [
-    {
-      blocks: [
-        para('Coverage Schedule'), // 0;0
-        {
-          // 0;1
-          tableFormat: { allowAutoFit: true },
-          rows: [
-            {
-              rowFormat: { isHeader: true },
-              cells: [cell('Line'), cell('Carrier')]
-            },
-            { rowFormat: {}, cells: [cell('General Liability'), cell('Acme')] },
-            { rowFormat: {}, cells: [cell('Auto'), cell('Beta')] },
-            { rowFormat: {}, cells: [cell('Property'), cell('Acme')] }
-          ]
-        },
-        para('End') // 0;2
       ]
     }
   ]
@@ -510,32 +491,6 @@ const CONTRACTS: Record<string, ContractCase> = {
       );
     }
   },
-  split_table: {
-    fixture: splittableTableFixture,
-    // Rows 1 and 3 are NOT adjacent, which is the point: the Acme lines are
-    // pulled into their own table and the Beta line stays behind.
-    edits: [
-      {
-        op: 'split_table',
-        anchor: '0;1;0;0;0',
-        rows: [1, 3],
-        targetAnchor: '0;2',
-        position: 'before'
-      }
-    ],
-    verify: (ed) => {
-      ed.revisions.acceptAll();
-      const texts = blockTexts(ed);
-      // Every cell that moved exists exactly once - relocated, never retyped.
-      for (const value of ['General Liability', 'Auto', 'Property', 'Beta'])
-        expect(texts.filter((text) => text === value)).toHaveLength(1);
-      // The header band is on BOTH tables, so it appears twice while every data
-      // value appears once. Nothing authored it: the copy carried it.
-      expect(texts.filter((text) => text === 'Line')).toHaveLength(2);
-      expect(texts.filter((text) => text === 'Carrier')).toHaveLength(2);
-      expect(texts.filter((text) => text === 'Acme')).toHaveLength(2);
-    }
-  },
   duplicate_table: {
     fixture: tableFixture,
     edits: [{ op: 'duplicate_table', anchor: '0;1;0;0;0', rows: 'copy' }],
@@ -560,6 +515,82 @@ const CONTRACTS: Record<string, ContractCase> = {
       expect(cells.filter((cell) => cell.text === '1 King St W')).toHaveLength(
         2
       );
+    }
+  },
+  insert_column: {
+    fixture: buildCostsFixture,
+    setup: (ed) => {
+      attachBindings(ed as any, { convertTokensOnOpen: false });
+    },
+    edits: [
+      {
+        op: 'insert_column',
+        anchor: '0;2;0;2;0',
+        position: 'after',
+        resultRef: '@value_col'
+      }
+    ],
+    verify: (ed, result) => {
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        route: 'engine',
+        createdRef: { ref: '@value_col', kind: 'column', id: 'costs' }
+      });
+      const sfdt = JSON.parse(ed.serialize());
+      const table = scanBindings(sfdt).tables.get('costs');
+      const node = table?.tablePath
+        ? (getAt(sfdt, table.tablePath) as any)
+        : null;
+      expect(node?.rows?.[0]?.cells ?? node?.r?.[0]?.c).toHaveLength(5);
+    }
+  },
+  delete_column: {
+    fixture: buildCostsFixture,
+    setup: (ed) => {
+      attachBindings(ed as any, { convertTokensOnOpen: false });
+    },
+    edits: [{ op: 'delete_column', anchor: '0;2;0;0;0' }],
+    verify: (ed, result) => {
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'delete_column',
+        route: 'engine',
+        details: ['table: costs', 'deleted column: 0']
+      });
+      const sfdt = JSON.parse(ed.serialize());
+      const table = scanBindings(sfdt).tables.get('costs');
+      const node = table?.tablePath
+        ? (getAt(sfdt, table.tablePath) as any)
+        : null;
+      expect(node?.rows?.[0]?.cells ?? node?.r?.[0]?.c).toHaveLength(3);
+      expect(blockTexts(ed)).not.toContain('Item');
+    }
+  },
+  create_binding: {
+    fixture: buildCostsFixture,
+    setup: (ed) => {
+      attachBindings(ed as any, { convertTokensOnOpen: false });
+    },
+    edits: [
+      {
+        op: 'insert_column',
+        anchor: '0;2;0;2;0',
+        position: 'after',
+        resultRef: '@value_col'
+      },
+      {
+        op: 'create_binding',
+        anchor: '@value_col;1;0',
+        kind: 'formula',
+        name: 'contract_value',
+        valueType: 'currency:USD:2',
+        expression: 'mul(quantity,unit_cost)'
+      }
+    ],
+    verify: (ed, result) => {
+      expect(result.results[1]).toMatchObject({ ok: true, route: 'engine' });
+      expect(ed.serialize()).toContain('name=contract_value');
+      expect(blockTexts(ed)).toContain('$1,800.00');
     }
   },
   insert_text: {
@@ -754,8 +785,24 @@ const CONTRACTS: Record<string, ContractCase> = {
       expect(result.results[0].appearance?.banding).toEqual({
         headerRows: 1,
         period: 2,
-        cycle: [null, '#D9E2F3']
+        cycle: [null, '#D9E2F3'],
+        tailInBand: true
       });
+    }
+  },
+  set_column_layout: {
+    fixture: bandedTablesFixture,
+    edits: [
+      { op: 'set_column_layout', anchor: '0;2;0;1;0', width: 180 }
+    ],
+    verify: (ed, result) => {
+      ed.selection.select('0;2;0;1;0;0', '0;2;0;1;0;0');
+      expect(Number(ed.selection.cellFormat.preferredWidth)).toBeCloseTo(
+        180,
+        0
+      );
+      expect(result.results[0].appearance).toMatchObject({ cellsWritten: 5 });
+      expect(result.changeSet?.formatTracking).toBe('untracked_immediate');
     }
   },
   change_case: {
@@ -984,9 +1031,7 @@ const CONTRACTS: Record<string, ContractCase> = {
     ],
     verify: (ed) => {
       expect(ed.serialize()).toContain('Verify this figure.');
-      expect(JSON.parse(ed.serialize()).cm).toEqual([
-        expect.objectContaining({ a: 'Robin' })
-      ]);
+      expect(displayAuthor(JSON.parse(ed.serialize()).cm[0].a)).toBe('Robin');
     }
   },
   delete_all_comments: {
@@ -1572,13 +1617,10 @@ function runContractCase(op: string, contract: ContractCase): void {
       changeSetId: `contract-${op}`
     });
 
-    expect(
-      result.results.map(({ ok, error, details }) => ({ ok, error, details }))
-    ).toEqual(
+    expect(result.results.map(({ ok, error }) => ({ ok, error }))).toEqual(
       contract.edits.map(() => ({
         ok: true,
-        error: undefined,
-        details: undefined
+        error: undefined
       }))
     );
     expect(result.changeSet?.status).toBe('applied');
@@ -1613,13 +1655,7 @@ describe('op contracts: every advertised op works over its real route', () => {
       // rather than the model supplying the bytes.
       'move_section',
       'swap_sections',
-      'copy_section',
-      // `split_table` is the same primitive again: it pastes a narrowed copy of
-      // a table at a target and deletes the extracted rows from the source. It
-      // was in NEITHER tracked set, so `assertTrackedMutation` returned on its
-      // first branch and the op was never checked at all - which is how a split
-      // whose reject was not byte-exact reported `ok: true`.
-      'split_table'
+      'copy_section'
     ]);
     const uncovered = DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op)
       .filter((op) => contentCreatingOps.has(op))
@@ -1632,17 +1668,17 @@ describe('op contracts: every advertised op works over its real route', () => {
 
   // The list above is a floor, not the invariant, and this is what keeps it
   // honest: an op that is in it but NOT registered is a typo, and an op that
-  // creates content under a name nobody added is what split_table was. Both
-  // ends are now checked against the registry rather than trusted.
+  // creates content under a name nobody added. Both ends are checked against
+  // the registry rather than trusted.
   it('names only ops the registry actually advertises', () => {
     const registered = new Set(
       DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op)
     );
-    for (const op of ['split_table', 'move_section', 'copy_section'])
+    for (const op of ['move_section', 'copy_section'])
       expect(registered.has(op)).toBe(true);
     // And each is genuinely covered by a tracked set, so the check above is
     // asserting membership rather than an empty intersection.
-    for (const op of ['split_table', 'move_section', 'copy_section'])
+    for (const op of ['move_section', 'copy_section'])
       expect(TRACKED_TEXT_OPS.has(op) || TRACKED_STRUCTURAL_OPS.has(op)).toBe(
         true
       );
@@ -1859,7 +1895,7 @@ describe('op contracts: every advertised op works over its real route', () => {
     }
   });
 
-  it('insert_column stays withdrawn: refused as unknown, document untouched', () => {
+  it('insert_column refuses a plain table because only the tracked bound route is supported', () => {
     const editor = makeEditor(tableFixture());
     try {
       const before = editor.serialize();
@@ -1867,8 +1903,9 @@ describe('op contracts: every advertised op works over its real route', () => {
         edits: [{ op: 'insert_column', anchor: '0;1;0;1;0', count: 1 }]
       });
       expect(result.results[0].ok).toBe(false);
-      expect(result.results[0].error).toBe('unsupported_op');
-      expect(result.results[0].retry).toBe('never');
+      expect(result.results[0].error).toBe(
+        'insert_column_requires_bound_table'
+      );
       expect(editor.revisions.length).toBe(0);
       expect(editor.serialize()).toBe(before);
     } finally {

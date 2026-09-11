@@ -20,8 +20,8 @@ import GroupCard from './GroupCard';
 import { ChipView, GroupView } from './types';
 import { ACCENT_LINE, INK, PANEL } from './styles';
 
-// Review rail for pending tracked changes: one card per assistant accept
-// group (plus one per human author), expanding to −/+ diff "chips" with
+// Review rail for pending tracked changes: one card per assistant review
+// family (plus one per human author), expanding to −/+ diff "chips" with
 // per-chip, per-card and rail-wide resolution — all through the
 // non-cascading path as ONE undo unit. Resolved edits leave the rail;
 // an undo brings them back via the contentChange refresh.
@@ -43,8 +43,11 @@ interface Props {
 // pauses is enough for the rail (refresh walks every revision + getRange).
 const CONTENT_REFRESH_DEBOUNCE_MS = 150;
 
-const groupKeyOf = (changeSetId: string, group: string) =>
-  `${changeSetId} ${group}`;
+const groupKeyOf = (
+  changeSetId: string,
+  group: string,
+  reviewBundleId?: string
+) => (reviewBundleId ? `bundle ${reviewBundleId}` : `${changeSetId} ${group}`);
 
 // Forces a real paint before `fn` runs. A single setTimeout(0) doesn't: the
 // browser coalesces the state-update paint with whatever runs in the same
@@ -103,6 +106,21 @@ const humanizeGroupId = (id: string) => {
   return spaced ? spaced[0].toUpperCase() + spaced.slice(1) : id;
 };
 
+/**
+ * What the rail says when a resolve could not finish.
+ *
+ * The pending counter cannot carry this on its own: a card that applied a prefix
+ * and stalled just redraws a smaller number, which reads as success. Plain
+ * language, an exact count, and the one action that undoes the partial state -
+ * the whole resolve was a single undo unit, so one step back is the way out.
+ */
+const stallNotice = (count: number, isAccept: boolean): string =>
+  `${count} ${count === 1 ? 'edit' : 'edits'} in this change could not be ${
+    isAccept ? 'accepted' : 'rejected'
+  } and ${
+    count === 1 ? 'is' : 'are'
+  } still showing. The rest went through; undo to put them back.`;
+
 // A chip is one EDIT, and an edit is a paragraph's worth of change backed by
 // however many revisions SyncFusion authored for it - its runs, its paragraph
 // mark, and for a replace both halves. Every resolve path must settle all of
@@ -141,6 +159,9 @@ function TrackedChangeGroups({
   // every arrow press skip an edit.
   const activeRevisionRef = useRef<any>(null);
   const ignoreSelectionRef = useRef(false);
+  // Survives the refresh that follows the resolve, and only that: the next
+  // resolve replaces it, and a clean one clears it.
+  const [stall, setStall] = useState<string | null>(null);
   const rowRefs = useRef(new Map<any, HTMLDivElement>());
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollBoxRef = useRef<HTMLDivElement>(null);
@@ -191,12 +212,14 @@ function TrackedChangeGroups({
     }
     setGroups(
       views.map((view) => ({
-        key: groupKeyOf(view.changeSetId, view.group),
+        key: groupKeyOf(view.changeSetId, view.group, view.reviewBundleId),
         changeSetId: view.changeSetId,
         group: view.group,
+        reviewBundleId: view.reviewBundleId,
         // A human view's "group" IS the author name; keep it verbatim.
         title: view.untagged ? view.group : humanizeGroupId(view.group),
         untagged: view.untagged,
+        derivedChanges: view.derivedChanges,
         chips: view.items.map((item) => ({
           revision: item.revision,
           revisions: item.revisions,
@@ -287,7 +310,11 @@ function TrackedChangeGroups({
               // Either half of a replace counts as clicking that one edit.
               if (!itemRevisions(item).some((rev) => revisions.includes(rev)))
                 continue;
-              const key = groupKeyOf(view.changeSetId, view.group);
+              const key = groupKeyOf(
+                view.changeSetId,
+                view.group,
+                view.reviewBundleId
+              );
               setExpanded((prev) =>
                 prev[key] ? prev : { ...prev, [key]: true }
               );
@@ -337,10 +364,10 @@ function TrackedChangeGroups({
 
   // Each native accept/reject moves the selection, firing a real
   // selectionChange — one unguarded rail rescan per revision without this.
-  const suppressingSelectionEcho = (fn: () => void) => {
+  const suppressingSelectionEcho = <T,>(fn: () => T): T => {
     ignoreSelectionRef.current = true;
     try {
-      fn();
+      return fn();
     } finally {
       queueMicrotask(() => {
         ignoreSelectionRef.current = false;
@@ -348,14 +375,20 @@ function TrackedChangeGroups({
     }
   };
 
+  // Every resolve path reports through here, so a stall can never be surfaced
+  // by one entry point and swallowed by another.
+  const reportStall = (unresolved: number, isAccept: boolean) =>
+    setStall(unresolved ? stallNotice(unresolved, isAccept) : null);
+
   // Non-cascading resolve (native accept/reject settles whatever is
   // CONTIGUOUS, not the group), wrapped as ONE undo step.
   const resolveChips = (chips: ChipView[], isAccept: boolean) => {
     if (!chips.length) return;
     const revisions = chips.flatMap(chipRevisions).filter(Boolean);
-    suppressingSelectionEcho(() =>
+    const outcome = suppressingSelectionEcho(() =>
       resolveRevisionsAsOneUndo(editor, revisions, isAccept)
     );
+    reportStall(outcome?.unresolved?.length ?? 0, isAccept);
     refresh();
     // Resolving the last edit unmounts the rail — focus would land on
     // <body>, where nobody sees the next ⌘Z.
@@ -364,9 +397,10 @@ function TrackedChangeGroups({
   };
 
   const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
-    suppressingSelectionEcho(() =>
+    const outcome = suppressingSelectionEcho(() =>
       resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept)
     );
+    reportStall(outcome?.unresolved?.length ?? 0, isAccept);
     refresh();
     if (listRevisionGroups(editor).length) refocusPanel();
     else editor?.focusIn?.();
@@ -545,6 +579,7 @@ function TrackedChangeGroups({
             onHide={onHiddenChange ? () => onHiddenChange(true) : undefined}
             onResolveAll={(isAccept) => resolveAllWithSpinner(groups, isAccept)}
             resolvingAll={resolvingAll}
+            notice={stall}
           />
           <div
             ref={scrollBoxRef}

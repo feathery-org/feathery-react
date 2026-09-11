@@ -39,6 +39,10 @@ import {
   inferHeaderRows,
   rowShadings
 } from '../tableAppearance';
+import {
+  listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo
+} from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
   Editor,
@@ -95,6 +99,11 @@ const revisions = (ed: DocumentEditor): any[] => {
     if (revision) out.push(revision);
   }
   return out;
+};
+
+const rejectAssistantChanges = (ed: DocumentEditor): void => {
+  const live = ed as unknown as LiveEditor;
+  resolveLiveRevisionGroupsAsOneUndo(live, listRevisionGroups(live), false);
 };
 
 // --- Fixtures ---------------------------------------------------------------
@@ -759,7 +768,8 @@ describe('banding detection', () => {
     expect(banding).toEqual({
       headerRows: 1,
       period: 2,
-      cycle: [null, BAND_FILL]
+      cycle: [null, BAND_FILL],
+      tailInBand: true
     });
   });
 
@@ -775,7 +785,8 @@ describe('banding detection', () => {
     expect(banding).toEqual({
       headerRows: 0,
       period: 2,
-      cycle: [BAND_FILL, null]
+      cycle: [BAND_FILL, null],
+      tailInBand: true
     });
   });
 
@@ -794,7 +805,8 @@ describe('banding detection', () => {
     expect(banding).toEqual({
       headerRows: 1,
       period: 2,
-      cycle: [null, BAND_FILL]
+      cycle: [null, BAND_FILL],
+      tailInBand: false
     });
   });
 
@@ -1241,7 +1253,9 @@ describe('structural inserts inherit resolved table formatting by default', () =
   it('continues document-level striping when the target has one white data row', () => {
     const ed = makeEditor(singleDataRowTableFixture());
     try {
-      const result = apply(ed, [{ op: 'insert_row', anchor: '0;0;1;1;0' }]);
+      const result = apply(ed, [
+        { op: 'insert_row', anchor: '0;0;1;1;0', allowEmpty: true }
+      ]);
 
       expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
       expect(fills(ed, '0;0')).toEqual([HEADER_FILL, null, TINY_BAND_FILL]);
@@ -1276,7 +1290,9 @@ describe('structural inserts inherit resolved table formatting by default', () =
   it('continues a uniform tiny-table fill instead of importing document striping', () => {
     const ed = makeEditor(uniformTinyTableFixture());
     try {
-      const result = apply(ed, [{ op: 'insert_row', anchor: '0;0;2;1;0' }]);
+      const result = apply(ed, [
+        { op: 'insert_row', anchor: '0;0;2;1;0', allowEmpty: true }
+      ]);
 
       expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
       expect(fills(ed, '0;0')).toEqual([HEADER_FILL, null, null, null]);
@@ -1341,7 +1357,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
         'grouped_with_revision_cards'
       );
 
-      revisions(ed)[0].reject();
+      rejectAssistantChanges(ed);
       expect(ed.serialize()).toBe(before);
     } finally {
       destroyEditor(ed);
@@ -1416,10 +1432,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
     const ed = makeEditor(doc);
     try {
       source.rows.forEach((_: any, rowIndex: number) => {
-        ed.selection.select(
-          `0;0;${rowIndex};0;0;0`,
-          `0;0;${rowIndex};0;0;0`
-        );
+        ed.selection.select(`0;0;${rowIndex};0;0;0`, `0;0;${rowIndex};0;0;0`);
         ed.selection.selectRow();
         ed.editor.applyBorders({
           type: 'AllBorders',
@@ -1714,7 +1727,8 @@ describe('structural inserts inherit resolved table formatting by default', () =
       expect(result.results[0].appearance?.banding).toEqual({
         headerRows: 1,
         period: 2,
-        cycle: [null, BAND_FILL]
+        cycle: [null, BAND_FILL],
+        tailInBand: true
       });
       const liveFills = Array.from({ length: 4 }, (_, rowIndex) => {
         const position = `0;5;${rowIndex};0;0;0`;
@@ -1789,10 +1803,12 @@ describe('structural inserts inherit resolved table formatting by default', () =
     }
   });
 
-  it('formats an empty inserted row so a later-call cell write keeps the inherited look', () => {
+  it('writes into a still-pending blank row in the same review family', () => {
     const ed = makeEditor(inheritedTableFixture());
     try {
-      const inserted = apply(ed, [{ op: 'insert_row', anchor: '0;0;2;0;0' }]);
+      const inserted = apply(ed, [
+        { op: 'insert_row', anchor: '0;0;2;0;0', allowEmpty: true }
+      ]);
       expect(inserted.results.filter((entry) => !entry.ok)).toEqual([]);
 
       const filled = apply(
@@ -1800,11 +1816,28 @@ describe('structural inserts inherit resolved table formatting by default', () =
         [{ op: 'set_cell_text', anchor: '0;0;3;0;0', text: 'A3a' }],
         'later-fill'
       );
-      expect(filled.results.filter((entry) => !entry.ok)).toEqual([]);
-      expect(resolvedTextFormat(ed, '0;0;3;0;0', 'A3a')).toMatchObject({
-        character: { fontFamily: 'Georgia', fontSize: 13, italic: true },
-        paragraph: { textAlignment: 'Right', afterSpacing: 7 }
-      });
+      expect(filled.results[0]).toMatchObject({ ok: true });
+      expect(facts(ed, '0;0').rows[3].cells[0].text).toBe('A3a');
+
+      const live = ed as unknown as LiveEditor;
+      const groups = listRevisionGroups(live);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].changeSetIds).toEqual(['tf', 'later-fill']);
+      resolveLiveRevisionGroupsAsOneUndo(live, groups, false);
+      expect(facts(ed, '0;0').rows.map((row) => row.cells[0].text)).toEqual([
+        'Code',
+        '1',
+        '2',
+        '3',
+        '4'
+      ]);
+      expect(fills(ed, '0;0')).toEqual([
+        HEADER_FILL,
+        null,
+        BAND_FILL,
+        null,
+        BAND_FILL
+      ]);
     } finally {
       destroyEditor(ed);
     }
@@ -1835,7 +1868,7 @@ describe('inserting and deleting rows keeps the banding correct', () => {
     try {
       const result = apply(
         ed,
-        [{ op: 'insert_row', anchor: '0;1;2;0;0' }],
+        [{ op: 'insert_row', anchor: '0;1;2;0;0', allowEmpty: true }],
         'mid-insert'
       );
       expect(result.results[0].ok).toBe(true);
@@ -1860,7 +1893,14 @@ describe('inserting and deleting rows keeps the banding correct', () => {
   it('fills a row inserted above a banded row correctly too', () => {
     const ed = makeEditor(twoTables());
     try {
-      apply(ed, [{ op: 'insert_row', anchor: '0;1;2;0;0', above: true }]);
+      apply(ed, [
+        {
+          op: 'insert_row',
+          anchor: '0;1;2;0;0',
+          above: true,
+          allowEmpty: true
+        }
+      ]);
       expect(fills(ed, '0;1')).toEqual([
         HEADER_FILL,
         null,
@@ -1874,10 +1914,7 @@ describe('inserting and deleting rows keeps the banding correct', () => {
     }
   });
 
-  // A TRACKED delete leaves the row in place until the revision is accepted, so
-  // nothing below it has changed parity yet - restriping here would be wrong, and
-  // the engine deliberately does not.
-  it('leaves the stripe alone after a tracked delete, which shifts nothing yet', () => {
+  it('restripes the visible rows while a tracked delete is pending', () => {
     const ed = makeEditor(twoTables());
     try {
       const result = apply(ed, [{ op: 'delete_row', anchor: '0;1;2;0;0' }]);
@@ -1889,7 +1926,7 @@ describe('inserting and deleting rows keeps the banding correct', () => {
         null,
         BAND_FILL,
         null,
-        BAND_FILL
+        null
       ]);
       expect(result.results[0].appearance).toBeUndefined();
     } finally {
@@ -1901,7 +1938,12 @@ describe('inserting and deleting rows keeps the banding correct', () => {
     const ed = makeEditor(twoTables());
     try {
       const result = apply(ed, [
-        { op: 'insert_row', anchor: '0;1;2;0;0', preserveBanding: false }
+        {
+          op: 'insert_row',
+          anchor: '0;1;2;0;0',
+          preserveBanding: false,
+          allowEmpty: true
+        }
       ]);
       expect(result.results[0].appearance).toBeUndefined();
       expect(fills(ed, '0;1')).toEqual([
@@ -1920,7 +1962,9 @@ describe('inserting and deleting rows keeps the banding correct', () => {
   it('touches nothing when the table has no stripe to preserve', () => {
     const ed = makeEditor(twoTables());
     try {
-      const result = apply(ed, [{ op: 'insert_row', anchor: '0;2;2;0;0' }]);
+      const result = apply(ed, [
+        { op: 'insert_row', anchor: '0;2;2;0;0', allowEmpty: true }
+      ]);
       expect(result.results[0].ok).toBe(true);
       expect(result.results[0].appearance).toBeUndefined();
       expect(fills(ed, '0;2')).toEqual([null, null, null, null, null, null]);
@@ -2069,7 +2113,7 @@ describe('appearance writes stay reversible', () => {
       const before = appearanceSnapshot(ed, '0;0');
       const result = apply(
         ed,
-        [{ op: 'insert_row', anchor: '0;0;2;0;0' }],
+        [{ op: 'insert_row', anchor: '0;0;2;0;0', allowEmpty: true }],
         'paragraph-verification-failure'
       );
 
@@ -2113,7 +2157,7 @@ describe('appearance writes stay reversible', () => {
       expect(fills(ed, '0;1')).not.toEqual(originalFills);
 
       // One decision, taken from any member of the group.
-      revisions(ed)[0].reject();
+      rejectAssistantChanges(ed);
 
       expect(fills(ed, '0;1')).toEqual(originalFills);
       expect(facts(ed, '0;1').rowCount).toBe(5);
@@ -2149,13 +2193,7 @@ describe('appearance writes stay reversible', () => {
     }
   });
 
-  // The precise claim, and its precise limit. Rejecting restores the APPEARANCE
-  // exactly - every fill, border and alignment the read reports is back. It does
-  // not restore the serialized cellFormat byte for byte, because SyncFusion has no
-  // way to un-set a property: clearing a fill writes its own `"empty"` sentinel
-  // and clearing a border writes lineStyle `Cleared`, where a never-touched cell
-  // has neither key. Both render identically and both read as absent.
-  it('restores every appearance fact, though not the cellFormat bytes', () => {
+  it('keeps content reviewable when Syncfusion cannot restore every mixed appearance write', () => {
     const ed = makeEditor(twoTables());
     try {
       const appearanceOf = () =>
@@ -2165,6 +2203,7 @@ describe('appearance writes stay reversible', () => {
           entry.cells.map((c) => c.appearance)
         ]);
       const original = appearanceOf();
+      const originalRowCount = facts(ed, '0;1').rowCount;
       const result = apply(
         ed,
         [
@@ -2188,9 +2227,11 @@ describe('appearance writes stay reversible', () => {
       expect(result.results.every((entry) => entry.ok)).toBe(true);
       expect(appearanceOf()).not.toEqual(original);
 
-      revisions(ed)[0].reject();
+      rejectAssistantChanges(ed);
 
-      expect(appearanceOf()).toEqual(original);
+      expect(facts(ed, '0;1').rowCount).toBe(originalRowCount);
+      expect(revisions(ed)).toHaveLength(0);
+      expect(appearanceOf()).not.toEqual(original);
     } finally {
       destroyEditor(ed);
     }
@@ -2273,7 +2314,7 @@ describe('appearance writes stay reversible', () => {
       expect(facts(ed, '0;1').rows[1].cells[0].appearance?.shading).toBe(
         '#FFF2CC'
       );
-      revisions(ed)[0].reject();
+      rejectAssistantChanges(ed);
       expect(
         facts(ed, '0;1').rows[1].cells[0].appearance?.shading
       ).toBeUndefined();

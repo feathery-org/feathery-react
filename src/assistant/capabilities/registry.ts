@@ -241,36 +241,6 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     requiresAnchor: true
   },
   {
-    // handler: ANCHORED_OP_HANDLERS.split_table
-    //
-    // One table becomes two, and no cell is retyped. The same relocation
-    // primitive as copy_section, applied to the whole table: the engine captures
-    // the table, narrows the captured payload to the header band plus the
-    // extracted rows, pastes that at the target, and deletes the extracted rows
-    // from the original. So the new table's formatting and its HEADER ROW are the
-    // source's own, by construction rather than by inheritance, and there is no
-    // content field for the model to fill.
-    //
-    // No title, ever: a title is content, so it is a separate composed heading
-    // through the section composer - which also makes "add a title later" an
-    // ordinary follow-up rather than a redo of the split.
-    //
-    // `rows` is the selective shape the captain asked for - "all of a specific
-    // items", which can sit in ANY rows - and the indices are transcribed from a
-    // table_facts read (`TableRowFact.row`). `splitAtRow` is the positional
-    // shape, and it exists so that shape needs no enumeration: naming a boundary
-    // costs one number where listing rows 5..39 would be counting.
-    // Exactly one of the two.
-    op: 'split_table',
-    params: {
-      rows: 'int>=0[]?',
-      splitAtRow: 'int>=0?',
-      targetAnchor: 'string',
-      position: 'enum[before,after]?'
-    },
-    requiresAnchor: true
-  },
-  {
     // handler: applyDocumentEdits preflight route + ANCHORED_OP_HANDLERS backstop
     //
     // SFDT-level table clone, so table styling and widths are copied as the
@@ -294,12 +264,19 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // renders two adjacent tables as one - see `spliceDuplicateAfter`). Moving
     // it elsewhere is a separate, later edit against the copy's own anchor.
     //
-    // One per change set, and last of the anchored edits in it: duplicating a
-    // table inserts a table, so every later anchor may have moved. Re-read the
-    // document before targeting the copy.
+    // `resultRef` gives a bound copy a stable name for later primitives in the
+    // same change set. To split, duplicate the whole table as `@copy`, delete
+    // the complementary rows from `@copy`, then delete the selected rows from
+    // the source. The engine resolves the created identity after each step, so
+    // the caller never predicts the copy's shifted document anchor.
+    //
+    // One duplicate per change set. Later anchored edits in the same change set
+    // are fine - the copy takes a fresh identity, so the source keeps answering
+    // to its own anchor.
     op: 'duplicate_table',
     params: {
       rows: 'duplicateRows?',
+      resultRef: 'string?',
       literal: 'boolean?',
       quotedFrom: 'string?',
       quotedText: 'string?'
@@ -460,7 +437,9 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     params: {
       above: 'boolean?',
       count: 'int>0?',
-      preserveBanding: 'boolean?'
+      preserveBanding: 'boolean?',
+      shape: 'enum[line_item,blank]?',
+      resultRef: 'string?'
     },
     requiresAnchor: true
   },
@@ -472,8 +451,7 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // accepted, so no row below it has changed parity yet. `restripe_table` is
     // the repair after acceptance.
     //
-    // `rows` is the SET shape, the same established shape `split_table` carries
-    // and read off the same `table_facts` field, and it is how a request for
+    // `rows` is the SET shape read from `table_facts`, and it is how a request for
     // several rows must be sent: the engine takes each contiguous run down in ONE
     // `deleteRow`, which is one change card the reviewer resolves once. Several
     // `delete_row` ops instead cannot work, and not merely less well - a row that
@@ -524,6 +502,41 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     },
     requiresAnchor: true
   },
+  {
+    // Replaces the addressed table subtree with a tracked copy carrying one
+    // additional logical column. The result reference names that column for
+    // later operations in the same change set.
+    op: 'insert_column',
+    params: {
+      position: 'enum[before,after]?',
+      resultRef: 'string?'
+    },
+    requiresAnchor: true
+  },
+  {
+    // Removes one logical column only after the binding engine proves no
+    // surviving formula depends on the controls the column owns.
+    op: 'delete_column',
+    params: {},
+    requiresAnchor: true
+  },
+  {
+    // Creates one persistent binding control at a paragraph or cell target.
+    // Row scope is derived from a bound target instead of supplied by callers.
+    op: 'create_binding',
+    params: {
+      kind: 'enum[input,formula]',
+      name: 'string',
+      valueType: 'string?',
+      expression: 'string?',
+      global: 'boolean?',
+      initial: 'string?',
+      literal: 'boolean?',
+      quotedFrom: 'string?',
+      quotedText: 'string?'
+    },
+    requiresAnchor: true
+  },
   // --- Table appearance -------------------------------------------------------
   //
   // Like the character/paragraph formatting block above, these are NOT tracked:
@@ -535,6 +548,14 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
   // card puts the old appearance back along with the content. A change set that
   // writes ONLY appearance has no card to bind to and says so
   // (`changeSet.formatTracking: 'untracked_immediate'`).
+  {
+    // Anchor: any cell in the logical column. Width is in points.
+    op: 'set_column_layout',
+    params: {
+      width: 'number'
+    },
+    requiresAnchor: true
+  },
   {
     // handler: ANCHORED_OP_HANDLERS.set_cell_format
     // Anchor: the cell's paragraph anchor, exactly as set_cell_text takes it.
@@ -596,13 +617,6 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     params: { fromRow: 'int>=0?' },
     requiresAnchor: true
   },
-  // `insert_column` was withdrawn in S5: probed on a real DocumentEditor, it
-  // reports ok:true and genuinely mutates the table (4 -> 6 cells) while
-  // recording ZERO revisions, so the change survives reject-all and can never
-  // be reviewed or undone from the Changes pane - the same no-tracked-route
-  // SyncFusion class as the withdrawn delete_column/merge_cells, except the
-  // mutation applies silently instead of popping the blocking dialog. It now
-  // falls to the vocabulary refusal like the rest of the parked table ops.
   // --- Links / bookmarks / comments ------------------------------------------
   {
     // handler: applyAnchoredOp case 'insert_hyperlink'

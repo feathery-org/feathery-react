@@ -231,15 +231,30 @@ const proposalFixture = () => ({
             {
               rowFormat: { isHeader: true },
               cells: [
-                { ...cell('Team Member'), cellFormat: { shading: {
-                  backgroundColor: '#4472C4'
-                } } },
-                { ...cell('Role'), cellFormat: { shading: {
-                  backgroundColor: '#4472C4'
-                } } },
-                { ...cell('Contact Info'), cellFormat: { shading: {
-                  backgroundColor: '#4472C4'
-                } } }
+                {
+                  ...cell('Team Member'),
+                  cellFormat: {
+                    shading: {
+                      backgroundColor: '#4472C4'
+                    }
+                  }
+                },
+                {
+                  ...cell('Role'),
+                  cellFormat: {
+                    shading: {
+                      backgroundColor: '#4472C4'
+                    }
+                  }
+                },
+                {
+                  ...cell('Contact Info'),
+                  cellFormat: {
+                    shading: {
+                      backgroundColor: '#4472C4'
+                    }
+                  }
+                }
               ]
             },
             {
@@ -364,7 +379,9 @@ describe('move_section: a relocation writes no content', () => {
         'About Hilb Group',
         'Next Steps'
       ]);
-      expect(bodyTexts(editor)).toContain('Your dedicated team is listed below.');
+      expect(bodyTexts(editor)).toContain(
+        'Your dedicated team is listed below.'
+      );
       // Exactly one copy of what moved: the failure this op replaces left two.
       expect(
         bodyTexts(editor).filter(
@@ -1289,7 +1306,9 @@ describe('copy_section: the same primitive without its delete', () => {
     ]
   ])('refuses %s', (_name, edit, error) => {
     const editor = makeEditor(
-      error === 'relocation_anchor_in_table' ? proposalFixture() : nestedFixture()
+      error === 'relocation_anchor_in_table'
+        ? proposalFixture()
+        : nestedFixture()
     );
     try {
       const before = editor.serialize();
@@ -1449,6 +1468,12 @@ describe('relocation refusals: each names what to do instead', () => {
         'robin-move-over-own-edit'
       );
       expect(moved.results[0]).toMatchObject({ ok: true });
+      const family = listRevisionGroups(editor as unknown as LiveEditor);
+      expect(family).toHaveLength(1);
+      expect((family[0] as any).changeSetIds.sort()).toEqual([
+        'robin-earlier-edit',
+        'robin-move-over-own-edit'
+      ]);
 
       // Rejecting everything walks all the way back to the true original text,
       // in the original order: the move CONSUMED the earlier pending insertion
@@ -1500,8 +1525,14 @@ describe('the rail card resolves a relocation as one unit', () => {
     // Cross-level, the shape that exposed the shared paragraph-style defect:
     // a subsection moved above a top-level section, so the two sides of the
     // paste carry different styles.
-    ['a cross-level move', { op: 'move_section', anchor: '0;2', targetAnchor: '0;0' }],
-    ['a cross-level copy', { op: 'copy_section', anchor: '0;2', targetAnchor: '0;0' }]
+    [
+      'a cross-level move',
+      { op: 'move_section', anchor: '0;2', targetAnchor: '0;0' }
+    ],
+    [
+      'a cross-level copy',
+      { op: 'copy_section', anchor: '0;2', targetAnchor: '0;0' }
+    ]
   ] as Array<[string, EditOp]>)(
     'rejecting the card restores the document exactly after %s',
     (_name, edit) => {
@@ -1757,27 +1788,27 @@ describe('accepting a relocation is verified, not only rejecting it', () => {
   // the revision collection, the rail card calls
   // `resolveLiveRevisionGroupsAsOneUndo` over the group. A user cannot tell
   // which they pressed, so the documents must not differ.
-  it.each(shapes)('both accept routes agree byte for byte after %s', (
-    _label,
-    edit
-  ) => {
-    const viaAll = makeEditor(nestedFixture());
-    const viaRail = makeEditor(nestedFixture());
-    try {
-      apply(viaAll, [edit], 'accept-all');
-      apply(viaRail, [edit], 'accept-rail');
-      viaAll.revisions.acceptAll();
-      resolveLiveRevisionGroupsAsOneUndo(
-        viaRail as unknown as LiveEditor,
-        listRevisionGroups(viaRail as unknown as LiveEditor),
-        true
-      );
-      expect(viaRail.serialize()).toBe(viaAll.serialize());
-    } finally {
-      destroyEditor(viaAll);
-      destroyEditor(viaRail);
+  it.each(shapes)(
+    'both accept routes agree byte for byte after %s',
+    (_label, edit) => {
+      const viaAll = makeEditor(nestedFixture());
+      const viaRail = makeEditor(nestedFixture());
+      try {
+        apply(viaAll, [edit], 'accept-all');
+        apply(viaRail, [edit], 'accept-rail');
+        viaAll.revisions.acceptAll();
+        resolveLiveRevisionGroupsAsOneUndo(
+          viaRail as unknown as LiveEditor,
+          listRevisionGroups(viaRail as unknown as LiveEditor),
+          true
+        );
+        expect(viaRail.serialize()).toBe(viaAll.serialize());
+      } finally {
+        destroyEditor(viaAll);
+        destroyEditor(viaRail);
+      }
     }
-  });
+  );
 
   // Moving the section that IS the document tail strands an empty paragraph on both
   // accept routes, the range carries its own paragraph mark. The stranded paragraph's
@@ -1803,7 +1834,10 @@ describe('accepting a relocation is verified, not only rejecting it', () => {
       expect(bodyTexts(viaRail)).toEqual(bodyTexts(viaAll));
       expect(bodyTexts(viaAll)).toEqual([
         ...reorder(['Next Steps', 'How We Support Clients']),
-        ...NESTED.slice(at('National Capabilities, Local Service'), at('Next Steps')),
+        ...NESTED.slice(
+          at('National Capabilities, Local Service'),
+          at('Next Steps')
+        ),
         ''
       ]);
       // The stranded paragraph is Normal on both routes, not the moved heading.

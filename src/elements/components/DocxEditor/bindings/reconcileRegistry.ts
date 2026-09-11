@@ -37,7 +37,31 @@ export type BindingCommand =
       afterTag: string;
       block: SfdtBlock;
     }
-  | { type: 'remove-table'; tableId: string; tag: string };
+  | {
+      type: 'replace-table';
+      tableId: string;
+      tag: string;
+      block: SfdtBlock;
+    }
+  | { type: 'remove-table'; tableId: string; tag: string }
+  | {
+      /**
+       * A formula's expression changed in a control that already exists.
+       *
+       * `set-value` cannot carry this and `add-table` cannot either: the first
+       * moves text, the second only ever carries a WHOLE table being added or
+       * removed. An expression rewritten in an existing control produced no
+       * command at all, so it was dropped between the in-memory projection and
+       * the live document and the two disagreed about what the document said.
+       *
+       * Both tags travel because the old one is the address - it is what the
+       * live control still wears - and the new one is the payload.
+       */
+      type: 'set-expression';
+      name: string;
+      previousTag: string;
+      tag: string;
+    };
 
 /**
  * Present only for an authored assistant batch. Ordinary commands omit this so
@@ -107,17 +131,35 @@ export function diffBindingCommands(
   const nextTables = [...next.tables.keys()].sort();
   const commands: BindingCommand[] = [];
 
-  for (const tableId of previousTables) {
-    if (next.tables.has(tableId)) continue;
-    const table = previous.tables.get(tableId);
-    if (!table) continue;
-    const marker = getAt(before, table.markerPath) as any;
-    commands.push({
-      type: 'remove-table',
-      tableId,
-      tag: String(marker?.contentControlProperties?.tag || '')
-    });
-  }
+  const logicalColumnCount = (table: unknown): number => {
+    const rows = (table as { rows?: Array<{ cells?: unknown[] }> } | undefined)
+      ?.rows;
+    if (!Array.isArray(rows)) return 0;
+    return rows.reduce(
+      (widest, row) =>
+        Math.max(
+          widest,
+          (row.cells ?? []).reduce<number>(
+            (width, cell) =>
+              width +
+              Math.max(
+                1,
+                Number(
+                  (cell as { cellFormat?: { columnSpan?: number } })?.cellFormat
+                    ?.columnSpan
+                ) || 1
+              ),
+            0
+          )
+        ),
+      0
+    );
+  };
+  const rawRowCount = (table: unknown): number => {
+    const rows = (table as { rows?: unknown[] } | undefined)?.rows;
+    return Array.isArray(rows) ? rows.length : 0;
+  };
+
   for (const tableId of nextTables) {
     if (previous.tables.has(tableId)) continue;
     const table = next.tables.get(tableId);
@@ -145,13 +187,49 @@ export function diffBindingCommands(
       block: getAt(after, table.markerPath) as SfdtBlock
     });
   }
+  // A table-subtree replacement adds the successor beside the source, then
+  // removes the source. Native application must keep that order because the
+  // source control is the insertion anchor.
+  for (const tableId of previousTables) {
+    if (next.tables.has(tableId)) continue;
+    const table = previous.tables.get(tableId);
+    if (!table) continue;
+    const marker = getAt(before, table.markerPath) as any;
+    commands.push({
+      type: 'remove-table',
+      tableId,
+      tag: String(marker?.contentControlProperties?.tag || '')
+    });
+  }
 
   for (const tableId of nextTables.filter((id) => previous.tables.has(id))) {
     const beforeTable = previous.tables.get(tableId);
     const afterTable = next.tables.get(tableId);
     if (!beforeTable || !afterTable) continue;
+    if (!beforeTable.tablePath || !afterTable.tablePath) continue;
+    const beforeColumns = logicalColumnCount(
+      getAt(before, beforeTable.tablePath)
+    );
+    const afterColumns = logicalColumnCount(getAt(after, afterTable.tablePath));
     const beforeIds = new Set(beforeTable.rows.map((row) => row.rowId));
     const afterIds = new Set(afterTable.rows.map((row) => row.rowId));
+    const sameBoundRows =
+      beforeIds.size === afterIds.size &&
+      [...beforeIds].every((rowId) => afterIds.has(rowId));
+    const unboundRowShapeChanged =
+      sameBoundRows &&
+      rawRowCount(getAt(before, beforeTable.tablePath)) !==
+        rawRowCount(getAt(after, afterTable.tablePath));
+    if (beforeColumns !== afterColumns || unboundRowShapeChanged) {
+      const marker = getAt(before, beforeTable.markerPath) as any;
+      commands.push({
+        type: 'replace-table',
+        tableId,
+        tag: String(marker?.contentControlProperties?.tag || ''),
+        block: getAt(after, afterTable.markerPath) as SfdtBlock
+      });
+      continue;
+    }
     for (const row of beforeTable.rows)
       if (row.rowId && !afterIds.has(row.rowId))
         commands.push({ type: 'remove-row', tableId, rowId: row.rowId });
@@ -182,6 +260,22 @@ export function diffBindingCommands(
         });
       }
     }
+  }
+  // An expression change never moves a value on its own, so it is diffed by
+  // NAME rather than by tag: the tag is what changed.
+  for (const [name, occurrences] of next.formulas) {
+    const current = occurrences[0];
+    const prior = previous.formulas.get(name)?.[0];
+    if (!current || !prior) continue;
+    if (current.def.kind !== 'formula' || prior.def.kind !== 'formula')
+      continue;
+    if (current.def.expression === prior.def.expression) continue;
+    commands.push({
+      type: 'set-expression',
+      name,
+      previousTag: prior.tag,
+      tag: current.tag
+    });
   }
   for (const [name, occurrences] of next.fields) {
     const occurrence = occurrences[0];

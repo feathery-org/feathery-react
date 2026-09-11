@@ -1225,13 +1225,11 @@ describe('resolving one chip of a card and rejecting the rest', () => {
   });
 });
 
-// The same stack, across TURNS. Two cards from two change sets can sit in the
-// rail at once and can have written the same cell, and rejecting both in the
-// order the rail lists them has to end at the value that predates both. The
-// snapshot stack belongs to the document, not to the change set that happened
-// to open it.
-describe('two cards from different turns that wrote one cell', () => {
-  it('leaves no fill behind when both are rejected in rail order', () => {
+// Dependent table edits across turns share one review family. Its appearance
+// restore stack belongs to the document and rejecting the family must return
+// to the value that predates every member change set.
+describe('one table review family across turns', () => {
+  it('leaves no fill behind when the family is rejected', () => {
     const ed = makeEditor(statedLayoutFixture());
     try {
       const before = appearanceSnapshot(ed, '0;2');
@@ -1267,13 +1265,10 @@ describe('two cards from different turns that wrote one cell', () => {
       expect(appearanceSnapshot(ed, '0;2')).not.toEqual(before);
 
       const live = ed as unknown as LiveEditor;
-      for (const group of ['a', 'b']) {
-        const view = listRevisionGroups(live).find(
-          (entry) => entry.group === group
-        );
-        expect(view).toBeDefined();
-        resolveLiveRevisionGroupsAsOneUndo(live, [view as any], false);
-      }
+      const groups = listRevisionGroups(live);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].changeSetIds).toEqual(['turn-one', 'turn-two']);
+      resolveLiveRevisionGroupsAsOneUndo(live, groups, false);
 
       expect(revisions(ed)).toHaveLength(0);
       expect(appearanceSnapshot(ed, '0;2')).toEqual(before);

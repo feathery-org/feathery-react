@@ -55,6 +55,28 @@ if (!(testWindow.SVGElement.prototype as any).getBBox) {
 const tag = (changeSetId: string, group: string) =>
   JSON.stringify({ v: 1, source: 'robin', changeSetId, group });
 
+const bundledTag = (
+  changeSetId: string,
+  group: string,
+  sequence: number,
+  derivedChanges?: Array<{
+    name: string;
+    beforeText: string;
+    afterText: string;
+  }>
+) =>
+  JSON.stringify({
+    v: 1,
+    source: 'robin',
+    changeSetId,
+    group,
+    reviewBundleId: 'property-family',
+    changeSetIds: ['split-property', 'add-signage'],
+    resourceKeys: ['table:property_premium'],
+    sequence,
+    derivedChanges
+  });
+
 function makeEditor(revisions: any[]): any {
   const listeners: Record<string, Array<() => void>> = {};
   return {
@@ -248,6 +270,48 @@ describe('TrackedChangeGroups', () => {
     // Two pending edits in the premium group, one in the date group.
     expect(screen.getByText('2 edits')).toBeInTheDocument();
     expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('3 pending')).toBeInTheDocument();
+  });
+
+  it('renders dependent table turns as one card and keeps unrelated prose separate', () => {
+    const editor = makeEditor([
+      makeRevision({
+        customData: bundledTag('add-signage', 'add-signage', 2, [
+          {
+            name: 'property_premium_subtotal',
+            beforeText: '$11,008.00',
+            afterText: '$11,638.00'
+          }
+        ]),
+        getRange: () => [{ text: 'Signage' }]
+      }),
+      makeRevision({
+        customData: bundledTag('split-property', 'split-property', 1, [
+          {
+            name: 'property_premium_subtotal',
+            beforeText: '$22,054.40',
+            afterText: '$11,008.00'
+          }
+        ]),
+        getRange: () => [{ text: 'Property split' }]
+      }),
+      makeRevision({
+        customData: tag('fix-date', 'fix-effective-date'),
+        getRange: () => [{ text: '2026-02-01' }]
+      })
+    ]);
+
+    render(<TrackedChangeGroups editor={editor} />);
+
+    expect(screen.getByText('Split property')).toBeInTheDocument();
+    expect(screen.queryByText('Add signage')).not.toBeInTheDocument();
+    expect(screen.getByText('Fix effective date')).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Split property' })
+    );
+    expect(
+      screen.getByText('property premium subtotal').parentElement
+    ).toHaveTextContent('$22,054.40 → $11,638.00');
     expect(screen.getByText('3 pending')).toBeInTheDocument();
   });
 
@@ -1268,7 +1332,8 @@ describe('resolveLiveRevisionGroupsAsOneUndo', () => {
     // the other two.
     expect(stuck.accept).toHaveBeenCalledTimes(1);
     expect(revisions).toEqual([stuck]);
-    expect(resolved).toEqual([stuck, first, second]);
+    expect(Array.from(resolved)).toEqual([first, second]);
+    expect(resolved.unresolved).toEqual([stuck]);
   });
 });
 

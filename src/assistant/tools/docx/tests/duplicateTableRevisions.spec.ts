@@ -20,6 +20,7 @@ import {
 } from '@syncfusion/ej2-documenteditor';
 import {
   applyDocumentEdits,
+  displayAuthor,
   flattenSfdt,
   EditOp,
   LiveEditor
@@ -212,9 +213,11 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
       (revision) => !pendingIds.includes(revisionId(revision))
     );
     expect(duplicateRevisions.length).toBeGreaterThan(0);
-    expect(new Set(duplicateRevisions.map((revision) => revision.author))).toEqual(
-      new Set(['Robin'])
-    );
+    expect(
+      new Set(
+        duplicateRevisions.map((revision) => displayAuthor(revision.author))
+      )
+    ).toEqual(new Set(['Robin']));
     expect(
       new Set(
         duplicateRevisions.map((revision) => {
@@ -250,7 +253,7 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
     expect(duplicated.results[0]).toMatchObject({ ok: true });
     const revisions = revisionsOf(editor);
     expect(revisions.length).toBeGreaterThan(0);
-    expect(new Set(revisions.map((revision) => revision.author))).toEqual(
+    expect(new Set(revisions.map((revision) => displayAuthor(revision.author)))).toEqual(
       new Set(['Robin'])
     );
 
@@ -276,7 +279,9 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
     expect(tableCount(editor)).toBe(2);
     expect(editor.revisions.length).toBeGreaterThan(0);
     expect(
-      new Set(revisionsOf(editor).map((revision) => revision.author))
+      new Set(
+        revisionsOf(editor).map((revision) => displayAuthor(revision.author))
+      )
     ).toEqual(new Set(['Robin']));
     expect(editor.enableTrackChanges).toBe(false);
     expect(container.enableTrackChanges).toBe(false);
@@ -306,7 +311,9 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
     expect(textsOf(editor)).toContain('Appended at the document end.');
     expect(editor.revisions.length).toBeGreaterThan(0);
     expect(
-      new Set(revisionsOf(editor).map((revision) => revision.author))
+      new Set(
+        revisionsOf(editor).map((revision) => displayAuthor(revision.author))
+      )
     ).toEqual(new Set(['Robin']));
     expect(editor.enableTrackChanges).toBe(false);
     expect(container.enableTrackChanges).toBe(false);
@@ -344,7 +351,9 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
     );
     expect(editor.revisions.length).toBeGreaterThan(0);
     expect(
-      new Set(revisionsOf(editor).map((revision) => revision.author))
+      new Set(
+        revisionsOf(editor).map((revision) => displayAuthor(revision.author))
+      )
     ).toEqual(new Set(['Robin']));
     expect(editor.enableTrackChanges).toBe(false);
     expect(container.enableTrackChanges).toBe(false);
@@ -451,7 +460,9 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
       expect(result.results[0]).toMatchObject({ ok: true, op: edit.op });
       const revisions = revisionsOf(editor);
       expect(revisions.length).toBeGreaterThan(0);
-      expect(new Set(revisions.map((revision) => revision.author))).toEqual(
+      expect(
+        new Set(revisions.map((revision) => displayAuthor(revision.author)))
+      ).toEqual(
         new Set(['Robin'])
       );
       expect(
@@ -487,7 +498,7 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
     expect(container.enableTrackChanges).toBe(false);
   });
 
-  it('refuses column insertion without changing content and forces both flags off', () => {
+  it('refuses column insertion in an unbound table without changing content and forces both flags off', () => {
     const before = documentContentOf(editor);
     const result = apply(
       editor,
@@ -503,8 +514,7 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
 
     expect(result.results[0]).toMatchObject({
       ok: false,
-      error: 'unsupported_op',
-      retry: 'never'
+      error: 'insert_column_requires_bound_table'
     });
     expect(editor.revisions.length).toBe(0);
     expect(documentContentOf(editor)).toEqual(before);
