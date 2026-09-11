@@ -3,13 +3,13 @@ import ChangeChip from './ChangeChip';
 import { ChipView, GroupView } from './types';
 import {
   CARD_SHADOW,
+  INK,
+  INK_2,
   INK_3,
   LINE,
-  MONO,
-  PANEL_2,
   PAPER,
-  btn,
-  rejectBtn
+  groupPrimaryBtn,
+  groupSecondaryBtn
 } from './styles';
 
 const caretSvg = (
@@ -24,13 +24,19 @@ const caretSvg = (
   </svg>
 );
 
+// Chevron width + gap; the subtitle is indented by this so it lines up under
+// the title, not under the chevron.
+const TITLE_INDENT = 20;
+
 interface Props {
   group: GroupView;
+  /** Registers the card element so the rail can scroll its header into view. */
+  cardRef: (el: HTMLDivElement | null) => void;
   isOpen: boolean;
   onToggle: () => void;
   /** Navigate the document to the group's first edit without expanding. */
   onNavigateFirst: () => void;
-  /** The document's active edit(s); matching chips ring and show actions. */
+  /** The document's active edit(s); matching chips tint. */
   activeRevisions: Set<any>;
   /** Row-element registrar per chip (scroll-into-view bookkeeping). */
   chipRef: (chip: ChipView) => (el: HTMLDivElement | null) => void;
@@ -39,10 +45,12 @@ interface Props {
   onResolveChips: (chips: ChipView[], isAccept: boolean) => void;
 }
 
-// One accept group. The header splits into two controls: the caret
-// expands/collapses the chip list, the title navigates without expanding.
+// One accept group (A2 layout): the chevron (left of the title) toggles the
+// chip list; the title navigates without expanding; the author sits on a line
+// under the title; group Accept/Reject sit at the top-right.
 export default function GroupCard({
   group,
+  cardRef,
   isOpen,
   onToggle,
   onNavigateFirst,
@@ -52,14 +60,16 @@ export default function GroupCard({
   onResolveGroup,
   onResolveChips
 }: Props) {
+  const count = group.chips.length;
   return (
     <div
+      ref={cardRef}
       css={{
         position: 'relative',
         flex: 'none',
         background: PAPER,
         border: `1px solid ${LINE}`,
-        borderRadius: 10,
+        borderRadius: 12,
         boxShadow: CARD_SHADOW,
         overflow: 'hidden'
       }}
@@ -68,113 +78,115 @@ export default function GroupCard({
         css={{
           display: 'flex',
           alignItems: 'flex-start',
-          '&:hover': { background: PANEL_2 }
+          justifyContent: 'space-between',
+          gap: 12,
+          padding: '14px 14px 12px'
         }}
       >
-        <button
-          type='button'
-          aria-expanded={isOpen}
-          aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${group.title}`}
-          onClick={onToggle}
-          css={{
-            flex: 'none',
-            display: 'flex',
-            alignItems: 'flex-start',
-            padding: '11px 4px 11px 10px',
-            border: 'none',
-            background: 'none',
-            color: 'inherit',
-            cursor: 'pointer'
-          }}
-        >
-          <span
-            aria-hidden
+        <div css={{ minWidth: 0, flex: 1 }}>
+          {/* Line 1: chevron (left of the title), aligned to the title row. */}
+          <div
+            css={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}
+          >
+            <button
+              type='button'
+              aria-expanded={isOpen}
+              aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${group.title}`}
+              onClick={onToggle}
+              css={{
+                flex: 'none',
+                width: 14,
+                height: 14,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                background: 'none',
+                padding: 0,
+                color: INK_3,
+                cursor: 'pointer',
+                transform: isOpen ? 'rotate(90deg)' : 'none',
+                transition: 'transform 0.18s ease'
+              }}
+            >
+              {caretSvg}
+            </button>
+            <button
+              type='button'
+              aria-label={`Go to ${group.title}`}
+              onClick={onNavigateFirst}
+              css={{
+                flex: 1,
+                minWidth: 0,
+                border: 'none',
+                background: 'none',
+                padding: 0,
+                textAlign: 'left',
+                font: 'inherit',
+                color: INK,
+                fontSize: 13.5,
+                fontWeight: 600,
+                lineHeight: 1.3,
+                cursor: 'pointer',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                '&:hover': { textDecoration: 'underline' }
+              }}
+            >
+              {group.title}
+            </button>
+          </div>
+          {/* Line 2: "N changes · Author", under the title. */}
+          <div
             css={{
-              marginTop: 2,
+              marginTop: 3,
+              paddingLeft: TITLE_INDENT,
+              fontSize: 12,
+              lineHeight: 1.3,
               color: INK_3,
-              display: 'inline-flex',
-              transform: isOpen ? 'rotate(90deg)' : 'none',
-              transition: 'transform 0.18s ease'
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
             }}
           >
-            {caretSvg}
-          </span>
-        </button>
-        <button
-          type='button'
-          aria-label={`Go to ${group.title}`}
-          onClick={onNavigateFirst}
-          css={{
-            flex: 1,
-            minWidth: 0,
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 7,
-            padding: '11px 11px 11px 0',
-            border: 'none',
-            background: 'none',
-            textAlign: 'left',
-            font: 'inherit',
-            color: 'inherit',
-            cursor: 'pointer'
-          }}
-        >
-          <b css={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.35 }}>
-            {group.title}
-          </b>
-          <span
-            css={{
-              flex: 'none',
-              fontFamily: MONO,
-              fontSize: 10,
-              color: INK_3,
-              background: PANEL_2,
-              border: `1px solid ${LINE}`,
-              borderRadius: 99,
-              padding: '1px 6px',
-              whiteSpace: 'nowrap'
-            }}
+            <span css={{ color: INK_2 }}>
+              {`${count} ${count === 1 ? 'change' : 'changes'}`}
+            </span>
+            {group.author && (
+              <>
+                <span>{' · '}</span>
+                <span css={{ fontWeight: 600 }}>{group.author}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div css={{ display: 'flex', gap: 8, flex: 'none' }}>
+          <button
+            type='button'
+            css={groupPrimaryBtn}
+            onClick={() => onResolveGroup(true)}
           >
-            {`${group.chips.length} ${
-              group.chips.length === 1 ? 'edit' : 'edits'
-            }`}
-          </span>
-        </button>
-      </div>
-      <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
-        <button type='button' css={btn} onClick={() => onResolveGroup(true)}>
-          Accept {group.chips.length}
-        </button>
-        <button
-          type='button'
-          css={rejectBtn}
-          onClick={() => onResolveGroup(false)}
-        >
-          Reject {group.chips.length}
-        </button>
+            Accept
+          </button>
+          <button
+            type='button'
+            css={groupSecondaryBtn}
+            onClick={() => onResolveGroup(false)}
+          >
+            Reject
+          </button>
+        </div>
       </div>
       {isOpen && (
         <div
           css={{
-            position: 'relative',
             display: 'flex',
             flexDirection: 'column',
-            gap: 6,
-            padding: '2px 11px 13px 31px'
+            gap: 2,
+            padding: '0 12px 10px'
           }}
         >
-          {/* Spine descending from the caret through the chips. */}
-          <span
-            aria-hidden
-            css={{
-              position: 'absolute',
-              left: 15,
-              top: -4,
-              bottom: 13,
-              width: 1,
-              background: LINE
-            }}
-          />
           {group.chips.map((chip, index) => (
             <ChangeChip
               key={index}

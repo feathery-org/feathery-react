@@ -1,7 +1,7 @@
 import 'jest-canvas-mock';
 import { randomFillSync } from 'crypto';
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import {
   DocumentEditor,
   Editor,
@@ -139,7 +139,7 @@ function destroyRealEditor(editor: DocumentEditor): void {
 }
 
 function acceptOnlyGroup(): void {
-  fireEvent.click(screen.getByRole('button', { name: /^Accept \d+$/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 }
 
 // Single-edit groups carry no group-wide card button, so the rail-wide action
@@ -181,21 +181,25 @@ describe('TrackedChangeGroups', () => {
     render(<TrackedChangeGroups editor={editor} />);
     // Card titled by the author, tally as usual.
     expect(screen.getByText('Ayesha')).toBeInTheDocument();
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
 
-    // Expanding shows the edit with its author attribution.
+    // Expanding shows the edit itself. The author is the card title, not
+    // repeated on each chip, so it still appears exactly once.
     fireEvent.click(screen.getByRole('button', { name: 'Expand Ayesha' }));
     expect(screen.getByText('A human tracked edit.')).toBeInTheDocument();
-    expect(screen.getAllByText('Ayesha').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Ayesha')).toHaveLength(1);
   });
 
-  it('shows the author on assistant chips too', () => {
-    const editor = makeEditor([makeRevision()]);
+  it('shows the assistant author once on the group header, not per chip', () => {
+    const editor = makeEditor([makeRevision(), makeRevision()]);
     render(<TrackedChangeGroups editor={editor} />);
+    // Visible on the header before expanding.
+    expect(screen.getByText('Robin (assistant)')).toBeInTheDocument();
+    // Still exactly one after expanding two chips — no per-chip repetition.
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
-    expect(screen.getByText('Robin (assistant)')).toBeInTheDocument();
+    expect(screen.getAllByText('Robin (assistant)')).toHaveLength(1);
   });
 
   it('keeps every review control from submitting the surrounding form', () => {
@@ -246,8 +250,8 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('Update premium')).toBeInTheDocument();
     expect(screen.getByText('Fix effective date')).toBeInTheDocument();
     // Two pending edits in the premium group, one in the date group.
-    expect(screen.getByText('2 edits')).toBeInTheDocument();
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('2 changes')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
     expect(screen.getByText('3 pending')).toBeInTheDocument();
   });
 
@@ -279,7 +283,12 @@ describe('TrackedChangeGroups', () => {
     expect(
       screen.getByText('$5,500').closest('[aria-current="true"]')
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Accept this edit')).toBeInTheDocument();
+    // Every row shows its own Accept/Reject; scope to the focused chip's row.
+    expect(
+      within(
+        screen.getByText('$5,500').closest('[role="button"]') as HTMLElement
+      ).getByLabelText('Accept this edit')
+    ).toBeInTheDocument();
 
     // Collapse hides the chips again.
     fireEvent.click(
@@ -388,7 +397,11 @@ describe('TrackedChangeGroups', () => {
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
     fireEvent.click(screen.getByText('$5,500'));
-    fireEvent.click(screen.getByLabelText('Accept this edit'));
+    fireEvent.click(
+      within(
+        screen.getByText('$5,500').closest('[role="button"]') as HTMLElement
+      ).getByLabelText('Accept this edit')
+    );
 
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).not.toHaveBeenCalled();
@@ -396,7 +409,7 @@ describe('TrackedChangeGroups', () => {
     // The resolved chip is gone; its group sibling stays pending.
     expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
     expect(screen.getByText('$6,000')).toBeInTheDocument();
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
     expect(screen.getByText('1 pending')).toBeInTheDocument();
   });
 
@@ -413,7 +426,7 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor(revisions);
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 
     // Every member resolved exactly once — a native accept on one member
     // would instead resolve whatever is contiguous to it.
@@ -437,7 +450,7 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor(revisions);
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reject 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
 
     expect(deletion.reject).toHaveBeenCalledTimes(1);
     expect(insertion.reject).toHaveBeenCalledTimes(1);
@@ -481,12 +494,12 @@ describe('TrackedChangeGroups', () => {
 
     const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
     const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
-    expect(acceptAllBtn.querySelector('svg')).toBeNull();
+    expect(acceptAllBtn.querySelector('circle')).toBeNull();
     fireEvent.click(acceptAllBtn);
     // The resolve itself hasn't run yet (still queued) — the spinner is up
     // and BOTH bulk buttons are disabled so the two can't race each other.
     expect(revision.accept).not.toHaveBeenCalled();
-    expect(acceptAllBtn.querySelector('svg')).not.toBeNull();
+    expect(acceptAllBtn.querySelector('circle')).not.toBeNull();
     expect(acceptAllBtn).toBeDisabled();
     expect(rejectAllBtn).toBeDisabled();
 
@@ -506,10 +519,10 @@ describe('TrackedChangeGroups', () => {
 
     const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
     const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
-    expect(rejectAllBtn.querySelector('svg')).toBeNull();
+    expect(rejectAllBtn.querySelector('circle')).toBeNull();
     fireEvent.click(rejectAllBtn);
     expect(revision.reject).not.toHaveBeenCalled();
-    expect(rejectAllBtn.querySelector('svg')).not.toBeNull();
+    expect(rejectAllBtn.querySelector('circle')).not.toBeNull();
     expect(rejectAllBtn).toBeDisabled();
     expect(acceptAllBtn).toBeDisabled();
 
@@ -539,7 +552,8 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor(revisions);
     render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept 2' }));
+    // Two groups each render an 'Accept' button; the first is 'Update premium'.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Accept' })[0]);
 
     // Without suppression, "untouched"'s group would now be force-expanded
     // with its chip marked current, even though the user never touched it.
@@ -692,7 +706,11 @@ describe('TrackedChangeGroups', () => {
     );
     fireEvent.click(screen.getByText('$6,000'));
     expect(panel).toHaveFocus();
-    fireEvent.click(screen.getByRole('button', { name: 'Accept this edit' }));
+    fireEvent.click(
+      within(
+        screen.getByText('$6,000').closest('[role="button"]') as HTMLElement
+      ).getByRole('button', { name: 'Accept this edit' })
+    );
     expect(insertion.accept).toHaveBeenCalledTimes(1);
     expect(panel).toHaveFocus();
   });
@@ -749,12 +767,8 @@ describe('TrackedChangeGroups', () => {
 
     // Group-wide actions are visible up front — no need to expand or focus a
     // chip.
-    expect(
-      screen.getByRole('button', { name: 'Accept 1' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Reject 1' })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
@@ -835,7 +849,7 @@ describe('TrackedChangeGroups', () => {
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
     // ONE edit, not two.
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
@@ -1006,6 +1020,74 @@ describe('TrackedChangeGroups', () => {
     expect(scrollBox.scrollTop).toBe(0);
     expect(viewport.scrollTop).toBe(8742);
     expect(container).toContainElement(row as HTMLElement);
+  });
+
+  it('scrolls to the group card top so the heading stays in view', () => {
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    const panel = screen.getByLabelText('Assistant tracked changes');
+    const scrollBox = panel.children[1] as HTMLElement;
+    const card = scrollBox.children[0] as HTMLElement;
+    const row = screen
+      .getByText('$6,000')
+      .closest('[role="button"]') as HTMLElement;
+
+    // Scrolled well past the card; the effect must bring it back up.
+    Object.defineProperties(scrollBox, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 3000 },
+      scrollTop: { configurable: true, writable: true, value: 2000 }
+    });
+    Object.defineProperty(row, 'offsetHeight', {
+      configurable: true,
+      value: 40
+    });
+    jest
+      .spyOn(scrollBox, 'getBoundingClientRect')
+      .mockReturnValue({ top: 100, bottom: 700 } as DOMRect);
+    // Both are scrolled above the viewport (top < box top); the card header
+    // sits just above its first chip row.
+    jest
+      .spyOn(card, 'getBoundingClientRect')
+      .mockReturnValue({ top: 50, bottom: 300 } as DOMRect);
+    jest
+      .spyOn(row, 'getBoundingClientRect')
+      .mockReturnValue({ top: 90, bottom: 130 } as DOMRect);
+
+    editor.selection.getCurrentRevision.mockReturnValue([revision]);
+    act(() => editor.emit('selectionChange'));
+
+    // Card top offset = 50 - 100 + 2000 = 1950 (not the row's 1990), so the
+    // group heading of the clicked change remains visible.
+    expect(scrollBox.scrollTop).toBe(1950);
+  });
+
+  it('leaves the rail scroll in place when a group is merely expanded', () => {
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    render(<TrackedChangeGroups editor={editor} />);
+    const panel = screen.getByLabelText('Assistant tracked changes');
+    const scrollBox = panel.children[1] as HTMLElement;
+    Object.defineProperties(scrollBox, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 3000 },
+      scrollTop: { configurable: true, writable: true, value: 1234 }
+    });
+
+    // Expanding/collapsing the group changes no selection, so the scroll
+    // effect must not run — the rail stays exactly where the user left it.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    expect(scrollBox.scrollTop).toBe(1234);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Collapse Update premium' })
+    );
+    expect(scrollBox.scrollTop).toBe(1234);
   });
 
   it('every rail button is type=button so clicks never submit the host form', () => {
@@ -1493,9 +1575,7 @@ describe('RailErrorBoundary', () => {
 
       act(() => editor.editorHistory.undo());
       expect(editor.revisions.length).toBeGreaterThan(0);
-      expect(
-        screen.getByRole('button', { name: /^Accept \d+$/ })
-      ).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Accept' })).toBeEnabled();
       acceptOnlyGroup();
       expect(editor.revisions.length).toBe(0);
     } finally {
