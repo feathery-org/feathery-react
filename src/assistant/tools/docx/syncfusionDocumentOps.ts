@@ -13810,7 +13810,8 @@ function bandingForAcceptedTableProjection(
       })
     : 0;
   const physicalBanding = physicalAppearance
-    ? detectTableBanding(physicalAppearance)
+    ? detectTableBanding(physicalAppearance) ??
+      shortInsertBanding(physicalAppearance)
     : null;
   const projectedBody = projectedAppearance
     ? rowShadings(projectedAppearance).slice(headerRows)
@@ -13826,7 +13827,9 @@ function bandingForAcceptedTableProjection(
             ]
       }
     : projectedAppearance
-    ? detectTableBanding(projectedAppearance) ?? undefined
+    ? detectTableBanding(projectedAppearance) ??
+      shortInsertBanding(projectedAppearance) ??
+      undefined
     : undefined;
   return { headerRows, banding };
 }
@@ -15030,9 +15033,15 @@ function boundBlankRowPlan(
           'blank_row_insert_unroutable',
           `insert_row could not derive a blank row shape in table "${tableRoute.tableId}". Nothing was written.`
         );
+      const liveTableAnchor = boundTableAnchor(state.sfdt, liveTable);
+      if (!liveTableAnchor)
+        throw new OpError(
+          'blank_row_insert_unroutable',
+          `insert_row could not locate table "${tableRoute.tableId}" in the current document. Nothing was written.`
+        );
       const { headerRows, banding } = bandingForAcceptedTableProjection(
         state.sfdt,
-        tableRoute.anchor
+        liveTableAnchor
       );
       const blankRow = clonedWithoutRevisions(state.sfdt, prototype);
       blankRow.cells = (blankRow.cells ?? []).map(blankColumnCell);
@@ -15058,15 +15067,13 @@ function boundBlankRowPlan(
           tableId: tableRoute.tableId,
           rowIndex: insertAt
         });
-      const footprint = banding
-        ? captureTableFootprint(
-            next,
-            tableAnchor,
-            headerRows,
-            banding,
-            tableRoute.tableId
-          )
-        : null;
+      const footprint = captureTableFootprint(
+        next,
+        tableAnchor,
+        headerRows,
+        banding,
+        tableRoute.tableId
+      );
       return {
         sfdt: next,
         anchor: `${tableAnchor};${insertAt};0;0`,

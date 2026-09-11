@@ -33,6 +33,19 @@ function plainThreeColumnCostsFixture(): any {
   );
   table.rows = table.rows.slice(0, 3);
   for (const row of table.rows) row.cells = row.cells.slice(0, 3);
+  for (const cell of table.rows[0].cells)
+    cell.cellFormat.shading = {
+      texture: 'TextureNone',
+      backgroundColor: '#001B49',
+      foregroundColor: 'empty'
+    };
+  for (const cell of table.rows[1].cells) delete cell.cellFormat.shading;
+  for (const cell of table.rows[2].cells)
+    cell.cellFormat.shading = {
+      texture: 'TextureNone',
+      backgroundColor: '#E6E6E6',
+      foregroundColor: 'empty'
+    };
   table.grid = table.grid.slice(0, 3);
   table.columnCount = 3;
   return sfdt;
@@ -415,6 +428,17 @@ describe('live value-column primitives', () => {
         expect.stringContaining('$6,000'),
         expect.stringContaining('Subtotal$7,800')
       ])
+    );
+    expect(result.warnings).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Table appearance not finalized')
+      ])
+    );
+    expect(await session.call<string>('cellShading', promoted, 3, 0)).toBe(
+      await session.call<string>('cellShading', promoted, 1, 0)
+    );
+    expect(await session.call<string>('cellShading', promoted, 3, 0)).not.toBe(
+      await session.call<string>('cellShading', promoted, 2, 0)
     );
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(baseline);
