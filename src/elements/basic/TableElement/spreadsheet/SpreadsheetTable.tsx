@@ -22,6 +22,10 @@ import {
 } from './table';
 import { useGridInteractions } from './useGridInteractions';
 import { useSpreadsheetHistory } from './useSpreadsheetHistory';
+import {
+  SpreadsheetGeometryContext,
+  useSpreadsheetGeometry
+} from './useSpreadsheetGeometry';
 
 const columnHelper = createColumnHelper<
   typeof spreadsheetFeatures,
@@ -284,46 +288,57 @@ export function SpreadsheetTable({
 
   // The status bar sits inside the element's own height box, so an auto-sized
   // grid grows to make room for it rather than losing a row while it is up.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const geometry = useSpreadsheetGeometry(containerRef);
   const fitHeight = useMemo(() => {
-    const base = spreadsheetViewportHeight(heightUnit, rows.length);
+    const base = spreadsheetViewportHeight(heightUnit, rows.length, geometry);
     if (base === undefined) return undefined;
     return base + (showBar ? PENDING_BAR_HEIGHT : 0);
-  }, [heightUnit, rows.length, showBar]);
+  }, [heightUnit, rows.length, showBar, geometry]);
 
   return (
-    <div
-      css={{
-        display: 'flex',
-        flex: '1 1 auto',
-        flexDirection: 'column',
-        minHeight: 0,
-        ...(fitHeight ? { height: `${fitHeight}px` } : {})
-      }}
-    >
-      {showBar && pending ? (
-        <PendingChangesBar
-          pendingCount={pending.count}
-          blockingCount={counts.blocking}
-          errorCount={counts.errors}
-          warningCount={counts.warnings}
-          saving={pending.saving}
-          onSave={pending.onSave}
-          onDiscard={pending.onDiscard}
-          onStepIssue={stepIssue}
+    <SpreadsheetGeometryContext.Provider value={geometry}>
+      <div
+        ref={containerRef}
+        style={
+          {
+            '--feathery-table-effective-row-height': `${geometry.rowHeight}px`,
+            '--feathery-table-effective-header-height': `${geometry.headerHeight}px`
+          } as React.CSSProperties
+        }
+        css={{
+          display: 'flex',
+          flex: '1 1 auto',
+          flexDirection: 'column',
+          minHeight: 0,
+          ...(fitHeight ? { height: `${fitHeight}px` } : {})
+        }}
+      >
+        {showBar && pending ? (
+          <PendingChangesBar
+            pendingCount={pending.count}
+            blockingCount={counts.blocking}
+            errorCount={counts.errors}
+            warningCount={counts.warnings}
+            saving={pending.saving}
+            onSave={pending.onSave}
+            onDiscard={pending.onDiscard}
+            onStepIssue={stepIssue}
+          />
+        ) : null}
+        <SpreadsheetGrid
+          ref={gridRef}
+          table={table}
+          interactions={interactions}
+          canEdit={canEdit}
+          rowIndexById={rowIndexById}
+          getCellShading={getCellShading}
+          cellRules={cellRules}
+          onAddColumn={onAddColumn}
+          onInsertRow={onInsertRow}
+          onDeleteRow={onDeleteRow}
         />
-      ) : null}
-      <SpreadsheetGrid
-        ref={gridRef}
-        table={table}
-        interactions={interactions}
-        canEdit={canEdit}
-        rowIndexById={rowIndexById}
-        getCellShading={getCellShading}
-        cellRules={cellRules}
-        onAddColumn={onAddColumn}
-        onInsertRow={onInsertRow}
-        onDeleteRow={onDeleteRow}
-      />
-    </div>
+      </div>
+    </SpreadsheetGeometryContext.Provider>
   );
 }
