@@ -364,4 +364,88 @@ describe('one table primitive surface for plain tables', () => {
     expect(await session.call<number>('tableColumnCountAt', remaining)).toBe(1);
     expect(await session.call<number>('contentControlCount')).toBe(controls);
   }, 120000);
+
+  it('restripes a plain source when a later message inserts into its pending split', async () => {
+    const baseline = await session.call<string>('serialize');
+    const applySequence = async (source: string, suffix: string) => {
+      const split = await session.call<any>(
+        'applyEdits',
+        [
+          {
+            op: 'duplicate_table',
+            group: 'g01-split-coverage',
+            anchor: source,
+            rows: 'copy',
+            resultRef: '@copy'
+          },
+          {
+            op: 'delete_row',
+            group: 'g01-split-coverage',
+            anchor: '@copy',
+            rows: [1, 3]
+          },
+          {
+            op: 'delete_row',
+            group: 'g01-split-coverage',
+            anchor: source,
+            rows: [2, 4]
+          }
+        ],
+        `plain-split-pending-${suffix}`
+      );
+      const insert = await session.call<any>(
+        'applyEdits',
+        [
+          {
+            op: 'insert_row',
+            group: 'g02-add-earthquake',
+            anchor: `${source};3;0;0`,
+            shape: 'blank',
+            resultRef: '@earthquake'
+          },
+          {
+            op: 'set_cell_text',
+            group: 'g02-add-earthquake',
+            anchor: '@earthquake;0;0',
+            text: 'Earthquake'
+          },
+          {
+            op: 'set_cell_text',
+            group: 'g02-add-earthquake',
+            anchor: '@earthquake;1;0',
+            text: 'Excluded'
+          }
+        ],
+        `plain-add-to-pending-source-${suffix}`
+      );
+      expect(split.outcomes).toEqual(['ok', 'ok', 'ok']);
+      expect(insert.outcomes).toEqual(['ok', 'ok', 'ok']);
+    };
+
+    const source = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    await applySequence(source, 'accept');
+
+    await session.call('resolveGroups', true);
+    expect(await session.call<string[]>('tableRowTextsAt', source)).toEqual([
+      'PerilStatus',
+      'Fire and explosionIncluded',
+      'SubsidenceExcluded',
+      'EarthquakeExcluded'
+    ]);
+    expect(
+      await session.call<Array<string | null>>('rowShadingAt', source)
+    ).toEqual(['#001B49FF', null, '#E6E6E6FF', null]);
+
+    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    const rejectSource = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    await applySequence(rejectSource, 'reject');
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
 });

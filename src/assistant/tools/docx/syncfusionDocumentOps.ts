@@ -9676,22 +9676,45 @@ export const ANCHORED_OP_HANDLERS: {
     const tableAnchor = tableAnchorForBlock(block);
     const addressedRow = Number(block.anchor.split(';')[2]);
     const rowIndex = addressedRow + (op.above === true ? 0 : 1);
+    const preWriteSfdt = serializeSfdt(editor);
+    const { headerRows, banding } = tableAnchor
+      ? bandingForAcceptedTableProjection(preWriteSfdt, tableAnchor)
+      : { headerRows: 0, banding: undefined };
+    const tableId = tableAnchor
+      ? bindingRuntime(editor, preWriteSfdt)?.tablesByAnchor.get(tableAnchor)
+          ?.tableId
+      : undefined;
     selectBlock(editor, block);
     callEditor(editor, 'insertRow', op.above === true, positiveCount(op.count));
+    const postWriteSfdt = serializeSfdt(editor);
+    const footprint =
+      tableAnchor && banding
+        ? captureTableFootprint(
+            postWriteSfdt,
+            tableAnchor,
+            headerRows,
+            banding,
+            tableId
+          )
+        : null;
     const resultRef =
       op.shape === 'blank' && typeof op.resultRef === 'string'
         ? op.resultRef.trim()
         : '';
-    return resultRef && tableAnchor && Number.isInteger(rowIndex)
-      ? {
-          createdRef: {
-            ref: resultRef,
-            kind: 'row' as const,
-            id: tableAnchor,
-            rowIndex
+    return {
+      postWriteSfdt,
+      ...(footprint ? { tableFootprints: [footprint] } : {}),
+      ...(resultRef && tableAnchor && Number.isInteger(rowIndex)
+        ? {
+            createdRef: {
+              ref: resultRef,
+              kind: 'row' as const,
+              id: tableAnchor,
+              rowIndex
+            }
           }
-        }
-      : undefined;
+        : {})
+    };
   },
   insert_table: ({ editor, op, block, byAnchor }) => {
     if (block.kind === 'table_cell')
