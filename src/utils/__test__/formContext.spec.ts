@@ -8,7 +8,8 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
 
   beforeEach(() => {
     client = {
-      generateDocuments: jest.fn().mockResolvedValue({ files: [] })
+      generateDocuments: jest.fn().mockResolvedValue({ files: [] }),
+      flushCustomFields: jest.fn().mockResolvedValue(undefined)
     };
     flow = jest.fn().mockResolvedValue({ files: [] });
     setFormInternalState(uuid, {
@@ -18,8 +19,8 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     } as any);
   });
 
-  it('routes the editor + signer options through the form flow with a built action', () => {
-    getFormContext(uuid).generateDocuments({
+  it('routes the editor + signer options through the form flow with a built action', async () => {
+    await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
       signers: [
         {
@@ -37,6 +38,7 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       redirect: 'https://done.example.com'
     });
 
+    expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
     expect(flow).toHaveBeenCalledTimes(1);
     const [action] = flow.mock.calls[0];
     expect(action).toMatchObject({
@@ -62,19 +64,22 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
-  it('routes a bare sign envelope action through the flow', () => {
-    getFormContext(uuid).generateDocuments({
+  it('routes a bare sign envelope action through the flow', async () => {
+    await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
       envelopeAction: 'sign'
     });
 
+    expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
     expect(flow).toHaveBeenCalledTimes(1);
     expect(flow.mock.calls[0][0]).toMatchObject({ envelope_action: 'sign' });
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
-  it('routes a quik-only document list through the flow even with no other options', () => {
-    getFormContext(uuid).generateDocuments({ documentIds: [{ kind: 'quik' }] });
+  it('routes a quik-only document list through the flow even with no other options', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: [{ kind: 'quik' }]
+    });
 
     expect(flow).toHaveBeenCalledTimes(1);
     expect(flow.mock.calls[0][0]).toMatchObject({
@@ -83,8 +88,8 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
-  it('keeps the simple client path for plain template fill/merge (no rich options)', () => {
-    getFormContext(uuid).generateDocuments({
+  it('keeps the simple client path for plain template fill/merge (no rich options)', async () => {
+    await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
       merge: true,
       mergedFileName: 'out',
@@ -92,6 +97,7 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       zipName: 'bundle'
     });
 
+    expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
     expect(client.generateDocuments).toHaveBeenCalledWith({
       documentIds: ['tpl-1'],
       download: true,
@@ -102,8 +108,8 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(flow).not.toHaveBeenCalled();
   });
 
-  it('routes per-role signers through the flow even with no other options', () => {
-    getFormContext(uuid).generateDocuments({
+  it('routes per-role signers through the flow even with no other options', async () => {
+    await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
       signers: [{ documentId: 'tpl-1', roleId: 'role-1', email: 'a@x.com' }]
     });
@@ -112,13 +118,13 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
-  it('falls back to the client path when no flow is registered (headless)', () => {
+  it('falls back to the client path when no flow is registered (headless)', async () => {
     // A separate form uuid: setFormInternalState overlays onto existing state
     // and never clears keys, so the flow registered in beforeEach would survive.
     const headlessUuid = 'formContext-test-headless';
     setFormInternalState(headlessUuid, { fields: {}, client } as any);
 
-    getFormContext(headlessUuid).generateDocuments({
+    await getFormContext(headlessUuid).generateDocuments({
       documentIds: ['tpl-1'],
       envelopeAction: 'sign'
     });
