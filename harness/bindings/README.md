@@ -14,21 +14,6 @@ Rebuild after changing anything under `src/elements/components/DocxEditor/bindin
 npx webpack --config harness/bindings/webpack.config.js
 ```
 
-## Headless document-editor tests
-
-The repository also includes a Jest lane that runs the document-editing
-primitives against a real, headless Chrome page rather than jsdom. It bundles
-the host automatically before the tests run:
-
-```
-yarn test:headless
-```
-
-The lane requires a locally installed Chrome or Chromium. Set `CHROME_PATH` to
-the browser executable when it is not in a standard location. Screenshots and
-other run evidence are written to the gitignored `.headless-evidence/`
-directory.
-
 ## Why it exists
 
 Every automated test for this engine runs in jsdom, which cannot reproduce the
