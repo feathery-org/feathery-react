@@ -34,6 +34,22 @@ const addCyberSection = [
   }
 ];
 
+const equipmentSection = {
+  title: '1.4 Equipment Costs',
+  blocks: [
+    {
+      role: 'table',
+      table: {
+        columnHeaders: ['Equipment', 'Quantity', 'Unit Cost'],
+        rows: [
+          ['Laptop', '2', '$1,000'],
+          ['Monitor', '3', '$400']
+        ]
+      }
+    }
+  ]
+};
+
 describe('section creation on the flagship document', () => {
   let session: HeadlessSession;
 
@@ -172,22 +188,6 @@ describe('section creation on the flagship document', () => {
       'tableAnchor',
       'property_premium'
     );
-    const sectionSpec = {
-      title: '1.4 Equipment Costs',
-      blocks: [
-        {
-          role: 'table',
-          table: {
-            columnHeaders: ['Equipment', 'Quantity', 'Unit Cost'],
-            rows: [
-              ['Laptop', '2', '$1,000'],
-              ['Monitor', '3', '$400']
-            ]
-          }
-        }
-      ]
-    };
-
     const beforeMisplaced = await session.call<string>('serialize');
     const misplaced = await session.call<any>(
       'applyEdits',
@@ -197,12 +197,28 @@ describe('section creation on the flagship document', () => {
           group: 'g01-misplaced-equipment',
           anchor: '2;0',
           position: 'before',
-          sectionSpec
+          sectionSpec: equipmentSection
         }
       ],
       'misplaced-equipment'
     );
     expect(misplaced.outcomes[0]).toContain('section_parent_mismatch');
+    expect(await session.call<string>('serialize')).toBe(beforeMisplaced);
+
+    const insidePriorUnit = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_section',
+          group: 'g01-equipment-inside-premium',
+          anchor: '1;8',
+          position: 'before',
+          sectionSpec: equipmentSection
+        }
+      ],
+      'equipment-inside-premium'
+    );
+    expect(insidePriorUnit.outcomes[0]).toContain('subsection_order_mismatch');
     expect(await session.call<string>('serialize')).toBe(beforeMisplaced);
 
     const placed = await session.call<any>(
@@ -213,7 +229,7 @@ describe('section creation on the flagship document', () => {
           group: 'g01-place-equipment',
           anchor: propertyTable,
           position: 'after',
-          sectionSpec
+          sectionSpec: equipmentSection
         }
       ],
       'place-equipment'
@@ -222,8 +238,53 @@ describe('section creation on the flagship document', () => {
     const inventory = await session.call<
       Array<{ anchor: string; kind: string; text: string }>
     >('inventory');
-    expect(
-      inventory.find((entry) => entry.text === '1.4 Equipment Costs')?.anchor
-    ).toMatch(/^1;/);
+    const insertedHeading = inventory.find(
+      (entry) => entry.text === '1.4 Equipment Costs'
+    )?.anchor;
+    const livePropertyTable = await session.call<string>(
+      'tableAnchor',
+      'property_premium'
+    );
+    expect(insertedHeading).toMatch(/^1;/);
+    expect(Number(insertedHeading?.split(';')[1])).toBeGreaterThan(
+      Number(livePropertyTable.split(';')[1])
+    );
+  }, 120000);
+
+  it('keeps a parent-tail blank anchor in its physical section', async () => {
+    const propertyTable = await session.call<string>(
+      'tableAnchor',
+      'property_premium'
+    );
+    const [section, block] = propertyTable.split(';').map(Number);
+    const placed = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_section',
+          group: 'g01-place-equipment-at-tail',
+          anchor: `${section};${block + 1}`,
+          position: 'after',
+          sectionSpec: equipmentSection
+        }
+      ],
+      'place-equipment-at-tail'
+    );
+    expect(placed.outcomes).toEqual(['ok']);
+
+    const inventory = await session.call<
+      Array<{ anchor: string; kind: string; text: string }>
+    >('inventory');
+    const insertedHeading = inventory.find(
+      (entry) => entry.text === '1.4 Equipment Costs'
+    )?.anchor;
+    const livePropertyTable = await session.call<string>(
+      'tableAnchor',
+      'property_premium'
+    );
+    expect(insertedHeading).toMatch(/^1;/);
+    expect(Number(insertedHeading?.split(';')[1])).toBeGreaterThan(
+      Number(livePropertyTable.split(';')[1])
+    );
   }, 120000);
 });

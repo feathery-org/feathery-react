@@ -21121,16 +21121,16 @@ function composerBoundaryBesideBlock(
   block: number,
   position: 'before' | 'after'
 ): ComposerInsertionBoundary | undefined {
-  const indexed = bodyBlocks
+  const allIndexed = bodyBlocks
     .map((target) => ({
       target,
       block: Number(target.anchor.split(';')[1])
     }))
-    .filter(
-      (candidate) =>
-        Number.isInteger(candidate.block) && !boundaryElement(candidate.target)
-    );
-  const following = indexed
+    .filter((candidate) => Number.isInteger(candidate.block));
+  const indexed = allIndexed.filter(
+    (candidate) => !boundaryElement(candidate.target)
+  );
+  const following = allIndexed
     .filter((candidate) => candidate.block > block)
     .sort((left, right) => left.block - right.block)[0]?.target;
   const preceding = indexed
@@ -21252,8 +21252,14 @@ function resolveComposerInsertionBoundary(
       const followingSection = sectionMap.find(
         (entry) => entry.start > exactIndex
       );
-      if (followingSection)
+      if (
+        followingSection &&
+        followingSection.heading.anchor.split(';')[0] ===
+          exact.anchor.split(';')[0]
+      )
         return { target: followingSection.heading, position: 'before' };
+      if (followingSection)
+        return { target: exact, position: requestedPosition };
       const preceding = [...blocks.slice(0, exactIndex)]
         .reverse()
         .find(
@@ -21354,6 +21360,88 @@ function composerTableDonor(
   return undefined;
 }
 
+function validateNumberedSubsectionPlacement(
+  title: string,
+  blocks: FlatBlock[],
+  target: FlatBlock,
+  position: 'before' | 'after'
+): void {
+  const numbered = /^\s*(\d+)\.(\d+)\b/.exec(title);
+  if (!numbered) return;
+  const parentNumber = numbered[1];
+  const parentHeading = blocks.find(
+    (block) =>
+      block.isHeading &&
+      new RegExp(`^\\s*Section\\s+${parentNumber}\\b`, 'i').test(block.text)
+  );
+  const parentSection = parentHeading?.anchor.split(';')[0];
+  if (!parentSection) return;
+  const targetSection = target.anchor.split(';')[0];
+  if (targetSection !== parentSection)
+    sectionSpecError(
+      'section_parent_mismatch',
+      'anchor',
+      `${JSON.stringify(title)} belongs inside ${JSON.stringify(
+        parentHeading.text
+      )}, but the anchor resolves to another Word section.`,
+      [
+        `use an anchor in Word section ${parentSection}, after the final existing block of the parent section`
+      ]
+    );
+
+  const targetOrdinal = Number(numbered[2]);
+  const siblingPattern = new RegExp(`^\\s*${parentNumber}\\.(\\d+)\\b`);
+  const siblings = blocks.flatMap((block, index) => {
+    const match = block.isHeading ? siblingPattern.exec(block.text) : undefined;
+    return match && block.anchor.split(';')[0] === parentSection
+      ? [{ block, index, ordinal: Number(match[1]) }]
+      : [];
+  });
+  const previous = siblings
+    .filter((sibling) => sibling.ordinal < targetOrdinal)
+    .sort((left, right) => right.ordinal - left.ordinal)[0];
+  const next = siblings
+    .filter((sibling) => sibling.ordinal > targetOrdinal)
+    .sort((left, right) => left.ordinal - right.ordinal)[0];
+  const insertionBlock =
+    Number(target.anchor.split(';')[1]) + (position === 'after' ? 1 : 0);
+  const previousEndBlock = previous
+    ? Math.max(
+        ...blocks
+          .slice(previous.index, sectionUnitEnd(blocks, previous.index))
+          .filter(
+            (block) =>
+              block.anchor.split(';')[0] === parentSection &&
+              !boundaryElement(block)
+          )
+          .map((block) => Number(block.anchor.split(';')[1]))
+          .filter(Number.isInteger)
+      )
+    : undefined;
+  const nextBlock = next ? Number(next.block.anchor.split(';')[1]) : undefined;
+  if (
+    (previousEndBlock === undefined || insertionBlock > previousEndBlock) &&
+    (nextBlock === undefined || insertionBlock <= nextBlock)
+  )
+    return;
+
+  sectionSpecError(
+    'subsection_order_mismatch',
+    'anchor',
+    `${JSON.stringify(
+      title
+    )} would not follow the document's numbered subsection order. Nothing was written.`,
+    [
+      previous
+        ? `place it after the complete ${JSON.stringify(
+            previous.block.text
+          )} unit`
+        : `place it before ${JSON.stringify(next?.block.text)}`,
+      ...(next ? [`keep it before ${JSON.stringify(next.block.text)}`] : [])
+    ]
+  );
+}
+
 function compileSectionComposer(
   op: EditOp,
   originalIndex: number,
@@ -21429,28 +21517,7 @@ function compileSectionComposer(
     : resolvedTarget;
   if (needsSeedAnchor) position = 'before';
   const spec = validatedSectionSpec(op.sectionSpec);
-  const numberedSubsection = /^\s*(\d+)\.(\d+)\b/.exec(spec.title);
-  if (numberedSubsection) {
-    const parentNumber = numberedSubsection[1];
-    const parentHeading = blocks.find(
-      (block) =>
-        block.isHeading &&
-        new RegExp(`^\\s*Section\\s+${parentNumber}\\b`, 'i').test(block.text)
-    );
-    const parentSection = parentHeading?.anchor.split(';')[0];
-    const targetSection = target.anchor.split(';')[0];
-    if (parentSection && targetSection !== parentSection)
-      sectionSpecError(
-        'section_parent_mismatch',
-        'anchor',
-        `${JSON.stringify(spec.title)} belongs inside ${JSON.stringify(
-          parentHeading?.text
-        )}, but the anchor resolves to another Word section.`,
-        [
-          `use an anchor in Word section ${parentSection}, after the final existing block of the parent section`
-        ]
-      );
-  }
+  validateNumberedSubsectionPlacement(spec.title, blocks, target, position);
   const group =
     typeof op.group === 'string'
       ? op.group
