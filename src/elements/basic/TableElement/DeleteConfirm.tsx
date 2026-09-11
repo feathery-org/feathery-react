@@ -9,6 +9,7 @@ import {
   confirmCancelButtonStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
+import { useTablePortalStyles } from './portalStyles';
 
 type DeleteConfirmProps = {
   anchorEl: HTMLElement | null;
@@ -27,11 +28,7 @@ export function DeleteConfirm({
 }: DeleteConfirmProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  if (!anchorEl) return null;
-
-  const anchorRect = anchorEl.getBoundingClientRect();
-  const top = anchorRect.bottom + 4;
-  const left = anchorRect.right;
+  useTablePortalStyles(anchorEl, popoverRef);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -61,6 +58,11 @@ export function DeleteConfirm({
       doc.removeEventListener('keydown', handleKeyDown);
     };
   }, [onCancel, anchorEl]);
+
+  if (!anchorEl) return null;
+  const anchorRect = anchorEl.getBoundingClientRect();
+  const top = anchorRect.bottom + 4;
+  const left = anchorRect.right;
 
   return createPortal(
     <div

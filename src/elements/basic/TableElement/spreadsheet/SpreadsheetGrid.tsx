@@ -12,6 +12,12 @@ import { TABLE_CLASS } from '../classNames';
 import { AddColumnHandler, CellShading, GetCellShading } from '../types';
 import { CellValue, getFillPreview } from './model';
 import { CellEditor } from './CellEditor';
+import { SpreadsheetGeometryContext } from './useSpreadsheetGeometry';
+import {
+  DEFAULT_SPREADSHEET_GEOMETRY,
+  SpreadsheetFont,
+  SpreadsheetGeometry
+} from './geometry';
 import { CellErrorTooltip } from './CellErrorTooltip';
 import { RowMenu, RowMenuTarget } from './RowMenu';
 import { choicesFor, formatCellDisplay } from './fieldEditors';
@@ -41,15 +47,9 @@ import {
   rowFocusedStyle,
   rowRaisedStyle,
   rowStyle,
-  CELL_HORIZONTAL_PADDING,
   DEFAULT_COLUMN_WIDTH,
-  FONT_SIZE,
   GRID_FONT_FAMILY,
-  HEADER_FONT_SIZE,
-  HEADER_FONT_WEIGHT,
-  HEADER_HEIGHT,
   ROW_HEADER_WIDTH,
-  ROW_HEIGHT,
   TOOLTIP_SCROLL_MARGIN
 } from './styles';
 import type {
@@ -125,6 +125,9 @@ export const SpreadsheetGrid = React.forwardRef<
   forwardedRef
 ) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const { rowHeight, headerHeight } = React.useContext(
+    SpreadsheetGeometryContext
+  );
 
   useHotkeys(
     [
@@ -194,9 +197,9 @@ export const SpreadsheetGrid = React.forwardRef<
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     getItemKey: (index) => rows[index]?.id ?? index,
-    estimateSize: () => ROW_HEIGHT,
-    paddingStart: HEADER_HEIGHT,
-    scrollPaddingStart: HEADER_HEIGHT,
+    estimateSize: () => rowHeight,
+    paddingStart: headerHeight,
+    scrollPaddingStart: headerHeight,
     // Stop short of the bottom edge so a scrolled-to cell has room beneath it
     // for its message bubble, which hangs below the cell.
     scrollPaddingEnd: TOOLTIP_SCROLL_MARGIN,
@@ -213,6 +216,10 @@ export const SpreadsheetGrid = React.forwardRef<
     scrollPaddingStart: ROW_HEADER_WIDTH,
     overscan: 3
   });
+
+  React.useEffect(() => {
+    rowVirtualizer.measure();
+  }, [rowVirtualizer, rowHeight, headerHeight]);
 
   // Resizing changes measured widths without changing the column count, which
   // the virtualizer would otherwise not re-measure for.
@@ -286,7 +293,7 @@ export const SpreadsheetGrid = React.forwardRef<
       );
       const localY = clamp(
         clientY - rect.top,
-        HEADER_HEIGHT + 1,
+        headerHeight + 1,
         rect.height - 1
       );
 
@@ -307,7 +314,7 @@ export const SpreadsheetGrid = React.forwardRef<
       if (rowIndex < 0 || columnIndex < 0) return null;
       return { rowIndex, columnIndex };
     },
-    [columns, columnVirtualizer, rows, rowVirtualizer, table]
+    [columns, columnVirtualizer, rows, rowVirtualizer, table, headerHeight]
   );
 
   const applyHeaderSelectionDrag = React.useCallback(
@@ -461,7 +468,7 @@ export const SpreadsheetGrid = React.forwardRef<
   // No trailing gutter: a bubble on one of the last rows flips above the cell
   // instead (CellErrorTooltip measures against the grid's visible box), so
   // the canvas ends at the last row and nothing blank scrolls into view.
-  const canvasHeight = rowsHeight + (onInsertRow ? ROW_HEIGHT : 0);
+  const canvasHeight = rowsHeight + (onInsertRow ? rowHeight : 0);
 
   return (
     <>
@@ -587,6 +594,7 @@ function HeaderRow({
   onExtendSelection,
   onAddColumn
 }: HeaderRowProps) {
+  const { headerHeight } = React.useContext(SpreadsheetGeometryContext);
   const rowCount = table.getRowsInDisplayOrder().length;
   const shared = {
     table,
@@ -626,7 +634,7 @@ function HeaderRow({
           css={{
             ...columnHeaderStyle,
             left: table.getTotalSize() + ROW_HEADER_WIDTH,
-            width: HEADER_HEIGHT,
+            width: headerHeight,
             cursor: 'pointer'
           }}
           onMouseDown={(event) => event.stopPropagation()}
@@ -663,6 +671,7 @@ function HeaderCell({
   left
 }: HeaderCellProps) {
   const { column } = header;
+  const geometry = React.useContext(SpreadsheetGeometryContext);
   const columnIndex = table.getCellSelectionColumnIndexes()[column.id] ?? -1;
   const inSelection = bounds.some(
     (bound) =>
@@ -700,7 +709,7 @@ function HeaderCell({
       <span
         css={{
           ...columnHeaderLabelStyle,
-          ...(fullySelected ? { color: 'inherit' } : {})
+          ...(inSelection ? { color: 'inherit' } : {})
         }}
       >
         {label}
@@ -726,7 +735,7 @@ function HeaderCell({
           event.stopPropagation();
           table.setColumnSizing((current) => ({
             ...current,
-            [column.id]: getAutoFitColumnWidth(table, column)
+            [column.id]: getAutoFitColumnWidth(table, column, geometry)
           }));
         }}
       />
@@ -851,6 +860,7 @@ function SpreadsheetRowView({
       className={TABLE_CLASS.gridRow}
       role='row'
       aria-rowindex={rowIndex + 2}
+      data-alternate-row={rowIndex % 2 === 1 || undefined}
       css={{
         ...rowStyle,
         ...(selection.focusedColumnId
@@ -858,7 +868,7 @@ function SpreadsheetRowView({
           : selection.inSelection
           ? rowRaisedStyle
           : {}),
-        height: ROW_HEIGHT,
+        height: 'var(--feathery-table-effective-row-height, 32px)',
         transform: `translateY(${top}px)`
       }}
     >
@@ -1171,18 +1181,11 @@ function formatRenderedValue(value: unknown): string {
 
 let textMeasurementContext: CanvasRenderingContext2D | null = null;
 
-type MeasuredFont = { size: number; weight: number };
-const CELL_FONT: MeasuredFont = { size: FONT_SIZE, weight: 400 };
-const HEADER_FONT: MeasuredFont = {
-  size: HEADER_FONT_SIZE,
-  weight: HEADER_FONT_WEIGHT
-};
-
 /**
  * The rendered width of `value` in the font the grid actually draws it in —
  * measuring in any other font fits the column to text it does not hold.
  */
-export function measureTextWidth(value: string, font: MeasuredFont): number {
+export function measureTextWidth(value: string, font: SpreadsheetFont): number {
   if (!textMeasurementContext) {
     textMeasurementContext = featheryDoc()
       .createElement('canvas')
@@ -1191,28 +1194,37 @@ export function measureTextWidth(value: string, font: MeasuredFont): number {
   // jsdom has no 2d context; fall back to a rough per-character estimate.
   if (!textMeasurementContext) return value.length * font.size * 0.55;
 
-  textMeasurementContext.font = `${font.weight} ${font.size}px ${GRID_FONT_FAMILY}`;
+  textMeasurementContext.font = `${font.weight} ${font.size}px ${
+    font.family ?? GRID_FONT_FAMILY
+  }`;
   return textMeasurementContext.measureText(value).width;
 }
 
 function getAutoFitColumnWidth(
   table: SpreadsheetTable,
-  column: SpreadsheetTableColumn
+  column: SpreadsheetTableColumn,
+  geometry: SpreadsheetGeometry = DEFAULT_SPREADSHEET_GEOMETRY
 ): number {
   const fieldKey = column.columnDef.meta?.fieldKey;
   if (!fieldKey) return column.getSize();
 
-  let widest = measureTextWidth(column.columnDef.meta?.name ?? '', HEADER_FONT);
+  let widest = measureTextWidth(
+    column.columnDef.meta?.name ?? '',
+    geometry.headerFont
+  );
   for (const row of table.options.data) {
     widest = Math.max(
       widest,
-      measureTextWidth(formatRenderedValue(row.cells[fieldKey]), CELL_FONT)
+      measureTextWidth(
+        formatRenderedValue(row.cells[fieldKey]),
+        geometry.cellFont
+      )
     );
   }
 
   return Math.max(
     column.columnDef.minSize ?? 0,
-    Math.ceil(widest + CELL_HORIZONTAL_PADDING + 2)
+    Math.ceil(widest + geometry.horizontalPadding * 2 + 2)
   );
 }
 
