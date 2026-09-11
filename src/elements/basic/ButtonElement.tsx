@@ -7,6 +7,7 @@ import { isFit } from '../../utils/hydration';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
 import ErrorInput from '../components/ErrorInput';
+import { managedConnectAccountElement } from '../../integrations/connectAccount/providers';
 
 // Space left between a scaled-down loader and the button's edge, per side. Not
 // taken from the button's padding on purpose: that would tie the loader's size
@@ -204,6 +205,16 @@ function ButtonElement({
         }
   );
 
+  const actions = element.properties.actions ?? [];
+  const noActions = actions.length === 0 && !element.properties.submit;
+
+  // A Feathery-managed Connect Account label is computed, so it replaces the
+  // builder's label on the canvas too - and can't be edited in place there.
+  const managedElement = managedConnectAccountElement(element);
+  const labelElement = managedElement ?? element;
+  const labelEditMode =
+    managedElement && editMode === 'editable' ? 'disabled' : editMode;
+
   const buttonContent = (
     <>
       {element.properties.image && (
@@ -215,12 +226,12 @@ function ButtonElement({
           }}
         />
       )}
-      {element.properties.text && (
+      {labelElement.properties.text && (
         <TextNodes
-          element={element}
+          element={labelElement}
           responsiveStyles={responsiveStyles}
           cssTarget='buttonLabel'
-          editMode={editMode}
+          editMode={labelEditMode}
           disabled={disabled}
           focused={focused}
           textCallbacks={textCallbacks}
@@ -257,9 +268,6 @@ function ButtonElement({
       objectFit: 'contain'
     }
   } as const;
-
-  const actions = element.properties.actions ?? [];
-  const noActions = actions.length === 0 && !element.properties.submit;
 
   const buttonDisabled = !editMode && (noActions || loader || disabled);
 

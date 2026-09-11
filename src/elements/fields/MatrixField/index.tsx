@@ -107,6 +107,10 @@ function MatrixField({
             </TextHoverTooltip>
             {options.map((opt: any, j: number) => {
               const questionVal = fieldVal[q.id];
+              const questionName =
+                repeatIndex !== null
+                  ? `${servar.key}-${i}-${repeatIndex}`
+                  : `${servar.key}-${i}`;
               const isChecked =
                 Array.isArray(questionVal) && questionVal.includes(opt);
 
@@ -122,11 +126,10 @@ function MatrixField({
                 >
                   <input
                     type={inputType}
-                    name={
-                      repeatIndex !== null
-                        ? `${servar.key}-${i}-${repeatIndex}`
-                        : `${servar.key}-${i}`
-                    }
+                    name={questionName}
+                    // Each option is identifiable on its own, not only
+                    // through the group name it shares with its siblings
+                    id={`${questionName}-${j}`}
                     aria-label={element.properties.aria_label}
                     data-question-id={q.id}
                     value={opt}

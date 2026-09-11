@@ -1,5 +1,6 @@
 import React, { PropsWithChildren, useRef, useState } from 'react';
 import { StyledContainer, getCellStyle } from '../StyledContainer';
+import { nameProps } from '../../../utils/domName';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import HoverTooltip from '../../../elements/components/HoverTooltip';
 import { replaceTextVariables } from '../../../elements/components/TextNodes';
@@ -104,6 +105,9 @@ export const Container = ({
         node={node}
         css={additionalCss}
         onClick={handleClick}
+        // Containers are named by their key so a click inside one is
+        // attributed to it rather than to an anonymous div
+        {...(node.isElement ? {} : nameProps(node.key))}
         viewport={viewport}
         breakpoint={form.formSettings.mobileBreakpoint}
         formId={form.formInstanceId}

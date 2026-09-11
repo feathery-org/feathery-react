@@ -17,6 +17,7 @@ import {
 import throttle from 'lodash.throttle';
 import { ACTION_EXECUTION_ORDER, ACTION_STORE_FIELD } from './elementActions';
 import { featheryDoc, featheryWindow } from './browser';
+import { getFilenameFromUrl } from './fileNames';
 import { DEFAULT_MOBILE_BREAKPOINT } from '../elements/styles';
 import internalState from './internalState';
 import { setSavedStepKey } from './stepHelperFunctions';
@@ -232,7 +233,10 @@ export async function setFormElementError({
         singleOrList instanceof RadioNodeList
           ? Array.from(singleOrList)
           : [singleOrList];
-      elements = elements.filter((e) => e);
+      // Hidden inputs are value mirrors (see HiddenValueInput) and are barred
+      // from constraint validation, so they must never be targeted for, or
+      // shift the indexing of, error display
+      elements = elements.filter((e) => e && (e as any).type !== 'hidden');
 
       if (listIndex !== null && elements.length)
         elements = [elements[listIndex]];
@@ -243,6 +247,9 @@ export async function setFormElementError({
         // If we are targeting a non-submit button, we instead target its hidden input child
         if (element.tagName === 'BUTTON' && element.type !== 'submit') {
           element = element.querySelector(`#error_${element.id}`);
+          // Only ButtonElement renders that child; any other button that
+          // resolves under a field key has nothing to carry the error
+          if (!element) return;
         }
         element.setCustomValidity(message);
         if (triggerErrors) {
@@ -320,7 +327,7 @@ export function objectMap(obj: any, transform: any) {
 export async function fetchS3File(url: any) {
   const response = await fetch(url);
   const blob = await response.blob();
-  return new File([blob], decodeURI(url.split('?')[0].split('/').slice(-1)), {
+  return new File([blob], getFilenameFromUrl(url), {
     type: blob.type
   });
 }

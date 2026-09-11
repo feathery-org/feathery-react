@@ -81,6 +81,7 @@ import {
   FieldValues,
   fieldValues,
   fileRetryStatus,
+  initInfo,
   initState,
   updateUserId
 } from '../utils/init';
@@ -149,6 +150,7 @@ import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   GetDocusignEnvelopeParams,
+  RunComputerAgentOptions,
   SendDocusignParams,
   UpdateDocusignEnvelopeParams,
   setFormInternalState
@@ -229,6 +231,11 @@ import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
 import ConnectAccountModal from '../integrations/connectAccount/ConnectAccountModal';
 import {
+  CONFIG_COMPONENTS,
+  connectionFieldKey,
+  hasEmailIdentity
+} from '../integrations/connectAccount/providers';
+import {
   ACCOUNT_CONNECT_POPUP_NAME,
   getPopupFeatures,
   runOAuthPopup
@@ -272,10 +279,7 @@ import {
   getActiveDocxEditorEnvelopeTarget,
   getActiveDocxEditorTarget
 } from '../assistant/tools/docx/docxEditorRegistry';
-import { hasDirtyDocxEditors } from '../elements/components/DocxEditor/docxDirtyRegistry';
-
-const UNSAVED_DOCX_MESSAGE =
-  'You have unsaved changes in the document editor. If you leave now, your changes will be lost.';
+import { confirmLeavingUnsavedWork } from '../utils/unsavedWork';
 
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
@@ -1732,6 +1736,24 @@ function Form({
           }
           return data;
         },
+        runComputerAgent: async (
+          agentId: string,
+          options: RunComputerAgentOptions = {}
+        ) => {
+          const { userId } = initInfo();
+          return client.runComputerAgent(agentId, {
+            ...options,
+            onComplete: (data: any) => {
+              // A run that finishes after the submission changed must not
+              // write into the new session's fields
+              if (data.status === 'complete' && initInfo().userId === userId) {
+                updateFieldValues(data.data ?? {});
+                processFileValues(data.file_values);
+              }
+              options.onComplete?.(data);
+            }
+          });
+        },
         forwardInboxEmail: async (options: ForwardInboxEmailOptions) => {
           return client.forwardInboxEmail({ options });
         }
@@ -2685,11 +2707,10 @@ function Form({
 
     // Prompted at the Next/Back action itself so validation and submission
     // decide the step is really leaving first. Full-page exits use beforeunload.
-    let docxDiscardDeclined = false;
-    const confirmDocxDiscard = () => {
-      if (!hasDirtyDocxEditors(_internalId)) return true;
-      const proceed = featheryWindow().confirm(UNSAVED_DOCX_MESSAGE);
-      docxDiscardDeclined = !proceed;
+    let leaveDeclined = false;
+    const confirmLeavingStep = () => {
+      const proceed = confirmLeavingUnsavedWork(_internalId);
+      leaveDeclined = !proceed;
       return proceed;
     };
 
@@ -2830,6 +2851,29 @@ function Form({
       );
     }
 
+    // The rest of the chain runs in a nested call over a sliced action array,
+    // so the windows this click pre-opened for those actions have to be handed
+    // across re-keyed to the slice, and dropped from this run's map, which
+    // closes whatever it still owns once the loop ends. Without the handoff the
+    // nested run pre-opens for itself - fine when it resumes from a fresh click
+    // (a modal's save, the Quik viewer's submit), but the connect account chain
+    // resumes straight off the OAuth result with no gesture left, so the browser
+    // blocks the window and the next action reports a popup that was never
+    // actually blocked. Windows already closed mean this run has finished and
+    // the resume is carrying its own gesture, so it is left to open its own.
+    const handOffPreOpenedWindows = (index: number) => {
+      const remaining = new Map<number, Window | null>();
+      let anyOpen = false;
+      preOpenedWindows.forEach((win, idx) => {
+        if (idx <= index) return;
+        remaining.set(idx - index - 1, win);
+        if (win && !win.closed) anyOpen = true;
+      });
+      if (!anyOpen) return undefined;
+      remaining.forEach((_, idx) => preOpenedWindows.delete(idx + index + 1));
+      return remaining;
+    };
+
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
       elementClicks[id] = false;
@@ -2844,7 +2888,8 @@ function Form({
         onAsyncEnd,
         textSpanStart,
         textSpanEnd,
-        triggerPayload
+        triggerPayload,
+        preOpenedWindows: handOffPreOpenedWindows(index)
       });
       if (!running) onAsyncEnd();
     };
@@ -2943,28 +2988,33 @@ function Form({
         // first trigger's flow-advance closure. Ignore this trigger instead;
         // the shared post-loop cleanup below still releases its click lock
         // and closes its own pre-opened popup.
+        // Only covers triggers that open a modal: the ref is set by
+        // openConnectAccountModal, so a provider that connects without one
+        // races here exactly as it did before the modal existed.
         if (connectAccountModalRef.current) break;
 
         await Promise.all([submitPromise, client.flushCustomFields()]);
         const popup = preOpenedWindows.get(i) ?? null;
         preOpenedWindows.delete(i);
         const provider = action.provider;
-        const emailKey = `feathery.connections.${provider}.email`;
+        // Not always an email: a provider with no user identity records only
+        // that a connection exists. Either way a value here means connected.
+        const connectionKey = connectionFieldKey(provider);
 
+        const alreadyConnected = !!fieldValues[connectionKey];
+        let connected = false;
         try {
-          if (fieldValues[emailKey]) {
+          if (alreadyConnected) {
             popup?.close();
           } else {
             const result = await runOAuthPopup(client, provider, popup);
-            updateFieldValues({ [emailKey]: result.account_email ?? '' });
+            updateFieldValues({
+              [connectionKey]: hasEmailIdentity(provider)
+                ? result.account_email ?? ''
+                : 'true'
+            });
           }
-          // The flow advances from the modal's onSaved, not here - the
-          // respondent has not finished configuring the account yet.
-          openConnectAccountModal({
-            provider,
-            onFlowSuccess: flowOnSuccess(i),
-            onAsyncEnd
-          });
+          connected = true;
         } catch (error) {
           elementClicks[id] = false;
           clearButtonActionState();
@@ -2974,6 +3024,30 @@ function Form({
               : 'Unable to connect your account.'
           );
           onAsyncEnd();
+        }
+        // Deliberately outside the try: the modal's setup UI is what advances
+        // the flow, and advancing runs every remaining action in the chain.
+        // A failure in one of those is that action's error, not a failure to
+        // connect, so it must not land in the catch above and get relabelled
+        // "Unable to connect your account."
+        if (connected) {
+          // A repeat click on an already-connected button still opens the
+          // modal - it is the only route to "Change account". On a fresh
+          // connect the modal is worth showing only for a provider with setup
+          // to collect; otherwise connecting is the whole job and the flow
+          // continues straight away.
+          if (alreadyConnected || CONFIG_COMPONENTS[provider]) {
+            // The flow advances from the modal's onSaved, which only a
+            // provider's config component calls - the respondent has not
+            // finished configuring the account yet.
+            openConnectAccountModal({
+              provider,
+              onFlowSuccess: flowOnSuccess(i),
+              onAsyncEnd
+            });
+          } else {
+            await flowOnSuccess(i)();
+          }
         }
         break;
       } else if (type === ACTION_URL) {
@@ -3088,7 +3162,7 @@ function Form({
       } else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
-        if (!confirmDocxDiscard()) break;
+        if (!confirmLeavingStep()) break;
         await goToNewStep({
           redirectKey: action.next_step_key ?? getNextStepKey(metadata),
           elementType: metadata.elementType,
@@ -3098,7 +3172,7 @@ function Form({
             elementType === 'button' ? (element as ClickActionElement) : null
         });
       } else if (type === ACTION_BACK) {
-        if (!confirmDocxDiscard()) break;
+        if (!confirmLeavingStep()) break;
         await goToPreviousStep();
       } else if (type === ACTION_PURCHASE_PRODUCTS) {
         const actionSuccess = await purchaseProductsAction(element);
@@ -3593,9 +3667,9 @@ function Form({
       elementClicks[id] = false;
       clearButtonActionState();
 
-      // The user chose to keep their unsaved docx changes, so nothing is
-      // pending. Return falsy so the caller clears the button loader.
-      if (docxDiscardDeclined) return;
+      // The user chose to keep their unsaved work, so nothing is pending.
+      // Return falsy so the caller clears the button loader.
+      if (leaveDeclined) return;
 
       return true;
     }
@@ -3909,9 +3983,11 @@ function Form({
             provider={connectAccountModal.provider}
             client={client}
             accountEmail={
-              fieldValues[
-                `feathery.connections.${connectAccountModal.provider}.email`
-              ] as string
+              hasEmailIdentity(connectAccountModal.provider)
+                ? (fieldValues[
+                    connectionFieldKey(connectAccountModal.provider)
+                  ] as string)
+                : ''
             }
             onChangeAccount={async () => {
               // window.open must stay the first statement: the modal's
@@ -3934,8 +4010,10 @@ function Form({
                   popup
                 );
                 updateFieldValues({
-                  [`feathery.connections.${connectAccountModal.provider}.email`]:
-                    result.account_email ?? ''
+                  [connectionFieldKey(connectAccountModal.provider)]:
+                    hasEmailIdentity(connectAccountModal.provider)
+                      ? result.account_email ?? ''
+                      : 'true'
                 });
               } catch (error) {
                 return error instanceof Error
@@ -3970,10 +4048,8 @@ export function JSForm({
   ...props
 }: Props & InternalProps) {
   const [remount, setRemount] = useState(false);
-  const confirmDocxPopNavigation = useCallback(
-    () =>
-      !hasDirtyDocxEditors(_internalId) ||
-      featheryWindow().confirm(UNSAVED_DOCX_MESSAGE),
+  const confirmPopNavigationGuard = useCallback(
+    () => confirmLeavingUnsavedWork(_internalId),
     [_internalId]
   );
 
@@ -3989,7 +4065,7 @@ export function JSForm({
   if (formId && runningInClient())
     return (
       <FeatheryCacheProvider>
-        <RouterProvider confirmPopNavigation={confirmDocxPopNavigation}>
+        <RouterProvider confirmPopNavigation={confirmPopNavigationGuard}>
           <Form
             {...props}
             formId={formId}

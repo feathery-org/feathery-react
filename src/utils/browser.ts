@@ -1,6 +1,7 @@
 import { type FocusEvent } from 'react';
 import JSZip from 'jszip';
 import { isElementInViewport } from './formHelperFunctions';
+import { getFilenameFromUrl } from './fileNames';
 
 export function runningInClient() {
   // eslint-disable-next-line no-restricted-globals
@@ -89,7 +90,7 @@ export function downloadFile(file: File) {
 async function getFileData(url: string) {
   const response = await fetch(url);
   const blob = await response.blob();
-  const fileName = new URL(url).pathname.split('/').at(-1) ?? '';
+  const fileName = getFilenameFromUrl(url);
   return { fileName, blob };
 }
 

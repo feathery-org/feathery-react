@@ -1510,3 +1510,28 @@ describe('DropdownMultiField - Base Functionality', () => {
     });
   });
 });
+
+describe('DropdownMultiField - DOM naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('mirrors the selection into a hidden input named by the field key', () => {
+    const element = createDropdownMultiElement(
+      'multiselect',
+      createOptionsMetadata(['a', 'b', 'c'])
+    );
+    const { container } = render(
+      <DropdownMultiField
+        {...createDropdownMultiProps(element, { fieldVal: ['a', 'c'] })}
+      />
+    );
+
+    const mirror = container.querySelector(
+      'input[type="hidden"]'
+    ) as HTMLInputElement;
+    expect(mirror.name).toBe(element.servar.key);
+    expect(mirror.value).toBe('a, c');
+  });
+});

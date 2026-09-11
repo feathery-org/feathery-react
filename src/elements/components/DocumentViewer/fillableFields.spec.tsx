@@ -277,7 +277,14 @@ it('freezes the form widgets while a save/finalize is in flight', async () => {
   releaseSave({ id: 'env-1' });
   await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
   await waitForIdleToolbar();
-  widgetLayers().forEach((layer) => expect(layer).not.toHaveAttribute('inert'));
+  // inert is cleared by a useEffect on inputLocked (DocumentCanvas), which
+  // flushes a tick after finalize resolves - poll for it rather than asserting
+  // synchronously, or the check flakes under parallel-worker CPU load.
+  await waitFor(() =>
+    widgetLayers().forEach((layer) =>
+      expect(layer).not.toHaveAttribute('inert')
+    )
+  );
 });
 
 it('blocks Escape and Back while a save/finalize is in flight', async () => {

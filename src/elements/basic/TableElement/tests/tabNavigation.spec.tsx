@@ -25,6 +25,7 @@ const element = {
 
 const responsiveStyles = {
   addTargets: jest.fn(),
+  apply: jest.fn(),
   getTarget: () => ({})
 };
 
