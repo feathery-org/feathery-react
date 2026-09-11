@@ -13,6 +13,16 @@ export const getElementType = (element: any) => {
   return null;
 };
 
+/**
+ * The hosted form types a table node 'table'; the designer canvas passes its
+ * own 'table_element'. Both render the same scrolling grid, which is the one
+ * element that has to shrink to its cell and grow into a fill height.
+ */
+export const isTableElement = (element: any) => {
+  const elementType = getElementType(element);
+  return elementType === 'table' || elementType === 'table_element';
+};
+
 export const isFillContainer = (div: HTMLDivElement) => {
   return Array.from(div.classList).includes('fill-container');
 };

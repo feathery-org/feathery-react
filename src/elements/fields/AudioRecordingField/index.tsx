@@ -392,6 +392,8 @@ function AudioRecordingField({
       <>
         {playbackUrl && (
           <AudioPlayer
+            // Playback state belongs to one recording; a new src is a new player
+            key={playbackUrl}
             src={playbackUrl}
             playLabel={t.play}
             pauseLabel={t.pause}
@@ -524,6 +526,7 @@ function AudioRecordingField({
         {/* This input must always be rendered so we can set field errors */}
         <ErrorInput
           id={servar.key}
+          name={servar.key}
           aria-label={element.properties.aria_label}
         />
       </div>

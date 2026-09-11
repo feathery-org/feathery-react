@@ -22,6 +22,7 @@ import {
   prioritizeActions,
   processFileValues,
   registerRenderCallback,
+  removeFilePathMapEntry,
   rerenderAllForms,
   setFormElementError,
   updateCustomCSS,
@@ -47,8 +48,11 @@ import {
   FieldStyles,
   formatStepFields,
   getAllFields,
+  FILE_FIELD_TYPES,
   getDefaultFieldValue,
   getDefaultFormFieldValue,
+  normalizeRepeatArrayValue,
+  stripEmptyRepeatEntries,
   getFieldValue,
   saveInitialValuesAndUrlParams,
   updateStepFieldOptions,
@@ -58,7 +62,8 @@ import {
 import {
   getContainerById,
   getFieldsInRepeat,
-  getRepeatedContainer
+  getRepeatedContainer,
+  getRepeatErrorOwnerIds
 } from '../utils/repeat';
 import {
   getHideIfReferences,
@@ -76,10 +81,12 @@ import {
   FieldValues,
   fieldValues,
   fileRetryStatus,
+  initInfo,
   initState,
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
+import { InlineErrors, shiftInlineErrorRows } from '../utils/inlineErrors';
 import FeatheryClient, { API_URL } from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
@@ -143,6 +150,7 @@ import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   GetDocusignEnvelopeParams,
+  RunComputerAgentOptions,
   SendDocusignParams,
   UpdateDocusignEnvelopeParams,
   setFormInternalState
@@ -223,6 +231,11 @@ import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
 import ConnectAccountModal from '../integrations/connectAccount/ConnectAccountModal';
 import {
+  CONFIG_COMPONENTS,
+  connectionFieldKey,
+  hasEmailIdentity
+} from '../integrations/connectAccount/providers';
+import {
   ACCOUNT_CONNECT_POPUP_NAME,
   getPopupFeatures,
   runOAuthPopup
@@ -266,10 +279,7 @@ import {
   getActiveDocxEditorEnvelopeTarget,
   getActiveDocxEditorTarget
 } from '../assistant/tools/docx/docxEditorRegistry';
-import { hasDirtyDocxEditors } from '../elements/components/DocxEditor/docxDirtyRegistry';
-
-const UNSAVED_DOCX_MESSAGE =
-  'You have unsaved changes in the document editor. If you leave now, your changes will be lost.';
+import { confirmLeavingUnsavedWork } from '../utils/unsavedWork';
 
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
@@ -470,9 +480,7 @@ function Form({
   const extractionFileFields = useRef<Record<string, Record<string, string[]>>>(
     {}
   );
-  const [inlineErrors, setInlineErrors] = useState<
-    Record<string, { message: string; index: number }>
-  >({});
+  const [inlineErrors, setInlineErrors] = useState<InlineErrors>({});
   const [, setRepeatChanged] = useState(false);
 
   const [integrations, setIntegrations] = useState<null | Record<string, any>>(
@@ -534,13 +542,14 @@ function Form({
       const found = getServarAndStepByFieldKey(fieldKey);
       if (!found) continue;
       const { servar, step } = found;
-      if (
-        !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
-      )
-        continue;
+      if (!FILE_FIELD_TYPES.includes(servar.type)) continue;
       if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
       fileEntries.push({
-        servar: { key: servar.key, [servar.type]: fieldValues[fieldKey] },
+        servar: {
+          key: servar.key,
+          [servar.type]: fieldValues[fieldKey],
+          repeated: Boolean(servar.repeated)
+        },
         stepKey: step.key
       });
     }
@@ -557,10 +566,7 @@ function Form({
         if (status) return pending;
         const servar = getServarByFieldKey(fieldKey);
         if (!servar) return pending;
-        if (
-          !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
-        )
-          return pending;
+        if (!FILE_FIELD_TYPES.includes(servar.type)) return pending;
         if (isFieldValueEmpty(fieldValues[fieldKey], servar)) return pending;
         pending.push(fieldKey);
         return pending;
@@ -927,6 +933,20 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
+  // Servar per field key. updateFieldValues runs on every keystroke, so this
+  // avoids both the linear scan in getServarByFieldKey and the Field entity,
+  // whose type getter warns when the field is not on the active form. The whole
+  // servar is stored because callers need `repeated` as well as `type`.
+  const servarByKey = useMemo(() => {
+    const servars = new Map<string, any>();
+    Object.values(steps).forEach((step: any) =>
+      (step.servar_fields ?? []).forEach((field: any) =>
+        servars.set(field.servar.key, field.servar)
+      )
+    );
+    return servars;
+  }, [steps]);
+
   useEffect(() => {
     const autoscroll = formSettings.autoscroll;
     if (!shouldScrollToTop || autoscroll === 'none') return;
@@ -956,7 +976,20 @@ function Form({
     });
 
     setRepeatChanged((repeatChanged) => !repeatChanged);
-    updateFieldValues(updatedValues);
+    // Adding/removing a repeat row is a structural change, not user input on a
+    // field. Don't auto-validate here: a brand-new, untouched row must not show
+    // a required error (inline or browser-native) until the user actually
+    // submits. Submit still validates every row via its own validateElements
+    // call, so validation is not weakened.
+    // clearErrors stays false too: it would wipe custom validity from EVERY
+    // control, so an already-invalid surviving row would silently look valid
+    // until the next validation pass. On the add path no rows move, so
+    // existing validity stays correct; removal shifts rows across DOM nodes,
+    // which removeRepeatedRow handles itself (html5 clear + inline reindex).
+    updateFieldValues(updatedValues, {
+      triggerErrors: false,
+      clearErrors: false
+    });
   }
 
   function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
@@ -984,12 +1017,31 @@ function Form({
     const curRepeatContainer = insideContainer || repeatContainer;
 
     const removeServars: Record<string, null> = {};
-    let curIndex = index;
+    // The removed row belongs to the container, not to any one field. Taking
+    // each field's own length lets a shorter array drop a different row, and a
+    // file field is shorter than its siblings whenever it ends in empty rows.
+    const fieldsInContainer = curRepeatContainer
+      ? getFieldsInRepeat(activeStep, curRepeatContainer)
+      : [];
+    const containerRows = Math.max(
+      0,
+      ...fieldsInContainer.map((field: any) => {
+        const vals = fieldValues[field.servar.key];
+        return Array.isArray(vals) ? vals.length : 0;
+      })
+    );
+    const curIndex = isInsideContainer ? index : containerRows - 1;
+    if (curIndex < 0) return;
+
     const getNewVal = (field: any) => {
       const vals = fieldValues[field.servar.key] as any[];
-      curIndex = !isInsideContainer ? vals.length - 1 : index;
 
       removeServars[field.servar.key] = null;
+
+      // filePathMap is indexed by repeat row, so it has to lose the same slot
+      // or the surviving files resolve to the removed row's uploaded path.
+      if (FILE_FIELD_TYPES.includes(field.servar.type))
+        removeFilePathMapEntry(field.servar.key, curIndex);
 
       const newRepeatedValues = justRemove(vals, curIndex);
       const defaultValue = [getDefaultFieldValue(field)];
@@ -997,6 +1049,41 @@ function Form({
     };
     updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
+
+    // HTML5-mode errors live in the DOM as setCustomValidity state, and repeat
+    // rows are keyed by array position, so removal shifts surviving rows into
+    // DOM nodes that keep the previous occupant's validity -- the message would
+    // render on the wrong row. DOM validity can't be reindexed, so clear it
+    // all; the next validation pass restores any real errors.
+    if (formSettings.errorType === 'html5') clearBrowserErrors(formRef);
+
+    // Inline errors for a repeated element live in its `byIndex` map. Drop the
+    // removed row's entry and shift higher-indexed rows down so each remaining
+    // row keeps its own error instead of inheriting a neighbor's. Operating on
+    // `byIndex` (not string keys) means a literal field like `foo-0` is never
+    // mistaken for a row of `foo`.
+    // Every element in the container can own a per-row error, not just servar
+    // fields: buttons (and containers) store submit/action failures under their
+    // element id, so they must be shifted too.
+    const applyShift = () =>
+      setInlineErrors((prev) =>
+        shiftInlineErrorRows(
+          prev,
+          [
+            ...Object.keys(removeServars),
+            ...getRepeatErrorOwnerIds(activeStep, curRepeatContainer)
+          ],
+          curIndex
+        )
+      );
+    // A pending async button-error publish (see setButtonError) still carries
+    // the pre-removal row index. Shift only after it lands so its error gets
+    // reindexed with the surviving rows (or dropped with the removed one)
+    // instead of attaching to whichever row now occupies the stale index.
+    const pendingPublish =
+      internalState[_internalId]?.pendingInlineErrorPublish;
+    if (pendingPublish) pendingPublish.then(applyShift);
+    else applyShift();
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -1097,7 +1184,7 @@ function Form({
       (acc, [key, value]) => {
         const field = fields?.[key];
         if (Array.isArray(value) && field && !field.isHiddenField) {
-          acc[key] = value.map((item) => (item === null ? '' : item));
+          acc[key] = normalizeRepeatArrayValue(value, servarByKey.get(key));
         } else {
           acc[key] = value;
         }
@@ -1516,12 +1603,14 @@ function Form({
             const { inlineErrors, setInlineErrors } =
               internalState[_internalId];
             let index = null;
-            let message = error;
+            let message: string;
             // If the user provided an object for an error then use the specified index and message
             // This allows users to specify an error on an element in a repeated row
             if (typeof error === 'object') {
               index = error.index;
               message = error.message;
+            } else {
+              message = error;
             }
             setFormElementError({
               formRef,
@@ -1646,6 +1735,24 @@ function Form({
             processFileValues(data.file_values);
           }
           return data;
+        },
+        runComputerAgent: async (
+          agentId: string,
+          options: RunComputerAgentOptions = {}
+        ) => {
+          const { userId } = initInfo();
+          return client.runComputerAgent(agentId, {
+            ...options,
+            onComplete: (data: any) => {
+              // A run that finishes after the submission changed must not
+              // write into the new session's fields
+              if (data.status === 'complete' && initInfo().userId === userId) {
+                updateFieldValues(data.data ?? {});
+                processFileValues(data.file_values);
+              }
+              options.onComplete?.(data);
+            }
+          });
         },
         forwardInboxEmail: async (options: ForwardInboxEmailOptions) => {
           return client.forwardInboxEmail({ options });
@@ -2007,7 +2114,9 @@ function Form({
 
   const submitStep = async (
     metadata: any,
-    repeat: number,
+    // Optional on purpose: undefined means the submitting element is NOT in a
+    // repeated container, which must stay distinguishable from row 0.
+    repeat: number | undefined,
     hasNext: boolean
   ): Promise<[Promise<any>] | undefined> => {
     const formattedFields = formatStepFields(
@@ -2020,8 +2129,8 @@ function Form({
       metadata.elementIDs[0],
       metadata.elementType
     );
-    trigger.repeatIndex = repeat;
-    const newInlineErrors: any = {};
+    // Legacy callback contract is numeric, so fall back to 0 here only.
+    trigger.repeatIndex = repeat ?? 0;
 
     if (
       activeStep.servar_fields.find(
@@ -2037,8 +2146,14 @@ function Form({
           fieldKey: errorField.servar.key,
           message: errorMessage,
           servarType: errorField.servar.type,
+          // Scope to the submitted row so a failure from one repeated row
+          // doesn't render on its siblings. Undefined for a non-repeated field,
+          // which stores a field-wide message the non-repeat renderer reads.
+          index: repeat,
           errorType: formSettings.errorType,
-          inlineErrors: newInlineErrors,
+          // Merge into the current error map rather than a fresh one, so
+          // surfacing a payment error doesn't wipe other fields' errors.
+          inlineErrors: internalState[_internalId]?.inlineErrors,
           setInlineErrors,
           triggerErrors: true
         });
@@ -2074,11 +2189,18 @@ function Form({
     if (invalid) return;
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
+      const servar = servarByKey.get(key);
       let newVal = val.value as any;
       newVal = Array.isArray(newVal)
-        ? newVal.filter((v) => ![null, undefined].includes(v))
+        ? stripEmptyRepeatEntries(newVal, servar)
         : newVal;
-      return { key, [val.type]: newVal };
+      const field: Record<string, any> = { key, [val.type]: newVal };
+      // Only the file submit path reads this. Setting it on every field would
+      // change the shape of the JSON submit body, which carries these objects
+      // verbatim.
+      if (FILE_FIELD_TYPES.includes(val.type))
+        field.repeated = Boolean(servar?.repeated);
+      return field;
     });
 
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);
@@ -2206,6 +2328,9 @@ function Form({
           fieldKey: errorField.servar ? errorField.servar.key : errorField.id,
           message: errorMessage,
           servarType: errorField.servar ? errorField.servar.type : '',
+          // Scope to the triggering element's row so a purchase failure in one
+          // repeated row doesn't render on its siblings.
+          index: triggerElement.repeat,
           errorType: formSettings.errorType,
           inlineErrors: newInlineErrors,
           setInlineErrors,
@@ -2428,19 +2553,48 @@ function Form({
       // Clear loaders before setting errors since buttons are disabled
       // when loaders are showing
       clearLoaders();
-      // Set asynchronously since loaders need to unrender first
-      setTimeout(
-        () =>
-          setFormElementError({
-            formRef,
-            fieldKey: button.id,
-            message,
-            errorType: formSettings.errorType,
-            setInlineErrors,
-            triggerErrors: true
-          }),
-        10
-      );
+      // Set asynchronously since loaders need to unrender first. Publish the
+      // pending write on internalState so programmatic callers (assistant
+      // tools) can await it instead of racing the timer.
+      const publication = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          // Promise.resolve tolerates a non-promise return (e.g. a mocked
+          // setFormElementError) so the publication always settles.
+          Promise.resolve(
+            setFormElementError({
+              formRef,
+              fieldKey: button.id,
+              message,
+              // Scope to the clicked button's repeat row, and merge into the
+              // current error map (read fresh from internalState, since this
+              // runs async) so a failure in one repeated row doesn't render on
+              // every row or wipe unrelated field errors.
+              index: button.repeat,
+              errorType: formSettings.errorType,
+              inlineErrors: internalState[_internalId]?.inlineErrors,
+              setInlineErrors,
+              triggerErrors: true
+            })
+          )
+            .catch((err) => {
+              // Still resolve so awaiters never hang, but leave a trail: a
+              // swallowed failure here means assistant tools snapshot inline
+              // errors believing the write landed.
+              console.warn('Failed to set button error', err);
+            })
+            .then(() => resolve());
+        }, 10);
+      });
+      const state = internalState[_internalId];
+      if (state) {
+        state.pendingInlineErrorPublish = publication;
+        // Stop awaiting a settled publication on later calls.
+        publication.then(() => {
+          if (state.pendingInlineErrorPublish === publication)
+            state.pendingInlineErrorPublish = undefined;
+        });
+      }
+      return publication;
     };
 
     try {
@@ -2553,11 +2707,10 @@ function Form({
 
     // Prompted at the Next/Back action itself so validation and submission
     // decide the step is really leaving first. Full-page exits use beforeunload.
-    let docxDiscardDeclined = false;
-    const confirmDocxDiscard = () => {
-      if (!hasDirtyDocxEditors(_internalId)) return true;
-      const proceed = featheryWindow().confirm(UNSAVED_DOCX_MESSAGE);
-      docxDiscardDeclined = !proceed;
+    let leaveDeclined = false;
+    const confirmLeavingStep = () => {
+      const proceed = confirmLeavingUnsavedWork(_internalId);
+      leaveDeclined = !proceed;
       return proceed;
     };
 
@@ -2599,16 +2752,20 @@ function Form({
         await client.resetPendingFileUploads(pendingFileKeys);
       }
 
-      // Clear any previous button error before re-validation
-      // This allows retry after file upload errors
+      // Clear any previous button error before re-validation (allows retry
+      // after e.g. file upload errors). Scope the clear to this button's repeat
+      // row and merge into the current map, and publish it (triggerErrors) so
+      // the cleared state actually reaches the UI.
       if (submit && elementType === 'button') {
         setFormElementError({
           formRef,
           fieldKey: element.id,
           message: '', // Empty message clears the error
+          index: element.repeat,
           errorType: formSettings.errorType,
+          inlineErrors: internalState[_internalId]?.inlineErrors,
           setInlineErrors,
-          triggerErrors: false
+          triggerErrors: true
         });
       }
 
@@ -2650,7 +2807,10 @@ function Form({
       try {
         submissionResult = await submitStep(
           metadata,
-          element.repeat || 0,
+          // Pass the optional repeat through: `|| 0` would make a non-repeated
+          // element look like row 0 and scope its errors to a row that the
+          // non-repeat renderer never reads.
+          element.repeat,
           !!hasNext
         );
       } catch (error) {
@@ -2691,6 +2851,29 @@ function Form({
       );
     }
 
+    // The rest of the chain runs in a nested call over a sliced action array,
+    // so the windows this click pre-opened for those actions have to be handed
+    // across re-keyed to the slice, and dropped from this run's map, which
+    // closes whatever it still owns once the loop ends. Without the handoff the
+    // nested run pre-opens for itself - fine when it resumes from a fresh click
+    // (a modal's save, the Quik viewer's submit), but the connect account chain
+    // resumes straight off the OAuth result with no gesture left, so the browser
+    // blocks the window and the next action reports a popup that was never
+    // actually blocked. Windows already closed mean this run has finished and
+    // the resume is carrying its own gesture, so it is left to open its own.
+    const handOffPreOpenedWindows = (index: number) => {
+      const remaining = new Map<number, Window | null>();
+      let anyOpen = false;
+      preOpenedWindows.forEach((win, idx) => {
+        if (idx <= index) return;
+        remaining.set(idx - index - 1, win);
+        if (win && !win.closed) anyOpen = true;
+      });
+      if (!anyOpen) return undefined;
+      remaining.forEach((_, idx) => preOpenedWindows.delete(idx + index + 1));
+      return remaining;
+    };
+
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
       elementClicks[id] = false;
@@ -2705,7 +2888,8 @@ function Form({
         onAsyncEnd,
         textSpanStart,
         textSpanEnd,
-        triggerPayload
+        triggerPayload,
+        preOpenedWindows: handOffPreOpenedWindows(index)
       });
       if (!running) onAsyncEnd();
     };
@@ -2804,28 +2988,33 @@ function Form({
         // first trigger's flow-advance closure. Ignore this trigger instead;
         // the shared post-loop cleanup below still releases its click lock
         // and closes its own pre-opened popup.
+        // Only covers triggers that open a modal: the ref is set by
+        // openConnectAccountModal, so a provider that connects without one
+        // races here exactly as it did before the modal existed.
         if (connectAccountModalRef.current) break;
 
         await Promise.all([submitPromise, client.flushCustomFields()]);
         const popup = preOpenedWindows.get(i) ?? null;
         preOpenedWindows.delete(i);
         const provider = action.provider;
-        const emailKey = `feathery.connections.${provider}.email`;
+        // Not always an email: a provider with no user identity records only
+        // that a connection exists. Either way a value here means connected.
+        const connectionKey = connectionFieldKey(provider);
 
+        const alreadyConnected = !!fieldValues[connectionKey];
+        let connected = false;
         try {
-          if (fieldValues[emailKey]) {
+          if (alreadyConnected) {
             popup?.close();
           } else {
             const result = await runOAuthPopup(client, provider, popup);
-            updateFieldValues({ [emailKey]: result.account_email ?? '' });
+            updateFieldValues({
+              [connectionKey]: hasEmailIdentity(provider)
+                ? result.account_email ?? ''
+                : 'true'
+            });
           }
-          // The flow advances from the modal's onSaved, not here - the
-          // respondent has not finished configuring the account yet.
-          openConnectAccountModal({
-            provider,
-            onFlowSuccess: flowOnSuccess(i),
-            onAsyncEnd
-          });
+          connected = true;
         } catch (error) {
           elementClicks[id] = false;
           clearButtonActionState();
@@ -2835,6 +3024,30 @@ function Form({
               : 'Unable to connect your account.'
           );
           onAsyncEnd();
+        }
+        // Deliberately outside the try: the modal's setup UI is what advances
+        // the flow, and advancing runs every remaining action in the chain.
+        // A failure in one of those is that action's error, not a failure to
+        // connect, so it must not land in the catch above and get relabelled
+        // "Unable to connect your account."
+        if (connected) {
+          // A repeat click on an already-connected button still opens the
+          // modal - it is the only route to "Change account". On a fresh
+          // connect the modal is worth showing only for a provider with setup
+          // to collect; otherwise connecting is the whole job and the flow
+          // continues straight away.
+          if (alreadyConnected || CONFIG_COMPONENTS[provider]) {
+            // The flow advances from the modal's onSaved, which only a
+            // provider's config component calls - the respondent has not
+            // finished configuring the account yet.
+            openConnectAccountModal({
+              provider,
+              onFlowSuccess: flowOnSuccess(i),
+              onAsyncEnd
+            });
+          } else {
+            await flowOnSuccess(i)();
+          }
         }
         break;
       } else if (type === ACTION_URL) {
@@ -2949,7 +3162,7 @@ function Form({
       } else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
-        if (!confirmDocxDiscard()) break;
+        if (!confirmLeavingStep()) break;
         await goToNewStep({
           redirectKey: action.next_step_key ?? getNextStepKey(metadata),
           elementType: metadata.elementType,
@@ -2959,7 +3172,7 @@ function Form({
             elementType === 'button' ? (element as ClickActionElement) : null
         });
       } else if (type === ACTION_BACK) {
-        if (!confirmDocxDiscard()) break;
+        if (!confirmLeavingStep()) break;
         await goToPreviousStep();
       } else if (type === ACTION_PURCHASE_PRODUCTS) {
         const actionSuccess = await purchaseProductsAction(element);
@@ -3454,9 +3667,9 @@ function Form({
       elementClicks[id] = false;
       clearButtonActionState();
 
-      // The user chose to keep their unsaved docx changes, so nothing is
-      // pending. Return falsy so the caller clears the button loader.
-      if (docxDiscardDeclined) return;
+      // The user chose to keep their unsaved work, so nothing is pending.
+      // Return falsy so the caller clears the button loader.
+      if (leaveDeclined) return;
 
       return true;
     }
@@ -3686,6 +3899,16 @@ function Form({
               }}
               onComplete={reviewViewerPayload.onComplete}
               onFinalize={reviewViewerPayload.onFinalize}
+              // Persists PDFs whose fields the filler edited in the viewer.
+              // The generic envelope file endpoint validates the extension
+              // against the envelope type, so name the upload as a pdf.
+              onSaveEnvelopeFile={(envelopeId: string, file: Blob) =>
+                clientRef.current.saveEnvelopeFile(
+                  envelopeId,
+                  file,
+                  'document.pdf'
+                )
+              }
             />
           </React.Suspense>
         )}
@@ -3760,9 +3983,11 @@ function Form({
             provider={connectAccountModal.provider}
             client={client}
             accountEmail={
-              fieldValues[
-                `feathery.connections.${connectAccountModal.provider}.email`
-              ] as string
+              hasEmailIdentity(connectAccountModal.provider)
+                ? (fieldValues[
+                    connectionFieldKey(connectAccountModal.provider)
+                  ] as string)
+                : ''
             }
             onChangeAccount={async () => {
               // window.open must stay the first statement: the modal's
@@ -3785,8 +4010,10 @@ function Form({
                   popup
                 );
                 updateFieldValues({
-                  [`feathery.connections.${connectAccountModal.provider}.email`]:
-                    result.account_email ?? ''
+                  [connectionFieldKey(connectAccountModal.provider)]:
+                    hasEmailIdentity(connectAccountModal.provider)
+                      ? result.account_email ?? ''
+                      : 'true'
                 });
               } catch (error) {
                 return error instanceof Error
@@ -3821,10 +4048,8 @@ export function JSForm({
   ...props
 }: Props & InternalProps) {
   const [remount, setRemount] = useState(false);
-  const confirmDocxPopNavigation = useCallback(
-    () =>
-      !hasDirtyDocxEditors(_internalId) ||
-      featheryWindow().confirm(UNSAVED_DOCX_MESSAGE),
+  const confirmPopNavigationGuard = useCallback(
+    () => confirmLeavingUnsavedWork(_internalId),
     [_internalId]
   );
 
@@ -3840,7 +4065,7 @@ export function JSForm({
   if (formId && runningInClient())
     return (
       <FeatheryCacheProvider>
-        <RouterProvider confirmPopNavigation={confirmDocxPopNavigation}>
+        <RouterProvider confirmPopNavigation={confirmPopNavigationGuard}>
           <Form
             {...props}
             formId={formId}

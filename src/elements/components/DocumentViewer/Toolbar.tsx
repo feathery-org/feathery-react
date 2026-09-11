@@ -59,6 +59,12 @@ export default function Toolbar({
         <button
           type='button'
           aria-label='Back'
+          // Closing mid-action would hide the viewer while the action's side
+          // effect (save/sign/send) still completes in the background —
+          // invisibly, and after the surrounding flow was told the review was
+          // cancelled. Block every close path until the action settles (the
+          // Escape handler in index.tsx applies the same gate).
+          disabled={busy}
           onClick={onBack}
           css={iconButtonCss}
         >

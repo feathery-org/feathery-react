@@ -1,4 +1,10 @@
 import { getWeightedBoolean } from './random';
+import { justRemove } from './array';
+import {
+  applyInlineError,
+  inlineEntryHasMessage,
+  InlineErrors
+} from './inlineErrors';
 import {
   fieldValues,
   filePathMap,
@@ -11,6 +17,7 @@ import {
 import throttle from 'lodash.throttle';
 import { ACTION_EXECUTION_ORDER, ACTION_STORE_FIELD } from './elementActions';
 import { featheryDoc, featheryWindow } from './browser';
+import { getFilenameFromUrl } from './fileNames';
 import { DEFAULT_MOBILE_BREAKPOINT } from '../elements/styles';
 import internalState from './internalState';
 import { setSavedStepKey } from './stepHelperFunctions';
@@ -157,9 +164,15 @@ export function updateSessionValues(session: any) {
     return acc;
   };
 
-  const transformedFieldValues = Object.entries(session.field_values).reduce(
-    replaceNullInServarArrays,
-    {}
+  const transformedFieldValues: Record<string, any> = Object.entries(
+    session.field_values
+  ).reduce(replaceNullInServarArrays, {});
+
+  // processFileValues owns these keys. The backend routes file servars into
+  // file_values alone, so this only bites if that split changes -- but '' here
+  // would flatten a repeat hole and silently undo it.
+  Object.keys(session.file_values ?? {}).forEach(
+    (key) => delete transformedFieldValues[key]
   );
 
   Object.assign(fieldValues, transformedFieldValues);
@@ -168,6 +181,21 @@ export function updateSessionValues(session: any) {
 /**
  * Set an error on a particular form DOM node(s).
  */
+// The sole writer of the InlineErrors invariant (row-scoped `byIndex` entries
+// under real field keys), so keep at least the error-map-shaping inputs typed.
+interface SetFormElementErrorArgs {
+  formRef?: React.MutableRefObject<any>;
+  errorType?: string;
+  errorCallback?: (props: Record<string, unknown>) => unknown;
+  fieldKey?: string;
+  message?: string;
+  index?: number | null;
+  servarType?: string;
+  inlineErrors?: InlineErrors;
+  setInlineErrors?: (errors: InlineErrors) => void;
+  triggerErrors?: boolean;
+}
+
 export async function setFormElementError({
   formRef,
   errorType,
@@ -182,11 +210,12 @@ export async function setFormElementError({
   inlineErrors = {},
   setInlineErrors = () => {},
   triggerErrors = false
-}: any) {
+}: SetFormElementErrorArgs) {
   let invalid = false;
   let listIndex = index;
   if (errorType === 'html5') {
-    if (!formRef.current) return false;
+    const form = formRef?.current;
+    if (!form) return false;
 
     let errorTriggered = false;
     if (fieldKey) {
@@ -199,12 +228,15 @@ export async function setFormElementError({
         listIndex = null;
       }
       // form.elements has reserved props so must use namedItem to get by id
-      const singleOrList = formRef.current.elements.namedItem(fieldKey);
+      const singleOrList = form.elements.namedItem(fieldKey);
       let elements =
         singleOrList instanceof RadioNodeList
           ? Array.from(singleOrList)
           : [singleOrList];
-      elements = elements.filter((e) => e);
+      // Hidden inputs are value mirrors (see HiddenValueInput) and are barred
+      // from constraint validation, so they must never be targeted for, or
+      // shift the indexing of, error display
+      elements = elements.filter((e) => e && (e as any).type !== 'hidden');
 
       if (listIndex !== null && elements.length)
         elements = [elements[listIndex]];
@@ -215,6 +247,9 @@ export async function setFormElementError({
         // If we are targeting a non-submit button, we instead target its hidden input child
         if (element.tagName === 'BUTTON' && element.type !== 'submit') {
           element = element.querySelector(`#error_${element.id}`);
+          // Only ButtonElement renders that child; any other button that
+          // resolves under a field key has nothing to carry the error
+          if (!element) return;
         }
         element.setCustomValidity(message);
         if (triggerErrors) {
@@ -228,9 +263,7 @@ export async function setFormElementError({
       // Find the first visible invalid element to show the browser tooltip.
       // Calling reportValidity() on the entire form fails if the first
       // invalid control is hidden via CSS (display:none).
-      const formElements = Array.from(
-        formRef.current.elements
-      ) as HTMLElement[];
+      const formElements = Array.from(form.elements) as HTMLElement[];
       for (const el of formElements) {
         if (
           'checkValidity' in el &&
@@ -242,12 +275,19 @@ export async function setFormElementError({
         }
       }
     }
-    invalid = !formRef.current.checkValidity();
+    invalid = !form.checkValidity();
   } else if (errorType === 'inline') {
-    if (fieldKey) inlineErrors[fieldKey] = { message };
+    // Scope a repeated-field error to its row via a nested `byIndex` map under
+    // the real field key, so an error validated on one repeat row doesn't bleed
+    // onto other rows (including freshly added, untouched ones) and can never
+    // collide with a literal field key such as `foo-0`. An empty message clears
+    // (whole field for a non-indexed write, only that row for an indexed one).
+    applyInlineError(inlineErrors, fieldKey, message, index);
     if (triggerErrors)
       setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
-    invalid = Object.values(inlineErrors).some((data) => (data as any).message);
+    invalid = Object.values(inlineErrors).some((data) =>
+      inlineEntryHasMessage(data as any)
+    );
   }
   if (message) {
     await errorCallback({
@@ -287,7 +327,7 @@ export function objectMap(obj: any, transform: any) {
 export async function fetchS3File(url: any) {
   const response = await fetch(url);
   const blob = await response.blob();
-  return new File([blob], decodeURI(url.split('?')[0].split('/').slice(-1)), {
+  return new File([blob], getFilenameFromUrl(url), {
     type: blob.type
   });
 }
@@ -300,20 +340,30 @@ export async function fetchS3File(url: any) {
 export function processFileValues(fileValues: Record<string, any>) {
   if (!fileValues || Object.keys(fileValues).length === 0) return;
 
+  // A repeated file field sends null for a row that holds no file. Those holes
+  // have to survive rehydration or the indices collapse again on reload.
   const filePromises = objectMap(fileValues, (fileOrFiles: any) =>
     Array.isArray(fileOrFiles)
-      ? fileOrFiles.map((f: any) => fetchS3File(f.url))
+      ? fileOrFiles.map((f: any) => (f?.url ? fetchS3File(f.url) : null))
       : fetchS3File(fileOrFiles.url)
   );
 
   const newFilePathMap = objectMap(fileValues, (fileOrFiles: any) =>
     Array.isArray(fileOrFiles)
-      ? fileOrFiles.map((f: any) => f.path)
+      ? fileOrFiles.map((f: any) => f?.path ?? null)
       : fileOrFiles.path
   );
 
   Object.assign(fieldValues, filePromises);
   Object.assign(filePathMap, newFilePathMap);
+}
+
+// Drop one repeat row's entry so the remaining paths stay aligned with their
+// rows. Deduplication is reset so the corrected file list is actually resent.
+export function removeFilePathMapEntry(key: any, index: number) {
+  const paths = filePathMap[key];
+  if (Array.isArray(paths)) filePathMap[key] = justRemove(paths, index);
+  delete fileDeduplicationCount[key];
 }
 
 // Update the map we maintain to track files that have already been uploaded to S3

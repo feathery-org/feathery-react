@@ -7,7 +7,7 @@ import DateSelectorStyles, {
   DATEPICKER_PADDING_TOP_VALUE,
   PORTAL_CONTAINER_CLASS
 } from './styles';
-import { resetStyles } from '../../styles';
+import { inputBoxAttrs, resetStyles } from '../../styles';
 import { parseISO, add } from 'date-fns';
 import useBorder from '../../components/useBorder';
 import {
@@ -274,11 +274,13 @@ function DateSelectorField({
             height: '100%'
           }
         }}
+        {...inputBoxAttrs(element.servar.type)}
       >
         {customBorder}
         <DateSelectorStyles />
         <DatePicker
           id={element.servar.key}
+          name={element.servar.key}
           selected={internalDate}
           // Many modern browsers do not support autocomplete="off".
           // In order to avoid the autoComplete, use autocomplete="new-password"

@@ -1,7 +1,13 @@
 import internalState from '../../utils/internalState';
 import { ACTION_NEXT } from '../../utils/elementActions';
 import { collectNavigableSteps } from './panelRuntime';
-import { getLiveStepKey, snapshotInlineErrors } from './utils';
+import {
+  awaitPendingInlineErrors,
+  diffInlineErrorSnapshots,
+  getLiveStepKey,
+  InlineErrorReport,
+  snapshotInlineErrors
+} from './utils';
 
 type NavigateErrorType =
   | 'step_not_allowed'
@@ -13,7 +19,7 @@ type NavigateResult =
   | {
       ok: true;
       navigated: { fromStepKey: string; toStepKey: string } | null;
-      fieldErrors?: Record<string, string>;
+      fieldErrors?: InlineErrorReport[];
     }
   | {
       ok: false;
@@ -82,17 +88,15 @@ export async function dispatchNavigate(
   }
 
   const toStepKey = getLiveStepKey(state) ?? fromStepKey;
+  // Errors published on a timer must land before we snapshot.
+  await awaitPendingInlineErrors(state);
   const errorsAfter = snapshotInlineErrors(state);
 
-  const fieldErrors: Record<string, string> = {};
-  for (const key of Object.keys(errorsAfter)) {
-    if (errorsAfter[key] !== errorsBefore[key])
-      fieldErrors[key] = errorsAfter[key];
-  }
+  const fieldErrors = diffInlineErrorSnapshots(errorsBefore, errorsAfter);
 
   return {
     ok: true,
     navigated: toStepKey !== fromStepKey ? { fromStepKey, toStepKey } : null,
-    ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {})
+    ...(fieldErrors.length > 0 ? { fieldErrors } : {})
   };
 }

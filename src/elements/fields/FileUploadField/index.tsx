@@ -335,6 +335,7 @@ function FileUploadField({
         )}
       {(allowMoreFiles || hidePreview) && (
         <div
+          id={`${servar.key}-add`}
           onClick={onClick}
           css={{
             position: 'relative',

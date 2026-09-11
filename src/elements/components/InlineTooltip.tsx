@@ -4,6 +4,7 @@ import { FORM_Z_INDEX } from '../../utils/styles';
 import { replaceTextVariables } from './TextNodes';
 import HoverTooltip from './HoverTooltip';
 import { isMobile as _isMobile } from '../../utils/browser';
+import { TOOLTIP_TRIGGER_INSET } from '../styles';
 
 interface InlineTooltipProps {
   id: string;
@@ -45,14 +46,15 @@ export default function InlineTooltip({
           absolute
             ? {
                 position: 'absolute',
-                insetInlineEnd: '10px',
+                insetInlineEnd: `${TOOLTIP_TRIGGER_INSET}px`,
                 top: 0,
                 bottom: 0,
                 zIndex: FORM_Z_INDEX,
                 margin: 'auto',
                 cursor: 'pointer',
                 height: '100%',
-                display: 'flex'
+                display: 'flex',
+                ...responsiveStyles.getTarget('tooltipTrigger')
               }
             : {
                 position: 'relative',

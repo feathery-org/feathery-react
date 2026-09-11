@@ -13,10 +13,7 @@ import {
 import { justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
 import { isButtonDisabled } from '../../../utils/button';
-import {
-  ACTION_CONNECT_ACCOUNT,
-  ACTION_NEXT
-} from '../../../utils/elementActions';
+import { ACTION_NEXT } from '../../../utils/elementActions';
 import {
   fileFieldShouldSubmit,
   getInlineError,
@@ -109,6 +106,7 @@ const Element = ({ node: el, form }: any) => {
     return (
       <Elements.TableElement
         {...basicProps}
+        formId={form.formInstanceId}
         onClick={(payload: any) => tableOnClick(el, payload)}
         updateFieldValues={updateFieldValues}
         submitCustom={submitCustom}
@@ -166,37 +164,6 @@ const Element = ({ node: el, form }: any) => {
     if (isNum(loaderData?.repeat) && loaderData.repeat !== el.repeat)
       loaderData = null;
 
-    // "Managed by Feathery" (the builder default): once this button has
-    // connected an account, show the connected account instead of the
-    // builder's static label, so the respondent can see which account is
-    // attached. `manage_button_label: false` opts out - the builder composes
-    // their own label with text variables (e.g.
-    // {{feathery.connections.box.email}}), which already resolve on their
-    // own. No connection yet -> nothing to show, so the builder's text wins
-    // regardless.
-    const connectAccountAction = (el.properties.actions ?? []).find(
-      (action: any) => action.type === ACTION_CONNECT_ACCOUNT
-    );
-    let buttonElement = el;
-    if (
-      connectAccountAction &&
-      connectAccountAction.manage_button_label !== false
-    ) {
-      const accountEmail = fieldValues[
-        `feathery.connections.${connectAccountAction.provider}.email`
-      ] as string | undefined;
-      if (accountEmail) {
-        buttonElement = {
-          ...el,
-          properties: {
-            ...el.properties,
-            text: accountEmail,
-            text_formatted: [{ insert: accountEmail }]
-          }
-        };
-      }
-    }
-
     return (
       <Elements.ButtonElement
         active={customClickSelectionState(el)}
@@ -209,7 +176,6 @@ const Element = ({ node: el, form }: any) => {
         }}
         disabled={disabled}
         {...basicProps}
-        element={buttonElement}
       />
     );
   } else if (type === 'field') {
@@ -356,6 +322,9 @@ const Element = ({ node: el, form }: any) => {
               onChange();
             }}
             onClear={() => {
+              // Without this the row keeps its stored S3 path, so the submit
+              // re-keeps the signature the user just erased.
+              clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
               changeValue(null, el, index);
               onChange();
             }}
@@ -720,6 +689,7 @@ const Element = ({ node: el, form }: any) => {
                 formRef,
                 fieldKey: el.servar.key,
                 message,
+                index: el.repeat,
                 errorType: formSettings.errorType,
                 servarType: el.servar.type,
                 inlineErrors: { ...inlineErrors },

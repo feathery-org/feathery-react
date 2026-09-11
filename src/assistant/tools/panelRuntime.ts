@@ -35,7 +35,10 @@ export type PanelRuntimeFieldEntry = {
   clickableAncestorIds?: string[];
   placeholder?: string;
   tooltip?: string;
+  // Field-wide validation message only (never a copy of a row's message).
   error?: string;
+  // Per-repeat-row validation messages, keyed by zero-based row index.
+  errorRows?: Record<string, string>;
   options?: Array<{ value: string; label: string }>;
   rowOptions?: Array<Array<{ value: string; label: string }> | null>;
   questions?: Array<{ id: string; label: string }>;
@@ -375,7 +378,19 @@ export const getPanelRuntimeSnapshot = (
       typeof props.tooltipText === 'string' && props.tooltipText.trim()
         ? resolveText(props.tooltipText)
         : undefined;
-    const error = inlineErrors[field.servar.key]?.message;
+    // `error` is the FIELD-WIDE message ONLY; per-row messages live in
+    // `errorRows`. Keeping the two disjoint means a field-wide failure and a
+    // row failure can both be reported without either masking the other, and
+    // `error` is never an ambiguous copy of some row's message.
+    const errorEntry = inlineErrors[field.servar.key];
+    const error = errorEntry?.message;
+    // Expose which repeat row(s) own errors so per-row state isn't collapsed.
+    const errorRows: Record<string, string> = {};
+    for (const [idx, data] of Object.entries<any>(errorEntry?.byIndex ?? {})) {
+      if (typeof data?.message === 'string' && data.message.length > 0)
+        errorRows[idx] = data.message;
+    }
+    const hasErrorRows = Object.keys(errorRows).length > 0;
     const servar = field.servar ?? {};
     const meta = servar.metadata ?? {};
     const repeated = !!servar.repeated;
@@ -468,6 +483,7 @@ export const getPanelRuntimeSnapshot = (
       ...(placeholder ? { placeholder } : {}),
       ...(tooltip ? { tooltip } : {}),
       ...(error ? { error } : {}),
+      ...(hasErrorRows ? { errorRows } : {}),
       ...(options ? { options } : {}),
       ...(rowOptions ? { rowOptions } : {}),
       ...(questions ? { questions } : {}),

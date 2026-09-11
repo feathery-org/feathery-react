@@ -829,3 +829,19 @@ describe('DateSelectorField', () => {
     });
   });
 });
+
+describe('DateSelectorField - DOM naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('names the date input with the field key', async () => {
+    const element = createDateSelectorElement();
+    render(<DateSelectorField {...createDateSelectorProps(element)} />);
+
+    const input = await getDatePickerInput();
+    expect(input.getAttribute('name')).toBe(element.servar.key);
+    expect(input.id).toBe(element.servar.key);
+  });
+});

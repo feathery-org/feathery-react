@@ -4,7 +4,7 @@ import { polyfillCountryFlagEmojis } from 'country-flag-emoji-polyfill';
 import timeZoneCountries from './timeZoneCountries';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { resetStyles } from '../../styles';
+import { inputBoxAttrs, resetStyles } from '../../styles';
 import countryData from '../../components/data/countries';
 import exampleNumbers from './exampleNumbers';
 import { isNum } from '../../../utils/primitives';
@@ -237,6 +237,7 @@ function PhoneField({
               }
             : {}
         }}
+        {...inputBoxAttrs(servar.type)}
       >
         {customBorder}
         <div

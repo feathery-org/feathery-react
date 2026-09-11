@@ -1,5 +1,6 @@
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { setFormElementError } from './formHelperFunctions';
+import { InlineErrors } from './inlineErrors';
 import { ARRAY_FIELD_TYPES } from './fieldHelperFunctions';
 
 import React from 'react';
@@ -46,11 +47,11 @@ function validateElements({
   trigger?: Trigger;
 }): {
   errors: { [fieldKey: string]: string };
-  inlineErrors: { [key: string]: any };
+  inlineErrors: InlineErrors;
   invalid: boolean;
 } {
   let invalid = false;
-  const inlineErrors = {};
+  const inlineErrors: InlineErrors = {};
   const errors = getVisibleElements(
     step,
     visiblePositions,
@@ -89,8 +90,11 @@ function validateElements({
 
     if (message && !invalid) invalid = true;
 
-    if (type === 'matrix' && message) {
-      // Get question index where error is
+    if (type === 'matrix' && message && errorType === 'html5') {
+      // The `${key}-${questionIndex}` suffix targets the specific unanswered
+      // matrix question's DOM control, so it is only for HTML5 targeting.
+      // Inline storage must keep the real servar key, otherwise the renderer
+      // (which reads inlineErrors[servar.key]) never finds the message.
       let fieldValue: any = fieldValues[key];
       // handle repeated matrix fields
       if (repeat != null && Array.isArray(fieldValue))

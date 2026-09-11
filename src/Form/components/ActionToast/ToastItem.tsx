@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, StatusIcon } from './icons';
 import { DataItem } from './useAIExtractionToast';
+import { getFilenameFromUrl } from '../../../utils/fileNames';
 
 const INDENT_PX = 24;
 
@@ -126,16 +127,11 @@ const renderItemLabel = (item: DataItem) => {
 const getFileSourcesText = (fileSources?: any[]) => {
   if (!fileSources?.length) return null;
 
-  const fileName = getFileName(fileSources[0].url as string);
+  const fileName = getFilenameFromUrl(fileSources[0].url as string);
   const additionalFiles = fileSources.length - 1;
 
   const fileInfo =
     additionalFiles > 0 ? `${fileName} & ${additionalFiles} more` : fileName;
 
   return `(${fileInfo})`;
-};
-
-const getFileName = (fileUrl: string) => {
-  const lastSlashIndex = fileUrl.lastIndexOf('/');
-  return fileUrl.substring(lastSlashIndex + 1);
 };

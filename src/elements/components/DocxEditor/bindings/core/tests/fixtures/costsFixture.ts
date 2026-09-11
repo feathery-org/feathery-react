@@ -43,7 +43,8 @@ function ccProps(
 function fieldTag(
   name: string,
   fieldType: FieldType,
-  rowId: string | null
+  rowId: string | null,
+  isGlobal = false
 ): string {
   return formatTag({
     version: 2,
@@ -52,6 +53,7 @@ function fieldTag(
     fieldType,
     isEditable: true,
     isDeletable: true,
+    isGlobal,
     options: rowId ? { row: rowId } : {}
   });
 }
@@ -70,6 +72,7 @@ function formulaTag(
     expression,
     isEditable: false,
     isDeletable: false,
+    isGlobal: false,
     options: rowId ? { row: rowId } : {}
   });
 }
@@ -134,7 +137,7 @@ function headerCell(text: string, width: number): SfdtCell {
  * inside the header cells of BOTH tables. Canonical value is the fraction
  * ("8%" -> 0.08). Editable anywhere, but no header can delete it.
  */
-function taxRateCc(title: string): SfdtInline {
+function taxRateCc(title: string, isGlobal: boolean): SfdtInline {
   const tag = formatTag({
     version: 2,
     kind: 'field',
@@ -142,6 +145,7 @@ function taxRateCc(title: string): SfdtInline {
     fieldType: { kind: 'percent' },
     isEditable: true,
     isDeletable: false,
+    isGlobal,
     options: {}
   });
   return cc(tag, title, false, '0%', HEADER_CF);
@@ -318,7 +322,7 @@ const TABLE_FORMAT = {
   bidi: false
 };
 
-function buildExpensesTable(): SfdtBlock {
+function buildExpensesTable(globalTaxRate: boolean): SfdtBlock {
   return {
     rows: [
       {
@@ -327,7 +331,7 @@ function buildExpensesTable(): SfdtBlock {
           headerCellInlines(
             [
               { characterFormat: HEADER_CF, text: 'Amount — tax ' },
-              taxRateCc('Tax rate (expenses header)')
+              taxRateCc('Tax rate (expenses header)', globalTaxRate)
             ],
             130
           )
@@ -390,7 +394,9 @@ function buildExpensesTable(): SfdtBlock {
   };
 }
 
-export function buildCostsFixture(): SfdtDocument {
+export function buildCostsFixture(
+  { globalTaxRate = false }: { globalTaxRate?: boolean } = {}
+): SfdtDocument {
   const table: SfdtBlock = {
     rows: [
       {
@@ -401,7 +407,7 @@ export function buildCostsFixture(): SfdtDocument {
           headerCellInlines(
             [
               { characterFormat: HEADER_CF, text: 'Line total — tax ' },
-              taxRateCc('Tax rate (costs header)')
+              taxRateCc('Tax rate (costs header)', globalTaxRate)
             ],
             130
           )
@@ -536,7 +542,7 @@ export function buildCostsFixture(): SfdtDocument {
               color: '#00000000',
               appearance: 'BoundingBox'
             },
-            blocks: [buildExpensesTable()]
+            blocks: [buildExpensesTable(globalTaxRate)]
           },
           { paragraphFormat: { afterSpacing: 8 }, inlines: [] },
           {

@@ -4,6 +4,7 @@ import {
   FieldStyles
 } from './fieldHelperFunctions';
 import Field from './entities/Field';
+import { InlineErrors } from './inlineErrors';
 import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
@@ -19,6 +20,11 @@ import {
 
 export type AlloyEntities = Record<string, any>[];
 export type LoanProCustomerObject = Record<string, any>;
+export type RunComputerAgentOptions = {
+  waitForCompletion?: boolean;
+  onStatusUpdate?: (data: any) => void;
+  onComplete?: (data: any) => void;
+};
 export type GetConfigParams = {
   filter?: Record<string, any>;
   keys?: string[];
@@ -157,10 +163,11 @@ export interface FormInternalState {
     props1?: Record<string, unknown>
   ) => (props2?: Record<string, unknown>) => Promise<boolean>;
   navigate: any;
-  inlineErrors: Record<string, { message: string; index: number }>;
-  setInlineErrors: React.Dispatch<
-    React.SetStateAction<Record<string, { message: string; index: number }>>
-  >;
+  inlineErrors: InlineErrors;
+  setInlineErrors: React.Dispatch<React.SetStateAction<InlineErrors>>;
+  // Resolves once an asynchronously-published inline error (e.g. a button
+  // submit error) has been written, so programmatic callers can await it.
+  pendingInlineErrorPublish?: Promise<void>;
   setUserProgress: React.Dispatch<React.SetStateAction<null>>;
   setDataMappingState?: (state: { show: boolean; hubs: any[] }) => void;
   steps: any;
@@ -181,6 +188,10 @@ export interface FormInternalState {
     options: ExtractionActionOptions | boolean,
     pages?: PageSelectionInput
   ) => Promise<Record<string, string>>;
+  runComputerAgent: (
+    agentId: string,
+    options?: RunComputerAgentOptions
+  ) => Promise<Record<string, any>>;
   forwardInboxEmail: (options: ForwardInboxEmailOptions) => Promise<void>;
   fillQuikForms: (params: FillQuikParams) => Promise<void>;
   sendDocusignEnvelope: (params: SendDocusignParams) => Promise<void>;

@@ -4,6 +4,7 @@ import ResponsiveStyles from '../../styles';
 
 const mockResponsiveStyles = {
   addTargets: jest.fn().mockReturnThis(),
+  apply: jest.fn(),
   applyCorners: jest.fn(),
   applyWidth: jest.fn(),
   apply: jest.fn(),
@@ -282,5 +283,17 @@ describe('TableElement targetable class names', () => {
     await waitFor(() => {
       expect(container.querySelector(`.${TABLE_CLASS.empty}`)).toBeTruthy();
     });
+  });
+});
+
+describe('TableElement DOM naming', () => {
+  it('names the table container', async () => {
+    const { container } = await renderTable({
+      columns: baseColumns,
+      actions: []
+    });
+    expect(
+      container.querySelector(`.${TABLE_CLASS.container}`)?.getAttribute('name')
+    ).toBe('table');
   });
 });

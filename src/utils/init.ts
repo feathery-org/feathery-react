@@ -113,7 +113,7 @@ const initState: InitState = {
 let fieldValues: FieldValues = {};
 let filePathMap: Record<string, null | string | (string | null)[]> = {};
 // Tracks number of files in last submission (prevents duplicate successful uploads)
-export const fileDeduplicationCount: Record<string, number> = {};
+export const fileDeduplicationCount: Record<string, string> = {};
 // Tracks last submission result (true=success, false=failed, undefined=never tried)
 export const fileRetryStatus: Record<string, boolean> = {};
 

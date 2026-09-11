@@ -288,8 +288,17 @@ export function convertTemplateTokens(
     );
   };
 
-  for (const section of doc.sections || []) {
-    const blocks = section.blocks || [];
+  /**
+   * Convert one story's block list.
+   *
+   * A section is not only its body: headers and footers are block lists of the
+   * same shape, and a template puts bindings in them for the obvious reason
+   * that a proposal names its client at the top of every page. Walking only
+   * `section.blocks` left those tokens as literal text, so the client read the
+   * tag language itself - and, because no content control was created, the
+   * header held no binding for anything to write to or refuse.
+   */
+  const convertStory = (blocks: SfdtBlock[]): SfdtBlock[] => {
     const out: SfdtBlock[] = [];
     let pendingTable: TableDefinition | null = null;
     for (const block of blocks) {
@@ -336,9 +345,22 @@ export function convertTemplateTokens(
       }
       out.push(block);
     }
-    // A marker still pending at the end of a section had no table after it.
+    // A marker still pending at the end of a story had no table after it.
     reportDangling(pendingTable);
-    section.blocks = out;
+    return out;
+  };
+
+  for (const section of doc.sections || []) {
+    section.blocks = convertStory(section.blocks || []);
+    // Every story in the section gets the same rule, so a binding behaves the
+    // same wherever a template author puts it.
+    const stories: Record<string, any> =
+      (section as any).headersFooters ?? (section as any).hf ?? {};
+    for (const key of Object.keys(stories)) {
+      const story = stories[key];
+      if (story && Array.isArray(story.blocks))
+        story.blocks = convertStory(story.blocks);
+    }
   }
 
   return { sfdt: doc, converted, diagnostics };
