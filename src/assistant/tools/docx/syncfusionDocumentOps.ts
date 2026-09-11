@@ -6103,6 +6103,7 @@ interface TableFootprint {
   shapeFingerprint: string;
   // Captured before mutation because a copied table may carry the wrong phase.
   banding?: TableBanding;
+  insertedColumn?: { column: number; sourceColumn: number };
 }
 
 /**
@@ -11576,6 +11577,36 @@ function applyBandingRows(
   return { report, restores: transaction.restores };
 }
 
+function applyInsertedColumnAppearance(
+  editor: LiveEditor,
+  tableAnchor: string,
+  current: TableAppearance,
+  inserted: { column: number; sourceColumn: number }
+): AppearanceWriteOutcome {
+  const report = emptyAppearanceReport();
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    current.rows.forEach((_row, row) => {
+      const desired = cellAppearanceAt(current, row, inserted.sourceColumn);
+      const before = cellAppearanceAt(current, row, inserted.column);
+      if (appearanceEquals(desired, before)) {
+        report.cellsUnchanged++;
+        return;
+      }
+      const write = appearanceWriteFor(desired, {
+        shading: true,
+        verticalAlignment: true,
+        borders: true
+      });
+      const cellAnchor = cellAnchorOf(tableAnchor, row, inserted.column);
+      record({ cellAnchor, write: restoreWriteFor(before, write) });
+      writeAppearance(editor, cellAnchor, write, 'cell');
+      report.cellsWritten++;
+      report.rowsWritten++;
+    });
+  });
+  return { report, restores: transaction.restores };
+}
+
 /**
  * Enforce the header flag each inserted row resolved to. SyncFusion clones the
  * anchored row's `rowFormat.isHeader`, so without this an insert anchored on
@@ -11635,6 +11666,7 @@ function finalizeTableAppearance(
   const warnings: string[] = [];
   const sfdt = serializeSfdt(editor);
   const sequence = topLevelSequence(sfdt);
+  const bindingIndex = scanBindings(sfdt);
 
   // Insertion order is edit order, so assignment keeps the latest footprint.
   const latest = new Map<string, TableFootprint>();
@@ -11653,15 +11685,23 @@ function finalizeTableAppearance(
   );
 
   for (const footprint of latest.values()) {
-    const address = sequence[footprint.sequenceIndex];
-    if (!address) {
+    const boundTable = footprint.tableId
+      ? bindingIndex.tables.get(footprint.tableId)
+      : undefined;
+    const boundAnchor = boundTable
+      ? boundTableAnchor(sfdt, boundTable)
+      : undefined;
+    const address = boundAnchor ? undefined : sequence[footprint.sequenceIndex];
+    const anchor =
+      boundAnchor ??
+      (address ? `${address.section};${address.block}` : undefined);
+    if (!anchor) {
       warnings.push(
         `Table appearance not finalized for ${footprint.anchor}: nothing is at ` +
           `sequence index ${footprint.sequenceIndex} any more.`
       );
       continue;
     }
-    const anchor = `${address.section};${address.block}`;
 
     const now = tableShapeFingerprint(sfdt, anchor, footprint.headerRows);
     if (now !== footprint.shapeFingerprint) {
@@ -11672,8 +11712,18 @@ function finalizeTableAppearance(
       continue;
     }
 
-    const current = liveTableAppearance(editor, anchor);
+    let current = liveTableAppearance(editor, anchor);
     if (!current) continue;
+    if (footprint.insertedColumn) {
+      const inserted = applyInsertedColumnAppearance(
+        editor,
+        anchor,
+        current,
+        footprint.insertedColumn
+      );
+      if (inserted.report.cellsWritten) record(inserted.restores);
+      current = liveTableAppearance(editor, anchor);
+    }
     const banding = footprint.banding ?? detectTableBanding(current);
     if (!banding) continue;
     const currentShadings = rowShadings(current);
@@ -13161,6 +13211,14 @@ interface EngineMutationState {
 interface EngineMutationOutcome {
   sfdt: any;
   anchor?: string;
+  deferredEditorWrite?: {
+    op: EditOp;
+    tableId: string;
+    rowIndex: number;
+    columnIndex: number;
+    paragraphIndex: number;
+  };
+  editorResult?: Partial<EditResult>;
   createdRef?: {
     ref: string;
     kind: 'table' | 'column' | 'row';
@@ -13183,6 +13241,7 @@ interface EngineMutationOutcome {
 
 interface EngineMutationPlan {
   route: 'engine';
+  resultRoute?: DocxEditRoute;
   index: number;
   op: EditOp;
   anchor?: string;
@@ -15997,6 +16056,11 @@ function boundInsertColumnPlan(
         tableRoute.tableId,
         true
       );
+      if (footprint)
+        footprint.insertedColumn = {
+          column: columnIndex,
+          sourceColumn: columnIndex === 0 ? 1 : columnIndex - 1
+        };
       return {
         sfdt: next,
         anchor: `${replacementAnchor};0;${columnIndex};0`,
@@ -16335,6 +16399,9 @@ function stableTableReferencePlan(
   let resolvedPlan: EngineMutationPlan | undefined;
   return {
     route: 'engine',
+    ...(op.op === 'set_column_layout'
+      ? { resultRoute: 'editor' as const }
+      : {}),
     index,
     op,
     ...(literalNumbers ? { literalNumbers } : {}),
@@ -16383,6 +16450,21 @@ function stableTableReferencePlan(
             'Column references currently address the first paragraph in a cell. Nothing was written.'
           );
         const anchor = `${tableAnchor};${rowIndex};${resource.columnIndex};0`;
+        if (op.op === 'set_column_layout')
+          return {
+            sfdt: state.sfdt,
+            anchor,
+            deferredEditorWrite: {
+              op,
+              tableId: resource.tableId,
+              rowIndex,
+              columnIndex: resource.columnIndex,
+              paragraphIndex
+            },
+            details: [
+              `resolved ${ref} to column ${resource.columnIndex} in table ${resource.tableId}`
+            ]
+          };
         if (op.op === 'insert_row' && op.shape === 'blank') {
           resolvedPlan = boundBlankRowPlan(
             index,
@@ -19135,7 +19217,8 @@ const STABLE_REF_TARGET_OPS = new Set([
   'delete_table',
   'set_cell_text',
   'create_binding',
-  'delete_column'
+  'delete_column',
+  'set_column_layout'
 ]);
 
 function stableResourceRef(value: unknown): string | null {
@@ -22097,7 +22180,7 @@ function applyDocumentEditsMeasured(
     const stableRef = stableResourceAnchor(op.anchor);
     if (stableRef) {
       const routed = stableTableReferencePlan(editor, index, op);
-      setRoute(index, routed.route);
+      setRoute(index, routed.resultRoute ?? routed.route);
       enginePlans.push(routed);
       observeMutationGuardBoundary(op, 'block_expect');
       return;
@@ -23187,6 +23270,7 @@ function applyDocumentEditsMeasured(
         } else {
           const outcomes = new Map<number, EngineMutationOutcome>();
           let applyingPlan: EngineMutationPlan | undefined;
+          let appliedEngineGroup: string | undefined;
           try {
             // Provenance makes the command layer author the review records in
             // SFDT. Native tracking must be off before that SFDT is opened;
@@ -23278,6 +23362,7 @@ function applyDocumentEditsMeasured(
                   ...conservation.receipts
                 ];
             }
+            const revisionsBeforeEngine = snapshotRevisions(editor);
             const engineResult = surface.runCommands(
               diffBindingCommands(beforeCommands, state.sfdt),
               {
@@ -23289,6 +23374,8 @@ function applyDocumentEditsMeasured(
               }
             );
             refresh(engineResult.sfdt);
+            appliedEngineGroup = opGroupId(enginePlans[0].op, changeSetId);
+            rememberGroupRevisions(enginePlans[0].op, revisionsBeforeEngine);
             // Reconciliation reopens the SFDT and can leave Syncfusion's caret
             // inside the content control that was just updated. Keep the next
             // assistant operation on a public body position even though every
@@ -23300,6 +23387,48 @@ function applyDocumentEditsMeasured(
             );
             if (nativeFailure)
               throw new OpError('engine_apply_failed', nativeFailure.message);
+            for (const plan of enginePlans) {
+              const outcome = outcomes.get(plan.index);
+              const deferred = outcome?.deferredEditorWrite;
+              if (!deferred) continue;
+              applyingPlan = plan;
+              const editorSfdt = serializeSfdt(editor);
+              const editorBlocks = flattenSfdt(editorSfdt);
+              const editorByAnchor = new Map(
+                editorBlocks.map((block) => [block.anchor, block] as const)
+              );
+              const liveTable = scanBindings(editorSfdt).tables.get(
+                deferred.tableId
+              );
+              const liveTableAnchor = liveTable
+                ? boundTableAnchor(editorSfdt, liveTable)
+                : null;
+              const liveAnchor = liveTableAnchor
+                ? `${liveTableAnchor};${deferred.rowIndex};${deferred.columnIndex};${deferred.paragraphIndex}`
+                : '';
+              const target = liveAnchor
+                ? editorByAnchor.get(liveAnchor)
+                : undefined;
+              if (!target)
+                throw new OpError(
+                  'stable_ref_target_unaddressable',
+                  `The resource resolved to table "${deferred.tableId}" in the SFDT projection, but the live editor could not address its new column after applying the structural transaction. The change set was rolled back.`
+                );
+              resolvedFormatTargets.set(plan.index, target);
+              const extras = applyAnchoredOp(
+                editor,
+                { ...deferred.op, anchor: liveAnchor },
+                target,
+                editorByAnchor
+              );
+              outcome.editorResult = collectOpExtras(
+                extras,
+                (restores) => recordAppearanceRestores(plan.op, restores),
+                recordTableFootprints,
+                (clamps) => recordBookmarkClamps(plan.op, clamps)
+              );
+            }
+            applyingPlan = undefined;
             const derivedChanges = changedFormulaValues(
               beforeCommands,
               engineResult.sfdt
@@ -23325,19 +23454,21 @@ function applyDocumentEditsMeasured(
               results[plan.index] = {
                 ok: true,
                 op: plan.op.op,
-                route: 'engine',
+                route: plan.resultRoute ?? 'engine',
                 ...(outcome?.anchor ?? plan.anchor ?? plan.op.anchor
                   ? { anchor: outcome?.anchor ?? plan.anchor ?? plan.op.anchor }
                   : {}),
                 ...(outcome?.details ? { details: outcome.details } : {}),
                 ...(outcome?.createdRef
                   ? { createdRef: outcome.createdRef }
-                  : {})
+                  : {}),
+                ...(outcome?.editorResult ?? {})
               };
             }
           } catch (err) {
             const failingPlan = applyingPlan ?? enginePlans[0];
             if (failingPlan) fail(failingPlan.index, failingPlan.op, err);
+            if (appliedEngineGroup) rollbackGroup(appliedEngineGroup);
             const rolledGroups = rollbackAppliedEditorResultsForBindingAbort(
               'The binding-engine transaction failed after editor-routed edits landed; editor-routed edits were rolled back before reporting failure.'
             );

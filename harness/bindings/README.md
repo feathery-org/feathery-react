@@ -14,32 +14,10 @@ Rebuild after changing anything under `src/elements/components/DocxEditor/bindin
 npx webpack --config harness/bindings/webpack.config.js
 ```
 
-## Headless integration lane
-
-The repository also has a real-Chrome lane for document-editor structural and
-layout behavior. Run it with:
-
-```
-yarn test:headless
-```
-
-The lane builds its temporary host bundle automatically, launches a throwaway
-system Chrome profile, and runs the `*.headless.spec.ts` cases under
-`src/assistant/tools/docx/tests/headless/`. Set `CHROME_PATH` when Chrome or
-Chromium is not installed in one of the standard locations. Screenshots are
-written to the gitignored `.headless-evidence/` directory when a test requests
-visual evidence.
-
-These tests cover behavior that requires the live editor, including composed
-table changes (duplicate plus row operations), column dependencies, tracked
-subtotal updates, restriping, rollback, and operation tracing. The regular
-Jest command excludes this lane; use `yarn test:headless` explicitly.
-
 ## Why it exists
 
-Most automated tests for this engine run in jsdom, which cannot reproduce the
-parts most likely to break. The headless lane complements them with a real
-Syncfusion editor:
+Every automated test for this engine runs in jsdom, which cannot reproduce the
+parts most likely to break:
 
 - **no real caret** — so how far the keystroke guard actually reaches is unproven
 - **no hidden editable div** — its `textInput` and `blur` events never fire, and

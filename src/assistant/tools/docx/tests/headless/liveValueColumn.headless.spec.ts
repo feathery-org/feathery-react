@@ -10,6 +10,12 @@ const edits = (anchor: string) => [
     resultRef: '@value_col'
   },
   {
+    op: 'set_column_layout',
+    group: 'g01-add-value-column',
+    anchor: '@value_col;0;0',
+    width: 144
+  },
+  {
     op: 'set_cell_text',
     group: 'g01-add-value-column',
     anchor: '@value_col;0;0',
@@ -65,12 +71,44 @@ describe('live value-column primitives', () => {
     );
     expect(replacement).toBe('costs');
     expect(await session.call<number>('tableColumnCount', replacement)).toBe(5);
+    expect(
+      (await session.call<number[]>('columnWidths', replacement))[3]
+    ).toBeCloseTo(144, 0);
     expect(await session.call<string[]>('tableRowTexts', replacement)).toEqual(
       expect.arrayContaining([
         expect.stringContaining('Value'),
         expect.stringContaining('$1,800.00'),
         expect.stringContaining('$6,000.00'),
         expect.stringContaining('$7,800.00')
+      ])
+    );
+    expect(result.warnings).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Table appearance not finalized')
+      ])
+    );
+    for (const row of [0, 1, 2])
+      expect(await session.call<string>('cellShading', 'costs', row, 3)).toBe(
+        await session.call<string>('cellShading', 'costs', row, 2)
+      );
+    expect(await session.call<any[]>('traces')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          applied: expect.arrayContaining([
+            expect.objectContaining({
+              op: 'insert_column',
+              route: 'engine',
+              mechanism: 'sfdt',
+              tracking: 'tracked_change'
+            }),
+            expect.objectContaining({
+              op: 'set_column_layout',
+              route: 'editor',
+              mechanism: 'syncfusion_editor',
+              tracking: 'untracked_formatting'
+            })
+          ])
+        })
       ])
     );
 
@@ -124,6 +162,38 @@ describe('live value-column primitives', () => {
     );
 
     await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
+  it('rolls the structural transaction back when deferred native layout fails', async () => {
+    await session.call('open', JSON.stringify(buildCostsFixture()));
+    const baseline = await session.call<string>('serialize');
+    const source = await session.call<string>('tableAnchor', 'costs');
+
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_column',
+          group: 'g01-invalid-column-layout',
+          anchor: `${source};0;2;0`,
+          position: 'after',
+          resultRef: '@value_col'
+        },
+        {
+          op: 'set_column_layout',
+          group: 'g01-invalid-column-layout',
+          anchor: '@value_col;0;0',
+          width: -1
+        }
+      ],
+      'invalid-live-value-column'
+    );
+
+    expect(result.outcomes).toEqual([
+      'change_set_failed',
+      'invalid_column_width'
+    ]);
     expect(await session.call<string>('serialize')).toBe(baseline);
   }, 120000);
 });
