@@ -1278,8 +1278,8 @@ describe('resolving one chip of a card and rejecting the rest', () => {
 // Dependent table edits across turns share one review family. Its appearance
 // restore stack belongs to the document and rejecting the family must return
 // to the value that predates every member change set.
-describe('one table review family across turns', () => {
-  it('leaves no fill behind when the family is rejected', () => {
+describe('independent table review cards across turns', () => {
+  it('leaves no fill behind when both cards are rejected newest first', () => {
     const ed = makeEditor(statedLayoutFixture());
     try {
       const before = appearanceSnapshot(ed, '0;2');
@@ -1316,9 +1316,23 @@ describe('one table review family across turns', () => {
 
       const live = ed as unknown as LiveEditor;
       const groups = listRevisionGroups(live);
-      expect(groups).toHaveLength(1);
-      expect(groups[0].changeSetIds).toEqual(['turn-one', 'turn-two']);
-      resolveLiveRevisionGroupsAsOneUndo(live, groups, false);
+      expect(groups.map((group) => group.changeSetId).sort()).toEqual([
+        'turn-one',
+        'turn-two'
+      ]);
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        groups.filter((group) => group.changeSetId === 'turn-two'),
+        false
+      );
+      expect(listRevisionGroups(live).map((group) => group.changeSetId)).toEqual(
+        ['turn-one']
+      );
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        listRevisionGroups(live),
+        false
+      );
 
       expect(revisions(ed)).toHaveLength(0);
       expect(appearanceSnapshot(ed, '0;2')).toEqual(before);

@@ -377,7 +377,7 @@ describe('writes aimed at a bound cell', () => {
     expect(JSON.stringify(settled)).not.toContain('orphaned-robin-revision');
   });
 
-  it.skip('keeps a superseding value in its own card and rejects through both states', () => {
+  it('supersedes a pending bound value and rejects to the original value', () => {
     const before = editor.serialize();
     const first = applyDocumentEdits(editor as unknown as LiveEditor, {
       changeSetId: 'bound-value-first',
@@ -391,7 +391,6 @@ describe('writes aimed at a bound cell', () => {
       ]
     });
     expect(first.results[0]).toMatchObject({ ok: true, route: 'engine' });
-
     const second = applyDocumentEdits(editor as unknown as LiveEditor, {
       changeSetId: 'bound-value-second',
       edits: [
@@ -405,34 +404,40 @@ describe('writes aimed at a bound cell', () => {
     });
 
     expect(second.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(second.results[0].details).toContain(
+      'superseded pending review bound-value-first/bound-value-first'
+    );
     const live = editor as unknown as LiveEditor;
     const groups = listRevisionGroups(live);
-    expect(groups.map((group) => group.changeSetId).sort()).toEqual([
-      'bound-value-first',
+    expect(groups.map((group) => group.changeSetId)).toEqual([
       'bound-value-second'
     ]);
-    // The tracked view includes the struck-through pending 20 and its
-    // replacement 25. The accepted projection and formula runtime read 25.
-    expect(textAt(editor, QUANTITY_CELL)).toBe('2025');
+    expect(textAt(editor, QUANTITY_CELL)).toBe('25');
     expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$3,750.00');
-    expect(
-      controlByTag(
-        JSON.parse(editor.serialize()),
-        '[[name=quantity|type=integer|row=r-1]]'
-      ).inlines.map((inline: any) => inline.text)
-    ).toEqual(['12', '20', '25']);
 
-    resolveLiveRevisionGroupsAsOneUndo(
-      live,
-      groups.filter((group) => group.changeSetId === 'bound-value-second'),
-      false
+    const third = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'bound-value-third',
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: QUANTITY_CELL,
+          text: '30',
+          literal: true
+        }
+      ]
+    });
+    expect(third.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(third.results[0].details).toContain(
+      'superseded pending review bound-value-second/bound-value-second'
     );
-    attached.controller.flush({ mode: 'self-heal' });
+    const finalGroups = listRevisionGroups(live);
+    expect(finalGroups.map((group) => group.changeSetId)).toEqual([
+      'bound-value-third'
+    ]);
+    expect(textAt(editor, QUANTITY_CELL)).toBe('30');
+    expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$4,500.00');
 
-    expect(textAt(editor, QUANTITY_CELL)).toBe('1220');
-    expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$3,000.00');
-
-    resolveLiveRevisionGroupsAsOneUndo(live, listRevisionGroups(live), false);
+    resolveLiveRevisionGroupsAsOneUndo(live, finalGroups, false);
     attached.controller.flush({ mode: 'self-heal' });
 
     expect(textAt(editor, QUANTITY_CELL)).toBe('12');

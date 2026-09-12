@@ -95,6 +95,7 @@ import type {
 // control this engine did not author is never mistaken for a binding, and bound
 // values use the same parse/render/transaction path as direct editor input.
 import {
+  formatType,
   formatTag,
   parseTag,
   parseType
@@ -193,7 +194,6 @@ import type {
   DerivedValueChange,
   ExpressionRestore,
   ParagraphStyleRestore,
-  RevisionBundleTag,
   BorderWrite,
   CellPropertyFacts,
   LiveEditor,
@@ -1013,6 +1013,27 @@ export interface ApplyEditsResult {
   results: EditResult[];
   warnings: string[];
   inventory?: InventoryEntry[];
+  executionTrace?: {
+    version: 1;
+    changeSetId: string;
+    requested: EditOp[];
+    canonical: EditOp[];
+    executed: EditOp[];
+    applied: Array<{
+      op?: string;
+      route?: EditResult['route'];
+      mechanism?: NonNullable<EditResult['mechanism']>;
+      tracking:
+        | 'not_applied'
+        | 'untracked_formatting'
+        | 'no_change'
+        | 'tracked_change';
+      outcome?: string;
+      details?: string[];
+    }>;
+    status?: 'applied' | 'failed';
+    warnings: string[];
+  };
   changeSet?: {
     id: string;
     status: 'applied' | 'failed';
@@ -4875,43 +4896,8 @@ const isBodyParagraph = (block: FlatBlock): boolean =>
   block.kind === 'paragraph' || block.kind === 'heading';
 
 /**
- * The end of a selection that must consume the trailing PARAGRAPH MARK of the
- * run it covers - the one rule `delete_paragraph` and the relocation primitive
- * share, owned here so they cannot drift apart.
- *
- * A mark sits BETWEEN two paragraphs, so when a following block exists IN THIS
- * WORD SECTION the end is the START of that block. Stopping at the last block's
- * own `length` leaves the mark behind, and both failures that produces are
- * silent: a delete_paragraph empties its paragraph in place instead of removing
- * it, and a relocated section's tail fuses with whatever it lands beside
- * ("g bodyAlpha") while accepting strands an empty paragraph behind.
- *
- * Crossing into `next` is therefore allowed only when `next` is a BODY PARAGRAPH
- * OF THE SAME WORD SECTION. Both halves of that condition exist because ending at
- * the start of the wrong kind of block silently drags that block into the range,
- * and they are the whole reason this lives in one place:
- *
- *   - a DIFFERENT Word section: ending at its first block puts the SECTION BREAK
- *     inside the range, and SyncFusion authors no rejectable revision for
- *     deleting one - so the page setup changes with no card to reject and a group
- *     rollback has nothing to put back. Live, that surfaced as the relocation's
- *     own `untracked_write` refusal on the captain's move, because the section
- *     being moved was a Word section of its own.
- *
- *   - NOT A BODY PARAGRAPH: `flattenSfdt` gives a table no block of its own - its
- *     CELLS are the blocks - so the block following a table is a `table_cell`
- *     whose Word section matches, which the section test alone waves through.
- *     Ending at a cell's offset 0 selects the ENTIRE neighbouring table (measured:
- *     the captured payload came back holding two tables and the paragraphs past
- *     them), so a split of a table that happens to sit directly against another
- *     one pasted a copy of its neighbour alongside its own rows. A split is how
- *     two tables come to be adjacent in the first place, so the second split of
- *     any table reached it. `delete_paragraph` already screened its own `next`
- *     through this same "body paragraph of this section" rule before calling; the
- *     rule belongs here, where every caller passes through it.
- *
- * With no usable following block the range ends at `length + 1`, which SyncFusion
- * accepts and reports back verbatim as the live endOffset.
+ * Include a trailing paragraph mark without crossing a Word section boundary
+ * or selecting a neighbouring table. Shared by deletion and relocation.
  */
 function markInclusiveRangeEnd(
   next: FlatBlock | undefined,
@@ -6098,6 +6084,8 @@ interface ReservedOpFields {
    * the boundary heading or the boundary is an ordinary blank paragraph.
    */
   __sectionBoundaryAnchor?: string;
+  /** Final table address planned by the section composer. */
+  __sectionFinalTableAnchor?: string;
   /** Composer-owned perimeter handling suppresses the generic insert heuristic. */
   __suppressSectionBoundary?: boolean;
   /** A malformed composer request is routed through the ordinary group refusal. */
@@ -7560,23 +7548,7 @@ function rawSectionBlocks(sfdt: any, section: number): any[] {
   return Array.isArray(sections) ? getBlocks(sections[section]) : [];
 }
 
-/**
- * Every top-level block address in DOCUMENT order, across Word sections.
- *
- * The relocation's position arithmetic runs in this sequence rather than in
- * per-section block counts, because a paste can change the Word SECTION
- * structure: when the payload carries a section break, pasting it splits the
- * destination section and the content after the paste point is renumbered into a
- * new section index. Measured per section, that reads as the destination section
- * LOSING blocks - a negative delta - and the source's computed post-paste anchor
- * lands back inside the copy that was just pasted. Live, that produced
- * `relocation_source_lost` on the captain's own move: expected 15 blocks, found
- * 14, because the range it found was the normalized copy rather than the source.
- *
- * A whole-document sequence has no such failure mode: the paste inserts N
- * entries at one position in it, and every entry after that position keeps its
- * order however the sections renumber.
- */
+/** Stable document-order addresses even when a paste renumbers Word sections. */
 function topLevelSequence(
   sfdt: any
 ): Array<{ section: number; block: number }> {
@@ -7868,12 +7840,9 @@ function collectRevisionIds(block: any, out: Set<string>): void {
  * from widget state, and treat an unattributed revision as ours rather than
  * refusing a document we cannot name an author for.
  */
-function foreignPendingAuthorInBlocks(
-  sfdt: any,
-  rawBlocks: any[]
-): string | undefined {
+function pendingAuthorsInBlocks(sfdt: any, rawBlocks: any[]): string[] {
   const revisions = pick(sfdt, 'revisions', 'r');
-  if (!Array.isArray(revisions) || !revisions.length) return undefined;
+  if (!Array.isArray(revisions) || !revisions.length) return [];
   const authorById = new Map<string, string>();
   for (const revision of revisions) {
     const id = pick(revision, 'revisionID', 'revisionId', 'rid');
@@ -7883,18 +7852,27 @@ function foreignPendingAuthorInBlocks(
   }
   const ids = new Set<string>();
   for (const block of rawBlocks) collectRevisionIds(block, ids);
-  for (const id of Array.from(ids)) {
-    const author = authorById.get(id);
-    if (author && !isAssistantAuthor(author)) return author;
-  }
-  return undefined;
+  return [...ids]
+    .filter((id) => authorById.has(id))
+    .map((id) => authorById.get(id) ?? '');
 }
 
-function foreignPendingAuthor(
+function foreignPendingAuthorInBlocks(
+  sfdt: any,
+  rawBlocks: any[]
+): string | undefined {
+  return pendingAuthorsInBlocks(sfdt, rawBlocks).find(
+    (author) => !!author && !isAssistantAuthor(author)
+  );
+}
+
+function pendingRevisionAuthor(
   sfdt: any,
   range: BlockRange
 ): string | undefined {
-  return foreignPendingAuthorInBlocks(sfdt, rawBlocksInRange(sfdt, range));
+  const rawBlocks = rawBlocksInRange(sfdt, range);
+  const [author] = pendingAuthorsInBlocks(sfdt, rawBlocks);
+  return author === undefined ? undefined : author || 'an unknown author';
 }
 
 // ---------------------------------------------------------------------------
@@ -8098,20 +8076,17 @@ function assertTableIsRemovable(
 }
 
 /**
- * The refusal that is about REJECTING the range: a pending change somebody else
- * authored inside it.
+ * A relocation cannot safely cross an unresolved review card.
  *
- * A move folds whatever it moves into its own card - the delete consumes a
- * pending insertion rather than authoring a Deletion beside it - so rejecting the
- * move reverts that earlier edit too. For Robin's own pending edits that is
- * correct. For a human reviewer's it is not: their edit would disappear because
- * we moved a section, and nothing would say so.
+ * Syncfusion consumes an unresolved insertion while moving its containing
+ * range. Giving the move a separate message identity then leaves text which its
+ * own rejection cannot restore. Refuse before writing, regardless of author.
  *
  * A copy leaves the source untouched, so it takes nothing away from anyone and
  * this does not apply to one either.
  */
-function assertRangeHasNoForeignEdits(sfdt: any, range: BlockRange): void {
-  const author = foreignPendingAuthor(sfdt, range);
+function assertRangeHasNoPendingEdits(sfdt: any, range: BlockRange): void {
+  const author = pendingRevisionAuthor(sfdt, range);
   if (author)
     throw new OpError(
       'relocation_source_has_pending_review',
@@ -8119,11 +8094,11 @@ function assertRangeHasNoForeignEdits(sfdt: any, range: BlockRange): void {
         range.anchor
       )}: it contains a pending tracked change by ${JSON.stringify(
         author
-      )}. A relocation folds what it moves into its own card, so rejecting this move would silently revert their edit as well. Nothing was written.`,
+      )}. A relocation cannot keep that edit and the move independently rejectable. Nothing was written.`,
       [
         `anchor: ${range.anchor}`,
         `pending author: ${author}`,
-        `Ask for ${author}'s change to be accepted or rejected first, then relocate the section.`
+        'Accept or reject the pending change first, then relocate the section.'
       ]
     );
 }
@@ -9394,7 +9369,7 @@ export const ANCHORED_OP_HANDLERS: {
     const source = resolveSectionRange(blocks, block.anchor, 'anchor');
     assertRangeWithinOneSection(source);
     assertRangeIsRemovable(blocks, source);
-    assertRangeHasNoForeignEdits(sfdt, source);
+    assertRangeHasNoPendingEdits(sfdt, source);
     relocateBlockRange(
       editor,
       sfdt,
@@ -9467,8 +9442,8 @@ export const ANCHORED_OP_HANDLERS: {
       );
     assertRangeIsRemovable(blocks, earlier);
     assertRangeIsRemovable(blocks, later);
-    assertRangeHasNoForeignEdits(sfdt, earlier);
-    assertRangeHasNoForeignEdits(sfdt, later);
+    assertRangeHasNoPendingEdits(sfdt, earlier);
+    assertRangeHasNoPendingEdits(sfdt, later);
     // Bottom-up, and the ordering is the whole reason a swap needs no
     // prediction. Both ranges and both payloads are resolved BEFORE any write.
     // The first relocation's paste lands at `later`'s start and its delete
@@ -9805,7 +9780,7 @@ export const ANCHORED_OP_HANDLERS: {
       );
     const position =
       typeof op.position === 'string' ? op.position.toLowerCase() : 'before';
-    const tableAnchor = resultingInsertedTableAnchor(op);
+    const tableAnchor = immediateInsertedTableAnchor(op);
     let selectedInsertion = false;
     if (position === 'after') {
       const parts = block.anchor.split(';');
@@ -9868,14 +9843,8 @@ export const ANCHORED_OP_HANDLERS: {
       assertTableIsRemovable(Array.from(byAnchor.values()), tableAnchor);
     callEditor(editor, 'deleteTable');
   },
-  // Deletes a ROW SET, in as few writes as the set allows - `rows` is the shape
-  // "remove mock coverage 3 to 7" needs. One op per row cannot express it: a
-  // withdrawal physically removes its row (see assertTrackedMutation), so every
-  // row below shifts, and the next op's anchor has to be re-resolved by text -
-  // which empty, freshly-inserted rows cannot be distinguished by, so the second
-  // op refused with `anchor_relocation_ambiguous` and four of the captain's five
-  // rows stayed behind. Here the whole run goes down in one `deleteRow`, which is
-  // also what makes it ONE card.
+  // Delete a row set in one operation so withdrawals cannot shift later row
+  // anchors between writes.
   delete_row: ({ editor, op, block, byAnchor }) => {
     const tableAnchor = tableAnchorForBlock(block);
     const blocks = Array.from(byAnchor.values());
@@ -9922,15 +9891,8 @@ export const ANCHORED_OP_HANDLERS: {
       preWriteTable,
       requested
     );
-    // The table's banding, read BEFORE the rows are marked. A row deletion
-    // changes which rows survive, so the change-set finalizer must revisit the
-    // stripes from the accept projection - and it can only revisit a table
-    // someone recorded. The bound split records both fragments from inside
-    // duplicate_table, so a split in ONE change set was already right; a
-    // delete_row arriving on its own (the model composing a split by hand in a
-    // second call, or a plain "delete these rows") never was. Measured on the
-    // browser document: Buildings and Stock marked deleted, Contents still
-    // carrying the second row's shade.
+    // Record pre-delete banding so the finalizer can stripe surviving rows from
+    // the accept projection.
     const preWriteAppearance = preWriteTable
       ? collectTableAppearance(preWriteTable)
       : null;
@@ -10306,26 +10268,8 @@ function intendedBlockText(
 }
 
 /**
- * A figure written into a column of formatted amounts wears that column's
- * format. `9660` into a column of `$36,803.00` lands as `$9,660.00`, because
- * the neighbours say so - the captain's complaint was exactly that the engine
- * wrote the digits it was handed and ignored the column around them:
- * *"I gave it just the value."*
- *
- * WHEN. Only when the figure carries no format of its own, which is
- * `classifyNumericText`'s own middle tier: numeric, but with no unit, no
- * decimal places and no observed grouping. That is what "just the value" means,
- * and reading it off the existing classifier is what keeps this from becoming a
- * second opinion about what a number is. A figure that ARRIVES formatted -
- * `0.00`, `$0`, `($0.00)`, `12.5%` - is an explicit instruction about how the
- * cell should read and is written exactly as sent; that is how "drop the
- * currency symbol from this column" is expressed, and re-dressing it would
- * silently refuse the request.
- *
- * WHAT FORMAT. The document's, discovered by `resolveQuantityCellFormat` -
- * which is `resolveRenderFormat`, the same mechanism `set_cell_formula` uses to
- * keep `$36,803` from coming back as `36803`. There is no second formatting
- * implementation.
+ * Apply the surrounding column's numeric format only to an unformatted numeric
+ * input. Explicit currency, percent, grouping, and decimal formats are kept.
  *
  * WHERE IN THE ORDER. Deliberately ahead of the provenance gate, not behind it,
  * so the gate judges the bytes that will LAND. Dropping the `$` therefore stops
@@ -12794,29 +12738,9 @@ function assertTrackedMutation(
 
   if (structural) {
     if (revisions.length && types.has(structural)) return;
-    // A WITHDRAWAL is a tracked outcome too, and this branch used to call it an
-    // untracked write. SyncFusion does not mark content that is ITSELF an
-    // unaccepted insertion as deleted - it removes it, because it was never in
-    // the document a reviewer had agreed to and there is nothing for a reject to
-    // put back. So no Deletion revision exists to find, and demanding one
-    // refused a delete_row over a row the assistant had just inserted - AFTER
-    // the row was already gone, with a rollback that rejects revisions and
-    // therefore had nothing to restore. The captain's decision: "we want to be
-    // able to delete the trackd changes and its fine if its gone from the
-    // tracked changes."
-    //
-    // Proven, not assumed, by the same two projections the text ops already use
-    // (this branch was simply the last user of the revision-type proxy, which
-    // the comment above records being replaced once already for set_cell_text):
-    // rejecting every revision still yields the pre-write document, which IS
-    // reversibility, and accepting them yields a different one, which is "the
-    // write did something". Together they are what a tracked, reviewable write
-    // means, and they are what separates a withdrawal from a write that did
-    // nothing at all.
-    //
-    // Inherent to these semantics, and deliberate rather than a defect: once a
-    // pending insertion is withdrawn NO LATER REJECT CAN RESTORE IT, because no
-    // revision is left to reject. That is why the row count travels back on the
+    // Removing a pending insertion is a withdrawal, not a new Deletion
+    // revision. The accept/reject projections prove that the structural write
+    // took effect and that unrelated content remains reversible.
     // result as `withdrewPendingInsertion` - so the model tells the user those
     // rows are simply gone with nothing left to review, instead of describing
     // them as tracked deletions it could offer to undo.
@@ -12910,8 +12834,7 @@ function opGroupId(op: EditOp, changeSetId: string): string {
 function stampRevisionGroup(
   editor: LiveEditor,
   changeSetId: string,
-  op: EditOp,
-  bundle?: RevisionBundleTag
+  op: EditOp
 ): void {
   const settings = editor.documentEditorSettings?.revisionSettings;
   if (!settings) return;
@@ -12922,8 +12845,7 @@ function stampRevisionGroup(
     undefined,
     undefined,
     undefined,
-    undefined,
-    bundle
+    undefined
   );
 }
 
@@ -13010,9 +12932,7 @@ function groupNewRevisions(
   revisionsWereReloaded = false,
   clampsByGroup?: Map<string, BookmarkClampIntent[]>,
   expressionsByGroup?: Map<string, ExpressionRestore[]>,
-  derivedChangesByGroup?: Map<string, DerivedValueChange[]>,
-  bundle?: RevisionBundleTag,
-  trackingIdentityId = changeSetId
+  derivedChangesByGroup?: Map<string, DerivedValueChange[]>
 ): RevisionGroupingReport {
   const createdAll = revisionsWereReloaded
     ? (() => {
@@ -13030,7 +12950,7 @@ function groupNewRevisions(
         );
       })()
     : createdRevisions(editor, before);
-  const created = ownRevisionsOnly(editor, createdAll, trackingIdentityId);
+  const created = ownRevisionsOnly(editor, createdAll, changeSetId);
   const revisionsByGroup = new Map<string, number>();
   const appearanceGroups = new Set<string>();
   if (!created.length)
@@ -13088,8 +13008,7 @@ function groupNewRevisions(
             styles,
             clamps,
             expressions,
-            derivedChanges,
-            bundle
+            derivedChanges
           );
       }
     }
@@ -13357,7 +13276,10 @@ function tableAnchorFromCellAnchor(anchor: unknown): string {
 function resultingInsertedTableAnchor(op: {
   anchor?: unknown;
   position?: unknown;
+  __sectionFinalTableAnchor?: unknown;
 }): string {
+  const composed = String(op.__sectionFinalTableAnchor ?? '').trim();
+  if (/^\d+;\d+$/.test(composed)) return composed;
   const parts = String(op.anchor ?? '').split(';');
   const after = String(op.position ?? '').toLowerCase() === 'after';
   if (parts.length === 2) {
@@ -13369,6 +13291,16 @@ function resultingInsertedTableAnchor(op: {
   const block = Number(parts[1]);
   if (!Number.isInteger(block) || block < 0) return '';
   return `${parts[0]};${block + 1}`;
+}
+
+function immediateInsertedTableAnchor(op: {
+  anchor?: unknown;
+  position?: unknown;
+}): string {
+  return resultingInsertedTableAnchor({
+    anchor: op.anchor,
+    position: op.position
+  });
 }
 
 /**
@@ -13390,7 +13322,8 @@ function cellWriteTableAnchorsFollowingInsert(
     if (candidate?.group !== group) continue;
     if (
       candidate?.op !== 'set_cell_text' &&
-      candidate?.op !== 'set_cell_formula'
+      candidate?.op !== 'set_cell_formula' &&
+      candidate?.op !== 'create_binding'
     )
       continue;
     const tableAnchor = tableAnchorFromCellAnchor(candidate.anchor);
@@ -13423,12 +13356,14 @@ function assertInsertedTableIsAddressable(
         `planned cell-write table anchor: ${expectedAnchor}`
       ]
     );
-  if (resultingAnchor && byAnchor.has(`${resultingAnchor};0;0;0`)) return;
+  const liveAnchor = immediateInsertedTableAnchor(op);
+  if (liveAnchor && byAnchor.has(`${liveAnchor};0;0;0`)) return;
   throw new OpError(
     'inserted_table_not_addressable',
-    `insert_table at "${op.anchor}" did not create a distinct table at "${resultingAnchor}". Adjacent tables can coalesce instead of creating a new addressable block. Choose an anchor separated from the existing table by a paragraph, then target the new cells under "${resultingAnchor};row;column;0". Nothing was written.`,
+    `insert_table at "${op.anchor}" did not create a distinct table at "${liveAnchor}". Adjacent tables can coalesce instead of creating a new addressable block. Choose an anchor separated from the existing table by a paragraph, then target the new cells under "${resultingAnchor};row;column;0". Nothing was written.`,
     [
       `requested insert anchor: ${op.anchor}`,
+      `immediate inserted table anchor: ${liveAnchor}`,
       `expected resulting table anchor: ${resultingAnchor}`
     ]
   );
@@ -13447,11 +13382,7 @@ function tableCreatedByEarlierInsert(edits: EditOp[], index: number): boolean {
   );
 }
 
-// Breaks which end the current paragraph and so bring exactly one new, empty
-// paragraph into existence at the next block index. Text destined for that new
-// paragraph has nowhere else to go, and requiring a second call for it leaves a
-// blank page behind whenever the text half then fails - which is exactly what
-// the captain saw when asking for a "THANK YOU" page.
+// Breaks that create a new empty paragraph at the next block index.
 const PARAGRAPH_CREATING_OPS = new Set([
   'insert_page_break',
   'insert_column_break'
@@ -13520,7 +13451,9 @@ interface BindingTableRoute {
 
 interface BindingRuntime {
   surface: BindingCommandSurface;
+  sfdt: any;
   index: BindingIndex;
+  revisionAuthorsById: Map<string, string>;
   occurrencesByTag: Map<string, Occurrence[]>;
   tablesByAnchor: Map<string, BindingTableRoute>;
 }
@@ -13585,6 +13518,7 @@ interface EngineMutationPlan {
     identity: BindingWireIdentity;
     canonical: string;
   };
+  reviewIdentity?: { changeSetId: string; group: string; author?: string };
   /**
    * The deferred bookmark clamps for the rows this plan removes: pure intent
    * data, collected once every plan in the set has executed and bound to the
@@ -13892,7 +13826,18 @@ function bindingRuntime(editor: LiveEditor, sfdt: any): BindingRuntime | null {
       table
     });
   }
-  return { surface, index, occurrencesByTag, tablesByAnchor };
+  const revisionAuthorsById = new Map<string, string>();
+  for (const revision of snapshotRevisions(editor))
+    if (revision.revisionID && typeof revision.author === 'string')
+      revisionAuthorsById.set(revision.revisionID, revision.author);
+  return {
+    surface,
+    sfdt,
+    index,
+    revisionAuthorsById,
+    occurrencesByTag,
+    tablesByAnchor
+  };
 }
 
 function editTableRoot(
@@ -13929,7 +13874,18 @@ function plannedPlainTablePromotions(
   for (const op of edits) {
     if (op?.op !== 'create_binding') continue;
     const anchor = editTableRoot(op, creators);
-    if (anchor && !boundAnchors.has(anchor) && tableBlockAt(sfdt, anchor))
+    const createdEarlier = anchor
+      ? edits.some(
+          (candidate) =>
+            candidate?.op === 'insert_table' &&
+            resultingInsertedTableAnchor(candidate) === anchor
+        )
+      : false;
+    if (
+      anchor &&
+      !boundAnchors.has(anchor) &&
+      (tableBlockAt(sfdt, anchor) || createdEarlier)
+    )
       roots.add(anchor);
   }
   const used = new Set(index.tables.keys());
@@ -13981,155 +13937,6 @@ function ensurePlainTablePromotion(
       `The promoted table "${promotion.tableId}" was not readable by the binding engine. Nothing was written.`
     );
   return { sfdt: next, index: nextIndex, refs: state.refs };
-}
-
-function reviewResourceKeys(
-  editor: LiveEditor,
-  sfdt: any,
-  edits: EditOp[]
-): string[] {
-  const keys = new Set<string>();
-  const runtime = bindingRuntime(editor, sfdt);
-  for (const op of edits) {
-    const anchor = String(op?.anchor ?? '').trim();
-    if (!anchor || anchor.startsWith('@')) continue;
-    if (isLiveStoryAnchor(anchor)) {
-      keys.add(`story:${anchor}`);
-      continue;
-    }
-    const tableAnchor = normalizeTableAnchor(anchor);
-    if (tableAnchor && tableBlockAt(sfdt, tableAnchor)) {
-      const route = runtime?.tablesByAnchor.get(tableAnchor);
-      keys.add(
-        route ? `table:${route.tableId}` : `table-anchor:${tableAnchor}`
-      );
-      continue;
-    }
-    keys.add(`block:${anchor}`);
-  }
-  return [...keys].sort();
-}
-
-function nextReviewSequence(editor: LiveEditor): number {
-  return (
-    snapshotRevisions(editor).reduce(
-      (latest, revision) =>
-        Math.max(
-          latest,
-          parseRevisionGroupTag(revision.customData)?.sequence ?? 0
-        ),
-      0
-    ) + 1
-  );
-}
-
-function reviewBundleForResources(
-  editor: LiveEditor,
-  changeSetId: string,
-  resourceKeys: string[]
-): RevisionBundleTag {
-  const wanted = new Set(resourceKeys);
-  const matches = snapshotRevisions(editor)
-    .map((revision) => parseRevisionGroupTag(revision.customData))
-    .filter(
-      (tag): tag is NonNullable<typeof tag> =>
-        !!tag && !!tag.resourceKeys?.some((key) => wanted.has(key))
-    )
-    .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
-  const combinedResources = [
-    ...new Set([
-      ...resourceKeys,
-      ...matches.flatMap((tag) => tag.resourceKeys ?? [])
-    ])
-  ].sort();
-  return {
-    reviewBundleId:
-      matches[0]?.reviewBundleId ?? matches[0]?.changeSetId ?? changeSetId,
-    changeSetIds: [
-      ...new Set([
-        ...matches.flatMap((tag) => tag.changeSetIds ?? [tag.changeSetId]),
-        changeSetId
-      ])
-    ],
-    resourceKeys: combinedResources,
-    sequence: nextReviewSequence(editor),
-    coalesce:
-      combinedResources.length > 0 &&
-      combinedResources.every((key) => key.startsWith('story:'))
-  };
-}
-
-function pendingAssistantTagsInRelocations(
-  sfdt: any,
-  edits: EditOp[]
-): Array<ReturnType<typeof parseRevisionGroupTag>> {
-  const ranges: BlockRange[] = [];
-  const blocks = flattenSfdt(sfdt);
-  for (const op of edits) {
-    if (op?.op !== 'move_section' && op?.op !== 'swap_sections') continue;
-    for (const anchor of [op.anchor, op.otherAnchor]) {
-      if (typeof anchor !== 'string' || !anchor.trim()) continue;
-      try {
-        ranges.push(resolveSectionRange(blocks, anchor, 'review dependency'));
-      } catch {
-        // Preflight owns invalid-anchor reporting. Dependency discovery is read-only.
-      }
-    }
-  }
-  if (!ranges.length) return [];
-  const ids = new Set<string>();
-  for (const range of ranges)
-    for (const block of rawBlocksInRange(sfdt, range))
-      collectRevisionIds(block, ids);
-  const revisions = pick(sfdt, 'revisions', 'r');
-  if (!Array.isArray(revisions)) return [];
-  return revisions.flatMap((revision: any) => {
-    const id = pick(revision, 'revisionID', 'revisionId', 'rid');
-    if (
-      id == null ||
-      !ids.has(String(id)) ||
-      !isAssistantAuthor(pick(revision, 'author', 'a'))
-    )
-      return [];
-    const tag = parseRevisionGroupTag(pick(revision, 'customData', 'cd'));
-    return tag ? [tag] : [];
-  });
-}
-
-function retagReviewBundle(
-  editor: LiveEditor,
-  bundle: RevisionBundleTag
-): void {
-  const bundleId = bundle.reviewBundleId;
-  if (!bundleId) return;
-  const resources = new Set(bundle.resourceKeys ?? []);
-  for (const revision of snapshotRevisions(editor)) {
-    const tag = parseRevisionGroupTag(revision.customData);
-    if (!tag) continue;
-    const joins =
-      tag.reviewBundleId === bundleId ||
-      tag.resourceKeys?.some((key) => resources.has(key));
-    if (!joins) continue;
-    const resourceKeys = [
-      ...new Set([...(tag.resourceKeys ?? []), ...resources])
-    ].sort();
-    revision.customData = revisionGroupTag(
-      tag.changeSetId,
-      tag.group,
-      tag.appearanceRestores,
-      tag.paragraphStyles,
-      tag.bookmarkClamps,
-      tag.expressionRestores,
-      tag.derivedChanges,
-      {
-        reviewBundleId: bundleId,
-        changeSetIds: bundle.changeSetIds,
-        resourceKeys,
-        sequence: tag.sequence ?? bundle.sequence,
-        coalesce: bundle.coalesce
-      }
-    );
-  }
 }
 
 function requireBindingRuntime(
@@ -14257,21 +14064,8 @@ function boundNumericWriteNeedsProvenance(
  * boundary see a figure being spent twice.
  */
 /**
- * Document provenance for a figure written into a row this change set is
- * CREATING: the same column, somewhere in the document, already shows exactly
- * this value.
- *
- * The provenance rule exists so a number the model produced never lands as if
- * it were a fact: a total it estimated, a figure it misread. A figure the
- * document itself already displays in this column is a fact the engine can
- * check, and the check is exact-text equality against a live bound value of the
- * same field name - the strongest source there is, stronger than a dictation.
- * Measured need: moving a row between two tables is delete_row plus insert_row
- * plus the row's own values, and the model was made to ask the user to dictate
- * figures it had just read off the page (captain, 2026-09-09). Scoped to rows
- * this change set creates on purpose: writing a copied figure into an EXISTING
- * quantity cell is exactly where a plausible-looking total replaces a real one,
- * and that path keeps demanding a formula or a declared source.
+ * Accept an exact same-column document value as provenance for a row this
+ * change set creates. Existing-row writes still require an explicit source.
  */
 function documentProvenanceFor(
   candidates: Occurrence[] | undefined,
@@ -14760,6 +14554,37 @@ function boundInputTextPlan(
       'binding_instance_not_editable',
       `The selected binding instance "${selectedOccurrence.name}" is not editable. Nothing was written.`
     );
+  const pendingDeletionIds = deletedRevisionIds(runtime.sfdt);
+  const occurrenceRevisionIds = collectRevisionIdsDeep(
+    getAt(runtime.sfdt, selectedOccurrence.path)
+  );
+  const pendingReviewIdentities = new Map<
+    string,
+    { changeSetId: string; group: string; author?: string }
+  >();
+  const revisions = pick(runtime.sfdt, 'revisions', 'r');
+  if (Array.isArray(revisions))
+    for (const revision of revisions) {
+      const id = pick(revision, 'revisionID', 'revisionId', 'rid');
+      if (
+        id == null ||
+        !pendingDeletionIds.has(String(id)) ||
+        !occurrenceRevisionIds.has(String(id))
+      )
+        continue;
+      const tag = parseRevisionGroupTag(
+        pick(revision, 'customData', 'customdata')
+      );
+      if (tag)
+        pendingReviewIdentities.set(`${tag.changeSetId}\u0000${tag.group}`, {
+          changeSetId: tag.changeSetId,
+          group: tag.group,
+          ...(runtime.revisionAuthorsById.has(String(id))
+            ? { author: runtime.revisionAuthorsById.get(String(id)) }
+            : {})
+        });
+    }
+  const reviewIdentity = [...pendingReviewIdentities.values()][0];
   const literalNumber = guardBoundNumericReplacement(
     op,
     selectedOccurrence,
@@ -14785,6 +14610,7 @@ function boundInputTextPlan(
       identity: { id: occurrence.name, global: occurrence.def.isGlobal },
       canonical
     },
+    ...(reviewIdentity ? { reviewIdentity } : {}),
     execute(state) {
       const liveOccurrence =
         state.index.occurrences.find(
@@ -14818,6 +14644,11 @@ function boundInputTextPlan(
         next = setBoundOccurrenceCanonical(state, liveOccurrence, canonical);
       }
       const details = [
+        ...(reviewIdentity
+          ? [
+              `superseded pending review ${reviewIdentity.changeSetId}/${reviewIdentity.group}`
+            ]
+          : []),
         ...(occurrence.def.isGlobal
           ? [
               `updated global identity "${occurrence.name}" across ${sameId.length} occurrences`
@@ -14900,7 +14731,6 @@ function nearestBoundRowId(table: TableEntry, rowIndex: number): string | null {
 }
 
 function boundInsertRowsPlan(
-  editor: LiveEditor,
   index: number,
   op: EditOp,
   block: FlatBlock,
@@ -14914,10 +14744,7 @@ function boundInsertRowsPlan(
     );
   const count = positiveCount(op.count);
   const above = op.above === true;
-  // A line item can go ANYWHERE in the table - above the first item, after
-  // the totals row - and it always clones a bound data row: the one on the
-  // anchor's side when there is one, otherwise the nearest (captain,
-  // 2026-09-09: "we should be able to add anywhere in the table").
+  // Clone the nearest bound data row while honoring the requested position.
   const afterVisualRow = above ? rowIndex - 1 : rowIndex;
   const afterRowId =
     rowIdAtVisualRow(tableRoute.table, afterVisualRow) ??
@@ -17341,7 +17168,7 @@ function planBindingRoutedOp(
     if (op.op === 'insert_row' && rowsBound) {
       if (op.shape === 'blank')
         return boundBlankRowPlan(index, op, target, tableRoute);
-      const plan = boundInsertRowsPlan(editor, index, op, target, tableRoute);
+      const plan = boundInsertRowsPlan(index, op, target, tableRoute);
       for (let offset = 0; offset < positiveCount(op.count); offset++)
         createdRows.set(
           `${tableRoute.anchor};${plan.firstVisualRow + offset}`,
@@ -20242,6 +20069,7 @@ function detectUnsourcedAuthoredFigures(edits: EditOp[]): BatchRefusal | null {
       // the cell-by-cell path arrives at by the time it writes the third one.
       if (!resolveQuantityCellFormat(blocks, { ...cell, text: '', length: 0 }))
         continue;
+      if (op.literal === true) continue;
       if (excerpt && attachment && quotedExcerptContains(excerpt, figure))
         continue;
       if (isExactColumnAggregate(blocks, cell)) continue;
@@ -20275,18 +20103,7 @@ function detectUnsourcedAuthoredFigures(edits: EditOp[]): BatchRefusal | null {
   return null;
 }
 
-/**
- * Placeholder-looking text, matched by SHAPE and never by a known token.
- *
- * The live failure: asked to swap two subsections, the model expressed it as a
- * three-way text shuffle and wrote `__TMP_SWAP_HEADING_1__` and
- * `__TMP_SWAP_PARA_1__` into the captain's client proposal as intermediate
- * values. That change set happened to roll back, so the tokens never survived -
- * but "one op away from a placeholder in a client document" is not a property to
- * rely on, and it is not something prompt guidance can prevent. Matching the
- * literal tokens that were seen would only refuse the one shuffle we already
- * know about; matching the shape refuses the class.
- */
+/** Refuse placeholder-shaped intermediate text from model-authored swaps. */
 const SENTINEL_SHAPES: Array<{ shape: RegExp; description: string }> = [
   {
     // `__TMP_SWAP_PARA_1__` - a delimited, shouted, underscore-wrapped token.
@@ -20557,7 +20374,23 @@ type ComposerUnit =
       ordinal: number;
       source?: FlatBlock;
       label: string;
+      finalAnchor?: string;
     };
+
+interface ComposerLiveBindingCell {
+  row: number;
+  column: number;
+  kind: 'input' | 'formula';
+  name: string;
+  valueType: string;
+  expression?: string;
+}
+
+interface ComposerLiveTablePlan {
+  cells: string[][];
+  bindings: ComposerLiveBindingCell[];
+  source: FlatBlock;
+}
 
 interface CompiledSectionEdit {
   edit: EditOp;
@@ -20769,7 +20602,8 @@ function validatedSectionSpec(value: unknown): SectionComposerSpec {
           ? {
               sourcedFrom: validatedFigureSource(table.sourcedFrom, tableLabel)
             }
-          : {})
+          : {}),
+        ...(table.literal === true ? { literal: true } : {})
       }
     };
   });
@@ -20881,6 +20715,23 @@ function composerUnitBlockCount(unit: ComposerUnit): number {
   if (unit.kind === 'text') return unit.items.length;
   if (unit.kind === 'separator') return unit.elements.length;
   return 1;
+}
+
+function composerFamilyUsesWordSections(
+  evidence: SectionFamilyEvidence | undefined
+): boolean {
+  const units = evidence?.units ?? [];
+  if (units.length < 2) return false;
+  const sections = units.map((unit) => {
+    const [section, block] = unit.blocks[0]?.anchor.split(';') ?? [];
+    return { section: Number(section), block: Number(block) };
+  });
+  return (
+    sections.every(
+      ({ section, block }) =>
+        Number.isInteger(section) && Number.isInteger(block) && block === 0
+    ) && new Set(sections.map(({ section }) => section)).size === units.length
+  );
 }
 
 interface ComposerInsertionBoundary {
@@ -21371,6 +21222,316 @@ function composerTableDonor(
   return undefined;
 }
 
+function composerCellText(cell: any, deletedIds: Set<string>): string {
+  return getBlocks(cell)
+    .map((block) => inlineText(getInlines(block), deletedIds))
+    .join('\n');
+}
+
+function composerLogicalCellText(
+  row: any,
+  column: number,
+  deletedIds: Set<string>
+): string {
+  const physical = physicalCellIndexAt(row, column);
+  const cells: any[] = pick(row, 'cells', 'c') ?? [];
+  return physical == null ? '' : composerCellText(cells[physical], deletedIds);
+}
+
+function composerOccurrenceColumn(
+  sfdt: any,
+  occurrence: Occurrence
+): number | null {
+  const physical = pathCellIndex(occurrence.path);
+  if (physical == null) return null;
+  const cell = getAt(
+    sfdt,
+    occurrence.path.slice(0, occurrence.path.indexOf('cells') + 2)
+  );
+  const logical = Number(pick(cell, 'columnIndex', 'ci'));
+  return Number.isInteger(logical) && logical >= 0 ? logical : physical;
+}
+
+function composerOccurrenceRow(occurrence: Occurrence): number | null {
+  const rows = occurrence.path.indexOf('rows');
+  const row = rows >= 0 ? Number(occurrence.path[rows + 1]) : NaN;
+  return Number.isInteger(row) && row >= 0 ? row : null;
+}
+
+function componentColumnKey(...values: Array<string | undefined>): string {
+  const words = values
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.some((word) => ['item', 'description', 'name'].includes(word)))
+    return 'item';
+  if (words.some((word) => ['unit', 'units', 'qty', 'quantity'].includes(word)))
+    return 'quantity';
+  if (words.some((word) => ['rate', 'price', 'unitcost'].includes(word)))
+    return 'rate';
+  if (
+    words.includes('total') &&
+    words.some((word) => ['line', 'amount', 'value', 'cost'].includes(word))
+  )
+    return 'line_total';
+  return words.join('_');
+}
+
+function escapeRegularExpression(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function composerBindingPrefix(title: string): string {
+  const prefix = title
+    .replace(/^\s*section\s+\d+(?:\.\d+)?\s*[-:]?\s*/i, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return prefix || 'composed_table';
+}
+
+/**
+ * Reuse a neighboring live table as a component template when the authored
+ * columns cover every editable input column in that template. Formula columns
+ * and aggregate rows are engine-owned: the section spec supplies inputs, and
+ * this plan supplies the same live behavior as the sibling component.
+ */
+function composerLiveTablePlanFromSource(
+  sfdt: any,
+  source: FlatBlock,
+  authored: SectionComposerBlock & { role: 'table' },
+  bindingPrefix: string
+): ComposerLiveTablePlan | undefined {
+  const tableAnchor = tableAnchorForBlock(source);
+  if (!tableAnchor) return undefined;
+  const bindingIndex = scanBindings(sfdt);
+  const donor = [...bindingIndex.tables.values()].find(
+    (table) => boundTableAnchor(sfdt, table) === tableAnchor
+  );
+  if (!donor?.tablePath || !donor.rows.length) return undefined;
+  const table = tableBlockAt(sfdt, tableAnchor);
+  const rows = getRows(table);
+  if (!table || !rows?.length) return undefined;
+
+  const boundRows = donor.rows
+    .filter((row) => !!row.rowId && !!row.path)
+    .map((row) => ({ row, index: Number(row.path?.[row.path.length - 1]) }))
+    .filter((entry) => Number.isInteger(entry.index));
+  if (!boundRows.length) return undefined;
+  const firstDataRow = Math.min(...boundRows.map((entry) => entry.index));
+  const lastDataRow = Math.max(...boundRows.map((entry) => entry.index));
+  // sectionSpec has one column-header row. A component with a more elaborate
+  // header remains a normal authored table until the semantic spec can express
+  // that topology without guessing.
+  if (firstDataRow !== 1) return undefined;
+
+  const prototype = boundRows.find(
+    (entry) => entry.index === firstDataRow
+  )?.row;
+  if (!prototype) return undefined;
+  const deletedIds = deletedRevisionIds(sfdt);
+  const width = rows.reduce((widest, row) => {
+    const cells: any[] = pick(row, 'cells', 'c') ?? [];
+    return Math.max(
+      widest,
+      cells.reduce(
+        (logical, cell) =>
+          logical + Math.max(1, Number(pick(cell, 'columnSpan', 'cs')) || 1),
+        0
+      )
+    );
+  }, 0);
+  if (!width) return undefined;
+  const donorHeaders = Array.from({ length: width }, (_unused, column) =>
+    composerLogicalCellText(rows[0], column, deletedIds)
+  );
+
+  const donorColumns = [...prototype.bindings.values()].flatMap(
+    (occurrence) => {
+      const column = composerOccurrenceColumn(sfdt, occurrence);
+      return column == null ? [] : [{ column, occurrence }];
+    }
+  );
+  const editable = donorColumns.filter(
+    ({ occurrence }) => occurrence.def.kind === 'field'
+  );
+  const formulas = donorColumns.filter(
+    ({ occurrence }) => occurrence.def.kind === 'formula'
+  );
+  if (!editable.length || !formulas.length) return undefined;
+
+  const mapped = authored.table.columnHeaders.map((header, authoredColumn) => {
+    const requestedKey = componentColumnKey(
+      authored.table.columnRoles?.[authoredColumn],
+      header
+    );
+    const candidates = editable.filter(({ column, occurrence }) => {
+      const donorKey = componentColumnKey(
+        occurrence.name,
+        donorHeaders[column]
+      );
+      return requestedKey && requestedKey === donorKey;
+    });
+    return candidates.length === 1
+      ? { authoredColumn, donorColumn: candidates[0].column }
+      : null;
+  });
+  if (
+    mapped.some((entry) => !entry) ||
+    new Set(mapped.map((entry) => entry?.donorColumn)).size !==
+      editable.length ||
+    authored.table.columnHeaders.length !== editable.length
+  )
+    return undefined;
+
+  const headers = [...donorHeaders];
+  for (const entry of mapped) {
+    if (!entry) continue;
+    headers[entry.donorColumn] =
+      authored.table.columnHeaders[entry.authoredColumn];
+  }
+  const dataRows = authored.table.rows.map((authoredRow) => {
+    const row = Array.from({ length: width }, () => '');
+    for (const entry of mapped) {
+      if (!entry) continue;
+      row[entry.donorColumn] = authoredRow[entry.authoredColumn];
+    }
+    return row;
+  });
+
+  const footerRows = rows
+    .slice(lastDataRow + 1)
+    .map((row) =>
+      Array.from({ length: width }, (_unused, column) =>
+        composerLogicalCellText(row, column, deletedIds)
+      )
+    );
+  const aggregateOccurrences = bindingIndex.occurrences.filter(
+    (occurrence) =>
+      occurrence.def.kind === 'formula' &&
+      !occurrence.rowId &&
+      pathHasPrefix(donor.tablePath as any[], occurrence.path) &&
+      (composerOccurrenceRow(occurrence) ?? -1) > lastDataRow
+  );
+  for (const occurrence of aggregateOccurrences) {
+    const oldRow = composerOccurrenceRow(occurrence);
+    const column = composerOccurrenceColumn(sfdt, occurrence);
+    if (oldRow == null || column == null) continue;
+    const footer = footerRows[oldRow - lastDataRow - 1];
+    if (footer) footer[column] = '';
+  }
+
+  const bindings: ComposerLiveBindingCell[] = [];
+  authored.table.rows.forEach((_row, offset) => {
+    for (const { column, occurrence } of donorColumns) {
+      bindings.push({
+        row: 1 + offset,
+        column,
+        kind: occurrence.def.kind === 'field' ? 'input' : 'formula',
+        name: occurrence.name,
+        valueType: formatType(occurrence.def.fieldType),
+        ...(occurrence.def.kind === 'formula'
+          ? {
+              expression: occurrence.def.expression.replace(
+                new RegExp(
+                  `\\b${escapeRegularExpression(donor.tableId)}\\.`,
+                  'g'
+                ),
+                'table.'
+              )
+            }
+          : {})
+      });
+    }
+  });
+
+  const usedNames = new Set([
+    ...bindingIndex.fields.keys(),
+    ...bindingIndex.formulas.keys()
+  ]);
+  for (const occurrence of aggregateOccurrences) {
+    const oldRow = composerOccurrenceRow(occurrence);
+    const column = composerOccurrenceColumn(sfdt, occurrence);
+    if (oldRow == null || column == null || occurrence.def.kind !== 'formula')
+      continue;
+    bindings.push({
+      row: 1 + authored.table.rows.length + (oldRow - lastDataRow - 1),
+      column,
+      kind: 'formula',
+      name: uniqueBindingName(`${bindingPrefix}_subtotal`, usedNames),
+      valueType: formatType(occurrence.def.fieldType),
+      expression: occurrence.def.expression.replace(
+        new RegExp(`\\b${escapeRegularExpression(donor.tableId)}\\.`, 'g'),
+        'table.'
+      )
+    });
+  }
+  return { cells: [headers, ...dataRows, ...footerRows], bindings, source };
+}
+
+function composerLiveTablePlan(
+  sfdt: any,
+  source: FlatBlock | undefined,
+  authored: SectionComposerBlock & { role: 'table' },
+  bindingPrefix: string
+): ComposerLiveTablePlan | undefined {
+  const blocks = flattenSfdt(sfdt);
+  const bindingIndex = scanBindings(sfdt);
+  if (source) {
+    const sourcePlan = composerLiveTablePlanFromSource(
+      sfdt,
+      source,
+      authored,
+      bindingPrefix
+    );
+    if (sourcePlan) return sourcePlan;
+  }
+
+  const candidates: FlatBlock[] = [];
+  for (const table of bindingIndex.tables.values()) {
+    const anchor = boundTableAnchor(sfdt, table);
+    const firstCell = anchor
+      ? blocks.find((block) => block.anchor === `${anchor};0;0;0`)
+      : undefined;
+    if (
+      firstCell &&
+      !candidates.some((candidate) => candidate.anchor === firstCell.anchor)
+    )
+      candidates.push(firstCell);
+  }
+  const plans = candidates.flatMap((candidate) => {
+    const plan = composerLiveTablePlanFromSource(
+      sfdt,
+      candidate,
+      authored,
+      bindingPrefix
+    );
+    return plan ? [plan] : [];
+  });
+  if (!plans.length) return undefined;
+  const signatures = new Set(
+    plans.map((plan) =>
+      JSON.stringify({
+        cells: plan.cells,
+        bindings: plan.bindings.map(
+          ({ row, column, kind, valueType, expression }) => ({
+            row,
+            column,
+            kind,
+            valueType,
+            expression
+          })
+        )
+      })
+    )
+  );
+  return signatures.size === 1 ? plans[0] : undefined;
+}
+
 function validateNumberedSubsectionPlacement(
   title: string,
   blocks: FlatBlock[],
@@ -21713,7 +21874,22 @@ function compileSectionComposer(
   // forward, so a creator-time anchor is stale by the end. These final anchors
   // are the same perimeter/topology evidence phase 3 verifies after every
   // structural write has landed.
-  const anchorParts = target.anchor.split(';');
+  const targetAnchorParts = target.anchor.split(';');
+  const targetSectionIndex = Number(targetAnchorParts[0]);
+  const targetBlockIndexBeforeBreak = Number(targetAnchorParts[1]);
+  const opensWordSection =
+    composerFamilyUsesWordSections(evidence) &&
+    position === 'before' &&
+    targetAnchorParts.length === 2 &&
+    Number.isInteger(targetSectionIndex) &&
+    Number.isInteger(targetBlockIndexBeforeBreak) &&
+    targetBlockIndexBeforeBreak >= 0;
+  const anchorParts = opensWordSection
+    ? [
+        String(targetSectionIndex + (targetBlockIndexBeforeBreak > 0 ? 1 : 0)),
+        '0'
+      ]
+    : targetAnchorParts;
   const targetBlockIndex = Number(anchorParts[1]);
   let finalBlockOffset = position === 'after' ? 1 : 0;
   if (anchorParts.length === 2 && Number.isInteger(targetBlockIndex))
@@ -21728,27 +21904,47 @@ function compileSectionComposer(
       } else if (unit.kind === 'separator') {
         finalBlockOffset += unit.elements.length;
       } else {
+        unit.finalAnchor = `${anchorParts[0]};${
+          targetBlockIndex + finalBlockOffset
+        }`;
         finalBlockOffset++;
       }
     });
   const structuralOrder =
     position === 'before' ? finalUnits : [...finalUnits].reverse();
-  const structural: CompiledSectionEdit[] = needsSeedAnchor
-    ? [
-        {
-          label: 'created structural seed anchor',
-          edit: {
-            op: 'insert_text',
-            group,
-            anchor: resolvedTarget.anchor,
-            position: 'after',
-            text: '\n',
-            __suppressSectionBoundary: true
+  const structural: CompiledSectionEdit[] = [
+    ...(opensWordSection
+      ? [
+          {
+            label: 'inherited sibling-family Word section boundary',
+            edit: {
+              op: 'insert_section_break',
+              group,
+              anchor: resolvedTarget.anchor,
+              sectionBreakType: 'NewPage',
+              __sectionBoundaryAnchor: resolvedTarget.anchor
+            }
+          } as CompiledSectionEdit
+        ]
+      : []),
+    ...(needsSeedAnchor
+      ? [
+          {
+            label: 'created structural seed anchor',
+            edit: {
+              op: 'insert_text',
+              group,
+              anchor: resolvedTarget.anchor,
+              position: 'after',
+              text: '\n',
+              __suppressSectionBoundary: true
+            }
           }
-        }
-      ]
-    : [];
+        ]
+      : [])
+  ];
   const formatting: CompiledSectionEdit[] = [];
+  const liveBindings: CompiledSectionEdit[] = [];
   let insertedBeforeBoundary = 0;
   structuralOrder.forEach((unit, unitIndex) => {
     const sectionBoundaryAnchor =
@@ -21758,10 +21954,17 @@ function compileSectionComposer(
         ? `${anchorParts[0]};${targetBlockIndex + insertedBeforeBoundary}`
         : target.anchor;
     if (unit.kind === 'table') {
-      const cells = [
+      const liveTable = composerLiveTablePlan(
+        sfdt,
+        unit.source,
+        unit.table,
+        composerBindingPrefix(spec.title)
+      );
+      const cells = liveTable?.cells ?? [
         [...unit.table.table.columnHeaders],
         ...unit.table.table.rows.map((row) => [...row])
       ];
+      const finalTableAnchor = unit.finalAnchor ?? sectionBoundaryAnchor;
       structural.push({
         label: unit.label,
         edit: {
@@ -21770,8 +21973,9 @@ function compileSectionComposer(
           anchor: resolvedTarget.anchor,
           position,
           __sectionBoundaryAnchor: sectionBoundaryAnchor,
+          __sectionFinalTableAnchor: finalTableAnchor,
           rows: cells.length,
-          columns: unit.table.table.columnHeaders.length,
+          columns: cells[0]?.length ?? unit.table.table.columnHeaders.length,
           initialCells: cells,
           // The table's citation rides on the op that writes the cells, so the
           // matrix and the source it was transcribed from reach the provenance
@@ -21779,9 +21983,31 @@ function compileSectionComposer(
           ...(unit.table.table.sourcedFrom
             ? { sourcedFrom: unit.table.table.sourcedFrom }
             : {}),
-          ...(unit.source ? { inheritFormatFrom: unit.source.anchor } : {})
+          ...(unit.table.table.literal === true ? { literal: true } : {}),
+          ...(liveTable?.source ?? unit.source
+            ? {
+                inheritFormatFrom: (liveTable?.source ?? unit.source)?.anchor
+              }
+            : {})
         }
       });
+      for (const binding of liveTable?.bindings ?? []) {
+        liveBindings.push({
+          label: `${unit.label} live ${binding.name}`,
+          edit: {
+            op: 'create_binding',
+            group,
+            anchor: `${finalTableAnchor};${binding.row};${binding.column};0`,
+            kind: binding.kind,
+            name: binding.name,
+            valueType: binding.valueType,
+            ...(binding.expression ? { expression: binding.expression } : {}),
+            __sectionCreatorId: `section-${originalIndex + 1}-table-${
+              unit.blockIndex + 1
+            }`
+          }
+        });
+      }
       if (position === 'before')
         insertedBeforeBoundary += composerUnitBlockCount(unit);
       return;
@@ -21837,7 +22063,7 @@ function compileSectionComposer(
       donors.push({ unit: unit.label, from: unit.source.anchor });
   }
   return {
-    children: [...structural, ...formatting],
+    children: [...structural, ...liveBindings, ...formatting],
     contentBlocks: spec.blocks.length + 1,
     tables: tableOrdinal,
     inheritance: {
@@ -22237,32 +22463,41 @@ export function applyDocumentEdits(
           serializationTiming
         );
         const result = collapseComposedResult(raw, expansion);
-        emitDocumentEditTrace({
-          version: 1,
-          changeSetId: input.changeSetId ?? 'document-edit-change-set',
-          requested: input.edits,
-          canonical,
-          executed,
-          applied: raw.results.map((entry, index) => ({
-            op: expansion.edits[index]?.op,
-            route: entry.route,
-            mechanism:
-              entry.mechanism ??
-              (entry.route === 'engine' ? 'sfdt' : 'syncfusion_editor'),
-            tracking: !entry.ok
-              ? 'not_applied'
-              : FORMAT_OPS.has(expansion.edits[index]?.op)
-              ? 'untracked_formatting'
-              : entry.noOp
-              ? 'no_change'
-              : 'tracked_change',
-            outcome: entry.ok ? 'ok' : entry.error,
-            ...(entry.details ? { details: entry.details } : {})
-          })),
-          status: result.changeSet?.status,
-          warnings: result.warnings
-        });
-        return result;
+        const executionTrace: NonNullable<ApplyEditsResult['executionTrace']> =
+          {
+            version: 1,
+            changeSetId: input.changeSetId ?? 'document-edit-change-set',
+            requested: input.edits,
+            canonical,
+            executed,
+            applied: raw.results.map((entry, index) => {
+              const mechanism =
+                entry.mechanism ??
+                (entry.route === 'engine'
+                  ? 'sfdt'
+                  : entry.route === 'editor'
+                  ? 'syncfusion_editor'
+                  : undefined);
+              return {
+                op: expansion.edits[index]?.op,
+                route: entry.route,
+                ...(mechanism ? { mechanism } : {}),
+                tracking: !entry.ok
+                  ? ('not_applied' as const)
+                  : FORMAT_OPS.has(expansion.edits[index]?.op)
+                  ? ('untracked_formatting' as const)
+                  : entry.noOp
+                  ? ('no_change' as const)
+                  : ('tracked_change' as const),
+                outcome: entry.ok ? 'ok' : entry.error,
+                ...(entry.details ? { details: entry.details } : {})
+              };
+            }),
+            status: result.changeSet?.status,
+            warnings: result.warnings
+          };
+        emitDocumentEditTrace(executionTrace);
+        return { ...result, executionTrace };
       })
     );
     return output;
@@ -22567,41 +22802,6 @@ function applyDocumentEditsMeasured(
     if (ref) stableRefCreators.set(ref, edit);
   }
   const plainTablePromotions = plannedPlainTablePromotions(liveSfdt, edits);
-  const reviewBundle = reviewBundleForResources(
-    editor,
-    changeSetId,
-    reviewResourceKeys(editor, liveSfdt, edits)
-  );
-  const relocationDependencies = pendingAssistantTagsInRelocations(
-    liveSfdt,
-    edits
-  ).filter((tag): tag is NonNullable<typeof tag> => !!tag);
-  if (relocationDependencies.length) {
-    relocationDependencies.sort(
-      (left, right) => (left.sequence ?? 0) - (right.sequence ?? 0)
-    );
-    reviewBundle.reviewBundleId =
-      relocationDependencies[0].reviewBundleId ??
-      relocationDependencies[0].changeSetId;
-    reviewBundle.changeSetIds = [
-      ...new Set([
-        ...relocationDependencies.flatMap(
-          (tag) => tag.changeSetIds ?? [tag.changeSetId]
-        ),
-        changeSetId
-      ])
-    ];
-    reviewBundle.resourceKeys = [
-      ...new Set([
-        ...(reviewBundle.resourceKeys ?? []),
-        ...relocationDependencies.flatMap((tag) => tag.resourceKeys ?? [])
-      ])
-    ].sort();
-    reviewBundle.coalesce = true;
-  }
-  const trackingIdentityId = reviewBundle.coalesce
-    ? reviewBundle.reviewBundleId ?? changeSetId
-    : changeSetId;
   const fail = (index: number, op: EditOp, err: unknown) => {
     results[index] = {
       ok: false,
@@ -22625,7 +22825,7 @@ function applyDocumentEditsMeasured(
     const created = ownRevisionsOnly(
       editor,
       createdRevisions(editor, before),
-      trackingIdentityId
+      changeSetId
     );
     if (!created.length) return;
     const id = opGroupId(op, changeSetId);
@@ -22982,7 +23182,9 @@ function applyDocumentEditsMeasured(
     // range is deferred even when a block answers to it today - the write-time
     // guard still requires the resolved cell to be brand new and empty.
     const deferredNewCell =
-      (name === 'set_cell_text' || name === 'set_cell_formula') &&
+      (name === 'set_cell_text' ||
+        name === 'set_cell_formula' ||
+        name === 'create_binding') &&
       (target
         ? !isLiveStoryTarget(target) &&
           target.kind === 'table_cell' &&
@@ -23155,13 +23357,25 @@ function applyDocumentEditsMeasured(
       const promotion = plainTablePromotions.get(
         editTableRoot(op, stableRefCreators) ?? ''
       );
+      const promotionTarget =
+        target ??
+        (promotion && deferredNewCell && op.op === 'create_binding'
+          ? ({
+              anchor: String(op.anchor),
+              kind: 'table_cell',
+              text: '',
+              length: 0,
+              isHeading: false,
+              level: -1
+            } as FlatBlock)
+          : undefined);
       const routed =
         promotion &&
-        target &&
-        !isLiveStoryTarget(target) &&
+        promotionTarget &&
+        !isLiveStoryTarget(promotionTarget) &&
         (['create_binding', 'insert_column', 'delete_column'].includes(op.op) ||
           (op.op === 'insert_row' && op.shape === 'blank'))
-          ? promotedPlainTablePlan(index, op, target, promotion)
+          ? promotedPlainTablePlan(index, op, promotionTarget, promotion)
           : planBindingRoutedOp(
               editor,
               liveSfdt,
@@ -23345,7 +23559,7 @@ function applyDocumentEditsMeasured(
   try {
     if (suspendLayout) setLayoutWithoutPropertyChange(false);
     editor.enableTrackChanges = true;
-    editor.currentUser = changeSetAuthor(trackingIdentityId);
+    editor.currentUser = changeSetAuthor(changeSetId);
     if (batchRefusal || engineBatchPreflightFailure) {
       warnings.push(
         `change_set_preflight_failed: ${changeSetId}; no structural or formatting writes were attempted.`
@@ -23368,7 +23582,7 @@ function applyDocumentEditsMeasured(
           failedGroups.has(groupId)
         )
           continue;
-        stampRevisionGroup(editor, changeSetId, op, reviewBundle);
+        stampRevisionGroup(editor, changeSetId, op);
         const revisionsBeforeOp = snapshotRevisions(editor);
         let writtenOp = op;
         let appliedRelocation = plan.relocated;
@@ -23414,24 +23628,8 @@ function applyDocumentEditsMeasured(
               );
             if (plan.target && isLiveStoryTarget(plan.target)) {
               trackedMutationTargetText = plan.target.text;
-              // A text frame's content IS in the serialized SFDT, so the reject
-              // projection covers it and proves the write reversible exactly as
-              // it does for a body or table anchor. Before this, story writes
-              // were the last users of the revision-type guess, which reports
-              // `untracked_write` whenever SyncFusion produces no NEW revision
-              // pair - and it produces none when the text being overwritten is
-              // itself a still-pending insertion. That is why the captain's
-              // second advisor-title edit failed on the cover page while the
-              // first succeeded, and why the table edit beside it was fine.
-              //
-              // That same serialization is what lets the mirror projection prove
-              // the write REPLACED the target instead of inserting beside it
-              // (`assertStoryTextFrameReplacement`), so both baselines - reject
-              // and accept - are captured here.
-              //
-              // Stories the projection genuinely cannot see (footnote/endnote
-              // markers) keep the revision assertion; headers/footers never get
-              // this far (`story_write_unverified` refuses them at preflight).
+              // Serialized text frames use projection-based replacement and
+              // reversibility checks. Unsupported stories are refused earlier.
               if (isTextFrameAnchor(String(op.anchor))) {
                 priorRejectStream = rejectStream;
                 priorAcceptStream = acceptStream;
@@ -23745,7 +23943,7 @@ function applyDocumentEditsMeasured(
           failedGroups.has(groupId)
         )
           continue;
-        stampRevisionGroup(editor, changeSetId, op, reviewBundle);
+        stampRevisionGroup(editor, changeSetId, op);
         const revisionsBeforeOp = snapshotRevisions(editor);
         let appliedRelocation = plan.relocated;
         try {
@@ -23761,13 +23959,8 @@ function applyDocumentEditsMeasured(
               'missing_anchor',
               'Formatting edit needs an anchor.'
             );
-          // A table-scoped op names a TABLE, and its anchor is just one of that
-          // table's cells - so it must NOT be relocated by cell text. Two tables
-          // sharing a header cell is ordinary (it is exactly the captain's
-          // document: two Location Schedules with "Loc #" in row 0), and the
-          // text match then reports `anchor_relocation_ambiguous` for an op that
-          // had no ambiguity at all. A row insert never moves a table's block
-          // anchor, so the direct anchor is the right answer here.
+          // Table-scoped operations keep their table anchor; repeated cell text
+          // is not a safe relocation identity.
           const baselineTarget =
             plan.target && !isLiveStoryTarget(plan.target)
               ? plan.target
@@ -24062,9 +24255,7 @@ function applyDocumentEditsMeasured(
                   ...bookmarkClampReceipts(clamps)
                 ];
             }
-            // THE LAW, applied where it is checkable: at the end of the whole
-            // change set, over the projection, from the copy's own provenance.
-            // A refusal here throws before anything reaches the live document.
+            // Validate split aggregate conservation before the live write.
             const conservation = conserveSplitAggregates(
               beforeCommands,
               state.sfdt
@@ -24087,15 +24278,33 @@ function applyDocumentEditsMeasured(
                 ];
             }
             const revisionsBeforeEngine = snapshotRevisions(editor);
+            const inheritedReviewIdentities = new Map(
+              enginePlans.flatMap((plan) =>
+                plan.reviewIdentity
+                  ? [
+                      [
+                        `${plan.reviewIdentity.changeSetId}\u0000${plan.reviewIdentity.group}`,
+                        plan.reviewIdentity
+                      ] as const
+                    ]
+                  : []
+              )
+            );
+            const inheritedReviewIdentity = [
+              ...inheritedReviewIdentities.values()
+            ][0];
+            const engineChangeSetId =
+              inheritedReviewIdentity?.changeSetId ?? changeSetId;
+            const engineGroup =
+              inheritedReviewIdentity?.group ??
+              opGroupId(enginePlans[0].op, changeSetId);
             let engineResult;
             if (plainTablePromotions.size) {
               const calculated = applyRules(state.sfdt);
-              stampRevisionGroup(
-                editor,
-                changeSetId,
-                enginePlans[0].op,
-                reviewBundle
-              );
+              stampRevisionGroup(editor, engineChangeSetId, {
+                ...enginePlans[0].op,
+                group: engineGroup
+              });
               appliedEngineGroup = opGroupId(enginePlans[0].op, changeSetId);
               try {
                 for (const promotion of plainTablePromotions.values()) {
@@ -24135,9 +24344,11 @@ function applyDocumentEditsMeasured(
               engineResult = remainingCommands.length
                 ? surface.runCommands(remainingCommands, {
                     provenance: {
-                      author: changeSetAuthor(changeSetId),
-                      changeSetId,
-                      group: opGroupId(enginePlans[0].op, changeSetId)
+                      author:
+                        inheritedReviewIdentity?.author ??
+                        changeSetAuthor(engineChangeSetId),
+                      changeSetId: engineChangeSetId,
+                      group: engineGroup
                     }
                   })
                 : {
@@ -24157,9 +24368,11 @@ function applyDocumentEditsMeasured(
                 diffBindingCommands(beforeCommands, state.sfdt),
                 {
                   provenance: {
-                    author: changeSetAuthor(changeSetId),
-                    changeSetId,
-                    group: opGroupId(enginePlans[0].op, changeSetId)
+                    author:
+                      inheritedReviewIdentity?.author ??
+                      changeSetAuthor(engineChangeSetId),
+                    changeSetId: engineChangeSetId,
+                    group: engineGroup
                   }
                 }
               );
@@ -24355,17 +24568,6 @@ function applyDocumentEditsMeasured(
     warnings.push(...finalizerWarnings);
   }
 
-  reviewBundle.resourceKeys = [
-    ...new Set([
-      ...(reviewBundle.resourceKeys ?? []),
-      ...tableFootprints.map((footprint) =>
-        footprint.tableId
-          ? `table:${footprint.tableId}`
-          : `table-anchor:${footprint.anchor}`
-      )
-    ])
-  ].sort();
-
   const grouping = groupNewRevisions(
     editor,
     revisionSnapshot,
@@ -24375,9 +24577,7 @@ function applyDocumentEditsMeasured(
     enginePlans.length > 0,
     bookmarkClampsByGroup,
     expressionRestoresByGroup,
-    derivedChangesByGroup,
-    reviewBundle,
-    trackingIdentityId
+    derivedChangesByGroup
   );
   const priorRevisionIds = new Set(
     revisionSnapshot
@@ -24400,8 +24600,7 @@ function applyDocumentEditsMeasured(
       undefined,
       undefined,
       undefined,
-      undefined,
-      reviewBundle
+      undefined
     );
   if (results.some((result) => result?.ok)) {
     adoptRevisionsIntoAuthorsCard(
@@ -24412,7 +24611,6 @@ function applyDocumentEditsMeasured(
           !parseRevisionGroupTag(revision.customData)
       )
     );
-    retagReviewBundle(editor, reviewBundle);
     if (lateAssistantRevisions.length) rebindRevisionGroups(editor);
   }
   const revisionCount = grouping.revisionCount;

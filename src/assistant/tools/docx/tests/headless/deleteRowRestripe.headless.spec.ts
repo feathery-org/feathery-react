@@ -22,7 +22,7 @@ describe('a standalone delete_row leaves the survivors striped for the document 
   });
 
   it('Buildings and Stock deleted: Contents white, Business interruption shaded, Machinery white', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const pristine = await session.call<string>('serialize');
     const before = await session.call<Array<string | null>>('rowShading', 'property_premium');
     // header, Buildings, Contents, Stock, Business interruption, Machinery, subtotal

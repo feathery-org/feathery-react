@@ -560,6 +560,7 @@ const api = {
     groups: number;
     revisions: number;
     warnings: string[];
+    executionTrace?: unknown;
   } {
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits,
@@ -572,7 +573,8 @@ const api = {
       messages: result.results.map((entry: any) => String(entry.message ?? '')),
       groups: listRevisionGroups(live() as unknown as LiveEditor).length,
       revisions: (live() as any).revisions?.length ?? 0,
-      warnings: (result.warnings ?? []).map((entry: any) => String(entry))
+      warnings: (result.warnings ?? []).map((entry: any) => String(entry)),
+      executionTrace: result.executionTrace
     };
   },
 
@@ -833,10 +835,7 @@ const api = {
   groups: (): any[] =>
     listRevisionGroups(live() as any).map((view: any) => ({
       changeSetId: view.changeSetId,
-      changeSetIds: view.changeSetIds,
       group: view.group,
-      reviewBundleId: view.reviewBundleId,
-      resourceKeys: view.resourceKeys,
       untagged: view.untagged,
       derivedChanges: view.derivedChanges
     })),
@@ -844,7 +843,6 @@ const api = {
   groupItems: (): any[] =>
     listRevisionGroups(live() as any).map((view: any) => ({
       changeSetId: view.changeSetId,
-      changeSetIds: view.changeSetIds,
       group: view.group,
       items: view.items.map((item: any) => ({
         revisionType: item.revisionType,
@@ -859,16 +857,11 @@ const api = {
       0
     ),
 
-  /** Accept (`true`) or reject (`false`) every live group as one undo. */
   /** Resolve only the groups one change set created, as one undo. */
   async resolveGroupsOf(changeSetId: string, accept: boolean): Promise<number> {
     const groups = api
       .groups()
-      .filter(
-        (group: any) =>
-          group.changeSetId === changeSetId ||
-          group.changeSetIds?.includes(changeSetId)
-      );
+      .filter((group: any) => group.changeSetId === changeSetId);
     const attempts = resolveLiveRevisionGroupsAsOneUndo(
       live() as any,
       groups,
@@ -878,6 +871,7 @@ const api = {
     return typeof attempts === 'number' ? attempts : -1;
   },
 
+  /** Accept (`true`) or reject (`false`) every live group as one undo. */
   async resolveGroups(accept: boolean): Promise<number> {
     const attempts = resolveLiveRevisionGroupsAsOneUndo(
       live() as any,

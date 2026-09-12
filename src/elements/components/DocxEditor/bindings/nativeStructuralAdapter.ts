@@ -14,6 +14,7 @@ import {
   isContentControlAttached,
   normalizeContentControlCollection,
   refreshContentControlCollection,
+  type ContentControlLike,
   type SyncfusionEditorLike
 } from './editorAdapter';
 
@@ -90,7 +91,9 @@ function applyRowAdoptions(
 ): boolean {
   const selection = editor.selection;
   const module = editor.editorModule as any;
+  const collection = editor.documentHelper?.contentControlCollection;
   if (!selection?.select || !module?.insertContentControl) return false;
+  if (!Array.isArray(collection)) return false;
   const live = JSON.parse(editor.serialize()) as SfdtDocument;
   const previousHistory = editor.enableEditorHistory;
   const previousTracking = editor.enableTrackChanges;
@@ -124,6 +127,42 @@ function applyRowAdoptions(
         ]) as SfdtCell | undefined;
         if (!liveCell) return false;
         const existing = textIn(liveCell.blocks);
+        const existingPlan = plannedControl(liveCell);
+        if (existingPlan?.properties.tag) {
+          const targetPrefix = `${prefix};${mutation.rowIndex};${cellIndex};`;
+          const existingControl = collection
+            .filter(
+              (candidate) =>
+                isContentControlAttached(candidate) &&
+                String(candidate.contentControlProperties?.tag || '') ===
+                  String(existingPlan.properties.tag)
+            )
+            .find((candidate) => {
+              (selection as any).selectContentControl?.(candidate);
+              return String(selection.startOffset ?? '').startsWith(
+                targetPrefix
+              );
+            });
+          if (!existingControl?.contentControlProperties) return false;
+          const properties = existingControl.contentControlProperties;
+          const titleFollowedTag = properties.title === properties.tag;
+          properties.tag = plan.properties.tag;
+          if (titleFollowedTag) properties.title = plan.properties.title;
+          const replacement = plan.text || '\u200b';
+          if (
+            properties.type === 'RichText' &&
+            selection.selectContentControlInternal &&
+            module.insertText
+          ) {
+            selection.selectContentControlInternal(existingControl);
+            module.insertText(replacement);
+          } else if (module.updateContentControl) {
+            module.updateContentControl(existingControl, replacement);
+          } else {
+            return false;
+          }
+          continue;
+        }
         selection.select(
           `${prefix};${mutation.rowIndex};${cellIndex};0;0`,
           `${prefix};${mutation.rowIndex};${cellIndex};0;${existing.length}`
@@ -141,6 +180,7 @@ function applyRowAdoptions(
           return false;
       }
     }
+    refreshContentControlCollection(editor);
   } finally {
     editor.enableEditorHistory = previousHistory;
     editor.enableTrackChanges = previousTracking;
@@ -173,6 +213,21 @@ const rowRevisionsOf = (control: any): number =>
 const tookEffect = (control: any, rowRevisionsBefore: number): boolean =>
   !isContentControlAttached(control) ||
   rowRevisionsOf(control) > rowRevisionsBefore;
+
+function selectControlCaret(
+  editor: SyncfusionEditorLike,
+  control: ContentControlLike
+): boolean {
+  const selection = editor.selection as any;
+  if (!selection?.selectContentControl || !selection.select) return false;
+  selection.selectContentControl(control);
+  const start = selection.startOffset;
+  if (typeof start !== 'string') return false;
+  selection.select(start, start);
+  if (!selection.currentContentControl)
+    selection.currentContentControl = control;
+  return true;
+}
 
 function needsGroupedHistory(mutations: NativeStructuralMutation[]): boolean {
   return (
@@ -280,27 +335,14 @@ export function applyNativeStructuralMutations(
           })
         );
         registerPastedContentControls(editor);
-        selection.selectContentControl(source);
-        const start = selection.startOffset;
-        if (typeof start !== 'string') return false;
-        selection.select(start, start);
-        if (!selection.currentContentControl)
-          selection.currentContentControl = source;
+        if (!selectControlCaret(editor, source)) return false;
         const rowRevisionsBefore = rowRevisionsOf(source);
         module.deleteTable();
         if (!tookEffect(source, rowRevisionsBefore)) return false;
       } else if (mutation.kind === 'delete-table') {
         const control = controlForTag(mutation.tag);
         if (!control || !module.deleteTable || !selection.select) return false;
-        selection.selectContentControl(control);
-        // deleteTable marks the rows deleted where delete() only strikes text,
-        // and it refuses a selection spanning a locked control
-        const start = selection.startOffset;
-        if (typeof start !== 'string') return false;
-        selection.select(start, start);
-        // The SDK misses a pasted wrapper as the enclosing control and reads the caret as locked
-        if (!selection.currentContentControl)
-          selection.currentContentControl = control;
+        if (!selectControlCaret(editor, control)) return false;
         const rowRevisionsBefore = rowRevisionsOf(control);
         module.deleteTable();
         if (!tookEffect(control, rowRevisionsBefore)) return false;
@@ -341,13 +383,7 @@ export function applyNativeStructuralMutations(
       } else if (mutation.kind === 'delete-row') {
         const control = controlForTag(mutation.tag);
         if (!control || !module.deleteRow || !selection.select) return false;
-        selection.selectContentControl(control);
-        // A selection spanning the control can read as every row of a pasted table
-        const start = selection.startOffset;
-        if (typeof start !== 'string') return false;
-        selection.select(start, start);
-        if (!selection.currentContentControl)
-          selection.currentContentControl = control;
+        if (!selectControlCaret(editor, control)) return false;
         const rowRevisionsBefore = rowRevisionsOf(control);
         module.deleteRow();
         if (!tookEffect(control, rowRevisionsBefore)) return false;
@@ -362,7 +398,7 @@ export function applyNativeStructuralMutations(
         const tag = anchorRow && [...anchorRow.bindings.values()][0]?.tag;
         const control = tag && controlForTag(tag);
         if (!control || !module.insertRow) return false;
-        selection.selectContentControl(control);
+        if (!selectControlCaret(editor, control)) return false;
         module.insertRow(mutation.afterRowId == null, 1);
         if (
           !applyRowAdoptions(editor, [

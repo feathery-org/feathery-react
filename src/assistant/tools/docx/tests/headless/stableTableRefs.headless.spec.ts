@@ -44,7 +44,7 @@ describe('stable references compose table primitives in one message', () => {
   };
 
   beforeEach(async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
   });
 
   it('resolves @copy without predicting its shifted anchor', async () => {
@@ -74,7 +74,7 @@ describe('stable references compose table primitives in one message', () => {
     ).toEqual([]);
     await session.call('resolveGroups', true);
 
-    expect(await session.call<number>('contentControlCount')).toBe(84);
+    expect(await session.call<number>('contentControlCount')).toBe(86);
     expect(
       await session.call<Array<string | null>>('rowShading', SOURCE)
     ).toEqual(['#001B49FF', null, '#E6E6E6FF', null, null]);
@@ -93,7 +93,7 @@ describe('stable references compose table primitives in one message', () => {
     await session.call('resolveGroups', false);
 
     expect(await session.call<any[]>('groups')).toEqual([]);
-    expect(await session.call<number>('contentControlCount')).toBe(82);
+    expect(await session.call<number>('contentControlCount')).toBe(84);
     expect(await session.call<string>('serialize')).toBe(original);
   }, 120000);
 });

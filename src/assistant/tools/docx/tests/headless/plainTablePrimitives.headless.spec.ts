@@ -12,7 +12,7 @@ describe('one table primitive surface for plain tables', () => {
   });
 
   beforeEach(async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
   });
 
   it('inserts, fills, accepts, and rejects a column through the shared operations', async () => {
@@ -100,7 +100,7 @@ describe('one table primitive surface for plain tables', () => {
     expect(await session.call<number>('tableColumnCountAt', accepted)).toBe(3);
     expect(await session.call<number>('contentControlCount')).toBe(controls);
 
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const rejectSource = await session.call<string>(
       'tableAnchorContaining',
       'Fire and explosion'
@@ -195,7 +195,7 @@ describe('one table primitive surface for plain tables', () => {
       await session.call<Array<string | null>>('rowShadingAt', copy)
     ).toEqual(['#001B49FF', null, '#E6E6E6FF']);
 
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const rejectSource = await session.call<string>(
       'tableAnchorContaining',
       'Fire and explosion'
@@ -280,7 +280,7 @@ describe('one table primitive surface for plain tables', () => {
       await session.call<Array<string | null>>('rowShadingAt', source)
     ).toEqual(['#001B49FF', null, '#E6E6E6FF', null, '#E6E6E6FF', null]);
 
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const rejectSource = await session.call<string>(
       'tableAnchorContaining',
       'Fire and explosion'
@@ -439,7 +439,7 @@ describe('one table primitive surface for plain tables', () => {
       await session.call<Array<string | null>>('rowShadingAt', source)
     ).toEqual(['#001B49FF', null, '#E6E6E6FF', null]);
 
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const rejectSource = await session.call<string>(
       'tableAnchorContaining',
       'Fire and explosion'

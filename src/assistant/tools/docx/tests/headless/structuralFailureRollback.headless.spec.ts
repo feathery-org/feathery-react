@@ -12,7 +12,7 @@ describe('a failed structural primitive chain is atomic', () => {
   });
 
   it('removes an already-pasted copy when a later native row delete fails', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const original = await session.call<string>('serialize');
     const source = await session.call<string>(
       'tableAnchor',
@@ -51,6 +51,6 @@ describe('a failed structural primitive chain is atomic', () => {
     expect(result.outcomes).toContain('engine_apply_failed');
     expect(result.groups).toBe(0);
     expect(await session.call<string>('serialize')).toBe(original);
-    expect(await session.call<number>('contentControlCount')).toBe(82);
+    expect(await session.call<number>('contentControlCount')).toBe(84);
   }, 120000);
 });

@@ -57,7 +57,7 @@ describe('a row moves between tables by primitives, before and after a split', (
   });
 
   it('before any split: Buildings moves from the Property table into the Liability table', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const property = await session.call<string>(
       'tableAnchor',
       'property_premium'
@@ -84,7 +84,7 @@ describe('a row moves between tables by primitives, before and after a split', (
   }, 120000);
 
   it('after a split: a row moves into the copy, then more rows anchor on the moved row and on the subtotal row', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const source = await session.call<string>(
       'tableAnchor',
       'property_premium'

@@ -14,7 +14,7 @@ const SUMMARY = [
   'grand_total'
 ];
 
-describe('dependent table messages resolve as one review family', () => {
+describe('dependent table messages remain independently reviewable', () => {
   let session: HeadlessSession;
   beforeAll(async () => {
     session = await startHeadless();
@@ -24,7 +24,7 @@ describe('dependent table messages resolve as one review family', () => {
   });
 
   async function splitThenDelete() {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const baseline = await session.call<string>('serialize');
     const table = await session.call<string>('tableAnchor', SOURCE);
     const split = await session.call<any>(
@@ -77,12 +77,11 @@ describe('dependent table messages resolve as one review family', () => {
     };
   }
 
-  it('the second change joins the first card and moves the figures it should', async () => {
+  it('the second change gets its own card and moves the figures it should', async () => {
     const { formulasAfterSplit, groupsAfterSplit } = await splitThenDelete();
     expect(groupsAfterSplit).toHaveLength(1);
     const groups = await session.call<any[]>('groups');
-    expect(groups).toHaveLength(1);
-    expect(groups[0].changeSetIds.sort()).toEqual([
+    expect(groups.map((group) => group.changeSetId).sort()).toEqual([
       'stacked-delete',
       'stacked-split'
     ]);
@@ -101,9 +100,16 @@ describe('dependent table messages resolve as one review family', () => {
     );
   }, 120000);
 
-  it('rejecting the family restores the original document', async () => {
-    const { baseline } = await splitThenDelete();
+  it('rejecting newest then oldest restores the original document', async () => {
+    const { baseline, formulasAfterSplit } = await splitThenDelete();
     await session.call('resolveGroupsOf', 'stacked-delete', false);
+    expect(
+      (await session.call<any[]>('groups')).map((group) => group.changeSetId)
+    ).toEqual(['stacked-split']);
+    expect(await session.call<Record<string, string>>('formulaValues')).toEqual(
+      formulasAfterSplit
+    );
+    await session.call('resolveGroupsOf', 'stacked-split', false);
     expect(await session.call<any[]>('groups')).toHaveLength(0);
     const final = await session.call<string>('serialize');
     expect(final).toBe(baseline);

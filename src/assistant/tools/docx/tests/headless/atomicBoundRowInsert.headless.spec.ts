@@ -12,7 +12,7 @@ describe('atomic bound row insertion', () => {
   });
 
   it('allows the row primitive to stand alone and rejects it cleanly', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const source = await session.call<string>('tableAnchor', 'property_premium');
     const before = await session.call<string[]>('tableRowTexts', 'property_premium');
     const controlsBefore = await session.call<number>('contentControlCount');

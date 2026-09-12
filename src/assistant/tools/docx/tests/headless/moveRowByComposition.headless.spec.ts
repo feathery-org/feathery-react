@@ -54,7 +54,7 @@ describe('a row moves between tables by delete_row plus insert_row with the valu
   });
 
   it('while the split is pending, the move joins its table-family card and one reject restores the original', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const originalTags = await session.call<string[]>('serializedTags');
     const originalRows = await session.call<string[]>(
       'tableRowTexts',
@@ -105,8 +105,7 @@ describe('a row moves between tables by delete_row plus insert_row with the valu
     );
     expect(moved.outcomes).toEqual(['ok', 'ok', 'ok', 'ok', 'ok']);
     const groups = await session.call<any[]>('groups');
-    expect(groups).toHaveLength(1);
-    expect(groups[0].changeSetIds.sort()).toEqual([
+    expect(groups.map((group) => group.changeSetId).sort()).toEqual([
       'move-pending',
       'move-pending-split'
     ]);
@@ -120,6 +119,10 @@ describe('a row moves between tables by delete_row plus insert_row with the valu
       true
     );
     await session.call('resolveGroupsOf', 'move-pending', false);
+    expect(
+      (await session.call<any[]>('groups')).map((group) => group.changeSetId)
+    ).toEqual(['move-pending-split']);
+    await session.call('resolveGroupsOf', 'move-pending-split', false);
     const formulasAfterReject = await session.call<Record<string, string>>(
       'formulaValues'
     );
@@ -138,7 +141,7 @@ describe('a row moves between tables by delete_row plus insert_row with the valu
   }, 120000);
 
   it('an unrelated paragraph in between remains independent: two cards, table reject leaves the paragraph change', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const source = await session.call<string>(
       'tableAnchor',
       'property_premium'
@@ -205,18 +208,22 @@ describe('a row moves between tables by delete_row plus insert_row with the valu
     );
     expect(moved.outcomes).toEqual(['ok', 'ok', 'ok', 'ok', 'ok']);
     const groups = await session.call<any[]>('groups');
-    expect(groups).toHaveLength(2);
-    expect(
-      groups.map((group: any) => group.changeSetIds.sort()).sort()
-    ).toEqual([
-      ['three-split', 'three-move'].sort(),
-      ['three-unrelated']
-    ].sort());
+    expect(groups.map((group: any) => group.changeSetId).sort()).toEqual([
+      'three-move',
+      'three-split',
+      'three-unrelated'
+    ]);
     await session.call('resolveGroupsOf', 'three-move', false);
     expect(
       (await session.call<any[]>('groups'))
         .map((group: any) => group.changeSetId)
         .sort()
+    ).toEqual(['three-split', 'three-unrelated']);
+    await session.call('resolveGroupsOf', 'three-split', false);
+    expect(
+      (await session.call<any[]>('groups')).map(
+        (group: any) => group.changeSetId
+      )
     ).toEqual(['three-unrelated']);
     expect(await session.call<string>('serialize')).toContain(
       'Public liability cover'
@@ -229,7 +236,7 @@ describe('a row moves between tables by delete_row plus insert_row with the valu
   }, 120000);
 
   it('after the split is accepted, Buildings joins the Stock table: subtotals move by its line total, summary holds, reject restores byte for byte', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const source = await session.call<string>(
       'tableAnchor',
       'property_premium'

@@ -84,7 +84,7 @@ describe('bound row operations while a source split is still pending', () => {
   });
 
   const openWithPendingSplit = async (): Promise<string> => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const source = await session.call<string>('tableAnchor', SOURCE);
     const split = await session.call<any>(
       'applyEdits',
@@ -121,7 +121,7 @@ describe('bound row operations while a source split is still pending', () => {
     source: string;
     copy: string;
   }> => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const original = await session.call<string>('serialize');
     const source = await session.call<string>('tableAnchor', SOURCE);
     const split = await session.call<any>(
@@ -159,7 +159,7 @@ describe('bound row operations while a source split is still pending', () => {
   };
 
   it('restripes and exactly rejects an ordinary mid-table insertion', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const original = await session.call<string>('serialize');
     const source = await session.call<string>('tableAnchor', SOURCE);
     const edits = [
@@ -242,7 +242,7 @@ describe('bound row operations while a source split is still pending', () => {
   }, 120000);
 
   it('restripes and exactly rejects an ordinary mid-table deletion', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const original = await session.call<string>('serialize');
     const source = await session.call<string>('tableAnchor', SOURCE);
     const deletion = [
@@ -291,14 +291,16 @@ describe('bound row operations while a source split is still pending', () => {
     expect(inserted.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
 
     const groups = await session.call<any[]>('groups');
-    expect(groups).toHaveLength(1);
-    expect(groups[0].changeSetIds.sort()).toEqual([
+    expect(groups.map((group) => group.changeSetId).sort()).toEqual([
       'pending-source-insert',
       'pending-source-split'
     ]);
-    expect(groups[0].derivedChanges).toContainEqual({
+    expect(
+      groups.find((group) => group.changeSetId === 'pending-source-insert')
+        ?.derivedChanges
+    ).toContainEqual({
       name: 'property_premium_subtotal',
-      beforeText: '$22,054.40',
+      beforeText: '$11,008.00',
       afterText: '$11,638.00'
     });
 
@@ -351,7 +353,7 @@ describe('bound row operations while a source split is still pending', () => {
   }, 120000);
 
   it('restripes a new row against noncontiguous pending deletions', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const source = await session.call<string>('tableAnchor', SOURCE);
     expect(
       (
@@ -486,8 +488,8 @@ describe('bound row operations while a source split is still pending', () => {
     expect(await session.call<string>('serialize')).toBe(pending);
   }, 120000);
 
-  it('rejects the added-row family back to the exact original', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+  it('rejects the added row, then the split, back to the exact original', async () => {
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const original = await session.call<string>('serialize');
     const source = await openWithPendingSplit();
     const inserted = await session.call<any>(
@@ -498,6 +500,10 @@ describe('bound row operations while a source split is still pending', () => {
     expect(inserted.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
 
     await session.call('resolveGroupsOf', 'pending-source-insert', false);
+    expect(
+      (await session.call<any[]>('groups')).map((group) => group.changeSetId)
+    ).toEqual(['pending-source-split']);
+    await session.call('resolveGroupsOf', 'pending-source-split', false);
     expect(await session.call<any[]>('groups')).toHaveLength(0);
     expect(await session.call<string>('serialize')).toBe(original);
   }, 120000);
@@ -548,13 +554,16 @@ describe('bound row operations while a source split is still pending', () => {
       ).outcomes
     ).toEqual(['ok', 'ok', 'ok', 'ok']);
     const groups = await session.call<any[]>('groups');
-    expect(groups).toHaveLength(1);
-    expect(groups[0].changeSetIds.sort()).toEqual([
+    expect(groups.map((group) => group.changeSetId).sort()).toEqual([
       'pending-copy-after-reload',
       'pending-source-split'
     ]);
 
     await session.call('resolveGroupsOf', 'pending-copy-after-reload', false);
+    expect(
+      (await session.call<any[]>('groups')).map((group) => group.changeSetId)
+    ).toEqual(['pending-source-split']);
+    await session.call('resolveGroupsOf', 'pending-source-split', false);
     expect(await session.call<any[]>('groups')).toHaveLength(0);
     expect(await session.call<string>('serialize')).toBe(original);
   }, 120000);
@@ -595,16 +604,17 @@ describe('bound row operations while a source split is still pending', () => {
       ).outcomes
     ).toEqual(['ok', 'ok', 'ok', 'ok']);
     const groups = await session.call<any[]>('groups');
-    expect(groups).toHaveLength(1);
-    expect(
-      groups.find((group) =>
-        group.changeSetIds?.includes('pending-copy-after-shift')
-      )?.changeSetIds.sort()
-    ).toEqual(['pending-copy-after-shift', 'pending-source-split']);
+    expect(groups.map((group) => group.changeSetId).sort()).toEqual([
+      'pending-copy-after-shift',
+      'pending-source-split'
+    ]);
 
     await session.call('resolveGroupsOf', 'pending-copy-after-shift', false);
-    const remaining = await session.call<any[]>('groups');
-    expect(remaining).toHaveLength(0);
+    expect(
+      (await session.call<any[]>('groups')).map((group) => group.changeSetId)
+    ).toEqual(['pending-source-split']);
+    await session.call('resolveGroupsOf', 'pending-source-split', false);
+    expect(await session.call<any[]>('groups')).toHaveLength(0);
     expect(await session.call<string>('serialize')).toContain(
       'Spacing checkpoint'
     );
@@ -628,6 +638,10 @@ describe('bound row operations while a source split is still pending', () => {
     ).toEqual(['ok', 'ok', 'ok', 'ok']);
 
     await session.call('resolveGroupsOf', 'pending-copy-insert', false);
+    expect(
+      (await session.call<any[]>('groups')).map((group) => group.changeSetId)
+    ).toEqual(['pending-source-split']);
+    await session.call('resolveGroupsOf', 'pending-source-split', false);
     expect(await session.call<any[]>('groups')).toHaveLength(0);
     expect(await session.call<string>('serialize')).toBe(original);
   }, 120000);
@@ -700,6 +714,10 @@ describe('bound row operations while a source split is still pending', () => {
     ).toEqual(['ok']);
 
     await session.call('resolveGroupsOf', 'pending-copy-delete', false);
+    expect(
+      (await session.call<any[]>('groups')).map((group) => group.changeSetId)
+    ).toEqual(['pending-source-split']);
+    await session.call('resolveGroupsOf', 'pending-source-split', false);
     expect(await session.call<any[]>('groups')).toHaveLength(0);
     expect(await session.call<string>('serialize')).toBe(original);
   }, 120000);
@@ -756,6 +774,11 @@ describe('bound row operations while a source split is still pending', () => {
 
     await session.call('resolveGroupsOf', 'pending-source-insert', true);
     let groups = await session.call<any[]>('groups');
+    expect(groups.map((group) => group.changeSetId)).toEqual([
+      'pending-source-split'
+    ]);
+    await session.call('resolveGroupsOf', 'pending-source-split', true);
+    groups = await session.call<any[]>('groups');
     expect(groups).toHaveLength(0);
 
     const signage = (await session.call<any[]>('inventory')).find(
@@ -812,9 +835,9 @@ describe('bound row operations while a source split is still pending', () => {
   }, 120000);
 
   it('moves non-contiguous rows and restripes both resulting tables', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const source = await session.call<string>('tableAnchor', SOURCE);
-    expect(await session.call<number>('contentControlCount')).toBe(82);
+    expect(await session.call<number>('contentControlCount')).toBe(84);
 
     const split = await session.call<any>(
       'applyEdits',
@@ -854,7 +877,7 @@ describe('bound row operations while a source split is still pending', () => {
 
     await session.call('resolveGroups', true);
     expect(await session.call<any[]>('groups')).toHaveLength(0);
-    expect(await session.call<number>('contentControlCount')).toBe(84);
+    expect(await session.call<number>('contentControlCount')).toBe(86);
 
     const sourceRows = await session.call<string[]>('tableRowTexts', SOURCE);
     const copyRows = await session.call<string[]>('tableRowTexts', COPY);

@@ -54,7 +54,10 @@ describe('copied cells stay editable: the control collection keeps document orde
         return {
           hits: n,
           resolved: !!control,
-          tag: String(control?.contentControlProperties?.tag ?? '').slice(0, 40),
+          tag: String(control?.contentControlProperties?.tag ?? '').slice(
+            0,
+            40
+          ),
           canEdit: ed.editor.canEditContentControl === true
         };
       },
@@ -63,13 +66,18 @@ describe('copied cells stay editable: the control collection keeps document orde
     );
 
   it('a split leaves the collection in document order and every copied cell editable', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     expect((await orderBreaks()).breaks).toBe(0);
-    const applied = await session.call<any>('splitTable', 'property_premium', 1, 3);
+    const applied = await session.call<any>(
+      'splitTable',
+      'property_premium',
+      1,
+      3
+    );
     expect(applied.outcomes).toEqual(['ok', 'ok', 'ok']);
 
     const order = await orderBreaks();
-    expect(order.count).toBe(96);
+    expect(order.count).toBe(98);
     expect(order.breaks).toBe(0);
 
     // The copy's Stock row is the LAST "Stock" in the document.

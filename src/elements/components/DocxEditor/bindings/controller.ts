@@ -136,6 +136,23 @@ interface CommitOptions {
   provenance?: BindingCommandProvenance;
 }
 
+function containsTable(block: SfdtBlock | undefined): boolean {
+  if (!block) return false;
+  if (Array.isArray(block.rows)) return true;
+  return (block.blocks ?? []).some(containsTable);
+}
+
+function insertedTableBlocks(
+  block: SfdtBlock,
+  following: SfdtBlock | undefined
+): SfdtBlock[] {
+  return [
+    { inlines: [] },
+    block,
+    ...(containsTable(following) ? [{ inlines: [] }] : [])
+  ];
+}
+
 export class ReconciliationController {
   readonly editor: EditorPort;
 
@@ -400,19 +417,13 @@ export class ReconciliationController {
         const blocksPath = anchor.markerPath.slice(0, -1);
         const at = Number(anchor.markerPath[anchor.markerPath.length - 1]);
         const blocks = getAt(mutated, blocksPath) as SfdtBlock[];
-        const hasTable = (block: SfdtBlock | undefined): boolean => {
-          if (!block) return false;
-          if (Array.isArray(block.rows)) return true;
-          return (block.blocks ?? []).some(hasTable);
-        };
         // Word coalesces adjacent top-level tables into one grid. A paragraph
         // is a storage-topology separator, so add-table owns that invariant for
         // every caller rather than requiring each caller to remember it.
-        const insertedBlocks: SfdtBlock[] = [
-          { inlines: [] },
+        const insertedBlocks = insertedTableBlocks(
           command.block,
-          ...(hasTable(blocks[at + 1]) ? [{ inlines: [] }] : [])
-        ];
+          blocks[at + 1]
+        );
         mutated = setAt(mutated, blocksPath, [
           ...blocks.slice(0, at + 1),
           ...insertedBlocks,
@@ -435,16 +446,10 @@ export class ReconciliationController {
         const blocksPath = table.markerPath.slice(0, -1);
         const at = Number(table.markerPath[table.markerPath.length - 1]);
         const blocks = getAt(mutated, blocksPath) as SfdtBlock[];
-        const hasTable = (block: SfdtBlock | undefined): boolean => {
-          if (!block) return false;
-          if (Array.isArray(block.rows)) return true;
-          return (block.blocks ?? []).some(hasTable);
-        };
-        const insertedBlocks: SfdtBlock[] = [
-          { inlines: [] },
+        const insertedBlocks = insertedTableBlocks(
           command.block,
-          ...(hasTable(blocks[at + 1]) ? [{ inlines: [] }] : [])
-        ];
+          blocks[at + 1]
+        );
         mutated = setAt(mutated, blocksPath, [
           ...blocks.slice(0, at),
           ...insertedBlocks,

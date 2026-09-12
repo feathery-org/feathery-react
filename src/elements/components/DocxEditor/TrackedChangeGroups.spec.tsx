@@ -52,13 +52,9 @@ if (!(testWindow.SVGElement.prototype as any).getBBox) {
 // A minimal live-editor stand-in: tagged revisions in a collection, plus the
 // event surface the panel subscribes to. Group tags use the same JSON shape
 // the ops engine stamps through revisionSettings.customData.
-const tag = (changeSetId: string, group: string) =>
-  JSON.stringify({ v: 1, source: 'robin', changeSetId, group });
-
-const bundledTag = (
+const tag = (
   changeSetId: string,
   group: string,
-  sequence: number,
   derivedChanges?: Array<{
     name: string;
     beforeText: string;
@@ -70,10 +66,6 @@ const bundledTag = (
     source: 'robin',
     changeSetId,
     group,
-    reviewBundleId: 'property-family',
-    changeSetIds: ['split-property', 'add-signage'],
-    resourceKeys: ['table:property_premium'],
-    sequence,
     derivedChanges
   });
 
@@ -273,10 +265,10 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('3 pending')).toBeInTheDocument();
   });
 
-  it('renders dependent table turns as one card and keeps unrelated prose separate', () => {
+  it('renders one card per message, including dependent table messages', () => {
     const editor = makeEditor([
       makeRevision({
-        customData: bundledTag('add-signage', 'add-signage', 2, [
+        customData: tag('add-signage', 'add-signage', [
           {
             name: 'property_premium_subtotal',
             beforeText: '$11,008.00',
@@ -286,7 +278,7 @@ describe('TrackedChangeGroups', () => {
         getRange: () => [{ text: 'Signage' }]
       }),
       makeRevision({
-        customData: bundledTag('split-property', 'split-property', 1, [
+        customData: tag('split-property', 'split-property', [
           {
             name: 'property_premium_subtotal',
             beforeText: '$22,054.40',
@@ -304,14 +296,16 @@ describe('TrackedChangeGroups', () => {
     render(<TrackedChangeGroups editor={editor} />);
 
     expect(screen.getByText('Split property')).toBeInTheDocument();
-    expect(screen.queryByText('Add signage')).not.toBeInTheDocument();
+    expect(screen.getByText('Add signage')).toBeInTheDocument();
     expect(screen.getByText('Fix effective date')).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Split property' })
     );
     expect(
       screen.getByText('property premium subtotal').parentElement
-    ).toHaveTextContent('$22,054.40 → $11,638.00');
+    ).toHaveTextContent('$22,054.40 → $11,008.00');
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Add signage' }));
+    expect(screen.getByText('$11,008.00 → $11,638.00')).toBeInTheDocument();
     expect(screen.getByText('3 pending')).toBeInTheDocument();
   });
 

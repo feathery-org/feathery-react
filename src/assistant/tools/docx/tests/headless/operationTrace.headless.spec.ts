@@ -12,7 +12,7 @@ describe('document operation trace', () => {
   });
 
   it('records requested primitives and whether SFDT or the native editor applied each one', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const source = await session.call<string>(
       'tableAnchor',
       'property_premium'
@@ -44,6 +44,21 @@ describe('document operation trace', () => {
       'trace-sfdt'
     );
     expect(split.outcomes).toEqual(['ok', 'ok', 'ok']);
+    expect(split.executionTrace).toMatchObject({
+      version: 1,
+      changeSetId: 'trace-sfdt',
+      requested: [
+        { op: 'duplicate_table' },
+        { op: 'delete_row' },
+        { op: 'delete_row' }
+      ],
+      applied: [
+        { op: 'duplicate_table', mechanism: 'sfdt', outcome: 'ok' },
+        { op: 'delete_row', mechanism: 'sfdt', outcome: 'ok' },
+        { op: 'delete_row', mechanism: 'sfdt', outcome: 'ok' }
+      ],
+      status: 'applied'
+    });
 
     const title = await session.call<any>(
       'replaceIndexed',
@@ -90,6 +105,24 @@ describe('document operation trace', () => {
           mechanism: 'syncfusion_editor'
         }
       ]
+    });
+
+    const refused = await session.call<any>(
+      'applyEdits',
+      [{ op: 'set_cell_text', anchor: '99;99;0;0;0', text: 'Never written' }],
+      'trace-refused'
+    );
+    expect(refused.outcomes).toEqual(['anchor_not_found']);
+    expect(refused.executionTrace).toMatchObject({
+      changeSetId: 'trace-refused',
+      applied: [
+        {
+          op: 'set_cell_text',
+          tracking: 'not_applied',
+          outcome: 'anchor_not_found'
+        }
+      ],
+      status: 'failed'
     });
   }, 120000);
 });

@@ -75,6 +75,12 @@ export interface SectionComposerTableSpec {
    * contain unless the engine can derive it from the matrix itself.
    */
   sourcedFrom?: FigureSourceCitation;
+  /**
+   * Server-authored proof that every numeric body-cell value was stated by
+   * the user. This is deliberately absent from Robin's model-facing schema;
+   * ai-services stamps it only after occurrence-counted transcript matching.
+   */
+  literal?: boolean;
 }
 
 export type SectionComposerBlock =

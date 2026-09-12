@@ -1,38 +1,7 @@
-// The Syncfusion side of the controller's EditorPort.
-//
-// Value-only engine output is written INSIDE the control, located by exact tag
-// match over documentHelper.contentControlCollection: select the control's
-// interior with selection.selectContentControlInternal (the SDK's own
-// mark-exclusive selection, the one its Text/Date writes use), then insertText.
-// Three deliberate choices, all measured on this SDK:
-//
-//   - NOT Syncfusion's title-matched importContentControlData, whose
-//     (type, title) matching collides whenever two controls share a title.
-//   - NOT the PUBLIC selection.selectContentControl + insertText. That selection
-//     spans the boundary marks themselves, so the replace DELETES the content
-//     control, tag and all, locked or not (lockContents.spec). The internal
-//     selection stops at the marks; the write lands between them and the
-//     binding survives (also lockContents.spec).
-//   - NOT editorModule.updateContentControl for RichText controls. For that
-//     type it is a PASTE of a one-block document merged into the cell's
-//     paragraph, and the merge stamps every paragraph-format default
-//     explicitly (borders, indents, outline level). Semantically a no-op, but
-//     the serialized document is never again byte-identical to what the author
-//     uploaded, and a review card's reject can no longer prove it restored the
-//     document - because the formula cells it recomputed differ in bytes it
-//     never meant to touch. insertText leaves the paragraph format alone
-//     (measured: the same value written back yields the identical file).
-//     updateContentControl stays the write for every other control type; it is
-//     the SDK's per-type dispatcher and RichText is the one type it pastes.
-//
-// History is the other half of the contract. Mechanical reconciliation records
-// only field normalization and keeps formula output out of the user's undo
-// stack. An authored assistant batch tracks changed formula output with the
-// same review identity as the edit that caused it.
-//
-// Everything runs in ONE synchronous turn, selection restore included. An async
-// restore was tried and reverted: it yanked the caret out from under a user
-// already typing in the next field when a commit trigger fired.
+// Syncfusion adapter for exact-tag content-control writes. RichText uses an
+// internal mark-exclusive selection so the binding survives and its paragraph
+// format remains byte-stable. Authored batches track derived writes; mechanical
+// reconciliation does not. Selection and scroll restoration are synchronous.
 
 import { EngineWrite } from './core/engine';
 import type { NativeStructuralMutation } from './core/sfdtAdapter';
@@ -52,13 +21,6 @@ export interface ContentControlLike {
   [key: string]: unknown;
 }
 
-/**
- * The scroll container. BOTH axes matter: every write selects its target, and
- * selectRange scrolls that target into view, which sets scrollLeft as readily as
- * scrollTop (viewer.js scrollToPosition). Putting only scrollTop back leaves the
- * page horizontally offset - the document visibly shifts sideways after a value
- * updates.
- */
 interface ScrollHost {
   scrollTop: number;
   scrollLeft: number;
@@ -122,11 +84,6 @@ interface ViewSnapshot {
 }
 
 /**
- * True when the control is still in the live document tree. deleteRow does
- * not drop widgets from contentControlCollection, so a deleted row's tags
- * stay findable and steal later writes.
- */
-/**
  * The author of the pending INSERTION a control sits inside, if any: the row
  * that holds it, the paragraph mark, or the control's own boundary marks carry
  * an Insertion revision. Undefined when the control is in settled content. See
@@ -168,6 +125,7 @@ export function pendingInsertionAuthorAround(
   return undefined;
 }
 
+/** Exclude controls whose widgets were detached by a structural command. */
 export function isContentControlAttached(control: ContentControlLike): boolean {
   const line = control.line as
     | { paragraph?: Record<string, unknown> }
@@ -191,11 +149,7 @@ export function isContentControlAttached(control: ContentControlLike): boolean {
       widget = anchoring;
       continue;
     }
-    // A header or footer is a root of its own: it is not a child of anything
-    // (indexInOwner reads -1) and no content edit removes it. Its controls are
-    // as attached as the body's. Measured 2026-09-09 without this: the first
-    // recompute after a resolve pruned every header control from the
-    // collection, and the header bindings went dark.
+    // Header/footer widgets are attached roots despite indexInOwner === -1.
     if (typeof widget.headerFooterType === 'string') return true;
     if (widget.indexInOwner === -1) return false;
     const parent = widget.containerWidget as
@@ -280,7 +234,10 @@ export function normalizeContentControlCollection(
       return { control, position: null };
     }
   });
-  positioned.sort((a, b) => {
+  const comparePosition = (
+    a: typeof positioned[number],
+    b: typeof positioned[number]
+  ) => {
     if (!a.position || !b.position) return 0;
     try {
       if (a.position.isAtSamePosition(b.position)) return 0;
@@ -288,8 +245,20 @@ export function normalizeContentControlCollection(
     } catch {
       return 0;
     }
-  });
-  collection.splice(0, collection.length, ...positioned.map((e) => e.control));
+  };
+  const headers = positioned.filter(
+    ({ control }) => !!(control as any)?.paragraph?.isInHeaderFooter
+  );
+  const body = positioned.filter(
+    ({ control }) => !(control as any)?.paragraph?.isInHeaderFooter
+  );
+  body.sort(comparePosition);
+  collection.splice(
+    0,
+    collection.length,
+    ...headers.map(({ control }) => control),
+    ...body.map(({ control }) => control)
+  );
 }
 
 export function refreshContentControlCollection(
@@ -329,31 +298,12 @@ export function configureEditorForBindings(
   }
 }
 
-/**
- * Depth of the authored-batch scope below. `updateValues` serves two callers
- * with opposite requirements - mechanical reconciliation, which must never
- * author revisions, and an authored assistant batch, which must - so the
- * decision belongs to the caller rather than being hard-coded in the writer.
- */
 let authoredDepth = 0;
 
 let adapterWriteDepth = 0;
-/**
- * True while the adapter itself is moving the selection to write: value writes
- * and structural mutations both select programmatically, and every one of
- * those selection changes reaches the editor's selectionChange listeners. They
- * are not the user's caret. A commit trigger that treated them as one flushed
- * the controller INSIDE the adapter's own write (measured 2026-09-09: a row
- * adoption ran between selecting a control's interior and inserting its text,
- * and the text landed in another table).
- */
+/** Distinguish adapter selection moves from the user's caret changes. */
 export function isAdapterWriting(): boolean {
   return adapterWriteDepth > 0;
-}
-
-/** True while an authored assistant batch is applying through this adapter. */
-export function isApplyingAuthoredBatch(): boolean {
-  return authoredDepth > 0;
 }
 
 export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
@@ -377,15 +327,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
     serialize: () => editor.serialize(),
     open: (sfdt: string) => editor.open(sfdt),
     applyStructuralMutations: (mutations: NativeStructuralMutation[]) => {
-      // A PROGRAMMATIC MUTATION LEAVES THE SELECTION WHERE IT FOUND IT. The
-      // native mutations select the tables and rows they work on; the caller's
-      // selection - the user's caret, or the engine's own selection in the
-      // middle of a write - must be exactly where it was when they return.
-      // Measured 2026-09-09 without this: a row adoption, run from a
-      // selectionChange the assistant's restripe had just fired, left the
-      // selection in the adopted table, so the restripe painted that table's
-      // cells and the SDK's own reject, entered the same way, removed content
-      // from it.
+      // Native structural commands borrow the selection and restore it.
       adapterWriteDepth += 1;
       try {
         return preserveDocumentViewDuring(editor as any, () =>
@@ -396,18 +338,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       }
     },
 
-    /**
-     * Borrow three editor switches for one authored batch, then hand every one
-     * of them back.
-     *
-     * Restoration is a `finally` around the whole run, not the happy path, and
-     * it restores the PRIOR values rather than assuming defaults. A leaked
-     * `enableTrackChanges` would silently start tracking the user's own typing;
-     * a leaked `currentUser` would stamp their later edits with the assistant's
-     * name, which is an authorship corruption worse than the defect this exists
-     * to fix. Same three switches, and the same discipline, as the assistant's
-     * older op seam.
-     */
+    /** Borrow tracking, author, and group metadata for one authored batch. */
     withAuthoredRevisions<T>(
       provenance: BindingCommandProvenance,
       run: () => T
@@ -523,27 +454,9 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
 
       adapterWriteDepth += 1;
       try {
-        // Reconciliation is mechanical normalization, not an authored edit, so
-        // it must never author tracked-change revisions. Leave tracking off
-        // afterwards too: restoring a leftover `true` (Assist batch, document
-        // flag, container drift) would make the user's next keystroke inside
-        // this control a tracked insertion.
-        //
-        // An AUTHORED batch is the one caller for which the opposite holds: its
-        // value writes are the assistant's own edits and must appear on the
-        // review card like any other. The authored scope owns restoring these
-        // switches, so this path leaves them alone entirely while inside it.
+        // Mechanical reconciliation is untracked; authored scopes own tracking.
         if (!authoredDepth) editor.enableTrackChanges = false;
-        // Formula cells normally get no history entry of their own: they are
-        // derived values, and recording them would put an undo step between the
-        // user and the edit that caused them. Under an authored batch that
-        // reasoning inverts twice over. The derived cells are part of the one
-        // change the reviewer accepts or rejects, so they belong in the SAME
-        // grouped history entry as the rest - and, measured on this SDK, a
-        // tracked write with history disabled loses its insertion outright: the
-        // old text is deleted, nothing replaces it, and the binding reads empty.
-        // Tracked editing and history are entangled here, so an authored batch
-        // keeps both on and lets the group carry the derived cells.
+        // Authored derived writes share one history group with their cause.
         const groupedWrites = authoredDepth
           ? applicableWrites.length
           : fieldWrites.length;

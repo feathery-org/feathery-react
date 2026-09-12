@@ -1444,7 +1444,7 @@ describe('relocation refusals: each names what to do instead', () => {
     }
   });
 
-  it("folds Robin's own pending edit in, and reject restores the truth", () => {
+  it("refuses to move across Robin's earlier unresolved card", () => {
     const editor = makeEditor(nestedFixture());
     try {
       const original = editor.serialize();
@@ -1461,31 +1461,23 @@ describe('relocation refusals: each names what to do instead', () => {
         'robin-earlier-edit'
       );
       expect(first.results[0].ok).toBe(true);
+      const beforeMove = editor.serialize();
 
       const moved = apply(
         editor,
         [{ op: 'move_section', anchor: '0;2', targetAnchor: '0;6' }],
         'robin-move-over-own-edit'
       );
-      expect(moved.results[0]).toMatchObject({ ok: true });
-      const family = listRevisionGroups(editor as unknown as LiveEditor);
-      expect(family).toHaveLength(1);
-      expect((family[0] as any).changeSetIds.sort()).toEqual([
-        'robin-earlier-edit',
-        'robin-move-over-own-edit'
-      ]);
+      expect(moved.results[0]).toMatchObject({
+        ok: false,
+        error: 'relocation_source_has_pending_review'
+      });
+      expect(moved.results[0].message).toContain('Robin');
+      expect(editor.serialize()).toBe(beforeMove);
+      expect(listRevisionGroups(editor as unknown as LiveEditor)).toHaveLength(
+        1
+      );
 
-      // Rejecting everything walks all the way back to the true original text,
-      // in the original order: the move CONSUMED the earlier pending insertion
-      // (SyncFusion authors no Deletion for text that is itself an unaccepted
-      // insertion) rather than leaving anything untracked behind.
-      //
-      // Asserted on the content rather than on the serialized bytes: a plain
-      // tracked replace_text plus rejectAll is already not byte-identical in
-      // this SDK version - it materializes a default `boldBidi` onto the inline
-      // it touched - which is true with no relocation in the picture at all.
-      // The byte-for-byte bar is asserted where it belongs, on relocations of
-      // untouched content, above.
       editor.revisions.rejectAll();
       expect(editor.revisions.length).toBe(0);
       expect(bodyTexts(editor)).toEqual(

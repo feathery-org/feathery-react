@@ -340,24 +340,11 @@ interface PersistedBookmarkClamp {
 interface RevisionGroupTag {
   changeSetId: string;
   group: string;
-  reviewBundleId?: string;
-  changeSetIds?: string[];
-  resourceKeys?: string[];
-  sequence?: number;
-  coalesce?: boolean;
   appearanceRestores?: AppearanceRestore[];
   paragraphStyles?: ParagraphStyleRestore[];
   bookmarkClamps?: PersistedBookmarkClamp[];
   expressionRestores?: ExpressionRestore[];
   derivedChanges?: DerivedValueChange[];
-}
-
-export interface RevisionBundleTag {
-  reviewBundleId?: string;
-  changeSetIds?: string[];
-  resourceKeys?: string[];
-  sequence?: number;
-  coalesce?: boolean;
 }
 
 export function revisionGroupTag(
@@ -367,27 +354,13 @@ export function revisionGroupTag(
   paragraphStyles?: ParagraphStyleRestore[],
   bookmarkClamps?: PersistedBookmarkClamp[],
   expressionRestores?: ExpressionRestore[],
-  derivedChanges?: DerivedValueChange[],
-  bundle?: RevisionBundleTag
+  derivedChanges?: DerivedValueChange[]
 ): string {
   return JSON.stringify({
     v: REVISION_GROUP_TAG_VERSION,
     source: 'robin',
     changeSetId,
     group,
-    ...(bundle?.reviewBundleId
-      ? { reviewBundleId: bundle.reviewBundleId }
-      : {}),
-    ...(bundle?.changeSetIds?.length
-      ? { changeSetIds: [...new Set(bundle.changeSetIds)] }
-      : {}),
-    ...(bundle?.resourceKeys?.length
-      ? { resourceKeys: [...new Set(bundle.resourceKeys)].sort() }
-      : {}),
-    ...(Number.isInteger(bundle?.sequence)
-      ? { sequence: bundle?.sequence }
-      : {}),
-    ...(bundle?.coalesce ? { coalesce: true } : {}),
     ...(appearanceRestores?.length ? { appearanceRestores } : {}),
     ...(paragraphStyles?.length ? { paragraphStyles } : {}),
     ...(bookmarkClamps?.length ? { bookmarkClamps } : {}),
@@ -765,47 +738,9 @@ export function parseRevisionGroupTag(
         parsed.expressionRestores
       );
       const derivedChanges = parseDerivedValueChanges(parsed.derivedChanges);
-      const reviewBundleId =
-        typeof parsed.reviewBundleId === 'string' &&
-        parsed.reviewBundleId.trim()
-          ? parsed.reviewBundleId.trim()
-          : undefined;
-      const changeSetIds: string[] | undefined = Array.isArray(
-        parsed.changeSetIds
-      )
-        ? [
-            ...new Set(
-              (parsed.changeSetIds as unknown[]).filter(
-                (id: unknown): id is string =>
-                  typeof id === 'string' && !!id.trim()
-              )
-            )
-          ]
-        : undefined;
-      const resourceKeys: string[] | undefined = Array.isArray(
-        parsed.resourceKeys
-      )
-        ? [
-            ...new Set(
-              (parsed.resourceKeys as unknown[]).filter(
-                (key: unknown): key is string =>
-                  typeof key === 'string' && !!key.trim()
-              )
-            )
-          ].sort()
-        : undefined;
-      const sequence = Number.isInteger(parsed.sequence)
-        ? Number(parsed.sequence)
-        : undefined;
-      const coalesce = parsed.coalesce === true;
       return {
         changeSetId: parsed.changeSetId,
         group: parsed.group,
-        ...(reviewBundleId ? { reviewBundleId } : {}),
-        ...(changeSetIds?.length ? { changeSetIds } : {}),
-        ...(resourceKeys?.length ? { resourceKeys } : {}),
-        ...(sequence !== undefined ? { sequence } : {}),
-        ...(coalesce ? { coalesce: true } : {}),
         ...(appearanceRestores ? { appearanceRestores } : {}),
         ...(paragraphStyles ? { paragraphStyles } : {}),
         ...(bookmarkClamps ? { bookmarkClamps } : {}),
@@ -868,7 +803,6 @@ const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
 type RevisionTagIdentity = {
   changeSetId: string;
   group: string;
-  reviewBundleId?: string;
 };
 const TAG_IDENTITY_MEMO = new Map<string, RevisionTagIdentity | null>();
 const revisionTagIdentity = (
@@ -881,8 +815,7 @@ const revisionTagIdentity = (
     identity = tag
       ? {
           changeSetId: tag.changeSetId,
-          group: tag.group,
-          ...(tag.reviewBundleId ? { reviewBundleId: tag.reviewBundleId } : {})
+          group: tag.group
         }
       : null;
     // Bounded: tags accumulate across documents in one long editor session.
@@ -894,11 +827,7 @@ const revisionTagIdentity = (
 
 const revisionTagKey = (customData: unknown): string => {
   const identity = revisionTagIdentity(customData);
-  return identity
-    ? identity.reviewBundleId && parseRevisionGroupTag(customData)?.coalesce
-      ? `bundle ${identity.reviewBundleId}`
-      : `${identity.changeSetId} ${identity.group}`
-    : '';
+  return identity ? `${identity.changeSetId} ${identity.group}` : '';
 };
 
 export function installRevisionGroupIsolation(editor: LiveEditor): void {
@@ -1896,23 +1825,7 @@ export function adoptRevisionsIntoAuthorsCard(
     const tag = sibling ? parseRevisionGroupTag(sibling.customData) : undefined;
     // The identity only: the sibling's payload (appearance snapshots, clamps)
     // describes the sibling's own edits and must not be replayed twice.
-    if (tag)
-      revision.customData = revisionGroupTag(
-        tag.changeSetId,
-        tag.group,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        {
-          reviewBundleId: tag.reviewBundleId,
-          changeSetIds: tag.changeSetIds,
-          resourceKeys: tag.resourceKeys,
-          sequence: tag.sequence,
-          coalesce: tag.coalesce
-        }
-      );
+    if (tag) revision.customData = revisionGroupTag(tag.changeSetId, tag.group);
   }
 }
 
@@ -2059,7 +1972,6 @@ function resolveRevisionsAsOneUndoInner(
 export interface RevisionGroupIdentity {
   changeSetId: string;
   group: string;
-  reviewBundleId?: string;
   untagged?: boolean;
 }
 
@@ -2210,11 +2122,6 @@ function resolveLiveRevisionGroupsAsOneUndoInner(
       .filter((group) => !group.untagged)
       .map((group) => `${group.changeSetId}\u0000${group.group}`)
   );
-  const bundles = new Set(
-    groups
-      .map((group) => group.reviewBundleId)
-      .filter((bundle): bundle is string => !!bundle)
-  );
   const authors = new Set(
     groups.filter((group) => group.untagged).map((group) => group.group)
   );
@@ -2222,10 +2129,8 @@ function resolveLiveRevisionGroupsAsOneUndoInner(
     // Memoized identity read: this runs once per revision per loop iteration
     // below — a full tag parse here is O(n^2) JSON.parse across a bulk resolve.
     const tag = revisionTagIdentity(revision.customData);
-    const fullTag = parseRevisionGroupTag(revision.customData);
     return tag
-      ? (!!fullTag?.reviewBundleId && bundles.has(fullTag.reviewBundleId)) ||
-          tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
+      ? tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
       : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
   };
   const initial = liveRevisionsRaw(editor).filter(matchesGroup);
@@ -2248,13 +2153,6 @@ function resolveLiveRevisionGroupsAsOneUndoInner(
   const attempted = new Set<LiveRevision>();
   const members = () => liveRevisionsRaw(editor).filter(matchesGroup);
   const resolveOrder = (left: LiveRevision, right: LiveRevision): number => {
-    const leftSequence = parseRevisionGroupTag(left.customData)?.sequence ?? 0;
-    const rightSequence =
-      parseRevisionGroupTag(right.customData)?.sequence ?? 0;
-    const bySequence = isAccept
-      ? leftSequence - rightSequence
-      : rightSequence - leftSequence;
-    if (bySequence) return bySequence;
     return Number(revisionSpansRow(right)) - Number(revisionSpansRow(left));
   };
   // Read before anything resolves: an accepted deletion takes its rows' widgets
@@ -2380,10 +2278,7 @@ const revisionParagraph = (revision: LiveRevision): unknown => {
 
 interface RevisionGroupView {
   changeSetId: string;
-  changeSetIds?: string[];
   group: string;
-  reviewBundleId?: string;
-  resourceKeys?: string[];
   untagged?: boolean;
   derivedChanges?: DerivedValueChange[];
   items: RevisionGroupItem[];
@@ -2423,10 +2318,10 @@ const sameEditUnit = (left: LiveRevision, right: LiveRevision): boolean => {
   const leftTag = parseRevisionGroupTag(left.customData);
   const rightTag = parseRevisionGroupTag(right.customData);
   if (leftTag && rightTag)
-    return leftTag.reviewBundleId && rightTag.reviewBundleId
-      ? leftTag.reviewBundleId === rightTag.reviewBundleId
-      : leftTag.changeSetId === rightTag.changeSetId &&
-          leftTag.group === rightTag.group;
+    return (
+      leftTag.changeSetId === rightTag.changeSetId &&
+      leftTag.group === rightTag.group
+    );
   if (!leftTag && !rightTag)
     return String(left.author ?? '') === String(right.author ?? '');
   return false;
@@ -2476,11 +2371,7 @@ export function findReplaceCounterpart(
 
 export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   const views = new Map<string, RevisionGroupView>();
-  const firstSequenceByView = new Map<string, number>();
-  const derivedByView = new Map<
-    string,
-    Map<string, Map<string, { sequence: number; change: DerivedValueChange }>>
-  >();
+  const derivedByView = new Map<string, Map<string, DerivedValueChange>>();
   for (const revision of snapshotRevisions(editor)) {
     const tag = parseRevisionGroupTag(revision.customData);
     // The invisible per-change-set identity suffix is not for readers.
@@ -2488,58 +2379,21 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
       String(revision.author ?? '')
         .replace(/[\u2060\u2061]/g, '')
         .trim() || 'Unknown author';
-    const bundled =
-      !!tag?.reviewBundleId && (tag.changeSetIds?.length ?? 1) > 1;
-    const key = tag
-      ? bundled
-        ? `bundle ${tag.reviewBundleId}`
-        : `${tag.changeSetId} ${tag.group}`
-      : `author ${author}`;
+    const key = tag ? `${tag.changeSetId} ${tag.group}` : `author ${author}`;
     let view = views.get(key);
     if (!view) {
       view = tag
         ? {
             changeSetId: tag.changeSetId,
-            changeSetIds: tag.changeSetIds ?? [tag.changeSetId],
             group: tag.group,
-            ...(bundled && tag.reviewBundleId
-              ? { reviewBundleId: tag.reviewBundleId }
-              : {}),
-            ...(tag.resourceKeys ? { resourceKeys: tag.resourceKeys } : {}),
             items: []
           }
         : { changeSetId: '', group: author, untagged: true, items: [] };
       views.set(key, view);
-      if (tag) firstSequenceByView.set(key, tag.sequence ?? 0);
-    } else if (tag) {
-      const sequence = tag.sequence ?? 0;
-      if (sequence < (firstSequenceByView.get(key) ?? sequence)) {
-        view.changeSetId = tag.changeSetId;
-        view.group = tag.group;
-        firstSequenceByView.set(key, sequence);
-      }
-      view.changeSetIds = [
-        ...new Set([
-          ...(view.changeSetIds ?? []),
-          ...(tag.changeSetIds ?? [tag.changeSetId])
-        ])
-      ];
-      if (tag.resourceKeys?.length)
-        view.resourceKeys = [
-          ...new Set([...(view.resourceKeys ?? []), ...tag.resourceKeys])
-        ].sort();
     }
     if (tag?.derivedChanges?.length) {
       const byName = derivedByView.get(key) ?? new Map();
-      const sequence = tag.sequence ?? 0;
-      for (const change of tag.derivedChanges) {
-        const bySource = byName.get(change.name) ?? new Map();
-        bySource.set(
-          `${tag.changeSetId}\u0000${tag.group}\u0000${sequence}\u0000${change.beforeText}\u0000${change.afterText}`,
-          { sequence, change }
-        );
-        byName.set(change.name, bySource);
-      }
+      for (const change of tag.derivedChanges) byName.set(change.name, change);
       derivedByView.set(key, byName);
     }
     const revisionType = String(revision.revisionType ?? '');
@@ -2593,16 +2447,7 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   for (const [key, byName] of derivedByView) {
     const view = views.get(key);
     if (!view) continue;
-    view.derivedChanges = [...byName.entries()].map(([name, bySource]) => {
-      const ordered = [...bySource.values()].sort(
-        (left, right) => left.sequence - right.sequence
-      );
-      return {
-        name,
-        beforeText: ordered[0].change.beforeText,
-        afterText: ordered[ordered.length - 1].change.afterText
-      };
-    });
+    view.derivedChanges = [...byName.values()];
   }
   return [...views.values()];
 }

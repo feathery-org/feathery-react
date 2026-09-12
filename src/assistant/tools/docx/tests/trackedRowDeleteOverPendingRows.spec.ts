@@ -37,7 +37,10 @@ import {
 } from '@syncfusion/ej2-documenteditor';
 
 import { DOCUMENT_EDITOR_CAPABILITIES } from '../../../capabilities/registry';
-import { listRevisionGroups } from '../../../../utils/documentEditorPrimitives';
+import {
+  listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo
+} from '../../../../utils/documentEditorPrimitives';
 import {
   applyDocumentEdits,
   flattenSfdt,
@@ -215,7 +218,7 @@ describe('one pending-inserted row, deleted', () => {
   // untracked_write here, over a document from which it had already removed the
   // row, and its rollback could not put the row back because a withdrawal leaves
   // no revision to reject.
-  it('keeps the later deletion in one family and resolves to the pristine rows', () => {
+  it('keeps insert and delete independently reviewable', () => {
     const editor = asRobin(makeEditor(fixture()));
     try {
       const pristine = rowTexts(editor);
@@ -241,11 +244,26 @@ describe('one pending-inserted row, deleted', () => {
       expect(result.withdrewPendingInsertion).toBeUndefined();
       expect(result.error).toBeUndefined();
       expect(rowTexts(editor)).toHaveLength(pristine.length + 1);
-      const groups = listRevisionGroups(editor as unknown as LiveEditor);
-      expect(groups).toHaveLength(1);
-      expect(groups[0].changeSetIds).toEqual(['add-one', 'remove-one']);
-      expect(rowsAfterRejectingAll(editor)).toEqual(pristine);
-      expect(rowsAfterAcceptingAll(editor)).toEqual(pristine);
+      const live = editor as unknown as LiveEditor;
+      const groups = listRevisionGroups(live);
+      expect(groups.map((group) => group.changeSetId).sort()).toEqual([
+        'add-one',
+        'remove-one'
+      ]);
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        groups.filter((group) => group.changeSetId === 'remove-one'),
+        false
+      );
+      expect(rowTexts(editor)).toHaveLength(pristine.length + 1);
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        listRevisionGroups(live).filter(
+          (group) => group.changeSetId === 'add-one'
+        ),
+        false
+      );
+      expect(rowTexts(editor)).toEqual(pristine);
     } finally {
       destroyEditor(editor);
     }
@@ -476,8 +494,8 @@ describe('what the relaxation did NOT loosen', () => {
     }
   });
 
-  // Scattered rows are ordinary - `split_table` already accepts them, so the
-  // model will send them here too. Each contiguous run is one write, taken
+  // Scattered rows are ordinary, and the primitive split chain uses them too.
+  // Each contiguous run is one write, taken
   // highest first so a withdrawal cannot move a row a later run still needs.
   it('deletes a scattered row set without touching the rows between', () => {
     const editor = asRobin(makeEditor(fixture(6)));

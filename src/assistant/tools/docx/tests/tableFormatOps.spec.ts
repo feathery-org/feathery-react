@@ -1803,7 +1803,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
     }
   });
 
-  it('writes into a still-pending blank row in the same review family', () => {
+  it('writes into a still-pending blank row as a separate review card', () => {
     const ed = makeEditor(inheritedTableFixture());
     try {
       const inserted = apply(ed, [
@@ -1821,9 +1821,23 @@ describe('structural inserts inherit resolved table formatting by default', () =
 
       const live = ed as unknown as LiveEditor;
       const groups = listRevisionGroups(live);
-      expect(groups).toHaveLength(1);
-      expect(groups[0].changeSetIds).toEqual(['tf', 'later-fill']);
-      resolveLiveRevisionGroupsAsOneUndo(live, groups, false);
+      expect(groups.map((group) => group.changeSetId).sort()).toEqual([
+        'later-fill',
+        'tf'
+      ]);
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        groups.filter((group) => group.changeSetId === 'later-fill'),
+        false
+      );
+      expect(facts(ed, '0;0').rows[3].cells[0].text).toBe('');
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        listRevisionGroups(live).filter(
+          (group) => group.changeSetId === 'tf'
+        ),
+        false
+      );
       expect(facts(ed, '0;0').rows.map((row) => row.cells[0].text)).toEqual([
         'Code',
         '1',

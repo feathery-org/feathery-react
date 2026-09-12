@@ -20,8 +20,8 @@ import GroupCard from './GroupCard';
 import { ChipView, GroupView } from './types';
 import { ACCENT_LINE, INK, PANEL } from './styles';
 
-// Review rail for pending tracked changes: one card per assistant review
-// family (plus one per human author), expanding to −/+ diff "chips" with
+// Review rail for pending tracked changes: one card per assistant change set
+// (plus one per human author), expanding to −/+ diff "chips" with
 // per-chip, per-card and rail-wide resolution — all through the
 // non-cascading path as ONE undo unit. Resolved edits leave the rail;
 // an undo brings them back via the contentChange refresh.
@@ -43,11 +43,8 @@ interface Props {
 // pauses is enough for the rail (refresh walks every revision + getRange).
 const CONTENT_REFRESH_DEBOUNCE_MS = 150;
 
-const groupKeyOf = (
-  changeSetId: string,
-  group: string,
-  reviewBundleId?: string
-) => (reviewBundleId ? `bundle ${reviewBundleId}` : `${changeSetId} ${group}`);
+const groupKeyOf = (changeSetId: string, group: string) =>
+  `${changeSetId} ${group}`;
 
 // Forces a real paint before `fn` runs. A single setTimeout(0) doesn't: the
 // browser coalesces the state-update paint with whatever runs in the same
@@ -212,10 +209,9 @@ function TrackedChangeGroups({
     }
     setGroups(
       views.map((view) => ({
-        key: groupKeyOf(view.changeSetId, view.group, view.reviewBundleId),
+        key: groupKeyOf(view.changeSetId, view.group),
         changeSetId: view.changeSetId,
         group: view.group,
-        reviewBundleId: view.reviewBundleId,
         // A human view's "group" IS the author name; keep it verbatim.
         title: view.untagged ? view.group : humanizeGroupId(view.group),
         untagged: view.untagged,
@@ -310,11 +306,7 @@ function TrackedChangeGroups({
               // Either half of a replace counts as clicking that one edit.
               if (!itemRevisions(item).some((rev) => revisions.includes(rev)))
                 continue;
-              const key = groupKeyOf(
-                view.changeSetId,
-                view.group,
-                view.reviewBundleId
-              );
+              const key = groupKeyOf(view.changeSetId, view.group);
               setExpanded((prev) =>
                 prev[key] ? prev : { ...prev, [key]: true }
               );

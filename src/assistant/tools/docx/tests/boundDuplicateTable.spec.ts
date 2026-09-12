@@ -302,9 +302,9 @@ describe('duplicate_table over bound tables', () => {
       (_, revisionIndex) => editor.revisions.get(revisionIndex)
     );
     expect(revisions.length).toBeGreaterThan(0);
-    expect(revisions.every((revision) => isAssistantAuthor(revision.author))).toBe(
-      true
-    );
+    expect(
+      revisions.every((revision) => isAssistantAuthor(revision.author))
+    ).toBe(true);
     expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(
       1
     );
@@ -429,9 +429,11 @@ describe('duplicate_table over bound tables', () => {
     // repo would fail. Keep this list and that schema in step, and note that
     // occurrences carry no `anchor`: the original write's anchor identifies the
     // ambiguous family and `instanceId` selects the instance.
-    expect(
-      Object.keys(ambiguity.instances[0]).sort()
-    ).toEqual(['identity', 'instanceId', 'occurrences']);
+    expect(Object.keys(ambiguity.instances[0]).sort()).toEqual([
+      'identity',
+      'instanceId',
+      'occurrences'
+    ]);
     for (const occurrence of ambiguity.instances.flatMap(
       (instance) => instance.occurrences
     )) {

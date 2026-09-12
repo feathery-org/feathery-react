@@ -11,8 +11,8 @@ describe('splitting a table that contains a pending inserted row', () => {
     await session?.close();
   });
 
-  it('moves accepted and pending rows atomically, then one family reject restores the original', async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+  it('moves accepted and pending rows atomically, then rejects each message independently', async () => {
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const original = await session.call<string>('serialize');
     const source = await session.call<string>(
       'tableAnchor',
@@ -56,7 +56,7 @@ describe('splitting a table that contains a pending inserted row', () => {
     );
     expect(added.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
     expect(await session.call<any[]>('groups')).toHaveLength(1);
-    expect(await session.call<number>('contentControlCount')).toBe(86);
+    expect(await session.call<number>('contentControlCount')).toBe(88);
 
     const split = await session.call<any>(
       'applyEdits',
@@ -86,12 +86,11 @@ describe('splitting a table that contains a pending inserted row', () => {
 
     expect(split.outcomes).toEqual(['ok', 'ok', 'ok']);
     const groups = await session.call<any[]>('groups');
-    expect(groups).toHaveLength(1);
-    expect(groups[0].changeSetIds.sort()).toEqual([
+    expect(groups.map((group) => group.changeSetId).sort()).toEqual([
       'add-equipment',
       'split-with-pending-equipment'
     ]);
-    expect(await session.call<number>('contentControlCount')).toBe(100);
+    expect(await session.call<number>('contentControlCount')).toBe(102);
     expect(
       await session.call<string[]>('tableRowIds', 'property_premium')
     ).toEqual(['property-r2', 'property-r4', 'property-r5']);
@@ -145,7 +144,17 @@ describe('splitting a table that contains a pending inserted row', () => {
       'split-with-pending-equipment',
       false
     );
-    expect(await session.call<number>('contentControlCount')).toBe(82);
+    expect(
+      (await session.call<any[]>('groups')).map((group) => group.changeSetId)
+    ).toEqual(['add-equipment']);
+    expect(await session.call<number>('contentControlCount')).toBe(88);
+    expect(
+      (await session.call<string[]>('tableRowTexts', 'property_premium')).join(
+        '|'
+      )
+    ).toContain('Equipment10$1,000.00$10,000.00');
+    await session.call('resolveGroupsOf', 'add-equipment', false);
+    expect(await session.call<number>('contentControlCount')).toBe(84);
     expect(await session.call<string>('serialize')).toBe(original);
   }, 120000);
 });

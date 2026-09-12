@@ -16,7 +16,7 @@ describe('calculated subtotals are visible tracked changes', () => {
   });
 
   async function split() {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
     const baseline = await session.call<string>('serialize');
     const anchor = await session.call<string>('tableAnchor', SOURCE);
     const result = await session.call<any>(

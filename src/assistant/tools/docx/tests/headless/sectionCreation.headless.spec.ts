@@ -50,6 +50,85 @@ const equipmentSection = {
   ]
 };
 
+const liveCyberPremiumSection = {
+  title: 'Section 4 - Cyber Insurance',
+  blocks: [
+    {
+      role: 'paragraph',
+      text: 'Covers ransomware, data breach, and business interruption.'
+    },
+    {
+      role: 'heading',
+      level: 2,
+      text: '4.1 Coverage Schedule'
+    },
+    {
+      role: 'table',
+      table: {
+        columnHeaders: ['Peril', 'Status'],
+        columnRoles: ['peril', 'status'],
+        rows: [
+          ['Ransomware', 'Included'],
+          ['Data breach', 'Included'],
+          ['Business interruption', 'Included']
+        ]
+      }
+    },
+    {
+      role: 'heading',
+      level: 2,
+      text: '4.2 Endorsements'
+    },
+    {
+      role: 'table',
+      table: {
+        columnHeaders: ['Ref', 'Wording'],
+        columnRoles: ['reference', 'wording'],
+        rows: [
+          ['CY-01', 'Multi-factor authentication'],
+          ['CY-02', 'Incident response']
+        ]
+      }
+    },
+    {
+      role: 'heading',
+      level: 2,
+      text: '4.3 Security Requirements'
+    },
+    {
+      role: 'table',
+      table: {
+        columnHeaders: ['Requirement', 'Status'],
+        columnRoles: ['requirement', 'status'],
+        rows: [
+          ['Encryption', 'Required'],
+          ['Annual testing', 'Required']
+        ]
+      }
+    },
+    {
+      role: 'heading',
+      level: 2,
+      text: '4.4 Premium Detail'
+    },
+    {
+      role: 'table',
+      table: {
+        columnHeaders: ['Item', 'Units', 'Rate'],
+        columnRoles: ['premium_item', 'units', 'rate'],
+        rows: [
+          ['Endpoint protection', '2', '$850'],
+          ['Monitoring', '3', '$425'],
+          ['Incident response', '1', '$1,200']
+        ],
+        // ai-services stamps this only after matching every figure against the
+        // user's own messages. It is not part of Robin's public schema.
+        literal: true
+      }
+    }
+  ]
+};
+
 describe('section creation on the flagship document', () => {
   let session: HeadlessSession;
 
@@ -62,7 +141,7 @@ describe('section creation on the flagship document', () => {
   });
 
   beforeEach(async () => {
-    await session.call('open', readFixture('flagship-v4.browser.sfdt.json'));
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
   });
 
   it('inherits the neighboring section pattern as one accept-or-reject group', async () => {
@@ -102,8 +181,8 @@ describe('section creation on the flagship document', () => {
     expect(
       await session.call<Array<string | null>>('rowShadingAt', table)
     ).toEqual(['#001B49FF', null, '#E6E6E6FF', null]);
-    expect(await session.call<string[]>('serializedTags')).toEqual(
-      baselineTags
+    expect((await session.call<string[]>('serializedTags')).sort()).toEqual(
+      [...baselineTags].sort()
     );
 
     await session.call('resolveGroups', false);
@@ -129,8 +208,8 @@ describe('section creation on the flagship document', () => {
       'Network interruptionIncluded',
       'Data restorationIncluded'
     ]);
-    expect(await session.call<string[]>('serializedTags')).toEqual(
-      baselineTags
+    expect((await session.call<string[]>('serializedTags')).sort()).toEqual(
+      [...baselineTags].sort()
     );
 
     const followUp = await session.call<any>(
@@ -176,8 +255,8 @@ describe('section creation on the flagship document', () => {
     expect(
       await session.call<Array<string | null>>('rowShadingAt', editedTable)
     ).toEqual(['#001B49FF', null, '#E6E6E6FF', null, '#E6E6E6FF']);
-    expect(await session.call<string[]>('serializedTags')).toEqual(
-      baselineTags
+    expect((await session.call<string[]>('serializedTags')).sort()).toEqual(
+      [...baselineTags].sort()
     );
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(acceptedSection);
@@ -286,5 +365,159 @@ describe('section creation on the flagship document', () => {
     expect(Number(insertedHeading?.split(';')[1])).toBeGreaterThan(
       Number(livePropertyTable.split(';')[1])
     );
+  }, 120000);
+
+  it('composes a sibling premium component with fresh live bindings', async () => {
+    const baseline = await session.call<string>('serialize');
+    const baselineTags = await session.call<string[]>('serializedTags');
+    const baselineSfdt = JSON.parse(baseline) as {
+      sections: Array<{
+        blocks: unknown[];
+        sectionFormat?: { breakCode?: string };
+      }>;
+    };
+    expect(baselineSfdt.sections).toHaveLength(6);
+    expect(
+      baselineSfdt.sections.map((section) => section.sectionFormat?.breakCode)
+    ).toEqual(Array(6).fill('NewPage'));
+    const baselineInventory = await session.call<
+      Array<{ anchor: string; kind: string; text: string }>
+    >('inventory');
+    expect(
+      baselineInventory.find((entry) => entry.text === 'Operating Locations')
+        ?.anchor
+    ).toBe('4;0');
+    expect(
+      baselineInventory.find((entry) => entry.text === 'Premium Summary')
+        ?.anchor
+    ).toBe('5;0');
+    const insert = async (id: string) =>
+      session.call<any>(
+        'applyEdits',
+        [
+          {
+            op: 'insert_section',
+            group: 'g01-add-live-cyber-premium',
+            anchor: 'before:Operating Locations',
+            sectionSpec: liveCyberPremiumSection
+          }
+        ],
+        id
+      );
+
+    expect((await insert('add-live-cyber-premium')).outcomes).toEqual(['ok']);
+    const pendingSfdt = JSON.parse(await session.call<string>('serialize')) as {
+      sections: Array<{ sectionFormat?: { breakCode?: string } }>;
+    };
+    expect(pendingSfdt.sections).toHaveLength(7);
+    expect(pendingSfdt.sections[4]?.sectionFormat?.breakCode).toBe('NewPage');
+    const pendingInventory = await session.call<
+      Array<{ anchor: string; kind: string; text: string }>
+    >('inventory');
+    expect(
+      pendingInventory.find(
+        (entry) => entry.text === 'Section 4 - Cyber Insurance'
+      )?.anchor
+    ).toMatch(/^4;0$/);
+    expect(
+      pendingInventory.find((entry) => entry.text === 'Operating Locations')
+        ?.anchor
+    ).toBe('5;0');
+    expect(
+      pendingInventory.find((entry) => entry.text === 'Premium Summary')?.anchor
+    ).toBe('6;0');
+    const componentHeadings = [
+      '4.1 Coverage Schedule',
+      '4.2 Endorsements',
+      '4.3 Security Requirements',
+      '4.4 Premium Detail'
+    ].map(
+      (text) => pendingInventory.find((entry) => entry.text === text)?.anchor
+    );
+    expect(componentHeadings).toHaveLength(4);
+    expect(componentHeadings.every((anchor) => /^4;/.test(anchor ?? ''))).toBe(
+      true
+    );
+    expect(
+      componentHeadings.map((anchor) => Number(anchor?.split(';')[1]))
+    ).toEqual(
+      [...componentHeadings]
+        .map((anchor) => Number(anchor?.split(';')[1]))
+        .sort((left, right) => left - right)
+    );
+    const requirementsTable = await session.call<string>(
+      'tableAnchorContaining',
+      'Annual testing'
+    );
+    expect(
+      await session.call<string[]>('tableRowTextsAt', requirementsTable)
+    ).toEqual([
+      'RequirementStatus',
+      'EncryptionRequired',
+      'Annual testingRequired'
+    ]);
+    const pendingTable = await session.call<string>(
+      'tableAnchorContaining',
+      'Endpoint protection'
+    );
+    expect(
+      await session.call<string[]>('tableRowTextsAt', pendingTable)
+    ).toEqual([
+      'ItemUnitsRateLine total',
+      'Endpoint protection2$850.00$1,700.00',
+      'Monitoring3$425.00$1,275.00',
+      'Incident response1$1,200.00$1,200.00',
+      'Subsection subtotal$4,175.00'
+    ]);
+    expect(
+      await session.call<Array<string | null>>('rowShadingAt', pendingTable)
+    ).toEqual(['#001B49FF', null, '#E6E6E6FF', null, '#E6E6E6FF']);
+    const pendingTags = await session.call<string[]>('serializedTags');
+    expect(pendingTags.length).toBeGreaterThan(baselineTags.length);
+    expect(
+      pendingTags.some(
+        (tag) => /^\[\[table=/.test(tag) && !baselineTags.includes(tag)
+      )
+    ).toBe(true);
+    expect(
+      pendingTags.some((tag) => tag.includes('cyber_insurance_subtotal'))
+    ).toBe(true);
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+
+    expect((await insert('add-live-cyber-premium-accepted')).outcomes).toEqual([
+      'ok'
+    ]);
+    await session.call('resolveGroups', true);
+    const acceptedTable = await session.call<string>(
+      'tableAnchorContaining',
+      'Endpoint protection'
+    );
+    const edit = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'set_cell_text',
+          group: 'g02-update-cyber-units',
+          anchor: `${acceptedTable};1;1;0`,
+          text: '4',
+          literal: true
+        }
+      ],
+      'update-cyber-units'
+    );
+    expect(edit.outcomes).toEqual(['ok']);
+    expect(edit.revisions).toBeGreaterThan(0);
+    await session.call('resolveGroups', true);
+    expect(
+      await session.call<string[]>('tableRowTextsAt', acceptedTable)
+    ).toEqual([
+      'ItemUnitsRateLine total',
+      'Endpoint protection4$850.00$3,400.00',
+      'Monitoring3$425.00$1,275.00',
+      'Incident response1$1,200.00$1,200.00',
+      'Subsection subtotal$5,875.00'
+    ]);
   }, 120000);
 });
