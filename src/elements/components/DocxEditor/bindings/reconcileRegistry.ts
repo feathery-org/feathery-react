@@ -130,6 +130,7 @@ export function diffBindingCommands(
   const previousTables = [...previous.tables.keys()].sort();
   const nextTables = [...next.tables.keys()].sort();
   const commands: BindingCommand[] = [];
+  const replacedTableIds = new Set<string>();
 
   const logicalColumnCount = (table: unknown): number => {
     const rows = (table as { rows?: Array<{ cells?: unknown[] }> } | undefined)
@@ -222,6 +223,7 @@ export function diffBindingCommands(
         rawRowCount(getAt(after, afterTable.tablePath));
     if (beforeColumns !== afterColumns || unboundRowShapeChanged) {
       const marker = getAt(before, beforeTable.markerPath) as any;
+      replacedTableIds.add(tableId);
       commands.push({
         type: 'replace-table',
         tableId,
@@ -263,6 +265,18 @@ export function diffBindingCommands(
   }
   // An expression change never moves a value on its own, so it is diffed by
   // NAME rather than by tag: the tag is what changed.
+  const formulaIsInsideReplacedTable = (
+    occurrence: typeof previous.occurrences[number]
+  ): boolean =>
+    [...replacedTableIds].some((tableId) => {
+      const tablePath = previous.tables.get(tableId)?.tablePath;
+      return (
+        !!tablePath &&
+        tablePath.every(
+          (segment, index) => String(occurrence.path[index]) === String(segment)
+        )
+      );
+    });
   for (const [name, occurrences] of next.formulas) {
     const current = occurrences[0];
     const prior = previous.formulas.get(name)?.[0];
@@ -270,6 +284,8 @@ export function diffBindingCommands(
     if (current.def.kind !== 'formula' || prior.def.kind !== 'formula')
       continue;
     if (current.def.expression === prior.def.expression) continue;
+    if ((previous.formulas.get(name) ?? []).every(formulaIsInsideReplacedTable))
+      continue;
     commands.push({
       type: 'set-expression',
       name,

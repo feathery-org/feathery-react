@@ -110,6 +110,29 @@ export function deriveTableStructure(input: {
   const tableIsBound = parsedRows.some((defs) =>
     defs.some((d) => d.kind !== 'table' && d.options?.row !== undefined)
   );
+  const unscopedFormulas = parsedRows
+    .flat()
+    .filter(
+      (definition) =>
+        definition.kind === 'formula' && definition.options?.row === undefined
+    );
+  const localFormulaNames = new Set(
+    unscopedFormulas.map((definition) => definition.name)
+  );
+  const localFormulaReferences = new Map<string, string[]>();
+  for (const definition of unscopedFormulas) {
+    try {
+      localFormulaReferences.set(
+        definition.name,
+        collectRefs(parseExpression(definition.expression)).filter(
+          (reference) => localFormulaNames.has(reference)
+        )
+      );
+    } catch {
+      localFormulaReferences.set(definition.name, []);
+    }
+  }
+  const localReferences = new Set([...localFormulaReferences.values()].flat());
 
   const out: TableRowRole[] = rows.map((_row, index) => {
     if (index < headerRows) return { index, role: 'header' as TableRole };
@@ -121,7 +144,15 @@ export function deriveTableStructure(input: {
         .filter(
           (d) =>
             d.kind === 'formula' &&
-            dependsOnTable(d.expression, tableId, documentFormulas, new Set())
+            (dependsOnTable(
+              d.expression,
+              tableId,
+              documentFormulas,
+              new Set()
+            ) ||
+              (d.options?.row === undefined &&
+                (localReferences.has(d.name) ||
+                  (localFormulaReferences.get(d.name)?.length ?? 0) > 0)))
         )
         .map((d) => d.name);
       if (aggregates.length)

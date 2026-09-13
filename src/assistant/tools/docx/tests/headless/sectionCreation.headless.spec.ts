@@ -547,4 +547,185 @@ describe('section creation on the flagship document', () => {
       'Subsection subtotal$5,875.00'
     ]);
   }, 120000);
+
+  it('adds a live formula row to the bound premium summary as one atomic primitive chain', async () => {
+    const inserted = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_section',
+          group: 'g01-add-live-cyber-premium',
+          anchor: 'before:Operating Locations',
+          sectionSpec: liveCyberPremiumSection
+        }
+      ],
+      'add-cyber-before-summary-row'
+    );
+    expect(inserted.outcomes).toEqual(['ok']);
+    await session.call('resolveGroups', true);
+
+    const summary = await session.call<string>('tableAnchor', 'summary');
+    const acceptedSection = await session.call<string>('serialize');
+    const acceptedSummaryShading = await session.call<Array<string | null>>(
+      'rowShadingAt',
+      summary
+    );
+    const addSummaryRow = [
+      {
+        op: 'create_binding',
+        group: 'g02-add-cyber-summary',
+        anchor: `${summary};4;1;0`,
+        name: 'summary_subtotal',
+        kind: 'formula',
+        valueType: 'currency',
+        expression:
+          'sum(property_premium_subtotal,liability_premium_subtotal,motor_premium_subtotal,cyber_insurance_subtotal)'
+      },
+      {
+        op: 'insert_row',
+        group: 'g02-add-cyber-summary',
+        anchor: `${summary};3;0;0`,
+        shape: 'blank',
+        resultRef: '@cyber_summary'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g02-add-cyber-summary',
+        anchor: '@cyber_summary;0;0',
+        text: 'Cyber Insurance'
+      },
+      {
+        op: 'create_binding',
+        group: 'g02-add-cyber-summary',
+        anchor: '@cyber_summary;1;0',
+        name: 'summary_cyber',
+        kind: 'formula',
+        valueType: 'currency',
+        expression: 'sum(cyber_insurance_subtotal)'
+      }
+    ];
+
+    const pending = await session.call<any>(
+      'applyEdits',
+      addSummaryRow,
+      'add-cyber-summary-row'
+    );
+    expect(pending.warnings).toEqual([]);
+    expect(pending.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
+    expect(pending.groups).toBe(1);
+    expect(pending.revisions).toBeGreaterThan(0);
+    const pendingSummary = await session.call<string>(
+      'tableAnchorContaining',
+      'Cyber Insurance'
+    );
+    expect(
+      await session.call<string[]>('tableRowTextsAt', pendingSummary)
+    ).toEqual([
+      'SectionPremium',
+      'Property$22,054.40',
+      'Liability$20,005.40',
+      'Motor Fleet$33,607.55',
+      'Cyber Insurance$4,175.00',
+      'Total premium$79,842.35',
+      'Insurance premium tax at 8.5%$6,786.60',
+      'Amount payable$86,628.95'
+    ]);
+    expect(
+      await session.call<Array<string | null>>('rowShadingAt', pendingSummary)
+    ).toEqual([
+      '#001B49FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      null,
+      null
+    ]);
+
+    await session.call('resolveGroups', false);
+    const rejected = await session.call<string>('serialize');
+    expect(rejected).toBe(acceptedSection);
+    expect(
+      await session.call<Array<string | null>>('rowShadingAt', summary)
+    ).toEqual(acceptedSummaryShading);
+
+    const accepted = await session.call<any>(
+      'applyEdits',
+      addSummaryRow,
+      'add-cyber-summary-row-accepted'
+    );
+    expect(accepted.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
+    await session.call('resolveGroups', true);
+    const acceptedSummary = await session.call<string>(
+      'tableAnchor',
+      'summary'
+    );
+    const acceptedSummaryDocument = await session.call<string>('serialize');
+    expect(
+      await session.call<Array<string | null>>('rowShadingAt', acceptedSummary)
+    ).toEqual([
+      '#001B49FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      '#E6E6E6FF',
+      null,
+      null,
+      null
+    ]);
+
+    const cyberPremium = await session.call<string>(
+      'tableAnchorContaining',
+      'Endpoint protection'
+    );
+    const changed = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'set_cell_text',
+          group: 'g03-update-cyber-units',
+          anchor: `${cyberPremium};1;1;0`,
+          text: '4',
+          literal: true
+        }
+      ],
+      'update-cyber-summary-source'
+    );
+    expect(changed.outcomes).toEqual(['ok']);
+    expect(changed.groups).toBe(1);
+    expect(changed.revisions).toBeGreaterThan(0);
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(
+      acceptedSummaryDocument
+    );
+
+    const changedAgain = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'set_cell_text',
+          group: 'g03-update-cyber-units',
+          anchor: `${cyberPremium};1;1;0`,
+          text: '4',
+          literal: true
+        }
+      ],
+      'update-cyber-summary-source-accepted'
+    );
+    expect(changedAgain.outcomes).toEqual(['ok']);
+    await session.call('resolveGroups', true);
+    expect(
+      await session.call<string[]>('tableRowTextsAt', acceptedSummary)
+    ).toEqual([
+      'SectionPremium',
+      'Property$22,054.40',
+      'Liability$20,005.40',
+      'Motor Fleet$33,607.55',
+      'Cyber Insurance$5,875.00',
+      'Total premium$81,542.35',
+      'Insurance premium tax at 8.5%$6,931.10',
+      'Amount payable$88,473.45'
+    ]);
+  }, 120000);
 });

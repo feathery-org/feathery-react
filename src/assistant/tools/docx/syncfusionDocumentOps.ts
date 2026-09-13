@@ -2554,6 +2554,19 @@ function tableBlockAt(sfdt: any, tableAnchor: string): any {
   return getBlocks(container.block).find((candidate) => getRows(candidate));
 }
 
+function boundTableIdAt(sfdt: any, tableAnchor: string): string | null {
+  const marker = tableContainerAt(sfdt, tableAnchor)?.block;
+  const tag = pick(marker, 'contentControlProperties', 'ccp');
+  const raw = pick(tag, 'tag', 'tg');
+  if (typeof raw !== 'string') return null;
+  try {
+    const definition = parseTag(raw);
+    return definition?.kind === 'table' ? definition.tableId : null;
+  } catch {
+    return null;
+  }
+}
+
 function scanReadableBindings(sfdt: any): BindingIndex | null {
   if (!Array.isArray(sfdt?.sections)) return null;
   const index = scanBindings(sfdt);
@@ -6156,6 +6169,7 @@ interface TableFootprint {
   shapeFingerprint: string;
   // Captured before mutation because a copied table may carry the wrong phase.
   banding?: TableBanding;
+  insertedRows?: number[];
   insertedColumn?: { column: number; sourceColumn: number };
 }
 
@@ -11942,6 +11956,13 @@ function finalizeTableAppearance(
   const warnings: string[] = [];
   const sfdt = serializeSfdt(editor);
   const sequence = topLevelSequence(sfdt);
+  const tableAnchors = [
+    ...new Set(
+      flattenSfdt(sfdt)
+        .map((block) => tableAnchorForBlock(block))
+        .filter((anchor): anchor is string => !!anchor)
+    )
+  ];
   const bindingIndex = scanBindings(sfdt);
 
   // Insertion order is edit order, so assignment keeps the latest footprint.
@@ -11967,8 +11988,28 @@ function finalizeTableAppearance(
     const boundAnchor = boundTable
       ? boundTableAnchor(sfdt, boundTable)
       : undefined;
+    const exactShapeAnchors = tableAnchors.filter(
+      (candidate) =>
+        tableShapeFingerprint(sfdt, candidate, footprint.headerRows) ===
+        footprint.shapeFingerprint
+    );
+    const exactBoundAnchor = footprint.tableId
+      ? exactShapeAnchors.find(
+          (candidate) => boundTableIdAt(sfdt, candidate) === footprint.tableId
+        ) ??
+        exactShapeAnchors.sort((left, right) => {
+          const from = topLevelAddress(footprint.anchor);
+          const leftAt = topLevelAddress(left);
+          const rightAt = topLevelAddress(right);
+          const distance = (at: { section: number; block: number }) =>
+            Math.abs(at.section - from.section) * 100000 +
+            Math.abs(at.block - from.block);
+          return distance(leftAt) - distance(rightAt);
+        })[0]
+      : undefined;
     const address = boundAnchor ? undefined : sequence[footprint.sequenceIndex];
     const anchor =
+      exactBoundAnchor ??
       boundAnchor ??
       (address ? `${address.section};${address.block}` : undefined);
     if (!anchor) {
@@ -12025,6 +12066,11 @@ function finalizeTableAppearance(
       tableId: footprint.tableId ?? null,
       documentFormulas
     }).rows;
+    const aggregateRows = roles.filter((row) => row.role === 'aggregate');
+    const bandSingleTailAggregate =
+      banding.tailInBand === true &&
+      aggregateRows.length === 1 &&
+      aggregateRows[0].index === roles.length - 1;
 
     const planned: Array<{
       row: number;
@@ -12039,8 +12085,7 @@ function finalizeTableAppearance(
       // totals row too when the source shaded it as the next band.
       const role = roles[index]?.role;
       const inBand =
-        role === 'item' ||
-        (role === 'aggregate' && banding.tailInBand === true);
+        role === 'item' || (role === 'aggregate' && bandSingleTailAggregate);
       if (inBand) {
         const wanted = bandedShadingForRow(banding, survivorIndex);
         if (wanted !== undefined) {
@@ -12060,6 +12105,7 @@ function finalizeTableAppearance(
           const rowIds = collectRevisionIdsDeep(row);
           const whollyInserted =
             footprint.createdInChangeSet === true ||
+            footprint.insertedRows?.includes(index) === true ||
             (rowIds.size > 0 && [...rowIds].every((id) => inserted.has(id)));
           const rowCarriesPriorPendingWork = [...rowIds].some((id) =>
             preExistingRevisionIds.has(id)
@@ -14904,7 +14950,7 @@ function boundBlankRowPlan(
         )[0];
       const prototype = prototypeEntry?.path
         ? getAt(state.sfdt, prototypeEntry.path)
-        : undefined;
+        : rows?.[Math.min(Math.max(rowIndex, 0), Math.max(rows.length - 1, 0))];
       if (!liveTable?.tablePath || !rows || !prototype)
         throw new OpError(
           'blank_row_insert_unroutable',
@@ -14951,6 +14997,7 @@ function boundBlankRowPlan(
         banding,
         tableRoute.tableId
       );
+      if (footprint) footprint.insertedRows = [insertAt];
       return {
         sfdt: next,
         anchor: `${tableAnchor};${insertAt};0;0`,
@@ -16669,6 +16716,100 @@ function createBindingInCell(
   );
 }
 
+function redefineBoundFormulaPlan(
+  index: number,
+  op: EditOp,
+  block: FlatBlock,
+  occurrence: Occurrence
+): EngineMutationPlan {
+  const requestedName = canonicalBindingName(String(op.name ?? ''));
+  if (op.kind !== 'formula' || occurrence.def.kind !== 'formula')
+    throw new OpError(
+      'binding_redefinition_kind_mismatch',
+      'create_binding can update an existing binding only when both the target and request are formulas. Nothing was written.'
+    );
+  if (!requestedName || requestedName !== occurrence.name)
+    throw new OpError(
+      'binding_redefinition_name_mismatch',
+      `create_binding targets formula "${occurrence.name}" but requested "${
+        requestedName || '(empty)'
+      }". Reuse the existing formula name to update its expression. Nothing was written.`
+    );
+  if (op.global !== undefined && op.global !== occurrence.def.isGlobal)
+    throw new OpError(
+      'binding_redefinition_scope_mismatch',
+      `create_binding cannot change the scope of existing formula "${occurrence.name}". Nothing was written.`
+    );
+  const expression = String(op.expression ?? '').replace(
+    /\btable\./g,
+    occurrence.tableId ? `${occurrence.tableId}.` : 'table.'
+  );
+  if (!expression)
+    throw new OpError(
+      'binding_expression_required',
+      'A formula binding requires an expression. Nothing was written.'
+    );
+  parseExpression(expression);
+  const fieldType =
+    op.valueType === undefined
+      ? occurrence.def.fieldType
+      : parseType(String(op.valueType), `create_binding:${occurrence.name}`);
+  return {
+    route: 'engine',
+    index,
+    op,
+    anchor: block.anchor,
+    execute(state) {
+      const live = state.index.formulas.get(occurrence.name) ?? [];
+      const targets = occurrence.def.isGlobal
+        ? live.filter((candidate) => candidate.def.isGlobal)
+        : live.filter(
+            (candidate) =>
+              !candidate.def.isGlobal &&
+              candidate.tableId === occurrence.tableId &&
+              candidate.rowId === occurrence.rowId
+          );
+      if (targets.length !== 1)
+        throw new OpError(
+          'binding_redefinition_ambiguous',
+          `Formula "${occurrence.name}" resolved to ${targets.length} matching controls. Nothing was written.`,
+          targets.map((candidate) => `candidate: ${candidate.path.join('/')}`)
+        );
+      const target = targets[0];
+      if (target.def.kind !== 'formula')
+        throw new OpError(
+          'binding_redefinition_target_lost',
+          `Formula "${occurrence.name}" changed kind before it could be updated. Nothing was written.`
+        );
+      const definition: Definition = {
+        ...target.def,
+        fieldType,
+        expression
+      };
+      const node = getAt(state.sfdt, target.path);
+      const properties = node?.contentControlProperties;
+      if (!node || !properties)
+        throw new OpError(
+          'binding_redefinition_target_lost',
+          `Formula "${occurrence.name}" was no longer addressable. Nothing was written.`
+        );
+      return {
+        sfdt: setAt(state.sfdt, target.path, {
+          ...node,
+          contentControlProperties: {
+            ...properties,
+            tag: formatTag(definition),
+            lockContentControl: true,
+            lockContents: true
+          }
+        }),
+        anchor: block.anchor,
+        details: [`updated formula binding: ${occurrence.name}`]
+      };
+    }
+  };
+}
+
 function promotedPlainTablePlan(
   index: number,
   op: EditOp,
@@ -17232,7 +17373,7 @@ function planBindingRoutedOp(
   if (tableRoute) {
     // Row ops need row identity, a marker-only table leaves them to the editor route
     const rowsBound = tableRoute.table.rows.length > 0;
-    if (op.op === 'insert_row' && rowsBound) {
+    if (op.op === 'insert_row' && (rowsBound || op.shape === 'blank')) {
       if (op.shape === 'blank')
         return boundBlankRowPlan(index, op, target, tableRoute);
       const plan = boundInsertRowsPlan(index, op, target, tableRoute);
@@ -17259,6 +17400,8 @@ function planBindingRoutedOp(
     maybeRuntime ?? requireBindingRuntime(editor, sfdt, op, target);
   const occurrence = occurrenceForBlock(runtime, target, op);
   if (!occurrence) return null;
+  if (op.op === 'create_binding')
+    return redefineBoundFormulaPlan(index, op, target, occurrence);
   if (occurrence.def.kind === 'formula' && BOUND_WRITE_OPS.has(op.op))
     throw formulaRedirect(op, occurrence);
   if (occurrence.def.kind === 'field' && BOUND_TEXT_WRITE_OPS.has(op.op))
