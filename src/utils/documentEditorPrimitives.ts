@@ -226,7 +226,7 @@ let programmaticSelectionDepth = 0;
 export function isProgrammaticSelection(): boolean {
   return programmaticSelectionDepth > 0;
 }
-export function withProgrammaticSelection<T>(run: () => T): T {
+function withProgrammaticSelection<T>(run: () => T): T {
   programmaticSelectionDepth += 1;
   try {
     return run();
@@ -1056,7 +1056,7 @@ interface PlannedBookmarkClampMove {
 }
 
 // Resolve each torn bookmark against the current rows of its own table.
-export function planBookmarkClampMoves(
+function planBookmarkClampMoves(
   editor: LiveEditor,
   intents: BookmarkClampIntent[]
 ): PlannedBookmarkClampMove[] {
@@ -1132,7 +1132,7 @@ export function planBookmarkClampMoves(
 }
 
 // Reattach planned ends after the deleting group has fully resolved.
-export function applyBookmarkClampMoves(
+function applyBookmarkClampMoves(
   editor: LiveEditor,
   moves: PlannedBookmarkClampMove[]
 ): string[] {
@@ -1262,7 +1262,7 @@ type LedgerEntry = {
  */
 const restoreKey = (restore: AppearanceRestore): string => {
   const kinds = [
-    restore.write ? 'write' : '',
+    restore.write || restore.clearShading ? 'write' : '',
     restore.rowIsHeader !== undefined ? 'rowIsHeader' : '',
     restore.tableBorders ? 'tableBorders' : '',
     restore.rowBorders ? 'rowBorders' : '',
@@ -1321,7 +1321,7 @@ const bindingIsInDocument = (editor: LiveEditor, name: string): boolean => {
 };
 
 // Make every expression rewrite agree with the binding currently in the SFDT.
-export function settleExpressionRewrites(editor: LiveEditor): void {
+function settleExpressionRewrites(editor: LiveEditor): void {
   const ledger = expressionLedger(editor);
   if (!ledger.length) return;
   const controls = liveContentControls(editor);
@@ -1741,7 +1741,7 @@ const lookupRevision = (
 };
 
 // Syncfusion cannot deregister a revision whose range is already empty.
-export const revisionRangeLength = (revision: LiveRevision): number => {
+const revisionRangeLength = (revision: LiveRevision): number => {
   try {
     const range =
       typeof revision.getRange === 'function' ? revision.getRange() : [];
@@ -1785,7 +1785,7 @@ export const revisionIsUnresolvable = (revision: LiveRevision): boolean => {
 };
 
 // Row revisions are structural containers for revisions inside their cells.
-export const revisionSpansRow = (revision: LiveRevision): boolean => {
+const revisionSpansRow = (revision: LiveRevision): boolean => {
   try {
     const range =
       typeof revision.getRange === 'function' ? revision.getRange() : [];
@@ -1799,9 +1799,7 @@ export const revisionSpansRow = (revision: LiveRevision): boolean => {
 };
 
 // Resolve structural containers before the content they own.
-export const containersFirst = <T extends LiveRevision>(
-  revisions: T[]
-): T[] => [
+const containersFirst = <T extends LiveRevision>(revisions: T[]): T[] => [
   ...revisions.filter(revisionSpansRow),
   ...revisions.filter((revision) => !revisionSpansRow(revision))
 ];
@@ -1831,7 +1829,7 @@ export function adoptRevisionsIntoAuthorsCard(
 
 // Retire document-wide empty or detached revision leaks that the SDK cannot
 // settle itself. Returns the retired objects for outcome accounting.
-export function purgeUnresolvableRevisions(editor: LiveEditor): LiveRevision[] {
+function purgeUnresolvableRevisions(editor: LiveEditor): LiveRevision[] {
   const collection: any = (editor as any).revisions;
   const registry: any = (editor as any).documentHelper?.revisionsInternal;
   const purged: LiveRevision[] = [];
@@ -1980,7 +1978,7 @@ export interface RevisionGroupIdentity {
  * replacements inside a table do not affect banding and must not cause that
  * table to be restriped when the revision resolves.
  */
-export function tablesTouchedByRevisions(revisions: LiveRevision[]): Set<any> {
+function tablesTouchedByRevisions(revisions: LiveRevision[]): Set<any> {
   const tables = new Set<any>();
   for (const revision of revisions) {
     if (!revisionSpansRow(revision)) continue;
@@ -2048,7 +2046,7 @@ const topLevelBlockPosition = (
  * counted once, at its first piece. A table that left the document (a rejected
  * insertion) or sits inside another table has no top-level anchor.
  */
-export function liveTableAnchorsOf(
+function liveTableAnchorsOf(
   editor: LiveEditor,
   tables: Iterable<any>
 ): Set<string> {

@@ -3,7 +3,7 @@
  *
  * The jsdom pair (`directFormatIsProven.spec.ts`) proves the law on the
  * serialized document: a colour word now lands or the op fails with a code, at
- * both of the anchors the captain's request resolves to. jsdom never lays out,
+ * both anchor shapes used by the formatting path. jsdom never lays out,
  * so it cannot say what the human actually sees, nor what the review surface
  * offers for a formatting change.
  *
@@ -26,7 +26,7 @@ const TITLE = 'Commercial Combined Insurance Proposal';
 
 /**
  * A cover page whose title lives in a text box, plus a Heading 1 in a second
- * Word section - the two shapes the captain's document puts the request on.
+ * Word section, covering both supported target shapes.
  */
 const proposal = () =>
   JSON.stringify({

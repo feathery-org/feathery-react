@@ -662,7 +662,7 @@ export function addLineItem(
    * Where the new row goes, as an index into the table's rows. Defaults to
    * right after the prototype. The prototype is only the row to CLONE: a line
    * item can be placed anywhere - above the first item, after the totals row -
-   * and it still copies a bound data row (captain, 2026-09-09).
+   * and it still copies a bound data row.
    */
   insertAt?: number
 ): { sfdt: SfdtDocument; rowId: string } {

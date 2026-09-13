@@ -4,7 +4,7 @@ import { PanelTab } from './DocumentPanel';
 export type ActivePanel = PanelTab | null;
 
 /** Open Changes when pending edits first appear, without overriding a later user choice. */
-export function nextActivePanel(input: {
+function nextActivePanel(input: {
   activePanel: ActivePanel;
   previousCount: number;
   count: number;

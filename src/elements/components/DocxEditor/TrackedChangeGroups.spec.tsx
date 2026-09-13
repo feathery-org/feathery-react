@@ -527,6 +527,41 @@ describe('TrackedChangeGroups', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('does not claim a partial resolve when every edit remains pending', async () => {
+    const stuck = makeRevision();
+    const editor = makeEditor([stuck]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    acceptAllGroups();
+    await flushDeferredResolve();
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 edit could not be accepted. Nothing in this change was resolved.'
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent(/undo/i);
+  });
+
+  it('reports exact resolved and unresolved counts after a partial resolve', async () => {
+    const resolved = makeRevision();
+    const stuck = makeRevision({
+      customData: tag('cs-1', 'fix-effective-date'),
+      getRange: () => [{ text: '2026-02-01' }]
+    });
+    const revisions = [resolved, stuck];
+    resolved.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(resolved), 1);
+    });
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    acceptAllGroups();
+    await flushDeferredResolve();
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 edit was accepted, but 1 edit remains. Review the document before retrying.'
+    );
+  });
+
   it('shows a spinner on Accept all while its deferred resolve is pending', async () => {
     const revisions: any[] = [];
     const revision = makeRevision();

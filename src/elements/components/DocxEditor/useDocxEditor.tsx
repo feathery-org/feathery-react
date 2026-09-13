@@ -1150,7 +1150,7 @@ export function useDocxEditor({
       // DocumentEditorContainer#resize enters refreshLayout, which homes the
       // cursor before rebuilding. The editor's own resize API performs the
       // required geometry refresh without that navigation side effect; keep
-      // Ayesha's host-resize owner but use the narrower native operation.
+      // the existing host-resize owner but use the narrower native operation.
       resizeDocxEditor(container, editor, refitZoom);
     },
     [editor]

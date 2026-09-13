@@ -84,4 +84,42 @@ describe('generic content-control binding primitive', () => {
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(baseline);
   }, 120000);
+
+  it('binds one paragraph in a multi-paragraph cell without deleting its siblings', async () => {
+    const fixture = buildCostsFixture() as any;
+    const costsTable = fixture.sections[0].blocks[2].blocks[0];
+    costsTable.rows[1].cells[0].blocks = [
+      { inlines: [{ text: 'Keep this paragraph' }] },
+      { inlines: [{ text: 'Bind this paragraph' }] }
+    ];
+    await session.call('open', JSON.stringify(fixture));
+    const baseline = await session.call<string>('serialize');
+    const target = (await session.call<any[]>('inventory')).find(
+      (entry) => entry.text === 'Bind this paragraph'
+    );
+
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g03-bind-second-paragraph',
+          anchor: target.anchor,
+          expect: 'Bind this paragraph',
+          kind: 'input',
+          name: 'second_paragraph'
+        }
+      ],
+      'multi-paragraph-cell-binding'
+    );
+
+    expect(result.outcomes).toEqual(['ok']);
+    const serialized = await session.call<string>('serialize');
+    expect(serialized).toContain('Keep this paragraph');
+    expect(serialized).toContain('Bind this paragraph');
+    expect(serialized).toContain('name=second_paragraph');
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
 });

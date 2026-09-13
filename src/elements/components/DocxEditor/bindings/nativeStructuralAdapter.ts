@@ -262,6 +262,10 @@ function rollbackFailedNativeBatch(
   throw new Error('native structural rollback did not restore the document');
 }
 
+function rethrowRollbackFailure(error: unknown): never {
+  throw error;
+}
+
 export function applyNativeStructuralMutations(
   editor: SyncfusionEditorLike,
   mutations: NativeStructuralMutation[]
@@ -281,6 +285,7 @@ export function applyNativeStructuralMutations(
 
   const before = editor.serialize();
   const undoDepth = historyStack(history, 'undoStackIn', 'undoStack').length;
+  const appliedRetags: Array<{ fromTag: string; toTag: string }> = [];
   let complex = false;
   let succeeded = false;
   nativeApplyDepth += 1;
@@ -310,6 +315,10 @@ export function applyNativeStructuralMutations(
         for (const control of matches)
           (control.contentControlProperties as { tag?: string }).tag =
             mutation.toTag;
+        appliedRetags.push({
+          fromTag: mutation.fromTag,
+          toTag: mutation.toTag
+        });
       } else if (mutation.kind === 'replace-table') {
         const source = controlForTag(mutation.tag);
         if (
@@ -421,16 +430,39 @@ export function applyNativeStructuralMutations(
     return true;
   } finally {
     nativeApplyDepth -= 1;
-    // Every native structural command that (re)registers controls appends them;
-    // leave the collection in document order whatever path ran.
-    normalizeContentControlCollection(editor);
     if (complex) history?.updateComplexHistory?.();
-    if (!succeeded)
-      rollbackFailedNativeBatch(
-        editor,
-        before,
-        undoDepth,
-        complex ? 1 : Math.max(1, mutations.length * 2)
-      );
+    let rollbackError: unknown;
+    if (!succeeded) {
+      try {
+        rollbackFailedNativeBatch(
+          editor,
+          before,
+          undoDepth,
+          complex ? 1 : Math.max(1, mutations.length * 2)
+        );
+      } catch (error) {
+        rollbackError = error;
+      }
+      for (let index = appliedRetags.length - 1; index >= 0; index--) {
+        const retag = appliedRetags[index];
+        for (const control of controls) {
+          const properties = control.contentControlProperties;
+          if (
+            !properties ||
+            !isContentControlAttached(control) ||
+            String(properties.tag ?? '') !== retag.toTag
+          )
+            continue;
+          properties.tag = retag.fromTag;
+        }
+      }
+    }
+    // Native commands and undo both append controls. Normalize only after the
+    // transaction has reached its final document state.
+    normalizeContentControlCollection(editor);
+    const restored = editor.serialize() === before;
+    if (!succeeded && restored)
+      historyStack(history, 'redoStackIn', 'redoStack').splice(0);
+    if (rollbackError && !restored) rethrowRollbackFailure(rollbackError);
   }
 }

@@ -2,7 +2,7 @@ import { HeadlessSession, readFixture, startHeadless } from './headlessSession';
 
 /**
  * A row moves between tables with insert_row, set_cell_text and delete_row
- * alone, in BOTH situations the captain named (2026-09-10): between two
+ * alone, in both supported situations: between two
  * tables the template already had, and into a table a split created - and in
  * the split case anchored where the assistant actually anchored in the live
  * run: on the row that had itself been moved in, and on the subtotal row.

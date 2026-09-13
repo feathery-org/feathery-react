@@ -3,7 +3,7 @@ import { HeadlessSession, readFixture, startHeadless } from './headlessSession';
 /**
  * Moving a row between two bound tables is a composition of the primitives we
  * have: insert_row into the destination, set_cell_text of the values the source
- * row shows, delete_row of the source. No new op (captain, 2026-09-09).
+ * row shows, then delete_row removes the source. No dedicated move op.
  *
  * The one thing that used to block it: the numeric provenance guard accepted a
  * dictated or an attachment-quoted figure only, so the model was made to ask

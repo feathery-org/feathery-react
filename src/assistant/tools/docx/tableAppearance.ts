@@ -152,7 +152,7 @@ export interface TableBanding {
    * Whether the table's LAST body row sits in the stripe, i.e. carries the fill
    * the cycle predicts for its position. In a schedule that row is the totals
    * row: a template that shades it as the next band wants the band to run
-   * through the total (captain, 2026-09-09), one that leaves it plain wants the
+   * through the total, while one that leaves it plain wants the
    * totals row styled by role. Read off the source, it travels with the banding
    * to every fragment a split produces, so a copy whose totals row was cloned
    * from a longer table is restriped for its own length.
@@ -766,9 +766,7 @@ export function inferHeaderRows(appearance: TableAppearance): number {
  * The cycle is SEEDED FROM THE FIRST BODY ROWS, not fitted globally, because a
  * repair has to know which end of the table is right. Damage propagates
  * DOWNWARD - insert a row and every row below it flips - so the top of the
- * stripe is the evidence and the bottom is the symptom. That is also the
- * captain's own description of the fix: "the row itself and the rows below that
- * might need to flip".
+ * stripe is the evidence and the bottom is the symptom.
  *
  * Guards that keep it from inventing a pattern:
  *   * the seed must not be constant - one highlighted row is not a stripe;

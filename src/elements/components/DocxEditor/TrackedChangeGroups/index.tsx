@@ -111,12 +111,22 @@ const humanizeGroupId = (id: string) => {
  * language, an exact count, and the one action that undoes the partial state -
  * the whole resolve was a single undo unit, so one step back is the way out.
  */
-const stallNotice = (count: number, isAccept: boolean): string =>
-  `${count} ${count === 1 ? 'edit' : 'edits'} in this change could not be ${
-    isAccept ? 'accepted' : 'rejected'
-  } and ${
-    count === 1 ? 'is' : 'are'
-  } still showing. The rest went through; undo to put them back.`;
+const stallNotice = (
+  unresolved: number,
+  resolved: number,
+  isAccept: boolean
+): string => {
+  const action = isAccept ? 'accepted' : 'rejected';
+  if (!resolved)
+    return `${unresolved} ${
+      unresolved === 1 ? 'edit' : 'edits'
+    } could not be ${action}. Nothing in this change was resolved.`;
+  return `${resolved} ${
+    resolved === 1 ? 'edit was' : 'edits were'
+  } ${action}, but ${unresolved} ${
+    unresolved === 1 ? 'edit remains' : 'edits remain'
+  }. Review the document before retrying.`;
+};
 
 // A chip is one EDIT, and an edit is a paragraph's worth of change backed by
 // however many revisions SyncFusion authored for it - its runs, its paragraph
@@ -369,8 +379,12 @@ function TrackedChangeGroups({
 
   // Every resolve path reports through here, so a stall can never be surfaced
   // by one entry point and swallowed by another.
-  const reportStall = (unresolved: number, isAccept: boolean) =>
-    setStall(unresolved ? stallNotice(unresolved, isAccept) : null);
+  const reportStall = (
+    unresolved: number,
+    resolved: number,
+    isAccept: boolean
+  ) =>
+    setStall(unresolved ? stallNotice(unresolved, resolved, isAccept) : null);
 
   // Non-cascading resolve (native accept/reject settles whatever is
   // CONTIGUOUS, not the group), wrapped as ONE undo step.
@@ -380,7 +394,11 @@ function TrackedChangeGroups({
     const outcome = suppressingSelectionEcho(() =>
       resolveRevisionsAsOneUndo(editor, revisions, isAccept)
     );
-    reportStall(outcome?.unresolved?.length ?? 0, isAccept);
+    reportStall(
+      outcome?.unresolved?.length ?? 0,
+      outcome?.length ?? 0,
+      isAccept
+    );
     refresh();
     // Resolving the last edit unmounts the rail — focus would land on
     // <body>, where nobody sees the next ⌘Z.
@@ -392,7 +410,11 @@ function TrackedChangeGroups({
     const outcome = suppressingSelectionEcho(() =>
       resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept)
     );
-    reportStall(outcome?.unresolved?.length ?? 0, isAccept);
+    reportStall(
+      outcome?.unresolved?.length ?? 0,
+      outcome?.length ?? 0,
+      isAccept
+    );
     refresh();
     if (listRevisionGroups(editor).length) refocusPanel();
     else editor?.focusIn?.();

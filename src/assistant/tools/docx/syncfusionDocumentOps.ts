@@ -7685,8 +7685,7 @@ interface PasteTarget {
    * for: a block anchor addresses a paragraph's TEXT, so the furthest caret
    * that exists is `${tail.anchor};${tail.length}` - before the final paragraph
    * mark, not after it. Pasting there merges the payload's first block into the
-   * document's last paragraph, which is the fusion Anthony read as
-   * `...Friday.National Capabilities` wearing `Heading 2`.
+   * document's last paragraph and can give the merged text the wrong style.
    *
    * Consuming the mark by arithmetic is not available here the way it is for a
    * selection END: `${tail.anchor};${tail.length + 1}` was measured to produce
@@ -12885,8 +12884,7 @@ interface RevisionGroupingReport {
  * and the tail (a lone content-control mark, in the measured case) becomes a
  * new Revision carrying the EARLIER card's author. Claiming it for this card
  * bound a fragment of card 1 into card 2, and rejecting card 2 then removed a
- * lone control mark of card 1's table - which the engine turned into the
- * removal of every text run in the document (measured 2026-09-09).
+ * lone control mark of card 1's table, which can corrupt unrelated content.
  *
  * So the diff is filtered by author, and a foreign fragment is handed to the
  * card whose identity it carries: it takes the tag of a sibling revision with
@@ -13803,6 +13801,13 @@ function columnIndexFromAnchor(anchor: unknown): number | null {
   if (parts.length < 5) return null;
   const column = Number(parts[3]);
   return Number.isInteger(column) && column >= 0 ? column : null;
+}
+
+function paragraphIndexFromAnchor(anchor: unknown): number | null {
+  const parts = String(anchor ?? '').split(';');
+  if (parts.length < 5) return null;
+  const paragraph = Number(parts[4]);
+  return Number.isInteger(paragraph) && paragraph >= 0 ? paragraph : null;
 }
 
 function bindingRuntime(editor: LiveEditor, sfdt: any): BindingRuntime | null {
@@ -16470,7 +16475,8 @@ function setCellContent(
   table: TableEntry,
   rowIndex: number,
   columnIndex: number,
-  content: any
+  content: any,
+  paragraphIndex = 0
 ): any {
   if (!table.tablePath)
     throw new OpError(
@@ -16499,8 +16505,16 @@ function setCellContent(
       `The referenced cell at row ${rowIndex}, column ${columnIndex} does not exist. Nothing was written.`
     );
   const blocks = Array.isArray(cell.blocks) ? [...cell.blocks] : [];
-  const paragraph = { ...(blocks[0] ?? {}), inlines: [content] };
-  return setAt(sfdt, cellPath, { ...cell, blocks: [paragraph] });
+  if (!blocks[paragraphIndex])
+    throw new OpError(
+      'stable_ref_target_unaddressable',
+      `The referenced cell has no paragraph ${paragraphIndex}. Nothing was written.`
+    );
+  blocks[paragraphIndex] = {
+    ...blocks[paragraphIndex],
+    inlines: [content]
+  };
+  return setAt(sfdt, cellPath, { ...cell, blocks });
 }
 
 function createBindingInCell(
@@ -16509,7 +16523,8 @@ function createBindingInCell(
   table: TableEntry,
   rowIndex: number,
   columnIndex: number,
-  promotedRowId?: string | null
+  promotedRowId?: string | null,
+  paragraphIndex = 0
 ): any {
   const kind = op.kind === 'input' ? 'input' : 'formula';
   const name = String(op.name ?? '').trim();
@@ -16591,23 +16606,32 @@ function createBindingInCell(
           physicalColumn
         ])
       : undefined;
-  const characterFormat = firstTextRun(cell)?.characterFormat;
-  return setCellContent(state.sfdt, table, rowIndex, columnIndex, {
-    contentControlProperties: {
-      ...(template ? cloneJson(template) : {}),
-      tag: formatTag(definition),
-      title: String(op.name),
-      type: 'Text',
-      lockContentControl: true,
-      lockContents: kind === 'formula',
-      hasPlaceHolderText: false,
-      multiline: false,
-      isTemporary: false,
-      color: template?.color ?? '#00000000',
-      appearance: template?.appearance ?? 'BoundingBox'
+  const characterFormat = firstTextRun(
+    Array.isArray(cell?.blocks) ? cell.blocks[paragraphIndex] : undefined
+  )?.characterFormat;
+  return setCellContent(
+    state.sfdt,
+    table,
+    rowIndex,
+    columnIndex,
+    {
+      contentControlProperties: {
+        ...(template ? cloneJson(template) : {}),
+        tag: formatTag(definition),
+        title: String(op.name),
+        type: 'Text',
+        lockContentControl: true,
+        lockContents: kind === 'formula',
+        hasPlaceHolderText: false,
+        multiline: false,
+        isTemporary: false,
+        color: template?.color ?? '#00000000',
+        appearance: template?.appearance ?? 'BoundingBox'
+      },
+      inlines: [{ text, ...(characterFormat ? { characterFormat } : {}) }]
     },
-    inlines: [{ text, ...(characterFormat ? { characterFormat } : {}) }]
-  });
+    paragraphIndex
+  );
 }
 
 function promotedPlainTablePlan(
@@ -16649,7 +16673,8 @@ function promotedPlainTablePlan(
         );
       const rowIndex = rowIndexFromAnchor(block.anchor);
       const columnIndex = columnIndexFromAnchor(block.anchor);
-      if (rowIndex == null || columnIndex == null)
+      const paragraphIndex = paragraphIndexFromAnchor(block.anchor);
+      if (rowIndex == null || columnIndex == null || paragraphIndex == null)
         throw new OpError(
           'not_a_cell_anchor',
           'create_binding in a table needs a cell anchor. Nothing was written.'
@@ -16667,7 +16692,7 @@ function promotedPlainTablePlan(
           : `${promotion.tableId}_r${rowIndex}`;
       const liveTableAnchor = boundTableAnchor(promoted.sfdt, table);
       const liveCellAnchor = liveTableAnchor
-        ? `${liveTableAnchor};${rowIndex};${columnIndex};0`
+        ? `${liveTableAnchor};${rowIndex};${columnIndex};${paragraphIndex}`
         : block.anchor;
       const current = flattenSfdt(promoted.sfdt).find(
         (candidate) => candidate.anchor === liveCellAnchor
@@ -16682,7 +16707,8 @@ function promotedPlainTablePlan(
         table,
         rowIndex,
         columnIndex,
-        rowId
+        rowId,
+        paragraphIndex
       );
       return {
         sfdt: next,
@@ -16858,7 +16884,8 @@ function stableTableReferencePlan(
               {
                 text: String(op.text ?? ''),
                 ...(characterFormat ? { characterFormat } : {})
-              }
+              },
+              paragraphIndex
             ),
             anchor
           };
@@ -16870,7 +16897,9 @@ function stableTableReferencePlan(
               op,
               table,
               rowIndex,
-              resource.columnIndex
+              resource.columnIndex,
+              undefined,
+              paragraphIndex
             ),
             anchor
           };
@@ -16907,7 +16936,8 @@ function stableTableReferencePlan(
               table,
               resource.rowIndex,
               columnIndex,
-              { text: String(op.text ?? '') }
+              { text: String(op.text ?? '') },
+              paragraphIndex
             ),
             anchor
           };
@@ -16918,7 +16948,9 @@ function stableTableReferencePlan(
               op,
               table,
               resource.rowIndex,
-              columnIndex
+              columnIndex,
+              undefined,
+              paragraphIndex
             ),
             anchor
           };
@@ -17966,10 +17998,8 @@ function documentInsertBanding(
 // this document?". Every path that brings content into existence asks this -
 // the section composer, insert_table, insert_row, and the insert_text +
 // apply_style + insert_table sequence a model hand-rolls when it prefers
-// primitives. Before this existed each answered separately, so each could be
-// wrong in its own way, and on 2026-08-06 each of them was: a subsection
-// dressed as a top-level section, a composed table wearing Word's defaults
-// inside a styled document, and a new row coming back as a second header.
+// primitives. Keeping this decision centralized prevents those paths from
+// drifting on heading levels, table defaults, and row roles.
 //
 // Two rules run through everything below, and they are easy to conflate:
 //
@@ -22113,13 +22143,6 @@ function canonicalizeTableOpAnchors(
       const first = Number(rows[0]);
       if (Number.isInteger(first) && first >= 0) return first;
     }
-    const splitAt = (op as any).splitAtRow;
-    if (
-      typeof splitAt === 'number' &&
-      Number.isInteger(splitAt) &&
-      splitAt >= 0
-    )
-      return splitAt;
     return 0;
   };
   return edits.map((op) => {
@@ -22598,9 +22621,7 @@ function applyDocumentEditsMeasured(
   // the same reason `groupNewRevisions` diffs by `revisionID` after a reload.
   //
   // EVERY earlier pending revision is off limits, the assistant's own earlier
-  // cards included. This used to exempt our own author on the theory that
-  // re-authoring our own revision "loses nothing the user decided". Measured
-  // false (2026-09-09): the user decides per CARD. A split left its subtotal
+  // cards included. The user decides per card, not per author. A split left its subtotal
   // recompute pending; a later delete_row's recompute wrote that cell, and
   // Syncfusion removed the same-author pending insertion outright - the split's
   // card lost two edits on the spot, and rejecting the delete could not bring
