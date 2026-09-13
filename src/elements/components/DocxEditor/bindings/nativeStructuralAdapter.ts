@@ -12,6 +12,9 @@ import {
 } from './core/sfdtTypes';
 import {
   isContentControlAttached,
+  normalizeContentControlCollection,
+  refreshContentControlCollection,
+  type ContentControlLike,
   type SyncfusionEditorLike
 } from './editorAdapter';
 
@@ -53,14 +56,33 @@ function plannedControl(
   return result;
 }
 
-function tableSelectionPrefix(path: Array<string | number>): string | null {
-  const sectionKey = path.indexOf('sections');
-  const blocksKey = path.indexOf('blocks', sectionKey + 2);
-  const section = path[sectionKey + 1];
-  const block = path[blocksKey + 1];
-  return typeof section === 'number' && typeof block === 'number'
-    ? `${section};${block}`
-    : null;
+// A foreign block-level control ahead of the table shifts the live block
+// index away from the SFDT path, so the address is read off the marker
+function liveTablePrefix(
+  editor: SyncfusionEditorLike,
+  live: SfdtDocument,
+  tablePath: Array<string | number>
+): string | null {
+  const selection = editor.selection as any;
+  const controls = editor.documentHelper?.contentControlCollection;
+  const wrapper = getAt(live, tablePath.slice(0, -2)) as
+    | { contentControlProperties?: ContentControlProperties }
+    | undefined;
+  const markerTag = wrapper?.contentControlProperties?.tag;
+  const marker =
+    markerTag && Array.isArray(controls)
+      ? controls.find(
+          (control) =>
+            isContentControlAttached(control) &&
+            String(control.contentControlProperties?.tag || '') === markerTag
+        )
+      : undefined;
+  if (!marker || !selection?.selectContentControl) return null;
+  selection.selectContentControl(marker);
+  const start = selection.startOffset;
+  if (typeof start !== 'string') return null;
+  const [section, block] = start.split(';');
+  return section && block ? `${section};${block}` : null;
 }
 
 function applyRowAdoptions(
@@ -69,13 +91,26 @@ function applyRowAdoptions(
 ): boolean {
   const selection = editor.selection;
   const module = editor.editorModule as any;
+  const collection = editor.documentHelper?.contentControlCollection;
   if (!selection?.select || !module?.insertContentControl) return false;
+  if (!Array.isArray(collection)) return false;
   const live = JSON.parse(editor.serialize()) as SfdtDocument;
   const previousHistory = editor.enableEditorHistory;
+  const previousTracking = editor.enableTrackChanges;
+  // Adoption is not an edit in its own right. The row it fills was just
+  // inserted by the structural mutation, and under an authored batch that
+  // insertion already carries the revision the reviewer sees - so the controls
+  // inside it need neither their own history entries (the reason this function
+  // already suspended history) nor their own revisions. Leaving tracking on
+  // here also made the SDK's own serializer throw
+  // `Cannot set properties of undefined (setting 'revisionIds')` from
+  // writeInlineRevisions, because a content control inserted into an
+  // already-tracked row produces revision markers it cannot write back out.
   editor.enableEditorHistory = false;
+  editor.enableTrackChanges = false;
   try {
     for (const mutation of mutations) {
-      const prefix = tableSelectionPrefix(mutation.tablePath);
+      const prefix = liveTablePrefix(editor, live, mutation.tablePath);
       if (!prefix) return false;
       const cells = mutation.row.cells ?? [];
       for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
@@ -92,6 +127,42 @@ function applyRowAdoptions(
         ]) as SfdtCell | undefined;
         if (!liveCell) return false;
         const existing = textIn(liveCell.blocks);
+        const existingPlan = plannedControl(liveCell);
+        if (existingPlan?.properties.tag) {
+          const targetPrefix = `${prefix};${mutation.rowIndex};${cellIndex};`;
+          const existingControl = collection
+            .filter(
+              (candidate) =>
+                isContentControlAttached(candidate) &&
+                String(candidate.contentControlProperties?.tag || '') ===
+                  String(existingPlan.properties.tag)
+            )
+            .find((candidate) => {
+              (selection as any).selectContentControl?.(candidate);
+              return String(selection.startOffset ?? '').startsWith(
+                targetPrefix
+              );
+            });
+          if (!existingControl?.contentControlProperties) return false;
+          const properties = existingControl.contentControlProperties;
+          const titleFollowedTag = properties.title === properties.tag;
+          properties.tag = plan.properties.tag;
+          if (titleFollowedTag) properties.title = plan.properties.title;
+          const replacement = plan.text || '\u200b';
+          if (
+            properties.type === 'RichText' &&
+            selection.selectContentControlInternal &&
+            module.insertText
+          ) {
+            selection.selectContentControlInternal(existingControl);
+            module.insertText(replacement);
+          } else if (module.updateContentControl) {
+            module.updateContentControl(existingControl, replacement);
+          } else {
+            return false;
+          }
+          continue;
+        }
         selection.select(
           `${prefix};${mutation.rowIndex};${cellIndex};0;0`,
           `${prefix};${mutation.rowIndex};${cellIndex};0;${existing.length}`
@@ -109,14 +180,90 @@ function applyRowAdoptions(
           return false;
       }
     }
+    refreshContentControlCollection(editor);
   } finally {
     editor.enableEditorHistory = previousHistory;
+    editor.enableTrackChanges = previousTracking;
   }
   return true;
 }
 
+/**
+ * Make a just-pasted table's content controls addressable by tag.
+ *
+ * The SDK registers a ContentControl in `documentHelper.contentControlCollection`
+ * only while LAYING OUT the line that holds it (layout.js, layoutLine). An
+ * assistant batch runs with layout suspended, so a natively pasted copy's
+ * controls stayed unregistered until the batch's closing relayout - and the
+ * value writes that follow the paste in the same transaction (the copy's
+ * recomputed formulas) found no control for their tags. The controller then
+ * recorded native-mutation-failed and never committed its model, a failure the
+ * old runCommands return silently discarded. A whole-document layout here is
+ * idempotent (the SDK guards the push with indexOf) and registers everything.
+ */
+function registerPastedContentControls(editor: SyncfusionEditorLike): void {
+  refreshContentControlCollection(editor);
+}
+
+const rowRevisionsOf = (control: any): number =>
+  control?.line?.paragraph?.associatedCell?.ownerRow?.rowFormat
+    ?.revisionLength ?? 0;
+
+// The SDK's delete commands return nothing and refuse silently on locked content
+const tookEffect = (control: any, rowRevisionsBefore: number): boolean =>
+  !isContentControlAttached(control) ||
+  rowRevisionsOf(control) > rowRevisionsBefore;
+
+function selectControlCaret(
+  editor: SyncfusionEditorLike,
+  control: ContentControlLike
+): boolean {
+  const selection = editor.selection as any;
+  if (!selection?.selectContentControl || !selection.select) return false;
+  selection.selectContentControl(control);
+  const start = selection.startOffset;
+  if (typeof start !== 'string') return false;
+  selection.select(start, start);
+  if (!selection.currentContentControl)
+    selection.currentContentControl = control;
+  return true;
+}
+
 function needsGroupedHistory(mutations: NativeStructuralMutation[]): boolean {
-  return mutations.length > 1;
+  return (
+    mutations.length > 1 ||
+    mutations.some((mutation) => mutation.kind === 'replace-table')
+  );
+}
+
+function historyStack(history: any, primary: string, fallback: string): any[] {
+  const stack = history?.[primary] ?? history?.[fallback];
+  return Array.isArray(stack) ? stack : [];
+}
+
+function rollbackFailedNativeBatch(
+  editor: SyncfusionEditorLike,
+  before: string,
+  undoDepth: number,
+  maxUndos: number
+): void {
+  if (editor.serialize() === before) return;
+  const history = (editor as any).editorHistory ?? editor.editorHistoryModule;
+  const undo = history?.undo;
+  for (let count = 0; count < maxUndos; count++) {
+    const stack = historyStack(history, 'undoStackIn', 'undoStack');
+    if (typeof undo !== 'function' || stack.length <= undoDepth) break;
+    undo.call(history);
+    if (editor.serialize() === before) {
+      historyStack(history, 'redoStackIn', 'redoStack').splice(0);
+      return;
+    }
+  }
+  throw new Error('native structural rollback did not restore the document');
+}
+
+function rethrowRollbackFailure(error: unknown): never {
+  throw error;
 }
 
 export function applyNativeStructuralMutations(
@@ -136,7 +283,11 @@ export function applyNativeStructuralMutations(
         String(control.contentControlProperties?.tag || '') === String(tag)
     );
 
+  const before = editor.serialize();
+  const undoDepth = historyStack(history, 'undoStackIn', 'undoStack').length;
+  const appliedRetags: Array<{ fromTag: string; toTag: string }> = [];
   let complex = false;
+  let succeeded = false;
   nativeApplyDepth += 1;
   try {
     if (
@@ -148,28 +299,103 @@ export function applyNativeStructuralMutations(
       complex = true;
     }
     for (const mutation of mutations) {
-      if (mutation.kind === 'delete-table') {
-        const control = controlForTag(mutation.tag);
-        if (!control || !module.delete) return false;
-        selection.selectContentControl(control);
-        module.delete();
-      } else if (mutation.kind === 'insert-table') {
-        const control = controlForTag(mutation.afterTag);
-        if (!control || !selection.collapseToEnd || !module.paste) return false;
-        selection.selectContentControl(control);
-        selection.collapseToEnd();
+      if (mutation.kind === 'retag-control') {
+        // There is no SDK call for this: `contentControlProperties` IS the live
+        // model, and what it holds is what `serialize` reads back. Every
+        // ATTACHED control wearing the old tag is retagged, so a formula with
+        // several occurrences moves as one; a detached leftover is skipped
+        // because it is no longer part of the document.
+        const matches = controls.filter(
+          (control) =>
+            isContentControlAttached(control) &&
+            String(control.contentControlProperties?.tag || '') ===
+              String(mutation.fromTag)
+        );
+        if (!matches.length) return false;
+        for (const control of matches)
+          (control.contentControlProperties as { tag?: string }).tag =
+            mutation.toTag;
+        appliedRetags.push({
+          fromTag: mutation.fromTag,
+          toTag: mutation.toTag
+        });
+      } else if (mutation.kind === 'replace-table') {
+        const source = controlForTag(mutation.tag);
+        if (
+          !source ||
+          !selection.select ||
+          !module.paste ||
+          !module.deleteTable
+        )
+          return false;
+        selection.selectContentControl(source);
+        const end = selection.endOffset;
+        if (typeof end !== 'string') return false;
+        const [sectionIndex, blockIndex] = end.split(';');
+        const nextBlock = Number(blockIndex) + 1;
+        if (!sectionIndex || !Number.isFinite(nextBlock)) return false;
+        selection.select(
+          `${sectionIndex};${nextBlock};0`,
+          `${sectionIndex};${nextBlock};0`
+        );
         module.paste(
           JSON.stringify({
             sections: [{ blocks: mutation.blocks, headersFooters: {} }]
           })
         );
+        registerPastedContentControls(editor);
+        if (!selectControlCaret(editor, source)) return false;
+        const rowRevisionsBefore = rowRevisionsOf(source);
+        module.deleteTable();
+        if (!tookEffect(source, rowRevisionsBefore)) return false;
+      } else if (mutation.kind === 'delete-table') {
+        const control = controlForTag(mutation.tag);
+        if (!control || !module.deleteTable || !selection.select) return false;
+        if (!selectControlCaret(editor, control)) return false;
+        const rowRevisionsBefore = rowRevisionsOf(control);
+        module.deleteTable();
+        if (!tookEffect(control, rowRevisionsBefore)) return false;
+      } else if (mutation.kind === 'insert-table') {
+        const control = controlForTag(mutation.afterTag);
+        // `collapseToEnd` does not exist on this SDK - not on Selection, not
+        // anywhere in the shipped bundle - so this guard could never pass and
+        // the branch below had never once run. Every table the assistant has
+        // ever created reached the document through the reopen instead, which
+        // is why the reopen's cost went unnoticed for so long.
+        // Collapsing is expressed with documented API: an empty range at the
+        // control's own end offset.
+        if (!control || !selection.select || !module.paste) return false;
+        selection.selectContentControl(control);
+        // Selecting a block-level control that WRAPS A TABLE leaves the end
+        // offset inside the table's last cell (`0;6;5;1;0;12`), not after the
+        // table. Pasting there nests the new table inside a cell of the old
+        // one - which still satisfies a naive "is the copy in the index?"
+        // check, because the binding scan walks nested tables. The anchor must
+        // therefore be the start of the FOLLOWING top-level block.
+        const end = selection.endOffset;
+        if (typeof end !== 'string') return false;
+        const [sectionIndex, blockIndex] = end.split(';');
+        const nextBlock = Number(blockIndex) + 1;
+        if (!sectionIndex || !Number.isFinite(nextBlock)) return false;
+        selection.select(
+          `${sectionIndex};${nextBlock};0`,
+          `${sectionIndex};${nextBlock};0`
+        );
+        module.paste(
+          JSON.stringify({
+            sections: [{ blocks: mutation.blocks, headersFooters: {} }]
+          })
+        );
+        registerPastedContentControls(editor);
       } else if (mutation.kind === 'adopt-row') {
         if (!applyRowAdoptions(editor, [mutation])) return false;
       } else if (mutation.kind === 'delete-row') {
         const control = controlForTag(mutation.tag);
-        if (!control || !module.deleteRow) return false;
-        selection.selectContentControl(control);
+        if (!control || !module.deleteRow || !selection.select) return false;
+        if (!selectControlCaret(editor, control)) return false;
+        const rowRevisionsBefore = rowRevisionsOf(control);
         module.deleteRow();
+        if (!tookEffect(control, rowRevisionsBefore)) return false;
       } else if (mutation.kind === 'insert-row') {
         const current = scanBindings(
           JSON.parse(editor.serialize()) as SfdtDocument
@@ -181,7 +407,7 @@ export function applyNativeStructuralMutations(
         const tag = anchorRow && [...anchorRow.bindings.values()][0]?.tag;
         const control = tag && controlForTag(tag);
         if (!control || !module.insertRow) return false;
-        selection.selectContentControl(control);
+        if (!selectControlCaret(editor, control)) return false;
         module.insertRow(mutation.afterRowId == null, 1);
         if (
           !applyRowAdoptions(editor, [
@@ -200,9 +426,43 @@ export function applyNativeStructuralMutations(
         return false;
       }
     }
+    succeeded = true;
     return true;
   } finally {
     nativeApplyDepth -= 1;
     if (complex) history?.updateComplexHistory?.();
+    let rollbackError: unknown;
+    if (!succeeded) {
+      try {
+        rollbackFailedNativeBatch(
+          editor,
+          before,
+          undoDepth,
+          complex ? 1 : Math.max(1, mutations.length * 2)
+        );
+      } catch (error) {
+        rollbackError = error;
+      }
+      for (let index = appliedRetags.length - 1; index >= 0; index--) {
+        const retag = appliedRetags[index];
+        for (const control of controls) {
+          const properties = control.contentControlProperties;
+          if (
+            !properties ||
+            !isContentControlAttached(control) ||
+            String(properties.tag ?? '') !== retag.toTag
+          )
+            continue;
+          properties.tag = retag.fromTag;
+        }
+      }
+    }
+    // Native commands and undo both append controls. Normalize only after the
+    // transaction has reached its final document state.
+    normalizeContentControlCollection(editor);
+    const restored = editor.serialize() === before;
+    if (!succeeded && restored)
+      historyStack(history, 'redoStackIn', 'redoStack').splice(0);
+    if (rollbackError && !restored) rethrowRollbackFailure(rollbackError);
   }
 }

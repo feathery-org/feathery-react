@@ -150,6 +150,8 @@ export interface AppearanceRestore {
    */
   seq?: number;
   write?: AppearanceWrite;
+  /** Restore the cell's original unstated shading instead of serializing defaults. */
+  clearShading?: true;
   rowIsHeader?: boolean;
   tableBorders?: BorderWrite[];
   /** Row-level border topology captured before a sibling-format copy. */
@@ -197,11 +199,53 @@ export interface ParagraphStyleRestore {
   text: string;
 }
 
+// Syncfusion does not track expression changes inside control tags. This
+// inverse follows the required binding's presence across reject and history.
+export interface ExpressionRestore {
+  name: string;
+  fromTag: string;
+  toTag: string;
+  requires: string;
+}
+
+/** A calculated value changed by the reviewed edits in the same card. */
+export interface DerivedValueChange {
+  name: string;
+  beforeText: string;
+  afterText: string;
+}
+
 /** How much paragraph text identifies a restore. Long enough to be unique. */
 const PARAGRAPH_IDENTITY_LIMIT = 200;
 
 export const paragraphIdentityText = (text: string): string =>
   text.slice(0, PARAGRAPH_IDENTITY_LIMIT);
+
+let programmaticSelectionDepth = 0;
+// Prevent internal card-resolution selections from triggering binding commits.
+export function isProgrammaticSelection(): boolean {
+  return programmaticSelectionDepth > 0;
+}
+function withProgrammaticSelection<T>(run: () => T): T {
+  programmaticSelectionDepth += 1;
+  try {
+    return run();
+  } finally {
+    programmaticSelectionDepth -= 1;
+  }
+}
+
+// Formatting setters need Syncfusion to refresh its real selected-cell cache.
+export function withLiveSelection<T>(editor: LiveEditor, run: () => T): T {
+  const selection: any = (editor as any).selection;
+  const prior = selection?.isModifyingSelectionInternally;
+  if (selection) selection.isModifyingSelectionInternally = false;
+  try {
+    return run();
+  } finally {
+    if (selection) selection.isModifyingSelectionInternally = prior ?? false;
+  }
+}
 
 export function preserveDocumentViewDuring<T>(
   editor: LiveEditor,
@@ -287,18 +331,30 @@ const PERSISTED_BORDER_TYPES = new Set([
   'NoBorder'
 ]);
 
+/** The serialized shape of a deferred bookmark clamp; see BookmarkClampIntent. */
+interface PersistedBookmarkClamp {
+  name: string;
+  receipt: string;
+}
+
 interface RevisionGroupTag {
   changeSetId: string;
   group: string;
   appearanceRestores?: AppearanceRestore[];
   paragraphStyles?: ParagraphStyleRestore[];
+  bookmarkClamps?: PersistedBookmarkClamp[];
+  expressionRestores?: ExpressionRestore[];
+  derivedChanges?: DerivedValueChange[];
 }
 
 export function revisionGroupTag(
   changeSetId: string,
   group: string,
   appearanceRestores?: AppearanceRestore[],
-  paragraphStyles?: ParagraphStyleRestore[]
+  paragraphStyles?: ParagraphStyleRestore[],
+  bookmarkClamps?: PersistedBookmarkClamp[],
+  expressionRestores?: ExpressionRestore[],
+  derivedChanges?: DerivedValueChange[]
 ): string {
   return JSON.stringify({
     v: REVISION_GROUP_TAG_VERSION,
@@ -306,8 +362,72 @@ export function revisionGroupTag(
     changeSetId,
     group,
     ...(appearanceRestores?.length ? { appearanceRestores } : {}),
-    ...(paragraphStyles?.length ? { paragraphStyles } : {})
+    ...(paragraphStyles?.length ? { paragraphStyles } : {}),
+    ...(bookmarkClamps?.length ? { bookmarkClamps } : {}),
+    ...(expressionRestores?.length ? { expressionRestores } : {}),
+    ...(derivedChanges?.length ? { derivedChanges } : {})
   });
+}
+
+function parseDerivedValueChanges(
+  value: unknown
+): DerivedValueChange[] | undefined {
+  if (!Array.isArray(value) || !value.length) return undefined;
+  const changes: DerivedValueChange[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item))
+      return undefined;
+    const raw = item as Record<string, unknown>;
+    if (
+      typeof raw.name !== 'string' ||
+      !raw.name ||
+      typeof raw.beforeText !== 'string' ||
+      typeof raw.afterText !== 'string'
+    )
+      return undefined;
+    changes.push({
+      name: raw.name,
+      beforeText: raw.beforeText,
+      afterText: raw.afterText
+    });
+  }
+  return changes;
+}
+
+function parsePersistedExpressionRestores(
+  value: unknown
+): ExpressionRestore[] | null {
+  if (!Array.isArray(value)) return null;
+  const restores: ExpressionRestore[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const raw = item as Record<string, unknown>;
+    const fields = ['name', 'fromTag', 'toTag', 'requires'] as const;
+    if (fields.some((field) => typeof raw[field] !== 'string' || !raw[field]))
+      return null;
+    restores.push({
+      name: String(raw.name),
+      fromTag: String(raw.fromTag),
+      toTag: String(raw.toTag),
+      requires: String(raw.requires)
+    });
+  }
+  return restores.length ? restores : null;
+}
+
+function parsePersistedBookmarkClamps(
+  value: unknown
+): PersistedBookmarkClamp[] | null {
+  if (!Array.isArray(value)) return null;
+  const clamps: PersistedBookmarkClamp[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const clamp = item as Record<string, unknown>;
+    if (typeof clamp.name !== 'string' || !clamp.name) return null;
+    if (typeof clamp.receipt !== 'string') return null;
+    clamps.push({ name: clamp.name, receipt: clamp.receipt });
+  }
+  return clamps.length ? clamps : null;
 }
 
 function parsePersistedBorderWrites(value: unknown): BorderWrite[] | null {
@@ -510,6 +630,8 @@ function parsePersistedAppearanceRestores(
       return undefined;
     if (raw.rowIsHeader !== undefined && typeof raw.rowIsHeader !== 'boolean')
       return undefined;
+    if (raw.clearShading !== undefined && raw.clearShading !== true)
+      return undefined;
     const write =
       raw.write === undefined
         ? undefined
@@ -538,6 +660,7 @@ function parsePersistedAppearanceRestores(
     if (raw.tableProperties !== undefined && !tableProperties) return undefined;
     if (
       raw.rowIsHeader === undefined &&
+      raw.clearShading !== true &&
       !write &&
       !tableBorders &&
       !rowBorders &&
@@ -556,6 +679,7 @@ function parsePersistedAppearanceRestores(
       ...(typeof raw.rowIsHeader === 'boolean'
         ? { rowIsHeader: raw.rowIsHeader }
         : {}),
+      ...(raw.clearShading === true ? { clearShading: true as const } : {}),
       ...(write ? { write } : {}),
       ...(tableBorders ? { tableBorders } : {}),
       ...(rowBorders ? { rowBorders } : {}),
@@ -607,11 +731,21 @@ export function parseRevisionGroupTag(
       const paragraphStyles = parsePersistedParagraphStyles(
         parsed.paragraphStyles
       );
+      const bookmarkClamps = parsePersistedBookmarkClamps(
+        parsed.bookmarkClamps
+      );
+      const expressionRestores = parsePersistedExpressionRestores(
+        parsed.expressionRestores
+      );
+      const derivedChanges = parseDerivedValueChanges(parsed.derivedChanges);
       return {
         changeSetId: parsed.changeSetId,
         group: parsed.group,
         ...(appearanceRestores ? { appearanceRestores } : {}),
-        ...(paragraphStyles ? { paragraphStyles } : {})
+        ...(paragraphStyles ? { paragraphStyles } : {}),
+        ...(bookmarkClamps ? { bookmarkClamps } : {}),
+        ...(expressionRestores ? { expressionRestores } : {}),
+        ...(derivedChanges ? { derivedChanges } : {})
       };
     }
   } catch {
@@ -666,7 +800,10 @@ const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
 // iteration; the appearance/style payloads they never need are the expensive
 // part of the parse, so only {changeSetId, group} is cached (the full parse
 // stays fresh for the binding paths that consume the payloads).
-type RevisionTagIdentity = { changeSetId: string; group: string };
+type RevisionTagIdentity = {
+  changeSetId: string;
+  group: string;
+};
 const TAG_IDENTITY_MEMO = new Map<string, RevisionTagIdentity | null>();
 const revisionTagIdentity = (
   customData: unknown
@@ -675,7 +812,12 @@ const revisionTagIdentity = (
   let identity = TAG_IDENTITY_MEMO.get(customData);
   if (identity === undefined) {
     const tag = parseRevisionGroupTag(customData);
-    identity = tag ? { changeSetId: tag.changeSetId, group: tag.group } : null;
+    identity = tag
+      ? {
+          changeSetId: tag.changeSetId,
+          group: tag.group
+        }
+      : null;
     // Bounded: tags accumulate across documents in one long editor session.
     if (TAG_IDENTITY_MEMO.size > 10000) TAG_IDENTITY_MEMO.clear();
     TAG_IDENTITY_MEMO.set(customData, identity);
@@ -757,6 +899,57 @@ export function installRevisionGroupIsolation(editor: LiveEditor): void {
   }
 }
 
+const CONTENT_CONTROL_DELETION_INSTALLED =
+  '__robinTrackedContentControlDeletion';
+
+// Vendored override, 34.1.31: handleDeleteTracking splices a content control
+// out untracked where a bookmark gets a Deletion revision, so a tracked row
+// delete destroys the row's binding tags and reject cannot restore them
+export function installTrackedContentControlDeletion(editor: LiveEditor): void {
+  const module: any = (editor as any).editorModule ?? editor.editor;
+  if (!module || typeof module.handleDeleteTracking !== 'function') return;
+  if (module[CONTENT_CONTROL_DELETION_INSTALLED]) return;
+  module[CONTENT_CONTROL_DELETION_INSTALLED] = true;
+  const original = module.handleDeleteTracking.bind(module);
+  // Same predicate the SDK uses to enter its marker branch with tracking on
+  const isTrackedDeletion = (elementBox: any): boolean => {
+    if (!module.owner?.enableTrackChanges) return false;
+    const history = module.editorHistory;
+    const isRedoingRowTrack =
+      !!elementBox.paragraph?.isInsideTable &&
+      !!history?.isRedoing &&
+      history.currentBaseHistoryInfo?.action === 'RemoveRowTrack';
+    return (
+      module.canHandleDeletion() || !module.skipTracking() || isRedoingRowTrack
+    );
+  };
+  // A row deletion already owns its control markers. A second marker revision
+  // becomes an empty-range revision when the row resolves.
+  const rowGovernsThisDeletion = (elementBox: any): boolean => {
+    const row = elementBox?.line?.paragraph?.associatedCell?.ownerRow;
+    if (!row) return false;
+    if (rowIsPendingDeleted(row)) return true;
+    // The row's Deletion may not be on its rowFormat yet: `trackRowDeletion`
+    // stamps this action on the history entry as it starts.
+    return (
+      module.editorHistory?.currentBaseHistoryInfo?.action === 'RemoveRowTrack'
+    );
+  };
+  module.handleDeleteTracking = (elementBox: any, ...rest: any[]): any => {
+    const isContentControl =
+      typeof elementBox?.contentControlWidgetType === 'string' &&
+      !!elementBox.contentControlProperties;
+    if (!isContentControl || !isTrackedDeletion(elementBox))
+      return original(elementBox, ...rest);
+    if (module.skipTableElements || rowGovernsThisDeletion(elementBox))
+      return undefined;
+    if (!module.checkToCombineRevisionsInSides(elementBox, 'Deletion'))
+      module.insertRevision(elementBox, 'Deletion');
+    module.updateLastDeletedRevision(elementBox);
+    return undefined;
+  };
+}
+
 type NativeResolvers = {
   accept?: () => void;
   reject?: () => void;
@@ -778,13 +971,239 @@ const captureNativeResolvers = (revision: LiveRevision): NativeResolvers => ({
       : undefined
 });
 
+// A card shares one tracking identity, so its members use the SDK group path.
 const resolveSingleRevision = (
   resolvers: NativeResolvers,
-  isAccept: boolean
+  isAccept: boolean,
+  asGroupMember = false
 ): void => {
-  if (resolvers.single) resolvers.single(isAccept, false);
+  if (resolvers.single) resolvers.single(isAccept, asGroupMember);
   else (isAccept ? resolvers.accept : resolvers.reject)?.();
 };
+
+// Bookmark clamps are deferred until the deleting card is accepted.
+export interface BookmarkClampIntent {
+  name: string;
+  receipt: string;
+}
+
+const revisionTypeOf = (revision: unknown): string =>
+  String((revision as { revisionType?: unknown })?.revisionType ?? '');
+
+/** Does this row widget carry a pending Deletion revision on its rowFormat? */
+const rowIsPendingDeleted = (row: any): boolean => {
+  const format = row?.rowFormat;
+  if (!format) return false;
+  const count =
+    typeof format.revisionLength === 'number'
+      ? format.revisionLength
+      : Array.isArray(format.revisions)
+      ? format.revisions.length
+      : 0;
+  for (let index = 0; index < count; index++) {
+    const revision = format.revisions?.[index] ?? format.getRevision?.(index);
+    if (revisionTypeOf(revision) === 'Deletion') return true;
+  }
+  return false;
+};
+
+const bookmarkRowOf = (element: any): any =>
+  element?.line?.paragraph?.associatedCell?.ownerRow;
+
+/** Is this widget still parented into the live document tree? */
+const widgetTreeAttached = (widget: any): boolean => {
+  if (!widget) return false;
+  const seen = new Set<any>();
+  let current = widget;
+  while (current) {
+    if (seen.has(current)) return false;
+    seen.add(current);
+    // A text frame hangs off its shape element's line, not off a container
+    // widget (its indexInOwner reads -1): continue from the anchoring paragraph.
+    if (current.containerShape) {
+      current = current.containerShape.line?.paragraph;
+      if (!current) return false;
+      continue;
+    }
+    // A header or footer is a root (indexInOwner -1 by design), and its
+    // content is attached: a revision in a header is not a leak.
+    if (typeof current.headerFooterType === 'string') return true;
+    if (current.indexInOwner === -1) return false;
+    current = current.containerWidget;
+  }
+  return true;
+};
+
+const firstParagraphIn = (cell: any, fromEnd: boolean): any => {
+  const blocks: any[] = Array.isArray(cell?.childWidgets)
+    ? cell.childWidgets
+    : [];
+  const ordered = fromEnd ? [...blocks].reverse() : blocks;
+  return ordered.find((widget) => widget && widget.paragraphFormat);
+};
+
+// Resolve target widgets before row deletion, then move them after the SDK has
+// finished resolving the group.
+interface PlannedBookmarkClampMove {
+  name: string;
+  receipt: string;
+  element: any;
+  isStart: boolean;
+  targetLine: any;
+  targetParagraph: any;
+  // The SDK may detach the surviving end while removing its partner.
+  keeper: { element: any; line: any; index: number };
+}
+
+// Resolve each torn bookmark against the current rows of its own table.
+function planBookmarkClampMoves(
+  editor: LiveEditor,
+  intents: BookmarkClampIntent[]
+): PlannedBookmarkClampMove[] {
+  const moves: PlannedBookmarkClampMove[] = [];
+  const bookmarks = (editor as any).documentHelper?.bookmarks;
+  if (!bookmarks?.get) return moves;
+  for (const intent of intents) {
+    const opening = bookmarks.get(intent.name);
+    const closing = opening?.reference;
+    if (!opening?.line || !closing?.line) continue;
+    const ends = [
+      { element: opening, isStart: true },
+      { element: closing, isStart: false }
+    ];
+    const doomed = ends.filter((end) => {
+      const row = bookmarkRowOf(end.element);
+      return !!row && rowIsPendingDeleted(row);
+    });
+    // Both ends going means the whole bookmark goes with its rows; neither
+    // going means there is nothing to clamp. Only a TORN bookmark moves.
+    if (doomed.length !== 1) continue;
+    const torn = doomed[0];
+    const row = bookmarkRowOf(torn.element);
+    const table = row?.ownerTable;
+    const rows: any[] = Array.isArray(table?.childWidgets)
+      ? table.childWidgets
+      : [];
+    const at = rows.indexOf(row);
+    if (at < 0) continue;
+    // Walk toward the surviving end: a torn start moves DOWN onto the first
+    // surviving row, a torn end moves UP.
+    const step = torn.isStart ? 1 : -1;
+    let landingRow: any;
+    for (
+      let index = at + step;
+      index >= 0 && index < rows.length;
+      index += step
+    )
+      if (!rowIsPendingDeleted(rows[index])) {
+        landingRow = rows[index];
+        break;
+      }
+    if (!landingRow) continue;
+    const cells: any[] = Array.isArray(landingRow.childWidgets)
+      ? landingRow.childWidgets
+      : [];
+    const cell = torn.isStart ? cells[0] : cells[cells.length - 1];
+    const paragraph = firstParagraphIn(cell, !torn.isStart);
+    const lines: any[] = Array.isArray(paragraph?.childWidgets)
+      ? paragraph.childWidgets
+      : [];
+    if (!lines.length) continue;
+    const target = torn.isStart ? lines[0] : lines[lines.length - 1];
+    if (!Array.isArray(target?.children)) continue;
+    const keeperEnd = ends.find((end) => end !== torn);
+    const keeperLine = keeperEnd?.element?.line;
+    if (!keeperEnd || !Array.isArray(keeperLine?.children)) continue;
+    moves.push({
+      name: intent.name,
+      receipt: intent.receipt,
+      element: torn.element,
+      isStart: torn.isStart,
+      targetLine: target,
+      targetParagraph: paragraph,
+      keeper: {
+        element: keeperEnd.element,
+        line: keeperLine,
+        index: keeperLine.children.indexOf(keeperEnd.element)
+      }
+    });
+  }
+  return moves;
+}
+
+// Reattach planned ends after the deleting group has fully resolved.
+function applyBookmarkClampMoves(
+  editor: LiveEditor,
+  moves: PlannedBookmarkClampMove[]
+): string[] {
+  const executed: string[] = [];
+  const bookmarks = (editor as any).documentHelper?.bookmarks;
+  for (const move of moves) {
+    const { element, targetLine, targetParagraph } = move;
+    if (!element || !Array.isArray(targetLine?.children)) continue;
+    // The move is owed only when the deletion actually took the end's row: a
+    // rejected (or partially rejected) group leaves the row - and the end -
+    // standing, and a bookmark that survived in place must not be narrowed.
+    if (widgetTreeAttached(element.line?.paragraph)) continue;
+    // Detach from wherever the resolution left it (often already detached
+    // because its row went), then land on the survivor.
+    const from = element.line;
+    if (from && Array.isArray(from.children)) {
+      const index = from.children.indexOf(element);
+      if (index >= 0) from.children.splice(index, 1);
+    }
+    if (targetLine.children.indexOf(element) < 0) {
+      if (move.isStart) targetLine.children.unshift(element);
+      else targetLine.children.push(element);
+    }
+    element.line = targetLine;
+    // Put the surviving end back where it lived if the engine's half-bookmark
+    // cleanup stripped it alongside the deleted row.
+    const keeper = move.keeper;
+    if (
+      keeper?.element &&
+      Array.isArray(keeper.line?.children) &&
+      keeper.line.children.indexOf(keeper.element) < 0
+    ) {
+      const at = Math.min(
+        Math.max(keeper.index, 0),
+        keeper.line.children.length
+      );
+      keeper.line.children.splice(at, 0, keeper.element);
+      keeper.element.line = keeper.line;
+    }
+    // Resolving a deletion that held one end can drop the bookmark from the
+    // engine's dictionary; both elements exist again, so put the entry back.
+    try {
+      const opening = move.isStart ? element : element.reference;
+      if (
+        opening &&
+        bookmarks?.add &&
+        bookmarks?.containsKey &&
+        !bookmarks.containsKey(move.name)
+      )
+        bookmarks.add(move.name, opening);
+    } catch {
+      // The marks are in the document either way; the dictionary is a cache.
+    }
+    // A relayout under a suspended layout is a no-op, so lift it for the move.
+    const live = editor as any;
+    const layoutWasOn = editor.enableLayout === true;
+    if (!layoutWasOn) live.setProperties?.({ enableLayout: true }, true);
+    try {
+      const layout = live.documentHelper?.layout;
+      if (from?.paragraph && from.paragraph !== targetParagraph)
+        layout?.reLayoutParagraph?.(from.paragraph, 0, 0);
+      layout?.reLayoutParagraph?.(targetParagraph, 0, 0);
+    } catch {
+      // Layout is cosmetic here; the serialized document already holds the move.
+    } finally {
+      if (!layoutWasOn) live.setProperties?.({ enableLayout: false }, true);
+    }
+    executed.push(move.receipt);
+  }
+  return executed;
+}
 
 export const invalidateDocumentLayout = (editor: LiveEditor): void => {
   preserveDocumentViewDuring(
@@ -843,7 +1262,7 @@ type LedgerEntry = {
  */
 const restoreKey = (restore: AppearanceRestore): string => {
   const kinds = [
-    restore.write ? 'write' : '',
+    restore.write || restore.clearShading ? 'write' : '',
     restore.rowIsHeader !== undefined ? 'rowIsHeader' : '',
     restore.tableBorders ? 'tableBorders' : '',
     restore.rowBorders ? 'rowBorders' : '',
@@ -875,6 +1294,76 @@ const nextLedgerBatch = (editor: LiveEditor): number =>
   ((editor as any)[APPEARANCE_LEDGER_BATCH] =
     ((editor as any)[APPEARANCE_LEDGER_BATCH] ?? 0) + 1);
 
+const EXPRESSION_LEDGER = '__robinExpressionLedger';
+const EXPRESSION_SWEEP_INSTALLED = '__robinExpressionSweepInstalled';
+
+interface ExpressionLedgerEntry {
+  groupKey: string;
+  restore: ExpressionRestore;
+}
+
+// The ledger outlives revision metadata so reject and history can restore tags.
+const expressionLedger = (editor: LiveEditor): ExpressionLedgerEntry[] =>
+  ((editor as any)[EXPRESSION_LEDGER] ??= []);
+
+const liveContentControls = (editor: LiveEditor): any[] => {
+  const collection = (editor as any).documentHelper?.contentControlCollection;
+  return Array.isArray(collection) ? collection : [];
+};
+
+// Serialized SFDT excludes detached controls retained by the live collection.
+const bindingIsInDocument = (editor: LiveEditor, name: string): boolean => {
+  const serialized = editor.serialize();
+  return (
+    serialized.includes(`name=${name}|`) ||
+    serialized.includes(`name=${name}]]`)
+  );
+};
+
+// Make every expression rewrite agree with the binding currently in the SFDT.
+function settleExpressionRewrites(editor: LiveEditor): void {
+  const ledger = expressionLedger(editor);
+  if (!ledger.length) return;
+  const controls = liveContentControls(editor);
+  if (!controls.length) return;
+  const presence = new Map<string, boolean>();
+  for (const { restore } of ledger) {
+    let present = presence.get(restore.requires);
+    if (present === undefined) {
+      present = bindingIsInDocument(editor, restore.requires);
+      presence.set(restore.requires, present);
+    }
+    const wanted = present ? restore.toTag : restore.fromTag;
+    const stale = present ? restore.fromTag : restore.toTag;
+    for (const control of controls) {
+      const properties = control?.contentControlProperties;
+      if (!properties || String(properties.tag ?? '') !== stale) continue;
+      properties.tag = wanted;
+    }
+  }
+}
+
+// Undo and redo bypass group settlement, so they run the same idempotent sweep.
+function installExpressionRewriteSweep(editor: LiveEditor): void {
+  const history: any =
+    (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
+  if (!history || history[EXPRESSION_SWEEP_INSTALLED]) return;
+  history[EXPRESSION_SWEEP_INSTALLED] = true;
+  for (const step of ['undo', 'redo']) {
+    const original = history[step];
+    if (typeof original !== 'function') continue;
+    history[step] = (...args: any[]) => {
+      const result = original.apply(history, args);
+      try {
+        settleExpressionRewrites(editor);
+      } catch {
+        // A failed sweep leaves the expression alone; it never fails the undo.
+      }
+      return result;
+    };
+  }
+}
+
 /** Write order across the whole document: the batch first, then the seq. */
 const inWriteOrder = (left: LedgerEntry, right: LedgerEntry): number =>
   left.batch - right.batch || left.seq - right.seq;
@@ -888,11 +1377,50 @@ export function groupRevisionsAtomic(
   changeSetId?: string,
   groupId?: string,
   appearanceRestores?: AppearanceRestore[],
-  paragraphStyles?: ParagraphStyleRestore[]
+  paragraphStyles?: ParagraphStyleRestore[],
+  bookmarkClamps?: BookmarkClampIntent[],
+  expressionRestores?: ExpressionRestore[]
 ): void {
   if (!group.length) return;
+  installAtomicRevisionCollectionResolution(editor);
   const members = group.map(captureNativeResolvers);
   const state = { resolved: false, restored: false, settled: false };
+  /**
+   * The deferred bookmark clamps this group promised, executed exactly when
+   * the deletion becomes real - in two phases around the accept. PLAN on the
+   * FIRST accept-resolution of the group, before any member resolves, while
+   * the doomed rows (and the torn ends inside them) are still present to read.
+   * APPLY at settlement, after every member has resolved, because moving a
+   * bookmark element mid-resolution makes the engine mint a stray empty-range
+   * revision that acceptAll then spins on. A reject never plans, and the apply
+   * itself skips any end whose row survived, so rejecting the card restores
+   * rows and bookmark alike; an undo revival re-arms the plan, which is safe
+   * because planning self-resolves and a bookmark already sitting on surviving
+   * rows plans nothing.
+   */
+  const clampState = {
+    planned: false,
+    moves: [] as ReturnType<typeof planBookmarkClampMoves>
+  };
+  const planBookmarkClamps = () => {
+    if (clampState.planned || !bookmarkClamps?.length) return;
+    clampState.planned = true;
+    try {
+      clampState.moves = planBookmarkClampMoves(editor, bookmarkClamps);
+    } catch {
+      // The accept must still resolve; a failed clamp loses only the narrowing.
+    }
+  };
+  const applyBookmarkClamps = () => {
+    if (!clampState.moves.length) return;
+    const moves = clampState.moves;
+    clampState.moves = [];
+    try {
+      applyBookmarkClampMoves(editor, moves);
+    } catch {
+      // The accept already resolved; a failed clamp loses only the narrowing.
+    }
+  };
   const resolvedAlone = new Set<number>();
   const acceptedAlone = new Set<number>();
   // This binding's identity. A group is finished when the document holds none
@@ -901,6 +1429,17 @@ export function groupRevisionsAtomic(
   // resolve calls does not.
   const token = {};
   const groupKey = `${changeSetId ?? ''}\u0000${groupId ?? ''}`;
+  if (expressionRestores?.length) {
+    // Re-binding the same card (a reload, an undo revival) replaces its entries
+    // rather than stacking a second copy of the same rewrite.
+    const outstanding = expressionLedger(editor);
+    for (let index = outstanding.length - 1; index >= 0; index--)
+      if (outstanding[index].groupKey === groupKey)
+        outstanding.splice(index, 1);
+    for (const restore of expressionRestores)
+      outstanding.push({ groupKey, restore });
+    installExpressionRewriteSweep(editor);
+  }
   const ledger = changeSetId ? appearanceLedger(editor) : undefined;
   if (ledger && appearanceRestores?.length) {
     // Re-binding the same card (a reload, an undo) replaces its entries rather
@@ -1005,12 +1544,44 @@ export function groupRevisionsAtomic(
     if (groupHasLiveMembers()) return;
     settleAppearance(acceptedAlone.size > 0);
     restoreParagraphStyles();
+    try {
+      // Asks the document, not the outcome: see settleExpressionRewrites.
+      settleExpressionRewrites(editor);
+    } catch {
+      // Content still resolves consistently if an expression restore fails.
+    }
+    if (acceptedAlone.size > 0) applyBookmarkClamps();
   };
-  const resolveAll = (isAccept: boolean) => {
+  const resolveAll = (isAccept: boolean) =>
+    withProgrammaticSelection(() => resolveAllInner(isAccept));
+  const resolveAllInner = (isAccept: boolean) => {
     if (state.resolved) return;
     state.resolved = true;
-    for (let index = 0; index < members.length; index++) {
+    const touchedTables = tablesTouchedByRevisions(group);
+    if (isAccept) planBookmarkClamps();
+    // Internal selection moves (see resolveRevisionsAsOneUndo).
+    const selectionForFlag: any = (editor as any).selection ?? null;
+    const priorFlag = selectionForFlag?.isModifyingSelectionInternally;
+    if (selectionForFlag)
+      selectionForFlag.isModifyingSelectionInternally = true;
+    const order = [
+      ...members
+        .map((_, index) => index)
+        .filter((index) => revisionSpansRow(group[index])),
+      ...members
+        .map((_, index) => index)
+        .filter((index) => !revisionSpansRow(group[index]))
+    ];
+    for (const index of order) {
       if (resolvedAlone.has(index)) continue;
+      if (
+        members[index].single &&
+        typeof group[index].getRange === 'function' &&
+        revisionIsUnresolvable(group[index])
+      ) {
+        purgeUnresolvableRevisions(editor);
+        continue;
+      }
       if (isAccept) acceptedAlone.add(index);
       try {
         resolveSingleRevision(members[index], isAccept);
@@ -1018,26 +1589,37 @@ export function groupRevisionsAtomic(
         // A later member can become stale after the first resolves.
       }
     }
+    if (selectionForFlag)
+      selectionForFlag.isModifyingSelectionInternally = priorFlag ?? false;
     settleIfFinished();
     if (members.length > 1) invalidateDocumentLayout(editor);
+    recomputeDerivedValuesAfterResolve(editor, touchedTables);
   };
   group.forEach((revision, index) => {
     if (changeSetId) (revision as any).robinChangeSetId = changeSetId;
     if (groupId) (revision as any).robinGroupId = groupId;
     (revision as any).robinGroupBound = true;
     (revision as any).robinGroupToken = token;
-    (revision as any).robinResolveSelf = (isAccept: boolean) => {
+    (revision as any).robinResolveSelf = (
+      isAccept: boolean,
+      asGroupMember = false
+    ) => {
       if (state.resolved || resolvedAlone.has(index)) return;
       // The non-cascading path the review rail resolves every card through:
       // per-chip, per-card and rail-wide all arrive here, member by member.
       resolvedAlone.add(index);
-      if (isAccept) acceptedAlone.add(index);
-      resolveSingleRevision(members[index], isAccept);
+      if (isAccept) {
+        acceptedAlone.add(index);
+        planBookmarkClamps();
+      }
+      resolveSingleRevision(members[index], isAccept, asGroupMember);
       settleIfFinished();
     };
     (revision as any).robinReviveSelf = () => {
       state.resolved = false;
       state.settled = false;
+      clampState.planned = false;
+      clampState.moves = [];
       resolvedAlone.delete(index);
       acceptedAlone.delete(index);
     };
@@ -1047,13 +1629,51 @@ export function groupRevisionsAtomic(
   bindAppearanceTargets();
 }
 
+const ATOMIC_COLLECTION_RESOLUTION_INSTALLED =
+  '__robinAtomicCollectionResolutionInstalled';
+
+/**
+ * Keep Syncfusion's collection-wide actions on the same non-cascading path as
+ * Robin's review rail.
+ *
+ * Once a revision is group-bound, its public accept/reject method resolves the
+ * whole logical group. Syncfusion's native acceptAll/rejectAll loops assume one
+ * public call removes exactly one revision; resolving several at once leaves
+ * that loop on a stale member and it never terminates. Resolve the live group
+ * inventory directly instead, which also preserves one undo unit.
+ */
+function installAtomicRevisionCollectionResolution(editor: LiveEditor): void {
+  const collection = editor.revisions as LiveRevisionCollection | undefined;
+  if (!collection || collection[ATOMIC_COLLECTION_RESOLUTION_INSTALLED]) return;
+  collection[ATOMIC_COLLECTION_RESOLUTION_INSTALLED] = true;
+  const nativeAcceptAll = collection.acceptAll?.bind(collection);
+  const nativeRejectAll = collection.rejectAll?.bind(collection);
+  collection.acceptAll = () => {
+    const groups = listRevisionGroups(editor);
+    if (groups.length) resolveLiveRevisionGroupsAsOneUndo(editor, groups, true);
+    nativeAcceptAll?.();
+  };
+  collection.rejectAll = () => {
+    const groups = listRevisionGroups(editor);
+    if (groups.length)
+      resolveLiveRevisionGroupsAsOneUndo(editor, groups, false);
+    nativeRejectAll?.();
+  };
+}
+
 export function resolveRevisionIndividually(
   revision: LiveRevision,
-  isAccept: boolean
+  isAccept: boolean,
+  asGroupMember = false
 ): void {
   const resolveSelf = (revision as any).robinResolveSelf;
-  if (typeof resolveSelf === 'function') resolveSelf(isAccept);
-  else resolveSingleRevision(captureNativeResolvers(revision), isAccept);
+  if (typeof resolveSelf === 'function') resolveSelf(isAccept, asGroupMember);
+  else
+    resolveSingleRevision(
+      captureNativeResolvers(revision),
+      isAccept,
+      asGroupMember
+    );
 }
 
 type RevisionMemberIdentity = {
@@ -1120,11 +1740,153 @@ const lookupRevision = (
   );
 };
 
+// Syncfusion cannot deregister a revision whose range is already empty.
+const revisionRangeLength = (revision: LiveRevision): number => {
+  try {
+    const range =
+      typeof revision.getRange === 'function' ? revision.getRange() : [];
+    return Array.isArray(range) ? range.length : 0;
+  } catch {
+    return -1;
+  }
+};
+
+/**
+ * Whether one item of a revision's range is still in the document: a text box
+ * or control mark still on its line, in a paragraph still in the tree; a
+ * paragraph mark or row format whose owner is still in the tree.
+ */
+const rangeItemAttached = (item: any): boolean => {
+  if (!item) return false;
+  const owner = item.ownerBase;
+  // Adapter/test revisions can expose an opaque range token rather than an EJ2
+  // widget. There is no attachment claim to disprove in that shape, so let the
+  // revision's own resolver decide whether it can move.
+  if (!owner && !item.line) return true;
+  if (owner && !item.line) return widgetTreeAttached(owner);
+  const line = item.line;
+  if (!line || !Array.isArray(line.children)) return false;
+  if (!line.children.includes(item)) return false;
+  return widgetTreeAttached(line.paragraph);
+};
+
+// A retained range of detached widgets is as unsafe as an empty range.
+export const revisionIsUnresolvable = (revision: LiveRevision): boolean => {
+  const length = revisionRangeLength(revision);
+  if (length === 0) return true;
+  if (length < 0) return false;
+  try {
+    const range =
+      typeof revision.getRange === 'function' ? revision.getRange() : [];
+    return range.every((item: any) => !rangeItemAttached(item));
+  } catch {
+    return false;
+  }
+};
+
+// Row revisions are structural containers for revisions inside their cells.
+const revisionSpansRow = (revision: LiveRevision): boolean => {
+  try {
+    const range =
+      typeof revision.getRange === 'function' ? revision.getRange() : [];
+    return (
+      Array.isArray(range) &&
+      range.some((item: any) => item?.constructor?.name === 'WRowFormat')
+    );
+  } catch {
+    return false;
+  }
+};
+
+// Resolve structural containers before the content they own.
+const containersFirst = <T extends LiveRevision>(revisions: T[]): T[] => [
+  ...revisions.filter(revisionSpansRow),
+  ...revisions.filter((revision) => !revisionSpansRow(revision))
+];
+
+// SDK-created fragments inherit only the identity of a tagged same-author card.
+export function adoptRevisionsIntoAuthorsCard(
+  editor: LiveEditor,
+  created: LiveRevision[]
+): void {
+  if (!created.length) return;
+  const live = snapshotRevisions(editor);
+  for (const revision of created) {
+    if (parseRevisionGroupTag(revision.customData)) continue;
+    const author = String(revision.author ?? '');
+    const sibling = live.find(
+      (candidate) =>
+        candidate !== revision &&
+        String(candidate.author ?? '') === author &&
+        !!parseRevisionGroupTag(candidate.customData)
+    );
+    const tag = sibling ? parseRevisionGroupTag(sibling.customData) : undefined;
+    // The identity only: the sibling's payload (appearance snapshots, clamps)
+    // describes the sibling's own edits and must not be replayed twice.
+    if (tag) revision.customData = revisionGroupTag(tag.changeSetId, tag.group);
+  }
+}
+
+// Retire document-wide empty or detached revision leaks that the SDK cannot
+// settle itself. Returns the retired objects for outcome accounting.
+function purgeUnresolvableRevisions(editor: LiveEditor): LiveRevision[] {
+  const collection: any = (editor as any).revisions;
+  const registry: any = (editor as any).documentHelper?.revisionsInternal;
+  const purged: LiveRevision[] = [];
+  for (const revision of snapshotRevisions(editor)) {
+    if (!revisionIsUnresolvable(revision)) continue;
+    // The SDK's own removal first: it also tears down the change-pane view.
+    try {
+      collection?.remove?.(revision);
+    } catch {
+      // The two arrays below are the registration that actually matters.
+    }
+    // `RevisionCollection.remove` splices only `changes` when the change pane
+    // never rendered this revision, while `length` reads `revisions` - so a
+    // host without that pane keeps counting a revision the SDK just removed.
+    for (const key of ['revisions', 'changes']) {
+      const list = collection?.[key];
+      if (!Array.isArray(list)) continue;
+      const at = list.indexOf(revision);
+      if (at >= 0) list.splice(at, 1);
+    }
+    try {
+      const id = revision.revisionID;
+      if (id && registry?.containsKey?.(id)) registry.remove(id);
+    } catch {
+      // The id map is a lookup cache; the collection is the registration.
+    }
+    purged.push(revision);
+  }
+  return purged;
+}
+
+// Remains array-compatible while exposing members the SDK refused to move.
+export interface RevisionResolveOutcome extends Array<LiveRevision> {
+  unresolved: LiveRevision[];
+}
+
+const resolveOutcome = (
+  resolved: LiveRevision[],
+  unresolved: LiveRevision[]
+): RevisionResolveOutcome =>
+  Object.assign(resolved as RevisionResolveOutcome, { unresolved });
+
 export function resolveRevisionsAsOneUndo(
   editor: LiveEditor,
   revisions: LiveRevision[],
   isAccept: boolean
-): void {
+): RevisionResolveOutcome {
+  return withProgrammaticSelection(() =>
+    resolveRevisionsAsOneUndoInner(editor, revisions, isAccept)
+  );
+}
+
+function resolveRevisionsAsOneUndoInner(
+  editor: LiveEditor,
+  revisions: LiveRevision[],
+  isAccept: boolean
+): RevisionResolveOutcome {
   const identities = revisions.map(revisionMemberIdentity);
   const editorModule: any = (editor as any).editorModule ?? editor.editor;
   const history: any =
@@ -1142,18 +1904,44 @@ export function resolveRevisionsAsOneUndo(
     }
   }
   const index = buildRevisionIndex(editor);
+  const resolved: LiveRevision[] = [];
+  const attempted: LiveRevision[] = [];
+  const touchedTables = tablesTouchedByRevisions(
+    identities
+      .map((identity) => lookupRevision(index, identity))
+      .filter(Boolean) as LiveRevision[]
+  );
+  // The engine's own selection moves during a resolve are internal: with this
+  // flag the SDK skips the selectionChange dispatch for them, so no listener
+  // (commit triggers, adoption) runs in the middle of a resolve.
+  const selectionForFlag: any = (editor as any).selection ?? null;
+  const priorFlag = selectionForFlag?.isModifyingSelectionInternally;
+  if (selectionForFlag) selectionForFlag.isModifyingSelectionInternally = true;
   try {
-    for (const identity of [...identities].reverse()) {
-      const revision = lookupRevision(index, identity);
-      if (!revision) continue;
+    const ordered = containersFirst(
+      [...identities]
+        .reverse()
+        .map((identity) => lookupRevision(index, identity))
+        .filter(Boolean) as LiveRevision[]
+    );
+    for (const revision of ordered) {
+      // Retired by an earlier member's resolution (its row went): not an edit.
+      if (revisionIsUnresolvable(revision)) {
+        purgeUnresolvableRevisions(editor);
+        continue;
+      }
+      attempted.push(revision);
       (revision as any).robinReviveSelf?.();
       try {
-        resolveRevisionIndividually(revision, isAccept);
+        resolveRevisionIndividually(revision, isAccept, false);
+        resolved.push(revision);
       } catch {
         // A stale member does not stop the remaining unit.
       }
     }
   } finally {
+    if (selectionForFlag)
+      selectionForFlag.isModifyingSelectionInternally = priorFlag ?? false;
     if (complex) {
       try {
         history?.updateComplexHistory?.();
@@ -1162,7 +1950,21 @@ export function resolveRevisionsAsOneUndo(
       }
     }
   }
+  // Before the document state is read back: an empty-range revision is not a
+  // member this pass failed to move, it is a leak to retire (see the law on
+  // `purgeUnresolvableRevisions`).
+  const purged = new Set(purgeUnresolvableRevisions(editor));
   if (revisions.length > 1) invalidateDocumentLayout(editor);
+  recomputeDerivedValuesAfterResolve(editor, touchedTables);
+  // Same law as the group path, read the same way: what is still registered
+  // after the pass did not move, whether it threw or refused in silence. This
+  // list is one edit's worth here, so a chip that cannot resolve says so
+  // instead of leaving the rail redrawing the same chip after every click.
+  const live = new Set(liveRevisionsRaw(editor));
+  return resolveOutcome(
+    resolved.filter((revision) => !purged.has(revision)),
+    attempted.filter((revision) => live.has(revision))
+  );
 }
 
 export interface RevisionGroupIdentity {
@@ -1171,11 +1973,148 @@ export interface RevisionGroupIdentity {
   untagged?: boolean;
 }
 
+/**
+ * The outermost tables whose ROW STRUCTURE a set of revisions changes. Text
+ * replacements inside a table do not affect banding and must not cause that
+ * table to be restriped when the revision resolves.
+ */
+function tablesTouchedByRevisions(revisions: LiveRevision[]): Set<any> {
+  const tables = new Set<any>();
+  for (const revision of revisions) {
+    if (!revisionSpansRow(revision)) continue;
+    let range: any[] = [];
+    try {
+      range =
+        typeof revision.getRange === 'function'
+          ? revision.getRange()
+          : Array.isArray(revision.range)
+          ? revision.range
+          : [];
+    } catch {
+      range = [];
+    }
+    for (const item of range) {
+      const table = outermostTableOf(item);
+      if (table) tables.add(table);
+    }
+  }
+  return tables;
+}
+
+const outermostTableOf = (item: any): any => {
+  const owner = item?.ownerBase;
+  let table: any = owner?.ownerTable ?? null;
+  if (!table) {
+    const paragraph = item?.line?.paragraph ?? owner ?? null;
+    table = paragraph?.associatedCell?.ownerTable ?? null;
+  }
+  if (!table) return null;
+  while (table.containerWidget?.ownerTable)
+    table = table.containerWidget.ownerTable;
+  const pieces =
+    typeof table.getSplitWidgets === 'function'
+      ? table.getSplitWidgets()
+      : null;
+  return pieces?.[0] ?? table;
+};
+
+/** The position of `widget` among a section's top-level blocks, or -1. */
+const topLevelBlockPosition = (
+  pages: any[],
+  section: number,
+  widget: any
+): number => {
+  let counted = 0;
+  for (const page of pages) {
+    for (const body of page?.bodyWidgets ?? []) {
+      if (body.sectionIndex !== section) continue;
+      for (const child of body.childWidgets ?? []) {
+        if (child.previousSplitWidget) continue;
+        if (child === widget) return counted;
+        counted++;
+      }
+    }
+  }
+  return -1;
+};
+
+/**
+ * The engine anchors ("section;block") of the tables that are still in the
+ * document, read AFTER a resolve. Counted over the live body widgets rather
+ * than read off the SDK's cached block index, which a resolve that removed a
+ * block above has not necessarily refreshed yet; a block split across pages is
+ * counted once, at its first piece. A table that left the document (a rejected
+ * insertion) or sits inside another table has no top-level anchor.
+ */
+function liveTableAnchorsOf(
+  editor: LiveEditor,
+  tables: Iterable<any>
+): Set<string> {
+  const anchors = new Set<string>();
+  const pages: any[] = (editor as any).documentHelper?.pages ?? [];
+  for (const table of tables) {
+    const first = table?.getSplitWidgets?.()?.[0] ?? table;
+    if (!widgetTreeAttached(first)) continue;
+    const container = first.containerWidget;
+    if (!container || container.ownerTable) continue;
+    const section = container.sectionIndex ?? container.index;
+    if (!Number.isInteger(section)) continue;
+    let block = topLevelBlockPosition(pages, section, first);
+    if (block < 0 && Number.isInteger(first.index)) block = first.index;
+    if (block >= 0) anchors.add(`${section};${block}`);
+  }
+  return anchors;
+}
+
+/**
+ * Derived state follows the document, so every resolve path ends here:
+ * formula outputs are written untracked and recompute at once (the binding
+ * runtime installs that hook when it attaches, attachBindings), and the stripe
+ * of every table the resolved revisions lived in is re-laid from its current
+ * rows (installed by the change-set runner; see restripeBandedTables). Only
+ * THOSE tables: a resolve must never change content outside the change sets it
+ * resolved, so untouched tables are not re-read, let alone repainted.
+ */
+function recomputeDerivedValuesAfterResolve(
+  editor: LiveEditor,
+  touchedTables: Iterable<any>
+): void {
+  const failures: unknown[] = [];
+  const hook = (editor as any).__robinRecomputeAfterResolve;
+  if (typeof hook === 'function') {
+    try {
+      hook();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  const restripe = (editor as any).__robinRestripeAfterResolve;
+  if (typeof restripe === 'function') {
+    try {
+      const anchors = liveTableAnchorsOf(editor, touchedTables);
+      if (anchors.size) restripe(anchors);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length) throw failures[0];
+}
+
 export function resolveLiveRevisionGroupsAsOneUndo(
   editor: LiveEditor,
   groups: RevisionGroupIdentity[],
   isAccept: boolean
-): LiveRevision[] {
+): RevisionResolveOutcome {
+  return withProgrammaticSelection(() =>
+    resolveLiveRevisionGroupsAsOneUndoInner(editor, groups, isAccept)
+  );
+}
+
+function resolveLiveRevisionGroupsAsOneUndoInner(
+  editor: LiveEditor,
+  groups: RevisionGroupIdentity[],
+  isAccept: boolean
+): RevisionResolveOutcome {
   const tagged = new Set(
     groups
       .filter((group) => !group.untagged)
@@ -1193,7 +2132,6 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
   };
   const initial = liveRevisionsRaw(editor).filter(matchesGroup);
-  const resolved: LiveRevision[] = [];
   const editorModule: any = (editor as any).editorModule ?? editor.editor;
   const history: any =
     (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
@@ -1209,27 +2147,77 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       complex = false;
     }
   }
+  const failed = new Set<LiveRevision>();
+  const attempted = new Set<LiveRevision>();
+  const members = () => liveRevisionsRaw(editor).filter(matchesGroup);
+  const resolveOrder = (left: LiveRevision, right: LiveRevision): number => {
+    return Number(revisionSpansRow(right)) - Number(revisionSpansRow(left));
+  };
+  // Read before anything resolves: an accepted deletion takes its rows' widgets
+  // out of the tree, and the table they were in is exactly the one to restripe.
+  const touchedTables = tablesTouchedByRevisions(initial);
+  // The SDK's own group path: one selection over the card, members resolved as
+  // group members (see resolveSingleRevision), the table relaid once at the end.
+  const selection: any = (editor as any).selection ?? null;
+  const selectionModule: any = (editor as any).selectionModule ?? selection;
+  const priorSelection =
+    selection && typeof selection.startOffset === 'string'
+      ? {
+          start: selection.startOffset,
+          end: selection.endOffset || selection.startOffset
+        }
+      : null;
+  try {
+    if (initial.length && typeof selectionModule?.selectRevision === 'function')
+      selectionModule.selectRevision(initial[0]);
+  } catch {
+    // Selection is a courtesy to the SDK's layout; resolution does not need it.
+  }
+  if (selection) selection.isModifyingSelectionInternally = true;
   try {
     let budget = Math.max(20, initial.length * 4);
-    // Without this, a revision that throws stays at current[0]/current[last]
-    // and is retried until the budget is gone, starving the rest of the group.
-    const failed = new Set<LiveRevision>();
+    // Advance only when the target leaves or a cascade shrinks the group.
     while (budget-- > 0) {
-      const current = liveRevisionsRaw(editor).filter(
-        (revision) => matchesGroup(revision) && !failed.has(revision)
-      );
+      // A member the previous step emptied or detached is retired here, not
+      // resolved: see revisionIsUnresolvable.
+      purgeUnresolvableRevisions(editor);
+      const before = members();
+      const current = before
+        .filter((revision) => !failed.has(revision))
+        .sort(resolveOrder);
       if (!current.length) break;
-      const revision = isAccept ? current[0] : current[current.length - 1];
+      const revision = current[0];
       (revision as any).robinReviveSelf?.();
-      resolved.push(revision);
+      attempted.add(revision);
+      let threw = false;
       try {
-        resolveRevisionIndividually(revision, isAccept);
+        resolveRevisionIndividually(revision, isAccept, false);
       } catch {
-        failed.add(revision);
+        threw = true;
         // The bounded loop can continue with the next current member.
       }
+      const after = members();
+      const progressed =
+        !threw && (!after.includes(revision) || after.length < before.length);
+      if (!progressed) failed.add(revision);
     }
   } finally {
+    if (selection) selection.isModifyingSelectionInternally = false;
+    try {
+      const paragraph = selection?.start?.paragraph;
+      const table = paragraph?.isInsideTable
+        ? paragraph.containerWidget?.ownerTable
+        : null;
+      if (table) (editor as any).documentHelper?.layout?.reLayoutTable?.(table);
+    } catch {
+      // A failed relayout leaves the SDK's own lazy relayout to run.
+    }
+    try {
+      if (priorSelection && typeof selection?.select === 'function')
+        selection.select(priorSelection.start, priorSelection.end);
+    } catch {
+      // The prior selection may no longer exist after a structural resolve.
+    }
     if (complex) {
       try {
         history?.updateComplexHistory?.();
@@ -1238,8 +2226,19 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       }
     }
   }
+  // Purge document-wide because cascades can create untagged leaks.
+  const purged = new Set(purgeUnresolvableRevisions(editor));
   if (initial.length) invalidateDocumentLayout(editor);
-  return resolved;
+  recomputeDerivedValuesAfterResolve(editor, touchedTables);
+  // Final membership, not call count, determines the outcome.
+  const live = new Set(members());
+  // Retired leaks belong in neither result list.
+  return resolveOutcome(
+    [...attempted].filter(
+      (revision) => !live.has(revision) && !purged.has(revision)
+    ),
+    [...live]
+  );
 }
 
 export interface RevisionGroupItem {
@@ -1279,6 +2278,7 @@ interface RevisionGroupView {
   changeSetId: string;
   group: string;
   untagged?: boolean;
+  derivedChanges?: DerivedValueChange[];
   items: RevisionGroupItem[];
 }
 
@@ -1369,16 +2369,30 @@ export function findReplaceCounterpart(
 
 export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   const views = new Map<string, RevisionGroupView>();
+  const derivedByView = new Map<string, Map<string, DerivedValueChange>>();
   for (const revision of snapshotRevisions(editor)) {
     const tag = parseRevisionGroupTag(revision.customData);
-    const author = String(revision.author ?? '').trim() || 'Unknown author';
+    // The invisible per-change-set identity suffix is not for readers.
+    const author =
+      String(revision.author ?? '')
+        .replace(/[\u2060\u2061]/g, '')
+        .trim() || 'Unknown author';
     const key = tag ? `${tag.changeSetId} ${tag.group}` : `author ${author}`;
     let view = views.get(key);
     if (!view) {
       view = tag
-        ? { changeSetId: tag.changeSetId, group: tag.group, items: [] }
+        ? {
+            changeSetId: tag.changeSetId,
+            group: tag.group,
+            items: []
+          }
         : { changeSetId: '', group: author, untagged: true, items: [] };
       views.set(key, view);
+    }
+    if (tag?.derivedChanges?.length) {
+      const byName = derivedByView.get(key) ?? new Map();
+      for (const change of tag.derivedChanges) byName.set(change.name, change);
+      derivedByView.set(key, byName);
     }
     const revisionType = String(revision.revisionType ?? '');
     const paragraph = revisionParagraph(revision);
@@ -1428,6 +2442,11 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
       previous.text = item.text;
     } else view.items.push(item);
   }
+  for (const [key, byName] of derivedByView) {
+    const view = views.get(key);
+    if (!view) continue;
+    view.derivedChanges = [...byName.values()];
+  }
   return [...views.values()];
 }
 
@@ -1435,11 +2454,12 @@ const selectForAppearance = (
   editor: LiveEditor,
   cellAnchor: string,
   extent: 'cell' | 'row'
-) => {
-  editor.selection.select(`${cellAnchor};0`, `${cellAnchor};0`);
-  const method = extent === 'row' ? 'selectRow' : 'selectCell';
-  editor.selection?.[method]?.();
-};
+) =>
+  withLiveSelection(editor, () => {
+    editor.selection.select(`${cellAnchor};0`, `${cellAnchor};0`);
+    const method = extent === 'row' ? 'selectRow' : 'selectCell';
+    editor.selection?.[method]?.();
+  });
 
 const applyBorders = (editor: LiveEditor, borders: BorderWrite[]) => {
   for (const border of borders) {
@@ -1519,21 +2539,27 @@ export function writeTableLayout(
     layout.allowAutoFit ? 'FitToContents' : 'FixedColumnWidth'
   );
   const columnWidths = layout.columnWidths ?? [];
-  for (let column = 0; column < columnWidths.length; column++) {
-    selectForAppearance(editor, `${tableAnchor};0;${column};0`, 'cell');
-    editor.selection?.selectColumn?.();
-    const cellFormat = editor.selection?.cellFormat;
-    if (!cellFormat) continue;
-    cellFormat.preferredWidth = columnWidths[column];
-    cellFormat.preferredWidthType = layout.columnWidthType ?? 'Auto';
-  }
-  // FixedColumnWidth first establishes the SDK's defined cell-width flags. Run
-  // it again after the sampled widths land so the live table grid is rebuilt
-  // from those widths rather than the equal grid SyncFusion inserted.
-  if (!layout.allowAutoFit && columnWidths.length) {
-    selectTable();
-    editor.editor?.autoFitTable?.('FixedColumnWidth');
-  }
+  const table = liveTableWidgetAt(editor, tableAnchor);
+  (table?.childWidgets ?? []).forEach((row: any, rowIndex: number) => {
+    let logicalColumn = Math.max(0, Number(row?.rowFormat?.gridBefore) || 0);
+    (row?.childWidgets ?? []).forEach((cell: any, cellIndex: number) => {
+      const span = Math.max(1, Number(cell?.cellFormat?.columnSpan) || 1);
+      const preferredWidth = columnWidths
+        .slice(logicalColumn, logicalColumn + span)
+        .reduce((sum, width) => sum + width, 0);
+      logicalColumn += span;
+      if (!(preferredWidth > 0)) return;
+      selectForAppearance(
+        editor,
+        `${tableAnchor};${rowIndex};${cellIndex};0`,
+        'cell'
+      );
+      const cellFormat = editor.selection?.cellFormat;
+      if (!cellFormat) return;
+      cellFormat.preferredWidth = preferredWidth;
+      cellFormat.preferredWidthType = layout.columnWidthType ?? 'Auto';
+    });
+  });
   selectTable();
   const tableFormat = editor.selection?.tableFormat;
   if (!tableFormat) return;
@@ -1550,6 +2576,16 @@ const cellParagraphAt = (editor: LiveEditor, cellAnchor: string): unknown => {
   } catch {
     return undefined;
   }
+};
+
+export const clearCellShading = (
+  editor: LiveEditor,
+  cellAnchor: string
+): void => {
+  selectForAppearance(editor, cellAnchor, 'cell');
+  const shading = (editor as any).selection?.start?.paragraph?.associatedCell
+    ?.cellFormat?.shading;
+  if (typeof shading?.destroy === 'function') shading.destroy();
 };
 
 /**
@@ -1648,6 +2684,7 @@ const replayAppearanceRestores = (
         selectForAppearance(editor, anchor, 'cell');
       }
     }
+    if (restore.clearShading) clearCellShading(editor, anchor);
   }
 };
 
@@ -1729,6 +2766,8 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
       revisions: LiveRevision[];
       restoreCandidates: AppearanceRestore[][];
       styleCandidates: ParagraphStyleRestore[][];
+      clampCandidates: BookmarkClampIntent[][];
+      expressionCandidates: ExpressionRestore[][];
     }
   >();
   for (const revision of snapshotRevisions(editor)) {
@@ -1743,6 +2782,10 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
         partition.restoreCandidates.push(tag.appearanceRestores);
       if (tag.paragraphStyles)
         partition.styleCandidates.push(tag.paragraphStyles);
+      if (tag.bookmarkClamps)
+        partition.clampCandidates.push(tag.bookmarkClamps);
+      if (tag.expressionRestores)
+        partition.expressionCandidates.push(tag.expressionRestores);
     } else {
       partitions.set(key, {
         changeSetId: tag.changeSetId,
@@ -1751,7 +2794,11 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
         restoreCandidates: tag.appearanceRestores
           ? [tag.appearanceRestores]
           : [],
-        styleCandidates: tag.paragraphStyles ? [tag.paragraphStyles] : []
+        styleCandidates: tag.paragraphStyles ? [tag.paragraphStyles] : [],
+        clampCandidates: tag.bookmarkClamps ? [tag.bookmarkClamps] : [],
+        expressionCandidates: tag.expressionRestores
+          ? [tag.expressionRestores]
+          : []
       });
     }
   }
@@ -1776,13 +2823,37 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
     );
     const styles =
       stylePayloads.size === 1 ? [...stylePayloads.values()][0] : undefined;
+    // Same agreement rule again: every member of a group carries the same
+    // clamp payload, so disagreement means a stale or mixed tag and the safe
+    // reading is to clamp nothing.
+    const clampPayloads = new Map(
+      partition.clampCandidates.map((clamps) => [
+        JSON.stringify(clamps),
+        clamps
+      ])
+    );
+    const clamps =
+      clampPayloads.size === 1 ? [...clampPayloads.values()][0] : undefined;
+    // Same agreement rule once more, for the expression inverse.
+    const expressionPayloads = new Map(
+      partition.expressionCandidates.map((entries) => [
+        JSON.stringify(entries),
+        entries
+      ])
+    );
+    const expressions =
+      expressionPayloads.size === 1
+        ? [...expressionPayloads.values()][0]
+        : undefined;
     groupRevisionsAtomic(
       editor,
       partition.revisions,
       partition.changeSetId,
       partition.group,
       restores,
-      styles
+      styles,
+      clamps,
+      expressions
     );
     bound += partition.revisions.length;
   });

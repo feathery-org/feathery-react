@@ -262,6 +262,56 @@ const plainCell = (text: string) => ({
 // ---------------------------------------------------------------------------
 
 describe('one change set that edits content AND restripes a table', () => {
+  it('surfaces derived-state failure after accepting revisions', () => {
+    const ed = makeEditor(twoTables());
+    try {
+      apply(
+        ed,
+        [{ op: 'set_cell_text', anchor: '0;1;1;0;0', text: 'A1 rewritten' }],
+        'accept-derived-failure'
+      );
+      (ed as any).__robinRecomputeAfterResolve = () => {
+        throw new Error('recompute failed');
+      };
+
+      expect(() =>
+        resolveLiveRevisionGroupsAsOneUndo(
+          ed as unknown as LiveEditor,
+          listRevisionGroups(ed as unknown as LiveEditor),
+          true
+        )
+      ).toThrow('recompute failed');
+      expect(revisions(ed)).toHaveLength(0);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('surfaces derived-state failure after rejecting revisions', () => {
+    const ed = makeEditor(twoTables());
+    try {
+      apply(
+        ed,
+        [{ op: 'set_cell_text', anchor: '0;1;1;0;0', text: 'A1 rewritten' }],
+        'reject-derived-failure'
+      );
+      (ed as any).__robinRecomputeAfterResolve = () => {
+        throw new Error('recompute failed');
+      };
+
+      expect(() =>
+        resolveLiveRevisionGroupsAsOneUndo(
+          ed as unknown as LiveEditor,
+          listRevisionGroups(ed as unknown as LiveEditor),
+          false
+        )
+      ).toThrow('recompute failed');
+      expect(revisions(ed)).toHaveLength(0);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
   it('rebuilds layout once after accepting a multi-revision table group', () => {
     const ed = makeEditor(twoTables());
     try {
@@ -1225,13 +1275,11 @@ describe('resolving one chip of a card and rejecting the rest', () => {
   });
 });
 
-// The same stack, across TURNS. Two cards from two change sets can sit in the
-// rail at once and can have written the same cell, and rejecting both in the
-// order the rail lists them has to end at the value that predates both. The
-// snapshot stack belongs to the document, not to the change set that happened
-// to open it.
-describe('two cards from different turns that wrote one cell', () => {
-  it('leaves no fill behind when both are rejected in rail order', () => {
+// Dependent table edits across turns share one review family. Its appearance
+// restore stack belongs to the document and rejecting the family must return
+// to the value that predates every member change set.
+describe('independent table review cards across turns', () => {
+  it('leaves no fill behind when both cards are rejected newest first', () => {
     const ed = makeEditor(statedLayoutFixture());
     try {
       const before = appearanceSnapshot(ed, '0;2');
@@ -1267,13 +1315,24 @@ describe('two cards from different turns that wrote one cell', () => {
       expect(appearanceSnapshot(ed, '0;2')).not.toEqual(before);
 
       const live = ed as unknown as LiveEditor;
-      for (const group of ['a', 'b']) {
-        const view = listRevisionGroups(live).find(
-          (entry) => entry.group === group
-        );
-        expect(view).toBeDefined();
-        resolveLiveRevisionGroupsAsOneUndo(live, [view as any], false);
-      }
+      const groups = listRevisionGroups(live);
+      expect(groups.map((group) => group.changeSetId).sort()).toEqual([
+        'turn-one',
+        'turn-two'
+      ]);
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        groups.filter((group) => group.changeSetId === 'turn-two'),
+        false
+      );
+      expect(listRevisionGroups(live).map((group) => group.changeSetId)).toEqual(
+        ['turn-one']
+      );
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        listRevisionGroups(live),
+        false
+      );
 
       expect(revisions(ed)).toHaveLength(0);
       expect(appearanceSnapshot(ed, '0;2')).toEqual(before);

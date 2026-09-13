@@ -28,7 +28,11 @@ import {
   Selection,
   SfdtExport
 } from '@syncfusion/ej2-documenteditor';
-import { applyDocumentEdits, LiveEditor } from '../syncfusionDocumentOps';
+import {
+  applyDocumentEdits,
+  displayAuthor,
+  LiveEditor
+} from '../syncfusionDocumentOps';
 
 DocumentEditor.Inject(Editor, Selection, SfdtExport, EditorHistory, ImageResizer, Search);
 
@@ -148,7 +152,8 @@ describe('revision authorship', () => {
         expect(result.results[0].ok).toBe(true);
         const created = revisionList().filter((r) => !before.has(r.id));
         expect(created.length).toBeGreaterThan(0);
-        for (const revision of created) expect(revision.author).toBe(ASSISTANT);
+        for (const revision of created)
+          expect(displayAuthor(revision.author)).toBe(ASSISTANT);
       }
     );
   });

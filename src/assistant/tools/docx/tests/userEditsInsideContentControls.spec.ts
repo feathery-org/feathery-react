@@ -18,7 +18,10 @@ import {
   SfdtExport
 } from '@syncfusion/ej2-documenteditor';
 import { applyDocumentEdits, LiveEditor } from '../syncfusionDocumentOps';
-import { listRevisionGroups } from '../../../../utils/documentEditorPrimitives';
+import {
+  listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo
+} from '../../../../utils/documentEditorPrimitives';
 import {
   destroyRealDocumentEditor,
   docWith,
@@ -102,6 +105,31 @@ const quantityControl = (ed: DocumentEditor): any => {
   );
   if (!found) throw new Error('no quantity control');
   return found;
+};
+
+const plainCostsFixture = (): any => {
+  const sfdt = JSON.parse(JSON.stringify(buildCostsFixture()));
+  const blocks = sfdt.sections[0].blocks;
+  const markerIndex = blocks.findIndex((block: any) =>
+    String(block?.contentControlProperties?.tag ?? '').includes('table=costs')
+  );
+  const table = blocks[markerIndex].blocks.find((block: any) =>
+    Array.isArray(block?.rows)
+  );
+  const textOf = (node: any): string => {
+    if (Array.isArray(node)) return node.map(textOf).join('');
+    if (!node || typeof node !== 'object') return '';
+    if (typeof node.text === 'string') return node.text;
+    return textOf(node.inlines) + textOf(node.blocks);
+  };
+  for (const row of table.rows)
+    for (const cell of row.cells) {
+      const text = textOf(cell);
+      delete cell.contentControlProperties;
+      cell.blocks = [{ inlines: [{ text }] }];
+    }
+  blocks.splice(markerIndex, 1, table);
+  return sfdt;
 };
 
 describe('user edits inside content controls stay untracked', () => {
@@ -215,6 +243,51 @@ describe('user edits inside content controls stay untracked', () => {
       (ed as any).editorModule.insertText('XY');
       for (const text of revisionTexts(ed)) expect(text).not.toContain('XY');
     } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('keeps an input editable after promoting and accepting a plain table', () => {
+    const ed = makeRealDocumentEditor(plainCostsFixture());
+    const attached = attachBindings(ed as any, { convertTokensOnOpen: false });
+    try {
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'promote-input',
+        edits: [
+          {
+            op: 'create_binding',
+            group: 'g01-promote-input',
+            anchor: '0;2;1;1;0',
+            kind: 'input',
+            name: 'promoted_quantity',
+            valueType: 'integer'
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true });
+      const live = ed as unknown as LiveEditor;
+      resolveLiveRevisionGroupsAsOneUndo(live, listRevisionGroups(live), true);
+
+      const promoted = Array.from(
+        (ed.documentHelper as any).contentControlCollection ?? []
+      ).find((control: any) => {
+        if (control.type !== 0) return false;
+        try {
+          return (
+            parseTag(String(control.contentControlProperties?.tag))?.name ===
+            'promoted_quantity'
+          );
+        } catch {
+          return false;
+        }
+      }) as any;
+      expect(promoted?.contentControlProperties?.lockContents).toBe(false);
+      caretInside(ed, promoted, 'mid');
+      (ed as any).editorModule.handleTextInput('7');
+
+      expect(interiorText(promoted)).toContain('7');
+    } finally {
+      attached.dispose();
       destroyRealDocumentEditor(ed);
     }
   });

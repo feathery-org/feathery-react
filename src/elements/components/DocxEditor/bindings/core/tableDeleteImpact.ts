@@ -88,7 +88,7 @@ export function analyzeTableDeleteImpact(
   return {
     scope: 'table',
     tableId: boundTableId(block),
-    orphans: diffOrphans(doc, trimmed)
+    orphans: analyzeBindingOrphans(doc, trimmed)
   };
 }
 
@@ -125,7 +125,7 @@ export function analyzeRowDeleteImpact(
   return {
     scope: 'row',
     tableId: boundTableId(block),
-    orphans: diffOrphans(doc, trimmed)
+    orphans: analyzeBindingOrphans(doc, trimmed)
   };
 }
 
@@ -145,7 +145,7 @@ export function analyzeRangeDeleteImpact(
   return {
     scope: 'range',
     tableId: null,
-    orphans: diffOrphans(doc, trimmed)
+    orphans: analyzeBindingOrphans(doc, trimmed)
   };
 }
 
@@ -171,7 +171,7 @@ function stripContentControls(node: unknown, tags: Set<string>): void {
 }
 
 /** Formulas that fail in `trimmed` but evaluated fine in `doc`. */
-function diffOrphans(
+export function analyzeBindingOrphans(
   doc: SfdtDocument,
   trimmed: SfdtDocument
 ): OrphanedFormula[] {

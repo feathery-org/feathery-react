@@ -37,7 +37,10 @@ import {
 } from '@syncfusion/ej2-documenteditor';
 
 import { DOCUMENT_EDITOR_CAPABILITIES } from '../../../capabilities/registry';
-import { listRevisionGroups } from '../../../../utils/documentEditorPrimitives';
+import {
+  listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo
+} from '../../../../utils/documentEditorPrimitives';
 import {
   applyDocumentEdits,
   flattenSfdt,
@@ -215,7 +218,7 @@ describe('one pending-inserted row, deleted', () => {
   // untracked_write here, over a document from which it had already removed the
   // row, and its rollback could not put the row back because a withdrawal leaves
   // no revision to reject.
-  it('reports ok, says the insertion was withdrawn, and leaves the pristine rows', () => {
+  it('keeps insert and delete independently reviewable', () => {
     const editor = asRobin(makeEditor(fixture()));
     try {
       const pristine = rowTexts(editor);
@@ -236,15 +239,31 @@ describe('one pending-inserted row, deleted', () => {
 
       expect(result).toMatchObject({
         ok: true,
-        op: 'delete_row',
-        withdrewPendingInsertion: 1
+        op: 'delete_row'
       });
+      expect(result.withdrewPendingInsertion).toBeUndefined();
       expect(result.error).toBeUndefined();
-      // The row is gone, and what is left is exactly the document before the
-      // insertion - so there is nothing for a reviewer to decide about it.
+      expect(rowTexts(editor)).toHaveLength(pristine.length + 1);
+      const live = editor as unknown as LiveEditor;
+      const groups = listRevisionGroups(live);
+      expect(groups.map((group) => group.changeSetId).sort()).toEqual([
+        'add-one',
+        'remove-one'
+      ]);
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        groups.filter((group) => group.changeSetId === 'remove-one'),
+        false
+      );
+      expect(rowTexts(editor)).toHaveLength(pristine.length + 1);
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        listRevisionGroups(live).filter(
+          (group) => group.changeSetId === 'add-one'
+        ),
+        false
+      );
       expect(rowTexts(editor)).toEqual(pristine);
-      expect(rowsAfterRejectingAll(editor)).toEqual(pristine);
-      expect(rowsAfterAcceptingAll(editor)).toEqual(pristine);
     } finally {
       destroyEditor(editor);
     }
@@ -272,7 +291,7 @@ describe("the captain's request: five of ten pending rows, in one op", () => {
     ).results[0];
   };
 
-  it('removes all five, not one, and accounts for them as withdrawals', () => {
+  it('tracks all five in one later card', () => {
     const editor = asRobin(makeEditor(fixture()));
     try {
       const pristine = rowTexts(editor);
@@ -282,11 +301,10 @@ describe("the captain's request: five of ten pending rows, in one op", () => {
 
       expect(result).toMatchObject({
         ok: true,
-        op: 'delete_row',
-        withdrewPendingInsertion: 5
+        op: 'delete_row'
       });
-      // Every one of the five: ten added, five removed, five left pending.
-      expect(rowTexts(editor)).toHaveLength(before + 5);
+      expect(result.withdrewPendingInsertion).toBeUndefined();
+      expect(rowTexts(editor)).toHaveLength(before + 10);
       expect(rowsAfterRejectingAll(editor)).toEqual(pristine);
       expect(rowsAfterAcceptingAll(editor)).toHaveLength(before + 5);
     } finally {
@@ -301,7 +319,8 @@ describe("the captain's request: five of ten pending rows, in one op", () => {
       // The whole run went down in a single deleteRow. Row by row, the second op
       // onwards failed to re-resolve its anchor and the change set rolled back,
       // which is what left four of the captain's five rows in the document.
-      expect(rowTexts(editor).filter((row) => row === '[|]')).toHaveLength(5);
+      expect(rowTexts(editor).filter((row) => row === '[|]')).toHaveLength(10);
+      expect(rowsAfterAcceptingAll(editor).filter((row) => row === '[|]')).toHaveLength(5);
     } finally {
       destroyEditor(editor);
     }
@@ -309,10 +328,7 @@ describe("the captain's request: five of ten pending rows, in one op", () => {
 });
 
 describe('a mixed row set: pending insertions and original rows together', () => {
-  // The shape the report measured as R9. SyncFusion already does the right thing
-  // with it - withdraw the pending rows, mark the original ones deleted, ONE
-  // revision - but only when the whole set goes down in one write.
-  it('lands as one card: pending rows withdrawn, original rows tracked-deleted', () => {
+  it('keeps both pending changes reversible through accept-all and reject-all', () => {
     const editor = asRobin(makeEditor(fixture(6)));
     try {
       const pristine = rowTexts(editor);
@@ -322,8 +338,6 @@ describe('a mixed row set: pending insertions and original rows together', () =>
         'add-three'
       );
       expect(revisionTypes(editor)).toEqual(['Insertion']);
-      // Rows 2,3,4 are pending insertions; rows 5,6 are the original Line 1 and
-      // Line 2. One selection, one write, over both kinds at once.
       const result = apply(
         editor,
         [{ op: 'delete_row', anchor: '0;2;0;0;0', rows: [2, 3, 4, 5, 6] }],
@@ -332,18 +346,15 @@ describe('a mixed row set: pending insertions and original rows together', () =>
 
       expect(result).toMatchObject({
         ok: true,
-        op: 'delete_row',
-        withdrewPendingInsertion: 3
+        op: 'delete_row'
       });
-      // ONE card, not five and not one per kind: the three withdrawals author no
-      // revision of their own and the two tracked deletions fold into a single
-      // one. The earlier Insertion is gone too, because withdrawing all three of
-      // its rows consumed the whole of it - which is why this asserts what the
-      // rail SHOWS rather than a count delta, and the delta here is zero.
-      expect(revisionTypes(editor)).toEqual(['Deletion']);
-      // The two original rows are still in place, marked, awaiting a decision.
-      expect(rowTexts(editor)).toHaveLength(pristine.length);
-      // Reject restores the pristine rows; accept takes the two originals out.
+      expect(result.withdrewPendingInsertion).toBeUndefined();
+      expect(revisionTypes(editor)).toEqual(
+        expect.arrayContaining(['Insertion', 'Deletion'])
+      );
+      // The tracked view keeps the inserted and deleted rows visible until the
+      // family resolves.
+      expect(rowTexts(editor)).toHaveLength(pristine.length + 3);
       expect(rowsAfterRejectingAll(editor)).toEqual(pristine);
       expect(rowsAfterAcceptingAll(editor)).toEqual(
         pristine.filter(
@@ -460,7 +471,8 @@ describe('what the relaxation did NOT loosen', () => {
         'span-remove'
       ).results[0];
 
-      expect(result).toMatchObject({ ok: true, withdrewPendingInsertion: 3 });
+      expect(result).toMatchObject({ ok: true });
+      expect(result.withdrewPendingInsertion).toBeUndefined();
       // The whole insertion was withdrawn, so both directions land on pristine -
       // and neither may disturb the table next door.
       for (const resolve of ['accept', 'reject'] as const) {
@@ -482,8 +494,8 @@ describe('what the relaxation did NOT loosen', () => {
     }
   });
 
-  // Scattered rows are ordinary - `split_table` already accepts them, so the
-  // model will send them here too. Each contiguous run is one write, taken
+  // Scattered rows are ordinary, and the primitive split chain uses them too.
+  // Each contiguous run is one write, taken
   // highest first so a withdrawal cannot move a row a later run still needs.
   it('deletes a scattered row set without touching the rows between', () => {
     const editor = asRobin(makeEditor(fixture(6)));

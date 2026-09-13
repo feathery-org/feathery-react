@@ -98,6 +98,14 @@ describe('capability entries expose only the live handler contract', () => {
     expect(paramsFor('insert_section_break')).toEqual({
       sectionBreakType: 'enum[NewPage,Continuous,EvenPage,OddPage]?'
     });
+    expect(paramsFor('duplicate_table')).toEqual({
+      rows: 'duplicateRows?',
+      resultRef: 'string?',
+      literal: 'boolean?',
+      quotedFrom: 'string?',
+      quotedText: 'string?'
+    });
+    expect(paramsFor('split_table')).toBeUndefined();
     for (const undeclaredType of ['string[]?', 'string[][][]?', 'object?'])
       expect(undeclaredType).not.toMatch(PARAM_TYPE_LANGUAGE);
   });

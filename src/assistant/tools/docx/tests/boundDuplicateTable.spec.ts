@@ -11,6 +11,7 @@ import {
 import {
   applyDocumentEdits,
   flattenSfdt,
+  isAssistantAuthor,
   LiveEditor
 } from '../syncfusionDocumentOps';
 import { buildCostsFixture } from '../../../../elements/components/DocxEditor/bindings/core/tests/fixtures/costsFixture';
@@ -301,9 +302,9 @@ describe('duplicate_table over bound tables', () => {
       (_, revisionIndex) => editor.revisions.get(revisionIndex)
     );
     expect(revisions.length).toBeGreaterThan(0);
-    expect(revisions.every((revision) => revision.author === 'Robin')).toBe(
-      true
-    );
+    expect(
+      revisions.every((revision) => isAssistantAuthor(revision.author))
+    ).toBe(true);
     expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(
       1
     );
@@ -362,7 +363,8 @@ describe('duplicate_table over bound tables', () => {
         editor.revisions.get(index)
       ).every(
         (revision) =>
-          revision.author === 'Robin' && revision.revisionType === 'Insertion'
+          isAssistantAuthor(revision.author) &&
+          revision.revisionType === 'Insertion'
       )
     ).toBe(true);
     expect(indexOf(editor).tables.has('expenses_copy')).toBe(true);
@@ -427,9 +429,11 @@ describe('duplicate_table over bound tables', () => {
     // repo would fail. Keep this list and that schema in step, and note that
     // occurrences carry no `anchor`: the original write's anchor identifies the
     // ambiguous family and `instanceId` selects the instance.
-    expect(
-      Object.keys(ambiguity.instances[0]).sort()
-    ).toEqual(['identity', 'instanceId', 'occurrences']);
+    expect(Object.keys(ambiguity.instances[0]).sort()).toEqual([
+      'identity',
+      'instanceId',
+      'occurrences'
+    ]);
     for (const occurrence of ambiguity.instances.flatMap(
       (instance) => instance.occurrences
     )) {
@@ -616,7 +620,7 @@ describe('duplicate_table over bound tables', () => {
     expect(editor.serialize()).toBe(before);
   });
 
-  it('refuses multiple duplicate_table ops or later anchored ops in one batch', () => {
+  it('refuses multiple duplicates but allows later writes to existing anchors', () => {
     const multiple = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [
         { op: 'duplicate_table', anchor: '0;2;0;0;0', rows: 'copy' },
@@ -639,9 +643,10 @@ describe('duplicate_table over bound tables', () => {
         }
       ]
     });
-    expect(laterAnchored.results[0].error).toBe(
-      'duplicate_table_must_end_change_set'
-    );
-    expect(editor.serialize()).toBe(before);
+    expect(laterAnchored.results.map((entry) => entry.ok)).toEqual([
+      true,
+      true
+    ]);
+    expect(editor.serialize()).not.toBe(before);
   });
 });
