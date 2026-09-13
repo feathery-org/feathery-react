@@ -1,6 +1,6 @@
 // Table look-and-feel: read it, apply it, and keep the banding correct.
 //
-// The captain, on a new section added from an uploaded document:
+// A reported failure on a new section added from an uploaded document:
 //
 //   "it doesn't add it in the table format, it just adds this in lines ... We
 //    need the new sections to have tables like their sibling sections ... Also
@@ -41,7 +41,8 @@ import {
 } from '../tableAppearance';
 import {
   listRevisionGroups,
-  resolveLiveRevisionGroupsAsOneUndo
+  resolveLiveRevisionGroupsAsOneUndo,
+  writeTableLayout
 } from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
@@ -622,6 +623,38 @@ describe('what SyncFusion 34.1.31 does with table appearance', () => {
         null,
         BAND_FILL
       ]);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('maps widths from the logical grid when a row omits a leading cell', () => {
+    const doc: any = twoTables();
+    const offsetRow = doc.sections[0].blocks[1].rows[1];
+    offsetRow.cells.shift();
+    offsetRow.rowFormat.gridBefore = 1;
+    offsetRow.rowFormat.gridBeforeWidth = 90;
+    offsetRow.rowFormat.gridBeforeWidthType = 'Point';
+    const ed = makeEditor(doc);
+    try {
+      writeTableLayout(ed as unknown as LiveEditor, '0;1', {
+        preferredWidth: 300,
+        preferredWidthType: 'Point',
+        leftIndent: 0,
+        tableAlignment: 'Left',
+        allowAutoFit: false,
+        columnWidths: [90, 210],
+        columnWidthType: 'Point'
+      });
+      const offsetCellAnchor = facts(ed, '0;1').rows[1].cells[0].anchor;
+      ed.selection.select(
+        `${offsetCellAnchor};0`,
+        `${offsetCellAnchor};0`
+      );
+      expect(
+        (ed.selection.start as any).paragraph.associatedCell.cellFormat
+          .preferredWidth
+      ).toBeCloseTo(210, 0);
     } finally {
       destroyEditor(ed);
     }

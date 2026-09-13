@@ -2541,7 +2541,7 @@ export function writeTableLayout(
   const columnWidths = layout.columnWidths ?? [];
   const table = liveTableWidgetAt(editor, tableAnchor);
   (table?.childWidgets ?? []).forEach((row: any, rowIndex: number) => {
-    let logicalColumn = 0;
+    let logicalColumn = Math.max(0, Number(row?.rowFormat?.gridBefore) || 0);
     (row?.childWidgets ?? []).forEach((cell: any, cellIndex: number) => {
       const span = Math.max(1, Number(cell?.cellFormat?.columnSpan) || 1);
       const preferredWidth = columnWidths
