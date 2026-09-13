@@ -282,6 +282,79 @@ describe('live value-column primitives', () => {
     expect(await session.call<string>('serialize')).toBe(accepted);
   }, 120000);
 
+  it('rewrites a promoted input while the promotion is still pending', async () => {
+    await session.call('open', JSON.stringify(plainCostsFixture()));
+    const baseline = await session.call<string>('serialize');
+    const source = await session.call<string>('tableAnchorContaining', 'Item');
+    const operations = [
+      ...[1, 2].flatMap((row) => [
+        {
+          op: 'create_binding',
+          group: 'g01-promote-pending-table',
+          anchor: `${source};${row};1;0`,
+          kind: 'input',
+          name: 'quantity',
+          valueType: 'decimal:0'
+        },
+        {
+          op: 'create_binding',
+          group: 'g01-promote-pending-table',
+          anchor: `${source};${row};2;0`,
+          kind: 'input',
+          name: 'unit_cost',
+          valueType: 'currency:USD:2'
+        }
+      ]),
+      ...edits(source).map((op) => ({
+        ...op,
+        group: 'g01-promote-pending-table'
+      }))
+    ];
+
+    const promotion = await session.call<any>(
+      'applyEdits',
+      operations,
+      'promote-pending-table'
+    );
+    expect(promotion.outcomes).toEqual(operations.map(() => 'ok'));
+    const promoted = (await session.call<string[]>('tableIds')).find((id) =>
+      id.startsWith('table_')
+    );
+    expect(promoted).toBeDefined();
+    const promotedAnchor = await session.call<string>('tableAnchor', promoted);
+
+    const update = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'set_cell_text',
+          group: 'g02-rewrite-pending-input',
+          anchor: `${promotedAnchor};1;1;0`,
+          expect: '12',
+          text: '20',
+          literal: true
+        }
+      ],
+      'rewrite-pending-input'
+    );
+
+    expect(update.outcomes).toEqual(['ok']);
+    expect(await session.call<string[]>('tableRowTexts', promoted)).toEqual([
+      'ItemQtyUnit priceValueLine total — tax 0%',
+      'Design work20$150.00$3,000.00$1,800.00',
+      'Development30$200.00$6,000.00$6,000.00',
+      'Subtotal$9,000.00$7,800.00',
+      'Tax$0.00',
+      'Total$7,800.00'
+    ]);
+    expect(
+      (await session.call<any[]>('groups')).map((group) => group.changeSetId)
+    ).toEqual(['promote-pending-table']);
+
+    await session.call('resolveGroupsOf', 'promote-pending-table', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
   it('creates and targets a new blank subtotal row in the same primitive chain', async () => {
     await session.call('open', JSON.stringify(buildCostsFixture()));
     const baseline = await session.call<string>('serialize');

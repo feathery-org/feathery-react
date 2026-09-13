@@ -95,6 +95,7 @@ import type {
 // control this engine did not author is never mistaken for a binding, and bound
 // values use the same parse/render/transaction path as direct editor input.
 import {
+  canonicalBindingName,
   formatType,
   formatTag,
   parseTag,
@@ -115,6 +116,7 @@ import {
   parseExpression
 } from '../../../elements/components/DocxEditor/bindings/core/formula';
 import { applyRules } from '../../../elements/components/DocxEditor/bindings/core/engine';
+import type { Diagnostic } from '../../../elements/components/DocxEditor/bindings/core/sfdtTypes';
 import { analyzeBindingOrphans } from '../../../elements/components/DocxEditor/bindings/core/tableDeleteImpact';
 import {
   addLineItem,
@@ -1013,6 +1015,9 @@ export interface ApplyEditsResult {
   results: EditResult[];
   warnings: string[];
   inventory?: InventoryEntry[];
+  /** Internal inputs for the trace envelope, removed from the public result. */
+  backgroundDiagnostics?: Diagnostic[];
+  traceTelemetry?: string[];
   executionTrace?: {
     version: 1;
     changeSetId: string;
@@ -1033,6 +1038,8 @@ export interface ApplyEditsResult {
     }>;
     status?: 'applied' | 'failed';
     warnings: string[];
+    backgroundDiagnostics?: Diagnostic[];
+    telemetry?: string[];
   };
   changeSet?: {
     id: string;
@@ -9028,7 +9035,8 @@ export const ANCHORED_OP_HANDLERS: {
         'formula_binding_requires_engine_target',
         'A formula binding requires an engine-addressable table cell so the engine can validate and evaluate its expression. Nothing was written.'
       );
-    const name = String(op.name ?? '').trim();
+    const displayName = String(op.name ?? '').trim();
+    const name = canonicalBindingName(displayName);
     if (!name)
       throw new OpError(
         'binding_name_required',
@@ -9074,10 +9082,15 @@ export const ANCHORED_OP_HANDLERS: {
     if (sameName.length)
       definition = sameName[0].def as Extract<Definition, { kind: 'field' }>;
 
+    const requestedPhrase =
+      typeof op.find === 'string' && op.find ? String(op.find) : '';
     let canonical =
       sameName.length > 0
         ? parseDisplay(sameName[0].def.fieldType, sameName[0].text)
-        : parseDisplay(fieldType, String(op.initial ?? liveText));
+        : parseDisplay(
+            fieldType,
+            String(op.initial ?? (requestedPhrase || liveText))
+          );
     if (sameName.length && op.initial !== undefined) {
       const requested = parseDisplay(fieldType, String(op.initial));
       if (requested !== canonical)
@@ -9093,12 +9106,28 @@ export const ANCHORED_OP_HANDLERS: {
     if (!layoutWasOn) liveEditor.setProperties?.({ enableLayout: true }, true);
     let inserted: any;
     try {
-      assertNoForeignPendingRevisions(editor, block, op);
-      selectBlock(editor, block);
+      if (requestedPhrase) {
+        const index = block.text.indexOf(requestedPhrase);
+        if (index < 0)
+          throw new OpError(
+            'text_not_found',
+            `${JSON.stringify(requestedPhrase)} is not present at "${
+              block.anchor
+            }". Nothing was written.`
+          );
+        assertNoForeignPendingRevisions(editor, block, op, {
+          start: index,
+          end: index + requestedPhrase.length
+        });
+        selectExactMatch(editor, block, requestedPhrase, index, op);
+      } else {
+        assertNoForeignPendingRevisions(editor, block, op);
+        selectBlock(editor, block);
+      }
       editor.editor.delete();
       inserted = liveEditor.editorModule?.insertContentControl?.({
         type: 'Text',
-        title: name,
+        title: displayName || name,
         tag: formatTag(definition),
         value: value || '\u200b',
         canDelete: definition.isDeletable,
@@ -9119,6 +9148,9 @@ export const ANCHORED_OP_HANDLERS: {
       postWriteSfdt,
       details: [
         `binding: ${name}`,
+        ...(displayName && displayName !== name
+          ? [`binding label: ${displayName}`]
+          : []),
         `scope: ${definition.isGlobal ? 'global' : 'independent'}`
       ]
     };
@@ -14560,6 +14592,7 @@ function boundInputTextPlan(
       `The selected binding instance "${selectedOccurrence.name}" is not editable. Nothing was written.`
     );
   const pendingDeletionIds = deletedRevisionIds(runtime.sfdt);
+  const pendingInsertionIds = insertedRevisionIds(runtime.sfdt);
   const occurrenceRevisionIds = collectRevisionIdsDeep(
     getAt(runtime.sfdt, selectedOccurrence.path)
   );
@@ -14573,7 +14606,8 @@ function boundInputTextPlan(
       const id = pick(revision, 'revisionID', 'revisionId', 'rid');
       if (
         id == null ||
-        !pendingDeletionIds.has(String(id)) ||
+        (!pendingDeletionIds.has(String(id)) &&
+          !pendingInsertionIds.has(String(id))) ||
         !occurrenceRevisionIds.has(String(id))
       )
         continue;
@@ -16527,7 +16561,8 @@ function createBindingInCell(
   paragraphIndex = 0
 ): any {
   const kind = op.kind === 'input' ? 'input' : 'formula';
-  const name = String(op.name ?? '').trim();
+  const displayName = String(op.name ?? '').trim();
+  const name = canonicalBindingName(displayName);
   if (!name)
     throw new OpError(
       'binding_name_required',
@@ -16618,7 +16653,7 @@ function createBindingInCell(
       contentControlProperties: {
         ...(template ? cloneJson(template) : {}),
         tag: formatTag(definition),
-        title: String(op.name),
+        title: displayName || name,
         type: 'Text',
         lockContentControl: true,
         lockContents: kind === 'formula',
@@ -22436,6 +22471,30 @@ function emitDocumentEditTrace(entry: Record<string, unknown>): void {
   }
 }
 
+export function partitionBindingDiagnostics(
+  before: Diagnostic[],
+  after: Diagnostic[]
+): { introduced: Diagnostic[]; background: Diagnostic[] } {
+  const available = new Map<string, number>();
+  const identity = (diagnostic: Diagnostic) =>
+    `${diagnostic.severity}\u0000${diagnostic.code}\u0000${diagnostic.message}`;
+  for (const diagnostic of before) {
+    const key = identity(diagnostic);
+    available.set(key, (available.get(key) ?? 0) + 1);
+  }
+  const introduced: Diagnostic[] = [];
+  const background: Diagnostic[] = [];
+  for (const diagnostic of after) {
+    const key = identity(diagnostic);
+    const remaining = available.get(key) ?? 0;
+    if (remaining > 0) {
+      available.set(key, remaining - 1);
+      background.push(diagnostic);
+    } else introduced.push(diagnostic);
+  }
+  return { introduced, background };
+}
+
 /** True while `applyDocumentEdits` is mid-batch, or the editing turn driving
  *  it is still in flight. */
 export function isAssistantWriting(
@@ -22517,10 +22576,19 @@ export function applyDocumentEdits(
               };
             }),
             status: result.changeSet?.status,
-            warnings: result.warnings
+            warnings: result.warnings,
+            ...(raw.backgroundDiagnostics?.length
+              ? { backgroundDiagnostics: raw.backgroundDiagnostics }
+              : {}),
+            ...(raw.traceTelemetry?.length
+              ? { telemetry: raw.traceTelemetry }
+              : {})
           };
         emitDocumentEditTrace(executionTrace);
-        return { ...result, executionTrace };
+        const publicResult = { ...result };
+        delete publicResult.backgroundDiagnostics;
+        delete publicResult.traceTelemetry;
+        return { ...publicResult, executionTrace };
       })
     );
     return output;
@@ -22604,6 +22672,7 @@ function applyDocumentEditsMeasured(
       restripeBandedTables(editor, anchors);
   const results: Array<EditResult | undefined> = new Array(edits.length);
   const warnings: string[] = [];
+  const backgroundDiagnostics: Diagnostic[] = [];
   const plan = typeof input?.plan === 'string' ? input.plan.trim() : '';
   // What the engine, reading the ops, says this change set does. Always
   // computed - it is a fact of the batch, not a claim by the model.
@@ -22733,6 +22802,28 @@ function applyDocumentEditsMeasured(
         anchor,
         styleName,
         text: paragraphIdentityText(block.text)
+      });
+    }
+    if (bucket.length) paragraphStylesByGroup.set(id, bucket);
+  };
+  const recordCreatedCellParagraphStyles = (
+    op: EditOp,
+    planned: PlannedInsertInheritance[]
+  ) => {
+    const id = opGroupId(op, changeSetId);
+    const bucket = paragraphStylesByGroup.get(id) ?? [];
+    for (const entry of planned) {
+      if (!/^\d+;\d+;\d+;\d+;\d+$/.test(entry.anchor)) continue;
+      const styleName =
+        entry.inherited?.paragraphFormat?.styleName ??
+        entry.source?.format?.styleName ??
+        entry.fallbackStyleName;
+      if (!styleName || entry.expectedText === undefined) continue;
+      if (bucket.some((restore) => restore.anchor === entry.anchor)) continue;
+      bucket.push({
+        anchor: entry.anchor,
+        styleName,
+        text: paragraphIdentityText(entry.expectedText)
       });
     }
     if (bucket.length) paragraphStylesByGroup.set(id, bucket);
@@ -23897,6 +23988,7 @@ function applyDocumentEditsMeasured(
             );
             if (inheritanceAppearance)
               recordAppearanceRestores(op, inheritanceAppearance.restores);
+            recordCreatedCellParagraphStyles(op, applicable);
             // Inheritance changes appearance only. Anchors, text, and both
             // revision projections remain identical to postWriteSfdt, while
             // every inherited property is verified through the public live
@@ -24224,6 +24316,8 @@ function applyDocumentEditsMeasured(
                 'The binding command bridge detached before the engine transaction could run. Nothing was kept.'
               );
             const beforeCommands = liveSfdt;
+            const diagnosticsBeforeEngine =
+              applyRules(beforeCommands).diagnostics;
             let state: EngineMutationState = {
               sfdt: beforeCommands,
               index: scanBindings(beforeCommands),
@@ -24463,9 +24557,14 @@ function applyDocumentEditsMeasured(
                 opGroupId(enginePlans[0].op, changeSetId),
                 derivedChanges
               );
-            if (engineResult.diagnostics.length) {
+            const diagnosticDelta = partitionBindingDiagnostics(
+              diagnosticsBeforeEngine,
+              engineResult.diagnostics
+            );
+            backgroundDiagnostics.push(...diagnosticDelta.background);
+            if (diagnosticDelta.introduced.length) {
               warnings.push(
-                `binding_engine_diagnostics: ${engineResult.diagnostics
+                `binding_engine_diagnostics: ${diagnosticDelta.introduced
                   .map(
                     (diagnostic) =>
                       `${diagnostic.severity}:${diagnostic.code}:${diagnostic.message}`
@@ -24671,11 +24770,11 @@ function applyDocumentEditsMeasured(
   const wroteAppearance = appearanceRestores.length > 0;
 
   const inventory = readPostEditInventory(editor, warnings);
-  warnings.push(
+  const traceTelemetry = [
     `document_serialization: count=${
       serializationTiming.count
     }; total_ms=${serializationTiming.totalMs.toFixed(1)}`
-  );
+  ];
   const response: ApplyEditsResult = {
     // results starts as a sparse array during preflight; Array#map skips holes,
     // so materialize every requested edit explicitly when a whole change set is
@@ -24714,7 +24813,9 @@ function applyDocumentEditsMeasured(
       // statements of the same thing: if they disagree, that is visible.
       announcement,
       ...(plan ? { plan } : {})
-    }
+    },
+    ...(backgroundDiagnostics.length ? { backgroundDiagnostics } : {}),
+    traceTelemetry
   };
   if (inventory) response.inventory = inventory;
   return response;

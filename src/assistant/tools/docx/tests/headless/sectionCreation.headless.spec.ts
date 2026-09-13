@@ -456,6 +456,20 @@ describe('section creation on the flagship document', () => {
       'EncryptionRequired',
       'Annual testingRequired'
     ]);
+    const composedTables = [
+      await session.call<string>('tableAnchorContaining', 'Ransomware'),
+      await session.call<string>('tableAnchorContaining', 'CY-01'),
+      requirementsTable,
+      await session.call<string>('tableAnchorContaining', 'Endpoint protection')
+    ];
+    for (const table of composedTables) {
+      expect(
+        await session.call<string>('cellParagraphStyleAt', table, 0, 0)
+      ).toBe(await session.call<string>('cellParagraphStyleAt', table, 0, 1));
+      expect(
+        await session.call<string>('cellParagraphStyleAt', table, 0, 0)
+      ).not.toBe('Heading 1');
+    }
     const pendingTable = await session.call<string>(
       'tableAnchorContaining',
       'Endpoint protection'
@@ -482,7 +496,6 @@ describe('section creation on the flagship document', () => {
     expect(
       pendingTags.some((tag) => tag.includes('cyber_insurance_subtotal'))
     ).toBe(true);
-
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(baseline);
 
@@ -494,6 +507,20 @@ describe('section creation on the flagship document', () => {
       'tableAnchorContaining',
       'Endpoint protection'
     );
+    const acceptedComposedTables = [
+      await session.call<string>('tableAnchorContaining', 'Ransomware'),
+      await session.call<string>('tableAnchorContaining', 'CY-01'),
+      await session.call<string>('tableAnchorContaining', 'Annual testing'),
+      acceptedTable
+    ];
+    for (const table of acceptedComposedTables) {
+      expect(
+        await session.call<string>('cellParagraphStyleAt', table, 0, 0)
+      ).toBe(await session.call<string>('cellParagraphStyleAt', table, 0, 1));
+      expect(
+        await session.call<string>('cellParagraphStyleAt', table, 0, 0)
+      ).not.toBe('Heading 1');
+    }
     const edit = await session.call<any>(
       'applyEdits',
       [

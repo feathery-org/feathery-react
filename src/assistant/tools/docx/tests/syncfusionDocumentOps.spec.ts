@@ -22,6 +22,7 @@ import {
   FULL_INVENTORY_BLOCK_LIMIT,
   isAssistantAuthor,
   isAssistantWriting,
+  partitionBindingDiagnostics,
   setAssistantSessionActive,
   LiveEditor
 } from '../syncfusionDocumentOps';
@@ -56,6 +57,31 @@ if (!window.crypto?.getRandomValues) {
     }
   });
 }
+
+it('keeps pre-existing binding diagnostics in the trace and surfaces only new ones', () => {
+  const existing = {
+    severity: 'warning' as const,
+    code: 'missing-alias',
+    message: 'A summary alias is not bound.',
+    path: ['sections', 4]
+  };
+  const introduced = {
+    severity: 'error' as const,
+    code: 'invalid-input',
+    message: 'Quantity is invalid.',
+    path: ['sections', 1]
+  };
+
+  expect(
+    partitionBindingDiagnostics(
+      [existing],
+      [{ ...existing, path: ['sections', 5] }, introduced]
+    )
+  ).toEqual({
+    background: [{ ...existing, path: ['sections', 5] }],
+    introduced: [introduced]
+  });
+});
 
 const jsdomGetComputedStyle = window.getComputedStyle.bind(window);
 window.getComputedStyle = ((elt: Element) =>
@@ -1091,7 +1117,7 @@ describe('applyDocumentEdits', () => {
 
         expect(result.results.every((entry) => entry.ok)).toBe(true);
         const calls = serialize.mock.calls.length;
-        expect(result.warnings).toEqual(
+        expect(result.executionTrace?.telemetry).toEqual(
           expect.arrayContaining([
             expect.stringMatching(
               new RegExp(`^document_serialization: count=${calls}; total_ms=`)
@@ -1166,7 +1192,7 @@ describe('applyDocumentEdits', () => {
 
       expect(result.results.every((entry) => entry.ok)).toBe(true);
       expect(serialize).toHaveBeenCalledTimes(8);
-      expect(result.warnings).toEqual(
+      expect(result.executionTrace?.telemetry).toEqual(
         expect.arrayContaining([
           expect.stringMatching(
             /^document_serialization: count=8; total_ms=\d+\.\d$/

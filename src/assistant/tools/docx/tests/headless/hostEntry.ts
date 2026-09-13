@@ -462,6 +462,18 @@ const api = {
     });
   },
 
+  cellParagraphStyleAt(
+    anchor: string,
+    rowIndex: number,
+    columnIndex: number
+  ): string | null {
+    const cell =
+      tableBlockAtAnchor(anchor)?.rows?.[rowIndex]?.cells?.[columnIndex];
+    const paragraph = cell?.blocks?.[0];
+    const format = paragraph?.paragraphFormat ?? paragraph?.pf;
+    return format?.styleName ?? format?.stn ?? null;
+  },
+
   traces: (): any[] => (globalThis as any).__featheryDocumentEditTraceLog ?? [],
 
   /** Bound row identities in document order, used to catch stale or duplicated controls. */

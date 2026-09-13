@@ -699,7 +699,10 @@ function parsePersistedParagraphStyles(
   for (const raw of value) {
     if (!raw || typeof raw !== 'object') return undefined;
     const entry = raw as Record<string, unknown>;
-    if (typeof entry.anchor !== 'string' || !/^\d+;\d+$/.test(entry.anchor))
+    if (
+      typeof entry.anchor !== 'string' ||
+      !/^(?:\d+;\d+|\d+;\d+;\d+;\d+;\d+)$/.test(entry.anchor)
+    )
       return undefined;
     if (typeof entry.styleName !== 'string' || !entry.styleName.trim())
       return undefined;
@@ -2132,6 +2135,23 @@ function resolveLiveRevisionGroupsAsOneUndoInner(
       : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
   };
   const initial = liveRevisionsRaw(editor).filter(matchesGroup);
+  const stylePayloadsByGroup = new Map<
+    string,
+    Map<string, ParagraphStyleRestore[]>
+  >();
+  for (const revision of initial) {
+    const tag = parseRevisionGroupTag(revision.customData);
+    if (!tag?.paragraphStyles) continue;
+    const key = `${tag.changeSetId}\u0000${tag.group}`;
+    const payloads = stylePayloadsByGroup.get(key) ?? new Map();
+    payloads.set(JSON.stringify(tag.paragraphStyles), tag.paragraphStyles);
+    stylePayloadsByGroup.set(key, payloads);
+  }
+  const postResolveStyles = [...stylePayloadsByGroup.values()]
+    .flatMap((payloads) =>
+      payloads.size === 1 ? [...payloads.values()][0] : []
+    )
+    .filter((restore) => restore.text.length > 0);
   const editorModule: any = (editor as any).editorModule ?? editor.editor;
   const history: any =
     (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
@@ -2230,6 +2250,10 @@ function resolveLiveRevisionGroupsAsOneUndoInner(
   const purged = new Set(purgeUnresolvableRevisions(editor));
   if (initial.length) invalidateDocumentLayout(editor);
   recomputeDerivedValuesAfterResolve(editor, touchedTables);
+  if (postResolveStyles.length)
+    preserveDocumentViewDuring(editor, () =>
+      replayParagraphStyles(editor, postResolveStyles)
+    );
   // Final membership, not call count, determines the outcome.
   const live = new Set(members());
   // Retired leaks belong in neither result list.
@@ -2725,31 +2749,98 @@ export const replayParagraphStyles = (
       .map((run) => run?.text ?? run?.tlp ?? '')
       .join('');
   const identify = (block: any) => paragraphIdentityText(readText(block));
+  const rowsOf = (node: any): any[] => node?.rows ?? node?.r ?? node?.rw ?? [];
+  const blocksOf = (node: any): any[] => node?.blocks ?? node?.b ?? [];
+  const cellsOf = (node: any): any[] => node?.cells ?? node?.c ?? [];
+  const tableOf = (node: any): any => {
+    if (!node || typeof node !== 'object') return undefined;
+    if (rowsOf(node).length) return node;
+    for (const child of blocksOf(node)) {
+      const table = tableOf(child);
+      if (table) return table;
+    }
+    return undefined;
+  };
+  const blockAt = (anchor: string): any => {
+    const parts = anchor.split(';').map(Number);
+    if (!parts.every(Number.isInteger)) return undefined;
+    const topLevel = sections[parts[0]]?.[parts[1]];
+    if (parts.length === 2) return topLevel;
+    if (parts.length !== 5) return undefined;
+    const table = tableOf(topLevel);
+    return blocksOf(cellsOf(rowsOf(table)[parts[2]])[parts[3]])[parts[4]];
+  };
+  const candidates = (): Array<{ anchor: string; block: any }> => {
+    const found: Array<{ anchor: string; block: any }> = [];
+    sections.forEach((blocks: any[], section: number) =>
+      blocks.forEach((block: any, blockIndex: number) => {
+        found.push({ anchor: `${section};${blockIndex}`, block });
+        const table = tableOf(block);
+        rowsOf(table).forEach((row: any, rowIndex: number) =>
+          cellsOf(row).forEach((cell: any, cellIndex: number) =>
+            blocksOf(cell).forEach((paragraph: any, paragraphIndex: number) =>
+              found.push({
+                anchor: `${section};${blockIndex};${rowIndex};${cellIndex};${paragraphIndex}`,
+                block: paragraph
+              })
+            )
+          )
+        );
+      })
+    );
+    return found;
+  };
   for (const restore of restores) {
-    const [sectionIndex, blockIndex] = restore.anchor.split(';').map(Number);
-    const atAnchor = sections[sectionIndex]?.[blockIndex];
-    let target: { section: number; block: number } | undefined;
+    const atAnchor = blockAt(restore.anchor);
+    let target: string | undefined;
     if (atAnchor && identify(atAnchor) === restore.text)
-      target = { section: sectionIndex, block: blockIndex };
+      target = restore.anchor;
     else {
-      // The anchor moved. Fall back to the one paragraph that still reads the
-      // same; ambiguity means leave it alone.
-      const matches: Array<{ section: number; block: number }> = [];
-      sections.forEach((blocks: any[], section: number) =>
-        blocks.forEach((block: any, index: number) => {
-          if (block?.rows ?? block?.r) return;
-          if (identify(block) === restore.text)
-            matches.push({ section, block: index });
-        })
+      const matches = candidates().filter(
+        ({ block }) => identify(block) === restore.text
       );
-      if (matches.length === 1) target = matches[0];
+      if (matches.length === 1) target = matches[0].anchor;
+      else {
+        const expected = restore.anchor.split(';').map(Number);
+        if (expected.length === 5) {
+          const structural = matches
+            .map((match) => ({
+              ...match,
+              parts: match.anchor.split(';').map(Number)
+            }))
+            .filter(
+              ({ parts }) =>
+                parts.length === 5 &&
+                parts[0] === expected[0] &&
+                parts[2] === expected[2] &&
+                parts[3] === expected[3] &&
+                parts[4] === expected[4]
+            )
+            .sort(
+              (left, right) =>
+                Math.abs(left.parts[1] - expected[1]) -
+                Math.abs(right.parts[1] - expected[1])
+            );
+          if (
+            structural.length &&
+            (structural.length === 1 ||
+              Math.abs(structural[0].parts[1] - expected[1]) <
+                Math.abs(structural[1].parts[1] - expected[1]))
+          )
+            target = structural[0].anchor;
+        }
+      }
     }
     if (!target) continue;
-    const block = sections[target.section]?.[target.block];
-    if (readStyle(block) === restore.styleName) continue;
-    const anchor = `${target.section};${target.block}`;
+    const block = blockAt(target);
+    const currentStyle = readStyle(block);
+    if (
+      currentStyle === restore.styleName ||
+      (!currentStyle && restore.styleName === 'Normal')
+    )
+      continue;
     try {
-      editor.selection?.select?.(`${anchor};0`, `${anchor};0`);
+      editor.selection?.select?.(`${target};0`, `${target};0`);
       (editor.editor as any)?.applyStyle?.(restore.styleName);
     } catch {
       // Content still resolves consistently if one style restore fails.

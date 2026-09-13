@@ -533,6 +533,7 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     params: {
       kind: 'enum[input,formula]',
       name: 'string',
+      find: 'string?',
       valueType: 'string?',
       expression: 'string?',
       global: 'boolean?',

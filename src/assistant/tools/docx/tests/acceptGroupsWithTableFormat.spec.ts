@@ -42,6 +42,7 @@ import {
   listRevisionGroups,
   parseRevisionGroupTag,
   rebindRevisionGroups,
+  revisionGroupTag,
   resolveLiveRevisionGroupsAsOneUndo,
   resolveRevisionsAsOneUndo
 } from '../../../../utils/documentEditorPrimitives';
@@ -102,6 +103,18 @@ const revisions = (ed: DocumentEditor): any[] => {
   }
   return out;
 };
+
+it('round-trips paragraph-style restores for table-cell paragraphs', () => {
+  const tag = parseRevisionGroupTag(
+    revisionGroupTag('change', 'group', undefined, [
+      { anchor: '4;3;0;0;0', styleName: 'Normal', text: 'Category' }
+    ])
+  );
+
+  expect(tag?.paragraphStyles).toEqual([
+    { anchor: '4;3;0;0;0', styleName: 'Normal', text: 'Category' }
+  ]);
+});
 
 // --- Fixture: the captain's document ----------------------------------------
 

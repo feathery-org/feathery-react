@@ -85,6 +85,105 @@ describe('generic content-control binding primitive', () => {
     expect(await session.call<string>('serialize')).toBe(baseline);
   }, 120000);
 
+  it('normalizes a readable global binding name before creating its tag', async () => {
+    await session.call('open', JSON.stringify(buildCostsFixture()));
+    const heading = (await session.call<any[]>('inventory')).find(
+      (entry) => entry.text === 'Project cost estimate'
+    );
+
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g03-readable-global-name',
+          anchor: heading.anchor,
+          kind: 'input',
+          name: 'Standard coverage status',
+          valueType: 'text',
+          global: true
+        }
+      ],
+      'readable-global-name'
+    );
+
+    expect(result.outcomes).toEqual(['ok']);
+    expect(await session.call<string[]>('serializedTags')).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('name=standard_coverage_status')
+      ])
+    );
+    expect(await session.call<string>('serialize')).not.toContain(
+      'name=Standard coverage status'
+    );
+
+    await session.call('resolveGroups', true);
+    const accepted = await session.call<string>('serialize');
+    const write = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'set_cell_text',
+          group: 'g04-write-readable-global',
+          anchor: heading.anchor,
+          expect: 'Project cost estimate',
+          text: 'Approved'
+        }
+      ],
+      'write-readable-global'
+    );
+    expect(write.outcomes).toEqual(['ok']);
+    expect(
+      (await session.call<any[]>('inventory')).find(
+        (entry) => entry.anchor === heading.anchor
+      )?.text
+    ).toBe('Approved');
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(accepted);
+  }, 120000);
+
+  it('wraps only the requested phrase in a reusable paragraph binding', async () => {
+    await session.call('open', JSON.stringify(buildCostsFixture()));
+    const baseline = await session.call<string>('serialize');
+    const heading = (await session.call<any[]>('inventory')).find(
+      (entry) => entry.text === 'Project cost estimate'
+    );
+
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g05-bind-exact-phrase',
+          anchor: heading.anchor,
+          expect: 'Project cost estimate',
+          find: 'cost estimate',
+          kind: 'input',
+          name: 'Client description',
+          valueType: 'text',
+          initial: 'cost estimate'
+        }
+      ],
+      'bind-exact-phrase'
+    );
+
+    expect(result.outcomes).toEqual(['ok']);
+    expect(
+      (await session.call<any[]>('inventory')).find(
+        (entry) => entry.anchor === heading.anchor
+      )?.text
+    ).toBe('Project cost estimate');
+    expect(await session.call<string[]>('serializedTags')).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('name=client_description')
+      ])
+    );
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
   it('binds one paragraph in a multi-paragraph cell without deleting its siblings', async () => {
     const fixture = buildCostsFixture() as any;
     const costsTable = fixture.sections[0].blocks[2].blocks[0];
@@ -103,7 +202,7 @@ describe('generic content-control binding primitive', () => {
       [
         {
           op: 'create_binding',
-          group: 'g03-bind-second-paragraph',
+          group: 'g06-bind-second-paragraph',
           anchor: target.anchor,
           expect: 'Bind this paragraph',
           kind: 'input',
