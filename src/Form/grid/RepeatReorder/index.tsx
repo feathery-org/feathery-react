@@ -25,6 +25,9 @@ import {
   clusterInsideStyles,
   clusterStyles,
   gripStyles,
+  insertBadgeStyles,
+  insertInsideStyles,
+  insertInsideStylesAbove,
   insertStyles,
   insertStylesAbove,
   stepStyles,
@@ -335,7 +338,16 @@ export const RepeatRowHandle = ({
         <button
           type='button'
           className={INSERT_CLASS}
-          css={seamAbove ? insertStylesAbove : insertStyles}
+          css={{
+            ...(seamAbove ? insertStylesAbove : insertStyles),
+            // Same fallback the cluster takes: with no gutter to sit in, the
+            // seam returns to the centre of the row rather than off screen.
+            ...(inside
+              ? seamAbove
+                ? insertInsideStylesAbove
+                : insertInsideStyles
+              : {})
+          }}
           aria-label={
             seamAbove
               ? `Add a row above row ${ordinal}`
@@ -347,7 +359,9 @@ export const RepeatRowHandle = ({
             onInsert(seamAbove ? index : index + 1);
           }}
         >
-          <Plus />
+          <span css={insertBadgeStyles}>
+            <Plus />
+          </span>
         </button>
       )}
       {canReorder && (

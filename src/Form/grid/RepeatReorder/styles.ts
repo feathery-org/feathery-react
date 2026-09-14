@@ -30,8 +30,19 @@ export const DRAGGING_ATTR = 'data-feathery-reorder-dragging';
  * The chrome sits in a gutter beside the row. It hangs off the outer container
  * rather than the inner one, so a thicker border or more padding pushes the
  * content in without ever reaching the dots.
+ *
+ * Wide enough for a 24px control plus a little air, because every
+ * control in here has to meet the minimum target size.
  */
-export const GUTTER_WIDTH = 28;
+export const GUTTER_WIDTH = 30;
+
+/**
+ * Minimum hit area for every control, per WCAG 2.2 SC 2.5.8.
+ *
+ * The painted glyph stays small - the extra is transparent padding around it -
+ * so meeting the minimum does not turn the quiet chrome into furniture.
+ */
+export const TARGET_SIZE = 24;
 
 /**
  * Stacking for the row being carried.
@@ -56,7 +67,7 @@ export const clusterStyles = {
   position: 'absolute' as const,
   insetBlockStart: 0,
   insetInlineStart: `-${GUTTER_WIDTH}px`,
-  width: `${GUTTER_WIDTH - 6}px`,
+  width: `${TARGET_SIZE}px`,
   display: 'flex',
   flexDirection: 'column' as const,
   alignItems: 'center',
@@ -120,6 +131,10 @@ const clusterButton = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
+  // The box is the hit area, not the drawing. Each glyph is its own small svg
+  // centred in here, so the chrome looks the same as before but can be hit.
+  width: `${TARGET_SIZE}px`,
+  height: `${TARGET_SIZE}px`,
   padding: 0,
   border: 0,
   background: 'none',
@@ -132,23 +147,16 @@ const clusterButton = {
 
 /**
  * Moves the row one place without a drag, which is what SC 2.5.7 asks for.
- * Kept in the same gutter as the grip so the three controls read as one
- * cluster, and sized to the 20px the grip already occupies rather than to a
- * touch target: on a coarse pointer the whole cluster is permanently visible,
- * and widening it there would push the row's content further in.
+ * Kept in the same gutter as the grip so every control reads as one cluster.
  */
 export const stepStyles = {
   ...clusterButton,
-  width: '20px',
-  height: '14px',
   cursor: 'pointer',
   '&:disabled': { opacity: 0.2, cursor: 'default' }
 };
 
 export const gripStyles = {
   ...clusterButton,
-  width: '20px',
-  height: '24px',
   cursor: 'grab',
   // Required for a pointer drag to survive a touch gesture; scoped to the grip
   // so scrolling anywhere else in the form is unaffected.
@@ -158,23 +166,25 @@ export const gripStyles = {
 
 /**
  * Sits on the seam between two rows, on whichever edge of the row the pointer
- * is nearer. Both variants ride the block axis, which is the axis rows stack on
- * for every track the SDK lays out itself.
+ * is nearer, in the same gutter as the grip.
+ *
+ * Centred on the row it was 317px from the handle on a 600px row, so reaching
+ * for one control meant leaving the other behind. In the gutter the whole set
+ * reads as one cluster: the block axis still says WHICH seam, the inline axis
+ * now agrees with the grip.
  */
 const insertBase = {
   position: 'absolute' as const,
-  insetInlineStart: '50%',
+  insetInlineStart: `-${GUTTER_WIDTH}px`,
+  width: `${TARGET_SIZE}px`,
+  height: `${TARGET_SIZE}px`,
   zIndex: 3,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: '18px',
-  height: '18px',
   padding: 0,
-  border: '1px solid',
-  borderColor: 'currentColor',
-  borderRadius: '5px',
-  background: surface,
+  border: 0,
+  background: 'none',
   color: ink,
   cursor: 'pointer',
   opacity: 0,
@@ -183,18 +193,50 @@ const insertBase = {
   '@media (hover: none)': { opacity: 0.6 }
 };
 
+/** The badge drawn inside the seam button, kept small while the button is not. */
+export const insertBadgeStyles = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '18px',
+  height: '18px',
+  border: '1px solid',
+  borderColor: 'currentColor',
+  borderRadius: '5px',
+  background: surface
+};
+
+/**
+ * Where the seam goes when the gutter has no room - the same full-bleed case
+ * that drives the cluster inside. Back to the centre of the row, which is
+ * always on screen and clear of the cluster's trailing corner.
+ */
+const insertInsideBase = {
+  insetInlineStart: '50%'
+};
+
+export const insertInsideStyles = {
+  ...insertInsideBase,
+  transform: 'translate(-50%, 50%)'
+};
+
+export const insertInsideStylesAbove = {
+  ...insertInsideBase,
+  transform: 'translate(-50%, -50%)'
+};
+
 /** On the seam below the row: insert after it. */
 export const insertStyles = {
   ...insertBase,
   insetBlockEnd: 0,
-  transform: 'translate(-50%, 50%)'
+  transform: 'translateY(50%)'
 };
 
 /** On the seam above the row: insert before it. */
 export const insertStylesAbove = {
   ...insertBase,
   insetBlockStart: 0,
-  transform: 'translate(-50%, -50%)'
+  transform: 'translateY(-50%)'
 };
 
 export const visuallyHidden = {

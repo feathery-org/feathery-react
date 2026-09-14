@@ -199,8 +199,8 @@ describe('Container repeat row reorder handle', () => {
   });
 
   it.each([
-    ['0px', '-28px'],
-    ['14px', '-42px']
+    ['0px', '-30px'],
+    ['14px', '-44px']
   ])('clears a %s outline by sitting at %s', (border, expected) => {
     // An absolute offset is measured from the padding box, which sits inside
     // the border, so a static gutter is swallowed by a heavy outline.
@@ -214,13 +214,16 @@ describe('Container repeat row reorder handle', () => {
         return { ...style, borderInlineStartWidth: border } as any;
       });
 
-    const { container } = renderContainer(repeatNode());
-    const cluster = container.querySelector(
-      '.feathery-repeat-reorder'
-    ) as HTMLElement;
+    try {
+      const { container } = renderContainer(repeatNode());
+      const cluster = container.querySelector(
+        '.feathery-repeat-reorder'
+      ) as HTMLElement;
 
-    expect(cluster.style.insetInlineStart).toBe(expected);
-    win.getComputedStyle.mockRestore();
+      expect(cluster.style.insetInlineStart).toBe(expected);
+    } finally {
+      win.getComputedStyle.mockRestore();
+    }
   });
 
   /**
@@ -256,7 +259,7 @@ describe('Container repeat row reorder handle', () => {
         const cluster = container.querySelector(
           '.feathery-repeat-reorder'
         ) as HTMLElement;
-        expect(cluster.style.insetInlineStart).toBe('-28px');
+        expect(cluster.style.insetInlineStart).toBe('-30px');
       });
     });
 
@@ -289,14 +292,17 @@ describe('Container repeat row reorder handle', () => {
       // Flush to the right edge of a 1024px window, so the leading side in RTL
       // has nothing outside it even though `left` is nowhere near zero.
       (win as any).innerWidth = 1024;
-      withRowRect({ left: 634, right: 1024 }, () => {
-        const { container } = renderContainer(repeatNode());
-        const cluster = container.querySelector(
-          '.feathery-repeat-reorder'
-        ) as HTMLElement;
-        expect(cluster.style.insetInlineStart).toBe('');
-      });
-      win.getComputedStyle.mockRestore();
+      try {
+        withRowRect({ left: 634, right: 1024 }, () => {
+          const { container } = renderContainer(repeatNode());
+          const cluster = container.querySelector(
+            '.feathery-repeat-reorder'
+          ) as HTMLElement;
+          expect(cluster.style.insetInlineStart).toBe('');
+        });
+      } finally {
+        win.getComputedStyle.mockRestore();
+      }
     });
 
     it('keeps the gutter on a row it cannot measure yet', () => {
@@ -307,8 +313,57 @@ describe('Container repeat row reorder handle', () => {
         const cluster = container.querySelector(
           '.feathery-repeat-reorder'
         ) as HTMLElement;
-        expect(cluster.style.insetInlineStart).toBe('-28px');
+        expect(cluster.style.insetInlineStart).toBe('-30px');
       });
+    });
+  });
+
+  /**
+   * Every control has to be reachable by a coarse pointer, and the seam has to
+   * be reachable from the handle - centred on the row it sat 317px away.
+   */
+  describe('the controls as one cluster', () => {
+    const size = (el: Element) => {
+      const cs = getComputedStyle(el);
+      return { w: cs.width, h: cs.height };
+    };
+
+    it('gives every control the minimum target size', () => {
+      const { container } = renderContainer(repeatNode({ repeat: 1 }));
+      const controls = [
+        ...container.querySelectorAll(
+          '.feathery-repeat-reorder-grip, .feathery-repeat-reorder-step, .feathery-repeat-insert'
+        )
+      ];
+
+      expect(controls.length).toBeGreaterThan(0);
+      controls.forEach((c) =>
+        expect(size(c)).toEqual({ w: '24px', h: '24px' })
+      );
+    });
+
+    it('puts the seam in the gutter, on the same line as the grip', () => {
+      const { container } = renderContainer(repeatNode({ repeat: 1 }));
+      const seam = container.querySelector(
+        '.feathery-repeat-insert'
+      ) as HTMLElement;
+      const cluster = container.querySelector(
+        '.feathery-repeat-reorder'
+      ) as HTMLElement;
+
+      // Both hang off the row's leading edge by the gutter width.
+      expect(getComputedStyle(seam).insetInlineStart).toBe('-30px');
+      expect(getComputedStyle(cluster).insetInlineStart).toBe('-30px');
+    });
+
+    it('keeps the badge small while the button is not', () => {
+      const { container } = renderContainer(repeatNode({ repeat: 1 }));
+      const badge = container.querySelector(
+        '.feathery-repeat-insert span'
+      ) as HTMLElement;
+
+      // The drawing stays the size it always was; only the hit area grew.
+      expect(size(badge)).toEqual({ w: '18px', h: '18px' });
     });
   });
 
