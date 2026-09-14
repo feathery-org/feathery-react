@@ -812,6 +812,9 @@ interface Props {
    *  with whether the assistant is driving the edit. The version-history
    *  session tracker uses this to attribute edits and keep autosave alive. */
   onEdit?: (info: { assistant: boolean }) => void;
+  /** Ctrl/Cmd+S in the editor. Provided so the save shortcut routes to the host
+   *  Save instead of Syncfusion's default (which downloads the raw SFDT). */
+  onSaveShortcut?: () => void;
   onError?: (error: string) => void;
   /**
    * Opt-in document bindings: [[...]] tokens become live fields and formulas that
@@ -846,6 +849,7 @@ export function useDocxEditor({
   onEditorReady,
   onDirty,
   onEdit,
+  onSaveShortcut,
   onError,
   bindings
 }: Props): Result {
@@ -859,6 +863,8 @@ export function useDocxEditor({
   onDirtyRef.current = onDirty;
   const onEditRef = useRef(onEdit);
   onEditRef.current = onEdit;
+  const onSaveShortcutRef = useRef(onSaveShortcut);
+  onSaveShortcutRef.current = onSaveShortcut;
   const [editor, setEditor] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1014,6 +1020,26 @@ export function useDocxEditor({
           // Unlike onDirty (edge-only), onEdit fires on every change so the
           // session tracker can debounce autosave and attribute each edit.
           onEditRef.current?.({ assistant: isAssistantWriting(ed) });
+        });
+        // Ctrl/Cmd+S: Syncfusion's default saves the document as a downloaded
+        // SFDT file. Intercept it, stop that default (isHandled + preventDefault),
+        // and route to the host's Save so the shortcut persists like the toolbar.
+        ed.addEventListener('keyDown', (args: any) => {
+          const e = args?.event as KeyboardEvent | undefined;
+          if (!e) return;
+          const isSaveCombo =
+            (e.ctrlKey || e.metaKey) &&
+            !e.shiftKey &&
+            !e.altKey &&
+            (e.key === 's' || e.key === 'S' || e.keyCode === 83);
+          if (!isSaveCombo) return;
+          args.isHandled = true;
+          try {
+            e.preventDefault();
+          } catch {
+            /* some synthetic events aren't cancelable */
+          }
+          onSaveShortcutRef.current?.();
         });
         // Native right-click menu — insert/delete table rows & columns,
         // cut/copy/paste, etc. (the built-in toolbar is disabled).

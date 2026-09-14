@@ -316,6 +316,9 @@ function DocxEditor({
     onEditorReady,
     onDirty: markDirty,
     onEdit: (info) => historyOnEditRef.current?.(info),
+    // Ctrl/Cmd+S saves through the host instead of Syncfusion's default (which
+    // downloads the raw SFDT). Runs the same gated flow as the toolbar Save.
+    onSaveShortcut: () => handleSave(),
     onError,
     bindings: bindings
       ? {
@@ -971,9 +974,11 @@ function DocxEditor({
             onSelectVersion={selectVersion}
             // Report the loaded list up so the panel can auto-select the latest.
             onVersionsLoaded={setHistoryVersions}
-            // Footer actions: Restore the open version; enabled while viewing.
+            // Footer actions: Restore the open version; enabled while viewing,
+            // but never for the current version (already the live document).
             onRestoreVersion={restoreViewingVersion}
             versionSelected={!!viewingVersion}
+            restoreDisabled={!!viewingVersion?.is_current}
             selectedVersionId={viewingVersion?.id ?? null}
             // Unapproved Robin edits still tracked in the in-progress current
             // version — surfaced on its row while it's the one being viewed.

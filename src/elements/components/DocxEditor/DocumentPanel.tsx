@@ -49,6 +49,9 @@ interface Props {
   onRestoreVersion?: () => void;
   /** Whether a version is open in the viewer, enabling the Restore button. */
   versionSelected?: boolean;
+  /** Disable Restore even when a version is open — e.g. the current version is
+   *  showing, which is already the live state and can't be restored to. */
+  restoreDisabled?: boolean;
   /** Id of the version open in the viewer (highlights its row). */
   selectedVersionId?: string | null;
   /** Unapproved Robin edits still tracked in the current version (its chip). */
@@ -72,10 +75,14 @@ export default function DocumentPanel({
   onVersionsLoaded,
   onRestoreVersion,
   versionSelected,
+  restoreDisabled,
   selectedVersionId,
   currentPendingCount,
   historyRefreshKey
 }: Props) {
+  // Restore is offered only for an older version that is open — never for the
+  // current version (it's already the live document).
+  const canRestore = !!versionSelected && !restoreDisabled;
   return (
     <div
       css={{
@@ -219,7 +226,12 @@ export default function DocumentPanel({
             <button
               type='button'
               onClick={onRestoreVersion}
-              disabled={!versionSelected}
+              disabled={!canRestore}
+              title={
+                versionSelected && !canRestore
+                  ? 'This is the current version'
+                  : undefined
+              }
               css={{
                 height: 32,
                 padding: '0 14px',
@@ -230,9 +242,9 @@ export default function DocumentPanel({
                 fontSize: 12.5,
                 fontWeight: 600,
                 color: '#fff',
-                cursor: versionSelected ? 'pointer' : 'default',
-                opacity: versionSelected ? 1 : 0.5,
-                '&:hover': versionSelected ? { filter: 'brightness(0.95)' } : {}
+                cursor: canRestore ? 'pointer' : 'default',
+                opacity: canRestore ? 1 : 0.5,
+                '&:hover': canRestore ? { filter: 'brightness(0.95)' } : {}
               }}
             >
               Restore version
