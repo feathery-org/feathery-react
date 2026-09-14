@@ -286,37 +286,46 @@ export const getFormContext = (formUuid: string) => {
         documentIds.some(
           (doc) => typeof doc === 'object' && doc.kind === 'quik'
         );
+      // Document generation reads whatever the fuser has on file, so pending
+      // field edits have to land before it runs or it fills/signs stale data.
+      const flushFields = () =>
+        Promise.all([
+          formState.client.flushCustomFields(),
+          defaultClient.flushCustomFields()
+        ]);
       // Quik sources, DocuSign, signers, the editor, and the sign/save
       // envelope actions all need the same endpoint + editor flow the Generate
       // Documents action uses, so route through the <Form />-registered flow
       // when any are requested. Otherwise keep the simple, backward-compatible
       // client path (template fill / merge / download).
       if (formState.generateEnvelopeFlow && usesRichOptions) {
-        return formState.generateEnvelopeFlow({
-          type: 'open_fuser_envelopes',
-          documents: documentIds,
-          envelope_action: envelopeAction,
-          sign_method: signMethod,
-          // Omitted rather than nulled: the backend's role_id rejects an
-          // explicit null, and leaving it off spreads the email across
-          // every role of that document.
-          envelope_signers: signers?.map(
-            ({ documentId, roleId, email, filler }) => ({
-              document_id: documentId,
-              ...(roleId ? { role_id: roleId } : {}),
-              email,
-              filler: !!filler
-            })
-          ),
-          editor_toolbar_actions: toolbarActions,
-          repeatable,
-          merge_docs: merge,
-          merged_file_name: mergedFileName,
-          envelope_zip_name: zipName,
-          save_document_field_key: saveDocumentFieldKey,
-          redirect,
-          run_async: true
-        });
+        return flushFields().then(() =>
+          formState.generateEnvelopeFlow!({
+            type: 'open_fuser_envelopes',
+            documents: documentIds,
+            envelope_action: envelopeAction,
+            sign_method: signMethod,
+            // Omitted rather than nulled: the backend's role_id rejects an
+            // explicit null, and leaving it off spreads the email across
+            // every role of that document.
+            envelope_signers: signers?.map(
+              ({ documentId, roleId, email, filler }) => ({
+                document_id: documentId,
+                ...(roleId ? { role_id: roleId } : {}),
+                email,
+                filler: !!filler
+              })
+            ),
+            editor_toolbar_actions: toolbarActions,
+            repeatable,
+            merge_docs: merge,
+            merged_file_name: mergedFileName,
+            envelope_zip_name: zipName,
+            save_document_field_key: saveDocumentFieldKey,
+            redirect,
+            run_async: true
+          })
+        );
       }
       // Reached only when no <Form /> flow is registered (headless/vanillajs).
       // The simple client path interpolates documentIds straight into its poll
@@ -339,14 +348,16 @@ export const getFormContext = (formUuid: string) => {
           )
         );
       }
-      return formState.client.generateDocuments({
-        documentIds: documentIds as string[],
-        download,
-        merge,
-        repeatable,
-        mergedFileName,
-        zipName
-      });
+      return flushFields().then(() =>
+        formState.client.generateDocuments({
+          documentIds: documentIds as string[],
+          download,
+          merge,
+          repeatable,
+          mergedFileName,
+          zipName
+        })
+      );
     },
     getQuikForms: (props: { dealerNames: string[] }) =>
       formState.client.getQuikForms(props),

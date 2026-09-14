@@ -19,6 +19,7 @@
 
 import {
   pruneDetachedContentControls,
+  withContentControlLocksBypassed,
   SyncfusionEditorLike
 } from './editorAdapter';
 import { isApplyingNativeStructuralMutations } from './nativeStructuralAdapter';
@@ -44,27 +45,7 @@ function allowRowCommandDuringReplay(
   const history = editor.editorHistoryModule;
   const module = editor.editorModule as object | undefined;
   if (!module || (!history?.isUndoing && !history?.isRedoing)) return run();
-  const hadOwn = Object.prototype.hasOwnProperty.call(
-    module,
-    'canEditContentControl'
-  );
-  const previous = hadOwn
-    ? Object.getOwnPropertyDescriptor(module, 'canEditContentControl')
-    : undefined;
-  Object.defineProperty(module, 'canEditContentControl', {
-    configurable: true,
-    enumerable: true,
-    get: () => true
-  });
-  try {
-    return run();
-  } finally {
-    if (hadOwn && previous)
-      Object.defineProperty(module, 'canEditContentControl', previous);
-    else
-      delete (module as { canEditContentControl?: unknown })
-        .canEditContentControl;
-  }
+  return withContentControlLocksBypassed(module, run);
 }
 
 /**

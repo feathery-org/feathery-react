@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import Sketch from '@uiw/react-color-sketch';
+import HiddenValueInput from '../../components/HiddenValueInput';
 
 function alphaToHex(alpha: number): string {
   const clampedAlpha = Math.max(0, Math.min(1, alpha));
@@ -20,6 +21,7 @@ function ColorPickerField({
   children
 }: any) {
   const [showPicker, setShowPicker] = useState(false);
+  const servar = element.servar;
   return (
     <div
       css={{
@@ -34,6 +36,7 @@ function ColorPickerField({
       {children}
       {fieldLabel}
       <div
+        id={`${servar.key}-swatch`}
         css={{
           width: '100%',
           background: `#${fieldVal}`,
@@ -73,6 +76,7 @@ function ColorPickerField({
           />
         </div>
       ) : null}
+      <HiddenValueInput name={servar.key} value={fieldVal} />
     </div>
   );
 }

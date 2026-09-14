@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { fieldValues } from '../../../utils/init';
-import { Column } from './types';
+import { CellWrite, Column } from './types';
 
 type UseTableMutationsProps = {
   columns: Column[];
@@ -17,9 +17,11 @@ type UseTableMutationsProps = {
 
 type UseTableMutationsReturn = {
   handleAddRow: () => void;
+  handleInsertRow: (atIndex: number) => void;
   handleDeleteRow: (rowIndex: number) => void;
   handleRemoveRowLocal: (rowIndex: number) => void;
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
+  handleCellsEdit: (writes: CellWrite[]) => void;
 };
 
 export function useTableMutations({
@@ -44,6 +46,26 @@ export function useTableMutations({
       return Array.isArray(val) ? val : [];
     },
     [editMode]
+  );
+
+  const handleInsertRow = useCallback(
+    (atIndex: number) => {
+      const updates: Record<string, any> = {};
+      columns.forEach((col) => {
+        const existing = getFieldArray(col.field_key);
+        const at = Math.max(0, Math.min(atIndex, existing.length));
+        updates[col.field_key] = [
+          ...existing.slice(0, at),
+          '',
+          ...existing.slice(at)
+        ];
+      });
+      // No submitCustom — a new row stays provisional until the user edits a
+      // cell, so an empty row is never pushed to the backend.
+      updateFieldValues(updates);
+      onMutate();
+    },
+    [columns, getFieldArray, updateFieldValues, onMutate]
   );
 
   const handleAddRow = useCallback(() => {
@@ -108,23 +130,45 @@ export function useTableMutations({
     [buildRowRemovalUpdates, updateFieldValues, onMutate]
   );
 
-  const handleCellEdit = useCallback(
-    (fieldKey: string, rowIndex: number, newValue: any) => {
-      const existing = getFieldArray(fieldKey);
-      const updated = [...existing];
-      updated[rowIndex] = newValue;
-      const values = { [fieldKey]: updated };
-      updateFieldValues(values);
-      if (!editMode) submitCustom(values);
+  /**
+   * Commit any number of cells as ONE update. Spreadsheet mode edits whole
+   * rectangles at a time (paste, drag-fill, clear, undo), and submitting those
+   * cell by cell would fire a request per cell and let a later write clobber
+   * an earlier one, since each rebuilds its column array from `fieldValues`.
+   */
+  const handleCellsEdit = useCallback(
+    (writes: CellWrite[]) => {
+      if (!writes.length) return;
+
+      const updates: Record<string, any[]> = {};
+      writes.forEach(({ fieldKey, rowIndex, value }) => {
+        // Each column's array is copied once and then written in place, so
+        // several cells in the same column land in the same submitted array.
+        if (!updates[fieldKey])
+          updates[fieldKey] = [...getFieldArray(fieldKey)];
+        updates[fieldKey][rowIndex] = value;
+      });
+
+      updateFieldValues(updates);
+      if (!editMode) submitCustom(updates);
       onMutate();
     },
     [getFieldArray, updateFieldValues, submitCustom, editMode, onMutate]
   );
 
+  const handleCellEdit = useCallback(
+    (fieldKey: string, rowIndex: number, newValue: any) => {
+      handleCellsEdit([{ fieldKey, rowIndex, value: newValue }]);
+    },
+    [handleCellsEdit]
+  );
+
   return {
     handleAddRow,
+    handleInsertRow,
     handleDeleteRow,
     handleRemoveRowLocal,
-    handleCellEdit
+    handleCellEdit,
+    handleCellsEdit
   };
 }

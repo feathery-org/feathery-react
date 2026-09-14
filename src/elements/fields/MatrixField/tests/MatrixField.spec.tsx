@@ -540,3 +540,24 @@ describe('MatrixField - Base Functionality', () => {
     });
   });
 });
+
+describe('MatrixField - DOM naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('gives every option input a unique id alongside its group name', () => {
+    const element = createMatrixElement('matrix');
+    render(<MatrixField {...createMatrixProps(element)} />);
+
+    const inputs = getMatrixInputs();
+    expect(inputs.length).toBeGreaterThan(0);
+    const ids = inputs.map((input) => input.id);
+    expect(ids.every(Boolean)).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+    inputs.forEach((input) => {
+      expect(input.id.startsWith(`${input.name}-`)).toBe(true);
+    });
+  });
+});

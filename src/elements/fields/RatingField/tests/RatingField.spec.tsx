@@ -202,3 +202,38 @@ describe('RatingField - Base Functionality', () => {
     });
   });
 });
+
+describe('RatingField - DOM naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('gives each rating icon a stable id', () => {
+    const element = createRatingElement('rating');
+    const { container } = render(
+      <RatingField {...createRatingProps(element, { fieldVal: 3 })} />
+    );
+
+    const icons = getRatingIcons();
+    expect(icons.length).toBeGreaterThan(0);
+    icons.forEach((_, i) => {
+      expect(
+        container.querySelector(`#${element.servar.key}-${i + 1}`)
+      ).toBeTruthy();
+    });
+  });
+
+  it('mirrors the selected rating into a hidden input named by the field key', () => {
+    const element = createRatingElement('rating');
+    const { container } = render(
+      <RatingField {...createRatingProps(element, { fieldVal: 3 })} />
+    );
+
+    const mirror = container.querySelector(
+      'input[type="hidden"]'
+    ) as HTMLInputElement;
+    expect(mirror.name).toBe(element.servar.key);
+    expect(mirror.value).toBe('3');
+  });
+});

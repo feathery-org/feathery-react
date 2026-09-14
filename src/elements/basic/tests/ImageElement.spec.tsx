@@ -532,3 +532,25 @@ describe('ImageElement', () => {
     });
   });
 });
+
+describe('ImageElement DOM naming', () => {
+  it('names the rendered image', async () => {
+    const ImageElement = (await import('../ImageElement')).default;
+    render(
+      <ImageElement
+        element={{
+          properties: {
+            uploaded_image_file_field_key: 'imageKey',
+            source_image: ''
+          },
+          repeat: 0
+        }}
+        responsiveStyles={mockResponsiveStyles}
+        editMode
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('img').getAttribute('name')).toBe('image');
+    });
+  });
+});

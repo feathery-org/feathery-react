@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import TextNodes from '../components/TextNodes';
+import { nameProps } from '../../utils/domName';
 import { isNum } from '../../utils/primitives';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
@@ -106,6 +107,8 @@ function TextElement({
               }
         )
       }}
+      // Named by content so a click on the text is attributed to it
+      {...nameProps(element.properties?.text, element.key)}
       {...elementProps}
     >
       {customBorder}

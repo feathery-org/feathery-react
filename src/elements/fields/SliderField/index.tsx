@@ -3,6 +3,7 @@ import Slider from '@rc-component/slider';
 import { hoverStylesGuard } from '../../../utils/browser';
 
 import SliderStyles from './styles';
+import HiddenValueInput from '../../components/HiddenValueInput';
 
 export default function SliderField({
   element,
@@ -81,7 +82,13 @@ export default function SliderField({
             onChange(val);
           }}
           aria-label={element.properties.aria_label}
+          // The handle is the element the user drags, so it carries the
+          // field key like a native control would
+          handleRender={(handle) =>
+            React.cloneElement(handle, { name: servar.key } as any)
+          }
         />
+        <HiddenValueInput name={servar.key} value={internalValue} />
       </div>
       <div
         css={{

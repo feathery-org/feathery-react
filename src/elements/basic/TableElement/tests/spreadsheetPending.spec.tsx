@@ -1,0 +1,1663 @@
+import React from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import TableElement from '../index';
+import AssistantClient from '../../../../assistant/AssistantClient';
+import { fieldValues } from '../../../../utils/init';
+import { featheryWindow } from '../../../../utils/browser';
+import {
+  hasUnsavedWork,
+  unsavedWorkMessage,
+  _clearUnsavedWorkRegistry
+} from '../../../../utils/unsavedWork';
+
+const COLUMNS = [
+  { name: 'Name', field_id: 'f1', field_type: 'text', field_key: 'name_key' },
+  { name: 'Email', field_id: 'f2', field_type: 'email', field_key: 'email_key' }
+];
+
+const HUB_FIELDS = [
+  { id: 'hf1', key: 'name', type: 'text', required: false, unique: false },
+  { id: 'hf2', key: 'email', type: 'email', required: false, unique: false }
+];
+
+const mockStyles = () => ({
+  addTargets: jest.fn(),
+  apply: jest.fn(),
+  getTarget: jest.fn(() => ({}))
+});
+
+// jsdom lays nothing out, so the virtualizers would see a 0x0 viewport and
+// render no cells. Give every element a viewport big enough for the fixture.
+let sizeSpies: Array<() => void> = [];
+const stubLayout = () => {
+  const original = {
+    offsetWidth: Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'offsetWidth'
+    ),
+    offsetHeight: Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'offsetHeight'
+    )
+  };
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+    configurable: true,
+    get: () => 900
+  });
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+    configurable: true,
+    get: () => 600
+  });
+  sizeSpies.push(() => {
+    if (original.offsetWidth) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        'offsetWidth',
+        original.offsetWidth
+      );
+    }
+    if (original.offsetHeight) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        'offsetHeight',
+        original.offsetHeight
+      );
+    }
+  });
+};
+
+const renderTable = (
+  props: Record<string, any> = {},
+  extra: Record<string, any> = {}
+) => {
+  const updateFieldValues = jest.fn();
+  const submitCustom = jest.fn();
+  const view = render(
+    <TableElement
+      element={{
+        id: 'table1',
+        styles: {},
+        properties: {
+          columns: COLUMNS,
+          actions: [],
+          search: false,
+          sort: false,
+          pagination: 0,
+          transpose: false,
+          display_mode: 'spreadsheet',
+          enable_editing: true,
+          add_delete_rows: true,
+          ...props
+        }
+      }}
+      responsiveStyles={mockStyles()}
+      updateFieldValues={updateFieldValues}
+      submitCustom={submitCustom}
+      {...extra}
+    />
+  );
+  return { updateFieldValues, submitCustom, unmount: view.unmount };
+};
+
+const grid = () => screen.getByRole('grid');
+const cell = (text: string) =>
+  screen.getByText(text).closest('[role="gridcell"]')!;
+const saveButton = () => screen.getByRole('button', { name: 'Save' });
+const discardButton = () => screen.getByRole('button', { name: 'Discard' });
+// Discarding cannot be undone, so it asks first.
+const discard = (accept = true) => {
+  const confirmSpy = jest
+    .spyOn(featheryWindow(), 'confirm')
+    .mockReturnValue(accept);
+  fireEvent.click(discardButton());
+  const asked = confirmSpy.mock.calls.map((call) => call[0]);
+  confirmSpy.mockRestore();
+  return asked;
+};
+const status = () => screen.getByRole('status');
+
+const editCell = (from: string, to: string) => {
+  fireEvent.doubleClick(cell(from));
+  const input = screen.getByRole('textbox');
+  fireEvent.change(input, { target: { value: to } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+};
+
+beforeEach(() => {
+  stubLayout();
+  Object.assign(fieldValues, {
+    name_key: ['Alice', 'Bob'],
+    email_key: ['alice@test.com', 'bob@test.com']
+  });
+});
+
+afterEach(() => {
+  _clearUnsavedWorkRegistry();
+  sizeSpies.forEach((restore) => restore());
+  sizeSpies = [];
+  ['name_key', 'email_key'].forEach((key) => {
+    delete (fieldValues as any)[key];
+  });
+});
+
+describe('unsaved changes bar', () => {
+  test('stays hidden until there is something to save', () => {
+    renderTable();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('counts the buffered edits instead of writing them', () => {
+    const { updateFieldValues, submitCustom } = renderTable();
+    editCell('Alice', 'Alicia');
+
+    expect(status()).toHaveTextContent('1 unsaved change');
+    expect(updateFieldValues).not.toHaveBeenCalled();
+    expect(submitCustom).not.toHaveBeenCalled();
+  });
+
+  test('a second edit to the same cell is still one change', () => {
+    renderTable();
+    editCell('Alice', 'Alicia');
+    editCell('Alicia', 'Alexa');
+    expect(status()).toHaveTextContent('1 unsaved change');
+  });
+
+  test('a removed row counts as a change and leaves the grid', () => {
+    renderTable();
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Select row 2' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete row 2' }));
+
+    expect(screen.queryByText('Bob')).toBeNull();
+    expect(status()).toHaveTextContent('1 unsaved change');
+  });
+
+  test('Save writes the whole buffer at once, then clears the bar', async () => {
+    const { updateFieldValues, submitCustom } = renderTable();
+    editCell('Alice', 'Alicia');
+    editCell('bob@test.com', 'robert@test.com');
+    expect(status()).toHaveTextContent('2 unsaved changes');
+
+    fireEvent.click(saveButton());
+
+    await waitFor(() =>
+      expect(updateFieldValues).toHaveBeenCalledWith({
+        name_key: ['Alicia', 'Bob'],
+        email_key: ['alice@test.com', 'robert@test.com']
+      })
+    );
+    expect(submitCustom).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('Discard restores the stored values and writes nothing', async () => {
+    const { updateFieldValues } = renderTable();
+    editCell('Alice', 'Alicia');
+
+    const asked = discard();
+
+    expect(asked).toEqual(['Discard your unsaved change?']);
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(updateFieldValues).not.toHaveBeenCalled();
+  });
+
+  test('Discard also forgets the undo history', async () => {
+    // Otherwise Ctrl+Z would replay the edit's "before" value as a new
+    // pending change over a cell that already shows it.
+    renderTable();
+    editCell('Alice', 'Alicia');
+    discard();
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(hasUnsavedWork('form1')).toBe(false);
+  });
+
+  test('a discarded row deletion comes back', async () => {
+    renderTable();
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Select row 2' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete row 2' }));
+    discard();
+
+    await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
+  });
+
+  test('declining the discard prompt keeps the edits', () => {
+    renderTable();
+    editCell('Alice', 'Alicia');
+
+    const asked = discard(false);
+
+    expect(asked).toEqual(['Discard your unsaved change?']);
+    expect(status()).toHaveTextContent('1 unsaved change');
+    expect(screen.getByText('Alicia')).toBeInTheDocument();
+  });
+
+  test('the prompt counts what is about to be thrown away', () => {
+    renderTable();
+    editCell('Alice', 'Alicia');
+    editCell('bob@test.com', 'robert@test.com');
+
+    expect(discard(false)).toEqual(['Discard your 2 unsaved changes?']);
+  });
+
+  test('the classic table keeps writing through, with no bar', async () => {
+    const { updateFieldValues } = renderTable({ display_mode: 'classic' });
+    fireEvent.click(screen.getByText('Alice'));
+    const input = await screen.findByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Alicia' } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(updateFieldValues).toHaveBeenCalled());
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+describe('validation errors', () => {
+  test('a bad value is counted and blocks the save', () => {
+    renderTable();
+    editCell('alice@test.com', 'not-an-email');
+
+    expect(status()).toHaveTextContent('1 error');
+    expect(saveButton()).toBeDisabled();
+  });
+
+  test('fixing the value re-enables the save', () => {
+    renderTable();
+    editCell('alice@test.com', 'not-an-email');
+    editCell('not-an-email', 'alice@example.com');
+
+    expect(saveButton()).toBeEnabled();
+    expect(status()).not.toHaveTextContent('error');
+  });
+
+  test('the failing cell is shaded and carries its message', () => {
+    renderTable();
+    editCell('alice@test.com', 'not-an-email');
+
+    expect(cell('not-an-email')).toHaveAttribute(
+      'title',
+      expect.stringContaining('Invalid email')
+    );
+  });
+
+  test('the stepper walks the failing cells and shows the message', async () => {
+    Object.assign(fieldValues, {
+      name_key: ['Alice', 'Bob'],
+      email_key: ['bad-one', 'bad-two']
+    });
+    renderTable();
+    // Two stored values that were never valid, so both are flagged on render.
+    expect(status()).toHaveTextContent('2 errors');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to next issue' }));
+    await waitFor(() =>
+      expect(cell('bad-one')).toHaveAttribute('aria-selected', 'true')
+    );
+    // The focused cell explains itself rather than waiting for a hover.
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'Invalid email'
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to next issue' }));
+    await waitFor(() =>
+      expect(cell('bad-two')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    // Stepping past the end wraps back to the first.
+    fireEvent.click(screen.getByRole('button', { name: 'Go to next issue' }));
+    await waitFor(() =>
+      expect(cell('bad-one')).toHaveAttribute('aria-selected', 'true')
+    );
+  });
+
+  test('stepping backwards from the start lands on the last issue', async () => {
+    Object.assign(fieldValues, {
+      name_key: ['Alice', 'Bob'],
+      email_key: ['bad-one', 'bad-two']
+    });
+    renderTable();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Go to previous issue' })
+    );
+    await waitFor(() =>
+      expect(cell('bad-two')).toHaveAttribute('aria-selected', 'true')
+    );
+  });
+
+  test('the grid keeps the keyboard after the stepper moves the selection', async () => {
+    Object.assign(fieldValues, {
+      name_key: ['Alice', 'Bob'],
+      email_key: ['bad-one', 'bob@test.com']
+    });
+    renderTable();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to next issue' }));
+    await waitFor(() => expect(grid()).toHaveFocus());
+  });
+});
+
+describe('cell editors follow the column', () => {
+  // The hub fixture gives Status a fixed option list; a field-backed column
+  // has none, so it stays a free-text box.
+  const HUB_COLUMNS = [
+    {
+      name: 'Name',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf1',
+      hub_field_key: 'name'
+    },
+    {
+      name: 'Status',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf3',
+      hub_field_key: 'status'
+    }
+  ];
+  const FIELDS_WITH_OPTIONS = [
+    { id: 'hf1', key: 'name', type: 'text', required: false, unique: false },
+    {
+      id: 'hf3',
+      key: 'status',
+      type: 'text',
+      required: false,
+      unique: false,
+      metadata: { options: ['Ready', 'Sent'] }
+    }
+  ];
+  const hubProps = {
+    columns: HUB_COLUMNS,
+    data_source: 'hub',
+    hub_id: 'hub1',
+    hub_verification: 'all'
+  };
+  const client = () => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({
+        hubs: [{ id: 'hub1', key: 'h', fields: FIELDS_WITH_OPTIONS }]
+      })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get'
+        ? Promise.resolve([
+            { id: 'e1', verified: true, data: { name: 'Alice', status: 'Ready' } }
+          ])
+        : Promise.resolve({})
+    )
+  });
+
+  test('a column with options edits through a dropdown', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    fireEvent.doubleClick(cell('Ready'));
+
+    const select = await screen.findByRole('combobox');
+    expect(select).toHaveValue('Ready');
+    expect(
+      [...select.querySelectorAll('option')].map((o) => o.textContent)
+    ).toEqual(['(empty)', 'Ready', 'Sent']);
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  test('Enter released on the menu closes the editor even when nothing changed', async () => {
+    // Enter on the already-selected option fires no change event, and the
+    // keydown never reaches the page while the native menu is open. Only the
+    // keyup does — it must hand the keyboard back to the grid.
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+    fireEvent.mouseDown(cell('Ready'));
+    await waitFor(() =>
+      expect(cell('Ready')).toHaveAttribute('aria-selected', 'true')
+    );
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    const select = await screen.findByRole('combobox');
+
+    // Well after the opening Enter was released (see the test below).
+    const later = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 5000);
+    fireEvent.keyUp(select, { key: 'Enter' });
+    later.mockRestore();
+
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(grid()));
+    expect(screen.queryByRole('status')).toBeNull();
+    // And the grid is navigable again (Status is the last column).
+    fireEvent.keyDown(grid(), { key: 'ArrowLeft' });
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+  });
+
+  test.each(['Enter', 'Escape'])(
+    '%s closing a letter-opened native dropdown restores arrow navigation',
+    async (key) => {
+      renderTable(hubProps, { client: client() });
+      await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+      fireEvent.mouseDown(cell('Ready'));
+      const openingTime = Date.now();
+      fireEvent.keyDown(document.activeElement!, { key: 's' });
+      const select = await screen.findByRole('combobox');
+      await waitFor(() => expect(select).toHaveValue('Sent'));
+      expect(select).toHaveFocus();
+
+      // The native picker consumes keydown and only delivers the release to
+      // the page. Closing quickly after typing is still a deliberate close.
+      const now = jest.spyOn(Date, 'now').mockReturnValue(openingTime + 100);
+      try {
+        fireEvent.keyUp(select, { key });
+      } finally {
+        now.mockRestore();
+      }
+
+      await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+      await waitFor(() => expect(grid()).toHaveFocus());
+      const statusCell = cell(key === 'Escape' ? 'Ready' : 'Sent');
+      expect(statusCell).toBeInTheDocument();
+      const towardName =
+        Number(cell('Alice').getAttribute('aria-colindex')) <
+        Number(statusCell.getAttribute('aria-colindex'))
+          ? 'ArrowLeft'
+          : 'ArrowRight';
+      fireEvent.keyDown(document.activeElement!, { key: towardName });
+      await waitFor(() =>
+        expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+      );
+    }
+  );
+
+  const mockNativePicker = () => {
+    const pickerDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLSelectElement.prototype,
+      'showPicker'
+    );
+    let pickerOpen = false;
+    const showPicker = jest.fn(() => {
+      pickerOpen = true;
+    });
+    Object.defineProperty(HTMLSelectElement.prototype, 'showPicker', {
+      configurable: true,
+      value: showPicker
+    });
+    const originalMatches = Element.prototype.matches;
+    const matches = jest
+      .spyOn(Element.prototype, 'matches')
+      .mockImplementation(function (this: Element, selector: string) {
+        if (this instanceof HTMLSelectElement && selector === ':open') {
+          return pickerOpen;
+        }
+        return originalMatches.call(this, selector);
+      });
+    return {
+      showPicker,
+      close: () => {
+        pickerOpen = false;
+      },
+      restore: () => {
+        matches.mockRestore();
+        if (pickerDescriptor) {
+          Object.defineProperty(
+            HTMLSelectElement.prototype,
+            'showPicker',
+            pickerDescriptor
+          );
+        } else {
+          Reflect.deleteProperty(HTMLSelectElement.prototype, 'showPicker');
+        }
+      }
+    };
+  };
+
+  test('a clicked native dropdown restores focus when dismissed without DOM events', async () => {
+    const picker = mockNativePicker();
+    const { unmount } = renderTable(hubProps, { client: client() });
+    try {
+      await waitFor(() =>
+        expect(screen.getByText('Ready')).toBeInTheDocument()
+      );
+      fireEvent.mouseDown(cell('Ready'));
+      fireEvent.click(cell('Ready'));
+      const select = await screen.findByRole('combobox');
+      expect(picker.showPicker).toHaveBeenCalledTimes(1);
+      expect(select).toHaveValue('Ready');
+
+      // Opening must not cancel the editor while the native picker stays open.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      });
+      expect(screen.getByRole('combobox')).toBe(select);
+      expect(select).toHaveFocus();
+
+      // Native Escape can close the OS popup without any DOM events.
+      picker.close();
+      await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+      await waitFor(() => expect(grid()).toHaveFocus());
+      expect(cell('Ready')).toBeInTheDocument();
+      expect(screen.queryByRole('status')).toBeNull();
+      const towardName =
+        Number(cell('Alice').getAttribute('aria-colindex')) <
+        Number(cell('Ready').getAttribute('aria-colindex'))
+          ? 'ArrowLeft'
+          : 'ArrowRight';
+      fireEvent.keyDown(document.activeElement!, { key: towardName });
+      await waitFor(() =>
+        expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+      );
+    } finally {
+      unmount();
+      picker.restore();
+    }
+  });
+
+  test('a typed native dropdown keeps its draft until delayed Enter release commits it', async () => {
+    const picker = mockNativePicker();
+    const { unmount } = renderTable(hubProps, { client: client() });
+    try {
+      await waitFor(() =>
+        expect(screen.getByText('Ready')).toBeInTheDocument()
+      );
+      fireEvent.mouseDown(cell('Ready'));
+      fireEvent.keyDown(document.activeElement!, { key: 's' });
+      const select = await screen.findByRole('combobox');
+      expect(picker.showPicker).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(select).toHaveValue('Sent'));
+
+      // The popup closes on Enter down; its release can arrive much later.
+      // That gap must not cancel the seeded value before Enter commits it.
+      picker.close();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      });
+      expect(screen.getByRole('combobox')).toBe(select);
+      expect(select).toHaveValue('Sent');
+      fireEvent.keyUp(select, { key: 'Enter' });
+
+      await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+      await waitFor(() => expect(grid()).toHaveFocus());
+      expect(cell('Sent')).toBeInTheDocument();
+      expect(status()).toHaveTextContent('1 unsaved change');
+    } finally {
+      unmount();
+      picker.restore();
+    }
+  });
+
+  test('releasing the Enter that opened the editor does not close it', async () => {
+    // The key is still held when the select mounts, so its keyup lands on
+    // the select a few milliseconds later — that is not a pick.
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+    fireEvent.mouseDown(cell('Ready'));
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    const select = await screen.findByRole('combobox');
+
+    fireEvent.keyUp(select, { key: 'Enter' });
+
+    expect(screen.getByRole('combobox')).toBe(select);
+  });
+
+  test('Space and letters on a dropdown cell open it without clearing it', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+    fireEvent.mouseDown(cell('Ready'));
+
+    fireEvent.keyDown(grid(), { key: ' ' });
+    let select = await screen.findByRole('combobox');
+    expect(select).toHaveValue('Ready');
+    fireEvent.keyDown(select, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+
+    // A letter jumps to the first matching choice…
+    fireEvent.keyDown(grid(), { key: 's' });
+    select = await screen.findByRole('combobox');
+    await waitFor(() => expect(select).toHaveValue('Sent'));
+    fireEvent.keyDown(select, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+
+    // …and one that matches nothing keeps the stored value.
+    fireEvent.keyDown(grid(), { key: 'z' });
+    select = await screen.findByRole('combobox');
+    await waitFor(() => expect(select).toHaveValue('Ready'));
+    fireEvent.blur(select);
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('opening a dropdown on a value outside its options and leaving keeps it', async () => {
+    // An option removed since the row was written. The menu cannot show it,
+    // but opening and leaving the cell must not turn it into a blank.
+    const staleClient = {
+      ...client(),
+      dataHubAction: jest.fn(({ operation }: any) =>
+        operation === 'get'
+          ? Promise.resolve([
+              { id: 'e1', verified: true, data: { name: 'Alice', status: 'Pending' } }
+            ])
+          : Promise.resolve({})
+      )
+    };
+    renderTable(hubProps, { client: staleClient });
+    await waitFor(() => expect(screen.getByText('Pending')).toBeInTheDocument());
+
+    fireEvent.click(cell('Pending'));
+    const select = await screen.findByRole('combobox');
+    fireEvent.blur(select);
+
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    expect(screen.getByText('Pending')).toBeInTheDocument();
+    // The stale value is flagged as an error, but nothing was changed.
+    expect(status()).toHaveTextContent('No unsaved changes');
+  });
+
+  test('clicking the next cell while a dropdown is open opens the next editor', async () => {
+    // Mousedown on the next cell commits the open dropdown; the click then
+    // opens the next editor. The focus restore that follows the commit must
+    // not pull focus back to the grid, which would close what just opened.
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+    fireEvent.click(cell('Ready'));
+    await screen.findByRole('combobox');
+
+    fireEvent.mouseDown(cell('Alice'));
+    fireEvent.doubleClick(cell('Alice'));
+    const input = await screen.findByRole('textbox');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(screen.getByRole('textbox')).toBe(input);
+    expect(input).toHaveFocus();
+  });
+
+  test('picking an option commits it straight away', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    fireEvent.doubleClick(cell('Ready'));
+    fireEvent.change(await screen.findByRole('combobox'), {
+      target: { value: 'Sent' }
+    });
+
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    expect(status()).toHaveTextContent('1 unsaved change');
+    expect(screen.getByText('Sent')).toBeInTheDocument();
+  });
+
+  test('a dropdown cell opens on a single click, a text cell does not', async () => {
+    // Double-click-to-open reads as a text editor on a cell that has nothing
+    // to type into; a spreadsheet's validation list opens on one click.
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    fireEvent.click(cell('Alice'));
+    expect(screen.queryByRole('textbox')).toBeNull();
+
+    fireEvent.click(cell('Ready'));
+    const select = await screen.findByRole('combobox');
+    expect(select).toHaveValue('Ready');
+    // The cell keeps drawing its chevron under the (transparent) menu, so
+    // opening it changes nothing about the cell's look.
+    expect(
+      select.closest('[role="gridcell"]')!.querySelector('[aria-hidden]')
+    ).not.toBeNull();
+  });
+
+  test('a modified click on a dropdown cell extends the selection instead', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    fireEvent.click(cell('Ready'), { shiftKey: true });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    fireEvent.click(cell('Ready'), { metaKey: true });
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  test('a dropdown cell is marked as one, a text cell is not', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    // The chevron is decorative and sits beside the value, not inside it.
+    expect(cell('Ready').querySelector('[aria-hidden]')).not.toBeNull();
+    expect(cell('Alice').querySelector('[aria-hidden]')).toBeNull();
+  });
+
+  test('typing a letter on a dropdown cell jumps to that option', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    fireEvent.mouseDown(cell('Ready'));
+    await waitFor(() =>
+      expect(cell('Ready')).toHaveAttribute('aria-selected', 'true')
+    );
+    fireEvent.keyDown(grid(), { key: 's' });
+
+    // The seeded character is a jump-to, not a value the column would accept.
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('Sent'));
+  });
+
+  test('a column with no options keeps a text box', () => {
+    renderTable();
+    fireEvent.doubleClick(cell('Alice'));
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+});
+
+describe('editors for other field types', () => {
+  const TYPED_COLUMNS = [
+    { name: 'Age', field_id: '', field_type: '', field_key: '', hub_field_id: 'n1', hub_field_key: 'age' },
+    { name: 'Born', field_id: '', field_type: '', field_key: '', hub_field_id: 'd1', hub_field_key: 'born' },
+    { name: 'SSN', field_id: '', field_type: '', field_key: '', hub_field_id: 't1', hub_field_key: 'ssn' },
+    { name: 'Docs', field_id: '', field_type: '', field_key: '', hub_field_id: 'f1', hub_field_key: 'docs' }
+  ];
+  const TYPED_FIELDS = [
+    { id: 'n1', key: 'age', type: 'number', required: false, unique: false },
+    { id: 'd1', key: 'born', type: 'date', required: false, unique: false },
+    { id: 't1', key: 'ssn', type: 'tax_id', required: false, unique: false },
+    { id: 'f1', key: 'docs', type: 'file', required: false, unique: false }
+  ];
+  const ENTRY = {
+    id: 'e1',
+    verified: true,
+    data: {
+      age: 42,
+      born: '1982-07-19T00:00:00Z',
+      ssn: '123456789',
+      docs: [{ url: 'https://x/y', path: 'uploads/deed.pdf' }]
+    }
+  };
+  const typedClient = () => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: TYPED_FIELDS }] })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get' ? Promise.resolve([ENTRY]) : Promise.resolve({})
+    )
+  });
+  const typedProps = {
+    columns: TYPED_COLUMNS,
+    data_source: 'hub',
+    hub_id: 'hub1',
+    hub_verification: 'all'
+  };
+  const renderTyped = async () => {
+    renderTable(typedProps, { client: typedClient() });
+    await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument());
+  };
+
+  test('a tax ID is masked until the cell is edited', async () => {
+    await renderTyped();
+    // At rest only the last four digits are readable.
+    expect(screen.getByText('•••••6789')).toBeInTheDocument();
+    expect(screen.queryByText('123456789')).toBeNull();
+
+    fireEvent.doubleClick(cell('•••••6789'));
+
+    // Editing reveals the real value — the mask is display only.
+    expect(await screen.findByRole('textbox')).toHaveValue('123456789');
+  });
+
+  test('a date column opens the native date picker on the date part', async () => {
+    await renderTyped();
+    fireEvent.doubleClick(cell('Jul 19, 1982'));
+
+    const input = await screen.findByLabelText(/Edit born/);
+    expect(input).toHaveAttribute('type', 'date');
+    expect(input).toHaveValue('1982-07-19');
+  });
+
+  // `setSelectionRange` throws InvalidStateError on a date input, and the throw
+  // was inside a layout effect — which unmounted the entire table, not just
+  // the cell.
+  test('typing at a date cell opens the picker instead of crashing', async () => {
+    await renderTyped();
+    fireEvent.mouseDown(cell('Jul 19, 1982'));
+    await waitFor(() =>
+      expect(cell('Jul 19, 1982')).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    );
+
+    fireEvent.keyDown(grid(), { key: '2' });
+
+    const input = await screen.findByLabelText(/Edit born/);
+    expect(input).toHaveAttribute('type', 'date');
+    // Opened on the stored value, not on the character that opened it.
+    expect(input).toHaveValue('1982-07-19');
+    // And the grid is still standing.
+    expect(grid()).toBeInTheDocument();
+  });
+
+  test('a number column refuses letters outright', async () => {
+    await renderTyped();
+    fireEvent.doubleClick(cell('42'));
+    const input = await screen.findByLabelText(/Edit age/);
+
+    fireEvent.change(input, { target: { value: '12x' } });
+    expect(input).toHaveValue('42');
+
+    fireEvent.change(input, { target: { value: '12.5' } });
+    expect(input).toHaveValue('12.5');
+  });
+
+  // The character that opens an editor is chosen before the editor exists, so
+  // it has to be filtered by the column rather than by the input.
+  test('typing a letter on a number cell opens nothing', async () => {
+    await renderTyped();
+    fireEvent.mouseDown(cell('42'));
+    await waitFor(() =>
+      expect(cell('42')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'a' });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByLabelText(/Edit age/)).toBeNull();
+  });
+
+  test('typing a digit on a number cell still starts the edit', async () => {
+    await renderTyped();
+    fireEvent.mouseDown(cell('42'));
+    await waitFor(() =>
+      expect(cell('42')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: '7' });
+
+    expect(await screen.findByLabelText(/Edit age/)).toHaveValue('7');
+  });
+
+  test('a file column shows its file names and opens no editor', async () => {
+    await renderTyped();
+    expect(screen.getByText('deed.pdf')).toBeInTheDocument();
+
+    // The stored value is an array. An editor opened on its String() form
+    // would commit "[object Object]" back over the upload reference the
+    // moment it closed, so no editor opens at all — by mouse or by key.
+    fireEvent.doubleClick(cell('deed.pdf'));
+    fireEvent.mouseDown(cell('deed.pdf'));
+    await waitFor(() =>
+      expect(cell('deed.pdf')).toHaveAttribute('aria-selected', 'true')
+    );
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    fireEvent.keyDown(grid(), { key: 'F2' });
+    fireEvent.keyDown(grid(), { key: 'x' });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByLabelText(/Edit docs/)).toBeNull();
+    expect(screen.getByText('deed.pdf')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('a file cell survives Delete and paste as well', async () => {
+    await renderTyped();
+    fireEvent.mouseDown(cell('deed.pdf'));
+    await waitFor(() =>
+      expect(cell('deed.pdf')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'Delete' });
+    fireEvent.paste(grid(), { clipboardData: { getData: () => 'nope' } });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByText('deed.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('nope')).toBeNull();
+    // Nothing landed, so nothing is waiting to be saved.
+    expect(screen.queryByText(/\d+ unsaved change/)).toBeNull();
+  });
+
+  test('a tax ID keeps its leading zero instead of becoming a number', async () => {
+    await renderTyped();
+    fireEvent.doubleClick(cell('•••••6789'));
+    const input = await screen.findByRole('textbox');
+
+    fireEvent.change(input, { target: { value: '012345678' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // Nine digits masked to the last four — not the eight of 12345678.
+    await waitFor(() =>
+      expect(screen.getByText('•••••5678')).toBeInTheDocument()
+    );
+    expect(status()).toHaveTextContent('1 unsaved change');
+  });
+
+  test('staged rows can be inserted and deleted', async () => {
+    // A row added to a table of staged data is itself staged (a single-row
+    // `create` appends to the set), and `delete` targets one staged row by id.
+    const stagedClient = typedClient();
+    stagedClient.dataHubAction = jest.fn(({ operation }: any) =>
+      operation === 'get'
+        ? Promise.resolve([{ ...ENTRY, verified: false }])
+        : Promise.resolve({})
+    );
+    renderTable(
+      { ...typedProps, hub_verification: 'unverified' },
+      { client: stagedClient }
+    );
+    await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument());
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Select row 1' }));
+
+    expect(
+      screen.getByRole('menuitem', { name: 'Delete row 1' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Insert row above' })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('keyboard stays on the grid', () => {
+  // The grid binds its keys to the grid element itself. Closing an editor
+  // unmounts the focused control, dropping focus to <body> — after which
+  // arrows and Enter reached nothing at all.
+  test('committing an edit hands the keyboard back', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    const input = await screen.findByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Alicia' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(grid()).toHaveFocus());
+    // Enter-commit moved down to Bob; the arrows still reach the grid, so it
+    // can move back.
+    await waitFor(() =>
+      expect(cell('Bob')).toHaveAttribute('aria-selected', 'true')
+    );
+    fireEvent.keyDown(grid(), { key: 'ArrowUp' });
+    await waitFor(() =>
+      expect(cell('Alicia')).toHaveAttribute('aria-selected', 'true')
+    );
+  });
+
+  test('abandoning an edit hands it back too', async () => {
+    renderTable();
+    fireEvent.doubleClick(cell('Alice'));
+    const input = await screen.findByRole('textbox');
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    await waitFor(() => expect(grid()).toHaveFocus());
+  });
+
+  // Clicking Save blurs the editor, which commits. Grabbing focus back
+  // unconditionally would take it off the button the user just pressed.
+  test('it does not steal focus from a button that was clicked', async () => {
+    renderTable();
+    editCell('Alice', 'Alicia');
+    const save = saveButton();
+    save.focus();
+
+    fireEvent.doubleClick(cell('bob@test.com'));
+    const input = await screen.findByRole('textbox');
+    fireEvent.blur(input);
+    save.focus();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(save).toHaveFocus();
+  });
+});
+
+describe('pasting invalid data', () => {
+  const OPTION_COLUMNS = [
+    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' },
+    { name: 'Status', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf3', hub_field_key: 'status' }
+  ];
+  const OPTION_FIELDS = [
+    { id: 'hf1', key: 'name', type: 'text', required: false, unique: false },
+    {
+      id: 'hf3',
+      key: 'status',
+      type: 'text',
+      required: false,
+      unique: false,
+      metadata: { options: ['Ready', 'Sent'] }
+    }
+  ];
+  const setup = async () => {
+    renderTable(
+      {
+        columns: OPTION_COLUMNS,
+        data_source: 'hub',
+        hub_id: 'hub1',
+        hub_verification: 'all'
+      },
+      {
+        client: {
+          getHubSchemas: jest.fn(() =>
+            Promise.resolve({
+              hubs: [{ id: 'hub1', key: 'h', fields: OPTION_FIELDS }]
+            })
+          ),
+          dataHubAction: jest.fn(({ operation }: any) =>
+            operation === 'get'
+              ? Promise.resolve([
+                  { id: 'e1', verified: true, data: { name: 'Alice', status: 'Ready' } }
+                ])
+              : Promise.resolve({})
+          )
+        }
+      }
+    );
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+  };
+
+  const pasteInto = (text: string) =>
+    fireEvent.paste(grid(), { clipboardData: { getData: () => text } });
+
+  test('a value the column rejects still lands, flagged as an issue', async () => {
+    // A pasted value is treated exactly like a typed one: it may be on its way
+    // to being valid, so it is kept and flagged rather than thrown away.
+    await setup();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    // Status only accepts Ready or Sent.
+    pasteInto('Bob\tNonsense');
+
+    await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
+    expect(screen.getByText('Nonsense')).toBeInTheDocument();
+    expect(status()).toHaveTextContent('2 unsaved changes');
+    // The row is verified, so the bad value blocks the save until it is fixed.
+    expect(status()).toHaveTextContent('1 error');
+    expect(saveButton()).toBeDisabled();
+  });
+
+  test('a wholly valid paste raises no issue', async () => {
+    await setup();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    pasteInto('Bob\tSent');
+
+    await waitFor(() => expect(screen.getByText('Sent')).toBeInTheDocument());
+    expect(status()).not.toHaveTextContent('error');
+    expect(saveButton()).toBeEnabled();
+  });
+
+  test('discarding a flagged paste clears the bar', async () => {
+    await setup();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+    pasteInto('Bob\tNonsense');
+    await waitFor(() => expect(status()).toHaveTextContent('1 error'));
+
+    const confirmSpy = jest
+      .spyOn(featheryWindow(), 'confirm')
+      .mockReturnValue(true);
+    fireEvent.click(discardButton());
+    confirmSpy.mockRestore();
+
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+});
+
+describe('keyboard editing', () => {
+  test('Enter opens the editor instead of moving down', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+
+    expect(await screen.findByRole('textbox')).toHaveValue('Alice');
+  });
+
+  test('Enter from inside the editor commits and moves down', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+
+    const input = await screen.findByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Alicia' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(cell('Bob')).toHaveAttribute('aria-selected', 'true')
+    );
+    expect(screen.getByText('Alicia')).toBeInTheDocument();
+  });
+
+  // The seeded character used to be selected, so the next keystroke replaced
+  // it and the first letter looked like it had been swallowed.
+  test('type-to-edit keeps the first character', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'Z' });
+
+    const input = (await screen.findByRole('textbox')) as HTMLInputElement;
+    expect(input).toHaveValue('Z');
+    // Caret parked after it, with nothing selected for the next key to eat.
+    expect(input.selectionStart).toBe(1);
+    expect(input.selectionEnd).toBe(1);
+  });
+
+  test('F2 still opens on the stored value, selected for replacement', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'F2' });
+
+    const input = (await screen.findByRole('textbox')) as HTMLInputElement;
+    expect(input).toHaveValue('Alice');
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(5);
+  });
+});
+
+describe('leaving with unsaved work', () => {
+  const beforeUnload = () => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event;
+  };
+
+  // The table registers with the form-wide registry the document editor uses,
+  // so one prompt covers Next/Back, browser history and a full page exit.
+  test('nothing is registered while everything is saved', () => {
+    renderTable({}, { formId: 'form-1' });
+    expect(hasUnsavedWork('form-1')).toBe(false);
+    expect(beforeUnload().defaultPrevented).toBe(false);
+  });
+
+  test('an unsaved edit registers a message and arms the browser', () => {
+    renderTable({}, { formId: 'form-1' });
+    editCell('Alice', 'Alicia');
+
+    expect(unsavedWorkMessage('form-1')).toContain('unsaved changes in a table');
+    expect(beforeUnload().defaultPrevented).toBe(true);
+  });
+
+  test('the registration is scoped to this table\'s form', () => {
+    renderTable({}, { formId: 'form-1' });
+    editCell('Alice', 'Alicia');
+    expect(hasUnsavedWork('form-2')).toBe(false);
+  });
+
+  test('saving releases it', async () => {
+    renderTable({}, { formId: 'form-1' });
+    editCell('Alice', 'Alicia');
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    expect(hasUnsavedWork('form-1')).toBe(false);
+    expect(beforeUnload().defaultPrevented).toBe(false);
+  });
+
+  test('discarding releases it', async () => {
+    renderTable({}, { formId: 'form-1' });
+    editCell('Alice', 'Alicia');
+    discard();
+
+    await waitFor(() => expect(hasUnsavedWork('form-1')).toBe(false));
+  });
+
+  // A table on a step the user navigates away from, or inside a repeat that is
+  // removed, must stop blocking the form it is no longer part of.
+  test('unmounting mid-edit releases it', () => {
+    const { unmount } = renderTable({}, { formId: 'form-1' });
+    editCell('Alice', 'Alicia');
+    expect(hasUnsavedWork('form-1')).toBe(true);
+
+    unmount();
+    expect(hasUnsavedWork('form-1')).toBe(false);
+  });
+});
+
+describe('staged Data Hub rows', () => {
+  const HUB_COLUMNS = [
+    {
+      name: 'Name',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf1',
+      hub_field_key: 'name'
+    },
+    {
+      name: 'Email',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf2',
+      hub_field_key: 'email'
+    }
+  ];
+
+  const hubClient = (entries: any[]) => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: HUB_FIELDS }] })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get' ? Promise.resolve(entries) : Promise.resolve({})
+    )
+  });
+
+  const hubProps = {
+    columns: HUB_COLUMNS,
+    data_source: 'hub',
+    hub_id: 'hub1',
+    hub_verification: 'all'
+  };
+
+  test('a bad value on a verified row blocks the save', async () => {
+    const client = hubClient([
+      { id: 'e1', verified: true, data: { name: 'Alice', email: 'bad' } }
+    ]);
+    renderTable(hubProps, { client });
+
+    await waitFor(() => expect(screen.getByText('bad')).toBeInTheDocument());
+    expect(status()).toHaveTextContent('1 error');
+    expect(saveButton()).toBeDisabled();
+  });
+
+  test('the same value on a staged row is still an error, but one that saves', async () => {
+    const client = hubClient([
+      { id: 'e1', verified: false, data: { name: 'Alice', email: 'bad' } }
+    ]);
+    renderTable(hubProps, { client });
+
+    await waitFor(() => expect(screen.getByText('bad')).toBeInTheDocument());
+    // A broken hub rule is red wherever it is; only the verified row's copy
+    // holds the save back, so the two are counted apart.
+    expect(status()).toHaveTextContent('1 error on unvalidated rows');
+    expect(status()).not.toHaveTextContent('warning');
+    expect(cell('bad')).toHaveStyle({ backgroundColor: '#fef3f2' });
+
+    // A staged row is not held to the hub's field rules until it is verified,
+    // so the user can still write a correction that is not finished yet.
+    fireEvent.doubleClick(cell('Alice'));
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Alicia' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+    fireEvent.click(saveButton());
+    await waitFor(() =>
+      expect(client.dataHubAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: 'update',
+          verification: 'unverified',
+          data: { name: 'Alicia' }
+        })
+      )
+    );
+  });
+});
+
+describe('rows inserted before a save', () => {
+  const HUB_COLUMNS = [
+    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' }
+  ];
+  const hubClient = () => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: [HUB_FIELDS[0]] }] })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get'
+        ? Promise.resolve([{ id: 'e1', verified: true, data: { name: 'Alice' } }])
+        : Promise.resolve({})
+    )
+  });
+  const rowCount = () => Number(grid().getAttribute('aria-rowcount')) - 1;
+  const addRow = () => fireEvent.click(screen.getByRole('button', { name: '+ Add row' }));
+
+  test('Discard removes an inserted Hub row and lets the table refetch again', async () => {
+    const client = hubClient();
+    const gets = () =>
+      client.dataHubAction.mock.calls.filter(([args]: any) => args.operation === 'get').length;
+    renderTable({ columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1' }, { client });
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+    expect(rowCount()).toBe(1);
+
+    addRow();
+    await waitFor(() => expect(rowCount()).toBe(2));
+    // A row with no entry yet would be lost by a resync, so none happens...
+    const before = gets();
+    fireEvent(featheryWindow(), new Event('focus'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(gets()).toBe(before);
+
+    editCell('Alice', 'Alicia');
+    discard();
+    // ...until Discard takes the row back along with the edit.
+    await waitFor(() => expect(rowCount()).toBe(1));
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    fireEvent(featheryWindow(), new Event('focus'));
+    await waitFor(() => expect(gets()).toBe(before + 1));
+  });
+
+  test('Discard removes an inserted field row too', async () => {
+    // Apply updates so the inserted blank row is really in the field values.
+    const updateFieldValues = jest.fn((updates: Record<string, any>) =>
+      Object.assign(fieldValues, updates)
+    );
+    renderTable({}, { updateFieldValues });
+    addRow();
+    await waitFor(() =>
+      expect(updateFieldValues).toHaveBeenLastCalledWith({
+        name_key: ['Alice', 'Bob', ''],
+        email_key: ['alice@test.com', 'bob@test.com', '']
+      })
+    );
+
+    editCell('Alice', 'Alicia');
+    discard();
+    await waitFor(() =>
+      expect(updateFieldValues).toHaveBeenLastCalledWith({
+        name_key: ['Alice', 'Bob'],
+        email_key: ['alice@test.com', 'bob@test.com']
+      })
+    );
+  });
+});
+
+describe('Data Hub status column', () => {
+  const HUB_COLUMNS = [
+    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' }
+  ];
+  const hubClient = (entries: any[], schemaExtra: Record<string, any> = {}) => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({
+        hubs: [{ id: 'hub1', key: 'h', fields: [HUB_FIELDS[0]], ...schemaExtra }]
+      })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get' ? Promise.resolve(entries) : Promise.resolve({})
+    )
+  });
+  const entries = [
+    { id: 'e1', verified: true, data: { name: 'Alice' } },
+    { id: 'e2', verified: false, data: { name: 'Bob' } }
+  ];
+  const hubProps = {
+    columns: HUB_COLUMNS,
+    data_source: 'hub',
+    hub_id: 'hub1',
+    hub_verification: 'all'
+  };
+  const headers = () =>
+    screen.getAllByRole('columnheader').map((h) => h.textContent);
+
+  test('a hub that stages rows shows each row\'s status as the first column', async () => {
+    renderTable(hubProps, { client: hubClient(entries) });
+    await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
+    expect(headers()).toEqual(['Status', 'name']);
+    expect(screen.getByText('Validated')).toBeInTheDocument();
+    expect(screen.getByText('Unvalidated')).toBeInTheDocument();
+  });
+
+  test('the status column is read-only', async () => {
+    renderTable(hubProps, { client: hubClient(entries) });
+    await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
+    fireEvent.doubleClick(cell('Validated'));
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    // The neighbouring hub column still edits.
+    fireEvent.doubleClick(cell('Alice'));
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+  });
+
+  test('the normal hide control hides it', async () => {
+    renderTable(
+      { ...hubProps, hidden_hub_fields: ['__status__'] },
+      { client: hubClient(entries) }
+    );
+    await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
+    expect(headers()).toEqual(['name']);
+  });
+
+  test('the hub schema decides whether the column exists at all', async () => {
+    // A verified-only table on a hub that stages rows still explains itself…
+    const { unmount } = renderTable(
+      { ...hubProps, hub_verification: 'verified' },
+      { client: hubClient([entries[0]], { unverified_enabled: true }) }
+    );
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+    expect(headers()).toEqual(['Status', 'name']);
+    unmount();
+
+    // …and a hub with staging off has nothing to say, whatever the filter.
+    renderTable(hubProps, {
+      client: hubClient([entries[0]], { unverified_enabled: false })
+    });
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+    expect(headers()).toEqual(['name']);
+  });
+});
+
+describe('read-only Data Hub columns', () => {
+  const HUB_COLUMNS = [
+    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' },
+    { name: 'Email', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf2', hub_field_key: 'email' }
+  ];
+  const client = () => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: HUB_FIELDS }] })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get'
+        ? Promise.resolve([{ id: 'e1', data: { name: 'Alice', email: 'a@b.co' } }])
+        : Promise.resolve({})
+    )
+  });
+
+  test('a column the builder marked read-only cannot be edited, typed into or pasted over', async () => {
+    renderTable(
+      {
+        columns: HUB_COLUMNS,
+        data_source: 'hub',
+        hub_id: 'hub1',
+        readonly_hub_fields: ['hf2']
+      },
+      { client: client() }
+    );
+    await waitFor(() => expect(screen.getByText('a@b.co')).toBeInTheDocument());
+
+    fireEvent.doubleClick(cell('a@b.co'));
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+
+    // Paste over both columns: only the writable one takes the value.
+    fireEvent.mouseDown(cell('Alice'), { button: 0 });
+    fireEvent.paste(grid(), {
+      clipboardData: { getData: () => 'Zed\tz@z.co' }
+    });
+    await waitFor(() => expect(screen.getByText('Zed')).toBeInTheDocument());
+    expect(screen.getByText('a@b.co')).toBeInTheDocument();
+    expect(screen.queryByText('z@z.co')).not.toBeInTheDocument();
+  });
+});
+
+describe('assistant issues', () => {
+  const HUB_COLUMNS = [
+    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' },
+    { name: 'Email', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf2', hub_field_key: 'email' }
+  ];
+  const client = (entries: any[]) => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: HUB_FIELDS }] })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get' ? Promise.resolve(entries) : Promise.resolve({})
+    )
+  });
+  const assistant = () =>
+    new AssistantClient({
+      buttonOnClick: jest.fn(),
+      runElementActions: jest.fn(),
+      tableOnClick: jest.fn(),
+      changeValue: jest.fn()
+    });
+
+  test('the assistant can flag a cell by entry id and hub field key; it is an orange warning that never blocks', async () => {
+    const assistantClient = assistant();
+    renderTable(
+      { columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1', hub_verification: 'verified' },
+      {
+        client: client([
+          { id: 'e1', verified: true, data: { name: 'Alice', email: 'alice@x.co' } }
+        ]),
+        assistantClient
+      }
+    );
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+
+    act(() => {
+      expect(
+        assistantClient.setTableIssues('table1', [
+          {
+            target: { kind: 'cell', row: { entryId: 'e1' }, field: 'email' },
+            message: 'Bounced last week'
+          }
+        ])
+      ).toBe(true);
+    });
+
+    expect(status()).toHaveTextContent('1 warning');
+    expect(cell('alice@x.co')).toHaveStyle({ backgroundColor: '#fffaeb' });
+    expect(cell('alice@x.co')).toHaveAttribute('title', 'Bounced last week');
+    expect(cell('Alice')).not.toHaveAttribute('title');
+
+    // A warning never holds a save back.
+    editCell('Alice', 'Alicia');
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+
+    act(() => {
+      assistantClient.clearTableIssues('table1');
+    });
+    expect(status()).not.toHaveTextContent('warning');
+  });
+
+  test('a hub field named like the status column is still reachable by that name', async () => {
+    const assistantClient = assistant();
+    const STATUS_FIELD = { id: 'hf9', key: 'Status', type: 'text', required: false, unique: false };
+    renderTable(
+      {
+        columns: [
+          { name: 'Status', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf9', hub_field_key: 'Status' }
+        ],
+        data_source: 'hub',
+        hub_id: 'hub1',
+        hub_verification: 'all'
+      },
+      {
+        client: {
+          getHubSchemas: jest.fn(() =>
+            Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: [STATUS_FIELD] }] })
+          ),
+          dataHubAction: jest.fn(({ operation }: any) =>
+            operation === 'get'
+              ? Promise.resolve([{ id: 'e1', verified: false, data: { Status: 'Pending' } }])
+              : Promise.resolve({})
+          )
+        },
+        assistantClient
+      }
+    );
+    await waitFor(() => expect(screen.getByText('Pending')).toBeInTheDocument());
+    expect(
+      screen.getAllByRole('columnheader').map((h) => h.textContent)
+    ).toEqual(['Status', 'Status']);
+
+    act(() => {
+      assistantClient.setTableIssues('table1', [
+        { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'Status' }, message: 'Stale' }
+      ]);
+    });
+    // The hub's own field takes the flag; the synthetic status column stays clean.
+    expect(cell('Pending')).toHaveAttribute('title', 'Stale');
+    expect(cell('Unvalidated')).not.toHaveAttribute('title');
+  });
+
+  test('row and range targets cover every cell they name', async () => {
+    const assistantClient = assistant();
+    renderTable(
+      { columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1' },
+      {
+        client: client([
+          { id: 'e1', data: { name: 'Alice', email: 'a@x.co' } },
+          { id: 'e2', data: { name: 'Bob', email: 'b@x.co' } },
+          { id: 'e3', data: { name: 'Cy', email: 'c@x.co' } }
+        ]),
+        assistantClient
+      }
+    );
+    await waitFor(() => expect(screen.getByText('Cy')).toBeInTheDocument());
+
+    act(() => {
+      assistantClient.setTableIssues('table1', [
+        { target: { kind: 'row', row: { rowIndex: 0 } }, message: 'Duplicate of row 4' },
+        {
+          target: {
+            kind: 'range',
+            from: { row: { entryId: 'e2' }, field: 'name' },
+            to: { row: { entryId: 'e3' }, field: 'email' }
+          },
+          message: 'Imported from the wrong sheet'
+        }
+      ]);
+    });
+
+    expect(status()).toHaveTextContent('6 warnings');
+    ['Alice', 'a@x.co'].forEach((text) =>
+      expect(cell(text)).toHaveAttribute('title', 'Duplicate of row 4')
+    );
+    ['Bob', 'b@x.co', 'Cy', 'c@x.co'].forEach((text) =>
+      expect(cell(text)).toHaveAttribute('title', 'Imported from the wrong sheet')
+    );
+  });
+
+  test('a hub rule error on the same cell wins, and the bar counts the categories apart', async () => {
+    const assistantClient = assistant();
+    renderTable(
+      { columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1', hub_verification: 'all' },
+      {
+        client: client([
+          { id: 'e1', verified: true, data: { name: 'Alice', email: 'bad' } },
+          { id: 'e2', verified: false, data: { name: 'Bob', email: 'worse' } }
+        ]),
+        assistantClient
+      }
+    );
+    await waitFor(() => expect(screen.getByText('worse')).toBeInTheDocument());
+
+    act(() => {
+      assistantClient.setTableIssues('table1', [
+        { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'email' }, message: 'Bounced' },
+        { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'name' }, message: 'Nickname?' }
+      ]);
+    });
+
+    expect(status()).toHaveTextContent('1 error · 1 error on unvalidated rows · 1 warning');
+    expect(cell('bad')).toHaveAttribute('title', 'Invalid email');
+    expect(cell('Alice')).toHaveAttribute('title', 'Nickname?');
+  });
+});

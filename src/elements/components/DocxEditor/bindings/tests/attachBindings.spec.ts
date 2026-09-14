@@ -154,11 +154,169 @@ describe('attaching bindings to a tokenized template', () => {
     attached.dispose();
     const removed = remove.mock.calls.map((call) => call[0]);
     expect(removed).toEqual(
-      expect.arrayContaining(['contentChange', 'selectionChange', 'keyDown'])
+      expect.arrayContaining([
+        'contentChange',
+        'selectionChange',
+        'keyDown',
+        'contentControl'
+      ])
     );
     remove.mockRestore();
     // Reattach so afterEach's dispose stays valid.
     attached = attachBindings(editor as unknown as SyncfusionEditorLike);
+  });
+
+  // The hint reads selection.currentContentControl directly - never
+  // canEditContentControl, whose getter re-fires 'contentControl' and would
+  // recurse forever (regression guard for that loop).
+  const setCaretControl = (locked: boolean | null) => {
+    (editor as any).selection.currentContentControl =
+      locked === null
+        ? null
+        : { contentControlProperties: { lockContents: locked } };
+  };
+
+  it('fires the locked-edit hint only when the caret is on a locked control', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit
+    });
+
+    // Editable inner field: Syncfusion still fires 'contentControl' (the
+    // wrapper is locked), but the hint must stay silent.
+    setCaretControl(false);
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).not.toHaveBeenCalled();
+
+    // On a locked control: shows the hint, debounced.
+    setCaretControl(true);
+    (editor as any).trigger('contentControl');
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    setCaretControl(null);
+  });
+
+  it('shows the hint on Backspace/Delete inside a locked control (no contentControl event fires)', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit
+    });
+
+    // Syncfusion refuses Backspace/Delete inside a locked control WITHOUT
+    // firing 'contentControl', so the keyDown handler must surface the hint.
+    setCaretControl(true);
+    (editor as any).trigger('keyDown', { event: { key: 'Backspace' } });
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    // An editable control: Backspace edits, no hint.
+    onLockedEdit.mockClear();
+    setCaretControl(false);
+    (editor as any).trigger('keyDown', { event: { key: 'Delete' } });
+    expect(onLockedEdit).not.toHaveBeenCalled();
+
+    // Not on a control (e.g. a structural/multi-cell selection): no hint.
+    setCaretControl(null);
+    (editor as any).trigger('keyDown', { event: { key: 'Backspace' } });
+    expect(onLockedEdit).not.toHaveBeenCalled();
+  });
+
+  it('does not show the hint on a multi-cell structural delete', () => {
+    // Fresh attach so the debounce state is clean and a "not called" result is
+    // the exclusion, not a lingering debounce from an earlier fire.
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit
+    });
+
+    // The caret resolves to a locked cell, but the selection spans two cells -
+    // a genuine row/table delete the guard owns. The hint must stay silent.
+    setCaretControl(true);
+    const sel = (editor as any).selection;
+    sel.start = { paragraph: { associatedCell: { id: 'A' } } };
+    sel.end = { paragraph: { associatedCell: { id: 'B' } } };
+    (editor as any).trigger('keyDown', { event: { key: 'Delete' } });
+    expect(onLockedEdit).not.toHaveBeenCalled();
+    setCaretControl(null);
+  });
+
+  it('does not recurse when reading whether the edit was refused', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit
+    });
+    // Wire a canEditContentControl getter that RE-FIRES contentControl, the
+    // exact shape of the reported infinite loop. If the handler read it, this
+    // would blow the stack; it must read currentContentControl instead.
+    const module = (editor as any).editorModule;
+    const restore = Object.getOwnPropertyDescriptor(
+      module,
+      'canEditContentControl'
+    );
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => {
+        (editor as any).trigger('contentControl');
+        return false;
+      }
+    });
+    setCaretControl(true);
+    expect(() => (editor as any).trigger('contentControl')).not.toThrow();
+
+    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
+    else delete module.canEditContentControl;
+    setCaretControl(null);
+  });
+
+  it('resolves the hint when the caret moves to an editable spot', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    const onLockedEditResolved = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit,
+      onLockedEditResolved
+    });
+
+    setCaretControl(true);
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    // Selection change while still on the locked cell keeps it up.
+    (editor as any).trigger('selectionChange');
+    expect(onLockedEditResolved).not.toHaveBeenCalled();
+
+    // Caret moves to an editable spot -> resolve once, and not again.
+    setCaretControl(false);
+    (editor as any).trigger('selectionChange');
+    (editor as any).trigger('selectionChange');
+    expect(onLockedEditResolved).toHaveBeenCalledTimes(1);
+
+    setCaretControl(null);
+  });
+
+  it('resolves the hint when focus leaves the editor', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    const onLockedEditResolved = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit,
+      onLockedEditResolved
+    });
+    setCaretControl(true);
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    // Blurring the editable div drops the hint even while still on the cell.
+    (editor as any).documentHelper.editableDiv.dispatchEvent(
+      new Event('blur')
+    );
+    expect(onLockedEditResolved).toHaveBeenCalledTimes(1);
+
+    setCaretControl(null);
   });
 });
 

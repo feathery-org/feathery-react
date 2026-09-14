@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import RatingStar from '../../components/icons/RatingStar';
 import Heart from '../../components/icons/Heart';
 import ErrorInput from '../../components/ErrorInput';
+import HiddenValueInput from '../../components/HiddenValueInput';
 
 export default function RatingField({
   element,
@@ -50,6 +51,7 @@ export default function RatingField({
             return (
               <Icon
                 key={index}
+                id={`${servar.key}-${index + 1}`}
                 onClick={() => onChange(index + 1)}
                 onMouseEnter={() => setHoverIndex(index)}
                 onMouseLeave={() => setHoverIndex(null)}
@@ -70,6 +72,7 @@ export default function RatingField({
           name={servar.key}
           aria-label={element.properties.aria_label}
         />
+        <HiddenValueInput name={servar.key} value={fieldVal} />
       </div>
     </div>
   );

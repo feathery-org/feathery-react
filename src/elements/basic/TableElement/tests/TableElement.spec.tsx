@@ -63,9 +63,10 @@ const makeHubElement = (propsOverride: Record<string, any> = {}) =>
     ...propsOverride
   });
 
-// applyTableStyles only calls addTargets and the render reads getTarget
+// applyTableStyles calls addTargets and apply; the render reads getTarget
 const mockStyles = () => ({
   addTargets: jest.fn(),
+  apply: jest.fn(),
   getTarget: jest.fn(() => ({}))
 });
 

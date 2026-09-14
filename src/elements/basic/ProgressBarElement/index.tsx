@@ -61,6 +61,8 @@ function ProgressBarElement({
       ...(vertical && { height: '100%' }),
       ...styles.getTarget('barContainer')
     },
+    // Fixed name: there is no content to derive one from
+    name: 'progress_bar',
     ...elementProps
   };
 

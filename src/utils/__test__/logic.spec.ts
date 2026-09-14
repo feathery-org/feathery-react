@@ -182,6 +182,38 @@ describe('logic', () => {
         expect(evalComparisonRule(rule(op, 'non-matching'))).toBeFalsy();
       });
 
+      it.each([
+        ['numeric right operand', 'Total 1000', 1000, true],
+        ['numeric left operand', 1000, '00', true],
+        ['boolean left operand', true, 'RU', true],
+        ['mixed case', 'Moderate', 'MOD', true],
+        ['literal numeric spelling', '1e3', 1000, false],
+        ['null left operand', null, 'x', false],
+        ['missing left operand', undefined, 'x', false],
+        ['null right operand', 'test', null, true]
+      ])(
+        'matches ignore-case substrings with %s',
+        (_, left, right, matches) => {
+          setFieldValues(left);
+          expect(evalComparisonRule(rule('contains_ignore_case', right))).toBe(
+            matches
+          );
+          expect(
+            evalComparisonRule(rule('not_contains_ignore_case', right))
+          ).toBe(!matches);
+        }
+      );
+
+      it('matches ignore-case substrings against numeric field values', () => {
+        setFieldValuesLR([1000], [0, 2]);
+        expect(
+          evalComparisonRule(rule('contains_ignore_case', field()))
+        ).toBeTruthy();
+        expect(
+          evalComparisonRule(rule('not_contains_ignore_case', field()))
+        ).toBeFalsy();
+      });
+
       it('not_equal_ignore_case', () => {
         const op = 'not_equal_ignore_case';
 

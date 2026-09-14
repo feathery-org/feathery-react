@@ -128,3 +128,42 @@ describe('StyledContainer document editor', () => {
     expect(queryByText('Document editor')).toBeNull();
   });
 });
+
+describe('StyledContainer table elements', () => {
+  const tableNode = (widthUnit: string, type: string) => ({
+    ...baseNode,
+    id: 'table-1',
+    key: 'table-1',
+    type: 'Element',
+    _type: type,
+    isElement: true,
+    parent: { styles: { height: 'fit', axis: 'row' } },
+    styles: {
+      ...baseNode.styles,
+      width: widthUnit === 'px' ? 400 : widthUnit,
+      width_unit: widthUnit
+    }
+  });
+
+  it.each([
+    ['table', 'fill'],
+    ['table', 'fit'],
+    ['table_element', 'fill'],
+    ['table_element', 'fit']
+  ])(
+    'never lets a %s node with %s width grow to its grid width',
+    (type, widthUnit) => {
+      // The grid scrolls inside its own box, so its intrinsic width must not
+      // reach the wrapper — a min-content floor would push the step wider than
+      // the viewport. The designer canvas names the node 'table_element'.
+      const { container } = render(
+        <StyledContainer node={tableNode(widthUnit, type)} breakpoint={480}>
+          <div />
+        </StyledContainer>
+      );
+      const wrapper = container.firstElementChild as HTMLElement;
+      // jsdom reports a unitless zero.
+      expect(['0', '0px']).toContain(getComputedStyle(wrapper).minWidth);
+    }
+  );
+});

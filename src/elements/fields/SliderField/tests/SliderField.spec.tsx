@@ -294,3 +294,30 @@ describe('SliderField - Base Functionality', () => {
     });
   });
 });
+
+describe('SliderField - DOM naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('mirrors the value into a hidden input named by the field key', () => {
+    const element = createSliderElement('slider');
+    const { container } = render(
+      <SliderField {...createSliderProps(element, { fieldVal: 42 })} />
+    );
+
+    const mirror = container.querySelector(
+      'input[type="hidden"]'
+    ) as HTMLInputElement;
+    expect(mirror.name).toBe(element.servar.key);
+    expect(mirror.value).toBe('42');
+  });
+
+  it('names the drag handle with the field key', () => {
+    const element = createSliderElement('slider');
+    render(<SliderField {...createSliderProps(element, { fieldVal: 3 })} />);
+
+    expect(getSliderHandle()?.getAttribute('name')).toBe(element.servar.key);
+  });
+});

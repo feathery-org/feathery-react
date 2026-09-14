@@ -430,3 +430,25 @@ describe('ButtonGroupField', () => {
     });
   });
 });
+
+describe('ButtonGroupField - DOM naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('mirrors the selection into a hidden input named by the field key', () => {
+    const element = createButtonGroupElement();
+    const { container } = render(
+      <ButtonGroupField
+        {...createButtonGroupProps(element, { fieldVal: ['Option 2'] })}
+      />
+    );
+
+    const mirror = container.querySelector(
+      'input[type="hidden"]'
+    ) as HTMLInputElement;
+    expect(mirror.name).toBe(element.servar.key);
+    expect(mirror.value).toBe('Option 2');
+  });
+});

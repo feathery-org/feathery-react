@@ -58,6 +58,26 @@ describe('Container document editor wiring', () => {
   });
 });
 
+describe('Container DOM naming', () => {
+  it.each([
+    ['container-1', 'container-1'],
+    ['Contact @ details #1 🎉', 'Contact_details_1']
+  ])('names a container with key %p as %p', (key, name) => {
+    const { container } = render(
+      <Container
+        node={{ ...docxNode, key, properties: {} }}
+        viewport='desktop'
+        form={{
+          formInstanceId: 'internal-form-id',
+          activeStep: { id: 'step-1' },
+          formSettings: { mobileBreakpoint: 480 }
+        }}
+      />
+    );
+    expect(container.querySelector(`[name="${name}"]`)).toBeTruthy();
+  });
+});
+
 /**
  * The handle is gated hard, because every rejected case is one where a visible
  * drag affordance would either do nothing or corrupt the row alignment behind

@@ -4,6 +4,7 @@ import useBorder from '../../components/useBorder';
 import { hoverStylesGuard } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
 import ErrorInput from '../../components/ErrorInput';
+import HiddenValueInput from '../../components/HiddenValueInput';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
 
 function ButtonGroupField({
@@ -171,6 +172,10 @@ function ButtonGroupField({
           id={servar.key}
           name={servar.key}
           aria-label={element.properties.aria_label}
+        />
+        <HiddenValueInput
+          name={servar.key}
+          value={(Array.isArray(fieldVal) ? fieldVal : []).join(', ')}
         />
       </div>
     </div>
