@@ -2248,3 +2248,32 @@ describe('the reserve both repos compute', () => {
     }
   );
 });
+
+// The pinned label is two responsive targets rendered as one element, and the
+// footprint reserve assumes the resting label's line box follows the field's
+// font at every breakpoint. That only holds if both targets' mobile blocks
+// survive the merge: this is the contract Placeholder relies on getTargets for.
+describe('merging the placeholder targets for a pinned label', () => {
+  const MOBILE_KEY = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
+
+  it('keeps both targets\' mobile declarations in one block', () => {
+    const merged: any = targets(
+      'text_field',
+      {
+        placeholder_transition: 'shrink_top',
+        height: 200,
+        height_unit: 'px',
+        font_size: 16
+      },
+      { placeholder: 'Name' },
+      { font_size: 28 }
+    ).getTargets('placeholder', 'placeholderFocus');
+
+    // The resting label's line box tracks the mobile font...
+    expect(merged[MOBILE_KEY].lineHeight).toBe('28px');
+    // ...and the pinned label's shrunken size rides alongside it, rather than
+    // replacing the block it arrived in.
+    expect(merged[MOBILE_KEY].fontSize).toBe('10px');
+    expect(merged[MOBILE_KEY].marginTop).toBe('5px');
+  });
+});
