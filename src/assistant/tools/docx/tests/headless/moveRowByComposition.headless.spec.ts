@@ -30,6 +30,29 @@ const splitStock = (source: string, group: string) => [
   { op: 'delete_row', group, anchor: source, rows: [3] }
 ];
 
+const moveBuildings = (copy: string, source: string, group: string) => [
+  { op: 'insert_row', group, anchor: `${copy};1;0;0` },
+  {
+    op: 'set_cell_text',
+    group,
+    anchor: `${copy};2;0;0`,
+    text: 'Buildings'
+  },
+  {
+    op: 'set_cell_text',
+    group,
+    anchor: `${copy};2;1;0`,
+    text: '12'
+  },
+  {
+    op: 'set_cell_text',
+    group,
+    anchor: `${copy};2;2;0`,
+    text: '$640.50'
+  },
+  { op: 'delete_row', group, anchor: source, rows: [1] }
+];
+
 /** The document with revision records and revision references removed. */
 function withoutRevisionIdentity(doc: string): string {
   const parsed = JSON.parse(doc);
@@ -64,43 +87,22 @@ describe('a row moves between tables by delete_row plus insert_row with the valu
       'tableAnchor',
       'property_premium'
     );
-    expect(
-      (
-        await session.call<any>(
-          'applyEdits',
-          splitStock(source, 'g01'),
-          'move-pending-split'
-        )
-      ).outcomes
-    ).toEqual(['ok', 'ok', 'ok']);
+    const split = await session.call<any>(
+      'applyEdits',
+      splitStock(source, 'g01'),
+      'move-pending-split'
+    );
+    expect(split.outcomes).toEqual(['ok', 'ok', 'ok']);
+    expect(split.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/row-not-adopted/)])
+    );
     const copy = await session.call<string>(
       'tableAnchor',
       'property_premium_copy'
     );
     const moved = await session.call<any>(
       'applyEdits',
-      [
-        { op: 'insert_row', group: 'g02', anchor: `${copy};1;0;0` },
-        {
-          op: 'set_cell_text',
-          group: 'g02',
-          anchor: `${copy};2;0;0`,
-          text: 'Buildings'
-        },
-        {
-          op: 'set_cell_text',
-          group: 'g02',
-          anchor: `${copy};2;1;0`,
-          text: '12'
-        },
-        {
-          op: 'set_cell_text',
-          group: 'g02',
-          anchor: `${copy};2;2;0`,
-          text: '$640.50'
-        },
-        { op: 'delete_row', group: 'g02', anchor: source, rows: [1] }
-      ],
+      moveBuildings(copy, source, 'g02'),
       'move-pending'
     );
     expect(moved.outcomes).toEqual(['ok', 'ok', 'ok', 'ok', 'ok']);
@@ -182,28 +184,7 @@ describe('a row moves between tables by delete_row plus insert_row with the valu
     );
     const moved = await session.call<any>(
       'applyEdits',
-      [
-        { op: 'insert_row', group: 'g02', anchor: `${copy};1;0;0` },
-        {
-          op: 'set_cell_text',
-          group: 'g02',
-          anchor: `${copy};2;0;0`,
-          text: 'Buildings'
-        },
-        {
-          op: 'set_cell_text',
-          group: 'g02',
-          anchor: `${copy};2;1;0`,
-          text: '12'
-        },
-        {
-          op: 'set_cell_text',
-          group: 'g02',
-          anchor: `${copy};2;2;0`,
-          text: '$640.50'
-        },
-        { op: 'delete_row', group: 'g02', anchor: source, rows: [1] }
-      ],
+      moveBuildings(copy, source, 'g02'),
       'three-move'
     );
     expect(moved.outcomes).toEqual(['ok', 'ok', 'ok', 'ok', 'ok']);

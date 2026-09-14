@@ -1,15 +1,3 @@
-/**
- * Launches a headless Chromium against a SYSTEM Chrome through
- * `puppeteer-core`, loads `host.html`, and hands the spec a thin typed handle on
- * the in-page engine surface (`hostEntry.ts`).
- *
- * No download, no bundled browser, no server: the page is loaded over `file://`
- * and the only new dependency is `puppeteer-core`. Node 18+ is required, which
- * `puppeteer-core@23` already gates; the repo runs Node 22 locally.
- *
- * This never attaches to an already-running browser. It always launches its own
- * throwaway profile, so a headed Chrome a human is driving is untouched.
- */
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -28,7 +16,7 @@ const CHROME_CANDIDATES = [
   '/snap/bin/chromium'
 ];
 
-export function resolveChrome(): string {
+function resolveChrome(): string {
   const candidates = [process.env.CHROME_PATH, ...CHROME_CANDIDATES].filter(
     Boolean
   ) as string[];
@@ -47,14 +35,7 @@ export interface HeadlessSession {
   close(): Promise<void>;
 }
 
-/**
- * Read a lane fixture from the corpus's `browser-only/` subdirectory.
- *
- * The subdirectory is load-bearing, not tidiness: `corpusShapes()` sweeps every
- * `*.sfdt.json` sitting DIRECTLY in `corpus/`, and the jsdom sweeps that consume
- * it would hang forever on a document with header and footer stories. A
- * browser-only shape must therefore never be a direct child of `corpus/`.
- */
+// Header/footer fixtures hang jsdom and must remain in browser-only.
 export function readFixture(name: string): string {
   return fs.readFileSync(
     path.join(__dirname, '..', 'corpus', 'browser-only', name),
@@ -62,27 +43,11 @@ export function readFixture(name: string): string {
   );
 }
 
-/**
- * Where the lane writes a screenshot of each settled state.
- *
- * Gitignored on purpose: it is evidence of a run, not an artifact of the
- * branch. A PR-viewable copy would have to be committed, and this repo pins
- * `store_in_repo: false`.
- */
-export const EVIDENCE_DIR = path.resolve(
+const EVIDENCE_DIR = path.resolve(
   __dirname,
   '../../../../../../.headless-evidence'
 );
 
-/**
- * Photograph the laid-out page at a settled state and return the path.
- *
- * The point is not decoration. Every other measurement in this lane reads the
- * SERIALIZED document, and a serialize can be right while the page a human
- * looks at is wrong - a split whose second table renders on top of the first,
- * a fragment that lays out with no rows. This is the only assertion-adjacent
- * artifact that can catch that, and it costs one file per settled state.
- */
 export async function shoot(
   session: HeadlessSession,
   name: string,
@@ -90,10 +55,6 @@ export async function shoot(
 ): Promise<string> {
   fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
   const file = path.join(EVIDENCE_DIR, `${name}.png`);
-  // A trial build's modal sits over the document, and page one of this
-  // proposal is a title page - so a raw viewport shot of a split would show
-  // neither the dialog's fault nor the split's rows. Clear the furniture, put
-  // the rows under test on screen, and photograph the editor itself.
   await session.call('dismissTrialNotice');
   if (focusText) await session.call('focus', focusText);
   const host = await session.page.$('#fm-editor');
@@ -117,8 +78,6 @@ export async function startHeadless(): Promise<HeadlessSession> {
       '--disable-gpu',
       '--allow-file-access-from-files',
       '--hide-scrollbars',
-      // A headless tab is never foregrounded, so without these the renderer
-      // throttles timers and withholds animation frames and layout never settles.
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding'
@@ -128,15 +87,12 @@ export async function startHeadless(): Promise<HeadlessSession> {
   const failures: string[] = [];
   try {
     page = await browser.newPage();
-    // Taller than the 900x700 editor host so an element screenshot of it is
-    // never clipped by the viewport.
     await page.setViewport({ width: 1200, height: 1000 });
     page.on('pageerror', (error: Error) => failures.push(String(error)));
     await page.goto(`file://${HOST_PAGE}`, { waitUntil: 'load' });
-    await page.waitForFunction(
-      () => (window as any).fmHeadlessReady === true,
-      { timeout: 30000 }
-    );
+    await page.waitForFunction(() => (window as any).fmHeadlessReady === true, {
+      timeout: 30000
+    });
   } catch (error) {
     await browser.close();
     throw new Error(
@@ -148,9 +104,6 @@ export async function startHeadless(): Promise<HeadlessSession> {
   return {
     browser,
     page,
-    // `apply`, not spread: this function body is compiled by babel and then
-    // shipped as source into a page that has no babel helpers, so a spread
-    // would arrive as an undefined `_toConsumableArray` reference.
     call: <T>(method: string, ...args: any[]): Promise<T> =>
       page.evaluate(
         function (name: string, callArgs: any[]) {

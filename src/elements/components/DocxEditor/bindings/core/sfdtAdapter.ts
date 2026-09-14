@@ -817,7 +817,7 @@ export interface DeleteTableMutation {
   kind: 'delete-table';
   tag: string;
 }
-export interface ReplaceTableMutation {
+interface ReplaceTableMutation {
   kind: 'replace-table';
   tag: string;
   blocks: SfdtBlock[];
@@ -830,7 +830,7 @@ export interface ReplaceTableMutation {
  * retag - and SyncFusion revisions content, never tags, which is why the change
  * set that issues one also binds an inverse to its revision group.
  */
-export interface RetagControlMutation {
+interface RetagControlMutation {
   kind: 'retag-control';
   fromTag: string;
   toTag: string;
@@ -921,6 +921,10 @@ export function adoptUnboundRows(
   // inserting rows entirely.
   const allRows = tableNode.rows || [];
   const templateCells = templateRow.cells || [];
+  const firstBoundRowIndex = table.rows
+    .map((entry) => Number(entry.path?.[entry.path.length - 1]))
+    .filter(Number.isInteger)
+    .sort((left, right) => left - right)[0];
 
   for (let r = 0; r < allRows.length; r++) {
     const row = allRows[r];
@@ -950,6 +954,8 @@ export function adoptUnboundRows(
       );
     });
     if (occupiedFormula !== -1) {
+      if (Number.isInteger(firstBoundRowIndex) && r < firstBoundRowIndex)
+        continue;
       skipped.push({
         rowIndex: r,
         reason: `cell ${occupiedFormula} holds text where the template has a formula`

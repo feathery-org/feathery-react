@@ -218,7 +218,7 @@ export const ASSISTANT_DOCUMENT_AUTHOR = 'Robin';
 const AUTHOR_SUFFIX_ZERO = '\u2060';
 const AUTHOR_SUFFIX_ONE = '\u2061';
 
-export function changeSetAuthor(changeSetId: string): string {
+function changeSetAuthor(changeSetId: string): string {
   let hash = 2166136261;
   for (let i = 0; i < changeSetId.length; i++) {
     hash ^= changeSetId.charCodeAt(i);
@@ -4962,7 +4962,7 @@ export function rejectProjectionStream(sfdt: any): string {
 // inspection can establish either: a write that inserts the replacement beside
 // an untouched target creates a perfectly rejectable Insertion and leaves the
 // document reading "Innovation LearningInnovation Learning LLC".
-export function acceptProjectionStream(sfdt: any): string {
+function acceptProjectionStream(sfdt: any): string {
   return revisionProjectionStream(sfdt, deletedRevisionIds(sfdt));
 }
 
@@ -15853,6 +15853,65 @@ function documentFormulaMap(index: BindingIndex): Map<string, string> {
   return out;
 }
 
+function prepareBoundTableRewrite(
+  state: EngineMutationState,
+  tableRoute: BindingTableRoute,
+  operation: 'duplicate_table' | 'insert_column' | 'delete_column',
+  rebuildPendingRows = true
+) {
+  const liveTable = state.index.tables.get(tableRoute.tableId);
+  if (!liveTable)
+    throw new OpError(
+      'bound_table_not_found',
+      `No bound table "${tableRoute.tableId}" was found when applying ${operation}. Nothing was written.`
+    );
+  assertDuplicateSourceHasNoForeignEdits(state.sfdt, tableRoute.anchor);
+  const markerPath = liveTable.markerPath;
+  const blocksPath = markerPath.slice(0, -1);
+  const at = Number(markerPath[markerPath.length - 1]);
+  const siblings = getAt(state.sfdt, blocksPath);
+  if (!Array.isArray(siblings) || !Number.isInteger(at))
+    throw new OpError(
+      `${operation}_unroutable`,
+      `${operation} could not locate table "${tableRoute.tableId}". Nothing was written.`
+    );
+  const markerBlock = getAt(state.sfdt, markerPath);
+  const sourceAppearance = collectTableAppearance(
+    firstTableBlockIn(markerBlock)
+  );
+  const sourceHeaderRows = sourceAppearance
+    ? effectiveHeaderRows({
+        blocks: flattenSfdt(state.sfdt),
+        sfdt: state.sfdt,
+        tableAnchor: tableRoute.anchor,
+        source: sourceAppearance
+      })
+    : 0;
+  const clone = clonedWithoutRevisions(
+    state.sfdt,
+    containerCarryingOnlyTable(
+      markerBlock,
+      getBlocks(markerBlock).find((candidate: any) => getRows(candidate))
+    )
+  );
+  if (rebuildPendingRows)
+    rebuildPendingInsertedRowsForPaste(
+      state.sfdt,
+      firstTableBlockIn(clone),
+      liveTable
+    );
+  return {
+    liveTable,
+    markerPath,
+    blocksPath,
+    at,
+    siblings,
+    sourceAppearance,
+    sourceHeaderRows,
+    clone
+  };
+}
+
 function boundDuplicateTablePlan(
   index: number,
   op: EditOp,
@@ -15869,46 +15928,16 @@ function boundDuplicateTablePlan(
     anchor: block.anchor,
     ...(literalNumbers.length ? { literalNumbers } : {}),
     execute(state) {
-      const liveTable = state.index.tables.get(tableRoute.tableId);
-      if (!liveTable)
-        throw new OpError(
-          'bound_table_not_found',
-          `No bound table "${tableRoute.tableId}" was found when applying duplicate_table. Nothing was written.`
-        );
-      assertDuplicateSourceHasNoForeignEdits(state.sfdt, tableRoute.anchor);
-      const markerPath = liveTable.markerPath;
-      const blocksPath = markerPath.slice(0, -1);
-      const at = Number(markerPath[markerPath.length - 1]);
-      const siblings = getAt(state.sfdt, blocksPath);
-      if (!Array.isArray(siblings) || !Number.isInteger(at))
-        throw new OpError(
-          'duplicate_table_unroutable',
-          `duplicate_table could not locate the table block for "${tableRoute.tableId}". Nothing was written.`
-        );
-      const markerBlock = getAt(state.sfdt, markerPath);
-      const sourceTableBlock = firstTableBlockIn(markerBlock);
-      const sourceAppearance = collectTableAppearance(sourceTableBlock);
-      const sourceHeaderRows = sourceAppearance
-        ? effectiveHeaderRows({
-            blocks: flattenSfdt(state.sfdt),
-            sfdt: state.sfdt,
-            tableAnchor: tableRoute.anchor,
-            source: sourceAppearance
-          })
-        : 0;
-
-      const clone = clonedWithoutRevisions(
-        state.sfdt,
-        containerCarryingOnlyTable(
-          markerBlock,
-          getBlocks(markerBlock).find((candidate: any) => getRows(candidate))
-        )
-      );
-      rebuildPendingInsertedRowsForPaste(
-        state.sfdt,
-        firstTableBlockIn(clone),
-        liveTable
-      );
+      const {
+        liveTable,
+        markerPath,
+        blocksPath,
+        at,
+        siblings,
+        sourceAppearance,
+        sourceHeaderRows,
+        clone
+      } = prepareBoundTableRewrite(state, tableRoute, 'duplicate_table');
       const newTableId = uniqueTableId(tableRoute.tableId, state.index);
       // One bound table in this clone, so a single-entry map. A section copy
       // builds the same map with one entry per bound table in its range.
@@ -16317,46 +16346,19 @@ function boundInsertColumnPlan(
     anchor: block.anchor,
     execute(state) {
       const resultRef = String(op.resultRef ?? '').trim();
-      const liveTable = state.index.tables.get(tableRoute.tableId);
-      if (!liveTable)
-        throw new OpError(
-          'bound_table_not_found',
-          `No bound table "${tableRoute.tableId}" was found when applying insert_column. Nothing was written.`
-        );
-      assertDuplicateSourceHasNoForeignEdits(state.sfdt, tableRoute.anchor);
-      const markerPath = liveTable.markerPath;
-      const blocksPath = markerPath.slice(0, -1);
-      const at = Number(markerPath[markerPath.length - 1]);
-      const siblings = getAt(state.sfdt, blocksPath);
-      if (!Array.isArray(siblings) || !Number.isInteger(at))
-        throw new OpError(
-          'insert_column_unroutable',
-          `insert_column could not locate table "${tableRoute.tableId}". Nothing was written.`
-        );
-      const markerBlock = getAt(state.sfdt, markerPath);
-      const sourceTableBlock = firstTableBlockIn(markerBlock);
-      const sourceAppearance = collectTableAppearance(sourceTableBlock);
-      const sourceHeaderRows = sourceAppearance
-        ? effectiveHeaderRows({
-            blocks: flattenSfdt(state.sfdt),
-            sfdt: state.sfdt,
-            tableAnchor: tableRoute.anchor,
-            source: sourceAppearance
-          })
-        : 0;
-      const clone = clonedWithoutRevisions(
-        state.sfdt,
-        containerCarryingOnlyTable(
-          markerBlock,
-          getBlocks(markerBlock).find((candidate: any) => getRows(candidate))
-        )
+      const {
+        blocksPath,
+        at,
+        siblings,
+        sourceAppearance,
+        sourceHeaderRows,
+        clone
+      } = prepareBoundTableRewrite(
+        state,
+        tableRoute,
+        'insert_column',
+        !tableCreatedInChangeSet
       );
-      if (!tableCreatedInChangeSet)
-        rebuildPendingInsertedRowsForPaste(
-          state.sfdt,
-          firstTableBlockIn(clone),
-          liveTable
-        );
       insertColumnIntoTable(firstTableBlockIn(clone), columnIndex);
       const withReplacement = spliceDuplicateAfter(
         state.sfdt,
@@ -16437,45 +16439,8 @@ function boundDeleteColumnPlan(
     op,
     anchor: block.anchor,
     execute(state) {
-      const liveTable = state.index.tables.get(tableRoute.tableId);
-      if (!liveTable)
-        throw new OpError(
-          'bound_table_not_found',
-          `No bound table "${tableRoute.tableId}" was found when applying delete_column. Nothing was written.`
-        );
-      assertDuplicateSourceHasNoForeignEdits(state.sfdt, tableRoute.anchor);
-      const markerPath = liveTable.markerPath;
-      const blocksPath = markerPath.slice(0, -1);
-      const at = Number(markerPath[markerPath.length - 1]);
-      const siblings = getAt(state.sfdt, blocksPath);
-      if (!Array.isArray(siblings) || !Number.isInteger(at))
-        throw new OpError(
-          'delete_column_unroutable',
-          `delete_column could not locate table "${tableRoute.tableId}". Nothing was written.`
-        );
-      const markerBlock = getAt(state.sfdt, markerPath);
-      const sourceTableBlock = firstTableBlockIn(markerBlock);
-      const sourceAppearance = collectTableAppearance(sourceTableBlock);
-      const sourceHeaderRows = sourceAppearance
-        ? effectiveHeaderRows({
-            blocks: flattenSfdt(state.sfdt),
-            sfdt: state.sfdt,
-            tableAnchor: tableRoute.anchor,
-            source: sourceAppearance
-          })
-        : 0;
-      const clone = clonedWithoutRevisions(
-        state.sfdt,
-        containerCarryingOnlyTable(
-          markerBlock,
-          getBlocks(markerBlock).find((candidate: any) => getRows(candidate))
-        )
-      );
-      rebuildPendingInsertedRowsForPaste(
-        state.sfdt,
-        firstTableBlockIn(clone),
-        liveTable
-      );
+      const { markerPath, sourceAppearance, sourceHeaderRows, clone } =
+        prepareBoundTableRewrite(state, tableRoute, 'delete_column');
       const removedNames = bindingNamesRemovedByColumn(
         firstTableBlockIn(clone),
         columnIndex
@@ -22753,7 +22718,7 @@ export function applyDocumentEdits(
 
 // Recompute affected stripes from the current accept projection after review
 // resolution. This avoids replaying stale formatting snapshots out of order.
-export function restripeBandedTables(
+function restripeBandedTables(
   editor: LiveEditor,
   onlyAnchors?: ReadonlySet<string>
 ): string[] {

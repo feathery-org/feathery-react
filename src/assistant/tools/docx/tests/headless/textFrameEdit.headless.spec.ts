@@ -1,29 +1,11 @@
-/**
- * A TEXT BOX EDIT IN THE REAL ENGINE.
- *
- * The jsdom pair (`textFrameIndexing.spec.ts`) proves the law on the serialized
- * document: the title inside a Word text box is indexed, addressable, and
- * writable at the anchor the index reports. jsdom never lays out, so it cannot
- * say whether the frame the human looks at carries the change, whether the
- * review surface offers ONE card for it, or whether accept and reject settle
- * the way they do for body text.
- *
- * This is that row, on a laid-out cover page whose title lives in a text box:
- * one tracked replace at the INVENTORY's anchor, one review card, accept leaves
- * the new title, reject restores the document byte for byte.
- */
 import fs from 'fs';
-import {
-  HeadlessSession,
-  shoot,
-  startHeadless
-} from './headlessSession';
+import { HeadlessSession, shoot, startHeadless } from './headlessSession';
 
 const TITLE = 'Commercial Combined Insurance Proposal';
 const NEW_TITLE = 'Commercial Combined Insurance Quote';
+const HEADING = 'Section 1 - Property';
 
-/** A shape carrying `textFrame.blocks`: how SyncFusion serializes a text box. */
-const coverPageWithTextBoxTitle = () =>
+const proposal = () =>
   JSON.stringify({
     sections: [
       {
@@ -88,11 +70,20 @@ const coverPageWithTextBoxTitle = () =>
           },
           { inlines: [{ text: 'Prepared by Tyler Marlow' }] }
         ]
+      },
+      {
+        sectionFormat: { pageWidth: 612, pageHeight: 792 },
+        blocks: [
+          {
+            paragraphFormat: { styleName: 'Heading 1' },
+            inlines: [{ text: HEADING }]
+          }
+        ]
       }
     ]
   });
 
-describe('editing the title inside a text box on a laid-out page', () => {
+describe('text and formatting edits on a laid-out page', () => {
   let session: HeadlessSession;
   beforeAll(async () => {
     session = await startHeadless();
@@ -102,7 +93,7 @@ describe('editing the title inside a text box on a laid-out page', () => {
   });
 
   it('lands one tracked, reviewable change that accepts and rejects cleanly', async () => {
-    await session.call('open', coverPageWithTextBoxTitle());
+    await session.call('open', proposal());
     expect(await session.call<number>('pageCount')).toBeGreaterThan(0);
 
     const baseline = await session.call<any>('snapshot');
@@ -154,7 +145,7 @@ describe('editing the title inside a text box on a laid-out page', () => {
     expect(fs.existsSync(shot)).toBe(true);
 
     // Reject the same edit on a fresh open: byte-identical to the baseline.
-    await session.call('open', coverPageWithTextBoxTitle());
+    await session.call('open', proposal());
     expect(await session.call<boolean>('setTrackChanges', true)).toBe(true);
     const again = await session.call<any>(
       'replaceIndexed',
@@ -189,4 +180,88 @@ describe('editing the title inside a text box on a laid-out page', () => {
         )
     );
   }, 180000);
+
+  it.each([
+    ['a Heading 1 paragraph', HEADING],
+    ['the title inside a text box', TITLE]
+  ])(
+    'applies an immediate color change to %s and rejects invalid colors',
+    async (name, find) => {
+      await session.call('open', proposal());
+      const baseline = await session.call<any>('snapshot');
+      const colorBefore = await session.call<string>('resolvedFontColor', find);
+      expect(colorBefore).not.toMatch(/^#ff0000/i);
+
+      expect(await session.call<boolean>('setTrackChanges', true)).toBe(true);
+      const applied = await session.call<any>(
+        'formatIndexed',
+        find,
+        'red',
+        'heading-red'
+      );
+      expect(applied.outcomes).toEqual(['ok']);
+      expect(applied.status).toBe('applied');
+      const colorAfter = await session.call<string>('resolvedFontColor', find);
+      expect(colorAfter).toMatch(/^#ff0000/i);
+
+      const pending = await session.call<any>('snapshot');
+      const groups = await session.call<any[]>('groups');
+      expect(pending.revisions).toBe(0);
+      expect(groups).toHaveLength(0);
+      const shot = await shoot(session, `format-red-${applied.kind}`, find);
+
+      await session.call('resolveGroups', true);
+      expect(await session.call<string>('resolvedFontColor', find)).toMatch(
+        /^#ff0000/i
+      );
+      await session.call('open', proposal());
+      expect(await session.call<boolean>('setTrackChanges', true)).toBe(true);
+      expect(
+        (await session.call<any>('formatIndexed', find, 'red', 'red-reject'))
+          .outcomes
+      ).toEqual(['ok']);
+      await session.call('resolveGroups', false);
+      const afterReject = await session.call<string>('resolvedFontColor', find);
+      expect(afterReject).toMatch(/^#ff0000/i);
+
+      await session.call('open', proposal());
+      expect(await session.call<boolean>('setTrackChanges', true)).toBe(true);
+      const refused = await session.call<any>(
+        'formatIndexed',
+        find,
+        'reddish',
+        'heading-bogus'
+      );
+      expect(refused.outcomes).toEqual(['invalid_color']);
+      expect(refused.status).toBe('failed');
+      expect(await session.call<string>('resolvedFontColor', find)).toBe(
+        colorBefore
+      );
+
+      // eslint-disable-next-line no-console
+      console.log(
+        'FORMAT_COLOR ' +
+          JSON.stringify(
+            {
+              case: name,
+              anchor: applied.anchor,
+              kind: applied.kind,
+              outcomes: applied.outcomes,
+              colorBefore,
+              colorAfter,
+              pendingRevisions: pending.revisions,
+              cards: groups.length,
+              baselineLen: baseline.len,
+              afterAccept: '#FF0000',
+              afterReject,
+              refused: refused.outcomes,
+              shot
+            },
+            null,
+            1
+          )
+      );
+    },
+    240000
+  );
 });

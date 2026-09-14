@@ -53,7 +53,10 @@ function withNativeRow(texts: string[], at = 3): SfdtDocument {
 
 describe('row adoption', () => {
   it('infers bindings and formulas from the row above', () => {
-    const result = applyRules(withNativeRow(['QA testing', '4', '250', '']), {});
+    const result = applyRules(
+      withNativeRow(['QA testing', '4', '250', '']),
+      {}
+    );
 
     expect(
       result.diagnostics.some(
@@ -105,6 +108,23 @@ describe('row adoption', () => {
       expect(grand.text).toBe('$7,800.00');
     }
     expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+  });
+
+  it('does not report a populated header whose isHeader flag is absent', () => {
+    const doc = buildCostsFixture();
+    const tablePath = scanBindings(doc).tables.get('costs')!.tablePath!;
+    const table = getAt(doc, tablePath) as { rows: SfdtRow[] };
+    table.rows[0].rowFormat!.isHeader = false;
+
+    const result = applyRules(doc, {});
+
+    expect(
+      result.diagnostics.some(
+        (entry) =>
+          entry.code === 'row-not-adopted' && /index 0/.test(entry.message)
+      )
+    ).toBe(false);
+    expect(result.index.tables.get('costs')!.rows).toHaveLength(2);
   });
 
   it('still adopts after every bound row has been deleted', () => {
@@ -168,9 +188,9 @@ describe('row adoption', () => {
     const first = applyRules(withNativeRow(['QA testing', '4', '250', '']), {});
     const second = applyRules(first.sfdt, { prevValues: first.values });
     expect(second.sfdt).toBe(first.sfdt); // identity: nothing rewritten
-    expect(second.diagnostics.some((entry) => entry.code === 'row-adopted')).toBe(
-      false
-    );
+    expect(
+      second.diagnostics.some((entry) => entry.code === 'row-adopted')
+    ).toBe(false);
   });
 
   it('skips a row that does not match the template shape, with a warning', () => {

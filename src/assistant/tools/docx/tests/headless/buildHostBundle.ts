@@ -11,7 +11,7 @@ import path from 'path';
 const webpack = require('webpack');
 /* eslint-enable @typescript-eslint/no-var-requires */
 
-export const HEADLESS_BUILD_DIR = path.resolve(
+const HEADLESS_BUILD_DIR = path.resolve(
   __dirname,
   '../../../../../../.headless-build'
 );

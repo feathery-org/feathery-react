@@ -89,7 +89,7 @@ interface ViewSnapshot {
  * an Insertion revision. Undefined when the control is in settled content. See
  * updateValues on why a write into such a place is authored as that insertion.
  */
-export function pendingInsertionAuthorAround(
+function pendingInsertionAuthorAround(
   control: ContentControlLike
 ): string | undefined {
   const insertionAuthor = (revisions: unknown): string | undefined => {

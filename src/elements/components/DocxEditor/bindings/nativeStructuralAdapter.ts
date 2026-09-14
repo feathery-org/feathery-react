@@ -97,15 +97,8 @@ function applyRowAdoptions(
   const live = JSON.parse(editor.serialize()) as SfdtDocument;
   const previousHistory = editor.enableEditorHistory;
   const previousTracking = editor.enableTrackChanges;
-  // Adoption is not an edit in its own right. The row it fills was just
-  // inserted by the structural mutation, and under an authored batch that
-  // insertion already carries the revision the reviewer sees - so the controls
-  // inside it need neither their own history entries (the reason this function
-  // already suspended history) nor their own revisions. Leaving tracking on
-  // here also made the SDK's own serializer throw
-  // `Cannot set properties of undefined (setting 'revisionIds')` from
-  // writeInlineRevisions, because a content control inserted into an
-  // already-tracked row produces revision markers it cannot write back out.
+  // The row insertion owns the revision. Adding its controls must be untracked
+  // or Syncfusion cannot serialize their revision markers.
   editor.enableEditorHistory = false;
   editor.enableTrackChanges = false;
   try {
@@ -188,19 +181,7 @@ function applyRowAdoptions(
   return true;
 }
 
-/**
- * Make a just-pasted table's content controls addressable by tag.
- *
- * The SDK registers a ContentControl in `documentHelper.contentControlCollection`
- * only while LAYING OUT the line that holds it (layout.js, layoutLine). An
- * assistant batch runs with layout suspended, so a natively pasted copy's
- * controls stayed unregistered until the batch's closing relayout - and the
- * value writes that follow the paste in the same transaction (the copy's
- * recomputed formulas) found no control for their tags. The controller then
- * recorded native-mutation-failed and never committed its model, a failure the
- * old runCommands return silently discarded. A whole-document layout here is
- * idempotent (the SDK guards the push with indexOf) and registers everything.
- */
+// Later mutations address pasted controls by tag before the closing relayout.
 function registerPastedContentControls(editor: SyncfusionEditorLike): void {
   refreshContentControlCollection(editor);
 }
@@ -226,6 +207,21 @@ function selectControlCaret(
   selection.select(start, start);
   if (!selection.currentContentControl)
     selection.currentContentControl = control;
+  return true;
+}
+
+function selectAfterBlockControl(selection: any, control: ContentControlLike) {
+  if (!selection?.selectContentControl || !selection.select) return false;
+  selection.selectContentControl(control);
+  const end = selection.endOffset;
+  if (typeof end !== 'string') return false;
+  const [sectionIndex, blockIndex] = end.split(';');
+  const nextBlock = Number(blockIndex) + 1;
+  if (!sectionIndex || !Number.isFinite(nextBlock)) return false;
+  selection.select(
+    `${sectionIndex};${nextBlock};0`,
+    `${sectionIndex};${nextBlock};0`
+  );
   return true;
 }
 
@@ -300,11 +296,7 @@ export function applyNativeStructuralMutations(
     }
     for (const mutation of mutations) {
       if (mutation.kind === 'retag-control') {
-        // There is no SDK call for this: `contentControlProperties` IS the live
-        // model, and what it holds is what `serialize` reads back. Every
-        // ATTACHED control wearing the old tag is retagged, so a formula with
-        // several occurrences moves as one; a detached leftover is skipped
-        // because it is no longer part of the document.
+        // Retag every attached occurrence of the same formula identity.
         const matches = controls.filter(
           (control) =>
             isContentControlAttached(control) &&
@@ -321,23 +313,8 @@ export function applyNativeStructuralMutations(
         });
       } else if (mutation.kind === 'replace-table') {
         const source = controlForTag(mutation.tag);
-        if (
-          !source ||
-          !selection.select ||
-          !module.paste ||
-          !module.deleteTable
-        )
-          return false;
-        selection.selectContentControl(source);
-        const end = selection.endOffset;
-        if (typeof end !== 'string') return false;
-        const [sectionIndex, blockIndex] = end.split(';');
-        const nextBlock = Number(blockIndex) + 1;
-        if (!sectionIndex || !Number.isFinite(nextBlock)) return false;
-        selection.select(
-          `${sectionIndex};${nextBlock};0`,
-          `${sectionIndex};${nextBlock};0`
-        );
+        if (!source || !module.paste || !module.deleteTable) return false;
+        if (!selectAfterBlockControl(selection, source)) return false;
         module.paste(
           JSON.stringify({
             sections: [{ blocks: mutation.blocks, headersFooters: {} }]
@@ -357,30 +334,8 @@ export function applyNativeStructuralMutations(
         if (!tookEffect(control, rowRevisionsBefore)) return false;
       } else if (mutation.kind === 'insert-table') {
         const control = controlForTag(mutation.afterTag);
-        // `collapseToEnd` does not exist on this SDK - not on Selection, not
-        // anywhere in the shipped bundle - so this guard could never pass and
-        // the branch below had never once run. Every table the assistant has
-        // ever created reached the document through the reopen instead, which
-        // is why the reopen's cost went unnoticed for so long.
-        // Collapsing is expressed with documented API: an empty range at the
-        // control's own end offset.
-        if (!control || !selection.select || !module.paste) return false;
-        selection.selectContentControl(control);
-        // Selecting a block-level control that WRAPS A TABLE leaves the end
-        // offset inside the table's last cell (`0;6;5;1;0;12`), not after the
-        // table. Pasting there nests the new table inside a cell of the old
-        // one - which still satisfies a naive "is the copy in the index?"
-        // check, because the binding scan walks nested tables. The anchor must
-        // therefore be the start of the FOLLOWING top-level block.
-        const end = selection.endOffset;
-        if (typeof end !== 'string') return false;
-        const [sectionIndex, blockIndex] = end.split(';');
-        const nextBlock = Number(blockIndex) + 1;
-        if (!sectionIndex || !Number.isFinite(nextBlock)) return false;
-        selection.select(
-          `${sectionIndex};${nextBlock};0`,
-          `${sectionIndex};${nextBlock};0`
-        );
+        if (!control || !module.paste) return false;
+        if (!selectAfterBlockControl(selection, control)) return false;
         module.paste(
           JSON.stringify({
             sections: [{ blocks: mutation.blocks, headersFooters: {} }]

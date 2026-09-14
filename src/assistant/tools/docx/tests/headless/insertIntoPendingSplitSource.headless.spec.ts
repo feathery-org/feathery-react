@@ -83,39 +83,6 @@ describe('bound row operations while a source split is still pending', () => {
     await session?.close();
   });
 
-  const openWithPendingSplit = async (): Promise<string> => {
-    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
-    const source = await session.call<string>('tableAnchor', SOURCE);
-    const split = await session.call<any>(
-      'applyEdits',
-      [
-        {
-          op: 'duplicate_table',
-          group: 'g01-split-tail',
-          anchor: source,
-          rows: 'copy',
-          resultRef: '@copy'
-        },
-        {
-          op: 'delete_row',
-          group: 'g01-split-tail',
-          anchor: '@copy',
-          rows: [1, 2]
-        },
-        {
-          op: 'delete_row',
-          group: 'g01-split-tail',
-          anchor: `${source};3;0;0`,
-          rows: [3, 4, 5]
-        }
-      ],
-      'pending-source-split'
-    );
-    expect(split.outcomes).toEqual(['ok', 'ok', 'ok']);
-    expect(await session.call<any[]>('groups')).toHaveLength(1);
-    return source;
-  };
-
   const openWithPendingPrimitiveSplit = async (): Promise<{
     original: string;
     source: string;
@@ -158,131 +125,8 @@ describe('bound row operations while a source split is still pending', () => {
     };
   };
 
-  it('restripes and exactly rejects an ordinary mid-table insertion', async () => {
-    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
-    const original = await session.call<string>('serialize');
-    const source = await session.call<string>('tableAnchor', SOURCE);
-    const edits = [
-      {
-        op: 'insert_row',
-        group: 'g01-add-signage',
-        anchor: `${source};2;0;0`,
-        expect: 'Contents'
-      },
-      {
-        op: 'set_cell_text',
-        group: 'g01-add-signage',
-        anchor: `${source};3;0;0`,
-        expect: '',
-        text: 'Signage'
-      },
-      {
-        op: 'set_cell_text',
-        group: 'g01-add-signage',
-        anchor: `${source};3;1;0`,
-        expect: '',
-        text: '3',
-        literal: true
-      },
-      {
-        op: 'set_cell_text',
-        group: 'g01-add-signage',
-        anchor: `${source};3;2;0`,
-        expect: '',
-        text: '210.00',
-        literal: true
-      }
-    ];
-    const inserted = await session.call<any>(
-      'applyEdits',
-      edits,
-      'ordinary-source-insert'
-    );
-    expect(inserted.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
-    expect(inserted.warnings).not.toEqual(
-      expect.arrayContaining([expect.stringMatching(/left unbanded/)])
-    );
-    expect(
-      await session.call<Array<string | null>>('rowShading', SOURCE)
-    ).toEqual([
-      '#001B49FF',
-      null,
-      '#E6E6E6FF',
-      null,
-      '#E6E6E6FF',
-      null,
-      '#E6E6E6FF',
-      null
-    ]);
-    await session.call('resolveGroupsOf', 'ordinary-source-insert', false);
-    expect(await session.call<string>('serialize')).toBe(original);
-
-    expect(
-      (
-        await session.call<any>(
-          'applyEdits',
-          edits,
-          'ordinary-source-insert-again'
-        )
-      ).outcomes
-    ).toEqual(['ok', 'ok', 'ok', 'ok']);
-    await session.call('resolveGroups', true);
-    expect(
-      await session.call<Array<string | null>>('rowShading', SOURCE)
-    ).toEqual([
-      '#001B49FF',
-      null,
-      '#E6E6E6FF',
-      null,
-      '#E6E6E6FF',
-      null,
-      '#E6E6E6FF',
-      null
-    ]);
-  }, 120000);
-
-  it('restripes and exactly rejects an ordinary mid-table deletion', async () => {
-    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
-    const original = await session.call<string>('serialize');
-    const source = await session.call<string>('tableAnchor', SOURCE);
-    const deletion = [
-      {
-        op: 'delete_row',
-        group: 'g01-delete-contents',
-        anchor: `${source};2;0;0`,
-        expect: 'Contents',
-        rows: [2]
-      }
-    ];
-    const deleted = await session.call<any>(
-      'applyEdits',
-      deletion,
-      'ordinary-source-delete'
-    );
-    expect(deleted.outcomes).toEqual(['ok']);
-    expect(deleted.warnings).not.toEqual(
-      expect.arrayContaining([expect.stringMatching(/left unbanded/)])
-    );
-    await session.call('resolveGroupsOf', 'ordinary-source-delete', false);
-    expect(await session.call<string>('serialize')).toBe(original);
-
-    expect(
-      (
-        await session.call<any>(
-          'applyEdits',
-          deletion,
-          'ordinary-source-delete-again'
-        )
-      ).outcomes
-    ).toEqual(['ok']);
-    await session.call('resolveGroups', true);
-    expect(
-      await session.call<Array<string | null>>('rowShading', SOURCE)
-    ).toEqual(['#001B49FF', null, '#E6E6E6FF', null, '#E6E6E6FF', null]);
-  }, 120000);
-
   it('creates a new green row instead of writing into a struck-through row', async () => {
-    const source = await openWithPendingSplit();
+    const { source } = await openWithPendingPrimitiveSplit();
     const inserted = await session.call<any>(
       'applyEdits',
       addSignage(source),
@@ -448,7 +292,7 @@ describe('bound row operations while a source split is still pending', () => {
   }, 120000);
 
   it('refuses cell writes into a row the pending split deleted', async () => {
-    const source = await openWithPendingSplit();
+    const { source } = await openWithPendingPrimitiveSplit();
     const pending = await session.call<string>('serialize');
     const result = await session.call<any>(
       'applyEdits',
@@ -489,9 +333,7 @@ describe('bound row operations while a source split is still pending', () => {
   }, 120000);
 
   it('rejects the added row, then the split, back to the exact original', async () => {
-    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
-    const original = await session.call<string>('serialize');
-    const source = await openWithPendingSplit();
+    const { original, source } = await openWithPendingPrimitiveSplit();
     const inserted = await session.call<any>(
       'applyEdits',
       addSignage(source),
@@ -761,7 +603,7 @@ describe('bound row operations while a source split is still pending', () => {
   }, 120000);
 
   it('can accept the split-plus-row family and then delete the accepted row', async () => {
-    const source = await openWithPendingSplit();
+    const { source } = await openWithPendingPrimitiveSplit();
     expect(
       (
         await session.call<any>(

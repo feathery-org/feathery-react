@@ -1865,7 +1865,7 @@ function purgeUnresolvableRevisions(editor: LiveEditor): LiveRevision[] {
 }
 
 // Remains array-compatible while exposing members the SDK refused to move.
-export interface RevisionResolveOutcome extends Array<LiveRevision> {
+interface RevisionResolveOutcome extends Array<LiveRevision> {
   unresolved: LiveRevision[];
 }
 

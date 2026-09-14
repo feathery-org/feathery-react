@@ -144,6 +144,23 @@ describe('section creation on the flagship document', () => {
     await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
   });
 
+  const expectEquipmentAfterProperty = async () => {
+    const inventory = await session.call<
+      Array<{ anchor: string; kind: string; text: string }>
+    >('inventory');
+    const insertedHeading = inventory.find(
+      (entry) => entry.text === '1.4 Equipment Costs'
+    )?.anchor;
+    const propertyTable = await session.call<string>(
+      'tableAnchor',
+      'property_premium'
+    );
+    expect(insertedHeading).toMatch(/^1;/);
+    expect(Number(insertedHeading?.split(';')[1])).toBeGreaterThan(
+      Number(propertyTable.split(';')[1])
+    );
+  };
+
   it('inherits the neighboring section pattern as one accept-or-reject group', async () => {
     const baseline = await session.call<string>('serialize');
     const baselineTags = await session.call<string[]>('serializedTags');
@@ -314,20 +331,7 @@ describe('section creation on the flagship document', () => {
       'place-equipment'
     );
     expect(placed.outcomes).toEqual(['ok']);
-    const inventory = await session.call<
-      Array<{ anchor: string; kind: string; text: string }>
-    >('inventory');
-    const insertedHeading = inventory.find(
-      (entry) => entry.text === '1.4 Equipment Costs'
-    )?.anchor;
-    const livePropertyTable = await session.call<string>(
-      'tableAnchor',
-      'property_premium'
-    );
-    expect(insertedHeading).toMatch(/^1;/);
-    expect(Number(insertedHeading?.split(';')[1])).toBeGreaterThan(
-      Number(livePropertyTable.split(';')[1])
-    );
+    await expectEquipmentAfterProperty();
   }, 120000);
 
   it('keeps a parent-tail blank anchor in its physical section', async () => {
@@ -350,21 +354,7 @@ describe('section creation on the flagship document', () => {
       'place-equipment-at-tail'
     );
     expect(placed.outcomes).toEqual(['ok']);
-
-    const inventory = await session.call<
-      Array<{ anchor: string; kind: string; text: string }>
-    >('inventory');
-    const insertedHeading = inventory.find(
-      (entry) => entry.text === '1.4 Equipment Costs'
-    )?.anchor;
-    const livePropertyTable = await session.call<string>(
-      'tableAnchor',
-      'property_premium'
-    );
-    expect(insertedHeading).toMatch(/^1;/);
-    expect(Number(insertedHeading?.split(';')[1])).toBeGreaterThan(
-      Number(livePropertyTable.split(';')[1])
-    );
+    await expectEquipmentAfterProperty();
   }, 120000);
 
   it('composes a sibling premium component with fresh live bindings', async () => {

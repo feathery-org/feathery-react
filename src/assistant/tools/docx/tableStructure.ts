@@ -7,16 +7,16 @@ import {
   parseExpression
 } from '../../../elements/components/DocxEditor/bindings/core/formula';
 
-export type TableRole = 'header' | 'item' | 'aggregate' | 'static';
+type TableRole = 'header' | 'item' | 'aggregate' | 'static';
 
-export interface TableRowRole {
+interface TableRowRole {
   index: number;
   role: TableRole;
   aggregates?: string[];
   rowId?: string | null;
 }
 
-export interface TableStructure {
+interface TableStructure {
   tableId: string | null;
   headerRows: number;
   rows: TableRowRole[];
