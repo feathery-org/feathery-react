@@ -70,3 +70,64 @@ it('normalizes runtime-only values at the panelRuntime source and retains empty 
   expect(snapshot.hiddenFieldsEmpty).not.toContain('not_present');
   expect(() => JSON.stringify(snapshot)).not.toThrow();
 });
+
+it('reports resolved bounds and flags a field whose bounds can move', () => {
+  const currentStep = {
+    id: 'step-1',
+    key: 'intro',
+    subgrids: [],
+    texts: [],
+    images: [],
+    buttons: [],
+    tables: [],
+    tabs: [],
+    progress_bars: [],
+    next_conditions: [],
+    servar_fields: [
+      {
+        servar: {
+          id: 'field-1',
+          key: 'amount',
+          type: 'integer_field',
+          min_length: 1,
+          max_length: 20,
+          metadata: {
+            dynamic_bounds: [
+              { id: 'always', conditions: [], min: 20, max: 30 }
+            ]
+          }
+        },
+        properties: {},
+        position: []
+      },
+      {
+        servar: {
+          id: 'field-2',
+          key: 'plain',
+          type: 'integer_field',
+          min_length: 1,
+          max_length: 20
+        },
+        properties: {},
+        position: []
+      }
+    ]
+  };
+  (internalState as any)[FORM] = {
+    currentStep,
+    steps: { intro: currentStep },
+    fields: { amount: { value: 25 }, plain: { value: 5 } },
+    visiblePositions: {},
+    inlineErrors: {},
+    logicRules: []
+  };
+
+  const fields = getPanelRuntimeSnapshot(FORM)!.currentStepFields;
+  const amount = fields.find((f: any) => f.key === 'amount')!;
+  const plain = fields.find((f: any) => f.key === 'plain')!;
+
+  expect(amount).toMatchObject({ minLength: 20, maxLength: 30 });
+  expect(amount.dynamicBounds).toBe(true);
+  expect(plain).toMatchObject({ minLength: 1, maxLength: 20 });
+  expect(plain.dynamicBounds).toBeUndefined();
+});

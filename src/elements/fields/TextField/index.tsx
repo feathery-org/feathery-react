@@ -26,14 +26,21 @@ function getMaskProps(
   value: any,
   showPassword: boolean,
   editing: boolean,
-  repeatIndex: number | null
+  repeatIndex: number | null,
+  internalId?: string
 ) {
   let maskProps;
   // Max length included in mask for validation of typed inputs
   let maxLength = servar.max_length ?? maxFieldLength(servar.type);
   switch (servar.type) {
     case 'integer_field':
-      maskProps = getNumberMaskProps(servar, value, editing, repeatIndex);
+      maskProps = getNumberMaskProps(
+        servar,
+        value,
+        editing,
+        repeatIndex,
+        internalId
+      );
       break;
     case 'ssn':
       maskProps = {
@@ -150,6 +157,7 @@ function TextField({
   setRef = () => {},
   inlineError,
   repeatIndex = null,
+  internalId,
   children
 }: any) {
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -350,9 +358,10 @@ function TextField({
               heldSign || rawValue,
               showPassword,
               // A held sign is mid-entry by definition, so it is never rounded
-              // — rounding "-0." would push "0" down and overwrite the sign.
+              // - rounding "-0." would push "0" down and overwrite the sign.
               editingRef.current || Boolean(heldSign),
-              repeatIndex
+              repeatIndex,
+              internalId
             )}
             onAccept={handleAccept}
           />

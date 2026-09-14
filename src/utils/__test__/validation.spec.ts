@@ -8,6 +8,7 @@ import {
 } from '../validation';
 import { fieldValues, initInfo } from '../init';
 import { featheryDoc } from '../browser';
+import { rangeRule } from './numberBounds-test-utils';
 
 jest.mock('../init', () => ({
   initInfo: jest.fn().mockReturnValue({
@@ -239,6 +240,58 @@ describe('validation', () => {
         });
         expect(validateElement({ servar }, 1)).toEqual('');
         expect(validateElement({ servar }, 0)).toEqual(
+          'Your entry must be at most 20'
+        );
+      });
+      it('uses the dynamic bounds driven by another field, per repeat row', () => {
+        Object.assign(fieldValues, {
+          range: ['10-20', '20-30'],
+          amount: [15, 15]
+        });
+        const servar = numberServar({
+          repeated: true,
+          metadata: {
+            dynamic_bounds: [
+              rangeRule('10-20', 10, 20),
+              rangeRule('20-30', 20, 30)
+            ]
+          }
+        });
+        expect(validateElement({ servar }, 0)).toEqual('');
+        expect(validateElement({ servar }, 1)).toEqual(
+          'Your entry must be at least 20'
+        );
+        expect(
+          getStandardFieldError(50, { ...servar, type: 'slider' }, 1)
+        ).toEqual('Your entry must be at most 30');
+      });
+
+      // The mask lets a stranded value stand, so validation has to report it
+      it('reports a value stranded when the driving field moves off every rule', () => {
+        Object.assign(fieldValues, { range: 'other' });
+        const servar = numberServar({
+          min_length: 1,
+          max_length: 20,
+          metadata: {
+            dynamic_bounds: [
+              {
+                id: '20-30',
+                conditions: [
+                  {
+                    field_type: 'servar',
+                    field_id: 'range-id',
+                    field_key: 'range',
+                    comparison: 'equal',
+                    values: ['20-30']
+                  }
+                ],
+                min: 20,
+                max: 30
+              }
+            ]
+          }
+        });
+        expect(getStandardFieldError(25, servar, null)).toEqual(
           'Your entry must be at most 20'
         );
       });

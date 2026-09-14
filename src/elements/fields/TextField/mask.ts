@@ -275,11 +275,12 @@ export function getNumberMaskProps(
   servar: any,
   value: any,
   editing = false,
-  repeatIndex?: number | null
+  repeatIndex?: number | null,
+  internalId?: string
 ) {
   const meta = servar.metadata ?? {};
-  let bounds = resolveNumberBounds(servar, repeatIndex);
-  // A tracked bound can move under a stored value; the mask must not rewrite
+  let bounds = resolveNumberBounds(servar, repeatIndex, internalId);
+  // A bound that can move under a stored value must not let the mask rewrite
   // it. Per side, so a static column keeps its clamp either way.
   bounds = widenBoundsToValue(bounds, value, movingBoundSides(servar));
   const scale = getDecimalPlaces(servar);

@@ -10,6 +10,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import TextField from '../index';
 import { fieldValues } from '../../../../utils/init';
+import { rangeRule } from '../../../../utils/__test__/numberBounds-test-utils';
 
 describe('TextField - Integer Type', () => {
   const input = () => screen.getByLabelText('Test field') as HTMLInputElement;
@@ -88,6 +89,82 @@ describe('TextField - Integer Type', () => {
       render(
         <TextField
           {...createTextFieldProps(trackingElement(), { rawValue: '25' })}
+          onAccept={mockOnAccept}
+        />
+      );
+
+      expect(input().value).toBe('25');
+      // imask may echo the mounted value back, but never a truncated one
+      expect(
+        mockOnAccept.mock.calls.map(([value]: any[]) => value)
+      ).not.toContain('2');
+      expect(getMockFieldValue()).toBe('25');
+    });
+  });
+  describe('Dynamic bounds', () => {
+    const dynamicElement = () =>
+      createTextFieldElement('integer_field', {
+        decimal_places: 0,
+        dynamic_bounds: [rangeRule('10-20', 10, 20), rangeRule('20-30', 20, 30)]
+      });
+
+    afterEach(() => {
+      delete fieldValues.range;
+    });
+
+    it('clamps typing to the bounds of the matching rule', () => {
+      Object.assign(fieldValues, { range: '10-20' });
+      const mockOnAccept = createStatefulAcceptHandler();
+      render(
+        <TextField
+          {...createTextFieldProps(dynamicElement())}
+          onAccept={mockOnAccept}
+        />
+      );
+
+      act(() => {
+        fireEvent.focus(input());
+        fireEvent.input(input(), { target: { value: '25' } });
+        fireEvent.blur(input());
+      });
+
+      // The keystroke exceeding the max is refused, then blur lifts what is
+      // left up to the matching rule's min
+      expect(getMockFieldValue()).toBe('10');
+    });
+
+    it('picks up new bounds when the driving field changes', () => {
+      Object.assign(fieldValues, { range: '10-20' });
+      const mockOnAccept = createStatefulAcceptHandler();
+      const props = createTextFieldProps(dynamicElement());
+      // Element hands TextField a fresh onAccept closure every render, which
+      // is what gets a memoized TextField past its props check
+      const field = () => (
+        <TextField
+          {...props}
+          onAccept={(...args: any[]) => (mockOnAccept as any)(...args)}
+        />
+      );
+      const { rerender } = render(field());
+
+      Object.assign(fieldValues, { range: '20-30' });
+      rerender(field());
+      act(() => {
+        fireEvent.focus(input());
+        fireEvent.input(input(), { target: { value: '25' } });
+        fireEvent.blur(input());
+      });
+
+      expect(getMockFieldValue()).toBe('25');
+    });
+
+    it('mounts a stored value the current rule no longer admits without rewriting it', () => {
+      Object.assign(fieldValues, { range: '10-20' });
+      const mockOnAccept = createStatefulAcceptHandler();
+      setMockFieldValue('25');
+      render(
+        <TextField
+          {...createTextFieldProps(dynamicElement(), { rawValue: '25' })}
           onAccept={mockOnAccept}
         />
       );
