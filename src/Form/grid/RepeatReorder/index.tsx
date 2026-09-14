@@ -10,8 +10,7 @@ import {
   getContainerById,
   getFieldsInRepeat,
   getRepeatContainerRowCount,
-  getRepeatMaxRows,
-  hasAddRowAction
+  resolveAddRowActions
 } from '../../../utils/repeat';
 import { isFixedContainer } from '../StyledContainer/hooks/useFixedContainer';
 import { announceReorder, subscribeToReorderAnnouncements } from './announce';
@@ -198,11 +197,14 @@ export function useRepeatRowReorder(
   // Sorting and inserting are separate permissions: a list whose order carries
   // meaning often wants rearranging without growing. `insertable` is opt-out
   // rather than opt-in so containers that predate the split keep their seam.
-  const maxRows = getRepeatMaxRows(activeStep, container.id);
+  // One scan of the step answers both questions: is there anything that can
+  // add a row here, and what ceiling does it impose. This runs per row on
+  // every render, so it is not worth walking the step twice.
+  const addRow = resolveAddRowActions(activeStep, container.id);
   const canInsert =
     node.properties?.insertable !== false &&
-    hasAddRowAction(activeStep, container.id) &&
-    (maxRows === null || rowCount < maxRows);
+    addRow.exists &&
+    (addRow.cap === null || rowCount < addRow.cap);
   if (!canReorder && !canInsert) return null;
 
   return {

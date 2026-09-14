@@ -122,11 +122,12 @@ const ACTION_ELEMENT_TYPES = ['buttons', 'texts', 'subgrids'];
  * kept adding. A blank limit is a path to unlimited rows, and is the same rule
  * carried to its end.
  */
-export function getRepeatMaxRows(
+export function resolveAddRowActions(
   step: any,
   containerId: string
-): number | null {
+): { exists: boolean; cap: number | null } {
   let ceiling: number | null = null;
+  let exists = false;
 
   for (const type of ACTION_ELEMENT_TYPES) {
     for (const element of step[type] ?? []) {
@@ -134,14 +135,24 @@ export function getRepeatMaxRows(
         if (action.type !== ACTION_ADD_REPEATED_ROW) continue;
         if (action.repeat_container !== containerId) continue;
 
+        exists = true;
         const limit = Number(action.max_repeats);
-        if (!Number.isFinite(limit) || limit < 1) return null;
+        // A blank limit is a path to unlimited rows, so the scan can stop -
+        // nothing later can tighten it.
+        if (!Number.isFinite(limit) || limit < 1) return { exists, cap: null };
         ceiling = ceiling === null ? limit : Math.max(ceiling, limit);
       }
     }
   }
 
-  return ceiling;
+  return { exists, cap: ceiling };
+}
+
+export function getRepeatMaxRows(
+  step: any,
+  containerId: string
+): number | null {
+  return resolveAddRowActions(step, containerId).cap;
 }
 
 /**
@@ -153,18 +164,7 @@ export function getRepeatMaxRows(
  * had deliberately given no way to grow. Nothing to borrow from means no seam.
  */
 export function hasAddRowAction(step: any, containerId: string): boolean {
-  for (const type of ACTION_ELEMENT_TYPES) {
-    for (const element of step[type] ?? []) {
-      for (const action of element.properties?.actions ?? []) {
-        if (
-          action.type === ACTION_ADD_REPEATED_ROW &&
-          action.repeat_container === containerId
-        )
-          return true;
-      }
-    }
-  }
-  return false;
+  return resolveAddRowActions(step, containerId).exists;
 }
 
 /**
