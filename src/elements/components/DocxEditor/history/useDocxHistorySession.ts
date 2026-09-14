@@ -17,11 +17,13 @@ import { isOpeningDocument } from '../useDocxEditor';
 import { createAutosaveScheduler } from './autosaveScheduler';
 import {
   applyHunks,
+  collectRobinRuns,
   contentHash,
   countEditGroups,
   countPendingGroups,
   diffSession,
-  normalizeForDiff
+  normalizeForDiff,
+  RevisionRun
 } from './sfdtDiff/index';
 import { createSessionTracker } from './sessionTracker';
 import { createSliceStore } from './sliceStore';
@@ -144,6 +146,11 @@ export function useDocxHistorySession(
   // the boundary would attribute it to the user. This pre-batch snapshot is the
   // correct end of the user's slice.
   const preTurnSnapshotRef = useRef<string | null>(null);
+  // Text Robin authored this session, captured on each assistant edit WHILE its
+  // revision is live — so it survives the user accepting the suggestion before
+  // the version closes. Stored on the change list to keep accepted Robin edits
+  // coloured as Robin at view time (deduped by kind+text).
+  const robinRunsRef = useRef<RevisionRun[]>([]);
   const finalizeRef = useRef<Promise<void>>(Promise.resolve());
 
   // Build the engine exactly once; its inner functions read the refs above.
@@ -164,6 +171,7 @@ export function useDocxHistorySession(
       fAuthor: string;
       s0: string | null;
       slices: Slice[];
+      robinRuns: RevisionRun[];
     }
 
     const closeSession = async (
@@ -206,6 +214,22 @@ export function useDocxHistorySession(
           );
           changeCount = changes.changeCount;
           formatChangeCount = changes.formatChangeCount;
+          // Attach Robin's captured runs so accepted Robin edits stay coloured
+          // as Robin at view time. Bounded well under the backend's 512KB change
+          // limit; if Robin authored more than the budget, drop the runs and let
+          // attribution degrade to today's behaviour rather than risk rejection.
+          const ROBIN_RUNS_BUDGET = 100_000;
+          if (snap.robinRuns.length) {
+            const capped: RevisionRun[] = [];
+            let used = 0;
+            for (const r of snap.robinRuns) {
+              used += r.text.length;
+              if (used > ROBIN_RUNS_BUDGET) break;
+              capped.push(r);
+            }
+            if (capped.length === snap.robinRuns.length && capped.length)
+              changes.robinRuns = capped;
+          }
           changesJson = await gzip(JSON.stringify(changes));
         }
       } catch {
@@ -248,15 +272,18 @@ export function useDocxHistorySession(
       } catch {
         fStr = null; // Serialize failed: the row keeps its docx pair only.
       }
-      const snap = {
+      const snap: CloseSnapshot = {
         fStr,
         fAuthor: currentAuthorRef.current,
         s0: s0Ref.current,
-        slices: slices.all()
+        slices: slices.all(),
+        robinRuns: robinRunsRef.current
       };
       slices.clear();
       s0Ref.current = null;
       preTurnSnapshotRef.current = null;
+      // Hand the captured runs to the snapshot and start the next session fresh.
+      robinRunsRef.current = [];
       // The just-closed document is the baseline for the NEXT session's diff —
       // set it now so edits landing while this close is in flight diff cleanly
       // into their own session.
@@ -323,6 +350,7 @@ export function useDocxHistorySession(
           slices.clear();
           s0Ref.current = null;
           preTurnSnapshotRef.current = null;
+          robinRunsRef.current = [];
           // A new document invalidates the old baseline; the open-capture effect
           // snapshots the fresh one.
           baselineRef.current = null;
@@ -363,6 +391,28 @@ export function useDocxHistorySession(
       const actor = info.assistant ? ROBIN : currentUserRef.current;
       currentAuthorRef.current = actor.key;
       tracker.noteEdit(actor);
+      // Snapshot Robin's authored runs now, while their revisions are still live
+      // (the user may accept them before this version closes, after which they
+      // are unrecoverable). Deduped by kind+text; only runs on assistant edits.
+      if (info.assistant && ed) {
+        try {
+          const runs = collectRobinRuns(JSON.parse(ed.serialize()));
+          if (runs.length) {
+            const seen = new Set(
+              robinRunsRef.current.map((r) => `${r.kind} ${r.text}`)
+            );
+            for (const r of runs) {
+              const key = `${r.kind} ${r.text}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                robinRunsRef.current.push(r);
+              }
+            }
+          }
+        } catch {
+          /* best-effort; attribution falls back to the diff's slice author */
+        }
+      }
       scheduler.touch();
     },
     [readOnly, scheduler, tracker]
@@ -434,6 +484,11 @@ export function useDocxHistorySession(
         { timeBudgetMs: 4000 }
       );
       if (!changes.hunks.length) return null;
+      // Same re-attribution the stored close path applies (closeSession): hand
+      // the captured Robin runs to applyHunks so a Robin edit the user just
+      // accepted in THIS open session stays coloured as Robin in the live
+      // "Current" preview instead of falling back to the viewer ('you').
+      if (robinRunsRef.current.length) changes.robinRuns = robinRunsRef.current;
       const display = applyHunks(fDoc, changes);
       return {
         sfdt: JSON.stringify(display),

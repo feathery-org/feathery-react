@@ -80,6 +80,15 @@ export type Hunk =
   | DelBlockHunk
   | FmtBlockHunk;
 
+/** One run of text a specific author inserted or deleted, captured from the live
+ *  tracked revisions. Stored on the change list so an edit that was ACCEPTED
+ *  before the version closed (no live revision left) can still be re-attributed
+ *  to its real author at view time. */
+export interface RevisionRun {
+  kind: 'ins' | 'del';
+  text: string;
+}
+
 export interface ChangeList {
   v: 1;
   sessionId: string;
@@ -88,6 +97,11 @@ export interface ChangeList {
   changeCount: number;
   formatChangeCount: number;
   authors: AuthorKey[];
+  /** Text Robin authored during the session, captured while its revisions were
+   *  live. Used at view time to keep an ACCEPTED Robin edit coloured as Robin
+   *  (the live-revision rescue can't see accepted edits). Optional/back-compat:
+   *  versions stored before this field behave exactly as before. */
+  robinRuns?: RevisionRun[];
   /** Reasons the result is partial (time budget, block cap, …). */
   degraded?: string[];
 }

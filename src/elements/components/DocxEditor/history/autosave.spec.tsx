@@ -228,6 +228,96 @@ describe('useDocxHistorySession', () => {
     expect(changes.hunks.some((h: any) => h.author === 'you')).toBe(true);
   });
 
+  it('captures Robin’s authored runs onto the change list (so accepted edits stay Robin)', async () => {
+    // On each assistant edit the hook snapshots Robin's live revision text; those
+    // runs ride the change list so an edit accepted before close can still be
+    // re-attributed to Robin at view time.
+    (globalThis as any).CompressionStream = undefined; // changesJson as raw JSON
+    let doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
+    });
+    const editor: any = { serialize: () => doc };
+    const { view, host } = setup({}, editor);
+    await flush(); // pristine baseline
+
+    act(() => setAssistantSessionActive(editor, true));
+    // Robin inserts " world" as a LIVE tracked revision.
+    doc = JSON.stringify({
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { text: 'hello' },
+                { text: ' world', revisionIds: ['r1'] }
+              ]
+            }
+          ]
+        }
+      ],
+      revisions: [
+        { author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }
+      ]
+    });
+    act(() => view.result.current.onEdit({ assistant: true }));
+    act(() => setAssistantSessionActive(editor, false)); // turn end → close
+    await flush();
+
+    const payload = host.closeVersion.mock.calls[0][1];
+    const changes = JSON.parse(await blobText(payload.changesJson!));
+    expect(
+      (changes.robinRuns ?? []).some(
+        (r: any) => r.kind === 'ins' && r.text.includes('world')
+      )
+    ).toBe(true);
+  });
+
+  it('re-attributes an accepted Robin edit to Robin in the live "Current" preview', async () => {
+    // Reproduces the reported bug: a Robin edit whose slice the diff tags 'you',
+    // then accepted in the same open session (author flips to 'you'). The live
+    // preview must use the captured Robin runs to colour it Robin, not the viewer.
+    let doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'start' }] }] }]
+    });
+    const editor: any = { serialize: () => doc };
+    const { view } = setup({}, editor);
+    await flush(); // pristine baseline "start"
+
+    // A user edit opens the session as 'you' (so Robin's text lands in a 'you' slice).
+    act(() => view.result.current.onEdit({ assistant: false }));
+    // Robin inserts " world" as a live tracked revision (assistant edit).
+    doc = JSON.stringify({
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { text: 'start' },
+                { text: ' world', revisionIds: ['r1'] }
+              ]
+            }
+          ]
+        }
+      ],
+      revisions: [
+        { author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }
+      ]
+    });
+    act(() => view.result.current.onEdit({ assistant: true }));
+    // The user accepts it (same open session): revision gone, author back to 'you'.
+    doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'start world' }] }] }]
+    });
+    act(() => view.result.current.onEdit({ assistant: false }));
+
+    const preview = view.result.current.previewSession();
+    expect(preview).toBeTruthy();
+    const display = JSON.parse(preview!.sfdt);
+    const authors = (display.revisions ?? []).map((r: any) => r.author);
+    expect(authors).toContain('robin');
+    expect(authors).not.toContain('you');
+  });
+
   it('keeps Robin as the closing author when a user-attributed change fires during the close', async () => {
     // The live mis-attribution: after the turn-end close begins, an engine
     // write (or the user's next keystroke) fires onEdit(assistant=false) while

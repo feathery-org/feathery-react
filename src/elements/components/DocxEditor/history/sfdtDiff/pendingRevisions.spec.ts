@@ -118,3 +118,78 @@ describe('applyHunks pending (unapproved) assistant edits', () => {
     expect(countPendingGroups(display)).toBe(1);
   });
 });
+
+describe('applyHunks approved-Robin re-attribution (durable robinRuns)', () => {
+  const base = docWith(para(textRun('Hello ')));
+  // An ACCEPTED Robin insertion: the text is in F but there is no live revision.
+  const acceptedFinal = docWith(para(textRun('Hello '), textRun('world')));
+
+  const authorsOf = (display: any): string[] =>
+    (display.revisions ?? []).map((r: any) => r.author);
+
+  it('keeps an accepted Robin edit coloured as Robin even when the diff mis-credits it to the viewer', () => {
+    // The diff runs with the F slice tagged 'you' (the mis-attribution), and the
+    // edit is accepted (no live revision to rescue it) — but the change list
+    // carries Robin's captured run, so it must re-attribute to 'robin'.
+    const changes = diffSession(
+      base,
+      [{ sfdt: clone(acceptedFinal), author: 'you' }],
+      's'
+    );
+    changes.robinRuns = [{ kind: 'ins', text: 'world' }];
+    const display = applyHunks(clone(acceptedFinal), changes);
+
+    expect(authorsOf(display)).toContain('robin');
+    // Approved, not suggested: no pending group (no dashed ring).
+    expect(countPendingGroups(display)).toBe(0);
+  });
+
+  it('without robinRuns the same accepted edit stays mis-credited (guards the gap it fixes)', () => {
+    const changes = diffSession(
+      base,
+      [{ sfdt: clone(acceptedFinal), author: 'you' }],
+      's'
+    );
+    const display = applyHunks(clone(acceptedFinal), changes);
+
+    // No durable run: the accepted edit keeps the diff's (wrong) 'you' author.
+    expect(authorsOf(display)).toContain('you');
+    expect(authorsOf(display)).not.toContain('robin');
+  });
+
+  it('a live pending revision still wins over robinRuns (stays pending)', () => {
+    // Same text, but still tracked in F: the live match must take precedence and
+    // mark it pending, not fall through to the approved (no-ring) path.
+    const pendingFinal = {
+      ...docWith(
+        para(textRun('Hello '), { text: 'world', revisionIds: ['r1'] })
+      ),
+      revisions: [
+        { author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }
+      ]
+    };
+    const changes = diffSession(
+      base,
+      [{ sfdt: clone(pendingFinal), author: 'you' }],
+      's'
+    );
+    changes.robinRuns = [{ kind: 'ins', text: 'world' }];
+    const display = applyHunks(clone(pendingFinal), changes);
+
+    expect(authorsOf(display)).toContain('robin');
+    expect(countPendingGroups(display)).toBe(1);
+  });
+
+  it('does not tint a genuine user edit that robinRuns does not mention', () => {
+    const changes = diffSession(
+      base,
+      [{ sfdt: clone(acceptedFinal), author: 'you' }],
+      's'
+    );
+    changes.robinRuns = [{ kind: 'ins', text: 'something else entirely' }];
+    const display = applyHunks(clone(acceptedFinal), changes);
+
+    expect(authorsOf(display)).toContain('you');
+    expect(authorsOf(display)).not.toContain('robin');
+  });
+});

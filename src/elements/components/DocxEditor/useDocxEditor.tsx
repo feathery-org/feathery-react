@@ -67,7 +67,11 @@ const ACTIVE_BOXES_KEY = '__robinActiveBoxes';
 // Boxes belonging to still-pending (unapproved) assistant edits, ringed with a
 // dashed outline so they read apart from approved edits' solid wash.
 const PENDING_BOXES_KEY = '__robinPendingBoxes';
-const PENDING_DASH: [number, number] = [4, 3];
+// A pending edit's dashed ring must read clearly apart from an approved edit's
+// solid wash — so it is deliberately bolder than the neutral active ring: a
+// thicker stroke and a longer dash-gap (opacity/wash alone is too subtle).
+const PENDING_DASH: [number, number] = [7, 4];
+const PENDING_RING_WIDTH = 3;
 
 // True when a revision is one of our synthetic history revisions marked pending
 // (customData.pending) — an assistant suggestion the user has not accepted yet.
@@ -458,24 +462,25 @@ export function installRevisionHighlightRendering(
     unions: Union[],
     stroke: string,
     dash: number[] | null,
-    perUnionColor: boolean
+    perUnionColor: boolean,
+    lineWidth: number = RING_WIDTH
   ) => {
     if (!unions.length) return;
     try {
       const ctx = renderer.pageContext;
       ctx.save();
       ctx.strokeStyle = stroke;
-      ctx.lineWidth = RING_WIDTH;
+      ctx.lineWidth = lineWidth;
       if (dash) ctx.setLineDash(dash);
       // Strokes straddle the path: inset by half the width so the ring's
       // OUTER edge lands on the highlight boundary (no gap, no bleed).
-      const inset = RING_WIDTH / 2;
+      const inset = lineWidth / 2;
       for (const u of unions) {
         if (perUnionColor && u.color) ctx.strokeStyle = u.color;
         const x = u.x + inset;
         const y = u.y + inset;
-        const w = u.right - u.x - RING_WIDTH;
-        const h = u.bottom - u.y - RING_WIDTH;
+        const w = u.right - u.x - lineWidth;
+        const h = u.bottom - u.y - lineWidth;
         if (w <= 0 || h <= 0) continue;
         if (typeof ctx.roundRect === 'function') {
           ctx.beginPath();
@@ -505,7 +510,8 @@ export function installRevisionHighlightRendering(
       unionBoxesByLine(boxes),
       DELETION_TEXT_COLOR,
       PENDING_DASH,
-      true
+      true,
+      PENDING_RING_WIDTH
     );
   };
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { keyframes } from '@emotion/react';
 
 import { INK_3, PAPER } from '../TrackedChangeGroups/styles';
 import { loadStyles, waitForDocumentLoad, waitForEj } from '../ejLoader';
@@ -14,6 +15,25 @@ import { DocxHistoryHost, DocxVersion } from './types';
 
 const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+// Gentle pulse for the loading skeleton's placeholder lines.
+const shimmer = keyframes({
+  '0%': { opacity: 0.5 },
+  '50%': { opacity: 1 },
+  '100%': { opacity: 0.5 }
+});
+
+// A full-page document placeholder shown OPAQUELY over the editor while a
+// version loads — so the reader never sees the bare editor (blank page +
+// blinking caret) before the document paints. The card fills the pane height
+// like a real page; line widths vary per paragraph so it reads like prose.
+const SKELETON_PARAGRAPHS: number[][] = [
+  [46, 100, 96, 90, 72],
+  [100, 94, 98, 88, 64],
+  [100, 90, 96, 82],
+  [92, 100, 86, 70],
+  [100, 88, 94, 60]
+];
 
 export interface VersionMeta {
   editCount?: number;
@@ -89,6 +109,14 @@ export default function VersionViewer({
     doc.pendingCount,
     doc.degraded
   ]);
+
+  // Switching versions reuses this editor (the parent no longer keys us by
+  // version id), so re-cover with the loader the moment a new version starts
+  // resolving — otherwise the previous document would linger under a stale
+  // "ready" phase while the next one loads.
+  useEffect(() => {
+    if (doc.loading) setPhase('loading');
+  }, [doc.loading]);
 
   // Create the read-only editor once. Use a DocumentEditorContainer (as the
   // live editor does) rather than a bare DocumentEditor: the container reliably
@@ -228,24 +256,108 @@ export default function VersionViewer({
   return (
     <div css={{ position: 'absolute', inset: 0, background: PAPER, zIndex: 2 }}>
       {/* A normal block filling the overlay (not absolute) so the editor's
-          height:100% resolves against it — mirrors the live editor's host. */}
-      <div ref={hostElRef} css={{ width: '100%', height: '100%' }} />
+          height:100% resolves against it — mirrors the live editor's host.
+          Kept invisible until the document has painted so the bare editor
+          (blank page + caret) is never shown; it stays laid out so the editor
+          still measures and sizes correctly. */}
+      <div
+        ref={hostElRef}
+        css={{
+          width: '100%',
+          height: '100%',
+          opacity: phase === 'ready' ? 1 : 0,
+          transition: 'opacity 120ms ease'
+        }}
+      />
       {phase !== 'ready' && (
         <div
           css={{
             position: 'absolute',
             inset: 0,
+            // Fully opaque: the editor never shows through while loading.
+            background: PAPER,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(255,255,255,0.75)',
-            color: INK_3,
-            fontSize: 14
+            padding: '32px 0',
+            overflow: 'hidden'
           }}
         >
-          {phase === 'error'
-            ? 'Couldn’t load this version.'
-            : 'Loading version…'}
+          {phase === 'error' ? (
+            <div
+              css={{
+                margin: 'auto',
+                color: INK_3,
+                fontSize: 14,
+                textAlign: 'center'
+              }}
+            >
+              Couldn’t load this version.
+            </div>
+          ) : (
+            <React.Fragment>
+              {/* A full-height page skeleton so the wait reads as "a document
+                  is loading" and fills the pane like a real page — not a small
+                  floating block. */}
+              <div
+                css={{
+                  position: 'relative',
+                  flex: '1 1 auto',
+                  width: 'min(720px, 88%)',
+                  padding: '48px 56px',
+                  background: '#fff',
+                  borderRadius: 6,
+                  boxShadow: '0 1px 3px rgba(16,24,40,0.10)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 26,
+                  overflow: 'hidden'
+                }}
+                aria-hidden
+              >
+                {SKELETON_PARAGRAPHS.map((para, pi) => (
+                  <div
+                    key={pi}
+                    css={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+                  >
+                    {para.map((w, li) => {
+                      const isHeading = pi === 0 && li === 0;
+                      return (
+                        <div
+                          key={li}
+                          css={{
+                            height: isHeading ? 20 : 12,
+                            width: `${w}%`,
+                            marginBottom: isHeading ? 10 : 0,
+                            borderRadius: 4,
+                            background: '#e6e8ec',
+                            animation: `${shimmer} 1.2s ease-in-out infinite`,
+                            animationDelay: `${(pi * 5 + li) * 80}ms`,
+                            '@media (prefers-reduced-motion: reduce)': {
+                              animation: 'none'
+                            }
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                ))}
+                <div
+                  css={{
+                    position: 'absolute',
+                    bottom: 20,
+                    left: 0,
+                    right: 0,
+                    textAlign: 'center',
+                    color: INK_3,
+                    fontSize: 13
+                  }}
+                >
+                  Loading version…
+                </div>
+              </div>
+            </React.Fragment>
+          )}
         </div>
       )}
     </div>

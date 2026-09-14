@@ -28,6 +28,7 @@ import type {
   ChangeList,
   DiffOptions,
   Hunk,
+  RevisionRun,
   Slice
 } from './types';
 
@@ -486,6 +487,18 @@ function collectPendingRuns(doc: any): PendingRun[] {
 }
 
 /**
+ * The text Robin has authored in a live document, as {kind,text} runs. Captured
+ * at edit time (while the revisions are still live) so it survives the user
+ * accepting the suggestion — the session hook stores these on the change list,
+ * and applyHunks uses them to keep an accepted Robin edit coloured as Robin.
+ */
+export function collectRobinRuns(doc: any): RevisionRun[] {
+  return collectPendingRuns(doc)
+    .filter((r) => r.author === 'robin')
+    .map((r) => ({ kind: r.kind, text: r.text }));
+}
+
+/**
  * The bucket a display revision steps/counts under. A replace's halves share
  * their hunk group; every assistant revision (content or formatting) collapses
  * into ONE bucket — a Robin turn is a single logical edit, and a session holds
@@ -574,6 +587,33 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
         r.kind === kind && (r.text.includes(t) || t.includes(r.text.trim()))
     );
   };
+  // Robin's authored text, captured while its revisions were live (stored on the
+  // change list). Unlike pendingRuns this survives the user ACCEPTING the edit,
+  // so it keeps an accepted Robin edit coloured as Robin. Matched only when there
+  // is no live pending match, and it never marks the edit pending (it's approved).
+  const robinRuns = changes.robinRuns ?? [];
+  const matchesRobin = (kind: 'ins' | 'del', text: string): boolean => {
+    if (!robinRuns.length) return false;
+    const t = text.trim();
+    if (!t) return false;
+    return robinRuns.some(
+      (r) =>
+        r.kind === kind && (r.text.includes(t) || t.includes(r.text.trim()))
+    );
+  };
+  // Author + pending decision for a content hunk: a live tracked revision wins
+  // (re-attributed AND pending); else an accepted Robin edit (approved, no ring);
+  // else the diff's slice author.
+  const resolveContentAuthor = (
+    kind: 'ins' | 'del',
+    text: string,
+    fallbackAuthor: string
+  ): { author: string; pending: boolean } => {
+    const live = matchPending(kind, text);
+    if (live) return { author: live.author, pending: true };
+    if (matchesRobin(kind, text)) return { author: 'robin', pending: false };
+    return { author: fallbackAuthor, pending: false };
+  };
   const date = new Date().toISOString();
   const changeSetId = `version:${changes.sessionId}`;
   let seq = 0;
@@ -631,13 +671,15 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
                 .map((c) => c.ch)
                 .join('')
             : '';
-        const match =
-          hunk.type === 'ins' ? matchPending('ins', insText) : undefined;
+        const resolved =
+          hunk.type === 'ins'
+            ? resolveContentAuthor('ins', insText, author)
+            : { author, pending: false };
         const mark = newRevision(
           'Insertion',
-          match ? match.author : author,
+          resolved.author,
           hunk.id,
-          !!match
+          resolved.pending
         );
         for (let k = hunk.at.offset; k < hunk.at.offset + hunk.at.length; k++) {
           chars[k]?.revisionIds.push(mark.revisionId);
@@ -662,12 +704,12 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
       .filter((h): h is Extract<Hunk, { type: 'del' }> => h.type === 'del')
       .sort((a, b) => b.at.offset - a.at.offset);
     for (const hunk of dels) {
-      const match = matchPending('del', hunk.text);
+      const resolved = resolveContentAuthor('del', hunk.text, hunk.author);
       const mark = newRevision(
         'Deletion',
-        match ? match.author : hunk.author,
+        resolved.author,
         hunk.id,
-        !!match
+        resolved.pending
       );
       // Inherit the surrounding char's content control so re-inserted deleted
       // text stays inside its field rather than splitting the wrapper.
@@ -701,12 +743,12 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
           .map((c) => c.ch)
           .join('');
     }
-    const insBlockMatch = matchPending('ins', insBlockText);
+    const resolved = resolveContentAuthor('ins', insBlockText, hunk.author);
     const mark = newRevision(
       'Insertion',
-      insBlockMatch ? insBlockMatch.author : hunk.author,
+      resolved.author,
       hunk.id,
-      !!insBlockMatch
+      resolved.pending
     );
     for (let k = 0; k < hunk.count; k++) {
       const path = [...hunk.at.block];

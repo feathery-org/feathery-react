@@ -32,6 +32,35 @@ export interface VersionDocument {
   degraded: boolean;
 }
 
+// A closed version's bytes are immutable (its final SFDT and change list never
+// change once uploaded), so a resolved document can be cached by version id and
+// reused on every later visit — no re-fetch, no re-gunzip, no re-applyHunks.
+// Bounded to the most-recently-used few so memory stays flat on long sessions.
+type ResolvedVersion = Omit<VersionDocument, 'loading'>;
+const CACHE_MAX = 8;
+const versionCache = new Map<string, ResolvedVersion>();
+function cacheGet(id: string): ResolvedVersion | undefined {
+  const hit = versionCache.get(id);
+  if (hit) {
+    // LRU touch: move to the newest slot.
+    versionCache.delete(id);
+    versionCache.set(id, hit);
+  }
+  return hit;
+}
+function cacheSet(id: string, value: ResolvedVersion): void {
+  versionCache.set(id, value);
+  if (versionCache.size > CACHE_MAX) {
+    const oldest = versionCache.keys().next().value as string | undefined;
+    if (oldest !== undefined) versionCache.delete(oldest);
+  }
+}
+
+/** Test-only: drop the module-level cache so cases don't bleed into each other. */
+export function __clearVersionDocumentCache(): void {
+  versionCache.clear();
+}
+
 async function gunzip(buffer: ArrayBuffer): Promise<string> {
   const bytes = new Uint8Array(buffer);
   const isGz = bytes[0] === 0x1f && bytes[1] === 0x8b;
@@ -58,11 +87,24 @@ export function useVersionDocument(
       setState({ loading: false, error: false, degraded: true });
       return;
     }
+    // Already resolved once this session: serve it straight from cache with no
+    // loading state — the previous document stays on screen until the reused
+    // editor re-opens this one, so switching back to a seen version is instant
+    // and shows no skeleton.
+    const cached = cacheGet(version.id);
+    if (cached) {
+      reqId.current++;
+      setState({ loading: false, ...cached });
+      return;
+    }
     const id = ++reqId.current;
     setState({ loading: true, error: false, degraded: true });
 
     const done = (next: Omit<VersionDocument, 'loading'>) => {
-      if (id === reqId.current) setState({ loading: false, ...next });
+      if (id !== reqId.current) return;
+      // Cache successful resolutions only — an error should be retried later.
+      if (!next.error) cacheSet(version.id, next);
+      setState({ loading: false, ...next });
     };
 
     (async () => {
@@ -111,11 +153,24 @@ export function useVersionDocument(
                 return;
               }
               const display = applyHunks(finalDoc, changes);
+              // Populate any raw [[field]] / {{ jinja }} tokens the same way the
+              // plain path does. A no-op for a document already content-
+              // controlled (a normal live-session version, revisions preserved),
+              // but it stops a version whose stored SFDT still holds raw tokens
+              // from rendering the unfilled template instead of the filled doc.
+              let displaySfdt: string;
+              try {
+                const populated = populateVersionBindings(display);
+                displaySfdt = JSON.stringify(populated);
+              } catch {
+                displaySfdt = JSON.stringify(display);
+              }
               done({
                 error: false,
-                sfdt: JSON.stringify(display),
+                sfdt: displaySfdt,
                 // Count edits the way the steppers walk them: a replace once,
-                // a whole Robin turn once (not per stored hunk).
+                // a whole Robin turn once (not per stored hunk). Counted on the
+                // pre-populate display, whose revisions the counts key off.
                 editCount: countEditGroups(display),
                 formatCount: changes.formatChangeCount,
                 pendingCount: countPendingGroups(display),

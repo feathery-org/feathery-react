@@ -1,6 +1,9 @@
 import { renderHook, waitFor } from '@testing-library/react';
 
-import { useVersionDocument } from './useVersionDocument';
+import {
+  __clearVersionDocumentCache,
+  useVersionDocument
+} from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
 
 const version = (over: Partial<DocxVersion>): DocxVersion =>
@@ -41,6 +44,10 @@ const host = (over: Partial<DocxHistoryHost> = {}): DocxHistoryHost => ({
 });
 
 describe('useVersionDocument', () => {
+  // Resolved versions are cached module-wide by id; clear it so each case (they
+  // reuse id 'v1') starts from a real fetch rather than a prior case's result.
+  beforeEach(() => __clearVersionDocumentCache());
+
   // The host and version MUST be stable identities across renders — the hook
   // keys its fetch effect on them. Create them once per test, never inside the
   // renderHook callback (that would re-fetch every render, an infinite loop).
@@ -57,6 +64,26 @@ describe('useVersionDocument', () => {
     expect(fetchVersionFile).toHaveBeenCalledWith('u');
     expect(result.current.sfdt).toBe(sfdt);
     expect(result.current.error).toBe(false);
+  });
+
+  it('serves a re-opened version from cache without re-fetching', async () => {
+    const sfdt = '{"sfdt":"cached"}';
+    const fetchVersionFile = jest
+      .fn()
+      .mockResolvedValue(new TextEncoder().encode(sfdt).buffer);
+    const h = host({ fetchVersionFile });
+    const ver = version({ id: 'cachial', final_sfdt: 'u' });
+
+    const first = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    expect(fetchVersionFile).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    // Re-opening the same version resolves from cache — no second fetch.
+    const second = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
+    expect(second.result.current.sfdt).toBe(sfdt);
+    expect(fetchVersionFile).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to the version’s docx URL when there is no final SFDT', async () => {

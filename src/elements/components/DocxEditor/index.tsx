@@ -495,7 +495,21 @@ function DocxEditor({
             pendingCount: preview.pendingCount
           };
         } else {
-          // No session edits to diff: show the current document plain.
+          // The open session has no diff of its own (between sessions, or right
+          // after accepting a suggestion, which nets to no change) — so instead
+          // of a plain document, show the most recent session that DID produce a
+          // diff, so "Current" reflects the last change's redlines.
+          const lastWithDiff = historyVersions.find(
+            (v) =>
+              v.id !== version.id && (v.change_count ?? 0) > 0 && !!v.final_sfdt
+          );
+          if (lastWithDiff) {
+            setLiveDoc(null);
+            setViewingVersion(lastWithDiff);
+            setVersionMeta(null);
+            return;
+          }
+          // Nothing anywhere to diff: show the current document plain.
           try {
             const sfdt = editor?.serialize?.();
             if (sfdt) {
@@ -510,7 +524,7 @@ function DocxEditor({
       setViewingVersion(version);
       setVersionMeta(null);
     },
-    [editor, historySession]
+    [editor, historySession, historyVersions]
   );
 
   // Back to the live editor (its toolbar returns because viewingVersion clears).
@@ -528,6 +542,14 @@ function DocxEditor({
   // deletion), and selectRevision scrolls the group into view (skipGroupSelect
   // keeps it on this exact edit; the native pane it would open is hidden by
   // closeTrackedChangeReviewPane's rule).
+  // The viewer editor now persists across version switches (keyed only by
+  // highlight mode), so onViewerEditor no longer fires per version. Reset the
+  // prev/next stepping cursor whenever the shown version (or highlight mode)
+  // changes so stepping starts from the top of the newly-opened document.
+  useEffect(() => {
+    changeStepRef.current = -1;
+  }, [viewingVersion?.id, highlightsOn]);
+
   const stepChange = useCallback((direction: 1 | -1) => {
     const ed = viewerEditorRef.current;
     const revisions: any[] = ed?.revisions?.revisions ?? [];
@@ -900,9 +922,12 @@ function DocxEditor({
           {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
           {history && viewingVersion && (
             <VersionViewer
-              // Toggling highlights remounts the viewer so it re-opens with or
-              // without the change marks.
-              key={`${viewingVersion.id}:${highlightsOn}`}
+              // Keyed only by highlight mode, NOT by version id, so switching
+              // versions REUSES this editor (it just re-opens the new document)
+              // instead of tearing down and rebuilding the heavy Syncfusion
+              // container each time — the switch is far faster. Toggling
+              // highlights still remounts so it re-opens with/without the marks.
+              key={`hl:${highlightsOn}`}
               host={history}
               version={viewingVersion}
               serviceUrl={serviceUrl}
