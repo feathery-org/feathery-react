@@ -1,18 +1,29 @@
 import { fieldValues } from './init';
-import { FieldValueType } from './logic';
+import {
+  evalComparisonRule,
+  FieldValueType,
+  ResolvedComparisonRule
+} from './logic';
 
 /**
- * A number field's min/max may track another field rather than a fixed number,
- * named by `servar.metadata.bound_fields`. A side with no reference falls back
+ * Dynamic min/max for number fields. The first rule in
+ * `servar.metadata.dynamic_bounds` whose conditions all pass wins; a bound is
+ * a literal number, null (unbounded), or another field whose current value is
+ * read at resolve time. When no rule matches, each side falls back to the
+ * field named by `servar.metadata.bound_fields` if there is one, and otherwise
  * to the `min_length` / `max_length` column.
  */
 export type FieldRef = FieldValueType;
 export type BoundValue = number | null | FieldRef;
+export interface DynamicBoundRule {
+  id: string;
+  conditions: ResolvedComparisonRule[];
+  min: BoundValue;
+  max: BoundValue;
+}
 export interface ResolvedNumberBounds {
   min: number | null;
   max: number | null;
-  // Whether a bound tracks a field, so it can move under a stored value
-  dynamic: boolean;
 }
 
 export const NUMBER_BOUND_TYPES = new Set(['integer_field', 'slider']);
@@ -27,8 +38,12 @@ const toBound = (value: any): number | null => {
 };
 
 export function hasDynamicBounds(servar: any): boolean {
-  const boundFields = servar?.metadata?.bound_fields;
-  return isFieldRef(boundFields?.min) || isFieldRef(boundFields?.max);
+  const meta = servar?.metadata;
+  const rules = meta?.dynamic_bounds;
+  if (Array.isArray(rules) && rules.length > 0) return true;
+  return (
+    isFieldRef(meta?.bound_fields?.min) || isFieldRef(meta?.bound_fields?.max)
+  );
 }
 
 export function resolveBound(bound: BoundValue, repeat?: number | null) {
@@ -39,10 +54,11 @@ export function resolveBound(bound: BoundValue, repeat?: number | null) {
   return toBound(raw);
 }
 
-export function resolveNumberBounds(
-  servar: any,
-  repeat?: number | null
-): ResolvedNumberBounds {
+/**
+ * The bounds that apply when no rule matches: each side is the field named by
+ * `metadata.bound_fields` when there is one, otherwise the static column.
+ */
+function baseBounds(servar: any, repeat?: number | null): ResolvedNumberBounds {
   const boundFields = servar?.metadata?.bound_fields;
   const side = (name: 'min' | 'max', column: any) => {
     const ref = boundFields?.[name];
@@ -50,9 +66,35 @@ export function resolveNumberBounds(
   };
   return {
     min: side('min', servar?.min_length),
-    max: side('max', servar?.max_length),
-    dynamic: hasDynamicBounds(servar)
+    max: side('max', servar?.max_length)
   };
+}
+
+export function resolveNumberBounds(
+  servar: any,
+  repeat?: number | null,
+  internalId?: string
+): ResolvedNumberBounds {
+  if (!hasDynamicBounds(servar)) return baseBounds(servar, repeat);
+  const repeatIndex = repeat ?? undefined;
+  try {
+    const rules = servar.metadata.dynamic_bounds;
+    const match = (
+      Array.isArray(rules) ? (rules as DynamicBoundRule[]) : []
+    ).find((rule) =>
+      (rule.conditions ?? []).every((condition) =>
+        evalComparisonRule(condition, repeatIndex, internalId)
+      )
+    );
+    if (!match) return baseBounds(servar, repeat);
+    return {
+      min: resolveBound(match.min, repeat),
+      max: resolveBound(match.max, repeat)
+    };
+  } catch {
+    // Malformed metadata must never take the field down with it
+    return baseBounds(servar, repeat);
+  }
 }
 
 /**
@@ -82,10 +124,30 @@ export function getNumberBoundReferences(
 ): Set<string> {
   const refSet = new Set<string>();
   elements.forEach(([element]) => {
-    const boundFields = element?.servar?.metadata?.bound_fields;
-    [boundFields?.min, boundFields?.max].forEach(
+    const meta = element?.servar?.metadata;
+    [meta?.bound_fields?.min, meta?.bound_fields?.max].forEach(
       (bound) => isFieldRef(bound) && refSet.add(bound.field_key)
     );
+    const rules = meta?.dynamic_bounds;
+    if (!Array.isArray(rules)) return;
+    rules.forEach((rule: DynamicBoundRule) => {
+      // Runs inside a step-level memo, so malformed metadata must not throw
+      if (!rule || typeof rule !== 'object') return;
+      const conditions = rule.conditions;
+      if (Array.isArray(conditions))
+        conditions.forEach((condition) => {
+          if (!condition || typeof condition !== 'object') return;
+          if (condition.field_key) refSet.add(condition.field_key);
+          const values = condition.values;
+          if (Array.isArray(values))
+            values.forEach(
+              (value) => isFieldRef(value) && refSet.add(value.field_key)
+            );
+        });
+      [rule.min, rule.max].forEach(
+        (bound) => isFieldRef(bound) && refSet.add(bound.field_key)
+      );
+    });
   });
   return refSet;
 }

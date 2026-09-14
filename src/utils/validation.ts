@@ -36,7 +36,8 @@ function validateElements({
   formRef,
   errorCallback = () => {},
   setInlineErrors,
-  trigger
+  trigger,
+  internalId
 }: {
   step: any;
   visiblePositions: any;
@@ -46,6 +47,7 @@ function validateElements({
   errorCallback?: any;
   setInlineErrors: any;
   trigger?: Trigger;
+  internalId?: string;
 }): {
   errors: { [fieldKey: string]: string };
   inlineErrors: InlineErrors;
@@ -77,7 +79,7 @@ function validateElements({
       key = element.id;
     }
 
-    let message = validateElement(element, repeat);
+    let message = validateElement(element, repeat, internalId);
 
     // We want to clear button errors when the button is not "relevant" to what the user is doing.
     // If the element is a button and was NOT the trigger or no trigger,
@@ -156,14 +158,17 @@ function validateElement(
     };
     validations?: ResolvedCustomValidation[];
   },
-  repeat: any
+  repeat: any,
+  internalId?: string
 ): string {
   const { servar, validations } = element;
 
   // First priority is custom validations for servar fields
   if (validations) {
     const firstMatchingValidation = validations.find((validation) =>
-      validation.rules.every((rule) => evalComparisonRule(rule, repeat))
+      validation.rules.every((rule) =>
+        evalComparisonRule(rule, repeat, internalId)
+      )
     );
     if (firstMatchingValidation) return firstMatchingValidation.message;
   }
@@ -172,7 +177,12 @@ function validateElement(
   if (servar) {
     let fieldVal: any = fieldValues[servar.key];
     if (servar.repeated) fieldVal = fieldVal[repeat];
-    const errorMsg = getStandardFieldError(fieldVal, servar, repeat);
+    const errorMsg = getStandardFieldError(
+      fieldVal,
+      servar,
+      repeat,
+      internalId
+    );
     if (errorMsg) return errorMsg;
   }
 
@@ -303,11 +313,12 @@ function getNumberRangeError(
   value: any,
   servar: any,
   repeat: any,
-  defaultErrors: Record<string, string>
+  defaultErrors: Record<string, string>,
+  internalId?: string
 ) {
   const num = Number(value);
   if (!Number.isFinite(num)) return '';
-  const { min, max } = resolveNumberBounds(servar, repeat);
+  const { min, max } = resolveNumberBounds(servar, repeat, internalId);
   const message = (key: string, bound: number) =>
     (defaultErrors[key] ?? NUMBER_RANGE_ERRORS[key]).replace(
       '{value}',
@@ -323,7 +334,12 @@ function getNumberRangeError(
  * Returns the error message for a field value if it's invalid.
  * Returns an empty string if it's valid.
  */
-function getStandardFieldError(value: any, servar: any, repeat: any) {
+function getStandardFieldError(
+  value: any,
+  servar: any,
+  repeat: any,
+  internalId?: string
+) {
   const defaultErrors = initInfo().defaultErrors;
 
   if (isFieldValueEmpty(value, servar)) {
@@ -333,7 +349,13 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
 
   // Number values have no length; their min/max are numeric bounds
   if (NUMBER_BOUND_TYPES.has(servar.type))
-    return getNumberRangeError(value, servar, repeat, defaultErrors);
+    return getNumberRangeError(
+      value,
+      servar,
+      repeat,
+      defaultErrors,
+      internalId
+    );
 
   if (servar.min_length && value.length < servar.min_length) {
     return defaultErrors.minimum.replace('{length}', servar.min_length);

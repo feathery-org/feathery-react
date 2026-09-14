@@ -49,6 +49,7 @@ export type PanelRuntimeFieldEntry = {
   questions?: Array<{ id: string; label: string }>;
   minLength?: number;
   maxLength?: number;
+  dynamicBounds?: boolean;
   format?: string;
   fileTypes?: string[];
   multipleFiles?: boolean;
@@ -453,7 +454,7 @@ export const getPanelRuntimeSnapshot = (
         : undefined;
     // Row-agnostic snapshot: a dynamic bound reads the first repeat row
     const numberBounds = NUMBER_BOUND_TYPES.has(servar.type)
-      ? resolveNumberBounds(servar)
+      ? resolveNumberBounds(servar, undefined, formId)
       : {
           min: typeof servar.min_length === 'number' ? servar.min_length : null,
           max: typeof servar.max_length === 'number' ? servar.max_length : null

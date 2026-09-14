@@ -17,6 +17,7 @@ export default function SliderField({
   onChange = () => {},
   elementProps = {},
   repeatIndex = null,
+  internalId,
   children
 }: any) {
   const [internalValue, setInternalValue] = useState(fieldVal);
@@ -27,7 +28,7 @@ export default function SliderField({
 
   const servar = element.servar;
   const stepSize = servar.metadata.step_size || 1;
-  const bounds = resolveNumberBounds(servar, repeatIndex);
+  const bounds = resolveNumberBounds(servar, repeatIndex, internalId);
   const minVal = bounds.min ?? 0;
   let maxVal = bounds.max ?? 100;
   // A dynamic max at or below the min leaves the track no room to move
