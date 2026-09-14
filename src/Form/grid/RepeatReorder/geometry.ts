@@ -139,6 +139,39 @@ export function displacementFor(
 }
 
 /**
+ * Bounds the drag offset so the carried row cannot leave the track.
+ *
+ * Without this the lift follows the pointer forever - on a real form it
+ * reached 900px above the first row and 1588px below the last, entirely off
+ * screen, with no way to tell where it would land. The cross-axis was already
+ * fixed only because the translate is single-axis; this gives the block axis
+ * the same treatment.
+ *
+ * The limits are the track's own extremes measured at grab time, so a row can
+ * still travel the full length of the list and no further.
+ */
+export function clampOffsetToTrack(
+  rows: RowSnapshot[],
+  fromAbs: number,
+  offset: number,
+  axis: TrackAxis
+) {
+  const dragged = rows.find((row) => row.abs === fromAbs);
+  const ordered = orderRows(rows, axis);
+  if (!dragged || !ordered.length) return offset;
+
+  const start = (r: RowRect) => (axis.vertical ? r.top : r.left);
+  const end = (r: RowRect) => (axis.vertical ? r.bottom : r.right);
+
+  // Negative: how far it may travel towards the top/left before its leading
+  // edge meets the first row's. Positive: the mirror at the far end.
+  const min = start(ordered[0].rect) - start(dragged.rect);
+  const max = end(ordered[ordered.length - 1].rect) - end(dragged.rect);
+
+  return Math.min(Math.max(offset, min), max);
+}
+
+/**
  * How far each row shifts so the dragged row's slot opens up.
  *
  * Worked in screen order, so a shift is always "towards the top/left" or

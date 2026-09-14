@@ -33,6 +33,16 @@ export const DRAGGING_ATTR = 'data-feathery-reorder-dragging';
  */
 export const GUTTER_WIDTH = 28;
 
+/**
+ * Stacking for the row being carried.
+ *
+ * A lift has to clear whatever the form draws over its own content - the
+ * hosted form's chrome sits at 10 - so a small number loses and the row is
+ * dragged underneath text inputs and footers. High enough to clear ordinary
+ * page furniture, low enough to stay under a modal.
+ */
+export const LIFT_Z_INDEX = 1000;
+
 const ink = 'var(--feathery-repeat-handle-ink, currentColor)';
 const surface = 'var(--feathery-repeat-insert-surface, #fff)';
 

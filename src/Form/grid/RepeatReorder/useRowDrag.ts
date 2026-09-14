@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { featheryDoc } from '../../../utils/browser';
 import {
   axisFromFlexDirection,
+  clampOffsetToTrack,
   displacementByAbs,
   displacementFor,
   mainAxisCoord,
@@ -12,7 +13,7 @@ import {
   TrackAxis
 } from './geometry';
 import { consumeRowFocus, requestRowFocus } from './focus';
-import { DRAGGING_ATTR, ROW_ATTR, TRACK_ATTR } from './styles';
+import { DRAGGING_ATTR, LIFT_Z_INDEX, ROW_ATTR, TRACK_ATTR } from './styles';
 
 // Enough movement to tell a drag from a tap, so tapping the grip still just
 // focuses it and leaves the keyboard path usable.
@@ -133,7 +134,9 @@ const paintDrag = (state: DragState, offset: number, to: number | null) => {
   const dragged = state.row;
   dragged.style.transition = 'none';
   dragged.style.transform = axisTranslate(offset, axis.vertical);
-  dragged.style.zIndex = '2';
+  // The form draws its own fixed chrome above the page, so a low lift is
+  // painted over by it and by anything else positioned on the form.
+  dragged.style.zIndex = String(LIFT_Z_INDEX);
   dragged.style.position = dragged.style.position || 'relative';
 
   if (to === null) return;
@@ -279,7 +282,13 @@ export function useRowDrag({
       // Rects are the ones captured at grab time. Live shifting is done with
       // transforms, which do not affect layout, so those rects stay true for
       // the whole gesture and row heights never have to be assumed uniform.
-      const offset = coord - state.start;
+      // Bounded to the track, so the row cannot be carried off screen.
+      const offset = clampOffsetToTrack(
+        state.rows,
+        state.index,
+        coord - state.start,
+        state.axis
+      );
       // The row's centre, not the pointer: the grip sits at the row's corner,
       // so the pointer trails the row it is carrying.
       // state.index, not the live prop: one from-index for the whole gesture,

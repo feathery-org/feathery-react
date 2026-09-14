@@ -9,12 +9,13 @@
  *    absolute indices; slotToTargetIndex is the bridge.
  */
 import {
+  RowSnapshot,
   axisFromFlexDirection,
+  clampOffsetToTrack,
   displacementByAbs,
   displacementFor,
   mainAxisCoord,
   orderRows,
-  RowSnapshot,
   steppedTargetIndex,
   targetIndexFromCenter
 } from '../geometry';
@@ -251,5 +252,65 @@ describe('displacementByAbs', () => {
     ];
     const shifts = displacementByAbs(withHidden, 0, 2, 20, vertical);
     expect(shifts[2]).toBe(-20);
+  });
+});
+
+describe('clampOffsetToTrack', () => {
+  // Three 20px rows stacked down the page, no gaps.
+  const rows = [
+    { abs: 0, rect: { top: 0, bottom: 20, left: 0, right: 100 } },
+    { abs: 1, rect: { top: 20, bottom: 40, left: 0, right: 100 } },
+    { abs: 2, rect: { top: 40, bottom: 60, left: 0, right: 100 } }
+  ];
+  const axis = { vertical: true, reversed: false };
+
+  it('lets a row travel the full length of the track', () => {
+    // Row 0 may drop as far as the last row's bottom edge: 60 - 20 = 40.
+    expect(clampOffsetToTrack(rows, 0, 40, axis)).toBe(40);
+    // Row 2 may rise to the first row's top edge: 0 - 40 = -40.
+    expect(clampOffsetToTrack(rows, 2, -40, axis)).toBe(-40);
+  });
+
+  it('refuses to carry a row past the end of the track', () => {
+    expect(clampOffsetToTrack(rows, 0, 900, axis)).toBe(40);
+    expect(clampOffsetToTrack(rows, 2, -900, axis)).toBe(-40);
+  });
+
+  it('pins the first row against the top and the last against the bottom', () => {
+    expect(clampOffsetToTrack(rows, 0, -50, axis)).toBe(0);
+    expect(clampOffsetToTrack(rows, 2, 50, axis)).toBe(0);
+  });
+
+  it('leaves an offset inside the track alone', () => {
+    expect(clampOffsetToTrack(rows, 1, 12, axis)).toBe(12);
+    expect(clampOffsetToTrack(rows, 1, -12, axis)).toBe(-12);
+  });
+
+  it('measures the inline axis on a horizontal track', () => {
+    const across = [
+      { abs: 0, rect: { top: 0, bottom: 20, left: 0, right: 30 } },
+      { abs: 1, rect: { top: 0, bottom: 20, left: 30, right: 60 } }
+    ];
+    const h = { vertical: false, reversed: false };
+    expect(clampOffsetToTrack(across, 0, 500, h)).toBe(30);
+    expect(clampOffsetToTrack(across, 0, -500, h)).toBe(0);
+  });
+
+  it('clamps to screen order, not DOM order, on a reversed track', () => {
+    // Same boxes, but the track runs bottom-to-top so abs 2 paints first.
+    const reversed = [
+      { abs: 0, rect: { top: 40, bottom: 60, left: 0, right: 100 } },
+      { abs: 1, rect: { top: 20, bottom: 40, left: 0, right: 100 } },
+      { abs: 2, rect: { top: 0, bottom: 20, left: 0, right: 100 } }
+    ];
+    const r = { vertical: true, reversed: true };
+    // abs 0 sits at the bottom of the screen, so it may only travel upwards.
+    expect(clampOffsetToTrack(reversed, 0, 900, r)).toBe(0);
+    expect(clampOffsetToTrack(reversed, 0, -900, r)).toBe(-40);
+  });
+
+  it('gives up gracefully on a row it cannot find', () => {
+    expect(clampOffsetToTrack(rows, 99, 250, axis)).toBe(250);
+    expect(clampOffsetToTrack([], 0, 250, axis)).toBe(250);
   });
 });
