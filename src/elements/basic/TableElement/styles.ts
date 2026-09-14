@@ -63,6 +63,18 @@ export const containerStyle = {
   boxSizing: 'border-box'
 } as const;
 
+/**
+ * Stops the table's content width from reaching its ancestors. A scroll
+ * container still reports its content's intrinsic width upward, so a wide grid
+ * would widen every ancestor that has no definite width — in the designer
+ * canvas that is the whole step. With inline-size containment the table takes
+ * exactly the width it is given and scrolls inside it. A `fit` table is the
+ * one case that must keep reporting its natural width, so it is left alone.
+ */
+export function tableContainment(widthUnit: string | undefined) {
+  return widthUnit === 'fit' ? {} : ({ contain: 'inline-size' } as const);
+}
+
 export const emptyStateContainerStyle = {
   display: 'flex',
   flexDirection: 'column' as const,

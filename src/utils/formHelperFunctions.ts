@@ -17,6 +17,7 @@ import {
 import throttle from 'lodash.throttle';
 import { ACTION_EXECUTION_ORDER, ACTION_STORE_FIELD } from './elementActions';
 import { featheryDoc, featheryWindow } from './browser';
+import { getFilenameFromUrl } from './fileNames';
 import { DEFAULT_MOBILE_BREAKPOINT } from '../elements/styles';
 import internalState from './internalState';
 import { setSavedStepKey } from './stepHelperFunctions';
@@ -326,7 +327,7 @@ export function objectMap(obj: any, transform: any) {
 export async function fetchS3File(url: any) {
   const response = await fetch(url);
   const blob = await response.blob();
-  return new File([blob], decodeURI(url.split('?')[0].split('/').slice(-1)), {
+  return new File([blob], getFilenameFromUrl(url), {
     type: blob.type
   });
 }
