@@ -28,9 +28,21 @@ beforeAll(() => {
   (window as any).PointerEvent = FakePointerEvent;
   (HTMLElement.prototype as any).setPointerCapture = jest.fn();
   (HTMLElement.prototype as any).releasePointerCapture = jest.fn();
+  // jsdom cannot derive flex layout, so the track's direction is forced - but
+  // everything else has to come through, or a row's own `display` is invisible
+  // to the code under test.
+  const realComputedStyle = window.getComputedStyle.bind(window);
   jest
     .spyOn(window, 'getComputedStyle')
-    .mockImplementation(() => ({ flexDirection: 'column' } as any));
+    .mockImplementation((el: any, pseudo?: any) => {
+      const style = realComputedStyle(el, pseudo);
+      return new Proxy(style, {
+        get: (target, key) =>
+          key === 'flexDirection'
+            ? 'column'
+            : Reflect.get(target, key, target)
+      }) as any;
+    });
   jest
     .spyOn(window, 'requestAnimationFrame')
     .mockImplementation((cb: any) => {
@@ -143,6 +155,78 @@ const grip = (index: number) =>
  * shared parent. Two containers therefore both have a row 0 sitting next to
  * each other, and every lookup has to tell them apart.
  */
+/**
+ * `hide_if` removes a row from the tree, so the drag never sees it. A
+ * mobile-only or desktop-only row is different: it stays in the tree, keeps
+ * its marker, and is merely `display: none` for this viewport.
+ */
+describe('a row that is display:none for this viewport', () => {
+  const layOut = (container: HTMLElement, hiddenIndex: number) => {
+    container.querySelectorAll(`[${ROW_ATTR}]`).forEach((row) => {
+      const i = Number(row.getAttribute(ROW_ATTR));
+      const el = row as HTMLElement;
+      if (i === hiddenIndex) {
+        el.style.display = 'none';
+        // A display:none box measures zero, which is what poisons the sort.
+        el.getBoundingClientRect = () =>
+          ({ top: 0, bottom: 0, left: 0, right: 0 } as DOMRect);
+        return;
+      }
+      el.getBoundingClientRect = () =>
+        ({
+          top: i * ROW_HEIGHT,
+          bottom: (i + 1) * ROW_HEIGHT,
+          left: 0,
+          right: 100
+        } as DOMRect);
+    });
+  };
+
+  it('is never displaced, because it is not in the track', () => {
+    const { container } = renderTrack(3);
+    layOut(container, 1);
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+
+    const hidden = container.querySelector(`[${ROW_ATTR}="1"]`) as HTMLElement;
+    const visible = container.querySelector(`[${ROW_ATTR}="2"]`) as HTMLElement;
+
+    // Counted, it would be handed a transform it can never show.
+    expect(hidden.style.transform).toBe('');
+    expect(visible.style.transform).not.toBe('');
+
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+  });
+
+  it('is skipped by an arrow-key step rather than swallowing it', () => {
+    const { onMove, container } = renderTrack(3);
+    layOut(container, 1);
+
+    fireEvent.keyDown(grip(0), { key: 'ArrowDown' });
+
+    expect(onMove).toHaveBeenCalledWith(0, 2);
+  });
+
+  it('is not marked as dragging, since it is not in the track', () => {
+    const { container } = renderTrack(3);
+    layOut(container, 1);
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+
+    const hidden = container.querySelector(`[${ROW_ATTR}="1"]`) as HTMLElement;
+    expect(hidden.hasAttribute(DRAGGING_ATTR)).toBe(false);
+    expect(container.querySelectorAll(`[${DRAGGING_ATTR}]`).length).toBe(2);
+
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+  });
+});
+
 describe('two containers sharing a parent', () => {
   const A = 'test-form:container-a';
   const B = 'test-form:container-b';

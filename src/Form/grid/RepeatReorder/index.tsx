@@ -159,7 +159,13 @@ export function useRepeatRowReorder(
   // screen order for every track the SDK itself lays out; a custom stylesheet
   // that reverses the track would need DOM measurement to number correctly,
   // and this hook runs at render time with nothing to measure.
-  const flags: boolean[] = form.visiblePositions?.[getPositionKey(node)] ?? [];
+  // Trimmed to the rows the data actually has: with a 'set_value' trigger the
+  // flags run one longer than the data, and counting that phantom row made
+  // three rows label themselves "Row 1 of 4" and left the last row's down
+  // button enabled with nowhere to go.
+  const flags: boolean[] = (
+    form.visiblePositions?.[getPositionKey(node)] ?? []
+  ).slice(0, rowCount);
   const visible = flags.length ? flags : Array(rowCount).fill(true);
   const ordinal = visible.slice(0, index).filter(Boolean).length + 1;
   const renderedCount = visible.filter(Boolean).length;

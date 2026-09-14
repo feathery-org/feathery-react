@@ -443,6 +443,61 @@ describe('Container repeat row reorder handle', () => {
     });
   });
 
+  /**
+   * A 'set_value' trigger renders one row past the end of the data. It carries
+   * no row marker, so it can never be a drag target - but it was still being
+   * counted, which is what the filler reads and hears.
+   */
+  describe('the phantom row a set_value trigger renders', () => {
+    it('counts only the rows the data has', () => {
+      setFieldValues(['a', 'b', 'c']);
+      // Four flags, three rows of data: the fourth is the phantom.
+      const form = formProps({
+        visiblePositions: { '0': [true, true, true, true] }
+      });
+
+      const { getByLabelText } = render(
+        <div>
+          {[0, 1, 2].map((repeat) => (
+            <Container
+              key={repeat}
+              node={repeatNode({ repeat })}
+              viewport='desktop'
+              form={form}
+            />
+          ))}
+        </div>
+      );
+
+      expect(getByLabelText('Row 1 of 3')).toBeTruthy();
+      expect(getByLabelText('Row 3 of 3')).toBeTruthy();
+    });
+
+    it('disables the last real row down button', () => {
+      setFieldValues(['a', 'b', 'c']);
+      const form = formProps({
+        visiblePositions: { '0': [true, true, true, true] }
+      });
+
+      const { getByLabelText } = render(
+        <div>
+          {[0, 1, 2].map((repeat) => (
+            <Container
+              key={repeat}
+              node={repeatNode({ repeat })}
+              viewport='desktop'
+              form={form}
+            />
+          ))}
+        </div>
+      );
+
+      // Counting the phantom left this enabled, and pressing it did nothing -
+      // the phantom has no marker for the step to land on.
+      expect(getByLabelText('Move row 3 down')).toBeDisabled();
+    });
+  });
+
   it('offers an insert seam below every row', () => {
     const { getByLabelText } = renderContainer(repeatNode({ repeat: 1 }));
     expect(getByLabelText('Add a row below row 2')).toBeTruthy();

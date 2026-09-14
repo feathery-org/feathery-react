@@ -70,12 +70,24 @@ export interface RowDragOptions {
  * with this one's, which silently corrupts the drop target, the displacement
  * map and the focus handoff. The track id is what separates them.
  */
+/**
+ * A row hidden for this viewport rather than by logic.
+ *
+ * `hide_if` removes a row from the tree entirely, so it never reaches here.
+ * But a mobile-only or desktop-only row - `visibility: hidden` with the
+ * opposite override - stays in the tree, keeps its marker, and resolves to
+ * `display: none`. Its rect is then all zeros, which drags `orderRows` into
+ * sorting a pile of equal values and makes the drop target arbitrary.
+ */
+const isRendered = (el: HTMLElement) => getComputedStyle(el).display !== 'none';
+
 const rowElements = (track: HTMLElement, trackId: string): HTMLElement[] =>
   Array.from(track.children).filter(
     (el): el is HTMLElement =>
       el instanceof HTMLElement &&
       el.hasAttribute(ROW_ATTR) &&
-      el.getAttribute(TRACK_ATTR) === trackId
+      el.getAttribute(TRACK_ATTR) === trackId &&
+      isRendered(el)
   );
 
 const snapshot = (elements: HTMLElement[]): RowSnapshot[] =>
