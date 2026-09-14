@@ -12,7 +12,7 @@ import {
   targetIndexFromCenter,
   TrackAxis
 } from './geometry';
-import { consumeRowFocus, requestRowFocus } from './focus';
+import { consumeRowFocus, focusHandle, requestRowFocus } from './focus';
 import { DRAGGING_ATTR, LIFT_Z_INDEX, ROW_ATTR, TRACK_ATTR } from './styles';
 
 // Enough movement to tell a drag from a tap, so tapping the grip still just
@@ -334,7 +334,7 @@ export function useRowDrag({
       // focus itself - otherwise the arrow keys are unreachable by pointer.
       const dragged = state.dragging;
       finish(dragged);
-      if (!dragged) handleRef.current?.focus();
+      if (!dragged) focusHandle(handleRef.current);
     },
     [finish]
   );
@@ -391,7 +391,7 @@ export function useRowDrag({
   // No dep array: the claim is checked on every render, which is exactly when
   // the destination row has just been re-rendered by the move.
   useEffect(() => {
-    if (consumeRowFocus(trackId, index)) handleRef.current?.focus();
+    if (consumeRowFocus(trackId, index)) focusHandle(handleRef.current);
   });
 
   // A row can unmount mid-drag when logic hides it. Its siblings are still on

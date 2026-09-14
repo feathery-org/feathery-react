@@ -146,3 +146,78 @@ it('does not leak a claim into another form on the page', () => {
   // Same container id, same row index, different form: not this claim.
   expect(otherRow1).not.toHaveFocus();
 });
+
+/**
+ * The handle sits in a gutter outside the row's box, so letting the browser
+ * bring it into view moves the page out from under whatever the filler was
+ * doing. Focus is placed without scrolling, and the page is only nudged when
+ * the handle is genuinely off screen.
+ */
+describe('focus does not move the page', () => {
+  // A move only hands focus over on the render that follows it, so the same
+  // rerendering harness the crosstalk tests use is what makes the claim fire.
+  const renderRows = () => {
+    const rendered = render(<Step />);
+    const grips = [
+      ...rendered.container.querySelectorAll('[data-feathery-reorder-handle]')
+    ] as HTMLElement[];
+    const commit = () => fireEvent.click(screen.getByText('rerender'));
+    return { ...rendered, grips, commit };
+  };
+
+  it('asks the browser not to scroll when it takes focus', () => {
+    const { grips, commit } = renderRows();
+    const opts: any[] = [];
+    grips.forEach((g) => {
+      const real = g.focus.bind(g);
+      g.focus = (o?: any) => {
+        opts.push(o);
+        real(o);
+      };
+    });
+
+    fireEvent.keyDown(grips[0], { key: 'ArrowDown', bubbles: true });
+    commit();
+
+    expect(opts.length).toBeGreaterThan(0);
+    opts.forEach((o) => expect(o).toEqual({ preventScroll: true }));
+  });
+
+  it('leaves a handle that is already on screen where it is', () => {
+    const { grips, commit } = renderRows();
+    const scrolled: HTMLElement[] = [];
+    grips.forEach((g) => {
+      g.getBoundingClientRect = () =>
+        ({ top: 10, bottom: 34, left: 10, right: 34 } as DOMRect);
+      g.scrollIntoView = () => scrolled.push(g);
+    });
+
+    fireEvent.keyDown(grips[0], { key: 'ArrowDown', bubbles: true });
+    commit();
+
+    expect(scrolled).toHaveLength(0);
+  });
+
+  it('nudges a handle that has been stepped off the screen', () => {
+    const { grips, commit } = renderRows();
+    const args: any[] = [];
+    grips.forEach((g) => {
+      // Past the bottom of the viewport, as a row walked down a long form is.
+      g.getBoundingClientRect = () =>
+        ({
+          top: window.innerHeight + 200,
+          bottom: window.innerHeight + 224,
+          left: 10,
+          right: 34
+        } as DOMRect);
+      g.scrollIntoView = (o?: any) => args.push(o);
+    });
+
+    fireEvent.keyDown(grips[0], { key: 'ArrowDown', bubbles: true });
+    commit();
+
+    expect(args).toHaveLength(1);
+    // The minimum needed, never a jump that recentres the page.
+    expect(args[0]).toEqual({ block: 'nearest', inline: 'nearest' });
+  });
+});

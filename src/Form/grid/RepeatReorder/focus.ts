@@ -25,3 +25,28 @@ export function consumeRowFocus(trackId: string, index: number) {
   pending = null;
   return true;
 }
+
+/**
+ * Puts focus on a handle without letting the browser scroll to it.
+ *
+ * The handle lives in a gutter OUTSIDE the row's box, so bringing it into view
+ * moves the page - on a long form that reads as the page jumping away from
+ * what you were doing. Scrolling is done afterwards, and only by the minimum
+ * needed, so a row stepped off the edge of the screen still comes back into
+ * view without the page lurching.
+ */
+export function focusHandle(handle: HTMLElement | null) {
+  if (!handle) return;
+  handle.focus({ preventScroll: true });
+
+  const rect = handle.getBoundingClientRect();
+  const win = handle.ownerDocument.defaultView;
+  if (!win) return;
+
+  const offScreen =
+    rect.bottom < 0 ||
+    rect.right < 0 ||
+    rect.top > win.innerHeight ||
+    rect.left > win.innerWidth;
+  if (offScreen) handle.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}

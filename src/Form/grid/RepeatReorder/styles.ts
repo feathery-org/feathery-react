@@ -55,7 +55,25 @@ export const TARGET_SIZE = 24;
 export const LIFT_Z_INDEX = 1000;
 
 const ink = 'var(--feathery-repeat-handle-ink, currentColor)';
-const surface = 'var(--feathery-repeat-insert-surface, #fff)';
+
+/**
+ * The seam's badge has to sit on something opaque or the row shows through it.
+ *
+ * White was wrong on any form that is not light: the badge punched a bright
+ * hole in a dark theme. The surface is resolved at runtime from the first
+ * ancestor that actually paints a background (see RESOLVED_SURFACE_VAR) and
+ * published as a custom property, with white left as the last resort. The
+ * author-facing variable is checked first, so custom CSS still wins.
+ */
+const surface =
+  'var(--feathery-repeat-insert-surface, ' +
+  'var(--feathery-repeat-insert-surface-resolved, #fff))';
+
+/**
+ * Where the runtime-resolved background is published. Deliberately NOT the
+ * author-facing name: an inline value would outrank a form's own stylesheet.
+ */
+export const RESOLVED_SURFACE_VAR = '--feathery-repeat-insert-surface-resolved';
 
 /**
  * Revealed by the row, so a resting form carries no extra furniture.

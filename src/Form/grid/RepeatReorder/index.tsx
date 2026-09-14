@@ -22,6 +22,7 @@ import {
   HANDLE_ATTR,
   INSERT_CLASS,
   REORDER_CLASS,
+  RESOLVED_SURFACE_VAR,
   STEP_CLASS,
   clusterInsideStyles,
   clusterStyles,
@@ -80,6 +81,26 @@ const Chevron = ({ up }: { up: boolean }) => (
     />
   </svg>
 );
+
+/**
+ * The nearest background the row is actually sitting on.
+ *
+ * Containers are transparent by default, so the colour that matters is usually
+ * several levels up. Everything the chrome draws already inherits its ink from
+ * the form through `currentColor`; this is the other half, so the seam's badge
+ * matches a dark theme instead of punching a white hole in it.
+ */
+const resolveSurface = (from: HTMLElement): string | null => {
+  let el: HTMLElement | null = from;
+  while (el) {
+    const bg = getComputedStyle(el).backgroundColor;
+    // Anything with alpha above zero counts; the shorthand and the rgba form
+    // are both how a browser reports "nothing painted here".
+    if (bg && bg !== 'transparent' && !/,\s*0\s*\)$/.test(bg)) return bg;
+    el = el.parentElement;
+  }
+  return null;
+};
 
 /** The conventional six-dot drag affordance. */
 const Grip = () => (
@@ -261,6 +282,11 @@ export const RepeatRowHandle = ({
       // stylesheet rather than pinned by a measured offset.
       if (fits) cluster.style.insetInlineStart = `-${gutter}px`;
       else cluster.style.removeProperty('inset-inline-start');
+
+      // Published on the row so both the cluster and the seam inherit it.
+      const resolved = resolveSurface(row);
+      if (resolved) row.style.setProperty(RESOLVED_SURFACE_VAR, resolved);
+      else row.style.removeProperty(RESOLVED_SURFACE_VAR);
     };
     apply();
 

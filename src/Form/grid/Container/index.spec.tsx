@@ -1,5 +1,6 @@
 import { fireEvent, render } from '@testing-library/react';
 import { Container } from '.';
+import { featheryDoc } from '../../../utils/browser';
 import { subscribeToReorderAnnouncements } from '../RepeatReorder/announce';
 
 // Records the props the real container would register dirty state under
@@ -495,6 +496,67 @@ describe('Container repeat row reorder handle', () => {
       // Counting the phantom left this enabled, and pressing it did nothing -
       // the phantom has no marker for the step to land on.
       expect(getByLabelText('Move row 3 down')).toBeDisabled();
+    });
+  });
+
+  /**
+   * The chrome takes its ink from the form through `currentColor`. The seam's
+   * badge needs the other half - something opaque to sit on - or a white badge
+   * punches a hole in a dark form.
+   */
+  describe('the seam badge takes its surface from the form', () => {
+    const withBackground = (colour: string | null, run: () => void) => {
+      const win: any = globalThis;
+      const real = win.getComputedStyle;
+      jest
+        .spyOn(win, 'getComputedStyle')
+        .mockImplementation((el: any, pseudo?: any) => {
+          const style = real.call(win, el, pseudo);
+          // Only the outermost node paints, the way a themed form works.
+          if (el === featheryDoc().body && colour)
+            return { ...style, backgroundColor: colour } as any;
+          return new Proxy(style, {
+            get: (t, k) =>
+              k === 'backgroundColor'
+                ? 'rgba(0, 0, 0, 0)'
+                : Reflect.get(t, k, t)
+          }) as any;
+        });
+      try {
+        run();
+      } finally {
+        win.getComputedStyle.mockRestore();
+      }
+    };
+
+    it('publishes the nearest painted background onto the row', () => {
+      withBackground('rgb(20, 22, 26)', () => {
+        const { container } = renderContainer(repeatNode({ repeat: 1 }));
+        const row = container.querySelector(
+          '[data-feathery-repeat-row]'
+        ) as HTMLElement;
+
+        expect(
+          row.style.getPropertyValue(
+            '--feathery-repeat-insert-surface-resolved'
+          )
+        ).toBe('rgb(20, 22, 26)');
+      });
+    });
+
+    it('publishes nothing when no ancestor paints, leaving the fallback', () => {
+      withBackground(null, () => {
+        const { container } = renderContainer(repeatNode({ repeat: 1 }));
+        const row = container.querySelector(
+          '[data-feathery-repeat-row]'
+        ) as HTMLElement;
+
+        expect(
+          row.style.getPropertyValue(
+            '--feathery-repeat-insert-surface-resolved'
+          )
+        ).toBe('');
+      });
     });
   });
 
