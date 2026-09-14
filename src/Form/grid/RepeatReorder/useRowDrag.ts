@@ -26,6 +26,14 @@ interface DragState {
   track: HTMLElement;
   /** Identifies which container's rows this gesture is allowed to touch. */
   trackId: string;
+  /**
+   * The row nodes as they were at grab time.
+   *
+   * Cleanup works from these rather than re-querying: a submit landing
+   * mid-drag strips every row marker step-wide, and a lookup by attribute then
+   * finds nothing and leaves the transforms stranded on screen.
+   */
+  elements: HTMLElement[];
   rows: RowSnapshot[];
   axis: TrackAxis;
   start: number;
@@ -165,7 +173,7 @@ const paintDrag = (state: DragState, offset: number, to: number | null) => {
 
 /** Puts every row back the way the stylesheet left it. */
 const clearDrag = (state: DragState) => {
-  rowElements(state.track, state.trackId).forEach((el) => {
+  state.elements.forEach((el) => {
     el.style.transition = '';
     el.style.transform = '';
     el.style.zIndex = '';
@@ -175,9 +183,7 @@ const clearDrag = (state: DragState) => {
   // whatever it was - an empty string when there was no inline value, which
   // hands the property back to the stylesheet.
   state.row.style.position = state.rowPosition;
-  rowElements(state.track, state.trackId).forEach((el) =>
-    el.removeAttribute(DRAGGING_ATTR)
-  );
+  state.elements.forEach((el) => el.removeAttribute(DRAGGING_ATTR));
 };
 
 export function useRowDrag({
@@ -254,6 +260,7 @@ export function useRowDrag({
         row,
         track,
         trackId,
+        elements,
         rows: snapshotRows,
         axis,
         start: mainAxisCoord(event.clientX, event.clientY, axis),
@@ -284,9 +291,7 @@ export function useRowDrag({
         featheryDoc().body.style.userSelect = 'none';
         // Marks the whole track, not just the row being carried: the seams that
         // most need withholding are the ones the pointer travels over.
-        rowElements(state.track, state.trackId).forEach((el) =>
-          el.setAttribute(DRAGGING_ATTR, '')
-        );
+        state.elements.forEach((el) => el.setAttribute(DRAGGING_ATTR, ''));
         setDragging(true);
         announce(`Row ${positionLabel(state.index)} grabbed`);
       }

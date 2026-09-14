@@ -717,6 +717,34 @@ describe('the track is marked while a drag is live', () => {
  * cleanup has to reach them: otherwise the track keeps the transforms and the
  * marker, leaving rows displaced and every seam hidden for the rest of the step.
  */
+describe('a submit landing mid-drag', () => {
+  it('still hands the track back when the markers are stripped', () => {
+    // useRepeatRowReorder drops every row marker step-wide while a button
+    // loader is up. The rows do not unmount, so a cleanup that re-queries by
+    // attribute finds nothing and the transforms stay on screen for good.
+    const { container } = renderTrack(3);
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+
+    const rows = [
+      ...container.querySelectorAll(`[${ROW_ATTR}]`)
+    ] as HTMLElement[];
+    expect(rows.some((r) => r.style.transform)).toBe(true);
+
+    rows.forEach((r) => r.removeAttribute(ROW_ATTR));
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+
+    rows.forEach((r) => {
+      expect(r.style.transform).toBe('');
+      expect(r.style.zIndex).toBe('');
+      expect(r.hasAttribute(DRAGGING_ATTR)).toBe(false);
+    });
+  });
+});
+
 describe('a row that unmounts mid-drag', () => {
   it('hands the whole track back', () => {
     const onMove = jest.fn().mockReturnValue(true);
