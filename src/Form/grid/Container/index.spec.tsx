@@ -89,6 +89,17 @@ describe('Container repeat row reorder handle', () => {
         servar: { key: 'name', type: 'text_field', repeated: true },
         position: [0, 0]
       }
+    ],
+    // The seam borrows its ceiling from an add-row action, so a container no
+    // action names gets no seam at all. Every fixture that expects one needs
+    // this button.
+    buttons: [
+      {
+        id: 'add-row',
+        properties: {
+          actions: [{ type: 'add_repeated_row', repeat_container: 'repeat-1' }]
+        }
+      }
     ]
   };
 
@@ -364,6 +375,71 @@ describe('Container repeat row reorder handle', () => {
 
       // The drawing stays the size it always was; only the hit area grew.
       expect(size(badge)).toEqual({ w: '18px', h: '18px' });
+    });
+  });
+
+  /**
+   * Sorting and inserting are separate permissions. A list whose order carries
+   * meaning often wants rearranging without growing.
+   */
+  describe('sorting and inserting as separate permissions', () => {
+    it('keeps the grip but drops the seam when insertable is off', () => {
+      const { container } = renderContainer(
+        repeatNode({ properties: { reorderable: true, insertable: false } })
+      );
+
+      expect(
+        container.querySelector('[data-feathery-reorder-handle]')
+      ).toBeTruthy();
+      expect(container.querySelector('.feathery-repeat-insert')).toBeNull();
+    });
+
+    it('keeps the seam for containers that predate the split', () => {
+      // No `insertable` key at all - the old single property meant both.
+      const { container } = renderContainer(
+        repeatNode({ properties: { reorderable: true } })
+      );
+
+      expect(container.querySelector('.feathery-repeat-insert')).toBeTruthy();
+    });
+
+    it('offers no seam when nothing can add a row to the container', () => {
+      // The seam borrows its ceiling from an add-row action. With none to
+      // borrow from it used to read as uncapped and grew the container without
+      // limit, on a container the author gave no way to grow.
+      const form = formProps({
+        activeStep: { ...step, buttons: [] }
+      });
+      const { container } = renderContainer(repeatNode(), form);
+
+      expect(container.querySelector('.feathery-repeat-insert')).toBeNull();
+      expect(
+        container.querySelector('[data-feathery-reorder-handle]')
+      ).toBeTruthy();
+    });
+
+    it('ignores an add-row action aimed at a different container', () => {
+      const form = formProps({
+        activeStep: {
+          ...step,
+          buttons: [
+            {
+              id: 'add-other',
+              properties: {
+                actions: [
+                  {
+                    type: 'add_repeated_row',
+                    repeat_container: 'somewhere-else'
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      });
+      const { container } = renderContainer(repeatNode(), form);
+
+      expect(container.querySelector('.feathery-repeat-insert')).toBeNull();
     });
   });
 

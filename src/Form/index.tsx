@@ -71,6 +71,7 @@ import {
   getRepeatedContainer,
   getRepeatErrorOwnerIds,
   getRepeatMaxRows,
+  hasAddRowAction,
   insertRepeatRowValue,
   moveRepeatRowValue
 } from '../utils/repeat';
@@ -1185,7 +1186,9 @@ function Form({
 
     const rows = getRepeatContainerRowCount(activeStep, repeatContainer);
     // Inserting between rows still grows the container, so it answers to the
-    // same cap the add-row action does.
+    // same cap the add-row action does - and to the existence of one at all.
+    // A container no add-row action names cannot be grown by its seam either.
+    if (!hasAddRowAction(activeStep, repeatContainer.id)) return false;
     const limit = getRepeatMaxRows(activeStep, repeatContainer.id);
     if (limit !== null && rows >= limit) return false;
 

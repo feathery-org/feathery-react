@@ -76,6 +76,9 @@ jest.mock('../../utils/repeat', () => {
     // Uncapped by default, so a spec only opts in to a row cap when it is
     // testing one.
     getRepeatMaxRows: () => null,
+    // The seam requires an add-row action to exist. These specs are about the
+    // insert mechanics, so one is assumed; the gate has its own spec.
+    hasAddRowAction: () => true,
     insertRepeatRowValue: (
       list: any[],
       at: number,

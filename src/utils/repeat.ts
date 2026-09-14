@@ -145,6 +145,29 @@ export function getRepeatMaxRows(
 }
 
 /**
+ * Whether any add-row action targets the container at all.
+ *
+ * The insert seam borrows its ceiling from those actions, so a container none
+ * of them names has no ceiling to borrow and `getRepeatMaxRows` reports it as
+ * uncapped. That let a seam add rows without limit to a container the author
+ * had deliberately given no way to grow. Nothing to borrow from means no seam.
+ */
+export function hasAddRowAction(step: any, containerId: string): boolean {
+  for (const type of ACTION_ELEMENT_TYPES) {
+    for (const element of step[type] ?? []) {
+      for (const action of element.properties?.actions ?? []) {
+        if (
+          action.type === ACTION_ADD_REPEATED_ROW &&
+          action.repeat_container === containerId
+        )
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Rendered row count, clamped so a 'set_value' trigger cannot offer a row past
  * the cap: typing into that trailing row grows the array upstream of every cap
  * check. Never clamps below the rows the data holds, so a cap lowered after

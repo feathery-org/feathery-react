@@ -10,7 +10,8 @@ import {
   getContainerById,
   getFieldsInRepeat,
   getRepeatContainerRowCount,
-  getRepeatMaxRows
+  getRepeatMaxRows,
+  hasAddRowAction
 } from '../../../utils/repeat';
 import { isFixedContainer } from '../StyledContainer/hooks/useFixedContainer';
 import { announceReorder, subscribeToReorderAnnouncements } from './announce';
@@ -166,8 +167,15 @@ export function useRepeatRowReorder(
   // A seam that cannot add a row should not be offered. insertRepeatedRow
   // refuses at the cap regardless, but a button that silently does nothing
   // reads as broken.
+  //
+  // Sorting and inserting are separate permissions: a list whose order carries
+  // meaning often wants rearranging without growing. `insertable` is opt-out
+  // rather than opt-in so containers that predate the split keep their seam.
   const maxRows = getRepeatMaxRows(activeStep, container.id);
-  const canInsert = maxRows === null || rowCount < maxRows;
+  const canInsert =
+    node.properties?.insertable !== false &&
+    hasAddRowAction(activeStep, container.id) &&
+    (maxRows === null || rowCount < maxRows);
   if (!canReorder && !canInsert) return null;
 
   return {
