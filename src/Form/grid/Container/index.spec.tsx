@@ -368,6 +368,28 @@ describe('Container repeat row reorder handle', () => {
       expect(getComputedStyle(cluster).insetInlineStart).toBe('-30px');
     });
 
+    it('keeps the seam clear of the step buttons', () => {
+      const { container } = renderContainer(repeatNode({ repeat: 1 }));
+      const seam = container.querySelector(
+        '.feathery-repeat-insert'
+      ) as HTMLElement;
+      const cluster = container.querySelector(
+        '.feathery-repeat-reorder'
+      ) as HTMLElement;
+
+      // Both hang in the same gutter. A seam straddles the row's edge, so it
+      // reaches half its own height into the row; the cluster starts that far
+      // down or the seam - which stacks above it - covers the first step
+      // button and swallows its clicks.
+      const seamHeight = parseFloat(getComputedStyle(seam).height);
+      const clusterOffset = parseFloat(
+        getComputedStyle(cluster).insetBlockStart
+      );
+
+      expect(seamHeight).toBe(24);
+      expect(clusterOffset).toBeGreaterThanOrEqual(seamHeight / 2);
+    });
+
     it('keeps the badge small while the button is not', () => {
       const { container } = renderContainer(repeatNode({ repeat: 1 }));
       const badge = container.querySelector(

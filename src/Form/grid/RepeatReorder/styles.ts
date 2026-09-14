@@ -83,7 +83,9 @@ export const RESOLVED_SURFACE_VAR = '--feathery-repeat-insert-surface-resolved';
  */
 export const clusterStyles = {
   position: 'absolute' as const,
-  insetBlockStart: 0,
+  // Half a target down, so the seam - which straddles the row's top edge, in
+  // this same gutter - abuts the first step button instead of covering it.
+  insetBlockStart: `${TARGET_SIZE / 2}px`,
   insetInlineStart: `-${GUTTER_WIDTH}px`,
   width: `${TARGET_SIZE}px`,
   display: 'flex',
@@ -110,6 +112,9 @@ export const clusterStyles = {
  */
 export const clusterInsideStyles = {
   ...clusterStyles,
+  // Back on the edge itself: inside the row the seam returns to the centre, so
+  // there is nothing here to clear.
+  insetBlockStart: 0,
   insetInlineStart: 'auto',
   insetInlineEnd: '8px',
   width: 'auto',
