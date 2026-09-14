@@ -12,7 +12,7 @@ import {
   TrackAxis
 } from './geometry';
 import { consumeRowFocus, requestRowFocus } from './focus';
-import { DRAGGING_ATTR, ROW_ATTR } from './styles';
+import { DRAGGING_ATTR, ROW_ATTR, TRACK_ATTR } from './styles';
 
 // Enough movement to tell a drag from a tap, so tapping the grip still just
 // focuses it and leaves the keyboard path usable.
@@ -23,6 +23,8 @@ interface DragState {
   index: number;
   row: HTMLElement;
   track: HTMLElement;
+  /** Identifies which container's rows this gesture is allowed to touch. */
+  trackId: string;
   rows: RowSnapshot[];
   axis: TrackAxis;
   start: number;
@@ -59,10 +61,20 @@ export interface RowDragOptions {
   disabled?: boolean;
 }
 
-const rowElements = (track: HTMLElement): HTMLElement[] =>
+/**
+ * The rows of ONE container.
+ *
+ * Every container on a step renders its rows into the same parent, so the
+ * marker alone collects other containers' rows too - and their indices collide
+ * with this one's, which silently corrupts the drop target, the displacement
+ * map and the focus handoff. The track id is what separates them.
+ */
+const rowElements = (track: HTMLElement, trackId: string): HTMLElement[] =>
   Array.from(track.children).filter(
     (el): el is HTMLElement =>
-      el instanceof HTMLElement && el.hasAttribute(ROW_ATTR)
+      el instanceof HTMLElement &&
+      el.hasAttribute(ROW_ATTR) &&
+      el.getAttribute(TRACK_ATTR) === trackId
   );
 
 const snapshot = (elements: HTMLElement[]): RowSnapshot[] =>
@@ -87,8 +99,10 @@ const restingCenterOf = (rows: RowSnapshot[], abs: number, axis: TrackAxis) => {
   return start + mainAxisExtent(row.rect, axis.vertical) / 2;
 };
 
-const rowElementByAbs = (track: HTMLElement, abs: number) =>
-  track.querySelector<HTMLElement>(`[${ROW_ATTR}="${abs}"]`);
+const rowElementByAbs = (track: HTMLElement, trackId: string, abs: number) =>
+  track.querySelector<HTMLElement>(
+    `[${TRACK_ATTR}="${trackId}"][${ROW_ATTR}="${abs}"]`
+  );
 
 /**
  * Which way the track runs, read off the stylesheet.
@@ -112,7 +126,7 @@ const axisTranslate = (offset: number, vertical: boolean) =>
  * what keeps the positional React keys safe until the move is committed.
  */
 const paintDrag = (state: DragState, offset: number, to: number | null) => {
-  const { track, rows, axis } = state;
+  const { track, trackId, rows, axis } = state;
 
   // The node captured at grab time, so the element whose `position` is
   // borrowed here is exactly the one clearDrag restores it on.
@@ -127,7 +141,7 @@ const paintDrag = (state: DragState, offset: number, to: number | null) => {
   const shifts = displacementByAbs(rows, state.index, to, distance, axis);
 
   Object.entries(shifts).forEach(([abs, shift]) => {
-    const el = rowElementByAbs(track, Number(abs));
+    const el = rowElementByAbs(track, trackId, Number(abs));
     if (!el) return;
     el.style.transition = 'transform 0.16s ease';
     el.style.transform = shift ? axisTranslate(shift, axis.vertical) : '';
@@ -136,7 +150,7 @@ const paintDrag = (state: DragState, offset: number, to: number | null) => {
 
 /** Puts every row back the way the stylesheet left it. */
 const clearDrag = (state: DragState) => {
-  rowElements(state.track).forEach((el) => {
+  rowElements(state.track, state.trackId).forEach((el) => {
     el.style.transition = '';
     el.style.transform = '';
     el.style.zIndex = '';
@@ -146,7 +160,9 @@ const clearDrag = (state: DragState) => {
   // whatever it was - an empty string when there was no inline value, which
   // hands the property back to the stylesheet.
   state.row.style.position = state.rowPosition;
-  rowElements(state.track).forEach((el) => el.removeAttribute(DRAGGING_ATTR));
+  rowElements(state.track, state.trackId).forEach((el) =>
+    el.removeAttribute(DRAGGING_ATTR)
+  );
 };
 
 export function useRowDrag({
@@ -204,8 +220,9 @@ export function useRowDrag({
       if (!row || !track) return;
 
       // Siblings include whatever else the author placed beside the container,
-      // so rows are identified by their marker rather than by position.
-      const elements = rowElements(track);
+      // and every other container's rows too, so rows are identified by their
+      // marker AND their track rather than by position.
+      const elements = rowElements(track, trackId);
 
       const axis = trackAxis(track);
 
@@ -221,6 +238,7 @@ export function useRowDrag({
         index,
         row,
         track,
+        trackId,
         rows: snapshotRows,
         axis,
         start: mainAxisCoord(event.clientX, event.clientY, axis),
@@ -234,7 +252,7 @@ export function useRowDrag({
     // the row a slot holds changes whenever a hide_if opens or closes a gap
     // above it. Without the dep this closure would keep grabbing the index the
     // slot held on its first render.
-    [disabled, index]
+    [disabled, index, trackId]
   );
 
   const onPointerMove = useCallback(
@@ -251,7 +269,7 @@ export function useRowDrag({
         featheryDoc().body.style.userSelect = 'none';
         // Marks the whole track, not just the row being carried: the seams that
         // most need withholding are the ones the pointer travels over.
-        rowElements(state.track).forEach((el) =>
+        rowElements(state.track, state.trackId).forEach((el) =>
           el.setAttribute(DRAGGING_ATTR, '')
         );
         setDragging(true);
@@ -308,7 +326,7 @@ export function useRowDrag({
         `[${ROW_ATTR}]`
       )?.parentElement;
       if (!track) return;
-      const rows = snapshot(rowElements(track));
+      const rows = snapshot(rowElements(track, trackId));
 
       // Stepping by rendered position rather than by index keeps a hidden row
       // from swallowing a keypress, and the axis keeps "up" meaning up on

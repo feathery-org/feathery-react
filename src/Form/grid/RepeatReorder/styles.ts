@@ -12,6 +12,16 @@ export const STEP_CLASS = 'feathery-repeat-reorder-step';
 export const INSERT_CLASS = 'feathery-repeat-insert';
 
 export const ROW_ATTR = 'data-feathery-repeat-row';
+/**
+ * Which container a row belongs to.
+ *
+ * Repeat rows are not nested inside their own container in the DOM - every
+ * container on a step renders its rows as siblings of every other container's,
+ * under one shared parent. So the row marker alone cannot identify a track:
+ * two containers both have a row 0. Rows carry their container as well, and
+ * every lookup filters on both.
+ */
+export const TRACK_ATTR = 'data-feathery-repeat-track';
 export const HANDLE_ATTR = 'data-feathery-reorder-handle';
 /** Set on every row in a track for as long as one of them is being dragged. */
 export const DRAGGING_ATTR = 'data-feathery-reorder-dragging';

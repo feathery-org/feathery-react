@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useRowDrag } from '../useRowDrag';
-import { DRAGGING_ATTR, HANDLE_ATTR, ROW_ATTR } from '../styles';
+import { DRAGGING_ATTR, HANDLE_ATTR, ROW_ATTR, TRACK_ATTR } from '../styles';
 
 const ROW_HEIGHT = 20;
 
@@ -67,7 +67,12 @@ const Row = ({
     announce: announce ?? (() => {})
   });
   return (
-    <div {...{ [ROW_ATTR]: index }} onClick={onRowClick}>
+    // Rows carry their track as well as their index, the way Container
+    // publishes them - the drag refuses to collect a row without it.
+    <div
+      {...{ [ROW_ATTR]: index, [TRACK_ATTR]: trackId }}
+      onClick={onRowClick}
+    >
       <span
         {...{ [HANDLE_ATTR]: '' }}
         ref={handleRef as any}
@@ -131,6 +136,143 @@ const renderTrack = (rowCount = 3, onRowClick?: () => void) => {
 
 const grip = (index: number) =>
   screen.getByLabelText(`Row ${index + 1}`) as HTMLElement;
+
+/**
+ * Repeat containers do not nest their rows in the DOM - every container on a
+ * step renders its rows as siblings of every other container's, under one
+ * shared parent. Two containers therefore both have a row 0 sitting next to
+ * each other, and every lookup has to tell them apart.
+ */
+describe('two containers sharing a parent', () => {
+  const A = 'test-form:container-a';
+  const B = 'test-form:container-b';
+
+  const renderTwoTracks = () => {
+    const onMoveA = jest.fn().mockReturnValue(true);
+    const onMoveB = jest.fn().mockReturnValue(true);
+
+    const Both = () => {
+      const [, bump] = useState(0);
+      const wrap = (fn: jest.Mock) => (from: number, to: number) => {
+        const r = fn(from, to);
+        bump((n) => n + 1);
+        return r;
+      };
+      return (
+        <div>
+          {[0, 1, 2].map((i) => (
+            <Row
+              key={`a${i}`}
+              index={i}
+              rowCount={3}
+              trackId={A}
+              onMove={wrap(onMoveA)}
+            />
+          ))}
+          {[0, 1, 2].map((i) => (
+            <Row
+              key={`b${i}`}
+              index={i}
+              rowCount={3}
+              trackId={B}
+              onMove={wrap(onMoveB)}
+            />
+          ))}
+        </div>
+      );
+    };
+
+    const { container } = render(<Both />);
+    // Container A occupies 0-60, container B 60-120, stacked down the page.
+    container.querySelectorAll(`[${ROW_ATTR}]`).forEach((row) => {
+      const i = Number(row.getAttribute(ROW_ATTR));
+      const base = row.getAttribute(TRACK_ATTR) === A ? 0 : 3 * ROW_HEIGHT;
+      (row as HTMLElement).getBoundingClientRect = () =>
+        ({
+          top: base + i * ROW_HEIGHT,
+          bottom: base + (i + 1) * ROW_HEIGHT,
+          left: 0,
+          right: 100
+        } as DOMRect);
+    });
+
+    const gripIn = (trackId: string, index: number) =>
+      container.querySelector(
+        `[${TRACK_ATTR}="${trackId}"][${ROW_ATTR}="${index}"] [${HANDLE_ATTR}]`
+      ) as HTMLElement;
+
+    return { container, onMoveA, onMoveB, gripIn };
+  };
+
+  it('drags within its own container, leaving the other alone', () => {
+    const { onMoveA, onMoveB, gripIn } = renderTwoTracks();
+    const handle = gripIn(B, 0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 60 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 115 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 115 });
+
+    // B's own rows span 60-120, so carrying row 0 to 115 lands it last.
+    expect(onMoveB).toHaveBeenCalledWith(0, 2);
+    expect(onMoveA).not.toHaveBeenCalled();
+  });
+
+  it('never displaces a row belonging to the other container', () => {
+    const { container, gripIn } = renderTwoTracks();
+    const handle = gripIn(B, 0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 60 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 115 });
+
+    // Count only rows that were DISPLACED, never the one under the pointer -
+    // the dragged row always carries a transform and would mask the bug.
+    const displaced = (trackId: string) =>
+      [...container.querySelectorAll(`[${TRACK_ATTR}="${trackId}"]`)].filter(
+        (el) => el !== handle.closest(`[${ROW_ATTR}]`) &&
+          (el as HTMLElement).style.transform
+      ).length;
+
+    // Container A is untouched; B's own rows move out of the way. Unscoped,
+    // the shift map collapses on the duplicated indices and nothing moves.
+    expect(displaced(A)).toBe(0);
+    expect(displaced(B)).toBeGreaterThan(0);
+
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 115 });
+  });
+
+  it('marks only its own rows as dragging', () => {
+    const { container, gripIn } = renderTwoTracks();
+    const handle = gripIn(B, 0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 60 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 115 });
+
+    const marked = (trackId: string) =>
+      container.querySelectorAll(
+        `[${TRACK_ATTR}="${trackId}"][${DRAGGING_ATTR}]`
+      ).length;
+
+    expect(marked(B)).toBe(3);
+    expect(marked(A)).toBe(0);
+
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 115 });
+  });
+
+  it('steps with the arrow keys inside its own container only', () => {
+    const { onMoveA, onMoveB, gripIn } = renderTwoTracks();
+
+    // The LAST row of the FIRST container. It has nowhere to go, but the row
+    // below it on screen is container B's first - unscoped, that becomes the
+    // step target and container A silently reorders itself.
+    fireEvent.keyDown(gripIn(A, 2), { key: 'ArrowDown' });
+
+    expect(onMoveA).not.toHaveBeenCalled();
+    expect(onMoveB).not.toHaveBeenCalled();
+  });
+});
 
 describe('pointer drag', () => {
   it('commits a move once the row has been carried past its neighbours', () => {

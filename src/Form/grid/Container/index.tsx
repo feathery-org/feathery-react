@@ -5,7 +5,7 @@ import HoverTooltip from '../../../elements/components/HoverTooltip';
 import { replaceTextVariables } from '../../../elements/components/TextNodes';
 import { isMobile as _isMobile } from '../../../utils/browser';
 import { RepeatRowHandle, useRepeatRowReorder } from '../RepeatReorder';
-import { ROW_ATTR, rowRevealStyles } from '../RepeatReorder/styles';
+import { ROW_ATTR, TRACK_ATTR, rowRevealStyles } from '../RepeatReorder/styles';
 
 type ContainerProps = PropsWithChildren & {
   node: any;
@@ -120,7 +120,9 @@ export const Container = ({
         stepId={form.activeStep?.id}
         assistantEnabled={form.formSettings.assistantEnabled}
         {...tooltipHoverProps}
-        {...(reorder ? { [ROW_ATTR]: reorder.index } : {})}
+        {...(reorder
+          ? { [ROW_ATTR]: reorder.index, [TRACK_ATTR]: reorder.trackId }
+          : {})}
         overlay={
           reorder ? <RepeatRowHandle {...reorder} rowRef={ref} /> : undefined
         }
