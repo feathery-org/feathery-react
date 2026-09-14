@@ -499,10 +499,13 @@ export function collectRobinRuns(doc: any): RevisionRun[] {
 }
 
 /**
- * The bucket a display revision steps/counts under. A replace's halves share
- * their hunk group; every assistant revision (content or formatting) collapses
- * into ONE bucket — a Robin turn is a single logical edit, and a session holds
- * at most one turn. Returns null for revisions that are not ours.
+ * The bucket a display revision steps/counts under. Every revision — assistant
+ * or human — groups by its hunk group, so one CONTIGUOUS block of edits is one
+ * step: a replace's halves share a hunk id (emitInlineHunks), and consecutive
+ * same-author block insertions coalesce into one ins_block hunk (emitHunks), so
+ * e.g. a whole table Robin inserted steps as a single edit. Grouping is by the
+ * edit's shape, NOT by session/turn, so it stays correct when a session holds
+ * several assistant turns. Returns null for revisions that are not ours.
  */
 export function editGroupKey(revision: any): string | null {
   let cd: any;
@@ -512,9 +515,6 @@ export function editGroupKey(revision: any): string | null {
     return null;
   }
   if (cd.source !== 'history') return null;
-  const author = String(revision?.author ?? '');
-  if (authorKeyOf(author.replace(FMT_AUTHOR_PREFIX, '')) === 'robin')
-    return 'robin-turn';
   return String(cd.group ?? revision.revisionId ?? '');
 }
 

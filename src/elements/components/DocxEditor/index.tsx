@@ -157,12 +157,15 @@ function DocxEditor({
   const [saving, setSaving] = useState(false);
   // Brief feedback shown after an explicit Save — the button otherwise gives
   // no sign of whether the document actually persisted.
-  // Binding-error modal shown when an action hits the export gate. Save and
+  // Confirmation / warning modal. Primarily the binding-error export gate, but
+  // also reused for plain confirmations (e.g. Restore) — `title` overrides the
+  // heading so a confirm doesn't inherit the binding-error label. Save and
   // download offer a consented escape hatch ("Save Anyway" / "Download
   // Anyway"); sign/send show it without one — informational, Close only. The
   // table-delete confirmation reuses it with its own title and a cancel hook.
   const [gateWarning, setGateWarning] = useState<{
     message: string;
+    /** Heading; defaults to the binding-error label when omitted. */
     title?: string;
     confirmLabel?: string;
     confirmTitle?: string;
@@ -498,21 +501,10 @@ function DocxEditor({
             pendingCount: preview.pendingCount
           };
         } else {
-          // The open session has no diff of its own (between sessions, or right
-          // after accepting a suggestion, which nets to no change) — so instead
-          // of a plain document, show the most recent session that DID produce a
-          // diff, so "Current" reflects the last change's redlines.
-          const lastWithDiff = historyVersions.find(
-            (v) =>
-              v.id !== version.id && (v.change_count ?? 0) > 0 && !!v.final_sfdt
-          );
-          if (lastWithDiff) {
-            setLiveDoc(null);
-            setViewingVersion(lastWithDiff);
-            setVersionMeta(null);
-            return;
-          }
-          // Nothing anywhere to diff: show the current document plain.
+          // No in-progress session diff (between sessions, or right after a
+          // restore/accept that nets to no change): show the current document
+          // plain. Selecting a row always highlights THAT row — never redirect
+          // to another version, which made the panel jump to a prior one.
           try {
             const sfdt = editor?.serialize?.();
             if (sfdt) {
@@ -527,7 +519,7 @@ function DocxEditor({
       setViewingVersion(version);
       setVersionMeta(null);
     },
-    [editor, historySession, historyVersions]
+    [editor, historySession]
   );
 
   // Back to the live editor (its toolbar returns because viewingVersion clears).
@@ -781,6 +773,7 @@ function DocxEditor({
     if (!history || !viewingVersion) return;
     const target = viewingVersion;
     setGateWarning({
+      title: 'Restore this version',
       message:
         'Restore this version? Your current document is saved ' +
         'as a version first, so you can undo this.',
@@ -789,6 +782,13 @@ function DocxEditor({
       proceed: async () => {
         setGateWarning(null);
         try {
+          // Persist in-progress edits as a proper, DIFFED version BEFORE
+          // restoring. Restore otherwise snapshots the still-open session
+          // docx-only on the backend, so those edits would lose their redlines
+          // (the "saved as a version first" the dialog promises). Closing the
+          // session here uploads its diff; the backend then sees it already
+          // closed and skips the docx-only snapshot.
+          await historySession.save();
           await history.restoreVersion(target.id);
           exitVersionView();
           flashSaveToast('success', 'Restored — saved as a new version');

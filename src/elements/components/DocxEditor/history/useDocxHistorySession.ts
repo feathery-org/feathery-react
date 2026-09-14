@@ -360,10 +360,38 @@ export function useDocxHistorySession(
       }
     });
 
-    return { slices, scheduler, tracker };
+    // Persist the open session's redlines WITHOUT closing it. Called when an
+    // assistant turn ends so Robin's edits get their diff uploaded right away
+    // (durable against a tab-death before the session actually closes), while
+    // user and assistant edits keep sharing one session. closeSession only
+    // uploads final_sfdt + changes — it does NOT close the row on the backend —
+    // so editing continues in the same session afterwards.
+    const checkpointSession = () => {
+      const meta = tracker.currentMeta();
+      if (!meta || !s0Ref.current) return;
+      let fStr: string | null = null;
+      try {
+        fStr = editorRef.current?.serialize() ?? null;
+      } catch {
+        fStr = null;
+      }
+      if (!fStr) return;
+      const snap: CloseSnapshot = {
+        fStr,
+        fAuthor: currentAuthorRef.current,
+        s0: s0Ref.current,
+        slices: slices.all(),
+        robinRuns: robinRunsRef.current
+      };
+      // Fire-and-forget; closeSession swallows its own network errors (the
+      // .catch is just to satisfy no-floating-promises).
+      closeSession(meta.sessionId, meta.authors, snap).catch(() => undefined);
+    };
+
+    return { slices, scheduler, tracker, checkpointSession };
   }
 
-  const { scheduler, tracker } = engine;
+  const { scheduler, tracker, checkpointSession } = engine;
 
   // Snapshot the pristine document as the diff baseline once it finishes opening
   // and no session is in flight. This is the true pre-edit S0 the diff needs;
@@ -419,7 +447,8 @@ export function useDocxHistorySession(
   );
 
   // Assistant turn START snapshots the pre-batch document (the user→Robin
-  // slice boundary); turn END closes the session.
+  // slice boundary); turn END checkpoints (uploads the turn's redlines) but
+  // leaves the session open so user + assistant edits share it.
   useEffect(() => {
     if (!editor || !host || readOnly) return undefined;
     return onAssistantSessionChange(editor, (active) => {
@@ -430,11 +459,15 @@ export function useDocxHistorySession(
           preTurnSnapshotRef.current = null;
         }
       } else {
+        // An assistant turn ending no longer CLOSES the session — user and
+        // assistant edits share one session (a version is cut on save / idle /
+        // restore instead). We only checkpoint here: upload the turn's redlines
+        // so they're durable, while the session stays open.
         preTurnSnapshotRef.current = null;
-        tracker.noteTurnEnd();
+        checkpointSession();
       }
     });
-  }, [editor, host, readOnly, tracker]);
+  }, [editor, host, readOnly, checkpointSession]);
 
   // Idle sessions close on their own.
   useEffect(() => {

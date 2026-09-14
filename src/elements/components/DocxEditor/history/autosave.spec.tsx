@@ -172,7 +172,7 @@ describe('useDocxHistorySession', () => {
     expect(meta.closeSession).toBeUndefined();
   });
 
-  it('closes the session when the assistant turn ends', async () => {
+  it('checkpoints (uploads redlines) on assistant turn end WITHOUT closing the session', async () => {
     const { view, editor, save, host } = setup();
 
     setAssistantSessionActive(editor, true); // a turn is under way
@@ -180,13 +180,26 @@ describe('useDocxHistorySession', () => {
     act(() => setAssistantSessionActive(editor, false)); // turn ends
     await flush();
 
-    expect(save).toHaveBeenCalledTimes(1);
-    expect(save.mock.calls[0][1].closeSession).toBe(true);
-    // The edit was attributed to Robin.
-    expect(save.mock.calls[0][1].authors).toEqual([
+    // The turn's redlines are uploaded (durable) via the close endpoint...
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+    expect(host.closeVersion.mock.calls[0][1].authors).toEqual([
       { kind: 'assistant', label: 'Robin' }
     ]);
-    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+    // ...but the session is NOT closed: no close-flag PATCH fired, so user and
+    // assistant edits keep sharing this session.
+    expect(save.mock.calls.some((c) => c[1]?.closeSession === true)).toBe(
+      false
+    );
+
+    // A follow-up user edit continues the SAME session (no new session opened):
+    // an explicit save then closes it, and closeVersion is called for that same
+    // session id.
+    act(() => view.result.current.onEdit({ assistant: false }));
+    const sessionId = host.closeVersion.mock.calls[0][0];
+    await act(async () => {
+      await view.result.current.save();
+    });
+    expect(host.closeVersion.mock.calls.at(-1)?.[0]).toBe(sessionId);
   });
 
   it('attributes Robin’s first op to Robin via the pre-turn snapshot', async () => {
