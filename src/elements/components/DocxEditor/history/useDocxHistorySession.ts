@@ -123,6 +123,8 @@ export function useDocxHistorySession(
   editorRef.current = editor;
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const saveRef = useRef(save);
   saveRef.current = save;
   const exportRef = useRef(exportDoc);
@@ -348,7 +350,7 @@ export function useDocxHistorySession(
       },
       canSave: () => {
         const ed = editorRef.current;
-        if (!ed || loadingRef.current) return false;
+        if (!ed || loadingRef.current || readOnlyRef.current) return false;
         if (isOpeningDocument(ed) || isAssistantWriting(ed)) return false;
         return canSaveRef.current ? canSaveRef.current() : true;
       },
@@ -515,6 +517,12 @@ export function useDocxHistorySession(
     const iv = setInterval(() => tracker.checkIdle(), IDLE_CHECK_MS);
     return () => clearInterval(iv);
   }, [host, readOnly, tracker]);
+
+  // Finalization/signing can make the editor read-only while a retry timer is
+  // armed. No further autosave is valid once that transition happens.
+  useEffect(() => {
+    if (readOnly) scheduler.cancel();
+  }, [readOnly, scheduler]);
 
   // A new document (regenerate / envelope change) abandons the open session.
   const firstRun = useRef(true);
