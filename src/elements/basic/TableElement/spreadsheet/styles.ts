@@ -254,20 +254,36 @@ export const columnHeaderLabelStyle = {
   whiteSpace: 'nowrap'
 } as const;
 
+// A 9px grab area straddling the column's right grid line, drawing a 2px
+// line exactly on that line while hovered or dragged. The header is
+// border-box, so its padding edge sits 1px inside the line: the offsets
+// below are measured from there.
+const RESIZER_HIT_WIDTH = 9;
+const RESIZER_LINE_WIDTH = 2;
+
 export const columnResizerStyle = {
   position: 'absolute',
   top: 0,
-  right: '-3px',
+  right: `-${(RESIZER_HIT_WIDTH - 1) / 2 + 1}px`,
   zIndex: 5,
-  width: '7px',
+  width: `${RESIZER_HIT_WIDTH}px`,
   height: '100%',
   cursor: 'col-resize',
   touchAction: 'none',
-  '&:hover': { backgroundColor: colors.accent }
+  '&::after': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: `${(RESIZER_HIT_WIDTH - 1) / 2 - RESIZER_LINE_WIDTH + 1}px`,
+    width: `${RESIZER_LINE_WIDTH}px`,
+    backgroundColor: 'transparent'
+  },
+  '&:hover::after': { backgroundColor: colors.accent }
 } as const;
 
 export const columnResizerActiveStyle = {
-  backgroundColor: colors.accent
+  '&::after': { backgroundColor: colors.accent }
 } as const;
 
 export const dropIndicatorStyle = {
