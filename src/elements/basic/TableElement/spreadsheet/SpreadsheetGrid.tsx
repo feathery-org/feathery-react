@@ -709,7 +709,7 @@ function HeaderCell({
       <span
         css={{
           ...columnHeaderLabelStyle,
-          ...(inSelection ? { color: 'inherit' } : {})
+          ...(fullySelected ? { color: 'inherit' } : {})
         }}
       >
         {label}
