@@ -372,14 +372,21 @@ export function useHubTableSource({
     return () => featheryWindow().removeEventListener('focus', onFocus);
   }, [enabled, refetch]);
 
-  // A filter change that arrived while edits were buffered was turned away by
-  // the guard above; once the buffer clears, catch up so the rows match the
-  // filters again rather than waiting for the window to regain focus.
-  const wasBlocked = useRef(blockRefetch);
+  // A filter change that arrives while edits are buffered is turned away by
+  // the guard above. Remember the filters in force when the block began, and
+  // once it lifts reload only if they moved meanwhile — so the rows catch up
+  // without a second fetch on a plain save or discard.
+  const blockedWhereKey = useRef<string | null>(null);
   useEffect(() => {
-    if (wasBlocked.current && !blockRefetch) refetch();
-    wasBlocked.current = blockRefetch;
-  }, [blockRefetch, refetch]);
+    if (blockRefetch) {
+      blockedWhereKey.current ??= whereKey;
+      return;
+    }
+    const stale =
+      blockedWhereKey.current !== null && blockedWhereKey.current !== whereKey;
+    blockedWhereKey.current = null;
+    if (stale) refetch();
+  }, [blockRefetch, whereKey, refetch]);
 
   const hubFieldValues = useMemo(() => {
     const values: Record<string, any[]> = {};

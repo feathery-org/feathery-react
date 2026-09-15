@@ -198,6 +198,12 @@ describe('useHubTableSource row filters', () => {
         where: [{ fieldId: 'account', value: 'globex' }]
       })
     );
+
+    // A block that lifts with the filters unchanged costs no extra fetch.
+    rerender({ blockRefetch: true });
+    rerender({ blockRefetch: false });
+    await act(async () => {});
+    expect(dataHubAction).toHaveBeenCalledTimes(2);
   });
 
   test('reloads the rows when a compared field changes, and only then', async () => {
