@@ -5,6 +5,7 @@ import {
   installRevisionGroupIsolation
 } from '../../../utils/documentEditorPrimitives';
 import { dynamicImport } from '../../../integrations/utils';
+import { featheryDoc } from '../../../utils/browser';
 import {
   configureTrackedChangeReview,
   resizeDocxEditor,
@@ -25,36 +26,37 @@ jest.mock('../../../integrations/utils', () => ({
 }));
 
 describe('configureTrackedChangeReview', () => {
+  const PANE_STYLE_ID = 'feathery-hide-de-review-pane';
   beforeEach(() => jest.clearAllMocks());
+  afterEach(() => featheryDoc().getElementById(PANE_STYLE_ID)?.remove());
 
   it('leaves a gated-off editor fully native', () => {
-    const editor = {
-      showRevisions: true,
-      enableTrackChanges: true,
-      commentReviewPane: { isUserClosed: false }
-    };
+    const editor = { showRevisions: true, enableTrackChanges: true };
 
     configureTrackedChangeReview(editor, false);
 
     expect(editor.showRevisions).toBe(true);
     expect(editor.enableTrackChanges).toBe(true);
-    expect(editor.commentReviewPane.isUserClosed).toBe(false);
+    // No native-pane suppression style is injected for a gated-off editor.
+    expect(featheryDoc().getElementById(PANE_STYLE_ID)).toBeNull();
     expect(installRevisionGroupIsolation).not.toHaveBeenCalled();
     expect(disableUserTrackChanges).not.toHaveBeenCalled();
   });
 
   it('installs review behavior only when the rail is enabled', () => {
-    const editor = {
-      showRevisions: true,
-      enableTrackChanges: true,
-      commentReviewPane: { isUserClosed: false }
-    };
+    const editor = { showRevisions: true, enableTrackChanges: true };
 
     configureTrackedChangeReview(editor, true);
 
     expect(editor.showRevisions).toBe(false);
     expect(editor.enableTrackChanges).toBe(false);
-    expect(editor.commentReviewPane.isUserClosed).toBe(true);
+    // The native Changes/Comments pane and the Restrict Editing pane (which
+    // Syncfusion auto-opens on click in a read-only editor) are hidden via an
+    // injected stylesheet rule.
+    const style = featheryDoc().getElementById(PANE_STYLE_ID);
+    expect(style).toBeTruthy();
+    expect(style?.textContent).toContain('.e-de-review-pane');
+    expect(style?.textContent).toContain('.e-de-restrict-pane');
     expect(installRevisionGroupIsolation).toHaveBeenCalledWith(editor);
     expect(disableUserTrackChanges).toHaveBeenCalledWith(editor);
   });
@@ -320,5 +322,89 @@ describe('useDocxEditor across a review-gate flip', () => {
     expect(fetchCalls).toBeGreaterThan(1);
     expect(editors[1].openAsync).toHaveBeenCalled();
     expect(editors[1].open).not.toHaveBeenCalledWith(CARRIED);
+  });
+
+  it('fires onEdit per content change, tagged with assistant authorship', async () => {
+    const onEdit = jest.fn();
+    const Edited = () => {
+      const api = useDocxEditor({
+        source: { url: 'https://example.test/doc.docx' },
+        serviceUrl: 'https://example.test/service/',
+        reviewChanges: false,
+        licenseKey: 'test-key',
+        onEdit
+      });
+      return <div ref={api.containerRef} />;
+    };
+
+    render(<Edited />);
+    await settle();
+
+    const ed = editors[0] as any;
+    const registration = ed.addEventListener.mock.calls.find(
+      ([name]: [string]) => name === 'contentChange'
+    );
+    expect(registration).toBeTruthy();
+    const fireContentChange = registration[1];
+
+    // A human edit: the assistant session flag is not set on the instance.
+    await act(async () => fireContentChange());
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: false });
+
+    // An assistant-driven edit: the bridge's session flag lives on the editor.
+    ed.__featheryAssistantSession = true;
+    await act(async () => fireContentChange());
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: true });
+
+    expect(onEdit).toHaveBeenCalledTimes(2);
+  });
+
+  it('routes Ctrl/Cmd+S to onSaveShortcut and blocks the default SFDT download', async () => {
+    const onSaveShortcut = jest.fn();
+    const Edited = () => {
+      const api = useDocxEditor({
+        source: { url: 'https://example.test/doc.docx' },
+        serviceUrl: 'https://example.test/service/',
+        reviewChanges: false,
+        licenseKey: 'test-key',
+        onSaveShortcut
+      });
+      return <div ref={api.containerRef} />;
+    };
+
+    render(<Edited />);
+    await settle();
+
+    const ed = editors[0] as any;
+    const registration = ed.addEventListener.mock.calls.find(
+      ([name]: [string]) => name === 'keyDown'
+    );
+    expect(registration).toBeTruthy();
+    const fireKeyDown = registration[1];
+
+    // Ctrl+S: handled + default prevented + routed to the host save.
+    const preventDefault = jest.fn();
+    const args = {
+      isHandled: false,
+      event: { ctrlKey: true, key: 's', keyCode: 83, preventDefault }
+    };
+    await act(async () => fireKeyDown(args));
+    expect(args.isHandled).toBe(true);
+    expect(preventDefault).toHaveBeenCalled();
+    expect(onSaveShortcut).toHaveBeenCalledTimes(1);
+
+    // A plain keystroke is left alone.
+    const plain = {
+      isHandled: false,
+      event: {
+        ctrlKey: false,
+        key: 'a',
+        keyCode: 65,
+        preventDefault: jest.fn()
+      }
+    };
+    await act(async () => fireKeyDown(plain));
+    expect(plain.isHandled).toBe(false);
+    expect(onSaveShortcut).toHaveBeenCalledTimes(1);
   });
 });

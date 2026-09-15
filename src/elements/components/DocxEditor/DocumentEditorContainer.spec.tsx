@@ -38,6 +38,8 @@ jest.mock('./index', () => {
     onEditorReady,
     onChange,
     onReady,
+    onSave,
+    history,
     reviewChanges,
     terminalAction,
     onTerminalAction,
@@ -89,6 +91,24 @@ jest.mock('./index', () => {
           key: 'clean',
           'data-testid': `clean:${source?.url}`,
           onClick: () => onChange(false)
+        }),
+      onSave &&
+        React.createElement('button', {
+          key: 'save',
+          'data-testid': `save:${source?.url}`,
+          onClick: () =>
+            onSave(new Blob(['docx']), {
+              sessionId: 'sess-1',
+              sessionStartedAt: '2026-09-02T00:00:00.000Z',
+              authors: [{ kind: 'user', label: 'You' }],
+              closeSession: true
+            })
+        }),
+      history &&
+        React.createElement('button', {
+          key: 'restore',
+          'data-testid': `restore:${source?.url}`,
+          onClick: () => history.restoreVersion('version-1')
         })
     );
   };
@@ -96,6 +116,10 @@ jest.mock('./index', () => {
 
 const mockFinalizeEnvelope = jest.fn();
 const mockFinalizeEnvelopeReview = jest.fn();
+const mockSaveEnvelopeFile = jest.fn().mockResolvedValue({});
+const mockRestoreEnvelopeVersion = jest
+  .fn()
+  .mockResolvedValue({ id: 'e', file: 'restored.docx', editor_file: null });
 jest.mock('../../../utils/featheryClient', () => ({
   __esModule: true,
   API_URL: 'https://api.test/',
@@ -105,7 +129,9 @@ jest.mock('../../../utils/featheryClient', () => ({
     this.finalizeEnvelopeReview = (...args: any[]) =>
       mockFinalizeEnvelopeReview(...args);
     this.getCurrentEnvelope = jest.fn().mockResolvedValue({});
-    this.saveEnvelopeFile = jest.fn().mockResolvedValue({});
+    this.saveEnvelopeFile = (...args: any[]) => mockSaveEnvelopeFile(...args);
+    this.restoreEnvelopeVersion = (...args: any[]) =>
+      mockRestoreEnvelopeVersion(...args);
     this.downloadEnvelopePdf = jest.fn().mockResolvedValue(new Blob());
   })
 }));
@@ -565,6 +591,47 @@ describe('DocumentEditorContainer signing outcomes', () => {
     initState.formSchemas = {};
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
     jest.restoreAllMocks();
+  });
+
+  it('forwards version-history save metadata to the client', async () => {
+    mockSaveEnvelopeFile.mockClear();
+    seed({});
+    const { getByTestId } = mount();
+    const saveId = `save:https://example.com/${CONTAINER}.docx`;
+    await waitFor(() => expect(getByTestId(saveId)).toBeTruthy());
+
+    await act(async () => {
+      getByTestId(saveId).click();
+    });
+
+    await waitFor(() => expect(mockSaveEnvelopeFile).toHaveBeenCalled());
+    const [envelopeId, , fileName, meta] = mockSaveEnvelopeFile.mock.calls[0];
+    expect(envelopeId).toBe(`envelope-${CONTAINER}`);
+    expect(fileName).toBe('document.docx');
+    expect(meta).toMatchObject({
+      sessionId: 'sess-1',
+      closeSession: true,
+      authors: [{ kind: 'user', label: 'You' }]
+    });
+  });
+
+  it('restores a version through the client', async () => {
+    mockRestoreEnvelopeVersion.mockClear();
+    seed({});
+    const { getByTestId } = mount();
+    const restoreId = `restore:https://example.com/${CONTAINER}.docx`;
+    await waitFor(() => expect(getByTestId(restoreId)).toBeTruthy());
+
+    await act(async () => {
+      getByTestId(restoreId).click();
+    });
+
+    await waitFor(() => expect(mockRestoreEnvelopeVersion).toHaveBeenCalled());
+    const [envelopeId, versionId, sessionId] =
+      mockRestoreEnvelopeVersion.mock.calls[0];
+    expect(envelopeId).toBe(`envelope-${CONTAINER}`);
+    expect(versionId).toBe('version-1');
+    expect(typeof sessionId).toBe('string'); // a fresh uuid
   });
 
   it('sends the reviewed docx to DocuSign instead of the Feathery sign page', async () => {
