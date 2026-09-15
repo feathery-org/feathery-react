@@ -15,6 +15,7 @@ import {
   INSERT_CLASS,
   KEYBOARD_FOCUS_ATTR,
   REORDER_CLASS,
+  TARGET_SIZE,
   rowRevealStyles
 } from '../styles';
 
@@ -36,8 +37,15 @@ describe('rowRevealStyles', () => {
     // and the seam faded out and back in.
     const bridge = (rowRevealStyles as any)['&::before'];
     expect(bridge).toMatchObject({ position: 'absolute', content: '""' });
-    expect(bridge.insetInlineStart).toBe(`-${GUTTER_WIDTH}px`);
-    expect(bridge.width).toBe(`${GUTTER_WIDTH}px`);
+    // Covers the gutter with half a target of slack past the buttons, so a
+    // pointer drifting outward along the column stays on the row.
+    const reach = GUTTER_WIDTH + TARGET_SIZE / 2;
+    expect(bridge.insetInlineStart).toBe(`-${reach}px`);
+    expect(bridge.width).toBe(`${reach}px`);
+    // Reaches down as far as the bottom seam does, and no further up: the row
+    // above owns that gap.
+    expect(bridge.insetBlockEnd).toBe(`-${TARGET_SIZE / 2}px`);
+    expect(bridge.insetBlockStart).toBe(0);
   });
 
   it('reveals the seam on hover and nothing else', () => {

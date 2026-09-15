@@ -149,18 +149,23 @@ export const clusterInsideStyles = {
 
 /** Applied to the row so its own hover drives the chrome. */
 export const rowRevealStyles = {
-  // The chrome hangs in a gutter OUTSIDE the row's box, and the buttons stop
-  // short of the row's edge. Reaching for one meant the pointer crossed a few
-  // pixels that belonged to neither, the row lost its hover, and the `+` faded
-  // out and back in on the way. This strip makes the gutter part of the row
-  // for hit-testing, so the hover holds all the way to the button.
+  // The chrome hangs in a gutter OUTSIDE the row's box. Between the buttons
+  // and the row's edge, a few pixels past the buttons on the outside, and in
+  // the gap beneath the row where its bottom seam sits, the pointer was over
+  // ground that belonged to no row - so a hand travelling down the column from
+  // the bin to the `+` lost the hover and the whole cluster faded. This strip
+  // makes all of that part of the row for hit-testing: the gutter plus half a
+  // target of slack outward, and half a target downward to meet the seam,
+  // which reaches that far past the edge. Not upward: the row above already
+  // owns that gap, and two rows claiming it would hand the hover to the wrong
+  // one right beside its `+`.
   '&::before': {
     content: '""',
     position: 'absolute' as const,
     insetBlockStart: 0,
-    insetBlockEnd: 0,
-    insetInlineStart: `-${GUTTER_WIDTH}px`,
-    width: `${GUTTER_WIDTH}px`
+    insetBlockEnd: `-${TARGET_SIZE / 2}px`,
+    insetInlineStart: `-${GUTTER_WIDTH + TARGET_SIZE / 2}px`,
+    width: `${GUTTER_WIDTH + TARGET_SIZE / 2}px`
   },
   // The row under the pointer, or the row a keyboard user has reached. Not
   // plain `:focus-within`: a pointer click leaves focus on the grip as well,
