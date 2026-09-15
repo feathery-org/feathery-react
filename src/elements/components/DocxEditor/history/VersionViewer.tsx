@@ -186,10 +186,14 @@ export default function VersionViewer({
     let cancelled = false;
     (async () => {
       try {
-        // With highlights available and enabled, patch the renderer and show
-        // revisions BEFORE opening so the first paint carries the highlights.
-        const wantHighlights = !doc.degraded && highlightsOn;
-        if (wantHighlights) {
+        // With highlights on, patch the renderer and show revisions BEFORE
+        // opening so the first paint carries the highlights. NOT gated on the
+        // version having a stored diff: a stored .docx can carry embedded
+        // tracked changes of its own (a version saved while suggestions were
+        // still awaiting review — what a restore brings back), and without the
+        // patch those render in Syncfusion's native author tint (a blue that
+        // matches nothing in our palette) instead of the author's wash.
+        if (highlightsOn) {
           try {
             // Inline author-coloured highlights. showRevisions stays ON so the
             // re-inserted deleted text lays out (false would show the accepted
@@ -216,10 +220,19 @@ export default function VersionViewer({
         }
         await loaded;
         if (cancelled) return;
-        if (wantHighlights) {
-          // Opening can re-open the review pane; keep it shut.
-          closeTrackedChangeReviewPane();
+        // Highlights off = the accepted (plain) view, explicitly and AFTER the
+        // open: opening a document that carries tracked changes can flip
+        // showRevisions back on natively, which would paint Syncfusion's own
+        // author tints over the "plain" view.
+        if (!highlightsOn) {
+          try {
+            viewer.showRevisions = false;
+          } catch {
+            /* decoration only */
+          }
         }
+        // Opening can re-open the review pane; keep it shut.
+        closeTrackedChangeReviewPane();
         // The raw-docx fallback still holds [[field]] / {{ jinja }} tokens (it
         // never went through the binding engine); populate them the way the live
         // editor does before showing the read-only version. The SFDT path is

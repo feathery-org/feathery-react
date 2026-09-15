@@ -36,6 +36,30 @@ export { RailErrorBoundary } from './RailErrorBoundary';
 
 type ActivePanel = PanelTab | null;
 
+// How long after a restore a nonzero pending-change count still counts as
+// "the restored version brought suggestions back" (reopen + rail refresh
+// comfortably finish within this; anything later is a new edit).
+const RESTORE_SUGGESTIONS_WINDOW_MS = 15_000;
+
+/** The restore-suggestions toast copy, or null when the pending count isn't
+ *  attributable to the last restore. Exported for tests. */
+export function restoredSuggestionsMessage(
+  count: number,
+  restoredAt: number,
+  now = Date.now()
+): string | null {
+  if (
+    count <= 0 ||
+    !restoredAt ||
+    now - restoredAt >= RESTORE_SUGGESTIONS_WINDOW_MS
+  )
+    return null;
+  return (
+    `This version includes ${count} unapproved suggestion` +
+    `${count === 1 ? '' : 's'} — review them in Suggested changes`
+  );
+}
+
 /** What a host's onSave may resolve with. `file` is the public copy of the
  *  saved document (content controls stripped server-side) — the only bytes
  *  downloads are allowed to serve. */
@@ -221,6 +245,11 @@ function DocxEditor({
   // Pending tracked-change count, reported by the (always-mounted) rail; drives
   // the toolbar's Changes badge and whether that button is offered at all.
   const [changesCount, setChangesCount] = useState(0);
+  // When the last restore finished. A restored .docx can carry back tracked
+  // changes that were still awaiting review when that version was saved; once
+  // the reopened document reports them (see the changesCount effect), a toast
+  // says so, and this timestamp scopes that toast to the restore itself.
+  const restoredAtRef = useRef(0);
 
   // A single dirty transition. Shared by ordinary edits (via the hook's
   // onDirty) and the section reorder, whose programmatic open() does not
@@ -564,14 +593,31 @@ function DocxEditor({
       bucket.push(rev);
     });
     if (!order.length) return;
+    // An inserted blank line is a paragraph-mark-only revision with an EMPTY
+    // range; stepping onto it lands the caret on an empty line with nothing to
+    // review ("steps on the empty line, never on the edit"). Step only among
+    // groups that carry visible content — fall back to all groups only if a
+    // version somehow has nothing but blank-line edits.
+    const hasContent = (revs: any[]): boolean =>
+      revs.some((r) =>
+        (r.range ?? []).some(
+          (x: any) => typeof x?.text === 'string' && x.text.length > 0
+        )
+      );
+    const contentOrder = order.filter((k) => hasContent(byGroup.get(k) ?? []));
+    const stepOrder = contentOrder.length ? contentOrder : order;
     const prev = changeStepRef.current;
     let next =
-      prev < 0 ? (direction === 1 ? 0 : order.length - 1) : prev + direction;
+      prev < 0
+        ? direction === 1
+          ? 0
+          : stepOrder.length - 1
+        : prev + direction;
     // Wrap so the steppers never dead-end.
-    if (next < 0) next = order.length - 1;
-    if (next >= order.length) next = 0;
+    if (next < 0) next = stepOrder.length - 1;
+    if (next >= stepOrder.length) next = 0;
     changeStepRef.current = next;
-    const group = byGroup.get(order[next]) ?? [];
+    const group = byGroup.get(stepOrder[next]) ?? [];
     // Ring the full edit (deletion + insertion), then scroll to it.
     try {
       setActiveInlineRevisions(ed, group);
@@ -580,7 +626,15 @@ function DocxEditor({
     }
     try {
       const selection = ed.selection;
-      selection?.selectRevision?.(group[0], undefined, undefined, true);
+      // Prefer a content-bearing revision so the caret lands on the edited text,
+      // not the paragraph break (empty line) that may precede it in the group.
+      const target =
+        group.find((r) =>
+          (r.range ?? []).some(
+            (x: any) => typeof x?.text === 'string' && x.text.length > 0
+          )
+        ) ?? group[0];
+      selection?.selectRevision?.(target, undefined, undefined, true);
       if (selection?.start && selection?.end) {
         ed.documentHelper?.scrollToPosition?.(selection.start, selection.end);
       }
@@ -611,14 +665,30 @@ function DocxEditor({
   // little longer than the success confirmation.
   const flashSaveToast = (
     type: 'success' | 'error' | 'info',
-    message: string
+    message: string,
+    durationMs?: number
   ) => {
     setSaveToast({ type, message });
     if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
     saveToastTimer.current = setTimeout(
       () => setSaveToast(null),
-      type === 'error' ? 5000 : 2500
+      durationMs ?? (type === 'error' ? 5000 : 2500)
     );
+  };
+
+  // The rail reports the live document's pending tracked-change count here.
+  // Right after a restore, a nonzero count means the restored version carried
+  // suggestions that were still awaiting review when it was saved (a .docx
+  // keeps its tracked changes) — say so, or the wash on those edits reads as a
+  // mystery. The time window scopes the toast to the restore's own reopen; a
+  // later assistant edit must not replay it.
+  const handleChangesCount = (count: number) => {
+    setChangesCount(count);
+    const message = restoredSuggestionsMessage(count, restoredAtRef.current);
+    if (message) {
+      restoredAtRef.current = 0;
+      flashSaveToast('success', message, 6000);
+    }
   };
 
   useEffect(
@@ -791,6 +861,7 @@ function DocxEditor({
           await historySession.save();
           await history.restoreVersion(target.id);
           exitVersionView();
+          restoredAtRef.current = Date.now();
           flashSaveToast('success', 'Restored — saved as a new version');
         } catch (err) {
           flashSaveToast('error', 'Could not restore this version');
@@ -964,7 +1035,7 @@ function DocxEditor({
               exitVersionView();
             }}
             reviewChanges={!!reviewChanges}
-            onChangesCount={setChangesCount}
+            onChangesCount={handleChangesCount}
             markDirty={markDirty}
             boundaryKey={`${railGeneration}:${openNonce ?? 0}`}
             history={history}

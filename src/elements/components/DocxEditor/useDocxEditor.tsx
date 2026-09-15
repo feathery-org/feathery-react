@@ -10,6 +10,7 @@ import {
 } from '../../../utils/documentEditorPrimitives';
 import { isAssistantWriting } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import { EJ2_SCRIPT_URL } from './constants';
+import { colorForRevisionAuthor } from './history/authorColors';
 import { loadStyles, waitForDocumentLoad, waitForEj } from './ejLoader';
 import { stampMissingContentControlColors } from './contentControlSafety';
 import { installDocumentTailInvariant } from './documentTailInvariant';
@@ -137,9 +138,9 @@ export function setAfterRenderCallback(ed: any, cb: (() => void) | null): void {
 export function installRevisionHighlightRendering(
   ed: any,
   // Optional per-author colouring. Given a revision's author, return that
-  // author's brand colour; the version viewer passes this so each person's
-  // edits are tinted their own colour (following the design mockup). Omitted by
-  // the live editor, which keeps the classic green-insert / red-delete washes.
+  // author's brand colour; the viewer and the live editor both pass this so
+  // each person's edits are tinted their own colour (following the design
+  // mockup). Omitted, the classic green-insert / red-delete washes apply.
   colorForRevision?: (author: string) => string | undefined
 ) {
   const renderer = ed?.documentHelper?.render;
@@ -576,8 +577,9 @@ export function installRevisionHighlightRendering(
 export function configureTrackedChangeReview(
   ed: any,
   enabled: boolean,
-  // Optional per-author colouring, forwarded to the highlight renderer. The
-  // version viewer passes this; the live editor omits it (classic green/red).
+  // Optional per-author colouring, forwarded to the highlight renderer. Both
+  // the version viewer and the live editor pass it; omitting it falls back to
+  // the classic green-insert / red-delete washes.
   colorForRevision?: (author: string) => string | undefined
 ): void {
   if (!enabled) return;
@@ -1045,7 +1047,12 @@ export function useDocxEditor({
         // cut/copy/paste, etc. (the built-in toolbar is disabled).
         ed.enableContextMenu = true;
         try {
-          configureTrackedChangeReview(ed, reviewGate);
+          // Per-author washes in the live canvas too: a pending tracked change
+          // is tinted its author's stable colour (Robin = brand red), matching
+          // the version viewer. This is the only attribution a restored
+          // version's tracked changes keep — a .docx stores the author name but
+          // has no field for our revision group tags.
+          configureTrackedChangeReview(ed, reviewGate, colorForRevisionAuthor);
           if (reviewGate) disableUserTrackChanges(ed, instance);
           // Engine-level fixes to the editing surface itself, not review
           // customizations: every host gets them, gated or not.
