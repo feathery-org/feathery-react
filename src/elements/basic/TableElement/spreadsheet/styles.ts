@@ -740,3 +740,82 @@ export const cellTooltipStyle = (blocking: boolean, above: boolean) =>
     pointerEvents: 'none',
     boxShadow: '0 4px 10px rgba(0, 0, 0, 0.22)'
   } as const);
+
+// Find-in-grid. The bar floats over the top-right of the sheet, below the
+// header so the column names stay readable; matches are tinted amber, the
+// convention every text editor's find uses, so they read apart from the blue
+// selection.
+export const SEARCH_MATCH_SHADING = { backgroundColor: '#fef3c7' } as const;
+export const SEARCH_CURRENT_SHADING = {
+  backgroundColor: '#fde68a',
+  borderColor: '#d97706'
+} as const;
+
+export const searchBarStyle = {
+  position: 'absolute',
+  // Clears the vertical scrollbar.
+  right: '20px',
+  zIndex: 50,
+  display: 'flex',
+  alignItems: 'center',
+  gap: '4px',
+  padding: '4px 6px',
+  backgroundColor: colors.white,
+  border: `1px solid ${colors.gray300}`,
+  borderRadius: '6px',
+  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
+  fontFamily: GRID_FONT_FAMILY,
+  fontSize: `${FONT_SIZE - 3}px`,
+  lineHeight: 1.4,
+  color: colors.gray900
+} as const;
+
+export const searchInputStyle = {
+  width: '180px',
+  padding: '4px 8px',
+  boxSizing: 'border-box',
+  border: `1px solid ${colors.gray300}`,
+  borderRadius: '4px',
+  backgroundColor: colors.white,
+  color: colors.gray900,
+  fontFamily: 'inherit',
+  fontSize: 'inherit',
+  lineHeight: 'inherit',
+  outline: 'none',
+  '&:focus': {
+    borderColor: colors.accent,
+    boxShadow: `0 0 0 1px ${colors.accent}`
+  }
+} as const;
+
+export const searchCountStyle = {
+  minWidth: '64px',
+  padding: '0 4px',
+  color: colors.gray500,
+  fontVariantNumeric: 'tabular-nums',
+  textAlign: 'center',
+  whiteSpace: 'nowrap'
+} as const;
+
+export const searchButtonStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '24px',
+  height: '24px',
+  padding: 0,
+  backgroundColor: colors.white,
+  border: `1px solid ${colors.gray300}`,
+  borderRadius: '4px',
+  cursor: 'pointer',
+  color: colors.gray700,
+  fontFamily: 'inherit',
+  fontSize: `${FONT_SIZE - 2}px`,
+  lineHeight: 1,
+  '&:hover:not(:disabled)': { backgroundColor: colors.gray100 },
+  '&:focus-visible': {
+    outline: `2px solid ${colors.accent}`,
+    outlineOffset: '1px'
+  },
+  '&:disabled': { opacity: 0.4, cursor: 'default' }
+} as const;

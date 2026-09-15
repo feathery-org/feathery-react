@@ -6,13 +6,17 @@ import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
 import { editorKindFor, parseCellInput, seedActionFor } from './fieldEditors';
 import { PendingChangesBar } from './PendingChangesBar';
+import { SearchBar } from './SearchBar';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
 import { cellErrorKey, CellRules } from './validation';
 import { CellIssues, countIssues, issueRank } from './issues';
 import {
   DEFAULT_COLUMN_WIDTH,
+  HEADER_HEIGHT,
   MIN_COLUMN_WIDTH,
   PENDING_BAR_HEIGHT,
+  SEARCH_CURRENT_SHADING,
+  SEARCH_MATCH_SHADING,
   spreadsheetViewportHeight
 } from './styles';
 import {
@@ -21,6 +25,7 @@ import {
   SpreadsheetTableState
 } from './table';
 import { useGridInteractions } from './useGridInteractions';
+import { useGridSearch } from './useGridSearch';
 import { useSpreadsheetHistory } from './useSpreadsheetHistory';
 
 const columnHelper = createColumnHelper<
@@ -274,6 +279,33 @@ export function SpreadsheetTable({
     [interactions, issues]
   );
 
+  const search = useGridSearch({
+    rows,
+    columns,
+    cellRules,
+    focusCell: interactions.focusCell
+  });
+
+  // Search tint sits under any Feathery-controlled shading: a rejected value
+  // stays red whether or not it also matches the query.
+  const shadeCell = useCallback<GetCellShading>(
+    (context) => {
+      const base = getCellShading?.(context);
+      if (base) return base;
+      const state = search.matchState(context.rowIndex, context.fieldKey);
+      if (state === 'current') return SEARCH_CURRENT_SHADING;
+      if (state === 'match') return SEARCH_MATCH_SHADING;
+      return null;
+    },
+    [getCellShading, search.matchState]
+  );
+
+  const closeSearch = useCallback(() => {
+    search.close();
+    // Escape in the find bar hands the keyboard back to the grid.
+    gridRef.current?.focus();
+  }, [search]);
+
   const counts = useMemo(() => countIssues(cellIssues ?? {}), [cellIssues]);
   const issueCount = counts.blocking + counts.errors + counts.warnings;
   // The bar also stays up while a save is in flight, so the write has somewhere
@@ -293,6 +325,7 @@ export function SpreadsheetTable({
   return (
     <div
       css={{
+        position: 'relative',
         display: 'flex',
         flex: '1 1 auto',
         flexDirection: 'column',
@@ -300,6 +333,18 @@ export function SpreadsheetTable({
         ...(fitHeight ? { height: `${fitHeight}px` } : {})
       }}
     >
+      {search.open && (
+        <SearchBar
+          query={search.query}
+          onQueryChange={search.setQuery}
+          matchCount={search.matches.length}
+          cursor={search.cursor}
+          onStep={search.step}
+          onClose={closeSearch}
+          focusToken={search.focusToken}
+          top={(showBar ? PENDING_BAR_HEIGHT : 0) + HEADER_HEIGHT + 8}
+        />
+      )}
       {showBar && pending ? (
         <PendingChangesBar
           pendingCount={pending.count}
@@ -318,11 +363,12 @@ export function SpreadsheetTable({
         interactions={interactions}
         canEdit={canEdit}
         rowIndexById={rowIndexById}
-        getCellShading={getCellShading}
+        getCellShading={shadeCell}
         cellRules={cellRules}
         onAddColumn={onAddColumn}
         onInsertRow={onInsertRow}
         onDeleteRow={onDeleteRow}
+        onOpenSearch={search.openSearch}
       />
     </div>
   );

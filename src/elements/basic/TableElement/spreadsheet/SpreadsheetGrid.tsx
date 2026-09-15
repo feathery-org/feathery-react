@@ -93,6 +93,8 @@ type SpreadsheetGridProps = {
   onInsertRow?: (atIndex: number) => void;
   /** Enables the row context menu's delete item. */
   onDeleteRow?: (rowIndex: number) => void;
+  /** Opens the find bar; bound to Mod+F while the grid has focus. */
+  onOpenSearch?: () => void;
 };
 
 type FillDrag = {
@@ -120,7 +122,8 @@ export const SpreadsheetGrid = React.forwardRef<
     cellRules,
     onAddColumn,
     onInsertRow,
-    onDeleteRow
+    onDeleteRow,
+    onOpenSearch
   },
   forwardedRef
 ) {
@@ -175,7 +178,8 @@ export const SpreadsheetGrid = React.forwardRef<
       { hotkey: 'Mod+A', callback: () => table.selectAllCells() },
       { hotkey: 'Mod+Z', callback: interactions.undo },
       { hotkey: 'Mod+Shift+Z', callback: interactions.redo },
-      { hotkey: 'Mod+Y', callback: interactions.redo }
+      { hotkey: 'Mod+Y', callback: interactions.redo },
+      { hotkey: 'Mod+F', callback: () => onOpenSearch?.() }
     ],
     {
       target: scrollRef,
