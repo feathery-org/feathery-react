@@ -32,6 +32,7 @@ import {
   isDocusignSignAction,
   signsViaDocusign
 } from '../document';
+import { withLinkRequestHeaders } from '../accessLinkRequest';
 
 // A configured Generate Documents entry in the ordered `documents` array: a
 // template UUID string, or the single polymorphic `{kind:'quik'}` source dict.
@@ -163,7 +164,8 @@ export default class IntegrationClient {
     if (initState.authenticationError) {
       return Promise.resolve(undefined);
     }
-    return apiFetch(sdkKey, url, options, parseResponse).catch((e) => {
+    const requestOptions = withLinkRequestHeaders(url, options);
+    return apiFetch(sdkKey, url, requestOptions, parseResponse).catch((e) => {
       if (e instanceof FormConflictError) {
         handleFormConflict();
         return;
