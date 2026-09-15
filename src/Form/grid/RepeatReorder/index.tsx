@@ -23,14 +23,17 @@ import {
   REORDER_CLASS,
   RESOLVED_SURFACE_VAR,
   STEP_CLASS,
+  TARGET_SIZE,
   clusterInsideStyles,
   clusterStyles,
+  clusterStylesTucked,
   gripStyles,
   insertBadgeStyles,
   insertInsideStyles,
   insertInsideStylesAbove,
   insertStyles,
   insertStylesAbove,
+  insertStylesAboveTucked,
   stepStyles,
   visuallyHidden
 } from './styles';
@@ -99,6 +102,27 @@ const resolveSurface = (from: HTMLElement): string | null => {
     el = el.parentElement;
   }
   return null;
+};
+
+/**
+ * How much scrollback sits above the row, in its scroller's own coordinates.
+ *
+ * Not the distance to the top of the viewport - that changes as the page
+ * scrolls, and chrome that repositioned on every scroll would jitter. This is
+ * the row's offset within whatever actually scrolls it, which only layout can
+ * change, so the existing observer is enough to keep it honest.
+ */
+export const spaceAboveRow = (row: HTMLElement): number => {
+  const rect = row.getBoundingClientRect();
+  let el: HTMLElement | null = row.parentElement;
+  while (el) {
+    const overflow = getComputedStyle(el).overflowY;
+    if (overflow === 'auto' || overflow === 'scroll') {
+      return rect.top - el.getBoundingClientRect().top + el.scrollTop;
+    }
+    el = el.parentElement;
+  }
+  return rect.top + featheryWindow().scrollY;
 };
 
 /** The conventional six-dot drag affordance. */
@@ -244,6 +268,9 @@ export const RepeatRowHandle = ({
   // Whether the gutter had room to hang in. See the offset effect below.
   const [inside, setInside] = useState(false);
 
+  // Whether the leading seam had scrollback above it to straddle into.
+  const [tucked, setTucked] = useState(false);
+
   // An absolutely positioned child is offset from its ancestor's padding box,
   // which sits inside the border. So a static offset is eaten by a thick
   // outline and the chrome ends up drawn over it. Measuring the border keeps
@@ -279,6 +306,11 @@ export const RepeatRowHandle = ({
 
       const fits = !measured || space >= gutter;
       setInside(!fits);
+
+      // The leading seam hangs half a target above the row. Where the row
+      // starts the scroller there is nothing above to hang into, and that half
+      // is unreachable at any scroll position, so the seam moves inside.
+      setTucked(measured && spaceAboveRow(row) < TARGET_SIZE / 2);
       // Only the gutter position depends on the border. The inside variant
       // centres itself on the row's top edge, so it must be left to the
       // stylesheet rather than pinned by a measured offset.
@@ -381,7 +413,11 @@ export const RepeatRowHandle = ({
           type='button'
           className={INSERT_CLASS}
           css={{
-            ...(seamAbove ? insertStylesAbove : insertStyles),
+            ...(seamAbove
+              ? tucked
+                ? insertStylesAboveTucked
+                : insertStylesAbove
+              : insertStyles),
             // Same fallback the cluster takes: with no gutter to sit in, the
             // seam returns to the centre of the row rather than off screen.
             ...(inside
@@ -410,7 +446,13 @@ export const RepeatRowHandle = ({
         <div
           ref={clusterRef}
           className={REORDER_CLASS}
-          css={inside ? clusterInsideStyles : clusterStyles}
+          css={
+            inside
+              ? clusterInsideStyles
+              : tucked
+              ? clusterStylesTucked
+              : clusterStyles
+          }
         >
           {stepButton(true)}
           <button

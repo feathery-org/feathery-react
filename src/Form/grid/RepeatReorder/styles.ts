@@ -101,6 +101,18 @@ export const clusterStyles = {
 };
 
 /**
+ * The cluster when the leading seam beside it has been tucked inside the row.
+ *
+ * A tucked seam occupies the row's first target instead of straddling its
+ * edge, so the cluster gives up a whole target rather than half of one. The
+ * two still abut exactly; without this the seam would cover the step button.
+ */
+export const clusterStylesTucked = {
+  ...clusterStyles,
+  insetBlockStart: `${TARGET_SIZE}px`
+};
+
+/**
  * Where the cluster goes when the row is full bleed and the gutter has nothing
  * to hang in. It rides the row's top corner, laid out along the edge rather
  * than down it, so it covers the border instead of the first words of the
@@ -260,6 +272,21 @@ export const insertStylesAbove = {
   ...insertBase,
   insetBlockStart: 0,
   transform: 'translateY(-50%)'
+};
+
+/**
+ * The leading seam when there is no scrollback above it to straddle into.
+ *
+ * A container flush with the top of the page puts that boundary at the
+ * document's own origin, so the half of the button that hangs above it is not
+ * merely clipped - it cannot be scrolled to and it cannot be clicked. Tucking
+ * the whole button inside the row keeps the one control that prepends a row
+ * reachable; the seam reads as slightly low rather than as half a button.
+ */
+export const insertStylesAboveTucked = {
+  ...insertBase,
+  insetBlockStart: 0,
+  transform: 'none'
 };
 
 export const visuallyHidden = {
