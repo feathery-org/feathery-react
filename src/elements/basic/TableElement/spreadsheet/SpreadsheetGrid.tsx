@@ -23,7 +23,6 @@ import {
   addRowStripStyle,
   canvasStyle,
   cellChipChevronStyle,
-  cellChipEmptyStyle,
   cellChipLabelStyle,
   cellChipStyle,
   cellFillPreviewStyle,
@@ -795,37 +794,20 @@ function HeaderCell({
 }
 
 /**
- * The value of a dropdown cell, drawn as a pill with a chevron the way a
- * spreadsheet marks a cell with a validation list. An empty cell shows only
- * a chevron at its right edge, and only while hovered or selected, so a
- * blank column does not read as a column of buttons. Not focusable: keyboard
- * handling lives on the grid, which opens the menu on Enter.
+ * The value of a dropdown cell, drawn as a pill spanning the cell with a
+ * chevron at its right, the way a spreadsheet marks a cell with a validation
+ * list. An empty cell is the same pill with no label. Not focusable:
+ * keyboard handling lives on the grid, which opens the menu on Enter.
  */
 function DropdownChip({
   text,
   label,
-  revealed,
   onOpen
 }: {
   text: string;
   label: string;
-  /** Show the empty cell's chevron without a hover (the cell is selected or open). */
-  revealed: boolean;
   onOpen: (event: React.MouseEvent) => void;
 }) {
-  if (!text) {
-    return (
-      <span
-        role='button'
-        aria-label={label}
-        className={TABLE_CLASS.gridCellChip}
-        css={cellChipEmptyStyle(revealed)}
-        onClick={onOpen}
-      >
-        <span aria-hidden css={cellChipChevronStyle} />
-      </span>
-    );
-  }
   return (
     <span
       role='button'
@@ -1136,7 +1118,6 @@ function SpreadsheetCell({
         <DropdownChip
           text={formatCellDisplay(value as CellValue, rule)}
           label={`Choose ${columnName} for row ${rowIndex + 1}`}
-          revealed={isFocused || isEditing}
           onOpen={openFromChip}
         />
       ) : isEditing ? null : (

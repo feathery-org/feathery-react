@@ -622,7 +622,7 @@ describe('cell editors follow the column', () => {
     ).toBeNull();
   });
 
-  test('an empty dropdown cell shows a blank chip only while hovered or selected', async () => {
+  test('an empty dropdown cell shows a blank chip that opens on (empty)', async () => {
     const emptyClient = {
       ...client(),
       dataHubAction: jest.fn(({ operation }: any) =>
@@ -640,11 +640,9 @@ describe('cell editors follow the column', () => {
       { name: 'Choose status for row 1' }
     );
     expect(empty).toHaveTextContent('');
-    expect(empty).toHaveStyle({ opacity: '0' });
+    expect(empty).toHaveStyle({ width: '100%' });
 
     fireEvent.mouseDown(empty.closest('[role="gridcell"]')!);
-    await waitFor(() => expect(empty).toHaveStyle({ opacity: '1' }));
-
     fireEvent.click(empty);
     expect(highlighted()).toBe('(empty)');
   });
