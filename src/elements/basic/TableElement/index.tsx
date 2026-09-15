@@ -688,23 +688,22 @@ function TableElement({
   styles.apply('table', 'column_sizing', (columnSizing: any) => ({
     tableLayout: !isTransposed && columnSizing === 'equal' ? 'fixed' : 'auto'
   }));
-  const desktopEqual = element.styles?.column_sizing === 'equal';
+  const desktopSizing = element.styles?.column_sizing;
   const mobileSizing = element.mobile_styles?.column_sizing;
+  const desktopEqual = desktopSizing === 'equal';
   // An absent mobile override inherits desktop, matching `apply`.
-  const mobileEqual =
-    mobileSizing === undefined ? desktopEqual : mobileSizing === 'equal';
+  const mobileEqual = (mobileSizing ?? desktopSizing) === 'equal';
   const useFixedColumns = !isTransposed && (desktopEqual || mobileEqual);
   // Pin the action/delete columns only in the viewport that is actually fixed;
   // `auto` elsewhere so an auto-layout viewport still sizes them to content.
   const utilityColStyle = (width: string) => ({
     width: desktopEqual ? width : 'auto',
-    ...(styles.handleMobile && mobileSizing !== undefined
-      ? {
-          [styles.mobileBreakpointKey]: {
-            width: mobileEqual ? width : 'auto'
-          }
+    ...(styles.handleMobile &&
+      mobileSizing !== undefined && {
+        [styles.mobileBreakpointKey]: {
+          width: mobileEqual ? width : 'auto'
         }
-      : {})
+      })
   });
 
   return (
