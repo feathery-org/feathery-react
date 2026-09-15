@@ -12,13 +12,13 @@ const Svg = (props: SVGProps<SVGSVGElement>) => (
   />
 );
 
-// Green "saved" tick — matches the task-view completion check in the assistant
-// (stroked polyline, emerald). Not the fill-based toolbar Svg helper.
+// Stroked check / ✕ for the save toast and the tracked-changes accept/reject
+// actions. Both use currentColor so the caller sets the color.
 export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg width='14' height='14' viewBox='0 0 24 24' fill='none' {...p}>
     <polyline
       points='20 6 9 17 4 12'
-      stroke='#10b981'
+      stroke='currentColor'
       strokeWidth='2'
       strokeLinecap='round'
       strokeLinejoin='round'
@@ -26,19 +26,10 @@ export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-// "✕" — matches the task-view error mark in the assistant (stroked, uses
-// currentColor so the caller sets the red).
 export const CloseIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg width='14' height='14' viewBox='0 0 24 24' fill='none' {...p}>
     <path
-      d='M18 6 6 18'
-      stroke='currentColor'
-      strokeWidth='2'
-      strokeLinecap='round'
-      strokeLinejoin='round'
-    />
-    <path
-      d='m6 6 12 12'
+      d='M18 6 6 18M6 6l12 12'
       stroke='currentColor'
       strokeWidth='2'
       strokeLinecap='round'
