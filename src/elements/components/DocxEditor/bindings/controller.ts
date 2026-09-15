@@ -29,6 +29,7 @@ import {
 import {
   addLineItem,
   BindingIndex,
+  formulaOccurrences,
   getAt,
   NativeStructuralMutation,
   removeLineItem,
@@ -65,6 +66,8 @@ export interface EditorPort {
    */
   updateValues?(writes: EngineWrite[]): boolean;
   applyStructuralMutations?(mutations: NativeStructuralMutation[]): boolean;
+  /** Commit several native calls together, or restore their exact input. */
+  withNativeTransaction(run: () => boolean): boolean;
   /**
    * Run one authored batch with the editor writing its OWN revisions -
    * undoable, correctly authored, correctly grouped - instead of having
@@ -151,6 +154,10 @@ function insertedTableBlocks(
     block,
     ...(containsTable(following) ? [{ inlines: [] }] : [])
   ];
+}
+
+function replacementTableBlocks(block: SfdtBlock): SfdtBlock[] {
+  return [block];
 }
 
 export class ReconciliationController {
@@ -344,8 +351,13 @@ export class ReconciliationController {
           mutated = setTaggedValue(mutated, command.name, command.value, index);
         }
       } else if (command.type === 'set-expression') {
-        const targets = (index.formulas.get(command.name) ?? []).filter(
-          (occurrence) => occurrence.tag === command.previousTag
+        const targets = formulaOccurrences(index, command.name).filter(
+          (occurrence) =>
+            occurrence.tag === command.previousTag &&
+            occurrence.def.isGlobal === command.global &&
+            (command.global ||
+              (occurrence.tableId === command.tableId &&
+                occurrence.rowId === command.rowId))
         );
         if (!targets.length)
           throw new Error(
@@ -446,10 +458,7 @@ export class ReconciliationController {
         const blocksPath = table.markerPath.slice(0, -1);
         const at = Number(table.markerPath[table.markerPath.length - 1]);
         const blocks = getAt(mutated, blocksPath) as SfdtBlock[];
-        const insertedBlocks = insertedTableBlocks(
-          command.block,
-          blocks[at + 1]
-        );
+        const insertedBlocks = replacementTableBlocks(command.block);
         mutated = setAt(mutated, blocksPath, [
           ...blocks.slice(0, at),
           ...insertedBlocks,
@@ -649,15 +658,17 @@ export class ReconciliationController {
       } else if (apply === 'structural') {
         const started = Date.now();
         try {
-          patched = this.inTrackedScope(provenance, () => {
-            let ok =
-              this.editor.applyStructuralMutations?.(
-                result.structuralMutations
-              ) === true;
-            if (ok && result.writes.length && this.editor.updateValues)
-              ok = this.editor.updateValues(result.writes) === true;
-            return ok;
-          });
+          patched = this.inTrackedScope(provenance, () =>
+            this.editor.withNativeTransaction(() => {
+              let ok =
+                this.editor.applyStructuralMutations?.(
+                  result.structuralMutations
+                ) === true;
+              if (ok && result.writes.length && this.editor.updateValues)
+                ok = this.editor.updateValues(result.writes) === true;
+              return ok;
+            })
+          );
         } catch {
           patched = false;
         }

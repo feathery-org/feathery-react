@@ -120,6 +120,10 @@ describe('live value-column primitives', () => {
       (id) => id === 'costs'
     );
     expect(replacement).toBe('costs');
+    const [section, block] = source.split(';').map(Number);
+    expect(await session.call<string>('tableAnchor', 'costs')).toBe(
+      `${section};${block + 1}`
+    );
     expect(await session.call<number>('tableColumnCount', replacement)).toBe(5);
     expect(
       (await session.call<number[]>('columnWidths', replacement))[3]
@@ -164,6 +168,78 @@ describe('live value-column primitives', () => {
 
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(baseline);
+
+    const acceptedResult = await session.call<any>(
+      'applyEdits',
+      edits(source),
+      'live-value-column-accept'
+    );
+    expect(acceptedResult.outcomes).toEqual(edits(source).map(() => 'ok'));
+    await session.call('resolveGroups', true);
+    expect(await session.call<string>('tableAnchor', 'costs')).toBe(source);
+  }, 120000);
+
+  it('redefines the selected row formula through the existing binding primitive', async () => {
+    await session.call('open', JSON.stringify(buildCostsFixture()));
+    const baseline = await session.call<string>('serialize');
+    const source = await session.call<string>('tableAnchor', 'costs');
+
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g01-change-line-total',
+          anchor: `${source};1;3;0`,
+          kind: 'formula',
+          name: 'line_total',
+          valueType: 'currency:USD:2',
+          expression: 'sub(mul(quantity,unit_cost),-100)'
+        }
+      ],
+      'change-one-line-total'
+    );
+
+    expect(result.outcomes).toEqual(['ok']);
+    expect(result.groups).toBe(1);
+    expect(await session.call<string[]>('tableRowTexts', 'costs')).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('$1,900.00'),
+        expect.stringContaining('$6,000.00'),
+        expect.stringContaining('$7,900.00')
+      ])
+    );
+    expect(await session.call<string[]>('serializedTags')).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'name=line_total|expr=sub(mul(quantity,unit_cost),-100)|row=r-1'
+        )
+      ])
+    );
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+
+    const acceptedResult = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g02-change-line-total',
+          anchor: `${source};1;3;0`,
+          kind: 'formula',
+          name: 'line_total',
+          valueType: 'currency:USD:2',
+          expression: 'sum(mul(quantity,unit_cost),100)'
+        }
+      ],
+      'accept-one-line-total'
+    );
+    expect(acceptedResult.outcomes).toEqual(['ok']);
+    await session.call('resolveGroups', true);
+    expect((await session.call<string[]>('tableRowTexts', 'costs'))[1]).toEqual(
+      expect.stringContaining('$1,900.00')
+    );
   }, 120000);
 
   it('promotes a plain table through the same primitives and rejects exactly', async () => {

@@ -78,6 +78,26 @@ export interface BindingIndex {
   diagnostics: Diagnostic[];
 }
 
+/** Every formula occurrence, including row-scoped formulas stored by tables. */
+export function formulaOccurrences(
+  index: BindingIndex,
+  name?: string
+): Occurrence[] {
+  return index.occurrences.filter(
+    (occurrence) =>
+      occurrence.def.kind === 'formula' &&
+      (name === undefined || occurrence.name === name)
+  );
+}
+
+/** Logical formula identity, independent of where scanBindings stores it. */
+export function formulaScopeKey(occurrence: Occurrence): string {
+  if (occurrence.def.isGlobal) return `global:${occurrence.name}`;
+  if (occurrence.tableId && occurrence.rowId)
+    return `row:${occurrence.tableId}:${occurrence.rowId}:${occurrence.name}`;
+  return `document:${occurrence.name}`;
+}
+
 export interface CellValue {
   text: string;
   canonical: string | null;

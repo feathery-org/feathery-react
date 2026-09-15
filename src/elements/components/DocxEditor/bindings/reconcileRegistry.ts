@@ -12,7 +12,12 @@
 // registration with it even if dispose never runs.
 
 import type { ApplyRulesResult } from './core/engine';
-import { getAt, scanBindings } from './core/sfdtAdapter';
+import {
+  formulaOccurrences,
+  formulaScopeKey,
+  getAt,
+  scanBindings
+} from './core/sfdtAdapter';
 import { parseDisplay } from './core/valueTypes';
 import type { SfdtBlock, SfdtDocument } from './core/sfdtTypes';
 
@@ -61,6 +66,9 @@ export type BindingCommand =
       name: string;
       previousTag: string;
       tag: string;
+      tableId: string | null;
+      rowId: string | null;
+      global: boolean;
     };
 
 /**
@@ -263,8 +271,8 @@ export function diffBindingCommands(
       }
     }
   }
-  // An expression change never moves a value on its own, so it is diffed by
-  // NAME rather than by tag: the tag is what changed.
+  // An expression change never moves a value on its own, so compare logical
+  // formula identities rather than the storage bucket or the changed tag.
   const formulaIsInsideReplacedTable = (
     occurrence: typeof previous.occurrences[number]
   ): boolean =>
@@ -277,20 +285,34 @@ export function diffBindingCommands(
         )
       );
     });
-  for (const [name, occurrences] of next.formulas) {
+  const formulasByScope = (index: typeof next) => {
+    const scopes = new Map<string, ReturnType<typeof formulaOccurrences>>();
+    for (const occurrence of formulaOccurrences(index)) {
+      const key = formulaScopeKey(occurrence);
+      const entries = scopes.get(key);
+      if (entries) entries.push(occurrence);
+      else scopes.set(key, [occurrence]);
+    }
+    return scopes;
+  };
+  const previousFormulaScopes = formulasByScope(previous);
+  for (const [scope, occurrences] of formulasByScope(next)) {
     const current = occurrences[0];
-    const prior = previous.formulas.get(name)?.[0];
+    const priorOccurrences = previousFormulaScopes.get(scope) ?? [];
+    const prior = priorOccurrences[0];
     if (!current || !prior) continue;
     if (current.def.kind !== 'formula' || prior.def.kind !== 'formula')
       continue;
     if (current.def.expression === prior.def.expression) continue;
-    if ((previous.formulas.get(name) ?? []).every(formulaIsInsideReplacedTable))
-      continue;
+    if (priorOccurrences.every(formulaIsInsideReplacedTable)) continue;
     commands.push({
       type: 'set-expression',
-      name,
+      name: current.name,
       previousTag: prior.tag,
-      tag: current.tag
+      tag: current.tag,
+      tableId: current.tableId,
+      rowId: current.rowId,
+      global: current.def.isGlobal
     });
   }
   for (const [name, occurrences] of next.fields) {

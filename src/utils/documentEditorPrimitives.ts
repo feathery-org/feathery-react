@@ -205,7 +205,10 @@ export interface ExpressionRestore {
   name: string;
   fromTag: string;
   toTag: string;
-  requires: string;
+  /** Split rewrites follow whether this successor binding remains present. */
+  requires?: string;
+  /** Direct redefinitions follow the accept or reject outcome of their card. */
+  onCardResolution?: true;
 }
 
 /** A calculated value changed by the reviewed edits in the same card. */
@@ -402,14 +405,21 @@ function parsePersistedExpressionRestores(
   for (const item of value) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
     const raw = item as Record<string, unknown>;
-    const fields = ['name', 'fromTag', 'toTag', 'requires'] as const;
+    const fields = ['name', 'fromTag', 'toTag'] as const;
     if (fields.some((field) => typeof raw[field] !== 'string' || !raw[field]))
       return null;
+    const onCardResolution = raw.onCardResolution === true;
+    const requires =
+      typeof raw.requires === 'string' && raw.requires
+        ? String(raw.requires)
+        : undefined;
+    if (!onCardResolution && !requires) return null;
     restores.push({
       name: String(raw.name),
       fromTag: String(raw.fromTag),
       toTag: String(raw.toTag),
-      requires: String(raw.requires)
+      ...(requires ? { requires } : {}),
+      ...(onCardResolution ? { onCardResolution: true } : {})
     });
   }
   return restores.length ? restores : null;
@@ -1303,6 +1313,7 @@ const EXPRESSION_SWEEP_INSTALLED = '__robinExpressionSweepInstalled';
 interface ExpressionLedgerEntry {
   groupKey: string;
   restore: ExpressionRestore;
+  accepted?: boolean;
 }
 
 // The ledger outlives revision metadata so reject and history can restore tags.
@@ -1324,13 +1335,41 @@ const bindingIsInDocument = (editor: LiveEditor, name: string): boolean => {
 };
 
 // Make every expression rewrite agree with the binding currently in the SFDT.
-function settleExpressionRewrites(editor: LiveEditor): void {
+function settleExpressionRewrites(
+  editor: LiveEditor,
+  resolution?: { groupKey: string; accepted: boolean }
+): void {
   const ledger = expressionLedger(editor);
   if (!ledger.length) return;
   const controls = liveContentControls(editor);
   if (!controls.length) return;
   const presence = new Map<string, boolean>();
-  for (const { restore } of ledger) {
+  const pendingGroups = new Set(
+    snapshotRevisions(editor).map(
+      (revision) =>
+        `${String((revision as any).robinChangeSetId ?? '')}\u0000${String(
+          (revision as any).robinGroupId ?? ''
+        )}`
+    )
+  );
+  for (const entry of ledger) {
+    const { restore } = entry;
+    if (resolution?.groupKey === entry.groupKey)
+      entry.accepted = resolution.accepted;
+    if (restore.onCardResolution) {
+      const wanted =
+        pendingGroups.has(entry.groupKey) || entry.accepted !== false
+          ? restore.toTag
+          : restore.fromTag;
+      const stale = wanted === restore.toTag ? restore.fromTag : restore.toTag;
+      for (const control of controls) {
+        const properties = control?.contentControlProperties;
+        if (!properties || String(properties.tag ?? '') !== stale) continue;
+        properties.tag = wanted;
+      }
+      continue;
+    }
+    if (!restore.requires) continue;
     let present = presence.get(restore.requires);
     if (present === undefined) {
       present = bindingIsInDocument(editor, restore.requires);
@@ -1548,8 +1587,11 @@ export function groupRevisionsAtomic(
     settleAppearance(acceptedAlone.size > 0);
     restoreParagraphStyles();
     try {
-      // Asks the document, not the outcome: see settleExpressionRewrites.
-      settleExpressionRewrites(editor);
+      // Split rewrites follow document presence; direct rewrites follow card outcome.
+      settleExpressionRewrites(editor, {
+        groupKey,
+        accepted: acceptedAlone.size > 0
+      });
     } catch {
       // Content still resolves consistently if an expression restore fails.
     }

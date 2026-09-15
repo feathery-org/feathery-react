@@ -120,6 +120,8 @@ import type { Diagnostic } from '../../../elements/components/DocxEditor/binding
 import { analyzeBindingOrphans } from '../../../elements/components/DocxEditor/bindings/core/tableDeleteImpact';
 import {
   addLineItem,
+  formulaOccurrences,
+  formulaScopeKey,
   getAt,
   removeLineItem,
   rewriteRowClone,
@@ -8848,7 +8850,7 @@ function replacePlainTableColumn(
   const { paste, pastedSfdt } = pasteBlocksAsTrackedSegments(
     editor,
     sfdt,
-    copyPasteSegments([clone], sfdt, target),
+    [[clone]],
     target
   );
   const replacementAnchor = assertPastedTableMatches(
@@ -13547,6 +13549,7 @@ interface EngineMutationState {
 
 interface EngineMutationOutcome {
   sfdt: any;
+  expressionRestores?: ExpressionRestore[];
   anchor?: string;
   deferredEditorWrite?: {
     op: EditOp;
@@ -16725,49 +16728,63 @@ function redefineBoundFormulaPlan(
     op,
     anchor: block.anchor,
     execute(state) {
-      const live = state.index.formulas.get(occurrence.name) ?? [];
-      const targets = occurrence.def.isGlobal
-        ? live.filter((candidate) => candidate.def.isGlobal)
-        : live.filter(
-            (candidate) =>
-              !candidate.def.isGlobal &&
-              candidate.tableId === occurrence.tableId &&
-              candidate.rowId === occurrence.rowId
-          );
-      if (targets.length !== 1)
+      const scope = formulaScopeKey(occurrence);
+      const targets = formulaOccurrences(state.index, occurrence.name).filter(
+        (candidate) => formulaScopeKey(candidate) === scope
+      );
+      if (!targets.length)
         throw new OpError(
           'binding_redefinition_ambiguous',
           `Formula "${occurrence.name}" resolved to ${targets.length} matching controls. Nothing was written.`,
           targets.map((candidate) => `candidate: ${candidate.path.join('/')}`)
         );
-      const target = targets[0];
-      if (target.def.kind !== 'formula')
-        throw new OpError(
-          'binding_redefinition_target_lost',
-          `Formula "${occurrence.name}" changed kind before it could be updated. Nothing was written.`
-        );
-      const definition: Definition = {
-        ...target.def,
-        fieldType,
-        expression
-      };
-      const node = getAt(state.sfdt, target.path);
-      const properties = node?.contentControlProperties;
-      if (!node || !properties)
-        throw new OpError(
-          'binding_redefinition_target_lost',
-          `Formula "${occurrence.name}" was no longer addressable. Nothing was written.`
-        );
-      return {
-        sfdt: setAt(state.sfdt, target.path, {
+      let sfdt = state.sfdt;
+      let toTag = '';
+      for (const target of targets) {
+        if (target.def.kind !== 'formula')
+          throw new OpError(
+            'binding_redefinition_target_lost',
+            `Formula "${occurrence.name}" changed kind before it could be updated. Nothing was written.`
+          );
+        const definition: Definition = {
+          ...target.def,
+          fieldType,
+          expression
+        };
+        const node = getAt(sfdt, target.path);
+        const properties = node?.contentControlProperties;
+        if (!node || !properties)
+          throw new OpError(
+            'binding_redefinition_target_lost',
+            `Formula "${occurrence.name}" was no longer addressable. Nothing was written.`
+          );
+        const nextTag = formatTag(definition);
+        if (toTag && toTag !== nextTag)
+          throw new OpError(
+            'binding_redefinition_ambiguous',
+            `Formula "${occurrence.name}" has inconsistent definitions in the selected scope. Nothing was written.`
+          );
+        toTag = nextTag;
+        sfdt = setAt(sfdt, target.path, {
           ...node,
           contentControlProperties: {
             ...properties,
-            tag: formatTag(definition),
+            tag: nextTag,
             lockContentControl: true,
             lockContents: true
           }
-        }),
+        });
+      }
+      return {
+        sfdt,
+        expressionRestores: [
+          {
+            name: occurrence.name,
+            fromTag: targets[0].tag,
+            toTag,
+            onCardResolution: true
+          }
+        ],
         anchor: block.anchor,
         details: [`updated formula binding: ${occurrence.name}`]
       };
@@ -24449,6 +24466,8 @@ function applyDocumentEditsMeasured(
               }
               const outcome = plan.execute(state);
               outcomes.set(plan.index, outcome);
+              if (outcome.expressionRestores?.length)
+                recordExpressionRestores(plan.op, outcome.expressionRestores);
               // Same sink, same ordering law as the editor route: an engine
               // plan's footprints are already current as of its own write, so
               // they are appended with no shift of their own.

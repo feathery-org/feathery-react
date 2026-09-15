@@ -474,7 +474,8 @@ const api = {
     edits: any[],
     changeSetId: string,
     method: string,
-    failAt = 1
+    failAt = 1,
+    failure: 'return' | 'throw' = 'return'
   ): {
     outcomes: string[];
     groups: number;
@@ -488,7 +489,10 @@ const api = {
     let calls = 0;
     module[method] = function (...args: any[]) {
       calls += 1;
-      if (calls === failAt) return undefined;
+      if (calls === failAt) {
+        if (failure === 'throw') throw new Error(`forced ${method} failure`);
+        return undefined;
+      }
       return original.apply(this, args);
     };
     try {

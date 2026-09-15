@@ -14,7 +14,10 @@ import {
   snapshotRevisions
 } from '../../../../utils/documentEditorPrimitives';
 import { anchorCaret, CaretAnchor, resolveAnchor } from './controlGeometry';
-import { applyNativeStructuralMutations } from './nativeStructuralAdapter';
+import {
+  applyNativeStructuralMutations,
+  applyNativeTransaction
+} from './nativeStructuralAdapter';
 
 export interface ContentControlLike {
   contentControlProperties?: { tag?: string; [key: string]: unknown };
@@ -338,6 +341,9 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       }
     },
 
+    withNativeTransaction: (run: () => boolean) =>
+      applyNativeTransaction(editor, run),
+
     /** Borrow tracking, author, and group metadata for one authored batch. */
     withAuthoredRevisions<T>(
       provenance: BindingCommandProvenance,
@@ -462,6 +468,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
           : fieldWrites.length;
         if (
           groupedWrites > 1 &&
+          !history?.currentHistoryInfo &&
           typeof (editorModule as any).initComplexHistory === 'function'
         ) {
           (editorModule as any).initComplexHistory('BindingValues');

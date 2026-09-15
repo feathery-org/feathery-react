@@ -81,6 +81,8 @@ describe('one table primitive surface for plain tables', () => {
       'tableAnchorContaining',
       'Notes'
     );
+    const [section, block] = source.split(';').map(Number);
+    expect(pending).toBe(`${section};${block + 1}`);
     expect(await session.call<number>('tableColumnCountAt', pending)).toBe(3);
     expect(
       (await session.call<number[]>('columnWidthsAt', pending))[2]
@@ -97,6 +99,7 @@ describe('one table primitive surface for plain tables', () => {
       'tableAnchorContaining',
       'Notes'
     );
+    expect(accepted).toBe(source);
     expect(await session.call<number>('tableColumnCountAt', accepted)).toBe(3);
     expect(await session.call<number>('contentControlCount')).toBe(controls);
 
@@ -172,6 +175,13 @@ describe('one table primitive surface for plain tables', () => {
     );
     expect(await session.call<number>('contentControlCount')).toBe(controls);
 
+    const [sourceSection, sourceBlock] = source.split(';').map(Number);
+    const pendingCopy = await session.call<string>(
+      'tableAnchorContaining',
+      'Storm and flood'
+    );
+    expect(pendingCopy).toBe(`${sourceSection};${sourceBlock + 2}`);
+
     await session.call('resolveGroups', true);
     const sourceRows = await session.call<string[]>('tableRowTextsAt', source);
     expect(sourceRows).toEqual([
@@ -183,6 +193,7 @@ describe('one table primitive surface for plain tables', () => {
       'tableAnchorContaining',
       'Storm and flood'
     );
+    expect(copy).toBe(`${sourceSection};${sourceBlock + 2}`);
     expect(await session.call<string[]>('tableRowTextsAt', copy)).toEqual([
       'PerilStatus',
       'Storm and floodIncluded',
@@ -226,6 +237,78 @@ describe('one table primitive surface for plain tables', () => {
       'plain-split-coverage-reject'
     );
     expect(rejected.outcomes).toEqual(['ok', 'ok', 'ok']);
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
+  it('keeps one separator paragraph when inserting a table below another table', async () => {
+    const baseline = await session.call<string>('serialize');
+    const source = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    const [section, block] = source.split(';').map(Number);
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_table',
+          group: 'g01-add-review-table',
+          anchor: `${section};${block + 2}`,
+          expect: '1.2 Endorsements',
+          position: 'before',
+          rows: 2,
+          columns: 2,
+          initialCells: [
+            ['Item', 'Notes'],
+            ['Fire and explosion', 'Check limits']
+          ]
+        }
+      ],
+      'plain-add-review-table'
+    );
+
+    expect(result.outcomes).toEqual(['ok']);
+    expect(result.groups).toBe(1);
+    const pending = await session.call<string>(
+      'tableAnchorContaining',
+      'Check limits'
+    );
+    expect(pending).toBe(`${section};${block + 2}`);
+
+    await session.call('resolveGroups', true);
+    const accepted = await session.call<string>(
+      'tableAnchorContaining',
+      'Check limits'
+    );
+    expect(accepted).toBe(`${section};${block + 2}`);
+
+    await session.call('open', readFixture('flagship-v4d.browser.sfdt.json'));
+    const rejectSource = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    const [rejectSection, rejectBlock] = rejectSource.split(';').map(Number);
+    const rejected = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_table',
+          group: 'g01-add-review-table',
+          anchor: `${rejectSection};${rejectBlock + 2}`,
+          expect: '1.2 Endorsements',
+          position: 'before',
+          rows: 2,
+          columns: 2,
+          initialCells: [
+            ['Item', 'Notes'],
+            ['Fire and explosion', 'Check limits']
+          ]
+        }
+      ],
+      'plain-add-review-table-reject'
+    );
+    expect(rejected.outcomes).toEqual(['ok']);
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(baseline);
   }, 120000);

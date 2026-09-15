@@ -262,6 +262,41 @@ function rethrowRollbackFailure(error: unknown): never {
   throw error;
 }
 
+/** One native commit boundary spanning structural commands and value writes. */
+export function applyNativeTransaction(
+  editor: SyncfusionEditorLike,
+  run: () => boolean
+): boolean {
+  const history = editor.editorHistoryModule as any;
+  if (!history || history.currentHistoryInfo) return false;
+  const before = editor.serialize();
+  const undoStack = historyStack(history, 'undoStackIn', 'undoStack');
+  const redoStack = historyStack(history, 'redoStackIn', 'redoStack');
+  const undoBefore = [...undoStack];
+  const redoBefore = [...redoStack];
+  const controlTags = (
+    editor.documentHelper?.contentControlCollection ?? []
+  ).map((control) => [control, control.contentControlProperties?.tag] as const);
+  try {
+    if (run() === true) return true;
+  } catch {
+    // Roll back below through the same native history that applied the edits.
+  }
+  for (const [control, tag] of controlTags) {
+    if (control.contentControlProperties)
+      control.contentControlProperties.tag = tag;
+  }
+  rollbackFailedNativeBatch(
+    editor,
+    before,
+    undoBefore.length,
+    Math.max(1, undoStack.length - undoBefore.length)
+  );
+  undoStack.splice(0, undoStack.length, ...undoBefore);
+  redoStack.splice(0, redoStack.length, ...redoBefore);
+  return false;
+}
+
 export function applyNativeStructuralMutations(
   editor: SyncfusionEditorLike,
   mutations: NativeStructuralMutation[]
