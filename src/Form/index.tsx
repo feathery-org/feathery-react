@@ -22,6 +22,7 @@ import {
   prioritizeActions,
   processFileValues,
   registerRenderCallback,
+  remountAllForms,
   removeFilePathMapEntry,
   rerenderAllForms,
   setFormElementError,
@@ -78,6 +79,7 @@ import {
 } from '../utils/validation';
 import {
   defaultClient,
+  adoptLinkRedemption,
   FieldValues,
   fieldValues,
   fileRetryStatus,
@@ -122,8 +124,12 @@ import FormOff, {
   COLLAB_COMPLETED,
   COLLAB_DIRECT_DISABLED,
   FILLED_OUT,
+  LINK_REQUIRED,
   NO_BUSINESS_EMAIL
 } from '../elements/components/FormOff';
+import LinkContinue from '../elements/components/LinkContinue';
+import { canPersistLinkSecret } from '../utils/accessLink';
+import type { LinkConfirmOutcome, LinkRedemption } from '../utils/accessLink';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
@@ -292,6 +298,13 @@ const DocumentViewer = React.lazy(
 const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
 const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
 
+// Shown instead of the closed-form copy when the session request itself fails
+// while an access link is open. A token this device kept for the form makes
+// that path reachable on an ordinary connectivity failure, where the form is
+// not closed at all and a reload is all the user needs.
+const LINK_SESSION_FAILED_MESSAGE =
+  "We couldn't load this form. Please refresh the page.";
+
 // Bottom-right overlays stack rather than overlap: each one clears the boxes
 // already sitting below it, plus a gap. An absent box contributes nothing.
 const BOTTOM_RIGHT_STACK_GAP = 10;
@@ -441,6 +454,12 @@ function Form({
   const [maxDepth, setMaxDepth] = useState(0);
   // No state since off reason is set in two locations almost simultaneously
   const formOffReason = useRef('');
+  // Copy for a blocked state the reason alone doesn't describe well enough.
+  // Empty leaves FormOff on the standard message for the reason.
+  const formOffMessage = useRef('');
+  // A single-use access link that this device hasn't claimed yet: the form
+  // stays behind the Continue screen until the user redeems it.
+  const [linkConfirmRequired, setLinkConfirmRequired] = useState(false);
   const [formSettings, setFormSettings] = useState({
     readOnly,
     errorType: 'html5',
@@ -1217,7 +1236,13 @@ function Form({
 
   // For audio AI only right now
   const [pollFuserData, setPollFuserData] = useState(_pollFuserData);
-  usePollFuserData(pollFuserData, client, updateFieldValues);
+  // An access link leaves the user id empty until the session (or a redeem)
+  // resolves it, and polling without one would fetch a different submission
+  usePollFuserData(
+    pollFuserData && !!initState.userId,
+    client,
+    updateFieldValues
+  );
 
   const eventCallbackMap: Record<string, any> = {
     change: onChange,
@@ -1962,8 +1987,15 @@ function Form({
     newClient
       .fetchSession(formPromise, true)
       .then(([session, steps]: any) => {
+        // A single-use link carries no form data until this device claims it
+        if (session?.link?.confirm) {
+          setLinkConfirmRequired(true);
+          return;
+        }
+
         if (!session || session.collaborator?.invalid)
           formOffReason.current = CLOSED;
+        else if (session.link?.required) formOffReason.current = LINK_REQUIRED;
         else if (session.collaborator?.completed)
           formOffReason.current = COLLAB_COMPLETED;
         else if (session.collaborator?.direct_submission_disabled)
@@ -2018,6 +2050,15 @@ function Form({
       })
       .catch(async (error: any) => {
         console.warn(error);
+        // Only the session resolves which submission an access link opens, so
+        // without one there is no user id to write against. Block instead of
+        // opening the origin step on an empty submission.
+        if (initState.linkToken) {
+          formOffReason.current = CLOSED;
+          formOffMessage.current = LINK_SESSION_FAILED_MESSAGE;
+          setRender((render) => ({ ...render }));
+          return;
+        }
         // Go to first step if origin fails
         const [data] = await formPromise;
         const newKey = (getOrigin as any)(data).key;
@@ -3830,6 +3871,38 @@ function Form({
     handleFormComplete().then(redirectForm);
   }, [anyFinished]);
 
+  // Claim a single-use access link for this device, then restart the load so
+  // the session fetch runs again against the submission the link opens.
+  const confirmAccessLink = async (): Promise<LinkConfirmOutcome> => {
+    const { linkToken } = initState;
+    if (!linkToken || !client) return 'failed';
+
+    // Fail safe: redeeming burns the one opening the link has, so a device that
+    // cannot keep the device secret must not touch the server at all. The link
+    // stays unredeemed and the user can open it somewhere that can store it.
+    if (!canPersistLinkSecret()) return 'storage_blocked';
+
+    let redemption: LinkRedemption | undefined;
+    try {
+      redemption = await client.redeemLink(linkToken);
+    } catch (e) {
+      // A rate limit or server error leaves the link unredeemed, so the user
+      // can simply ask again
+      return 'failed';
+    }
+
+    // A rejected link (expired, used on another device, revoked) answers 403,
+    // which the client has already turned into the blocked form state
+    if (initState.authenticationError) return 'blocked';
+    // Anything else empty is a network failure or a response we can't open the
+    // submission with, both of which are worth retrying
+    if (!redemption?.fuser_key || !redemption.device_secret) return 'failed';
+
+    adoptLinkRedemption(linkToken, redemption);
+    remountAllForms();
+    return 'adopted';
+  };
+
   // Form authentication error (403)
   if (initState.authenticationError) {
     return (
@@ -3842,13 +3915,25 @@ function Form({
   }
   // Form is turned off
   if (formOffReason.current === CLOSED)
-    return <FormOff showCTA={formSettings.showBrand} />;
+    return (
+      <FormOff
+        showCTA={formSettings.showBrand}
+        message={formOffMessage.current}
+      />
+    );
   else if (
-    [COLLAB_COMPLETED, COLLAB_DIRECT_DISABLED, NO_BUSINESS_EMAIL].includes(
-      formOffReason.current
-    )
+    [
+      COLLAB_COMPLETED,
+      COLLAB_DIRECT_DISABLED,
+      LINK_REQUIRED,
+      NO_BUSINESS_EMAIL
+    ].includes(formOffReason.current)
   )
     return <FormOff reason={formOffReason.current} showCTA={false} />;
+  // Checked after the off states so a turned off form never offers to burn the
+  // one opening a single-use link has
+  else if (linkConfirmRequired)
+    return <LinkContinue onContinue={confirmAccessLink} />;
   else if (anyFinished) {
     return formSettings.completionBehavior === 'show_completed_screen' ? (
       <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
