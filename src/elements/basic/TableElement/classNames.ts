@@ -58,5 +58,8 @@ export const TABLE_CLASS = {
   gridSearchInput: 'feathery-table-grid-search-input',
   gridSearchCount: 'feathery-table-grid-search-count',
   gridSearchStep: 'feathery-table-grid-search-step',
-  gridSearchClose: 'feathery-table-grid-search-close'
+  gridSearchClose: 'feathery-table-grid-search-close',
+  gridHeaderMenu: 'feathery-table-grid-header-menu',
+  gridHeaderMenuItem: 'feathery-table-grid-header-menu-item',
+  gridSortIndicator: 'feathery-table-grid-sort-indicator'
 } as const;

@@ -14,6 +14,7 @@ import { CellValue, getFillPreview } from './model';
 import { CellEditor } from './CellEditor';
 import { CellErrorTooltip } from './CellErrorTooltip';
 import { RowMenu, RowMenuTarget } from './RowMenu';
+import { HeaderMenu, HeaderMenuTarget, SpreadsheetSort } from './HeaderMenu';
 import { choicesFor, formatCellDisplay } from './fieldEditors';
 import { CellRules } from './validation';
 import type { FillPreview, GridBounds, GridCoordinate } from './model';
@@ -41,6 +42,7 @@ import {
   rowFocusedStyle,
   rowRaisedStyle,
   rowStyle,
+  sortIndicatorStyle,
   CELL_HORIZONTAL_PADDING,
   DEFAULT_COLUMN_WIDTH,
   FONT_SIZE,
@@ -95,6 +97,8 @@ type SpreadsheetGridProps = {
   onDeleteRow?: (rowIndex: number) => void;
   /** Opens the find bar; bound to Mod+F while the grid has focus. */
   onOpenSearch?: () => void;
+  /** Enables the column header's right-click sort menu. */
+  sort?: SpreadsheetSort;
 };
 
 type FillDrag = {
@@ -123,7 +127,8 @@ export const SpreadsheetGrid = React.forwardRef<
     onAddColumn,
     onInsertRow,
     onDeleteRow,
-    onOpenSearch
+    onOpenSearch,
+    sort
   },
   forwardedRef
 ) {
@@ -204,7 +209,9 @@ export const SpreadsheetGrid = React.forwardRef<
     // Stop short of the bottom edge so a scrolled-to cell has room beneath it
     // for its message bubble, which hangs below the cell.
     scrollPaddingEnd: TOOLTIP_SCROLL_MARGIN,
-    overscan: 8
+    // A comfortable margin of rows beyond the viewport, so a fast scroll or
+    // a find-jump lands on rows that are already painted.
+    overscan: 16
   });
 
   const columnVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
@@ -273,6 +280,10 @@ export const SpreadsheetGrid = React.forwardRef<
   );
   const [rowMenu, setRowMenu] = React.useState<RowMenuTarget | null>(null);
   const closeRowMenu = React.useCallback(() => setRowMenu(null), []);
+  const [headerMenu, setHeaderMenu] = React.useState<HeaderMenuTarget | null>(
+    null
+  );
+  const closeHeaderMenu = React.useCallback(() => setHeaderMenu(null), []);
   const hasRowMenu = Boolean(onInsertRow || onDeleteRow);
   const fillDragRef = React.useRef<FillDrag | null>(null);
   const headerSelectionDragRef = React.useRef<HeaderSelectionDrag | null>(null);
@@ -504,6 +515,8 @@ export const SpreadsheetGrid = React.forwardRef<
                 onStartSelection={startHeaderSelection}
                 onExtendSelection={extendHeaderSelection}
                 onAddColumn={onAddColumn}
+                sort={sort}
+                onOpenHeaderMenu={sort ? setHeaderMenu : undefined}
               />
             )}
           </table.Subscribe>
@@ -548,6 +561,9 @@ export const SpreadsheetGrid = React.forwardRef<
           ) : null}
         </div>
       </div>
+      {headerMenu && sort ? (
+        <HeaderMenu target={headerMenu} sort={sort} onClose={closeHeaderMenu} />
+      ) : null}
       {rowMenu ? (
         <RowMenu
           target={rowMenu}
@@ -578,6 +594,8 @@ type HeaderRowProps = {
   ) => void;
   onExtendSelection: (axis: 'column', id: string) => void;
   onAddColumn?: AddColumnHandler;
+  sort?: SpreadsheetSort;
+  onOpenHeaderMenu?: (target: HeaderMenuTarget) => void;
 };
 
 function HeaderRow({
@@ -589,7 +607,9 @@ function HeaderRow({
   headers,
   onStartSelection,
   onExtendSelection,
-  onAddColumn
+  onAddColumn,
+  sort,
+  onOpenHeaderMenu
 }: HeaderRowProps) {
   const rowCount = table.getRowsInDisplayOrder().length;
   const shared = {
@@ -599,7 +619,9 @@ function HeaderRow({
     resizingColumnId,
     rowCount,
     onStartSelection,
-    onExtendSelection
+    onExtendSelection,
+    sort,
+    onOpenHeaderMenu
   };
 
   return (
@@ -653,6 +675,8 @@ type HeaderCellProps = {
   onStartSelection: HeaderRowProps['onStartSelection'];
   onExtendSelection: HeaderRowProps['onExtendSelection'];
   left: number;
+  sort?: SpreadsheetSort;
+  onOpenHeaderMenu?: (target: HeaderMenuTarget) => void;
 };
 
 function HeaderCell({
@@ -664,7 +688,9 @@ function HeaderCell({
   rowCount,
   onStartSelection,
   onExtendSelection,
-  left
+  left,
+  sort,
+  onOpenHeaderMenu
 }: HeaderCellProps) {
   const { column } = header;
   const columnIndex = table.getCellSelectionColumnIndexes()[column.id] ?? -1;
@@ -683,6 +709,7 @@ function HeaderCell({
     );
   const meta = column.columnDef.meta;
   const label = meta?.name ?? column.id;
+  const sortedHere = sort?.column === label ? sort.direction : null;
 
   return (
     <div
@@ -700,6 +727,18 @@ function HeaderCell({
         onStartSelection(event, 'column', column.id, fullySelected)
       }
       onMouseEnter={() => onExtendSelection('column', column.id)}
+      onContextMenu={(event) => {
+        if (!onOpenHeaderMenu) return;
+        event.preventDefault();
+        onOpenHeaderMenu({ name: label, x: event.clientX, y: event.clientY });
+      }}
+      aria-sort={
+        sortedHere
+          ? sortedHere === 'asc'
+            ? 'ascending'
+            : 'descending'
+          : undefined
+      }
     >
       <span
         css={{
@@ -708,6 +747,15 @@ function HeaderCell({
         }}
       >
         {label}
+        {sortedHere ? (
+          <span
+            className={TABLE_CLASS.gridSortIndicator}
+            aria-hidden='true'
+            css={sortIndicatorStyle}
+          >
+            {sortedHere === 'asc' ? '▲' : '▼'}
+          </span>
+        ) : null}
       </span>
       <div
         className={TABLE_CLASS.gridColumnResizer}

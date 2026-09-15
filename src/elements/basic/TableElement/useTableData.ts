@@ -143,6 +143,8 @@ type UseTableDataReturn = {
 
   // Handlers
   handleSort: (columnName: string) => void;
+  /** Sets the sort outright; `null` clears it. */
+  setSort: (columnName: string | null, direction?: 'asc' | 'desc') => void;
   handleTransposedSort: (rowIndex: number) => void;
 };
 
@@ -458,6 +460,15 @@ export function useTableData({
     }
   }, [totalPages]);
 
+  const setSort = (
+    columnName: string | null,
+    direction: 'asc' | 'desc' = 'asc'
+  ) => {
+    if (!enableSort) return;
+    setSortColumn(columnName);
+    setSortDirection(direction);
+  };
+
   const handleSort = (columnName: string) => {
     if (!enableSort) return;
 
@@ -509,6 +520,7 @@ export function useTableData({
     sortDirection,
     sortedColumnIndex,
     handleSort,
+    setSort,
     handleTransposedSort,
 
     enablePagination,

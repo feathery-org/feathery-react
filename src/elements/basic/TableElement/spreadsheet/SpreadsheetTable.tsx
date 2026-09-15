@@ -7,6 +7,7 @@ import { CellValue } from './model';
 import { editorKindFor, parseCellInput, seedActionFor } from './fieldEditors';
 import { PendingChangesBar } from './PendingChangesBar';
 import { SearchBar } from './SearchBar';
+import type { SpreadsheetSort } from './HeaderMenu';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
 import { cellErrorKey, CellRules } from './validation';
 import { CellIssues, countIssues, issueRank } from './issues';
@@ -80,6 +81,8 @@ export type SpreadsheetTableProps = {
    * says (a file column is never typed into). Paste, fill and clear skip them.
    */
   readOnlyFieldKeys?: Set<string>;
+  /** Column sort, offered from each header's right-click menu. */
+  sort?: SpreadsheetSort;
 };
 
 export function SpreadsheetTable({
@@ -97,7 +100,8 @@ export function SpreadsheetTable({
   rowIdentityVersion = 0,
   pending,
   cellIssues,
-  readOnlyFieldKeys
+  readOnlyFieldKeys,
+  sort
 }: SpreadsheetTableProps) {
   const getValue = useCallback(
     (rowIndex: number, fieldKey: string): CellValue => {
@@ -369,6 +373,7 @@ export function SpreadsheetTable({
         onInsertRow={onInsertRow}
         onDeleteRow={onDeleteRow}
         onOpenSearch={search.openSearch}
+        sort={sort}
       />
     </div>
   );

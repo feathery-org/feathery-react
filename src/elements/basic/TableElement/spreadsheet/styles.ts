@@ -819,3 +819,10 @@ export const searchButtonStyle = {
   },
   '&:disabled': { opacity: 0.4, cursor: 'default' }
 } as const;
+
+// Sits after the header label for the sorted column.
+export const sortIndicatorStyle = {
+  marginInlineStart: '4px',
+  fontSize: `${HEADER_FONT_SIZE - 4}px`,
+  color: colors.gray500
+} as const;
