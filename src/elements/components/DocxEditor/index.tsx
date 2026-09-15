@@ -733,10 +733,12 @@ function DocxEditor({
       // must never be what the user walks away with.
       const blob = await exportDoc();
       const saveResult =
-        onSave && dirtyRef.current
-          ? await saveCurrentDocument(blob)
+        onSave && (dirtyRef.current || !!history)
+          ? history
+            ? await historySession.save()
+            : await saveCurrentDocument(blob)
           : undefined;
-      const url = saveResult?.file ?? downloadUrl;
+      const url = (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
       // No public copy exists for standalone hosts — their exported bytes are
       // the only source.
       if (url) triggerDownload(await fetchDownloadBlob(url));
@@ -757,7 +759,10 @@ function DocxEditor({
       // The host converts the SAVED document, so persist current edits first —
       // the PDF must match what's on screen.
       const blob = await exportDoc();
-      if (onSave && dirtyRef.current) await saveCurrentDocument(blob);
+      if (onSave && (dirtyRef.current || !!history)) {
+        if (history) await historySession.save();
+        else await saveCurrentDocument(blob);
+      }
       triggerDownload(await onExportPdf(), 'pdf');
     } catch (err) {
       onError?.((err as Error).message || String(err));
@@ -784,8 +789,10 @@ function DocxEditor({
     try {
       const blob = await exportDoc();
       const saveResult =
-        onSave && dirtyRef.current
-          ? await saveCurrentDocument(blob)
+        onSave && (dirtyRef.current || !!history)
+          ? history
+            ? await historySession.save()
+            : await saveCurrentDocument(blob)
           : undefined;
       await run(blob, saveResult);
     } catch (err) {
