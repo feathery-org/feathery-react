@@ -86,6 +86,24 @@ describe('useVersionDocument', () => {
     expect(fetchVersionFile).toHaveBeenCalledTimes(1);
   });
 
+  it('re-fetches a Current row when its saved document changes at the same id', async () => {
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(new TextEncoder().encode(`{"sfdt":"${url}"}`).buffer)
+    );
+    const h = host({ fetchVersionFile });
+    const checkpoint = version({ is_current: true, final_sfdt: 'checkpoint' });
+    const first = renderHook(() => useVersionDocument(h, checkpoint));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    expect(first.result.current.sfdt).toContain('checkpoint');
+    first.unmount();
+
+    const saved = version({ is_current: true, final_sfdt: 'closed' });
+    const closed = renderHook(() => useVersionDocument(h, saved));
+    await waitFor(() => expect(closed.result.current.loading).toBe(false));
+    expect(closed.result.current.sfdt).toContain('closed');
+    expect(fetchVersionFile).toHaveBeenCalledTimes(2);
+  });
+
   it('falls back to the version’s docx URL when there is no final SFDT', async () => {
     const h = host();
     const ver = version({ editor_file: 'editor.docx', file: 'public.docx' });

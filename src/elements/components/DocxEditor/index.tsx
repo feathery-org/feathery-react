@@ -13,6 +13,8 @@ import {
 } from './useDocxEditor';
 import { TableDeleteImpact } from './bindings/tableDeleteGuard';
 import { editGroupKey } from './history/sfdtDiff/index';
+import { stepperRevisions } from './history/stepperRevisions';
+import { firstUserActorKey } from './history/authorColors';
 import { useDocxHistorySession } from './history/useDocxHistorySession';
 import { VersionDocument } from './history/useVersionDocument';
 import VersionViewer from './history/VersionViewer';
@@ -227,6 +229,7 @@ function DocxEditor({
   // The version list reported up by the History panel, for auto-selecting the
   // latest (Current) version when the panel opens.
   const [historyVersions, setHistoryVersions] = useState<DocxVersion[]>([]);
+  const firstUserKey = firstUserActorKey(historyVersions);
   // Version highlights are always shown when available (no user toggle). The
   // resolved counts below drive the version bar's summary; reset per version.
   // Highlight-changes toggle (version bar). Toggling remounts the viewer.
@@ -509,15 +512,15 @@ function DocxEditor({
   });
   historyOnEditRef.current = historySession.onEdit;
 
-  // Open a version read-only in the viewer. The in-progress current version has
-  // no stored files, so build a live display document for it (its session diffed
-  // live → highlights); stored versions fetch their own files (liveDoc null).
+  // Open a version read-only in the viewer. An in-progress session previews
+  // live edits; a saved Current row with no open session reads its stored change
+  // files, like any older version.
   const selectVersion = useCallback(
     (version: DocxVersion) => {
       let live: VersionDocument | null = null;
-      // Current is mutable: autosave checkpoints can update its stored files
-      // under the same version id. Always derive it from the live editor rather
-      // than the cached server checkpoint, which may already be stale.
+      // During an open session, autosave checkpoints can already be stale.
+      // After Save/reload, the browser has no live diff baseline; the latest
+      // saved change files are then the only source for user edit stepping.
       if (version.is_current) {
         const preview = historySession.previewSession();
         if (preview) {
@@ -530,11 +533,12 @@ function DocxEditor({
             formatCount: preview.formatCount,
             pendingCount: preview.pendingCount
           };
-        } else {
-          // No in-progress session diff (between sessions, or right after a
-          // restore/accept that nets to no change): show the current document
-          // plain. Selecting a row always highlights THAT row — never redirect
-          // to another version, which made the panel jump to a prior one.
+        } else if (
+          !version.final_sfdt ||
+          (historySession.isSessionOpen() && !version.changes)
+        ) {
+          // With no saved change list to fall back to, show the live document
+          // plain until a checkpoint finishes uploading.
           try {
             const sfdt = editor?.serialize?.();
             if (sfdt) {
@@ -551,6 +555,22 @@ function DocxEditor({
     },
     [editor, historySession]
   );
+
+  // Save can finish while Current is already selected. Once its refreshed row
+  // includes the stored history files, replace any plain live preview with the
+  // saved version so the viewer can render and step through those edits.
+  useEffect(() => {
+    if (!viewingVersion?.is_current) return;
+    const saved = historyVersions.find((v) => v.id === viewingVersion.id);
+    if (!saved?.final_sfdt || (saved === viewingVersion && !liveDoc)) return;
+    // A healthy live preview is fresher than an in-progress checkpoint. A
+    // degraded plain preview should yield to saved tracked changes as soon as
+    // the refreshed row contains them.
+    if (historySession.isSessionOpen() && liveDoc && !liveDoc.degraded) return;
+    changeStepRef.current = -1;
+    setLiveDoc(null);
+    setViewingVersion(saved);
+  }, [historyVersions, historySession, liveDoc, viewingVersion]);
 
   // Back to the live editor (its toolbar returns because viewingVersion clears).
   const exitVersionView = useCallback(() => {
@@ -577,7 +597,7 @@ function DocxEditor({
 
   const stepChange = useCallback((direction: 1 | -1) => {
     const ed = viewerEditorRef.current;
-    const revisions: any[] = ed?.revisions?.revisions ?? [];
+    const revisions = stepperRevisions(ed);
     if (!revisions.length) return;
     // Bucket every revision under its group, preserving document order and the
     // order groups first appear.
@@ -739,7 +759,8 @@ function DocxEditor({
             ? await historySession.save()
             : await saveCurrentDocument(blob)
           : undefined;
-      const url = (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
+      const url =
+        (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
       // No public copy exists for standalone hosts — their exported bytes are
       // the only source.
       if (url) triggerDownload(await fetchDownloadBlob(url));
@@ -1012,6 +1033,7 @@ function DocxEditor({
               key={`hl:${highlightsOn}`}
               host={history}
               version={viewingVersion}
+              firstUserKey={firstUserKey}
               serviceUrl={serviceUrl}
               headers={headers}
               highlightsOn={highlightsOn}

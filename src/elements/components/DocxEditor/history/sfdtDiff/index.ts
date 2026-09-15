@@ -503,7 +503,9 @@ export function collectRobinRuns(doc: any): RevisionRun[] {
  * or human — groups by its hunk group, so one CONTIGUOUS block of edits is one
  * step: a replace's halves share a hunk id (emitInlineHunks), and consecutive
  * same-author block insertions coalesce into one ins_block hunk (emitHunks), so
- * e.g. a whole table Robin inserted steps as a single edit. Grouping is by the
+ * e.g. a whole table Robin inserted steps as a single edit. Empty paragraphs
+ * at the edge of such a hunk get their own group so stepping lands on text.
+ * Grouping is by the
  * edit's shape, NOT by session/turn, so it stays correct when a session holds
  * several assistant turns. Returns null for revisions that are not ours.
  */
@@ -633,7 +635,8 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
       // remain valid for short runs.
       return (
         candidate === t ||
-        (candidate.length >= 8 && t.length >= 8 &&
+        (candidate.length >= 8 &&
+          t.length >= 8 &&
           (candidate.includes(t) || t.includes(candidate)))
       );
     });
@@ -652,7 +655,8 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
       const candidate = r.text.trim();
       return (
         candidate === t ||
-        (candidate.length >= 8 && t.length >= 8 &&
+        (candidate.length >= 8 &&
+          t.length >= 8 &&
           (candidate.includes(t) || t.includes(candidate)))
       );
     });
@@ -803,41 +807,54 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
   // Whole-block insertions: mark every inline and the paragraph mark.
   for (const hunk of changes.hunks) {
     if (hunk.type !== 'ins_block') continue;
-    // Gather the inserted paragraphs' text up front so the whole block can be
-    // marked pending when it matches a still-open assistant suggestion.
-    let insBlockText = '';
-    for (let k = 0; k < hunk.count; k++) {
-      const p = [...hunk.at.block];
-      p[p.length - 1] = (p[p.length - 1] as number) + k;
-      const para = getBlock(doc, p);
-      if (para && Array.isArray(para.inlines))
-        insBlockText += flattenForDisplay(para)
-          .map((c) => c.ch)
-          .join('');
-    }
-    const resolved = resolveContentAuthor('ins', insBlockText, hunk.author);
-    const mark = newRevision(
-      'Insertion',
-      resolved.author,
-      hunk.id,
-      resolved.pending,
-      blockGroupKey(resolved.author, hunk.at.block)
-    );
-    for (let k = 0; k < hunk.count; k++) {
+    const inserted = Array.from({ length: hunk.count }, (_, k) => {
       const path = [...hunk.at.block];
       path[path.length - 1] = (path[path.length - 1] as number) + k;
       const para = getBlock(doc, path);
-      if (!para || !Array.isArray(para.inlines)) continue;
-      const chars = flattenForDisplay(para);
-      for (const c of chars) c.revisionIds.push(mark.revisionId);
-      para.inlines = rebuildInlines(chars);
-      para.characterFormat = {
-        ...(para.characterFormat ?? {}),
-        revisionIds: [
-          ...((para.characterFormat?.revisionIds as string[]) ?? []),
-          mark.revisionId
-        ]
-      };
+      const text =
+        para && Array.isArray(para.inlines)
+          ? flattenForDisplay(para)
+              .map((c) => c.ch)
+              .join('')
+          : '';
+      return { path, para, text };
+    });
+    // The stored hunk may start on a blank paragraph and continue into the
+    // user's real line. Split that boundary into separate revisions: the blank
+    // mark is ignored by the stepper, and the line gets its own text anchor.
+    for (let start = 0; start < inserted.length; ) {
+      let end = start + 1;
+      while (
+        end < inserted.length &&
+        Boolean(inserted[end].text) === Boolean(inserted[start].text)
+      )
+        end++;
+      const insBlockText = inserted
+        .slice(start, end)
+        .map((part) => part.text)
+        .join('');
+      const resolved = resolveContentAuthor('ins', insBlockText, hunk.author);
+      const mark = newRevision(
+        'Insertion',
+        resolved.author,
+        hunk.id,
+        resolved.pending,
+        blockGroupKey(resolved.author, inserted[start].path)
+      );
+      for (const { para } of inserted.slice(start, end)) {
+        if (!para || !Array.isArray(para.inlines)) continue;
+        const chars = flattenForDisplay(para);
+        for (const c of chars) c.revisionIds.push(mark.revisionId);
+        para.inlines = rebuildInlines(chars);
+        para.characterFormat = {
+          ...(para.characterFormat ?? {}),
+          revisionIds: [
+            ...((para.characterFormat?.revisionIds as string[]) ?? []),
+            mark.revisionId
+          ]
+        };
+      }
+      start = end;
     }
   }
 

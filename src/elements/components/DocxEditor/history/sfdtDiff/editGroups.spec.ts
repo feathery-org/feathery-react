@@ -4,7 +4,9 @@
 // separate edits — assistant or human — are separate buckets.
 import {
   cellText,
+  destroyRealDocumentEditor,
   docWith,
+  makeRealDocumentEditor,
   para,
   row,
   table,
@@ -16,6 +18,7 @@ import {
   diffSession,
   editGroupKey
 } from './index';
+import { stepperRevisions } from '../stepperRevisions';
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
@@ -160,6 +163,55 @@ describe('edit groups (version-bar count + steppers)', () => {
     );
     const display = applyHunks(clone(final), changes);
     expect(countEditGroups(display)).toBe(1);
+  });
+
+  it('steps onto a user line after an inserted blank paragraph', () => {
+    const base = docWith(para(textRun('Before.')));
+    const final = docWith(
+      para(textRun('Before.')),
+      para(),
+      para(textRun('second edit while editng the table'))
+    );
+    const changes = diffSession(
+      clone(base),
+      [{ sfdt: clone(final), author: 'you' }],
+      's'
+    );
+    expect(changes.hunks).toEqual([
+      expect.objectContaining({ type: 'ins_block', count: 2 })
+    ]);
+    const display = applyHunks(clone(final), changes);
+    const blocks = display.sections[0].blocks;
+    const blankId = blocks[1].characterFormat.revisionIds[0];
+    const lineId = blocks[2].inlines[0].revisionIds[0];
+    const blankRevision = display.revisions.find(
+      (revision: any) => revision.revisionId === blankId
+    );
+    const lineRevision = display.revisions.find(
+      (revision: any) => revision.revisionId === lineId
+    );
+    expect(lineId).not.toBe(blankId);
+    expect(editGroupKey(lineRevision)).not.toBe(editGroupKey(blankRevision));
+    expect(countEditGroups(display)).toBe(1);
+
+    // Syncfusion exposes the loaded text revision through changes, even when
+    // its separate revisions array contains only the blank paragraph mark.
+    const editor = makeRealDocumentEditor(display);
+    try {
+      const navigable = stepperRevisions(editor);
+      const target = navigable.find((revision: any) =>
+        (revision.range ?? []).some(
+          (range: any) => range.text === 'second edit while editng the table'
+        )
+      );
+      expect(target).toBeDefined();
+      expect(editGroupKey(target)).toBe(editGroupKey(lineRevision));
+      expect(() =>
+        editor.selection.selectRevision(target, undefined, undefined, true)
+      ).not.toThrow();
+    } finally {
+      destroyRealDocumentEditor(editor);
+    }
   });
 
   it('still counts a version whose only change is a blank line', () => {

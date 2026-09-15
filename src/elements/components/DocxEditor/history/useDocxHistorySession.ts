@@ -88,6 +88,8 @@ export interface UseDocxHistorySessionResult {
    *  a highlighted display document for the in-progress current version, which
    *  has no stored files yet. Null when no session is open or nothing changed. */
   previewSession: () => SessionPreview | null;
+  /** Whether the current document still has an in-progress editing session. */
+  isSessionOpen: () => boolean;
 }
 
 async function gzip(text: string): Promise<Blob> {
@@ -240,6 +242,27 @@ export function useDocxHistorySession(
             if (capped.length === snap.robinRuns.length && capped.length)
               changes.robinRuns = capped;
           }
+          // Session activity includes accepts and edits that were later undone.
+          // Persist only authors whose final revisions the viewer can render.
+          const display = applyHunks(fDoc, changes);
+          changes.trackedAuthors = Array.from(
+            new Set(
+              (display.revisions ?? [])
+                .filter((revision: any) => {
+                  try {
+                    return (
+                      JSON.parse(revision.customData ?? '{}').source ===
+                      'history'
+                    );
+                  } catch {
+                    return false;
+                  }
+                })
+                .map((revision: any) =>
+                  String(revision.author ?? '').replace(/^fmt:/, '')
+                )
+            )
+          );
           changesJson = await gzip(JSON.stringify(changes));
         }
       } catch {
@@ -271,7 +294,9 @@ export function useDocxHistorySession(
       authors: DocxSaveMeta['authors'],
       snap: CloseSnapshot
     ): Promise<void> => {
-      const next = closeQueue.then(() => closeSession(sessionId, authors, snap));
+      const next = closeQueue.then(() =>
+        closeSession(sessionId, authors, snap)
+      );
       closeQueue = next.catch(() => undefined);
       return next;
     };
@@ -321,8 +346,6 @@ export function useDocxHistorySession(
           authors: meta.authors,
           closeSession: true
         });
-        setSavedAt(new Date());
-        setStatus('saved');
       } catch {
         setStatus('error');
         // The document PATCH is the persistence boundary. Do not resolve an
@@ -330,6 +353,10 @@ export function useDocxHistorySession(
         throw new Error('Document save failed');
       }
       await queueClose(meta.sessionId, meta.authors, snap);
+      // Refresh the history list only after the saved diff and SFDT are ready.
+      // Otherwise a selected Current row can retain its pre-close metadata.
+      setSavedAt(new Date());
+      setStatus('saved');
     };
 
     const scheduler = createAutosaveScheduler({
@@ -424,9 +451,12 @@ export function useDocxHistorySession(
         robinRuns: robinRunsRef.current
       };
       lastCheckpointAt = Date.now();
-      // Fire-and-forget; closeSession swallows its own network errors (the
-      // .catch is just to satisfy no-floating-promises).
-      queueClose(meta.sessionId, meta.authors, snap).catch(() => undefined);
+      // Refresh the history list after the checkpoint files are uploaded. A
+      // refresh on the DOCX autosave alone can read the pre-checkpoint row and
+      // leave an already-selected Current version without its stepper.
+      queueClose(meta.sessionId, meta.authors, snap)
+        .then(() => setSavedAt(new Date()))
+        .catch(() => undefined);
     };
 
     return { slices, scheduler, tracker, checkpointSession };
@@ -583,5 +613,15 @@ export function useDocxHistorySession(
     }
   }, [engine, tracker]);
 
-  return { status, savedAt, onEdit, save: explicitSave, retry, previewSession };
+  const isSessionOpen = useCallback(() => tracker.isOpen(), [tracker]);
+
+  return {
+    status,
+    savedAt,
+    onEdit,
+    save: explicitSave,
+    retry,
+    previewSession,
+    isSessionOpen
+  };
 }

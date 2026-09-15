@@ -9,7 +9,11 @@ import {
   PAPER
 } from '../TrackedChangeGroups/styles';
 import { RobinIcon } from '../icons';
-import { colorForAuthor, initialsForAuthor } from './authorColors';
+import {
+  colorForAuthor,
+  firstUserActorKey,
+  initialsForAuthor
+} from './authorColors';
 import { groupVersions, MonthSection } from './versionGrouping';
 import { DocxHistoryHost, DocxVersion, VersionAuthor } from './types';
 
@@ -29,7 +33,7 @@ interface Props {
   refreshKey?: number | string;
 }
 
-type Author = { kind: string; label: string };
+type Author = { kind: string; label: string; key?: string };
 
 // "Current" pill + selected/hover row backgrounds, matched to the design.
 const PILL_BLUE = '#2563eb';
@@ -63,8 +67,14 @@ function formatWhen(iso: string, relative = false): string {
   return `${day}, ${time}`;
 }
 
-function Avatar({ author }: { author: Author }) {
-  const color = colorForAuthor(author);
+function Avatar({
+  author,
+  firstUserKey
+}: {
+  author: Author;
+  firstUserKey: string;
+}) {
+  const color = colorForAuthor(author, firstUserKey);
   return (
     <span
       title={author.kind === 'assistant' ? 'Robin' : author.label || 'You'}
@@ -96,7 +106,13 @@ const authorName = (a: Author): string =>
   a.kind === 'assistant' ? 'Robin' : a.label || 'You';
 
 // One author line: avatar + name, stacked (a version can list several).
-function AuthorLine({ author }: { author: Author }) {
+function AuthorLine({
+  author,
+  firstUserKey
+}: {
+  author: Author;
+  firstUserKey: string;
+}) {
   return (
     <div
       css={{
@@ -107,7 +123,7 @@ function AuthorLine({ author }: { author: Author }) {
         color: INK_2
       }}
     >
-      <Avatar author={author} />
+      <Avatar author={author} firstUserKey={firstUserKey} />
       <span>{authorName(author)}</span>
     </div>
   );
@@ -119,6 +135,7 @@ function VersionRow({
   isCurrent,
   selected,
   pendingCount,
+  firstUserKey,
   onSelect
 }: {
   version: DocxVersion;
@@ -126,24 +143,25 @@ function VersionRow({
   isCurrent: boolean;
   selected?: boolean;
   pendingCount?: number;
+  firstUserKey: string;
   onSelect?: (v: DocxVersion) => void;
 }) {
-  // The baseline (initial upload) has no session, so its authors list is empty
-  // and it would render with no avatar. Attribute it to the current viewer so
-  // every row shows one, consistent with the rest of the list.
-  const effectiveAuthors: Author[] = authors.length
-    ? authors
-    : [{ kind: 'user', label: 'You' }];
-  // The browser sends the viewer-facing "You" label, but the backend also
-  // resolves the authenticated actor. Prefer that durable identity when it is
-  // available so collaborators see who actually made an older edit.
+  // The open session's author list records content-change activity. Until a
+  // checkpoint has saved final hunks, it cannot prove a surviving tracked edit.
+  const hasTrackedChanges =
+    Boolean(version.changes) &&
+    ((version.change_count ?? 0) > 0 || (version.format_change_count ?? 0) > 0);
+  const effectiveAuthors: Author[] = hasTrackedChanges ? authors : [];
+  // The session writes "You" in the browser; the saved actor identifies who
+  // that session belonged to. Use the durable label for display and colour.
   const displayedAuthors = effectiveAuthors.map((author) =>
     author.kind === 'user' &&
     (!author.label || author.label === 'You') &&
     (version.actor_name || version.actor_label)
       ? {
           ...author,
-          label: version.actor_name || version.actor_label
+          label: version.actor_name || version.actor_label,
+          key: version.actor_label || version.actor_name
         }
       : author
   );
@@ -220,9 +238,17 @@ function VersionRow({
           gap: 6
         }}
       >
-        {displayedAuthors.map((a) => (
-          <AuthorLine key={`${a.kind}:${a.label}`} author={a} />
-        ))}
+        {version.is_baseline ? (
+          <span css={{ fontSize: 13, color: INK_2 }}>Original document</span>
+        ) : (
+          displayedAuthors.map((a) => (
+            <AuthorLine
+              key={`${a.kind}:${a.label}`}
+              author={a}
+              firstUserKey={firstUserKey}
+            />
+          ))
+        )}
       </div>
     </div>
   );
@@ -301,6 +327,7 @@ export default function HistoryPanel({
   const currentSeq =
     versions.reduce((max, v) => (v.seq > max ? v.seq : max), -1) ?? null;
   const sections: MonthSection[] = groupVersions(versions);
+  const firstUserKey = firstUserActorKey(versions);
 
   return (
     <div css={{ overflowY: 'auto', height: '100%', padding: '6px 8px 12px' }}>
@@ -321,6 +348,7 @@ export default function HistoryPanel({
               key={cluster.primary.id}
               version={cluster.primary}
               authors={cluster.authors}
+              firstUserKey={firstUserKey}
               isCurrent={cluster.primary.seq === currentSeq}
               selected={selectedId != null && cluster.primary.id === selectedId}
               pendingCount={

@@ -1,7 +1,9 @@
 import React from 'react';
 import { render, waitFor } from '@testing-library/react';
 
+import { installRevisionHighlightRendering } from '../useDocxEditor';
 import VersionViewer from './VersionViewer';
+import { colorForAuthor } from './authorColors';
 import { DocxHistoryHost, DocxVersion } from './types';
 
 // Drive the viewer against a fake ej global and a stubbed loader so no real
@@ -13,6 +15,10 @@ jest.mock('../ejLoader', () => ({
 }));
 jest.mock('../contentControlSafety', () => ({
   stampMissingContentControlColors: jest.fn()
+}));
+jest.mock('../useDocxEditor', () => ({
+  installRevisionHighlightRendering: jest.fn(),
+  closeTrackedChangeReviewPane: jest.fn()
 }));
 
 const construct = jest.fn();
@@ -106,6 +112,7 @@ beforeEach(() => {
   construct.mockClear();
   open.mockClear();
   destroy.mockClear();
+  (installRevisionHighlightRendering as jest.Mock).mockClear();
   (globalThis as any).ej = {
     documenteditor: { DocumentEditorContainer: FakeDocumentEditorContainer }
   };
@@ -116,6 +123,33 @@ afterEach(() => {
 });
 
 describe('VersionViewer', () => {
+  it('paints the stored actor’s edits with the same colour as their history avatar', async () => {
+    const actor = 'sam@co.com';
+    render(
+      <VersionViewer
+        host={host()}
+        version={version({
+          actor_label: actor,
+          authors: [{ kind: 'user', label: 'You' }]
+        })}
+        liveDoc={{
+          loading: false,
+          error: false,
+          sfdt: '{"live":true}',
+          degraded: false
+        }}
+      />
+    );
+    await waitFor(() =>
+      expect(installRevisionHighlightRendering).toHaveBeenCalled()
+    );
+    const colorForRevision = (installRevisionHighlightRendering as jest.Mock)
+      .mock.calls[0][1] as (author: string) => string;
+    expect(colorForRevision('you')).toBe(
+      colorForAuthor({ kind: 'user', key: actor, label: actor })
+    );
+  });
+
   it('constructs a read-only editor and opens the version SFDT', async () => {
     render(
       <VersionViewer host={host()} version={version({ final_sfdt: 'u' })} />
@@ -124,6 +158,21 @@ describe('VersionViewer', () => {
     await waitFor(() => expect(construct).toHaveBeenCalled());
     await waitFor(() => expect(open).toHaveBeenCalledWith('{"sfdt":"v"}'));
     expect(lastEditor.isReadOnly).toBe(true);
+  });
+
+  it('opens a saved Current version through its stored SFDT', async () => {
+    const h = host();
+    render(
+      <VersionViewer
+        host={h}
+        version={version({ is_current: true, final_sfdt: 'saved-current' })}
+      />
+    );
+
+    await waitFor(() =>
+      expect(h.fetchVersionFile).toHaveBeenCalledWith('saved-current')
+    );
+    await waitFor(() => expect(open).toHaveBeenCalledWith('{"sfdt":"v"}'));
   });
 
   it('destroys the editor on unmount', async () => {

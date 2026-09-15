@@ -97,6 +97,8 @@ export interface ChangeList {
   changeCount: number;
   formatChangeCount: number;
   authors: AuthorKey[];
+  /** Authors of revisions actually rendered from the final change list. */
+  trackedAuthors?: AuthorKey[];
   /** Text Robin authored during the session, captured while its revisions were
    *  live. Used at view time to keep an ACCEPTED Robin edit coloured as Robin
    *  (the live-revision rescue can't see accepted edits). Optional/back-compat:

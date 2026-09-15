@@ -48,6 +48,8 @@ interface Props {
   version: DocxVersion;
   serviceUrl?: string;
   headers?: Record<string, string>[];
+  /** Stable identity of this document's first human editor (orange). */
+  firstUserKey?: string;
   /** Show tracked-change highlights (default true). Off opens the version with
    *  changes accepted (plain final state). The parent keys the viewer on this,
    *  so toggling remounts and re-opens. */
@@ -73,6 +75,7 @@ export default function VersionViewer({
   version,
   serviceUrl,
   headers,
+  firstUserKey,
   highlightsOn = true,
   liveDoc,
   onMeta,
@@ -88,6 +91,10 @@ export default function VersionViewer({
   // so the normal highlight path renders it exactly like a stored version.
   const fetched = useVersionDocument(host, liveDoc ? null : version);
   const doc = liveDoc ?? fetched;
+  const versionActorKeyRef = useRef(version.actor_label || version.actor_name);
+  versionActorKeyRef.current = version.actor_label || version.actor_name;
+  const firstUserKeyRef = useRef(firstUserKey);
+  firstUserKeyRef.current = firstUserKey;
 
   // Report the version's counts up to the bar once resolved.
   const onMetaRef = useRef(onMeta);
@@ -200,7 +207,13 @@ export default function VersionViewer({
             // doc and hide deletions); the custom renderer overrides Syncfusion's
             // default track-change styling with our washes, and we keep the
             // Changes/review pane shut so no tracked-change panel appears.
-            installRevisionHighlightRendering(viewer, colorForRevisionAuthor);
+            installRevisionHighlightRendering(viewer, (author) =>
+              colorForRevisionAuthor(
+                author,
+                versionActorKeyRef.current,
+                firstUserKeyRef.current
+              )
+            );
             viewer.showRevisions = true;
             closeTrackedChangeReviewPane();
           } catch {

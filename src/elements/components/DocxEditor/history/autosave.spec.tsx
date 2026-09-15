@@ -65,6 +65,7 @@ describe('useDocxHistorySession', () => {
 
     act(() => view.result.current.onEdit({ assistant: false }));
     expect(view.result.current.status).toBe('dirty');
+    expect(view.result.current.isSessionOpen()).toBe(true);
 
     await act(async () => {
       await view.result.current.save();
@@ -83,6 +84,9 @@ describe('useDocxHistorySession', () => {
     expect(closePayload.changeCount).toBe(0);
     expect(closePayload.changesJson).toBeInstanceOf(Blob);
     expect(closePayload.finalSfdtGz).toBeInstanceOf(Blob);
+    expect(view.result.current.isSessionOpen()).toBe(false);
+    expect(view.result.current.previewSession()).toBeNull();
+    expect(view.result.current.savedAt).not.toBeNull();
   });
 
   it('propagates a document save failure and does not close history', async () => {
@@ -249,6 +253,30 @@ describe('useDocxHistorySession', () => {
     expect(host.closeVersion.mock.calls.at(-1)?.[0]).toBe(sessionId);
   });
 
+  it('refreshes version history after a Current checkpoint finishes uploading', async () => {
+    const { view, editor, host } = setup();
+    let finishUpload: () => void = () => undefined;
+    host.closeVersion.mockImplementation(
+      () =>
+        new Promise<any>((resolve) => {
+          finishUpload = () => resolve(null);
+        })
+    );
+
+    act(() => setAssistantSessionActive(editor, true));
+    act(() => view.result.current.onEdit({ assistant: true }));
+    act(() => setAssistantSessionActive(editor, false));
+    await flush();
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+    expect(view.result.current.savedAt).toBeNull();
+
+    await act(async () => {
+      finishUpload();
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(view.result.current.savedAt).not.toBeNull();
+  });
+
   it('attributes Robin’s first op to Robin via the pre-turn snapshot', async () => {
     // contentChange (→ onEdit) fires AFTER an op applies, so at the user→Robin
     // boundary the document already holds Robin's first op. The slice must come
@@ -333,6 +361,7 @@ describe('useDocxHistorySession', () => {
   });
 
   it('re-attributes an accepted Robin edit to Robin in the live "Current" preview', async () => {
+    (globalThis as any).CompressionStream = undefined;
     // Reproduces the reported bug: a Robin edit whose slice the diff tags 'you',
     // then accepted in the same open session (author flips to 'you'). The live
     // preview must use the captured Robin runs to colour it Robin, not the viewer.
@@ -340,7 +369,7 @@ describe('useDocxHistorySession', () => {
       sections: [{ blocks: [{ inlines: [{ text: 'start' }] }] }]
     });
     const editor: any = { serialize: () => doc };
-    const { view } = setup({}, editor);
+    const { view, host } = setup({}, editor);
     await flush(); // pristine baseline "start"
 
     // A user edit opens the session as 'you' (so Robin's text lands in a 'you' slice).
@@ -376,6 +405,14 @@ describe('useDocxHistorySession', () => {
     const authors = (display.revisions ?? []).map((r: any) => r.author);
     expect(authors).toContain('robin');
     expect(authors).not.toContain('you');
+    await act(async () => {
+      await view.result.current.save();
+    });
+    const savedChanges = JSON.parse(
+      await blobText(host.closeVersion.mock.calls[0][1].changesJson!)
+    );
+    expect(savedChanges.trackedAuthors).toContain('robin');
+    expect(savedChanges.trackedAuthors).not.toContain('you');
   });
 
   it('keeps Robin as the closing author when a user-attributed change fires during the close', async () => {

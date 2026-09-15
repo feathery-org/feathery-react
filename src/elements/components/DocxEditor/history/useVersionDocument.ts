@@ -32,9 +32,9 @@ export interface VersionDocument {
   degraded: boolean;
 }
 
-// A closed version's bytes are immutable (its final SFDT and change list never
-// change once uploaded), so a resolved document can be cached by version id and
-// reused on every later visit — no re-fetch, no re-gunzip, no re-applyHunks.
+// Older versions are immutable, so a resolved document can be cached by id.
+// Current can still receive a later checkpoint or close at the same id, and
+// must be fetched again when its row is refreshed.
 // Bounded to the most-recently-used few so memory stays flat on long sessions.
 type ResolvedVersion = Omit<VersionDocument, 'loading'>;
 const CACHE_MAX = 8;
@@ -91,7 +91,7 @@ export function useVersionDocument(
     // loading state — the previous document stays on screen until the reused
     // editor re-opens this one, so switching back to a seen version is instant
     // and shows no skeleton.
-    const cached = cacheGet(version.id);
+    const cached = version.is_current ? undefined : cacheGet(version.id);
     if (cached) {
       reqId.current++;
       setState({ loading: false, ...cached });
@@ -103,7 +103,7 @@ export function useVersionDocument(
     const done = (next: Omit<VersionDocument, 'loading'>) => {
       if (id !== reqId.current) return;
       // Cache successful resolutions only — an error should be retried later.
-      if (!next.error) cacheSet(version.id, next);
+      if (!next.error && !version.is_current) cacheSet(version.id, next);
       setState({ loading: false, ...next });
     };
 

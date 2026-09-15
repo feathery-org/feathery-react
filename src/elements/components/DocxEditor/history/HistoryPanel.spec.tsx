@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 
 import HistoryPanel from './HistoryPanel';
 import { DocxHistoryHost, DocxVersion, VersionAuthor } from './types';
@@ -70,24 +70,62 @@ describe('HistoryPanel', () => {
     expect(await findByText('No versions yet.')).toBeTruthy();
   });
 
-  it('shows an avatar for the baseline version even with no authors', async () => {
-    // The baseline (initial upload) has an empty authors list; it must still
-    // render an avatar (falls back to the current viewer's "Y").
+  it('labels an authorless baseline as the original document, not an edit by the viewer', async () => {
     const host = makeHost([
-      v({ name: 'Baseline', seq: 0, authors: [] as any })
+      v({
+        name: '',
+        seq: 0,
+        is_baseline: true,
+        ended_at: '2026-09-14T20:17:01Z',
+        authors: []
+      })
     ]);
-    const { findByText, getByTitle } = renderPanel(host);
-    await findByText('Baseline');
-    expect(getByTitle('You')).toBeTruthy();
+    const { findByText, queryByTitle } = renderPanel(host);
+    await findByText('Original document');
+    expect(queryByTitle('You')).toBeNull();
   });
 
   it('uses the backend-resolved actor identity for a collaborator version', async () => {
     const host = makeHost([
-      v({ authors: [{ kind: 'user', label: 'You' }], actor_label: 'a@x.co' })
+      v({
+        authors: [{ kind: 'user', label: 'You' }],
+        actor_label: 'a@x.co',
+        changes: '/changes.gz',
+        change_count: 1
+      })
     ]);
     const { findByText, getByTitle } = renderPanel(host);
     await findByText('a@x.co');
     expect(getByTitle('a@x.co')).toBeTruthy();
+  });
+
+  it('does not show a session-activity avatar without saved tracked changes', async () => {
+    const host = makeHost([
+      v({
+        name: 'Activity only',
+        authors: [{ kind: 'user', label: 'You' }],
+        changes: null,
+        change_count: null
+      })
+    ]);
+    const { findByText, queryByTitle } = renderPanel(host);
+    await findByText('Activity only');
+    expect(queryByTitle('You')).toBeNull();
+  });
+
+  it('shows only authors with surviving edits on a closed version', async () => {
+    const host = makeHost([
+      v({
+        name: 'Table insertion',
+        authors: [{ kind: 'assistant', label: 'Robin' }],
+        changes: '/changes.gz',
+        change_count: 15
+      })
+    ]);
+    const { findByText, queryByTitle, getByText } = renderPanel(host);
+    await findByText('Table insertion');
+    expect(getByText('Robin')).toBeTruthy();
+    expect(queryByTitle('You')).toBeNull();
   });
 
   it('lists versions under a month header and tags the newest Current', async () => {
