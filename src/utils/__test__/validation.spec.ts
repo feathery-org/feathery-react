@@ -6,7 +6,7 @@ import {
   loadPhoneValidator,
   phoneLibPromise
 } from '../validation';
-import { fieldValues } from '../init';
+import { fieldValues, initInfo } from '../init';
 import { featheryDoc } from '../browser';
 
 jest.mock('../init', () => ({
@@ -182,6 +182,63 @@ describe('validation', () => {
   });
 
   describe('getStandardFieldError', () => {
+    describe('number bounds', () => {
+      const numberServar = (servar: any = {}) => ({
+        required: false,
+        type: 'integer_field',
+        key: 'amount',
+        repeated: false,
+        ...servar
+      });
+
+      it('reports a value outside the static columns with the fallback text', () => {
+        const servar = numberServar({ min_length: 10, max_length: 20 });
+        expect(getStandardFieldError(5, servar, null)).toEqual(
+          'Your entry must be at least 10'
+        );
+        expect(getStandardFieldError(25, servar, null)).toEqual(
+          'Your entry must be at most 20'
+        );
+        expect(getStandardFieldError(15, servar, null)).toEqual('');
+        // 0 is a value, not an empty entry
+        expect(
+          getStandardFieldError(0, numberServar({ min_length: 1 }), null)
+        ).toEqual('Your entry must be at least 1');
+        expect(getStandardFieldError('', servar, null)).toEqual('');
+        expect(getStandardFieldError(NaN, servar, null)).toEqual('');
+      });
+
+      it('prefers the backend default error text', () => {
+        (initInfo as jest.Mock).mockReturnValueOnce({
+          defaultErrors: { maximum_value: 'Max is {value}' }
+        });
+        expect(
+          getStandardFieldError(25, numberServar({ max_length: 20 }), null)
+        ).toEqual('Max is 20');
+      });
+
+      it('uses a bound that tracks another field, per repeat row', () => {
+        Object.assign(fieldValues, { cap: [20, 40], amount: [25, 25] });
+        const servar = numberServar({
+          repeated: true,
+          metadata: {
+            bound_fields: {
+              min: null,
+              max: {
+                field_type: 'servar',
+                field_id: 'cap-id',
+                field_key: 'cap'
+              }
+            }
+          }
+        });
+        expect(validateElement({ servar }, 1)).toEqual('');
+        expect(validateElement({ servar }, 0)).toEqual(
+          'Your entry must be at most 20'
+        );
+      });
+    });
+
     it('gets the error for an empty required value', () => {
       // Arrange
       const val = '';
