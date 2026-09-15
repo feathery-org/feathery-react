@@ -1,4 +1,5 @@
 import type { TableIssue } from '../elements/basic/TableElement/spreadsheet/issues';
+import type { Column } from '../elements/basic/TableElement/types';
 
 type AssistantClientCallbacks = {
   buttonOnClick: (button: any) => Promise<void>;
@@ -8,6 +9,9 @@ type AssistantClientCallbacks = {
 };
 
 export type TableHandlers = {
+  // The columns the grid is actually rendering, which on a Hub table are
+  // resolved from the live Hub schema rather than the ones stored on the element
+  columns: Column[];
   handleCellEdit: (fieldKey: string, rowIndex: number, value: any) => void;
   handleAddRow: () => void;
   handleDeleteRow: (rowIndex: number) => void;
@@ -62,6 +66,11 @@ export default class AssistantClient {
 
   registerTable(tableId: string, handlers: TableHandlers): void {
     this._tables.set(tableId, handlers);
+  }
+
+  /** Columns a mounted table is rendering, null when it isn't mounted */
+  getTableColumns(tableId: string): Column[] | null {
+    return this._tables.get(tableId)?.columns ?? null;
   }
 
   unregisterTable(tableId: string): void {
