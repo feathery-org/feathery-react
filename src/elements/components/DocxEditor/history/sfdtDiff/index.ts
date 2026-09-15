@@ -624,10 +624,19 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
     if (!pendingRuns.length) return undefined;
     const t = text.trim();
     if (!t) return undefined;
-    return pendingRuns.find(
-      (r) =>
-        r.kind === kind && (r.text.includes(t) || t.includes(r.text.trim()))
-    );
+    return pendingRuns.find((r) => {
+      if (r.kind !== kind) return false;
+      const candidate = r.text.trim();
+      // Short substrings are common words ("the", punctuation, etc.) and are
+      // not reliable identity evidence across unrelated edits. Permit fuzzy
+      // containment only once both sides carry enough context; exact matches
+      // remain valid for short runs.
+      return (
+        candidate === t ||
+        (candidate.length >= 8 && t.length >= 8 &&
+          (candidate.includes(t) || t.includes(candidate)))
+      );
+    });
   };
   // Robin's authored text, captured while its revisions were live (stored on the
   // change list). Unlike pendingRuns this survives the user ACCEPTING the edit,
@@ -638,10 +647,15 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
     if (!robinRuns.length) return false;
     const t = text.trim();
     if (!t) return false;
-    return robinRuns.some(
-      (r) =>
-        r.kind === kind && (r.text.includes(t) || t.includes(r.text.trim()))
-    );
+    return robinRuns.some((r) => {
+      if (r.kind !== kind) return false;
+      const candidate = r.text.trim();
+      return (
+        candidate === t ||
+        (candidate.length >= 8 && t.length >= 8 &&
+          (candidate.includes(t) || t.includes(candidate)))
+      );
+    });
   };
   // Author + pending decision for a content hunk: a live tracked revision wins
   // (re-attributed AND pending); else an accepted Robin edit (approved, no ring);

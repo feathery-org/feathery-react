@@ -192,4 +192,14 @@ describe('applyHunks approved-Robin re-attribution (durable robinRuns)', () => {
     expect(authorsOf(display)).toContain('you');
     expect(authorsOf(display)).not.toContain('robin');
   });
+
+  it('does not attribute a short common-word edit from a longer Robin run', () => {
+    const start = docWith(para(textRun('Hello world')));
+    const final = docWith(para(textRun('Hello the')));
+    const changes = diffSession(start, [{ sfdt: final, author: 'you' }], 's');
+    changes.robinRuns = [{ kind: 'ins', text: 'there' }];
+    const display = applyHunks(clone(final), changes);
+
+    expect(authorsOf(display)).not.toContain('robin');
+  });
 });
