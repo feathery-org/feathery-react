@@ -242,9 +242,19 @@ export const columnHeaderStyle = {
   '&:hover': { backgroundColor: colors.gray200 }
 } as const;
 
+// Label plus optional sort arrow, filling the header so the label can
+// truncate while the arrow keeps its width.
+export const columnHeaderContentStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '100%',
+  minWidth: 0
+} as const;
+
 export const columnHeaderLabelStyle = {
   display: 'block',
-  width: '100%',
+  minWidth: 0,
   overflow: 'hidden',
   color: colors.gray900,
   fontSize: `${HEADER_FONT_SIZE}px`,
@@ -817,6 +827,7 @@ export const searchButtonStyle = {
 
 // Sits after the header label for the sorted column.
 export const sortIndicatorStyle = {
+  flex: '0 0 auto',
   marginInlineStart: '4px',
   fontSize: `${HEADER_FONT_SIZE - 4}px`,
   color: colors.gray500

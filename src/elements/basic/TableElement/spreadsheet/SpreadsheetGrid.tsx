@@ -30,6 +30,7 @@ import {
   cellSelectedStyle,
   cellStyle,
   cellValueStyle,
+  columnHeaderContentStyle,
   columnHeaderLabelStyle,
   columnHeaderStyle,
   columnResizerActiveStyle,
@@ -742,14 +743,18 @@ function HeaderCell({
           : undefined
       }
     >
-      <span
-        css={{
-          ...columnHeaderLabelStyle,
-          ...(fullySelected ? { color: 'inherit' } : {})
-        }}
-      >
-        {label}
+      <span css={columnHeaderContentStyle}>
+        <span
+          css={{
+            ...columnHeaderLabelStyle,
+            ...(fullySelected ? { color: 'inherit' } : {})
+          }}
+        >
+          {label}
+        </span>
         {sortedHere ? (
+          // A flex sibling of the label, so the label truncates and the
+          // arrow never does.
           <span
             className={TABLE_CLASS.gridSortIndicator}
             aria-hidden='true'
