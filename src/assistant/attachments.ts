@@ -2,6 +2,7 @@ import type { FileUIPart } from 'ai';
 import { Chat } from '@ai-sdk/react';
 import { featheryDoc } from '../utils/browser';
 import { AssistantHeaders, withFormKey } from './utils';
+import { withLinkRequestHeaders } from '../utils/accessLinkRequest';
 
 export const MAX_DIMENSION = 1568;
 export const MAX_FILE_SIZE = 25 * 1024 * 1024;
@@ -156,12 +157,16 @@ export async function uploadAttachment(
 ): Promise<UploadedAttachment> {
   const form = new FormData();
   form.append('file', file);
-  const response = await fetch(withFormKey(attachmentBase(baseUrl), formKey), {
-    method: 'POST',
-    headers: { ...headers(), 'X-Session-ID': sessionId },
-    body: form,
-    signal
-  });
+  const url = withFormKey(attachmentBase(baseUrl), formKey);
+  const response = await fetch(
+    url,
+    withLinkRequestHeaders(url, {
+      method: 'POST',
+      headers: { ...headers(), 'X-Session-ID': sessionId },
+      body: form,
+      signal
+    })
+  );
   if (!response.ok) {
     let message = `Upload failed (${response.status})`;
     try {
@@ -209,18 +214,21 @@ export async function pollAttachmentStatus(
   formKey?: string
 ): Promise<UploadedAttachment> {
   const id = encodeURIComponent(attachmentId);
+  const url = withFormKey(`${attachmentBase(baseUrl)}${id}/url/`, formKey);
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   // eslint-disable-next-line no-constant-condition
   while (true) {
     let resp: Response | null = null;
     try {
+      // Wrapped per poll rather than once: a link redeemed mid-upload hands
+      // back the device secret the later polls have to send.
       resp = await fetch(
-        withFormKey(`${attachmentBase(baseUrl)}${id}/url/`, formKey),
-        {
+        url,
+        withLinkRequestHeaders(url, {
           method: 'GET',
           headers: { ...headers(), 'X-Session-ID': sessionId },
           signal
-        }
+        })
       );
     } catch (err) {
       // Network blips retry until the deadline, aborts exit the loop
