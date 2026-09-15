@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
-import { findMatches } from '../spreadsheet/useGridSearch';
+import { findMatches, indexCells } from '../spreadsheet/useGridSearch';
 import {
   SEARCH_CURRENT_SHADING,
   SEARCH_MATCH_SHADING
@@ -109,17 +109,18 @@ describe('findMatches', () => {
   ];
 
   test('matches displayed text case-insensitively, in reading order', () => {
-    expect(findMatches(rows, columns, 'AL')).toEqual([
+    const cells = indexCells(rows, columns);
+    expect(findMatches(cells, 'AL')).toEqual([
       { rowId: 'r0', rowIndex: 0, columnId: 'a' },
       { rowId: 'r1', rowIndex: 1, columnId: 'b' }
     ]);
-    expect(findMatches(rows, columns, '3')).toEqual([
+    expect(findMatches(cells, '3')).toEqual([
       { rowId: 'r0', rowIndex: 0, columnId: 'b' }
     ]);
   });
 
   test('a blank query matches nothing', () => {
-    expect(findMatches(rows, columns, '   ')).toEqual([]);
+    expect(findMatches(indexCells(rows, columns), '   ')).toEqual([]);
   });
 });
 

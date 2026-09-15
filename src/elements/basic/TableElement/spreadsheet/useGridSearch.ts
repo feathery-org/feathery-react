@@ -16,36 +16,46 @@ export type SearchMatchState = 'match' | 'current';
 export const searchMatchKey = (rowIndex: number, fieldKey: string) =>
   `${rowIndex}:${fieldKey}`;
 
+export type SearchableCell = SearchMatch & { text: string };
+
 /**
- * Every cell whose displayed text contains `query`, case-insensitively, in
- * reading order (down the rows, left to right). Matching runs on the text the
- * user sees, so a masked tax id or a formatted date is found the way it reads.
+ * Every cell's displayed text, lowercased, in reading order (down the rows,
+ * left to right). Built once per data change so a keystroke only scans
+ * strings; formatting (dates, masked tax ids) is the expensive part and the
+ * user sees the formatted text, so that is what a query matches.
  */
-export function findMatches(
+export function indexCells(
   rows: SpreadsheetRow[],
   columns: Column[],
-  query: string,
   cellRules?: CellRules
+): SearchableCell[] {
+  const cells: SearchableCell[] = [];
+  rows.forEach((row) => {
+    columns.forEach((column) => {
+      cells.push({
+        rowId: row.id,
+        rowIndex: row.rowIndex,
+        columnId: column.field_key,
+        text: formatCellDisplay(
+          row.cells[column.field_key] as CellValue,
+          cellRules?.[column.field_key]
+        ).toLowerCase()
+      });
+    });
+  });
+  return cells;
+}
+
+/** The indexed cells whose text contains `query`, case-insensitively. */
+export function findMatches(
+  cells: SearchableCell[],
+  query: string
 ): SearchMatch[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
-  const matches: SearchMatch[] = [];
-  rows.forEach((row) => {
-    columns.forEach((column) => {
-      const text = formatCellDisplay(
-        row.cells[column.field_key] as CellValue,
-        cellRules?.[column.field_key]
-      );
-      if (text.toLowerCase().includes(needle)) {
-        matches.push({
-          rowId: row.id,
-          rowIndex: row.rowIndex,
-          columnId: column.field_key
-        });
-      }
-    });
-  });
-  return matches;
+  return cells
+    .filter((cell) => cell.text.includes(needle))
+    .map(({ rowId, rowIndex, columnId }) => ({ rowId, rowIndex, columnId }));
 }
 
 type UseGridSearchOptions = {
@@ -74,9 +84,13 @@ export function useGridSearch({
   // Bumped on every open request so an already-open bar refocuses its input.
   const [focusToken, setFocusToken] = React.useState(0);
 
+  const cells = React.useMemo(
+    () => (open ? indexCells(rows, columns, cellRules) : []),
+    [open, rows, columns, cellRules]
+  );
   const matches = React.useMemo(
-    () => (open ? findMatches(rows, columns, query, cellRules) : []),
-    [open, rows, columns, query, cellRules]
+    () => findMatches(cells, query),
+    [cells, query]
   );
   const safeCursor = matches.length ? Math.min(cursor, matches.length - 1) : -1;
 

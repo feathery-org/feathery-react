@@ -592,10 +592,9 @@ export function useGridInteractions(options: GridInteractionOptions) {
   );
 
   /**
-   * Collapses the selection onto one cell and brings it into view. Used to
-   * walk the user through failing cells from the status bar, so it also takes
-   * keyboard focus back to the grid — otherwise the next arrow key would still
-   * go to the button that moved the selection.
+   * Collapses the selection onto one cell and brings it into view. DOM focus
+   * is the caller's call: the issue stepper hands the keyboard back to the
+   * grid afterwards, while find-in-grid keeps it in the search input.
    */
   const focusCell = React.useCallback(
     (rowId: string, columnId: string) => {

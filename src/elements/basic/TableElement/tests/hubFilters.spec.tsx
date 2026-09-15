@@ -52,11 +52,15 @@ describe('hubFilterWhere', () => {
     ]);
   });
 
-  test('prefers the live schema key for the hub column, so a rename keeps filtering', () => {
+  test('uses the live schema key for the hub column: a rename keeps filtering, a deleted column stops', () => {
     const schema = [{ id: 'hf1', key: 'customer' }] as any;
     expect(hubFilterWhere([equalsFilter], schema, { account_id: 'x' })).toEqual(
       [{ fieldId: 'customer', value: 'x' }]
     );
+    const without = [{ id: 'other', key: 'other' }] as any;
+    expect(
+      hubFilterWhere([equalsFilter], without, { account_id: 'x' })
+    ).toEqual([]);
   });
 
   test('an empty field drops its filter, so the table shows all rows', () => {
@@ -158,6 +162,40 @@ describe('useHubTableSource row filters', () => {
         hubId: 'hub1',
         operation: 'get',
         verification: 'verified'
+      })
+    );
+  });
+
+  test('a filter change held back by pending edits is applied once they clear', async () => {
+    Object.assign(fieldValues, { account_id: 'acme' });
+    const dataHubAction = jest.fn(() => Promise.resolve([]));
+    const el = element([equalsFilter]);
+    const c = client(dataHubAction);
+    const { rerender } = renderHook(
+      ({ blockRefetch }: { blockRefetch: boolean }) =>
+        useHubTableSource({
+          element: el,
+          client: c,
+          enabled: true,
+          blockRefetch
+        }),
+      { initialProps: { blockRefetch: false } }
+    );
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(1));
+
+    // Edits are buffered: the changed filter must not replace the rows yet.
+    rerender({ blockRefetch: true });
+    Object.assign(fieldValues, { account_id: 'globex' });
+    rerender({ blockRefetch: true });
+    await act(async () => {});
+    expect(dataHubAction).toHaveBeenCalledTimes(1);
+
+    // Saved: catch up with the filter that arrived meanwhile.
+    rerender({ blockRefetch: false });
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(2));
+    expect(dataHubAction).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: [{ fieldId: 'account', value: 'globex' }]
       })
     );
   });

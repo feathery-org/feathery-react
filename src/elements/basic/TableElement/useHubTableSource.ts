@@ -372,6 +372,15 @@ export function useHubTableSource({
     return () => featheryWindow().removeEventListener('focus', onFocus);
   }, [enabled, refetch]);
 
+  // A filter change that arrived while edits were buffered was turned away by
+  // the guard above; once the buffer clears, catch up so the rows match the
+  // filters again rather than waiting for the window to regain focus.
+  const wasBlocked = useRef(blockRefetch);
+  useEffect(() => {
+    if (wasBlocked.current && !blockRefetch) refetch();
+    wasBlocked.current = blockRefetch;
+  }, [blockRefetch, refetch]);
+
   const hubFieldValues = useMemo(() => {
     const values: Record<string, any[]> = {};
     hubColumns.forEach((column) => {
@@ -685,8 +694,8 @@ function omitKeys(
  * The `where` conditions a table's row filters currently resolve to. Every
  * filter must match (the Hub ANDs its conditions). The hub column is
  * addressed by key (what the Hub API takes), taken from the live schema when
- * it has loaded so a renamed column keeps filtering, and from the key stored
- * on the filter otherwise.
+ * it has loaded so a renamed column keeps filtering (and a deleted one stops),
+ * and from the key stored on the filter otherwise.
  *
  * A filter is left off while its form field is empty, so an unfilled field
  * behaves like no filter (all rows) rather than matching nothing. A filter
@@ -701,9 +710,12 @@ export function hubFilterWhere(
   if (!filters?.length) return [];
   const conditions: HubWhereCondition[] = [];
   filters.forEach((filter) => {
-    const hubFieldKey =
-      schemaFields?.find((field) => field.id === filter.hub_field_id)?.key ??
-      filter.hub_field_key;
+    // Until the schema loads, the stored key is the best guess. Once it has,
+    // a column that is no longer in it was deleted: skip that filter rather
+    // than send a key the Hub would reject, which would fail the whole read.
+    const hubFieldKey = schemaFields
+      ? schemaFields.find((field) => field.id === filter.hub_field_id)?.key
+      : filter.hub_field_key;
     if (!hubFieldKey) return;
     const operator = filter.operator;
     if (VALUELESS_OPERATORS.includes(operator)) {
