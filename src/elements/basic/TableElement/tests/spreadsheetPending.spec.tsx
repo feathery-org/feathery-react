@@ -1,5 +1,12 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within
+} from '@testing-library/react';
 import TableElement from '../index';
 import AssistantClient from '../../../../assistant/AssistantClient';
 import { fieldValues } from '../../../../utils/init';
@@ -115,6 +122,9 @@ const discard = (accept = true) => {
   return asked;
 };
 const status = () => screen.getByRole('status');
+// The chip inside a dropdown cell, which is what opens its menu on click.
+const chip = (text: string) =>
+  within(cell(text) as HTMLElement).getByRole('button');
 
 const editCell = (from: string, to: string) => {
   fireEvent.doubleClick(cell(from));
@@ -299,9 +309,7 @@ describe('validation errors', () => {
       expect(cell('bad-one')).toHaveAttribute('aria-selected', 'true')
     );
     // The focused cell explains itself rather than waiting for a hover.
-    expect(screen.getByRole('tooltip')).toHaveTextContent(
-      'Invalid email'
-    );
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Invalid email');
 
     fireEvent.click(screen.getByRole('button', { name: 'Go to next issue' }));
     await waitFor(() =>
@@ -389,7 +397,11 @@ describe('cell editors follow the column', () => {
     dataHubAction: jest.fn(({ operation }: any) =>
       operation === 'get'
         ? Promise.resolve([
-            { id: 'e1', verified: true, data: { name: 'Alice', status: 'Ready' } }
+            {
+              id: 'e1',
+              verified: true,
+              data: { name: 'Alice', status: 'Ready' }
+            }
           ])
         : Promise.resolve({})
     )
@@ -441,7 +453,9 @@ describe('cell editors follow the column', () => {
     '%s closing a letter-opened native dropdown restores arrow navigation',
     async (key) => {
       renderTable(hubProps, { client: client() });
-      await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.getByText('Ready')).toBeInTheDocument()
+      );
       fireEvent.mouseDown(cell('Ready'));
       const openingTime = Date.now();
       fireEvent.keyDown(document.activeElement!, { key: 's' });
@@ -524,7 +538,7 @@ describe('cell editors follow the column', () => {
         expect(screen.getByText('Ready')).toBeInTheDocument()
       );
       fireEvent.mouseDown(cell('Ready'));
-      fireEvent.click(cell('Ready'));
+      fireEvent.click(chip('Ready'));
       const select = await screen.findByRole('combobox');
       expect(picker.showPicker).toHaveBeenCalledTimes(1);
       expect(select).toHaveValue('Ready');
@@ -639,15 +653,21 @@ describe('cell editors follow the column', () => {
       dataHubAction: jest.fn(({ operation }: any) =>
         operation === 'get'
           ? Promise.resolve([
-              { id: 'e1', verified: true, data: { name: 'Alice', status: 'Pending' } }
+              {
+                id: 'e1',
+                verified: true,
+                data: { name: 'Alice', status: 'Pending' }
+              }
             ])
           : Promise.resolve({})
       )
     };
     renderTable(hubProps, { client: staleClient });
-    await waitFor(() => expect(screen.getByText('Pending')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Pending')).toBeInTheDocument()
+    );
 
-    fireEvent.click(cell('Pending'));
+    fireEvent.click(chip('Pending'));
     const select = await screen.findByRole('combobox');
     fireEvent.blur(select);
 
@@ -663,7 +683,7 @@ describe('cell editors follow the column', () => {
     // not pull focus back to the grid, which would close what just opened.
     renderTable(hubProps, { client: client() });
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
-    fireEvent.click(cell('Ready'));
+    fireEvent.click(chip('Ready'));
     await screen.findByRole('combobox');
 
     fireEvent.mouseDown(cell('Alice'));
@@ -689,32 +709,38 @@ describe('cell editors follow the column', () => {
     expect(screen.getByText('Sent')).toBeInTheDocument();
   });
 
-  test('a dropdown cell opens on a single click, a text cell does not', async () => {
-    // Double-click-to-open reads as a text editor on a cell that has nothing
-    // to type into; a spreadsheet's validation list opens on one click.
+  test('a dropdown cell opens from its chip; clicking around the chip only selects', async () => {
+    // The value is a chip, like a spreadsheet's validation list. The chip is
+    // the affordance that opens the menu; the rest of the cell behaves like
+    // any other cell, so a click there starts a selection instead.
     renderTable(hubProps, { client: client() });
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
 
     fireEvent.click(cell('Alice'));
     expect(screen.queryByRole('textbox')).toBeNull();
 
+    fireEvent.mouseDown(cell('Ready'));
     fireEvent.click(cell('Ready'));
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(cell('Ready')).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.click(chip('Ready'));
     const select = await screen.findByRole('combobox');
     expect(select).toHaveValue('Ready');
-    // The cell keeps drawing its chevron under the (transparent) menu, so
-    // opening it changes nothing about the cell's look.
+    // The chevron stays under the (transparent) menu, so opening it changes
+    // nothing about the cell's shape.
     expect(
       select.closest('[role="gridcell"]')!.querySelector('[aria-hidden]')
     ).not.toBeNull();
   });
 
-  test('a modified click on a dropdown cell extends the selection instead', async () => {
+  test('a modified click on a dropdown chip extends the selection instead', async () => {
     renderTable(hubProps, { client: client() });
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
 
-    fireEvent.click(cell('Ready'), { shiftKey: true });
+    fireEvent.click(chip('Ready'), { shiftKey: true });
     expect(screen.queryByRole('combobox')).toBeNull();
-    fireEvent.click(cell('Ready'), { metaKey: true });
+    fireEvent.click(chip('Ready'), { metaKey: true });
     expect(screen.queryByRole('combobox')).toBeNull();
   });
 
@@ -722,9 +748,13 @@ describe('cell editors follow the column', () => {
     renderTable(hubProps, { client: client() });
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
 
-    // The chevron is decorative and sits beside the value, not inside it.
+    // The value sits in a labelled chip with a decorative chevron.
+    expect(chip('Ready')).toHaveTextContent('Ready');
     expect(cell('Ready').querySelector('[aria-hidden]')).not.toBeNull();
     expect(cell('Alice').querySelector('[aria-hidden]')).toBeNull();
+    expect(
+      within(cell('Alice') as HTMLElement).queryByRole('button')
+    ).toBeNull();
   });
 
   test('typing a letter on a dropdown cell jumps to that option', async () => {
@@ -738,7 +768,9 @@ describe('cell editors follow the column', () => {
     fireEvent.keyDown(grid(), { key: 's' });
 
     // The seeded character is a jump-to, not a value the column would accept.
-    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('Sent'));
+    await waitFor(() =>
+      expect(screen.getByRole('combobox')).toHaveValue('Sent')
+    );
   });
 
   test('a column with no options keeps a text box', () => {
@@ -751,10 +783,38 @@ describe('cell editors follow the column', () => {
 
 describe('editors for other field types', () => {
   const TYPED_COLUMNS = [
-    { name: 'Age', field_id: '', field_type: '', field_key: '', hub_field_id: 'n1', hub_field_key: 'age' },
-    { name: 'Born', field_id: '', field_type: '', field_key: '', hub_field_id: 'd1', hub_field_key: 'born' },
-    { name: 'SSN', field_id: '', field_type: '', field_key: '', hub_field_id: 't1', hub_field_key: 'ssn' },
-    { name: 'Docs', field_id: '', field_type: '', field_key: '', hub_field_id: 'f1', hub_field_key: 'docs' }
+    {
+      name: 'Age',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'n1',
+      hub_field_key: 'age'
+    },
+    {
+      name: 'Born',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'd1',
+      hub_field_key: 'born'
+    },
+    {
+      name: 'SSN',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 't1',
+      hub_field_key: 'ssn'
+    },
+    {
+      name: 'Docs',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'f1',
+      hub_field_key: 'docs'
+    }
   ];
   const TYPED_FIELDS = [
     { id: 'n1', key: 'age', type: 'number', required: false, unique: false },
@@ -774,7 +834,9 @@ describe('editors for other field types', () => {
   };
   const typedClient = () => ({
     getHubSchemas: jest.fn(() =>
-      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: TYPED_FIELDS }] })
+      Promise.resolve({
+        hubs: [{ id: 'hub1', key: 'h', fields: TYPED_FIELDS }]
+      })
     ),
     dataHubAction: jest.fn(({ operation }: any) =>
       operation === 'get' ? Promise.resolve([ENTRY]) : Promise.resolve({})
@@ -819,10 +881,7 @@ describe('editors for other field types', () => {
     await renderTyped();
     fireEvent.mouseDown(cell('Jul 19, 1982'));
     await waitFor(() =>
-      expect(cell('Jul 19, 1982')).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(cell('Jul 19, 1982')).toHaveAttribute('aria-selected', 'true')
     );
 
     fireEvent.keyDown(grid(), { key: '2' });
@@ -1011,8 +1070,22 @@ describe('keyboard stays on the grid', () => {
 
 describe('pasting invalid data', () => {
   const OPTION_COLUMNS = [
-    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' },
-    { name: 'Status', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf3', hub_field_key: 'status' }
+    {
+      name: 'Name',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf1',
+      hub_field_key: 'name'
+    },
+    {
+      name: 'Status',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf3',
+      hub_field_key: 'status'
+    }
   ];
   const OPTION_FIELDS = [
     { id: 'hf1', key: 'name', type: 'text', required: false, unique: false },
@@ -1043,7 +1116,11 @@ describe('pasting invalid data', () => {
           dataHubAction: jest.fn(({ operation }: any) =>
             operation === 'get'
               ? Promise.resolve([
-                  { id: 'e1', verified: true, data: { name: 'Alice', status: 'Ready' } }
+                  {
+                    id: 'e1',
+                    verified: true,
+                    data: { name: 'Alice', status: 'Ready' }
+                  }
                 ])
               : Promise.resolve({})
           )
@@ -1193,11 +1270,13 @@ describe('leaving with unsaved work', () => {
     renderTable({}, { formId: 'form-1' });
     editCell('Alice', 'Alicia');
 
-    expect(unsavedWorkMessage('form-1')).toContain('unsaved changes in a table');
+    expect(unsavedWorkMessage('form-1')).toContain(
+      'unsaved changes in a table'
+    );
     expect(beforeUnload().defaultPrevented).toBe(true);
   });
 
-  test('the registration is scoped to this table\'s form', () => {
+  test("the registration is scoped to this table's form", () => {
     renderTable({}, { formId: 'form-1' });
     editCell('Alice', 'Alicia');
     expect(hasUnsavedWork('form-2')).toBe(false);
@@ -1316,26 +1395,43 @@ describe('staged Data Hub rows', () => {
 
 describe('rows inserted before a save', () => {
   const HUB_COLUMNS = [
-    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' }
+    {
+      name: 'Name',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf1',
+      hub_field_key: 'name'
+    }
   ];
   const hubClient = () => ({
     getHubSchemas: jest.fn(() =>
-      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: [HUB_FIELDS[0]] }] })
+      Promise.resolve({
+        hubs: [{ id: 'hub1', key: 'h', fields: [HUB_FIELDS[0]] }]
+      })
     ),
     dataHubAction: jest.fn(({ operation }: any) =>
       operation === 'get'
-        ? Promise.resolve([{ id: 'e1', verified: true, data: { name: 'Alice' } }])
+        ? Promise.resolve([
+            { id: 'e1', verified: true, data: { name: 'Alice' } }
+          ])
         : Promise.resolve({})
     )
   });
   const rowCount = () => Number(grid().getAttribute('aria-rowcount')) - 1;
-  const addRow = () => fireEvent.click(screen.getByRole('button', { name: '+ Add row' }));
+  const addRow = () =>
+    fireEvent.click(screen.getByRole('button', { name: '+ Add row' }));
 
   test('Discard removes an inserted Hub row and lets the table refetch again', async () => {
     const client = hubClient();
     const gets = () =>
-      client.dataHubAction.mock.calls.filter(([args]: any) => args.operation === 'get').length;
-    renderTable({ columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1' }, { client });
+      client.dataHubAction.mock.calls.filter(
+        ([args]: any) => args.operation === 'get'
+      ).length;
+    renderTable(
+      { columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1' },
+      { client }
+    );
     await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
     expect(rowCount()).toBe(1);
 
@@ -1383,12 +1479,24 @@ describe('rows inserted before a save', () => {
 
 describe('Data Hub status column', () => {
   const HUB_COLUMNS = [
-    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' }
+    {
+      name: 'Name',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf1',
+      hub_field_key: 'name'
+    }
   ];
-  const hubClient = (entries: any[], schemaExtra: Record<string, any> = {}) => ({
+  const hubClient = (
+    entries: any[],
+    schemaExtra: Record<string, any> = {}
+  ) => ({
     getHubSchemas: jest.fn(() =>
       Promise.resolve({
-        hubs: [{ id: 'hub1', key: 'h', fields: [HUB_FIELDS[0]], ...schemaExtra }]
+        hubs: [
+          { id: 'hub1', key: 'h', fields: [HUB_FIELDS[0]], ...schemaExtra }
+        ]
       })
     ),
     dataHubAction: jest.fn(({ operation }: any) =>
@@ -1408,7 +1516,7 @@ describe('Data Hub status column', () => {
   const headers = () =>
     screen.getAllByRole('columnheader').map((h) => h.textContent);
 
-  test('a hub that stages rows shows each row\'s status as the first column', async () => {
+  test("a hub that stages rows shows each row's status as the first column", async () => {
     renderTable(hubProps, { client: hubClient(entries) });
     await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
     expect(headers()).toEqual(['Status', 'name']);
@@ -1456,8 +1564,22 @@ describe('Data Hub status column', () => {
 
 describe('read-only Data Hub columns', () => {
   const HUB_COLUMNS = [
-    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' },
-    { name: 'Email', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf2', hub_field_key: 'email' }
+    {
+      name: 'Name',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf1',
+      hub_field_key: 'name'
+    },
+    {
+      name: 'Email',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf2',
+      hub_field_key: 'email'
+    }
   ];
   const client = () => ({
     getHubSchemas: jest.fn(() =>
@@ -1465,7 +1587,9 @@ describe('read-only Data Hub columns', () => {
     ),
     dataHubAction: jest.fn(({ operation }: any) =>
       operation === 'get'
-        ? Promise.resolve([{ id: 'e1', data: { name: 'Alice', email: 'a@b.co' } }])
+        ? Promise.resolve([
+            { id: 'e1', data: { name: 'Alice', email: 'a@b.co' } }
+          ])
         : Promise.resolve({})
     )
   });
@@ -1498,8 +1622,22 @@ describe('read-only Data Hub columns', () => {
 
 describe('assistant issues', () => {
   const HUB_COLUMNS = [
-    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' },
-    { name: 'Email', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf2', hub_field_key: 'email' }
+    {
+      name: 'Name',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf1',
+      hub_field_key: 'name'
+    },
+    {
+      name: 'Email',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf2',
+      hub_field_key: 'email'
+    }
   ];
   const client = (entries: any[]) => ({
     getHubSchemas: jest.fn(() =>
@@ -1520,10 +1658,19 @@ describe('assistant issues', () => {
   test('the assistant can flag a cell by entry id and hub field key; it is an orange warning that never blocks', async () => {
     const assistantClient = assistant();
     renderTable(
-      { columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1', hub_verification: 'verified' },
+      {
+        columns: HUB_COLUMNS,
+        data_source: 'hub',
+        hub_id: 'hub1',
+        hub_verification: 'verified'
+      },
       {
         client: client([
-          { id: 'e1', verified: true, data: { name: 'Alice', email: 'alice@x.co' } }
+          {
+            id: 'e1',
+            verified: true,
+            data: { name: 'Alice', email: 'alice@x.co' }
+          }
         ]),
         assistantClient
       }
@@ -1558,11 +1705,24 @@ describe('assistant issues', () => {
 
   test('a hub field named like the status column is still reachable by that name', async () => {
     const assistantClient = assistant();
-    const STATUS_FIELD = { id: 'hf9', key: 'Status', type: 'text', required: false, unique: false };
+    const STATUS_FIELD = {
+      id: 'hf9',
+      key: 'Status',
+      type: 'text',
+      required: false,
+      unique: false
+    };
     renderTable(
       {
         columns: [
-          { name: 'Status', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf9', hub_field_key: 'Status' }
+          {
+            name: 'Status',
+            field_id: '',
+            field_type: '',
+            field_key: '',
+            hub_field_id: 'hf9',
+            hub_field_key: 'Status'
+          }
         ],
         data_source: 'hub',
         hub_id: 'hub1',
@@ -1571,25 +1731,34 @@ describe('assistant issues', () => {
       {
         client: {
           getHubSchemas: jest.fn(() =>
-            Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: [STATUS_FIELD] }] })
+            Promise.resolve({
+              hubs: [{ id: 'hub1', key: 'h', fields: [STATUS_FIELD] }]
+            })
           ),
           dataHubAction: jest.fn(({ operation }: any) =>
             operation === 'get'
-              ? Promise.resolve([{ id: 'e1', verified: false, data: { Status: 'Pending' } }])
+              ? Promise.resolve([
+                  { id: 'e1', verified: false, data: { Status: 'Pending' } }
+                ])
               : Promise.resolve({})
           )
         },
         assistantClient
       }
     );
-    await waitFor(() => expect(screen.getByText('Pending')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Pending')).toBeInTheDocument()
+    );
     expect(
       screen.getAllByRole('columnheader').map((h) => h.textContent)
     ).toEqual(['Status', 'Status']);
 
     act(() => {
       assistantClient.setTableIssues('table1', [
-        { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'Status' }, message: 'Stale' }
+        {
+          target: { kind: 'cell', row: { entryId: 'e1' }, field: 'Status' },
+          message: 'Stale'
+        }
       ]);
     });
     // The hub's own field takes the flag; the synthetic status column stays clean.
@@ -1614,7 +1783,10 @@ describe('assistant issues', () => {
 
     act(() => {
       assistantClient.setTableIssues('table1', [
-        { target: { kind: 'row', row: { rowIndex: 0 } }, message: 'Duplicate of row 4' },
+        {
+          target: { kind: 'row', row: { rowIndex: 0 } },
+          message: 'Duplicate of row 4'
+        },
         {
           target: {
             kind: 'range',
@@ -1631,14 +1803,22 @@ describe('assistant issues', () => {
       expect(cell(text)).toHaveAttribute('title', 'Duplicate of row 4')
     );
     ['Bob', 'b@x.co', 'Cy', 'c@x.co'].forEach((text) =>
-      expect(cell(text)).toHaveAttribute('title', 'Imported from the wrong sheet')
+      expect(cell(text)).toHaveAttribute(
+        'title',
+        'Imported from the wrong sheet'
+      )
     );
   });
 
   test('a hub rule error on the same cell wins, and the bar counts the categories apart', async () => {
     const assistantClient = assistant();
     renderTable(
-      { columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1', hub_verification: 'all' },
+      {
+        columns: HUB_COLUMNS,
+        data_source: 'hub',
+        hub_id: 'hub1',
+        hub_verification: 'all'
+      },
       {
         client: client([
           { id: 'e1', verified: true, data: { name: 'Alice', email: 'bad' } },
@@ -1651,12 +1831,20 @@ describe('assistant issues', () => {
 
     act(() => {
       assistantClient.setTableIssues('table1', [
-        { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'email' }, message: 'Bounced' },
-        { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'name' }, message: 'Nickname?' }
+        {
+          target: { kind: 'cell', row: { entryId: 'e1' }, field: 'email' },
+          message: 'Bounced'
+        },
+        {
+          target: { kind: 'cell', row: { entryId: 'e1' }, field: 'name' },
+          message: 'Nickname?'
+        }
       ]);
     });
 
-    expect(status()).toHaveTextContent('1 error · 1 error on unvalidated rows · 1 warning');
+    expect(status()).toHaveTextContent(
+      '1 error · 1 error on unvalidated rows · 1 warning'
+    );
     expect(cell('bad')).toHaveAttribute('title', 'Invalid email');
     expect(cell('Alice')).toHaveAttribute('title', 'Nickname?');
   });

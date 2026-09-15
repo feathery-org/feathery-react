@@ -61,5 +61,6 @@ export const TABLE_CLASS = {
   gridSearchClose: 'feathery-table-grid-search-close',
   gridHeaderMenu: 'feathery-table-grid-header-menu',
   gridHeaderMenuItem: 'feathery-table-grid-header-menu-item',
-  gridSortIndicator: 'feathery-table-grid-sort-indicator'
+  gridSortIndicator: 'feathery-table-grid-sort-indicator',
+  gridCellChip: 'feathery-table-grid-cell-chip'
 } as const;

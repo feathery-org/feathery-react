@@ -22,6 +22,10 @@ import {
   addRowStripLabelStyle,
   addRowStripStyle,
   canvasStyle,
+  cellChipChevronStyle,
+  cellChipEmptyStyle,
+  cellChipLabelStyle,
+  cellChipStyle,
   cellDropdownIndicatorStyle,
   cellFillPreviewStyle,
   cellZIndex,
@@ -786,6 +790,47 @@ function HeaderCell({
   );
 }
 
+/**
+ * The value of a dropdown cell, drawn as a pill with a chevron the way a
+ * spreadsheet marks a cell with a validation list. Not focusable: keyboard
+ * handling lives on the grid, which opens the menu on Enter.
+ */
+function DropdownChip({
+  text,
+  label,
+  onOpen
+}: {
+  text: string;
+  label: string;
+  onOpen: (event: React.MouseEvent) => void;
+}) {
+  if (!text) {
+    return (
+      <span
+        role='button'
+        aria-label={label}
+        className={TABLE_CLASS.gridCellChip}
+        css={cellChipEmptyStyle}
+        onClick={onOpen}
+      >
+        <span aria-hidden css={cellChipChevronStyle} />
+      </span>
+    );
+  }
+  return (
+    <span
+      role='button'
+      aria-label={label}
+      className={TABLE_CLASS.gridCellChip}
+      css={cellChipStyle}
+      onClick={onOpen}
+    >
+      <span css={cellChipLabelStyle}>{text}</span>
+      <span aria-hidden css={cellChipChevronStyle} />
+    </span>
+  );
+}
+
 type RowSelectionSnapshot = {
   activeBound?: CellSelectionBounds;
   focusedColumnId?: string;
@@ -1013,10 +1058,20 @@ function SpreadsheetCell({
 
   const value = cell.getValue();
   const rule = cellRules?.[cell.column.id];
-  // A dropdown cell opens on ONE click, the way a spreadsheet's validation
-  // list does — double-click-to-open reads as a text editor on a cell that
-  // has nothing to type into.
-  const opensOnClick = canEdit && choicesFor(rule) !== null;
+  // A dropdown cell draws its value as a chip. Clicking the chip opens the
+  // menu at once (a spreadsheet's validation list); clicking the rest of the
+  // cell only selects it, so range selection works the same as anywhere else.
+  const isDropdown = choicesFor(rule) !== null;
+  const chipOpens = canEdit && isDropdown;
+  const columnName = cell.column.columnDef.meta?.name ?? '';
+  const openFromChip = (event: React.MouseEvent) => {
+    if (!chipOpens || isEditing || event.button !== 0) return;
+    // A modified click is extending the selection, not picking.
+    if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)
+      return;
+    event.stopPropagation();
+    interactions.startEditing(cell.row.id, cell.column.id);
+  };
   const shading = getCellShading?.({
     rowIndex: sourceRowIndex,
     fieldKey: cell.column.id,
@@ -1063,23 +1118,17 @@ function SpreadsheetCell({
         cell.getSelectionStartHandler(featheryDoc())(event);
       }}
       onMouseEnter={cell.getSelectionExtendHandler()}
-      onClick={(event) => {
-        if (!opensOnClick || isEditing || event.button !== 0) return;
-        // A modified click is extending the selection, not picking. A click
-        // that ended on another cell (a range drag) never reaches here, and
-        // one on the fill handle is the start of a fill, not a pick.
-        if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
-          return;
-        }
-        const target = event.target as HTMLElement;
-        if (target.closest(`.${TABLE_CLASS.gridFillHandle}`)) return;
-        interactions.startEditing(cell.row.id, cell.column.id);
-      }}
       onDoubleClick={() => {
         if (!isEditing) interactions.startEditing(cell.row.id, cell.column.id);
       }}
     >
-      {isEditing ? null : (
+      {isEditing ? null : isDropdown ? (
+        <DropdownChip
+          text={formatCellDisplay(value as CellValue, rule)}
+          label={`Choose ${columnName} for row ${rowIndex + 1}`}
+          onOpen={openFromChip}
+        />
+      ) : (
         <span css={cellValueStyle}>
           {formatCellDisplay(value as CellValue, rule)}
         </span>
@@ -1100,9 +1149,9 @@ function SpreadsheetCell({
           onBlur={() => interactions.commitEditing()}
         />
       ) : null}
-      {/* Drawn by the cell in both states, so opening the menu changes nothing
-          about how the cell looks except the menu itself. */}
-      {opensOnClick ? (
+      {/* The chip is gone while the menu is open; its chevron stays so the
+          cell keeps its shape under the (transparent) menu. */}
+      {isEditing && isDropdown ? (
         <span aria-hidden css={cellDropdownIndicatorStyle} />
       ) : null}
       {showTooltip && shading?.message ? (

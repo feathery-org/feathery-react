@@ -826,3 +826,56 @@ export const sortIndicatorStyle = {
   fontSize: `${HEADER_FONT_SIZE - 4}px`,
   color: colors.gray500
 } as const;
+
+// A dropdown cell's value as a chip, the way a spreadsheet draws a cell with
+// a validation list. Raised above the cell so its click reaches it first.
+export const cellChipStyle = {
+  position: 'relative',
+  zIndex: 1,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  maxWidth: '100%',
+  minWidth: 0,
+  padding: '2px 8px 2px 10px',
+  boxSizing: 'border-box',
+  borderRadius: '999px',
+  backgroundColor: colors.gray100,
+  border: `1px solid ${colors.gray300}`,
+  cursor: 'pointer',
+  lineHeight: 1.3,
+  '&:hover': { backgroundColor: colors.gray200 }
+} as const;
+
+// An empty dropdown cell shows only the chevron, clickable, at the right edge.
+export const cellChipEmptyStyle = {
+  position: 'relative',
+  zIndex: 1,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '18px',
+  height: '18px',
+  marginLeft: 'auto',
+  borderRadius: '4px',
+  cursor: 'pointer',
+  '&:hover': { backgroundColor: colors.gray200 }
+} as const;
+
+export const cellChipLabelStyle = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  fontSize: `${FONT_SIZE - 2}px`
+} as const;
+
+export const cellChipChevronStyle = {
+  flex: '0 0 auto',
+  width: '6px',
+  height: '6px',
+  transform: 'translateY(-2px) rotate(45deg)',
+  borderRight: `1.5px solid ${colors.gray500}`,
+  borderBottom: `1.5px solid ${colors.gray500}`,
+  pointerEvents: 'none'
+} as const;
