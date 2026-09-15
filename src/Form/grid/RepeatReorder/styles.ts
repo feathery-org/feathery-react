@@ -26,6 +26,12 @@ export const TRACK_ATTR = 'data-feathery-repeat-track';
 export const HANDLE_ATTR = 'data-feathery-reorder-handle';
 /** Set on every row in a track for as long as one of them is being dragged. */
 export const DRAGGING_ATTR = 'data-feathery-reorder-dragging';
+/**
+ * Set on a cluster that holds focus a keyboard put there. Focus a pointer
+ * left behind does not count, so a clicked grip does not keep its row lit
+ * after the pointer has moved on. See modality.ts.
+ */
+export const KEYBOARD_FOCUS_ATTR = 'data-feathery-reorder-keyboard-focus';
 
 /**
  * The chrome sits in a gutter beside the row. It hangs off the outer container
@@ -143,9 +149,11 @@ export const clusterInsideStyles = {
 
 /** Applied to the row so its own hover drives the chrome. */
 export const rowRevealStyles = {
-  // The grip is safe to show for a row being typed in: it sits in that row's
-  // own gutter, so several visible at once read as several handles.
-  [`&:hover .${REORDER_CLASS}, &:focus-within .${REORDER_CLASS}`]: {
+  // The row under the pointer, or the row a keyboard user has reached. Not
+  // plain `:focus-within`: a pointer click leaves focus on the grip as well,
+  // and that kept a row lit long after the pointer had left it, so hovering
+  // any other row showed two toolbars.
+  [`&:hover .${REORDER_CLASS}, & .${REORDER_CLASS}[${KEYBOARD_FOCUS_ATTR}]`]: {
     opacity: 1
   },
   // Hover-only, so exactly one seam can show. Adding `:focus-within` lit both

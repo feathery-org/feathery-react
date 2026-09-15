@@ -1,7 +1,8 @@
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { Container } from '.';
 import { featheryDoc } from '../../../utils/browser';
 import { subscribeToReorderAnnouncements } from '../RepeatReorder/announce';
+import { resetInputModality } from '../RepeatReorder/modality';
 
 // Records the props the real container would register dirty state under
 jest.mock(
@@ -192,7 +193,10 @@ describe('Container repeat row reorder handle', () => {
     });
   };
 
-  beforeEach(() => setFieldValues(['a', 'b', 'c']));
+  beforeEach(() => {
+    setFieldValues(['a', 'b', 'c']);
+    resetInputModality();
+  });
 
   const renderContainer = (node: any, form: any = formProps()) =>
     render(<Container node={node} viewport='desktop' form={form} />);
@@ -492,6 +496,74 @@ describe('Container repeat row reorder handle', () => {
    * no row marker, so it can never be a drag target - but it was still being
    * counted, which is what the filler reads and hears.
    */
+  describe('which row stays lit', () => {
+    const ATTR = 'data-feathery-reorder-keyboard-focus';
+    const clusterOf = (container: HTMLElement) =>
+      container.querySelector('.feathery-repeat-reorder') as HTMLElement;
+    const gripOf = (container: HTMLElement) =>
+      container.querySelector('[data-feathery-reorder-handle]') as HTMLElement;
+
+    it('does not keep a row lit after a pointer tap on its grip', () => {
+      // The tap focuses the grip so the arrow keys work next, but the pointer
+      // is what put it there, and the pointer will move on.
+      const { container } = renderContainer(repeatNode({ repeat: 1 }));
+      const grip = gripOf(container);
+
+      fireEvent.pointerDown(featheryDoc().body, { bubbles: true });
+      tapGrip(grip);
+      expect(featheryDoc().activeElement).toBe(grip);
+      expect(clusterOf(container).hasAttribute(ATTR)).toBe(false);
+    });
+
+    it('keeps a row lit when a keyboard put focus on its grip', () => {
+      const { container } = renderContainer(repeatNode({ repeat: 1 }));
+      const grip = gripOf(container);
+
+      // Tab lands here: the keydown happened on whatever was focused before.
+      fireEvent.keyDown(featheryDoc().body, { key: 'Tab', bubbles: true });
+      act(() => grip.focus());
+      expect(clusterOf(container).hasAttribute(ATTR)).toBe(true);
+    });
+
+    it('lights a tapped row once the keyboard takes over', () => {
+      const { container } = renderContainer(repeatNode({ repeat: 1 }));
+      const grip = gripOf(container);
+
+      fireEvent.pointerDown(featheryDoc().body, { bubbles: true });
+      tapGrip(grip);
+      expect(clusterOf(container).hasAttribute(ATTR)).toBe(false);
+
+      pressArrow(grip, 'ArrowDown');
+      expect(clusterOf(container).hasAttribute(ATTR)).toBe(true);
+    });
+
+    it('goes dark again when focus leaves the cluster', () => {
+      const { container } = renderContainer(repeatNode({ repeat: 1 }));
+      const grip = gripOf(container);
+
+      fireEvent.keyDown(featheryDoc().body, { key: 'Tab', bubbles: true });
+      act(() => grip.focus());
+      expect(clusterOf(container).hasAttribute(ATTR)).toBe(true);
+
+      act(() => grip.blur());
+      expect(clusterOf(container).hasAttribute(ATTR)).toBe(false);
+    });
+
+    it('stays lit while focus moves between the cluster own buttons', () => {
+      const { container, getByLabelText } = renderContainer(
+        repeatNode({ repeat: 1 })
+      );
+
+      fireEvent.keyDown(featheryDoc().body, { key: 'Tab', bubbles: true });
+      act(() => gripOf(container).focus());
+      act(() => getByLabelText('Move row 2 down').focus());
+      expect(featheryDoc().activeElement).toBe(
+        getByLabelText('Move row 2 down')
+      );
+      expect(clusterOf(container).hasAttribute(ATTR)).toBe(true);
+    });
+  });
+
   describe('removing a row', () => {
     it('offers a remove button on each row of a growable container', () => {
       const { getByLabelText } = renderContainer(repeatNode({ repeat: 1 }));

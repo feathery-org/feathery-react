@@ -16,11 +16,13 @@ import { isFixedContainer } from '../StyledContainer/hooks/useFixedContainer';
 import { announceReorder, subscribeToReorderAnnouncements } from './announce';
 import { useRowDrag } from './useRowDrag';
 import { requestRowFocus } from './focus';
+import { lastInputWasKeyboard, trackInputModality } from './modality';
 import {
   GRIP_CLASS,
   GUTTER_WIDTH,
   HANDLE_ATTR,
   INSERT_CLASS,
+  KEYBOARD_FOCUS_ATTR,
   REMOVE_CLASS,
   REORDER_CLASS,
   RESOLVED_SURFACE_VAR,
@@ -308,6 +310,14 @@ export const RepeatRowHandle = ({
   // Whether the leading seam had scrollback above it to straddle into.
   const [tucked, setTucked] = useState(false);
 
+  // Whether a keyboard put focus inside the cluster. Focus a pointer left
+  // there is not a reason to keep the row lit once the pointer has gone.
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
+  useEffect(() => {
+    const doc = rowRef.current?.ownerDocument;
+    if (doc) trackInputModality(doc);
+  }, [rowRef]);
+
   // An absolutely positioned child is offset from its ancestor's padding box,
   // which sits inside the border. So a static offset is eaten by a thick
   // outline and the chrome ends up drawn over it. Measuring the border keeps
@@ -502,6 +512,16 @@ export const RepeatRowHandle = ({
         <div
           ref={clusterRef}
           className={REORDER_CLASS}
+          {...(keyboardFocus ? { [KEYBOARD_FOCUS_ATTR]: '' } : {})}
+          onFocus={() => setKeyboardFocus(lastInputWasKeyboard())}
+          // Arrow keys on an already focused grip: the row moves and focus is
+          // handed to the new position, but the cluster is lit from here on
+          // even if that handoff lands back in this same node.
+          onKeyDownCapture={() => setKeyboardFocus(true)}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+              setKeyboardFocus(false);
+          }}
           css={
             inside
               ? clusterInsideStyles

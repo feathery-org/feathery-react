@@ -12,6 +12,7 @@
 import {
   DRAGGING_ATTR,
   INSERT_CLASS,
+  KEYBOARD_FOCUS_ATTR,
   REORDER_CLASS,
   rowRevealStyles
 } from '../styles';
@@ -52,10 +53,15 @@ describe('rowRevealStyles', () => {
     });
   });
 
-  it('still reveals the grip for the row being typed in', () => {
-    const [selector] = selectorsFor(REORDER_CLASS);
+  it('reveals the grip for the hovered row and for keyboard focus only', () => {
+    const [selector, ...rest] = selectorsFor(REORDER_CLASS);
 
+    expect(rest).toHaveLength(0);
     expect(selector).toContain(':hover');
-    expect(selector).toContain(':focus-within');
+    expect(selector).toContain(`[${KEYBOARD_FOCUS_ATTR}]`);
+    // A pointer click leaves focus on the grip too. Plain `:focus-within` kept
+    // that row lit after the pointer had moved on, so hovering any other row
+    // showed two toolbars.
+    expect(selector).not.toContain(':focus-within');
   });
 });
