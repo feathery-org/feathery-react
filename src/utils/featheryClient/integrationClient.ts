@@ -1447,6 +1447,30 @@ export default class IntegrationClient {
     else return { ok: false, error: (await res?.text()) ?? '' };
   }
 
+  async boxSendFiles(
+    fields: {
+      field_id: string;
+      name_field_id?: string;
+      name_field_type?: string;
+    }[]
+  ) {
+    const { userId } = initInfo();
+    const url = `${API_URL}box/send_files/`;
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        form_key: this.formKey,
+        fuser_key: userId,
+        field_ids: fields
+      })
+    };
+    const res = await this._fetch(url, reqOptions, false);
+    if (res && res.status === 201)
+      return { ok: true, payload: await res.json() };
+    else return { ok: false, error: (await res?.text()) ?? '' };
+  }
+
   async customRolloutAction(
     automationIds: IntegrationActionIds,
     options: IntegrationActionOptions
