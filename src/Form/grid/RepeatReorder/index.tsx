@@ -128,15 +128,20 @@ export const spaceAboveRow = (row: HTMLElement): number => {
   return rect.top + featheryWindow().scrollY;
 };
 
-/** Removes the row. Drawn to the chevrons' weight so the cluster reads as one set. */
-const Cross = () => (
-  <svg width='10' height='10' viewBox='0 0 10 10' aria-hidden='true'>
+/**
+ * Removes the row. A bin rather than a cross: a cross in a cluster of arrows
+ * reads as "cancel" or "close", and this is neither. Drawn at the chevrons'
+ * stroke weight so the cluster still reads as one set.
+ */
+const Trash = () => (
+  <svg width='12' height='12' viewBox='0 0 12 12' aria-hidden='true'>
     <path
-      d='M2.5 2.5l5 5M7.5 2.5l-5 5'
+      d='M2 3.5h8M4.5 3.5V2.5h3v1M3 3.5l.55 6.1a1 1 0 0 0 1 .9h2.9a1 1 0 0 0 1-.9L9 3.5'
       fill='none'
       stroke='currentColor'
-      strokeWidth='1.6'
+      strokeWidth='1.3'
       strokeLinecap='round'
+      strokeLinejoin='round'
     />
   </svg>
 );
@@ -533,7 +538,7 @@ export const RepeatRowHandle = ({
                 remove();
               }}
             >
-              <Cross />
+              <Trash />
             </button>
           )}
         </div>
