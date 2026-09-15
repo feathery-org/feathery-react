@@ -68,6 +68,11 @@ type GridInteractionOptions = {
    * type instead, so `007` in a text column stays `007`.
    */
   parseValue?: (fieldKey: string, text: string, before: CellValue) => CellValue;
+  /**
+   * The fixed values a column offers, when it has them. Such a column edits
+   * through a menu the grid drives from the keyboard, so focus never leaves.
+   */
+  choicesFor?: (fieldKey: string) => string[] | null;
 };
 
 export function useGridInteractions(options: GridInteractionOptions) {
@@ -83,7 +88,8 @@ export function useGridInteractions(options: GridInteractionOptions) {
     restoreFocus,
     seedAction,
     isReadOnly,
-    parseValue
+    parseValue,
+    choicesFor
   } = options;
   const [editing, setEditing] = React.useState<EditingCell | null>(null);
 
@@ -583,12 +589,69 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [editing, getActiveRange, getDisplayColumns, moveSelection]
   );
 
+  /**
+   * Keys while a choice menu is open. The grid holds focus, so they arrive
+   * here: arrows move the highlight, Enter/Tab commit it (moving on like the
+   * text editor does), Escape closes, a letter jumps to the first match.
+   * Everything else is swallowed so nothing reaches the grid underneath.
+   */
+  const handleChoiceMenuKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLElement>): boolean => {
+      if (!editing) return false;
+      const choices = choicesFor?.(editing.columnId);
+      if (!choices) return false;
+      const rows = ['', ...choices];
+      const step = (delta: number) => {
+        const at = rows.indexOf(editing.draft);
+        const next =
+          at < 0 ? 0 : Math.min(rows.length - 1, Math.max(0, at + delta));
+        setEditingDraft(rows[next]);
+      };
+      switch (event.key) {
+        case 'ArrowDown':
+          step(1);
+          break;
+        case 'ArrowUp':
+          step(-1);
+          break;
+        case 'Home':
+          setEditingDraft(rows[0]);
+          break;
+        case 'End':
+          setEditingDraft(rows[rows.length - 1]);
+          break;
+        case 'Enter':
+          commitEditing(event.shiftKey ? 'up' : 'down');
+          break;
+        case 'Tab':
+          commitEditing(event.shiftKey ? 'left' : 'right');
+          break;
+        case 'Escape':
+          cancelEditing();
+          break;
+        default: {
+          if (event.metaKey || event.ctrlKey || event.altKey) return false;
+          if (event.key.length !== 1) return false;
+          const prefix = event.key.toLowerCase();
+          const match = choices.find((choice) =>
+            choice.toLowerCase().startsWith(prefix)
+          );
+          if (match) setEditingDraft(match);
+        }
+      }
+      event.preventDefault();
+      return true;
+    },
+    [cancelEditing, choicesFor, commitEditing, editing, setEditingDraft]
+  );
+
   const handleGridKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLElement>) => {
+      if (handleChoiceMenuKeyDown(event)) return;
       handleGridTabKey(event);
       if (!event.defaultPrevented) handleGridTextEntry(event);
     },
-    [handleGridTabKey, handleGridTextEntry]
+    [handleChoiceMenuKeyDown, handleGridTabKey, handleGridTextEntry]
   );
 
   /**

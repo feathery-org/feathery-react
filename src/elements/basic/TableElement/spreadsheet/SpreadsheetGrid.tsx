@@ -23,10 +23,8 @@ import {
   addRowStripStyle,
   canvasStyle,
   cellChipChevronStyle,
-  cellChipEmptyStyle,
   cellChipLabelStyle,
   cellChipStyle,
-  cellDropdownIndicatorStyle,
   cellFillPreviewStyle,
   cellZIndex,
   cellSelectedStyle,
@@ -804,19 +802,6 @@ function DropdownChip({
   label: string;
   onOpen: (event: React.MouseEvent) => void;
 }) {
-  if (!text) {
-    return (
-      <span
-        role='button'
-        aria-label={label}
-        className={TABLE_CLASS.gridCellChip}
-        css={cellChipEmptyStyle}
-        onClick={onOpen}
-      >
-        <span aria-hidden css={cellChipChevronStyle} />
-      </span>
-    );
-  }
   return (
     <span
       role='button'
@@ -825,7 +810,7 @@ function DropdownChip({
       css={cellChipStyle}
       onClick={onOpen}
     >
-      <span css={cellChipLabelStyle}>{text}</span>
+      {text ? <span css={cellChipLabelStyle}>{text}</span> : null}
       <span aria-hidden css={cellChipChevronStyle} />
     </span>
   );
@@ -1122,13 +1107,14 @@ function SpreadsheetCell({
         if (!isEditing) interactions.startEditing(cell.row.id, cell.column.id);
       }}
     >
-      {isEditing ? null : isDropdown ? (
+      {isDropdown ? (
+        // Stays up while the menu is open, the way a chip does in a sheet.
         <DropdownChip
           text={formatCellDisplay(value as CellValue, rule)}
           label={`Choose ${columnName} for row ${rowIndex + 1}`}
           onOpen={openFromChip}
         />
-      ) : (
+      ) : isEditing ? null : (
         <span css={cellValueStyle}>
           {formatCellDisplay(value as CellValue, rule)}
         </span>
@@ -1148,11 +1134,6 @@ function SpreadsheetCell({
           onKeyDown={interactions.handleEditorKeyDown}
           onBlur={() => interactions.commitEditing()}
         />
-      ) : null}
-      {/* The chip is gone while the menu is open; its chevron stays so the
-          cell keeps its shape under the (transparent) menu. */}
-      {isEditing && isDropdown ? (
-        <span aria-hidden css={cellDropdownIndicatorStyle} />
       ) : null}
       {showTooltip && shading?.message ? (
         <CellErrorTooltip

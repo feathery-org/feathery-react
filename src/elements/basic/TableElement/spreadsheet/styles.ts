@@ -353,32 +353,6 @@ export const cellValueStyle = {
   whiteSpace: 'nowrap'
 } as const;
 
-// The mark on a dropdown cell: a small chevron at the right edge, the way a
-// spreadsheet marks a cell with a validation list, telling the user one click
-// opens it. A flex sibling of the value span rather than part of it, so the
-// text truncates before the chevron instead of underneath it.
-export const cellDropdownIndicatorStyle = {
-  // Pushed to the right edge whether or not a value span sits before it —
-  // while the cell is being edited the transparent <select> is out of flow
-  // and this is the only in-flow child.
-  flex: '0 0 auto',
-  position: 'relative',
-  // Above the editor, which is a positioned sibling earlier in the DOM.
-  zIndex: 1,
-  width: '6px',
-  height: '6px',
-  marginLeft: 'auto',
-  // The rotated square overhangs its box, so without this the chevron's
-  // right arm sits almost on the grid line.
-  marginRight: '4px',
-  // Rotated into a chevron; nudged up so its visual centre, not its box,
-  // sits on the text's centre line.
-  transform: 'translateY(-2px) rotate(45deg)',
-  borderRight: `1.5px solid ${colors.gray500}`,
-  borderBottom: `1.5px solid ${colors.gray500}`,
-  pointerEvents: 'none'
-} as const;
-
 export const cellSelectedStyle = {
   backgroundColor: colors.accentSoft
 } as const;
@@ -455,35 +429,40 @@ export const cellEditorStyle = {
   WebkitUserSelect: 'text'
 } as const;
 
-// The dropdown variant of the editor. Same box as the text input so swapping
-// between them does not shift the cell, but it keeps the native control's own
-// padding for the disclosure arrow.
-// The dropdown editor is the cell with a menu attached, not a control laid
-// over it. So it has no chrome of its own — the cell already draws the focus
-// ring, the selection tint and the chevron — and the picked value sits exactly
-// where the cell's text did. A native <select> would repaint all of that (a
-// white box, its own border, a black arrow, an indented label) and read as a
-// different control appearing on click.
-export const cellSelectStyle = {
-  position: 'absolute',
-  inset: 0,
-  width: '100%',
-  height: '100%',
-  padding: `0 ${CELL_HORIZONTAL_PADDING / 2}px`,
-  boxSizing: 'border-box',
-  appearance: 'none',
-  WebkitAppearance: 'none',
-  MozAppearance: 'none',
-  border: 'none',
-  borderRadius: 0,
-  backgroundColor: 'transparent',
-  outline: 'none',
-  cursor: 'pointer',
-  font: 'inherit',
-  fontVariantNumeric: 'inherit',
-  color: 'inherit',
-  textOverflow: 'ellipsis'
-} as const;
+// The menu under a dropdown cell. Inside the cell (so it scrolls with the
+// grid) and above the rows beneath, which the focused row's z-index allows.
+export const choiceMenuStyle = (above: boolean) =>
+  ({
+    position: 'absolute',
+    insetInlineStart: 0,
+    ...(above
+      ? { bottom: '100%', marginBottom: '2px' }
+      : { top: '100%', marginTop: '2px' }),
+    zIndex: 30,
+    minWidth: '100%',
+    maxHeight: `${ROW_HEIGHT * 8}px`,
+    overflowY: 'auto',
+    padding: '4px',
+    boxSizing: 'border-box',
+    backgroundColor: colors.white,
+    border: `1px solid ${colors.gray300}`,
+    borderRadius: '6px',
+    boxShadow: '0 6px 16px rgba(0, 0, 0, 0.18)',
+    fontSize: `${FONT_SIZE - 2}px`,
+    lineHeight: 1.4,
+    cursor: 'default',
+    userSelect: 'none'
+  } as const);
+
+export const choiceOptionStyle = (highlighted: boolean, empty: boolean) =>
+  ({
+    padding: '5px 10px',
+    borderRadius: '4px',
+    whiteSpace: 'nowrap',
+    color: empty ? colors.gray500 : colors.gray900,
+    backgroundColor: highlighted ? colors.accentSoft : 'transparent',
+    '&:hover': { backgroundColor: colors.gray100 }
+  } as const);
 
 // A range's perimeter is deliberately lighter than the 2px ring on the focused
 // cell, so the active cell still reads as the active one inside a selection.
@@ -860,21 +839,6 @@ export const cellChipStyle = {
   border: `1px solid ${colors.gray300}`,
   cursor: 'pointer',
   lineHeight: 1.3,
-  '&:hover': { backgroundColor: colors.gray200 }
-} as const;
-
-// An empty dropdown cell shows only the chevron, clickable, at the right edge.
-export const cellChipEmptyStyle = {
-  position: 'relative',
-  zIndex: 1,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '18px',
-  height: '18px',
-  marginLeft: 'auto',
-  borderRadius: '4px',
-  cursor: 'pointer',
   '&:hover': { backgroundColor: colors.gray200 }
 } as const;
 

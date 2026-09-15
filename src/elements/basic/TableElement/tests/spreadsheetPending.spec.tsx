@@ -107,8 +107,13 @@ const renderTable = (
 };
 
 const grid = () => screen.getByRole('grid');
+// The cell showing `text`. An open choice menu lists the same text as an
+// option, so matches inside a listbox are skipped.
 const cell = (text: string) =>
-  screen.getByText(text).closest('[role="gridcell"]')!;
+  screen
+    .getAllByText(text)
+    .find((node) => !node.closest('[role="listbox"]'))!
+    .closest('[role="gridcell"]')!;
 const saveButton = () => screen.getByRole('button', { name: 'Save' });
 const discardButton = () => screen.getByRole('button', { name: 'Discard' });
 // Discarding cannot be undone, so it asks first.
@@ -407,215 +412,93 @@ describe('cell editors follow the column', () => {
     )
   });
 
-  test('a column with options edits through a dropdown', async () => {
+  const menu = () => screen.getByRole('listbox');
+  const highlighted = () =>
+    within(menu()).getByRole('option', { selected: true }).textContent;
+  const option = (text: string) =>
+    within(menu()).getByRole('option', { name: text });
+
+  test('a column with options edits through a menu the grid drives', async () => {
     renderTable(hubProps, { client: client() });
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
 
+    fireEvent.mouseDown(cell('Ready'));
     fireEvent.doubleClick(cell('Ready'));
 
-    const select = await screen.findByRole('combobox');
-    expect(select).toHaveValue('Ready');
     expect(
-      [...select.querySelectorAll('option')].map((o) => o.textContent)
+      within(menu())
+        .getAllByRole('option')
+        .map((o) => o.textContent)
     ).toEqual(['(empty)', 'Ready', 'Sent']);
+    expect(highlighted()).toBe('Ready');
     expect(screen.queryByRole('textbox')).toBeNull();
+    // Nothing inside the menu takes focus: the grid keeps the keyboard.
+    expect(grid()).toHaveFocus();
+    // The chip stays up under the open menu.
+    expect(chip('Ready')).toBeInTheDocument();
   });
 
-  test('Enter released on the menu closes the editor even when nothing changed', async () => {
-    // Enter on the already-selected option fires no change event, and the
-    // keydown never reaches the page while the native menu is open. Only the
-    // keyup does — it must hand the keyboard back to the grid.
+  test('arrows move the highlight, Enter commits it, and the grid stays navigable', async () => {
     renderTable(hubProps, { client: client() });
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
     fireEvent.mouseDown(cell('Ready'));
-    await waitFor(() =>
-      expect(cell('Ready')).toHaveAttribute('aria-selected', 'true')
-    );
     fireEvent.keyDown(grid(), { key: 'Enter' });
-    const select = await screen.findByRole('combobox');
+    expect(highlighted()).toBe('Ready');
 
-    // Well after the opening Enter was released (see the test below).
-    const later = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 5000);
-    fireEvent.keyUp(select, { key: 'Enter' });
-    later.mockRestore();
+    // An arrow never opens or closes anything: it moves the highlight.
+    fireEvent.keyDown(grid(), { key: 'ArrowDown' });
+    expect(highlighted()).toBe('Sent');
+    fireEvent.keyDown(grid(), { key: 'ArrowDown' });
+    expect(highlighted()).toBe('Sent');
+    fireEvent.keyDown(grid(), { key: 'ArrowUp' });
+    fireEvent.keyDown(grid(), { key: 'ArrowUp' });
+    expect(highlighted()).toBe('(empty)');
+    fireEvent.keyDown(grid(), { key: 'End' });
+    expect(highlighted()).toBe('Sent');
 
-    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(grid()));
-    expect(screen.queryByRole('status')).toBeNull();
-    // And the grid is navigable again (Status is the last column).
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(cell('Sent')).toBeInTheDocument();
+    expect(status()).toHaveTextContent('1 unsaved change');
+    expect(grid()).toHaveFocus();
+    // Arrow keys move the selection again (Status is the last column).
     fireEvent.keyDown(grid(), { key: 'ArrowLeft' });
     await waitFor(() =>
       expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
     );
   });
 
-  test.each(['Enter', 'Escape'])(
-    '%s closing a letter-opened native dropdown restores arrow navigation',
-    async (key) => {
-      renderTable(hubProps, { client: client() });
-      await waitFor(() =>
-        expect(screen.getByText('Ready')).toBeInTheDocument()
-      );
-      fireEvent.mouseDown(cell('Ready'));
-      const openingTime = Date.now();
-      fireEvent.keyDown(document.activeElement!, { key: 's' });
-      const select = await screen.findByRole('combobox');
-      await waitFor(() => expect(select).toHaveValue('Sent'));
-      expect(select).toHaveFocus();
-
-      // The native picker consumes keydown and only delivers the release to
-      // the page. Closing quickly after typing is still a deliberate close.
-      const now = jest.spyOn(Date, 'now').mockReturnValue(openingTime + 100);
-      try {
-        fireEvent.keyUp(select, { key });
-      } finally {
-        now.mockRestore();
-      }
-
-      await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
-      await waitFor(() => expect(grid()).toHaveFocus());
-      const statusCell = cell(key === 'Escape' ? 'Ready' : 'Sent');
-      expect(statusCell).toBeInTheDocument();
-      const towardName =
-        Number(cell('Alice').getAttribute('aria-colindex')) <
-        Number(statusCell.getAttribute('aria-colindex'))
-          ? 'ArrowLeft'
-          : 'ArrowRight';
-      fireEvent.keyDown(document.activeElement!, { key: towardName });
-      await waitFor(() =>
-        expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
-      );
-    }
-  );
-
-  const mockNativePicker = () => {
-    const pickerDescriptor = Object.getOwnPropertyDescriptor(
-      HTMLSelectElement.prototype,
-      'showPicker'
-    );
-    let pickerOpen = false;
-    const showPicker = jest.fn(() => {
-      pickerOpen = true;
-    });
-    Object.defineProperty(HTMLSelectElement.prototype, 'showPicker', {
-      configurable: true,
-      value: showPicker
-    });
-    const originalMatches = Element.prototype.matches;
-    const matches = jest
-      .spyOn(Element.prototype, 'matches')
-      .mockImplementation(function (this: Element, selector: string) {
-        if (this instanceof HTMLSelectElement && selector === ':open') {
-          return pickerOpen;
-        }
-        return originalMatches.call(this, selector);
-      });
-    return {
-      showPicker,
-      close: () => {
-        pickerOpen = false;
-      },
-      restore: () => {
-        matches.mockRestore();
-        if (pickerDescriptor) {
-          Object.defineProperty(
-            HTMLSelectElement.prototype,
-            'showPicker',
-            pickerDescriptor
-          );
-        } else {
-          Reflect.deleteProperty(HTMLSelectElement.prototype, 'showPicker');
-        }
-      }
-    };
-  };
-
-  test('a clicked native dropdown restores focus when dismissed without DOM events', async () => {
-    const picker = mockNativePicker();
-    const { unmount } = renderTable(hubProps, { client: client() });
-    try {
-      await waitFor(() =>
-        expect(screen.getByText('Ready')).toBeInTheDocument()
-      );
-      fireEvent.mouseDown(cell('Ready'));
-      fireEvent.click(chip('Ready'));
-      const select = await screen.findByRole('combobox');
-      expect(picker.showPicker).toHaveBeenCalledTimes(1);
-      expect(select).toHaveValue('Ready');
-
-      // Opening must not cancel the editor while the native picker stays open.
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 120));
-      });
-      expect(screen.getByRole('combobox')).toBe(select);
-      expect(select).toHaveFocus();
-
-      // Native Escape can close the OS popup without any DOM events.
-      picker.close();
-      await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
-      await waitFor(() => expect(grid()).toHaveFocus());
-      expect(cell('Ready')).toBeInTheDocument();
-      expect(screen.queryByRole('status')).toBeNull();
-      const towardName =
-        Number(cell('Alice').getAttribute('aria-colindex')) <
-        Number(cell('Ready').getAttribute('aria-colindex'))
-          ? 'ArrowLeft'
-          : 'ArrowRight';
-      fireEvent.keyDown(document.activeElement!, { key: towardName });
-      await waitFor(() =>
-        expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
-      );
-    } finally {
-      unmount();
-      picker.restore();
-    }
-  });
-
-  test('a typed native dropdown keeps its draft until delayed Enter release commits it', async () => {
-    const picker = mockNativePicker();
-    const { unmount } = renderTable(hubProps, { client: client() });
-    try {
-      await waitFor(() =>
-        expect(screen.getByText('Ready')).toBeInTheDocument()
-      );
-      fireEvent.mouseDown(cell('Ready'));
-      fireEvent.keyDown(document.activeElement!, { key: 's' });
-      const select = await screen.findByRole('combobox');
-      expect(picker.showPicker).toHaveBeenCalledTimes(1);
-      await waitFor(() => expect(select).toHaveValue('Sent'));
-
-      // The popup closes on Enter down; its release can arrive much later.
-      // That gap must not cancel the seeded value before Enter commits it.
-      picker.close();
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 120));
-      });
-      expect(screen.getByRole('combobox')).toBe(select);
-      expect(select).toHaveValue('Sent');
-      fireEvent.keyUp(select, { key: 'Enter' });
-
-      await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
-      await waitFor(() => expect(grid()).toHaveFocus());
-      expect(cell('Sent')).toBeInTheDocument();
-      expect(status()).toHaveTextContent('1 unsaved change');
-    } finally {
-      unmount();
-      picker.restore();
-    }
-  });
-
-  test('releasing the Enter that opened the editor does not close it', async () => {
-    // The key is still held when the select mounts, so its keyup lands on
-    // the select a few milliseconds later — that is not a pick.
+  test('Escape closes the menu without changing the cell', async () => {
     renderTable(hubProps, { client: client() });
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
     fireEvent.mouseDown(cell('Ready'));
     fireEvent.keyDown(grid(), { key: 'Enter' });
-    const select = await screen.findByRole('combobox');
+    fireEvent.keyDown(grid(), { key: 'ArrowDown' });
+    expect(highlighted()).toBe('Sent');
 
-    fireEvent.keyUp(select, { key: 'Enter' });
+    fireEvent.keyDown(grid(), { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(cell('Ready')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(grid()).toHaveFocus();
+  });
 
-    expect(screen.getByRole('combobox')).toBe(select);
+  test('a press outside the menu closes it without committing', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+    fireEvent.click(chip('Ready'));
+    fireEvent.keyDown(grid(), { key: 'ArrowDown' });
+    expect(highlighted()).toBe('Sent');
+
+    fireEvent.mouseDown(cell('Alice'));
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(cell('Ready')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
+
+    // And the cell pressed on can be edited straight away.
+    fireEvent.doubleClick(cell('Alice'));
+    const input = await screen.findByRole('textbox');
+    expect(input).toHaveFocus();
   });
 
   test('Space and letters on a dropdown cell open it without clearing it', async () => {
@@ -624,28 +507,26 @@ describe('cell editors follow the column', () => {
     fireEvent.mouseDown(cell('Ready'));
 
     fireEvent.keyDown(grid(), { key: ' ' });
-    let select = await screen.findByRole('combobox');
-    expect(select).toHaveValue('Ready');
-    fireEvent.keyDown(select, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    await waitFor(() => expect(highlighted()).toBe('Ready'));
+    fireEvent.keyDown(grid(), { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
 
     // A letter jumps to the first matching choice…
     fireEvent.keyDown(grid(), { key: 's' });
-    select = await screen.findByRole('combobox');
-    await waitFor(() => expect(select).toHaveValue('Sent'));
-    fireEvent.keyDown(select, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    await waitFor(() => expect(highlighted()).toBe('Sent'));
+    // …and another letter while open jumps again.
+    fireEvent.keyDown(grid(), { key: 'r' });
+    expect(highlighted()).toBe('Ready');
+    fireEvent.keyDown(grid(), { key: 'Escape' });
 
-    // …and one that matches nothing keeps the stored value.
+    // One that matches nothing keeps the stored value.
     fireEvent.keyDown(grid(), { key: 'z' });
-    select = await screen.findByRole('combobox');
-    await waitFor(() => expect(select).toHaveValue('Ready'));
-    fireEvent.blur(select);
-    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    await waitFor(() => expect(highlighted()).toBe('Ready'));
+    fireEvent.keyDown(grid(), { key: 'Escape' });
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  test('opening a dropdown on a value outside its options and leaving keeps it', async () => {
+  test('opening a menu on a value outside its options and leaving keeps it', async () => {
     // An option removed since the row was written. The menu cannot show it,
     // but opening and leaving the cell must not turn it into a blank.
     const staleClient = {
@@ -668,31 +549,13 @@ describe('cell editors follow the column', () => {
     );
 
     fireEvent.click(chip('Pending'));
-    const select = await screen.findByRole('combobox');
-    fireEvent.blur(select);
+    expect(within(menu()).queryByRole('option', { selected: true })).toBeNull();
+    fireEvent.keyDown(grid(), { key: 'Escape' });
 
-    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
-    expect(screen.getByText('Pending')).toBeInTheDocument();
-    // The stale value is flagged as an error, but nothing was changed.
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(cell('Pending')).toBeInTheDocument();
+    // The stale value is flagged as a rule error, but nothing was edited.
     expect(status()).toHaveTextContent('No unsaved changes');
-  });
-
-  test('clicking the next cell while a dropdown is open opens the next editor', async () => {
-    // Mousedown on the next cell commits the open dropdown; the click then
-    // opens the next editor. The focus restore that follows the commit must
-    // not pull focus back to the grid, which would close what just opened.
-    renderTable(hubProps, { client: client() });
-    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
-    fireEvent.click(chip('Ready'));
-    await screen.findByRole('combobox');
-
-    fireEvent.mouseDown(cell('Alice'));
-    fireEvent.doubleClick(cell('Alice'));
-    const input = await screen.findByRole('textbox');
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    expect(screen.getByRole('textbox')).toBe(input);
-    expect(input).toHaveFocus();
   });
 
   test('picking an option commits it straight away', async () => {
@@ -700,13 +563,21 @@ describe('cell editors follow the column', () => {
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
 
     fireEvent.doubleClick(cell('Ready'));
-    fireEvent.change(await screen.findByRole('combobox'), {
-      target: { value: 'Sent' }
-    });
+    fireEvent.click(option('Sent'));
 
-    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    expect(screen.queryByRole('listbox')).toBeNull();
     expect(status()).toHaveTextContent('1 unsaved change');
     expect(screen.getByText('Sent')).toBeInTheDocument();
+  });
+
+  test('picking (empty) clears the cell', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+    fireEvent.click(chip('Ready'));
+    fireEvent.click(option('(empty)'));
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(screen.queryByText('Ready')).toBeNull();
+    expect(status()).toHaveTextContent('1 unsaved change');
   });
 
   test('a dropdown cell opens from its chip; clicking around the chip only selects', async () => {
@@ -721,17 +592,11 @@ describe('cell editors follow the column', () => {
 
     fireEvent.mouseDown(cell('Ready'));
     fireEvent.click(cell('Ready'));
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
     expect(cell('Ready')).toHaveAttribute('aria-selected', 'true');
 
     fireEvent.click(chip('Ready'));
-    const select = await screen.findByRole('combobox');
-    expect(select).toHaveValue('Ready');
-    // The chevron stays under the (transparent) menu, so opening it changes
-    // nothing about the cell's shape.
-    expect(
-      select.closest('[role="gridcell"]')!.querySelector('[aria-hidden]')
-    ).not.toBeNull();
+    expect(highlighted()).toBe('Ready');
   });
 
   test('a modified click on a dropdown chip extends the selection instead', async () => {
@@ -739,9 +604,9 @@ describe('cell editors follow the column', () => {
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
 
     fireEvent.click(chip('Ready'), { shiftKey: true });
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
     fireEvent.click(chip('Ready'), { metaKey: true });
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
   });
 
   test('a dropdown cell is marked as one, a text cell is not', async () => {
@@ -757,27 +622,11 @@ describe('cell editors follow the column', () => {
     ).toBeNull();
   });
 
-  test('typing a letter on a dropdown cell jumps to that option', async () => {
-    renderTable(hubProps, { client: client() });
-    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
-
-    fireEvent.mouseDown(cell('Ready'));
-    await waitFor(() =>
-      expect(cell('Ready')).toHaveAttribute('aria-selected', 'true')
-    );
-    fireEvent.keyDown(grid(), { key: 's' });
-
-    // The seeded character is a jump-to, not a value the column would accept.
-    await waitFor(() =>
-      expect(screen.getByRole('combobox')).toHaveValue('Sent')
-    );
-  });
-
   test('a column with no options keeps a text box', () => {
     renderTable();
     fireEvent.doubleClick(cell('Alice'));
     expect(screen.getByRole('textbox')).toBeInTheDocument();
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
   });
 });
 

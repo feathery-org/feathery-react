@@ -4,7 +4,12 @@ import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
 import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
-import { editorKindFor, parseCellInput, seedActionFor } from './fieldEditors';
+import {
+  choicesFor,
+  editorKindFor,
+  parseCellInput,
+  seedActionFor
+} from './fieldEditors';
 import { PendingChangesBar } from './PendingChangesBar';
 import { SearchBar } from './SearchBar';
 import type { SpreadsheetSort } from './HeaderMenu';
@@ -210,6 +215,10 @@ export function SpreadsheetTable({
       parseCellInput(text, cellRules?.[fieldKey], before),
     [cellRules]
   );
+  const columnChoices = useCallback(
+    (fieldKey: string) => choicesFor(cellRules?.[fieldKey]),
+    [cellRules]
+  );
 
   // Failing cells in reading order — down the rows, left to right — grouped
   // by how much they matter: what holds the save back first, then the other
@@ -260,7 +269,8 @@ export function SpreadsheetTable({
     restoreFocus,
     seedAction,
     isReadOnly,
-    parseValue
+    parseValue,
+    choicesFor: columnChoices
   });
 
   const stepIssue = useCallback(

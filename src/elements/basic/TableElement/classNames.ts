@@ -62,5 +62,7 @@ export const TABLE_CLASS = {
   gridHeaderMenu: 'feathery-table-grid-header-menu',
   gridHeaderMenuItem: 'feathery-table-grid-header-menu-item',
   gridSortIndicator: 'feathery-table-grid-sort-indicator',
-  gridCellChip: 'feathery-table-grid-cell-chip'
+  gridCellChip: 'feathery-table-grid-cell-chip',
+  gridChoiceMenu: 'feathery-table-grid-choice-menu',
+  gridChoiceOption: 'feathery-table-grid-choice-option'
 } as const;
