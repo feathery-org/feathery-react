@@ -8,7 +8,11 @@ import { editorKindFor, parseCellInput, seedActionFor } from './fieldEditors';
 import { PendingChangesBar } from './PendingChangesBar';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
 import { cellErrorKey, CellRules } from './validation';
-import { CellIssues, countIssues, issueRank } from './issues';
+import {
+  CellAnnotations,
+  countAnnotations,
+  annotationRank
+} from './annotations';
 import {
   DEFAULT_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
@@ -69,7 +73,7 @@ export type SpreadsheetTableProps = {
    * Failing cells keyed `${rowIndex}:${fieldKey}`, each with its severity and
    * whether it stops a save. The bar's stepper walks them blocking-first.
    */
-  cellIssues?: CellIssues;
+  cellAnnotations?: CellAnnotations;
   /**
    * Columns the user cannot write to, on top of what the column's own rule
    * says (a file column is never typed into). Paste, fill and clear skip them.
@@ -91,7 +95,7 @@ export function SpreadsheetTable({
   cellRules,
   rowIdentityVersion = 0,
   pending,
-  cellIssues,
+  cellAnnotations,
   readOnlyFieldKeys
 }: SpreadsheetTableProps) {
   const getValue = useCallback(
@@ -206,14 +210,15 @@ export function SpreadsheetTable({
   // by how much they matter: what holds the save back first, then the other
   // rule breaks, then the advisory findings.
   const issues = useMemo(() => {
-    if (!cellIssues || !Object.keys(cellIssues).length) return [];
+    if (!cellAnnotations || !Object.keys(cellAnnotations).length) return [];
     const ordered: { rank: number; rowId: string; columnId: string }[] = [];
     rows.forEach((row) =>
       columns.forEach((column) => {
-        const issue = cellIssues[cellErrorKey(row.rowIndex, column.field_key)];
+        const issue =
+          cellAnnotations[cellErrorKey(row.rowIndex, column.field_key)];
         if (issue) {
           ordered.push({
-            rank: issueRank(issue),
+            rank: annotationRank(issue),
             rowId: row.id,
             columnId: column.field_key
           });
@@ -225,7 +230,7 @@ export function SpreadsheetTable({
       .map((issue, index) => ({ ...issue, index }))
       .sort((a, b) => a.rank - b.rank || a.index - b.index)
       .map(({ rowId, columnId }) => ({ rowId, columnId }));
-  }, [cellIssues, rows, columns]);
+  }, [cellAnnotations, rows, columns]);
 
   // Where the stepper is in `issues`. Reset whenever the set changes, so
   // fixing a cell restarts the walk rather than skipping the next one.
@@ -274,7 +279,10 @@ export function SpreadsheetTable({
     [interactions, issues]
   );
 
-  const counts = useMemo(() => countIssues(cellIssues ?? {}), [cellIssues]);
+  const counts = useMemo(
+    () => countAnnotations(cellAnnotations ?? {}),
+    [cellAnnotations]
+  );
   const issueCount = counts.blocking + counts.errors + counts.warnings;
   // The bar also stays up while a save is in flight, so the write has somewhere
   // to report from after the buffer it came from is already empty.
