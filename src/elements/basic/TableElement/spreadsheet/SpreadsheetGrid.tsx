@@ -7,13 +7,14 @@ import type {
   CellSelectionState
 } from '@tanstack/react-table';
 import type { VirtualItem } from '@tanstack/react-virtual';
-import { featheryDoc } from '../../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
 import { AddColumnHandler, CellShading, GetCellShading } from '../types';
 import { CellValue, getFillPreview } from './model';
 import { CellEditor } from './CellEditor';
 import { CellErrorTooltip } from './CellErrorTooltip';
 import { RowMenu, RowMenuTarget } from './RowMenu';
+import { HeaderMenu, HeaderMenuTarget, SpreadsheetSort } from './HeaderMenu';
 import { choicesFor, formatCellDisplay } from './fieldEditors';
 import { CellRules } from './validation';
 import type { FillPreview, GridBounds, GridCoordinate } from './model';
@@ -21,12 +22,15 @@ import {
   addRowStripLabelStyle,
   addRowStripStyle,
   canvasStyle,
-  cellDropdownIndicatorStyle,
+  cellChipChevronStyle,
+  cellChipLabelStyle,
+  cellChipStyle,
   cellFillPreviewStyle,
   cellZIndex,
   cellSelectedStyle,
   cellStyle,
   cellValueStyle,
+  columnHeaderContentStyle,
   columnHeaderLabelStyle,
   columnHeaderStyle,
   columnResizerActiveStyle,
@@ -41,6 +45,7 @@ import {
   rowFocusedStyle,
   rowRaisedStyle,
   rowStyle,
+  sortIndicatorStyle,
   CELL_HORIZONTAL_PADDING,
   DEFAULT_COLUMN_WIDTH,
   FONT_SIZE,
@@ -93,6 +98,12 @@ type SpreadsheetGridProps = {
   onInsertRow?: (atIndex: number) => void;
   /** Enables the row context menu's delete item. */
   onDeleteRow?: (rowIndex: number) => void;
+  /** Opens the find bar; bound to Mod+F while the grid has focus. */
+  onOpenSearch?: () => void;
+  /** Enables the column header's right-click sort menu. */
+  sort?: SpreadsheetSort;
+  /** Reports the horizontal scrollbar's height (0 when the columns fit). */
+  onScrollbarHeight?: (height: number) => void;
 };
 
 type FillDrag = {
@@ -120,7 +131,10 @@ export const SpreadsheetGrid = React.forwardRef<
     cellRules,
     onAddColumn,
     onInsertRow,
-    onDeleteRow
+    onDeleteRow,
+    onOpenSearch,
+    sort,
+    onScrollbarHeight
   },
   forwardedRef
 ) {
@@ -175,7 +189,8 @@ export const SpreadsheetGrid = React.forwardRef<
       { hotkey: 'Mod+A', callback: () => table.selectAllCells() },
       { hotkey: 'Mod+Z', callback: interactions.undo },
       { hotkey: 'Mod+Shift+Z', callback: interactions.redo },
-      { hotkey: 'Mod+Y', callback: interactions.redo }
+      { hotkey: 'Mod+Y', callback: interactions.redo },
+      { hotkey: 'Mod+F', callback: () => onOpenSearch?.() }
     ],
     {
       target: scrollRef,
@@ -200,7 +215,9 @@ export const SpreadsheetGrid = React.forwardRef<
     // Stop short of the bottom edge so a scrolled-to cell has room beneath it
     // for its message bubble, which hangs below the cell.
     scrollPaddingEnd: TOOLTIP_SCROLL_MARGIN,
-    overscan: 8
+    // A comfortable margin of rows beyond the viewport, so a fast scroll or
+    // a find-jump lands on rows that are already painted.
+    overscan: 16
   });
 
   const columnVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
@@ -264,11 +281,31 @@ export const SpreadsheetGrid = React.forwardRef<
     [columns, columnVirtualizer, rows, rowVirtualizer]
   );
 
+  // Measured rather than assumed: scrollbar size is a platform setting, and
+  // overlay scrollbars take no room at all.
+  const columnsWidth = table.getTotalSize();
+  React.useLayoutEffect(() => {
+    const grid = scrollRef.current;
+    if (!grid || !onScrollbarHeight) return;
+    const report = () =>
+      onScrollbarHeight(Math.max(0, grid.offsetHeight - grid.clientHeight));
+    report();
+    const Observer = (featheryWindow() as any).ResizeObserver;
+    if (!Observer) return;
+    const observer = new Observer(report);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [onScrollbarHeight, columnsWidth]);
+
   const [fillPreview, setFillPreview] = React.useState<FillPreview | null>(
     null
   );
   const [rowMenu, setRowMenu] = React.useState<RowMenuTarget | null>(null);
   const closeRowMenu = React.useCallback(() => setRowMenu(null), []);
+  const [headerMenu, setHeaderMenu] = React.useState<HeaderMenuTarget | null>(
+    null
+  );
+  const closeHeaderMenu = React.useCallback(() => setHeaderMenu(null), []);
   const hasRowMenu = Boolean(onInsertRow || onDeleteRow);
   const fillDragRef = React.useRef<FillDrag | null>(null);
   const headerSelectionDragRef = React.useRef<HeaderSelectionDrag | null>(null);
@@ -500,6 +537,8 @@ export const SpreadsheetGrid = React.forwardRef<
                 onStartSelection={startHeaderSelection}
                 onExtendSelection={extendHeaderSelection}
                 onAddColumn={onAddColumn}
+                sort={sort}
+                onOpenHeaderMenu={sort ? setHeaderMenu : undefined}
               />
             )}
           </table.Subscribe>
@@ -544,6 +583,9 @@ export const SpreadsheetGrid = React.forwardRef<
           ) : null}
         </div>
       </div>
+      {headerMenu && sort ? (
+        <HeaderMenu target={headerMenu} sort={sort} onClose={closeHeaderMenu} />
+      ) : null}
       {rowMenu ? (
         <RowMenu
           target={rowMenu}
@@ -574,6 +616,8 @@ type HeaderRowProps = {
   ) => void;
   onExtendSelection: (axis: 'column', id: string) => void;
   onAddColumn?: AddColumnHandler;
+  sort?: SpreadsheetSort;
+  onOpenHeaderMenu?: (target: HeaderMenuTarget) => void;
 };
 
 function HeaderRow({
@@ -585,7 +629,9 @@ function HeaderRow({
   headers,
   onStartSelection,
   onExtendSelection,
-  onAddColumn
+  onAddColumn,
+  sort,
+  onOpenHeaderMenu
 }: HeaderRowProps) {
   const rowCount = table.getRowsInDisplayOrder().length;
   const shared = {
@@ -595,7 +641,9 @@ function HeaderRow({
     resizingColumnId,
     rowCount,
     onStartSelection,
-    onExtendSelection
+    onExtendSelection,
+    sort,
+    onOpenHeaderMenu
   };
 
   return (
@@ -649,6 +697,8 @@ type HeaderCellProps = {
   onStartSelection: HeaderRowProps['onStartSelection'];
   onExtendSelection: HeaderRowProps['onExtendSelection'];
   left: number;
+  sort?: SpreadsheetSort;
+  onOpenHeaderMenu?: (target: HeaderMenuTarget) => void;
 };
 
 function HeaderCell({
@@ -660,7 +710,9 @@ function HeaderCell({
   rowCount,
   onStartSelection,
   onExtendSelection,
-  left
+  left,
+  sort,
+  onOpenHeaderMenu
 }: HeaderCellProps) {
   const { column } = header;
   const columnIndex = table.getCellSelectionColumnIndexes()[column.id] ?? -1;
@@ -679,6 +731,7 @@ function HeaderCell({
     );
   const meta = column.columnDef.meta;
   const label = meta?.name ?? column.id;
+  const sortedHere = sort?.column === label ? sort.direction : null;
 
   return (
     <div
@@ -696,14 +749,39 @@ function HeaderCell({
         onStartSelection(event, 'column', column.id, fullySelected)
       }
       onMouseEnter={() => onExtendSelection('column', column.id)}
+      onContextMenu={(event) => {
+        if (!onOpenHeaderMenu) return;
+        event.preventDefault();
+        onOpenHeaderMenu({ name: label, x: event.clientX, y: event.clientY });
+      }}
+      aria-sort={
+        sortedHere
+          ? sortedHere === 'asc'
+            ? 'ascending'
+            : 'descending'
+          : undefined
+      }
     >
-      <span
-        css={{
-          ...columnHeaderLabelStyle,
-          ...(fullySelected ? { color: 'inherit' } : {})
-        }}
-      >
-        {label}
+      <span css={columnHeaderContentStyle}>
+        <span
+          css={{
+            ...columnHeaderLabelStyle,
+            ...(fullySelected ? { color: 'inherit' } : {})
+          }}
+        >
+          {label}
+        </span>
+        {sortedHere ? (
+          // A flex sibling of the label, so the label truncates and the
+          // arrow never does.
+          <span
+            className={TABLE_CLASS.gridSortIndicator}
+            aria-hidden='true'
+            css={sortIndicatorStyle}
+          >
+            {sortedHere === 'asc' ? '▲' : '▼'}
+          </span>
+        ) : null}
       </span>
       <div
         className={TABLE_CLASS.gridColumnResizer}
@@ -731,6 +809,35 @@ function HeaderCell({
         }}
       />
     </div>
+  );
+}
+
+/**
+ * The value of a dropdown cell, drawn as a pill spanning the cell with a
+ * chevron at its right, the way a spreadsheet marks a cell with a validation
+ * list. An empty cell is the same pill with no label. Not focusable:
+ * keyboard handling lives on the grid, which opens the menu on Enter.
+ */
+function DropdownChip({
+  text,
+  label,
+  onOpen
+}: {
+  text: string;
+  label: string;
+  onOpen: (event: React.MouseEvent) => void;
+}) {
+  return (
+    <span
+      role='button'
+      aria-label={label}
+      className={TABLE_CLASS.gridCellChip}
+      css={cellChipStyle}
+      onClick={onOpen}
+    >
+      <span css={cellChipLabelStyle}>{text}</span>
+      <span aria-hidden css={cellChipChevronStyle} />
+    </span>
   );
 }
 
@@ -961,10 +1068,20 @@ function SpreadsheetCell({
 
   const value = cell.getValue();
   const rule = cellRules?.[cell.column.id];
-  // A dropdown cell opens on ONE click, the way a spreadsheet's validation
-  // list does — double-click-to-open reads as a text editor on a cell that
-  // has nothing to type into.
-  const opensOnClick = canEdit && choicesFor(rule) !== null;
+  // A dropdown cell draws its value as a chip. Clicking the chip opens the
+  // menu at once (a spreadsheet's validation list); clicking the rest of the
+  // cell only selects it, so range selection works the same as anywhere else.
+  const isDropdown = choicesFor(rule) !== null;
+  const chipOpens = canEdit && isDropdown;
+  const columnName = cell.column.columnDef.meta?.name ?? '';
+  const openFromChip = (event: React.MouseEvent) => {
+    if (!chipOpens || isEditing || event.button !== 0) return;
+    // A modified click is extending the selection, not picking.
+    if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)
+      return;
+    event.stopPropagation();
+    interactions.startEditing(cell.row.id, cell.column.id);
+  };
   const shading = getCellShading?.({
     rowIndex: sourceRowIndex,
     fieldKey: cell.column.id,
@@ -1011,23 +1128,18 @@ function SpreadsheetCell({
         cell.getSelectionStartHandler(featheryDoc())(event);
       }}
       onMouseEnter={cell.getSelectionExtendHandler()}
-      onClick={(event) => {
-        if (!opensOnClick || isEditing || event.button !== 0) return;
-        // A modified click is extending the selection, not picking. A click
-        // that ended on another cell (a range drag) never reaches here, and
-        // one on the fill handle is the start of a fill, not a pick.
-        if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
-          return;
-        }
-        const target = event.target as HTMLElement;
-        if (target.closest(`.${TABLE_CLASS.gridFillHandle}`)) return;
-        interactions.startEditing(cell.row.id, cell.column.id);
-      }}
       onDoubleClick={() => {
         if (!isEditing) interactions.startEditing(cell.row.id, cell.column.id);
       }}
     >
-      {isEditing ? null : (
+      {isDropdown ? (
+        // Stays up while the menu is open, the way a chip does in a sheet.
+        <DropdownChip
+          text={formatCellDisplay(value as CellValue, rule)}
+          label={`Choose ${columnName} for row ${rowIndex + 1}`}
+          onOpen={openFromChip}
+        />
+      ) : isEditing ? null : (
         <span css={cellValueStyle}>
           {formatCellDisplay(value as CellValue, rule)}
         </span>
@@ -1047,11 +1159,6 @@ function SpreadsheetCell({
           onKeyDown={interactions.handleEditorKeyDown}
           onBlur={() => interactions.commitEditing()}
         />
-      ) : null}
-      {/* Drawn by the cell in both states, so opening the menu changes nothing
-          about how the cell looks except the menu itself. */}
-      {opensOnClick ? (
-        <span aria-hidden css={cellDropdownIndicatorStyle} />
       ) : null}
       {showTooltip && shading?.message ? (
         <CellErrorTooltip

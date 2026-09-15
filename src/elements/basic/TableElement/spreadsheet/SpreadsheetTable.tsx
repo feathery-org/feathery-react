@@ -1,18 +1,34 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { useCreateAtom } from '@tanstack/react-store';
 import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
 import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
-import { editorKindFor, parseCellInput, seedActionFor } from './fieldEditors';
+import {
+  choicesFor,
+  editorKindFor,
+  parseCellInput,
+  seedActionFor
+} from './fieldEditors';
 import { PendingChangesBar } from './PendingChangesBar';
+import { SearchBar } from './SearchBar';
+import type { SpreadsheetSort } from './HeaderMenu';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
 import { cellErrorKey, CellRules } from './validation';
 import { CellIssues, countIssues, issueRank } from './issues';
 import {
   DEFAULT_COLUMN_WIDTH,
+  HEADER_HEIGHT,
   MIN_COLUMN_WIDTH,
   PENDING_BAR_HEIGHT,
+  SEARCH_CURRENT_SHADING,
+  SEARCH_MATCH_SHADING,
   spreadsheetViewportHeight
 } from './styles';
 import {
@@ -21,6 +37,7 @@ import {
   SpreadsheetTableState
 } from './table';
 import { useGridInteractions } from './useGridInteractions';
+import { useGridSearch } from './useGridSearch';
 import { useSpreadsheetHistory } from './useSpreadsheetHistory';
 
 const columnHelper = createColumnHelper<
@@ -75,6 +92,8 @@ export type SpreadsheetTableProps = {
    * says (a file column is never typed into). Paste, fill and clear skip them.
    */
   readOnlyFieldKeys?: Set<string>;
+  /** Column sort, offered from each header's right-click menu. */
+  sort?: SpreadsheetSort;
 };
 
 export function SpreadsheetTable({
@@ -92,7 +111,8 @@ export function SpreadsheetTable({
   rowIdentityVersion = 0,
   pending,
   cellIssues,
-  readOnlyFieldKeys
+  readOnlyFieldKeys,
+  sort
 }: SpreadsheetTableProps) {
   const getValue = useCallback(
     (rowIndex: number, fieldKey: string): CellValue => {
@@ -201,6 +221,10 @@ export function SpreadsheetTable({
       parseCellInput(text, cellRules?.[fieldKey], before),
     [cellRules]
   );
+  const columnChoices = useCallback(
+    (fieldKey: string) => choicesFor(cellRules?.[fieldKey]),
+    [cellRules]
+  );
 
   // Failing cells in reading order — down the rows, left to right — grouped
   // by how much they matter: what holds the save back first, then the other
@@ -251,7 +275,8 @@ export function SpreadsheetTable({
     restoreFocus,
     seedAction,
     isReadOnly,
-    parseValue
+    parseValue,
+    choicesFor: columnChoices
   });
 
   const stepIssue = useCallback(
@@ -274,6 +299,33 @@ export function SpreadsheetTable({
     [interactions, issues]
   );
 
+  const search = useGridSearch({
+    rows,
+    columns,
+    cellRules,
+    focusCell: interactions.focusCell
+  });
+
+  // Search tint sits under any Feathery-controlled shading: a rejected value
+  // stays red whether or not it also matches the query.
+  const shadeCell = useCallback<GetCellShading>(
+    (context) => {
+      const base = getCellShading?.(context);
+      if (base) return base;
+      const state = search.matchState(context.rowIndex, context.fieldKey);
+      if (state === 'current') return SEARCH_CURRENT_SHADING;
+      if (state === 'match') return SEARCH_MATCH_SHADING;
+      return null;
+    },
+    [getCellShading, search.matchState]
+  );
+
+  const closeSearch = useCallback(() => {
+    search.close();
+    // Escape in the find bar hands the keyboard back to the grid.
+    gridRef.current?.focus();
+  }, [search]);
+
   const counts = useMemo(() => countIssues(cellIssues ?? {}), [cellIssues]);
   const issueCount = counts.blocking + counts.errors + counts.warnings;
   // The bar also stays up while a save is in flight, so the write has somewhere
@@ -284,15 +336,22 @@ export function SpreadsheetTable({
 
   // The status bar sits inside the element's own height box, so an auto-sized
   // grid grows to make room for it rather than losing a row while it is up.
+  // The horizontal scrollbar lives inside the grid's scroll box, so an
+  // auto-sized grid has to grow by its height or it eats the last row.
+  const [scrollbarHeight, setScrollbarHeight] = useState(0);
   const fitHeight = useMemo(() => {
-    const base = spreadsheetViewportHeight(heightUnit, rows.length);
+    const base = spreadsheetViewportHeight(heightUnit, rows.length, {
+      addRow: Boolean(onInsertRow),
+      scrollbarHeight
+    });
     if (base === undefined) return undefined;
     return base + (showBar ? PENDING_BAR_HEIGHT : 0);
-  }, [heightUnit, rows.length, showBar]);
+  }, [heightUnit, rows.length, onInsertRow, scrollbarHeight, showBar]);
 
   return (
     <div
       css={{
+        position: 'relative',
         display: 'flex',
         flex: '1 1 auto',
         flexDirection: 'column',
@@ -300,6 +359,18 @@ export function SpreadsheetTable({
         ...(fitHeight ? { height: `${fitHeight}px` } : {})
       }}
     >
+      {search.open && (
+        <SearchBar
+          query={search.query}
+          onQueryChange={search.setQuery}
+          matchCount={search.matches.length}
+          cursor={search.cursor}
+          onStep={search.step}
+          onClose={closeSearch}
+          focusToken={search.focusToken}
+          top={(showBar ? PENDING_BAR_HEIGHT : 0) + HEADER_HEIGHT + 8}
+        />
+      )}
       {showBar && pending ? (
         <PendingChangesBar
           pendingCount={pending.count}
@@ -318,11 +389,14 @@ export function SpreadsheetTable({
         interactions={interactions}
         canEdit={canEdit}
         rowIndexById={rowIndexById}
-        getCellShading={getCellShading}
+        getCellShading={shadeCell}
         cellRules={cellRules}
         onAddColumn={onAddColumn}
         onInsertRow={onInsertRow}
         onDeleteRow={onDeleteRow}
+        onOpenSearch={search.openSearch}
+        sort={sort}
+        onScrollbarHeight={setScrollbarHeight}
       />
     </div>
   );
