@@ -141,6 +141,37 @@ describe('row operations', () => {
     expect(scanBindings(doc).tables.get('costs')!.rows).toHaveLength(2);
   });
 
+  it('preserves unknown content-control properties when cloning a row', () => {
+    const doc = buildCostsFixture();
+    const sourceQuantity = scanBindings(doc)
+      .tables.get('costs')!
+      .rows[0].bindings.get('quantity')!;
+    const sourceControl = getAt(doc, sourceQuantity.path);
+    sourceControl.contentControlProperties.futurePolicy = {
+      owner: 'ayesha',
+      version: 2
+    };
+
+    const { sfdt: next } = addLineItem(
+      doc,
+      'costs',
+      'r-1',
+      scanBindings(doc),
+      'r-new'
+    );
+    const clonedQuantity = scanBindings(next)
+      .tables.get('costs')!
+      .rows[1].bindings.get('quantity')!;
+    const clonedControl = getAt(next, clonedQuantity.path);
+
+    expect(clonedControl.contentControlProperties.futurePolicy).toEqual({
+      owner: 'ayesha',
+      version: 2
+    });
+    expect(clonedControl.contentControlProperties.tag).toContain('row=r-new');
+    expect(sourceControl.contentControlProperties.tag).toContain('row=r-1');
+  });
+
   it('deletes a row and its bindings', () => {
     const doc = buildCostsFixture();
     const next = removeLineItem(doc, 'costs', 'r-1');

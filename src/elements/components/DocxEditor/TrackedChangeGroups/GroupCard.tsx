@@ -5,6 +5,8 @@ import {
   CARD_SHADOW,
   INK_3,
   LINE,
+  MOD,
+  MOD_WASH,
   MONO,
   PANEL_2,
   PAPER,
@@ -52,6 +54,7 @@ export default function GroupCard({
   onResolveGroup,
   onResolveChips
 }: Props) {
+  const calculated = group.derivedChanges ?? [];
   return (
     <div
       css={{
@@ -137,7 +140,7 @@ export default function GroupCard({
           >
             {`${group.chips.length} ${
               group.chips.length === 1 ? 'edit' : 'edits'
-            }`}
+            }${calculated.length ? ` · ${calculated.length} calculated` : ''}`}
           </span>
         </button>
       </div>
@@ -188,6 +191,48 @@ export default function GroupCard({
               onResolve={(isAccept) => onResolveChips([chip], isAccept)}
             />
           ))}
+          {calculated.length > 0 && (
+            <div
+              css={{
+                marginTop: 2,
+                padding: '8px 9px',
+                border: `1px solid ${LINE}`,
+                borderRadius: 8,
+                background: MOD_WASH
+              }}
+            >
+              <div
+                css={{
+                  marginBottom: 5,
+                  color: MOD,
+                  fontSize: 10.5,
+                  fontWeight: 650
+                }}
+              >
+                Calculated values updated
+              </div>
+              {calculated.map((change) => (
+                <div
+                  key={change.name}
+                  css={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                    gap: 8,
+                    alignItems: 'baseline',
+                    fontSize: 10.5,
+                    '& + &': { marginTop: 4 }
+                  }}
+                >
+                  <span css={{ minWidth: 0, color: INK_3 }}>
+                    {change.name.replace(/[-_]+/g, ' ')}
+                  </span>
+                  <span css={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
+                    {change.beforeText} → {change.afterText}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

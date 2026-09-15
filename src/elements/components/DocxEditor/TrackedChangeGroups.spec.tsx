@@ -52,8 +52,22 @@ if (!(testWindow.SVGElement.prototype as any).getBBox) {
 // A minimal live-editor stand-in: tagged revisions in a collection, plus the
 // event surface the panel subscribes to. Group tags use the same JSON shape
 // the ops engine stamps through revisionSettings.customData.
-const tag = (changeSetId: string, group: string) =>
-  JSON.stringify({ v: 1, source: 'robin', changeSetId, group });
+const tag = (
+  changeSetId: string,
+  group: string,
+  derivedChanges?: Array<{
+    name: string;
+    beforeText: string;
+    afterText: string;
+  }>
+) =>
+  JSON.stringify({
+    v: 1,
+    source: 'robin',
+    changeSetId,
+    group,
+    derivedChanges
+  });
 
 function makeEditor(revisions: any[]): any {
   const listeners: Record<string, Array<() => void>> = {};
@@ -248,6 +262,50 @@ describe('TrackedChangeGroups', () => {
     // Two pending edits in the premium group, one in the date group.
     expect(screen.getByText('2 edits')).toBeInTheDocument();
     expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('3 pending')).toBeInTheDocument();
+  });
+
+  it('renders one card per message, including dependent table messages', () => {
+    const editor = makeEditor([
+      makeRevision({
+        customData: tag('add-signage', 'add-signage', [
+          {
+            name: 'property_premium_subtotal',
+            beforeText: '$11,008.00',
+            afterText: '$11,638.00'
+          }
+        ]),
+        getRange: () => [{ text: 'Signage' }]
+      }),
+      makeRevision({
+        customData: tag('split-property', 'split-property', [
+          {
+            name: 'property_premium_subtotal',
+            beforeText: '$22,054.40',
+            afterText: '$11,008.00'
+          }
+        ]),
+        getRange: () => [{ text: 'Property split' }]
+      }),
+      makeRevision({
+        customData: tag('fix-date', 'fix-effective-date'),
+        getRange: () => [{ text: '2026-02-01' }]
+      })
+    ]);
+
+    render(<TrackedChangeGroups editor={editor} />);
+
+    expect(screen.getByText('Split property')).toBeInTheDocument();
+    expect(screen.getByText('Add signage')).toBeInTheDocument();
+    expect(screen.getByText('Fix effective date')).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Split property' })
+    );
+    expect(
+      screen.getByText('property premium subtotal').parentElement
+    ).toHaveTextContent('$22,054.40 → $11,008.00');
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Add signage' }));
+    expect(screen.getByText('$11,008.00 → $11,638.00')).toBeInTheDocument();
     expect(screen.getByText('3 pending')).toBeInTheDocument();
   });
 
@@ -467,6 +525,41 @@ describe('TrackedChangeGroups', () => {
     expect(premium.accept).toHaveBeenCalledTimes(1);
     expect(date.accept).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('does not claim a partial resolve when every edit remains pending', async () => {
+    const stuck = makeRevision();
+    const editor = makeEditor([stuck]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    acceptAllGroups();
+    await flushDeferredResolve();
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 edit could not be accepted. Nothing in this change was resolved.'
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent(/undo/i);
+  });
+
+  it('reports exact resolved and unresolved counts after a partial resolve', async () => {
+    const resolved = makeRevision();
+    const stuck = makeRevision({
+      customData: tag('cs-1', 'fix-effective-date'),
+      getRange: () => [{ text: '2026-02-01' }]
+    });
+    const revisions = [resolved, stuck];
+    resolved.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(resolved), 1);
+    });
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    acceptAllGroups();
+    await flushDeferredResolve();
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 edit was accepted, but 1 edit remains. Review the document before retrying.'
+    );
   });
 
   it('shows a spinner on Accept all while its deferred resolve is pending', async () => {
@@ -1268,7 +1361,8 @@ describe('resolveLiveRevisionGroupsAsOneUndo', () => {
     // the other two.
     expect(stuck.accept).toHaveBeenCalledTimes(1);
     expect(revisions).toEqual([stuck]);
-    expect(resolved).toEqual([stuck, first, second]);
+    expect(Array.from(resolved)).toEqual([first, second]);
+    expect(resolved.unresolved).toEqual([stuck]);
   });
 });
 
