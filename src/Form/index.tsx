@@ -1084,16 +1084,34 @@ function Form({
     const isInsideContainer = Boolean(insideContainer);
     const curRepeatContainer = insideContainer || repeatContainer;
 
-    const removeServars: Record<string, null> = {};
-    // The removed row belongs to the container, not to any one field. Taking
-    // each field's own length lets a shorter array drop a different row, and a
-    // file field is shorter than its siblings whenever it ends in empty rows.
+    // A button inside a row removes that row. One outside the container has
+    // no row of its own, so it takes the last one.
     const containerRows = curRepeatContainer
       ? getRepeatContainerRowCount(activeStep, curRepeatContainer)
       : 0;
-    const curIndex = isInsideContainer ? index : containerRows - 1;
-    if (curIndex < 0) return;
+    removeRepeatedRowAt(
+      curRepeatContainer,
+      isInsideContainer ? index : containerRows - 1
+    );
+  }
 
+  /**
+   * Removes one row of a repeat container by index. Returns whether anything
+   * changed, like its move and insert siblings, so a caller can skip its own
+   * follow-up work (focus, announcements) on a refused removal.
+   */
+  function removeRepeatedRowAt(
+    repeatContainer: Subgrid | undefined,
+    index: number
+  ) {
+    if (!repeatContainer) return false;
+    // The row belongs to the container, not to any one field. Taking each
+    // field's own length would let a shorter array drop a different row, and a
+    // file field is shorter than its siblings whenever it ends in empty rows.
+    const rows = getRepeatContainerRowCount(activeStep, repeatContainer);
+    if (index < 0 || index >= rows) return false;
+
+    const removeServars: Record<string, null> = {};
     const getNewVal = (field: any) => {
       const vals = fieldValues[field.servar.key] as any[];
 
@@ -1102,24 +1120,25 @@ function Form({
       // filePathMap is indexed by repeat row, so it has to lose the same slot
       // or the surviving files resolve to the removed row's uploaded path.
       if (FILE_FIELD_TYPES.includes(field.servar.type))
-        removeFilePathMapEntry(field.servar.key, curIndex);
+        removeFilePathMapEntry(field.servar.key, index);
 
-      const newRepeatedValues = justRemove(vals, curIndex);
+      const newRepeatedValues = justRemove(vals, index);
       const defaultValue = [getDefaultFieldValue(field)];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
-    updateRepeatValues(curRepeatContainer, getNewVal);
-    internalState[_internalId].updateFieldOptions(removeServars, curIndex);
+    updateRepeatValues(repeatContainer, getNewVal);
+    internalState[_internalId].updateFieldOptions(removeServars, index);
 
     // Drop the removed row's own entry and shift higher-indexed rows down, so
     // each remaining row keeps its own error instead of inheriting a
     // neighbour's. Operating on `byIndex` rather than on string keys means a
     // literal field named `foo-0` is never mistaken for row 0 of `foo`.
     reindexRepeatRowErrors(
-      curRepeatContainer,
-      (errors, owners) => shiftInlineErrorRows(errors, owners, curIndex),
+      repeatContainer,
+      (errors, owners) => shiftInlineErrorRows(errors, owners, index),
       Object.keys(removeServars)
     );
+    return true;
   }
 
   /**
@@ -3954,6 +3973,7 @@ function Form({
     updateFieldValues,
     moveRepeatedRow,
     insertRepeatedRow,
+    removeRepeatedRowAt,
     submitCustom: (values: Record<string, any>) => client?.submitCustom(values),
     elementOnView,
     onViewElements: viewElements,

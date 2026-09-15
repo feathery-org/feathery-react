@@ -132,6 +132,7 @@ describe('Container repeat row reorder handle', () => {
     buttonLoaders: {},
     moveRepeatedRow: jest.fn().mockReturnValue(true),
     insertRepeatedRow: jest.fn().mockReturnValue(true),
+    removeRepeatedRowAt: jest.fn().mockReturnValue(true),
     ...overrides
   });
 
@@ -491,6 +492,157 @@ describe('Container repeat row reorder handle', () => {
    * no row marker, so it can never be a drag target - but it was still being
    * counted, which is what the filler reads and hears.
    */
+  describe('removing a row', () => {
+    it('offers a remove button on each row of a growable container', () => {
+      const { getByLabelText } = renderContainer(repeatNode({ repeat: 1 }));
+      expect(getByLabelText('Remove row 2')).toBeTruthy();
+    });
+
+    it('removes the row the button belongs to, by absolute index', () => {
+      const form = formProps();
+      const { getByLabelText } = renderContainer(
+        repeatNode({ repeat: 1 }),
+        form
+      );
+      getByLabelText('Remove row 2').click();
+      expect(form.removeRepeatedRowAt).toHaveBeenCalledWith(
+        step.subgrids[0],
+        1
+      );
+    });
+
+    it('withholds it where the filler may not change the row count', () => {
+      const { queryByLabelText } = renderContainer(
+        repeatNode({
+          repeat: 1,
+          properties: { reorderable: true, insertable: false }
+        })
+      );
+      expect(queryByLabelText('Remove row 2')).toBeNull();
+    });
+
+    it('withholds it where nothing could add a row back', () => {
+      // Deleting from a container with no add-row action is a one-way street.
+      const form = formProps({ activeStep: { ...step, buttons: [] } });
+      const { queryByLabelText } = renderContainer(
+        repeatNode({ repeat: 1 }),
+        form
+      );
+      expect(queryByLabelText('Remove row 2')).toBeNull();
+    });
+
+    it('keeps it when the container is at its row cap', () => {
+      // Deleting is how a full container gets back under the cap.
+      const form = formProps({
+        activeStep: {
+          ...step,
+          buttons: [
+            {
+              id: 'add-row',
+              properties: {
+                actions: [
+                  {
+                    type: 'add_repeated_row',
+                    repeat_container: 'repeat-1',
+                    max_repeats: 3
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      });
+      const { getByLabelText, queryByLabelText } = renderContainer(
+        repeatNode({ repeat: 1 }),
+        form
+      );
+      expect(queryByLabelText('Add a row below row 2')).toBeNull();
+      expect(getByLabelText('Remove row 2')).toBeTruthy();
+    });
+
+    it('meets the minimum target size like the rest of the cluster', () => {
+      const { getByLabelText } = renderContainer(repeatNode({ repeat: 1 }));
+      const style = getComputedStyle(getByLabelText('Remove row 2'));
+      expect(parseFloat(style.width)).toBeGreaterThanOrEqual(24);
+      expect(parseFloat(style.height)).toBeGreaterThanOrEqual(24);
+    });
+  });
+
+  describe('the leading seam at the top of the page', () => {
+    /** A laid-out row: jsdom reads every rect as zero without this. */
+    const withRowTop = (top: number, run: () => void) => {
+      const real = Element.prototype.getBoundingClientRect;
+      Element.prototype.getBoundingClientRect = function () {
+        if (!(this as Element).hasAttribute?.('data-feathery-repeat-row'))
+          return real.call(this);
+        return {
+          width: 390,
+          height: 216,
+          top,
+          bottom: top + 216,
+          left: 100,
+          right: 490
+        } as DOMRect;
+      };
+      try {
+        run();
+      } finally {
+        Element.prototype.getBoundingClientRect = real;
+      }
+    };
+
+    const seamAbove = (container: HTMLElement) => {
+      const row = container.querySelector(
+        '[data-feathery-repeat-row]'
+      ) as HTMLElement;
+      fireEvent.pointerMove(row, { bubbles: true, clientY: 10 });
+      return container.querySelector('.feathery-repeat-insert') as HTMLElement;
+    };
+
+    it('straddles the row edge when there is room above it', () => {
+      withRowTop(300, () => {
+        const { container } = renderContainer(repeatNode());
+        const seam = seamAbove(container);
+        expect(seam.getAttribute('aria-label')).toBe('Add a row above row 1');
+        expect(getComputedStyle(seam).transform).toBe('translateY(-50%)');
+      });
+    });
+
+    it('tucks inside the row when the row starts the page', () => {
+      // Half the seam would sit above the scroll origin, where no scrolling
+      // reaches it.
+      withRowTop(0, () => {
+        const { container } = renderContainer(repeatNode());
+        const seam = seamAbove(container);
+        expect(getComputedStyle(seam).transform).toBe('none');
+      });
+    });
+
+    it('drops the cluster a whole target so the two still abut', () => {
+      withRowTop(0, () => {
+        const { container } = renderContainer(repeatNode());
+        const cluster = container.querySelector(
+          '.feathery-repeat-reorder'
+        ) as HTMLElement;
+        expect(getComputedStyle(cluster).insetBlockStart).toBe('24px');
+      });
+    });
+
+    it('tucks on a lone row, which has a seam but no cluster', () => {
+      // On first load a container usually has one row. It has no grip, so the
+      // measurement used to bail before it ever ran, and the seam only moved
+      // once a second row appeared.
+      setFieldValues(['a']);
+      const form = formProps({ visiblePositions: { '0': [true] } });
+      withRowTop(0, () => {
+        const { container } = renderContainer(repeatNode(), form);
+        expect(container.querySelector('.feathery-repeat-reorder')).toBeNull();
+        const seam = seamAbove(container);
+        expect(getComputedStyle(seam).transform).toBe('none');
+      });
+    });
+  });
+
   describe('the phantom row a set_value trigger renders', () => {
     it('counts only the rows the data has', () => {
       setFieldValues(['a', 'b', 'c']);

@@ -15,11 +15,13 @@ import {
 import { isFixedContainer } from '../StyledContainer/hooks/useFixedContainer';
 import { announceReorder, subscribeToReorderAnnouncements } from './announce';
 import { useRowDrag } from './useRowDrag';
+import { requestRowFocus } from './focus';
 import {
   GRIP_CLASS,
   GUTTER_WIDTH,
   HANDLE_ATTR,
   INSERT_CLASS,
+  REMOVE_CLASS,
   REORDER_CLASS,
   RESOLVED_SURFACE_VAR,
   STEP_CLASS,
@@ -34,6 +36,7 @@ import {
   insertStyles,
   insertStylesAbove,
   insertStylesAboveTucked,
+  removeStyles,
   stepStyles,
   visuallyHidden
 } from './styles';
@@ -125,6 +128,19 @@ export const spaceAboveRow = (row: HTMLElement): number => {
   return rect.top + featheryWindow().scrollY;
 };
 
+/** Removes the row. Drawn to the chevrons' weight so the cluster reads as one set. */
+const Cross = () => (
+  <svg width='10' height='10' viewBox='0 0 10 10' aria-hidden='true'>
+    <path
+      d='M2.5 2.5l5 5M7.5 2.5l-5 5'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='1.6'
+      strokeLinecap='round'
+    />
+  </svg>
+);
+
 /** The conventional six-dot drag affordance. */
 const Grip = () => (
   <svg width='10' height='16' viewBox='0 0 10 16' aria-hidden='true'>
@@ -154,8 +170,11 @@ export interface RepeatRowReorder {
   canReorder: boolean;
   /** False once the container has reached the author's row cap. */
   canInsert: boolean;
+  /** False on a lone row, and wherever the filler may not change the count. */
+  canRemove: boolean;
   onMove: (from: number, to: number) => boolean;
   onInsert: (at: number) => boolean;
+  onRemove: (index: number) => boolean;
 }
 
 /**
@@ -229,6 +248,15 @@ export function useRepeatRowReorder(
     node.properties?.insertable !== false &&
     addRow.exists &&
     (addRow.cap === null || rowCount < addRow.cap);
+  // Removing answers to the same permission as inserting - both change the
+  // row count, which a list of fixed size must not let the filler do - and to
+  // the same add-row action: with no way to add a row back, deleting one is a
+  // one-way street. It ignores the cap, since deleting is how a full
+  // container gets back under it. A lone row stays: removing it would only
+  // reset it to a blank row in the same place, which reads as a button that
+  // does nothing.
+  const canRemove =
+    node.properties?.insertable !== false && addRow.exists && rowCount >= 2;
   if (!canReorder && !canInsert) return null;
 
   return {
@@ -240,9 +268,11 @@ export function useRepeatRowReorder(
     trackId: `${form.formInstanceId}:${container.id}`,
     canReorder,
     canInsert,
+    canRemove,
     onMove: (from: number, to: number) =>
       Boolean(form.moveRepeatedRow?.(container, from, to)),
-    onInsert: (at: number) => Boolean(form.insertRepeatedRow?.(container, at))
+    onInsert: (at: number) => Boolean(form.insertRepeatedRow?.(container, at)),
+    onRemove: (at: number) => Boolean(form.removeRepeatedRowAt?.(container, at))
   };
 }
 
@@ -255,8 +285,10 @@ export const RepeatRowHandle = ({
   trackId,
   canReorder,
   canInsert,
+  canRemove,
   onMove,
   onInsert,
+  onRemove,
   rowRef
 }: RepeatRowReorder & { rowRef: RefObject<HTMLElement | null> }) => {
   const clusterRef = useRef<HTMLDivElement>(null);
@@ -278,7 +310,10 @@ export const RepeatRowHandle = ({
   useEffect(() => {
     const cluster = clusterRef.current;
     const row = rowRef.current;
-    if (!cluster || !row) return;
+    // The row is measured whether or not it has a cluster: a lone row has no
+    // grip, but it still has a seam, and that seam still has to find out
+    // whether it has room above it.
+    if (!row) return;
 
     const apply = () => {
       const win = featheryWindow();
@@ -314,8 +349,10 @@ export const RepeatRowHandle = ({
       // Only the gutter position depends on the border. The inside variant
       // centres itself on the row's top edge, so it must be left to the
       // stylesheet rather than pinned by a measured offset.
-      if (fits) cluster.style.insetInlineStart = `-${gutter}px`;
-      else cluster.style.removeProperty('inset-inline-start');
+      if (cluster) {
+        if (fits) cluster.style.insetInlineStart = `-${gutter}px`;
+        else cluster.style.removeProperty('inset-inline-start');
+      }
 
       // Published on the row so both the cluster and the seam inherit it.
       const resolved = resolveSurface(row);
@@ -389,6 +426,20 @@ export const RepeatRowHandle = ({
    * own CSS has reversed, that label is already counted in absolute order, so
    * this shares the limitation instead of adding a second one.
    */
+  /**
+   * The row's slot is taken by the one below it, so that is the row that
+   * takes focus - or the one above, from the end. With only one row left
+   * there is no handle to take it, and a claim nobody consumes would fire the
+   * next time a row is added, so none is left.
+   */
+  const remove = () => {
+    if (!onRemove(index)) return;
+    const rowsAfter = visible.length - 1;
+    announce(`Row ${ordinal} removed, ${renderedCount - 1} remaining`);
+    if (rowsAfter >= 2)
+      requestRowFocus(trackId, Math.min(index, rowsAfter - 1));
+  };
+
   const stepButton = (up: boolean) => (
     <button
       type='button'
@@ -470,6 +521,21 @@ export const RepeatRowHandle = ({
             <Grip />
           </button>
           {stepButton(false)}
+          {canRemove && (
+            <button
+              type='button'
+              className={REMOVE_CLASS}
+              css={removeStyles}
+              aria-label={`Remove row ${ordinal}`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                remove();
+              }}
+            >
+              <Cross />
+            </button>
+          )}
         </div>
       )}
     </>
@@ -492,7 +558,7 @@ export const ReorderLiveRegion = ({ formId }: { formId: string }) => {
       <span id={reorderInstructionsId(formId)} css={visuallyHidden}>
         Drag the handle to move this row, or press the arrow keys while it is
         focused. The buttons above and below the handle move the row one place
-        without dragging.
+        without dragging, and the button beneath them removes the row.
       </span>
       <span
         role='status'

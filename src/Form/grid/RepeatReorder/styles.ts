@@ -9,6 +9,7 @@
 export const REORDER_CLASS = 'feathery-repeat-reorder';
 export const GRIP_CLASS = 'feathery-repeat-reorder-grip';
 export const STEP_CLASS = 'feathery-repeat-reorder-step';
+export const REMOVE_CLASS = 'feathery-repeat-reorder-remove';
 export const INSERT_CLASS = 'feathery-repeat-insert';
 
 export const ROW_ATTR = 'data-feathery-repeat-row';
@@ -188,6 +189,16 @@ export const stepStyles = {
   ...clusterButton,
   cursor: 'pointer',
   '&:disabled': { opacity: 0.2, cursor: 'default' }
+};
+
+/**
+ * Removes the row. Last in the cluster and set a little apart from the step
+ * buttons, so a hand reaching for "move down" does not land on "delete".
+ */
+export const removeStyles = {
+  ...clusterButton,
+  cursor: 'pointer',
+  marginBlockStart: '4px'
 };
 
 export const gripStyles = {

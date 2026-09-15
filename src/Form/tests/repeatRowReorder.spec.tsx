@@ -45,12 +45,19 @@ const mountForm = async (id: string) => {
   // on it - the call is how the third side channel gets permuted.
   const moveFieldOptions = jest.fn();
   const insertFieldOptions = jest.fn();
+  const updateFieldOptions = jest.fn();
   (internalState as any)[id] = {
     ...((internalState as any)[id] ?? {}),
     moveFieldOptions,
-    insertFieldOptions
+    insertFieldOptions,
+    updateFieldOptions
   };
-  return { form: GridMod._spies.form, moveFieldOptions, insertFieldOptions };
+  return {
+    form: GridMod._spies.form,
+    moveFieldOptions,
+    insertFieldOptions,
+    updateFieldOptions
+  };
 };
 
 beforeEach(() => {
@@ -231,6 +238,40 @@ describe('insertRepeatedRow', () => {
   });
 });
 
+describe('removeRepeatedRowAt', () => {
+  it('drops the same slot from every field and side channel', async () => {
+    (fieldValues as any).name = ['first', 'second', 'third'];
+    (fieldValues as any).doc = ['a.pdf', 'b.pdf', 'c.pdf'];
+    (fieldValues as any).pick = ['x', 'y', 'z'];
+    (filePathMap as any).doc = ['a.pdf', 'b.pdf', 'c.pdf'];
+    setUp(3);
+
+    const { form, updateFieldOptions } = await mountForm('iid-remove-mid');
+    expect(form.removeRepeatedRowAt(container, 1)).toBe(true);
+
+    await waitFor(() => {
+      expect((fieldValues as any).name).toEqual(['first', 'third']);
+    });
+    expect((fieldValues as any).doc).toEqual(['a.pdf', 'c.pdf']);
+    expect((filePathMap as any).doc).toEqual(['a.pdf', 'c.pdf']);
+    expect(updateFieldOptions).toHaveBeenCalledWith(
+      { name: null, doc: null, pick: null },
+      1
+    );
+  });
+
+  it('refuses an index the container does not have', async () => {
+    (fieldValues as any).name = ['first', 'second'];
+    setUp(2);
+    const { form } = await mountForm('iid-remove-range');
+
+    expect(form.removeRepeatedRowAt(container, 2)).toBe(false);
+    expect(form.removeRepeatedRowAt(container, -1)).toBe(false);
+    expect(form.removeRepeatedRowAt(undefined, 0)).toBe(false);
+    expect((fieldValues as any).name).toEqual(['first', 'second']);
+  });
+});
+
 /**
  * The row cap belongs to the container, not to any one field inside it.
  * Deciding per field let a field that trails empty rows keep growing after its
@@ -351,6 +392,37 @@ describe('per-row errors follow their rows', () => {
       // nobody has filled in yet does not inherit its neighbour's error.
       expect(GridMod._spies.form.inlineErrors).toEqual({
         name: { byIndex: { 2: { message: 'row 1 required' } } }
+      });
+    });
+  });
+
+  it('shifts the rows below a removed row up, and drops its own error', async () => {
+    (fieldValues as any).name = ['a', 'b', 'c'];
+    (fieldValues as any).doc = ['x', 'y', 'z'];
+    (fieldValues as any).pick = ['p', 'q', 'r'];
+    setUp(3);
+    RepeatMod.getRepeatErrorOwnerIds = () => OWNERS;
+
+    const id = 'iid-reorder-errors-remove';
+    await mountForm(id);
+    await seedErrors({
+      name: {
+        byIndex: {
+          1: { message: 'row 1 required' },
+          2: { message: 'row 2 required' }
+        }
+      }
+    });
+
+    await act(async () => {
+      GridMod._spies.form.removeRepeatedRowAt(container, 1);
+    });
+
+    await waitFor(() => {
+      // Row 1 is gone with its error. The old row 2 is now row 1 and keeps its
+      // own error, rather than inheriting the removed row's.
+      expect(GridMod._spies.form.inlineErrors).toEqual({
+        name: { byIndex: { 1: { message: 'row 2 required' } } }
       });
     });
   });

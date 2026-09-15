@@ -21,6 +21,7 @@ type ContainerProps = PropsWithChildren & {
     buttonLoaders?: Record<string, any>;
     moveRepeatedRow?: (container: any, from: number, to: number) => boolean;
     insertRepeatedRow?: (container: any, at: number) => boolean;
+    removeRepeatedRowAt?: (container: any, index: number) => boolean;
   };
 };
 
