@@ -165,6 +165,9 @@ export function useDocxHistorySession(
 
   function buildEngine() {
     const slices = createSliceStore();
+    // Close/checkpoint uploads mutate the same backend row. Keep them in one
+    // FIFO so an older checkpoint can never complete after a newer final close.
+    let closeQueue: Promise<void> = Promise.resolve();
 
     // The closing session's diff inputs, captured SYNCHRONOUSLY at close time.
     // Anything serialized later (after the PATCH round-trip) can already carry
@@ -261,6 +264,16 @@ export function useDocxHistorySession(
       }
     };
 
+    const queueClose = (
+      sessionId: string,
+      authors: DocxSaveMeta['authors'],
+      snap: CloseSnapshot
+    ): Promise<void> => {
+      const next = closeQueue.then(() => closeSession(sessionId, authors, snap));
+      closeQueue = next.catch(() => undefined);
+      return next;
+    };
+
     const finalizeSession = async (meta: {
       sessionId: string;
       sessionStartedAt: string;
@@ -297,6 +310,7 @@ export function useDocxHistorySession(
       // before the closing save so an older autosave cannot arrive afterward and
       // overwrite the just-closed session with stale bytes.
       await scheduler.flush();
+      await closeQueue;
       try {
         const blob = await exportRef.current();
         await saveRef.current(blob, {
@@ -313,7 +327,7 @@ export function useDocxHistorySession(
         // explicit save (or continue a restore) when those bytes were rejected.
         throw new Error('Document save failed');
       }
-      await closeSession(meta.sessionId, meta.authors, snap);
+      await queueClose(meta.sessionId, meta.authors, snap);
     };
 
     const scheduler = createAutosaveScheduler({
@@ -410,7 +424,7 @@ export function useDocxHistorySession(
       lastCheckpointAt = Date.now();
       // Fire-and-forget; closeSession swallows its own network errors (the
       // .catch is just to satisfy no-floating-promises).
-      closeSession(meta.sessionId, meta.authors, snap).catch(() => undefined);
+      queueClose(meta.sessionId, meta.authors, snap).catch(() => undefined);
     };
 
     return { slices, scheduler, tracker, checkpointSession };
