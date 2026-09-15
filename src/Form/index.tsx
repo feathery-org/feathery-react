@@ -22,6 +22,8 @@ import {
   prioritizeActions,
   processFileValues,
   registerRenderCallback,
+  insertFilePathMapEntry,
+  moveFilePathMapEntry,
   removeFilePathMapEntry,
   rerenderAllForms,
   setFormElementError,
@@ -55,6 +57,9 @@ import {
   stripEmptyRepeatEntries,
   getFieldValue,
   saveInitialValuesAndUrlParams,
+  hasRepeatOptionsForFields,
+  insertStepFieldRepeatOptions,
+  moveStepFieldRepeatOptions,
   updateStepFieldOptions,
   updateStepFieldProperties,
   updateStepFieldStyles
@@ -62,8 +67,13 @@ import {
 import {
   getContainerById,
   getFieldsInRepeat,
+  getRepeatContainerRowCount,
   getRepeatedContainer,
-  getRepeatErrorOwnerIds
+  getRepeatErrorOwnerIds,
+  getRepeatMaxRows,
+  hasAddRowAction,
+  insertRepeatRowValue,
+  moveRepeatRowValue
 } from '../utils/repeat';
 import {
   getHideIfReferences,
@@ -86,7 +96,12 @@ import {
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
-import { InlineErrors, shiftInlineErrorRows } from '../utils/inlineErrors';
+import {
+  InlineErrors,
+  insertInlineErrorRows,
+  moveInlineErrorRows,
+  shiftInlineErrorRows
+} from '../utils/inlineErrors';
 import FeatheryClient, { API_URL } from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
@@ -992,10 +1007,21 @@ function Form({
     });
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
+  function addRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    limit: number | null = null
+  ) {
+    // The cap belongs to the container, so it is measured against the
+    // container's row count. Taking each field's own length instead let a
+    // field that trails empty rows keep growing after its siblings had
+    // stopped, which is the opposite of one row being added.
+    const rows = repeatContainer
+      ? getRepeatContainerRowCount(activeStep, repeatContainer)
+      : 0;
+    if (limit && rows >= limit) return;
+
     const getNewVal = (field: any) => {
       const val = fieldValues[field.servar.key];
-      if (limit && val && Array.isArray(val) && val.length >= limit) return val;
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
         ...val,
@@ -1003,6 +1029,48 @@ function Form({
       ];
     };
     updateRepeatValues(repeatContainer, getNewVal);
+  }
+
+  /**
+   * Renumbers a repeat container's per-row errors after its rows have been
+   * permuted, so an error stays on the row it was raised against.
+   *
+   * Shared by add, remove, move and insert, so the next structural change
+   * cannot quietly skip one of the three things that have to happen: the
+   * browser's own validity, the per-row inline errors, and waiting for a
+   * pending async publish before renumbering either.
+   */
+  function reindexRepeatRowErrors(
+    repeatContainer: Subgrid | undefined,
+    remap: (errors: InlineErrors, owners: string[]) => InlineErrors,
+    // Owners the caller already knows about. getRepeatErrorOwnerIds resolves
+    // them from the step, which needs the container to carry a position key.
+    extraOwners: string[] = []
+  ) {
+    // HTML5-mode errors live in the DOM as setCustomValidity state and repeat
+    // rows are keyed by array position, so shifting rows leaves each DOM node
+    // holding the previous occupant's validity - the message would render on
+    // the wrong row. DOM validity cannot be reindexed, so clear it all; the
+    // next validation pass restores any real errors.
+    if (formSettings.errorType === 'html5') clearBrowserErrors(formRef);
+
+    // Every element in the container can own a per-row error, not just servar
+    // fields: buttons and containers store submit/action failures under their
+    // element id, so they are renumbered too.
+    const owners = [
+      ...extraOwners,
+      ...getRepeatErrorOwnerIds(activeStep, repeatContainer)
+    ];
+    const applyRemap = () => setInlineErrors((prev) => remap(prev, owners));
+
+    // A pending async button-error publish (see setButtonError) still carries
+    // the row index from before this change, so renumber only once it has
+    // landed. Otherwise its error attaches to whichever row now occupies the
+    // stale index.
+    const pendingPublish =
+      internalState[_internalId]?.pendingInlineErrorPublish;
+    if (pendingPublish) pendingPublish.then(applyRemap);
+    else applyRemap();
   }
 
   function removeRepeatedRow(
@@ -1016,23 +1084,34 @@ function Form({
     const isInsideContainer = Boolean(insideContainer);
     const curRepeatContainer = insideContainer || repeatContainer;
 
-    const removeServars: Record<string, null> = {};
-    // The removed row belongs to the container, not to any one field. Taking
-    // each field's own length lets a shorter array drop a different row, and a
-    // file field is shorter than its siblings whenever it ends in empty rows.
-    const fieldsInContainer = curRepeatContainer
-      ? getFieldsInRepeat(activeStep, curRepeatContainer)
-      : [];
-    const containerRows = Math.max(
-      0,
-      ...fieldsInContainer.map((field: any) => {
-        const vals = fieldValues[field.servar.key];
-        return Array.isArray(vals) ? vals.length : 0;
-      })
+    // A button inside a row removes that row. One outside the container has
+    // no row of its own, so it takes the last one.
+    const containerRows = curRepeatContainer
+      ? getRepeatContainerRowCount(activeStep, curRepeatContainer)
+      : 0;
+    removeRepeatedRowAt(
+      curRepeatContainer,
+      isInsideContainer ? index : containerRows - 1
     );
-    const curIndex = isInsideContainer ? index : containerRows - 1;
-    if (curIndex < 0) return;
+  }
 
+  /**
+   * Removes one row of a repeat container by index. Returns whether anything
+   * changed, like its move and insert siblings, so a caller can skip its own
+   * follow-up work (focus, announcements) on a refused removal.
+   */
+  function removeRepeatedRowAt(
+    repeatContainer: Subgrid | undefined,
+    index: number
+  ) {
+    if (!repeatContainer) return false;
+    // The row belongs to the container, not to any one field. Taking each
+    // field's own length would let a shorter array drop a different row, and a
+    // file field is shorter than its siblings whenever it ends in empty rows.
+    const rows = getRepeatContainerRowCount(activeStep, repeatContainer);
+    if (index < 0 || index >= rows) return false;
+
+    const removeServars: Record<string, null> = {};
     const getNewVal = (field: any) => {
       const vals = fieldValues[field.servar.key] as any[];
 
@@ -1041,49 +1120,124 @@ function Form({
       // filePathMap is indexed by repeat row, so it has to lose the same slot
       // or the surviving files resolve to the removed row's uploaded path.
       if (FILE_FIELD_TYPES.includes(field.servar.type))
-        removeFilePathMapEntry(field.servar.key, curIndex);
+        removeFilePathMapEntry(field.servar.key, index);
 
-      const newRepeatedValues = justRemove(vals, curIndex);
+      const newRepeatedValues = justRemove(vals, index);
       const defaultValue = [getDefaultFieldValue(field)];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
-    updateRepeatValues(curRepeatContainer, getNewVal);
-    internalState[_internalId].updateFieldOptions(removeServars, curIndex);
+    updateRepeatValues(repeatContainer, getNewVal);
+    internalState[_internalId].updateFieldOptions(removeServars, index);
 
-    // HTML5-mode errors live in the DOM as setCustomValidity state, and repeat
-    // rows are keyed by array position, so removal shifts surviving rows into
-    // DOM nodes that keep the previous occupant's validity -- the message would
-    // render on the wrong row. DOM validity can't be reindexed, so clear it
-    // all; the next validation pass restores any real errors.
-    if (formSettings.errorType === 'html5') clearBrowserErrors(formRef);
+    // Drop the removed row's own entry and shift higher-indexed rows down, so
+    // each remaining row keeps its own error instead of inheriting a
+    // neighbour's. Operating on `byIndex` rather than on string keys means a
+    // literal field named `foo-0` is never mistaken for row 0 of `foo`.
+    reindexRepeatRowErrors(
+      repeatContainer,
+      (errors, owners) => shiftInlineErrorRows(errors, owners, index),
+      Object.keys(removeServars)
+    );
+    return true;
+  }
 
-    // Inline errors for a repeated element live in its `byIndex` map. Drop the
-    // removed row's entry and shift higher-indexed rows down so each remaining
-    // row keeps its own error instead of inheriting a neighbor's. Operating on
-    // `byIndex` (not string keys) means a literal field like `foo-0` is never
-    // mistaken for a row of `foo`.
-    // Every element in the container can own a per-row error, not just servar
-    // fields: buttons (and containers) store submit/action failures under their
-    // element id, so they must be shifted too.
-    const applyShift = () =>
-      setInlineErrors((prev) =>
-        shiftInlineErrorRows(
-          prev,
-          [
-            ...Object.keys(removeServars),
-            ...getRepeatErrorOwnerIds(activeStep, curRepeatContainer)
-          ],
-          curIndex
-        )
-      );
-    // A pending async button-error publish (see setButtonError) still carries
-    // the pre-removal row index. Shift only after it lands so its error gets
-    // reindexed with the surviving rows (or dropped with the removed one)
-    // instead of attaching to whichever row now occupies the stale index.
-    const pendingPublish =
-      internalState[_internalId]?.pendingInlineErrorPublish;
-    if (pendingPublish) pendingPublish.then(applyShift);
-    else applyShift();
+  /**
+   * Moves one repeat container row to a new index. Returns whether anything
+   * changed so callers can skip their own follow-up work (focus, announcements)
+   * on a rejected move.
+   */
+  function moveRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    fromIndex: number,
+    toIndex: number
+  ) {
+    if (!repeatContainer) return false;
+
+    const fields = getFieldsInRepeat(activeStep, repeatContainer);
+    // A container whose row count comes only from text variables has no arrays
+    // for updateRepeatValues to permute.
+    if (!fields.length) return false;
+
+    const rows = getRepeatContainerRowCount(activeStep, repeatContainer);
+    if (rows < 2) return false;
+
+    // Clamping also discards the phantom trailing row that a 'set_value'
+    // trigger renders past the end of the data.
+    const from = Math.min(Math.max(fromIndex, 0), rows - 1);
+    const to = Math.min(Math.max(toIndex, 0), rows - 1);
+    if (from === to) return false;
+
+    const getNewVal = (field: any) => {
+      const key = field.servar.key;
+      const vals = fieldValues[key];
+      if (!Array.isArray(vals)) return vals;
+
+      if (FILE_FIELD_TYPES.includes(field.servar.type))
+        moveFilePathMapEntry(key, from, to, rows);
+
+      return moveRepeatRowValue(vals, from, to, rows, field);
+    };
+
+    updateRepeatValues(repeatContainer, getNewVal);
+    internalState[_internalId].moveFieldOptions(
+      new Set(fields.map((field: any) => field.servar.key)),
+      from,
+      to
+    );
+    reindexRepeatRowErrors(
+      repeatContainer,
+      (errors, owners) => moveInlineErrorRows(errors, owners, from, to),
+      fields.map((field: any) => field.servar.key)
+    );
+    return true;
+  }
+
+  /**
+   * Opens a new row at `index`, so a row can be added between two existing ones
+   * rather than only at the end. Returns whether anything changed.
+   */
+  function insertRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    index: number
+  ) {
+    if (!repeatContainer) return false;
+
+    const fields = getFieldsInRepeat(activeStep, repeatContainer);
+    if (!fields.length) return false;
+
+    const rows = getRepeatContainerRowCount(activeStep, repeatContainer);
+    // Inserting between rows still grows the container, so it answers to the
+    // same cap the add-row action does - and to the existence of one at all.
+    // A container no add-row action names cannot be grown by its seam either.
+    if (!hasAddRowAction(activeStep, repeatContainer.id)) return false;
+    const limit = getRepeatMaxRows(activeStep, repeatContainer.id);
+    if (limit !== null && rows >= limit) return false;
+
+    // A boundary, not a row, so the count itself is a valid position.
+    const at = Math.min(Math.max(index, 0), rows);
+
+    const getNewVal = (field: any) => {
+      const key = field.servar.key;
+      const vals = fieldValues[key];
+      if (!Array.isArray(vals)) return vals;
+
+      if (FILE_FIELD_TYPES.includes(field.servar.type))
+        insertFilePathMapEntry(key, at, rows);
+
+      return insertRepeatRowValue(vals, at, rows, field);
+    };
+
+    updateRepeatValues(repeatContainer, getNewVal);
+    internalState[_internalId].insertFieldOptions(
+      new Set(fields.map((field: any) => field.servar.key)),
+      at
+    );
+    reindexRepeatRowErrors(
+      repeatContainer,
+      (errors, owners) => insertInlineErrorRows(errors, owners, at),
+      fields.map((field: any) => field.servar.key)
+    );
+    return true;
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -1575,6 +1729,30 @@ function Form({
           );
           setSteps(JSON.parse(JSON.stringify(steps)));
           updateStepFieldOptions(newStep, newOptions, repeatIndex);
+        },
+        insertFieldOptions: (fieldKeys: Set<string>, at: number) => {
+          if (!hasRepeatOptionsForFields(newStep, fieldKeys)) return;
+
+          Object.values(steps).forEach((step) =>
+            insertStepFieldRepeatOptions(step, fieldKeys, at)
+          );
+          setSteps(JSON.parse(JSON.stringify(steps)));
+          insertStepFieldRepeatOptions(newStep, fieldKeys, at);
+        },
+        moveFieldOptions: (
+          fieldKeys: Set<string>,
+          from: number,
+          to: number
+        ) => {
+          // Every reorder would otherwise pay a whole-form deep clone even
+          // though most containers hold no per-row options at all.
+          if (!hasRepeatOptionsForFields(newStep, fieldKeys)) return;
+
+          Object.values(steps).forEach((step) =>
+            moveStepFieldRepeatOptions(step, fieldKeys, from, to)
+          );
+          setSteps(JSON.parse(JSON.stringify(steps)));
+          moveStepFieldRepeatOptions(newStep, fieldKeys, from, to);
         },
         updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => {
           Object.values(steps).forEach((step) =>
@@ -2105,7 +2283,10 @@ function Form({
 
     const change = updateFieldValues(updateValues, { rerender, triggerErrors });
     if (repeatRowOperation === 'add' && repeatContainer)
-      addRepeatedRow(repeatContainer);
+      addRepeatedRow(
+        repeatContainer,
+        getRepeatMaxRows(activeStep, repeatContainer.id)
+      );
     return change;
   };
 
@@ -3790,6 +3971,9 @@ function Form({
       changeFormStep(nextStepKey, activeStep.key, false),
     client,
     updateFieldValues,
+    moveRepeatedRow,
+    insertRepeatedRow,
+    removeRepeatedRowAt,
     submitCustom: (values: Record<string, any>) => client?.submitCustom(values),
     elementOnView,
     onViewElements: viewElements,

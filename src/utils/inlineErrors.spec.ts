@@ -2,6 +2,8 @@ import {
   applyInlineError,
   inlineEntryHasMessage,
   InlineErrors,
+  insertInlineErrorRows,
+  moveInlineErrorRows,
   resolveInlineErrorMessage,
   shiftInlineErrorRows
 } from './inlineErrors';
@@ -66,6 +68,129 @@ describe('shiftInlineErrorRows', () => {
     expect(next.f).toEqual({ message: 'field-wide' });
     // Not in ownerKeys => untouched.
     expect(next.other).toEqual({ byIndex: { 0: { message: 'keep' } } });
+  });
+});
+
+describe('moveInlineErrorRows', () => {
+  const threeRows = (): InlineErrors => ({
+    f: {
+      byIndex: {
+        0: { message: 'r0' },
+        1: { message: 'r1' },
+        2: { message: 'r2' }
+      }
+    }
+  });
+
+  it('carries the moved row error down with its row', () => {
+    // Row 0 moves to the end; the rows it passes each come up one.
+    const next = moveInlineErrorRows(threeRows(), ['f'], 0, 2);
+
+    expect(next.f).toEqual({
+      byIndex: {
+        0: { message: 'r1' },
+        1: { message: 'r2' },
+        2: { message: 'r0' }
+      }
+    });
+  });
+
+  it('carries the moved row error up with its row', () => {
+    const next = moveInlineErrorRows(threeRows(), ['f'], 2, 0);
+
+    expect(next.f).toEqual({
+      byIndex: {
+        0: { message: 'r2' },
+        1: { message: 'r0' },
+        2: { message: 'r1' }
+      }
+    });
+  });
+
+  it('leaves rows outside the moved span alone', () => {
+    // 1 -> 2 swaps those two and must not disturb row 0.
+    const next = moveInlineErrorRows(threeRows(), ['f'], 1, 2);
+
+    expect(next.f).toEqual({
+      byIndex: {
+        0: { message: 'r0' },
+        1: { message: 'r2' },
+        2: { message: 'r1' }
+      }
+    });
+  });
+
+  it('moves BUTTON errors too, not just servar fields', () => {
+    // A button inside the container is clickable once per row, so its action
+    // failures are per-row and have to travel with the row that raised them.
+    const errors: InlineErrors = {
+      btn: { byIndex: { 0: { message: 'row 0 failed' } } },
+      name: { byIndex: { 2: { message: 'row 2 required' } } }
+    };
+
+    const next = moveInlineErrorRows(errors, ['name', 'btn'], 0, 2);
+
+    expect(next.btn).toEqual({ byIndex: { 2: { message: 'row 0 failed' } } });
+    expect(next.name).toEqual({
+      byIndex: { 1: { message: 'row 2 required' } }
+    });
+  });
+
+  it('is identity-equal on a no-op move', () => {
+    const errors = threeRows();
+    expect(moveInlineErrorRows(errors, ['f'], 1, 1)).toBe(errors);
+  });
+
+  it('preserves a field-wide message and ignores untouched owners', () => {
+    const errors: InlineErrors = {
+      f: { message: 'field wide', byIndex: { 0: { message: 'r0' } } },
+      other: { byIndex: { 0: { message: 'not mine' } } }
+    };
+
+    const next = moveInlineErrorRows(errors, ['f'], 0, 1);
+
+    expect(next.f).toEqual({
+      message: 'field wide',
+      byIndex: { 1: { message: 'r0' } }
+    });
+    expect(next.other).toEqual({ byIndex: { 0: { message: 'not mine' } } });
+  });
+});
+
+describe('insertInlineErrorRows', () => {
+  it('shifts the displaced rows up and leaves the new row clean', () => {
+    const errors: InlineErrors = {
+      f: { byIndex: { 0: { message: 'r0' }, 1: { message: 'r1' } } }
+    };
+
+    const next = insertInlineErrorRows(errors, ['f'], 1);
+
+    // The new row 1 has no error of its own; the old row 1 is now row 2.
+    expect(next.f).toEqual({
+      byIndex: { 0: { message: 'r0' }, 2: { message: 'r1' } }
+    });
+  });
+
+  it('shifts every row when inserting at the front', () => {
+    const errors: InlineErrors = {
+      f: { byIndex: { 0: { message: 'r0' } } },
+      btn: { byIndex: { 0: { message: 'row 0 failed' } } }
+    };
+
+    const next = insertInlineErrorRows(errors, ['f', 'btn'], 0);
+
+    expect(next.f).toEqual({ byIndex: { 1: { message: 'r0' } } });
+    expect(next.btn).toEqual({ byIndex: { 1: { message: 'row 0 failed' } } });
+  });
+
+  it('leaves rows above the insert point alone when appending', () => {
+    const errors: InlineErrors = {
+      f: { byIndex: { 0: { message: 'r0' }, 1: { message: 'r1' } } }
+    };
+
+    expect(insertInlineErrorRows(errors, ['f'], 2).f).toEqual({
+      byIndex: { 0: { message: 'r0' }, 1: { message: 'r1' } }
+    });
   });
 });
 
