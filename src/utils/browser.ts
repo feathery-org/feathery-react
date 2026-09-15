@@ -100,47 +100,60 @@ async function getFileData(url: string) {
   return { fileName, blob };
 }
 
+// Points the download anchor directly at a real HTTP(S) URL instead of a
+// blob: URL. Some embedding contexts (e.g. a Visualforce page rendered in
+// Salesforce Lightning) intercept the anchor click and reopen the URL in a
+// new top-level tab; blob: URLs only resolve in the browsing context that
+// created them, so they fail to load there. A real URL survives being
+// reopened, and relies on the server response having
+// Content-Disposition: attachment so it downloads instead of rendering inline.
+function downloadFileUrl(url: string) {
+  const element = featheryDoc().createElement('a');
+  element.style.display = 'none';
+  element.href = url;
+  element.download = '';
+  featheryDoc().body.appendChild(element);
+  element.click();
+  featheryDoc().body.removeChild(element);
+}
+
 export async function downloadAllFileUrls(urls: string[], zipName?: string) {
   if (urls.length === 0) return;
 
-  let file: File;
-
-  if (urls.length > 1) {
-    const zip = new JSZip();
-
-    const files = await Promise.all(
-      urls.map((url: string) => getFileData(url))
-    );
-
-    const nameCount: Record<string, number> = {};
-    for (const { fileName, blob } of files) {
-      let uniqueName = fileName;
-      if (nameCount[fileName] != null) {
-        nameCount[fileName]++;
-        const dotIndex = fileName.lastIndexOf('.');
-        if (dotIndex !== -1) {
-          uniqueName = `${fileName.slice(0, dotIndex)} (${
-            nameCount[fileName]
-          })${fileName.slice(dotIndex)}`;
-        } else {
-          uniqueName = `${fileName} (${nameCount[fileName]})`;
-        }
-      } else {
-        nameCount[fileName] = 0;
-      }
-      zip.file(uniqueName, blob);
-    }
-
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const finalZipName =
-      zipName && !zipName.endsWith('.zip') ? `${zipName}.zip` : zipName;
-    file = new File([zipBlob], finalZipName || 'Feathery_Download.zip', {
-      type: 'application/zip'
-    });
-  } else {
-    const { fileName, blob } = await getFileData(urls[0]);
-    file = new File([blob], fileName, { type: blob.type });
+  if (urls.length === 1) {
+    downloadFileUrl(urls[0]);
+    return;
   }
+
+  const zip = new JSZip();
+
+  const files = await Promise.all(urls.map((url: string) => getFileData(url)));
+
+  const nameCount: Record<string, number> = {};
+  for (const { fileName, blob } of files) {
+    let uniqueName = fileName;
+    if (nameCount[fileName] != null) {
+      nameCount[fileName]++;
+      const dotIndex = fileName.lastIndexOf('.');
+      if (dotIndex !== -1) {
+        uniqueName = `${fileName.slice(0, dotIndex)} (${
+          nameCount[fileName]
+        })${fileName.slice(dotIndex)}`;
+      } else {
+        uniqueName = `${fileName} (${nameCount[fileName]})`;
+      }
+    } else {
+      nameCount[fileName] = 0;
+    }
+    zip.file(uniqueName, blob);
+  }
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  const finalZipName =
+    zipName && !zipName.endsWith('.zip') ? `${zipName}.zip` : zipName;
+  const file = new File([zipBlob], finalZipName || 'Feathery_Download.zip', {
+    type: 'application/zip'
+  });
 
   downloadFile(file);
 }

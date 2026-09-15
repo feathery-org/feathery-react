@@ -1,20 +1,23 @@
 /**
- * The name a download saves under has to match the processing toast and the
- * rehydrated file field. It previously kept the raw S3 percent-encoding.
+ * Single-file downloads point the anchor straight at the real URL (relying
+ * on the server's Content-Disposition for the save-as name) instead of
+ * blobbing it — a blob: URL can't be reopened in a new tab, which some
+ * embedding contexts (e.g. a Visualforce page in Salesforce Lightning) do to
+ * every anchor click. Multi-file downloads still zip client-side, so they
+ * still decode the raw S3 percent-encoding into a human-readable name; see
+ * fileNames.spec.ts for that decoding logic.
  */
-import { downloadAllFileUrls, featheryDoc, featheryWindow } from '../browser';
+import { downloadAllFileUrls, featheryDoc } from '../browser';
 
 describe('downloadAllFileUrls', () => {
   const originalFetch = (globalThis as any).fetch;
-  let downloadedName: string;
+  let anchor: Partial<HTMLAnchorElement> & { clicked?: boolean };
 
   beforeEach(() => {
-    downloadedName = '';
+    anchor = {};
     (globalThis as any).fetch = jest.fn().mockResolvedValue({
       blob: async () => new Blob(['pdf-bytes'], { type: 'application/pdf' })
     });
-    featheryWindow().URL.createObjectURL = jest.fn(() => 'blob:stub');
-    featheryWindow().URL.revokeObjectURL = jest.fn();
 
     const doc = featheryDoc();
     const createElement = doc.createElement.bind(doc);
@@ -22,7 +25,7 @@ describe('downloadAllFileUrls', () => {
       const element = createElement(tag);
       if (tag === 'a') {
         element.click = () => {
-          downloadedName = (element as HTMLAnchorElement).download;
+          anchor = { href: element.href, download: element.download };
         };
       }
       return element;
@@ -34,12 +37,13 @@ describe('downloadAllFileUrls', () => {
     (globalThis as any).fetch = originalFetch;
   });
 
-  it.each([
-    ['003_%E7%99%BB%E9%8C%B2%E6%9B%B8.pdf', '003_登録書.pdf'],
-    ['caf%C3%A9%20%26%20%E6%9B%B8%E9%A1%9E.pdf', 'café & 書類.pdf'],
-    ['bad%E7.pdf', 'bad%E7.pdf']
-  ])('saves %s as %s', async (key, expected) => {
-    await downloadAllFileUrls([`https://files.test/uploads/${key}?sig=abc`]);
-    expect(downloadedName).toBe(expected);
+  it('points the anchor at the real URL without fetching', async () => {
+    const url = 'https://files.test/uploads/003_%E7%99%BB%E9%8C%B2%E6%9B%B8.pdf?sig=abc';
+
+    await downloadAllFileUrls([url]);
+
+    expect(anchor.href).toBe(url);
+    expect(anchor.download).toBe('');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
