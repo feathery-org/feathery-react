@@ -293,6 +293,10 @@ export function useDocxHistorySession(
       // set it now so edits landing while this close is in flight diff cleanly
       // into their own session.
       baselineRef.current = fStr;
+      // A timer cancellation does not stop a PATCH already in flight. Drain it
+      // before the closing save so an older autosave cannot arrive afterward and
+      // overwrite the just-closed session with stale bytes.
+      await scheduler.flush();
       try {
         const blob = await exportRef.current();
         await saveRef.current(blob, {
