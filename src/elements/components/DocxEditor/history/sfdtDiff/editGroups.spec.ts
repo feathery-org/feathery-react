@@ -2,7 +2,14 @@
 // A replace's delete+insert share a bucket; consecutive same-author block
 // insertions coalesce into one bucket (so a whole table steps as one edit);
 // separate edits — assistant or human — are separate buckets.
-import { docWith, para, textRun } from '../../bindings/tests/realEditorHarness';
+import {
+  cellText,
+  docWith,
+  para,
+  row,
+  table,
+  textRun
+} from '../../bindings/tests/realEditorHarness';
 import {
   applyHunks,
   countEditGroups,
@@ -13,6 +20,35 @@ import {
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
 describe('edit groups (version-bar count + steppers)', () => {
+  it('steps a whole inserted table (all its cells) as one edit', () => {
+    // Robin inserts a 2x2 table. It flattens to one hunk per cell, but every
+    // cell shares the table's top-level block index, so it steps as ONE edit.
+    const base = docWith(para(textRun('Before the table.')));
+    const final = docWith(
+      para(textRun('Before the table.')),
+      table(
+        row(cellText('A1'), cellText('B1')),
+        row(cellText('A2'), cellText('B2'))
+      )
+    );
+    const changes = diffSession(
+      clone(base),
+      [{ sfdt: clone(final), author: 'robin' }],
+      's'
+    );
+    const display = applyHunks(clone(final), changes);
+    // The table produced several hunks (one per cell)...
+    expect(changes.hunks.length).toBeGreaterThan(1);
+    // ...but they present as ONE edit, under a single group key.
+    expect(countEditGroups(display)).toBe(1);
+    const keys = new Set(
+      (display.revisions ?? [])
+        .map((r: any) => editGroupKey(r))
+        .filter((k: string | null): k is string => k != null)
+    );
+    expect(keys.size).toBe(1);
+  });
+
   it('treats a contiguous block Robin inserted as one edit group', () => {
     // Robin appends two CONSECUTIVE new paragraphs — one contiguous block, the
     // way an inserted table would be. They coalesce into a single ins_block hunk
@@ -105,6 +141,39 @@ describe('edit groups (version-bar count + steppers)', () => {
     expect(robinRevs.length).toBeGreaterThan(0);
     // 1 user edit + 2 separate Robin paragraph edits.
     expect(countEditGroups(display)).toBe(3);
+  });
+
+  it('does not count a trailing blank inserted line as its own edit', () => {
+    // Duplicating a table leaves an empty paragraph after it. The blank line is
+    // a paragraph-mark-only revision — not steppable — so it must not inflate
+    // the "N edits" label either: one table + one blank line = ONE edit.
+    const base = docWith(para(textRun('Intro.')));
+    const final = docWith(
+      para(textRun('Intro.')),
+      table(row(cellText('A1'), cellText('B1'))),
+      para() // the blank paragraph the duplication leaves behind
+    );
+    const changes = diffSession(
+      clone(base),
+      [{ sfdt: clone(final), author: 'robin' }],
+      's'
+    );
+    const display = applyHunks(clone(final), changes);
+    expect(countEditGroups(display)).toBe(1);
+  });
+
+  it('still counts a version whose only change is a blank line', () => {
+    // Nothing but a blank-line insertion: fall back to counting the group so
+    // the version doesn't claim "0 edits" while showing a change.
+    const base = docWith(para(textRun('Intro.')));
+    const final = docWith(para(textRun('Intro.')), para());
+    const changes = diffSession(
+      clone(base),
+      [{ sfdt: clone(final), author: 'you' }],
+      's'
+    );
+    const display = applyHunks(clone(final), changes);
+    expect(countEditGroups(display)).toBe(1);
   });
 
   it('ignores revisions that are not ours', () => {

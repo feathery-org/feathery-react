@@ -41,6 +41,11 @@ const ROBIN: VersionAuthor = {
   label: 'Robin'
 };
 const IDLE_CHECK_MS = 30_000;
+// Minimum spacing between autosave-piggybacked redline checkpoints. Autosaves
+// can fire every ~3s while typing; diffing + uploading the change list that
+// often is wasteful, and one checkpoint per interval keeps an abandoned
+// session's stored highlights at most this stale.
+export const CHECKPOINT_MIN_INTERVAL_MS = 20_000;
 
 export interface UseDocxHistorySessionOptions {
   editor: any;
@@ -314,6 +319,11 @@ export function useDocxHistorySession(
           sessionStartedAt: meta.sessionStartedAt,
           authors: meta.authors
         });
+        // Piggyback a throttled redline checkpoint on the successful autosave:
+        // the PATCH persists only the docx, so a session abandoned before close
+        // (reload / navigation) would otherwise store a version with NO
+        // highlights. This keeps the open row's diff at most one autosave stale.
+        checkpointSession();
       },
       canSave: () => {
         const ed = editorRef.current;
@@ -360,13 +370,16 @@ export function useDocxHistorySession(
       }
     });
 
-    // Persist the open session's redlines WITHOUT closing it. Called when an
-    // assistant turn ends so Robin's edits get their diff uploaded right away
-    // (durable against a tab-death before the session actually closes), while
-    // user and assistant edits keep sharing one session. closeSession only
-    // uploads final_sfdt + changes — it does NOT close the row on the backend —
-    // so editing continues in the same session afterwards.
-    const checkpointSession = () => {
+    // Persist the open session's redlines WITHOUT closing it, so a session
+    // abandoned before it closes (reload / navigation / tab-death) still stores
+    // a version WITH its highlights. Runs at an assistant turn's end (forced)
+    // and piggybacked on autosaves (throttled). closeSession only uploads
+    // final_sfdt + changes — it does NOT close the row on the backend — so
+    // editing continues in the same session afterwards.
+    let lastCheckpointAt = 0;
+    const checkpointSession = (force = false) => {
+      if (!force && Date.now() - lastCheckpointAt < CHECKPOINT_MIN_INTERVAL_MS)
+        return;
       const meta = tracker.currentMeta();
       if (!meta || !s0Ref.current) return;
       let fStr: string | null = null;
@@ -383,6 +396,7 @@ export function useDocxHistorySession(
         slices: slices.all(),
         robinRuns: robinRunsRef.current
       };
+      lastCheckpointAt = Date.now();
       // Fire-and-forget; closeSession swallows its own network errors (the
       // .catch is just to satisfy no-floating-promises).
       closeSession(meta.sessionId, meta.authors, snap).catch(() => undefined);
@@ -462,9 +476,10 @@ export function useDocxHistorySession(
         // An assistant turn ending no longer CLOSES the session — user and
         // assistant edits share one session (a version is cut on save / idle /
         // restore instead). We only checkpoint here: upload the turn's redlines
-        // so they're durable, while the session stays open.
+        // so they're durable, while the session stays open. Forced — a turn
+        // boundary is always worth persisting, whatever the throttle says.
         preTurnSnapshotRef.current = null;
-        checkpointSession();
+        checkpointSession(true);
       }
     });
   }, [editor, host, readOnly, checkpointSession]);

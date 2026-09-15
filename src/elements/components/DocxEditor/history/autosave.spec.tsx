@@ -172,6 +172,39 @@ describe('useDocxHistorySession', () => {
     expect(meta.closeSession).toBeUndefined();
   });
 
+  it('piggybacks a throttled redline checkpoint on the autosave, without closing', async () => {
+    jest.useFakeTimers();
+    let doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
+    });
+    const editor: any = { serialize: () => doc };
+    const { view, save, host } = setup({}, editor);
+
+    doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello world' }] }] }]
+    });
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+
+    // The autosave PATCHed without a close flag, AND the checkpoint uploaded
+    // the session's redlines — so an abandoned session keeps its highlights.
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][1].closeSession).toBeUndefined();
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+
+    // A second autosave inside the throttle window does NOT checkpoint again.
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+  });
+
   it('checkpoints (uploads redlines) on assistant turn end WITHOUT closing the session', async () => {
     const { view, editor, save, host } = setup();
 

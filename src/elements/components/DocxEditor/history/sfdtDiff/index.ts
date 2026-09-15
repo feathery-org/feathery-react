@@ -518,20 +518,62 @@ export function editGroupKey(revision: any): string | null {
   return String(cd.group ?? revision.revisionId ?? '');
 }
 
+/** Revision ids that mark at least one NON-EMPTY text inline in the display —
+ *  i.e. edits with visible content. A blank inserted line's revision only sits
+ *  on a paragraph mark, so it never lands in this set. */
+function revisionIdsWithText(doc: any): Set<string> {
+  const ids = new Set<string>();
+  const visitInlines = (inlines: any[]) => {
+    for (const inline of inlines ?? []) {
+      if (!inline || typeof inline !== 'object') continue;
+      if (Array.isArray(inline.inlines)) {
+        visitInlines(inline.inlines);
+        continue;
+      }
+      if (
+        typeof inline.text === 'string' &&
+        inline.text.length > 0 &&
+        Array.isArray(inline.revisionIds)
+      )
+        for (const id of inline.revisionIds) ids.add(String(id));
+    }
+  };
+  const visitBlocks = (blocks: any[]) => {
+    for (const b of blocks ?? []) {
+      if (!b || typeof b !== 'object') continue;
+      if (Array.isArray(b.inlines)) visitInlines(b.inlines);
+      if (Array.isArray(b.blocks)) visitBlocks(b.blocks);
+      if (Array.isArray(b.rows))
+        for (const row of b.rows)
+          for (const cell of row?.cells ?? []) visitBlocks(cell?.blocks ?? []);
+    }
+  };
+  for (const section of doc?.sections ?? []) visitBlocks(section?.blocks ?? []);
+  return ids;
+}
+
 /**
  * Count the distinct EDITS in a display document the way the version bar and
  * the prev/next steppers present them: one per edit group (see editGroupKey),
  * with formatting-only revisions excluded — they are counted separately.
+ * Groups with no visible content (an inserted blank line: paragraph-mark-only)
+ * are excluded, matching the steppers, so the "N edits" label never exceeds
+ * what stepping visits. Falls back to counting every group only when a version
+ * holds nothing but blank-line edits (again mirroring the steppers).
  */
 export function countEditGroups(displayDoc: any): number {
-  const groups = new Set<string>();
+  const textIds = revisionIdsWithText(displayDoc);
+  const withContent = new Set<string>();
+  const all = new Set<string>();
   for (const r of displayDoc?.revisions ?? []) {
     const author = String(r?.author ?? '');
     if (author.startsWith(FMT_AUTHOR_PREFIX)) continue;
     const key = editGroupKey(r);
-    if (key != null) groups.add(key);
+    if (key == null) continue;
+    all.add(key);
+    if (textIds.has(String(r.revisionId))) withContent.add(key);
   }
-  return groups.size;
+  return withContent.size || all.size;
 }
 
 /**
@@ -617,11 +659,23 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
   const date = new Date().toISOString();
   const changeSetId = `version:${changes.sessionId}`;
   let seq = 0;
+  // Step/count bucket for a hunk: its TOP-LEVEL block, scoped by author. Every
+  // hunk inside one structure shares that structure's top-level index — all of a
+  // table's cells are `[section,'blocks',tableIdx,...]` — so a whole table (or a
+  // single paragraph) steps as ONE edit, while separate structures stay separate.
+  // A replace's delete+insert share a paragraph + author, so they stay one group.
+  const blockGroupKey = (author: string, block: BlockPath): string => {
+    const a = authorKeyOf(String(author).replace(FMT_AUTHOR_PREFIX, ''));
+    const sec = Array.isArray(block) ? block[0] : 0;
+    const idx = Array.isArray(block) ? block[2] : 0; // top-level block index
+    return `${a}:${sec}:${idx}`;
+  };
   const newRevision = (
     type: 'Insertion' | 'Deletion',
     author: string,
     hunkId: number,
-    pending = false
+    pending = false,
+    group?: string
   ): Mark => {
     const revisionId = `vh-${hunkId}-${(seq++).toString(36)}`;
     revisions.push({
@@ -633,7 +687,7 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
         v: 1,
         source: 'history',
         changeSetId,
-        group: `h${hunkId}`,
+        group: group ?? `h${hunkId}`,
         ...(pending ? { pending: true } : {})
       })
     });
@@ -679,7 +733,8 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
           'Insertion',
           resolved.author,
           hunk.id,
-          resolved.pending
+          resolved.pending,
+          blockGroupKey(resolved.author, hunk.at.block)
         );
         for (let k = hunk.at.offset; k < hunk.at.offset + hunk.at.length; k++) {
           chars[k]?.revisionIds.push(mark.revisionId);
@@ -688,7 +743,9 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
         const mark = newRevision(
           'Insertion',
           `${FMT_AUTHOR_PREFIX}${hunk.author}`,
-          hunk.id
+          hunk.id,
+          false,
+          blockGroupKey(hunk.author, hunk.at.block)
         );
         para.characterFormat = {
           ...(para.characterFormat ?? {}),
@@ -709,7 +766,8 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
         'Deletion',
         resolved.author,
         hunk.id,
-        resolved.pending
+        resolved.pending,
+        blockGroupKey(resolved.author, hunk.at.block)
       );
       // Inherit the surrounding char's content control so re-inserted deleted
       // text stays inside its field rather than splitting the wrapper.
@@ -748,7 +806,8 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
       'Insertion',
       resolved.author,
       hunk.id,
-      resolved.pending
+      resolved.pending,
+      blockGroupKey(resolved.author, hunk.at.block)
     );
     for (let k = 0; k < hunk.count; k++) {
       const path = [...hunk.at.block];
@@ -784,11 +843,13 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
       )
       .join('');
     const delBlockMatch = matchPending('del', delBlockText);
+    const delAuthor = delBlockMatch ? delBlockMatch.author : hunk.author;
     const mark = newRevision(
       'Deletion',
-      delBlockMatch ? delBlockMatch.author : hunk.author,
+      delAuthor,
       hunk.id,
-      !!delBlockMatch
+      !!delBlockMatch,
+      blockGroupKey(delAuthor, hunk.at.block)
     );
     const { arr, index } = containerOf(doc, hunk.at.block);
     if (!Array.isArray(arr)) continue;
