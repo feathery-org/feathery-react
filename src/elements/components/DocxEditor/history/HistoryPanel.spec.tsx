@@ -81,6 +81,15 @@ describe('HistoryPanel', () => {
     expect(getByTitle('You')).toBeTruthy();
   });
 
+  it('uses the backend-resolved actor identity for a collaborator version', async () => {
+    const host = makeHost([
+      v({ authors: [{ kind: 'user', label: 'You' }], actor_label: 'a@x.co' })
+    ]);
+    const { findByText, getByTitle } = renderPanel(host);
+    await findByText('a@x.co');
+    expect(getByTitle('a@x.co')).toBeTruthy();
+  });
+
   it('lists versions under a month header and tags the newest Current', async () => {
     // Past-year dates so labels are stable ('Month Year') regardless of today.
     const host = makeHost([

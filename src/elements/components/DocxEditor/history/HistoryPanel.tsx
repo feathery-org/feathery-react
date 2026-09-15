@@ -134,6 +134,19 @@ function VersionRow({
   const effectiveAuthors: Author[] = authors.length
     ? authors
     : [{ kind: 'user', label: 'You' }];
+  // The browser sends the viewer-facing "You" label, but the backend also
+  // resolves the authenticated actor. Prefer that durable identity when it is
+  // available so collaborators see who actually made an older edit.
+  const displayedAuthors = effectiveAuthors.map((author) =>
+    author.kind === 'user' &&
+    (!author.label || author.label === 'You') &&
+    (version.actor_name || version.actor_label)
+      ? {
+          ...author,
+          label: version.actor_name || version.actor_label
+        }
+      : author
+  );
   return (
     <div
       onClick={() => onSelect?.(version)}
@@ -207,7 +220,7 @@ function VersionRow({
           gap: 6
         }}
       >
-        {effectiveAuthors.map((a) => (
+        {displayedAuthors.map((a) => (
           <AuthorLine key={`${a.kind}:${a.label}`} author={a} />
         ))}
       </div>
