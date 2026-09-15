@@ -69,6 +69,12 @@ type UseHubTableSourceReturn = {
   hubColumns: Column[];
   hubFieldValues: Record<string, any[]>;
   entryIds: Array<string | null>;
+  /**
+   * Each row's own id, in row order — `entry:<id>` once saved, `new:<n>` while
+   * it is only local. Unlike `entryIds` it is never null, so it is what a row
+   * key resolves against.
+   */
+  localIds: string[];
   loading: boolean;
   saving: boolean;
   errors: string[];
@@ -327,6 +333,7 @@ export function useHubTableSource({
   }, [hubColumns, rows, syntheticToHubKey, statusKey]);
 
   const entryIds = useMemo(() => rows.map((row) => row.entryId), [rows]);
+  const localIds = useMemo(() => rows.map((row) => row.localId), [rows]);
 
   const rowVerified = useMemo(() => rows.map((row) => row.verified), [rows]);
 
@@ -570,6 +577,7 @@ export function useHubTableSource({
     hubColumns,
     hubFieldValues,
     entryIds,
+    localIds,
     loading,
     saving: pending > 0,
     errors,

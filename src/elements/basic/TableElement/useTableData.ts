@@ -133,6 +133,8 @@ type UseTableDataReturn = {
   paginatedRowIndices: number[];
   transposedRowIndices: number[];
   totalRows: number;
+  /** Rows in the source data, before search, sort, paging or transposing. */
+  sourceRowCount: number;
   totalPages: number;
   rowsPerPage: number;
   hasData: boolean;
@@ -525,6 +527,7 @@ export function useTableData({
     enableAddDeleteRows,
 
     totalRows,
+    sourceRowCount: numRows,
     totalPages,
     hasData,
     activeFieldValues,

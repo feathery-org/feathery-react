@@ -13,6 +13,14 @@ type UseTableMutationsProps = {
   setSearchQuery: (query: string) => void;
   searchQuery: string;
   onMutate: () => void;
+  /**
+   * Row identity bookkeeping. Structural edits go through here and nowhere
+   * else, so this is the one place that can keep row keys lined up with rows.
+   */
+  rowKeys?: {
+    onRowInserted: (rowIndex: number) => void;
+    onRowRemoved: (rowIndex: number) => void;
+  };
 };
 
 type UseTableMutationsReturn = {
@@ -34,7 +42,8 @@ export function useTableMutations({
   setCurrentPage,
   setSearchQuery,
   searchQuery,
-  onMutate
+  onMutate,
+  rowKeys
 }: UseTableMutationsProps): UseTableMutationsReturn {
   const editModeFieldValuesRef = useRef(editModeFieldValues);
   editModeFieldValuesRef.current = editModeFieldValues;
@@ -62,10 +71,11 @@ export function useTableMutations({
       });
       // No submitCustom — a new row stays provisional until the user edits a
       // cell, so an empty row is never pushed to the backend.
+      rowKeys?.onRowInserted(Math.max(0, atIndex));
       updateFieldValues(updates);
       onMutate();
     },
-    [columns, getFieldArray, updateFieldValues, onMutate]
+    [columns, getFieldArray, updateFieldValues, onMutate, rowKeys]
   );
 
   const handleAddRow = useCallback(() => {
@@ -78,6 +88,7 @@ export function useTableMutations({
     if (searchQuery) setSearchQuery('');
     // No submitCustom — new rows are provisional until the user edits a cell,
     // avoiding empty-row noise in the backend
+    rowKeys?.onRowInserted(0);
     updateFieldValues(updates);
     onMutate();
     // Navigate to first page where the new row appears
@@ -90,7 +101,8 @@ export function useTableMutations({
     enablePagination,
     setCurrentPage,
     setSearchQuery,
-    searchQuery
+    searchQuery,
+    rowKeys
   ]);
 
   const buildRowRemovalUpdates = useCallback(
@@ -108,6 +120,7 @@ export function useTableMutations({
   const handleDeleteRow = useCallback(
     (rowIndex: number) => {
       const updates = buildRowRemovalUpdates(rowIndex);
+      rowKeys?.onRowRemoved(rowIndex);
       updateFieldValues(updates);
       if (!editMode) submitCustom(updates);
       onMutate();
@@ -117,17 +130,19 @@ export function useTableMutations({
       updateFieldValues,
       submitCustom,
       editMode,
-      onMutate
+      onMutate,
+      rowKeys
     ]
   );
 
   const handleRemoveRowLocal = useCallback(
     (rowIndex: number) => {
       const updates = buildRowRemovalUpdates(rowIndex);
+      rowKeys?.onRowRemoved(rowIndex);
       updateFieldValues(updates);
       onMutate();
     },
-    [buildRowRemovalUpdates, updateFieldValues, onMutate]
+    [buildRowRemovalUpdates, updateFieldValues, onMutate, rowKeys]
   );
 
   /**
