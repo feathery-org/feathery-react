@@ -173,23 +173,29 @@ describe('buildFillPatches', () => {
   };
 
   test('extends a numeric run by its detected step', () => {
-    const patches = fill({ a: [10, 20, null, null, null] }, {
-      minRowIndex: 0,
-      maxRowIndex: 1,
-      minColumnIndex: 0,
-      maxColumnIndex: 0
-    });
+    const patches = fill(
+      { a: [10, 20, null, null, null] },
+      {
+        minRowIndex: 0,
+        maxRowIndex: 1,
+        minColumnIndex: 0,
+        maxColumnIndex: 0
+      }
+    );
 
     expect(patches.map((patch) => patch.after)).toEqual([30, 40, 50]);
   });
 
   test('extends an ISO date run by whole days', () => {
-    const patches = fill({ a: ['2026-01-01', '2026-01-03', null, null, null] }, {
-      minRowIndex: 0,
-      maxRowIndex: 1,
-      minColumnIndex: 0,
-      maxColumnIndex: 0
-    });
+    const patches = fill(
+      { a: ['2026-01-01', '2026-01-03', null, null, null] },
+      {
+        minRowIndex: 0,
+        maxRowIndex: 1,
+        minColumnIndex: 0,
+        maxColumnIndex: 0
+      }
+    );
 
     expect(patches.map((patch) => patch.after)).toEqual([
       '2026-01-05',
@@ -199,34 +205,43 @@ describe('buildFillPatches', () => {
   });
 
   test('repeats the source block when no series can be inferred', () => {
-    const patches = fill({ a: ['red', 'blue', null, null, null] }, {
-      minRowIndex: 0,
-      maxRowIndex: 1,
-      minColumnIndex: 0,
-      maxColumnIndex: 0
-    });
+    const patches = fill(
+      { a: ['red', 'blue', null, null, null] },
+      {
+        minRowIndex: 0,
+        maxRowIndex: 1,
+        minColumnIndex: 0,
+        maxColumnIndex: 0
+      }
+    );
 
     expect(patches.map((patch) => patch.after)).toEqual(['red', 'blue', 'red']);
   });
 
   test('a single source cell repeats rather than counting up', () => {
-    const patches = fill({ a: [7, null, null, null, null] }, {
-      minRowIndex: 0,
-      maxRowIndex: 0,
-      minColumnIndex: 0,
-      maxColumnIndex: 0
-    });
+    const patches = fill(
+      { a: [7, null, null, null, null] },
+      {
+        minRowIndex: 0,
+        maxRowIndex: 0,
+        minColumnIndex: 0,
+        maxColumnIndex: 0
+      }
+    );
 
     expect(patches.map((patch) => patch.after)).toEqual([7, 7, 7, 7]);
   });
 
   test('skips cells whose value would not change', () => {
-    const patches = fill({ a: [5, 5, 5, null, 5] }, {
-      minRowIndex: 0,
-      maxRowIndex: 1,
-      minColumnIndex: 0,
-      maxColumnIndex: 0
-    });
+    const patches = fill(
+      { a: [5, 5, 5, null, 5] },
+      {
+        minRowIndex: 0,
+        maxRowIndex: 1,
+        minColumnIndex: 0,
+        maxColumnIndex: 0
+      }
+    );
 
     // Rows 2 and 4 already hold 5; only the blank row 3 is patched.
     expect(patches).toEqual([
@@ -235,12 +250,15 @@ describe('buildFillPatches', () => {
   });
 
   test('carries the previous value so the fill can be undone', () => {
-    const patches = fill({ a: [1, 2, 'keep', null, null] }, {
-      minRowIndex: 0,
-      maxRowIndex: 1,
-      minColumnIndex: 0,
-      maxColumnIndex: 0
-    });
+    const patches = fill(
+      { a: [1, 2, 'keep', null, null] },
+      {
+        minRowIndex: 0,
+        maxRowIndex: 1,
+        minColumnIndex: 0,
+        maxColumnIndex: 0
+      }
+    );
 
     expect(patches[0]).toEqual({
       rowIndex: 2,
@@ -252,6 +270,19 @@ describe('buildFillPatches', () => {
 });
 
 describe('spreadsheetViewportHeight', () => {
+  test('counts the add-row strip as a row and adds the horizontal scrollbar on top of the cap', () => {
+    expect(spreadsheetViewportHeight('fit', 3, { addRow: true })).toBe(
+      spreadsheetViewportHeight('fit', 4)
+    );
+    expect(spreadsheetViewportHeight('fit', 3, { scrollbarHeight: 15 })).toBe(
+      spreadsheetViewportHeight('fit', 3)! + 15
+    );
+    // A capped grid still shows whole rows above its scrollbar.
+    expect(
+      spreadsheetViewportHeight('fit', 10_000, { scrollbarHeight: 15 })
+    ).toBe(FIT_MAX_HEIGHT + 15);
+  });
+
   test('leaves a px height alone — the element sizes that container itself', () => {
     expect(spreadsheetViewportHeight('px', 10)).toBeUndefined();
   });
@@ -288,9 +319,7 @@ describe('spreadsheetViewportHeight', () => {
   });
 
   test('an empty grid still reserves room for its header', () => {
-    expect(spreadsheetViewportHeight('fit', 0)).toBe(
-      HEADER_HEIGHT + 2
-    );
+    expect(spreadsheetViewportHeight('fit', 0)).toBe(HEADER_HEIGHT + 2);
   });
 });
 

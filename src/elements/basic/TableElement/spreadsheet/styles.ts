@@ -71,14 +71,28 @@ export function sampleRowCount(
   return SAMPLE_ROWS_MIN;
 }
 
+export type SpreadsheetChrome = {
+  /** The trailing "+ Add row" strip, one row tall. */
+  addRow?: boolean;
+  /** Height of the grid's horizontal scrollbar, when its columns overflow. */
+  scrollbarHeight?: number;
+};
+
+/**
+ * The height an auto-sized grid needs to show all its rows with no vertical
+ * scrollbar: header, rows, the add-row strip, the container's borders and,
+ * because it sits inside the scroll box, the horizontal scrollbar. Rows are
+ * capped; the scrollbar is added on top so the cap still shows whole rows.
+ */
 export function spreadsheetViewportHeight(
   heightUnit: string | undefined,
-  rowCount: number
+  rowCount: number,
+  chrome: SpreadsheetChrome = {}
 ): number | undefined {
   if (heightUnit === 'px') return undefined;
-  // Header, rows and the grid's own 1px borders.
-  const content = HEADER_HEIGHT + rowCount * ROW_HEIGHT + 2;
-  return Math.min(content, FIT_MAX_HEIGHT);
+  const content =
+    HEADER_HEIGHT + (rowCount + (chrome.addRow ? 1 : 0)) * ROW_HEIGHT + 2;
+  return Math.min(content, FIT_MAX_HEIGHT) + (chrome.scrollbarHeight ?? 0);
 }
 
 const colors = {

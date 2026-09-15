@@ -7,7 +7,7 @@ import type {
   CellSelectionState
 } from '@tanstack/react-table';
 import type { VirtualItem } from '@tanstack/react-virtual';
-import { featheryDoc } from '../../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
 import { AddColumnHandler, CellShading, GetCellShading } from '../types';
 import { CellValue, getFillPreview } from './model';
@@ -102,6 +102,8 @@ type SpreadsheetGridProps = {
   onOpenSearch?: () => void;
   /** Enables the column header's right-click sort menu. */
   sort?: SpreadsheetSort;
+  /** Reports the horizontal scrollbar's height (0 when the columns fit). */
+  onScrollbarHeight?: (height: number) => void;
 };
 
 type FillDrag = {
@@ -131,7 +133,8 @@ export const SpreadsheetGrid = React.forwardRef<
     onInsertRow,
     onDeleteRow,
     onOpenSearch,
-    sort
+    sort,
+    onScrollbarHeight
   },
   forwardedRef
 ) {
@@ -277,6 +280,22 @@ export const SpreadsheetGrid = React.forwardRef<
     }),
     [columns, columnVirtualizer, rows, rowVirtualizer]
   );
+
+  // Measured rather than assumed: scrollbar size is a platform setting, and
+  // overlay scrollbars take no room at all.
+  const columnsWidth = table.getTotalSize();
+  React.useLayoutEffect(() => {
+    const grid = scrollRef.current;
+    if (!grid || !onScrollbarHeight) return;
+    const report = () =>
+      onScrollbarHeight(Math.max(0, grid.offsetHeight - grid.clientHeight));
+    report();
+    const Observer = (featheryWindow() as any).ResizeObserver;
+    if (!Observer) return;
+    const observer = new Observer(report);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [onScrollbarHeight, columnsWidth]);
 
   const [fillPreview, setFillPreview] = React.useState<FillPreview | null>(
     null
