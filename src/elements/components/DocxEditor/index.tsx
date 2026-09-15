@@ -514,10 +514,11 @@ function DocxEditor({
   // live → highlights); stored versions fetch their own files (liveDoc null).
   const selectVersion = useCallback(
     (version: DocxVersion) => {
-      const hasStoredDoc =
-        !!version.final_sfdt || !!version.editor_file || !!version.file;
       let live: VersionDocument | null = null;
-      if (version.is_current && !hasStoredDoc) {
+      // Current is mutable: autosave checkpoints can update its stored files
+      // under the same version id. Always derive it from the live editor rather
+      // than the cached server checkpoint, which may already be stale.
+      if (version.is_current) {
         const preview = historySession.previewSession();
         if (preview) {
           live = {
