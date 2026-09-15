@@ -4,6 +4,7 @@ import {
   FieldStyles
 } from './fieldHelperFunctions';
 import Field from './entities/Field';
+import { TableHandle, TableHandles } from './entities/Table';
 import { InlineErrors } from './inlineErrors';
 import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
@@ -153,6 +154,8 @@ export interface FormInternalState {
   formName: string;
   formId: string;
   fields: Record<string, Field>;
+  /** Tables mounted on the current step, by element id. See `entities/Table`. */
+  tables: TableHandles;
   products: Record<string, SimplifiedProduct>;
   cart: Cart;
   collaborator: Collaborator;
@@ -249,6 +252,27 @@ export const setFormInternalState = (
   // return the form's internalState object
   internalState[formUuid] = state;
   return internalState[formUuid];
+};
+
+/**
+ * A mounted table announcing itself, so logic rules and the assistant can
+ * reach it by element id. Dropped again on unmount: a table on another step is
+ * simply not there.
+ */
+export const registerFormTable = (
+  formUuid: string,
+  tableId: string,
+  handle: TableHandle
+) => {
+  const state = internalState[formUuid];
+  if (!state) return;
+  if (!state.tables) state.tables = {};
+  state.tables[tableId] = handle;
+};
+
+export const unregisterFormTable = (formUuid: string, tableId: string) => {
+  const tables = internalState[formUuid]?.tables;
+  if (tables) delete tables[tableId];
 };
 
 export default internalState;

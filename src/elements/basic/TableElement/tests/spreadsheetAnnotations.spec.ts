@@ -4,6 +4,7 @@ import {
   cellErrorLayer,
   countAnnotations,
   annotationRank,
+  pinRowRefs,
   resolveTableAnnotations,
   TableAnnotation,
   TableRowRef
@@ -334,5 +335,71 @@ describe('annotationRank', () => {
       { message: '', source: 'hub_rule', severity: 'error', blocking: false }
     ] as const;
     expect(ranks.map(annotationRank)).toEqual([2, 0, 1]);
+  });
+});
+
+describe('pinRowRefs', () => {
+  const keyAt = (rowIndex: number) => ROW_KEYS[rowIndex];
+
+  test('a row index is pinned to the key of the row sitting there now', () => {
+    const [pinned] = pinRowRefs(
+      [
+        {
+          target: { kind: 'cell', row: { rowIndex: 2 }, field: 'name' },
+          message: 'Wrong'
+        }
+      ],
+      keyAt
+    );
+    expect(pinned.target).toEqual({
+      kind: 'cell',
+      row: { rowKey: 'k2' },
+      field: 'name'
+    });
+  });
+
+  test('pins both corners of a range', () => {
+    const [pinned] = pinRowRefs(
+      [
+        {
+          target: {
+            kind: 'range',
+            from: { row: { rowIndex: 0 }, field: 'name' },
+            to: { row: { rowIndex: 1 }, field: 'email' }
+          },
+          message: 'Block'
+        }
+      ],
+      keyAt
+    );
+    expect(pinned.target).toEqual({
+      kind: 'range',
+      from: { row: { rowKey: 'k0' }, field: 'name' },
+      to: { row: { rowKey: 'k1' }, field: 'email' }
+    });
+  });
+
+  test('leaves refs that already name a row alone', () => {
+    const annotations: TableAnnotation[] = [
+      {
+        target: { kind: 'row', row: { entryId: 'e1' } },
+        message: 'Duplicate'
+      },
+      {
+        target: { kind: 'row', row: { rowKey: 'k1' } },
+        message: 'Duplicate'
+      }
+    ];
+    expect(pinRowRefs(annotations, keyAt)).toEqual(annotations);
+  });
+
+  test('an index with no row there is left as-is, to be reported unresolved', () => {
+    const annotations: TableAnnotation[] = [
+      {
+        target: { kind: 'cell', row: { rowIndex: 99 }, field: 'name' },
+        message: 'Nowhere'
+      }
+    ];
+    expect(pinRowRefs(annotations, keyAt)).toEqual(annotations);
   });
 });

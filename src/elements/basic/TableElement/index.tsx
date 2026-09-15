@@ -18,14 +18,22 @@ import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
 import { useRowKeys } from './useRowKeys';
+import {
+  registerFormTable,
+  unregisterFormTable
+} from '../../../utils/internalState';
+import { TableRow } from '../../../utils/entities/Table';
 import { useHubTableSource } from './useHubTableSource';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
 import {
   annotationLayer,
+  AnnotationSource,
   buildCellAnnotations,
   CellAnnotations,
   cellErrorLayer,
+  pinRowRefs,
+  resolveTableAnnotations,
   TableAnnotation,
   TableRowRef
 } from './spreadsheet/annotations';
@@ -258,10 +266,11 @@ function TableElement({
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
 
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
-  // Findings the assistant has placed on this table (see `setAnnotations` below).
-  const [assistantAnnotations, setAssistantAnnotations] = useState<
-    TableAnnotation[]
-  >([]);
+  // What each producer has marked on this table — a logic rule, the assistant.
+  // Kept apart so one replacing its own marks leaves the others standing.
+  const [annotationsBySource, setAnnotationsBySource] = useState<
+    Partial<Record<AnnotationSource, TableAnnotation[]>>
+  >({});
   const pendingAddRowsRef = useRef(pendingAddRows);
   pendingAddRowsRef.current = pendingAddRows;
 
@@ -518,11 +527,10 @@ function TableElement({
   /**
    * Producers name rows and fields the way the form's author does (a hub entry
    * id, a row key or row number; a hub field key or column name); the grid
-   * stores cells under its own keys. Resolved here, against the rows and
-   * columns actually rendered, so an annotation on a hidden column or a
-   * deleted row simply does not show.
+   * stores cells under its own keys. Resolved here so an annotation on a
+   * column the table does not have simply does not show.
    */
-  const annotationContext = useMemo(() => {
+  const makeAnnotationContext = useMemo(() => {
     // Keys first, display names second, so a hub field whose key is "Status"
     // is never shadowed by a column merely named that (the status column,
     // say — which is not a producer's to flag at all).
@@ -540,8 +548,8 @@ function TableElement({
         byName.set(column.name, column.field_key);
       }
     });
-    return {
-      rowIndices: spreadsheetRowIndices,
+    return (rowIndices: number[]) => ({
+      rowIndices,
       fieldKeys: columns.map((column: any) => column.field_key),
       resolveField: (name: string) => byName.get(name),
       resolveRow: (ref: TableRowRef) => {
@@ -553,30 +561,77 @@ function TableElement({
         }
         return rowKeys.rowIndexOf(ref.rowKey);
       }
-    };
-  }, [columns, spreadsheetRowIndices, isHub, hub.entryIds, rowKeys]);
+    });
+  }, [columns, isHub, hub.entryIds, rowKeys]);
 
-  const assistantLayer = useMemo(
+  const annotationContext = useMemo(
+    () => makeAnnotationContext(spreadsheetRowIndices),
+    [makeAnnotationContext, spreadsheetRowIndices]
+  );
+
+  /**
+   * Every row of the table, not only the page on screen. What a producer is
+   * told about is the whole table, so a row it named on another page counts as
+   * resolved.
+   */
+  const allRowsContextRef = useRef(annotationContext);
+  allRowsContextRef.current = useMemo(
     () =>
-      isSpreadsheet && assistantAnnotations.length
-        ? annotationLayer(assistantAnnotations, annotationContext, 'assistant')
-        : {},
-    [isSpreadsheet, assistantAnnotations, annotationContext]
+      makeAnnotationContext(
+        Array.from({ length: sourceRowCount }, (_, index) => index)
+      ),
+    [makeAnnotationContext, sourceRowCount]
+  );
+
+  const rowKeyAtRef = useRef(rowKeys.keyAt);
+  rowKeyAtRef.current = rowKeys.keyAt;
+
+  /**
+   * Replaces one producer's annotations. Row numbers are pinned to the row
+   * sitting there now (see `pinRowRefs`), so the mark follows the row rather
+   * than the position. Returns what could not be placed.
+   */
+  const setSourceAnnotations = useCallback(
+    (source: AnnotationSource, annotations: TableAnnotation[]) => {
+      const pinned = pinRowRefs(annotations, rowKeyAtRef.current);
+      setAnnotationsBySource((previous) => ({ ...previous, [source]: pinned }));
+      return resolveTableAnnotations(pinned, allRowsContextRef.current, source)
+        .unresolved;
+    },
+    []
+  );
+
+  const clearSourceAnnotations = useCallback(
+    (source: AnnotationSource) =>
+      setAnnotationsBySource((previous) => ({ ...previous, [source]: [] })),
+    []
+  );
+
+  const producerLayers = useMemo(
+    () =>
+      (['rule', 'assistant'] as AnnotationSource[]).map((source) =>
+        annotationLayer(
+          annotationsBySource[source] ?? [],
+          annotationContext,
+          source
+        )
+      ),
+    [annotationsBySource, annotationContext]
   );
 
   /**
    * Every cell with something wrong, each with its severity and whether it
-   * holds the save back. The hub's own rules come first, so they win a cell
+   * holds the step back. The hub's own rules come first, so they win a cell
    * two producers both named. See `spreadsheet/annotations`.
    */
   const cellAnnotations = useMemo<CellAnnotations>(
     () =>
       buildCellAnnotations({
-        layers: [cellErrorLayer(cellErrors), assistantLayer],
+        layers: [cellErrorLayer(cellErrors), ...producerLayers],
         isRowVerified: (rowIndex) =>
           !isHub || hub.rowVerified[rowIndex] !== false
       }),
-    [cellErrors, assistantLayer, isHub, hub.rowVerified]
+    [cellErrors, producerLayers, isHub, hub.rowVerified]
   );
 
   /**
@@ -676,8 +731,9 @@ function TableElement({
       handleCellEdit: wrappedHandleCellEdit,
       handleAddRow: wrappedHandleAddRow,
       handleDeleteRow: wrappedHandleDeleteRow,
-      setAnnotations: setAssistantAnnotations,
-      clearAnnotations: () => setAssistantAnnotations([])
+      setAnnotations: (annotations: TableAnnotation[]) =>
+        setSourceAnnotations('assistant', annotations),
+      clearAnnotations: () => clearSourceAnnotations('assistant')
     });
     return () => assistantClient.unregisterTable(tableId);
   }, [
@@ -685,8 +741,36 @@ function TableElement({
     tableId,
     wrappedHandleCellEdit,
     wrappedHandleAddRow,
-    wrappedHandleDeleteRow
+    wrappedHandleDeleteRow,
+    setSourceAnnotations,
+    clearSourceAnnotations
   ]);
+
+  // Every row as a logic rule sees it: keyed by column name, carrying the row
+  // key an annotation should point at.
+  const getRowsRef = useRef<() => TableRow[]>(() => []);
+  getRowsRef.current = () =>
+    Array.from({ length: sourceRowCount }, (_, rowIndex) => {
+      const row: TableRow = { _key: rowKeys.keys[rowIndex] };
+      columns.forEach((column: any) => {
+        const values = activeFieldValues[column.field_key];
+        row[column.name || column.field_key] = Array.isArray(values)
+          ? values[rowIndex]
+          : undefined;
+      });
+      return row;
+    });
+
+  // Lets logic rules reach this table by element id — `feathery.tables[id]`.
+  useEffect(() => {
+    if (!formId || !tableId) return;
+    registerFormTable(formId, tableId, {
+      setAnnotations: setSourceAnnotations,
+      clearAnnotations: clearSourceAnnotations,
+      getRows: () => getRowsRef.current()
+    });
+    return () => unregisterFormTable(formId, tableId);
+  }, [formId, tableId, setSourceAnnotations, clearSourceAnnotations]);
 
   const showEmptyState = !hasData || !hasSearchResults;
   const showToolbar = enableSearch || showAddRow;

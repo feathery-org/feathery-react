@@ -300,3 +300,40 @@ export function countAnnotations(
  */
 export const annotationRank = (annotation: CellAnnotation): number =>
   annotation.blocking ? 0 : annotation.severity === 'error' ? 1 : 2;
+
+/**
+ * Replaces every `rowIndex` reference with the key of the row sitting at that
+ * index right now.
+ *
+ * A producer writes what it sees — "row 2 is wrong" — but by the time anyone
+ * reads it back, row 2 may be a different row: something was inserted above it,
+ * or the grid was re-sorted. Pinning at write time is what makes an annotation
+ * stick to the row it was about. An index with no row there is left alone, so
+ * it surfaces as unresolved rather than silently landing on the wrong row.
+ */
+export function pinRowRefs(
+  annotations: TableAnnotation[],
+  keyAt: (rowIndex: number) => string | undefined
+): TableAnnotation[] {
+  const pin = (ref: TableRowRef): TableRowRef => {
+    if (!('rowIndex' in ref)) return ref;
+    const rowKey = keyAt(ref.rowIndex);
+    return rowKey === undefined ? ref : { rowKey };
+  };
+
+  return annotations.map((annotation) => {
+    const { target } = annotation;
+    if (target.kind === 'cell')
+      return { ...annotation, target: { ...target, row: pin(target.row) } };
+    if (target.kind === 'row')
+      return { ...annotation, target: { ...target, row: pin(target.row) } };
+    return {
+      ...annotation,
+      target: {
+        ...target,
+        from: { ...target.from, row: pin(target.from.row) },
+        to: { ...target.to, row: pin(target.to.row) }
+      }
+    };
+  });
+}
