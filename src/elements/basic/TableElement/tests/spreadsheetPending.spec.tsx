@@ -622,6 +622,33 @@ describe('cell editors follow the column', () => {
     ).toBeNull();
   });
 
+  test('an empty dropdown cell shows a blank chip only while hovered or selected', async () => {
+    const emptyClient = {
+      ...client(),
+      dataHubAction: jest.fn(({ operation }: any) =>
+        operation === 'get'
+          ? Promise.resolve([
+              { id: 'e1', verified: true, data: { name: 'Alice', status: '' } }
+            ])
+          : Promise.resolve({})
+      )
+    };
+    renderTable(hubProps, { client: emptyClient });
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+    const empty = within(cell('Alice').parentElement as HTMLElement).getByRole(
+      'button',
+      { name: 'Choose status for row 1' }
+    );
+    expect(empty).toHaveTextContent('');
+    expect(empty).toHaveStyle({ opacity: '0' });
+
+    fireEvent.mouseDown(empty.closest('[role="gridcell"]')!);
+    await waitFor(() => expect(empty).toHaveStyle({ opacity: '1' }));
+
+    fireEvent.click(empty);
+    expect(highlighted()).toBe('(empty)');
+  });
+
   test('a column with no options keeps a text box', () => {
     renderTable();
     fireEvent.doubleClick(cell('Alice'));

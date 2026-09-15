@@ -1,3 +1,4 @@
+import { TABLE_CLASS } from '../classNames';
 // Layout constants. Rows and the header are fixed-height because the row
 // virtualizer and the drag hit-testing both size themselves from these numbers.
 export const ROW_HEIGHT = 32;
@@ -835,6 +836,9 @@ export const sortIndicatorStyle = {
 
 // A dropdown cell's value as a chip, the way a spreadsheet draws a cell with
 // a validation list. Raised above the cell so its click reaches it first.
+// One height for filled and blank chips, so a mixed column lines up.
+export const CHIP_HEIGHT = 24;
+
 export const cellChipStyle = {
   position: 'relative',
   zIndex: 1,
@@ -843,7 +847,8 @@ export const cellChipStyle = {
   gap: '6px',
   maxWidth: '100%',
   minWidth: 0,
-  padding: '2px 8px 2px 10px',
+  height: `${CHIP_HEIGHT}px`,
+  padding: '0 8px 0 10px',
   boxSizing: 'border-box',
   borderRadius: '999px',
   backgroundColor: colors.gray100,
@@ -852,6 +857,20 @@ export const cellChipStyle = {
   lineHeight: 1.3,
   '&:hover': { backgroundColor: colors.gray200 }
 } as const;
+
+// An empty dropdown cell: a blank pill spanning the cell with the chevron at
+// its right edge, shown on hover or while the cell is selected, the way a
+// sheet marks an empty chip cell.
+export const cellChipEmptyStyle = (revealed: boolean) =>
+  ({
+    ...cellChipStyle,
+    width: '100%',
+    justifyContent: 'flex-end',
+    padding: '0 8px',
+    opacity: revealed ? 1 : 0,
+    transition: 'opacity 120ms',
+    [`.${TABLE_CLASS.gridCell}:hover &`]: { opacity: 1 }
+  } as const);
 
 export const cellChipLabelStyle = {
   minWidth: 0,
