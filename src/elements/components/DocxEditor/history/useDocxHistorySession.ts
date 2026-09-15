@@ -309,6 +309,9 @@ export function useDocxHistorySession(
         setStatus('saved');
       } catch {
         setStatus('error');
+        // The document PATCH is the persistence boundary. Do not resolve an
+        // explicit save (or continue a restore) when those bytes were rejected.
+        throw new Error('Document save failed');
       }
       await closeSession(meta.sessionId, meta.authors, snap);
     };
@@ -371,6 +374,10 @@ export function useDocxHistorySession(
           return;
         }
         finalizeRef.current = finalizeSession(meta);
+        // Idle/turn-end closes are fire-and-forget, but must not create an
+        // unhandled rejection when the persistence boundary fails. Explicit
+        // Save still awaits the original promise above and receives the error.
+        finalizeRef.current.catch(() => undefined);
       }
     });
 

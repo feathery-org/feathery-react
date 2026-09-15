@@ -85,6 +85,20 @@ describe('useDocxHistorySession', () => {
     expect(closePayload.finalSfdtGz).toBeInstanceOf(Blob);
   });
 
+  it('propagates a document save failure and does not close history', async () => {
+    const { view, save, host } = setup();
+    save.mockRejectedValueOnce(new Error('network failure'));
+
+    act(() => view.result.current.onEdit({ assistant: false }));
+
+    await expect(
+      act(async () => {
+        await view.result.current.save();
+      })
+    ).rejects.toThrow('Document save failed');
+    expect(host.closeVersion).not.toHaveBeenCalled();
+  });
+
   it('diffs the session and uploads real hunks when the document changed', async () => {
     // Baseline is snapshotted at open (pristine 'hello'); F is 'hello world'.
     let doc = JSON.stringify({
