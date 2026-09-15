@@ -12,6 +12,7 @@ import {
   actionIconButtonStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
+import { useTablePortalStyles } from './portalStyles';
 import { Action, Column } from './types';
 import { featheryDoc } from '../../../utils/browser';
 
@@ -57,6 +58,8 @@ export function ActionButtons({
   const containerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  useTablePortalStyles(menuButtonRef.current, menuRef);
 
   const useOverflow = !forceInlineButtons && actions.length > 1;
 
