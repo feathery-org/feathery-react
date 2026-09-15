@@ -837,7 +837,10 @@ export const sortIndicatorStyle = {
 // a cell with a validation list: label on the left, chevron on the right, and
 // the same pill whether or not the cell holds a value. Raised above the cell
 // so its click reaches it first.
-export const CHIP_HEIGHT = 24;
+export const CHIP_HEIGHT = 22;
+// Room left between the pill and the cell's edges (on top of the cell's own
+// padding), so a click beside the chip still lands on the cell to select it.
+export const CHIP_INSET = 4;
 
 export const cellChipStyle = {
   position: 'relative',
@@ -846,7 +849,8 @@ export const cellChipStyle = {
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: '6px',
-  width: '100%',
+  width: `calc(100% - ${CHIP_INSET * 2}px)`,
+  margin: `0 ${CHIP_INSET}px`,
   minWidth: 0,
   height: `${CHIP_HEIGHT}px`,
   padding: '0 8px 0 10px',

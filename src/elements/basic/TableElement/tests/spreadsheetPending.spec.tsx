@@ -640,7 +640,7 @@ describe('cell editors follow the column', () => {
       { name: 'Choose status for row 1' }
     );
     expect(empty).toHaveTextContent('');
-    expect(empty).toHaveStyle({ width: '100%' });
+    expect(empty).toHaveStyle({ width: 'calc(100% - 8px)' });
 
     fireEvent.mouseDown(empty.closest('[role="gridcell"]')!);
     fireEvent.click(empty);
