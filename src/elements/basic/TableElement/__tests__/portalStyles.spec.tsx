@@ -44,16 +44,18 @@ test('updates open portals on rerender and resize, removing stale properties', (
   const { table, anchor } = makeTable('red');
   const { getByTestId, rerender, unmount } = render(<Portal anchor={anchor} />);
   const style = getByTestId('portal').style;
-  expect(style.getPropertyValue('--feathery-table-controls-background-color')).toBe(
-    'red'
-  );
+  expect(
+    style.getPropertyValue('--feathery-table-controls-background-color')
+  ).toBe('red');
   table.style.setProperty('--feathery-table-controls-background-color', 'blue');
   act(() => window.dispatchEvent(new Event('resize')));
-  expect(style.getPropertyValue('--feathery-table-controls-background-color')).toBe(
-    'blue'
-  );
+  expect(
+    style.getPropertyValue('--feathery-table-controls-background-color')
+  ).toBe('blue');
   table.style.removeProperty('--feathery-table-controls-background-color');
   rerender(<Portal anchor={anchor} />);
-  expect(style.getPropertyValue('--feathery-table-controls-background-color')).toBe('');
+  expect(
+    style.getPropertyValue('--feathery-table-controls-background-color')
+  ).toBe('');
   unmount();
 });
