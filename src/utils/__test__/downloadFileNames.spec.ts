@@ -38,7 +38,8 @@ describe('downloadAllFileUrls', () => {
   });
 
   it('points the anchor at the real URL without fetching', async () => {
-    const url = 'https://files.test/uploads/003_%E7%99%BB%E9%8C%B2%E6%9B%B8.pdf?sig=abc';
+    const url =
+      'https://files.test/uploads/003_%E7%99%BB%E9%8C%B2%E6%9B%B8.pdf?sig=abc';
 
     await downloadAllFileUrls([url]);
 
