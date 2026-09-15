@@ -564,6 +564,60 @@ describe('Container repeat row reorder handle', () => {
     });
   });
 
+  describe('a lone row', () => {
+    const lone = () => {
+      setFieldValues(['only']);
+      return formProps({ visiblePositions: { '0': [true] } });
+    };
+    const disabled = (el: HTMLElement) => (el as HTMLButtonElement).disabled;
+
+    it('keeps the whole cluster, greyed out, so every row wears the same chrome', () => {
+      const { container, getByLabelText } = renderContainer(
+        repeatNode(),
+        lone()
+      );
+
+      expect(container.querySelector('.feathery-repeat-reorder')).toBeTruthy();
+      expect(disabled(getByLabelText('Row 1 of 1'))).toBe(true);
+      expect(disabled(getByLabelText('Move row 1 up'))).toBe(true);
+      expect(disabled(getByLabelText('Move row 1 down'))).toBe(true);
+      expect(disabled(getByLabelText('Remove row 1'))).toBe(true);
+    });
+
+    it('still offers the seam, which is how the second row arrives', () => {
+      const { container } = renderContainer(repeatNode(), lone());
+      expect(container.querySelector('.feathery-repeat-insert')).toBeTruthy();
+    });
+
+    it('keeps the cluster even where the filler may not change the count', () => {
+      const { container, queryByLabelText } = renderContainer(
+        repeatNode({ properties: { reorderable: true, insertable: false } }),
+        lone()
+      );
+      expect(container.querySelector('.feathery-repeat-reorder')).toBeTruthy();
+      // Permission, not row count, decides whether the bin exists at all.
+      expect(queryByLabelText('Remove row 1')).toBeNull();
+    });
+
+    it('cannot be dragged', () => {
+      const { getByLabelText } = renderContainer(repeatNode(), lone());
+      const grip = getByLabelText('Row 1 of 1');
+      fireEvent.pointerDown(grip, {
+        bubbles: true,
+        pointerId: 1,
+        clientX: 0,
+        clientY: 0
+      });
+      fireEvent.pointerMove(grip, {
+        bubbles: true,
+        pointerId: 1,
+        clientX: 0,
+        clientY: 300
+      });
+      expect(grip.getAttribute('aria-pressed')).toBe('false');
+    });
+  });
+
   describe('removing a row', () => {
     it('offers a remove button on each row of a growable container', () => {
       const { getByLabelText } = renderContainer(repeatNode({ repeat: 1 }));
@@ -700,15 +754,14 @@ describe('Container repeat row reorder handle', () => {
       });
     });
 
-    it('tucks on a lone row, which has a seam but no cluster', () => {
-      // On first load a container usually has one row. It has no grip, so the
-      // measurement used to bail before it ever ran, and the seam only moved
-      // once a second row appeared.
+    it('tucks on a lone row too', () => {
+      // On first load a container usually has one row. The measurement used to
+      // run only for a row with something to reorder, so the seam above a lone
+      // first row hung off the page until a second row appeared.
       setFieldValues(['a']);
       const form = formProps({ visiblePositions: { '0': [true] } });
       withRowTop(0, () => {
         const { container } = renderContainer(repeatNode(), form);
-        expect(container.querySelector('.feathery-repeat-reorder')).toBeNull();
         const seam = seamAbove(container);
         expect(getComputedStyle(seam).transform).toBe('none');
       });
@@ -1033,13 +1086,17 @@ describe('Container repeat row reorder handle', () => {
       );
     });
 
-    it('is absent on a lone row, which has nowhere to step', () => {
+    it('is present but disabled on a lone row, which has nowhere to step', () => {
       setFieldValues(['only']);
       const form = formProps({ visiblePositions: { '0': [true] } });
-      const { queryByLabelText } = renderContainer(repeatNode(), form);
+      const { getByLabelText } = renderContainer(repeatNode(), form);
 
-      expect(queryByLabelText('Move row 1 up')).toBeNull();
-      expect(queryByLabelText('Move row 1 down')).toBeNull();
+      expect(
+        (getByLabelText('Move row 1 up') as HTMLButtonElement).disabled
+      ).toBe(true);
+      expect(
+        (getByLabelText('Move row 1 down') as HTMLButtonElement).disabled
+      ).toBe(true);
     });
 
     it('does not fire the container click action', () => {
@@ -1118,16 +1175,17 @@ describe('Container repeat row reorder handle', () => {
 
   // A lone row has nothing to reorder against, but it is still the anchor for
   // adding the second one, so the seam has to survive where the grip does not.
-  it('keeps the seam but drops the grip on a single row', () => {
+  it('keeps the seam and a greyed grip on a single row', () => {
     setFieldValues(['a']);
-    const { container, queryByLabelText } = renderContainer(repeatNode());
+    const { container, getByLabelText } = renderContainer(repeatNode());
 
     expect(container.querySelector('[data-feathery-repeat-row]')).toBeTruthy();
     expect(container.querySelector('.feathery-repeat-insert')).toBeTruthy();
-    expect(
-      container.querySelector('[data-feathery-reorder-handle]')
-    ).toBeNull();
-    expect(queryByLabelText('Row 1 of 1')).toBeNull();
+    // The grip stays so the row looks like every other one; it just cannot
+    // do anything until there is a second row to move against.
+    expect((getByLabelText('Row 1 of 1') as HTMLButtonElement).disabled).toBe(
+      true
+    );
   });
 
   it('adds the second row from a lone row seam', () => {

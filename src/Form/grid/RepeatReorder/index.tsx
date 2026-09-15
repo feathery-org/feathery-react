@@ -177,7 +177,7 @@ export interface RepeatRowReorder {
   canReorder: boolean;
   /** False once the container has reached the author's row cap. */
   canInsert: boolean;
-  /** False on a lone row, and wherever the filler may not change the count. */
+  /** False wherever the filler may not change the row count. */
   canRemove: boolean;
   onMove: (from: number, to: number) => boolean;
   onInsert: (at: number) => boolean;
@@ -220,8 +220,9 @@ export function useRepeatRowReorder(
   // end of the data - it has no row behind it to move or insert against.
   if (rowCount < 1 || index >= rowCount) return null;
 
-  // A lone row has nothing to reorder against, but it can still be the anchor
-  // for adding the second one, so it keeps the seam and loses only the grip.
+  // A lone row has nothing to reorder against. It keeps its cluster all the
+  // same, greyed out, so every row in every container wears the same chrome
+  // and a filler learns where the controls live before there is a second row.
   const canReorder = rowCount >= 2;
 
   // The badge counts what the user can see: a hide_if in the middle must not
@@ -259,12 +260,10 @@ export function useRepeatRowReorder(
   // row count, which a list of fixed size must not let the filler do - and to
   // the same add-row action: with no way to add a row back, deleting one is a
   // one-way street. It ignores the cap, since deleting is how a full
-  // container gets back under it. A lone row stays: removing it would only
-  // reset it to a blank row in the same place, which reads as a button that
-  // does nothing.
-  const canRemove =
-    node.properties?.insertable !== false && addRow.exists && rowCount >= 2;
-  if (!canReorder && !canInsert) return null;
+  // container gets back under it. This is the permission alone: on a lone row
+  // the button is shown but disabled, since removing it would only reset it to
+  // a blank row in the same place.
+  const canRemove = node.properties?.insertable !== false && addRow.exists;
 
   return {
     index,
@@ -460,7 +459,7 @@ export const RepeatRowHandle = ({
       type='button'
       className={STEP_CLASS}
       css={stepStyles}
-      disabled={up ? ordinal === 1 : ordinal === renderedCount}
+      disabled={!canReorder || (up ? ordinal === 1 : ordinal === renderedCount)}
       aria-label={up ? `Move row ${ordinal} up` : `Move row ${ordinal} down`}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
@@ -508,61 +507,61 @@ export const RepeatRowHandle = ({
           </span>
         </button>
       )}
-      {canReorder && (
-        <div
-          ref={clusterRef}
-          className={REORDER_CLASS}
-          {...(keyboardFocus ? { [KEYBOARD_FOCUS_ATTR]: '' } : {})}
-          onFocus={() => setKeyboardFocus(lastInputWasKeyboard())}
-          // Arrow keys on an already focused grip: the row moves and focus is
-          // handed to the new position, but the cluster is lit from here on
-          // even if that handoff lands back in this same node.
-          onKeyDownCapture={() => setKeyboardFocus(true)}
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null))
-              setKeyboardFocus(false);
-          }}
-          css={
-            inside
-              ? clusterInsideStyles
-              : tucked
-              ? clusterStylesTucked
-              : clusterStyles
-          }
+      <div
+        ref={clusterRef}
+        className={REORDER_CLASS}
+        {...(keyboardFocus ? { [KEYBOARD_FOCUS_ATTR]: '' } : {})}
+        onFocus={() => setKeyboardFocus(lastInputWasKeyboard())}
+        // Arrow keys on an already focused grip: the row moves and focus is
+        // handed to the new position, but the cluster is lit from here on
+        // even if that handoff lands back in this same node.
+        onKeyDownCapture={() => setKeyboardFocus(true)}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+            setKeyboardFocus(false);
+        }}
+        css={
+          inside
+            ? clusterInsideStyles
+            : tucked
+            ? clusterStylesTucked
+            : clusterStyles
+        }
+      >
+        {stepButton(true)}
+        <button
+          {...{ [HANDLE_ATTR]: '' }}
+          ref={handleRef as any}
+          type='button'
+          className={GRIP_CLASS}
+          css={gripStyles}
+          aria-roledescription='sortable row handle'
+          aria-label={`Row ${ordinal} of ${renderedCount}`}
+          aria-describedby={reorderInstructionsId(formId)}
+          aria-pressed={dragging}
+          disabled={!canReorder}
+          {...handleProps}
         >
-          {stepButton(true)}
+          <Grip />
+        </button>
+        {stepButton(false)}
+        {canRemove && (
           <button
-            {...{ [HANDLE_ATTR]: '' }}
-            ref={handleRef as any}
             type='button'
-            className={GRIP_CLASS}
-            css={gripStyles}
-            aria-roledescription='sortable row handle'
-            aria-label={`Row ${ordinal} of ${renderedCount}`}
-            aria-describedby={reorderInstructionsId(formId)}
-            aria-pressed={dragging}
-            {...handleProps}
+            className={REMOVE_CLASS}
+            css={removeStyles}
+            disabled={!canReorder}
+            aria-label={`Remove row ${ordinal}`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              remove();
+            }}
           >
-            <Grip />
+            <Trash />
           </button>
-          {stepButton(false)}
-          {canRemove && (
-            <button
-              type='button'
-              className={REMOVE_CLASS}
-              css={removeStyles}
-              aria-label={`Remove row ${ordinal}`}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                remove();
-              }}
-            >
-              <Trash />
-            </button>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </>
   );
 };

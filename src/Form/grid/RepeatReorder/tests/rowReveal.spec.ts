@@ -11,6 +11,7 @@
  */
 import {
   DRAGGING_ATTR,
+  GUTTER_WIDTH,
   INSERT_CLASS,
   KEYBOARD_FOCUS_ATTR,
   REORDER_CLASS,
@@ -29,6 +30,16 @@ const seamRevealSelectors = () =>
   );
 
 describe('rowRevealStyles', () => {
+  it('extends the row hit area across the gutter, so the hover holds', () => {
+    // The buttons stop a few pixels short of the row's edge. Without this the
+    // pointer crossed ground that belonged to neither on its way to the `+`,
+    // and the seam faded out and back in.
+    const bridge = (rowRevealStyles as any)['&::before'];
+    expect(bridge).toMatchObject({ position: 'absolute', content: '""' });
+    expect(bridge.insetInlineStart).toBe(`-${GUTTER_WIDTH}px`);
+    expect(bridge.width).toBe(`${GUTTER_WIDTH}px`);
+  });
+
   it('reveals the seam on hover and nothing else', () => {
     const [selector, ...rest] = seamRevealSelectors();
 

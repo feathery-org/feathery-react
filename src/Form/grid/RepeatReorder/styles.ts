@@ -149,6 +149,19 @@ export const clusterInsideStyles = {
 
 /** Applied to the row so its own hover drives the chrome. */
 export const rowRevealStyles = {
+  // The chrome hangs in a gutter OUTSIDE the row's box, and the buttons stop
+  // short of the row's edge. Reaching for one meant the pointer crossed a few
+  // pixels that belonged to neither, the row lost its hover, and the `+` faded
+  // out and back in on the way. This strip makes the gutter part of the row
+  // for hit-testing, so the hover holds all the way to the button.
+  '&::before': {
+    content: '""',
+    position: 'absolute' as const,
+    insetBlockStart: 0,
+    insetBlockEnd: 0,
+    insetInlineStart: `-${GUTTER_WIDTH}px`,
+    width: `${GUTTER_WIDTH}px`
+  },
   // The row under the pointer, or the row a keyboard user has reached. Not
   // plain `:focus-within`: a pointer click leaves focus on the grip as well,
   // and that kept a row lit long after the pointer had left it, so hovering
@@ -206,7 +219,8 @@ export const stepStyles = {
 export const removeStyles = {
   ...clusterButton,
   cursor: 'pointer',
-  marginBlockStart: '4px'
+  marginBlockStart: '4px',
+  '&:disabled': { opacity: 0.2, cursor: 'default' }
 };
 
 export const gripStyles = {
@@ -215,7 +229,9 @@ export const gripStyles = {
   // Required for a pointer drag to survive a touch gesture; scoped to the grip
   // so scrolling anywhere else in the form is unaffected.
   touchAction: 'none' as const,
-  '&:active': { cursor: 'grabbing', opacity: 1 }
+  '&:active': { cursor: 'grabbing', opacity: 1 },
+  // A lone row keeps its cluster, greyed, so every row wears the same chrome.
+  '&:disabled': { opacity: 0.2, cursor: 'default' }
 };
 
 /**
