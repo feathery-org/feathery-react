@@ -255,7 +255,9 @@ const Element = ({ node: el, form }: any) => {
         readOnly ||
         stateFieldHasNoOptions(el, activeStep, fieldValues, index ?? undefined),
       onEnter,
-      required
+      required,
+      // Lets a field's comparison rules tell a multi-value field from a repeat
+      internalId: form.formInstanceId
     };
 
     let countryCode = '';

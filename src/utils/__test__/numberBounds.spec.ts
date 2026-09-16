@@ -5,13 +5,8 @@ import {
   resolveNumberBounds,
   widenBoundsToValue
 } from '../numberBounds';
+import { condition, ref } from './numberBounds-test-utils';
 import { fieldValues } from '../init';
-
-const ref = (fieldKey: string) => ({
-  field_type: 'servar' as const,
-  field_id: `${fieldKey}-id`,
-  field_key: fieldKey
-});
 
 const numberServar = (boundFields?: any, servar: any = {}) => ({
   type: 'integer_field',
@@ -19,6 +14,15 @@ const numberServar = (boundFields?: any, servar: any = {}) => ({
   min_length: 1,
   max_length: 1000,
   metadata: { bound_fields: boundFields },
+  ...servar
+});
+
+const ruleServar = (rules: any, servar: any = {}) => ({
+  type: 'integer_field',
+  key: 'amount',
+  min_length: 1,
+  max_length: 1000,
+  metadata: { dynamic_bounds: rules },
   ...servar
 });
 
@@ -74,6 +78,144 @@ describe('resolveNumberBounds', () => {
     expect(resolveNumberBounds(servar).max).toBe(15);
   });
 
+  it('applies the first rule whose conditions all pass', () => {
+    Object.assign(fieldValues, { range: '20-30' });
+    const servar = ruleServar([
+      {
+        id: 'low',
+        conditions: [condition('range', 'equal', ['10-20'])],
+        min: 10,
+        max: 20
+      },
+      {
+        id: 'mid',
+        conditions: [condition('range', 'equal', ['20-30'])],
+        min: 20,
+        max: 30
+      },
+      { id: 'always', conditions: [], min: 0, max: 5 }
+    ]);
+
+    expect(resolveNumberBounds(servar)).toEqual({
+      min: 20,
+      max: 30
+    });
+
+    Object.assign(fieldValues, { range: 'other' });
+    expect(resolveNumberBounds(servar)).toEqual({
+      min: 0,
+      max: 5
+    });
+  });
+
+  it('falls back to the static columns when no rule matches', () => {
+    Object.assign(fieldValues, { range: 'other' });
+    const servar = ruleServar([
+      {
+        id: 'low',
+        conditions: [condition('range', 'equal', ['10-20'])],
+        min: 10,
+        max: 20
+      }
+    ]);
+    expect(resolveNumberBounds(servar)).toEqual({
+      min: 1,
+      max: 1000
+    });
+  });
+
+  it('resolves a rule per repeat row and reads row 0 from outside a repeat', () => {
+    Object.assign(fieldValues, {
+      range: ['10-20', '20-30'],
+      cap: [15, 25]
+    });
+    const servar = ruleServar([
+      {
+        id: 'low',
+        conditions: [condition('range', 'equal', ['10-20'])],
+        min: 10,
+        max: ref('cap')
+      },
+      {
+        id: 'mid',
+        conditions: [condition('range', 'equal', ['20-30'])],
+        min: 20,
+        max: ref('cap')
+      }
+    ]);
+
+    expect(resolveNumberBounds(servar, 0)).toEqual({
+      min: 10,
+      max: 15
+    });
+    expect(resolveNumberBounds(servar, 1)).toEqual({
+      min: 20,
+      max: 25
+    });
+    // Without a row the comparison sees every row, so the first rule matches
+    expect(resolveNumberBounds(servar)).toEqual({
+      min: 10,
+      max: 15
+    });
+  });
+
+  it('falls back to a bound bound to another field before the columns', () => {
+    Object.assign(fieldValues, { ceiling: 250, range: 'other' });
+    // numberServar's overrides replace metadata wholesale, so build it here
+    const servar = {
+      type: 'integer_field',
+      key: 'amount',
+      min_length: 1,
+      max_length: 1000,
+      metadata: {
+        bound_fields: { min: null, max: ref('ceiling') },
+        dynamic_bounds: [
+          {
+            id: 'low',
+            conditions: [condition('range', 'equal', ['10-20'])],
+            min: 10,
+            max: 20
+          }
+        ]
+      }
+    };
+
+    // No rule matches, so the base applies: column min, referenced max
+    expect(resolveNumberBounds(servar)).toEqual({
+      min: 1,
+      max: 250
+    });
+    expect(hasDynamicBounds(servar)).toBe(true);
+
+    // A matching rule still takes priority over the base
+    Object.assign(fieldValues, { range: '10-20' });
+    expect(resolveNumberBounds(servar)).toEqual({
+      min: 10,
+      max: 20
+    });
+
+    // An empty referenced field leaves that side unbounded
+    Object.assign(fieldValues, { ceiling: '', range: 'other' });
+    expect(resolveNumberBounds(servar).max).toBeNull();
+  });
+
+  it('treats bound_fields alone as dynamic without any rules', () => {
+    Object.assign(fieldValues, { ceiling: 80 });
+    const servar = {
+      type: 'integer_field',
+      min_length: 5,
+      max_length: 100,
+      metadata: { bound_fields: { min: null, max: ref('ceiling') } }
+    };
+    expect(resolveNumberBounds(servar)).toEqual({
+      min: 5,
+      max: 80
+    });
+    expect(
+      hasDynamicBounds({ metadata: { bound_fields: { min: null, max: null } } })
+    ).toBe(false);
+  });
+
   it('survives malformed metadata', () => {
     expect(resolveNumberBounds(numberServar('nope'))).toEqual({
       min: 1,
@@ -99,7 +241,7 @@ describe('widenBoundsToValue', () => {
   });
 
   // A side backed by a static column must keep its clamp even when the other
-  // side tracks a field
+  // side can move
   it('leaves a side alone when that side cannot move', () => {
     const bounds = { min: 10, max: 100 };
     expect(widenBoundsToValue(bounds, 5, { min: false, max: true })).toEqual(
@@ -116,6 +258,8 @@ describe('widenBoundsToValue', () => {
 });
 
 describe('movingBoundSides', () => {
+  beforeEach(clearFieldValues);
+
   it('answers per side, not per field', () => {
     expect(
       movingBoundSides(numberServar({ min: null, max: ref('c') }))
@@ -123,6 +267,50 @@ describe('movingBoundSides', () => {
     expect(movingBoundSides(numberServar())).toEqual({
       min: false,
       max: false
+    });
+  });
+
+  it('counts a side some rule can set, even while the columns supply it', () => {
+    const servar = ruleServar(
+      [
+        {
+          id: 'mid',
+          conditions: [condition('range', 'equal', ['20-30'])],
+          min: null,
+          max: 30
+        }
+      ],
+      { min_length: 1, max_length: 20 }
+    );
+    expect(movingBoundSides(servar)).toEqual({ min: false, max: true });
+  });
+});
+
+describe('widenBoundsToValue at the no-match boundary', () => {
+  beforeEach(clearFieldValues);
+
+  // A driver moving off every rule is exactly when a stored value is stranded,
+  // so the mask must still widen even though the columns supplied the bounds.
+  it('is reached for a rule-only field once no rule matches', () => {
+    Object.assign(fieldValues, { range: 'unmatched' });
+    const servar = ruleServar(
+      [
+        {
+          id: 'mid',
+          conditions: [condition('range', 'equal', ['20-30'])],
+          min: 20,
+          max: 30
+        }
+      ],
+      { min_length: 1, max_length: 20 }
+    );
+
+    expect(hasDynamicBounds(servar)).toBe(true);
+    const bounds = resolveNumberBounds(servar);
+    expect(bounds).toEqual({ min: 1, max: 20 });
+    expect(widenBoundsToValue(bounds, 25, movingBoundSides(servar))).toEqual({
+      min: 1,
+      max: 25
     });
   });
 });
@@ -140,5 +328,48 @@ describe('getNumberBoundReferences', () => {
       )
     );
     expect([...refs].sort()).toEqual(['ceiling', 'floor']);
+  });
+
+  it('collects rule condition, value and bound references', () => {
+    const refs = getNumberBoundReferences(
+      elements({
+        servar: ruleServar([
+          {
+            id: 'r1',
+            conditions: [condition('range', 'equal', [ref('other')])],
+            min: ref('floor'),
+            max: 30
+          }
+        ])
+      })
+    );
+    expect([...refs].sort()).toEqual(['floor', 'other', 'range']);
+  });
+
+  // This runs inside a step-level memo, so a throw blanks the whole step
+  it('survives malformed rules rather than throwing', () => {
+    expect(() =>
+      getNumberBoundReferences(
+        elements(
+          { servar: ruleServar('not-an-array') },
+          { servar: ruleServar([null]) },
+          { servar: ruleServar([{ id: 'r1' }]) },
+          { servar: ruleServar([{ id: 'r2', conditions: [null] }]) },
+          {
+            servar: ruleServar([
+              { id: 'r3', conditions: [condition('range', 'equal', null)] }
+            ])
+          }
+        )
+      )
+    ).not.toThrow();
+
+    expect([
+      ...getNumberBoundReferences(
+        elements({
+          servar: ruleServar([null, { id: 'ok', min: ref('floor') }])
+        })
+      )
+    ]).toEqual(['floor']);
   });
 });

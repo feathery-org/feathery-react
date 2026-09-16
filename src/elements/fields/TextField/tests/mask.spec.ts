@@ -6,6 +6,7 @@ import {
   showsFormatInText
 } from '../mask';
 import { fieldValues } from '../../../../utils/init';
+import { rangeRule } from '../../../../utils/__test__/numberBounds-test-utils';
 
 const numberServar = (metadata: any = {}, servar: any = {}) => ({
   type: 'integer_field',
@@ -381,6 +382,125 @@ describe('getNumberMaskProps', () => {
         bound_fields: { min: null, max: ceiling }
       });
       expect(getNumberMaskProps(servar, '', false, 1).blocks.num.max).toBe(25);
+    });
+  });
+  describe('dynamic_bounds', () => {
+    const balanceRef = {
+      field_type: 'servar',
+      field_id: 'balance-id',
+      field_key: 'balance'
+    };
+
+    beforeEach(() => {
+      delete fieldValues.range;
+      delete fieldValues.balance;
+    });
+
+    it('takes the matching rule over the columns', () => {
+      Object.assign(fieldValues, { range: '20-30' });
+      const props = getNumberMaskProps(
+        numberServar(
+          {
+            dynamic_bounds: [
+              rangeRule('10-20', 10, 20),
+              rangeRule('20-30', 20, 30)
+            ]
+          },
+          { min_length: 0, max_length: 100 }
+        ),
+        ''
+      );
+      expect(props.blocks.num).toMatchObject({ min: 20, max: 30 });
+    });
+
+    it('falls back to the columns when nothing matches', () => {
+      Object.assign(fieldValues, { range: 'other' });
+      const props = getNumberMaskProps(
+        numberServar(
+          { dynamic_bounds: [rangeRule('10-20', 10, 20)] },
+          { min_length: 0, max_length: 100 }
+        ),
+        ''
+      );
+      expect(props.blocks.num).toMatchObject({ min: 0, max: 100 });
+    });
+
+    // imask replays a value character by character on mount, so a column max
+    // below a stored value would truncate it and echo that through onAccept
+    it('still widens around a stored value once no rule matches', () => {
+      Object.assign(fieldValues, { range: 'other' });
+      const props = getNumberMaskProps(
+        numberServar(
+          { dynamic_bounds: [rangeRule('20-30', 20, 30)] },
+          { min_length: 1, max_length: 20 }
+        ),
+        25
+      );
+      expect(props.blocks.num).toMatchObject({ min: 1, max: 25 });
+    });
+
+    it('reads a referenced field as the max and treats null as unbounded', () => {
+      Object.assign(fieldValues, { balance: 250 });
+      const props = getNumberMaskProps(
+        numberServar({
+          dynamic_bounds: [
+            { id: 'r', conditions: [], min: null, max: balanceRef }
+          ]
+        }),
+        ''
+      );
+      expect(props.blocks.num).toMatchObject({
+        min: 0,
+        max: 250
+      });
+    });
+
+    it('lets a dynamic floor below zero open the sign', () => {
+      const servar = (min: number | null) =>
+        numberServar(
+          {
+            allow_negative: true,
+            dynamic_bounds: [{ id: 'r', conditions: [], min, max: 100 }]
+          },
+          { min_length: 0 }
+        );
+      expect(getNumberMaskProps(servar(-10), '').blocks.num.min).toBe(-10);
+      expect(getNumberMaskProps(servar(null), '').blocks.num.min).toBe(
+        -Number.MAX_SAFE_INTEGER
+      );
+      // A dynamic floor at zero blocks the sign the way the column does
+      expect(getNumberMaskProps(servar(0), '').blocks.num.min).toBe(0);
+    });
+
+    it('widens dynamic bounds around a stored value the rule no longer admits', () => {
+      Object.assign(fieldValues, { range: '10-20' });
+      const dynamic = numberServar({
+        dynamic_bounds: [rangeRule('10-20', 10, 20)]
+      });
+      expect(getNumberMaskProps(dynamic, 25).blocks.num).toMatchObject({
+        min: 10,
+        max: 25
+      });
+      expect(getNumberMaskProps(dynamic, 5).blocks.num).toMatchObject({
+        min: 5,
+        max: 20
+      });
+      // Static columns keep their mask exactly as before
+      const fixed = numberServar({}, { min_length: 10, max_length: 20 });
+      expect(getNumberMaskProps(fixed, 25).blocks.num).toMatchObject({
+        min: 10,
+        max: 20
+      });
+    });
+
+    it('resolves per repeat row', () => {
+      Object.assign(fieldValues, { range: ['10-20', '20-30'] });
+      const servar = numberServar({
+        dynamic_bounds: [rangeRule('10-20', 10, 20), rangeRule('20-30', 20, 30)]
+      });
+      expect(getNumberMaskProps(servar, '', false, 1).blocks.num).toMatchObject(
+        { min: 20, max: 30 }
+      );
     });
   });
 

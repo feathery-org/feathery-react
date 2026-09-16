@@ -86,7 +86,8 @@ function validateSetFieldValue(
   state: any,
   fieldKey: string,
   rawValue: unknown,
-  repeatIndex: number | undefined
+  repeatIndex: number | undefined,
+  internalId?: string
 ): ValidationResult {
   const currentStep = state?.currentStep;
   const stepFields = currentStep?.servar_fields ?? [];
@@ -172,7 +173,12 @@ function validateSetFieldValue(
   }
 
   // Type and bound checks
-  const shapeError = checkValueAgainstField(servar, value, repeatIndex);
+  const shapeError = checkValueAgainstField(
+    servar,
+    value,
+    repeatIndex,
+    internalId
+  );
   if (shapeError)
     return { ok: false, errorType: 'shape_mismatch', error: shapeError };
 
@@ -209,7 +215,8 @@ function resolveOptions(
 function checkValueAgainstField(
   servar: any,
   value: unknown,
-  repeatIndex: number | undefined
+  repeatIndex: number | undefined,
+  internalId?: string
 ): string | null {
   const type = servar.type;
   const key = servar.key;
@@ -219,7 +226,7 @@ function checkValueAgainstField(
   let maxLength =
     typeof servar.max_length === 'number' ? servar.max_length : undefined;
   if (NUMBER_BOUND_TYPES.has(type)) {
-    const bounds = resolveNumberBounds(servar, repeatIndex);
+    const bounds = resolveNumberBounds(servar, repeatIndex, internalId);
     minLength = bounds.min ?? undefined;
     maxLength = bounds.max ?? undefined;
   }
@@ -446,7 +453,8 @@ export async function dispatchSetFieldValue(
         state,
         fieldKey,
         item.value,
-        repeatIndex
+        repeatIndex,
+        formUuid
       );
       if (!validation.ok) {
         return {
