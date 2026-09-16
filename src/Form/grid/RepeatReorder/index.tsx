@@ -28,21 +28,19 @@ import {
   RESOLVED_SURFACE_VAR,
   STEP_CLASS,
   TARGET_SIZE,
+  clusterInsideHorizontalStyles,
   clusterInsideStyles,
   clusterStyles,
-  clusterStylesHorizontal,
-  clusterStylesHorizontalTucked,
   clusterStylesTucked,
   gripStyles,
   insertBadgeStyles,
+  insertInsideHorizontalStyles,
+  insertInsideHorizontalStylesBefore,
   insertInsideStyles,
   insertInsideStylesAbove,
   insertStyles,
   insertStylesAbove,
   insertStylesAboveTucked,
-  insertStylesBefore,
-  insertStylesBeforeTucked,
-  insertStylesHorizontal,
   removeStyles,
   stepStyles,
   visuallyHidden
@@ -80,19 +78,34 @@ const Plus = () => (
   </svg>
 );
 
-/** Points at the seam the row would step to, so the two read as a pair. */
-const Chevron = ({ up }: { up: boolean }) => (
-  <svg width='10' height='10' viewBox='0 0 10 10' aria-hidden='true'>
-    <path
-      d={up ? 'M2 6.5L5 3.5l3 3' : 'M2 3.5L5 6.5l3-3'}
-      fill='none'
-      stroke='currentColor'
-      strokeWidth='1.6'
-      strokeLinecap='round'
-      strokeLinejoin='round'
-    />
-  </svg>
-);
+/**
+ * Points at the seam the row would step to, so the two read as a pair.
+ *
+ * A chevron pointing up on a track whose rows sit side by side promises a move
+ * that cannot happen, so it turns with the axis: up/down for a stack, and
+ * left/right once the rows flow across.
+ */
+const Chevron = ({ up, horizontal }: { up: boolean; horizontal: boolean }) => {
+  const path = horizontal
+    ? up
+      ? 'M6.5 2L3.5 5l3 3'
+      : 'M3.5 2L6.5 5l-3 3'
+    : up
+    ? 'M2 6.5L5 3.5l3 3'
+    : 'M2 3.5L5 6.5l3-3';
+  return (
+    <svg width='10' height='10' viewBox='0 0 10 10' aria-hidden='true'>
+      <path
+        d={path}
+        fill='none'
+        stroke='currentColor'
+        strokeWidth='1.6'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+      />
+    </svg>
+  );
+};
 
 /**
  * The nearest background the row is actually sitting on.
@@ -395,17 +408,14 @@ export const RepeatRowHandle = ({
       // starts the scroller there is nothing above to hang into, and that half
       // is unreachable at any scroll position, so the seam moves inside.
       setTucked(measured && spaceAboveRow(row, isHorizontal) < TARGET_SIZE / 2);
-      // Only the gutter position depends on the border. The inside variant
-      // centres itself on the row's top edge, so it must be left to the
-      // stylesheet rather than pinned by a measured offset.
+      // Only a gutter position depends on the border, and only a stacked track
+      // has a gutter: horizontal chrome sits inside the row, so its placement
+      // is left entirely to the stylesheet.
       if (cluster) {
-        const pinned = isHorizontal
-          ? 'inset-block-start'
-          : 'inset-inline-start';
-        const loose = isHorizontal ? 'inset-inline-start' : 'inset-block-start';
-        cluster.style.removeProperty(loose);
-        if (fits) cluster.style.setProperty(pinned, `-${gutter}px`);
-        else cluster.style.removeProperty(pinned);
+        cluster.style.removeProperty('inset-block-start');
+        if (!isHorizontal && fits)
+          cluster.style.setProperty('inset-inline-start', `-${gutter}px`);
+        else cluster.style.removeProperty('inset-inline-start');
       }
 
       // Published on the row so both the cluster and the seam inherit it.
@@ -505,14 +515,19 @@ export const RepeatRowHandle = ({
       className={STEP_CLASS}
       css={stepStyles}
       disabled={!canReorder || (up ? ordinal === 1 : ordinal === renderedCount)}
-      aria-label={up ? `Move row ${ordinal} up` : `Move row ${ordinal} down`}
+      aria-label={
+        // Named for the direction the row actually travels on this track.
+        horizontal
+          ? `Move row ${ordinal} ${up ? 'left' : 'right'}`
+          : `Move row ${ordinal} ${up ? 'up' : 'down'}`
+      }
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
         move(up ? -1 : 1);
       }}
     >
-      <Chevron up={up} />
+      <Chevron up={up} horizontal={horizontal} />
     </button>
   );
 
@@ -525,10 +540,8 @@ export const RepeatRowHandle = ({
           css={{
             ...(horizontal
               ? seamAbove
-                ? tucked
-                  ? insertStylesBeforeTucked
-                  : insertStylesBefore
-                : insertStylesHorizontal
+                ? insertInsideHorizontalStylesBefore
+                : insertInsideHorizontalStyles
               : seamAbove
               ? tucked
                 ? insertStylesAboveTucked
@@ -574,12 +587,12 @@ export const RepeatRowHandle = ({
             setKeyboardFocus(false);
         }}
         css={
-          inside
+          // A horizontal track always keeps its chrome inside the row: the
+          // space above it belongs to a neighbour.
+          horizontal
+            ? clusterInsideHorizontalStyles
+            : inside
             ? clusterInsideStyles
-            : horizontal
-            ? tucked
-              ? clusterStylesHorizontalTucked
-              : clusterStylesHorizontal
             : tucked
             ? clusterStylesTucked
             : clusterStyles

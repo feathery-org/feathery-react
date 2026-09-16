@@ -134,21 +134,33 @@ export const clusterStylesTucked = {
  * the controls lie along it instead of down it. Everything else - target
  * sizes, colours, the reveal - is shared.
  */
-export const clusterStylesHorizontal = {
+/**
+ * The cluster on a horizontal track: always inside the row.
+ *
+ * A gutter beside a stacked row is usually empty margin, but the space above a
+ * row in a horizontal track belongs to whatever the form put there, so chrome
+ * hung in it trespasses on a neighbour and can be painted over by anything
+ * with a stacking order. Inside the row it can only ever cover the row's own
+ * content, which is the same bargain the no-room fallback already takes.
+ *
+ * Centred along the row's leading edge rather than tucked into a corner: a
+ * repeated row in a horizontal track is narrow, so a corner pill would hang
+ * over the edge it is trying to stay inside of.
+ */
+export const clusterInsideHorizontalStyles = {
   ...clusterStyles,
-  // Half a target in, so the seam straddling the row's leading edge in this
-  // same gutter abuts the first step button instead of covering it.
-  insetInlineStart: `${TARGET_SIZE / 2}px`,
-  insetBlockStart: `-${GUTTER_WIDTH}px`,
+  insetBlockStart: '4px',
+  insetInlineStart: '50%',
   width: 'auto',
   height: `${TARGET_SIZE}px`,
-  flexDirection: 'row' as const
-};
-
-/** The horizontal cluster when its leading seam has been tucked inside. */
-export const clusterStylesHorizontalTucked = {
-  ...clusterStylesHorizontal,
-  insetInlineStart: `${TARGET_SIZE}px`
+  flexDirection: 'row' as const,
+  gap: '2px',
+  padding: '0 4px',
+  border: '1px solid',
+  borderColor: 'currentColor',
+  borderRadius: '5px',
+  background: surface,
+  transform: 'translateX(-50%)'
 };
 
 /**
@@ -372,36 +384,28 @@ export const insertStylesAboveTucked = {
   transform: 'none'
 };
 
+/** On the seam after the row: insert to its trailing side. */
 /**
- * The seam on a horizontal track. It marks a boundary between two rows, so it
- * follows the main axis: the leading and trailing edges are left and right,
- * and it hangs in the same cross-axis gutter the cluster does.
+ * The seam on a horizontal track, kept inside the row for the same reason the
+ * cluster is. It stays on the inline edge it marks, just not straddling it.
  */
-const insertBaseHorizontal = {
+const insertInsideHorizontalBase = {
   ...insertBase,
   insetInlineStart: 'auto',
-  insetBlockStart: `-${GUTTER_WIDTH}px`
-};
-
-/** On the seam after the row: insert to its trailing side. */
-export const insertStylesHorizontal = {
-  ...insertBaseHorizontal,
-  insetInlineEnd: 0,
-  transform: 'translateX(50%)'
-};
-
-/** On the seam before the row: insert to its leading side. */
-export const insertStylesBefore = {
-  ...insertBaseHorizontal,
-  insetInlineStart: 0,
-  transform: 'translateX(-50%)'
-};
-
-/** The leading seam with no scrollback beside it to straddle into. */
-export const insertStylesBeforeTucked = {
-  ...insertBaseHorizontal,
-  insetInlineStart: 0,
+  insetBlockStart: '4px',
   transform: 'none'
+};
+
+/** Just inside the row's trailing edge: insert after it. */
+export const insertInsideHorizontalStyles = {
+  ...insertInsideHorizontalBase,
+  insetInlineEnd: 0
+};
+
+/** Just inside the row's leading edge: insert before it. */
+export const insertInsideHorizontalStylesBefore = {
+  ...insertInsideHorizontalBase,
+  insetInlineStart: 0
 };
 
 export const visuallyHidden = {

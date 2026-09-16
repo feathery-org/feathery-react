@@ -677,22 +677,39 @@ describe('Container repeat row reorder handle', () => {
       return c.querySelector('.feathery-repeat-insert') as HTMLElement;
     };
 
-    it('hangs the cluster above the row, not beside it', () => {
+    it('keeps the cluster inside the row, laid along it', () => {
       withRowTrack(() => {
         const { container } = renderContainer(repeatNode({ repeat: 1 }));
         const style = getComputedStyle(clusterOf(container));
-        // The gutter moves to the cross axis, which is now the block axis.
-        expect(parseFloat(style.insetBlockStart)).toBeLessThan(0);
+        // Never negative: the space above a row in a horizontal track belongs
+        // to a neighbour, so the chrome may not hang into it.
+        expect(parseFloat(style.insetBlockStart)).toBeGreaterThanOrEqual(0);
         expect(style.flexDirection).toBe('row');
+        // A pill on its own surface, because inside the row it sits over the
+        // row's own content.
+        expect(style.borderRadius).not.toBe('');
       });
     });
 
-    it('puts the seam on an inline edge, where the boundary is', () => {
+    it('puts the seam on an inline edge, inside the row', () => {
       withRowTrack(() => {
         const { container } = renderContainer(repeatNode({ repeat: 1 }));
         const style = getComputedStyle(seamOf(container));
-        expect(style.transform).toContain('translateX');
-        expect(parseFloat(style.insetBlockStart)).toBeLessThan(0);
+        // On the edge it marks, but not straddling it.
+        expect(style.transform).toBe('none');
+        expect(parseFloat(style.insetBlockStart)).toBeGreaterThanOrEqual(0);
+      });
+    });
+
+    it('turns the chevrons and their labels along the axis', () => {
+      withRowTrack(() => {
+        const { getByLabelText, queryByLabelText } = renderContainer(
+          repeatNode({ repeat: 1 })
+        );
+        // "up" promises a move this track cannot make.
+        expect(queryByLabelText('Move row 2 up')).toBeNull();
+        expect(getByLabelText('Move row 2 left')).toBeTruthy();
+        expect(getByLabelText('Move row 2 right')).toBeTruthy();
       });
     });
 
@@ -716,6 +733,7 @@ describe('Container repeat row reorder handle', () => {
       expect(parseFloat(style.insetBlockStart)).toBeGreaterThanOrEqual(0);
       seamOf(container);
       expect(getByLabelText(/Add a row (above|below) row 2/)).toBeTruthy();
+      expect(getByLabelText('Move row 2 up')).toBeTruthy();
     });
   });
 
