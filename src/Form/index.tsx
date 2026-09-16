@@ -68,6 +68,8 @@ import {
   getContainerById,
   getFieldsInRepeat,
   getRepeatContainerRowCount,
+  getRepeatRowKeys,
+  getRepeatTextVariableKeys,
   getRepeatedContainer,
   getRepeatErrorOwnerIds,
   getRepeatMaxRows,
@@ -990,6 +992,22 @@ function Form({
       updatedValues[field.servar.key] = getNewVal(field);
     });
 
+    // A container can repeat on a `{{key}}` in its copy with no field of its
+    // own - an API-fed list is the usual case. Those arrays are the rows just
+    // as much, so they move with them. Given a synthetic field because the key
+    // has no servar behind it; a plain text default is the right hole filler.
+    getRepeatTextVariableKeys(activeStep, repeatContainer).forEach(
+      (key: string) => {
+        if (key in updatedValues) return;
+        // `metadata` is not optional: getDefaultFieldValue reads
+        // `servar.metadata.default_value` unguarded, and a text variable has
+        // no servar to borrow one from.
+        updatedValues[key] = getNewVal({
+          servar: { key, type: 'text_field', repeated: true, metadata: {} }
+        });
+      }
+    );
+
     setRepeatChanged((repeatChanged) => !repeatChanged);
     // Adding/removing a repeat row is a structural change, not user input on a
     // field. Don't auto-validate here: a brand-new, untouched row must not show
@@ -1154,9 +1172,9 @@ function Form({
     if (!repeatContainer) return false;
 
     const fields = getFieldsInRepeat(activeStep, repeatContainer);
-    // A container whose row count comes only from text variables has no arrays
-    // for updateRepeatValues to permute.
-    if (!fields.length) return false;
+    // Either source of rows is enough to reorder: a container that repeats on
+    // nothing but a text variable still has an array to permute.
+    if (!getRepeatRowKeys(activeStep, repeatContainer).length) return false;
 
     const rows = getRepeatContainerRowCount(activeStep, repeatContainer);
     if (rows < 2) return false;
@@ -1203,7 +1221,7 @@ function Form({
     if (!repeatContainer) return false;
 
     const fields = getFieldsInRepeat(activeStep, repeatContainer);
-    if (!fields.length) return false;
+    if (!getRepeatRowKeys(activeStep, repeatContainer).length) return false;
 
     const rows = getRepeatContainerRowCount(activeStep, repeatContainer);
     // Inserting between rows still grows the container, so it answers to the

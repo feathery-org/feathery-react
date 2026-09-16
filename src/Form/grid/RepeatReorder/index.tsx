@@ -8,7 +8,7 @@ import React, {
 import { getPositionKey } from '../../../utils/hideAndRepeats';
 import {
   getContainerById,
-  getFieldsInRepeat,
+  getRepeatRowKeys,
   getRepeatContainerRowCount,
   resolveAddRowActions
 } from '../../../utils/repeat';
@@ -211,9 +211,10 @@ export function useRepeatRowReorder(
   const container = getContainerById(activeStep, node.id);
   if (!container) return null;
 
-  // Row count driven purely by text variables leaves updateRepeatValues with
-  // nothing to permute.
-  if (!getFieldsInRepeat(activeStep, container).length) return null;
+  // Any array behind the rows will do - a container's own repeated fields, or
+  // the text variables its copy references. A list fetched from an API has
+  // only the latter, and its order is exactly what a filler may want to change.
+  if (!getRepeatRowKeys(activeStep, container).length) return null;
 
   const rowCount = getRepeatContainerRowCount(activeStep, container);
   // Excludes the phantom trailing row a 'set_value' trigger renders past the

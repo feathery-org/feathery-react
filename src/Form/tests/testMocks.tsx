@@ -65,11 +65,21 @@ jest.mock('../../utils/array', () => ({
 // helpers keep their real behaviour so those specs assert real output.
 jest.mock('../../utils/repeat', () => {
   const ROW_HOLE = Symbol('mock.repeatRowHole');
-  return {
+  const RepeatModRef: any = {};
+  return Object.assign(RepeatModRef, {
     getContainerById: () => undefined,
     getFieldsInRepeat: () => [],
     getRepeatedContainer: () => undefined,
     getRepeatContainerRowCount: () => 0,
+    // The keys whose arrays make up the rows. Defaults to the container's own
+    // fields, which is what every pre-existing spec assumes; a spec about a
+    // text-variable-driven container reassigns this.
+    getRepeatRowKeys: (step: any, container: any) =>
+      RepeatModRef.getFieldsInRepeat(step, container).map(
+        (field: any) => field.servar.key
+      ),
+    // No `{{key}}` copy inside the container by default.
+    getRepeatTextVariableKeys: () => [],
     // Which elements in the container can own a per-row error. Inert by
     // default; a spec that asserts error renumbering names its own owners.
     getRepeatErrorOwnerIds: () => [],
@@ -115,7 +125,7 @@ jest.mock('../../utils/repeat', () => {
       );
       return padded.map((val) => (val === ROW_HOLE ? (isFile ? null : '') : val));
     }
-  };
+  });
 });
 
 // Hide and repeats

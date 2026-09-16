@@ -67,6 +67,10 @@ beforeEach(() => {
   RepeatMod.getRepeatContainerRowCount = () => 0;
   RepeatMod.getRepeatMaxRows = () => null;
   RepeatMod.getRepeatErrorOwnerIds = () => [];
+  // Rows come from the container's own fields unless a spec says otherwise.
+  RepeatMod.getRepeatTextVariableKeys = () => [];
+  RepeatMod.getRepeatRowKeys = (step: any, c: any) =>
+    RepeatMod.getFieldsInRepeat(step, c).map((f: any) => f.servar.key);
   FormHelperMod.clearBrowserErrors = jest.fn();
 });
 
@@ -235,6 +239,54 @@ describe('insertRepeatedRow', () => {
     await waitFor(() => {
       expect((fieldValues as any).name).toEqual(['a', '', 'b']);
     });
+  });
+});
+
+describe('a container that repeats on copy alone', () => {
+  // The rows of an API-fed list live in the array a `{{key}}` renders, not in
+  // any field of the container. Moving a row has to permute that array or the
+  // controls are decoration.
+  const withCopyRows = (keys: string[]) => {
+    RepeatMod.getFieldsInRepeat = () => [];
+    RepeatMod.getRepeatTextVariableKeys = () => keys;
+    RepeatMod.getRepeatRowKeys = () => keys;
+  };
+
+  it('permutes the array behind the copy', async () => {
+    (fieldValues as any).recipe = ['pizza', 'cookies', 'pasta'];
+    withCopyRows(['recipe']);
+    RepeatMod.getRepeatContainerRowCount = () => 3;
+
+    const { form } = await mountForm('iid-copy-move');
+    expect(form.moveRepeatedRow(container, 0, 2)).toBe(true);
+
+    await waitFor(() => {
+      expect((fieldValues as any).recipe).toEqual(['cookies', 'pasta', 'pizza']);
+    });
+  });
+
+  it('moves every referenced array together', async () => {
+    // Two columns of one list: they must not shear apart.
+    (fieldValues as any).recipe = ['pizza', 'cookies'];
+    (fieldValues as any).calories = [800, 200];
+    withCopyRows(['recipe', 'calories']);
+    RepeatMod.getRepeatContainerRowCount = () => 2;
+
+    const { form } = await mountForm('iid-copy-move-pair');
+    form.moveRepeatedRow(container, 0, 1);
+
+    await waitFor(() => {
+      expect((fieldValues as any).recipe).toEqual(['cookies', 'pizza']);
+    });
+    expect((fieldValues as any).calories).toEqual([200, 800]);
+  });
+
+  it('refuses when nothing at all drives the rows', async () => {
+    withCopyRows([]);
+    RepeatMod.getRepeatContainerRowCount = () => 0;
+
+    const { form } = await mountForm('iid-copy-none');
+    expect(form.moveRepeatedRow(container, 0, 1)).toBe(false);
   });
 });
 

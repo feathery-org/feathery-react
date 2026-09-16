@@ -7,6 +7,7 @@ import {
 import { fieldValues } from './init';
 import { arrayMove } from './array';
 import { ACTION_ADD_REPEATED_ROW } from './elementActions';
+import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 
 interface Step {
   subgrids: Subgrid[];
@@ -205,20 +206,80 @@ export function getServarRepeatNum(field: any, fieldValue: unknown): number {
 }
 
 /**
+ * The `{{key}}` references inside a repeated container.
+ *
+ * A container does not need an input field to repeat: a text or button that
+ * references an array-valued key renders once per entry, which is how a list
+ * fetched from an API is displayed. Those keys are as much the container's
+ * row data as a field's own array, so anything that reasons about rows has to
+ * see them - see getRepeatRowKeys.
+ */
+export function getRepeatTextVariableKeys(
+  step: { texts?: any[]; buttons?: any[] },
+  repeatContainer: PositionedElement
+): string[] {
+  const repeatKey = getPositionKey(repeatContainer);
+  if (typeof repeatKey !== 'string') return [];
+  const keys = new Set<string>();
+
+  [...(step.texts ?? []), ...(step.buttons ?? [])]
+    // An element with no position cannot be placed in the container. Buttons
+    // reached through an action carry none, and getPositionKey returns null
+    // for them.
+    .filter((el: any) => {
+      const key = getPositionKey(el);
+      return typeof key === 'string' && inRepeat(key, repeatKey);
+    })
+    .forEach((el: any) => {
+      const text = el?.properties?.text;
+      if (typeof text !== 'string') return;
+      const matches = text.match(TEXT_VARIABLE_PATTERN);
+      matches?.forEach((match: string) => keys.add(match.slice(2, -2)));
+    });
+
+  // Only a key holding an array contributes rows. A scalar reference renders
+  // the same value in every row and must not be permuted with them.
+  return [...keys].filter((key) => Array.isArray(fieldValues[key]));
+}
+
+/**
+ * Every key whose array the container's rows are made of: its own repeated
+ * fields, plus the text variables its copy references. A row move permutes all
+ * of them together, so a list built from either source stays aligned.
+ */
+export function getRepeatRowKeys(
+  step: { servar_fields: any[]; texts?: any[]; buttons?: any[] },
+  repeatContainer: PositionedElement
+): string[] {
+  const fieldKeys = getFieldsInRepeat(step, repeatContainer).map(
+    (field: any) => field.servar.key
+  );
+  const textKeys = getRepeatTextVariableKeys(step, repeatContainer).filter(
+    (key) => !fieldKeys.includes(key)
+  );
+  return [...fieldKeys, ...textKeys];
+}
+
+/**
  * Rows the container's data actually has. Fields in one container can hold
  * arrays of different lengths - a file field is shorter than its siblings
  * whenever it ends in empty rows - so the container's row count is the longest
- * of them. Note this is the count the data supports, not the count rendered:
- * a 'set_value' trigger renders one more (see getServarRepeatNum).
+ * of them. Text variables count too: a container can repeat on nothing but a
+ * `{{key}}` in its copy, and the renderer takes the longest of both sources
+ * (see repeatCountByTextVariables), so this has to agree with it or a row the
+ * user can see is a row the reorder controls refuse to move.
+ *
+ * Note this is the count the data supports, not the count rendered: a
+ * 'set_value' trigger renders one more (see getServarRepeatNum).
  */
 export function getRepeatContainerRowCount(
-  step: { servar_fields: any[] },
+  step: { servar_fields: any[]; texts?: any[]; buttons?: any[] },
   repeatContainer: PositionedElement
 ) {
   return Math.max(
     0,
-    ...getFieldsInRepeat(step, repeatContainer).map((field: any) => {
-      const vals = fieldValues[field.servar.key];
+    ...getRepeatRowKeys(step, repeatContainer).map((key) => {
+      const vals = fieldValues[key];
       return Array.isArray(vals) ? vals.length : 0;
     })
   );

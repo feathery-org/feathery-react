@@ -564,6 +564,84 @@ describe('Container repeat row reorder handle', () => {
     });
   });
 
+  describe('a container that repeats on copy alone', () => {
+    // An API-fed list: a logic rule writes an array, a text renders one row per
+    // entry, and the container holds no input field at all. The controls used
+    // to be withheld entirely, which made a list whose order is the whole point
+    // the one list nobody could order.
+    const copyStep = {
+      ...step,
+      servar_fields: [],
+      texts: [{ properties: { text: '{{recipe}}' }, position: [0, 0] }]
+    };
+
+    const copyForm = (overrides: any = {}) =>
+      formProps({ activeStep: copyStep, ...overrides });
+
+    beforeEach(() => {
+      const init = jest.requireActual('../../../utils/init');
+      init.fieldValues.recipe = ['pizza', 'cookies', 'pasta'];
+    });
+
+    it('offers the grip on rows made only of copy', () => {
+      const { getByLabelText } = renderContainer(
+        repeatNode({ repeat: 1 }),
+        copyForm()
+      );
+      expect(getByLabelText('Row 2 of 3')).toBeTruthy();
+    });
+
+    it('moves such a row like any other', () => {
+      // Stepping reads the rendered siblings, so the whole track is mounted.
+      const form = copyForm();
+      const { getByLabelText } = render(
+        <div>
+          {[0, 1, 2].map((repeat) => (
+            <Container
+              key={repeat}
+              node={repeatNode({ repeat })}
+              viewport='desktop'
+              form={form}
+            />
+          ))}
+        </div>
+      );
+
+      fireEvent.click(getByLabelText('Move row 2 down'));
+
+      expect(form.moveRepeatedRow).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'repeat-1' }),
+        1,
+        2
+      );
+    });
+
+    it('counts the rows the copy renders', () => {
+      const { getByLabelText } = renderContainer(
+        repeatNode({ repeat: 2 }),
+        copyForm()
+      );
+      // Last row: its down button has nowhere to go.
+      expect(
+        (getByLabelText('Move row 3 down') as HTMLButtonElement).disabled
+      ).toBe(true);
+    });
+
+    it('still withholds everything when nothing drives the rows', () => {
+      const bare = {
+        ...step,
+        servar_fields: [],
+        texts: [{ properties: { text: 'static copy' }, position: [0, 0] }]
+      };
+      const { container } = renderContainer(
+        repeatNode(),
+        formProps({ activeStep: bare })
+      );
+      expect(container.querySelector('.feathery-repeat-reorder')).toBeNull();
+      expect(container.querySelector('[data-feathery-repeat-row]')).toBeNull();
+    });
+  });
+
   describe('a lone row', () => {
     const lone = () => {
       setFieldValues(['only']);
