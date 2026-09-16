@@ -3,6 +3,7 @@ import { Container } from '.';
 import { featheryDoc } from '../../../utils/browser';
 import { subscribeToReorderAnnouncements } from '../RepeatReorder/announce';
 import { resetInputModality } from '../RepeatReorder/modality';
+import { clusterStylesHorizontal } from '../RepeatReorder/styles';
 
 // Records the props the real container would register dirty state under
 jest.mock(
@@ -677,27 +678,35 @@ describe('Container repeat row reorder handle', () => {
       return c.querySelector('.feathery-repeat-insert') as HTMLElement;
     };
 
-    it('keeps the cluster inside the row, laid along it', () => {
+    it('hangs the cluster in the gutter above the row, laid along it', () => {
       withRowTrack(() => {
         const { container } = renderContainer(repeatNode({ repeat: 1 }));
         const style = getComputedStyle(clusterOf(container));
-        // Never negative: the space above a row in a horizontal track belongs
-        // to a neighbour, so the chrome may not hang into it.
-        expect(parseFloat(style.insetBlockStart)).toBeGreaterThanOrEqual(0);
+        // The gutter moves to the cross axis, which is the block axis here.
+        expect(parseFloat(style.insetBlockStart)).toBeLessThan(0);
         expect(style.flexDirection).toBe('row');
-        // A pill on its own surface, because inside the row it sits over the
-        // row's own content.
-        expect(style.borderRadius).not.toBe('');
       });
     });
 
-    it('puts the seam on an inline edge, inside the row', () => {
+    it('gives it a surface, since it sits over whatever is above', () => {
+      // Unlike the stacked gutter, which hangs in empty margin.
+      withRowTrack(() => {
+        const { container } = renderContainer(repeatNode({ repeat: 1 }));
+        const style = getComputedStyle(clusterOf(container));
+        expect(style.borderRadius).not.toBe('');
+        expect(style.borderStyle).toBe('solid');
+        // The surface resolves through a custom property, which jsdom does not
+        // compute, so the declaration itself is what this pins.
+        expect(clusterStylesHorizontal.background).toBeTruthy();
+      });
+    });
+
+    it('puts the seam on an inline edge, where the boundary is', () => {
       withRowTrack(() => {
         const { container } = renderContainer(repeatNode({ repeat: 1 }));
         const style = getComputedStyle(seamOf(container));
-        // On the edge it marks, but not straddling it.
-        expect(style.transform).toBe('none');
-        expect(parseFloat(style.insetBlockStart)).toBeGreaterThanOrEqual(0);
+        expect(style.transform).toContain('translateX');
+        expect(parseFloat(style.insetBlockStart)).toBeLessThan(0);
       });
     });
 

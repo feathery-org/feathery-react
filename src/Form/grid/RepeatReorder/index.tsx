@@ -31,16 +31,18 @@ import {
   clusterInsideHorizontalStyles,
   clusterInsideStyles,
   clusterStyles,
+  clusterStylesHorizontal,
   clusterStylesTucked,
   gripStyles,
   insertBadgeStyles,
-  insertInsideHorizontalStyles,
-  insertInsideHorizontalStylesBefore,
   insertInsideStyles,
   insertInsideStylesAbove,
   insertStyles,
   insertStylesAbove,
   insertStylesAboveTucked,
+  insertStylesBefore,
+  insertStylesBeforeTucked,
+  insertStylesHorizontal,
   removeStyles,
   stepStyles,
   visuallyHidden
@@ -408,14 +410,17 @@ export const RepeatRowHandle = ({
       // starts the scroller there is nothing above to hang into, and that half
       // is unreachable at any scroll position, so the seam moves inside.
       setTucked(measured && spaceAboveRow(row, isHorizontal) < TARGET_SIZE / 2);
-      // Only a gutter position depends on the border, and only a stacked track
-      // has a gutter: horizontal chrome sits inside the row, so its placement
-      // is left entirely to the stylesheet.
+      // Only the gutter position depends on the border, and which edge that is
+      // depends on the axis. The inside variants place themselves, so they are
+      // left to the stylesheet rather than pinned by a measured offset.
       if (cluster) {
-        cluster.style.removeProperty('inset-block-start');
-        if (!isHorizontal && fits)
-          cluster.style.setProperty('inset-inline-start', `-${gutter}px`);
-        else cluster.style.removeProperty('inset-inline-start');
+        const pinned = isHorizontal
+          ? 'inset-block-start'
+          : 'inset-inline-start';
+        const loose = isHorizontal ? 'inset-inline-start' : 'inset-block-start';
+        cluster.style.removeProperty(loose);
+        if (fits) cluster.style.setProperty(pinned, `-${gutter}px`);
+        else cluster.style.removeProperty(pinned);
       }
 
       // Published on the row so both the cluster and the seam inherit it.
@@ -540,8 +545,10 @@ export const RepeatRowHandle = ({
           css={{
             ...(horizontal
               ? seamAbove
-                ? insertInsideHorizontalStylesBefore
-                : insertInsideHorizontalStyles
+                ? tucked
+                  ? insertStylesBeforeTucked
+                  : insertStylesBefore
+                : insertStylesHorizontal
               : seamAbove
               ? tucked
                 ? insertStylesAboveTucked
@@ -587,10 +594,11 @@ export const RepeatRowHandle = ({
             setKeyboardFocus(false);
         }}
         css={
-          // A horizontal track always keeps its chrome inside the row: the
-          // space above it belongs to a neighbour.
           horizontal
-            ? clusterInsideHorizontalStyles
+            ? // Above the row, unless there is no room up there to hang in.
+              inside
+              ? clusterInsideHorizontalStyles
+              : clusterStylesHorizontal
             : inside
             ? clusterInsideStyles
             : tucked
