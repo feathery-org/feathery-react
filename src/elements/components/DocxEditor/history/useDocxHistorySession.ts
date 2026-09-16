@@ -491,10 +491,62 @@ export function useDocxHistorySession(
         .catch(() => undefined);
     };
 
-    return { slices, scheduler, tracker, checkpointSession };
+    // After a reload the backend can have a current row containing live tracked
+    // revisions while the in-memory tracker has no open session. Preserve that
+    // row before native acceptance removes the revisions; otherwise the only
+    // durable snapshot is the later confirmed one and both history rows look
+    // approved. The backend close endpoint accepts this late artifact upload
+    // for the current row even when its original session is already closed.
+    const preservePendingCurrentVersion = async (
+      acceptance: TrackedChangeAcceptance
+    ) => {
+      const h = hostRef.current;
+      if (!h) return;
+      try {
+        const current = (await h.listVersions()).find(
+          (version) => version.is_current && version.session_id
+        );
+        if (!current?.session_id) return;
+
+        const pendingDoc = JSON.parse(acceptance.beforeSfdt);
+        const rejectedDoc = normalizeForDiff(pendingDoc, {
+          rejectRevisionIds: acceptance.revisionIds
+        });
+        const snap: CloseSnapshot = {
+          fStr: acceptance.beforeSfdt,
+          fAuthor: ROBIN.key,
+          s0: JSON.stringify(rejectedDoc),
+          slices: [],
+          robinRuns: collectRobinRuns(pendingDoc),
+          acceptance: null
+        };
+        await queueClose(
+          current.session_id,
+          [{ kind: ROBIN.kind, label: ROBIN.label }],
+          snap
+        );
+        setSavedAt(new Date());
+      } catch {
+        // Version history is a sidecar to native review. A stale/missing row or
+        // unavailable list endpoint must not prevent the user accepting edits.
+      }
+    };
+
+    return {
+      slices,
+      scheduler,
+      tracker,
+      checkpointSession,
+      preservePendingCurrentVersion
+    };
   }
 
-  const { scheduler, tracker, checkpointSession } = engine;
+  const {
+    scheduler,
+    tracker,
+    checkpointSession,
+    preservePendingCurrentVersion
+  } = engine;
 
   // Snapshot the pristine document as the diff baseline once it finishes opening
   // and no session is in flight. This is the true pre-edit S0 the diff needs;
@@ -614,6 +666,8 @@ export function useDocxHistorySession(
       if (tracker.isOpen()) {
         tracker.noteExplicitSave();
         await finalizeRef.current;
+      } else {
+        await preservePendingCurrentVersion(acceptance);
       }
 
       acceptanceRef.current = acceptance;
@@ -634,7 +688,7 @@ export function useDocxHistorySession(
         throw error;
       }
     },
-    [tracker]
+    [preservePendingCurrentVersion, tracker]
   );
 
   const retry = useCallback(() => scheduler.touch(), [scheduler]);

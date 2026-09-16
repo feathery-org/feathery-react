@@ -234,6 +234,85 @@ describe('useDocxHistorySession', () => {
     expect(customData.every((data: any) => !data.pending)).toBe(true);
   });
 
+  it('preserves the pending current version before accepting after a reload', async () => {
+    (globalThis as any).CompressionStream = undefined;
+    const pending = JSON.stringify({
+      revisions: [
+        {
+          author: 'Robin (assistant)',
+          revisionType: 'Insertion',
+          revisionId: 'r-robin'
+        }
+      ],
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { text: 'hello' },
+                { text: ' robin', revisionIds: ['r-robin'] }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+    const accepted = JSON.stringify({
+      sections: [
+        {
+          blocks: [{ inlines: [{ text: 'hello' }, { text: ' robin' }] }]
+        }
+      ]
+    });
+    let doc = pending;
+    const editor: any = { serialize: () => doc };
+    const { view, host } = setup({}, editor);
+    host.listVersions.mockResolvedValue([
+      {
+        is_current: true,
+        session_id: 'pending-session'
+      } as any
+    ]);
+    await flush();
+
+    // The page loaded with a pending tracked edit, so there is no open local
+    // tracker session when the user accepts it.
+    expect(view.result.current.isSessionOpen()).toBe(false);
+    await act(async () => {
+      await view.result.current.acceptTrackedChanges(
+        { beforeSfdt: pending, revisionIds: ['r-robin'] },
+        () => {
+          doc = accepted;
+        }
+      );
+    });
+
+    // Snapshot the existing pending row first, then store confirmation in a
+    // distinct session. Otherwise both rows render as approved versions.
+    expect(host.closeVersion).toHaveBeenCalledTimes(2);
+    expect(host.closeVersion.mock.calls[0][0]).toBe('pending-session');
+    expect(host.closeVersion.mock.calls[1][0]).not.toBe('pending-session');
+
+    const pendingPayload = host.closeVersion.mock.calls[0][1];
+    const pendingChanges = JSON.parse(
+      await blobText(pendingPayload.changesJson!)
+    );
+    expect(pendingChanges.confirmed).toBeUndefined();
+    expect(pendingChanges.changeCount).toBeGreaterThan(0);
+    const pendingDisplay = applyHunks(JSON.parse(pending), pendingChanges);
+    const pendingMetadata = (pendingDisplay.revisions ?? []).map(
+      (revision: any) => JSON.parse(revision.customData ?? '{}')
+    );
+    expect(pendingMetadata.some((data: any) => data.pending === true)).toBe(
+      true
+    );
+
+    const confirmationChanges = JSON.parse(
+      await blobText(host.closeVersion.mock.calls[1][1].changesJson!)
+    );
+    expect(confirmationChanges.confirmed).toBe(true);
+  });
+
   it('previewSession returns a highlighted display document for the open session', async () => {
     let doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
