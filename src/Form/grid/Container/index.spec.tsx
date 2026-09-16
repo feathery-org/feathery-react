@@ -642,6 +642,83 @@ describe('Container repeat row reorder handle', () => {
     });
   });
 
+  describe('a track whose rows flow across the page', () => {
+    // A repeated container is laid out by its parent, so a parent on the column
+    // axis puts the rows side by side. The drag maths always read the track's
+    // axis; the chrome did not, so the handle sat beside the wrong edge and the
+    // seam marked a boundary that was not there.
+    const withRowTrack = (run: () => void) => {
+      const win: any = globalThis;
+      const real = win.getComputedStyle;
+      jest
+        .spyOn(win, 'getComputedStyle')
+        .mockImplementation((el: any, pseudo?: any) => {
+          const style = real.call(win, el, pseudo);
+          // The track is whatever holds the marked rows.
+          const holdsRows = el?.querySelector?.('[data-feathery-repeat-row]');
+          if (!holdsRows) return style;
+          return new Proxy(style, {
+            get: (target: any, key: string) =>
+              key === 'flexDirection' ? 'row' : target[key]
+          });
+        });
+      try {
+        run();
+      } finally {
+        jest.restoreAllMocks();
+      }
+    };
+
+    const clusterOf = (c: HTMLElement) =>
+      c.querySelector('.feathery-repeat-reorder') as HTMLElement;
+    const seamOf = (c: HTMLElement) => {
+      const row = c.querySelector('[data-feathery-repeat-row]') as HTMLElement;
+      fireEvent.pointerMove(row, { bubbles: true, clientX: 10, clientY: 10 });
+      return c.querySelector('.feathery-repeat-insert') as HTMLElement;
+    };
+
+    it('hangs the cluster above the row, not beside it', () => {
+      withRowTrack(() => {
+        const { container } = renderContainer(repeatNode({ repeat: 1 }));
+        const style = getComputedStyle(clusterOf(container));
+        // The gutter moves to the cross axis, which is now the block axis.
+        expect(parseFloat(style.insetBlockStart)).toBeLessThan(0);
+        expect(style.flexDirection).toBe('row');
+      });
+    });
+
+    it('puts the seam on an inline edge, where the boundary is', () => {
+      withRowTrack(() => {
+        const { container } = renderContainer(repeatNode({ repeat: 1 }));
+        const style = getComputedStyle(seamOf(container));
+        expect(style.transform).toContain('translateX');
+        expect(parseFloat(style.insetBlockStart)).toBeLessThan(0);
+      });
+    });
+
+    it('names the boundary along the axis the rows flow', () => {
+      withRowTrack(() => {
+        const { container, getByLabelText } = renderContainer(
+          repeatNode({ repeat: 1 })
+        );
+        seamOf(container);
+        // "above" would be plainly wrong for a row that sits to the left.
+        expect(getByLabelText(/Add a row (before|after) row 2/)).toBeTruthy();
+      });
+    });
+
+    it('leaves a stacked track alone', () => {
+      const { container, getByLabelText } = renderContainer(
+        repeatNode({ repeat: 1 })
+      );
+      const style = getComputedStyle(clusterOf(container));
+      expect(style.flexDirection).toBe('column');
+      expect(parseFloat(style.insetBlockStart)).toBeGreaterThanOrEqual(0);
+      seamOf(container);
+      expect(getByLabelText(/Add a row (above|below) row 2/)).toBeTruthy();
+    });
+  });
+
   describe('a lone row', () => {
     const lone = () => {
       setFieldValues(['only']);

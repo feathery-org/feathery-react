@@ -90,6 +90,12 @@ export const RESOLVED_SURFACE_VAR = '--feathery-repeat-insert-surface-resolved';
  */
 export const clusterStyles = {
   position: 'absolute' as const,
+  // Above the row's own pseudo-elements. The hover bridges are drawn on the
+  // row, and `::after` paints as its last child - over any child with no
+  // stacking order of its own, which is how the grip ended up unclickable on
+  // a horizontal track. Below the seam's 3, which should stay on top of the
+  // cluster, and far below a lifted row.
+  zIndex: 2,
   // Half a target down, so the seam - which straddles the row's top edge, in
   // this same gutter - abuts the first step button instead of covering it.
   insetBlockStart: `${TARGET_SIZE / 2}px`,
@@ -117,6 +123,32 @@ export const clusterStyles = {
 export const clusterStylesTucked = {
   ...clusterStyles,
   insetBlockStart: `${TARGET_SIZE}px`
+};
+
+/**
+ * The cluster on a track whose rows flow left to right.
+ *
+ * A repeated container is laid out by its parent, so a parent on the column
+ * axis puts the rows side by side. The gutter has to follow: it belongs on the
+ * cross axis of the track, which is above the row rather than beside it, and
+ * the controls lie along it instead of down it. Everything else - target
+ * sizes, colours, the reveal - is shared.
+ */
+export const clusterStylesHorizontal = {
+  ...clusterStyles,
+  // Half a target in, so the seam straddling the row's leading edge in this
+  // same gutter abuts the first step button instead of covering it.
+  insetInlineStart: `${TARGET_SIZE / 2}px`,
+  insetBlockStart: `-${GUTTER_WIDTH}px`,
+  width: 'auto',
+  height: `${TARGET_SIZE}px`,
+  flexDirection: 'row' as const
+};
+
+/** The horizontal cluster when its leading seam has been tucked inside. */
+export const clusterStylesHorizontalTucked = {
+  ...clusterStylesHorizontal,
+  insetInlineStart: `${TARGET_SIZE}px`
 };
 
 /**
@@ -166,6 +198,17 @@ export const rowRevealStyles = {
     insetBlockEnd: `-${TARGET_SIZE / 2}px`,
     insetInlineStart: `-${GUTTER_WIDTH + TARGET_SIZE / 2}px`,
     width: `${GUTTER_WIDTH + TARGET_SIZE / 2}px`
+  },
+  // The same bridge for a track whose gutter is above the row. Both are always
+  // present: only one of them overlaps chrome, and an empty strip beside a row
+  // costs nothing.
+  '&::after': {
+    content: '""',
+    position: 'absolute' as const,
+    insetInlineStart: 0,
+    insetInlineEnd: `-${TARGET_SIZE / 2}px`,
+    insetBlockStart: `-${GUTTER_WIDTH + TARGET_SIZE / 2}px`,
+    height: `${GUTTER_WIDTH + TARGET_SIZE / 2}px`
   },
   // The row under the pointer, or the row a keyboard user has reached. Not
   // plain `:focus-within`: a pointer click leaves focus on the grip as well,
@@ -326,6 +369,38 @@ export const insertStylesAbove = {
 export const insertStylesAboveTucked = {
   ...insertBase,
   insetBlockStart: 0,
+  transform: 'none'
+};
+
+/**
+ * The seam on a horizontal track. It marks a boundary between two rows, so it
+ * follows the main axis: the leading and trailing edges are left and right,
+ * and it hangs in the same cross-axis gutter the cluster does.
+ */
+const insertBaseHorizontal = {
+  ...insertBase,
+  insetInlineStart: 'auto',
+  insetBlockStart: `-${GUTTER_WIDTH}px`
+};
+
+/** On the seam after the row: insert to its trailing side. */
+export const insertStylesHorizontal = {
+  ...insertBaseHorizontal,
+  insetInlineEnd: 0,
+  transform: 'translateX(50%)'
+};
+
+/** On the seam before the row: insert to its leading side. */
+export const insertStylesBefore = {
+  ...insertBaseHorizontal,
+  insetInlineStart: 0,
+  transform: 'translateX(-50%)'
+};
+
+/** The leading seam with no scrollback beside it to straddle into. */
+export const insertStylesBeforeTucked = {
+  ...insertBaseHorizontal,
+  insetInlineStart: 0,
   transform: 'none'
 };
 

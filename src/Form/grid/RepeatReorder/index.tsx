@@ -30,6 +30,8 @@ import {
   TARGET_SIZE,
   clusterInsideStyles,
   clusterStyles,
+  clusterStylesHorizontal,
+  clusterStylesHorizontalTucked,
   clusterStylesTucked,
   gripStyles,
   insertBadgeStyles,
@@ -38,6 +40,9 @@ import {
   insertStyles,
   insertStylesAbove,
   insertStylesAboveTucked,
+  insertStylesBefore,
+  insertStylesBeforeTucked,
+  insertStylesHorizontal,
   removeStyles,
   stepStyles,
   visuallyHidden
@@ -117,17 +122,22 @@ const resolveSurface = (from: HTMLElement): string | null => {
  * the row's offset within whatever actually scrolls it, which only layout can
  * change, so the existing observer is enough to keep it honest.
  */
-export const spaceAboveRow = (row: HTMLElement): number => {
+export const spaceAboveRow = (row: HTMLElement, horizontal = false): number => {
   const rect = row.getBoundingClientRect();
   let el: HTMLElement | null = row.parentElement;
   while (el) {
-    const overflow = getComputedStyle(el).overflowY;
+    const style = getComputedStyle(el);
+    const overflow = horizontal ? style.overflowX : style.overflowY;
     if (overflow === 'auto' || overflow === 'scroll') {
-      return rect.top - el.getBoundingClientRect().top + el.scrollTop;
+      const box = el.getBoundingClientRect();
+      return horizontal
+        ? rect.left - box.left + el.scrollLeft
+        : rect.top - box.top + el.scrollTop;
     }
     el = el.parentElement;
   }
-  return rect.top + featheryWindow().scrollY;
+  const win = featheryWindow();
+  return horizontal ? rect.left + win.scrollX : rect.top + win.scrollY;
 };
 
 /**
@@ -310,6 +320,11 @@ export const RepeatRowHandle = ({
   // Whether the leading seam had scrollback above it to straddle into.
   const [tucked, setTucked] = useState(false);
 
+  // Whether the rows flow left to right. The chrome hangs on the track's cross
+  // axis and its seams mark boundaries along the main one, so both swap with
+  // this. The drag maths has always read the same axis off the track.
+  const [horizontal, setHorizontal] = useState(false);
+
   // Whether a keyboard put focus inside the cluster. Focus a pointer left
   // there is not a reason to keep the row lit once the pointer has gone.
   const [keyboardFocus, setKeyboardFocus] = useState(false);
@@ -333,8 +348,16 @@ export const RepeatRowHandle = ({
     const apply = () => {
       const win = featheryWindow();
       const style = getComputedStyle(row);
+      const track = row.parentElement;
+      const flow = track ? getComputedStyle(track).flexDirection : 'column';
+      const isHorizontal = flow.startsWith('row');
+      setHorizontal(isHorizontal);
       const border =
-        parseFloat(style.borderInlineStartWidth || style.borderLeftWidth) || 0;
+        parseFloat(
+          isHorizontal
+            ? style.borderBlockStartWidth || style.borderTopWidth
+            : style.borderInlineStartWidth || style.borderLeftWidth
+        ) || 0;
       const gutter = GUTTER_WIDTH + border;
 
       // The gutter hangs off the outside of the row, so it needs somewhere to
@@ -351,8 +374,19 @@ export const RepeatRowHandle = ({
       // the designed position and let the observer correct it once the row has
       // a real box.
       const measured = rect.width > 0 || rect.height > 0;
-      const space =
-        style.direction === 'rtl' ? win.innerWidth - rect.right : rect.left;
+      // Room on the cross axis: above the row when the rows flow across, beside
+      // it when they stack. RTL only mirrors the inline axis.
+      //
+      // The vertical measure is the row's offset within its scroller, not its
+      // viewport top: those differ by the scroll position, and chrome that
+      // moved inside the row halfway down a page would be absurd. The
+      // horizontal one can stay viewport-relative because a form does not
+      // scroll sideways.
+      const space = isHorizontal
+        ? spaceAboveRow(row, false)
+        : style.direction === 'rtl'
+        ? win.innerWidth - rect.right
+        : rect.left;
 
       const fits = !measured || space >= gutter;
       setInside(!fits);
@@ -360,13 +394,18 @@ export const RepeatRowHandle = ({
       // The leading seam hangs half a target above the row. Where the row
       // starts the scroller there is nothing above to hang into, and that half
       // is unreachable at any scroll position, so the seam moves inside.
-      setTucked(measured && spaceAboveRow(row) < TARGET_SIZE / 2);
+      setTucked(measured && spaceAboveRow(row, isHorizontal) < TARGET_SIZE / 2);
       // Only the gutter position depends on the border. The inside variant
       // centres itself on the row's top edge, so it must be left to the
       // stylesheet rather than pinned by a measured offset.
       if (cluster) {
-        if (fits) cluster.style.insetInlineStart = `-${gutter}px`;
-        else cluster.style.removeProperty('inset-inline-start');
+        const pinned = isHorizontal
+          ? 'inset-block-start'
+          : 'inset-inline-start';
+        const loose = isHorizontal ? 'inset-inline-start' : 'inset-block-start';
+        cluster.style.removeProperty(loose);
+        if (fits) cluster.style.setProperty(pinned, `-${gutter}px`);
+        else cluster.style.removeProperty(pinned);
       }
 
       // Published on the row so both the cluster and the seam inherit it.
@@ -401,14 +440,19 @@ export const RepeatRowHandle = ({
 
     const onPointerMove = (event: any) => {
       const rect = row.getBoundingClientRect();
-      if (!rect.height) return;
-      const above = event.clientY < rect.top + rect.height / 2;
+      // Which half the pointer is in, along the axis the rows flow. On a
+      // horizontal track "above" means "before" - the row's leading side.
+      const extent = horizontal ? rect.width : rect.height;
+      if (!extent) return;
+      const start = horizontal ? rect.left : rect.top;
+      const coord = horizontal ? event.clientX : event.clientY;
+      const above = coord < start + extent / 2;
       setSeamAbove((prev) => (prev === above ? prev : above));
     };
 
     row.addEventListener('pointermove', onPointerMove);
     return () => row.removeEventListener('pointermove', onPointerMove);
-  }, [rowRef, canInsert]);
+  }, [rowRef, canInsert, horizontal]);
 
   // Built from the same flags as the badge below, so what a move announces and
   // what the handle calls itself can never drift apart.
@@ -479,7 +523,13 @@ export const RepeatRowHandle = ({
           type='button'
           className={INSERT_CLASS}
           css={{
-            ...(seamAbove
+            ...(horizontal
+              ? seamAbove
+                ? tucked
+                  ? insertStylesBeforeTucked
+                  : insertStylesBefore
+                : insertStylesHorizontal
+              : seamAbove
               ? tucked
                 ? insertStylesAboveTucked
                 : insertStylesAbove
@@ -493,9 +543,11 @@ export const RepeatRowHandle = ({
               : {})
           }}
           aria-label={
+            // Wording follows the axis: "above/below" is concrete for a
+            // stacked track, and plainly wrong for one that flows across.
             seamAbove
-              ? `Add a row above row ${ordinal}`
-              : `Add a row below row ${ordinal}`
+              ? `Add a row ${horizontal ? 'before' : 'above'} row ${ordinal}`
+              : `Add a row ${horizontal ? 'after' : 'below'} row ${ordinal}`
           }
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
@@ -524,6 +576,10 @@ export const RepeatRowHandle = ({
         css={
           inside
             ? clusterInsideStyles
+            : horizontal
+            ? tucked
+              ? clusterStylesHorizontalTucked
+              : clusterStylesHorizontal
             : tucked
             ? clusterStylesTucked
             : clusterStyles

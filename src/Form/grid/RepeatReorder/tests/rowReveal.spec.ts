@@ -12,6 +12,9 @@
 import {
   DRAGGING_ATTR,
   GUTTER_WIDTH,
+  LIFT_Z_INDEX,
+  clusterStyles,
+  insertStyles,
   INSERT_CLASS,
   KEYBOARD_FOCUS_ATTR,
   REORDER_CLASS,
@@ -31,6 +34,15 @@ const seamRevealSelectors = () =>
   );
 
 describe('rowRevealStyles', () => {
+  it('keeps both hover bridges under the chrome they reveal', () => {
+    // `::after` paints as the row's last child, so without a stacking order of
+    // its own the cluster sits beneath it and every control is unclickable.
+    // The seam already carried one; the cluster now does too.
+    expect(clusterStyles.zIndex).toBeGreaterThan(0);
+    expect(insertStyles.zIndex).toBeGreaterThan(clusterStyles.zIndex);
+    expect(LIFT_Z_INDEX).toBeGreaterThan(insertStyles.zIndex as number);
+  });
+
   it('extends the row hit area across the gutter, so the hover holds', () => {
     // The buttons stop a few pixels short of the row's edge. Without this the
     // pointer crossed ground that belonged to neither on its way to the `+`,
