@@ -243,9 +243,73 @@ export function getRepeatTextVariableKeys(
 }
 
 /**
+ * Element collections a step can hold, in the shape `buildGridTree` reads them.
+ * Mirrors `stepElementTypes` in hideAndRepeats; kept local to avoid a cycle.
+ */
+const STEP_ELEMENT_TYPES = [
+  'subgrids',
+  'texts',
+  'buttons',
+  'servar_fields',
+  'progress_bars',
+  'images',
+  'videos',
+  'tables',
+  'tabs'
+] as const;
+
+/**
+ * Keys an element inside the container reads per row without being a field.
+ *
+ * An image bound to a field takes its source from `fieldValues[key][repeat]`,
+ * the same indexing a repeated field uses, so its array is row data even
+ * though nothing about it looks like a `{{variable}}`. A container's
+ * background image binds the same way through its styles. Miss these and the
+ * copy reorders while the pictures stay put.
+ */
+export function getRepeatBoundImageKeys(
+  step: Record<string, any>,
+  repeatContainer: PositionedElement
+): string[] {
+  const repeatKey = getPositionKey(repeatContainer);
+  if (typeof repeatKey !== 'string') return [];
+  const keys = new Set<string>();
+
+  STEP_ELEMENT_TYPES.forEach((type) => {
+    (step[type] ?? []).forEach((el: any) => {
+      const key = getPositionKey(el);
+      if (typeof key !== 'string' || !inRepeat(key, repeatKey)) return;
+      const bound =
+        el?.properties?.uploaded_image_file_field_key ??
+        el?.styles?.uploaded_image_file_field_key;
+      if (bound) keys.add(bound);
+    });
+  });
+
+  return [...keys].filter((key) => Array.isArray(fieldValues[key]));
+}
+
+/**
+ * Every key whose array must move with the rows. The container's own repeated
+ * fields and the text variables its copy renders define how many rows there
+ * are; a bound image rides along without adding any, exactly as the renderer
+ * counts them.
+ */
+export function getRepeatCarriedKeys(
+  step: Record<string, any>,
+  repeatContainer: PositionedElement
+): string[] {
+  const rowKeys = getRepeatRowKeys(step as any, repeatContainer);
+  const extra = getRepeatBoundImageKeys(step, repeatContainer).filter(
+    (key) => !rowKeys.includes(key)
+  );
+  return [...rowKeys, ...extra];
+}
+
+/**
  * Every key whose array the container's rows are made of: its own repeated
- * fields, plus the text variables its copy references. A row move permutes all
- * of them together, so a list built from either source stays aligned.
+ * fields, plus the text variables its copy references. This is the counting
+ * set - it has to agree with the renderer, which maxes those same two sources.
  */
 export function getRepeatRowKeys(
   step: { servar_fields: any[]; texts?: any[]; buttons?: any[] },

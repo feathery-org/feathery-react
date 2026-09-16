@@ -9,6 +9,8 @@
  * repeated fields, so a list built this way had no controls at all.
  */
 import {
+  getRepeatBoundImageKeys,
+  getRepeatCarriedKeys,
   getRepeatContainerRowCount,
   getRepeatRowKeys,
   getRepeatTextVariableKeys,
@@ -191,5 +193,73 @@ describe('the synthetic field a text variable is moved with', () => {
     // A short array padded and moved must not leave the sentinel behind.
     const moved = moveRepeatRowValue(['a'], 0, 2, 3, synthetic);
     expect(moved).toEqual(['', '', 'a']);
+  });
+});
+
+describe('images bound to a field, which are row data without being fields', () => {
+  // An image takes its source from fieldValues[key][repeat] - the same
+  // indexing a repeated field uses - but nothing about it looks like a
+  // {{variable}}. Missing it let the copy reorder while the pictures stayed
+  // put, so row 1 showed row 3's photograph.
+  const image = (key: string, position = [6, 0, 1]) => ({
+    properties: { uploaded_image_file_field_key: key },
+    position
+  });
+
+  it('finds an image bound to an array', () => {
+    fieldValues['recipe image'] = ['a.png', 'b.png'];
+    const s = step({ images: [image('recipe image')] });
+    expect(getRepeatBoundImageKeys(s as any, container as any)).toEqual([
+      'recipe image'
+    ]);
+  });
+
+  it('finds a container background bound through styles', () => {
+    fieldValues.bg = ['x.png', 'y.png'];
+    const s = step({
+      subgrids: [
+        { styles: { uploaded_image_file_field_key: 'bg' }, position: [6, 0, 2] }
+      ]
+    });
+    expect(getRepeatBoundImageKeys(s as any, container as any)).toEqual(['bg']);
+  });
+
+  it('ignores a binding outside the container', () => {
+    fieldValues.other = ['x.png'];
+    const s = step({ images: [image('other', [7, 0])] });
+    expect(getRepeatBoundImageKeys(s as any, container as any)).toEqual([]);
+  });
+
+  it('ignores a binding whose value is not an array', () => {
+    fieldValues.logo = 'one.png';
+    const s = step({ images: [image('logo')] });
+    expect(getRepeatBoundImageKeys(s as any, container as any)).toEqual([]);
+  });
+
+  it('carries the image alongside the copy that counts the rows', () => {
+    fieldValues.recipe = ['pizza', 'cookies'];
+    fieldValues['recipe image'] = ['a.png', 'b.png'];
+    const s = step({
+      texts: [text('{{recipe}}')],
+      images: [image('recipe image')]
+    });
+    expect(getRepeatCarriedKeys(s as any, container as any).sort()).toEqual([
+      'recipe',
+      'recipe image'
+    ]);
+  });
+
+  it('does not let a bound image invent rows', () => {
+    // The renderer counts fields and text variables only, so an image array
+    // longer than the copy must not make the controls promise a row that is
+    // not on screen.
+    fieldValues.recipe = ['pizza', 'cookies'];
+    fieldValues['recipe image'] = ['a.png', 'b.png', 'c.png', 'd.png'];
+    const s = step({
+      texts: [text('{{recipe}}')],
+      images: [image('recipe image')]
+    });
+    expect(getRepeatContainerRowCount(s as any, container as any)).toBe(2);
+    expect(getRepeatRowKeys(s as any, container as any)).toEqual(['recipe']);
   });
 });

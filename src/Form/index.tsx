@@ -69,7 +69,7 @@ import {
   getFieldsInRepeat,
   getRepeatContainerRowCount,
   getRepeatRowKeys,
-  getRepeatTextVariableKeys,
+  getRepeatCarriedKeys,
   getRepeatedContainer,
   getRepeatErrorOwnerIds,
   getRepeatMaxRows,
@@ -993,20 +993,19 @@ function Form({
     });
 
     // A container can repeat on a `{{key}}` in its copy with no field of its
-    // own - an API-fed list is the usual case. Those arrays are the rows just
-    // as much, so they move with them. Given a synthetic field because the key
-    // has no servar behind it; a plain text default is the right hole filler.
-    getRepeatTextVariableKeys(activeStep, repeatContainer).forEach(
-      (key: string) => {
-        if (key in updatedValues) return;
-        // `metadata` is not optional: getDefaultFieldValue reads
-        // `servar.metadata.default_value` unguarded, and a text variable has
-        // no servar to borrow one from.
-        updatedValues[key] = getNewVal({
-          servar: { key, type: 'text_field', repeated: true, metadata: {} }
-        });
-      }
-    );
+    // own - an API-fed list is the usual case - and an image inside it can be
+    // bound to yet another array. All of them are row data, so they move
+    // together. Given a synthetic field because the key has no servar behind
+    // it; a plain text default is the right hole filler.
+    getRepeatCarriedKeys(activeStep, repeatContainer).forEach((key: string) => {
+      if (key in updatedValues) return;
+      // `metadata` is not optional: getDefaultFieldValue reads
+      // `servar.metadata.default_value` unguarded, and a text variable has
+      // no servar to borrow one from.
+      updatedValues[key] = getNewVal({
+        servar: { key, type: 'text_field', repeated: true, metadata: {} }
+      });
+    });
 
     setRepeatChanged((repeatChanged) => !repeatChanged);
     // Adding/removing a repeat row is a structural change, not user input on a

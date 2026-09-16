@@ -80,6 +80,10 @@ jest.mock('../../utils/repeat', () => {
       ),
     // No `{{key}}` copy inside the container by default.
     getRepeatTextVariableKeys: () => [],
+    // No bound images either; a spec about them reassigns these.
+    getRepeatBoundImageKeys: () => [],
+    getRepeatCarriedKeys: (step: any, container: any) =>
+      RepeatModRef.getRepeatRowKeys(step, container),
     // Which elements in the container can own a per-row error. Inert by
     // default; a spec that asserts error renumbering names its own owners.
     getRepeatErrorOwnerIds: () => [],

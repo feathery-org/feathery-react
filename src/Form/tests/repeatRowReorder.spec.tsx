@@ -69,8 +69,11 @@ beforeEach(() => {
   RepeatMod.getRepeatErrorOwnerIds = () => [];
   // Rows come from the container's own fields unless a spec says otherwise.
   RepeatMod.getRepeatTextVariableKeys = () => [];
+  RepeatMod.getRepeatBoundImageKeys = () => [];
   RepeatMod.getRepeatRowKeys = (step: any, c: any) =>
     RepeatMod.getFieldsInRepeat(step, c).map((f: any) => f.servar.key);
+  RepeatMod.getRepeatCarriedKeys = (step: any, c: any) =>
+    RepeatMod.getRepeatRowKeys(step, c);
   FormHelperMod.clearBrowserErrors = jest.fn();
 });
 
@@ -246,10 +249,11 @@ describe('a container that repeats on copy alone', () => {
   // The rows of an API-fed list live in the array a `{{key}}` renders, not in
   // any field of the container. Moving a row has to permute that array or the
   // controls are decoration.
-  const withCopyRows = (keys: string[]) => {
+  const withCopyRows = (keys: string[], carried: string[] = keys) => {
     RepeatMod.getFieldsInRepeat = () => [];
     RepeatMod.getRepeatTextVariableKeys = () => keys;
     RepeatMod.getRepeatRowKeys = () => keys;
+    RepeatMod.getRepeatCarriedKeys = () => carried;
   };
 
   it('permutes the array behind the copy', async () => {
@@ -279,6 +283,27 @@ describe('a container that repeats on copy alone', () => {
       expect((fieldValues as any).recipe).toEqual(['cookies', 'pizza']);
     });
     expect((fieldValues as any).calories).toEqual([200, 800]);
+  });
+
+  it('carries a bound image with the row that renders it', async () => {
+    // The copy counted the rows, the picture just rode along - and used to
+    // stay behind, leaving row 1 showing row 3's photograph.
+    (fieldValues as any).recipe = ['pizza', 'cookies', 'pasta'];
+    (fieldValues as any)['recipe image'] = ['a.png', 'b.png', 'c.png'];
+    withCopyRows(['recipe'], ['recipe', 'recipe image']);
+    RepeatMod.getRepeatContainerRowCount = () => 3;
+
+    const { form } = await mountForm('iid-copy-image');
+    expect(form.moveRepeatedRow(container, 0, 2)).toBe(true);
+
+    await waitFor(() => {
+      expect((fieldValues as any).recipe).toEqual(['cookies', 'pasta', 'pizza']);
+    });
+    expect((fieldValues as any)['recipe image']).toEqual([
+      'b.png',
+      'c.png',
+      'a.png'
+    ]);
   });
 
   it('refuses when nothing at all drives the rows', async () => {
