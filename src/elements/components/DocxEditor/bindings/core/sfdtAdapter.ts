@@ -78,6 +78,26 @@ export interface BindingIndex {
   diagnostics: Diagnostic[];
 }
 
+/** Every formula occurrence, including row-scoped formulas stored by tables. */
+export function formulaOccurrences(
+  index: BindingIndex,
+  name?: string
+): Occurrence[] {
+  return index.occurrences.filter(
+    (occurrence) =>
+      occurrence.def.kind === 'formula' &&
+      (name === undefined || occurrence.name === name)
+  );
+}
+
+/** Logical formula identity, independent of where scanBindings stores it. */
+export function formulaScopeKey(occurrence: Occurrence): string {
+  if (occurrence.def.isGlobal) return `global:${occurrence.name}`;
+  if (occurrence.tableId && occurrence.rowId)
+    return `row:${occurrence.tableId}:${occurrence.rowId}:${occurrence.name}`;
+  return `document:${occurrence.name}`;
+}
+
 export interface CellValue {
   text: string;
   canonical: string | null;
@@ -143,6 +163,13 @@ function hasOnlyRevisionIds(node: any, ids: Set<string>): boolean {
     Array.isArray(revisionIds) &&
     revisionIds.length > 0 &&
     revisionIds.every((id) => ids.has(String(id)))
+  );
+}
+
+function hasRevisionId(node: any, ids: Set<string>): boolean {
+  return (
+    Array.isArray(node?.revisionIds) &&
+    node.revisionIds.some((id: unknown) => ids.has(String(id)))
   );
 }
 
@@ -333,7 +360,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
           if (
             rawTable?.rows?.length &&
             rawTable.rows.every((row: SfdtRow) =>
-              hasOnlyRevisionIds(row.rowFormat, deletedRevisionIds)
+              hasRevisionId(row.rowFormat, deletedRevisionIds)
             )
           )
             return;
@@ -372,7 +399,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
         walkBlocks(block.blocks, [...path, 'blocks'], innerCtx, rowPath);
       } else if (Array.isArray(block.rows)) {
         block.rows.forEach((row: SfdtRow, r: number) => {
-          if (hasOnlyRevisionIds(row.rowFormat, deletedRevisionIds)) return;
+          if (hasRevisionId(row.rowFormat, deletedRevisionIds)) return;
           const currentRowPath = [...path, 'rows', r];
           (row.cells || []).forEach((cell, c) => {
             if ((cell as any).contentControlProperties) {
@@ -499,6 +526,20 @@ export function readLineItems(
  * run's characterFormat so styling survives the rewrite.
  */
 function withCcText(node: any, text: string): any {
+  // Read and write the same representation. A cell-level content control can
+  // carry both the cell's ordinary paragraph blocks and its own control
+  // inlines. `ccText` prefers the latter, so writing the blocks would leave the
+  // binding's canonical value unchanged even though visible cell text moved.
+  // Syncfusion produces this shape when a row cloned by an earlier operation
+  // becomes the prototype for a later insert.
+  if (Array.isArray(node.inlines)) {
+    const first = node.inlines.find(
+      (inline: SfdtInline) => inline && typeof inline.text === 'string'
+    );
+    const run: SfdtInline = { text: String(text) };
+    if (first?.characterFormat) run.characterFormat = first.characterFormat;
+    return { ...node, inlines: [run] };
+  }
   if (Array.isArray(node.blocks) && node.blocks.length) {
     const blocks = [...node.blocks];
     const paragraph = blocks[0] || {};
@@ -510,13 +551,7 @@ function withCcText(node: any, text: string): any {
     blocks[0] = { ...paragraph, inlines: [run] };
     return { ...node, blocks };
   }
-  const first = (node.inlines || []).find(
-    (inline: SfdtInline) => inline && typeof inline.text === 'string'
-  );
-  const run: SfdtInline = { text: String(text) };
-  if (first && first.characterFormat)
-    run.characterFormat = first.characterFormat;
-  return { ...node, inlines: [run] };
+  return { ...node, inlines: [{ text: String(text) }] };
 }
 
 export function setOccurrenceText(
@@ -593,7 +628,7 @@ export const freshRowId = createRowIdGenerator();
 
 /* ---------------- row operations ---------------- */
 
-function rewriteRowClone(node: any, newRowId: string): void {
+export function rewriteRowClone(node: any, newRowId: string): void {
   if (Array.isArray(node)) {
     node.forEach((entry) => rewriteRowClone(entry, newRowId));
     return;
@@ -642,7 +677,14 @@ export function addLineItem(
   tableId: string,
   afterRowId: string | null = null,
   index: BindingIndex = scanBindings(sfdt),
-  rowId: string = freshRowId()
+  rowId: string = freshRowId(),
+  /**
+   * Where the new row goes, as an index into the table's rows. Defaults to
+   * right after the prototype. The prototype is only the row to CLONE: a line
+   * item can be placed anywhere - above the first item, after the totals row -
+   * and it still copies a bound data row.
+   */
+  insertAt?: number
 ): { sfdt: SfdtDocument; rowId: string } {
   const table = index.tables.get(tableId);
   if (!table || !table.rows.length)
@@ -662,7 +704,10 @@ export function addLineItem(
   rewriteRowClone(clone, rowId);
   const rowsPath = prototype.path.slice(0, -1);
   const rows = getAt(sfdt, rowsPath) as SfdtRow[];
-  const at = Number(prototype.path[prototype.path.length - 1]) + 1;
+  const at =
+    insertAt !== undefined
+      ? Math.max(0, Math.min(rows.length, insertAt))
+      : Number(prototype.path[prototype.path.length - 1]) + 1;
   const nextRows = [...rows.slice(0, at), clone, ...rows.slice(at)];
   return { sfdt: setAt(sfdt, rowsPath, nextRows), rowId };
 }
@@ -792,12 +837,32 @@ export interface DeleteTableMutation {
   kind: 'delete-table';
   tag: string;
 }
+interface ReplaceTableMutation {
+  kind: 'replace-table';
+  tag: string;
+  blocks: SfdtBlock[];
+}
+/**
+ * A control's identity rewritten in place, tag for tag.
+ *
+ * The one structural mutation that changes no content. A formula's EXPRESSION
+ * lives in its tag, so rewriting an expression in an existing control is a
+ * retag - and SyncFusion revisions content, never tags, which is why the change
+ * set that issues one also binds an inverse to its revision group.
+ */
+interface RetagControlMutation {
+  kind: 'retag-control';
+  fromTag: string;
+  toTag: string;
+}
 export type NativeStructuralMutation =
   | AdoptedRowMutation
   | InsertRowMutation
   | DeleteRowMutation
   | InsertTableMutation
-  | DeleteTableMutation;
+  | DeleteTableMutation
+  | ReplaceTableMutation
+  | RetagControlMutation;
 
 /**
  * Indexes of rows that look like the user's own additions: not a header, and
@@ -876,6 +941,10 @@ export function adoptUnboundRows(
   // inserting rows entirely.
   const allRows = tableNode.rows || [];
   const templateCells = templateRow.cells || [];
+  const firstBoundRowIndex = table.rows
+    .map((entry) => Number(entry.path?.[entry.path.length - 1]))
+    .filter(Number.isInteger)
+    .sort((left, right) => left - right)[0];
 
   for (let r = 0; r < allRows.length; r++) {
     const row = allRows[r];
@@ -905,6 +974,8 @@ export function adoptUnboundRows(
       );
     });
     if (occupiedFormula !== -1) {
+      if (Number.isInteger(firstBoundRowIndex) && r < firstBoundRowIndex)
+        continue;
       skipped.push({
         rowIndex: r,
         reason: `cell ${occupiedFormula} holds text where the template has a formula`
