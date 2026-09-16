@@ -1086,6 +1086,9 @@ function DocxEditor({
             currentPendingCount={
               viewingVersion?.is_current ? versionMeta?.pendingCount : undefined
             }
+            onAcceptTrackedChanges={
+              history ? historySession.acceptTrackedChanges : undefined
+            }
             // Reload the list whenever a save lands so a new version and the
             // "Current" tag stay fresh while the panel is open.
             historyRefreshKey={historySession.savedAt?.getTime() ?? 0}

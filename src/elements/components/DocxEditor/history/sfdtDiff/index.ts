@@ -706,6 +706,7 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
         source: 'history',
         changeSetId,
         group: group ?? `h${hunkId}`,
+        ...(changes.confirmed ? { confirmed: true } : {}),
         ...(pending ? { pending: true } : {})
       })
     });

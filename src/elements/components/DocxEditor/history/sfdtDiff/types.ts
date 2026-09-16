@@ -104,6 +104,10 @@ export interface ChangeList {
    *  (the live-revision rescue can't see accepted edits). Optional/back-compat:
    *  versions stored before this field behave exactly as before. */
   robinRuns?: RevisionRun[];
+  /** This version records the user confirming tracked edits. Its synthetic
+   *  revisions stay attributed to the original author and render as approved
+   *  (non-pending) highlights. */
+  confirmed?: boolean;
   /** Reasons the result is partial (time budget, block cap, …). */
   degraded?: string[];
 }

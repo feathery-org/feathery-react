@@ -75,6 +75,13 @@ export interface SessionPreview {
   pendingCount: number;
 }
 
+export interface TrackedChangeAcceptance {
+  /** Raw SFDT while the selected revisions are still pending. */
+  beforeSfdt: string;
+  /** Syncfusion revision ids settled by this one review action. */
+  revisionIds: string[];
+}
+
 export interface UseDocxHistorySessionResult {
   status: SaveStatus;
   savedAt: Date | null;
@@ -90,6 +97,12 @@ export interface UseDocxHistorySessionResult {
   previewSession: () => SessionPreview | null;
   /** Whether the current document still has an in-progress editing session. */
   isSessionOpen: () => boolean;
+  /** Close any preceding edits, apply the native accept operation, then save
+   *  that confirmation as its own Robin-attributed history version. */
+  acceptTrackedChanges: (
+    acceptance: TrackedChangeAcceptance,
+    accept: () => void
+  ) => Promise<void>;
 }
 
 async function gzip(text: string): Promise<Blob> {
@@ -160,6 +173,10 @@ export function useDocxHistorySession(
   // the version closes. Stored on the change list to keep accepted Robin edits
   // coloured as Robin at view time (deduped by kind+text).
   const robinRunsRef = useRef<RevisionRun[]>([]);
+  // Present only while the review rail is applying an accept operation. It
+  // changes both attribution (the accepted text remains Robin's) and the diff
+  // baseline (the selected revisions are rendered rejected at S0).
+  const acceptanceRef = useRef<TrackedChangeAcceptance | null>(null);
   const finalizeRef = useRef<Promise<void>>(Promise.resolve());
 
   // Build the engine exactly once; its inner functions read the refs above.
@@ -184,6 +201,7 @@ export function useDocxHistorySession(
       s0: string | null;
       slices: Slice[];
       robinRuns: RevisionRun[];
+      acceptance: TrackedChangeAcceptance | null;
     }
 
     const closeSession = async (
@@ -196,7 +214,14 @@ export function useDocxHistorySession(
       const fStr = snap.fStr;
       const fDoc = JSON.parse(fStr);
       const finalSha256 = contentHash(normalizeForDiff(fDoc));
-      const startSha256 = snap.s0
+      const confirmedStart = snap.acceptance
+        ? normalizeForDiff(JSON.parse(snap.acceptance.beforeSfdt), {
+            rejectRevisionIds: snap.acceptance.revisionIds
+          })
+        : null;
+      const startSha256 = confirmedStart
+        ? contentHash(confirmedStart)
+        : snap.s0
         ? contentHash(normalizeForDiff(JSON.parse(snap.s0)))
         : finalSha256;
 
@@ -208,22 +233,25 @@ export function useDocxHistorySession(
       let formatChangeCount: number | null = null;
       try {
         if (snap.s0) {
-          const diffSlices = [
-            ...snap.slices.map((s) => ({
-              sfdt: JSON.parse(s.sfdt as string),
-              author: s.author,
-              endedAt: s.endedAt
-            })),
-            { sfdt: fDoc, author: snap.fAuthor }
-          ];
+          const diffSlices = snap.acceptance
+            ? [{ sfdt: fDoc, author: ROBIN.key }]
+            : [
+                ...snap.slices.map((s) => ({
+                  sfdt: JSON.parse(s.sfdt as string),
+                  author: s.author,
+                  endedAt: s.endedAt
+                })),
+                { sfdt: fDoc, author: snap.fAuthor }
+              ];
           const changes = diffSession(
-            JSON.parse(snap.s0),
+            confirmedStart ?? JSON.parse(snap.s0),
             diffSlices,
             sessionId,
             {
               timeBudgetMs: 4000
             }
           );
+          if (snap.acceptance) changes.confirmed = true;
           changeCount = changes.changeCount;
           formatChangeCount = changes.formatChangeCount;
           // Attach Robin's captured runs so accepted Robin edits stay coloured
@@ -322,13 +350,15 @@ export function useDocxHistorySession(
         fAuthor: currentAuthorRef.current,
         s0: s0Ref.current,
         slices: slices.all(),
-        robinRuns: robinRunsRef.current
+        robinRuns: robinRunsRef.current,
+        acceptance: acceptanceRef.current
       };
       slices.clear();
       s0Ref.current = null;
       preTurnSnapshotRef.current = null;
       // Hand the captured runs to the snapshot and start the next session fresh.
       robinRunsRef.current = [];
+      acceptanceRef.current = null;
       // The just-closed document is the baseline for the NEXT session's diff —
       // set it now so edits landing while this close is in flight diff cleanly
       // into their own session.
@@ -411,6 +441,7 @@ export function useDocxHistorySession(
           s0Ref.current = null;
           preTurnSnapshotRef.current = null;
           robinRunsRef.current = [];
+          acceptanceRef.current = null;
           // A new document invalidates the old baseline; the open-capture effect
           // snapshots the fresh one.
           baselineRef.current = null;
@@ -448,7 +479,8 @@ export function useDocxHistorySession(
         fAuthor: currentAuthorRef.current,
         s0: s0Ref.current,
         slices: slices.all(),
-        robinRuns: robinRunsRef.current
+        robinRuns: robinRunsRef.current,
+        acceptance: acceptanceRef.current
       };
       lastCheckpointAt = Date.now();
       // Refresh the history list after the checkpoint files are uploaded. A
@@ -487,7 +519,13 @@ export function useDocxHistorySession(
       if (!tracker.isOpen() && ed) {
         s0Ref.current = baselineRef.current ?? ed.serialize();
       }
-      const actor = info.assistant ? ROBIN : currentUserRef.current;
+      // Native acceptance fires contentChange as a user action, but the text
+      // being confirmed was authored by Robin. Keep that content attribution.
+      const actor = acceptanceRef.current
+        ? ROBIN
+        : info.assistant
+        ? ROBIN
+        : currentUserRef.current;
       currentAuthorRef.current = actor.key;
       tracker.noteEdit(actor);
       // Snapshot Robin's authored runs now, while their revisions are still live
@@ -569,6 +607,36 @@ export function useDocxHistorySession(
     await finalizeRef.current;
   }, [tracker]);
 
+  const acceptTrackedChanges = useCallback(
+    async (acceptance: TrackedChangeAcceptance, accept: () => void) => {
+      // Cut the preceding editing session while the suggestion is still
+      // pending. The confirmation then becomes a distinct version.
+      if (tracker.isOpen()) {
+        tracker.noteExplicitSave();
+        await finalizeRef.current;
+      }
+
+      acceptanceRef.current = acceptance;
+      baselineRef.current = acceptance.beforeSfdt;
+      try {
+        accept();
+        // Syncfusion normally emits contentChange synchronously. Keep the
+        // persistence contract intact if a version emits no event here.
+        if (!tracker.isOpen()) {
+          s0Ref.current = acceptance.beforeSfdt;
+          currentAuthorRef.current = ROBIN.key;
+          tracker.noteEdit(ROBIN);
+        }
+        tracker.noteExplicitSave();
+        await finalizeRef.current;
+      } catch (error) {
+        acceptanceRef.current = null;
+        throw error;
+      }
+    },
+    [tracker]
+  );
+
   const retry = useCallback(() => scheduler.touch(), [scheduler]);
 
   // Live equivalent of closeSession's diff, but returns the display document
@@ -622,6 +690,7 @@ export function useDocxHistorySession(
     save: explicitSave,
     retry,
     previewSession,
-    isSessionOpen
+    isSessionOpen,
+    acceptTrackedChanges
   };
 }

@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 
 import { setAssistantSessionActive } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
 import { AUTOSAVE_IDLE_MS } from './autosaveScheduler';
+import { applyHunks } from './sfdtDiff';
 import {
   useDocxHistorySession,
   UseDocxHistorySessionOptions
@@ -147,6 +148,90 @@ describe('useDocxHistorySession', () => {
 
     const closePayload = host.closeVersion.mock.calls[0][1];
     expect(closePayload.changeCount).toBeGreaterThan(0);
+  });
+
+  it('stores accepting a tracked Robin edit as its own confirmed Robin version', async () => {
+    (globalThis as any).CompressionStream = undefined;
+    const original = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
+    });
+    const pending = JSON.stringify({
+      revisions: [
+        {
+          author: 'Robin (assistant)',
+          revisionType: 'Insertion',
+          revisionId: 'r-robin'
+        }
+      ],
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { text: 'hello' },
+                { text: ' robin', revisionIds: ['r-robin'] }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+    const accepted = JSON.stringify({
+      sections: [
+        {
+          blocks: [{ inlines: [{ text: 'hello' }, { text: ' robin' }] }]
+        }
+      ]
+    });
+    let doc = original;
+    const editor: any = { serialize: () => doc };
+    const { view, save, host } = setup({}, editor);
+    await flush();
+
+    // Robin authors a pending suggestion in the current session.
+    doc = pending;
+    act(() => view.result.current.onEdit({ assistant: true }));
+
+    await act(async () => {
+      await view.result.current.acceptTrackedChanges(
+        { beforeSfdt: pending, revisionIds: ['r-robin'] },
+        () => {
+          doc = accepted;
+          // Syncfusion's native accept emits this synchronously.
+          view.result.current.onEdit({ assistant: false });
+        }
+      );
+    });
+
+    // The pending edit and its later confirmation are separate versions.
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(host.closeVersion).toHaveBeenCalledTimes(2);
+    expect(host.closeVersion.mock.calls[0][0]).not.toBe(
+      host.closeVersion.mock.calls[1][0]
+    );
+
+    const confirmationPayload = host.closeVersion.mock.calls[1][1];
+    const changes = JSON.parse(
+      await blobText(confirmationPayload.changesJson!)
+    );
+    expect(confirmationPayload.startSha256).not.toBe(
+      confirmationPayload.finalSha256
+    );
+    expect(changes.confirmed).toBe(true);
+    expect(changes.changeCount).toBeGreaterThan(0);
+    expect(changes.hunks.every((h: any) => h.author === 'robin')).toBe(true);
+    expect(changes.trackedAuthors).toEqual(['robin']);
+    expect(save.mock.calls[1][1].authors).toEqual([
+      { kind: 'assistant', label: 'Robin' }
+    ]);
+
+    const display = applyHunks(JSON.parse(accepted), changes);
+    const customData = (display.revisions ?? []).map((revision: any) =>
+      JSON.parse(revision.customData)
+    );
+    expect(customData.length).toBeGreaterThan(0);
+    expect(customData.every((data: any) => data.confirmed === true)).toBe(true);
+    expect(customData.every((data: any) => !data.pending)).toBe(true);
   });
 
   it('previewSession returns a highlighted display document for the open session', async () => {

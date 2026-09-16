@@ -6,6 +6,7 @@ import { INK, INK_3, LINE, PANEL, PANEL_2 } from './TrackedChangeGroups/styles';
 import { FEATHERY_RED } from './DocxToolbar/styles';
 import HistoryPanel from './history/HistoryPanel';
 import { DocxHistoryHost, DocxVersion, VersionAuthor } from './history/types';
+import type { TrackedChangeAcceptance } from './history/useDocxHistorySession';
 
 export type PanelTab = 'changes' | 'sections' | 'history';
 
@@ -58,6 +59,10 @@ interface Props {
   currentPendingCount?: number;
   /** Bump to reload the version list (e.g. after a session closes). */
   historyRefreshKey?: number | string;
+  onAcceptTrackedChanges?: (
+    acceptance: TrackedChangeAcceptance,
+    accept: () => void
+  ) => Promise<void>;
 }
 
 export default function DocumentPanel({
@@ -78,7 +83,8 @@ export default function DocumentPanel({
   restoreDisabled,
   selectedVersionId,
   currentPendingCount,
-  historyRefreshKey
+  historyRefreshKey,
+  onAcceptTrackedChanges
 }: Props) {
   // Restore is offered only for an older version that is open — never for the
   // current version (it's already the live document).
@@ -159,6 +165,7 @@ export default function DocumentPanel({
                 <TrackedChangeGroups
                   editor={editor}
                   onPendingCountChange={onChangesCount}
+                  onAcceptTrackedChanges={onAcceptTrackedChanges}
                 />
               </RailErrorBoundary>
             </div>

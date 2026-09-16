@@ -257,6 +257,10 @@ export interface NormalizeOptions {
    *  snapshots small/comparable); OFF when normalising a document for DISPLAY,
    *  which must keep the real image bytes. Default true. */
   digestImages?: boolean;
+  /** Render these live revisions as rejected before stripping revision
+   *  metadata. Used when accepting a suggestion: the resulting document is
+   *  the content state immediately before that confirmation. */
+  rejectRevisionIds?: Iterable<string>;
 }
 
 export function normalizeForDiff(
@@ -268,6 +272,17 @@ export function normalizeForDiff(
   const deletions = revisionIdsOfType(doc, 'Deletion');
   const moveFrom = revisionIdsOfType(doc, 'MoveFrom');
   const dropIds = new Set([...deletions, ...moveFrom]);
+  const rejected = new Set(
+    Array.from(options.rejectRevisionIds ?? [], (id) => String(id))
+  );
+  if (rejected.size) {
+    const insertions = revisionIdsOfType(doc, 'Insertion');
+    const moveTo = revisionIdsOfType(doc, 'MoveTo');
+    for (const id of rejected) {
+      if (insertions.has(id) || moveTo.has(id)) dropIds.add(id);
+      if (deletions.has(id) || moveFrom.has(id)) dropIds.delete(id);
+    }
+  }
   const isDropped = (node: any) =>
     Array.isArray(node?.revisionIds) &&
     node.revisionIds.length > 0 &&
