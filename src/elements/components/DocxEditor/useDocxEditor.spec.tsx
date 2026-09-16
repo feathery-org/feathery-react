@@ -218,15 +218,18 @@ describe('useDocxEditor across a review-gate flip', () => {
   // hook's ref before its create effect runs, exactly as in the real component.
   const Harness = ({
     reviewChanges,
-    url = 'https://example.test/pre-save.docx'
+    url = 'https://example.test/pre-save.docx',
+    openNonce = 0
   }: {
     reviewChanges: boolean;
     url?: string;
+    openNonce?: number;
   }) => {
     const api = useDocxEditor({
       source: { url },
       serviceUrl: 'https://example.test/service/',
       reviewChanges,
+      openNonce,
       licenseKey: 'test-key'
     });
     return <div ref={api.containerRef} />;
@@ -255,6 +258,26 @@ describe('useDocxEditor across a review-gate flip', () => {
     expect(editors[0].serialize).toHaveBeenCalled();
     expect(editors[1].open).toHaveBeenCalledWith(CARRIED);
     expect(editors[1].openAsync).not.toHaveBeenCalled();
+  });
+
+  it('bypasses the browser cache when reopening a restored document URL', async () => {
+    const view = render(<Harness reviewChanges={false} openNonce={0} />);
+    await settle();
+
+    view.rerender(<Harness reviewChanges={false} openNonce={1} />);
+    await settle();
+
+    expect(fetchCalls).toBe(2);
+    expect((globalThis as any).fetch).toHaveBeenNthCalledWith(
+      1,
+      'https://example.test/pre-save.docx',
+      { cache: 'no-store' }
+    );
+    expect((globalThis as any).fetch).toHaveBeenNthCalledWith(
+      2,
+      'https://example.test/pre-save.docx',
+      { cache: 'no-store' }
+    );
   });
 
   it('waits for documentChange before reporting the document ready', async () => {

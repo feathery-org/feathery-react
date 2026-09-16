@@ -800,7 +800,10 @@ export function installTableRowResizeFix(ed: any) {
 
 async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
   if ('buffer' in source) return source.buffer;
-  const res = await fetch(source.url);
+  // Saves and restores replace the object behind the same live envelope URL.
+  // Reopening with the browser cache can therefore load the pre-restore bytes
+  // even though openNonce correctly triggered a new fetch.
+  const res = await fetch(source.url, { cache: 'no-store' });
   if (!res.ok) {
     throw new Error(`Failed to fetch document (${res.status})`);
   }
