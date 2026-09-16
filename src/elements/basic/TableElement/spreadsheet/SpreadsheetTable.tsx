@@ -6,6 +6,7 @@ import React, {
   useState
 } from 'react';
 import { useCreateAtom } from '@tanstack/react-store';
+import { featheryWindow } from '../../../../utils/browser';
 import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
 import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
@@ -339,14 +340,30 @@ export function SpreadsheetTable({
   // The horizontal scrollbar lives inside the grid's scroll box, so an
   // auto-sized grid has to grow by its height or it eats the last row.
   const [scrollbarHeight, setScrollbarHeight] = useState(0);
+  // The bar wraps its text on narrow tables, so its height is measured rather
+  // than assumed; the constant only stands in until the first measurement.
+  const barRef = useRef<HTMLDivElement>(null);
+  const [barHeight, setBarHeight] = useState(PENDING_BAR_HEIGHT);
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const report = () => setBarHeight(bar.offsetHeight || PENDING_BAR_HEIGHT);
+    report();
+    const Observer = (featheryWindow() as any).ResizeObserver;
+    if (!Observer) return;
+    const observer = new Observer(report);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [showBar]);
+  const barSpace = showBar ? barHeight : 0;
   const fitHeight = useMemo(() => {
     const base = spreadsheetViewportHeight(heightUnit, rows.length, {
       addRow: Boolean(onInsertRow),
       scrollbarHeight
     });
     if (base === undefined) return undefined;
-    return base + (showBar ? PENDING_BAR_HEIGHT : 0);
-  }, [heightUnit, rows.length, onInsertRow, scrollbarHeight, showBar]);
+    return base + barSpace;
+  }, [heightUnit, rows.length, onInsertRow, scrollbarHeight, barSpace]);
 
   return (
     <div
@@ -368,20 +385,22 @@ export function SpreadsheetTable({
           onStep={search.step}
           onClose={closeSearch}
           focusToken={search.focusToken}
-          top={(showBar ? PENDING_BAR_HEIGHT : 0) + HEADER_HEIGHT + 8}
+          top={barSpace + HEADER_HEIGHT + 8}
         />
       )}
       {showBar && pending ? (
-        <PendingChangesBar
-          pendingCount={pending.count}
-          blockingCount={counts.blocking}
-          errorCount={counts.errors}
-          warningCount={counts.warnings}
-          saving={pending.saving}
-          onSave={pending.onSave}
-          onDiscard={pending.onDiscard}
-          onStepIssue={stepIssue}
-        />
+        <div ref={barRef} css={{ flex: '0 0 auto' }}>
+          <PendingChangesBar
+            pendingCount={pending.count}
+            blockingCount={counts.blocking}
+            errorCount={counts.errors}
+            warningCount={counts.warnings}
+            saving={pending.saving}
+            onSave={pending.onSave}
+            onDiscard={pending.onDiscard}
+            onStepIssue={stepIssue}
+          />
+        </div>
       ) : null}
       <SpreadsheetGrid
         ref={gridRef}

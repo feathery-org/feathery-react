@@ -80,9 +80,10 @@ export type SpreadsheetChrome = {
 
 /**
  * The height an auto-sized grid needs to show all its rows with no vertical
- * scrollbar: header, rows, the add-row strip, the container's borders and,
- * because it sits inside the scroll box, the horizontal scrollbar. Rows are
- * capped; the scrollbar is added on top so the cap still shows whole rows.
+ * scrollbar: header, rows, the add-row strip and, because it sits inside the
+ * scroll box, the horizontal scrollbar. The element's border is outside this
+ * box and is not counted. Rows are capped; the scrollbar is added on top so
+ * the cap still shows whole rows.
  */
 export function spreadsheetViewportHeight(
   heightUnit: string | undefined,
@@ -91,7 +92,7 @@ export function spreadsheetViewportHeight(
 ): number | undefined {
   if (heightUnit === 'px') return undefined;
   const content =
-    HEADER_HEIGHT + (rowCount + (chrome.addRow ? 1 : 0)) * ROW_HEIGHT + 2;
+    HEADER_HEIGHT + (rowCount + (chrome.addRow ? 1 : 0)) * ROW_HEIGHT;
   return Math.min(content, FIT_MAX_HEIGHT) + (chrome.scrollbarHeight ?? 0);
 }
 
