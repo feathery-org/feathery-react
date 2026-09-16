@@ -934,9 +934,9 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
-  // Fields another field's min/max tracks. The bounded field's mask must pick
-  // up the new limits before the next keystroke lands in it.
-  const numberBoundFieldReferences = useMemo(() => {
+  // Fields that drive another field's dynamic min/max. The bounded field's
+  // mask must pick up the new limits before the next keystroke lands in it.
+  const dynamicBoundFieldReferences = useMemo(() => {
     if (activeStep) return getNumberBoundReferences(getAllElements(activeStep));
     return new Set<string>();
   }, [activeStep?.id]);
@@ -1105,7 +1105,8 @@ function Form({
           triggerErrors: true,
           errorType: formSettings.errorType,
           formRef,
-          setInlineErrors
+          setInlineErrors,
+          internalId: _internalId
         });
     }, 750),
     [activeStep?.id, formRef]
@@ -1183,7 +1184,7 @@ function Form({
       ([key, val]) =>
         fieldValues[key] !== val &&
         (textVariableFieldReferences.has(key) ||
-          numberBoundFieldReferences.has(key))
+          dynamicBoundFieldReferences.has(key))
     );
 
     const fields = internalState[_internalId]?.fields;
@@ -2314,7 +2315,8 @@ function Form({
         formRef,
         errorCallback,
         setInlineErrors,
-        trigger
+        trigger,
+        internalId: _internalId
       });
       if (invalid) return false;
 
@@ -2787,7 +2789,8 @@ function Form({
         formRef,
         errorCallback: getErrorCallback({ trigger }),
         setInlineErrors,
-        trigger
+        trigger,
+        internalId: _internalId
       });
 
       if (invalid) {

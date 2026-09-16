@@ -52,6 +52,42 @@ describe('SliderField - Base Functionality', () => {
       expectSliderToHaveMax(1);
     });
   });
+  describe('Dynamic bounds', () => {
+    afterEach(() => {
+      delete fieldValues.budget;
+    });
+
+    it('takes its track from the matching rule and keeps room to move', () => {
+      Object.assign(fieldValues, { budget: 40 });
+      const element = createSliderElement('slider', {
+        min_value: 0,
+        max_value: 100
+      });
+      element.servar.metadata.dynamic_bounds = [
+        {
+          id: 'budget',
+          conditions: [],
+          min: 10,
+          max: {
+            field_type: 'servar',
+            field_id: 'budget-id',
+            field_key: 'budget'
+          }
+        }
+      ];
+      const { rerender } = render(
+        <SliderField {...createSliderProps(element)} />
+      );
+      expectSliderToHaveMin(10);
+      expectSliderToHaveMax(40);
+
+      // A max at or below the min would freeze the handle
+      Object.assign(fieldValues, { budget: 5 });
+      rerender(<SliderField {...createSliderProps(element)} />);
+      expectSliderToHaveMin(10);
+      expectSliderToHaveMax(11);
+    });
+  });
 
   describe('Basic Rendering', () => {
     it('renders SliderField component with default props', () => {

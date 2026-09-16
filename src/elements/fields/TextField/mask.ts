@@ -1,4 +1,5 @@
 import {
+  hasDynamicBounds,
   ResolvedNumberBounds,
   resolveNumberBounds,
   widenBoundsToValue
@@ -274,12 +275,13 @@ export function getNumberMaskProps(
   servar: any,
   value: any,
   editing = false,
-  repeatIndex?: number | null
+  repeatIndex?: number | null,
+  internalId?: string
 ) {
   const meta = servar.metadata ?? {};
-  let bounds = resolveNumberBounds(servar, repeatIndex);
+  let bounds = resolveNumberBounds(servar, repeatIndex, internalId);
   // Dynamic bounds can move under a stored value; the mask must not rewrite it
-  if (bounds.dynamic) bounds = widenBoundsToValue(bounds, value);
+  if (hasDynamicBounds(servar)) bounds = widenBoundsToValue(bounds, value);
   const scale = getDecimalPlaces(servar);
   const entryScale = getEntryDecimalPlaces(servar);
   const affixes = getFormatAffixes(servar);
