@@ -11,6 +11,7 @@ import {
   updateTheme,
   updateUserId
 } from './init';
+import Table from './entities/Table';
 import internalState, {
   AlloyEntities,
   GetConfigParams,
@@ -55,6 +56,17 @@ export const getFormContext = (formUuid: string) => {
     formId: formState.formId,
     _getInternalUserId: () => initState._internalUserId,
     fields: formState.fields,
+    /**
+     * The tables on the current step, by element id. Built fresh each time a
+     * rule runs, so a table that has since unmounted is simply absent.
+     */
+    tables: Object.keys(formState.tables ?? {}).reduce(
+      (tables: Record<string, Table>, tableId) => {
+        tables[tableId] = new Table(formUuid, tableId);
+        return tables;
+      },
+      {}
+    ),
     products: formState.products,
     cart: formState.cart,
     collaborator: formState.collaborator,
