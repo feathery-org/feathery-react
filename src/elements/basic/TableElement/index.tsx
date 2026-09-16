@@ -17,6 +17,7 @@ import { getNextEditableCell } from './utils';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
+import { useRowKeys } from './useRowKeys';
 import { useHubTableSource } from './useHubTableSource';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
@@ -174,6 +175,7 @@ function TableElement({
     isTransposed,
     transposedRowIndices,
     totalRows,
+    sourceRowCount,
     totalPages,
     hasData,
     hasSearchResults,
@@ -192,6 +194,17 @@ function TableElement({
     externalFieldValues: isHub ? hub.hubFieldValues : undefined
   });
 
+  /**
+   * What an annotation points at when it names a row. A hub row already has an
+   * id; a field-backed table mints one, because a row index names a position
+   * and positions move. See `./rowKeys`.
+   */
+  const rowKeys = useRowKeys({
+    tableId: element?.id,
+    rowCount: sourceRowCount,
+    hubLocalIds: isHub ? hub.localIds : undefined
+  });
+
   const fieldMutations = useTableMutations({
     columns: baseColumns,
     updateFieldValues,
@@ -202,7 +215,8 @@ function TableElement({
     setCurrentPage,
     setSearchQuery,
     searchQuery,
-    onMutate
+    onMutate,
+    rowKeys
   });
 
   // In Hub mode the writes go to the Data Hub instead of form field values.
@@ -537,10 +551,10 @@ function TableElement({
           const rowIndex = hub.entryIds.indexOf(ref.entryId);
           return rowIndex === -1 ? undefined : rowIndex;
         }
-        return undefined;
+        return rowKeys.rowIndexOf(ref.rowKey);
       }
     };
-  }, [columns, spreadsheetRowIndices, isHub, hub.entryIds]);
+  }, [columns, spreadsheetRowIndices, isHub, hub.entryIds, rowKeys]);
 
   const assistantLayer = useMemo(
     () =>
