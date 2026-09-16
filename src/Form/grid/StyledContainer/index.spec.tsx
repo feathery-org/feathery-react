@@ -1,6 +1,18 @@
 import { render } from '@testing-library/react';
 import { StyledContainer } from '.';
 
+jest.mock('../../../elements/components/DocxEditor', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: ({ preview }: { preview?: boolean }) =>
+      React.createElement('div', {
+        'data-testid': 'blank-document-preview',
+        'data-preview': String(!!preview)
+      })
+  };
+});
+
 const baseNode = {
   id: 'container-1',
   key: 'container-1',
@@ -105,8 +117,8 @@ describe('StyledContainer alignment', () => {
 });
 
 describe('StyledContainer document editor', () => {
-  it('mounts the document editor placeholder when document_editor is set', () => {
-    const { getByText } = render(
+  it('mounts the document editor preview when document_editor is set', () => {
+    const { getByTestId } = render(
       <StyledContainer
         node={{
           ...baseNode,
@@ -117,15 +129,18 @@ describe('StyledContainer document editor', () => {
       />
     );
 
-    expect(getByText('Document editor')).toBeTruthy();
+    expect(getByTestId('blank-document-preview')).toHaveAttribute(
+      'data-preview',
+      'true'
+    );
   });
 
   it('does not mount the document editor when document_editor is unset', () => {
-    const { queryByText } = render(
+    const { queryByTestId } = render(
       <StyledContainer node={baseNode} editMode breakpoint={480} />
     );
 
-    expect(queryByText('Document editor')).toBeNull();
+    expect(queryByTestId('blank-document-preview')).toBeNull();
   });
 });
 
