@@ -73,18 +73,45 @@ export function getStytchJwt() {
 export const openTab = (url: any) =>
   featheryWindow().open(url, '_blank', 'noopener');
 
+// Long enough that a download the host defers behind a prompt still finds the
+// blob, short enough that the bytes are not pinned in memory for the session.
+const BLOB_URL_LIFETIME = 60000;
+
+/**
+ * Save a file to the user's device.
+ *
+ * Two details here exist so this survives being embedded in a Salesforce
+ * Visualforce iframe, where the straightforward version fails:
+ *
+ * 1. The anchor is never put in the document. Salesforce watches for link
+ *    clicks from a listener on the host document, and on seeing one it
+ *    cancels the click and re-opens the href itself, outside the iframe -
+ *    where a blob: URL, being scoped to the origin that minted it, no longer
+ *    resolves. A detached anchor's click event propagates to nothing, so
+ *    there is no delegated listener - capturing or bubbling - for Salesforce
+ *    to intercept it from.
+ * 2. The blob: URL outlives the click. Browsers hand a download off to the
+ *    download manager asynchronously, so revoking on the very next line
+ *    races it; a host that defers the click further loses the blob outright.
+ *
+ * This keeps the blob rather than linking to the file's stored URL: those URLs
+ * are cross-origin (S3), where the `download` attribute is ignored, so without
+ * a stored `Content-Disposition: attachment` the browser would render the PDF
+ * inline instead of saving it.
+ */
 export function downloadFile(file: File) {
-  const element = featheryDoc().createElement('a');
-  element.style.display = 'none';
   const href = featheryWindow().URL.createObjectURL(file);
+
+  const element = featheryDoc().createElement('a');
   element.href = href;
   element.download = file.name;
-  featheryDoc().body.appendChild(element);
 
   element.click();
 
-  featheryWindow().URL.revokeObjectURL(href);
-  featheryDoc().body.removeChild(element);
+  featheryWindow().setTimeout(
+    () => featheryWindow().URL.revokeObjectURL(href),
+    BLOB_URL_LIFETIME
+  );
 }
 
 async function getFileData(url: string) {
