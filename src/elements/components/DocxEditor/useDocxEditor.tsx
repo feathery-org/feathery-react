@@ -49,13 +49,13 @@ const RING_WIDTH = 2;
 // Alpha for an author-coloured wash. Insertions carry the full wash so the
 // edit clearly reads in the author's colour; deletions are a touch lighter
 // because their glyphs are additionally struck through.
-const AUTHOR_WASH_ALPHA = 0.22;
+const AUTHOR_WASH_ALPHA = 0.18;
 const AUTHOR_WASH_ALPHA_DEL = 0.16;
 // Pending suggestions need a visibly stronger state than approved history
 // edits. They keep the author's hue, but use a denser wash in addition to the
 // dashed outline so the distinction survives zoom and dense document layouts.
-const PENDING_AUTHOR_WASH_ALPHA = 0.36;
-const PENDING_AUTHOR_WASH_ALPHA_DEL = 0.28;
+const PENDING_AUTHOR_WASH_ALPHA = 0.42;
+const PENDING_AUTHOR_WASH_ALPHA_DEL = 0.34;
 
 // '#rrggbb' → 'rgba(r,g,b,a)'. Returns the input untouched if it is not a plain
 // 6-digit hex (already an rgba() string, say).
@@ -554,8 +554,11 @@ export function installRevisionHighlightRendering(
     const startCount = (ed[ACTIVE_BOXES_KEY] ?? []).length;
     const pendingStart = (ed[PENDING_BOXES_KEY] ?? []).length;
     const out = originalRenderWidgets(page, left, top, width, height);
-    drawPendingOutline(pendingStart);
     drawActiveRing(startCount);
+    // Paint the pending dash last. A pending edit can also be the active
+    // step, and both outlines share the same bounds; painting the solid active
+    // ring last used to cover the dash completely.
+    drawPendingOutline(pendingStart);
     if (!visible.length || visible[visible.length - 1] === page) {
       try {
         ed[AFTER_RENDER_KEY]?.();

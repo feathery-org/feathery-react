@@ -2,7 +2,13 @@
 // are baked into the content. applyHunks must mark the still-tracked ones so the
 // viewer can outline them apart from approved edits, and countPendingGroups must
 // count them (a replace counting once).
-import { docWith, para, textRun } from '../../bindings/tests/realEditorHarness';
+import {
+  destroyRealDocumentEditor,
+  docWith,
+  makeRealDocumentEditor,
+  para,
+  textRun
+} from '../../bindings/tests/realEditorHarness';
 import { applyHunks, countPendingGroups, diffSession } from './index';
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -43,6 +49,41 @@ describe('applyHunks pending (unapproved) assistant edits', () => {
     expect(ours.length).toBeGreaterThan(0);
     expect(ours.some((cd) => cd.pending)).toBe(true);
     expect(countPendingGroups(display)).toBe(1);
+  });
+
+  it('preserves pending metadata after the display SFDT opens in Syncfusion', () => {
+    const final = {
+      ...docWith(
+        para(textRun('Hello '), { text: 'world', revisionIds: ['r1'] })
+      ),
+      revisions: [
+        { author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }
+      ]
+    };
+    const changes = diffSession(
+      base,
+      [{ sfdt: clone(final), author: 'robin' }],
+      's'
+    );
+    const display = applyHunks(clone(final), changes);
+    const editor = makeRealDocumentEditor(display);
+    try {
+      const live = ((editor as any).revisions?.changes ?? []).filter(
+        (revision: any) => revision.author === 'robin'
+      );
+      expect(live.length).toBeGreaterThan(0);
+      expect(
+        live.some((revision: any) => {
+          try {
+            return JSON.parse(revision.customData ?? '{}').pending === true;
+          } catch {
+            return false;
+          }
+        })
+      ).toBe(true);
+    } finally {
+      destroyRealDocumentEditor(editor);
+    }
   });
 
   it('does NOT mark the same edit pending once it is accepted (no live revision)', () => {
