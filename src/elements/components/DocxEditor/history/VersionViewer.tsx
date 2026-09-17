@@ -10,11 +10,26 @@ import {
 } from '../useDocxEditor';
 import { colorForRevisionAuthor } from './authorColors';
 import { populateVersionBindings } from './populateVersionBindings';
+import { normalizeForDiff } from './sfdtDiff';
 import { useVersionDocument, VersionDocument } from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
 
 const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+// Syncfusion still paints revision text with its native author colour when
+// showRevisions is false. Open an accepted, revision-free copy for the plain
+// view so the run's own characterFormat (including fontColor) remains in
+// control. Keep image bytes intact because this copy is rendered, not diffed.
+const acceptedSfdt = (sfdt: string): string => {
+  try {
+    return JSON.stringify(
+      normalizeForDiff(JSON.parse(sfdt), { digestImages: false })
+    );
+  } catch {
+    return sfdt;
+  }
+};
 
 // Gentle pulse for the loading skeleton's placeholder lines.
 const shimmer = keyframes({
@@ -219,10 +234,12 @@ export default function VersionViewer({
           } catch {
             /* highlights are decoration; the document must still open */
           }
+        } else {
+          viewer.showRevisions = false;
         }
         const loaded = waitForDocumentLoad(viewer);
         if (doc.sfdt) {
-          viewer.open(doc.sfdt);
+          viewer.open(highlightsOn ? doc.sfdt : acceptedSfdt(doc.sfdt));
         } else if (doc.docxUrl) {
           const res = await fetch(doc.docxUrl, { cache: 'no-store' });
           const blob = new Blob([await res.arrayBuffer()], { type: DOCX_MIME });
@@ -254,9 +271,12 @@ export default function VersionViewer({
           try {
             const parsed = JSON.parse(viewer.serialize());
             const populated = populateVersionBindings(parsed);
-            if (populated !== parsed) {
+            const displaySfdt = highlightsOn
+              ? populated
+              : normalizeForDiff(populated, { digestImages: false });
+            if (displaySfdt !== parsed) {
               const reloaded = waitForDocumentLoad(viewer);
-              viewer.open(JSON.stringify(populated));
+              viewer.open(JSON.stringify(displaySfdt));
               await reloaded;
               if (cancelled) return;
             }
@@ -277,7 +297,14 @@ export default function VersionViewer({
     return () => {
       cancelled = true;
     };
-  }, [editorReady, doc.loading, doc.error, doc.sfdt, doc.docxUrl]);
+  }, [
+    editorReady,
+    doc.loading,
+    doc.error,
+    doc.sfdt,
+    doc.docxUrl,
+    highlightsOn
+  ]);
 
   return (
     <div css={{ position: 'absolute', inset: 0, background: PAPER, zIndex: 2 }}>

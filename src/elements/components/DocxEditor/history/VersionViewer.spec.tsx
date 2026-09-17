@@ -203,4 +203,54 @@ describe('VersionViewer', () => {
     // The live document bypasses the version-file fetch entirely.
     expect(h.fetchVersionFile).not.toHaveBeenCalled();
   });
+
+  it('opens accepted content with its original font colour when highlights are off', async () => {
+    const sfdt = {
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                {
+                  text: 'Robin edit',
+                  revisionIds: ['robin-insertion'],
+                  characterFormat: { fontColor: '#2F5496' }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      revisions: [
+        {
+          author: 'Robin',
+          revisionType: 'Insertion',
+          revisionId: 'robin-insertion'
+        }
+      ]
+    };
+
+    render(
+      <VersionViewer
+        host={host()}
+        version={version()}
+        highlightsOn={false}
+        liveDoc={{
+          loading: false,
+          error: false,
+          sfdt: JSON.stringify(sfdt),
+          degraded: false
+        }}
+      />
+    );
+
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    const opened = JSON.parse(open.mock.calls[0][0]);
+    expect(opened.revisions).toBeUndefined();
+    expect(opened.sections[0].blocks[0].inlines[0]).toEqual({
+      text: 'Robin edit',
+      characterFormat: { fontColor: '#2F5496' }
+    });
+    expect(installRevisionHighlightRendering).not.toHaveBeenCalled();
+  });
 });
