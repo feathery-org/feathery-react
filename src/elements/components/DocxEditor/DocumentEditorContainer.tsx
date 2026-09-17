@@ -518,7 +518,7 @@ export default function DocumentEditorContainer({
 
   const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
 
-  if (editMode) return box(<div css={placeholder}>Document editor</div>);
+  if (editMode) return box(<DocxEditor preview hideDownload />);
   if (!activeDocumentId && !envelope) {
     return box(
       <div css={placeholder}>
