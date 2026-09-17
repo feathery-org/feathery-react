@@ -545,7 +545,17 @@ function DocxEditor({
     };
     syncZoom();
     editor.addEventListener?.('zoomFactorChange', syncZoom);
-    return () => editor.removeEventListener?.('zoomFactorChange', syncZoom);
+    return () => {
+      // On step navigation useDocxEditor has already destroy()ed the editor
+      // when this cleanup runs; removeEventListener on a destroyed ej2
+      // instance throws, which would take down the whole form.
+      if (editor.isDestroyed) return;
+      try {
+        editor.removeEventListener?.('zoomFactorChange', syncZoom);
+      } catch {
+        /* editor already torn down */
+      }
+    };
   }, [editor]);
 
   useEffect(() => {
