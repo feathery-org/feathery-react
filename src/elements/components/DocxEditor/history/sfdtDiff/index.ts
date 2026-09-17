@@ -20,6 +20,7 @@ import {
   flattenSfdt,
   getBlock,
   normalizeForDiff,
+  tableParagraphCount,
   TOKEN_CHAR
 } from './ir';
 import type {
@@ -78,7 +79,7 @@ export function diffSession(
   }
 
   const finalDoc = normalizeForDiff(slices[slices.length - 1].sfdt);
-  const hunks = emitHunks(working, s0);
+  const hunks = emitHunks(working);
   const authors = Array.from(
     new Set(hunks.map((h) => h.author))
   ) as AuthorKey[];
@@ -131,7 +132,19 @@ const samePath = (a: BlockPath | null, b: BlockPath | null): boolean =>
   a.length === b.length &&
   a.every((part, index) => part === b[index]);
 
-function emitHunks(working: Working, startDoc: any): Hunk[] {
+// The deleted run's table, but ONLY when the run removes the whole table: every
+// block shares one carried table reference (so it is the real structure from
+// the document the blocks last lived in — never a stale S0 path lookup) and the
+// run covers all of its paragraphs (a partial row deletion must not resurrect
+// the surviving rows as a duplicate struck table).
+function wholeDeletedTable(runBlocks: WBlock[]): unknown {
+  const table = runBlocks[0]?.rawTable as any;
+  if (!table || !Array.isArray(table.rows)) return undefined;
+  if (!runBlocks.every((b) => b.rawTable === table)) return undefined;
+  return tableParagraphCount(table) === runBlocks.length ? table : undefined;
+}
+
+function emitHunks(working: Working): Hunk[] {
   const hunks: Hunk[] = [];
   let nextId = 1;
   const blocks = working.blocks;
@@ -157,26 +170,27 @@ function emitHunks(working: Working, startDoc: any): Hunk[] {
     if (block.delBlock) {
       // Consecutive deleted blocks by the same author share one hunk.
       const removed: unknown[] = [rawParagraphFrom(block)];
+      const runBlocks: WBlock[] = [block];
       const tablePath = tablePathOf(block.path);
       let deletesOnlyThisTable = !!tablePath;
       const author = block.delBlock;
       while (bi + 1 < blocks.length && blocks[bi + 1].delBlock === author) {
         bi++;
         removed.push(rawParagraphFrom(blocks[bi]));
+        runBlocks.push(blocks[bi]);
         if (!samePath(tablePath, tablePathOf(blocks[bi].path)))
           deletesOnlyThisTable = false;
       }
-      const table =
-        deletesOnlyThisTable && tablePath
-          ? getBlock(startDoc, tablePath)
-          : undefined;
+      const table = deletesOnlyThisTable
+        ? wholeDeletedTable(runBlocks)
+        : undefined;
       hunks.push({
         id: nextId++,
         author,
         type: 'del_block',
         at: { block: nextSurvivingPath(bi + 1) },
         blocks: removed,
-        ...(Array.isArray(table?.rows) ? { table } : {})
+        ...(table ? { table } : {})
       });
       continue;
     }
@@ -639,6 +653,64 @@ export function countPendingGroups(displayDoc: any): number {
     }
   }
   return groups.size;
+}
+
+/**
+ * Move NATIVE row-level revision marks (Syncfusion tags a tracked row insert /
+ * delete on rowFormat) down onto the row's cell content, in place. The renderer
+ * paints a row-level mark as a wash across every cell — a whole tracked table
+ * floods solid — while cell-content marks paint like any other tracked text.
+ * Used on documents shown WITHOUT a change list (a restored version, a degraded
+ * row), where applyHunks never ran to normalize the marks. Returns whether
+ * anything was moved.
+ */
+export function demoteNativeRowRevisions(doc: any): boolean {
+  let changed = false;
+  const markParagraphs = (blocks: any[], ids: string[]) => {
+    for (const b of blocks ?? []) {
+      if (!b || typeof b !== 'object') continue;
+      if (Array.isArray(b.inlines)) {
+        const chars = flattenForDisplay(b);
+        for (const c of chars) for (const id of ids) c.revisionIds.push(id);
+        b.inlines = rebuildInlines(chars);
+        b.characterFormat = {
+          ...(b.characterFormat ?? {}),
+          revisionIds: [
+            ...((b.characterFormat?.revisionIds as string[]) ?? []),
+            ...ids
+          ]
+        };
+      }
+      if (Array.isArray(b.blocks)) markParagraphs(b.blocks, ids);
+      if (Array.isArray(b.rows))
+        for (const row of b.rows)
+          for (const cell of row?.cells ?? [])
+            markParagraphs(cell?.blocks ?? [], ids);
+    }
+  };
+  const walkBlocks = (blocks: any[]) => {
+    for (const b of blocks ?? []) {
+      if (!b || typeof b !== 'object') continue;
+      if (Array.isArray(b.rows)) {
+        for (const row of b.rows) {
+          const ids: string[] = Array.isArray(row?.rowFormat?.revisionIds)
+            ? row.rowFormat.revisionIds.map(String)
+            : [];
+          if (ids.length) {
+            delete row.rowFormat.revisionIds;
+            for (const cell of row.cells ?? [])
+              markParagraphs(cell?.blocks ?? [], ids);
+            changed = true;
+          }
+          // Nested tables inside the row's cells get their own pass.
+          for (const cell of row?.cells ?? []) walkBlocks(cell?.blocks ?? []);
+        }
+      }
+      if (Array.isArray(b.blocks)) walkBlocks(b.blocks);
+    }
+  };
+  for (const section of doc?.sections ?? []) walkBlocks(section?.blocks ?? []);
+  return changed;
 }
 
 /**

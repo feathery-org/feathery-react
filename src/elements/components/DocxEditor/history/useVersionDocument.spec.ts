@@ -260,6 +260,58 @@ describe('useVersionDocument', () => {
     expect(result.current.sfdt).toBe(FINAL);
   });
 
+  it('moves native tracked-row marks onto cell content in the plain view', async () => {
+    // A restored version's SFDT can carry a live tracked table insert. Row-level
+    // marks paint a wash across whole rows; the plain view must repaint them as
+    // cell-content marks like a regular version.
+    const finalSfdt = JSON.stringify({
+      sections: [
+        {
+          blocks: [
+            {
+              tableFormat: {},
+              rows: [
+                {
+                  rowFormat: { revisionIds: ['sync-1'] },
+                  cells: [
+                    {
+                      cellFormat: {},
+                      blocks: [{ inlines: [{ text: 'Cell text' }] }]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      revisions: [
+        {
+          revisionId: 'sync-1',
+          revisionType: 'Insertion',
+          author: 'Robin',
+          customData: JSON.stringify({ source: 'robin', group: 'g1' })
+        }
+      ]
+    });
+    const fetchVersionFile = jest
+      .fn()
+      .mockResolvedValue(new TextEncoder().encode(finalSfdt).buffer);
+    const h = host({ fetchVersionFile });
+    const ver = version({ final_sfdt: 'restored' });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const doc = JSON.parse(result.current.sfdt!);
+    const tableRow = doc.sections[0].blocks[0].rows[0];
+    expect(tableRow.rowFormat.revisionIds).toBeUndefined();
+    const cellPara = tableRow.cells[0].blocks[0];
+    expect(cellPara.inlines[0].revisionIds).toEqual(['sync-1']);
+    expect(cellPara.characterFormat.revisionIds).toContain('sync-1');
+    // The revision record itself survives, so the renderer still colors it.
+    expect(doc.revisions[0].revisionId).toBe('sync-1');
+  });
+
   // A close whose artifact upload is deferred (restore) or still in flight has
   // no final_sfdt on the backend row yet. The registered in-memory snapshot
   // must serve the viewer instead of the raw control-bearing docx fallback.

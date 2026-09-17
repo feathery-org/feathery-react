@@ -47,6 +47,74 @@ describe('edit groups (version-bar count + steppers)', () => {
     );
   });
 
+  it('keeps a table inserted mid-session and then rejected as a table', () => {
+    // Robin's turn inserts the table into the OPEN session; the user rejects it
+    // before close. The deleted blocks only ever existed in the slice document,
+    // so the table structure must come from the carried slice, not from S0.
+    const s0 = docWith(
+      para(textRun('Before the table.')),
+      para(textRun('After the table.'))
+    );
+    const robinSlice = docWith(
+      para(textRun('Before the table.')),
+      table(
+        row(cellText('Item'), cellText('Qty')),
+        row(cellText('Design work'), cellText('12'))
+      ),
+      para(textRun('After the table.'))
+    );
+    const final = clone(s0);
+
+    const changes = diffSession(
+      clone(s0),
+      [
+        { sfdt: clone(robinSlice), author: 'robin' },
+        { sfdt: clone(final), author: 'you' }
+      ],
+      'reject-mid-session'
+    );
+    const display = applyHunks(clone(final), changes);
+    expect(
+      display.sections[0].blocks.some((b: any) => Array.isArray(b.rows))
+    ).toBe(true);
+  });
+
+  it('does not resurrect a whole table when only one row was deleted', () => {
+    const base = docWith(
+      table(
+        row(cellText('Item'), cellText('Qty')),
+        row(cellText('Design work'), cellText('12')),
+        row(cellText('QA'), cellText('3'))
+      )
+    );
+    const final = docWith(
+      table(
+        row(cellText('Item'), cellText('Qty')),
+        row(cellText('QA'), cellText('3'))
+      )
+    );
+    const changes = diffSession(
+      clone(base),
+      [{ sfdt: clone(final), author: 'you' }],
+      'partial-row'
+    );
+    const display = applyHunks(clone(final), changes);
+    // Exactly one table anywhere — a duplicate could splice nested in a cell.
+    let tables = 0;
+    const walk = (blocks: any[]) => {
+      for (const b of blocks ?? []) {
+        if (Array.isArray(b?.rows)) {
+          tables++;
+          for (const r of b.rows) for (const c of r.cells ?? []) walk(c.blocks);
+        } else if (Array.isArray(b?.blocks)) walk(b.blocks);
+      }
+    };
+    walk(display.sections[0].blocks);
+    expect(tables).toBe(1);
+    // The deleted row's text still shows as struck content.
+    expect(JSON.stringify(display)).toContain('Design work');
+  });
+
   it('steps a whole inserted table (all its cells) as one edit', () => {
     // Robin inserts a 2x2 table. It flattens to one hunk per cell, but every
     // cell shares the table's top-level block index, so it steps as ONE edit.

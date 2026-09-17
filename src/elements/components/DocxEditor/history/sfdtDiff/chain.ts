@@ -38,6 +38,7 @@ export interface WBlock {
   /** Path of this block in the most recently applied slice. */
   path: BlockPath;
   rowPath?: BlockPath;
+  rawTable?: unknown;
   raw: unknown;
 }
 
@@ -64,6 +65,7 @@ export function fromFlat(doc: FlatDoc): Working {
       paraFmt: b.paraFmt,
       path: b.path,
       rowPath: b.rowPath,
+      rawTable: b.rawTable,
       raw: b.raw
     }))
   };
@@ -174,6 +176,7 @@ function spliceBlock(
   block.paraFmt = next.paraFmt;
   block.path = next.path;
   block.rowPath = next.rowPath;
+  block.rawTable = next.rawTable;
   block.raw = next.raw;
 }
 
@@ -184,6 +187,7 @@ function insertedBlock(next: FlatBlock, author: AuthorKey): WBlock {
     insBlock: author,
     path: next.path,
     rowPath: next.rowPath,
+    rawTable: next.rawTable,
     raw: next.raw
   };
 }

@@ -10,7 +10,8 @@ import {
   applyHunks,
   ChangeList,
   countEditGroups,
-  countPendingGroups
+  countPendingGroups,
+  demoteNativeRowRevisions
 } from './sfdtDiff/index';
 import { DocxHistoryHost, DocxVersion } from './types';
 
@@ -153,8 +154,12 @@ function buildFromFinal(
 
   const plainSfdt = () => {
     try {
+      // Native tracked-row marks flood whole table rows in the viewer; move
+      // them onto cell content so a plain view paints like a regular version.
+      const demoted = demoteNativeRowRevisions(finalDoc);
       const populated = populateVersionBindings(finalDoc);
-      return populated === finalDoc ? finalSfdt : JSON.stringify(populated);
+      if (populated !== finalDoc) return JSON.stringify(populated);
+      return demoted ? JSON.stringify(finalDoc) : finalSfdt;
     } catch {
       return finalSfdt;
     }

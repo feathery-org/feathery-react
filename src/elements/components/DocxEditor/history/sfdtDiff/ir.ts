@@ -46,6 +46,10 @@ export interface FlatBlock {
   path: BlockPath;
   /** Path of the enclosing table row, when inside a table. */
   rowPath?: BlockPath;
+  /** The OUTERMOST enclosing table object (same doc as `raw`), when inside a
+   *  table. Lets a whole-table deletion carry its real structure without a
+   *  path lookup, which goes stale once slices move blocks. */
+  rawTable?: unknown;
   chars: FlatChar[];
   text: string;
   paraFmt: Record<string, unknown>;
@@ -146,6 +150,7 @@ function flattenParagraph(
   para: any,
   path: BlockPath,
   rowPath: BlockPath | undefined,
+  rawTable: unknown,
   out: FlatBlock[]
 ): void {
   const chars: FlatChar[] = [];
@@ -155,6 +160,7 @@ function flattenParagraph(
   out.push({
     path,
     rowPath,
+    ...(rawTable ? { rawTable } : {}),
     chars,
     text: chars.map((c) => c.ch).join(''),
     paraFmt,
@@ -168,13 +174,17 @@ function flattenBlocks(
   blocks: any[],
   path: BlockPath,
   rowPath: BlockPath | undefined,
+  rawTable: unknown,
   out: FlatBlock[]
 ): void {
   blocks.forEach((block, index) => {
     const here = [...path, index];
     if (isParagraph(block)) {
-      flattenParagraph(block, here, rowPath, out);
+      flattenParagraph(block, here, rowPath, rawTable, out);
     } else if (isTable(block)) {
+      // A nested table's paragraphs keep the OUTERMOST table (its path is what
+      // hunk grouping keys on).
+      const tableRef = rawTable ?? block;
       block.rows.forEach((row: any, r: number) => {
         const rp = [...here, 'rows', r];
         (row.cells ?? []).forEach((cell: any, c: number) => {
@@ -182,13 +192,14 @@ function flattenBlocks(
             cell.blocks ?? [],
             [...rp, 'cells', c, 'blocks'],
             rp,
+            tableRef,
             out
           );
         });
       });
     } else if (Array.isArray(block.blocks)) {
       // Block-level content control wrapper.
-      flattenBlocks(block.blocks, [...here, 'blocks'], rowPath, out);
+      flattenBlocks(block.blocks, [...here, 'blocks'], rowPath, rawTable, out);
     }
   });
 }
@@ -196,9 +207,27 @@ function flattenBlocks(
 export function flattenSfdt(sfdt: any): FlatDoc {
   const blocks: FlatBlock[] = [];
   (sfdt?.sections ?? []).forEach((section: any, s: number) => {
-    flattenBlocks(section.blocks ?? [], [s, 'blocks'], undefined, blocks);
+    flattenBlocks(section.blocks ?? [], [s, 'blocks'], undefined, null, blocks);
   });
   return { blocks };
+}
+
+/** Paragraph count of a table, counted the way flattenSfdt flattens it (cell
+ *  paragraphs, nested tables and block content controls included). */
+export function tableParagraphCount(table: any): number {
+  let count = 0;
+  const walk = (blocks: any[]) => {
+    for (const b of blocks ?? []) {
+      if (isParagraph(b)) count++;
+      else if (isTable(b))
+        for (const r of b.rows ?? [])
+          for (const c of r?.cells ?? []) walk(c?.blocks ?? []);
+      else if (Array.isArray(b?.blocks)) walk(b.blocks);
+    }
+  };
+  for (const r of table?.rows ?? [])
+    for (const c of r?.cells ?? []) walk(c?.blocks ?? []);
+  return count;
 }
 
 /** Navigate a block path on a (cloned) document. */
