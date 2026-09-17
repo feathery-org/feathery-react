@@ -655,6 +655,7 @@ function TableElement({
   useEffect(() => {
     if (!assistantClient || !tableId) return;
     assistantClient.registerTable(tableId, {
+      columns: elementForData.properties.columns,
       handleCellEdit: wrappedHandleCellEdit,
       handleAddRow: wrappedHandleAddRow,
       handleDeleteRow: wrappedHandleDeleteRow,
@@ -665,6 +666,7 @@ function TableElement({
   }, [
     assistantClient,
     tableId,
+    elementForData.properties.columns,
     wrappedHandleCellEdit,
     wrappedHandleAddRow,
     wrappedHandleDeleteRow
