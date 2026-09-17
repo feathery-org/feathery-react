@@ -1,4 +1,4 @@
-import type { TableIssue } from '../elements/basic/TableElement/spreadsheet/issues';
+import type { TableAnnotation } from '../elements/basic/TableElement/spreadsheet/annotations';
 
 type AssistantClientCallbacks = {
   buttonOnClick: (button: any) => Promise<void>;
@@ -16,8 +16,8 @@ export type TableHandlers = {
    * set, so a re-run of a verification rule supersedes the previous run
    * rather than piling onto it. The grid shows them as warnings.
    */
-  setIssues: (issues: TableIssue[]) => void;
-  clearIssues: () => void;
+  setAnnotations: (annotations: TableAnnotation[]) => void;
+  clearAnnotations: () => void;
 };
 
 export default class AssistantClient {
@@ -99,17 +99,20 @@ export default class AssistantClient {
    * custom validation / verification rule. Returns false when the table is
    * not mounted, like the other table hooks.
    */
-  setTableIssues(tableId: string, issues: TableIssue[]): boolean {
+  setTableAnnotations(
+    tableId: string,
+    annotations: TableAnnotation[]
+  ): boolean {
     const t = this._tables.get(tableId);
     if (!t) return false;
-    t.setIssues(issues);
+    t.setAnnotations(annotations);
     return true;
   }
 
-  clearTableIssues(tableId: string): boolean {
+  clearTableAnnotations(tableId: string): boolean {
     const t = this._tables.get(tableId);
     if (!t) return false;
-    t.clearIssues();
+    t.clearAnnotations();
     return true;
   }
 }

@@ -1532,7 +1532,7 @@ describe('assistant issues', () => {
 
     act(() => {
       expect(
-        assistantClient.setTableIssues('table1', [
+        assistantClient.setTableAnnotations('table1', [
           {
             target: { kind: 'cell', row: { entryId: 'e1' }, field: 'email' },
             message: 'Bounced last week'
@@ -1551,7 +1551,7 @@ describe('assistant issues', () => {
     await waitFor(() => expect(saveButton()).toBeEnabled());
 
     act(() => {
-      assistantClient.clearTableIssues('table1');
+      assistantClient.clearTableAnnotations('table1');
     });
     expect(status()).not.toHaveTextContent('warning');
   });
@@ -1588,7 +1588,7 @@ describe('assistant issues', () => {
     ).toEqual(['Status', 'Status']);
 
     act(() => {
-      assistantClient.setTableIssues('table1', [
+      assistantClient.setTableAnnotations('table1', [
         { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'Status' }, message: 'Stale' }
       ]);
     });
@@ -1613,7 +1613,7 @@ describe('assistant issues', () => {
     await waitFor(() => expect(screen.getByText('Cy')).toBeInTheDocument());
 
     act(() => {
-      assistantClient.setTableIssues('table1', [
+      assistantClient.setTableAnnotations('table1', [
         { target: { kind: 'row', row: { rowIndex: 0 } }, message: 'Duplicate of row 4' },
         {
           target: {
@@ -1650,7 +1650,7 @@ describe('assistant issues', () => {
     await waitFor(() => expect(screen.getByText('worse')).toBeInTheDocument());
 
     act(() => {
-      assistantClient.setTableIssues('table1', [
+      assistantClient.setTableAnnotations('table1', [
         { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'email' }, message: 'Bounced' },
         { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'name' }, message: 'Nickname?' }
       ]);

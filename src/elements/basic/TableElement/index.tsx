@@ -21,11 +21,13 @@ import { useHubTableSource } from './useHubTableSource';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
 import {
-  buildCellIssues,
-  CellIssues,
-  resolveTableIssues,
-  TableIssue
-} from './spreadsheet/issues';
+  annotationLayer,
+  buildCellAnnotations,
+  CellAnnotations,
+  cellErrorLayer,
+  TableAnnotation,
+  TableRowRef
+} from './spreadsheet/annotations';
 import {
   CellErrors,
   cellErrorKey,
@@ -242,8 +244,10 @@ function TableElement({
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
 
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
-  // Findings the assistant has placed on this table (see `setIssues` below).
-  const [assistantIssues, setAssistantIssues] = useState<TableIssue[]>([]);
+  // Findings the assistant has placed on this table (see `setAnnotations` below).
+  const [assistantAnnotations, setAssistantAnnotations] = useState<
+    TableAnnotation[]
+  >([]);
   const pendingAddRowsRef = useRef(pendingAddRows);
   pendingAddRowsRef.current = pendingAddRows;
 
@@ -498,17 +502,16 @@ function TableElement({
   ]);
 
   /**
-   * The assistant names rows and fields the way the form's author does (a hub
-   * entry id or row number, a hub field key or column name); the grid stores
-   * cells under its own keys. Expanded here, against the rows and columns
-   * actually rendered, so a finding on a hidden column or a deleted row simply
-   * does not show.
+   * Producers name rows and fields the way the form's author does (a hub entry
+   * id, a row key or row number; a hub field key or column name); the grid
+   * stores cells under its own keys. Resolved here, against the rows and
+   * columns actually rendered, so an annotation on a hidden column or a
+   * deleted row simply does not show.
    */
-  const assistantMessages = useMemo(() => {
-    if (!isSpreadsheet || !assistantIssues.length) return {};
+  const annotationContext = useMemo(() => {
     // Keys first, display names second, so a hub field whose key is "Status"
     // is never shadowed by a column merely named that (the status column,
-    // say — which is not the assistant's to flag at all).
+    // say — which is not a producer's to flag at all).
     const byName = new Map<string, string>();
     const targetable = columns.filter(
       (column: any) => column.hub_field_id !== STATUS_HUB_FIELD_ID
@@ -523,42 +526,43 @@ function TableElement({
         byName.set(column.name, column.field_key);
       }
     });
-    return resolveTableIssues(assistantIssues, {
+    return {
       rowIndices: spreadsheetRowIndices,
       fieldKeys: columns.map((column: any) => column.field_key),
-      resolveField: (name) => byName.get(name),
-      resolveRow: (ref) => {
+      resolveField: (name: string) => byName.get(name),
+      resolveRow: (ref: TableRowRef) => {
         if ('rowIndex' in ref) return ref.rowIndex;
-        if (!isHub) return undefined;
-        const rowIndex = hub.entryIds.indexOf(ref.entryId);
-        return rowIndex === -1 ? undefined : rowIndex;
+        if ('entryId' in ref) {
+          if (!isHub) return undefined;
+          const rowIndex = hub.entryIds.indexOf(ref.entryId);
+          return rowIndex === -1 ? undefined : rowIndex;
+        }
+        return undefined;
       }
-    }).cells;
-  }, [
-    isSpreadsheet,
-    assistantIssues,
-    columns,
-    spreadsheetRowIndices,
-    isHub,
-    hub.entryIds
-  ]);
+    };
+  }, [columns, spreadsheetRowIndices, isHub, hub.entryIds]);
+
+  const assistantLayer = useMemo(
+    () =>
+      isSpreadsheet && assistantAnnotations.length
+        ? annotationLayer(assistantAnnotations, annotationContext, 'assistant')
+        : {},
+    [isSpreadsheet, assistantAnnotations, annotationContext]
+  );
 
   /**
    * Every cell with something wrong, each with its severity and whether it
-   * holds the save back. A hub rule broken on a verified row blocks, because
-   * the backend would reject the write anyway; on an unverified row it is
-   * still an error but saves — correcting staged data is the point of editing
-   * it. Assistant findings are warnings throughout. See `spreadsheet/issues`.
+   * holds the save back. The hub's own rules come first, so they win a cell
+   * two producers both named. See `spreadsheet/annotations`.
    */
-  const cellIssues = useMemo<CellIssues>(
+  const cellAnnotations = useMemo<CellAnnotations>(
     () =>
-      buildCellIssues({
-        ruleErrors: cellErrors,
-        assistantMessages,
+      buildCellAnnotations({
+        layers: [cellErrorLayer(cellErrors), assistantLayer],
         isRowVerified: (rowIndex) =>
           !isHub || hub.rowVerified[rowIndex] !== false
       }),
-    [cellErrors, assistantMessages, isHub, hub.rowVerified]
+    [cellErrors, assistantLayer, isHub, hub.rowVerified]
   );
 
   /**
@@ -567,9 +571,9 @@ function TableElement({
    * tint per cell read as a third kind of problem.
    */
   const getCellShading = useMemo<GetCellShading | undefined>(() => {
-    if (!Object.keys(cellIssues).length) return undefined;
+    if (!Object.keys(cellAnnotations).length) return undefined;
     return ({ rowIndex, fieldKey }) => {
-      const issue = cellIssues[cellErrorKey(rowIndex, fieldKey)];
+      const issue = cellAnnotations[cellErrorKey(rowIndex, fieldKey)];
       if (!issue) return null;
       // Background only: an outline here competes with the selection border,
       // which is the one ring in the grid that means "you are here".
@@ -582,7 +586,7 @@ function TableElement({
         severity: issue.severity
       };
     };
-  }, [cellIssues]);
+  }, [cellAnnotations]);
 
   const savingEdits = isHub && hub.saving;
 
@@ -658,8 +662,8 @@ function TableElement({
       handleCellEdit: wrappedHandleCellEdit,
       handleAddRow: wrappedHandleAddRow,
       handleDeleteRow: wrappedHandleDeleteRow,
-      setIssues: setAssistantIssues,
-      clearIssues: () => setAssistantIssues([])
+      setAnnotations: setAssistantAnnotations,
+      clearAnnotations: () => setAssistantAnnotations([])
     });
     return () => assistantClient.unregisterTable(tableId);
   }, [
@@ -781,7 +785,7 @@ function TableElement({
                 }
               : undefined
           }
-          cellIssues={cellIssues}
+          cellAnnotations={cellAnnotations}
           readOnlyFieldKeys={isHub ? hub.readOnlyKeys : undefined}
         />
       ) : (
