@@ -286,6 +286,10 @@ function setFieldValues(
     else result[key] = parseUserVal(value, key);
   });
 
+  // updateUserId clears fieldValues but deliberately keeps knownFieldKeys, so
+  // record these keys too or a field written only here - an API connector
+  // response, say - would render as a raw {{token}} after a user switch.
+  registerKnownFieldKeys({ servars: Object.keys(result) });
   Object.assign(fieldValues, result);
   if (!skipServerSubmit) defaultClient.submitCustom(result);
 

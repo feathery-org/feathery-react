@@ -6,7 +6,11 @@
  * in the short field, silently shearing the row apart. moveRepeatRowValue pads
  * to the container's row count first so every field moves the same row.
  */
-import { getRepeatContainerRowCount, moveRepeatRowValue } from '../repeat';
+import {
+  getRepeatContainerRowCount,
+  insertRepeatRowValue,
+  moveRepeatRowValue
+} from '../repeat';
 
 jest.mock('../init', () => ({
   initInfo: () => ({ sdkKey: 'key', userId: 'user' }),
@@ -141,5 +145,36 @@ describe('moveRepeatRowValue', () => {
     expect(moveRepeatRowValue(before, 3, 0, 4, field)).toHaveLength(
       before.length
     );
+  });
+});
+
+describe('insertRepeatRowValue appending at the boundary', () => {
+  // addRepeatedRow appends by inserting at `rows`, so a field an API connector
+  // left short is padded to the container before the new row goes on. Growing
+  // it from its own length instead kept it a row behind its siblings.
+  it('pads a short connector array up to the container first', () => {
+    expect(insertRepeatRowValue(['a', 'b'], 3, 3, textField('name'))).toEqual([
+      'a',
+      'b',
+      '',
+      ''
+    ]);
+  });
+
+  it('keeps a repeated file field on null holes while padding', () => {
+    expect(insertRepeatRowValue(['f0'], 3, 3, fileField('doc'))).toEqual([
+      'f0',
+      null,
+      null,
+      null
+    ]);
+  });
+
+  it('adds exactly one row to a field that already spans the container', () => {
+    expect(insertRepeatRowValue(['a', 'b'], 2, 2, textField('name'))).toEqual([
+      'a',
+      'b',
+      ''
+    ]);
   });
 });
