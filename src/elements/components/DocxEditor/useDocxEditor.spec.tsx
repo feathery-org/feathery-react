@@ -219,14 +219,16 @@ describe('useDocxEditor across a review-gate flip', () => {
   const Harness = ({
     reviewChanges,
     url = 'https://example.test/pre-save.docx',
+    sfdt,
     openNonce = 0
   }: {
     reviewChanges: boolean;
     url?: string;
+    sfdt?: string;
     openNonce?: number;
   }) => {
     const api = useDocxEditor({
-      source: { url },
+      source: sfdt ? { sfdt } : { url },
       serviceUrl: 'https://example.test/service/',
       reviewChanges,
       openNonce,
@@ -278,6 +280,16 @@ describe('useDocxEditor across a review-gate flip', () => {
       'https://example.test/pre-save.docx',
       { cache: 'no-store' }
     );
+  });
+
+  it('opens a restored SFDT directly without DOCX fetch or conversion', async () => {
+    const restored = '{"sfdt":"restored clean baseline"}';
+    render(<Harness reviewChanges={false} sfdt={restored} />);
+    await settle();
+
+    expect(fetchCalls).toBe(0);
+    expect(editors[0].open).toHaveBeenCalledWith(restored);
+    expect(editors[0].openAsync).not.toHaveBeenCalled();
   });
 
   it('waits for documentChange before reporting the document ready', async () => {

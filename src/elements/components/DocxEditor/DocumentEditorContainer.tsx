@@ -77,6 +77,22 @@ function envelopeSourceUrl(envelope?: Envelope | null): string | undefined {
   return envelope?.editor_file ?? envelope?.file ?? undefined;
 }
 
+/** Fetch the clean SFDT recorded for a restored version. The history endpoint
+ * stores it gzipped; using it lets the live editor bypass DOCX import. */
+async function fetchRestoredSfdt(url: string): Promise<string> {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error('Could not fetch restored document');
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const gzipped = bytes[0] === 0x1f && bytes[1] === 0x8b;
+  if (!gzipped) return new TextDecoder().decode(bytes);
+  const DecompressionStreamImpl = (globalThis as any).DecompressionStream;
+  if (!DecompressionStreamImpl)
+    throw new Error('gzip decompression unavailable');
+  return new Response(
+    new Blob([bytes]).stream().pipeThrough(new DecompressionStreamImpl('gzip'))
+  ).text();
+}
+
 interface RefreshEventDetail {
   containerId?: string;
   documents?: string[];
@@ -186,6 +202,9 @@ export default function DocumentEditorContainer({
   const [sourceUrl, setSourceUrl] = useState<string | undefined>(() =>
     envelopeSourceUrl(getGeneratedEnvelope(pendingDraft, documentId))
   );
+  // Set only for a just-restored snapshot. It stays in memory while the user
+  // edits, then a generated/external refresh clears it and reopens the DOCX.
+  const [restoredSfdt, setRestoredSfdt] = useState<string | undefined>();
   const [loading, setLoading] = useState(!envelope);
   const [error, setError] = useState<string | null>(null);
   // Bumped to force the editor to reload its source after a (re)generate.
@@ -221,6 +240,7 @@ export default function DocumentEditorContainer({
       const env = await client.getCurrentEnvelope(documentId);
       const nextEnvelope = env && env.id ? (env as Envelope) : null;
       setEnvelope(nextEnvelope);
+      setRestoredSfdt(undefined);
       setSourceUrl(envelopeSourceUrl(nextEnvelope));
       setError(null);
     } catch (e: any) {
@@ -242,6 +262,7 @@ export default function DocumentEditorContainer({
     );
     if (pendingEnvelope?.id) {
       setEnvelope(pendingEnvelope);
+      setRestoredSfdt(undefined);
       setSourceUrl(envelopeSourceUrl(pendingEnvelope));
       setLoading(false);
       return;
@@ -264,6 +285,7 @@ export default function DocumentEditorContainer({
       const generatedEnvelope = getGeneratedEnvelope(detail, documentId);
       if (generatedEnvelope?.id) {
         setEnvelope(generatedEnvelope);
+        setRestoredSfdt(undefined);
         setSourceUrl(envelopeSourceUrl(generatedEnvelope));
         setError(null);
         setLoading(false);
@@ -282,8 +304,13 @@ export default function DocumentEditorContainer({
   // signalled (reloadKey) — a plain save leaves both unchanged, so it doesn't
   // reload the document.
   const source = useMemo(
-    () => (sourceUrl ? { url: sourceUrl } : undefined),
-    [sourceUrl]
+    () =>
+      restoredSfdt
+        ? { sfdt: restoredSfdt }
+        : sourceUrl
+        ? { url: sourceUrl }
+        : undefined,
+    [restoredSfdt, sourceUrl]
   );
   // The loaded editor is authoritative. If a generate action contains several
   // documents, the envelope actually displayed here wins over the action's
@@ -377,6 +404,21 @@ export default function DocumentEditorContainer({
           versionId,
           uuidv4()
         );
+        // The backend deliberately copies only final SFDT, not a change list,
+        // into the restored row. Reopen it directly when present: this removes
+        // the DOCX download + Syncfusion Import round-trip from restore.
+        let cleanSfdt: string | undefined;
+        const finalSfdtUrl = (updated as any)?.version?.final_sfdt as
+          | string
+          | null
+          | undefined;
+        if (finalSfdtUrl) {
+          try {
+            cleanSfdt = await fetchRestoredSfdt(finalSfdtUrl);
+          } catch {
+            // The authoritative DOCX URL below remains a safe fallback.
+          }
+        }
         // Point the live editor at the restored bytes and force a reopen.
         setEnvelope((current) =>
           current?.id === envelopeId
@@ -387,6 +429,7 @@ export default function DocumentEditorContainer({
               }
             : current
         );
+        setRestoredSfdt(cleanSfdt);
         setSourceUrl(envelopeSourceUrl({ ...updated } as Envelope));
         setReloadKey((k) => k + 1);
       },

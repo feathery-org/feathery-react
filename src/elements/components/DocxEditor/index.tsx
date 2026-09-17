@@ -59,10 +59,7 @@ export function restoredSuggestionsMessage(
     now - restoredAt >= RESTORE_SUGGESTIONS_WINDOW_MS
   )
     return null;
-  return (
-    `This version includes ${count} unapproved suggestion` +
-    `${count === 1 ? '' : 's'} — review them in Suggested changes`
-  );
+  return `${count} pending Robin ${count === 1 ? 'edit' : 'edits'} restored`;
 }
 
 /** What a host's onSave may resolve with. `file` is the public copy of the
@@ -945,7 +942,7 @@ function DocxEditor({
           await history.restoreVersion(target.id);
           exitVersionView();
           restoredAtRef.current = Date.now();
-          flashSaveToast('success', 'Restored — saved as a new version');
+          flashSaveToast('success', 'Version restored');
         } catch (err) {
           flashSaveToast('error', 'Could not restore this version');
           onError?.((err as Error).message || String(err));

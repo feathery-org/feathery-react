@@ -799,6 +799,7 @@ export function installTableRowResizeFix(ed: any) {
 
 async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
   if ('buffer' in source) return source.buffer;
+  if ('sfdt' in source) throw new Error('SFDT does not have DOCX bytes');
   // Saves and restores replace the object behind the same live envelope URL.
   // Reopening with the browser cache can therefore load the pre-restore bytes
   // even though openNonce correctly triggered a new fetch.
@@ -1154,19 +1155,22 @@ export function useDocxEditor({
   // NOT a .docx blob — so a .docx is converted server-side first: POST it to
   // `${serviceUrl}Import` (multipart field "files"); the response is SFDT,
   // sometimes wrapped in `{"sfdt": "..."}` depending on the service build.
-  // Depend on the URL/buffer identity (not the wrapper object) so parent
+  // Depend on the URL/buffer/SFDT identity (not the wrapper object) so parent
   // re-renders that recreate `{ url }` don't cancel an in-flight open.
   const sourceUrl = source && 'url' in source ? source.url : undefined;
   const sourceBuffer = source && 'buffer' in source ? source.buffer : undefined;
+  const sourceSfdt = source && 'sfdt' in source ? source.sfdt : undefined;
   // What "the same document, opened the same time" means, for the carried stash.
-  const openKey = `${openNonce ?? 0}|${sourceUrl ?? ''}|${
-    sourceBuffer ? sourceBuffer.byteLength : ''
-  }`;
+  const openKey = sourceSfdt
+    ? `${openNonce ?? 0}|sfdt|${sourceSfdt}`
+    : `${openNonce ?? 0}|${sourceUrl ?? ''}|${
+        sourceBuffer ? sourceBuffer.byteLength : ''
+      }`;
   const openKeyRef = useRef(openKey);
   openKeyRef.current = openKey;
 
   useEffect(() => {
-    if (!editor || (!sourceUrl && !sourceBuffer)) return;
+    if (!editor || (!sourceUrl && !sourceBuffer && !sourceSfdt)) return;
     const carried = carriedRef.current;
     carriedRef.current = null;
     if (carried && carried.key === openKey) {
@@ -1189,7 +1193,9 @@ export function useDocxEditor({
       }
     }
     let cancelled = false;
-    const openSource: DocxSource = sourceBuffer
+    const openSource: DocxSource = sourceSfdt
+      ? { sfdt: sourceSfdt }
+      : sourceBuffer
       ? { buffer: sourceBuffer }
       : { url: sourceUrl as string };
 
@@ -1198,17 +1204,6 @@ export function useDocxEditor({
         ignoreContentChangeRef.current = true;
         setLoading(true);
         setError(null);
-        const buffer = await resolveBuffer(openSource);
-        if (cancelled) return;
-        if (!serviceUrl) {
-          throw new Error('serviceUrl is required to open a .docx');
-        }
-        // Match the dashboard DocxPage path: hand Syncfusion the .docx blob
-        // and let it convert via serviceUrl. Manual Import→SFDT was returning
-        // optimized/base64 SFDT that open() often left as a blank document.
-        const blob = new Blob([buffer], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        });
         const liveEditor = containerInstRef.current?.documentEditor ?? editor;
         liveEditor[OPENING_DOCUMENT_KEY] = true;
         // open() resolves before the converted document is laid out, so anything
@@ -1216,10 +1211,28 @@ export function useDocxEditor({
         // Registered before the open so a fast load cannot outrun the listener.
         const documentLoaded = waitForDocumentLoad(liveEditor);
         try {
-          if (typeof liveEditor.openAsync === 'function') {
-            await liveEditor.openAsync(blob);
+          if ('sfdt' in openSource) {
+            // A restored version can carry this exact clean snapshot. Opening
+            // it directly avoids downloading the DOCX and asking Syncfusion's
+            // Import service to convert it before the user can continue.
+            liveEditor.open(openSource.sfdt);
           } else {
-            liveEditor.open(blob);
+            const buffer = await resolveBuffer(openSource);
+            if (cancelled) return;
+            if (!serviceUrl) {
+              throw new Error('serviceUrl is required to open a .docx');
+            }
+            // Match the dashboard DocxPage path: hand Syncfusion the .docx blob
+            // and let it convert via serviceUrl. Manual Import→SFDT was returning
+            // optimized/base64 SFDT that open() often left as a blank document.
+            const blob = new Blob([buffer], {
+              type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            });
+            if (typeof liveEditor.openAsync === 'function') {
+              await liveEditor.openAsync(blob);
+            } else {
+              liveEditor.open(blob);
+            }
           }
         } catch (err) {
           // A failed open must not leave the flag stuck true — that would
@@ -1268,7 +1281,7 @@ export function useDocxEditor({
       cancelled = true;
       ignoreContentChangeRef.current = true;
     };
-  }, [editor, sourceUrl, sourceBuffer, serviceUrl, openNonce]);
+  }, [editor, sourceUrl, sourceBuffer, sourceSfdt, serviceUrl, openNonce]);
 
   // Bindings attach only once a document is actually open, and never to a
   // read-only one: reconciliation writes to the document, and a finalized or

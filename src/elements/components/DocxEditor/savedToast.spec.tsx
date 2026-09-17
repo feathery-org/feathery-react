@@ -73,11 +73,11 @@ describe('DocxEditor save confirmation toast', () => {
 
     it('announces the count reported right after a restore', () => {
       expect(restoredSuggestionsMessage(18, now - 3000, now)).toBe(
-        'This version includes 18 unapproved suggestions — review them in Suggested changes'
+        '18 pending Robin edits restored'
       );
       // Singular form.
-      expect(restoredSuggestionsMessage(1, now - 3000, now)).toContain(
-        '1 unapproved suggestion —'
+      expect(restoredSuggestionsMessage(1, now - 3000, now)).toBe(
+        '1 pending Robin edit restored'
       );
     });
 
