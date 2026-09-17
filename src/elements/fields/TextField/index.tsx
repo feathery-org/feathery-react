@@ -25,14 +25,15 @@ function getMaskProps(
   servar: any,
   value: any,
   showPassword: boolean,
-  editing: boolean
+  editing: boolean,
+  repeatIndex: number | null
 ) {
   let maskProps;
   // Max length included in mask for validation of typed inputs
   let maxLength = servar.max_length ?? maxFieldLength(servar.type);
   switch (servar.type) {
     case 'integer_field':
-      maskProps = getNumberMaskProps(servar, value, editing);
+      maskProps = getNumberMaskProps(servar, value, editing, repeatIndex);
       break;
     case 'ssn':
       maskProps = {
@@ -350,7 +351,8 @@ function TextField({
               showPassword,
               // A held sign is mid-entry by definition, so it is never rounded
               // — rounding "-0." would push "0" down and overwrite the sign.
-              editingRef.current || Boolean(heldSign)
+              editingRef.current || Boolean(heldSign),
+              repeatIndex
             )}
             onAccept={handleAccept}
           />

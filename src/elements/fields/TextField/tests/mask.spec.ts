@@ -5,6 +5,7 @@ import {
   roundToDecimalPlaces,
   showsFormatInText
 } from '../mask';
+import { fieldValues } from '../../../../utils/init';
 
 const numberServar = (metadata: any = {}, servar: any = {}) => ({
   type: 'integer_field',
@@ -164,13 +165,13 @@ describe('getNumberMaskProps', () => {
       [0, 1],
       [1, 1],
       [2, 2]
-    ])('sets the entry scale for %p configured places', (
-      decimal_places,
-      expected
-    ) => {
-      const props = getNumberMaskProps(numberServar({ decimal_places }), '');
-      expect(props.blocks.num.scale).toBe(expected);
-    });
+    ])(
+      'sets the entry scale for %p configured places',
+      (decimal_places, expected) => {
+        const props = getNumberMaskProps(numberServar({ decimal_places }), '');
+        expect(props.blocks.num.scale).toBe(expected);
+      }
+    );
 
     it('never leaves the mask unable to accept a radix', () => {
       [0, 1, 2].forEach((decimal_places) =>
@@ -289,6 +290,98 @@ describe('getNumberMaskProps', () => {
   it('passes max_length through as the mask max', () => {
     const props = getNumberMaskProps(numberServar({}, { max_length: 100 }), '');
     expect(props.blocks.num.max).toBe(100);
+  });
+
+  describe('bound_fields', () => {
+    const ceiling = {
+      field_type: 'servar',
+      field_id: 'ceiling-id',
+      field_key: 'ceiling'
+    };
+
+    const clearRefs = () => {
+      delete fieldValues.ceiling;
+      delete fieldValues.floor;
+    };
+    beforeEach(clearRefs);
+    afterEach(clearRefs);
+
+    it('takes a referenced field over the column', () => {
+      Object.assign(fieldValues, { ceiling: 250 });
+      const props = getNumberMaskProps(
+        numberServar(
+          { bound_fields: { min: null, max: ceiling } },
+          { min_length: 0, max_length: 100 }
+        ),
+        ''
+      );
+      expect(props.blocks.num).toMatchObject({ min: 0, max: 250 });
+    });
+
+    it('falls back to the column when the referenced field is empty', () => {
+      Object.assign(fieldValues, { ceiling: '' });
+      const props = getNumberMaskProps(
+        numberServar(
+          { bound_fields: { min: null, max: ceiling } },
+          { min_length: 0, max_length: 100 }
+        ),
+        ''
+      );
+      expect(props.blocks.num.max).toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it('lets a referenced floor below zero open the sign', () => {
+      const servar = numberServar(
+        {
+          allow_negative: true,
+          bound_fields: {
+            min: { field_type: 'servar', field_id: 'f', field_key: 'floor' },
+            max: null
+          }
+        },
+        { min_length: 0 }
+      );
+      Object.assign(fieldValues, { floor: -10 });
+      expect(getNumberMaskProps(servar, '').blocks.num.min).toBe(-10);
+      // A referenced floor at zero blocks the sign the way the column does
+      Object.assign(fieldValues, { floor: 0 });
+      expect(getNumberMaskProps(servar, '').blocks.num.min).toBe(0);
+    });
+
+    it('widens a tracked bound around a stored value it no longer admits', () => {
+      Object.assign(fieldValues, { ceiling: 20 });
+      const tracked = numberServar({
+        bound_fields: { min: null, max: ceiling }
+      });
+      expect(getNumberMaskProps(tracked, 25).blocks.num.max).toBe(25);
+      // Static columns keep their mask exactly as before
+      const fixed = numberServar({}, { min_length: 10, max_length: 20 });
+      expect(getNumberMaskProps(fixed, 25).blocks.num).toMatchObject({
+        min: 10,
+        max: 20
+      });
+    });
+
+    // Only the tracked side may move; a mixed field keeps its column clamp
+    it('leaves the static side of a mixed field clamped', () => {
+      Object.assign(fieldValues, { ceiling: 100 });
+      const mixed = numberServar(
+        { bound_fields: { min: null, max: ceiling } },
+        { min_length: 10, max_length: 999 }
+      );
+      expect(getNumberMaskProps(mixed, 5).blocks.num).toMatchObject({
+        min: 10,
+        max: 100
+      });
+    });
+
+    it('resolves per repeat row', () => {
+      Object.assign(fieldValues, { ceiling: [15, 25] });
+      const servar = numberServar({
+        bound_fields: { min: null, max: ceiling }
+      });
+      expect(getNumberMaskProps(servar, '', false, 1).blocks.num.max).toBe(25);
+    });
   });
 
   // The sign has to sit in front of a prefix, and imask keeps a number block's
