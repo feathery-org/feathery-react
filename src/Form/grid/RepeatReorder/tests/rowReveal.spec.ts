@@ -13,7 +13,10 @@ import {
   DRAGGING_ATTR,
   GUTTER_WIDTH,
   LIFT_Z_INDEX,
+  clusterInsideHorizontalStyles,
+  clusterInsideStyles,
   clusterStyles,
+  clusterStylesHorizontal,
   insertStyles,
   INSERT_CLASS,
   KEYBOARD_FOCUS_ATTR,
@@ -34,6 +37,22 @@ const seamRevealSelectors = () =>
   );
 
 describe('rowRevealStyles', () => {
+  it('gives every cluster the same surface, whichever way the track runs', () => {
+    // A handle that looks like a different control depending on the track's
+    // direction is two controls to learn instead of one.
+    const surfaced = [
+      clusterStyles,
+      clusterStylesHorizontal,
+      clusterInsideStyles,
+      clusterInsideHorizontalStyles
+    ];
+    for (const variant of surfaced) {
+      expect(variant.borderRadius).toBe(clusterStyles.borderRadius);
+      expect(variant.background).toBe(clusterStyles.background);
+      expect(variant.border).toBe('1px solid');
+    }
+  });
+
   it('keeps both hover bridges under the chrome they reveal', () => {
     // `::after` paints as the row's last child, so without a stacking order of
     // its own the cluster sits beneath it and every control is unclickable.

@@ -88,8 +88,25 @@ export const RESOLVED_SURFACE_VAR = '--feathery-repeat-insert-surface-resolved';
  * A column, because the grip is stacked between the two step buttons that are
  * the drag's single-pointer alternative (WCAG 2.2 SC 2.5.7).
  */
+/**
+ * The surface every cluster sits on, whichever way the track runs.
+ *
+ * The chrome is drawn over the form rather than beside it - in a gutter it
+ * shares with a neighbour, or inside the row when there is no gutter to use -
+ * so it carries its own ground to stay legible. Defined once because a handle
+ * that looks like a different control depending on the track's direction is
+ * two controls to learn instead of one.
+ */
+const chromeSurface = {
+  border: '1px solid',
+  borderColor: 'currentColor',
+  borderRadius: '5px',
+  background: surface
+};
+
 export const clusterStyles = {
   position: 'absolute' as const,
+  ...chromeSurface,
   // Above the row's own pseudo-elements. The hover bridges are drawn on the
   // row, and `::after` paints as its last child - over any child with no
   // stacking order of its own, which is how the grip ended up unclickable on
@@ -142,15 +159,12 @@ export const clusterStylesTucked = {
  * own to stay legible. The same treatment the no-room fallback uses.
  */
 const pill = {
+  ...chromeSurface,
   width: 'auto',
   height: `${TARGET_SIZE}px`,
   flexDirection: 'row' as const,
   gap: '2px',
-  padding: '0 4px',
-  border: '1px solid',
-  borderColor: 'currentColor',
-  borderRadius: '5px',
-  background: surface
+  padding: '0 4px'
 };
 
 /**
@@ -189,14 +203,11 @@ export const clusterInsideStyles = {
   insetBlockStart: 0,
   insetInlineStart: 'auto',
   insetInlineEnd: '8px',
+  ...chromeSurface,
   width: 'auto',
   flexDirection: 'row' as const,
   gap: '2px',
   padding: '0 4px',
-  border: '1px solid',
-  borderColor: 'currentColor',
-  borderRadius: '5px',
-  background: surface,
   transform: 'translateY(-50%)'
 };
 
