@@ -114,6 +114,16 @@ async function gzip(text: string): Promise<Blob> {
   return new Response(stream).blob();
 }
 
+function uniqueRevisionRuns(runs: RevisionRun[]): RevisionRun[] {
+  const seen = new Set<string>();
+  return runs.filter((run) => {
+    const key = JSON.stringify([run.kind, run.text, run.group ?? null]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function useDocxHistorySession(
   opts: UseDocxHistorySessionOptions
 ): UseDocxHistorySessionResult {
@@ -259,15 +269,26 @@ export function useDocxHistorySession(
           // limit; if Robin authored more than the budget, drop the runs and let
           // attribution degrade to today's behaviour rather than risk rejection.
           const ROBIN_RUNS_BUDGET = 100_000;
-          if (snap.robinRuns.length) {
+          // The preceding pending-edit version has already closed when the user
+          // accepts it, so its in-memory Robin runs have been reset. Recover the
+          // original groups from the acceptance snapshot for the confirmation
+          // version; this is the version later copied by Restore.
+          const acceptanceRuns = snap.acceptance
+            ? collectRobinRuns(JSON.parse(snap.acceptance.beforeSfdt))
+            : [];
+          const robinRuns = uniqueRevisionRuns([
+            ...snap.robinRuns,
+            ...acceptanceRuns
+          ]);
+          if (robinRuns.length) {
             const capped: RevisionRun[] = [];
             let used = 0;
-            for (const r of snap.robinRuns) {
+            for (const r of robinRuns) {
               used += r.text.length;
               if (used > ROBIN_RUNS_BUDGET) break;
               capped.push(r);
             }
-            if (capped.length === snap.robinRuns.length && capped.length)
+            if (capped.length === robinRuns.length && capped.length)
               changes.robinRuns = capped;
           }
           // Session activity includes accepts and edits that were later undone.

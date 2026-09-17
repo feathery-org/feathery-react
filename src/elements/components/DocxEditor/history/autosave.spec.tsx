@@ -160,7 +160,13 @@ describe('useDocxHistorySession', () => {
         {
           author: 'Robin (assistant)',
           revisionType: 'Insertion',
-          revisionId: 'r-robin'
+          revisionId: 'r-robin',
+          customData: JSON.stringify({
+            v: 1,
+            source: 'robin',
+            changeSetId: 'cs-1',
+            group: 'update-premium-table'
+          })
         }
       ],
       sections: [
@@ -221,6 +227,11 @@ describe('useDocxHistorySession', () => {
     expect(changes.changeCount).toBeGreaterThan(0);
     expect(changes.hunks.every((h: any) => h.author === 'robin')).toBe(true);
     expect(changes.trackedAuthors).toEqual(['robin']);
+    expect(changes.robinRuns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ group: 'update-premium-table' })
+      ])
+    );
     expect(save.mock.calls[1][1].authors).toEqual([
       { kind: 'assistant', label: 'Robin' }
     ]);
@@ -232,6 +243,9 @@ describe('useDocxHistorySession', () => {
     expect(customData.length).toBeGreaterThan(0);
     expect(customData.every((data: any) => data.confirmed === true)).toBe(true);
     expect(customData.every((data: any) => !data.pending)).toBe(true);
+    expect(
+      customData.every((data: any) => data.group === 'update-premium-table')
+    ).toBe(true);
   });
 
   it('preserves the pending current version before accepting after a reload', async () => {

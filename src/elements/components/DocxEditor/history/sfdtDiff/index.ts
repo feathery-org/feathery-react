@@ -444,7 +444,7 @@ interface PendingRun {
 // diff's author key is 'robin'. Normalise a live-revision author to that key so
 // a re-attributed edit gets the assistant's brand colour, not a palette one.
 function authorKeyOf(author: string): AuthorKey {
-  return author.toLowerCase() === 'robin' ? 'robin' : author;
+  return author.trim().toLowerCase().startsWith('robin') ? 'robin' : author;
 }
 
 /**
