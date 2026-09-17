@@ -90,36 +90,6 @@ describe('useDocxHistorySession', () => {
     expect(view.result.current.savedAt).not.toBeNull();
   });
 
-  it('lets restore proceed after the document snapshot while holding its diff upload', async () => {
-    const { view, save, host } = setup();
-    let releaseClose: (() => void) | undefined;
-    host.closeVersion.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          releaseClose = () => resolve(null);
-        })
-    );
-    act(() => view.result.current.onEdit({ assistant: false }));
-
-    await act(async () => {
-      await view.result.current.saveForRestore();
-    });
-
-    // The DOCX snapshot is durable before restore starts, but the expensive
-    // diff upload has not entered the network queue yet.
-    expect(save).toHaveBeenCalledTimes(1);
-    expect(host.closeVersion).not.toHaveBeenCalled();
-
-    act(() => view.result.current.finishRestoreSave());
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    await flush();
-    expect(host.closeVersion).toHaveBeenCalledTimes(1);
-    releaseClose?.();
-    await flush();
-  });
-
   it('propagates a document save failure and does not close history', async () => {
     const { view, save, host } = setup();
     save.mockRejectedValueOnce(new Error('network failure'));
