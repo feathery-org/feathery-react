@@ -90,6 +90,12 @@ export interface UseDocxHistorySessionResult {
   onEdit: (info: { assistant: boolean }) => void;
   /** Explicit Save: close the session now and resolve when it has persisted. */
   save: () => Promise<void>;
+  /** Close the current session's DOCX before a restore, but defer its costly
+   *  diff upload until the restore has preserved that now-closed row. */
+  saveForRestore: () => Promise<void>;
+  /** Release the deferred pre-restore diff upload. Always call after a
+   *  saveForRestore attempt, including when the restore request fails. */
+  finishRestoreSave: () => void;
   retry: () => void;
   /** Diff the OPEN session live (same inputs as the close-time diff) and return
    *  a highlighted display document for the in-progress current version, which
@@ -188,6 +194,9 @@ export function useDocxHistorySession(
   // baseline (the selected revisions are rendered rejected at S0).
   const acceptanceRef = useRef<TrackedChangeAcceptance | null>(null);
   const finalizeRef = useRef<Promise<void>>(Promise.resolve());
+  const restoreSnapshotRef = useRef<Promise<void>>(Promise.resolve());
+  const holdFinalDiffForRestoreRef = useRef(false);
+  const releaseFinalDiffRef = useRef<(() => void) | null>(null);
 
   // Build the engine exactly once; its inner functions read the refs above.
   const engineRef = useRef<ReturnType<typeof buildEngine> | null>(null);
@@ -355,6 +364,20 @@ export function useDocxHistorySession(
       sessionStartedAt: string;
       authors: DocxSaveMeta['authors'];
     }) => {
+      // Restore only needs the DOCX snapshot to be durable before it can
+      // replace the live document. Its SFDT/diff upload can safely attach to
+      // the now-closed pre-restore row afterwards (the backend permits this
+      // late close), so keep it off the click's critical path.
+      const deferDiffForRestore = holdFinalDiffForRestoreRef.current;
+      holdFinalDiffForRestoreRef.current = false;
+      let resolveSnapshot: (() => void) | undefined;
+      let rejectSnapshot: ((reason?: unknown) => void) | undefined;
+      if (deferDiffForRestore) {
+        restoreSnapshotRef.current = new Promise<void>((resolve, reject) => {
+          resolveSnapshot = resolve;
+          rejectSnapshot = reject;
+        });
+      }
       scheduler.cancel();
       // Capture the closing session's diff inputs before the first await: F,
       // its author, S0 and the boundary slices all belong to THIS session, and
@@ -398,10 +421,18 @@ export function useDocxHistorySession(
           closeSession: true
         });
       } catch {
+        rejectSnapshot?.(new Error('Document save failed'));
         setStatus('error');
         // The document PATCH is the persistence boundary. Do not resolve an
         // explicit save (or continue a restore) when those bytes were rejected.
         throw new Error('Document save failed');
+      }
+      resolveSnapshot?.();
+      if (deferDiffForRestore) {
+        await new Promise<void>((resolve) => {
+          releaseFinalDiffRef.current = resolve;
+        });
+        releaseFinalDiffRef.current = null;
       }
       await queueClose(meta.sessionId, meta.authors, snap);
       // Refresh the history list only after the saved diff and SFDT are ready.
@@ -683,6 +714,24 @@ export function useDocxHistorySession(
     await finalizeRef.current;
   }, [tracker]);
 
+  const saveForRestore = useCallback(async () => {
+    if (!tracker.isOpen()) return;
+    holdFinalDiffForRestoreRef.current = true;
+    tracker.noteExplicitSave();
+    await restoreSnapshotRef.current;
+  }, [tracker]);
+
+  const finishRestoreSave = useCallback(() => {
+    const release = releaseFinalDiffRef.current;
+    releaseFinalDiffRef.current = null;
+    if (release) {
+      // Let React paint the restored editor before CPU-heavy diffing begins.
+      // The close endpoint accepts the preserved session after the restore, so
+      // yielding one task does not change which history row receives it.
+      setTimeout(release, 0);
+    }
+  }, []);
+
   const acceptTrackedChanges = useCallback(
     async (acceptance: TrackedChangeAcceptance, accept: () => void) => {
       // Cut the preceding editing session while the suggestion is still
@@ -766,6 +815,8 @@ export function useDocxHistorySession(
     savedAt,
     onEdit,
     save: explicitSave,
+    saveForRestore,
+    finishRestoreSave,
     retry,
     previewSession,
     isSessionOpen,
