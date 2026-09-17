@@ -38,6 +38,10 @@ class FakeEditor implements EditorPort {
   /** Set to false to model an editor without the in-place patch API. */
   supportsPatching = true;
 
+  supportsStructuralPatching = true;
+
+  supportsValuePatching = true;
+
   serialize(): string {
     return JSON.stringify(this.doc);
   }
@@ -49,8 +53,21 @@ class FakeEditor implements EditorPort {
     this.controller?.notifyContentChange();
   }
 
+  withNativeTransaction(run: () => boolean): boolean {
+    const before = this.doc && JSON.parse(JSON.stringify(this.doc));
+    try {
+      const succeeded = run() === true;
+      if (!succeeded) this.doc = before;
+      return succeeded;
+    } catch (error) {
+      this.doc = before;
+      throw error;
+    }
+  }
+
   applyStructuralMutations(mutations: NativeStructuralMutation[]): boolean {
-    if (!this.supportsPatching) return false;
+    if (!this.supportsPatching || !this.supportsStructuralPatching)
+      return false;
     try {
       for (const mutation of mutations) {
         if (mutation.kind === 'insert-row') {
@@ -87,7 +104,7 @@ class FakeEditor implements EditorPort {
   }
 
   updateValues(writes: EngineWrite[]): boolean {
-    if (!this.supportsPatching) return false;
+    if (!this.supportsPatching || !this.supportsValuePatching) return false;
     // Empty text would show the editor's placeholder instead.
     if (writes.some((write) => !write.text)) return false;
     for (const write of writes) {
@@ -313,9 +330,9 @@ describe('runCommands', () => {
     controller.runCommands([
       { type: 'set-value', name: 'project.name', value: 'Rebrand' }
     ]);
-    for (const occurrence of scanBindings(editor.doc as SfdtDocument).fields.get(
-      'project.name'
-    )!) {
+    for (const occurrence of scanBindings(
+      editor.doc as SfdtDocument
+    ).fields.get('project.name')!) {
       expect(occurrence.text).toBe('Rebrand');
     }
 
@@ -332,6 +349,25 @@ describe('runCommands', () => {
     expect(table.rows[2].bindings.get('line_total')!.text).toBe('$0.00');
     expect(editor.opens).toBe(1);
     clock.fire();
+  });
+
+  it('restores structure when a later derived write cannot be applied', () => {
+    const { editor, controller } = setup();
+    controller.loadInitial(buildCostsFixture());
+    const baseline = editor.serialize();
+    editor.supportsValuePatching = false;
+
+    controller.runCommands([
+      { type: 'remove-row', tableId: 'costs', rowId: 'r-2' }
+    ]);
+
+    expect(editor.serialize()).toBe(baseline);
+    expect(JSON.stringify(controller.workingSfdt)).toBe(baseline);
+    expect(controller.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'native-mutation-failed' })
+      ])
+    );
   });
 });
 
