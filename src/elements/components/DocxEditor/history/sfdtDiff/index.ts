@@ -436,6 +436,8 @@ interface PendingRun {
   text: string;
   /** The revision's author key ('robin' for the assistant), for re-attribution. */
   author: AuthorKey;
+  /** Robin's original tracked-change group, if the revision was tagged. */
+  group?: string;
 }
 
 // The assistant writes tracked changes under the document author 'Robin'; the
@@ -455,16 +457,30 @@ function authorKeyOf(author: string): AuthorKey {
  */
 function collectPendingRuns(doc: any): PendingRun[] {
   const revs: any[] = Array.isArray(doc?.revisions) ? doc.revisions : [];
-  const metaById = new Map<string, { kind: 'ins' | 'del'; author: string }>();
+  const metaById = new Map<
+    string,
+    { kind: 'ins' | 'del'; author: string; group?: string }
+  >();
   for (const r of revs) {
     const id = r?.revisionId != null ? String(r.revisionId) : null;
     if (!id || id.startsWith('vh-')) continue;
     const type = String(r?.revisionType);
     const author = String(r?.author ?? '');
+    let group: string | undefined;
+    try {
+      const customData = JSON.parse(r?.customData ?? '{}');
+      if (
+        customData?.source === 'robin' &&
+        typeof customData.group === 'string'
+      )
+        group = customData.group;
+    } catch {
+      // Older or untagged tracked revisions do not carry a usable group.
+    }
     if (type === 'Insertion' || type === 'MoveTo')
-      metaById.set(id, { kind: 'ins', author });
+      metaById.set(id, { kind: 'ins', author, group });
     else if (type === 'Deletion' || type === 'MoveFrom')
-      metaById.set(id, { kind: 'del', author });
+      metaById.set(id, { kind: 'del', author, group });
   }
   if (!metaById.size) return [];
   const textById = new Map<string, string>();
@@ -501,7 +517,12 @@ function collectPendingRuns(doc: any): PendingRun[] {
   for (const [id, text] of textById) {
     const meta = metaById.get(id);
     if (meta && text.trim())
-      runs.push({ kind: meta.kind, text, author: authorKeyOf(meta.author) });
+      runs.push({
+        kind: meta.kind,
+        text,
+        author: authorKeyOf(meta.author),
+        ...(meta.group ? { group: meta.group } : {})
+      });
   }
   return runs;
 }
@@ -515,7 +536,11 @@ function collectPendingRuns(doc: any): PendingRun[] {
 export function collectRobinRuns(doc: any): RevisionRun[] {
   return collectPendingRuns(doc)
     .filter((r) => r.author === 'robin')
-    .map((r) => ({ kind: r.kind, text: r.text }));
+    .map((r) => ({
+      kind: r.kind,
+      text: r.text,
+      ...(r.group ? { group: r.group } : {})
+    }));
 }
 
 /**
@@ -666,11 +691,14 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
   // so it keeps an accepted Robin edit coloured as Robin. Matched only when there
   // is no live pending match, and it never marks the edit pending (it's approved).
   const robinRuns = changes.robinRuns ?? [];
-  const matchesRobin = (kind: 'ins' | 'del', text: string): boolean => {
-    if (!robinRuns.length) return false;
+  const matchRobin = (
+    kind: 'ins' | 'del',
+    text: string
+  ): RevisionRun | undefined => {
+    if (!robinRuns.length) return undefined;
     const t = text.trim();
-    if (!t) return false;
-    return robinRuns.some((r) => {
+    if (!t) return undefined;
+    return robinRuns.find((r) => {
       if (r.kind !== kind) return false;
       const candidate = r.text.trim();
       return (
@@ -688,10 +716,21 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
     kind: 'ins' | 'del',
     text: string,
     fallbackAuthor: string
-  ): { author: string; pending: boolean } => {
+  ): { author: string; pending: boolean; group?: string } => {
     const live = matchPending(kind, text);
-    if (live) return { author: live.author, pending: true };
-    if (matchesRobin(kind, text)) return { author: 'robin', pending: false };
+    if (live)
+      return {
+        author: live.author,
+        pending: true,
+        ...(live.group ? { group: live.group } : {})
+      };
+    const robin = matchRobin(kind, text);
+    if (robin)
+      return {
+        author: 'robin',
+        pending: false,
+        ...(robin.group ? { group: robin.group } : {})
+      };
     return { author: fallbackAuthor, pending: false };
   };
   const date = new Date().toISOString();
@@ -773,7 +812,7 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
           resolved.author,
           hunk.id,
           resolved.pending,
-          blockGroupKey(resolved.author, hunk.at.block)
+          resolved.group ?? blockGroupKey(resolved.author, hunk.at.block)
         );
         for (let k = hunk.at.offset; k < hunk.at.offset + hunk.at.length; k++) {
           chars[k]?.revisionIds.push(mark.revisionId);
@@ -806,7 +845,7 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
         resolved.author,
         hunk.id,
         resolved.pending,
-        blockGroupKey(resolved.author, hunk.at.block)
+        resolved.group ?? blockGroupKey(resolved.author, hunk.at.block)
       );
       // Inherit the surrounding char's content control so re-inserted deleted
       // text stays inside its field rather than splitting the wrapper.
@@ -860,7 +899,7 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
         resolved.author,
         hunk.id,
         resolved.pending,
-        blockGroupKey(resolved.author, inserted[start].path)
+        resolved.group ?? blockGroupKey(resolved.author, inserted[start].path)
       );
       for (const { para } of inserted.slice(start, end)) {
         if (!para || !Array.isArray(para.inlines)) continue;
@@ -901,7 +940,7 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
       delAuthor,
       hunk.id,
       !!delBlockMatch,
-      blockGroupKey(delAuthor, hunk.at.block)
+      delBlockMatch?.group ?? blockGroupKey(delAuthor, hunk.at.block)
     );
     const { arr, index } = containerOf(doc, hunk.at.block);
     if (!Array.isArray(arr)) continue;

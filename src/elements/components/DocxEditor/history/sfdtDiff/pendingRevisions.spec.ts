@@ -9,7 +9,12 @@ import {
   para,
   textRun
 } from '../../bindings/tests/realEditorHarness';
-import { applyHunks, countPendingGroups, diffSession } from './index';
+import {
+  applyHunks,
+  countPendingGroups,
+  diffSession,
+  editGroupKey
+} from './index';
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
@@ -183,6 +188,25 @@ describe('applyHunks approved-Robin re-attribution (durable robinRuns)', () => {
     expect(authorsOf(display)).toContain('robin');
     // Approved, not suggested: no pending group (no dashed ring).
     expect(countPendingGroups(display)).toBe(0);
+  });
+
+  it('keeps the Robin tracked-change group after the edit is accepted and restored', () => {
+    const changes = diffSession(
+      base,
+      [{ sfdt: clone(acceptedFinal), author: 'you' }],
+      's'
+    );
+    // This is persisted in the version's changes artifact while the live Robin
+    // revision still exists. A restored version must retain the same group key.
+    changes.robinRuns = [
+      { kind: 'ins', text: 'world', group: 'add-premium-table' }
+    ];
+    const display = applyHunks(clone(acceptedFinal), changes);
+    const robinRevision = (display.revisions ?? []).find(
+      (revision: any) => revision.author === 'robin'
+    );
+
+    expect(editGroupKey(robinRevision)).toBe('add-premium-table');
   });
 
   it('without robinRuns the same accepted edit stays mis-credited (guards the gap it fixes)', () => {

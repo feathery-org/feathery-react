@@ -508,7 +508,17 @@ describe('useDocxHistorySession', () => {
         }
       ],
       revisions: [
-        { author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }
+        {
+          author: 'Robin',
+          revisionType: 'Insertion',
+          revisionId: 'r1',
+          customData: JSON.stringify({
+            v: 1,
+            source: 'robin',
+            changeSetId: 'cs-1',
+            group: 'add-premium-table'
+          })
+        }
       ]
     });
     act(() => view.result.current.onEdit({ assistant: true }));
@@ -519,7 +529,10 @@ describe('useDocxHistorySession', () => {
     const changes = JSON.parse(await blobText(payload.changesJson!));
     expect(
       (changes.robinRuns ?? []).some(
-        (r: any) => r.kind === 'ins' && r.text.includes('world')
+        (r: any) =>
+          r.kind === 'ins' &&
+          r.text.includes('world') &&
+          r.group === 'add-premium-table'
       )
     ).toBe(true);
   });

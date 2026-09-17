@@ -171,7 +171,7 @@ export function useDocxHistorySession(
   // Text Robin authored this session, captured on each assistant edit WHILE its
   // revision is live — so it survives the user accepting the suggestion before
   // the version closes. Stored on the change list to keep accepted Robin edits
-  // coloured as Robin at view time (deduped by kind+text).
+  // coloured as Robin at view time (deduped by kind, text, and group).
   const robinRunsRef = useRef<RevisionRun[]>([]);
   // Present only while the review rail is applying an accept operation. It
   // changes both attribution (the accepted text remains Robin's) and the diff
@@ -582,16 +582,19 @@ export function useDocxHistorySession(
       tracker.noteEdit(actor);
       // Snapshot Robin's authored runs now, while their revisions are still live
       // (the user may accept them before this version closes, after which they
-      // are unrecoverable). Deduped by kind+text; only runs on assistant edits.
+      // are unrecoverable). Deduped by kind, text, and group; only runs on
+      // assistant edits.
       if (info.assistant && ed) {
         try {
           const runs = collectRobinRuns(JSON.parse(ed.serialize()));
           if (runs.length) {
             const seen = new Set(
-              robinRunsRef.current.map((r) => `${r.kind} ${r.text}`)
+              robinRunsRef.current.map(
+                (r) => `${r.kind} ${r.text} ${r.group ?? ''}`
+              )
             );
             for (const r of runs) {
-              const key = `${r.kind} ${r.text}`;
+              const key = `${r.kind} ${r.text} ${r.group ?? ''}`;
               if (!seen.has(key)) {
                 seen.add(key);
                 robinRunsRef.current.push(r);

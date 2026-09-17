@@ -90,6 +90,8 @@ export type Hunk =
 export interface RevisionRun {
   kind: 'ins' | 'del';
   text: string;
+  /** Original Robin tracked-change group, retained when a version is restored. */
+  group?: string;
 }
 
 export interface ChangeList {
