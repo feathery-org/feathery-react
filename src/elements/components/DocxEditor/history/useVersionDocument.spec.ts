@@ -2,7 +2,9 @@ import { renderHook, waitFor } from '@testing-library/react';
 
 import {
   __clearVersionDocumentCache,
+  clearLocalVersionArtifacts,
   prefetchVersionDocuments,
+  registerLocalVersionArtifacts,
   useVersionDocument
 } from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
@@ -256,5 +258,64 @@ describe('useVersionDocument', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.degraded).toBe(true);
     expect(result.current.sfdt).toBe(FINAL);
+  });
+
+  // A close whose artifact upload is deferred (restore) or still in flight has
+  // no final_sfdt on the backend row yet. The registered in-memory snapshot
+  // must serve the viewer instead of the raw control-bearing docx fallback.
+  it('serves registered local artifacts instead of the docx fallback', async () => {
+    const changes = {
+      v: 1,
+      sessionId: 's1',
+      final_sha256: '',
+      hunks: [
+        {
+          id: 1,
+          author: 'you',
+          type: 'ins',
+          at: { block: [0, 'blocks', 0], offset: 0, length: 2 }
+        }
+      ],
+      changeCount: 1,
+      formatChangeCount: 0,
+      authors: ['you']
+    } as any;
+    registerLocalVersionArtifacts('s1', { finalSfdt: FINAL, changes });
+    const h = host();
+    const ver = version({ editor_file: 'editor.docx', file: 'public.docx' });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.docxUrl).toBeUndefined();
+    expect(result.current.degraded).toBe(false);
+    expect(result.current.sfdt).toContain('revisionId');
+    expect(h.fetchVersionFile).not.toHaveBeenCalled();
+  });
+
+  it('outranks a cached degraded prefetch and clears only a matching snapshot', async () => {
+    const h = host();
+    const ver = version({ editor_file: 'editor.docx' });
+    // Prefetch caches the degraded docx fallback before the close registers.
+    await prefetchVersionDocuments(h, [ver]);
+    registerLocalVersionArtifacts('s1', { finalSfdt: FINAL });
+
+    const local = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(local.result.current.loading).toBe(false));
+    expect(local.result.current.sfdt).toBe(FINAL);
+    local.unmount();
+
+    // A different snapshot's clear (an older checkpoint completing) is ignored.
+    clearLocalVersionArtifacts('s1', '{"other":1}');
+    const kept = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(kept.result.current.loading).toBe(false));
+    expect(kept.result.current.sfdt).toBe(FINAL);
+    kept.unmount();
+
+    // The matching clear (this close's upload landed) releases it: the row is
+    // resolved normally again (here, back to its docx fallback).
+    clearLocalVersionArtifacts('s1', FINAL);
+    const released = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(released.result.current.loading).toBe(false));
+    expect(released.result.current.docxUrl).toBe('editor.docx');
   });
 });

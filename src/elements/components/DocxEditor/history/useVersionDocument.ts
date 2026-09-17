@@ -77,6 +77,59 @@ function cacheSet(key: string, value: ResolvedVersion): void {
 export function __clearVersionDocumentCache(): void {
   versionCache.clear();
   resolveInFlight.clear();
+  localArtifacts.clear();
+}
+
+export interface LocalVersionArtifacts {
+  finalSfdt: string;
+  changes?: ChangeList;
+}
+
+// The closing session's artifacts, kept in memory while their upload is in
+// flight (or failed), so the viewer never degrades to the raw control-bearing
+// docx for a row the client can render exactly.
+const LOCAL_ARTIFACTS_MAX = 4;
+const localArtifacts = new Map<string, LocalVersionArtifacts>();
+
+export function registerLocalVersionArtifacts(
+  sessionId: string,
+  artifacts: LocalVersionArtifacts
+): void {
+  localArtifacts.delete(sessionId);
+  localArtifacts.set(sessionId, artifacts);
+  if (localArtifacts.size > LOCAL_ARTIFACTS_MAX) {
+    const oldest = localArtifacts.keys().next().value as string | undefined;
+    if (oldest !== undefined) localArtifacts.delete(oldest);
+  }
+}
+
+/** The registered artifacts for a session, if any (also used by tests). */
+export function localVersionArtifactsFor(
+  sessionId: string
+): LocalVersionArtifacts | undefined {
+  return localArtifacts.get(sessionId);
+}
+
+/** Drop a session's local artifacts once uploaded. With `finalSfdt`, only the
+ *  matching snapshot is cleared — an older checkpoint's upload completing must
+ *  not evict a newer close's registration. */
+export function clearLocalVersionArtifacts(
+  sessionId: string,
+  finalSfdt?: string
+): void {
+  const entry = localArtifacts.get(sessionId);
+  if (!entry) return;
+  if (finalSfdt !== undefined && entry.finalSfdt !== finalSfdt) return;
+  localArtifacts.delete(sessionId);
+}
+
+function localFor(version: DocxVersion): LocalVersionArtifacts | undefined {
+  if (!version.session_id) return undefined;
+  const entry = localArtifacts.get(version.session_id);
+  if (!entry) return undefined;
+  // Local wins only while the backend row is missing something it has.
+  if (!version.final_sfdt || (!version.changes && entry.changes)) return entry;
+  return undefined;
 }
 
 async function gunzip(buffer: ArrayBuffer): Promise<string> {
@@ -89,6 +142,57 @@ async function gunzip(buffer: ArrayBuffer): Promise<string> {
   return new Response(stream).text();
 }
 
+/** Build the viewer document from a final SFDT and (optionally) its change
+ *  list. `expectedSha256` guards fetched artifacts; local ones pass null. */
+function buildFromFinal(
+  finalSfdt: string,
+  changes: ChangeList | null,
+  expectedSha256: string | null
+): ResolvedVersion {
+  const finalDoc = JSON.parse(finalSfdt);
+
+  const plainSfdt = () => {
+    try {
+      const populated = populateVersionBindings(finalDoc);
+      return populated === finalDoc ? finalSfdt : JSON.stringify(populated);
+    } catch {
+      return finalSfdt;
+    }
+  };
+
+  if (changes) {
+    try {
+      if (
+        changes.final_sha256 &&
+        expectedSha256 &&
+        changes.final_sha256 !== expectedSha256
+      )
+        return { error: false, sfdt: plainSfdt(), degraded: true };
+      if (!changes.hunks?.length)
+        return { error: false, sfdt: plainSfdt(), degraded: true };
+      const display = applyHunks(finalDoc, changes);
+      let displaySfdt: string;
+      try {
+        displaySfdt = JSON.stringify(populateVersionBindings(display));
+      } catch {
+        displaySfdt = JSON.stringify(display);
+      }
+      return {
+        error: false,
+        sfdt: displaySfdt,
+        editCount: countEditGroups(display),
+        formatCount: changes.formatChangeCount,
+        pendingCount: countPendingGroups(display),
+        approvedCount: changes.confirmed ? countEditGroups(display) : 0,
+        degraded: false
+      };
+    } catch {
+      return { error: false, sfdt: plainSfdt(), degraded: true };
+    }
+  }
+  return { error: false, sfdt: plainSfdt(), degraded: true };
+}
+
 async function resolveVersionDocument(
   host: DocxHistoryHost,
   version: DocxVersion
@@ -98,51 +202,17 @@ async function resolveVersionDocument(
       const finalSfdt = await gunzip(
         await host.fetchVersionFile(version.final_sfdt)
       );
-      const finalDoc = JSON.parse(finalSfdt);
-
-      const plainSfdt = () => {
-        try {
-          const populated = populateVersionBindings(finalDoc);
-          return populated === finalDoc ? finalSfdt : JSON.stringify(populated);
-        } catch {
-          return finalSfdt;
-        }
-      };
-
+      let changes: ChangeList | null = null;
       if (version.changes && version.change_count != null) {
         try {
-          const changes: ChangeList = JSON.parse(
+          changes = JSON.parse(
             await gunzip(await host.fetchVersionFile(version.changes))
           );
-          if (
-            changes.final_sha256 &&
-            version.final_sha256 &&
-            changes.final_sha256 !== version.final_sha256
-          )
-            return { error: false, sfdt: plainSfdt(), degraded: true };
-          if (!changes.hunks?.length)
-            return { error: false, sfdt: plainSfdt(), degraded: true };
-          const display = applyHunks(finalDoc, changes);
-          let displaySfdt: string;
-          try {
-            displaySfdt = JSON.stringify(populateVersionBindings(display));
-          } catch {
-            displaySfdt = JSON.stringify(display);
-          }
-          return {
-            error: false,
-            sfdt: displaySfdt,
-            editCount: countEditGroups(display),
-            formatCount: changes.formatChangeCount,
-            pendingCount: countPendingGroups(display),
-            approvedCount: changes.confirmed ? countEditGroups(display) : 0,
-            degraded: false
-          };
         } catch {
-          return { error: false, sfdt: plainSfdt(), degraded: true };
+          changes = null;
         }
       }
-      return { error: false, sfdt: plainSfdt(), degraded: true };
+      return buildFromFinal(finalSfdt, changes, version.final_sha256 ?? null);
     }
 
     const docxUrl = version.editor_file ?? version.file;
@@ -157,6 +227,16 @@ async function resolveAndCache(
   host: DocxHistoryHost,
   version: DocxVersion
 ): Promise<ResolvedVersion> {
+  // A close still uploading (or failed) serves from memory, uncached: the row's
+  // artifact URLs appear on a later list refresh and take over naturally.
+  const local = localFor(version);
+  if (local) {
+    try {
+      return buildFromFinal(local.finalSfdt, local.changes ?? null, null);
+    } catch {
+      // Malformed local snapshot: fall through to the fetched/docx path.
+    }
+  }
   if (version.is_current) return resolveVersionDocument(host, version);
   const key = cacheKey(version);
   const cached = cacheGet(key);
@@ -203,7 +283,12 @@ export function useVersionDocument(
       setState({ loading: false, error: false, degraded: true });
       return;
     }
-    const cached = version.is_current ? undefined : cacheGet(cacheKey(version));
+    // Local artifacts outrank a cached resolution: a prefetch may have cached
+    // the degraded docx fallback before the close registered its snapshot.
+    const cached =
+      version.is_current || localFor(version)
+        ? undefined
+        : cacheGet(cacheKey(version));
     if (cached) {
       reqId.current++;
       setState({ loading: false, ...cached });

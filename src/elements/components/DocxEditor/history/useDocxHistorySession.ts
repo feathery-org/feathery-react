@@ -34,6 +34,11 @@ import {
   Slice,
   VersionAuthor
 } from './types';
+import {
+  clearLocalVersionArtifacts,
+  localVersionArtifactsFor,
+  registerLocalVersionArtifacts
+} from './useVersionDocument';
 
 const ROBIN: VersionAuthor = {
   kind: 'assistant',
@@ -322,6 +327,15 @@ export function useDocxHistorySession(
             )
           );
           changesJson = await gzip(JSON.stringify(changes));
+          // Serve this exact document from memory while the upload is pending.
+          // Upgrade-only: an older checkpoint draining from the queue must not
+          // clobber a newer close's registration for the same session.
+          const existing = localVersionArtifactsFor(sessionId);
+          if (!existing || existing.finalSfdt === fStr)
+            registerLocalVersionArtifacts(sessionId, {
+              finalSfdt: fStr,
+              changes
+            });
         }
       } catch {
         // Diff failed (unexpected SFDT shape, over budget): upload F alone so
@@ -341,9 +355,12 @@ export function useDocxHistorySession(
           startSha256,
           authors
         });
+        // Uploaded: the backend row now serves these artifacts itself. Matched
+        // by snapshot so this cannot evict a newer close's registration.
+        clearLocalVersionArtifacts(sessionId, fStr);
       } catch {
         // Backend close endpoint unreachable: the row keeps its docx pair and
-        // views with the one-colour fallback.
+        // views with the one-colour fallback (locally, from the registration).
       }
     };
 
@@ -397,6 +414,10 @@ export function useDocxHistorySession(
         robinRuns: robinRunsRef.current,
         acceptance: acceptanceRef.current
       };
+      // Register the closing document immediately: a restore (or prefetch) can
+      // reach this row before its deferred diff/SFDT upload has even started.
+      if (fStr)
+        registerLocalVersionArtifacts(meta.sessionId, { finalSfdt: fStr });
       slices.clear();
       s0Ref.current = null;
       preTurnSnapshotRef.current = null;
