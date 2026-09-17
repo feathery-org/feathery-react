@@ -78,7 +78,7 @@ export function diffSession(
   }
 
   const finalDoc = normalizeForDiff(slices[slices.length - 1].sfdt);
-  const hunks = emitHunks(working);
+  const hunks = emitHunks(working, s0);
   const authors = Array.from(
     new Set(hunks.map((h) => h.author))
   ) as AuthorKey[];
@@ -120,7 +120,18 @@ function rawParagraphFrom(block: WBlock): unknown {
   return { paragraphFormat: { ...block.paraFmt }, inlines };
 }
 
-function emitHunks(working: Working): Hunk[] {
+const tablePathOf = (path: BlockPath): BlockPath | null => {
+  const rowIndex = path.indexOf('rows');
+  return rowIndex > 0 ? path.slice(0, rowIndex) : null;
+};
+
+const samePath = (a: BlockPath | null, b: BlockPath | null): boolean =>
+  a !== null &&
+  b !== null &&
+  a.length === b.length &&
+  a.every((part, index) => part === b[index]);
+
+function emitHunks(working: Working, startDoc: any): Hunk[] {
   const hunks: Hunk[] = [];
   let nextId = 1;
   const blocks = working.blocks;
@@ -146,17 +157,26 @@ function emitHunks(working: Working): Hunk[] {
     if (block.delBlock) {
       // Consecutive deleted blocks by the same author share one hunk.
       const removed: unknown[] = [rawParagraphFrom(block)];
+      const tablePath = tablePathOf(block.path);
+      let deletesOnlyThisTable = !!tablePath;
       const author = block.delBlock;
       while (bi + 1 < blocks.length && blocks[bi + 1].delBlock === author) {
         bi++;
         removed.push(rawParagraphFrom(blocks[bi]));
+        if (!samePath(tablePath, tablePathOf(blocks[bi].path)))
+          deletesOnlyThisTable = false;
       }
+      const table =
+        deletesOnlyThisTable && tablePath
+          ? getBlock(startDoc, tablePath)
+          : undefined;
       hunks.push({
         id: nextId++,
         author,
         type: 'del_block',
         at: { block: nextSurvivingPath(bi + 1) },
-        blocks: removed
+        blocks: removed,
+        ...(Array.isArray(table?.rows) ? { table } : {})
       });
       continue;
     }
@@ -885,6 +905,29 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
     );
     const { arr, index } = containerOf(doc, hunk.at.block);
     if (!Array.isArray(arr)) continue;
+    if (hunk.table && Array.isArray((hunk.table as any).rows)) {
+      const table = JSON.parse(JSON.stringify(hunk.table));
+      for (const row of table.rows) {
+        row.rowFormat = {
+          ...(row.rowFormat ?? {}),
+          revisionIds: [mark.revisionId]
+        };
+        for (const cell of row.cells ?? []) {
+          for (const para of cell.blocks ?? []) {
+            if (!Array.isArray(para?.inlines)) continue;
+            const chars = flattenForDisplay(para);
+            for (const c of chars) c.revisionIds.push(mark.revisionId);
+            para.inlines = rebuildInlines(chars);
+            para.characterFormat = {
+              ...(para.characterFormat ?? {}),
+              revisionIds: [mark.revisionId]
+            };
+          }
+        }
+      }
+      arr.splice(Math.min(index, arr.length), 0, table);
+      continue;
+    }
     const paras = hunk.blocks.map((raw: any) => {
       const para = JSON.parse(JSON.stringify(raw));
       const chars = flattenForDisplay(para);

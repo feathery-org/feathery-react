@@ -239,6 +239,9 @@ function DocxEditor({
   // The version list reported up by the History panel, for auto-selecting the
   // latest (Current) version when the panel opens.
   const [historyVersions, setHistoryVersions] = useState<DocxVersion[]>([]);
+  // The panel can still hold rows from its previous opening. Only its next
+  // completed list request is allowed to choose the initial Current version.
+  const historyAutoSelectedRef = useRef(false);
   const firstUserKey = firstUserActorKey(historyVersions);
   // Version highlights are always shown when available (no user toggle). The
   // resolved counts below drive the version bar's summary; reset per version.
@@ -599,6 +602,21 @@ function DocxEditor({
     [editor, historySession]
   );
 
+  const handleHistoryVersionsLoaded = useCallback(
+    (versions: DocxVersion[]) => {
+      setHistoryVersions(versions);
+      // Do not use the previous opening's rows here: a save can turn that old
+      // Current row into latest-1 before the user opens history again. The
+      // callback's payload is the fresh list that the panel is displaying.
+      if (activePanel !== 'history' || historyAutoSelectedRef.current) return;
+      const current = versions.find((version) => version.is_current);
+      if (!current) return;
+      historyAutoSelectedRef.current = true;
+      selectVersion(current);
+    },
+    [activePanel, selectVersion]
+  );
+
   // Save can finish while Current is already selected. Once its refreshed row
   // includes the stored history files, replace any plain live preview with the
   // saved version so the viewer can render and step through those edits.
@@ -708,22 +726,13 @@ function DocxEditor({
     }
   }, []);
 
-  // When the History panel opens, select the latest (Current) version by default
-  // so the viewer shows it read-only straight away. Fires once per open; a manual
-  // "back to current" while the panel stays open does not re-trigger it.
-  const historyAutoSelectedRef = useRef(false);
+  // Opening history always waits for the panel's fresh list response before it
+  // selects Current. Leaving it makes the next opening eligible again.
   useEffect(() => {
     if (activePanel !== 'history') {
       historyAutoSelectedRef.current = false;
-      return;
     }
-    if (historyAutoSelectedRef.current) return;
-    const current = historyVersions.find((v) => v.is_current);
-    if (current) {
-      historyAutoSelectedRef.current = true;
-      selectVersion(current);
-    }
-  }, [activePanel, historyVersions, selectVersion]);
+  }, [activePanel]);
 
   // Flash a save toast and auto-dismiss it. Re-showing while one is already up
   // resets the timer so a second save reads as fresh feedback. Errors linger a
@@ -1121,7 +1130,7 @@ function DocxEditor({
             // in-progress current version is diffed live inside selectVersion.
             onSelectVersion={selectVersion}
             // Report the loaded list up so the panel can auto-select the latest.
-            onVersionsLoaded={setHistoryVersions}
+            onVersionsLoaded={handleHistoryVersionsLoaded}
             // Footer actions: Restore the open version; enabled while viewing,
             // but never for the current version (already the live document).
             onRestoreVersion={restoreViewingVersion}

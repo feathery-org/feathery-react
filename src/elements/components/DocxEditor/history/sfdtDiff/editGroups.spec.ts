@@ -23,6 +23,30 @@ import { stepperRevisions } from '../stepperRevisions';
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
 describe('edit groups (version-bar count + steppers)', () => {
+  it('keeps a deleted table as a table in the version preview', () => {
+    const base = docWith(
+      para(textRun('Before the table.')),
+      table(
+        row(cellText('Item'), cellText('Qty')),
+        row(cellText('Design work'), cellText('12'))
+      )
+    );
+    const final = docWith(para(textRun('Before the table.')));
+
+    const changes = diffSession(
+      clone(base),
+      [{ sfdt: clone(final), author: 'robin' }],
+      'deleted-table'
+    );
+    const display = applyHunks(clone(final), changes);
+
+    expect(display.sections[0].blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rows: expect.any(Array) })
+      ])
+    );
+  });
+
   it('steps a whole inserted table (all its cells) as one edit', () => {
     // Robin inserts a 2x2 table. It flattens to one hunk per cell, but every
     // cell shares the table's top-level block index, so it steps as ONE edit.

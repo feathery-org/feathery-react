@@ -62,6 +62,9 @@ export interface DelBlockHunk {
   at: Pick<HunkAt, 'block'>;
   /** Removed paragraphs, as plain SFDT blocks (text + formats), in order. */
   blocks: unknown[];
+  /** The original table when this deletion removes one whole table. Keeping the
+   *  wrapper preserves rows, cells, widths and borders in the history view. */
+  table?: unknown;
 }
 
 export interface FmtBlockHunk {
