@@ -1039,11 +1039,12 @@ function Form({
 
     const getNewVal = (field: any) => {
       const val = fieldValues[field.servar.key];
-      return [
-        // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
-        ...val,
-        getDefaultFieldValue(field)
-      ];
+      if (!Array.isArray(val)) return val;
+      // Appending is inserting at the boundary, so a field left short by a
+      // connector response is padded to the container first. Growing it from
+      // its own length instead kept it permanently a row behind its siblings,
+      // lining row N of one field up with row N-1 of another.
+      return insertRepeatRowValue(val, rows, rows, field);
     };
     updateRepeatValues(repeatContainer, getNewVal);
   }

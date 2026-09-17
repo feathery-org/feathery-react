@@ -31,11 +31,12 @@ export function replaceTextVariables(text: string, repeat?: any) {
           return '';
         } else if (isNaN(repeat)) {
           return pVal.map((entry) => renderValue(pStr, entry)).join(', ');
-        } else if (repeat >= pVal.length) {
-          return renderValue(pStr, pVal[0]);
-        } else {
-          return renderValue(pStr, pVal[repeat]);
         }
+        // Inside a repeat the array is row-indexed: entry N belongs to row N.
+        // A row past the end of the array has no value of its own and renders
+        // empty. It used to fall back to entry 0, which copied the first row's
+        // value into every row a shorter array could not fill.
+        else return renderValue(pStr, pVal[repeat]);
       } else return renderValue(pStr, pVal);
     }
     // A real field the user hasn't filled renders empty, while a name that

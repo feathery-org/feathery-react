@@ -402,7 +402,14 @@ describe('addRepeatedRow at the row cap', () => {
     await waitFor(() => {
       expect((fieldValues as any).name).toEqual(['a', 'b', '']);
     });
-    expect((fieldValues as any).doc).toEqual(['f0', '']);
+    // Every field lands on the same row count. `doc` starts a row short, the
+    // way a file field is whenever it ends in empty rows, so it is padded to
+    // the container before the new row goes on - row 1 is its own hole (null,
+    // the file convention) and row 2 is the added row. Growing it from its own
+    // length instead left it at two rows while its siblings had three, which
+    // lined row N of one field up with row N-1 of another.
+    expect((fieldValues as any).doc).toEqual(['f0', null, '']);
+    expect((fieldValues as any).pick).toEqual(['x', 'y', '']);
   });
 });
 

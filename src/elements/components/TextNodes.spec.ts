@@ -74,8 +74,35 @@ describe('replaceTextVariables', () => {
       expect(replaceTextVariables('{{f}}', 1)).toBe('b');
     });
 
-    it('falls back to the first entry past the end of the array', () => {
-      expect(replaceTextVariables('{{f}}', 5)).toBe('a');
+    it('renders empty past the end of the array', () => {
+      // It used to fall back to entry 0, so every row a shorter array could
+      // not fill wore the first row's value.
+      expect(replaceTextVariables('{{f}}', 5)).toBe('');
+    });
+
+    it('renders empty at the first row the array cannot fill', () => {
+      // Two connector values, three rows: row 2 has no value of its own.
+      expect(replaceTextVariables('{{f}}', 2)).toBe('');
+    });
+
+    it('still fills the rows the array does cover', () => {
+      expect(replaceTextVariables('{{f}}', 0)).toBe('a');
+    });
+
+    it('keeps the surrounding text when a row is empty', () => {
+      expect(replaceTextVariables('Item: {{f}}!', 2)).toBe('Item: !');
+    });
+
+    it('renders empty for an explicit empty entry', () => {
+      setFieldValues({ f: ['a', ''] });
+      expect(replaceTextVariables('{{f}}', 1)).toBe('');
+    });
+
+    it('does not broadcast a one-entry array to later rows', () => {
+      // A value meant for every row belongs in a non-repeated field.
+      setFieldValues({ f: ['only'] });
+      expect(replaceTextVariables('{{f}}', 0)).toBe('only');
+      expect(replaceTextVariables('{{f}}', 1)).toBe('');
     });
   });
 
@@ -129,6 +156,19 @@ describe('replaceTextVariables', () => {
       registerFormatted('amount');
       setFieldValues({ amount: [1234.5, 6] });
       expect(replaceTextVariables('{{amount}}', 1)).toBe('$6');
+    });
+
+    it('renders empty past the end rather than a bare currency symbol', () => {
+      registerFormatted('amount');
+      setFieldValues({ amount: [1234.5, 6] });
+      expect(replaceTextVariables('total: {{amount}}', 2)).toBe('total: ');
+    });
+
+    it('renders a zero entry rather than treating it as missing', () => {
+      // formatNumberValue tests value === '', not falsiness, so 0 formats.
+      registerFormatted('amount');
+      setFieldValues({ amount: [0, 6] });
+      expect(replaceTextVariables('{{amount}}', 0)).toBe('$0');
     });
 
     it('formats only the fields that opted in', () => {
