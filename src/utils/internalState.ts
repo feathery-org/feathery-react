@@ -132,6 +132,23 @@ export type SendDocusignParams = {
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
 };
+export type EgnyteFile = {
+  name: string;
+  data: string; // base64
+  // DocuSign's document type (content/summary/certificate), not a MIME type
+  type?: string;
+};
+export type UploadFileToEgnyteParams = {
+  // A getDocusignEnvelope document can be passed straight through
+  file: EgnyteFile;
+  // Relative to the root folder configured on the Egnyte integration
+  path?: string;
+  name?: string; // overrides file.name
+  createFolder?: boolean; // defaults to true
+};
+export type CreateEgnyteFolderParams = {
+  path: string;
+};
 export type UpdateDocusignEnvelopeParams = {
   envelopeId: string;
   // 'sent' (send a draft) | 'voided' (cancel) | 'discarded' (move to the
@@ -199,6 +216,8 @@ export interface FormInternalState {
   updateDocusignEnvelope: (
     params: UpdateDocusignEnvelopeParams
   ) => Promise<any>;
+  uploadFileToEgnyte: (params: UploadFileToEgnyteParams) => Promise<any>;
+  createEgnyteFolder: (params: CreateEgnyteFolderParams) => Promise<any>;
   getDocusignBrands: () => Promise<any>;
   getConfig: GetConfig;
   // Registered by <Form /> so the `feathery.generateDocuments` logic-rule
