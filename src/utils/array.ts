@@ -27,6 +27,23 @@ function justInsert(
 }
 
 /**
+ * Moves one entry to a new index without side effects. `to` is the entry's
+ * index in the result, matching Array#splice semantics. The input is returned
+ * identity-equal when the move is a no-op or out of range, so callers can
+ * cheaply detect that nothing happened.
+ */
+function arrayMove(list: any[], from: number, to: number) {
+  if (from === to) return list;
+  if (from < 0 || from >= list.length) return list;
+  if (to < 0 || to >= list.length) return list;
+
+  const next = [...list];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+/**
  * Removes an element from a list without side effects.
  */
 function justRemove(list: any, index: any) {
@@ -45,4 +62,4 @@ function isEmptyArray(arr: any) {
   return Array.isArray(arr) && arr.length === 0;
 }
 
-export { justInsert, justRemove, toList, isEmptyArray };
+export { justInsert, justRemove, arrayMove, toList, isEmptyArray };

@@ -4,6 +4,7 @@ import { fieldValues } from './init';
 import {
   getRepeatedContainer,
   getRepeatedContainers,
+  clampRepeatCountToCap,
   getServarRepeatNum,
   inRepeat
 } from './repeat';
@@ -191,7 +192,16 @@ function _collectHideFlags(
     1
   );
 
-  const curRepeats = repeatKey ? numRepeats : 1;
+  // The container the repeat count belongs to, so a row cap can withhold the
+  // trailing row a 'set_value' trigger would otherwise offer past the limit.
+  const repeatContainer = repeatKey
+    ? step.subgrids.find((sg: any) => getPositionKey(sg) === repeatKey)
+    : undefined;
+  const curRepeats = !repeatKey
+    ? 1
+    : repeatContainer
+    ? clampRepeatCountToCap(step, repeatContainer, numRepeats)
+    : numRepeats;
 
   const visible: boolean[] = [];
   for (let i = 0; i < curRepeats; i++) {
