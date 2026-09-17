@@ -250,6 +250,50 @@ describe('VersionViewer', () => {
     await waitFor(() => expect(open).toHaveBeenCalledWith('{"sfdt":"second"}'));
   });
 
+  it('a slow docx import cannot paint over a newer selection', async () => {
+    // A docx-only row (baseline) imports via openAsync, which cannot be
+    // aborted. Selecting another version mid-import must queue its open AFTER
+    // the stale one lands, so the raw (unpopulated) import never wins.
+    let resolveImport!: () => void;
+    openAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveImport = resolve;
+        })
+    );
+    const realFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      arrayBuffer: async () => new ArrayBuffer(4)
+    }) as any;
+    try {
+      const h = host();
+      const view = render(
+        <VersionViewer
+          host={h}
+          version={version({ id: 'docx-race', editor_file: 'e.docx' })}
+        />
+      );
+      await waitFor(() => expect(openAsync).toHaveBeenCalled());
+
+      view.rerender(
+        <VersionViewer
+          host={h}
+          version={version({ id: 'sfdt-race', final_sfdt: 'u' })}
+        />
+      );
+      // The newer open waits for the stale import to fully land first.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(open).not.toHaveBeenCalled();
+
+      resolveImport();
+      await waitFor(() => expect(open).toHaveBeenCalledWith('{"sfdt":"v"}'));
+      // …and the newer document is the last thing opened.
+      expect(open).toHaveBeenCalledTimes(1);
+    } finally {
+      global.fetch = realFetch;
+    }
+  });
+
   it('shares zoom changes from the preview footer', async () => {
     const onZoomFactorChange = jest.fn();
     const view = render(

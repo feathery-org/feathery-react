@@ -213,16 +213,26 @@ export default function VersionViewer({
     containerRef.current?.statusBar?.updateZoomContent?.();
   }, [editorReady, zoomFactor]);
 
+  // Opens run strictly one after another. The viewer is reused across version
+  // selections, and openAsync (the docx fallback) cannot be aborted mid-flight:
+  // without the chain, a slow stale open lands AFTER the newer version's open
+  // and paints the wrong (still-unpopulated) document over it.
+  const openSeqRef = useRef(0);
+  const openChainRef = useRef<Promise<void>>(Promise.resolve());
+
   // Open the resolved document once both the editor and the bytes are ready.
   useEffect(() => {
-    const viewer = editorRef.current;
-    if (!viewer || doc.loading) return undefined;
+    if (!editorRef.current || doc.loading) return undefined;
     if (doc.error) {
       setPhase('error');
       return undefined;
     }
     let cancelled = false;
-    (async () => {
+    const seq = ++openSeqRef.current;
+    openChainRef.current = openChainRef.current.then(async () => {
+      const viewer = editorRef.current;
+      // A newer selection superseded this open while it queued, or unmounted.
+      if (cancelled || seq !== openSeqRef.current || !viewer) return;
       try {
         // With highlights on, patch the renderer and show revisions BEFORE
         // opening so the first paint carries the highlights. NOT gated on the
@@ -257,6 +267,9 @@ export default function VersionViewer({
         if (doc.sfdt) {
           viewer.open(highlightsOn ? doc.sfdt : acceptedSfdt(doc.sfdt));
         } else if (doc.docxUrl) {
+          // The import result still holds raw binding tokens until the populate
+          // step below reopens it — hide the pane so they never paint.
+          setPhase('loading');
           const res = await fetch(doc.docxUrl, { cache: 'no-store' });
           const blob = new Blob([await res.arrayBuffer()], { type: DOCX_MIME });
           await viewer.openAsync(blob);
@@ -321,7 +334,7 @@ export default function VersionViewer({
       } catch {
         if (!cancelled) setPhase('error');
       }
-    })();
+    });
     return () => {
       cancelled = true;
     };
