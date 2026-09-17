@@ -32,24 +32,39 @@ export interface VersionDocument {
   degraded: boolean;
 }
 
-// Older versions are immutable, so a resolved document can be cached by id.
+// Older versions are immutable, so a resolved document can be cached locally.
 // Current can still receive a later checkpoint or close at the same id, and
 // must be fetched again when its row is refreshed.
 // Bounded to the most-recently-used few so memory stays flat on long sessions.
 type ResolvedVersion = Omit<VersionDocument, 'loading'>;
 const CACHE_MAX = 8;
 const versionCache = new Map<string, ResolvedVersion>();
-function cacheGet(id: string): ResolvedVersion | undefined {
-  const hit = versionCache.get(id);
+const resolveInFlight = new Map<string, Promise<ResolvedVersion>>();
+
+function cacheKey(version: DocxVersion): string {
+  // A closed row should never change, but including the artifact URLs prevents
+  // an accidental id reuse or refreshed serializer payload from serving bytes
+  // for a different immutable object.
+  return [
+    version.id,
+    version.final_sfdt ?? '',
+    version.changes ?? '',
+    version.editor_file ?? '',
+    version.file ?? ''
+  ].join('|');
+}
+
+function cacheGet(key: string): ResolvedVersion | undefined {
+  const hit = versionCache.get(key);
   if (hit) {
     // LRU touch: move to the newest slot.
-    versionCache.delete(id);
-    versionCache.set(id, hit);
+    versionCache.delete(key);
+    versionCache.set(key, hit);
   }
   return hit;
 }
-function cacheSet(id: string, value: ResolvedVersion): void {
-  versionCache.set(id, value);
+function cacheSet(key: string, value: ResolvedVersion): void {
+  versionCache.set(key, value);
   if (versionCache.size > CACHE_MAX) {
     const oldest = versionCache.keys().next().value as string | undefined;
     if (oldest !== undefined) versionCache.delete(oldest);
@@ -59,6 +74,7 @@ function cacheSet(id: string, value: ResolvedVersion): void {
 /** Test-only: drop the module-level cache so cases don't bleed into each other. */
 export function __clearVersionDocumentCache(): void {
   versionCache.clear();
+  resolveInFlight.clear();
 }
 
 async function gunzip(buffer: ArrayBuffer): Promise<string> {
@@ -69,6 +85,103 @@ async function gunzip(buffer: ArrayBuffer): Promise<string> {
   if (!DS) throw new Error('gzip decompression unavailable');
   const stream = new Blob([bytes]).stream().pipeThrough(new DS('gzip'));
   return new Response(stream).text();
+}
+
+async function resolveVersionDocument(
+  host: DocxHistoryHost,
+  version: DocxVersion
+): Promise<ResolvedVersion> {
+  try {
+    if (version.final_sfdt) {
+      const finalSfdt = await gunzip(
+        await host.fetchVersionFile(version.final_sfdt)
+      );
+      const finalDoc = JSON.parse(finalSfdt);
+
+      const plainSfdt = () => {
+        try {
+          const populated = populateVersionBindings(finalDoc);
+          return populated === finalDoc ? finalSfdt : JSON.stringify(populated);
+        } catch {
+          return finalSfdt;
+        }
+      };
+
+      if (version.changes && version.change_count != null) {
+        try {
+          const changes: ChangeList = JSON.parse(
+            await gunzip(await host.fetchVersionFile(version.changes))
+          );
+          if (
+            changes.final_sha256 &&
+            version.final_sha256 &&
+            changes.final_sha256 !== version.final_sha256
+          )
+            return { error: false, sfdt: plainSfdt(), degraded: true };
+          if (!changes.hunks?.length)
+            return { error: false, sfdt: plainSfdt(), degraded: true };
+          const display = applyHunks(finalDoc, changes);
+          let displaySfdt: string;
+          try {
+            displaySfdt = JSON.stringify(populateVersionBindings(display));
+          } catch {
+            displaySfdt = JSON.stringify(display);
+          }
+          return {
+            error: false,
+            sfdt: displaySfdt,
+            editCount: countEditGroups(display),
+            formatCount: changes.formatChangeCount,
+            pendingCount: countPendingGroups(display),
+            degraded: false
+          };
+        } catch {
+          return { error: false, sfdt: plainSfdt(), degraded: true };
+        }
+      }
+      return { error: false, sfdt: plainSfdt(), degraded: true };
+    }
+
+    const docxUrl = version.editor_file ?? version.file;
+    if (!docxUrl) throw new Error('version has no document');
+    return { error: false, docxUrl, degraded: true };
+  } catch {
+    return { error: true, degraded: true };
+  }
+}
+
+async function resolveAndCache(
+  host: DocxHistoryHost,
+  version: DocxVersion
+): Promise<ResolvedVersion> {
+  if (version.is_current) return resolveVersionDocument(host, version);
+  const key = cacheKey(version);
+  const cached = cacheGet(key);
+  if (cached) return cached;
+  const pending = resolveInFlight.get(key);
+  if (pending) return pending;
+  const resolve = resolveVersionDocument(host, version).then((result) => {
+    resolveInFlight.delete(key);
+    if (!result.error) cacheSet(key, result);
+    return result;
+  });
+  resolveInFlight.set(key, resolve);
+  return resolve;
+}
+
+/** Warm a small set of immutable historical versions after the rail opens. */
+export function prefetchVersionDocuments(
+  host: DocxHistoryHost | null | undefined,
+  versions: DocxVersion[],
+  limit = CACHE_MAX
+): Promise<void> {
+  if (!host) return Promise.resolve();
+  return Promise.all(
+    versions
+      .filter((version) => !version.is_current)
+      .slice(0, limit)
+      .map((version) => resolveAndCache(host, version))
+  ).then(() => undefined);
 }
 
 export function useVersionDocument(
@@ -87,11 +200,7 @@ export function useVersionDocument(
       setState({ loading: false, error: false, degraded: true });
       return;
     }
-    // Already resolved once this session: serve it straight from cache with no
-    // loading state — the previous document stays on screen until the reused
-    // editor re-opens this one, so switching back to a seen version is instant
-    // and shows no skeleton.
-    const cached = version.is_current ? undefined : cacheGet(version.id);
+    const cached = version.is_current ? undefined : cacheGet(cacheKey(version));
     if (cached) {
       reqId.current++;
       setState({ loading: false, ...cached });
@@ -103,98 +212,10 @@ export function useVersionDocument(
     const done = (next: Omit<VersionDocument, 'loading'>) => {
       if (id !== reqId.current) return;
       // Cache successful resolutions only — an error should be retried later.
-      if (!next.error && !version.is_current) cacheSet(version.id, next);
       setState({ loading: false, ...next });
     };
 
-    (async () => {
-      try {
-        if (version.final_sfdt) {
-          const finalSfdt = await gunzip(
-            await host.fetchVersionFile(version.final_sfdt)
-          );
-          const finalDoc = JSON.parse(finalSfdt);
-
-          // The plain (no-highlights) document with its [[field]] / {{ jinja }}
-          // tokens populated, like the live editor does on open. A no-op for a
-          // document that came from a live edit session (already content-
-          // controlled), so it only fixes versions stored as a raw template.
-          const plainSfdt = () => {
-            try {
-              const populated = populateVersionBindings(finalDoc);
-              return populated === finalDoc
-                ? finalSfdt
-                : JSON.stringify(populated);
-            } catch {
-              return finalSfdt;
-            }
-          };
-
-          // With a change list, apply the hunks so the viewer shows highlights.
-          if (version.changes && version.change_count != null) {
-            try {
-              const changes: ChangeList = JSON.parse(
-                await gunzip(await host.fetchVersionFile(version.changes))
-              );
-              // A hash mismatch means the hunks no longer describe this SFDT;
-              // show the document plain rather than mis-anchored highlights.
-              if (
-                changes.final_sha256 &&
-                version.final_sha256 &&
-                changes.final_sha256 !== version.final_sha256
-              ) {
-                done({ error: false, sfdt: plainSfdt(), degraded: true });
-                return;
-              }
-              // An empty change list carries no highlights; show it plain and
-              // degraded rather than a "highlights on" view that paints nothing.
-              if (!changes.hunks?.length) {
-                done({ error: false, sfdt: plainSfdt(), degraded: true });
-                return;
-              }
-              const display = applyHunks(finalDoc, changes);
-              // Populate any raw [[field]] / {{ jinja }} tokens the same way the
-              // plain path does. A no-op for a document already content-
-              // controlled (a normal live-session version, revisions preserved),
-              // but it stops a version whose stored SFDT still holds raw tokens
-              // from rendering the unfilled template instead of the filled doc.
-              let displaySfdt: string;
-              try {
-                const populated = populateVersionBindings(display);
-                displaySfdt = JSON.stringify(populated);
-              } catch {
-                displaySfdt = JSON.stringify(display);
-              }
-              done({
-                error: false,
-                sfdt: displaySfdt,
-                // Count edits the way the steppers walk them: a replace once,
-                // a whole Robin turn once (not per stored hunk). Counted on the
-                // pre-populate display, whose revisions the counts key off.
-                editCount: countEditGroups(display),
-                formatCount: changes.formatChangeCount,
-                pendingCount: countPendingGroups(display),
-                degraded: false
-              });
-              return;
-            } catch {
-              // Corrupt/failed change list: fall back to the plain document.
-              done({ error: false, sfdt: plainSfdt(), degraded: true });
-              return;
-            }
-          }
-
-          done({ error: false, sfdt: plainSfdt(), degraded: true });
-          return;
-        }
-
-        const docxUrl = version.editor_file ?? version.file;
-        if (!docxUrl) throw new Error('version has no document');
-        done({ error: false, docxUrl, degraded: true });
-      } catch {
-        done({ error: true, degraded: true });
-      }
-    })();
+    resolveAndCache(host, version).then(done);
   }, [host, version]);
 
   return state;

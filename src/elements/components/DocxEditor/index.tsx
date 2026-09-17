@@ -16,7 +16,10 @@ import { editGroupKey } from './history/sfdtDiff/index';
 import { stepperRevisions } from './history/stepperRevisions';
 import { firstUserActorKey } from './history/authorColors';
 import { useDocxHistorySession } from './history/useDocxHistorySession';
-import { VersionDocument } from './history/useVersionDocument';
+import {
+  prefetchVersionDocuments,
+  VersionDocument
+} from './history/useVersionDocument';
 import VersionViewer from './history/VersionViewer';
 import VersionBar from './history/VersionBar';
 import {
@@ -222,6 +225,13 @@ function DocxEditor({
   const [viewingVersion, setViewingVersion] = useState<DocxVersion | null>(
     null
   );
+  // The selected row can resolve in the background while the viewer keeps the
+  // last fully painted page on screen. This identity drives the bar only after
+  // the replacement document is ready, so its label/counts never get ahead of
+  // what the reader is looking at.
+  const [displayedVersion, setDisplayedVersion] = useState<DocxVersion | null>(
+    null
+  );
   // A live-diffed display document for the in-progress current version (no
   // stored files yet): highlights baked in, so the viewer renders it like any
   // stored version. Null for stored versions (they fetch their own files).
@@ -234,6 +244,9 @@ function DocxEditor({
   // resolved counts below drive the version bar's summary; reset per version.
   // Highlight-changes toggle (version bar). Toggling remounts the viewer.
   const [highlightsOn, setHighlightsOn] = useState(true);
+  const [sharedZoomFactor, setSharedZoomFactor] = useState<number | undefined>(
+    undefined
+  );
   // The read-only version viewer's editor, for stepping through its changes.
   const viewerEditorRef = useRef<any>(null);
   // Which change group the steppers are on (index into orderedChangeGroups);
@@ -379,6 +392,7 @@ function DocxEditor({
       if (e.key !== 'Escape') return;
       if (viewingVersion) {
         setViewingVersion(null);
+        setDisplayedVersion(null);
         setLiveDoc(null);
       } else setActivePanel(null);
     };
@@ -512,6 +526,34 @@ function DocxEditor({
   });
   historyOnEditRef.current = historySession.onEdit;
 
+  // Opening the history rail is a good idle point to resolve its recent,
+  // immutable snapshots. This cache only contains rendered preview data; live
+  // restores continue to fetch the current editor file without caching.
+  useEffect(() => {
+    prefetchVersionDocuments(history ?? null, historyVersions);
+  }, [history, historyVersions]);
+
+  // Both DocumentEditorContainers expose the same zoom footer. Keep the
+  // editing and read-only containers at one zoom level when moving between
+  // them, including a zoom chosen directly in either footer.
+  useEffect(() => {
+    if (!editor) return undefined;
+    const syncZoom = (args?: any) => {
+      const next = Number(args?.zoomFactor ?? editor.zoomFactor);
+      if (Number.isFinite(next)) setSharedZoomFactor(next);
+    };
+    syncZoom();
+    editor.addEventListener?.('zoomFactorChange', syncZoom);
+    return () => editor.removeEventListener?.('zoomFactorChange', syncZoom);
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor || !Number.isFinite(sharedZoomFactor)) return;
+    if (Math.abs(Number(editor.zoomFactor) - Number(sharedZoomFactor)) < 0.001)
+      return;
+    editor.zoomFactor = sharedZoomFactor;
+  }, [editor, sharedZoomFactor]);
+
   // Open a version read-only in the viewer. An in-progress session previews
   // live edits; a saved Current row with no open session reads its stored change
   // files, like any older version.
@@ -551,6 +593,7 @@ function DocxEditor({
       }
       setLiveDoc(live);
       setViewingVersion(version);
+      setDisplayedVersion((displayed) => displayed ?? version);
       setVersionMeta(null);
     },
     [editor, historySession]
@@ -575,6 +618,7 @@ function DocxEditor({
   // Back to the live editor (its toolbar returns because viewingVersion clears).
   const exitVersionView = useCallback(() => {
     setViewingVersion(null);
+    setDisplayedVersion(null);
     setLiveDoc(null);
   }, []);
 
@@ -920,7 +964,7 @@ function DocxEditor({
       {!editor && <div css={{ height: TOOLBAR_HEIGHT, flex: '0 0 auto' }} />}
       {editor && viewingVersion && (
         <VersionBar
-          version={viewingVersion}
+          version={displayedVersion ?? viewingVersion}
           onExit={exitVersionView}
           editCount={versionMeta?.editCount}
           formatCount={versionMeta?.formatCount}
@@ -1041,6 +1085,9 @@ function DocxEditor({
               // display document to open directly (no stored files exist).
               liveDoc={liveDoc ?? undefined}
               onMeta={setVersionMeta}
+              zoomFactor={sharedZoomFactor}
+              onZoomFactorChange={setSharedZoomFactor}
+              onDisplayedVersion={setDisplayedVersion}
               onViewerEditor={(ed) => {
                 viewerEditorRef.current = ed;
                 // Fresh editor (new version / highlight toggle): restart stepping.

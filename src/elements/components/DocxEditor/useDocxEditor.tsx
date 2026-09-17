@@ -10,7 +10,6 @@ import {
 } from '../../../utils/documentEditorPrimitives';
 import { isAssistantWriting } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import { EJ2_SCRIPT_URL } from './constants';
-import { colorForRevisionAuthor } from './history/authorColors';
 import { loadStyles, waitForDocumentLoad, waitForEj } from './ejLoader';
 import { stampMissingContentControlColors } from './contentControlSafety';
 import { installDocumentTailInvariant } from './documentTailInvariant';
@@ -1071,12 +1070,10 @@ export function useDocxEditor({
         // cut/copy/paste, etc. (the built-in toolbar is disabled).
         ed.enableContextMenu = true;
         try {
-          // Per-author washes in the live canvas too: a pending tracked change
-          // is tinted its author's stable colour (Robin = brand red), matching
-          // the version viewer. This is the only attribution a restored
-          // version's tracked changes keep — a .docx stores the author name but
-          // has no field for our revision group tags.
-          configureTrackedChangeReview(ed, reviewGate, colorForRevisionAuthor);
+          // The editing surface keeps the classic green-insertion/red-deletion
+          // treatment. Per-author colours belong only to version history, where
+          // attribution is the point of the view.
+          configureTrackedChangeReview(ed, reviewGate);
           if (reviewGate) disableUserTrackChanges(ed, instance);
           // Engine-level fixes to the editing surface itself, not review
           // customizations: every host gets them, gated or not.
@@ -1234,7 +1231,8 @@ export function useDocxEditor({
           liveEditor[OPENING_DOCUMENT_KEY] = false;
           return;
         }
-        await documentLoaded;
+        if (!(await documentLoaded))
+          throw new Error('Document editor did not finish loading');
         if (cancelled) {
           liveEditor[OPENING_DOCUMENT_KEY] = false;
           return;

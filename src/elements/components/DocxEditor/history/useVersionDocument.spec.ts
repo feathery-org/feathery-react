@@ -2,6 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 
 import {
   __clearVersionDocumentCache,
+  prefetchVersionDocuments,
   useVersionDocument
 } from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
@@ -44,8 +45,8 @@ const host = (over: Partial<DocxHistoryHost> = {}): DocxHistoryHost => ({
 });
 
 describe('useVersionDocument', () => {
-  // Resolved versions are cached module-wide by id; clear it so each case (they
-  // reuse id 'v1') starts from a real fetch rather than a prior case's result.
+  // Resolved versions are cached module-wide; clear it so each case starts from
+  // a real fetch rather than a prior case's result.
   beforeEach(() => __clearVersionDocumentCache());
 
   // The host and version MUST be stable identities across renders — the hook
@@ -84,6 +85,37 @@ describe('useVersionDocument', () => {
     await waitFor(() => expect(second.result.current.loading).toBe(false));
     expect(second.result.current.sfdt).toBe(sfdt);
     expect(fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('warms immutable previews before they are selected', async () => {
+    const fetchVersionFile = jest
+      .fn()
+      .mockResolvedValue(new TextEncoder().encode('{"sfdt":"warm"}').buffer);
+    const h = host({ fetchVersionFile });
+    const ver = version({ id: 'warm', final_sfdt: 'warm-file' });
+
+    await prefetchVersionDocuments(h, [ver]);
+    const selected = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(selected.result.current.loading).toBe(false));
+    expect(selected.result.current.sfdt).toBe('{"sfdt":"warm"}');
+    expect(fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reuse an artifact cache entry after a same-id payload refresh', async () => {
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(new TextEncoder().encode(`{"sfdt":"${url}"}`).buffer)
+    );
+    const h = host({ fetchVersionFile });
+    const firstVersion = version({ id: 'refreshed', final_sfdt: 'first' });
+    const first = renderHook(() => useVersionDocument(h, firstVersion));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    first.unmount();
+
+    const refreshed = version({ id: 'refreshed', final_sfdt: 'second' });
+    const second = renderHook(() => useVersionDocument(h, refreshed));
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
+    expect(second.result.current.sfdt).toContain('second');
+    expect(fetchVersionFile).toHaveBeenCalledTimes(2);
   });
 
   it('re-fetches a Current row when its saved document changes at the same id', async () => {

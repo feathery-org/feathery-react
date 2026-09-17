@@ -80,11 +80,17 @@ interface Props {
   /** Exposes the read-only editor once ready (null on unmount) so the version
    *  bar can step the caret through tracked changes. */
   onViewerEditor?: (editor: any | null) => void;
+  /** Keeps the preview's footer zoom in sync with the editing surface. */
+  zoomFactor?: number;
+  onZoomFactorChange?: (zoomFactor: number) => void;
+  /** Called only after this version has actually painted in the reused viewer. */
+  onDisplayedVersion?: (version: DocxVersion) => void;
 }
 
 // A second, read-only DocumentEditor overlaid on the live editor's pane. It is
-// never registered (the assistant/rail must not see it) and is destroyed on
-// unmount — the parent keys it by version id so a new selection remounts it.
+// never registered (the assistant/rail must not see it). The parent reuses it
+// between selections so its last painted page can remain visible while the next
+// version resolves.
 export default function VersionViewer({
   host,
   version,
@@ -94,11 +100,15 @@ export default function VersionViewer({
   highlightsOn = true,
   liveDoc,
   onMeta,
-  onViewerEditor
+  onViewerEditor,
+  zoomFactor,
+  onZoomFactorChange,
+  onDisplayedVersion
 }: Props) {
   const hostElRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<any>(null);
   const editorRef = useRef<any>(null);
+  const zoomHandlerRef = useRef<((args: any) => void) | null>(null);
   const [editorReady, setEditorReady] = useState(false);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   // With a live document (the in-progress current version — no stored files),
@@ -116,29 +126,10 @@ export default function VersionViewer({
   onMetaRef.current = onMeta;
   const onViewerEditorRef = useRef(onViewerEditor);
   onViewerEditorRef.current = onViewerEditor;
-  useEffect(() => {
-    if (doc.loading) return;
-    onMetaRef.current?.({
-      editCount: doc.editCount,
-      formatCount: doc.formatCount,
-      pendingCount: doc.pendingCount,
-      degraded: doc.degraded
-    });
-  }, [
-    doc.loading,
-    doc.editCount,
-    doc.formatCount,
-    doc.pendingCount,
-    doc.degraded
-  ]);
-
-  // Switching versions reuses this editor (the parent no longer keys us by
-  // version id), so re-cover with the loader the moment a new version starts
-  // resolving — otherwise the previous document would linger under a stale
-  // "ready" phase while the next one loads.
-  useEffect(() => {
-    if (doc.loading) setPhase('loading');
-  }, [doc.loading]);
+  const onZoomFactorChangeRef = useRef(onZoomFactorChange);
+  onZoomFactorChangeRef.current = onZoomFactorChange;
+  const onDisplayedVersionRef = useRef(onDisplayedVersion);
+  onDisplayedVersionRef.current = onDisplayedVersion;
 
   // Create the read-only editor once. Use a DocumentEditorContainer (as the
   // live editor does) rather than a bare DocumentEditor: the container reliably
@@ -177,6 +168,14 @@ export default function VersionViewer({
       ed.enableSfdtExport = true;
       ed.enableEditorHistory = false;
       ed.enableAutoFocus = false;
+      const webButton = container.statusBar?.webButton;
+      if (webButton?.style) webButton.style.display = 'none';
+      const onZoom = (args: any) => {
+        const next = Number(args?.zoomFactor ?? ed.zoomFactor);
+        if (Number.isFinite(next)) onZoomFactorChangeRef.current?.(next);
+      };
+      ed.addEventListener?.('zoomFactorChange', onZoom);
+      zoomHandlerRef.current = onZoom;
       containerRef.current = container;
       editorRef.current = ed;
       onViewerEditorRef.current?.(ed);
@@ -186,16 +185,31 @@ export default function VersionViewer({
       cancelled = true;
       onViewerEditorRef.current?.(null);
       try {
+        if (zoomHandlerRef.current)
+          editorRef.current?.removeEventListener?.(
+            'zoomFactorChange',
+            zoomHandlerRef.current
+          );
         containerRef.current?.destroy();
       } catch {
         /* already torn down */
       }
       containerRef.current = null;
       editorRef.current = null;
+      zoomHandlerRef.current = null;
     };
     // serviceUrl/headers are stable for a given mount (the parent keys us by
     // version id), so the editor is created exactly once.
   }, []);
+
+  useEffect(() => {
+    const viewer = editorRef.current;
+    if (!viewer || !Number.isFinite(zoomFactor)) return;
+    if (Math.abs(Number(viewer.zoomFactor) - Number(zoomFactor)) < 0.001)
+      return;
+    viewer.zoomFactor = zoomFactor;
+    containerRef.current?.statusBar?.updateZoomContent?.();
+  }, [editorReady, zoomFactor]);
 
   // Open the resolved document once both the editor and the bytes are ready.
   useEffect(() => {
@@ -248,7 +262,8 @@ export default function VersionViewer({
           setPhase('error');
           return;
         }
-        await loaded;
+        if (!(await loaded))
+          throw new Error('Version preview did not finish loading');
         if (cancelled) return;
         // Highlights off = the accepted (plain) view, explicitly and AFTER the
         // open: opening a document that carries tracked changes can flip
@@ -267,29 +282,39 @@ export default function VersionViewer({
         // never went through the binding engine); populate them the way the live
         // editor does before showing the read-only version. The SFDT path is
         // already populated upstream in useVersionDocument.
+        let populated = true;
         if (doc.docxUrl) {
           try {
             const parsed = JSON.parse(viewer.serialize());
-            const populated = populateVersionBindings(parsed);
+            const populatedSfdt = populateVersionBindings(parsed);
             const displaySfdt = highlightsOn
-              ? populated
-              : normalizeForDiff(populated, { digestImages: false });
+              ? populatedSfdt
+              : normalizeForDiff(populatedSfdt, { digestImages: false });
             if (displaySfdt !== parsed) {
               const reloaded = waitForDocumentLoad(viewer);
               viewer.open(JSON.stringify(displaySfdt));
-              await reloaded;
+              populated = await reloaded;
               if (cancelled) return;
             }
           } catch {
             /* population is best-effort; show the raw document if it fails */
           }
         }
+        if (!populated)
+          throw new Error('Version preview did not finish loading');
         stampMissingContentControlColors(viewer);
         const container = viewer.documentHelper?.viewerContainer as
           | HTMLElement
           | undefined;
         if (container) container.style.overflowAnchor = 'none';
         setPhase('ready');
+        onMetaRef.current?.({
+          editCount: doc.editCount,
+          formatCount: doc.formatCount,
+          pendingCount: doc.pendingCount,
+          degraded: doc.degraded
+        });
+        onDisplayedVersionRef.current?.(version);
       } catch {
         if (!cancelled) setPhase('error');
       }
@@ -303,7 +328,8 @@ export default function VersionViewer({
     doc.error,
     doc.sfdt,
     doc.docxUrl,
-    highlightsOn
+    highlightsOn,
+    version.id
   ]);
 
   return (

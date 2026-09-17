@@ -11,7 +11,7 @@ import { DocxHistoryHost, DocxVersion } from './types';
 jest.mock('../ejLoader', () => ({
   waitForEj: () => Promise.resolve((globalThis as any).ej),
   loadStyles: jest.fn(),
-  waitForDocumentLoad: () => Promise.resolve()
+  waitForDocumentLoad: () => Promise.resolve(true)
 }));
 jest.mock('../contentControlSafety', () => ({
   stampMissingContentControlColors: jest.fn()
@@ -30,23 +30,38 @@ const destroy = jest.fn();
 // its read-only/export flags after `created`, so keep a handle to the last one
 // to assert against.
 let lastEditor: any;
-const makeInnerEditor = () => ({
-  isReadOnly: false,
-  enableSfdtExport: false,
-  enableEditorHistory: true,
-  enableAutoFocus: true,
-  showRevisions: false,
-  documentHelper: { viewerContainer: { style: {} as Record<string, string> } },
-  open: (sfdt: string) => open(sfdt),
-  openAsync,
-  serialize: () => '{"sfdt":"v"}',
-  fitPage() {
-    /* no-op */
-  },
-  resize() {
-    /* no-op */
-  }
-});
+const makeInnerEditor = () => {
+  const listeners = new Map<string, (args: any) => void>();
+  return {
+    isReadOnly: false,
+    enableSfdtExport: false,
+    enableEditorHistory: true,
+    enableAutoFocus: true,
+    showRevisions: false,
+    zoomFactor: 1,
+    documentHelper: {
+      viewerContainer: { style: {} as Record<string, string> }
+    },
+    open: (sfdt: string) => open(sfdt),
+    openAsync,
+    serialize: () => '{"sfdt":"v"}',
+    fitPage() {
+      /* no-op */
+    },
+    resize() {
+      /* no-op */
+    },
+    addEventListener(event: string, cb: (args: any) => void) {
+      listeners.set(event, cb);
+    },
+    removeEventListener(event: string, cb: (args: any) => void) {
+      if (listeners.get(event) === cb) listeners.delete(event);
+    },
+    emit(event: string, args: any) {
+      listeners.get(event)?.(args);
+    }
+  };
+};
 
 class FakeDocumentEditorContainer {
   documentEditor = (lastEditor = makeInnerEditor());
@@ -180,6 +195,7 @@ describe('VersionViewer', () => {
       <VersionViewer host={host()} version={version({ final_sfdt: 'u' })} />
     );
     await waitFor(() => expect(construct).toHaveBeenCalled());
+    await waitFor(() => expect(open).toHaveBeenCalled());
     view.unmount();
     expect(destroy).toHaveBeenCalled();
   });
@@ -202,6 +218,58 @@ describe('VersionViewer', () => {
     await waitFor(() => expect(open).toHaveBeenCalledWith('{"live":true}'));
     // The live document bypasses the version-file fetch entirely.
     expect(h.fetchVersionFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps the painted preview visible while the next version resolves', async () => {
+    let resolveSecond: ((value: ArrayBuffer) => void) | undefined;
+    const h = host({
+      fetchVersionFile: jest.fn((url: string) => {
+        if (url === 'second')
+          return new Promise<ArrayBuffer>((resolve) => {
+            resolveSecond = resolve;
+          });
+        return Promise.resolve(
+          new TextEncoder().encode('{"sfdt":"first"}').buffer
+        );
+      })
+    });
+    const view = render(
+      <VersionViewer host={h} version={version({ final_sfdt: 'first' })} />
+    );
+    await waitFor(() => expect(open).toHaveBeenCalledWith('{"sfdt":"first"}'));
+
+    view.rerender(
+      <VersionViewer
+        host={h}
+        version={version({ id: 'v2', final_sfdt: 'second' })}
+      />
+    );
+    expect(view.queryByText('Loading version…')).toBeNull();
+
+    resolveSecond?.(new TextEncoder().encode('{"sfdt":"second"}').buffer);
+    await waitFor(() => expect(open).toHaveBeenCalledWith('{"sfdt":"second"}'));
+  });
+
+  it('shares zoom changes from the preview footer', async () => {
+    const onZoomFactorChange = jest.fn();
+    const view = render(
+      <VersionViewer
+        host={host()}
+        version={version()}
+        liveDoc={{
+          loading: false,
+          error: false,
+          sfdt: '{"live":true}',
+          degraded: false
+        }}
+        zoomFactor={0.9}
+        onZoomFactorChange={onZoomFactorChange}
+      />
+    );
+    await waitFor(() => expect(lastEditor.zoomFactor).toBe(0.9));
+    lastEditor.emit('zoomFactorChange', { zoomFactor: 1.2 });
+    expect(onZoomFactorChange).toHaveBeenCalledWith(1.2);
+    view.unmount();
   });
 
   it('opens accepted content with its original font colour when highlights are off', async () => {

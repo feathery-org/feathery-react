@@ -51,30 +51,36 @@ function loadAccentOverride(): void {
 const DOCUMENT_LOAD_TIMEOUT_MS = 20000;
 
 /**
- * Resolves when Syncfusion finishes laying the document out. `documentChange`
+ * Resolves true when Syncfusion finishes laying the document out. `documentChange`
  * fires exactly once per open, after open()/openAsync() has already resolved,
- * and is the only signal that the document is really on screen.
+ * and is the only signal that the document is really on screen. A missing event
+ * is a failed load, never permission to reveal the editor's blank default page.
  */
-export function waitForDocumentLoad(ed: any): Promise<void> {
-  return new Promise<void>((resolve) => {
+export function waitForDocumentLoad(ed: any): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
     let settled = false;
-    const finish = () => {
+    const onDocumentChange = () => finish(true);
+    const finish = (loaded: boolean) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
       try {
-        ed.removeEventListener?.('documentChange', finish);
+        ed.removeEventListener?.('documentChange', onDocumentChange);
       } catch {
         /* instance already torn down */
       }
-      resolve();
+      resolve(loaded);
     };
-    try {
-      ed.addEventListener?.('documentChange', finish);
-    } catch {
-      finish();
+    const timeout = setTimeout(() => finish(false), DOCUMENT_LOAD_TIMEOUT_MS);
+    if (typeof ed?.addEventListener !== 'function') {
+      finish(false);
       return;
     }
-    setTimeout(finish, DOCUMENT_LOAD_TIMEOUT_MS);
+    try {
+      ed.addEventListener('documentChange', onDocumentChange);
+    } catch {
+      finish(false);
+    }
   });
 }
 
