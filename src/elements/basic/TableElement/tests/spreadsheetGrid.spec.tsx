@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  createEvent,
   fireEvent,
   render,
   screen,
@@ -94,10 +95,12 @@ const renderTable = (props: Record<string, any> = {}) => {
 };
 
 const grid = () => screen.getByRole('grid');
-const cell = (text: string) => screen.getByText(text).closest('[role="gridcell"]')!;
+const cell = (text: string) =>
+  screen.getByText(text).closest('[role="gridcell"]')!;
 // Spreadsheet edits are buffered, so nothing reaches the data source until the
 // user saves them.
-const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+const save = () =>
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
 beforeEach(() => {
   stubLayout();
@@ -136,8 +139,12 @@ describe('spreadsheet grid rendering', () => {
 
   test('numbers the rows in a gutter, starting at 1', () => {
     renderTable();
-    expect(screen.getByRole('button', { name: 'Select row 1' })).toHaveTextContent('1');
-    expect(screen.getByRole('button', { name: 'Select row 3' })).toHaveTextContent('3');
+    expect(
+      screen.getByRole('button', { name: 'Select row 1' })
+    ).toHaveTextContent('1');
+    expect(
+      screen.getByRole('button', { name: 'Select row 3' })
+    ).toHaveTextContent('3');
   });
 
   test('renders every cell value', () => {
@@ -164,7 +171,9 @@ describe('spreadsheet grid rendering', () => {
     // No search box, and all three rows render rather than one page of two.
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.getByText('Cara')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Select row 3' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Select row 3' })
+    ).toBeInTheDocument();
   });
 
   test('the classic table still honours those settings', () => {
@@ -386,7 +395,9 @@ describe('read-only spreadsheet', () => {
 
 describe('row insertion and deletion', () => {
   const openRowMenu = (rowNumber: number) => {
-    const header = screen.getByRole('button', { name: `Select row ${rowNumber}` });
+    const header = screen.getByRole('button', {
+      name: `Select row ${rowNumber}`
+    });
     fireEvent.contextMenu(header);
   };
 
@@ -490,7 +501,9 @@ describe('row insertion and deletion', () => {
     renderTable({ add_delete_rows: true });
     // Two "add row" affordances would be one too many.
     expect(screen.queryByText('+ Add Row')).toBeNull();
-    expect(screen.getByRole('button', { name: '+ Add row' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '+ Add row' })
+    ).toBeInTheDocument();
   });
 
   test('the classic table keeps its toolbar add button', () => {
@@ -518,33 +531,40 @@ describe('Tab and the grid boundary', () => {
     await waitFor(() =>
       expect(cell('30')).toHaveAttribute('aria-selected', 'true')
     );
-    expect(fireEvent.keyDown(grid(), { key: 'Tab', shiftKey: true })).toBe(false);
+    expect(fireEvent.keyDown(grid(), { key: 'Tab', shiftKey: true })).toBe(
+      false
+    );
     await waitFor(() =>
       expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
     );
   });
 
-  test('Tab at the last column and Shift+Tab at the first leave the grid to the browser', async () => {
-    // Otherwise a keyboard user could never reach the rest of the form.
+  test('Tab on the last cell and Shift+Tab on the first leave the grid to the browser', async () => {
+    // Row ends wrap to the next row (see "tab order across rows"); only the
+    // grid's own ends let go, otherwise a keyboard user could never reach
+    // the rest of the form.
     renderTable();
-    fireEvent.mouseDown(cell('Denver'));
+    fireEvent.mouseDown(cell('Reno'));
     await waitFor(() =>
-      expect(cell('Denver')).toHaveAttribute('aria-selected', 'true')
+      expect(cell('Reno')).toHaveAttribute('aria-selected', 'true')
     );
     expect(fireEvent.keyDown(grid(), { key: 'Tab' })).toBe(true);
-    expect(cell('Denver')).toHaveAttribute('aria-selected', 'true');
+    expect(cell('Reno')).toHaveAttribute('aria-selected', 'true');
 
     fireEvent.mouseDown(cell('Alice'));
     await waitFor(() =>
       expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
     );
-    expect(fireEvent.keyDown(grid(), { key: 'Tab', shiftKey: true })).toBe(true);
+    expect(fireEvent.keyDown(grid(), { key: 'Tab', shiftKey: true })).toBe(
+      true
+    );
     expect(cell('Alice')).toHaveAttribute('aria-selected', 'true');
   });
 });
 
 describe('fill handle', () => {
-  const handle = () => document.querySelector('.feathery-table-grid-fill-handle');
+  const handle = () =>
+    document.querySelector('.feathery-table-grid-fill-handle');
 
   test('is hidden while a cell is being edited', async () => {
     renderTable();
@@ -552,7 +572,9 @@ describe('fill handle', () => {
     await waitFor(() => expect(handle()).not.toBeNull());
 
     fireEvent.doubleClick(cell('Alice'));
-    await waitFor(() => expect(screen.getByRole('textbox')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('textbox')).toBeInTheDocument()
+    );
     expect(handle()).toBeNull();
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
@@ -566,7 +588,10 @@ describe('designer preview', () => {
   test('a sized spreadsheet preview fills its height with sample rows', () => {
     render(
       <TableElement
-        element={{ ...makeElement(), styles: { height: 400, height_unit: 'px' } }}
+        element={{
+          ...makeElement(),
+          styles: { height: 400, height_unit: 'px' }
+        }}
         responsiveStyles={mockStyles()}
         updateFieldValues={jest.fn()}
         submitCustom={jest.fn()}
@@ -579,7 +604,10 @@ describe('designer preview', () => {
   test('a fit-height preview keeps the short sample', () => {
     render(
       <TableElement
-        element={{ ...makeElement(), styles: { height: '', height_unit: 'fit' } }}
+        element={{
+          ...makeElement(),
+          styles: { height: '', height_unit: 'fit' }
+        }}
         responsiveStyles={mockStyles()}
         updateFieldValues={jest.fn()}
         submitCustom={jest.fn()}
@@ -587,5 +615,40 @@ describe('designer preview', () => {
       />
     );
     expect(rowCount()).toBe(2);
+  });
+});
+
+describe('tab order across rows', () => {
+  const selected = (text: string) =>
+    expect(cell(text)).toHaveAttribute('aria-selected', 'true');
+
+  test('Tab at the last column moves to the next row, and Shift+Tab back', () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Denver'));
+    fireEvent.keyDown(grid(), { key: 'Tab' });
+    selected('Bob');
+    fireEvent.keyDown(grid(), { key: 'Tab', shiftKey: true });
+    selected('Denver');
+  });
+
+  test('Tab on the very last cell is left for the browser to move focus on', () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Reno'));
+    const tab = createEvent.keyDown(grid(), { key: 'Tab' });
+    fireEvent(grid(), tab);
+    expect(tab.defaultPrevented).toBe(false);
+    selected('Reno');
+  });
+
+  test('Tab from an editor at the row end commits and lands on the next row', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Denver'));
+    fireEvent.doubleClick(cell('Denver'));
+    const input = await screen.findByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Boulder' } });
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(cell('Boulder')).toBeInTheDocument();
+    selected('Bob');
   });
 });
