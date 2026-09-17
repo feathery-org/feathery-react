@@ -259,6 +259,7 @@ function DocxEditor({
     editCount?: number;
     formatCount?: number;
     pendingCount?: number;
+    approvedCount?: number;
     degraded: boolean;
   } | null>(null);
   // Pending tracked-change count, reported by the (always-mounted) rail; drives
@@ -978,6 +979,7 @@ function DocxEditor({
           editCount={versionMeta?.editCount}
           formatCount={versionMeta?.formatCount}
           pendingCount={versionMeta?.pendingCount}
+          approvedCount={versionMeta?.approvedCount}
           highlightsAvailable={!!versionMeta && !versionMeta.degraded}
           highlightsOn={highlightsOn}
           onToggleHighlights={setHighlightsOn}

@@ -19,6 +19,8 @@ interface Props {
   formatCount?: number;
   /** Assistant edits still tracked (unapproved) in this version. */
   pendingCount?: number;
+  /** Robin edit groups confirmed by accepting tracked changes in this version. */
+  approvedCount?: number;
   /** Whether detailed highlights exist for this version (gates the controls). */
   highlightsAvailable?: boolean;
   /** Highlight-changes toggle state + handler. */
@@ -50,6 +52,7 @@ export default function VersionBar({
   onExit,
   editCount,
   pendingCount,
+  approvedCount,
   highlightsAvailable,
   highlightsOn = true,
   onToggleHighlights,
@@ -177,6 +180,28 @@ export default function VersionBar({
               }}
             >
               {pendingCount} pending
+            </span>
+          )}
+          {approvedCount != null && approvedCount > 0 && (
+            <span
+              title={`${approvedCount} Robin ${
+                approvedCount === 1 ? 'edit was' : 'edits were'
+              } approved`}
+              css={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#166534',
+                background: 'rgba(22, 101, 52, 0.10)',
+                border: '1px solid rgba(22, 101, 52, 0.45)',
+                borderRadius: 999,
+                padding: '2px 8px',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              ✓ {approvedCount} approved
             </span>
           )}
           <button

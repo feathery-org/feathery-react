@@ -55,6 +55,8 @@ export interface VersionMeta {
   formatCount?: number;
   /** Assistant edits still tracked (unapproved) in this version. */
   pendingCount?: number;
+  /** Robin edit groups confirmed by accepting tracked changes in this version. */
+  approvedCount?: number;
   degraded: boolean;
 }
 
@@ -312,6 +314,7 @@ export default function VersionViewer({
           editCount: doc.editCount,
           formatCount: doc.formatCount,
           pendingCount: doc.pendingCount,
+          approvedCount: doc.approvedCount,
           degraded: doc.degraded
         });
         onDisplayedVersionRef.current?.(version);

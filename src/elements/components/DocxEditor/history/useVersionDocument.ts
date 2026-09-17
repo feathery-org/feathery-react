@@ -27,6 +27,8 @@ export interface VersionDocument {
   formatCount?: number;
   /** Assistant edits still tracked (not yet accepted) in this version. */
   pendingCount?: number;
+  /** Robin edit groups confirmed by accepting tracked changes in this version. */
+  approvedCount?: number;
   /** True when detailed per-author highlights are unavailable (no change list,
    *  pruned highlights, or a hash mismatch) — the document still opens plain. */
   degraded: boolean;
@@ -133,6 +135,7 @@ async function resolveVersionDocument(
             editCount: countEditGroups(display),
             formatCount: changes.formatChangeCount,
             pendingCount: countPendingGroups(display),
+            approvedCount: changes.confirmed ? countEditGroups(display) : 0,
             degraded: false
           };
         } catch {

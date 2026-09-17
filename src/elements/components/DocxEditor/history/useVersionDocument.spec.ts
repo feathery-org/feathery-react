@@ -185,7 +185,8 @@ describe('useVersionDocument', () => {
       ],
       changeCount: 2,
       formatChangeCount: 1,
-      authors: ['you']
+      authors: ['you'],
+      confirmed: true
     });
     const fetchVersionFile = jest.fn((url: string) =>
       Promise.resolve(buf(url === 'chg' ? changes : FINAL))
@@ -200,6 +201,7 @@ describe('useVersionDocument', () => {
     // not the stored changeCount — a replace or a whole Robin turn counts once.
     expect(result.current.editCount).toBe(1);
     expect(result.current.formatCount).toBe(1);
+    expect(result.current.approvedCount).toBe(1);
     expect(result.current.sfdt).toContain('sections');
     // The applied hunk produced a synthetic revision to render.
     expect(result.current.sfdt).toContain('revisionId');

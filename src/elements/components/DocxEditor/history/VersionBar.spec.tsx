@@ -72,6 +72,19 @@ describe('VersionBar', () => {
     expect(onPrev).toHaveBeenCalled();
   });
 
+  it('shows an explicit approved badge in the version preview', () => {
+    const { getByText } = render(
+      <VersionBar
+        version={version()}
+        onExit={jest.fn()}
+        highlightsAvailable
+        approvedCount={1}
+      />
+    );
+
+    expect(getByText('✓ 1 approved')).toBeTruthy();
+  });
+
   it('disables the steppers while highlights are toggled off', () => {
     const onNext = jest.fn();
     const { getByLabelText } = render(
