@@ -938,7 +938,7 @@ function DocxEditor({
           // (the "saved as a version first" the dialog promises). Closing the
           // session here uploads its diff; the backend then sees it already
           // closed and skips the docx-only snapshot.
-          await historySession.save();
+          await historySession.saveForRestore();
           await history.restoreVersion(target.id);
           exitVersionView();
           restoredAtRef.current = Date.now();
@@ -946,6 +946,10 @@ function DocxEditor({
         } catch (err) {
           flashSaveToast('error', 'Could not restore this version');
           onError?.((err as Error).message || String(err));
+        } finally {
+          // The preserved pre-restore row receives its SFDT/diff after the
+          // restore request, so the expensive diff never delays the restore.
+          historySession.finishRestoreSave();
         }
       }
     });
