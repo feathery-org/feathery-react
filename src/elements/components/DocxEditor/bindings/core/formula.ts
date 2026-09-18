@@ -138,7 +138,7 @@ export function parseExpression(src: string): Ast {
     throw new FormulaError(`trailing input in ${JSON.stringify(src)}`);
   if (!('op' in ast))
     throw new FormulaError(
-      `expression must be a function call: ${JSON.stringify(src)}`
+      `expression must reference a value: ${JSON.stringify(src)}`
     );
   return ast;
 }

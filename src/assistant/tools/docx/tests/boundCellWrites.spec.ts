@@ -13,6 +13,7 @@ import {
 import {
   applyDocumentEdits,
   flattenSfdt,
+  isAssistantAuthor,
   LiveEditor
 } from '../syncfusionDocumentOps';
 import { buildCostsFixture } from '../../../../elements/components/DocxEditor/bindings/core/tests/fixtures/costsFixture';
@@ -21,6 +22,10 @@ import {
   AttachedBindings
 } from '../../../../elements/components/DocxEditor/bindings/attachBindings';
 import { SyncfusionEditorLike } from '../../../../elements/components/DocxEditor/bindings/editorAdapter';
+import {
+  listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo
+} from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
   Editor,
@@ -241,7 +246,7 @@ describe('writes aimed at a bound cell', () => {
     expect(
       revisions.filter((revision) => revision.revisionType === 'Insertion')
     ).toHaveLength(6);
-    expect(revisions.every((revision) => revision.author === 'Robin')).toBe(
+    expect(revisions.every((revision) => isAssistantAuthor(revision.author))).toBe(
       true
     );
     expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(
@@ -313,7 +318,7 @@ describe('writes aimed at a bound cell', () => {
     });
 
     expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
-    expect(trackingDuringOpen).toEqual([false]);
+    expect(trackingDuringOpen).toEqual([]);
     expect(editor.enableTrackChanges).toBe(false);
     const assistantRevisionCount = editor.revisions.length;
 
@@ -323,7 +328,9 @@ describe('writes aimed at a bound cell', () => {
     expect(editor.enableTrackChanges).toBe(false);
     expect(editor.revisions.length).toBe(assistantRevisionCount);
     expect(
-      liveRevisions(editor).every((revision) => revision.author === 'Robin')
+      liveRevisions(editor).every((revision) =>
+        isAssistantAuthor(revision.author)
+      )
     ).toBe(true);
   });
 
@@ -370,7 +377,7 @@ describe('writes aimed at a bound cell', () => {
     expect(JSON.stringify(settled)).not.toContain('orphaned-robin-revision');
   });
 
-  it('collapses a superseded pending value to one pair that still rejects to the original', () => {
+  it('supersedes a pending bound value and rejects to the original value', () => {
     const before = editor.serialize();
     const first = applyDocumentEdits(editor as unknown as LiveEditor, {
       changeSetId: 'bound-value-first',
@@ -384,7 +391,6 @@ describe('writes aimed at a bound cell', () => {
       ]
     });
     expect(first.results[0]).toMatchObject({ ok: true, route: 'engine' });
-
     const second = applyDocumentEdits(editor as unknown as LiveEditor, {
       changeSetId: 'bound-value-second',
       edits: [
@@ -398,17 +404,40 @@ describe('writes aimed at a bound cell', () => {
     });
 
     expect(second.results[0]).toMatchObject({ ok: true, route: 'engine' });
-    expect(editor.revisions.length).toBe(12);
+    expect(second.results[0].details).toContain(
+      'superseded pending review bound-value-first/bound-value-first'
+    );
+    const live = editor as unknown as LiveEditor;
+    const groups = listRevisionGroups(live);
+    expect(groups.map((group) => group.changeSetId)).toEqual([
+      'bound-value-second'
+    ]);
     expect(textAt(editor, QUANTITY_CELL)).toBe('25');
     expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$3,750.00');
-    expect(
-      controlByTag(
-        JSON.parse(editor.serialize()),
-        '[[name=quantity|type=integer|row=r-1]]'
-      ).inlines.map((inline: any) => inline.text)
-    ).toEqual(['12', '25']);
 
-    rejectAllRevisions(editor);
+    const third = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'bound-value-third',
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: QUANTITY_CELL,
+          text: '30',
+          literal: true
+        }
+      ]
+    });
+    expect(third.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(third.results[0].details).toContain(
+      'superseded pending review bound-value-second/bound-value-second'
+    );
+    const finalGroups = listRevisionGroups(live);
+    expect(finalGroups.map((group) => group.changeSetId)).toEqual([
+      'bound-value-third'
+    ]);
+    expect(textAt(editor, QUANTITY_CELL)).toBe('30');
+    expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$4,500.00');
+
+    resolveLiveRevisionGroupsAsOneUndo(live, finalGroups, false);
     attached.controller.flush({ mode: 'self-heal' });
 
     expect(textAt(editor, QUANTITY_CELL)).toBe('12');

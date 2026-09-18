@@ -4,7 +4,11 @@ import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
 import { CheckIcon, CloseIcon, SpinnerIcon } from './icons';
 import { FEATHERY_RED, TOOLBAR_HEIGHT } from './DocxToolbar/styles';
-import DocumentPanel, { PanelTab } from './DocumentPanel';
+import DocumentPanel from './DocumentPanel';
+import {
+  ActivePanel,
+  useReviewPanelPresentation
+} from './reviewPanelPresentation';
 import PanelRail from './PanelRail';
 import {
   DocxBindingsConfig,
@@ -39,8 +43,6 @@ const DEFAULT_CURRENT_USER: VersionAuthor = {
 
 // Re-exported for tests that import it from this module.
 export { RailErrorBoundary } from './RailErrorBoundary';
-
-type ActivePanel = PanelTab | null;
 
 // How long after a restore a nonzero pending-change count still counts as
 // "the restored version brought suggestions back" (reopen + rail refresh
@@ -390,11 +392,17 @@ function DocxEditor({
       : bindings
   });
 
-  // The Changes button is only offered while changes are pending; if they all
-  // resolve while its panel is open, close it so the empty slot doesn't linger.
-  useEffect(() => {
-    if (activePanel === 'changes' && changesCount === 0) setActivePanel(null);
-  }, [activePanel, changesCount]);
+  // The review surface follows the document: a change set arriving presents the
+  // Suggested changes panel, and resolving the last edit closes it again. Both
+  // halves of that rule live in reviewPanelPresentation - the opening half used
+  // to be missing, which left a landed change set invisible behind whichever
+  // panel the user had open.
+  useReviewPanelPresentation({
+    activePanel,
+    count: changesCount,
+    reviewChanges: !!reviewChanges,
+    setActivePanel
+  });
 
   // Escape backs out one layer at a time: first the version viewer, then the
   // side panel.

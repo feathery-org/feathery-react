@@ -148,6 +148,16 @@ export interface TableBanding {
   period: number;
   /** The repeating fills, from the first banded row. `null` is "no fill". */
   cycle: Array<string | null>;
+  /**
+   * Whether the table's LAST body row sits in the stripe, i.e. carries the fill
+   * the cycle predicts for its position. In a schedule that row is the totals
+   * row: a template that shades it as the next band wants the band to run
+   * through the total, while one that leaves it plain wants the
+   * totals row styled by role. Read off the source, it travels with the banding
+   * to every fragment a split produces, so a copy whose totals row was cloned
+   * from a longer table is restriped for its own length.
+   */
+  tailInBand?: boolean;
 }
 
 /** The model-facing account of what an appearance op did. */
@@ -239,9 +249,24 @@ function readBorder(raw: any): BorderFacts | undefined {
   };
 }
 
+// An unstated border colour is not "no colour" - it renders black, which is
+// exactly what an explicit #000000 renders as. Whether a given document happens
+// to spell the default out is a serialization detail, so the two must compare
+// equal or an appearance that landed correctly reads as a mismatch. Normalized
+// here rather than in readColor, because that reader also supplies the values
+// written back, and writing the default out explicitly would state something
+// the document never carried.
+const AUTO_BORDER_COLOR = '#000000';
+const borderColorOf = (border: BorderFacts): string =>
+  border.color ?? AUTO_BORDER_COLOR;
+
 function sameBorder(a?: BorderFacts, b?: BorderFacts): boolean {
   if (!a || !b) return !a && !b;
-  return a.style === b.style && a.width === b.width && a.color === b.color;
+  return (
+    a.style === b.style &&
+    a.width === b.width &&
+    borderColorOf(a) === borderColorOf(b)
+  );
 }
 
 function readBorders(
@@ -741,9 +766,7 @@ export function inferHeaderRows(appearance: TableAppearance): number {
  * The cycle is SEEDED FROM THE FIRST BODY ROWS, not fitted globally, because a
  * repair has to know which end of the table is right. Damage propagates
  * DOWNWARD - insert a row and every row below it flips - so the top of the
- * stripe is the evidence and the bottom is the symptom. That is also the
- * captain's own description of the fix: "the row itself and the rows below that
- * might need to flip".
+ * stripe is the evidence and the bottom is the symptom.
  *
  * Guards that keep it from inventing a pattern:
  *   * the seed must not be constant - one highlighted row is not a stripe;
@@ -788,13 +811,25 @@ export function detectTableBanding(
     if (cycle.every((value) => value === cycle[0])) continue;
     const twoColourStripe = period === 2 && distinct.size === 2;
     if ((!twoColourStripe || options.strict) && !corroborated(cycle)) continue;
+    const tailInBand =
+      body[body.length - 1] === cycle[(body.length - 1) % period];
     if (twoColourStripe)
-      return { headerRows, period, cycle: cycle as Array<string | null> };
+      return {
+        headerRows,
+        period,
+        cycle: cycle as Array<string | null>,
+        tailInBand
+      };
     let matches = 0;
     for (let index = 0; index < body.length; index++)
       if (body[index] === cycle[index % period]) matches++;
     if (matches / body.length >= BAND_FIT_THRESHOLD)
-      return { headerRows, period, cycle: cycle as Array<string | null> };
+      return {
+        headerRows,
+        period,
+        cycle: cycle as Array<string | null>,
+        tailInBand
+      };
   }
   return null;
 }

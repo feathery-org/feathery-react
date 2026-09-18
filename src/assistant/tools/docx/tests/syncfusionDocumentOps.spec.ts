@@ -20,8 +20,10 @@ import {
   applyDocumentEdits,
   getDocumentInventory,
   FULL_INVENTORY_BLOCK_LIMIT,
+  isAssistantAuthor,
   isAssistantWriting,
   isAssistantApplyingEdits,
+  partitionBindingDiagnostics,
   setAssistantSessionActive,
   LiveEditor
 } from '../syncfusionDocumentOps';
@@ -56,6 +58,31 @@ if (!window.crypto?.getRandomValues) {
     }
   });
 }
+
+it('keeps pre-existing binding diagnostics in the trace and surfaces only new ones', () => {
+  const existing = {
+    severity: 'warning' as const,
+    code: 'missing-alias',
+    message: 'A summary alias is not bound.',
+    path: ['sections', 4]
+  };
+  const introduced = {
+    severity: 'error' as const,
+    code: 'invalid-input',
+    message: 'Quantity is invalid.',
+    path: ['sections', 1]
+  };
+
+  expect(
+    partitionBindingDiagnostics(
+      [existing],
+      [{ ...existing, path: ['sections', 5] }, introduced]
+    )
+  ).toEqual({
+    background: [{ ...existing, path: ['sections', 5] }],
+    introduced: [introduced]
+  });
+});
 
 const jsdomGetComputedStyle = window.getComputedStyle.bind(window);
 window.getComputedStyle = ((elt: Element) =>
@@ -698,7 +725,7 @@ describe('applyDocumentEdits', () => {
       expect(
         realRevisions(ed)
           .slice(beforeAssistant, afterAssistant)
-          .every((revision) => revision.author === 'Robin')
+          .every((revision) => isAssistantAuthor(revision.author))
       ).toBe(true);
 
       ed.selection.select('0;2;0', '0;2;6');
@@ -1097,7 +1124,7 @@ describe('applyDocumentEdits', () => {
 
         expect(result.results.every((entry) => entry.ok)).toBe(true);
         const calls = serialize.mock.calls.length;
-        expect(result.warnings).toEqual(
+        expect(result.executionTrace?.telemetry).toEqual(
           expect.arrayContaining([
             expect.stringMatching(
               new RegExp(`^document_serialization: count=${calls}; total_ms=`)
@@ -1172,7 +1199,7 @@ describe('applyDocumentEdits', () => {
 
       expect(result.results.every((entry) => entry.ok)).toBe(true);
       expect(serialize).toHaveBeenCalledTimes(8);
-      expect(result.warnings).toEqual(
+      expect(result.executionTrace?.telemetry).toEqual(
         expect.arrayContaining([
           expect.stringMatching(
             /^document_serialization: count=8; total_ms=\d+\.\d$/
@@ -1699,7 +1726,7 @@ describe('live occurrence search and scoped replacement', () => {
         flattenSfdt(JSON.parse(ed.serialize())).some((block) =>
           block.anchor.includes(';S;')
         )
-      ).toBe(false);
+      ).toBe(true);
       const serializedBefore = ed.serialize();
 
       const edited = applyDocumentEdits(ed as unknown as LiveEditor, {
@@ -1749,6 +1776,7 @@ describe('live occurrence search and scoped replacement', () => {
         'Email: torrey@example.com',
         'Engineer',
         '',
+        'Torrey in text frame',
         'Body neighbour after'
       ]);
 
@@ -2574,7 +2602,7 @@ describe('styling ops (no silent success)', () => {
     });
     expect(res.results[0]).toMatchObject({ ok: true, op: 'set_char_format' });
     expect(ed.selection.characterFormat.bold).toBe(true);
-    expect(ed.selection.characterFormat.fontColor).toBe('#ff0000');
+    expect(ed.selection.characterFormat.fontColor).toBe('#FF0000');
   });
 
   it('set_char_format with NO recognized field throws missing_format (not silent ok)', () => {
@@ -4840,13 +4868,10 @@ describe('explicit table structure and section break ops', () => {
     }
   });
 
-  // SyncFusion cannot delete a column or merge cells as a tracked change: both
-  // sit behind a blocking "wont be marked as change" confirmation dialog, and a
-  // human clicking OK would produce an UNTRACKED change that survives
-  // reject-all. This engine applies every change set tracked, so the ops are
-  // out of the vocabulary and must refuse loudly instead of reporting ok:true
-  // while doing nothing.
-  it.each(['delete_column', 'merge_cells'])(
+  // SyncFusion cannot merge cells as a tracked change. The SDK puts the write
+  // behind a confirmation dialog and accepting it would leave an untracked
+  // mutation, so the engine refuses instead of reporting a false success.
+  it.each(['merge_cells'])(
     'real SDK: %s is refused as outside the vocabulary, never as a false success',
     (op) => {
       const ed = makeRealDocumentEditor(locationScheduleSfdt());

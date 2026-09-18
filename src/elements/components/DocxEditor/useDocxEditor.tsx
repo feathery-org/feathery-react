@@ -5,6 +5,7 @@ import {
   disableUserTrackChanges,
   findReplaceCounterpart,
   installRevisionGroupIsolation,
+  installTrackedContentControlDeletion,
   preserveDocumentViewDuring,
   registerWrappingDocumentEditorContainer
 } from '../../../utils/documentEditorPrimitives';
@@ -1095,6 +1096,7 @@ export function useDocxEditor({
           // Engine-level fixes to the editing surface itself, not review
           // customizations: every host gets them, gated or not.
           installTableRowResizeFix(ed);
+          installTrackedContentControlDeletion(ed);
           // Status bar (bottom right): hide the Web-layout toggle — it flips
           // the document into continuous view, which breaks the paginated
           // editing/print flows this editor is built around.
@@ -1326,7 +1328,7 @@ export function useDocxEditor({
       // DocumentEditorContainer#resize enters refreshLayout, which homes the
       // cursor before rebuilding. The editor's own resize API performs the
       // required geometry refresh without that navigation side effect; keep
-      // Ayesha's host-resize owner but use the narrower native operation.
+      // the existing host-resize owner but use the narrower native operation.
       resizeDocxEditor(container, editor, refitZoom);
     },
     [editor]

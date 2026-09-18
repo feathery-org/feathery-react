@@ -310,7 +310,7 @@ describe('write-integrity guards', () => {
       ]
     });
 
-    it('DEFECT: refuses to split a bound table, document byte-unchanged', () => {
+    it('refuses the removed split_table shortcut without changing the document', () => {
       const live = open(boundTable());
       const before = serialized();
       const result = apply(
@@ -328,7 +328,7 @@ describe('write-integrity guards', () => {
         'split-bound'
       );
       expect(result.results[0].ok).toBe(false);
-      expect(result.results[0].error).toBe('structural_op_would_destroy_bindings');
+      expect(result.results[0].error).toBe('unsupported_op');
       // The bindings are the whole point: a refusal that still moved the
       // document would have destroyed the very tags it claims to protect.
       expect(serialized()).toBe(before);
