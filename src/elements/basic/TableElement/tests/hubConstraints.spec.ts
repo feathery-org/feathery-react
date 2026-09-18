@@ -216,3 +216,82 @@ test('an unknown comparator does not satisfy a when condition', () => {
     )
   ).toEqual({});
 });
+
+describe('Hub string comparisons for structured values', () => {
+  const files = [
+    { url: 'https://example.com/invoice.pdf', path: 'invoice.pdf' }
+  ];
+
+  test.each([
+    ['any', true, 'equal', 'True'],
+    ['any', false, 'equal', 'False'],
+    ['file', files, 'contains', 'invoice.pdf'],
+    ['file', files, 'not_contains', 'missing.pdf'],
+    ['file', files, 'starts_with', "[{'url': 'https://example.com/"],
+    ['file', files, 'ends_with', "'path': 'invoice.pdf'}]"],
+    [
+      'file',
+      files,
+      'equal',
+      "[{'url': 'https://example.com/invoice.pdf', 'path': 'invoice.pdf'}]"
+    ],
+    [
+      'file',
+      [{ path: "customer's invoice.pdf" }],
+      'equal',
+      `[{\u0027path\u0027: "customer's invoice.pdf"}]`
+    ],
+    ['file', [{ path: 'a\\b\nc.pdf' }], 'contains', 'a\\\\b\\nc.pdf'],
+    [
+      'file',
+      [{ path: 'invoice\u00a0final.pdf' }],
+      'contains',
+      'invoice\\xa0final.pdf'
+    ],
+    [
+      'file',
+      [{ path: 'invoice\u200bfinal.pdf' }],
+      'contains',
+      'invoice\\u200bfinal.pdf'
+    ],
+    [
+      'file',
+      [{ path: 'invoice\u{e0001}.pdf' }],
+      'contains',
+      'invoice\\U000e0001.pdf'
+    ],
+    ['file', [{ path: 'café 🧾.pdf' }], 'equal', "[{'path': 'café 🧾.pdf'}]"]
+  ])('matches the server for %s %p %s', (type, actual, comparator, value) => {
+    const constraint = condition(
+      'status',
+      comparator as string,
+      value as string
+    );
+    expect(
+      validate(
+        [row(actual)],
+        [{ ...rule, when: [], constraint }],
+        type as string
+      )
+    ).toEqual({});
+    expect(
+      validate([row(actual)], [{ ...rule, when: [constraint] }], type as string)
+    ).toEqual({ [errorKey]: rule.error_message });
+  });
+
+  test('a filename mismatch still fails the constraint', () => {
+    expect(
+      validate(
+        [row(files)],
+        [
+          {
+            ...rule,
+            when: [],
+            constraint: condition('status', 'contains', 'missing.pdf')
+          }
+        ],
+        'file'
+      )
+    ).toEqual({ [errorKey]: rule.error_message });
+  });
+});

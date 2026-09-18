@@ -56,11 +56,15 @@ const renderHub = ({
   verified = true,
   stage = 'Draft',
   hidden = ['gate-id'],
+  gate = true,
+  fields = FIELDS,
   saveError
 }: {
   verified?: boolean;
   stage?: string;
   hidden?: string[];
+  gate?: unknown;
+  fields?: typeof FIELDS;
   saveError?: string;
 } = {}) => {
   const dataHubAction = jest.fn(({ operation, data }: any) =>
@@ -70,7 +74,7 @@ const renderHub = ({
             {
               id: 'entry1',
               verified,
-              data: { stage, review: 'Pending review', gate: true }
+              data: { stage, review: 'Pending review', gate }
             }
           ]
         : {
@@ -84,7 +88,7 @@ const renderHub = ({
   const client = {
     dataHubAction,
     getHubSchemas: jest.fn(() =>
-      Promise.resolve({ hubs: [{ id: 'hub1', key: 'intake', fields: FIELDS }] })
+      Promise.resolve({ hubs: [{ id: 'hub1', key: 'intake', fields }] })
     )
   };
   render(
@@ -131,6 +135,51 @@ afterEach(() => {
 });
 
 describe('Hub conditional cell validation', () => {
+  test('a matching hidden attachment constraint permits saving a verified row', async () => {
+    const dataHubAction = renderHub({
+      stage: 'Complete',
+      gate: [{ url: 'https://example.com/invoice.pdf', path: 'invoice.pdf' }],
+      fields: FIELDS.map((field) =>
+        field.key === 'gate'
+          ? { ...field, type: 'file' }
+          : field.key === 'review'
+          ? {
+              ...field,
+              constraint_rules: [
+                {
+                  when: [
+                    {
+                      field_key: 'stage',
+                      comparator: 'equal',
+                      value: 'Complete'
+                    }
+                  ],
+                  constraint: {
+                    field_key: 'gate',
+                    comparator: 'contains',
+                    value: 'invoice.pdf'
+                  },
+                  error_message: 'An invoice is required'
+                }
+              ]
+            }
+          : field
+      )
+    });
+    await screen.findByText('Pending review');
+    expect(cell('Pending review')).not.toHaveAttribute('title');
+    editCell('Pending review', 'Approved');
+    expect(saveButton()).toBeEnabled();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(2));
+    expect(dataHubAction).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        operation: 'update',
+        data: { review: 'Approved' }
+      })
+    );
+  });
+
   test('dependency edits flag the owner and correcting the buffered row clears the error', async () => {
     const dataHubAction = renderHub();
     await screen.findByText('Pending review');

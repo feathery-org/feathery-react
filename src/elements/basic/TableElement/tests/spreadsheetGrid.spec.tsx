@@ -442,6 +442,45 @@ describe('row insertion and deletion', () => {
     }));
   });
 
+  test('Enter append preserves undo and redo for the committed edit and earlier edits', async () => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    updateFieldValues.mockImplementation((updates) => Object.assign(fieldValues, updates));
+    fireEvent.doubleClick(cell('Alice'));
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Alicia' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
+    fireEvent.doubleClick(cell('Cara'));
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Caroline' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(grid()).toHaveAttribute('aria-rowcount', '5'));
+
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true });
+    expect(cell('Cara')).toBeInTheDocument();
+    expect(cell('Alicia')).toBeInTheDocument();
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true });
+    expect(cell('Alice')).toBeInTheDocument();
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true, shiftKey: true });
+    expect(cell('Alicia')).toBeInTheDocument();
+    expect(cell('Caroline')).toBeInTheDocument();
+    expect(grid()).toHaveAttribute('aria-rowcount', '5');
+  });
+
+  test('inserting before existing rows still clears index-keyed undo history', async () => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    updateFieldValues.mockImplementation((updates) => Object.assign(fieldValues, updates));
+    fireEvent.doubleClick(cell('Cara'));
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Caroline' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
+    openRowMenu(2);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Insert row above' }));
+    await waitFor(() => expect(grid()).toHaveAttribute('aria-rowcount', '5'));
+
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true });
+    expect(cell('Caroline')).toBeInTheDocument();
+    expect(cell('Bob')).toBeInTheDocument();
+    expect(screen.queryByText('Cara')).toBeNull();
+  });
+
   test.each([
     ['Shift+Enter', { key: 'Enter', shiftKey: true }],
     ['ArrowDown', { key: 'ArrowDown', shiftKey: false }]
