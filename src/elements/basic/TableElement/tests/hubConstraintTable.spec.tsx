@@ -58,6 +58,7 @@ const renderHub = ({
   hidden = ['gate-id'],
   gate = true,
   fields = FIELDS,
+  rejectSave = false,
   saveError
 }: {
   verified?: boolean;
@@ -65,10 +66,26 @@ const renderHub = ({
   hidden?: string[];
   gate?: unknown;
   fields?: typeof FIELDS;
+  rejectSave?: boolean;
   saveError?: string;
 } = {}) => {
-  const dataHubAction = jest.fn(({ operation, data }: any) =>
-    Promise.resolve(
+  const dataHubAction = jest.fn(({ operation, data }: any) => {
+    if (
+      operation !== 'get' &&
+      rejectSave &&
+      saveError &&
+      data.review !== 'Approved'
+    ) {
+      return Promise.reject(
+        Object.assign(new Error(saveError), {
+          payload: {
+            error: saveError,
+            constraint: { field_key: 'review', rule_index: 0 }
+          }
+        })
+      );
+    }
+    return Promise.resolve(
       operation === 'get'
         ? [
             {
@@ -80,11 +97,14 @@ const renderHub = ({
         : {
             updated: 1,
             ...(saveError && data.review !== 'Approved'
-              ? { error: saveError }
+              ? {
+                  error: saveError,
+                  constraint: { field_key: 'review', rule_index: 0 }
+                }
               : {})
           }
-    )
-  );
+    );
+  });
   const client = {
     dataHubAction,
     getHubSchemas: jest.fn(() =>
@@ -135,6 +155,31 @@ afterEach(() => {
 });
 
 describe('Hub conditional cell validation', () => {
+  test('a rejected save retains rule identity without rendering metadata as errors', async () => {
+    const dataHubAction = renderHub({
+      rejectSave: true,
+      saveError: 'Server wording differs from the schema'
+    });
+    await screen.findByText('Pending review');
+    editCell('Draft', 'In progress');
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByRole('tooltip')).toHaveTextContent(
+        'Server wording differs from the schema'
+      )
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /^Server wording differs from the schema$/
+    );
+    editCell('Pending review', 'Approved');
+    expect(cell('Draft')).not.toHaveAttribute('title');
+    expect(screen.getByRole('status')).not.toHaveTextContent('error');
+    expect(saveButton()).toBeEnabled();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(3));
+  });
+
   test('a matching hidden attachment constraint permits saving a verified row', async () => {
     const dataHubAction = renderHub({
       stage: 'Complete',
@@ -271,7 +316,10 @@ describe('Hub conditional cell validation', () => {
   });
 
   test('correcting a staged buffered row clears its previous server constraint error', async () => {
-    const dataHubAction = renderHub({ verified: false, saveError: MESSAGE });
+    const dataHubAction = renderHub({
+      verified: false,
+      saveError: 'A translated or updated server constraint message'
+    });
     await screen.findByText('Pending review');
     editCell('Draft', 'Complete');
     fireEvent.click(saveButton());

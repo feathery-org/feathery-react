@@ -118,7 +118,7 @@ describe('Hub conditional cell constraints', () => {
     ['boolean', 'equal', 'true', 'true'],
     ['date', 'equal', '2026-09-17', '2026-09-17'],
     ['datetime', 'equal', '2026-09-17T10:00:00', '2026-09-17T10:00:00Z'],
-    ['any', 'is_empty', [], ''],
+    ['file', 'is_empty', [], ''],
     ['number', 'is_filled', 0, ''],
     ['boolean', 'is_filled', false, '']
   ])('matches %s %s conditions', (type, comparator, actual, expected) => {
@@ -173,24 +173,116 @@ test('preserves unrelated server errors while a conditional error is corrected',
     key
   );
   const serverErrors = {
-    [`0:${key('status')}`]: rule.error_message,
-    [`1:${key('status')}`]: rule.error_message,
+    [`0:${key('status')}`]: 'Server wording differs from the live rule',
+    [`1:${key('status')}`]: 'Server wording differs from the live rule',
     [`0:${key('other')}`]: 'Must be unique'
+  };
+  const constraintErrors = {
+    [`0:${key('status')}`]: { field_key: 'completed', rule_index: 0 },
+    [`1:${key('status')}`]: { field_key: 'completed', rule_index: 0 }
   };
   expect(
     mergeCellErrors(
       serverErrors,
       {},
       rules,
-      (index, fieldKey) => index === 0 && fieldKey === key('completed')
+      (index, fieldKey) => index === 0 && fieldKey === key('completed'),
+      constraintErrors
     )
   ).toEqual({
-    [`1:${key('status')}`]: rule.error_message,
+    [`1:${key('status')}`]: 'Server wording differs from the live rule',
     [`0:${key('other')}`]: 'Must be unique'
   });
-  expect(mergeCellErrors(serverErrors, {}, rules, () => false)).toEqual(
-    serverErrors
+  expect(
+    mergeCellErrors(serverErrors, {}, rules, () => false, constraintErrors)
+  ).toEqual(serverErrors);
+});
+
+test('does not clear another rule or an unclassified error with identical text', () => {
+  const otherRule = {
+    ...rule,
+    when: [condition('other', 'equal', 'Complete')]
+  };
+  const rules = hubCellRules(
+    ['completed', 'other_owner'].map((name) => ({
+      name,
+      hub_field_key: name,
+      field_key: key(name)
+    })),
+    [
+      { key: 'completed', type: 'text', constraint_rules: [rule] },
+      { key: 'other_owner', type: 'text', constraint_rules: [otherRule] },
+      { key: 'status', type: 'text' },
+      { key: 'other', type: 'text' }
+    ],
+    key
   );
+  const serverErrors = {
+    [`0:${key('status')}`]: rule.error_message,
+    [`0:${key('other')}`]: rule.error_message,
+    [`0:${key('unclassified')}`]: rule.error_message
+  };
+  expect(
+    mergeCellErrors(
+      serverErrors,
+      {},
+      rules,
+      (_, fieldKey) => fieldKey === key('status'),
+      {
+        [`0:${key('status')}`]: { field_key: 'completed', rule_index: 0 },
+        [`0:${key('other')}`]: { field_key: 'other_owner', rule_index: 0 }
+      }
+    )
+  ).toEqual({
+    [`0:${key('other')}`]: rule.error_message,
+    [`0:${key('unclassified')}`]: rule.error_message
+  });
+});
+
+describe('Hub condition literal semantics', () => {
+  test.each([
+    [true, 'true', true],
+    [false, 'false', true],
+    [true, 'TRUE', true],
+    [false, 'FALSE', true],
+    [true, '1', true],
+    [false, '0', true],
+    [true, 'yes', false],
+    [false, 'yes', true],
+    [true, 'y', false],
+    [false, 'Y', true],
+    [true, ' true ', false],
+    [false, ' TRUE ', true],
+    [' YES ', 'true', true],
+    [' Y ', 'TRUE', true],
+    [' NO ', 'false', true],
+    [' N ', 'FALSE', true],
+    [' T ', 'true', true],
+    [' F ', 'false', true]
+  ])('boolean %p equals literal %p: %p', (actual, literal, matches) => {
+    const constraint = condition('status', 'equal', literal as string);
+    expect(
+      validate([row(actual)], [{ ...rule, when: [], constraint }], 'boolean')
+    ).toEqual(matches ? {} : { [errorKey]: rule.error_message });
+  });
+
+  test.each([
+    ['2026-09-17', true],
+    ['2026-09-17T00:00:00Z', true],
+    ['2026-09-17T10:00:00Z', false],
+    ['2026-09-17T02:00:00+02:00', true],
+    ['2026-09-16T20:00:00-04:00', true],
+    ['2026-09-17T00:00:00+02:00', false]
+  ])('date compares the full literal timestamp %s: %p', (literal, matches) => {
+    const constraint = condition('status', 'equal', literal as string);
+    expect(
+      validate(
+        [row('2026-09-17T10:00:00-04:00')],
+        [{ ...rule, when: [], constraint }],
+        'date'
+      )
+    ).toEqual(matches ? {} : { [errorKey]: rule.error_message });
+  });
 });
 
 test.each([
@@ -225,6 +317,24 @@ describe('Hub string comparisons for structured values', () => {
   test.each([
     ['any', true, 'equal', 'True'],
     ['any', false, 'equal', 'False'],
+    [
+      'any',
+      { enabled: true, items: [false, null, 2] },
+      'equal',
+      '{"enabled": true, "items": [false, null, 2]}'
+    ],
+    ['any', [true, { enabled: false }], 'equal', '[true, {"enabled": false}]'],
+    ['any', { text: 'a,b:c' }, 'equal', '{"text": "a,b:c"}'],
+    ['any', { text: 'a"b\\c\nd' }, 'equal', '{"text": "a\\"b\\\\c\\nd"}'],
+    [
+      'any',
+      { text: 'café 🧾' },
+      'equal',
+      '{"text": "caf\\u00e9 \\ud83e\\uddfe"}'
+    ],
+    ['any', [], 'equal', '[]'],
+    ['any', {}, 'equal', '{}'],
+    ['any', [], 'is_filled', ''],
     ['file', files, 'contains', 'invoice.pdf'],
     ['file', files, 'not_contains', 'missing.pdf'],
     ['file', files, 'starts_with', "[{'url': 'https://example.com/"],
