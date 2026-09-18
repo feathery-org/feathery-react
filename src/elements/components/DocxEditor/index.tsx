@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
-import { CheckIcon, CloseIcon } from './icons';
+import { CheckIcon, CloseIcon, SpinnerIcon } from './icons';
 import { FEATHERY_RED, TOOLBAR_HEIGHT } from './DocxToolbar/styles';
 import DocumentPanel from './DocumentPanel';
 import {
@@ -10,12 +10,62 @@ import {
   useReviewPanelPresentation
 } from './reviewPanelPresentation';
 import PanelRail from './PanelRail';
-import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
+import {
+  DocxBindingsConfig,
+  setActiveInlineRevisions,
+  useDocxEditor
+} from './useDocxEditor';
 import { TableDeleteImpact } from './bindings/tableDeleteGuard';
+import { editGroupKey } from './history/sfdtDiff/index';
+import { stepperRevisions } from './history/stepperRevisions';
+import { firstUserActorKey } from './history/authorColors';
+import { useDocxHistorySession } from './history/useDocxHistorySession';
+import {
+  prefetchVersionDocuments,
+  retainVersionDocuments,
+  versionDocumentKey,
+  VersionDocument
+} from './history/useVersionDocument';
+import VersionViewer from './history/VersionViewer';
+import VersionBar from './history/VersionBar';
+import {
+  DocxHistoryHost,
+  DocxSaveMeta,
+  DocxVersion,
+  LiveSessionAuthors,
+  VersionAuthor
+} from './history/types';
 import { DocxSource } from './types';
+
+const DEFAULT_CURRENT_USER: VersionAuthor = {
+  kind: 'user',
+  key: 'you',
+  label: 'You'
+};
 
 // Re-exported for tests that import it from this module.
 export { RailErrorBoundary } from './RailErrorBoundary';
+
+// How long after a restore a nonzero pending-change count still counts as
+// "the restored version brought suggestions back" (reopen + rail refresh
+// comfortably finish within this; anything later is a new edit).
+const RESTORE_SUGGESTIONS_WINDOW_MS = 15_000;
+
+/** The restore-suggestions toast copy, or null when the pending count isn't
+ *  attributable to the last restore. Exported for tests. */
+export function restoredSuggestionsMessage(
+  count: number,
+  restoredAt: number,
+  now = Date.now()
+): string | null {
+  if (
+    count <= 0 ||
+    !restoredAt ||
+    now - restoredAt >= RESTORE_SUGGESTIONS_WINDOW_MS
+  )
+    return null;
+  return `${count} pending Robin ${count === 1 ? 'edit' : 'edits'} restored`;
+}
 
 /** What a host's onSave may resolve with. `file` is the public copy of the
  *  saved document (content controls stripped server-side) — the only bytes
@@ -27,6 +77,7 @@ export interface DocxSaveResult {
 }
 
 export interface DocxEditorProps {
+  envelopeId?: string;
   /** Document to open. `buffer` when the host already fetched the bytes (e.g.
    *  an authenticated download); `url` for the component to fetch directly. */
   source?: DocxSource;
@@ -72,11 +123,20 @@ export interface DocxEditorProps {
   /** Fired with the current dirty state (true on edits, false after a save). */
   onChange?: (dirty: boolean) => void;
   onError?: (error: string) => void;
-  /** Persistence boundary: receives the exported .docx. The host decides where
-   *  it goes (the component never persists on its own). */
+  /** Host must await this before replacing the document. */
+  onBeforeReplaceReady?: (save: (() => Promise<unknown>) | null) => void;
+  /** Persistence boundary: receives the exported .docx and, when version
+   *  history is active, the session metadata to group the save into a version
+   *  row. The host decides where it goes (the component never persists). */
   onSave?: (
-    blob: Blob
+    blob: Blob,
+    meta?: DocxSaveMeta
   ) => DocxSaveResult | void | Promise<DocxSaveResult | void>;
+  /** Opt-in version history: the I/O adapter the container injects. Absent →
+   *  no sessions, no autosave grouping (the editor behaves as before). */
+  history?: DocxHistoryHost;
+  /** The current viewer's identity for version attribution. */
+  currentUser?: VersionAuthor;
   /** Opt-in document bindings: [[...]] tokens become live fields and formulas
    *  that recalculate as the document is edited. Omitting it changes nothing. */
   bindings?: DocxBindingsConfig;
@@ -121,20 +181,39 @@ function DocxEditor({
   onEditorReady,
   onChange,
   onError,
+  onBeforeReplaceReady,
+  envelopeId,
   onSave,
+  history,
+  currentUser,
   bindings
 }: DocxEditorProps) {
   const dirtyRef = useRef(false);
+  const editRevisionRef = useRef(0);
+  const snapshotRevisions = useRef(new WeakMap<Blob, number>());
+  const snapshotBindings = useRef(new WeakMap<Blob, Record<string, string>>());
+  const committedBindingsRef = useRef<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const restoreInFlightRef = useRef(false);
+  const [restoreRefreshKey, setRestoreRefreshKey] = useState(0);
+  const restoredSelectionRef = useRef<{
+    id?: string;
+    sourceId: string;
+    afterSeq: number;
+  } | null>(null);
   // Brief feedback shown after an explicit Save — the button otherwise gives
   // no sign of whether the document actually persisted.
-  // Binding-error modal shown when an action hits the export gate. Save and
+  // Confirmation / warning modal. Primarily the binding-error export gate, but
+  // also reused for plain confirmations (e.g. Restore) — `title` overrides the
+  // heading so a confirm doesn't inherit the binding-error label. Save and
   // download offer a consented escape hatch ("Save Anyway" / "Download
   // Anyway"); sign/send show it without one — informational, Close only. The
   // table-delete confirmation reuses it with its own title and a cancel hook.
   const [gateWarning, setGateWarning] = useState<{
     message: string;
+    /** Heading; defaults to the binding-error label when omitted. */
     title?: string;
     confirmLabel?: string;
     confirmTitle?: string;
@@ -160,14 +239,64 @@ function DocxEditor({
   // The single right-rail slot shows at most one panel, toggled from the
   // toolbar's two buttons (Changes / Sections).
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  // A selected older version, shown read-only over the live editor. The live
+  // editor keeps autosaving underneath while it is open.
+  const [viewingVersion, setViewingVersion] = useState<DocxVersion | null>(
+    null
+  );
+  // The selected row can resolve in the background while the viewer keeps the
+  // last fully painted page on screen. This identity drives the bar only after
+  // the replacement document is ready, so its label/counts never get ahead of
+  // what the reader is looking at.
+  const [displayedVersion, setDisplayedVersion] = useState<DocxVersion | null>(
+    null
+  );
+  // A live-diffed display document for the in-progress current version (no
+  // stored files yet): highlights baked in, so the viewer renders it like any
+  // stored version. Null for stored versions (they fetch their own files).
+  const [liveDoc, setLiveDoc] = useState<VersionDocument | null>(null);
+  const [liveSessionAuthors, setLiveSessionAuthors] =
+    useState<LiveSessionAuthors | null>(null);
+  // The version list reported up by the History panel, for auto-selecting the
+  // latest (Current) version when the panel opens.
+  const [historyVersions, setHistoryVersions] = useState<DocxVersion[]>([]);
+  // The panel can still hold rows from its previous opening. Only its next
+  // completed list request is allowed to choose the initial Current version.
+  const historyAutoSelectedRef = useRef(false);
+  const firstUserKey = firstUserActorKey(historyVersions);
+  // Version highlights are always shown when available (no user toggle). The
+  // resolved counts below drive the version bar's summary; reset per version.
+  // Highlight-changes toggle (version bar). Toggling remounts the viewer.
+  const [highlightsOn, setHighlightsOn] = useState(true);
+  const [sharedZoomFactor, setSharedZoomFactor] = useState<number | undefined>(
+    undefined
+  );
+  // The read-only version viewer's editor, for stepping through its changes.
+  const viewerEditorRef = useRef<any>(null);
+  // Which change group the steppers are on (index into orderedChangeGroups);
+  // -1 before the first step. Reset when the viewer's editor changes.
+  const changeStepRef = useRef(-1);
+  const [versionMeta, setVersionMeta] = useState<{
+    editCount?: number;
+    formatCount?: number;
+    pendingCount?: number;
+    approvedCount?: number;
+    degraded: boolean;
+  } | null>(null);
   // Pending tracked-change count, reported by the (always-mounted) rail; drives
   // the toolbar's Changes badge and whether that button is offered at all.
   const [changesCount, setChangesCount] = useState(0);
+  // When the last restore finished. A restored .docx can carry back tracked
+  // changes that were still awaiting review when that version was saved; once
+  // the reopened document reports them (see the changesCount effect), a toast
+  // says so, and this timestamp scopes that toast to the restore itself.
+  const restoredAtRef = useRef(0);
 
   // A single dirty transition. Shared by ordinary edits (via the hook's
   // onDirty) and the section reorder, whose programmatic open() does not
   // reliably fire the gated contentChange.
   const markDirty = useCallback(() => {
+    editRevisionRef.current++;
     if (!dirtyRef.current) {
       dirtyRef.current = true;
       setDirty(true);
@@ -235,12 +364,19 @@ function DocxEditor({
     setSaveToast(null);
   }, []);
 
+  // The history hook is created below (it needs `editor`), but useDocxEditor's
+  // onEdit must exist now — bridge through a ref so the stable listener reaches
+  // the latest hook.
+  const historyOnEditRef = useRef<
+    ((info: { assistant: boolean }) => void) | undefined
+  >(undefined);
+
   const {
     containerRef,
     editor,
     loading,
     error,
-    exportDoc,
+    exportDoc: exportRawDoc,
     bindings: bindingsState
   } = useDocxEditor({
     source,
@@ -253,16 +389,37 @@ function DocxEditor({
     onReady,
     onEditorReady,
     onDirty: markDirty,
+    onEdit: (info) => {
+      markDirty();
+      historyOnEditRef.current?.(info);
+    },
+    // Ctrl/Cmd+S saves through the host instead of Syncfusion's default (which
+    // downloads the raw SFDT). Runs the same gated flow as the toolbar Save.
+    onSaveShortcut: () => handleSave(),
     onError,
     bindings: bindings
       ? {
           ...bindings,
+          onFieldValues: (values) => {
+            committedBindingsRef.current = values;
+            bindings.onFieldValues?.(values);
+          },
           confirmTableDelete,
           onLockedEdit: handleLockedEdit,
           onLockedEditResolved: handleLockedEditResolved
         }
       : bindings
   });
+
+  const exportDoc = () => {
+    const revision = editRevisionRef.current;
+    const values = { ...committedBindingsRef.current };
+    return exportRawDoc().then((blob) => {
+      snapshotRevisions.current.set(blob, revision);
+      snapshotBindings.current.set(blob, values);
+      return blob;
+    });
+  };
 
   // The review surface follows the document: a change set arriving presents the
   // Suggested changes panel, and resolving the last edit closes it again. Both
@@ -272,9 +429,29 @@ function DocxEditor({
   useReviewPanelPresentation({
     activePanel,
     count: changesCount,
-    reviewChanges: !!reviewChanges,
+    reviewChanges:
+      !!reviewChanges &&
+      !(activePanel === 'history' && viewingVersion?.restored_from),
     setActivePanel
   });
+
+  // Escape backs out one layer at a time: first the version viewer, then the
+  // side panel.
+  useEffect(() => {
+    if (!viewingVersion && activePanel === null) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (restoreInFlightRef.current) return;
+      if (e.key !== 'Escape') return;
+      if (viewingVersion) {
+        setViewingVersion(null);
+        setDisplayedVersion(null);
+        setLiveDoc(null);
+      } else setActivePanel(null);
+    };
+    const doc = featheryDoc();
+    doc.addEventListener('keydown', onKey);
+    return () => doc.removeEventListener('keydown', onKey);
+  }, [viewingVersion, activePanel]);
 
   /**
    * Reconcile anything uncommitted before bytes leave the editor and report the
@@ -283,6 +460,8 @@ function DocxEditor({
    * document carries an invalid binding config - not that content is missing.
    */
   const exportBlockMessage = (): string | null => {
+    if (bindings?.enabled && !bindingsState.ready)
+      return 'Document bindings are still loading. Please wait before saving.';
     if (!bindingsState.ready) return null;
     if (bindingsState.commitForSave()) return null;
     const detail = bindingsState.diagnostics
@@ -371,33 +550,347 @@ function DocxEditor({
   // Persist the given (already-exported) bytes to the host. Reuses the caller's
   // blob so download/terminal flows export exactly once and save the same bytes
   // they hand back to the user.
-  const saveCurrentDocument = async (blob: Blob) => {
+  const saveCurrentDocument = async (blob: Blob, meta?: DocxSaveMeta) => {
     if (!onSave) return;
-    setSaving(true);
+    const foreground = !meta || meta.closeSession;
+    if (foreground) setSaving(true);
     try {
-      const result = (await onSave(blob)) as DocxSaveResult | undefined;
-      dirtyRef.current = false;
-      setDirty(false);
-      onChange?.(false);
+      const result = (await onSave(
+        blob,
+        meta
+          ? { ...meta, bindingValues: snapshotBindings.current.get(blob) }
+          : meta
+      )) as DocxSaveResult | undefined;
+      if (snapshotRevisions.current.get(blob) === editRevisionRef.current) {
+        dirtyRef.current = false;
+        setDirty(false);
+        onChange?.(false);
+      }
       return result;
     } finally {
-      setSaving(false);
+      if (foreground) setSaving(false);
     }
   };
+
+  // Version history: sessions + autosave. No-ops without a `history` host, so
+  // standalone hosts keep the manual Save/Download flow unchanged.
+  const historySession = useDocxHistorySession({
+    editor,
+    loading,
+    readOnly,
+    host: history ?? null,
+    currentUser: currentUser ?? DEFAULT_CURRENT_USER,
+    envelopeId,
+    openNonce,
+    exportDoc,
+    save: saveCurrentDocument,
+    canSave: () =>
+      !bindings?.enabled ||
+      (bindingsState.ready && bindingsState.commitForSave())
+  });
+  historyOnEditRef.current = historySession.onEdit;
+  useEffect(
+    () => (history ? retainVersionDocuments(history) : undefined),
+    [history]
+  );
+
+  const beforeReplaceRef = useRef<(() => Promise<unknown>) | undefined>(
+    undefined
+  );
+  beforeReplaceRef.current = async () => {
+    if (readOnly) return;
+    const block = exportBlockMessage();
+    if (block) throw new Error(block);
+    if (history) {
+      let result: unknown;
+      do {
+        result = await historySession.save();
+      } while (historySession.isSessionOpen());
+      return result;
+    }
+    if (dirtyRef.current) return saveCurrentDocument(await exportDoc());
+  };
+  useEffect(() => {
+    onBeforeReplaceReady?.(
+      () => beforeReplaceRef.current?.() ?? Promise.resolve()
+    );
+    return () => onBeforeReplaceReady?.(null);
+  }, [onBeforeReplaceReady]);
+
+  // Opening the history rail is a good idle point to resolve its recent,
+  // immutable snapshots. This cache only contains rendered preview data; live
+  // restores continue to fetch the current editor file without caching.
+  useEffect(() => {
+    prefetchVersionDocuments(history ?? null, historyVersions);
+  }, [history, historyVersions]);
+
+  // Both DocumentEditorContainers expose the same zoom footer. Keep the
+  // editing and read-only containers at one zoom level when moving between
+  // them, including a zoom chosen directly in either footer.
+  useEffect(() => {
+    if (!editor) return undefined;
+    const syncZoom = (args?: any) => {
+      const next = Number(args?.zoomFactor ?? editor.zoomFactor);
+      if (Number.isFinite(next)) setSharedZoomFactor(next);
+    };
+    syncZoom();
+    editor.addEventListener?.('zoomFactorChange', syncZoom);
+    return () => {
+      // On step navigation useDocxEditor has already destroy()ed the editor
+      // when this cleanup runs; removeEventListener on a destroyed ej2
+      // instance throws, which would take down the whole form.
+      if (editor.isDestroyed) return;
+      try {
+        editor.removeEventListener?.('zoomFactorChange', syncZoom);
+      } catch {
+        /* editor already torn down */
+      }
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor || !Number.isFinite(sharedZoomFactor)) return;
+    if (Math.abs(Number(editor.zoomFactor) - Number(sharedZoomFactor)) < 0.001)
+      return;
+    editor.zoomFactor = sharedZoomFactor;
+  }, [editor, sharedZoomFactor]);
+
+  // Open a version read-only in the viewer. An in-progress session previews
+  // live edits; a saved Current row with no open session reads its stored change
+  // files, like any older version.
+  const selectVersion = useCallback(
+    (version: DocxVersion) => {
+      let live: VersionDocument | null = null;
+      // During an open session, autosave checkpoints can already be stale.
+      // After Save/reload, the browser has no live diff baseline; the latest
+      // saved change files are then the only source for user edit stepping.
+      if (version.is_current) {
+        const preview = historySession.previewSession();
+        setLiveSessionAuthors(
+          preview
+            ? { sessionId: preview.sessionId, authors: preview.authors }
+            : null
+        );
+        if (preview && preview.sessionId === version.session_id) {
+          live = {
+            loading: false,
+            error: false,
+            sfdt: preview.sfdt,
+            degraded: false,
+            editCount: preview.editCount,
+            formatCount: preview.formatCount,
+            pendingCount: preview.pendingCount
+          };
+        } else if (!version.final_sfdt || historySession.isSessionOpen()) {
+          // With no saved change list to fall back to, show the live document
+          // plain until a checkpoint finishes uploading.
+          try {
+            const sfdt = editor?.serialize?.();
+            if (sfdt) {
+              live = { loading: false, error: false, sfdt, degraded: true };
+            }
+          } catch {
+            live = null;
+          }
+        }
+      }
+      setLiveDoc(live);
+      setViewingVersion(version);
+      setDisplayedVersion((displayed) => displayed ?? version);
+      if (viewingVersion?.id !== version.id) setVersionMeta(null);
+    },
+    [editor, historySession, viewingVersion?.id]
+  );
+
+  const handleHistoryVersionsLoaded = useCallback(
+    (versions: DocxVersion[]) => {
+      setHistoryVersions(versions);
+      // Do not use the previous opening's rows here: a save can turn that old
+      // Current row into latest-1 before the user opens history again. The
+      // callback's payload is the fresh list that the panel is displaying.
+      if (activePanel !== 'history') return;
+      if (restoreInFlightRef.current) return;
+      const pendingRestore = restoredSelectionRef.current;
+      if (pendingRestore) {
+        const restored = versions.find((version) =>
+          pendingRestore.id
+            ? version.id === pendingRestore.id
+            : version.restored_from === pendingRestore.sourceId &&
+              version.seq > pendingRestore.afterSeq
+        );
+        if (!restored) return;
+        restoredSelectionRef.current = null;
+        historyAutoSelectedRef.current = true;
+        // Use saved bytes, not the live editor, which may still be reopening.
+        setLiveDoc(null);
+        setLiveSessionAuthors(null);
+        setViewingVersion(restored);
+        return;
+      }
+      if (historyAutoSelectedRef.current && !viewingVersion?.is_current) return;
+      const current = versions.find((version) => version.is_current);
+      if (!current) return;
+      historyAutoSelectedRef.current = true;
+      selectVersion(current);
+    },
+    [activePanel, selectVersion, viewingVersion?.is_current]
+  );
+
+  // Save can finish while Current is already selected. Once its refreshed row
+  // includes the stored history files, replace any plain live preview with the
+  // saved version so the viewer can render and step through those edits.
+  useEffect(() => {
+    if (!viewingVersion?.is_current) return;
+    const saved = historyVersions.find((v) => v.id === viewingVersion.id);
+    if (
+      !saved?.final_sfdt ||
+      (versionDocumentKey(saved) === versionDocumentKey(viewingVersion) &&
+        !liveDoc)
+    )
+      return;
+    // A healthy live preview is fresher than an in-progress checkpoint. A
+    // degraded plain preview should yield to saved tracked changes as soon as
+    // the refreshed row contains them.
+    if (historySession.isSessionOpen() && liveDoc && !liveDoc.degraded) return;
+    changeStepRef.current = -1;
+    setLiveDoc(null);
+    setLiveSessionAuthors(null);
+    setViewingVersion(saved);
+  }, [historyVersions, historySession, liveDoc, viewingVersion]);
+
+  // Back to the live editor (its toolbar returns because viewingVersion clears).
+  const exitVersionView = useCallback(() => {
+    if (restoreInFlightRef.current) return;
+    restoredSelectionRef.current = null;
+    setViewingVersion(null);
+    setDisplayedVersion(null);
+    setLiveDoc(null);
+    setLiveSessionAuthors(null);
+  }, []);
+
+  // Step the viewer through EDIT GROUPS, not raw revisions: one click = one
+  // logical edit. editGroupKey buckets a replace's delete+insert together and
+  // collapses the WHOLE Robin turn into a single group (a session holds at most
+  // one turn), so the assistant's changes step as one edit however many places
+  // it touched. setActiveInlineRevisions rings every revision in the group (so
+  // both the strikethrough and the rewritten text are ringed, not just the
+  // deletion), and selectRevision scrolls the group into view (skipGroupSelect
+  // keeps it on this exact edit; the native pane it would open is hidden by
+  // closeTrackedChangeReviewPane's rule).
+  // The viewer persists across version switches and highlight toggles, so
+  // onViewerEditor no longer fires per version. Reset the
+  // prev/next stepping cursor whenever the shown version (or highlight mode)
+  // changes so stepping starts from the top of the newly-opened document.
+  useEffect(() => {
+    changeStepRef.current = -1;
+  }, [viewingVersion?.id, highlightsOn]);
+
+  const stepChange = useCallback((direction: 1 | -1) => {
+    const ed = viewerEditorRef.current;
+    const revisions = stepperRevisions(ed);
+    if (!revisions.length) return;
+    // Bucket every revision under its group, preserving document order and the
+    // order groups first appear.
+    const order: string[] = [];
+    const byGroup = new Map<string, any[]>();
+    revisions.forEach((rev, i) => {
+      const key = editGroupKey(rev) ?? rev?.revisionId ?? String(i);
+      let bucket = byGroup.get(key);
+      if (!bucket) {
+        bucket = [];
+        byGroup.set(key, bucket);
+        order.push(key);
+      }
+      bucket.push(rev);
+    });
+    if (!order.length) return;
+    // An inserted blank line is a paragraph-mark-only revision with an EMPTY
+    // range; stepping onto it lands the caret on an empty line with nothing to
+    // review ("steps on the empty line, never on the edit"). Step only among
+    // groups that carry visible content — fall back to all groups only if a
+    // version somehow has nothing but blank-line edits.
+    const hasContent = (revs: any[]): boolean =>
+      revs.some((r) =>
+        (r.range ?? []).some(
+          (x: any) => typeof x?.text === 'string' && x.text.length > 0
+        )
+      );
+    const contentOrder = order.filter((k) => hasContent(byGroup.get(k) ?? []));
+    const stepOrder = contentOrder.length ? contentOrder : order;
+    const prev = changeStepRef.current;
+    let next =
+      prev < 0
+        ? direction === 1
+          ? 0
+          : stepOrder.length - 1
+        : prev + direction;
+    // Wrap so the steppers never dead-end.
+    if (next < 0) next = stepOrder.length - 1;
+    if (next >= stepOrder.length) next = 0;
+    changeStepRef.current = next;
+    const group = byGroup.get(stepOrder[next]) ?? [];
+    // Ring the full edit (deletion + insertion), then scroll to it.
+    try {
+      setActiveInlineRevisions(ed, group);
+    } catch {
+      /* highlighting is decoration; navigation must still run */
+    }
+    try {
+      const selection = ed.selection;
+      // Prefer a content-bearing revision so the caret lands on the edited text,
+      // not the paragraph break (empty line) that may precede it in the group.
+      const target =
+        group.find((r) =>
+          (r.range ?? []).some(
+            (x: any) => typeof x?.text === 'string' && x.text.length > 0
+          )
+        ) ?? group[0];
+      selection?.selectRevision?.(target, undefined, undefined, true);
+      if (selection?.start && selection?.end) {
+        ed.documentHelper?.scrollToPosition?.(selection.start, selection.end);
+      }
+    } catch {
+      /* selection unavailable mid-teardown */
+    }
+  }, []);
+
+  // Opening history always waits for the panel's fresh list response before it
+  // selects Current. Leaving it makes the next opening eligible again.
+  useEffect(() => {
+    if (activePanel !== 'history') {
+      historyAutoSelectedRef.current = false;
+    }
+  }, [activePanel]);
 
   // Flash a save toast and auto-dismiss it. Re-showing while one is already up
   // resets the timer so a second save reads as fresh feedback. Errors linger a
   // little longer than the success confirmation.
   const flashSaveToast = (
     type: 'success' | 'error' | 'info',
-    message: string
+    message: string,
+    durationMs?: number
   ) => {
     setSaveToast({ type, message });
     if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
     saveToastTimer.current = setTimeout(
       () => setSaveToast(null),
-      type === 'error' ? 5000 : 2500
+      durationMs ?? (type === 'error' ? 5000 : 2500)
     );
+  };
+
+  // The rail reports the live document's pending tracked-change count here.
+  // Right after a restore, a nonzero count means the restored version carried
+  // suggestions that were still awaiting review when it was saved (a .docx
+  // keeps its tracked changes) — say so, or the wash on those edits reads as a
+  // mystery. The time window scopes the toast to the restore's own reopen; a
+  // later assistant edit must not replay it.
+  const handleChangesCount = (count: number) => {
+    setChangesCount(count);
+    const message = restoredSuggestionsMessage(count, restoredAtRef.current);
+    if (message) {
+      restoredAtRef.current = 0;
+      flashSaveToast('success', message, 6000);
+    }
   };
 
   useEffect(
@@ -411,7 +904,11 @@ function DocxEditor({
     if (force) bindingsState.commitForSave();
     else if (!gateSave(() => handleSave(true))) return;
     try {
-      await saveCurrentDocument(await exportDoc());
+      // With history active, an explicit Save closes the current session (which
+      // persists the document via the same onSave), so the edits become a
+      // finished version rather than a mid-session autosave.
+      if (history) await historySession.save();
+      else await saveCurrentDocument(await exportDoc());
       flashSaveToast('success', 'Document saved');
     } catch (err) {
       flashSaveToast('error', 'Could not save document');
@@ -438,10 +935,13 @@ function DocxEditor({
       // must never be what the user walks away with.
       const blob = await exportDoc();
       const saveResult =
-        onSave && dirtyRef.current
-          ? await saveCurrentDocument(blob)
+        onSave && (dirtyRef.current || !!history)
+          ? history
+            ? await historySession.save()
+            : await saveCurrentDocument(blob)
           : undefined;
-      const url = saveResult?.file ?? downloadUrl;
+      const url =
+        (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
       // No public copy exists for standalone hosts — their exported bytes are
       // the only source.
       if (url) triggerDownload(await fetchDownloadBlob(url));
@@ -462,7 +962,10 @@ function DocxEditor({
       // The host converts the SAVED document, so persist current edits first —
       // the PDF must match what's on screen.
       const blob = await exportDoc();
-      if (onSave && dirtyRef.current) await saveCurrentDocument(blob);
+      if (onSave && (dirtyRef.current || !!history)) {
+        if (history) await historySession.save();
+        else await saveCurrentDocument(blob);
+      }
       triggerDownload(await onExportPdf(), 'pdf');
     } catch (err) {
       onError?.((err as Error).message || String(err));
@@ -489,8 +992,10 @@ function DocxEditor({
     try {
       const blob = await exportDoc();
       const saveResult =
-        onSave && dirtyRef.current
-          ? await saveCurrentDocument(blob)
+        onSave && (dirtyRef.current || !!history)
+          ? history
+            ? await historySession.save()
+            : await saveCurrentDocument(blob)
           : undefined;
       await run(blob, saveResult);
     } catch (err) {
@@ -540,11 +1045,77 @@ function DocxEditor({
     }
   };
 
+  // Restore the version currently open in the viewer. Confirms first (the
+  // current document is saved as a version, so the restore is undoable), then
+  // restores and selects the new saved baseline in the History panel.
+  const restoreViewingVersion = () => {
+    if (
+      !history ||
+      !viewingVersion ||
+      viewingVersion.is_current ||
+      restoreInFlightRef.current
+    )
+      return;
+    const target = viewingVersion;
+    setGateWarning({
+      title: 'Restore this version',
+      message:
+        'Restore this version? Your current document is saved ' +
+        'as a version first, so you can undo this.',
+      confirmLabel: 'Restore',
+      confirmTitle: 'Restore this version',
+      proceed: async () => {
+        if (restoreInFlightRef.current) return;
+        restoreInFlightRef.current = true;
+        setRestoring(true);
+        setGateWarning(null);
+        try {
+          // Preserve the current DOCX first; its detailed history uploads
+          // after restore so computing the diff does not delay the operation.
+          await historySession.saveForRestore();
+          const restored = await history.restoreVersion(target.id);
+          restoredSelectionRef.current = {
+            id: restored?.id,
+            sourceId: target.id,
+            afterSeq: Math.max(
+              target.seq,
+              ...historyVersions.map((version) => version.seq)
+            )
+          };
+          setLiveDoc(null);
+          setLiveSessionAuthors(null);
+          setVersionMeta(null);
+          if (restored) setViewingVersion(restored);
+          setRestoreRefreshKey((key) => key + 1);
+          restoredAtRef.current = Date.now();
+          flashSaveToast('success', 'Version restored');
+        } catch (err) {
+          flashSaveToast('error', 'Could not restore this version');
+          onError?.((err as Error).message || String(err));
+        } finally {
+          restoreInFlightRef.current = false;
+          setRestoring(false);
+          // The preserved pre-restore row receives its SFDT/diff after the
+          // restore request, so the expensive diff never delays the restore.
+          historySession.finishRestoreSave();
+        }
+      }
+    });
+  };
+
   if (!visible) return null;
 
   return (
     <div
       className={className}
+      onKeyDownCapture={
+        restoring
+          ? (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          : undefined
+      }
       css={{
         display: 'flex',
         flexDirection: 'column',
@@ -555,10 +1126,41 @@ function DocxEditor({
         background: '#fff'
       }}
     >
+      {historySession.error && (
+        <div
+          role='alert'
+          css={{
+            padding: '8px 12px',
+            background: '#fff4e5',
+            color: '#7a4100',
+            fontSize: 13
+          }}
+        >
+          {historySession.error}{' '}
+          <button type='button' onClick={historySession.retry}>
+            Retry save
+          </button>
+        </div>
+      )}
       {/* Reserve the toolbar's space until it mounts (it needs `editor`), so its
           arrival doesn't shrink the editor pane mid-load. */}
       {!editor && <div css={{ height: TOOLBAR_HEIGHT, flex: '0 0 auto' }} />}
-      {editor && (
+      {editor && viewingVersion && (
+        <VersionBar
+          version={displayedVersion ?? viewingVersion}
+          onExit={exitVersionView}
+          editCount={versionMeta?.editCount}
+          formatCount={versionMeta?.formatCount}
+          pendingCount={versionMeta?.pendingCount}
+          approvedCount={versionMeta?.approvedCount}
+          highlightsAvailable={!!versionMeta && !versionMeta.degraded}
+          highlightsOn={highlightsOn}
+          onToggleHighlights={setHighlightsOn}
+          onPrevChange={() => stepChange(-1)}
+          onNextChange={() => stepChange(1)}
+        />
+      )}
+      {editor && !viewingVersion && (
         <DocxToolbar
           editor={editor}
           // Save stays visible even alongside a terminal action so users can
@@ -649,6 +1251,28 @@ function DocxEditor({
           />
           {loading && !error && <div css={overlay}>Loading document…</div>}
           {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
+          {history && viewingVersion && (
+            <VersionViewer
+              host={history}
+              version={viewingVersion}
+              firstUserKey={firstUserKey}
+              serviceUrl={serviceUrl}
+              headers={headers}
+              highlightsOn={highlightsOn}
+              // Present only for the in-progress current version: a live-diffed
+              // display document to open directly (no stored files exist).
+              liveDoc={liveDoc ?? undefined}
+              onMeta={setVersionMeta}
+              zoomFactor={sharedZoomFactor}
+              onZoomFactorChange={setSharedZoomFactor}
+              onDisplayedVersion={setDisplayedVersion}
+              onViewerEditor={(ed) => {
+                viewerEditorRef.current = ed;
+                // Fresh editor (opening history): restart stepping.
+                changeStepRef.current = -1;
+              }}
+            />
+          )}
         </div>
         {/* Shared side panel; its title follows the rail icon that opened it
             (Suggested changes · Sections). Stays mounted while review is on so
@@ -659,11 +1283,51 @@ function DocxEditor({
             editor={editor}
             open={activePanel !== null}
             tab={activePanel ?? 'sections'}
-            onClose={() => setActivePanel(null)}
+            // Closing the panel (its X) returns to the live editor: clear the
+            // version view so the editing toolbar comes back.
+            onClose={() => {
+              setActivePanel(null);
+              exitVersionView();
+            }}
             reviewChanges={!!reviewChanges}
-            onChangesCount={setChangesCount}
+            onChangesCount={handleChangesCount}
             markDirty={markDirty}
             boundaryKey={`${railGeneration}:${openNonce ?? 0}`}
+            history={history}
+            currentUser={currentUser ?? DEFAULT_CURRENT_USER}
+            // Every version opens read-only in the viewer with highlights; the
+            // in-progress current version is diffed live inside selectVersion.
+            onSelectVersion={
+              restoring
+                ? undefined
+                : (version) => {
+                    restoredSelectionRef.current = null;
+                    selectVersion(version);
+                  }
+            }
+            // Report the loaded list up so the panel can auto-select the latest.
+            onVersionsLoaded={handleHistoryVersionsLoaded}
+            // Footer actions: Restore the open version; enabled while viewing,
+            // but never for the current version (already the live document).
+            onRestoreVersion={restoreViewingVersion}
+            versionSelected={!!viewingVersion}
+            restoreDisabled={!!viewingVersion?.is_current}
+            restoring={restoring}
+            selectedVersionId={viewingVersion?.id ?? null}
+            // Unapproved Robin edits still tracked in the in-progress current
+            // version — surfaced on its row while it's the one being viewed.
+            currentPendingCount={
+              viewingVersion?.is_current ? versionMeta?.pendingCount : undefined
+            }
+            liveSessionAuthors={liveSessionAuthors}
+            onAcceptTrackedChanges={
+              history ? historySession.acceptTrackedChanges : undefined
+            }
+            // Reload the list whenever a save lands so a new version and the
+            // "Current" tag stay fresh while the panel is open.
+            historyRefreshKey={`${
+              historySession.savedAt?.getTime() ?? 0
+            }:${restoreRefreshKey}`}
           />
         )}
         {/* Slim edge rail on the far right: one icon per side panel. Always
@@ -673,12 +1337,36 @@ function DocxEditor({
             activePanel={activePanel}
             showChanges={!!reviewChanges}
             changesCount={changesCount}
+            showHistory={!!history}
             onToggle={(panel) =>
-              setActivePanel((p) => (p === panel ? null : panel))
+              setActivePanel((p) => {
+                const next = p === panel ? null : panel;
+                // Leaving the History panel returns to the live editor.
+                if (p === 'history' && next !== 'history') exitVersionView();
+                return next;
+              })
             }
           />
         )}
       </div>
+      {restoring && (
+        <div
+          role='status'
+          aria-live='polite'
+          tabIndex={-1}
+          ref={(node) => node?.focus()}
+          css={{
+            ...overlay,
+            zIndex: 30,
+            gap: 10,
+            cursor: 'wait',
+            outline: 'none'
+          }}
+        >
+          <SpinnerIcon width={20} height={20} aria-hidden />
+          Restoring version…
+        </div>
+      )}
       {/* Binding-error prompt: a blocking modal. Portaled to the document body
           (same pattern as the toolbar menus) so the backdrop covers the whole
           page — nothing proceeds until the user picks the Anyway action

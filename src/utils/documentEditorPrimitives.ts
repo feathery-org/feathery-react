@@ -2155,6 +2155,17 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   );
 }
 
+// Untagged revisions (including DOCX round trips that drop customData) are
+// grouped by their visible author. Resolution must use that same identity:
+// Robin's invisible change-set suffix is not part of the review card's name.
+function untaggedRevisionAuthor(author: unknown): string {
+  return (
+    String(author ?? '')
+      .replace(/[\u2060\u2061]/g, '')
+      .trim() || 'Unknown author'
+  );
+}
+
 function resolveLiveRevisionGroupsAsOneUndoInner(
   editor: LiveEditor,
   groups: RevisionGroupIdentity[],
@@ -2174,7 +2185,7 @@ function resolveLiveRevisionGroupsAsOneUndoInner(
     const tag = revisionTagIdentity(revision.customData);
     return tag
       ? tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
-      : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
+      : authors.has(untaggedRevisionAuthor(revision.author));
   };
   const initial = liveRevisionsRaw(editor).filter(matchesGroup);
   const stylePayloadsByGroup = new Map<
@@ -2439,10 +2450,7 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   for (const revision of snapshotRevisions(editor)) {
     const tag = parseRevisionGroupTag(revision.customData);
     // The invisible per-change-set identity suffix is not for readers.
-    const author =
-      String(revision.author ?? '')
-        .replace(/[\u2060\u2061]/g, '')
-        .trim() || 'Unknown author';
+    const author = untaggedRevisionAuthor(revision.author);
     const key = tag ? `${tag.changeSetId} ${tag.group}` : `author ${author}`;
     let view = views.get(key);
     if (!view) {

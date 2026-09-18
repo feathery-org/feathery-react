@@ -1,7 +1,13 @@
 import 'jest-canvas-mock';
 import { randomFillSync } from 'crypto';
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor
+} from '@testing-library/react';
 import {
   DocumentEditor,
   Editor,
@@ -456,6 +462,41 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('$6,000')).toBeInTheDocument();
     expect(screen.getByText('1 edit')).toBeInTheDocument();
     expect(screen.getByText('1 pending')).toBeInTheDocument();
+  });
+
+  it('routes acceptance through history with the pending SFDT and revision id', async () => {
+    const revision = makeRevision({ revisionID: 'r-robin' });
+    const revisions = [revision];
+    revision.accept.mockImplementation(() => revisions.splice(0, 1));
+    const beforeSfdt = JSON.stringify({
+      revisions: [
+        {
+          author: revision.author,
+          revisionType: revision.revisionType,
+          revisionId: 'r-robin',
+          customData: revision.customData
+        }
+      ],
+      sections: []
+    });
+    const editor = { ...makeEditor(revisions), serialize: () => beforeSfdt };
+    const onAcceptTrackedChanges = jest.fn(
+      async (_acceptance: unknown, accept: () => void) => accept()
+    );
+    render(
+      <TrackedChangeGroups
+        editor={editor}
+        onAcceptTrackedChanges={onAcceptTrackedChanges}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accept 1' }));
+
+    await waitFor(() => expect(revision.accept).toHaveBeenCalledTimes(1));
+    expect(onAcceptTrackedChanges).toHaveBeenCalledWith(
+      { beforeSfdt, revisionIds: ['r-robin'] },
+      expect.any(Function)
+    );
   });
 
   it('group Accept resolves every pending member and removes the card', () => {

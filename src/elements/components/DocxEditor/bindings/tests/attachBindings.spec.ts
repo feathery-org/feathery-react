@@ -478,6 +478,25 @@ describe('surviving the editor being torn down mid-event', () => {
     attached = attachBindings(editor as unknown as SyncfusionEditorLike);
   });
 
+  it('disposes silently once the editor is already destroyed', () => {
+    // Instance recreation and step navigation both destroy the editor before
+    // dispose runs. Its listeners died with it — poking the corpse throws
+    // inside ej2 and used to log four red dispose errors every teardown.
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      destroy(editor);
+      const removeSpy = jest.spyOn(editor, 'removeEventListener');
+      attached.dispose();
+      expect(removeSpy).not.toHaveBeenCalled();
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+    // Fresh instances so afterEach's dispose/destroy stay valid.
+    editor = makeEditor(buildTemplateTokenDocument());
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike);
+  });
+
   it('dispose does not throw when the editor was already destroyed', () => {
     // The real unmount order: React runs the host's instance.destroy() cleanup
     // before this binding's dispose. removeEventListener and the un-patch helpers
