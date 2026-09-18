@@ -17,11 +17,26 @@ type CellCondition = {
   value: string;
 };
 
+export type ConstraintIdentity = { field_key: string; rule_index: number };
+
 export type CellConstraint = {
+  identity: ConstraintIdentity;
   when: CellCondition[];
   constraint: CellCondition;
   message: string;
 };
+
+export function constraintIdentity(
+  value: unknown
+): ConstraintIdentity | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const identity = value as ConstraintIdentity;
+  return typeof identity.field_key === 'string' &&
+    Number.isInteger(identity.rule_index) &&
+    identity.rule_index >= 0
+    ? { field_key: identity.field_key, rule_index: identity.rule_index }
+    : undefined;
+}
 
 export function cellConstraints(
   owner: { key: string; constraint_rules?: HubConstraintRule[] },
@@ -40,7 +55,8 @@ export function cellConstraints(
       value: String(condition.value ?? '')
     };
   };
-  return (owner.constraint_rules ?? []).map((rule) => ({
+  return (owner.constraint_rules ?? []).map((rule, ruleIndex) => ({
+    identity: { field_key: owner.key, rule_index: ruleIndex },
     when: (rule.when ?? []).map(resolve),
     constraint: resolve(rule.constraint),
     message:
@@ -90,11 +106,32 @@ function hubString(value: unknown, nested = false): string {
   return String(value);
 }
 
+/** Python json.dumps uses spaced separators and ASCII escapes by default. */
+function hubJson(value: object): string {
+  const spaced = JSON.stringify(value).replace(
+    /"(?:\\.|[^"\\])*"|[:,]/g,
+    (token) => (token === ':' || token === ',' ? `${token} ` : token)
+  );
+  return spaced
+    .split('')
+    .map((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 127 ? `\\u${code.toString(16).padStart(4, '0')}` : char;
+    })
+    .join('');
+}
+
 function matches(
   condition: CellCondition,
   getValue: (key: string) => any
 ): boolean {
-  const value = getValue(condition.fieldKey);
+  const rawValue = getValue(condition.fieldKey);
+  // Any structures normalize to JSON for Hub comparisons; file arrays keep
+  // their typed structure and therefore use Python's repr below.
+  const value =
+    condition.type === 'any' && rawValue != null && typeof rawValue === 'object'
+      ? hubJson(rawValue)
+      : rawValue;
   const empty =
     value == null || value === '' || (Array.isArray(value) && !value.length);
   if (condition.comparator === 'is_filled') return !empty;
@@ -111,13 +148,19 @@ function matches(
   } else if (condition.type === 'date' || condition.type === 'datetime') {
     const text = String(value);
     actual = dateValue(condition.type === 'date' ? text.slice(0, 10) : text);
+    // The Hub normalizes stored dates, but compares the full literal timestamp.
     expected = dateValue(condition.value);
     if (Number.isNaN(actual) || Number.isNaN(expected)) return false;
   } else if (condition.type === 'boolean') {
     const text = String(value).trim().toLowerCase();
-    if (!['true', 'false', '1', '0', 'yes', 'no', 'y', 'n'].includes(text))
+    if (
+      !['true', 'false', '1', '0', 'yes', 'no', 'y', 'n', 't', 'f'].includes(
+        text
+      )
+    )
       return false;
-    actual = ['true', '1', 'yes', 'y'].includes(text);
+    actual = ['true', '1', 'yes', 'y', 't'].includes(text);
+    // Literal rules use the backend evaluator's true/1 semantics, not input aliases.
     expected = ['true', '1'].includes(condition.value.toLowerCase());
   }
 

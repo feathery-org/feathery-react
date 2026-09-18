@@ -494,13 +494,15 @@ function TableElement({
           validated,
           cellRules,
           (rowIndex, fieldKey) =>
-            pendingEdits.peek(rowIndex, fieldKey) !== undefined
+            pendingEdits.peek(rowIndex, fieldKey) !== undefined,
+          hub.cellErrorConstraints
         )
       : validated;
   }, [
     isSpreadsheet,
     isHub,
     hub.cellErrors,
+    hub.cellErrorConstraints,
     hub.rowVerified,
     hub.entryIds,
     pendingEdits.peek,

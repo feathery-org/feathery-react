@@ -2,6 +2,7 @@ import { validators } from '../../../../utils/validation';
 import { CellValue } from './model';
 import {
   CellConstraint,
+  ConstraintIdentity,
   HubConstraintRule,
   cellConstraints,
   validateConstraints
@@ -56,24 +57,29 @@ export type CellRules = Record<string, CellRule>;
 
 /** `${rowIndex}:${fieldKey}` -> message. */
 export type CellErrors = Record<string, string>;
+export type CellErrorConstraints = Record<string, ConstraintIdentity>;
 
 export const cellErrorKey = (rowIndex: number, fieldKey: string) =>
   `${rowIndex}:${fieldKey}`;
 
 export function isChangedConstraintError(
-  message: string,
+  identity: ConstraintIdentity | undefined,
   rules: CellRules,
   isCellChanged: (fieldKey: string) => boolean
 ): boolean {
-  return Object.entries(rules).some(([ownerKey, rule]) =>
-    rule.constraints?.some(
-      (constraint) =>
-        constraint.message === message &&
-        [
-          ownerKey,
-          constraint.constraint.fieldKey,
-          ...constraint.when.map((condition) => condition.fieldKey)
-        ].some(isCellChanged)
+  return (
+    !!identity &&
+    Object.entries(rules).some(([ownerKey, rule]) =>
+      rule.constraints?.some(
+        (constraint) =>
+          constraint.identity.field_key === identity.field_key &&
+          constraint.identity.rule_index === identity.rule_index &&
+          [
+            ownerKey,
+            constraint.constraint.fieldKey,
+            ...constraint.when.map((condition) => condition.fieldKey)
+          ].some(isCellChanged)
+      )
     )
   );
 }
@@ -82,13 +88,14 @@ export function mergeCellErrors(
   serverErrors: CellErrors,
   validated: CellErrors,
   rules: CellRules,
-  isCellChanged: (rowIndex: number, fieldKey: string) => boolean
+  isCellChanged: (rowIndex: number, fieldKey: string) => boolean,
+  constraintErrors: CellErrorConstraints = {}
 ): CellErrors {
-  const remaining = Object.entries(serverErrors).filter(([key, message]) => {
+  const remaining = Object.entries(serverErrors).filter(([key]) => {
     const rowIndex = Number(key.slice(0, key.indexOf(':')));
     // Hub writes can attach a constraint message to an edited dependency.
     // Once that rule's inputs change, the live result replaces that message.
-    return !isChangedConstraintError(message, rules, (fieldKey) =>
+    return !isChangedConstraintError(constraintErrors[key], rules, (fieldKey) =>
       isCellChanged(rowIndex, fieldKey)
     );
   });
