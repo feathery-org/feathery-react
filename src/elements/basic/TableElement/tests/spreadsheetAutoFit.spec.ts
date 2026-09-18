@@ -30,12 +30,18 @@ describe('auto-fit text measurement', () => {
       size: HEADER_FONT_SIZE,
       weight: HEADER_FONT_WEIGHT
     });
+    measureTextWidth('Styled', {
+      size: 24,
+      weight: 700,
+      family: 'Georgia, serif'
+    });
     spy.mockRestore();
 
     expect(cellWidth).toBe(40);
     expect(fonts).toEqual([
       `400 ${FONT_SIZE}px ${GRID_FONT_FAMILY}`,
-      `${HEADER_FONT_WEIGHT} ${HEADER_FONT_SIZE}px ${GRID_FONT_FAMILY}`
+      `${HEADER_FONT_WEIGHT} ${HEADER_FONT_SIZE}px ${GRID_FONT_FAMILY}`,
+      '700 24px Georgia, serif'
     ]);
   });
 });

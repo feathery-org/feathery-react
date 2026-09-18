@@ -10,6 +10,20 @@ import {
   _clearUnsavedWorkRegistry
 } from '../../../../utils/unsavedWork';
 
+// jsdom does not resolve CSS variables, so inspect the winning authored color.
+function backgroundRule(element: Element) {
+  return Array.from(document.styleSheets)
+    .flatMap((sheet) => Array.from(sheet.cssRules))
+    .filter(
+      (rule): rule is CSSStyleRule =>
+        'selectorText' in rule &&
+        element.matches((rule as CSSStyleRule).selectorText)
+    )
+    .map((rule) => rule.style.getPropertyValue('background-color'))
+    .filter(Boolean)
+    .pop();
+}
+
 const COLUMNS = [
   { name: 'Name', field_id: 'f1', field_type: 'text', field_key: 'name_key' },
   { name: 'Email', field_id: 'f2', field_type: 'email', field_key: 'email_key' }
@@ -1291,7 +1305,9 @@ describe('staged Data Hub rows', () => {
     // holds the save back, so the two are counted apart.
     expect(status()).toHaveTextContent('1 error on unvalidated rows');
     expect(status()).not.toHaveTextContent('warning');
-    expect(cell('bad')).toHaveStyle({ backgroundColor: '#fef3f2' });
+    expect(backgroundRule(cell('bad'))).toBe(
+      'var(--feathery-table-error-background-color, #fef3f2)'
+    );
 
     // A staged row is not held to the hub's field rules until it is verified,
     // so the user can still write a correction that is not finished yet.
@@ -1542,7 +1558,9 @@ describe('assistant issues', () => {
     });
 
     expect(status()).toHaveTextContent('1 warning');
-    expect(cell('alice@x.co')).toHaveStyle({ backgroundColor: '#fffaeb' });
+    expect(backgroundRule(cell('alice@x.co'))).toBe(
+      'var(--feathery-table-warning-background-color, #fffaeb)'
+    );
     expect(cell('alice@x.co')).toHaveAttribute('title', 'Bounced last week');
     expect(cell('Alice')).not.toHaveAttribute('title');
 
