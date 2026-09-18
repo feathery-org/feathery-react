@@ -54,6 +54,42 @@ function dateValue(value: string): number {
   return Date.parse(naive.test(value) ? `${value}Z` : value);
 }
 
+const NONPRINTING = new RegExp('[\\p{C}\\p{Z}]', 'u');
+
+/** Match the Hub's Python str/repr for JSON values used in comparisons. */
+function hubString(value: unknown, nested = false): string {
+  if (value == null) return 'None';
+  if (typeof value === 'boolean') return value ? 'True' : 'False';
+  if (typeof value === 'string') {
+    if (!nested) return value;
+    // Python prefers single quotes, switching when that avoids an escape.
+    const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
+    const escaped = Array.from(value)
+      .map((char) => {
+        if (char === '\\' || char === quote) return `\\${char}`;
+        if (char === '\n') return '\\n';
+        if (char === '\r') return '\\r';
+        if (char === '\t') return '\\t';
+        if (char !== ' ' && NONPRINTING.test(char)) {
+          const code = char.codePointAt(0) ?? 0;
+          const prefix = code <= 255 ? 'x' : code <= 65535 ? 'u' : 'U';
+          const width = code <= 255 ? 2 : code <= 65535 ? 4 : 8;
+          return `\\${prefix}${code.toString(16).padStart(width, '0')}`;
+        }
+        return char;
+      })
+      .join('');
+    return `${quote}${escaped}${quote}`;
+  }
+  if (Array.isArray(value))
+    return `[${value.map((item) => hubString(item, true)).join(', ')}]`;
+  if (typeof value === 'object')
+    return `{${Object.entries(value)
+      .map(([key, item]) => `${hubString(key, true)}: ${hubString(item, true)}`)
+      .join(', ')}}`;
+  return String(value);
+}
+
 function matches(
   condition: CellCondition,
   getValue: (key: string) => any
@@ -65,7 +101,7 @@ function matches(
   if (condition.comparator === 'is_empty') return empty;
   if (value == null || value === '') return false;
 
-  let actual: string | number | boolean = String(value);
+  let actual: string | number | boolean = hubString(value);
   let expected: string | number | boolean = condition.value;
   if (condition.type === 'number') {
     actual =

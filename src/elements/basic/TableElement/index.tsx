@@ -298,9 +298,9 @@ function TableElement({
   const deleteIconRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const actionCellRefs = useRef<Map<number, HTMLTableCellElement>>(new Map());
 
-  // Adding or deleting a row renumbers the rows below it. The spreadsheet's
-  // undo history is keyed by row index, so it is dropped when this changes
-  // rather than replayed onto the wrong rows.
+  // Inserting before existing rows or deleting a row changes row identities.
+  // The spreadsheet's undo history is keyed by row index, so it is dropped
+  // when this changes rather than replayed onto the wrong rows.
   const [rowIdentityVersion, setRowIdentityVersion] = useState(0);
   const bumpRowIdentity = useCallback(
     () => setRowIdentityVersion((version) => version + 1),
@@ -345,7 +345,9 @@ function TableElement({
   const spreadsheetInsertRow = useCallback(
     (atIndex: number) => {
       setDeleteRowIndex(null);
-      bumpRowIdentity();
+      // Appending preserves every existing row index and its edit history.
+      // Use the source count, which still includes pending deleted rows.
+      if (atIndex < totalRows) bumpRowIdentity();
       handleInsertRow(atIndex);
       // The row lands in the source data straight away, so every buffered edit
       // at or below it now belongs to a different row index.
@@ -363,6 +365,7 @@ function TableElement({
     [
       handleInsertRow,
       bumpRowIdentity,
+      totalRows,
       isHub,
       searchQuery,
       setSearchQuery,
