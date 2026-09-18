@@ -59,6 +59,7 @@ describe('createSliceStore', () => {
 
     const authors = store.all().map((s) => s.author);
     expect(store.size()).toBe(3);
+    expect(store.isComplete()).toBe(true);
     // The earlier of the oldest same-author pair (a1) is gone; a2 remains.
     expect(authors).toEqual(['you', 'robin', 'robin']);
     expect(JSON.parse(store.all()[0].sfdt as string)).toEqual(
@@ -73,6 +74,7 @@ describe('createSliceStore', () => {
     store.push(doc('c'), 'you'); // 3 > 2, no adjacent same-author → drop oldest
 
     expect(store.size()).toBe(2);
+    expect(store.isComplete()).toBe(false);
     expect(store.all().map((s) => s.author)).toEqual(['robin', 'you']);
   });
 
@@ -82,5 +84,6 @@ describe('createSliceStore', () => {
     store.clear();
     expect(store.size()).toBe(0);
     expect(store.all()).toEqual([]);
+    expect(store.isComplete()).toBe(true);
   });
 });

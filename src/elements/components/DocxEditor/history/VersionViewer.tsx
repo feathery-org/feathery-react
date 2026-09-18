@@ -118,6 +118,10 @@ export default function VersionViewer({
   // so the normal highlight path renders it exactly like a stored version.
   const fetched = useVersionDocument(host, liveDoc ? null : version);
   const doc = liveDoc ?? fetched;
+  // Restores establish a clean baseline; embedded suggestions are reviewable
+  // in the live editor, not replayed as edits in the restored history row.
+  const isRestored = !!(version.restored_from || version.restored_from_at);
+  const showHighlights = highlightsOn && !isRestored;
   const versionActorKeyRef = useRef(version.actor_label || version.actor_name);
   versionActorKeyRef.current = version.actor_label || version.actor_name;
   const firstUserKeyRef = useRef(firstUserKey);
@@ -234,14 +238,9 @@ export default function VersionViewer({
       // A newer selection superseded this open while it queued, or unmounted.
       if (cancelled || seq !== openSeqRef.current || !viewer) return;
       try {
-        // With highlights on, patch the renderer and show revisions BEFORE
-        // opening so the first paint carries the highlights. NOT gated on the
-        // version having a stored diff: a stored .docx can carry embedded
-        // tracked changes of its own (a version saved while suggestions were
-        // still awaiting review — what a restore brings back), and without the
-        // patch those render in Syncfusion's native author tint (a blue that
-        // matches nothing in our palette) instead of the author's wash.
-        if (highlightsOn) {
+        // Non-restored versions may carry native suggestions without a diff.
+        // Install our palette before their first paint; restores stay plain.
+        if (showHighlights) {
           try {
             // Inline author-coloured highlights. showRevisions stays ON so the
             // re-inserted deleted text lays out (false would show the accepted
@@ -265,7 +264,7 @@ export default function VersionViewer({
         }
         const loaded = waitForDocumentLoad(viewer);
         if (doc.sfdt) {
-          viewer.open(highlightsOn ? doc.sfdt : acceptedSfdt(doc.sfdt));
+          viewer.open(showHighlights ? doc.sfdt : acceptedSfdt(doc.sfdt));
         } else if (doc.docxUrl) {
           // The import result still holds raw binding tokens until the populate
           // step below reopens it — hide the pane so they never paint.
@@ -284,7 +283,7 @@ export default function VersionViewer({
         // open: opening a document that carries tracked changes can flip
         // showRevisions back on natively, which would paint Syncfusion's own
         // author tints over the "plain" view.
-        if (!highlightsOn) {
+        if (!showHighlights) {
           try {
             viewer.showRevisions = false;
           } catch {
@@ -302,7 +301,7 @@ export default function VersionViewer({
           try {
             const parsed = JSON.parse(viewer.serialize());
             const populatedSfdt = populateVersionBindings(parsed);
-            const displaySfdt = highlightsOn
+            const displaySfdt = showHighlights
               ? populatedSfdt
               : normalizeForDiff(populatedSfdt, { digestImages: false });
             if (displaySfdt !== parsed) {
@@ -317,6 +316,7 @@ export default function VersionViewer({
         }
         if (!populated)
           throw new Error('Version preview did not finish loading');
+        if (!showHighlights) viewer.showRevisions = false;
         stampMissingContentControlColors(viewer);
         const container = viewer.documentHelper?.viewerContainer as
           | HTMLElement
@@ -324,11 +324,11 @@ export default function VersionViewer({
         if (container) container.style.overflowAnchor = 'none';
         setPhase('ready');
         onMetaRef.current?.({
-          editCount: doc.editCount,
-          formatCount: doc.formatCount,
-          pendingCount: doc.pendingCount,
-          approvedCount: doc.approvedCount,
-          degraded: doc.degraded
+          editCount: isRestored ? undefined : doc.editCount,
+          formatCount: isRestored ? undefined : doc.formatCount,
+          pendingCount: isRestored ? undefined : doc.pendingCount,
+          approvedCount: isRestored ? undefined : doc.approvedCount,
+          degraded: doc.degraded || isRestored
         });
         onDisplayedVersionRef.current?.(version);
       } catch {
@@ -344,7 +344,8 @@ export default function VersionViewer({
     doc.error,
     doc.sfdt,
     doc.docxUrl,
-    highlightsOn,
+    showHighlights,
+    isRestored,
     version.id
   ]);
 

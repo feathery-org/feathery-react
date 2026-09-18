@@ -365,4 +365,96 @@ describe('VersionViewer', () => {
     });
     expect(installRevisionHighlightRendering).not.toHaveBeenCalled();
   });
+
+  it.each(['live', 'saved', 'docx', 'pruned-source'])(
+    'opens restored versions without Robin revision highlights from %s even when highlights are on',
+    async (source) => {
+      const sfdt = JSON.stringify({
+        sections: [
+          {
+            blocks: [
+              {
+                inlines: [
+                  { text: 'Robin edit', revisionIds: ['robin-insertion'] }
+                ]
+              }
+            ]
+          }
+        ],
+        revisions: [
+          {
+            author: 'Robin',
+            revisionType: 'Insertion',
+            revisionId: 'robin-insertion'
+          }
+        ]
+      });
+      const originalFetch = global.fetch;
+      if (source === 'docx') {
+        global.fetch = jest.fn().mockResolvedValue({
+          arrayBuffer: async () => new ArrayBuffer(0)
+        });
+        openAsync.mockImplementationOnce(async () => {
+          lastEditor.serialize = () => sfdt;
+          lastEditor.showRevisions = true;
+        });
+      }
+      try {
+        const onMeta = jest.fn();
+        render(
+          <VersionViewer
+            host={host({
+              fetchVersionFile: jest
+                .fn()
+                .mockResolvedValue(new TextEncoder().encode(sfdt).buffer)
+            })}
+            version={version({
+              id: `restored-${source}`,
+              restored_from:
+                source === 'pruned-source' ? null : 'original-version',
+              restored_from_at: '2026-09-17T12:00:00Z',
+              final_sfdt:
+                source === 'saved' || source === 'pruned-source'
+                  ? 'saved-sfdt'
+                  : null,
+              editor_file: source === 'docx' ? 'restored.docx' : null
+            })}
+            highlightsOn
+            onMeta={onMeta}
+            liveDoc={
+              source === 'live'
+                ? {
+                    loading: false,
+                    error: false,
+                    sfdt,
+                    degraded: false,
+                    editCount: 1,
+                    pendingCount: 1
+                  }
+                : undefined
+            }
+          />
+        );
+        await waitFor(() => expect(onMeta).toHaveBeenCalled());
+        const opened = JSON.parse(open.mock.calls[0][0]);
+        expect(opened.revisions).toBeUndefined();
+        expect(opened.sections[0].blocks[0].inlines).toEqual([
+          { text: 'Robin edit' }
+        ]);
+        expect(lastEditor.showRevisions).toBe(false);
+        expect(installRevisionHighlightRendering).not.toHaveBeenCalled();
+        expect(onMeta).toHaveBeenLastCalledWith({
+          editCount: undefined,
+          formatCount: undefined,
+          pendingCount: undefined,
+          approvedCount: undefined,
+          degraded: true
+        });
+        // Display normalization must not accept or modify the source document.
+        expect(JSON.parse(sfdt).revisions).toHaveLength(1);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    }
+  );
 });

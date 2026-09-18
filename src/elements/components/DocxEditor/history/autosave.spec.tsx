@@ -278,84 +278,98 @@ describe('useDocxHistorySession', () => {
     ).toBe(true);
   });
 
-  it('preserves the pending current version before accepting after a reload', async () => {
-    (globalThis as any).CompressionStream = undefined;
-    const pending = JSON.stringify({
-      revisions: [
+  it.each([false, true])(
+    'preserves the pending current version before accepting after a reload (has artifacts: %s)',
+    async (hasArtifacts) => {
+      (globalThis as any).CompressionStream = undefined;
+      const pending = JSON.stringify({
+        revisions: [
+          {
+            author: 'Robin (assistant)',
+            revisionType: 'Insertion',
+            revisionId: 'r-robin'
+          }
+        ],
+        sections: [
+          {
+            blocks: [
+              {
+                inlines: [
+                  { text: 'hello' },
+                  { text: ' robin', revisionIds: ['r-robin'] }
+                ]
+              }
+            ]
+          }
+        ]
+      });
+      const accepted = JSON.stringify({
+        sections: [
+          {
+            blocks: [{ inlines: [{ text: 'hello' }, { text: ' robin' }] }]
+          }
+        ]
+      });
+      let doc = pending;
+      const editor: any = { serialize: () => doc };
+      const { view, host } = setup({}, editor);
+      host.listVersions.mockResolvedValue([
         {
-          author: 'Robin (assistant)',
-          revisionType: 'Insertion',
-          revisionId: 'r-robin'
-        }
-      ],
-      sections: [
-        {
-          blocks: [
-            {
-              inlines: [
-                { text: 'hello' },
-                { text: ' robin', revisionIds: ['r-robin'] }
-              ]
-            }
-          ]
-        }
-      ]
-    });
-    const accepted = JSON.stringify({
-      sections: [
-        {
-          blocks: [{ inlines: [{ text: 'hello' }, { text: ' robin' }] }]
-        }
-      ]
-    });
-    let doc = pending;
-    const editor: any = { serialize: () => doc };
-    const { view, host } = setup({}, editor);
-    host.listVersions.mockResolvedValue([
-      {
-        is_current: true,
-        session_id: 'pending-session'
-      } as any
-    ]);
-    await flush();
+          is_current: true,
+          session_id: 'pending-session',
+          authors: [
+            { kind: 'user', label: 'You' },
+            { kind: 'assistant', label: 'Robin' }
+          ],
+          ...(hasArtifacts
+            ? {
+                final_sfdt: 'saved-final',
+                changes: 'saved-mixed-author-changes'
+              }
+            : {})
+        } as any
+      ]);
+      await flush();
 
-    // The page loaded with a pending tracked edit, so there is no open local
-    // tracker session when the user accepts it.
-    expect(view.result.current.isSessionOpen()).toBe(false);
-    await act(async () => {
-      await view.result.current.acceptTrackedChanges(
-        { beforeSfdt: pending, revisionIds: ['r-robin'] },
-        () => {
-          doc = accepted;
-        }
+      // The page loaded with a pending tracked edit, so there is no open local
+      // tracker session when the user accepts it.
+      expect(view.result.current.isSessionOpen()).toBe(false);
+      await act(async () => {
+        await view.result.current.acceptTrackedChanges(
+          { beforeSfdt: pending, revisionIds: ['r-robin'] },
+          () => {
+            doc = accepted;
+          }
+        );
+      });
+
+      if (hasArtifacts) {
+        // Existing attribution is immutable: rebuilding from pending revisions
+        // alone cannot recover the human edits in the original session.
+        expect(host.closeVersion).toHaveBeenCalledTimes(1);
+        expect(host.closeVersion.mock.calls[0][0]).not.toBe('pending-session');
+        return;
+      }
+
+      // Snapshot the existing pending row first, then store confirmation in a
+      // distinct session. Otherwise both rows render as approved versions.
+      expect(host.closeVersion).toHaveBeenCalledTimes(2);
+      expect(host.closeVersion.mock.calls[0][0]).toBe('pending-session');
+      expect(host.closeVersion.mock.calls[1][0]).not.toBe('pending-session');
+
+      const pendingPayload = host.closeVersion.mock.calls[0][1];
+      // Missing original slices cannot be reconstructed from pending text.
+      // Keep its native revisions and leave the backend's known authors intact.
+      expect(await blobText(pendingPayload.finalSfdtGz)).toBe(pending);
+      expect(pendingPayload.changesJson).toBeUndefined();
+      expect(pendingPayload.startSha256).toBe('');
+
+      const confirmationChanges = JSON.parse(
+        await blobText(host.closeVersion.mock.calls[1][1].changesJson!)
       );
-    });
-
-    // Snapshot the existing pending row first, then store confirmation in a
-    // distinct session. Otherwise both rows render as approved versions.
-    expect(host.closeVersion).toHaveBeenCalledTimes(2);
-    expect(host.closeVersion.mock.calls[0][0]).toBe('pending-session');
-    expect(host.closeVersion.mock.calls[1][0]).not.toBe('pending-session');
-
-    const pendingPayload = host.closeVersion.mock.calls[0][1];
-    const pendingChanges = JSON.parse(
-      await blobText(pendingPayload.changesJson!)
-    );
-    expect(pendingChanges.confirmed).toBeUndefined();
-    expect(pendingChanges.changeCount).toBeGreaterThan(0);
-    const pendingDisplay = applyHunks(JSON.parse(pending), pendingChanges);
-    const pendingMetadata = (pendingDisplay.revisions ?? []).map(
-      (revision: any) => JSON.parse(revision.customData ?? '{}')
-    );
-    expect(pendingMetadata.some((data: any) => data.pending === true)).toBe(
-      true
-    );
-
-    const confirmationChanges = JSON.parse(
-      await blobText(host.closeVersion.mock.calls[1][1].changesJson!)
-    );
-    expect(confirmationChanges.confirmed).toBe(true);
-  });
+      expect(confirmationChanges.confirmed).toBe(true);
+    }
+  );
 
   it('previewSession returns a highlighted display document for the open session', async () => {
     let doc = JSON.stringify({
@@ -375,6 +389,33 @@ describe('useDocxHistorySession', () => {
     expect(preview!.editCount).toBeGreaterThan(0);
     // applyHunks baked synthetic revisions into the display document.
     expect(preview!.sfdt).toContain('revisionId');
+    expect(preview!.authors).toEqual([YOU]);
+    expect(preview!.sessionId).toBeTruthy();
+  });
+
+  it('derives live avatars from surviving edits, clearing them after undo', async () => {
+    let text = 'hello';
+    const editor = {
+      serialize: () =>
+        JSON.stringify({ sections: [{ blocks: [{ inlines: [{ text }] }] }] })
+    };
+    const { view } = setup({}, editor);
+    text = 'hello human';
+    act(() => view.result.current.onEdit({ assistant: false }));
+    text = 'hello human robin';
+    act(() => view.result.current.onEdit({ assistant: true }));
+    expect(view.result.current.previewSession()?.authors).toEqual([
+      YOU,
+      { kind: 'assistant', key: 'robin', label: 'Robin' }
+    ]);
+    text = 'hello human';
+    act(() => view.result.current.onEdit({ assistant: false }));
+    expect(view.result.current.previewSession()?.authors).toEqual([YOU]);
+    text = 'hello';
+    act(() => view.result.current.onEdit({ assistant: false }));
+    const preview = view.result.current.previewSession();
+    expect(preview?.authors).toEqual([]);
+    expect(preview?.editCount).toBe(0);
   });
 
   it('previewSession is null with no open session', () => {
@@ -522,6 +563,292 @@ describe('useDocxHistorySession', () => {
     expect(authorsOf('robin')).toContain('robin');
     // The user's own insertion stays the user's.
     expect(changes.hunks.some((h: any) => h.author === 'you')).toBe(true);
+  });
+
+  it('preserves both authors when a user edits after Robin in the same session', async () => {
+    (globalThis as any).CompressionStream = undefined;
+    const document = (userText: string, robinText = '') =>
+      JSON.stringify({
+        sections: [
+          {
+            blocks: [
+              { inlines: [{ text: userText }] },
+              {
+                inlines: [
+                  { text: 'Assistant paragraph' },
+                  ...(robinText
+                    ? [{ text: robinText, revisionIds: ['r1'] }]
+                    : [])
+                ]
+              }
+            ]
+          }
+        ],
+        revisions: robinText
+          ? [{ author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }]
+          : []
+      });
+    let doc = document('User paragraph');
+    const editor: any = { serialize: () => doc };
+    const { view, host } = setup({}, editor);
+    await flush();
+    act(() => setAssistantSessionActive(editor, true));
+    doc = document('User paragraph', ' robin addition');
+    act(() => view.result.current.onEdit({ assistant: true }));
+    act(() => setAssistantSessionActive(editor, false));
+    await flush();
+    doc = document('User paragraph human addition', ' robin addition');
+    act(() => view.result.current.onEdit({ assistant: false }));
+
+    const preview = JSON.parse(view.result.current.previewSession()!.sfdt);
+    expect(preview.revisions.map((r: any) => r.author)).toEqual(
+      expect.arrayContaining(['you', 'robin'])
+    );
+    await act(async () => {
+      await view.result.current.save();
+    });
+    const payload = host.closeVersion.mock.calls.slice(-1)[0][1];
+    const changes = JSON.parse(await blobText(payload.changesJson!));
+    expect(changes.trackedAuthors).toEqual(
+      expect.arrayContaining(['you', 'robin'])
+    );
+  });
+
+  it('keeps repeated human text human across Robin turns and acceptance', async () => {
+    (globalThis as any).CompressionStream = undefined;
+    const document = (human: string, robin: string, pending: boolean) =>
+      JSON.stringify({
+        sections: [
+          {
+            blocks: [
+              { inlines: [{ text: 'Human: ' + human }] },
+              {
+                inlines: [
+                  { text: 'Robin: ' },
+                  { text: robin, ...(pending ? { revisionIds: ['r1'] } : {}) }
+                ]
+              }
+            ]
+          }
+        ],
+        revisions: pending
+          ? [{ author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }]
+          : []
+      });
+    let doc = document('', '', false);
+    const editor: any = { serialize: () => doc };
+    const { view, host } = setup({}, editor);
+    await flush();
+    doc = document('same words', '', false);
+    act(() => view.result.current.onEdit({ assistant: false }));
+    act(() => setAssistantSessionActive(editor, true));
+    doc = document('same words', 'same words', true);
+    act(() => view.result.current.onEdit({ assistant: true }));
+    // Human input between tool calls, while the turn remains active.
+    doc = document('same words typed later', 'same words', true);
+    act(() => view.result.current.onEdit({ assistant: false }));
+    act(() => setAssistantSessionActive(editor, false));
+    await flush();
+    const pending = doc;
+    await act(async () => {
+      await view.result.current.acceptTrackedChanges(
+        { beforeSfdt: pending, revisionIds: ['r1'] },
+        () => {
+          doc = document('same words typed later', 'same words', false);
+          view.result.current.onEdit({ assistant: false });
+        }
+      );
+    });
+    const closes = host.closeVersion.mock.calls.slice(-2);
+    const preceding = JSON.parse(await blobText(closes[0][1].changesJson!));
+    expect(preceding.trackedAuthors).toEqual(
+      expect.arrayContaining(['you', 'robin'])
+    );
+    const display = applyHunks(JSON.parse(pending), preceding);
+    const humanRevisionIds = display.sections[0].blocks[0].inlines.flatMap(
+      (inline: any) => inline.revisionIds ?? []
+    );
+    expect(
+      display.revisions
+        .filter((r: any) => humanRevisionIds.includes(r.revisionId))
+        .every(
+          (r: any) => r.author === 'you' && !JSON.parse(r.customData).pending
+        )
+    ).toBe(true);
+    const confirmation = JSON.parse(await blobText(closes[1][1].changesJson!));
+    expect(confirmation.trackedAuthors).toEqual(['robin']);
+    expect(confirmation.confirmed).toBe(true);
+  });
+
+  it('captures the replacement document baseline when reusing an editor', async () => {
+    const document = (text: string) =>
+      JSON.stringify({
+        sections: [{ blocks: [{ inlines: [{ text }] }] }]
+      });
+    let doc = document('Old document');
+    const editor = { serialize: () => doc };
+    const host = makeHost();
+    const view = renderHook(
+      ({ openNonce }) =>
+        useDocxHistorySession({
+          editor,
+          host,
+          loading: false,
+          currentUser: YOU,
+          openNonce,
+          exportDoc: async () => new Blob(['docx']),
+          save: async () => undefined
+        }),
+      { initialProps: { openNonce: 0 } }
+    );
+    doc = document('Replacement');
+    view.rerender({ openNonce: 1 });
+    doc = document('Replacement edited');
+    act(() => view.result.current.onEdit({ assistant: false }));
+    const preview = view.result.current.previewSession();
+    expect(preview).not.toBeNull();
+    expect(preview!.sfdt).not.toContain('Old document');
+  });
+
+  it('saves DOCX and history from the same snapshot while later typing stays dirty', async () => {
+    (globalThis as any).CompressionStream = undefined;
+    const document = (text: string) =>
+      JSON.stringify({
+        sections: [{ blocks: [{ inlines: [{ text }] }] }]
+      });
+    let doc = document('start');
+    const { view, save, host } = setup(
+      {
+        exportDoc: () => Promise.resolve(new Blob([doc]))
+      },
+      { serialize: () => doc }
+    );
+    doc = document('start Robin');
+    act(() => view.result.current.onEdit({ assistant: true }));
+    let closing!: Promise<void>;
+    act(() => {
+      closing = view.result.current.save();
+      doc = document('start Robin later human');
+      view.result.current.onEdit({ assistant: false });
+    });
+    await act(async () => {
+      await closing;
+    });
+    const savedDocx = await blobText(save.mock.calls[0][0]);
+    const savedSfdt = await blobText(
+      host.closeVersion.mock.calls[0][1].finalSfdtGz
+    );
+    expect(savedDocx).toBe(savedSfdt);
+    expect(savedDocx).not.toContain('later human');
+    expect(view.result.current.status).toBe('dirty');
+  });
+
+  it('keeps typing during the pre-accept save out of Robin confirmation attribution', async () => {
+    (globalThis as any).CompressionStream = undefined;
+    const document = (human: string, pending: boolean) =>
+      JSON.stringify({
+        sections: [
+          {
+            blocks: [
+              { inlines: [{ text: human }] },
+              {
+                inlines: [
+                  {
+                    text: 'Robin suggestion',
+                    ...(pending ? { revisionIds: ['r1'] } : {})
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        revisions: pending
+          ? [{ author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }]
+          : []
+      });
+    let doc = document('Human', true);
+    const { view, save, host } = setup({}, { serialize: () => doc });
+    act(() => view.result.current.onEdit({ assistant: true }));
+    save.mockImplementationOnce(async () => {
+      doc = document('Human types during save', true);
+      view.result.current.onEdit({ assistant: false });
+    });
+    await act(async () => {
+      await view.result.current.acceptTrackedChanges(
+        { beforeSfdt: doc, revisionIds: ['r1'] },
+        () => {
+          doc = document('Human types during save', false);
+          view.result.current.onEdit({ assistant: false });
+        }
+      );
+    });
+    // Original session, intervening human edit, then the acceptance itself.
+    expect(host.closeVersion).toHaveBeenCalledTimes(3);
+    const human = JSON.parse(
+      await blobText(host.closeVersion.mock.calls[1][1].changesJson!)
+    );
+    expect(human.trackedAuthors).toEqual(['you']);
+    const confirmation = JSON.parse(
+      await blobText(host.closeVersion.mock.calls[2][1].changesJson!)
+    );
+    expect(confirmation.hunks.every((h: any) => h.at.block[2] === 1)).toBe(
+      true
+    );
+  });
+
+  it('preserves a long alternating-author session without inventing highlights after its slice cap', async () => {
+    let text = 'Original';
+    const editor = {
+      serialize: () =>
+        JSON.stringify({ sections: [{ blocks: [{ inlines: [{ text }] }] }] })
+    };
+    const { view, host } = setup({}, editor);
+    for (let i = 0; i < 24; i++) {
+      text += ` edit${i}`;
+      act(() => view.result.current.onEdit({ assistant: i % 2 === 0 }));
+    }
+    expect(view.result.current.previewSession()).toBeNull();
+    await act(async () => {
+      await view.result.current.save();
+    });
+    const payload = host.closeVersion.mock.calls[0][1];
+    expect(payload.changesJson).toBeUndefined();
+    expect(payload.changeCount).toBeNull();
+    expect(payload.authors).toEqual(
+      expect.arrayContaining([
+        { kind: 'user', label: 'You' },
+        { kind: 'assistant', label: 'Robin' }
+      ])
+    );
+  });
+
+  it('does not lose the first edit after a background tab delays the idle timer', async () => {
+    let now = 1_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    let text = 'original';
+    try {
+      const { view } = setup(
+        {},
+        {
+          serialize: () =>
+            JSON.stringify({
+              sections: [{ blocks: [{ inlines: [{ text }] }] }]
+            })
+        }
+      );
+      text += ' Robin';
+      act(() => view.result.current.onEdit({ assistant: true }));
+      now += 360_000;
+      text += ' human';
+      act(() => view.result.current.onEdit({ assistant: false }));
+      const preview = view.result.current.previewSession();
+      expect(preview).not.toBeNull();
+      expect(
+        JSON.parse(preview!.sfdt).revisions.map((r: any) => r.author)
+      ).toEqual(expect.arrayContaining(['you', 'robin']));
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('captures Robin’s authored runs onto the change list (so accepted edits stay Robin)', async () => {

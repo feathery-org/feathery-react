@@ -11,7 +11,9 @@ import {
   ChangeList,
   countEditGroups,
   countPendingGroups,
-  demoteNativeRowRevisions
+  demoteNativeRowRevisions,
+  contentHash,
+  normalizeForDiff
 } from './sfdtDiff/index';
 import { DocxHistoryHost, DocxVersion } from './types';
 
@@ -50,6 +52,9 @@ function cacheKey(version: DocxVersion): string {
   // for a different immutable object.
   return [
     version.id,
+    version.final_sha256,
+    version.change_count,
+    version.format_change_count,
     version.final_sfdt ?? '',
     version.changes ?? '',
     version.editor_file ?? '',
@@ -128,9 +133,9 @@ function localFor(version: DocxVersion): LocalVersionArtifacts | undefined {
   if (!version.session_id) return undefined;
   const entry = localArtifacts.get(version.session_id);
   if (!entry) return undefined;
-  // Local wins only while the backend row is missing something it has.
-  if (!version.final_sfdt || (!version.changes && entry.changes)) return entry;
-  return undefined;
+  // A previous checkpoint can already have URLs. The locally registered close
+  // is newer until its matching upload clears it, even when those URLs exist.
+  return entry;
 }
 
 async function gunzip(buffer: ArrayBuffer): Promise<string> {
@@ -168,9 +173,10 @@ function buildFromFinal(
   if (changes) {
     try {
       if (
-        changes.final_sha256 &&
-        expectedSha256 &&
-        changes.final_sha256 !== expectedSha256
+        changes.degraded?.includes('time-budget') ||
+        (changes.final_sha256 &&
+          (changes.final_sha256 !== contentHash(normalizeForDiff(finalDoc)) ||
+            (expectedSha256 && changes.final_sha256 !== expectedSha256)))
       )
         return { error: false, sfdt: plainSfdt(), degraded: true };
       if (!changes.hunks?.length)
@@ -250,7 +256,10 @@ async function resolveAndCache(
   if (pending) return pending;
   const resolve = resolveVersionDocument(host, version).then((result) => {
     resolveInFlight.delete(key);
-    if (!result.error) cacheSet(key, result);
+    // A failed diff fetch is retryable. Caching the plain fallback would make
+    // one network error hide authors/highlights for the rest of the page visit.
+    if (!result.error && (!result.degraded || !version.changes))
+      cacheSet(key, result);
     return result;
   });
   resolveInFlight.set(key, resolve);
@@ -284,6 +293,7 @@ export function useVersionDocument(
   const reqId = useRef(0);
 
   useEffect(() => {
+    const id = ++reqId.current;
     if (!host || !version) {
       setState({ loading: false, error: false, degraded: true });
       return;
@@ -295,11 +305,9 @@ export function useVersionDocument(
         ? undefined
         : cacheGet(cacheKey(version));
     if (cached) {
-      reqId.current++;
       setState({ loading: false, ...cached });
       return;
     }
-    const id = ++reqId.current;
     setState({ loading: true, error: false, degraded: true });
 
     const done = (next: Omit<VersionDocument, 'loading'>) => {
@@ -309,6 +317,9 @@ export function useVersionDocument(
     };
 
     resolveAndCache(host, version).then(done);
+    return () => {
+      reqId.current++;
+    };
   }, [host, version]);
 
   return state;

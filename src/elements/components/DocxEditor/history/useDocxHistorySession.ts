@@ -23,13 +23,15 @@ import {
   countPendingGroups,
   diffSession,
   normalizeForDiff,
-  RevisionRun
+  RevisionRun,
+  trackedAuthorKeys
 } from './sfdtDiff/index';
 import { createSessionTracker } from './sessionTracker';
 import { createSliceStore } from './sliceStore';
 import {
   DocxHistoryHost,
   DocxSaveMeta,
+  LiveSessionAuthors,
   SaveStatus,
   Slice,
   VersionAuthor
@@ -72,7 +74,7 @@ export interface UseDocxHistorySessionOptions {
 
 /** The current session's live change list, as the viewer would render a stored
  *  version: `sfdt` is the applyHunks display document (highlights baked in). */
-export interface SessionPreview {
+export interface SessionPreview extends LiveSessionAuthors {
   sfdt: string;
   editCount: number;
   formatCount: number;
@@ -104,7 +106,7 @@ export interface UseDocxHistorySessionResult {
   retry: () => void;
   /** Diff the OPEN session live (same inputs as the close-time diff) and return
    *  a highlighted display document for the in-progress current version, which
-   *  has no stored files yet. Null when no session is open or nothing changed. */
+   *  has no stored files yet. Null when no session is open or the diff fails. */
   previewSession: () => SessionPreview | null;
   /** Whether the current document still has an in-progress editing session. */
   isSessionOpen: () => boolean;
@@ -183,12 +185,9 @@ export function useDocxHistorySession(
   // The author of the final segment (last boundary → close): the F slice's
   // author for the diff. Updated on every edit.
   const currentAuthorRef = useRef<string>('you');
-  // The document serialized at the instant an assistant turn STARTS. The
-  // user→Robin slice boundary only fires on Robin's first contentChange — by
-  // then the document already holds that first assistant op, so serializing at
-  // the boundary would attribute it to the user. This pre-batch snapshot is the
-  // correct end of the user's slice.
-  const preTurnSnapshotRef = useRef<string | null>(null);
+  // contentChange is emitted AFTER an edit. Retain the previous document for
+  // BOTH directions of author switch, including typing between Robin batches.
+  const lastSnapshotRef = useRef<string | null>(null);
   // Text Robin authored this session, captured on each assistant edit WHILE its
   // revision is live — so it survives the user accepting the suggestion before
   // the version closes. Stored on the change list to keep accepted Robin edits
@@ -198,6 +197,7 @@ export function useDocxHistorySession(
   // changes both attribution (the accepted text remains Robin's) and the diff
   // baseline (the selected revisions are rendered rejected at S0).
   const acceptanceRef = useRef<TrackedChangeAcceptance | null>(null);
+  const documentEpochRef = useRef(0);
   const finalizeRef = useRef<Promise<void>>(Promise.resolve());
   const restoreSnapshotRef = useRef<Promise<void>>(Promise.resolve());
   const holdFinalDiffForRestoreRef = useRef(false);
@@ -220,10 +220,12 @@ export function useDocxHistorySession(
     // last-edit author to the viewer — which is exactly how assistant edits
     // were being mis-attributed.
     interface CloseSnapshot {
+      host: DocxHistoryHost | null | undefined;
       fStr: string | null;
       fAuthor: string;
       s0: string | null;
       slices: Slice[];
+      slicesComplete: boolean;
       robinRuns: RevisionRun[];
       acceptance: TrackedChangeAcceptance | null;
     }
@@ -233,7 +235,7 @@ export function useDocxHistorySession(
       authors: DocxSaveMeta['authors'],
       snap: CloseSnapshot
     ) => {
-      const h = hostRef.current;
+      const h = snap.host;
       if (!h || !snap.fStr) return;
       const fStr = snap.fStr;
       const fDoc = JSON.parse(fStr);
@@ -247,7 +249,7 @@ export function useDocxHistorySession(
         ? contentHash(confirmedStart)
         : snap.s0
         ? contentHash(normalizeForDiff(JSON.parse(snap.s0)))
-        : finalSha256;
+        : '';
 
       // Diff the session into per-author hunks. The stored slices are the
       // author-boundary snapshots; F is the closing state. A tab-death session
@@ -257,6 +259,9 @@ export function useDocxHistorySession(
       let formatChangeCount: number | null = null;
       try {
         if (snap.s0) {
+          // Missing author boundaries cannot produce trustworthy attribution.
+          if (!snap.slicesComplete)
+            throw new Error('History slice limit reached');
           const diffSlices = snap.acceptance
             ? [{ sfdt: fDoc, author: ROBIN.key }]
             : [
@@ -275,6 +280,9 @@ export function useDocxHistorySession(
               timeBudgetMs: 4000
             }
           );
+          if (changes.degraded?.includes('time-budget'))
+            throw new Error('History diff timed out');
+          changes.attribution = 'slices';
           if (snap.acceptance) changes.confirmed = true;
           changeCount = changes.changeCount;
           formatChangeCount = changes.formatChangeCount;
@@ -288,7 +296,10 @@ export function useDocxHistorySession(
           // original groups from the acceptance snapshot for the confirmation
           // version; this is the version later copied by Restore.
           const acceptanceRuns = snap.acceptance
-            ? collectRobinRuns(JSON.parse(snap.acceptance.beforeSfdt))
+            ? collectRobinRuns(
+                JSON.parse(snap.acceptance.beforeSfdt),
+                snap.acceptance.revisionIds
+              )
             : [];
           const robinRuns = uniqueRevisionRuns([
             ...snap.robinRuns,
@@ -308,24 +319,7 @@ export function useDocxHistorySession(
           // Session activity includes accepts and edits that were later undone.
           // Persist only authors whose final revisions the viewer can render.
           const display = applyHunks(fDoc, changes);
-          changes.trackedAuthors = Array.from(
-            new Set(
-              (display.revisions ?? [])
-                .filter((revision: any) => {
-                  try {
-                    return (
-                      JSON.parse(revision.customData ?? '{}').source ===
-                      'history'
-                    );
-                  } catch {
-                    return false;
-                  }
-                })
-                .map((revision: any) =>
-                  String(revision.author ?? '').replace(/^fmt:/, '')
-                )
-            )
-          );
+          changes.trackedAuthors = trackedAuthorKeys(display);
           changesJson = await gzip(JSON.stringify(changes));
           // Serve this exact document from memory while the upload is pending.
           // Upgrade-only: an older checkpoint draining from the queue must not
@@ -407,11 +401,13 @@ export function useDocxHistorySession(
         fStr = null; // Serialize failed: the row keeps its docx pair only.
       }
       const snap: CloseSnapshot = {
+        host: hostRef.current,
         fStr,
         fAuthor: currentAuthorRef.current,
         s0: s0Ref.current,
         slices: slices.all(),
-        robinRuns: robinRunsRef.current,
+        slicesComplete: slices.isComplete(),
+        robinRuns: [...robinRunsRef.current],
         acceptance: acceptanceRef.current
       };
       // Register the closing document immediately: a restore (or prefetch) can
@@ -420,7 +416,6 @@ export function useDocxHistorySession(
         registerLocalVersionArtifacts(meta.sessionId, { finalSfdt: fStr });
       slices.clear();
       s0Ref.current = null;
-      preTurnSnapshotRef.current = null;
       // Hand the captured runs to the snapshot and start the next session fresh.
       robinRunsRef.current = [];
       acceptanceRef.current = null;
@@ -431,11 +426,16 @@ export function useDocxHistorySession(
       // A timer cancellation does not stop a PATCH already in flight. Drain it
       // before the closing save so an older autosave cannot arrive afterward and
       // overwrite the just-closed session with stale bytes.
-      await scheduler.flush();
-      await closeQueue;
       try {
-        const blob = await exportRef.current();
-        await saveRef.current(blob, {
+        // Start DOCX serialization alongside F, before yielding to another edit.
+        // Capture the destination too: a document switch may replace the refs.
+        const saveSnapshot = saveRef.current;
+        const exported = exportRef.current();
+        exported.catch(() => undefined);
+        await scheduler.flush();
+        await closeQueue;
+        const blob = await exported;
+        await saveSnapshot(blob, {
           sessionId: meta.sessionId,
           sessionStartedAt: meta.sessionStartedAt,
           authors: meta.authors,
@@ -459,15 +459,17 @@ export function useDocxHistorySession(
       // Refresh the history list only after the saved diff and SFDT are ready.
       // Otherwise a selected Current row can retain its pre-close metadata.
       setSavedAt(new Date());
-      setStatus('saved');
+      setStatus(tracker.isOpen() ? 'dirty' : 'saved');
     };
 
     const scheduler = createAutosaveScheduler({
       save: async () => {
         const meta = tracker.currentMeta();
         if (!meta) return;
+        const saveDocument = saveRef.current;
+        const epoch = documentEpochRef.current;
         const blob = await exportRef.current();
-        await saveRef.current(blob, {
+        await saveDocument(blob, {
           sessionId: meta.sessionId,
           sessionStartedAt: meta.sessionStartedAt,
           authors: meta.authors
@@ -476,7 +478,7 @@ export function useDocxHistorySession(
         // the PATCH persists only the docx, so a session abandoned before close
         // (reload / navigation) would otherwise store a version with NO
         // highlights. This keeps the open row's diff at most one autosave stale.
-        checkpointSession();
+        if (epoch === documentEpochRef.current) checkpointSession();
       },
       canSave: () => {
         const ed = editorRef.current;
@@ -491,18 +493,15 @@ export function useDocxHistorySession(
     });
 
     const tracker = createSessionTracker({
+      // onEdit is post-mutation. If a background tab delayed the idle timer,
+      // keep the session intact rather than closing with the next edit in F.
+      closeIdleOnEdit: false,
       onSliceBoundary: (author) => {
         const ed = editorRef.current;
         if (!ed) return;
-        // The boundary fires on the incoming author's FIRST contentChange, so
-        // the live document already contains that edit. For the user→Robin
-        // switch we snapshotted the document at the turn-start edge — use it so
-        // the outgoing user slice ends exactly where the user stopped and
-        // Robin's first op is attributed to Robin, not the user.
-        const preTurn = preTurnSnapshotRef.current;
-        preTurnSnapshotRef.current = null;
         try {
-          slices.push(preTurn ?? ed.serialize(), author.key);
+          const before = lastSnapshotRef.current ?? baselineRef.current;
+          if (before) slices.push(before, author.key);
         } catch {
           // Slice lost: the diff falls back to coarser attribution.
         }
@@ -512,7 +511,7 @@ export function useDocxHistorySession(
           scheduler.cancel();
           slices.clear();
           s0Ref.current = null;
-          preTurnSnapshotRef.current = null;
+          lastSnapshotRef.current = null;
           robinRunsRef.current = [];
           acceptanceRef.current = null;
           // A new document invalidates the old baseline; the open-capture effect
@@ -548,11 +547,13 @@ export function useDocxHistorySession(
       }
       if (!fStr) return;
       const snap: CloseSnapshot = {
+        host: hostRef.current,
         fStr,
         fAuthor: currentAuthorRef.current,
         s0: s0Ref.current,
         slices: slices.all(),
-        robinRuns: robinRunsRef.current,
+        slicesComplete: slices.isComplete(),
+        robinRuns: [...robinRunsRef.current],
         acceptance: acceptanceRef.current
       };
       lastCheckpointAt = Date.now();
@@ -580,24 +581,24 @@ export function useDocxHistorySession(
           (version) => version.is_current && version.session_id
         );
         if (!current?.session_id) return;
+        // A stored checkpoint contains the original per-author slices' diff.
+        // Reconstructing it from today's pending revisions would erase human
+        // edits and earlier accepted Robin edits. Only recover missing artifacts.
+        if (current.final_sfdt || current.changes) return;
 
-        const pendingDoc = JSON.parse(acceptance.beforeSfdt);
-        const rejectedDoc = normalizeForDiff(pendingDoc, {
-          rejectRevisionIds: acceptance.revisionIds
-        });
+        // With no original baseline we can preserve the document and known
+        // authors, but cannot reconstruct the session from pending edits alone.
         const snap: CloseSnapshot = {
+          host: h,
           fStr: acceptance.beforeSfdt,
           fAuthor: ROBIN.key,
-          s0: JSON.stringify(rejectedDoc),
+          s0: null,
           slices: [],
-          robinRuns: collectRobinRuns(pendingDoc),
+          slicesComplete: true,
+          robinRuns: [],
           acceptance: null
         };
-        await queueClose(
-          current.session_id,
-          [{ kind: ROBIN.kind, label: ROBIN.label }],
-          snap
-        );
+        await queueClose(current.session_id, [], snap);
         setSavedAt(new Date());
       } catch {
         // Version history is a sidecar to native review. A stale/missing row or
@@ -621,6 +622,20 @@ export function useDocxHistorySession(
     preservePendingCurrentVersion
   } = engine;
 
+  // Reset before capturing the replacement document, even if the old tracker
+  // was already closed (tracker.reset alone does not fire onClose in that case).
+  useEffect(() => {
+    documentEpochRef.current++;
+    tracker.reset();
+    scheduler.cancel();
+    engine.slices.clear();
+    s0Ref.current = null;
+    baselineRef.current = null;
+    lastSnapshotRef.current = null;
+    robinRunsRef.current = [];
+    acceptanceRef.current = null;
+  }, [envelopeId, openNonce, tracker, scheduler, engine]);
+
   // Snapshot the pristine document as the diff baseline once it finishes opening
   // and no session is in flight. This is the true pre-edit S0 the diff needs;
   // capturing it at edit time is too late (contentChange fires post-edit).
@@ -629,10 +644,11 @@ export function useDocxHistorySession(
     if (tracker.isOpen()) return; // Mid-session: don't clobber the baseline.
     try {
       baselineRef.current = editor.serialize();
+      lastSnapshotRef.current = baselineRef.current;
     } catch {
       /* keep whatever baseline we had */
     }
-  }, [editor, loading, readOnly, tracker]);
+  }, [editor, loading, readOnly, tracker, envelopeId, openNonce]);
 
   const onEdit = useCallback(
     (info: { assistant: boolean }) => {
@@ -653,13 +669,20 @@ export function useDocxHistorySession(
         : currentUserRef.current;
       currentAuthorRef.current = actor.key;
       tracker.noteEdit(actor);
+      let snapshot: string | null = null;
+      try {
+        snapshot = ed?.serialize() ?? null;
+      } catch {
+        // Do not reuse a stale snapshot as evidence for the next boundary.
+      }
+      lastSnapshotRef.current = snapshot;
       // Snapshot Robin's authored runs now, while their revisions are still live
       // (the user may accept them before this version closes, after which they
       // are unrecoverable). Deduped by kind, text, and group; only runs on
       // assistant edits.
-      if (info.assistant && ed) {
+      if (info.assistant && snapshot) {
         try {
-          const runs = collectRobinRuns(JSON.parse(ed.serialize()));
+          const runs = collectRobinRuns(JSON.parse(snapshot));
           if (runs.length) {
             const seen = new Set(
               robinRunsRef.current.map(
@@ -691,9 +714,9 @@ export function useDocxHistorySession(
     return onAssistantSessionChange(editor, (active) => {
       if (active) {
         try {
-          preTurnSnapshotRef.current = editor.serialize();
+          lastSnapshotRef.current = editor.serialize();
         } catch {
-          preTurnSnapshotRef.current = null;
+          lastSnapshotRef.current = null;
         }
       } else {
         // An assistant turn ending no longer CLOSES the session — user and
@@ -701,7 +724,6 @@ export function useDocxHistorySession(
         // restore instead). We only checkpoint here: upload the turn's redlines
         // so they're durable, while the session stays open. Forced — a turn
         // boundary is always worth persisting, whatever the throttle says.
-        preTurnSnapshotRef.current = null;
         checkpointSession(true);
       }
     });
@@ -720,15 +742,7 @@ export function useDocxHistorySession(
     if (readOnly) scheduler.cancel();
   }, [readOnly, scheduler]);
 
-  // A new document (regenerate / envelope change) abandons the open session.
-  const firstRun = useRef(true);
-  useEffect(() => {
-    if (firstRun.current) {
-      firstRun.current = false;
-      return;
-    }
-    tracker.reset();
-  }, [envelopeId, openNonce, tracker]);
+  useEffect(() => () => scheduler.cancel(), [scheduler]);
 
   const explicitSave = useCallback(async () => {
     tracker.noteExplicitSave();
@@ -755,15 +769,29 @@ export function useDocxHistorySession(
 
   const acceptTrackedChanges = useCallback(
     async (acceptance: TrackedChangeAcceptance, accept: () => void) => {
+      const documentEpoch = documentEpochRef.current;
       // Cut the preceding editing session while the suggestion is still
       // pending. The confirmation then becomes a distinct version.
-      if (tracker.isOpen()) {
+      if (!tracker.isOpen()) await preservePendingCurrentVersion(acceptance);
+      if (documentEpoch !== documentEpochRef.current)
+        throw new Error(
+          'The document changed before the suggestion could be accepted'
+        );
+      while (tracker.isOpen()) {
         tracker.noteExplicitSave();
         await finalizeRef.current;
-      } else {
-        await preservePendingCurrentVersion(acceptance);
+        if (documentEpoch !== documentEpochRef.current)
+          throw new Error(
+            'The document changed before the suggestion could be accepted'
+          );
       }
 
+      // A user can type while the preceding save is in flight. Flush that
+      // session too and capture the actual pre-accept document, synchronously.
+      acceptance = {
+        ...acceptance,
+        beforeSfdt: editorRef.current?.serialize() ?? acceptance.beforeSfdt
+      };
       acceptanceRef.current = acceptance;
       baselineRef.current = acceptance.beforeSfdt;
       try {
@@ -792,10 +820,11 @@ export function useDocxHistorySession(
   // version (no stored files yet). Reuses the exact same inputs and engine.
   const previewSession = useCallback((): SessionPreview | null => {
     const ed = editorRef.current;
-    if (!ed || !s0Ref.current) return null;
+    const sessionId = tracker.currentMeta()?.sessionId;
+    if (!ed || !sessionId || !s0Ref.current || !engine.slices.isComplete())
+      return null;
     try {
       const fDoc = JSON.parse(ed.serialize());
-      const sessionId = tracker.currentMeta()?.sessionId ?? 'preview';
       const diffSlices = [
         ...engine.slices.all().map((s) => ({
           sfdt: JSON.parse(s.sfdt as string),
@@ -804,13 +833,22 @@ export function useDocxHistorySession(
         })),
         { sfdt: fDoc, author: currentAuthorRef.current }
       ];
+      const startDoc = JSON.parse(s0Ref.current);
+      // The backend removes net-zero versions. Do not display intermediate
+      // author-boundary edits after the document has been fully undone.
+      const unchanged =
+        contentHash(normalizeForDiff(startDoc)) ===
+        contentHash(normalizeForDiff(fDoc));
       const changes = diffSession(
-        JSON.parse(s0Ref.current),
-        diffSlices,
+        startDoc,
+        unchanged
+          ? [{ sfdt: fDoc, author: currentAuthorRef.current }]
+          : diffSlices,
         sessionId,
         { timeBudgetMs: 4000 }
       );
-      if (!changes.hunks.length) return null;
+      changes.attribution = 'slices';
+      if (changes.degraded?.includes('time-budget')) return null;
       // Same re-attribution the stored close path applies (closeSession): hand
       // the captured Robin runs to applyHunks so a Robin edit the user just
       // accepted in THIS open session stays coloured as Robin in the live
@@ -818,6 +856,10 @@ export function useDocxHistorySession(
       if (robinRunsRef.current.length) changes.robinRuns = robinRunsRef.current;
       const display = applyHunks(fDoc, changes);
       return {
+        sessionId,
+        authors: trackedAuthorKeys(display).map((key) =>
+          key === ROBIN.key ? ROBIN : { ...currentUserRef.current, key }
+        ),
         sfdt: JSON.stringify(display),
         // Same grouping as the steppers: a Robin turn counts as one edit.
         editCount: countEditGroups(display),

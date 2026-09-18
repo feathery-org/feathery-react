@@ -173,6 +173,31 @@ describe('applyHunks approved-Robin re-attribution (durable robinRuns)', () => {
   const authorsOf = (display: any): string[] =>
     (display.revisions ?? []).map((r: any) => r.author);
 
+  it('does not mark an accepted suggestion pending because identical text is still pending elsewhere', () => {
+    const start = docWith(
+      para(textRun('First ')),
+      para(textRun('Second same words'))
+    );
+    const final = {
+      ...docWith(
+        para(textRun('First same words')),
+        para(textRun('Second '), { text: 'same words', revisionIds: ['other'] })
+      ),
+      revisions: [
+        { author: 'Robin', revisionType: 'Insertion', revisionId: 'other' }
+      ]
+    };
+    const changes = diffSession(
+      start,
+      [{ sfdt: final, author: 'robin' }],
+      'confirmed'
+    );
+    changes.confirmed = true;
+    changes.attribution = 'slices';
+    const display = applyHunks(final, changes);
+    expect(countPendingGroups(display)).toBe(0);
+  });
+
   it('keeps an accepted Robin edit coloured as Robin even when the diff mis-credits it to the viewer', () => {
     // The diff runs with the F slice tagged 'you' (the mis-attribution), and the
     // edit is accepted (no live revision to rescue it) — but the change list

@@ -4,8 +4,14 @@ import SectionList from './sections/SectionPanel';
 import { RailErrorBoundary } from './RailErrorBoundary';
 import { INK, INK_3, LINE, PANEL, PANEL_2 } from './TrackedChangeGroups/styles';
 import { FEATHERY_RED } from './DocxToolbar/styles';
+import { SpinnerIcon } from './icons';
 import HistoryPanel from './history/HistoryPanel';
-import { DocxHistoryHost, DocxVersion, VersionAuthor } from './history/types';
+import {
+  DocxHistoryHost,
+  DocxVersion,
+  LiveSessionAuthors,
+  VersionAuthor
+} from './history/types';
 import type { TrackedChangeAcceptance } from './history/useDocxHistorySession';
 
 export type PanelTab = 'changes' | 'sections' | 'history';
@@ -53,10 +59,12 @@ interface Props {
   /** Disable Restore even when a version is open — e.g. the current version is
    *  showing, which is already the live state and can't be restored to. */
   restoreDisabled?: boolean;
+  restoring?: boolean;
   /** Id of the version open in the viewer (highlights its row). */
   selectedVersionId?: string | null;
   /** Unapproved Robin edits still tracked in the current version (its chip). */
   currentPendingCount?: number;
+  liveSessionAuthors?: LiveSessionAuthors | null;
   /** Bump to reload the version list (e.g. after a session closes). */
   historyRefreshKey?: number | string;
   onAcceptTrackedChanges?: (
@@ -81,14 +89,16 @@ export default function DocumentPanel({
   onRestoreVersion,
   versionSelected,
   restoreDisabled,
+  restoring = false,
   selectedVersionId,
   currentPendingCount,
+  liveSessionAuthors,
   historyRefreshKey,
   onAcceptTrackedChanges
 }: Props) {
   // Restore is offered only for an older version that is open — never for the
   // current version (it's already the live document).
-  const canRestore = !!versionSelected && !restoreDisabled;
+  const canRestore = !!versionSelected && !restoreDisabled && !restoring;
   return (
     <div
       css={{
@@ -130,6 +140,7 @@ export default function DocumentPanel({
             aria-label='Close panel'
             title='Close'
             onClick={onClose}
+            disabled={restoring}
             css={{
               width: 24,
               height: 24,
@@ -189,6 +200,7 @@ export default function DocumentPanel({
                   onVersionsLoaded={onVersionsLoaded}
                   selectedId={selectedVersionId}
                   currentPendingCount={currentPendingCount}
+                  liveSessionAuthors={liveSessionAuthors}
                   refreshKey={historyRefreshKey}
                 />
               </RailErrorBoundary>
@@ -214,6 +226,7 @@ export default function DocumentPanel({
             <button
               type='button'
               onClick={onClose}
+              disabled={restoring}
               css={{
                 height: 32,
                 padding: '0 14px',
@@ -235,11 +248,14 @@ export default function DocumentPanel({
               onClick={onRestoreVersion}
               disabled={!canRestore}
               title={
-                versionSelected && !canRestore
+                versionSelected && restoreDisabled
                   ? 'This is the current version'
                   : undefined
               }
               css={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
                 height: 32,
                 padding: '0 14px',
                 border: `1px solid ${FEATHERY_RED}`,
@@ -254,7 +270,8 @@ export default function DocumentPanel({
                 '&:hover': canRestore ? { filter: 'brightness(0.95)' } : {}
               }}
             >
-              Restore version
+              {restoring && <SpinnerIcon width={14} height={14} aria-hidden />}
+              {restoring ? 'Restoring…' : 'Restore version'}
             </button>
           </div>
         )}

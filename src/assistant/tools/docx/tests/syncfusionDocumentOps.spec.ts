@@ -21,6 +21,7 @@ import {
   getDocumentInventory,
   FULL_INVENTORY_BLOCK_LIMIT,
   isAssistantWriting,
+  isAssistantApplyingEdits,
   setAssistantSessionActive,
   LiveEditor
 } from '../syncfusionDocumentOps';
@@ -544,6 +545,7 @@ describe('applyDocumentEdits', () => {
     const origInsert = ed.editor.insertText;
     ed.editor.insertText = (t: string) => {
       seen.push(isAssistantWriting(ed));
+      expect(isAssistantApplyingEdits(ed)).toBe(true);
       origInsert(t);
     };
     applyDocumentEdits(ed, {
@@ -563,6 +565,7 @@ describe('applyDocumentEdits', () => {
     // The docx bridge raises this on the turn's first write.
     setAssistantSessionActive(ed, true);
     expect(isAssistantWriting(ed)).toBe(true);
+    expect(isAssistantApplyingEdits(ed)).toBe(false);
 
     applyDocumentEdits(ed, {
       edits: [
@@ -572,6 +575,10 @@ describe('applyDocumentEdits', () => {
     // The per-call flag cleared with the call; the session alone holds it
     // through the LLM round-trip before the next tool call.
     expect(isAssistantWriting(ed)).toBe(true);
+
+    // Human input in the gap belongs to the user even though autosave and
+    // selection handling still need the whole-turn guard.
+    expect(isAssistantApplyingEdits(ed)).toBe(false);
 
     // The turn actually finishes.
     setAssistantSessionActive(ed, false);

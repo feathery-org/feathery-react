@@ -19085,6 +19085,13 @@ export function isAssistantWriting(
   return !!ed?.[ASSISTANT_WRITING_KEY] || !!ed?.[ASSISTANT_SESSION_KEY];
 }
 
+/** Attribution follows actual mutations; humans can type between tool calls. */
+export function isAssistantApplyingEdits(
+  editor: LiveEditor | null | undefined
+): boolean {
+  return !!(editor as any)?.[ASSISTANT_WRITING_KEY];
+}
+
 /** Mark the assistant editing turn driving this editor as in flight. The docx
  *  bridge sets it on the first document write of a turn; AssistantChat clears
  *  it when the turn settles. */

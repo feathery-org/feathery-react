@@ -8,6 +8,7 @@ import {
   useVersionDocument
 } from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
+import { contentHash, diffSession, normalizeForDiff } from './sfdtDiff';
 
 const version = (over: Partial<DocxVersion>): DocxVersion =>
   ({
@@ -258,6 +259,79 @@ describe('useVersionDocument', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.degraded).toBe(true);
     expect(result.current.sfdt).toBe(FINAL);
+  });
+
+  it('checks the fetched document itself even when metadata hashes agree', async () => {
+    const original = JSON.parse(FINAL);
+    const changes = diffSession(
+      { sections: [] },
+      [{ sfdt: original, author: 'robin' }],
+      's'
+    );
+    const different = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'Different document' }] }] }]
+    });
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(buf(url === 'chg' ? JSON.stringify(changes) : different))
+    );
+    const h = host({ fetchVersionFile });
+    const ver = version({
+      final_sfdt: 'fin',
+      changes: 'chg',
+      change_count: 1,
+      final_sha256: contentHash(normalizeForDiff(original))
+    });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.degraded).toBe(true);
+    expect(result.current.sfdt).toBe(different);
+    expect(result.current.editCount).toBeUndefined();
+  });
+
+  it('retries a temporarily unavailable change list when a version is reopened', async () => {
+    const changes = diffSession(
+      { sections: [] },
+      [{ sfdt: JSON.parse(FINAL), author: 'you' }],
+      's'
+    );
+    let fail = true;
+    const fetchVersionFile = jest.fn((url: string) =>
+      url === 'chg' && fail
+        ? Promise.reject(new Error('temporary failure'))
+        : Promise.resolve(buf(url === 'chg' ? JSON.stringify(changes) : FINAL))
+    );
+    const h = host({ fetchVersionFile });
+    const ver = version({ final_sfdt: 'fin', changes: 'chg', change_count: 1 });
+    const first = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    expect(first.result.current.degraded).toBe(true);
+    first.unmount();
+    fail = false;
+    const second = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
+    expect(second.result.current.degraded).toBe(false);
+  });
+
+  it('uses the local closing snapshot even if the row already has older checkpoint artifacts', async () => {
+    const ver = version({
+      session_id: 'local-close',
+      final_sfdt: 'older-final',
+      changes: 'older-changes',
+      change_count: 1
+    });
+    const final = JSON.parse(FINAL);
+    const changes = diffSession(
+      { sections: [] },
+      [{ sfdt: final, author: 'you' }],
+      'local-close'
+    );
+    registerLocalVersionArtifacts('local-close', { finalSfdt: FINAL, changes });
+    const h = host();
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe(false);
+    expect(result.current.degraded).toBe(false);
+    expect(h.fetchVersionFile).not.toHaveBeenCalled();
   });
 
   it('moves native tracked-row marks onto cell content in the plain view', async () => {

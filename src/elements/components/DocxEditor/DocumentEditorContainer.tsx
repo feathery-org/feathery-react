@@ -432,6 +432,7 @@ export default function DocumentEditorContainer({
         setRestoredSfdt(cleanSfdt);
         setSourceUrl(envelopeSourceUrl({ ...updated } as Envelope));
         setReloadKey((k) => k + 1);
+        return updated.version;
       },
       renameVersion: (versionId, name) =>
         client.renameEnvelopeVersion(envelopeId, versionId, name)

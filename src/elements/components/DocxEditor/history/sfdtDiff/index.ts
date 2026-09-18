@@ -79,7 +79,9 @@ export function diffSession(
   }
 
   const finalDoc = normalizeForDiff(slices[slices.length - 1].sfdt);
-  const hunks = emitHunks(working);
+  // Partial slices are anchored to an intermediate document. Never paint them
+  // onto F: their offsets and authors can refer to entirely different content.
+  const hunks = degraded.includes('time-budget') ? [] : emitHunks(working);
   const authors = Array.from(
     new Set(hunks.map((h) => h.author))
   ) as AuthorKey[];
@@ -469,7 +471,7 @@ function authorKeyOf(author: string): AuthorKey {
  * a hunk's text against these to mark it pending AND re-attribute it to the real
  * author (the diff can mis-credit a still-tracked assistant edit to the viewer).
  */
-function collectPendingRuns(doc: any): PendingRun[] {
+function collectPendingRuns(doc: any, revisionIds?: Set<string>): PendingRun[] {
   const revs: any[] = Array.isArray(doc?.revisions) ? doc.revisions : [];
   const metaById = new Map<
     string,
@@ -478,6 +480,7 @@ function collectPendingRuns(doc: any): PendingRun[] {
   for (const r of revs) {
     const id = r?.revisionId != null ? String(r.revisionId) : null;
     if (!id || id.startsWith('vh-')) continue;
+    if (revisionIds && !revisionIds.has(id)) continue;
     const type = String(r?.revisionType);
     const author = String(r?.author ?? '');
     let group: string | undefined;
@@ -547,8 +550,11 @@ function collectPendingRuns(doc: any): PendingRun[] {
  * accepting the suggestion — the session hook stores these on the change list,
  * and applyHunks uses them to keep an accepted Robin edit coloured as Robin.
  */
-export function collectRobinRuns(doc: any): RevisionRun[] {
-  return collectPendingRuns(doc)
+export function collectRobinRuns(
+  doc: any,
+  revisionIds?: string[]
+): RevisionRun[] {
+  return collectPendingRuns(doc, revisionIds ? new Set(revisionIds) : undefined)
     .filter((r) => r.author === 'robin')
     .map((r) => ({
       kind: r.kind,
@@ -577,6 +583,19 @@ export function editGroupKey(revision: any): string | null {
   }
   if (cd.source !== 'history') return null;
   return String(cd.group ?? revision.revisionId ?? '');
+}
+
+/** Authors of the rendered history revisions, excluding native suggestions. */
+export function trackedAuthorKeys(displayDoc: any): string[] {
+  return Array.from(
+    new Set<string>(
+      (displayDoc?.revisions ?? [])
+        .filter((revision: any) => editGroupKey(revision) !== null)
+        .map((revision: any) =>
+          String(revision.author ?? '').replace(/^fmt:/, '')
+        )
+    )
+  );
 }
 
 /** Revision ids that mark at least one NON-EMPTY text inline in the display —
@@ -789,15 +808,25 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
     text: string,
     fallbackAuthor: string
   ): { author: string; pending: boolean; group?: string } => {
-    const live = matchPending(kind, text);
-    if (live)
+    // A confirmation's hunks contain only the selected, settled revisions.
+    // Identical text in another pending suggestion is not the same edit.
+    const live = changes.confirmed ? undefined : matchPending(kind, text);
+    if (
+      live &&
+      (changes.attribution !== 'slices' ||
+        live.author === authorKeyOf(fallbackAuthor))
+    )
       return {
         author: live.author,
         pending: true,
         ...(live.group ? { group: live.group } : {})
       };
     const robin = matchRobin(kind, text);
-    if (robin)
+    if (
+      robin &&
+      (changes.attribution !== 'slices' ||
+        authorKeyOf(fallbackAuthor) === 'robin')
+    )
       return {
         author: 'robin',
         pending: false,
@@ -1005,14 +1034,14 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
           .join('')
       )
       .join('');
-    const delBlockMatch = matchPending('del', delBlockText);
-    const delAuthor = delBlockMatch ? delBlockMatch.author : hunk.author;
+    const resolved = resolveContentAuthor('del', delBlockText, hunk.author);
+    const delAuthor = resolved.author;
     const mark = newRevision(
       'Deletion',
       delAuthor,
       hunk.id,
-      !!delBlockMatch,
-      delBlockMatch?.group ?? blockGroupKey(delAuthor, hunk.at.block)
+      resolved.pending,
+      resolved.group ?? blockGroupKey(delAuthor, hunk.at.block)
     );
     const { arr, index } = containerOf(doc, hunk.at.block);
     if (!Array.isArray(arr)) continue;

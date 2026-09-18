@@ -22,6 +22,8 @@ export interface SessionMeta {
 export interface SessionTrackerOptions {
   now?: () => number;
   idleMs?: number;
+  /** Post-edit observers must let checkIdle close before another edit lands. */
+  closeIdleOnEdit?: boolean;
   /** The author whose slice just ended (an actor switch, before close). The
    *  hook serializes the document here and stores it as that author's slice. */
   onSliceBoundary?: (author: VersionAuthor) => void;
@@ -91,7 +93,12 @@ export function createSessionTracker(
   return {
     noteEdit(actor) {
       const at = now();
-      if (sessionId && at - lastEditAt >= idleMs) close('idle');
+      if (
+        options.closeIdleOnEdit !== false &&
+        sessionId &&
+        at - lastEditAt >= idleMs
+      )
+        close('idle');
       if (!sessionId) {
         start(actor, at);
         return;

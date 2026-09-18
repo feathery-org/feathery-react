@@ -8,7 +8,7 @@ import {
   preserveDocumentViewDuring,
   registerWrappingDocumentEditorContainer
 } from '../../../utils/documentEditorPrimitives';
-import { isAssistantWriting } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isAssistantApplyingEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import { EJ2_SCRIPT_URL } from './constants';
 import { loadStyles, waitForDocumentLoad, waitForEj } from './ejLoader';
 import { stampMissingContentControlColors } from './contentControlSafety';
@@ -28,6 +28,22 @@ const BUILT_IN_SYNCFUSION_LICENSE_KEY =
   typeof __SYNCFUSION_LICENSE_KEY__ === 'undefined'
     ? ''
     : __SYNCFUSION_LICENSE_KEY__;
+
+/** Snapshot synchronously, with a separate archive for overlapping saves. */
+export function exportDocxSnapshot(editor: any): Promise<Blob> {
+  if (!editor) return Promise.reject(new Error('Editor is not ready'));
+  const Writer = editor.wordExportModule?.constructor;
+  if (!Writer || Writer === Object) return editor.saveAsBlob('Docx');
+  const writer = new Writer();
+  try {
+    return writer
+      .saveAsBlob(editor.documentHelper, 'Docx')
+      .finally(() => writer.destroy());
+  } catch (error) {
+    writer.destroy();
+    return Promise.reject(error);
+  }
+}
 
 // GitHub-style tracked-change rendering: green wash for insertions, red wash
 // + red struck text for deletions, replace = struck old + green new. The
@@ -1045,7 +1061,7 @@ export function useDocxEditor({
           onDirtyRef.current?.();
           // Unlike onDirty (edge-only), onEdit fires on every change so the
           // session tracker can debounce autosave and attribute each edit.
-          onEditRef.current?.({ assistant: isAssistantWriting(ed) });
+          onEditRef.current?.({ assistant: isAssistantApplyingEdits(ed) });
         });
         // Ctrl/Cmd+S: Syncfusion's default saves the document as a downloaded
         // SFDT file. Intercept it, stop that default (isHandled + preventDefault),
@@ -1301,8 +1317,7 @@ export function useDocxEditor({
   });
 
   const exportDoc = useCallback((): Promise<Blob> => {
-    if (!editor) return Promise.reject(new Error('Editor is not ready'));
-    return editor.saveAsBlob('Docx');
+    return exportDocxSnapshot(editor);
   }, [editor]);
 
   const resizeEditor = useCallback(

@@ -42,11 +42,13 @@ export interface SliceStore {
   push(sfdt: string, author: AuthorKey, endedAt?: string): void;
   all(): Slice[];
   size(): number;
+  isComplete(): boolean;
   clear(): void;
 }
 
 export function createSliceStore(max = MAX_SLICES): SliceStore {
   let slices: Slice[] = [];
+  let complete = true;
 
   // Keep the count at or under `max` with the least attribution loss: first
   // coalesce the oldest adjacent same-author pair (their boundary carries no
@@ -60,6 +62,7 @@ export function createSliceStore(max = MAX_SLICES): SliceStore {
         break;
       }
     }
+    if (dropAt === -1) complete = false;
     slices.splice(dropAt === -1 ? 0 : dropAt, 1);
   };
 
@@ -74,8 +77,12 @@ export function createSliceStore(max = MAX_SLICES): SliceStore {
     size() {
       return slices.length;
     },
+    isComplete() {
+      return complete;
+    },
     clear() {
       slices = [];
+      complete = true;
     }
   };
 }

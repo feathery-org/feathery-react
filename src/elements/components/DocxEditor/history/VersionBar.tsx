@@ -59,7 +59,9 @@ export default function VersionBar({
   onPrevChange,
   onNextChange
 }: Props) {
-  const canStep = highlightsAvailable && highlightsOn;
+  const isRestored = !!(version.restored_from || version.restored_from_at);
+  const showChangeControls = highlightsAvailable && !isRestored;
+  const canStep = showChangeControls && highlightsOn;
   return (
     <div
       css={{
@@ -106,7 +108,7 @@ export default function VersionBar({
         {version.name || formatWhen(version.ended_at)}
       </span>
       <span css={{ flex: 1 }} />
-      {highlightsAvailable && (
+      {showChangeControls && (
         <div css={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button
             type='button'
@@ -162,9 +164,13 @@ export default function VersionBar({
           )}
           {pendingCount != null && pendingCount > 0 && (
             <span
-              title={`${pendingCount} unapproved Robin ${
-                pendingCount === 1 ? 'edit' : 'edits'
-              } still tracked`}
+              title={
+                version.is_current
+                  ? `${pendingCount} unapproved Robin ${
+                      pendingCount === 1 ? 'edit' : 'edits'
+                    }`
+                  : 'Pending when this version was saved; may have since been accepted or rejected.'
+              }
               css={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -179,7 +185,8 @@ export default function VersionBar({
                 whiteSpace: 'nowrap'
               }}
             >
-              {pendingCount} pending
+              {pendingCount}{' '}
+              {version.is_current ? 'pending' : 'pending at save'}
             </span>
           )}
           {approvedCount != null && approvedCount > 0 && (
@@ -229,6 +236,11 @@ export default function VersionBar({
             <ChevronDownIcon width={15} height={15} />
           </button>
         </div>
+      )}
+      {highlightsAvailable === false && !version.is_baseline && !isRestored && (
+        <span css={{ fontSize: 12, color: INK_3 }}>
+          Detailed changes unavailable
+        </span>
       )}
     </div>
   );

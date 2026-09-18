@@ -11,6 +11,12 @@ export interface VersionAuthor {
   label: string;
 }
 
+/** Attribution proven by the live preview, scoped to its editing session. */
+export interface LiveSessionAuthors {
+  sessionId: string;
+  authors: VersionAuthor[];
+}
+
 /** Extra multipart fields the autosave PATCH carries so the backend can group
  *  saves into one version row. Absent → the PATCH behaves as it always has. */
 export interface DocxSaveMeta {
@@ -75,7 +81,8 @@ export interface DocxHistoryHost {
     payload: CloseVersionPayload
   ): Promise<DocxVersion | null>;
   fetchVersionFile(url: string): Promise<ArrayBuffer>;
-  restoreVersion(versionId: string): Promise<void>;
+  /** Return the created row when available so the UI can select it directly. */
+  restoreVersion(versionId: string): Promise<DocxVersion | void>;
   renameVersion(versionId: string, name: string): Promise<DocxVersion>;
 }
 

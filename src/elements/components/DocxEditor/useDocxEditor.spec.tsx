@@ -386,12 +386,19 @@ describe('useDocxEditor across a review-gate flip', () => {
     await act(async () => fireContentChange());
     expect(onEdit).toHaveBeenLastCalledWith({ assistant: false });
 
-    // An assistant-driven edit: the bridge's session flag lives on the editor.
+    // Between tool calls, human input stays human while the turn is active.
     ed.__featheryAssistantSession = true;
+    await act(async () => fireContentChange());
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: false });
+
+    ed.__featheryAssistantWriting = true;
     await act(async () => fireContentChange());
     expect(onEdit).toHaveBeenLastCalledWith({ assistant: true });
 
-    expect(onEdit).toHaveBeenCalledTimes(2);
+    ed.__featheryAssistantWriting = false;
+    await act(async () => fireContentChange());
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: false });
+    expect(onEdit).toHaveBeenCalledTimes(4);
   });
 
   it('routes Ctrl/Cmd+S to onSaveShortcut and blocks the default SFDT download', async () => {

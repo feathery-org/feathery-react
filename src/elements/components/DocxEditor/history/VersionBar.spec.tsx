@@ -85,6 +85,20 @@ describe('VersionBar', () => {
     expect(getByText('✓ 1 approved')).toBeTruthy();
   });
 
+  it('makes historical pending status explicitly relative to the saved snapshot', () => {
+    const { getByText } = render(
+      <VersionBar
+        version={version()}
+        onExit={jest.fn()}
+        highlightsAvailable
+        pendingCount={2}
+      />
+    );
+    expect(getByText('2 pending at save').getAttribute('title')).toContain(
+      'may have since been accepted'
+    );
+  });
+
   it('disables the steppers while highlights are toggled off', () => {
     const onNext = jest.fn();
     const { getByLabelText } = render(
@@ -111,5 +125,22 @@ describe('VersionBar', () => {
     );
     expect(queryByText(/edits/)).toBeNull();
     expect(queryByRole('switch')).toBeNull();
+    expect(queryByText('Detailed changes unavailable')).toBeTruthy();
+  });
+
+  it('never offers highlight controls or pending badges for a restored baseline', () => {
+    const view = render(
+      <VersionBar
+        version={version({ restored_from: 'original' })}
+        onExit={jest.fn()}
+        highlightsAvailable
+        pendingCount={2}
+        editCount={2}
+      />
+    );
+    expect(view.queryByRole('switch')).toBeNull();
+    expect(view.queryByLabelText('Next change')).toBeNull();
+    expect(view.queryByText(/pending/)).toBeNull();
+    expect(view.queryByText('Detailed changes unavailable')).toBeNull();
   });
 });

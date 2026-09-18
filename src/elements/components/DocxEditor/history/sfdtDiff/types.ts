@@ -102,6 +102,9 @@ export interface ChangeList {
   changeCount: number;
   formatChangeCount: number;
   authors: AuthorKey[];
+  /** Correct pre-edit boundaries make slice attribution authoritative. Older
+   *  artifacts retain the legacy text-based attribution fallback. */
+  attribution?: 'slices';
   /** Authors of revisions actually rendered from the final change list. */
   trackedAuthors?: AuthorKey[];
   /** Text Robin authored during the session, captured while its revisions were

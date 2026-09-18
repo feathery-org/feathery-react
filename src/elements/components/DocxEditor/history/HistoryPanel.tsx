@@ -15,7 +15,12 @@ import {
   initialsForAuthor
 } from './authorColors';
 import { groupVersions, MonthSection } from './versionGrouping';
-import { DocxHistoryHost, DocxVersion, VersionAuthor } from './types';
+import {
+  DocxHistoryHost,
+  DocxVersion,
+  LiveSessionAuthors,
+  VersionAuthor
+} from './types';
 
 interface Props {
   host: DocxHistoryHost;
@@ -29,6 +34,7 @@ interface Props {
   /** Assistant edits still tracked (unapproved) in the in-progress current
    *  version; shown as a "pending" chip on its row. 0/undefined hides it. */
   currentPendingCount?: number;
+  liveSessionAuthors?: LiveSessionAuthors | null;
   /** Bump to reload the list (e.g. after a session closes). */
   refreshKey?: number | string;
 }
@@ -135,6 +141,7 @@ function VersionRow({
   isCurrent,
   selected,
   pendingCount,
+  liveAuthors,
   firstUserKey,
   onSelect
 }: {
@@ -143,15 +150,20 @@ function VersionRow({
   isCurrent: boolean;
   selected?: boolean;
   pendingCount?: number;
+  liveAuthors?: VersionAuthor[];
   firstUserKey: string;
   onSelect?: (v: DocxVersion) => void;
 }) {
-  // The open session's author list records content-change activity. Until a
-  // checkpoint has saved final hunks, it cannot prove a surviving tracked edit.
+  // Activity alone is not proof of a surviving edit. A live diff supplies the
+  // same evidence as a saved checkpoint, including an empty list after undo.
   const hasTrackedChanges =
     Boolean(version.changes) &&
     ((version.change_count ?? 0) > 0 || (version.format_change_count ?? 0) > 0);
-  const effectiveAuthors: Author[] = hasTrackedChanges ? authors : [];
+  // A saved snapshot without a diff retains known authors; a temporary diff
+  // failure must not erase them from the list. Unsaved activity stays hidden.
+  const hasSavedFallback = Boolean(version.final_sfdt) && !version.changes;
+  const effectiveAuthors: Author[] =
+    liveAuthors ?? (hasTrackedChanges || hasSavedFallback ? authors : []);
   // The session writes "You" in the browser; the saved actor identifies who
   // that session belonged to. Use the durable label for display and colour.
   const displayedAuthors = effectiveAuthors.map((author) =>
@@ -168,6 +180,7 @@ function VersionRow({
   return (
     <div
       onClick={() => onSelect?.(version)}
+      aria-current={selected ? 'true' : undefined}
       css={{
         // No dividers; spacing comes from the padding + rounded active fill.
         padding: '10px 12px',
@@ -266,6 +279,7 @@ export default function HistoryPanel({
   onVersionsLoaded,
   selectedId,
   currentPendingCount,
+  liveSessionAuthors,
   refreshKey
 }: Props) {
   const [versions, setVersions] = useState<DocxVersion[] | null>(null);
@@ -348,6 +362,13 @@ export default function HistoryPanel({
               key={cluster.primary.id}
               version={cluster.primary}
               authors={cluster.authors}
+              liveAuthors={
+                cluster.primary.is_current &&
+                !cluster.primary.closed_at &&
+                cluster.primary.session_id === liveSessionAuthors?.sessionId
+                  ? liveSessionAuthors.authors
+                  : undefined
+              }
               firstUserKey={firstUserKey}
               isCurrent={cluster.primary.seq === currentSeq}
               selected={selectedId != null && cluster.primary.id === selectedId}

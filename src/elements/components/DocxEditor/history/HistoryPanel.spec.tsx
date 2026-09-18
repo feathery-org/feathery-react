@@ -2,7 +2,12 @@ import React from 'react';
 import { fireEvent, render } from '@testing-library/react';
 
 import HistoryPanel from './HistoryPanel';
-import { DocxHistoryHost, DocxVersion, VersionAuthor } from './types';
+import {
+  DocxHistoryHost,
+  DocxVersion,
+  LiveSessionAuthors,
+  VersionAuthor
+} from './types';
 
 const YOU: VersionAuthor = { kind: 'user', key: 'you', label: 'You' };
 
@@ -49,7 +54,8 @@ const makeHost = (rows: DocxVersion[]): jest.Mocked<DocxHistoryHost> => ({
 const renderPanel = (
   host: DocxHistoryHost,
   onSelect?: any,
-  onVersionsLoaded?: any
+  onVersionsLoaded?: any,
+  liveSessionAuthors?: LiveSessionAuthors
 ) =>
   render(
     <HistoryPanel
@@ -57,6 +63,7 @@ const renderPanel = (
       currentUser={YOU}
       onSelect={onSelect}
       onVersionsLoaded={onVersionsLoaded}
+      liveSessionAuthors={liveSessionAuthors}
     />
   );
 
@@ -113,6 +120,73 @@ describe('HistoryPanel', () => {
     expect(queryByTitle('You')).toBeNull();
   });
 
+  it('shows the human author on the open Just now version before a Robin checkpoint', async () => {
+    const host = makeHost([
+      v({
+        is_current: true,
+        session_id: 'live-session',
+        closed_at: null,
+        ended_at: new Date().toISOString(),
+        authors: [{ kind: 'user', label: 'You' }]
+      })
+    ]);
+    const { findByText, queryByTitle } = renderPanel(
+      host,
+      undefined,
+      undefined,
+      {
+        sessionId: 'live-session',
+        authors: [YOU]
+      }
+    );
+    await findByText('Just now');
+    expect(queryByTitle('You')).not.toBeNull();
+  });
+
+  it('prefers live surviving authors over a stale checkpoint, including undoing all edits', async () => {
+    const row = v({
+      name: 'Live session',
+      is_current: true,
+      closed_at: null,
+      changes: '/older-checkpoint.gz',
+      change_count: 1,
+      authors: [{ kind: 'assistant', label: 'Robin' }]
+    });
+    const host = makeHost([row]);
+    const view = renderPanel(host, undefined, undefined, {
+      sessionId: row.session_id as string,
+      authors: [YOU]
+    });
+    await view.findByText('Live session');
+    expect(view.queryByTitle('You')).not.toBeNull();
+    expect(view.queryByTitle('Robin')).toBeNull();
+    view.rerender(
+      <HistoryPanel
+        host={host}
+        currentUser={YOU}
+        liveSessionAuthors={{
+          sessionId: row.session_id as string,
+          authors: []
+        }}
+      />
+    );
+    expect(view.queryByTitle('You')).toBeNull();
+    expect(view.queryByTitle('Robin')).toBeNull();
+  });
+
+  it('does not apply live attribution to a different session or a closed version', async () => {
+    const host = makeHost([
+      v({ name: 'Other session', is_current: true, closed_at: null }),
+      v({ name: 'Closed session', session_id: 'live-session' })
+    ]);
+    const view = renderPanel(host, undefined, undefined, {
+      sessionId: 'live-session',
+      authors: [YOU]
+    });
+    await view.findByText('Other session');
+    expect(view.queryByTitle('You')).toBeNull();
+  });
+
   it('shows only authors with surviving edits on a closed version', async () => {
     const host = makeHost([
       v({
@@ -126,6 +200,25 @@ describe('HistoryPanel', () => {
     await findByText('Table insertion');
     expect(getByText('Robin')).toBeTruthy();
     expect(queryByTitle('You')).toBeNull();
+  });
+
+  it('keeps saved attribution visible when detailed highlights are unavailable', async () => {
+    const host = makeHost([
+      v({
+        name: 'Saved without diff',
+        final_sfdt: '/final.gz',
+        changes: null,
+        change_count: null,
+        authors: [
+          { kind: 'user', label: 'You' },
+          { kind: 'assistant', label: 'Robin' }
+        ]
+      })
+    ]);
+    const { findByText, getByTitle } = renderPanel(host);
+    await findByText('Saved without diff');
+    expect(getByTitle('You')).toBeTruthy();
+    expect(getByTitle('Robin')).toBeTruthy();
   });
 
   it('lists versions under a month header and tags the newest Current', async () => {

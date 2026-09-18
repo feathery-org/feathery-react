@@ -45,6 +45,22 @@ const BASE = docWith(
 );
 
 describe('sfdtDiff spike', () => {
+  it('never emits intermediate-state hunks as if anchored to the final document after a timeout', () => {
+    let clock = 0;
+    const middle = docWith(para(run('Robin insertion')));
+    const final = docWith(para(run('Human replacement')));
+    const changes = diffSession(
+      docWith(para(run('Original'))),
+      [
+        { sfdt: middle, author: 'robin' },
+        { sfdt: final, author: 'you' }
+      ],
+      'timeout',
+      { timeBudgetMs: 1, now: () => clock++ }
+    );
+    expect(changes.degraded).toContain('time-budget');
+    expect(changes.hunks).toEqual([]);
+  });
   it('finds a word replace, a deleted paragraph, an added paragraph and a bolded span', () => {
     const after = clone(BASE);
     after.sections[0].blocks[2].inlines = [
