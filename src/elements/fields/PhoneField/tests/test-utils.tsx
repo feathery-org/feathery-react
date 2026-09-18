@@ -23,6 +23,10 @@ export {
 };
 
 const mockLibphonenumber = {
+  getCountryCallingCode: jest.requireActual('libphonenumber-js/min')
+    .getCountryCallingCode,
+  parsePhoneNumberFromString: jest.requireActual('libphonenumber-js/min')
+    .parsePhoneNumberFromString,
   AsYouType: jest.fn(() => ({
     input: jest.fn((number) => {
       if (number.startsWith('+1')) {

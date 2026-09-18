@@ -1,5 +1,9 @@
 jest.mock('../../../../utils/validation', () => {
   const lib = {
+    getCountryCallingCode: jest.requireActual('libphonenumber-js/min')
+      .getCountryCallingCode,
+    parsePhoneNumberFromString: jest.requireActual('libphonenumber-js/min')
+      .parsePhoneNumberFromString,
     AsYouType: jest.fn(() => ({
       input: jest.fn((number: string) => {
         if (number.startsWith('+1')) {
@@ -21,12 +25,12 @@ jest.mock('../../../../utils/validation', () => {
     })),
     parseDigits: jest.fn((number: string) => number.replace(/\D/g, '')),
     parsePhoneNumber: jest.fn((number: string, country: string) => ({
-      formatInternational: jest.fn(() => '+1 555 123 4567'),
+      formatInternational: jest.fn(() => '+1 202 555 0123'),
       isValid: jest.fn(() => true),
       country: country || 'US'
     })),
     isSupportedCountry: jest.fn(() => true),
-    getExampleNumber: jest.fn(() => '+1 555 123 4567'),
+    getExampleNumber: jest.fn(() => '+1 202 555 0123'),
     validatePhoneNumberLength: () => undefined,
     isValidPhoneNumber: jest.fn(
       (number: string) => number.replace(/\D/g, '').length === 11
@@ -240,10 +244,10 @@ describe('PhoneField Component', () => {
       render(<PhoneField {...props} />);
 
       const input = getPhoneInput();
-      typePhoneNumber(input, '+15551234567');
+      typePhoneNumber(input, '+12025550123');
 
-      expect(onComplete).toHaveBeenCalledWith('15551234567');
-      expectFieldToHaveValue('15551234567');
+      expect(onComplete).toHaveBeenCalledWith('12025550123');
+      expectFieldToHaveValue('12025550123');
     });
 
     it('formats US phone number as user types', () => {
@@ -261,8 +265,8 @@ describe('PhoneField Component', () => {
       typePartialPhoneNumber(input, '+1555123');
       expectPhoneNumberToBeFormatted(input, '+1 555 123');
 
-      typePartialPhoneNumber(input, '+15551234567');
-      expectPhoneNumberToBeFormatted(input, '+1 555 123 4567');
+      typePartialPhoneNumber(input, '+12025550123');
+      expectPhoneNumberToBeFormatted(input, '+1 202 555 0123');
     });
 
     it('updates field value as user types', () => {
@@ -279,8 +283,8 @@ describe('PhoneField Component', () => {
       expect(onComplete).not.toHaveBeenCalled();
 
       // Complete the number
-      typePhoneNumber(input, '+15551234567');
-      expect(onComplete).toHaveBeenCalledWith('15551234567');
+      typePhoneNumber(input, '+12025550123');
+      expect(onComplete).toHaveBeenCalledWith('12025550123');
     });
 
     it('commits the number while typing once it becomes valid, without blur', () => {
@@ -297,8 +301,8 @@ describe('PhoneField Component', () => {
 
       // No blur — the moment the number is valid it should commit so any
       // stale validation error can clear while the user is still typing
-      typePartialPhoneNumber(input, '+15551234567');
-      expect(onComplete).toHaveBeenCalledWith('15551234567');
+      typePartialPhoneNumber(input, '+12025550123');
+      expect(onComplete).toHaveBeenCalledWith('12025550123');
     });
   });
 
@@ -412,6 +416,18 @@ describe('PhoneField Component', () => {
 
       expect(input.value.replace(/\D/g, '')).toBe('158647');
     });
+  });
+
+  it('does not open the country selector with + when country selection is locked', () => {
+    render(
+      <PhoneField
+        {...createPhoneProps(
+          createPhoneElement('phone', { disable_other_countries: true })
+        )}
+      />
+    );
+    fireEvent.keyDown(getPhoneInput(), { key: '+' });
+    expectCountryDropdownToBeClosed();
   });
 
   describe('Disabled State', () => {
