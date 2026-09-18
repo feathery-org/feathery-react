@@ -1,8 +1,10 @@
 import {
   formatAllFormFields,
   formatStepFields,
-  getDefaultFieldValue
+  getDefaultFieldValue,
+  saveInitialValuesAndUrlParams
 } from '../fieldHelperFunctions';
+import { featheryWindow } from '../browser';
 import { fieldValues } from '../init';
 
 jest.mock('../init');
@@ -215,6 +217,37 @@ describe('fieldHelperFunctions', () => {
 
       // Assert
       expect(actual).toMatchObject(expected);
+    });
+  });
+
+  describe('saveInitialValuesAndUrlParams', () => {
+    const saveParams = (search) => {
+      featheryWindow().history.replaceState({}, '', `/to/form${search}`);
+      const updateFieldValues = jest.fn();
+      const client = { submitCustom: jest.fn() };
+
+      saveInitialValuesAndUrlParams({
+        updateFieldValues,
+        client,
+        saveUrlParams: true,
+        initialValues: {},
+        steps: null,
+        hiddenFields: {}
+      });
+
+      return updateFieldValues.mock.calls[0]?.[0] ?? {};
+    };
+
+    it('submits ordinary url params as field values', () => {
+      expect(saveParams('?utm_source=email')).toEqual({
+        utm_source: 'email'
+      });
+    });
+
+    it('never submits the access link token, which is a credential', () => {
+      expect(saveParams('?_lt=tok&utm_source=email')).toEqual({
+        utm_source: 'email'
+      });
     });
   });
 });
