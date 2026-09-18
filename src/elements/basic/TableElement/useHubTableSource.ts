@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { featheryWindow } from '../../../utils/browser';
 import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
-import { CellRules, hubCellRules } from './spreadsheet/validation';
+import {
+  CellRules,
+  CellErrorConstraints,
+  hubCellRules,
+  isChangedConstraintError
+} from './spreadsheet/validation';
+import {
+  ConstraintIdentity,
+  constraintIdentity
+} from './spreadsheet/constraints';
 import { CellWrite, Column } from './types';
 import {
   STATUS_COLUMN_NAME,
@@ -27,7 +36,7 @@ type HubRow = {
   verified: boolean;
   // Hub field key -> message, for cells whose last write the Hub rejected.
   // Drives the validation shading in spreadsheet mode.
-  errors?: Record<string, string>;
+  errors?: Record<string, { message: string; constraint?: ConstraintIdentity }>;
 };
 
 type DataHubAction = (options: {
@@ -74,6 +83,7 @@ type UseHubTableSourceReturn = {
   errors: string[];
   // `${rowIndex}:${fieldKey}` -> message, for cells the Hub rejected.
   cellErrors: Record<string, string>;
+  cellErrorConstraints: CellErrorConstraints;
   // The hub's own field rules, so the grid can flag a bad value before a save
   // rather than only after one is rejected.
   cellRules: CellRules;
@@ -99,15 +109,20 @@ const syntheticKey = (tableId: string, hubFieldKey: string) =>
 const ROW_GONE_MESSAGE =
   'This row was changed or removed in the Data Hub. Refresh to see the latest data.';
 
+const errorPayload = (error: any) =>
+  error?.response?.data ?? error?.data ?? error?.payload;
+
 const errorMessages = (error: any): string[] => {
-  const detail = error?.response?.data ?? error?.data;
+  const detail = errorPayload(error);
   if (detail) {
     const messages: string[] = [];
     const collect = (value: any) => {
       if (typeof value === 'string') messages.push(value);
       else if (Array.isArray(value)) value.forEach(collect);
       else if (value && typeof value === 'object') {
-        Object.values(value).forEach(collect);
+        Object.entries(value).forEach(([key, item]) => {
+          if (key !== 'constraint' && key !== 'code') collect(item);
+        });
       }
     };
     collect(detail);
@@ -314,6 +329,12 @@ export function useHubTableSource({
 
   const hubFieldValues = useMemo(() => {
     const values: Record<string, any[]> = {};
+    // Hidden columns can still be dependencies of a visible cell's rules.
+    schemaFields?.forEach((field) => {
+      values[syntheticKey(tableId, field.key)] = rows.map(
+        (row) => row.data[field.key] ?? ''
+      );
+    });
     hubColumns.forEach((column) => {
       if (column.field_key === statusKey) {
         values[statusKey] = rows.map((row) => statusLabel(row.verified));
@@ -324,34 +345,41 @@ export function useHubTableSource({
       values[column.field_key] = rows.map((row) => row.data[hubFieldKey] ?? '');
     });
     return values;
-  }, [hubColumns, rows, syntheticToHubKey, statusKey]);
+  }, [hubColumns, rows, syntheticToHubKey, statusKey, schemaFields, tableId]);
 
   const entryIds = useMemo(() => rows.map((row) => row.entryId), [rows]);
 
   const rowVerified = useMemo(() => rows.map((row) => row.verified), [rows]);
 
   const cellRules = useMemo(
-    () => hubCellRules(hubColumns, schemaFields),
-    [hubColumns, schemaFields]
+    () =>
+      hubCellRules(hubColumns, schemaFields, (key) =>
+        syntheticKey(tableId, key)
+      ),
+    [hubColumns, schemaFields, tableId]
   );
 
   // Re-key row-local errors onto the (rowIndex, synthetic field key) pairs the
   // grid renders, so shading survives rows being added or removed above them.
-  const cellErrors = useMemo(() => {
+  const { cellErrors, cellErrorConstraints } = useMemo(() => {
     const hubKeyToSynthetic: Record<string, string> = {};
     Object.entries(syntheticToHubKey).forEach(([synthetic, hubFieldKey]) => {
       hubKeyToSynthetic[hubFieldKey] = synthetic;
     });
 
     const result: Record<string, string> = {};
+    const identities: CellErrorConstraints = {};
     rows.forEach((row, rowIndex) => {
       if (!row.errors) return;
-      Object.entries(row.errors).forEach(([hubFieldKey, message]) => {
+      Object.entries(row.errors).forEach(([hubFieldKey, error]) => {
         const fieldKey = hubKeyToSynthetic[hubFieldKey];
-        if (fieldKey) result[`${rowIndex}:${fieldKey}`] = message;
+        if (!fieldKey) return;
+        const key = `${rowIndex}:${fieldKey}`;
+        result[key] = error.message;
+        if (error.constraint) identities[key] = error.constraint;
       });
     });
-    return result;
+    return { cellErrors: result, cellErrorConstraints: identities };
   }, [rows, syntheticToHubKey]);
 
   /**
@@ -395,7 +423,17 @@ export function useHubTableSource({
           return {
             ...row,
             data: { ...row.data, ...changes },
-            errors: omitKeys(row.errors, Object.keys(changes))
+            errors: Object.fromEntries(
+              Object.entries(row.errors ?? {}).filter(
+                ([key, error]) =>
+                  !(key in changes) &&
+                  !isChangedConstraintError(
+                    error.constraint,
+                    cellRules,
+                    (fieldKey) => syntheticToHubKey[fieldKey] in changes
+                  )
+              )
+            )
           };
         })
       );
@@ -434,7 +472,13 @@ export function useHubTableSource({
                   errors: {
                     ...r.errors,
                     ...Object.fromEntries(
-                      changedKeys.map((key) => [key, result.error])
+                      changedKeys.map((key) => [
+                        key,
+                        {
+                          message: result.error,
+                          constraint: constraintIdentity(result.constraint)
+                        }
+                      ])
                     )
                   }
                 }));
@@ -446,22 +490,29 @@ export function useHubTableSource({
             // fields).
             // A single row with `verification: unverified` is appended to
             // the staged set (the list form would replace it).
-            const created: (HubEntry & { error?: string }) | null =
-              await client.dataHubAction({
-                hubId,
-                operation: 'create',
-                ...(row.verified ? {} : { verification: 'unverified' }),
-                data: row.data
-              });
+            const created:
+              | (HubEntry & { error?: string; constraint?: unknown })
+              | null = await client.dataHubAction({
+              hubId,
+              operation: 'create',
+              ...(row.verified ? {} : { verification: 'unverified' }),
+              data: row.data
+            });
             if (!created?.id) {
               throw new Error('Data Hub did not return a row ID');
             }
             // A staged row is stored even when it breaks a field rule; the
             // Hub reports the rule so the grid can flag it as a warning.
             const createdError = created.error;
-            const createdErrors: Record<string, string> = createdError
+            const createdErrors: HubRow['errors'] = createdError
               ? Object.fromEntries(
-                  changedKeys.map((key) => [key, createdError])
+                  changedKeys.map((key) => [
+                    key,
+                    {
+                      message: createdError,
+                      constraint: constraintIdentity(created.constraint)
+                    }
+                  ])
                 )
               : {};
             updateRow(localId, (r) => ({
@@ -473,6 +524,8 @@ export function useHubTableSource({
           } catch (error) {
             const messages = errorMessages(error);
             const message = messages[0];
+            const payload = errorPayload(error);
+            const constraint = constraintIdentity(payload?.constraint);
             const previous = previousByLocalId.get(localId) ?? {};
             updateRow(localId, (r) => ({
               ...r,
@@ -481,7 +534,9 @@ export function useHubTableSource({
               data: r.entryId ? { ...r.data, ...previous } : r.data,
               errors: {
                 ...r.errors,
-                ...Object.fromEntries(changedKeys.map((key) => [key, message]))
+                ...Object.fromEntries(
+                  changedKeys.map((key) => [key, { message, constraint }])
+                )
               }
             }));
             setErrors(messages);
@@ -489,7 +544,15 @@ export function useHubTableSource({
         });
       });
     },
-    [syntheticToHubKey, commitRows, updateRow, enqueue, hubId, client]
+    [
+      syntheticToHubKey,
+      commitRows,
+      updateRow,
+      enqueue,
+      hubId,
+      client,
+      cellRules
+    ]
   );
 
   const handleCellEdit = useCallback(
@@ -574,6 +637,7 @@ export function useHubTableSource({
     saving: pending > 0,
     errors,
     cellErrors,
+    cellErrorConstraints,
     cellRules,
     rowVerified,
     refetch,
@@ -608,15 +672,4 @@ export function orderLikeGrid(
     .filter((entry) => !seen.has(entry.id))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return [...fresh, ...kept];
-}
-
-function omitKeys(
-  source: Record<string, string> | undefined,
-  keys: string[]
-): Record<string, string> | undefined {
-  if (!source) return undefined;
-  const remaining = Object.entries(source).filter(
-    ([key]) => !keys.includes(key)
-  );
-  return remaining.length ? Object.fromEntries(remaining) : undefined;
 }

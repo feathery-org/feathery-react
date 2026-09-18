@@ -378,7 +378,8 @@ describe('cell editors follow the column', () => {
     columns: HUB_COLUMNS,
     data_source: 'hub',
     hub_id: 'hub1',
-    hub_verification: 'all'
+    hub_verification: 'all',
+    add_delete_rows: false
   };
   const client = () => ({
     getHubSchemas: jest.fn(() =>
@@ -1660,4 +1661,66 @@ describe('assistant issues', () => {
     expect(cell('bad')).toHaveAttribute('title', 'Invalid email');
     expect(cell('Alice')).toHaveAttribute('title', 'Nickname?');
   });
+});
+
+describe('empty spreadsheet add-row footer', () => {
+  test('adds the first field-backed row and keeps the footer after discard', () => {
+    Object.assign(fieldValues, { name_key: [], email_key: [] });
+    renderTable(
+      {},
+      {
+        updateFieldValues: (updates: Record<string, any>) =>
+          Object.assign(fieldValues, updates)
+      }
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add row' }));
+
+    expect(screen.getAllByRole('gridcell')).toHaveLength(2);
+    fireEvent.doubleClick(screen.getAllByRole('gridcell')[0]);
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'First row' }
+    });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    discard();
+    expect(screen.queryAllByRole('gridcell')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: '+ Add row' })).toBeEnabled();
+  });
+
+  test('adds the first Hub row without creating an entry before editing', async () => {
+    const dataHubAction = jest.fn(() => Promise.resolve([]));
+    renderTable(
+      { data_source: 'hub', hub_id: 'hub1', columns: [] },
+      {
+        client: {
+          dataHubAction,
+          getHubSchemas: () =>
+            Promise.resolve({ hubs: [{ id: 'hub1', fields: HUB_FIELDS }] })
+        }
+      }
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add row' }));
+
+    expect(screen.getAllByRole('gridcell')).toHaveLength(2);
+    expect(dataHubAction).toHaveBeenCalledTimes(1);
+    expect(dataHubAction).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'get' })
+    );
+  });
+
+  test.each([
+    { add_delete_rows: false },
+    { enable_editing: false },
+    { columns: [] }
+  ])(
+    'keeps the normal empty state when adding is unavailable: %o',
+    (properties) => {
+      Object.assign(fieldValues, { name_key: [], email_key: [] });
+      renderTable(properties);
+
+      expect(screen.getByText('No data available')).toBeVisible();
+      expect(screen.queryByRole('button', { name: '+ Add row' })).toBeNull();
+    }
+  );
 });

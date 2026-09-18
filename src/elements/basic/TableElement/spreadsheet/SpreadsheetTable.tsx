@@ -247,6 +247,7 @@ export function SpreadsheetTable({
     undo: history.undo,
     redo: history.redo,
     canEdit,
+    onInsertRow,
     scrollToCell,
     restoreFocus,
     seedAction,

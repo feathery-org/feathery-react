@@ -23,8 +23,9 @@ export type CellEditorProps = {
   stored: string;
   label: string;
   onChange: (draft: string) => void;
-  /** Commit a value and close, without moving the selection. */
-  onCommit: (draft: string) => void;
+  /** Commit and close; native Enter releases also request row navigation. */
+  onCommit: (draft: string, move?: 'up' | 'down') => void;
+  onChoose: (draft: string) => void;
   onCancel: () => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
   onBlur: () => void;
@@ -71,6 +72,7 @@ export function CellEditor({
   onCommit,
   onCancel,
   onKeyDown,
+  onChoose,
   onBlur
 }: CellEditorProps) {
   const kind = editorKindFor(rule);
@@ -175,7 +177,7 @@ export function CellEditor({
           // A pick is the whole edit, so it lands as soon as it is made — and
           // it has to carry its own value, since the draft setState above has
           // not been applied yet.
-          onCommit(picked);
+          onChoose(picked);
         }}
         onKeyDown={(event) => {
           sawKeyDown.current = true;
@@ -200,7 +202,7 @@ export function CellEditor({
             !sawKeyDown.current &&
             Date.now() - openedAt.current < OPENING_KEY_GRACE_MS;
           if (isOpeningKeyRelease) return;
-          onCommit(event.currentTarget.value);
+          onCommit(event.currentTarget.value, event.shiftKey ? 'up' : 'down');
         }}
         onBlur={onBlur}
       >

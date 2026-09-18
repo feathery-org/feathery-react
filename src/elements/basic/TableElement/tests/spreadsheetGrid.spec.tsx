@@ -8,6 +8,7 @@ import {
 } from '@testing-library/react';
 import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
+import { SpreadsheetTable } from '../spreadsheet/SpreadsheetTable';
 
 const COLUMNS = [
   { name: 'Name', field_id: 'f1', field_type: 'text', field_key: 'name_key' },
@@ -389,6 +390,182 @@ describe('row insertion and deletion', () => {
     const header = screen.getByRole('button', { name: `Select row ${rowNumber}` });
     fireEvent.contextMenu(header);
   };
+
+  test('Enter on the last row appends a row and selects the same column', async () => {
+    const { updateFieldValues, submitCustom } = renderTable({ add_delete_rows: true });
+    updateFieldValues.mockImplementation((updates) => Object.assign(fieldValues, updates));
+    fireEvent.mouseDown(cell('Reno'));
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+
+    await waitFor(() => expect(grid()).toHaveAttribute('aria-rowcount', '5'));
+    const newCell = screen.getAllByRole('gridcell').at(-1)!;
+    expect(newCell).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(grid());
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(submitCustom).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(grid(), { key: 'N' });
+    expect(await screen.findByRole('textbox')).toHaveValue('N');
+    expect(newCell).toContainElement(screen.getByRole('textbox'));
+  });
+
+  test('Enter commits the last-row edit before appending and keeps both rows editable', async () => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    updateFieldValues.mockImplementation((updates) => Object.assign(fieldValues, updates));
+    fireEvent.doubleClick(cell('Cara'));
+    const input = await screen.findByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Caroline' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(grid()).toHaveAttribute('aria-rowcount', '5'));
+    expect(cell('Caroline')).toBeInTheDocument();
+    expect(screen.getAllByRole('gridcell')[9]).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(grid(), { key: 'D' });
+    const newInput = await screen.findByRole('textbox');
+    fireEvent.change(newInput, { target: { value: 'Dana' } });
+    fireEvent.keyDown(newInput, { key: 'Tab' });
+    save();
+
+    await waitFor(() => expect(updateFieldValues).toHaveBeenLastCalledWith({
+      name_key: ['Alice', 'Bob', 'Caroline', 'Dana']
+    }));
+  });
+
+  test('Enter append preserves undo and redo for the committed edit and earlier edits', async () => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    updateFieldValues.mockImplementation((updates) => Object.assign(fieldValues, updates));
+    fireEvent.doubleClick(cell('Alice'));
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Alicia' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
+    fireEvent.doubleClick(cell('Cara'));
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Caroline' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(grid()).toHaveAttribute('aria-rowcount', '5'));
+
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true });
+    expect(cell('Cara')).toBeInTheDocument();
+    expect(cell('Alicia')).toBeInTheDocument();
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true });
+    expect(cell('Alice')).toBeInTheDocument();
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true, shiftKey: true });
+    expect(cell('Alicia')).toBeInTheDocument();
+    expect(cell('Caroline')).toBeInTheDocument();
+    expect(grid()).toHaveAttribute('aria-rowcount', '5');
+  });
+
+  test('inserting before existing rows still clears index-keyed undo history', async () => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    updateFieldValues.mockImplementation((updates) => Object.assign(fieldValues, updates));
+    fireEvent.doubleClick(cell('Cara'));
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Caroline' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
+    openRowMenu(2);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Insert row above' }));
+    await waitFor(() => expect(grid()).toHaveAttribute('aria-rowcount', '5'));
+
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true });
+    expect(cell('Caroline')).toBeInTheDocument();
+    expect(cell('Bob')).toBeInTheDocument();
+    expect(screen.queryByText('Cara')).toBeNull();
+  });
+
+  test.each([
+    ['Shift+Enter', { key: 'Enter', shiftKey: true }],
+    ['ArrowDown', { key: 'ArrowDown', shiftKey: false }]
+  ])('%s on the last row does not append', (_name, key) => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    fireEvent.mouseDown(cell('Cara'));
+    fireEvent.keyDown(grid(), key);
+    expect(updateFieldValues).not.toHaveBeenCalled();
+    expect(cell(key.shiftKey ? 'Bob' : 'Cara')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test.each([
+    { add_delete_rows: false },
+    { add_delete_rows: true, enable_editing: false }
+  ])('Enter does not append when row editing is disabled: %j', (props) => {
+    const { updateFieldValues } = renderTable(props);
+    fireEvent.mouseDown(cell('Cara'));
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    const input = screen.queryByRole('textbox');
+    if (input) fireEvent.keyDown(input, { key: 'Enter' });
+    expect(updateFieldValues).not.toHaveBeenCalled();
+    expect(grid()).toHaveAttribute('aria-rowcount', '4');
+  });
+
+  test('Shift+Enter from the last-row editor commits and moves up without appending', async () => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    fireEvent.doubleClick(cell('Cara'));
+    const input = await screen.findByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Caroline' } });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(cell('Bob')).toHaveAttribute('aria-selected', 'true');
+    expect(cell('Caroline')).toBeInTheDocument();
+    expect(updateFieldValues).not.toHaveBeenCalled();
+  });
+
+  test.each([false, true])('native dropdown Enter release honors row navigation (shift: %s)', async (shiftKey) => {
+    const onInsertRow = jest.fn();
+    render(
+      <SpreadsheetTable
+        columns={COLUMNS}
+        rowIndices={[0, 1, 2]}
+        fieldValues={fieldValues}
+        canEdit
+        onCellsEdit={jest.fn()}
+        onInsertRow={onInsertRow}
+        cellRules={{ city_key: { label: 'City', type: 'text', options: ['Denver', 'Austin', 'Reno'] } }}
+      />
+    );
+    fireEvent.doubleClick(cell('Reno'));
+    const select = await screen.findByRole('combobox');
+    const later = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 5000);
+    fireEvent.keyUp(select, { key: 'Enter', shiftKey });
+    later.mockRestore();
+
+    expect(screen.queryByRole('combobox')).toBeNull();
+    if (shiftKey) {
+      expect(onInsertRow).not.toHaveBeenCalled();
+      expect(cell('Austin')).toHaveAttribute('aria-selected', 'true');
+    } else {
+      expect(onInsertRow).toHaveBeenCalledWith(3);
+    }
+  });
+
+  test.each(['Enter', 'mouse'])('changing a native dropdown with %s commits immediately and only Enter appends', async (gesture) => {
+    const onInsertRow = jest.fn();
+    const onCellsEdit = jest.fn();
+    render(
+      <SpreadsheetTable
+        columns={COLUMNS}
+        rowIndices={[0, 1, 2]}
+        fieldValues={fieldValues}
+        canEdit
+        onCellsEdit={onCellsEdit}
+        onInsertRow={onInsertRow}
+        cellRules={{ city_key: { label: 'City', type: 'text', options: ['Denver', 'Austin', 'Reno'] } }}
+      />
+    );
+    fireEvent.doubleClick(cell('Reno'));
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'Denver' } });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(onCellsEdit).toHaveBeenCalledWith([{ rowIndex: 2, fieldKey: 'city_key', value: 'Denver' }]);
+    expect(onInsertRow).not.toHaveBeenCalled();
+
+    if (gesture === 'mouse') {
+      // A mouse choice has no Enter release. A subsequent keyboard gesture
+      // must clear the choice before an unrelated Enter can be released.
+      fireEvent.keyDown(grid(), { key: 'ArrowUp' });
+    }
+    fireEvent.keyUp(document, { key: 'Enter' });
+    if (gesture === 'Enter') {
+      expect(onInsertRow).toHaveBeenCalledWith(3);
+    } else {
+      expect(onInsertRow).not.toHaveBeenCalled();
+      expect(cell('Austin')).toHaveAttribute('aria-selected', 'true');
+    }
+  });
 
   test('no row menu or add strip when adding and deleting are off', () => {
     renderTable({ add_delete_rows: false });
