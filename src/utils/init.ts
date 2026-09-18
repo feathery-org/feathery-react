@@ -48,8 +48,8 @@ type InitOptions = {
   language?: string;
   theme?: string;
   noSave?: boolean;
-  // Token from a one-time or expiring access link. Hosted forms pass it
-  // explicitly; a plain embed picks it up from the `_lt` URL param.
+  // Token from a one-time or expiring access link. Read from the `_lt` URL
+  // param when not passed.
   linkToken?: string;
   _enterpriseRegion?: string;
 };
@@ -183,7 +183,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     );
 
     // An explicit option wins over the URL so a host page can pass a token it
-    // resolved itself (hosted forms read `_lt` before the SDK loads).
+    // resolved itself.
     if (!initState.linkToken) initState.linkToken = getLinkTokenFromUrl();
     if (initState.linkToken)
       initState.linkSecret = getStoredLinkSecret(initState.linkToken);

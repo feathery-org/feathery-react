@@ -369,6 +369,40 @@ describe('resuming a link session from a plain url', () => {
     expect(initState.linkSecret).toBe('');
   });
 
+  it('forgets only the token it sent, not a newer one the form kept', async () => {
+    // A revoked link reopened from an earlier email: the url token is sent
+    // and rejected, and the re-issued link this device redeemed must survive
+    featheryWindow().localStorage.setItem(TOKEN_KEY, 'new');
+    featheryWindow().localStorage.setItem(SECRET_KEY('new'), 'new-secret');
+    openedWithLink('old');
+    const client = clientRejecting('This link is not valid.');
+
+    await client.fetchSession();
+
+    expect(storedToken()).toBe('new');
+    expect(featheryWindow().localStorage.getItem(SECRET_KEY('new'))).toBe(
+      'new-secret'
+    );
+    expect(initState.linkToken).toBe('');
+  });
+
+  it('forgets nothing when another form had already blocked the page', async () => {
+    // `_fetch` sends nothing once the page is blocked, and the error it leaves
+    // behind belongs to whichever form hit it first
+    featheryWindow().localStorage.setItem(TOKEN_KEY, 'tok');
+    featheryWindow().localStorage.setItem(SECRET_KEY('tok'), 'secret');
+    initState.authenticationError = 'This link has expired.';
+    const client = clientReturning(linkResolvedSession());
+
+    await client.fetchSession();
+
+    expect(apiFetch).not.toHaveBeenCalled();
+    expect(storedToken()).toBe('tok');
+    expect(featheryWindow().localStorage.getItem(SECRET_KEY('tok'))).toBe(
+      'secret'
+    );
+  });
+
   it('keeps the token when the 403 was about something else', async () => {
     featheryWindow().localStorage.setItem(TOKEN_KEY, 'tok');
     openedWithLink('tok', 'secret');
@@ -419,6 +453,21 @@ describe('redeemLink', () => {
     expect(storedToken()).toBeNull();
     expect(initState.linkToken).toBe('');
     expect(initState.linkSecret).toBe('');
+  });
+
+  it('forgets nothing when another form had already blocked the page', async () => {
+    featheryWindow().localStorage.setItem(TOKEN_KEY, 'tok');
+    featheryWindow().localStorage.setItem(SECRET_KEY('tok'), 'secret');
+    initState.authenticationError = 'This link is not valid.';
+    const client = clientReturning({});
+
+    await expect(client.redeemLink('tok')).resolves.toBeUndefined();
+
+    expect(apiFetch).not.toHaveBeenCalled();
+    expect(storedToken()).toBe('tok');
+    expect(featheryWindow().localStorage.getItem(SECRET_KEY('tok'))).toBe(
+      'secret'
+    );
   });
 
   it('surfaces a rate limit so the caller can offer a retry', async () => {

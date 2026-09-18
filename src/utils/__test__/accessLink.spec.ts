@@ -99,6 +99,12 @@ describe('accessLink', () => {
       expect(getLinkTokenFromUrl()).toBe('');
     });
 
+    it('ignores a repeated _lt rather than picking one of them', () => {
+      mockWindow({ location: { search: '?_lt=tok-a&_lt=tok-b' } });
+
+      expect(getLinkTokenFromUrl()).toBe('');
+    });
+
     it('is empty outside the browser, where there is no location', () => {
       expect(getLinkTokenFromUrl()).toBe('');
     });
@@ -345,7 +351,7 @@ describe('accessLink', () => {
       entries['feathery-link-token-form-key'] = 'tok';
       entries['feathery-link-tok'] = 'secret';
 
-      forgetLinkToken('form-key');
+      forgetLinkToken('form-key', 'tok');
 
       expect(entries).toEqual({});
       expect(deleteCookie).toHaveBeenCalledWith('feathery-link-token-form-key');
@@ -353,26 +359,30 @@ describe('accessLink', () => {
     });
 
     it('drops the secret of a token this device kept only in a cookie', () => {
-      // An embed where localStorage is blocked holds both halves as cookies,
-      // and the token is what names the secret's key
       const cookies = workingCookies();
       cookies['feathery-link-token-form-key'] = 'tok';
       cookies['feathery-link-tok'] = 'secret';
       mockWindow({ localStorage: throwingLocalStorage() });
 
-      forgetLinkToken('form-key');
+      forgetLinkToken('form-key', 'tok');
 
       expect(cookies).toEqual({});
     });
 
-    it('leaves the stores alone for a form that kept no token', () => {
+    it('keeps a newer token the form holds when an old one is rejected', () => {
+      // A revoked link reopened from an earlier email must not take the
+      // re-issued link's secret with it: that secret cannot be recovered
       const { entries } = pageWindow();
+      entries['feathery-link-token-form-key'] = 'new';
+      entries['feathery-link-new'] = 'new-secret';
+      entries['feathery-link-old'] = 'old-secret';
 
-      forgetLinkToken('form-key');
+      forgetLinkToken('form-key', 'old');
 
-      expect(entries).toEqual({});
-      expect(deleteCookie).toHaveBeenCalledTimes(1);
-      expect(deleteCookie).toHaveBeenCalledWith('feathery-link-token-form-key');
+      expect(entries).toEqual({
+        'feathery-link-token-form-key': 'new',
+        'feathery-link-new': 'new-secret'
+      });
     });
 
     it('does not throw when the stores are blocked', () => {
@@ -381,7 +391,7 @@ describe('accessLink', () => {
       });
       mockWindow({ localStorage: throwingLocalStorage() });
 
-      expect(() => forgetLinkToken('form-key')).not.toThrow();
+      expect(() => forgetLinkToken('form-key', 'tok')).not.toThrow();
     });
   });
 
@@ -394,16 +404,18 @@ describe('accessLink', () => {
         )
       ).toBe(true);
       expect(isRejectedLinkMessage('This link is not valid.')).toBe(true);
+    });
+
+    it('leaves every other blocked message to its own handling', () => {
+      // Expectation moved: "only from its access link" used to count too, but
+      // it means no usable token was presented (another form's, say), so it
+      // says nothing about a token this device holds. Nor does the
+      // require-a-link answer.
       expect(
         isRejectedLinkMessage(
           'This submission can only be opened from its access link.'
         )
-      ).toBe(true);
-    });
-
-    it('leaves every other blocked message to its own handling', () => {
-      // A form that requires a link answers this when none was presented, which
-      // says nothing about a token this device may be holding
+      ).toBe(false);
       expect(
         isRejectedLinkMessage('Please open this form from your personal link.')
       ).toBe(false);
