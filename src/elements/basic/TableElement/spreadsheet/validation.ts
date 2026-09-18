@@ -1,13 +1,18 @@
 import { validators } from '../../../../utils/validation';
 import { CellValue } from './model';
+import {
+  CellConstraint,
+  HubConstraintRule,
+  cellConstraints,
+  validateConstraints
+} from './constraints';
 
 /**
  * Client-side mirror of the Data Hub's field rules
  * (`apps/hub/entry_validation.py`), so a spreadsheet can count and highlight
  * bad cells as they are typed instead of only after a rejected write.
  *
- * It deliberately covers the cheap, stable rules only. Cross-field constraint
- * rules and hub-wide uniqueness stay server-side; those still come back as
+ * Hub-wide uniqueness stays server-side; those failures still come back as
  * cell errors from a save. Messages are worded like the backend's so a cell
  * does not change its wording once the server has seen it.
  */
@@ -43,6 +48,7 @@ export type CellRule = {
   dateRange?: 'past_only' | 'future_only';
   minDate?: string;
   maxDate?: string;
+  constraints?: CellConstraint[];
 };
 
 /** Field key -> rule. A column with no entry is never flagged. */
@@ -53,6 +59,41 @@ export type CellErrors = Record<string, string>;
 
 export const cellErrorKey = (rowIndex: number, fieldKey: string) =>
   `${rowIndex}:${fieldKey}`;
+
+export function isChangedConstraintError(
+  message: string,
+  rules: CellRules,
+  isCellChanged: (fieldKey: string) => boolean
+): boolean {
+  return Object.entries(rules).some(([ownerKey, rule]) =>
+    rule.constraints?.some(
+      (constraint) =>
+        constraint.message === message &&
+        [
+          ownerKey,
+          constraint.constraint.fieldKey,
+          ...constraint.when.map((condition) => condition.fieldKey)
+        ].some(isCellChanged)
+    )
+  );
+}
+
+export function mergeCellErrors(
+  serverErrors: CellErrors,
+  validated: CellErrors,
+  rules: CellRules,
+  isCellChanged: (rowIndex: number, fieldKey: string) => boolean
+): CellErrors {
+  const remaining = Object.entries(serverErrors).filter(([key, message]) => {
+    const rowIndex = Number(key.slice(0, key.indexOf(':')));
+    // Hub writes can attach a constraint message to an edited dependency.
+    // Once that rule's inputs change, the live result replaces that message.
+    return !isChangedConstraintError(message, rules, (fieldKey) =>
+      isCellChanged(rowIndex, fieldKey)
+    );
+  });
+  return { ...Object.fromEntries(remaining), ...validated };
+}
 
 const TAX_ID_PATTERN = /^\d{9}$/;
 const UUID_PATTERN =
@@ -246,7 +287,9 @@ export function validateGrid({
       const rule = rules[fieldKey];
       if (!rule) return;
       const value = getValue(rowIndex, fieldKey);
-      const message = validateCellValue(value, rule);
+      const message =
+        validateCellValue(value, rule) ||
+        validateConstraints(rule.constraints, (key) => getValue(rowIndex, key));
       if (message) {
         errors[cellErrorKey(rowIndex, fieldKey)] = message;
         return;
@@ -286,6 +329,7 @@ type HubFieldLike = {
   required?: boolean;
   unique?: boolean;
   metadata?: Record<string, any> | null;
+  constraint_rules?: HubConstraintRule[];
 };
 
 const HUB_TYPES: Record<string, CellValueType> = {
@@ -308,10 +352,16 @@ const HUB_TYPES: Record<string, CellValueType> = {
  */
 export function hubCellRules(
   columns: Array<{ field_key: string; name: string; hub_field_key?: string }>,
-  fields: HubFieldLike[] | null
+  fields: HubFieldLike[] | null,
+  storageKey?: (hubKey: string) => string
 ): CellRules {
   if (!fields?.length) return {};
   const byKey = new Map(fields.map((field) => [field.key, field]));
+  const keyForField =
+    storageKey ??
+    ((hubKey: string) =>
+      columns.find((column) => column.hub_field_key === hubKey)?.field_key ??
+      hubKey);
   const rules: CellRules = {};
 
   columns.forEach((column) => {
@@ -333,7 +383,10 @@ export function hubCellRules(
       decimalDigits: metadata.decimal_digits,
       dateRange: metadata.date_range,
       minDate: metadata.min_date,
-      maxDate: metadata.max_date
+      maxDate: metadata.max_date,
+      ...(field.constraint_rules?.length
+        ? { constraints: cellConstraints(field, byKey, keyForField) }
+        : {})
     };
   });
 

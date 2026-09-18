@@ -160,10 +160,9 @@ export const SpreadsheetGrid = React.forwardRef<
       // Tab is not bound here: it moves the selection only while there is a
       // column to move to, and otherwise has to leave the grid — see
       // handleGridKeyDown.
-      // Enter opens the editor on the selected cell. Committing from inside
-      // the editor is what moves down — so Enter, Enter walks a column the way
-      // a spreadsheet does, without a bare Enter skipping a cell unedited.
-      { hotkey: 'Enter', callback: interactions.startEditingActive },
+      // Enter opens the editor, or appends a row at the bottom when adding is
+      // enabled. Committing an editor with Enter also moves down into that row.
+      { hotkey: 'Enter', callback: interactions.enterActiveCell },
       {
         hotkey: 'Shift+Enter',
         callback: () => interactions.moveSelection('up')
@@ -1042,7 +1041,8 @@ function SpreadsheetCell({
             rowIndex + 1
           }`}
           onChange={interactions.setEditingDraft}
-          onCommit={(draft) => interactions.commitEditing(undefined, draft)}
+          onCommit={(draft, move) => interactions.commitEditing(move, draft)}
+          onChoose={interactions.commitChoice}
           onCancel={interactions.cancelEditing}
           onKeyDown={interactions.handleEditorKeyDown}
           onBlur={() => interactions.commitEditing()}

@@ -30,6 +30,7 @@ import {
   CellErrors,
   cellErrorKey,
   fieldCellRules,
+  mergeCellErrors,
   validateGrid
 } from './spreadsheet/validation';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
@@ -482,7 +483,15 @@ function TableElement({
         pendingEdits.peek(rowIndex, fieldKey) !== undefined ||
         (isHub ? hub.entryIds[rowIndex] == null : pendingAddRows.has(rowIndex))
     });
-    return isHub ? { ...hub.cellErrors, ...validated } : validated;
+    return isHub
+      ? mergeCellErrors(
+          hub.cellErrors,
+          validated,
+          cellRules,
+          (rowIndex, fieldKey) =>
+            pendingEdits.peek(rowIndex, fieldKey) !== undefined
+        )
+      : validated;
   }, [
     isSpreadsheet,
     isHub,
@@ -670,7 +679,9 @@ function TableElement({
     wrappedHandleDeleteRow
   ]);
 
-  const showEmptyState = !hasData || !hasSearchResults;
+  const showEmptyState =
+    (!hasData || !hasSearchResults) &&
+    !(isSpreadsheet && canAddRows && columns.length > 0);
   const showToolbar = enableSearch || showAddRow;
 
   // Column sizing: 'equal' uses a fixed table layout so data columns share the
