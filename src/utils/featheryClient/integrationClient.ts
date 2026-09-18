@@ -4,10 +4,12 @@ import { API_URL, STATIC_URL } from '.';
 import { OfflineRequestHandler } from '../offlineRequestHandler';
 import {
   AlloyEntities,
+  CreateEgnyteFolderParams,
   GetDocusignEnvelopeParams,
   LoanProCustomerObject,
   SendDocusignParams,
-  UpdateDocusignEnvelopeParams
+  UpdateDocusignEnvelopeParams,
+  UploadFileToEgnyteParams
 } from '../internalState';
 import { featheryWindow } from '../browser';
 import {
@@ -1126,6 +1128,55 @@ export default class IntegrationClient {
         docusign_envelope_id: envelopeId,
         status,
         voided_reason: voidedReason
+      })
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
+  uploadFileToEgnyte({
+    file,
+    path,
+    name,
+    createFolder = true
+  }: UploadFileToEgnyteParams) {
+    const { userId } = initInfo();
+    const url = `${API_URL}egnyte/file/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        fuser_key: userId,
+        form_key: this.formKey,
+        // Accepts a getDocusignEnvelope document unchanged
+        file: { name: file.name, data: file.data, type: file.type },
+        path,
+        name,
+        create_folder: createFolder
+      })
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
+  createEgnyteFolder({ path }: CreateEgnyteFolderParams) {
+    const { userId } = initInfo();
+    const url = `${API_URL}egnyte/folder/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        fuser_key: userId,
+        form_key: this.formKey,
+        path
       })
     };
     return this._fetch(url, options, false).then(async (response) => {

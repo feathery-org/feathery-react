@@ -149,7 +149,9 @@ import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
+  CreateEgnyteFolderParams,
   GetDocusignEnvelopeParams,
+  UploadFileToEgnyteParams,
   RunComputerAgentOptions,
   SendDocusignParams,
   UpdateDocusignEnvelopeParams,
@@ -1650,6 +1652,10 @@ function Form({
           client.getDocusignEnvelope(params),
         updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
           client.updateDocusignEnvelope(params),
+        uploadFileToEgnyte: (params: UploadFileToEgnyteParams) =>
+          client.uploadFileToEgnyte(params),
+        createEgnyteFolder: (params: CreateEgnyteFolderParams) =>
+          client.createEgnyteFolder(params),
         getDocusignBrands: async () => {
           await Promise.all([
             client.flushCustomFields(),
