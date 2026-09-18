@@ -189,7 +189,7 @@ export default function DocumentPanel({
             </div>
           )}
           {open && tab === 'history' && history && (
-            <div css={{ position: 'absolute', inset: 0 }}>
+            <div css={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
               <RailErrorBoundary key={`history:${boundaryKey}`}>
                 <HistoryPanel
                   host={history}

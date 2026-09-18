@@ -25,6 +25,10 @@ import {
   listRevisionGroups,
   resolveLiveRevisionGroupsAsOneUndo
 } from '../../../../../utils/documentEditorPrimitives';
+import { installRevisionHighlightRendering } from '../../../../../elements/components/DocxEditor/useDocxEditor';
+import { colorForRevisionAuthor } from '../../../../../elements/components/DocxEditor/history/authorColors';
+import { versionPreviewHarness } from './versionPreviewHarness';
+import { historyReviewHarness } from './historyReviewHarness';
 
 declare const __SYNCFUSION_LICENSE_KEY__: string;
 
@@ -142,6 +146,8 @@ function inventoryEntryHolding(find: string) {
 }
 
 const api = {
+  ...versionPreviewHarness,
+  ...historyReviewHarness,
   async open(sfdt: string, headerRowsHint = 1): Promise<void> {
     void headerRowsHint;
     api.close();
@@ -299,6 +305,33 @@ const api = {
   },
 
   serialize: (): string => live().serialize(),
+
+  async verifyHistoryRenderer(): Promise<boolean> {
+    const instance = live() as any;
+    installRevisionHighlightRendering(instance, colorForRevisionAuthor);
+    const renderer = instance.documentHelper.render;
+    const check = renderer.checkRevisionType;
+    instance.showRevisions = true;
+    instance.resize();
+    await frame();
+    await frame();
+    return renderer.checkRevisionType === check;
+  },
+
+  async observeHistoryEdit(text: string): Promise<string[]> {
+    const snapshots: string[] = [];
+    const instance = live();
+    const changed = () => snapshots.push(instance.serialize());
+    instance.addEventListener('contentChange', changed);
+    try {
+      instance.selection.moveToDocumentEnd();
+      instance.editor.insertText(text);
+      await frame();
+      return snapshots;
+    } finally {
+      instance.removeEventListener('contentChange', changed);
+    }
+  },
 
   formulaValues: (): Record<string, string> => {
     const out: Record<string, string> = {};

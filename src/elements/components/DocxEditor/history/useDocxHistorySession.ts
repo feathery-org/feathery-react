@@ -7,7 +7,9 @@
 // highlights) lands in a later PR — closeVersion is called with F only, and a
 // backend that has not shipped the close endpoint yet simply leaves the row
 // with its docx pair (a one-colour fallback at view time).
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
+import { featheryDoc } from '../../../../utils/browser';
 
 import {
   isAssistantWriting,
@@ -15,6 +17,7 @@ import {
 } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
 import { isOpeningDocument } from '../useDocxEditor';
 import { createAutosaveScheduler } from './autosaveScheduler';
+import { createDocumentSaveQueue } from './documentSaveQueue';
 import {
   applyHunks,
   collectRobinRuns,
@@ -53,6 +56,8 @@ const IDLE_CHECK_MS = 30_000;
 // often is wasteful, and one checkpoint per interval keeps an abandoned
 // session's stored highlights at most this stale.
 export const CHECKPOINT_MIN_INTERVAL_MS = 20_000;
+const ARTIFACT_UPLOAD_ERROR =
+  'Document saved, but version details could not be uploaded. Retry to preserve its highlights.';
 
 export interface UseDocxHistorySessionOptions {
   editor: any;
@@ -67,7 +72,7 @@ export interface UseDocxHistorySessionOptions {
   openNonce?: number;
   exportDoc: () => Promise<Blob>;
   /** The autosave PATCH (index.tsx → container → client.saveEnvelopeFile). */
-  save: (blob: Blob, meta: DocxSaveMeta) => Promise<void>;
+  save: (blob: Blob, meta: DocxSaveMeta) => Promise<unknown>;
   /** Extra gate (the binding soft-gate): autosave holds while it is false. */
   canSave?: () => boolean;
 }
@@ -90,13 +95,14 @@ export interface TrackedChangeAcceptance {
 }
 
 export interface UseDocxHistorySessionResult {
+  error: string | null;
   status: SaveStatus;
   savedAt: Date | null;
   /** Fire on every editor content change; index.tsx forwards useDocxEditor's
    *  onEdit here. */
   onEdit: (info: { assistant: boolean }) => void;
   /** Explicit Save: close the session now and resolve when it has persisted. */
-  save: () => Promise<void>;
+  save: () => Promise<unknown>;
   /** Close the current session's DOCX before a restore, but defer its costly
    *  diff upload until the restore has preserved that now-closed row. */
   saveForRestore: () => Promise<void>;
@@ -153,8 +159,22 @@ export function useDocxHistorySession(
     canSave
   } = opts;
 
-  const [status, setStatus] = useState<SaveStatus>('clean');
-  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const mountedRef = useRef(true);
+  const ownedSessions = useRef(new Set<string>());
+  const [status, updateStatus] = useState<SaveStatus>('clean');
+  const [savedAt, updateSavedAt] = useState<Date | null>(null);
+  const [saveError, updateSaveError] = useState<string | null>(null);
+  const setStatus = (value: SaveStatus) => {
+    if (mountedRef.current) updateStatus(value);
+  };
+  const setSavedAt = (value: Date | null) => {
+    if (mountedRef.current) updateSavedAt(value);
+  };
+  const setSaveError = (
+    value: string | null | ((current: string | null) => string | null)
+  ) => {
+    if (mountedRef.current) updateSaveError(value);
+  };
 
   // Live inputs behind refs so the engine (built once) reads fresh values.
   const editorRef = useRef(editor);
@@ -198,8 +218,7 @@ export function useDocxHistorySession(
   // baseline (the selected revisions are rendered rejected at S0).
   const acceptanceRef = useRef<TrackedChangeAcceptance | null>(null);
   const documentEpochRef = useRef(0);
-  const finalizeRef = useRef<Promise<void>>(Promise.resolve());
-  const restoreSnapshotRef = useRef<Promise<void>>(Promise.resolve());
+  const finalizeRef = useRef<Promise<unknown>>(Promise.resolve());
   const holdFinalDiffForRestoreRef = useRef(false);
   const releaseFinalDiffRef = useRef<(() => void) | null>(null);
 
@@ -210,9 +229,56 @@ export function useDocxHistorySession(
 
   function buildEngine() {
     const slices = createSliceStore();
+    const documentWrites = createDocumentSaveQueue();
+    const pendingArtifacts = new Set<Promise<void>>();
+    const failedArtifacts = new Map<string, () => Promise<void>>();
+    const reportError = (error: unknown) => {
+      setSaveError(
+        error instanceof Error ? error.message : 'Could not save document'
+      );
+      setStatus('error');
+    };
+    const canPersist = () => {
+      const ed = editorRef.current;
+      return (
+        mountedRef.current &&
+        !!ed &&
+        !ed.isDestroyed &&
+        !loadingRef.current &&
+        !readOnlyRef.current &&
+        !isOpeningDocument(ed) &&
+        !isAssistantWriting(ed)
+      );
+    };
     // Close/checkpoint uploads mutate the same backend row. Keep them in one
     // FIFO so an older checkpoint can never complete after a newer final close.
     let closeQueue: Promise<void> = Promise.resolve();
+
+    const uploadArtifacts = async (
+      h: DocxHistoryHost,
+      sessionId: string,
+      payload: Parameters<DocxHistoryHost['closeVersion']>[1],
+      finalSfdt: string
+    ): Promise<void> => {
+      try {
+        await h.closeVersion(sessionId, payload);
+        clearLocalVersionArtifacts(sessionId, finalSfdt);
+        failedArtifacts.delete(sessionId);
+        if (!failedArtifacts.size)
+          setSaveError((current) =>
+            current === ARTIFACT_UPLOAD_ERROR ? null : current
+          );
+      } catch (error) {
+        // Retain the encoded upload, not every full author-boundary snapshot,
+        // and retry through the same FIFO as newer checkpoints.
+        failedArtifacts.set(sessionId, () =>
+          uploadArtifacts(h, sessionId, payload, finalSfdt)
+        );
+        setSaveError(ARTIFACT_UPLOAD_ERROR);
+        setStatus('error');
+        throw error;
+      }
+    };
 
     // The closing session's diff inputs, captured SYNCHRONOUSLY at close time.
     // Anything serialized later (after the PATCH round-trip) can already carry
@@ -325,7 +391,7 @@ export function useDocxHistorySession(
           // Upgrade-only: an older checkpoint draining from the queue must not
           // clobber a newer close's registration for the same session.
           const existing = localVersionArtifactsFor(sessionId);
-          if (!existing || existing.finalSfdt === fStr)
+          if (mountedRef.current && (!existing || existing.finalSfdt === fStr))
             registerLocalVersionArtifacts(sessionId, {
               finalSfdt: fStr,
               changes
@@ -339,8 +405,10 @@ export function useDocxHistorySession(
         formatChangeCount = null;
       }
 
-      try {
-        await h.closeVersion(sessionId, {
+      await uploadArtifacts(
+        h,
+        sessionId,
+        {
           finalSfdtGz: await gzip(fStr),
           changesJson,
           changeCount,
@@ -348,14 +416,9 @@ export function useDocxHistorySession(
           finalSha256,
           startSha256,
           authors
-        });
-        // Uploaded: the backend row now serves these artifacts itself. Matched
-        // by snapshot so this cannot evict a newer close's registration.
-        clearLocalVersionArtifacts(sessionId, fStr);
-      } catch {
-        // Backend close endpoint unreachable: the row keeps its docx pair and
-        // views with the one-colour fallback (locally, from the registration).
-      }
+        },
+        fStr
+      );
     };
 
     const queueClose = (
@@ -381,14 +444,13 @@ export function useDocxHistorySession(
       // late close), so keep it off the click's critical path.
       const deferDiffForRestore = holdFinalDiffForRestoreRef.current;
       holdFinalDiffForRestoreRef.current = false;
-      let resolveSnapshot: (() => void) | undefined;
-      let rejectSnapshot: ((reason?: unknown) => void) | undefined;
-      if (deferDiffForRestore) {
-        restoreSnapshotRef.current = new Promise<void>((resolve, reject) => {
-          resolveSnapshot = resolve;
-          rejectSnapshot = reject;
-        });
-      }
+      // Create the release gate before persistence so a failed restore can
+      // release it too; retrying that snapshot must not strand its artifacts.
+      const diffReady = deferDiffForRestore
+        ? new Promise<void>((resolve) => {
+            releaseFinalDiffRef.current = resolve;
+          })
+        : Promise.resolve();
       scheduler.cancel();
       // Capture the closing session's diff inputs before the first await: F,
       // its author, S0 and the boundary slices all belong to THIS session, and
@@ -412,7 +474,8 @@ export function useDocxHistorySession(
       };
       // Register the closing document immediately: a restore (or prefetch) can
       // reach this row before its deferred diff/SFDT upload has even started.
-      if (fStr)
+      ownedSessions.current.add(meta.sessionId);
+      if (fStr && mountedRef.current)
         registerLocalVersionArtifacts(meta.sessionId, { finalSfdt: fStr });
       slices.clear();
       s0Ref.current = null;
@@ -432,62 +495,80 @@ export function useDocxHistorySession(
         const saveSnapshot = saveRef.current;
         const exported = exportRef.current();
         exported.catch(() => undefined);
-        await scheduler.flush();
-        await closeQueue;
-        const blob = await exported;
-        await saveSnapshot(blob, {
-          sessionId: meta.sessionId,
-          sessionStartedAt: meta.sessionStartedAt,
-          authors: meta.authors,
-          closeSession: true
+        let artifacts = Promise.resolve();
+        const result = await documentWrites.submit(async () => {
+          const blob = await exported;
+          const result = await saveSnapshot(blob, {
+            sessionId: meta.sessionId,
+            sessionStartedAt: meta.sessionStartedAt,
+            authors: meta.authors,
+            closeSession: true
+          });
+          artifacts = diffReady.then(() =>
+            queueClose(meta.sessionId, meta.authors, snap)
+          );
+          pendingArtifacts.add(artifacts);
+          artifacts
+            .then(() => {
+              setSavedAt(new Date());
+              setStatus(tracker.isOpen() ? 'dirty' : 'saved');
+              if (!failedArtifacts.size) setSaveError(null);
+            })
+            .catch(() => undefined)
+            .finally(() => pendingArtifacts.delete(artifacts));
+          return result;
         });
-      } catch {
-        rejectSnapshot?.(new Error('Document save failed'));
-        setStatus('error');
+        await artifacts;
+        return result;
+      } catch (error) {
+        if (!failedArtifacts.size) reportError(error);
         // The document PATCH is the persistence boundary. Do not resolve an
         // explicit save (or continue a restore) when those bytes were rejected.
-        throw new Error('Document save failed');
+        throw error;
       }
-      resolveSnapshot?.();
-      if (deferDiffForRestore) {
-        await new Promise<void>((resolve) => {
-          releaseFinalDiffRef.current = resolve;
-        });
-        releaseFinalDiffRef.current = null;
-      }
-      await queueClose(meta.sessionId, meta.authors, snap);
-      // Refresh the history list only after the saved diff and SFDT are ready.
-      // Otherwise a selected Current row can retain its pre-close metadata.
-      setSavedAt(new Date());
-      setStatus(tracker.isOpen() ? 'dirty' : 'saved');
     };
 
+    // A turn ending during an in-flight save must force the NEXT snapshot's
+    // checkpoint too; completing the older save cannot consume that request.
+    let requestedCheckpoint = 0;
+    let savedCheckpoint = 0;
     const scheduler = createAutosaveScheduler({
       save: async () => {
         const meta = tracker.currentMeta();
         if (!meta) return;
         const saveDocument = saveRef.current;
         const epoch = documentEpochRef.current;
-        const blob = await exportRef.current();
-        await saveDocument(blob, {
-          sessionId: meta.sessionId,
-          sessionStartedAt: meta.sessionStartedAt,
-          authors: meta.authors
+        const checkpointRequest = requestedCheckpoint;
+        const checkpoint = prepareCheckpoint(
+          checkpointRequest > savedCheckpoint
+        );
+        const exported = exportRef.current();
+        exported.catch(() => undefined);
+        await documentWrites.submit(async () => {
+          const blob = await exported;
+          return saveDocument(blob, {
+            sessionId: meta.sessionId,
+            sessionStartedAt: meta.sessionStartedAt,
+            authors: meta.authors
+          });
         });
+        if (!failedArtifacts.size) setSaveError(null);
         // Piggyback a throttled redline checkpoint on the successful autosave:
         // the PATCH persists only the docx, so a session abandoned before close
         // (reload / navigation) would otherwise store a version with NO
         // highlights. This keeps the open row's diff at most one autosave stale.
-        if (epoch === documentEpochRef.current) checkpointSession();
+        if (epoch === documentEpochRef.current) {
+          checkpoint?.();
+          savedCheckpoint = checkpointRequest;
+        }
       },
       canSave: () => {
-        const ed = editorRef.current;
-        if (!ed || loadingRef.current || readOnlyRef.current) return false;
-        if (isOpeningDocument(ed) || isAssistantWriting(ed)) return false;
+        if (!canPersist()) return false;
         return canSaveRef.current ? canSaveRef.current() : true;
       },
+      onError: reportError,
       onStatus: (s) => {
-        setStatus(s);
+        setStatus(failedArtifacts.size ? 'error' : s);
         if (s === 'saved') setSavedAt(new Date());
       }
     });
@@ -534,7 +615,7 @@ export function useDocxHistorySession(
     // final_sfdt + changes — it does NOT close the row on the backend — so
     // editing continues in the same session afterwards.
     let lastCheckpointAt = 0;
-    const checkpointSession = (force = false) => {
+    const prepareCheckpoint = (force = false): (() => void) | undefined => {
       if (!force && Date.now() - lastCheckpointAt < CHECKPOINT_MIN_INTERVAL_MS)
         return;
       const meta = tracker.currentMeta();
@@ -557,12 +638,30 @@ export function useDocxHistorySession(
         acceptance: acceptanceRef.current
       };
       lastCheckpointAt = Date.now();
+      ownedSessions.current.add(meta.sessionId);
       // Refresh the history list after the checkpoint files are uploaded. A
       // refresh on the DOCX autosave alone can read the pre-checkpoint row and
       // leave an already-selected Current version without its stepper.
-      queueClose(meta.sessionId, meta.authors, snap)
-        .then(() => setSavedAt(new Date()))
-        .catch(() => undefined);
+      return () => {
+        const pending = queueClose(meta.sessionId, meta.authors, snap);
+        pendingArtifacts.add(pending);
+        pending
+          .then(() => {
+            setSavedAt(new Date());
+            if (!failedArtifacts.size && scheduler.status() === 'saved')
+              setStatus('saved');
+          })
+          .catch(() => undefined)
+          .finally(() => pendingArtifacts.delete(pending));
+      };
+    };
+    const checkpointSession = () => {
+      if (!tracker.isOpen()) return;
+      requestedCheckpoint++;
+      // The backend requires the session's DOCX save before its artifacts.
+      // Use the normal save gate/queue and keep the editing session open.
+      scheduler.touch();
+      scheduler.flush().catch(() => undefined);
     };
 
     // After a reload the backend can have a current row containing live tracked
@@ -608,6 +707,19 @@ export function useDocxHistorySession(
 
     return {
       slices,
+      documentWrites,
+      flushArtifacts: () => Promise.all([...pendingArtifacts]),
+      retryArtifacts: async () => {
+        for (const [sessionId, retry] of [...failedArtifacts]) {
+          const next = closeQueue.then(() => {
+            if (failedArtifacts.get(sessionId) === retry) return retry();
+          });
+          closeQueue = next.catch(() => undefined);
+          await next;
+        }
+      },
+      reportError,
+      canPersist,
       scheduler,
       tracker,
       checkpointSession,
@@ -626,6 +738,7 @@ export function useDocxHistorySession(
   // was already closed (tracker.reset alone does not fire onClose in that case).
   useEffect(() => {
     documentEpochRef.current++;
+    engine.documentWrites.resetResult();
     tracker.reset();
     scheduler.cancel();
     engine.slices.clear();
@@ -721,10 +834,10 @@ export function useDocxHistorySession(
       } else {
         // An assistant turn ending no longer CLOSES the session — user and
         // assistant edits share one session (a version is cut on save / idle /
-        // restore instead). We only checkpoint here: upload the turn's redlines
-        // so they're durable, while the session stays open. Forced — a turn
-        // boundary is always worth persisting, whatever the throttle says.
-        checkpointSession(true);
+        // restore instead). Save its DOCX first, then checkpoint its redlines,
+        // while keeping the session open. Every turn bypasses the highlight
+        // throttle, but not the binding gate or ordered document-save queue.
+        checkpointSession();
       }
     });
   }, [editor, host, readOnly, checkpointSession]);
@@ -732,9 +845,12 @@ export function useDocxHistorySession(
   // Idle sessions close on their own.
   useEffect(() => {
     if (!host || readOnly) return undefined;
-    const iv = setInterval(() => tracker.checkIdle(), IDLE_CHECK_MS);
+    const iv = setInterval(() => {
+      if (engine.canPersist() && (!canSaveRef.current || canSaveRef.current()))
+        tracker.checkIdle();
+    }, IDLE_CHECK_MS);
     return () => clearInterval(iv);
-  }, [host, readOnly, tracker]);
+  }, [host, readOnly, tracker, engine]);
 
   // Finalization/signing can make the editor read-only while a retry timer is
   // armed. No further autosave is valid once that transition happens.
@@ -742,19 +858,73 @@ export function useDocxHistorySession(
     if (readOnly) scheduler.cancel();
   }, [readOnly, scheduler]);
 
-  useEffect(() => () => scheduler.cancel(), [scheduler]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      documentEpochRef.current++;
+      scheduler.cancel();
+      engine.slices.clear();
+      baselineRef.current = null;
+      s0Ref.current = null;
+      lastSnapshotRef.current = null;
+      robinRunsRef.current = [];
+      releaseFinalDiffRef.current?.();
+      releaseFinalDiffRef.current = null;
+      for (const sessionId of ownedSessions.current)
+        clearLocalVersionArtifacts(sessionId);
+      ownedSessions.current.clear();
+    };
+  }, [scheduler, engine]);
+
+  useEffect(() => {
+    const doc = featheryDoc();
+    const checkpointBeforeHide = () => {
+      if (
+        doc.visibilityState === 'hidden' &&
+        tracker.isOpen() &&
+        engine.canPersist()
+      )
+        scheduler.flush().catch(() => undefined);
+    };
+    doc.addEventListener('visibilitychange', checkpointBeforeHide);
+    return () =>
+      doc.removeEventListener('visibilitychange', checkpointBeforeHide);
+  }, [scheduler, tracker, engine]);
 
   const explicitSave = useCallback(async () => {
+    if (!tracker.isOpen() && !engine.documentWrites.pending()) {
+      await engine.flushArtifacts();
+      await engine.retryArtifacts();
+      setSaveError(null);
+      return engine.documentWrites.flush();
+    }
+    if (!engine.canPersist() || (canSaveRef.current && !canSaveRef.current()))
+      throw new DocumentPersistenceError(
+        'Wait for the current edit or binding validation to finish before saving.',
+        'blocked'
+      );
     tracker.noteExplicitSave();
-    await finalizeRef.current;
-  }, [tracker]);
+    const result = await engine.documentWrites.flush();
+    await engine.flushArtifacts();
+    await engine.retryArtifacts();
+    setSaveError(null);
+    setStatus(tracker.isOpen() ? 'dirty' : 'saved');
+    return result;
+  }, [tracker, engine]);
 
   const saveForRestore = useCallback(async () => {
-    if (!tracker.isOpen()) return;
-    holdFinalDiffForRestoreRef.current = true;
-    tracker.noteExplicitSave();
-    await restoreSnapshotRef.current;
-  }, [tracker]);
+    if (!engine.canPersist() || (canSaveRef.current && !canSaveRef.current()))
+      throw new DocumentPersistenceError(
+        'Wait for the current edit or binding validation to finish before restoring.',
+        'blocked'
+      );
+    if (tracker.isOpen()) {
+      holdFinalDiffForRestoreRef.current = true;
+      tracker.noteExplicitSave();
+    }
+    await engine.documentWrites.flush();
+  }, [tracker, engine]);
 
   const finishRestoreSave = useCallback(() => {
     const release = releaseFinalDiffRef.current;
@@ -796,6 +966,26 @@ export function useDocxHistorySession(
       baselineRef.current = acceptance.beforeSfdt;
       try {
         accept();
+        // A native resolve can stall or settle only part of a group. Confirm
+        // what actually left the document, never every revision requested by
+        // the button (that would label still-live suggestions as approved).
+        const beforeIds = new Set<string>(
+          (JSON.parse(acceptance.beforeSfdt).revisions ?? []).map(
+            (revision: any) => revision.revisionId
+          )
+        );
+        const after = JSON.parse(editorRef.current.serialize());
+        const pendingIds = new Set<string>(
+          (after.revisions ?? []).map((revision: any) => revision.revisionId)
+        );
+        const resolvedIds = acceptance.revisionIds.filter(
+          (id) => beforeIds.has(id) && !pendingIds.has(id)
+        );
+        if (!resolvedIds.length) {
+          acceptanceRef.current = null;
+          return;
+        }
+        acceptanceRef.current = { ...acceptance, revisionIds: resolvedIds };
         // Syncfusion normally emits contentChange synchronously. Keep the
         // persistence contract intact if a version emits no event here.
         if (!tracker.isOpen()) {
@@ -813,7 +1003,9 @@ export function useDocxHistorySession(
     [preservePendingCurrentVersion, tracker]
   );
 
-  const retry = useCallback(() => scheduler.touch(), [scheduler]);
+  const retry = useCallback(() => {
+    explicitSave().catch(engine.reportError);
+  }, [explicitSave, engine]);
 
   // Live equivalent of closeSession's diff, but returns the display document
   // instead of uploading. Used to show highlights for the in-progress current
@@ -873,16 +1065,32 @@ export function useDocxHistorySession(
 
   const isSessionOpen = useCallback(() => tracker.isOpen(), [tracker]);
 
-  return {
-    status,
-    savedAt,
-    onEdit,
-    save: explicitSave,
-    saveForRestore,
-    finishRestoreSave,
-    retry,
-    previewSession,
-    isSessionOpen,
-    acceptTrackedChanges
-  };
+  return useMemo(
+    () => ({
+      error: saveError,
+      status,
+      savedAt,
+      onEdit,
+      save: explicitSave,
+      saveForRestore,
+      finishRestoreSave,
+      retry,
+      previewSession,
+      isSessionOpen,
+      acceptTrackedChanges
+    }),
+    [
+      saveError,
+      status,
+      savedAt,
+      onEdit,
+      explicitSave,
+      saveForRestore,
+      finishRestoreSave,
+      retry,
+      previewSession,
+      isSessionOpen,
+      acceptTrackedChanges
+    ]
+  );
 }

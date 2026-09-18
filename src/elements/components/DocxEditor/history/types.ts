@@ -6,7 +6,7 @@ export type { AuthorKey, ChangeList, Hunk, Slice } from './sfdtDiff/types';
 /** Who made an edit. `key` is the stable identity used for colour and slice
  *  attribution (the current viewer is always 'you'); `label` is for display. */
 export interface VersionAuthor {
-  kind: 'user' | 'assistant' | 'other';
+  kind: 'user' | 'assistant';
   key: string;
   label: string;
 }
@@ -22,10 +22,12 @@ export interface LiveSessionAuthors {
 export interface DocxSaveMeta {
   sessionId: string;
   sessionStartedAt: string; // ISO 8601
-  authors: Array<{ kind: VersionAuthor['kind']; label: string }>;
+  authors: Array<{ kind: VersionAuthor['kind']; label: string; key?: string }>;
   collaboratorId?: string;
   /** True when this flush is the last save of the session. */
   closeSession?: boolean;
+  /** Local-only form write-back snapshot; never sent as history metadata. */
+  bindingValues?: Record<string, string>;
 }
 
 /** One version row as the list/detail endpoints serialize it
@@ -41,7 +43,7 @@ export interface DocxVersion {
   started_at: string;
   ended_at: string;
   closed_at: string | null;
-  authors: Array<{ kind: string; label: string }>;
+  authors: Array<{ kind: VersionAuthor['kind']; label: string; key?: string }>;
   actor_label: string;
   actor_name: string;
   restored_from: string | null;
@@ -67,7 +69,7 @@ export interface CloseVersionPayload {
   formatChangeCount: number | null;
   finalSha256: string;
   startSha256: string;
-  authors: Array<{ kind: VersionAuthor['kind']; label: string }>;
+  authors: DocxSaveMeta['authors'];
 }
 
 /**
@@ -76,6 +78,8 @@ export interface CloseVersionPayload {
  */
 export interface DocxHistoryHost {
   listVersions(): Promise<DocxVersion[]>;
+  /** Refresh signed artifact URLs after expiry. */
+  getVersion?(versionId: string): Promise<DocxVersion>;
   closeVersion(
     sessionId: string,
     payload: CloseVersionPayload

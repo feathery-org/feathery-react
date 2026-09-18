@@ -344,7 +344,14 @@ export default function HistoryPanel({
   const firstUserKey = firstUserActorKey(versions);
 
   return (
-    <div css={{ overflowY: 'auto', height: '100%', padding: '6px 8px 12px' }}>
+    <div
+      css={{
+        overflowY: 'auto',
+        height: '100%',
+        boxSizing: 'border-box',
+        padding: '6px 8px 12px'
+      }}
+    >
       {sections.map((section) => (
         <div key={section.key}>
           <div

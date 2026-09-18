@@ -22,6 +22,8 @@ import { firstUserActorKey } from './history/authorColors';
 import { useDocxHistorySession } from './history/useDocxHistorySession';
 import {
   prefetchVersionDocuments,
+  retainVersionDocuments,
+  versionDocumentKey,
   VersionDocument
 } from './history/useVersionDocument';
 import VersionViewer from './history/VersionViewer';
@@ -75,6 +77,7 @@ export interface DocxSaveResult {
 }
 
 export interface DocxEditorProps {
+  envelopeId?: string;
   /** Document to open. `buffer` when the host already fetched the bytes (e.g.
    *  an authenticated download); `url` for the component to fetch directly. */
   source?: DocxSource;
@@ -120,6 +123,8 @@ export interface DocxEditorProps {
   /** Fired with the current dirty state (true on edits, false after a save). */
   onChange?: (dirty: boolean) => void;
   onError?: (error: string) => void;
+  /** Host must await this before replacing the document. */
+  onBeforeReplaceReady?: (save: (() => Promise<unknown>) | null) => void;
   /** Persistence boundary: receives the exported .docx and, when version
    *  history is active, the session metadata to group the save into a version
    *  row. The host decides where it goes (the component never persists). */
@@ -176,12 +181,18 @@ function DocxEditor({
   onEditorReady,
   onChange,
   onError,
+  onBeforeReplaceReady,
+  envelopeId,
   onSave,
   history,
   currentUser,
   bindings
 }: DocxEditorProps) {
   const dirtyRef = useRef(false);
+  const editRevisionRef = useRef(0);
+  const snapshotRevisions = useRef(new WeakMap<Blob, number>());
+  const snapshotBindings = useRef(new WeakMap<Blob, Record<string, string>>());
+  const committedBindingsRef = useRef<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -285,6 +296,7 @@ function DocxEditor({
   // onDirty) and the section reorder, whose programmatic open() does not
   // reliably fire the gated contentChange.
   const markDirty = useCallback(() => {
+    editRevisionRef.current++;
     if (!dirtyRef.current) {
       dirtyRef.current = true;
       setDirty(true);
@@ -364,7 +376,7 @@ function DocxEditor({
     editor,
     loading,
     error,
-    exportDoc,
+    exportDoc: exportRawDoc,
     bindings: bindingsState
   } = useDocxEditor({
     source,
@@ -377,7 +389,10 @@ function DocxEditor({
     onReady,
     onEditorReady,
     onDirty: markDirty,
-    onEdit: (info) => historyOnEditRef.current?.(info),
+    onEdit: (info) => {
+      markDirty();
+      historyOnEditRef.current?.(info);
+    },
     // Ctrl/Cmd+S saves through the host instead of Syncfusion's default (which
     // downloads the raw SFDT). Runs the same gated flow as the toolbar Save.
     onSaveShortcut: () => handleSave(),
@@ -385,12 +400,26 @@ function DocxEditor({
     bindings: bindings
       ? {
           ...bindings,
+          onFieldValues: (values) => {
+            committedBindingsRef.current = values;
+            bindings.onFieldValues?.(values);
+          },
           confirmTableDelete,
           onLockedEdit: handleLockedEdit,
           onLockedEditResolved: handleLockedEditResolved
         }
       : bindings
   });
+
+  const exportDoc = () => {
+    const revision = editRevisionRef.current;
+    const values = { ...committedBindingsRef.current };
+    return exportRawDoc().then((blob) => {
+      snapshotRevisions.current.set(blob, revision);
+      snapshotBindings.current.set(blob, values);
+      return blob;
+    });
+  };
 
   // The review surface follows the document: a change set arriving presents the
   // Suggested changes panel, and resolving the last edit closes it again. Both
@@ -400,7 +429,9 @@ function DocxEditor({
   useReviewPanelPresentation({
     activePanel,
     count: changesCount,
-    reviewChanges: !!reviewChanges,
+    reviewChanges:
+      !!reviewChanges &&
+      !(activePanel === 'history' && viewingVersion?.restored_from),
     setActivePanel
   });
 
@@ -429,6 +460,8 @@ function DocxEditor({
    * document carries an invalid binding config - not that content is missing.
    */
   const exportBlockMessage = (): string | null => {
+    if (bindings?.enabled && !bindingsState.ready)
+      return 'Document bindings are still loading. Please wait before saving.';
     if (!bindingsState.ready) return null;
     if (bindingsState.commitForSave()) return null;
     const detail = bindingsState.diagnostics
@@ -519,15 +552,23 @@ function DocxEditor({
   // they hand back to the user.
   const saveCurrentDocument = async (blob: Blob, meta?: DocxSaveMeta) => {
     if (!onSave) return;
-    setSaving(true);
+    const foreground = !meta || meta.closeSession;
+    if (foreground) setSaving(true);
     try {
-      const result = (await onSave(blob, meta)) as DocxSaveResult | undefined;
-      dirtyRef.current = false;
-      setDirty(false);
-      onChange?.(false);
+      const result = (await onSave(
+        blob,
+        meta
+          ? { ...meta, bindingValues: snapshotBindings.current.get(blob) }
+          : meta
+      )) as DocxSaveResult | undefined;
+      if (snapshotRevisions.current.get(blob) === editRevisionRef.current) {
+        dirtyRef.current = false;
+        setDirty(false);
+        onChange?.(false);
+      }
       return result;
     } finally {
-      setSaving(false);
+      if (foreground) setSaving(false);
     }
   };
 
@@ -539,13 +580,42 @@ function DocxEditor({
     readOnly,
     host: history ?? null,
     currentUser: currentUser ?? DEFAULT_CURRENT_USER,
+    envelopeId,
     openNonce,
     exportDoc,
-    save: async (blob, meta) => {
-      await saveCurrentDocument(blob, meta);
-    }
+    save: saveCurrentDocument,
+    canSave: () =>
+      !bindings?.enabled ||
+      (bindingsState.ready && bindingsState.commitForSave())
   });
   historyOnEditRef.current = historySession.onEdit;
+  useEffect(
+    () => (history ? retainVersionDocuments(history) : undefined),
+    [history]
+  );
+
+  const beforeReplaceRef = useRef<(() => Promise<unknown>) | undefined>(
+    undefined
+  );
+  beforeReplaceRef.current = async () => {
+    if (readOnly) return;
+    const block = exportBlockMessage();
+    if (block) throw new Error(block);
+    if (history) {
+      let result: unknown;
+      do {
+        result = await historySession.save();
+      } while (historySession.isSessionOpen());
+      return result;
+    }
+    if (dirtyRef.current) return saveCurrentDocument(await exportDoc());
+  };
+  useEffect(() => {
+    onBeforeReplaceReady?.(
+      () => beforeReplaceRef.current?.() ?? Promise.resolve()
+    );
+    return () => onBeforeReplaceReady?.(null);
+  }, [onBeforeReplaceReady]);
 
   // Opening the history rail is a good idle point to resolve its recent,
   // immutable snapshots. This cache only contains rendered preview data; live
@@ -672,7 +742,12 @@ function DocxEditor({
   useEffect(() => {
     if (!viewingVersion?.is_current) return;
     const saved = historyVersions.find((v) => v.id === viewingVersion.id);
-    if (!saved?.final_sfdt || (saved === viewingVersion && !liveDoc)) return;
+    if (
+      !saved?.final_sfdt ||
+      (versionDocumentKey(saved) === versionDocumentKey(viewingVersion) &&
+        !liveDoc)
+    )
+      return;
     // A healthy live preview is fresher than an in-progress checkpoint. A
     // degraded plain preview should yield to saved tracked changes as soon as
     // the refreshed row contains them.
@@ -702,8 +777,8 @@ function DocxEditor({
   // deletion), and selectRevision scrolls the group into view (skipGroupSelect
   // keeps it on this exact edit; the native pane it would open is hidden by
   // closeTrackedChangeReviewPane's rule).
-  // The viewer editor now persists across version switches (keyed only by
-  // highlight mode), so onViewerEditor no longer fires per version. Reset the
+  // The viewer persists across version switches and highlight toggles, so
+  // onViewerEditor no longer fires per version. Reset the
   // prev/next stepping cursor whenever the shown version (or highlight mode)
   // changes so stepping starts from the top of the newly-opened document.
   useEffect(() => {
@@ -1051,6 +1126,22 @@ function DocxEditor({
         background: '#fff'
       }}
     >
+      {historySession.error && (
+        <div
+          role='alert'
+          css={{
+            padding: '8px 12px',
+            background: '#fff4e5',
+            color: '#7a4100',
+            fontSize: 13
+          }}
+        >
+          {historySession.error}{' '}
+          <button type='button' onClick={historySession.retry}>
+            Retry save
+          </button>
+        </div>
+      )}
       {/* Reserve the toolbar's space until it mounts (it needs `editor`), so its
           arrival doesn't shrink the editor pane mid-load. */}
       {!editor && <div css={{ height: TOOLBAR_HEIGHT, flex: '0 0 auto' }} />}
@@ -1162,12 +1253,6 @@ function DocxEditor({
           {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
           {history && viewingVersion && (
             <VersionViewer
-              // Keyed only by highlight mode, NOT by version id, so switching
-              // versions REUSES this editor (it just re-opens the new document)
-              // instead of tearing down and rebuilding the heavy Syncfusion
-              // container each time — the switch is far faster. Toggling
-              // highlights still remounts so it re-opens with/without the marks.
-              key={`hl:${highlightsOn}`}
               host={history}
               version={viewingVersion}
               firstUserKey={firstUserKey}
@@ -1183,7 +1268,7 @@ function DocxEditor({
               onDisplayedVersion={setDisplayedVersion}
               onViewerEditor={(ed) => {
                 viewerEditorRef.current = ed;
-                // Fresh editor (new version / highlight toggle): restart stepping.
+                // Fresh editor (opening history): restart stepping.
                 changeStepRef.current = -1;
               }}
             />

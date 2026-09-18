@@ -208,8 +208,33 @@ export function flattenSfdt(sfdt: any): FlatDoc {
   const blocks: FlatBlock[] = [];
   (sfdt?.sections ?? []).forEach((section: any, s: number) => {
     flattenBlocks(section.blocks ?? [], [s, 'blocks'], undefined, null, blocks);
+    for (const [name, region] of Object.entries(section.headersFooters ?? {})) {
+      flattenBlocks(
+        (region as any)?.blocks ?? [],
+        [s, 'headersFooters', name, 'blocks'],
+        undefined,
+        null,
+        blocks
+      );
+    }
   });
   return { blocks };
+}
+
+/** Body/header/footer are separate document regions, never alignment peers. */
+export function regionKey(path: BlockPath): string {
+  return JSON.stringify(path.slice(0, path[1] === 'headersFooters' ? 3 : 1));
+}
+
+export function visitDocumentRegions(
+  doc: any,
+  visit: (blocks: any[]) => void
+): void {
+  for (const section of doc?.sections ?? []) {
+    visit(section?.blocks ?? []);
+    for (const region of Object.values(section?.headersFooters ?? {}))
+      visit((region as any)?.blocks ?? []);
+  }
 }
 
 /** Paragraph count of a table, counted the way flattenSfdt flattens it (cell
@@ -374,14 +399,33 @@ export function normalizeForDiff(
 
   doc.sections = (doc.sections ?? []).map((section: any) => ({
     ...section,
-    blocks: walkBlocks(section.blocks ?? [])
+    blocks: walkBlocks(section.blocks ?? []),
+    ...(section.headersFooters
+      ? {
+          headersFooters: Object.fromEntries(
+            Object.entries(section.headersFooters).map(([key, region]) => [
+              key,
+              {
+                ...(region as any),
+                blocks: walkBlocks((region as any)?.blocks ?? [])
+              }
+            ])
+          )
+        }
+      : {})
   }));
   delete doc.revisions;
   return doc;
 }
 
-/** Deterministic content hash of a normalised document (FNV-1a, 32-bit x2). */
+/** Legacy wire fields call this sha256, but it is a non-cryptographic
+ * FNV-1a x2 fingerprint. Keep UTF-16 code-unit ordering for stored versions. */
 export function contentHash(sfdt: any): string {
   const s = JSON.stringify(sfdt);
-  return hash32(s) + hash32(s.split('').reverse().join(''));
+  let reverse = 0x811c9dc5;
+  for (let i = s.length - 1; i >= 0; i--) {
+    reverse ^= s.charCodeAt(i);
+    reverse = Math.imul(reverse, 0x01000193) >>> 0;
+  }
+  return hash32(s) + reverse.toString(16).padStart(8, '0');
 }

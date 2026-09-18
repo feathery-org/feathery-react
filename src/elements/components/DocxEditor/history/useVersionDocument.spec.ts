@@ -5,6 +5,7 @@ import {
   clearLocalVersionArtifacts,
   prefetchVersionDocuments,
   registerLocalVersionArtifacts,
+  retainVersionDocuments,
   useVersionDocument
 } from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
@@ -48,6 +49,78 @@ const host = (over: Partial<DocxHistoryHost> = {}): DocxHistoryHost => ({
 });
 
 describe('useVersionDocument', () => {
+  it('does not refetch Current when only row object identity and signatures change', async () => {
+    const h = host({
+      fetchVersionFile: jest
+        .fn()
+        .mockResolvedValue(new TextEncoder().encode('{}').buffer)
+    });
+    const row = version({
+      is_current: true,
+      final_sfdt: 'https://files.test/current?signature=one'
+    });
+    const view = renderHook(({ selected }) => useVersionDocument(h, selected), {
+      initialProps: { selected: row }
+    });
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    view.rerender({
+      selected: {
+        ...row,
+        final_sfdt: 'https://files.test/current?signature=two'
+      }
+    });
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases one editor’s cache without clearing another editor’s versions', async () => {
+    const bytes = new TextEncoder().encode('{}').buffer;
+    const first = host({
+      fetchVersionFile: jest.fn().mockResolvedValue(bytes)
+    });
+    const second = host({
+      fetchVersionFile: jest.fn().mockResolvedValue(bytes)
+    });
+    const releaseFirst = retainVersionDocuments(first);
+    const releaseSecond = retainVersionDocuments(second);
+    const row = version({ final_sfdt: 'file' });
+    await prefetchVersionDocuments(first, [row]);
+    await prefetchVersionDocuments(second, [row]);
+    releaseFirst();
+    await prefetchVersionDocuments(first, [row]);
+    await prefetchVersionDocuments(second, [row]);
+    expect(first.fetchVersionFile).toHaveBeenCalledTimes(2);
+    expect(second.fetchVersionFile).toHaveBeenCalledTimes(1);
+    releaseSecond();
+  });
+
+  it('does not retain a single preview larger than the byte budget', async () => {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({ text: 'x'.repeat(9 * 1024 * 1024) })
+    ).buffer;
+    const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(bytes) });
+    const row = version({ final_sfdt: 'large' });
+    await prefetchVersionDocuments(h, [row]);
+    await prefetchVersionDocuments(h, [row]);
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(2);
+  });
+  it('refreshes an expired artifact URL once through the version detail endpoint', async () => {
+    const stale = version({ final_sfdt: 'expired' });
+    const getVersion = jest
+      .fn()
+      .mockResolvedValue({ ...stale, final_sfdt: 'fresh' });
+    const fetchVersionFile = jest
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Expired'), { status: 403 })
+      )
+      .mockResolvedValue(new TextEncoder().encode('{"sfdt":"fresh"}').buffer);
+    const h = host({ getVersion, fetchVersionFile });
+    const { result } = renderHook(() => useVersionDocument(h, stale));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.sfdt).toBe('{"sfdt":"fresh"}');
+    expect(getVersion).toHaveBeenCalledTimes(1);
+    expect(fetchVersionFile).toHaveBeenLastCalledWith('fresh');
+  });
   // Resolved versions are cached module-wide; clear it so each case starts from
   // a real fetch rather than a prior case's result.
   beforeEach(() => __clearVersionDocumentCache());

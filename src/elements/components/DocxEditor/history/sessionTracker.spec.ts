@@ -105,6 +105,20 @@ describe('createSessionTracker', () => {
     ]);
   });
 
+  it('preserves distinct custom identities even when their labels match', () => {
+    const { tracker } = make();
+    tracker.noteEdit({
+      kind: 'user',
+      key: 'alice@example.com',
+      label: 'Editor'
+    });
+    tracker.noteEdit({ kind: 'user', key: 'bob@example.com', label: 'Editor' });
+    expect(tracker.currentMeta()!.authors).toEqual([
+      { kind: 'user', key: 'alice@example.com', label: 'Editor' },
+      { kind: 'user', key: 'bob@example.com', label: 'Editor' }
+    ]);
+  });
+
   it('closes on turn end, explicit save, and reset', () => {
     for (const [act, reason] of [
       ['noteTurnEnd', 'turn_end'],

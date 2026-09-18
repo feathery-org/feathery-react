@@ -13,6 +13,7 @@ import { populateVersionBindings } from './populateVersionBindings';
 import { normalizeForDiff } from './sfdtDiff';
 import { useVersionDocument, VersionDocument } from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
+import { withDocumentDeadline } from '../../../../utils/documentPersistence';
 
 const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -28,6 +29,34 @@ const acceptedSfdt = (sfdt: string): string => {
     );
   } catch {
     return sfdt;
+  }
+};
+
+// SFDT opens lay out synchronously but select the document start and paint that
+// viewport. Replace the content and repaint at the reader's position in the
+// same task, before the browser can show a blank canvas or the first page.
+// Do not restore selection offsets: accepting deletions changes those offsets.
+const preservePreviewViewport = (viewer: any, open: () => void): void => {
+  const helper = viewer.documentHelper;
+  const container = helper?.viewerContainer;
+  if (!container) return open();
+  const { scrollTop, scrollLeft } = container;
+  const scrollToPosition = helper.scrollToPosition;
+  const skipScrollToPosition = helper.skipScrollToPosition;
+  helper.scrollToPosition = () => undefined;
+  try {
+    open();
+  } finally {
+    try {
+      container.scrollTop = scrollTop;
+      container.scrollLeft = scrollLeft;
+      // Also refresh Syncfusion's virtualized canvas now, not in the next
+      // scroll event / its deferred 50ms layout pass.
+      viewer.viewer?.updateScrollBars?.();
+    } finally {
+      helper.scrollToPosition = scrollToPosition;
+      helper.skipScrollToPosition = skipScrollToPosition;
+    }
   }
 };
 
@@ -67,9 +96,8 @@ interface Props {
   headers?: Record<string, string>[];
   /** Stable identity of this document's first human editor (orange). */
   firstUserKey?: string;
-  /** Show tracked-change highlights (default true). Off opens the version with
-   *  changes accepted (plain final state). The parent keys the viewer on this,
-   *  so toggling remounts and re-opens. */
+  /** Show tracked-change highlights (default true). Off opens the accepted
+   *  final state in the same viewer, preserving its scroll position. */
   highlightsOn?: boolean;
   /** A ready-resolved document to open directly, bypassing the version fetch.
    *  Used for the in-progress current version, which has no stored files yet:
@@ -143,6 +171,7 @@ export default function VersionViewer({
   // lays out at the right scale instead of appearing zoomed in.
   useEffect(() => {
     let cancelled = false;
+    let cancelCreation: (() => void) | undefined;
     (async () => {
       const ej = await waitForEj();
       loadStyles();
@@ -157,9 +186,27 @@ export default function VersionViewer({
       });
       // Wait until Syncfusion finishes creating the inner DocumentEditor before
       // touching it — opening a doc before `created` leaves a blank default.
-      await new Promise<void>((resolve) => {
-        container.addEventListener('created', () => resolve());
-        container.appendTo(hostElRef.current);
+      containerRef.current = container;
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(
+          () => finish(new Error('Version viewer creation timed out')),
+          20_000
+        );
+        const finish = (error?: Error) => {
+          clearTimeout(timer);
+          container.removeEventListener?.('created', created);
+          cancelCreation = undefined;
+          if (error) reject(error);
+          else resolve();
+        };
+        const created = () => finish();
+        cancelCreation = () => finish(new Error('Version viewer closed'));
+        container.addEventListener('created', created);
+        try {
+          container.appendTo(hostElRef.current);
+        } catch (error) {
+          finish(error as Error);
+        }
       });
       if (cancelled) {
         try {
@@ -186,9 +233,19 @@ export default function VersionViewer({
       editorRef.current = ed;
       onViewerEditorRef.current?.(ed);
       setEditorReady(true);
-    })();
+    })().catch(() => {
+      if (cancelled) return;
+      try {
+        containerRef.current?.destroy();
+      } catch {
+        /* partially created */
+      }
+      containerRef.current = null;
+      setPhase('error');
+    });
     return () => {
       cancelled = true;
+      cancelCreation?.();
       onViewerEditorRef.current?.(null);
       try {
         if (zoomHandlerRef.current)
@@ -204,8 +261,7 @@ export default function VersionViewer({
       editorRef.current = null;
       zoomHandlerRef.current = null;
     };
-    // serviceUrl/headers are stable for a given mount (the parent keys us by
-    // version id), so the editor is created exactly once.
+    // serviceUrl/headers are stable while history is open, so create once.
   }, []);
 
   useEffect(() => {
@@ -223,6 +279,7 @@ export default function VersionViewer({
   // and paints the wrong (still-unpopulated) document over it.
   const openSeqRef = useRef(0);
   const openChainRef = useRef<Promise<void>>(Promise.resolve());
+  const displayedVersionIdRef = useRef<string | null>(null);
 
   // Open the resolved document once both the editor and the bytes are ready.
   useEffect(() => {
@@ -247,12 +304,15 @@ export default function VersionViewer({
             // doc and hide deletions); the custom renderer overrides Syncfusion's
             // default track-change styling with our washes, and we keep the
             // Changes/review pane shut so no tracked-change panel appears.
-            installRevisionHighlightRendering(viewer, (author) =>
-              colorForRevisionAuthor(
-                author,
-                versionActorKeyRef.current,
-                firstUserKeyRef.current
-              )
+            installRevisionHighlightRendering(
+              viewer,
+              (author) =>
+                colorForRevisionAuthor(
+                  author,
+                  versionActorKeyRef.current,
+                  firstUserKeyRef.current
+                ),
+              { showPendingOutline: true }
             );
             viewer.showRevisions = true;
             closeTrackedChangeReviewPane();
@@ -262,16 +322,37 @@ export default function VersionViewer({
         } else {
           viewer.showRevisions = false;
         }
-        const loaded = waitForDocumentLoad(viewer);
+        let loaded: Promise<boolean>;
         if (doc.sfdt) {
-          viewer.open(showHighlights ? doc.sfdt : acceptedSfdt(doc.sfdt));
+          loaded = waitForDocumentLoad(viewer);
+          const sfdt = showHighlights ? doc.sfdt : acceptedSfdt(doc.sfdt);
+          if (displayedVersionIdRef.current === version.id) {
+            preservePreviewViewport(viewer, () => viewer.open(sfdt));
+          } else {
+            viewer.open(sfdt);
+          }
         } else if (doc.docxUrl) {
           // The import result still holds raw binding tokens until the populate
           // step below reopens it — hide the pane so they never paint.
           setPhase('loading');
-          const res = await fetch(doc.docxUrl, { cache: 'no-store' });
-          const blob = new Blob([await res.arrayBuffer()], { type: DOCX_MIME });
-          await viewer.openAsync(blob);
+          let bytes: ArrayBuffer;
+          try {
+            bytes = await host.fetchVersionFile(doc.docxUrl);
+          } catch (error) {
+            if (
+              !host.getVersion ||
+              ![403, 404].includes((error as any)?.status)
+            )
+              throw error;
+            const fresh = await host.getVersion(version.id);
+            const url = fresh.editor_file ?? fresh.file;
+            if (!url) throw error;
+            bytes = await host.fetchVersionFile(url);
+          }
+          if (cancelled) return;
+          const blob = new Blob([bytes], { type: DOCX_MIME });
+          loaded = waitForDocumentLoad(viewer);
+          await withDocumentDeadline(() => viewer.openAsync(blob));
         } else {
           setPhase('error');
           return;
@@ -322,6 +403,7 @@ export default function VersionViewer({
           | HTMLElement
           | undefined;
         if (container) container.style.overflowAnchor = 'none';
+        displayedVersionIdRef.current = version.id;
         setPhase('ready');
         onMetaRef.current?.({
           editCount: isRestored ? undefined : doc.editCount,

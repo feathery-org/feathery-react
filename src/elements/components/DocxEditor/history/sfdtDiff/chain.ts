@@ -13,6 +13,7 @@ import {
   fmtKeyOf,
   formatDelta,
   identityOf,
+  regionKey,
   TOKEN_CHAR
 } from './ir';
 import { patienceAlign, similarity, wordDiff } from './lcs';
@@ -86,12 +87,13 @@ function spliceBlock(
   block: WBlock,
   next: FlatBlock,
   author: AuthorKey,
-  includeFormatting: boolean
+  includeFormatting: boolean,
+  checkBudget?: () => void
 ): void {
   const oldAccepted = acceptedChars(block);
   const oldText = oldAccepted.map((c) => c.ch).join('');
   const newChars = toWChars(next);
-  const ops = wordDiff(oldText, next.text);
+  const ops = wordDiff(oldText, next.text, checkBudget);
 
   // Deleted characters stay in the stream (marked) in their original order;
   // we walk the old accepted stream and the new stream in parallel.
@@ -214,12 +216,17 @@ export function applySlice(
   working: Working,
   slice: FlatDoc,
   author: AuthorKey,
-  includeFormatting = true
+  includeFormatting = true,
+  checkBudget?: () => void
 ): void {
   const live = working.blocks.filter((b) => !b.delBlock);
-  const oldKeys = live.map((b) => identityOf(acceptedText(b)));
-  const newKeys = slice.blocks.map((b) => identityOf(b.text));
-  const pairs = patienceAlign(oldKeys, newKeys);
+  const oldKeys = live.map(
+    (b) => `${regionKey(b.path)}:${identityOf(acceptedText(b))}`
+  );
+  const newKeys = slice.blocks.map(
+    (b) => `${regionKey(b.path)}:${identityOf(b.text)}`
+  );
+  const pairs = patienceAlign(oldKeys, newKeys, checkBudget);
 
   const nextBlocks: WBlock[] = [];
   let li = 0; // index into live
@@ -244,15 +251,17 @@ export function applySlice(
     let oi = 0;
     let nj = 0;
     while (oi < olds.length || nj < news.length) {
+      checkBudget?.();
       const o = olds[oi];
       const n = news[nj];
       if (
         o &&
         n &&
+        regionKey(o.path) === regionKey(n.path) &&
         similarity(acceptedText(o), n.text) >= SIMILARITY_THRESHOLD
       ) {
         carryDeletedUpTo(o);
-        spliceBlock(o, n, author, includeFormatting);
+        spliceBlock(o, n, author, includeFormatting, checkBudget);
         nextBlocks.push(o);
         wi++;
         oi++;
@@ -273,10 +282,11 @@ export function applySlice(
   };
 
   for (const p of pairs) {
+    checkBudget?.();
     handleGap(p.a, p.b);
     const o = live[p.a];
     carryDeletedUpTo(o);
-    spliceBlock(o, slice.blocks[p.b], author, includeFormatting);
+    spliceBlock(o, slice.blocks[p.b], author, includeFormatting, checkBudget);
     nextBlocks.push(o);
     wi++;
     li = p.a + 1;

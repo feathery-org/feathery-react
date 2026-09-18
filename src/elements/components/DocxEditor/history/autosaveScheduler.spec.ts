@@ -55,6 +55,74 @@ function deferred() {
 }
 
 describe('createAutosaveScheduler', () => {
+  it('ignores a cancelled request failure after a new session resumes', async () => {
+    const clock = makeClock();
+    const old = deferred();
+    const onError = jest.fn();
+    const save = jest
+      .fn()
+      .mockImplementationOnce(() => old.promise)
+      .mockResolvedValue(undefined);
+    const scheduler = createAutosaveScheduler({
+      save,
+      onError,
+      canSave: () => true,
+      ...clock
+    });
+    scheduler.touch();
+    await clock.advance(AUTOSAVE_IDLE_MS);
+    scheduler.cancel();
+    scheduler.touch();
+    old.reject(new Error('old document failed'));
+    await clock.drain();
+    await clock.advance(AUTOSAVE_IDLE_MS);
+    expect(onError).not.toHaveBeenCalled();
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops transient retries after the ceiling and resumes only on explicit retry', async () => {
+    const clock = makeClock();
+    const save = jest.fn().mockRejectedValue(new Error('offline'));
+    const scheduler = createAutosaveScheduler({
+      save,
+      canSave: () => true,
+      maxAttempts: 3,
+      ...clock
+    });
+    scheduler.touch();
+    await clock.advance(200_000);
+    scheduler.touch();
+    await clock.advance(200_000);
+    expect(save).toHaveBeenCalledTimes(3);
+    save.mockResolvedValue(undefined);
+    scheduler.retry();
+    await clock.advance(0);
+    expect(save).toHaveBeenCalledTimes(4);
+    expect(scheduler.status()).toBe('saved');
+  });
+  it('rejects a blocked explicit flush instead of leaving its caller waiting', async () => {
+    const clock = makeClock();
+    const scheduler = createAutosaveScheduler({
+      save: async () => undefined,
+      canSave: () => false,
+      ...clock
+    });
+    scheduler.touch();
+    let outcome = 'waiting';
+    scheduler.flush().then(
+      () => {
+        outcome = 'saved';
+      },
+      () => {
+        outcome = 'blocked';
+      }
+    );
+    await clock.drain();
+    expect(outcome).toBe('blocked');
+    expect(scheduler.status()).toBe('blocked');
+    scheduler.cancel();
+  });
+
   it('saves after the idle window, not before', async () => {
     const clock = makeClock();
     const save = jest.fn().mockResolvedValue(undefined);
@@ -74,6 +142,34 @@ describe('createAutosaveScheduler', () => {
     await clock.advance(1);
     expect(save).toHaveBeenCalledTimes(1);
     expect(s.status()).toBe('saved');
+  });
+
+  it('cancellation releases a pending flush and prevents a late failure retry', async () => {
+    const clock = makeClock();
+    const request = deferred();
+    const save = jest.fn(() => request.promise);
+    const scheduler = createAutosaveScheduler({
+      save,
+      canSave: () => true,
+      ...clock
+    });
+    scheduler.touch();
+    let outcome = 'waiting';
+    scheduler.flush().then(
+      () => {
+        outcome = 'saved';
+      },
+      () => {
+        outcome = 'cancelled';
+      }
+    );
+    scheduler.cancel();
+    await clock.drain();
+    expect(outcome).toBe('cancelled');
+    request.reject(new Error('offline'));
+    await clock.drain();
+    await clock.advance(100_000);
+    expect(save).toHaveBeenCalledTimes(1);
   });
 
   it('resets the idle window on each edit but saves by the max interval', async () => {
@@ -173,6 +269,25 @@ describe('createAutosaveScheduler', () => {
     await clock.advance(1);
     expect(save).toHaveBeenCalledTimes(2);
     expect(s.status()).toBe('saved');
+  });
+
+  it('does not retry a permanent server rejection', async () => {
+    const clock = makeClock();
+    const save = jest.fn().mockRejectedValue(
+      Object.assign(new Error('Session is no longer current'), {
+        status: 400
+      })
+    );
+    const scheduler = createAutosaveScheduler({
+      save,
+      canSave: () => true,
+      ...clock
+    });
+    scheduler.touch();
+    await clock.advance(200_000);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(scheduler.status()).toBe('error');
+    scheduler.cancel();
   });
 
   it('flush saves immediately and resolves when the save settles', async () => {

@@ -16,6 +16,7 @@ import {
   normalizeForDiff
 } from './sfdtDiff/index';
 import { DocxHistoryHost, DocxVersion } from './types';
+import { parseChangeList } from './validation';
 
 export interface VersionDocument {
   loading: boolean;
@@ -43,24 +44,59 @@ export interface VersionDocument {
 // Bounded to the most-recently-used few so memory stays flat on long sessions.
 type ResolvedVersion = Omit<VersionDocument, 'loading'>;
 const CACHE_MAX = 8;
+const CACHE_BYTES_MAX = 16 * 1024 * 1024;
 const versionCache = new Map<string, ResolvedVersion>();
 const resolveInFlight = new Map<string, Promise<ResolvedVersion>>();
+const hostScopes = new WeakMap<
+  DocxHistoryHost,
+  { id: number; users: number; epoch: number }
+>();
+let nextHostId = 0;
+const scopeFor = (host: DocxHistoryHost) => {
+  let scope = hostScopes.get(host);
+  if (!scope) {
+    scope = { id: ++nextHostId, users: 0, epoch: 0 };
+    hostScopes.set(host, scope);
+  }
+  return scope;
+};
 
-function cacheKey(version: DocxVersion): string {
+/** Own cache lifetime at the editing surface, not at each preview selection. */
+export function retainVersionDocuments(host: DocxHistoryHost): () => void {
+  const scope = scopeFor(host);
+  scope.users++;
+  return () => {
+    if (--scope.users > 0) return;
+    scope.epoch++;
+    for (const key of versionCache.keys())
+      if (key.startsWith(`${scope.id}:`)) versionCache.delete(key);
+    for (const key of resolveInFlight.keys())
+      if (key.startsWith(`${scope.id}:`)) resolveInFlight.delete(key);
+  };
+}
+
+export function versionDocumentKey(version: DocxVersion): string {
   // A closed row should never change, but including the artifact URLs prevents
   // an accidental id reuse or refreshed serializer payload from serving bytes
   // for a different immutable object.
   return [
     version.id,
+    version.session_id,
+    version.ended_at,
+    version.closed_at,
+    version.is_current,
     version.final_sha256,
     version.change_count,
     version.format_change_count,
-    version.final_sfdt ?? '',
-    version.changes ?? '',
-    version.editor_file ?? '',
-    version.file ?? ''
+    (version.final_sfdt ?? '').split('?')[0],
+    (version.changes ?? '').split('?')[0],
+    (version.editor_file ?? '').split('?')[0],
+    (version.file ?? '').split('?')[0]
   ].join('|');
 }
+
+const cacheKey = (host: DocxHistoryHost, version: DocxVersion) =>
+  `${scopeFor(host).id}:${versionDocumentKey(version)}`;
 
 function cacheGet(key: string): ResolvedVersion | undefined {
   const hit = versionCache.get(key);
@@ -72,8 +108,14 @@ function cacheGet(key: string): ResolvedVersion | undefined {
   return hit;
 }
 function cacheSet(key: string, value: ResolvedVersion): void {
+  versionCache.delete(key);
   versionCache.set(key, value);
-  if (versionCache.size > CACHE_MAX) {
+  const bytes = () =>
+    [...versionCache.values()].reduce(
+      (total, entry) => total + (entry.sfdt?.length ?? 0) * 2,
+      0
+    );
+  while (versionCache.size > CACHE_MAX || bytes() > CACHE_BYTES_MAX) {
     const oldest = versionCache.keys().next().value as string | undefined;
     if (oldest !== undefined) versionCache.delete(oldest);
   }
@@ -103,7 +145,18 @@ export function registerLocalVersionArtifacts(
 ): void {
   localArtifacts.delete(sessionId);
   localArtifacts.set(sessionId, artifacts);
-  if (localArtifacts.size > LOCAL_ARTIFACTS_MAX) {
+  const bytes = () =>
+    [...localArtifacts.values()].reduce(
+      (total, entry) =>
+        total +
+        entry.finalSfdt.length * 2 +
+        (entry.changes ? JSON.stringify(entry.changes).length * 2 : 0),
+      0
+    );
+  while (
+    localArtifacts.size > LOCAL_ARTIFACTS_MAX ||
+    bytes() > CACHE_BYTES_MAX
+  ) {
     const oldest = localArtifacts.keys().next().value as string | undefined;
     if (oldest !== undefined) localArtifacts.delete(oldest);
   }
@@ -206,7 +259,8 @@ function buildFromFinal(
 
 async function resolveVersionDocument(
   host: DocxHistoryHost,
-  version: DocxVersion
+  version: DocxVersion,
+  refreshed = false
 ): Promise<ResolvedVersion> {
   try {
     if (version.final_sfdt) {
@@ -216,10 +270,18 @@ async function resolveVersionDocument(
       let changes: ChangeList | null = null;
       if (version.changes && version.change_count != null) {
         try {
-          changes = JSON.parse(
-            await gunzip(await host.fetchVersionFile(version.changes))
+          changes = parseChangeList(
+            JSON.parse(
+              await gunzip(await host.fetchVersionFile(version.changes))
+            )
           );
-        } catch {
+        } catch (error) {
+          if (
+            !refreshed &&
+            host.getVersion &&
+            [403, 404].includes((error as any)?.status)
+          )
+            throw error;
           changes = null;
         }
       }
@@ -229,7 +291,22 @@ async function resolveVersionDocument(
     const docxUrl = version.editor_file ?? version.file;
     if (!docxUrl) throw new Error('version has no document');
     return { error: false, docxUrl, degraded: true };
-  } catch {
+  } catch (error) {
+    if (
+      !refreshed &&
+      host.getVersion &&
+      [403, 404].includes((error as any)?.status)
+    ) {
+      try {
+        return await resolveVersionDocument(
+          host,
+          await host.getVersion(version.id),
+          true
+        );
+      } catch {
+        /* one recovery attempt only */
+      }
+    }
     return { error: true, degraded: true };
   }
 }
@@ -249,7 +326,9 @@ async function resolveAndCache(
     }
   }
   if (version.is_current) return resolveVersionDocument(host, version);
-  const key = cacheKey(version);
+  const key = cacheKey(host, version);
+  const scope = scopeFor(host);
+  const epoch = scope.epoch;
   const cached = cacheGet(key);
   if (cached) return cached;
   const pending = resolveInFlight.get(key);
@@ -258,7 +337,11 @@ async function resolveAndCache(
     resolveInFlight.delete(key);
     // A failed diff fetch is retryable. Caching the plain fallback would make
     // one network error hide authors/highlights for the rest of the page visit.
-    if (!result.error && (!result.degraded || !version.changes))
+    if (
+      scope.epoch === epoch &&
+      !result.error &&
+      (!result.degraded || !version.changes)
+    )
       cacheSet(key, result);
     return result;
   });
@@ -291,8 +374,12 @@ export function useVersionDocument(
     degraded: true
   });
   const reqId = useRef(0);
+  const latestVersion = useRef(version);
+  latestVersion.current = version;
+  const documentKey = version ? versionDocumentKey(version) : '';
 
   useEffect(() => {
+    const version = latestVersion.current;
     const id = ++reqId.current;
     if (!host || !version) {
       setState({ loading: false, error: false, degraded: true });
@@ -303,7 +390,7 @@ export function useVersionDocument(
     const cached =
       version.is_current || localFor(version)
         ? undefined
-        : cacheGet(cacheKey(version));
+        : cacheGet(cacheKey(host, version));
     if (cached) {
       setState({ loading: false, ...cached });
       return;
@@ -320,7 +407,7 @@ export function useVersionDocument(
     return () => {
       reqId.current++;
     };
-  }, [host, version]);
+  }, [host, documentKey]);
 
   return state;
 }

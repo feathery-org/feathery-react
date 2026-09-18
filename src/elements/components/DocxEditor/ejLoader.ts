@@ -2,7 +2,7 @@
 // read-only version viewer can wait for the engine and inject styles without
 // pulling in the editor hook.
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
-import { EJ2_STYLE_URLS } from './constants';
+import { EJ2_STYLE_INTEGRITY, EJ2_STYLE_URLS } from './constants';
 
 // Inject the Syncfusion theme CSS once (deduped across all editor instances).
 const LOADED_STYLES = new Set<string>();
@@ -15,6 +15,8 @@ export function loadStyles(): void {
     const link = doc.createElement('link');
     link.rel = 'stylesheet';
     link.href = href;
+    link.integrity = EJ2_STYLE_INTEGRITY[href];
+    link.crossOrigin = 'anonymous';
     doc.head.appendChild(link);
   });
   loadAccentOverride();

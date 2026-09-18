@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 
 import { installRevisionHighlightRendering } from '../useDocxEditor';
 import VersionViewer from './VersionViewer';
@@ -133,6 +133,33 @@ beforeEach(() => {
   };
 });
 
+it('destroys a partially-created container and reports a bounded creation failure', async () => {
+  jest.useFakeTimers();
+  class NeverCreated extends FakeDocumentEditorContainer {
+    addEventListener() {
+      /* deliberately never fires */
+    }
+  }
+  (globalThis as any).ej.documenteditor.DocumentEditorContainer = NeverCreated;
+  const view = render(
+    <VersionViewer
+      host={host()}
+      version={version()}
+      liveDoc={{ loading: false, error: false, degraded: true, sfdt: '{}' }}
+    />
+  );
+  await act(async () => {
+    await Promise.resolve();
+  });
+  await act(async () => {
+    jest.advanceTimersByTime(20_000);
+  });
+  expect(view.getByText('Couldn’t load this version.')).toBeTruthy();
+  expect(destroy).toHaveBeenCalledTimes(1);
+  view.unmount();
+  jest.useRealTimers();
+});
+
 afterEach(() => {
   delete (globalThis as any).ej;
 });
@@ -156,7 +183,11 @@ describe('VersionViewer', () => {
       />
     );
     await waitFor(() =>
-      expect(installRevisionHighlightRendering).toHaveBeenCalled()
+      expect(installRevisionHighlightRendering).toHaveBeenCalledWith(
+        lastEditor,
+        expect.any(Function),
+        { showPendingOutline: true }
+      )
     );
     const colorForRevision = (installRevisionHighlightRendering as jest.Mock)
       .mock.calls[0][1] as (author: string) => string;

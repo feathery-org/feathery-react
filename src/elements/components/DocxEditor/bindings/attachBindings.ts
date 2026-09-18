@@ -412,8 +412,7 @@ export function attachBindings(
       );
       step(
         'contentControl',
-        () =>
-          eventful.removeEventListener?.('contentControl', onLockedControl),
+        () => eventful.removeEventListener?.('contentControl', onLockedControl),
         true
       );
       step('lockedHintTimer', () => {

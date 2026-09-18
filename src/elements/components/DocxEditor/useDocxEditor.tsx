@@ -67,11 +67,6 @@ const RING_WIDTH = 2;
 // because their glyphs are additionally struck through.
 const AUTHOR_WASH_ALPHA = 0.18;
 const AUTHOR_WASH_ALPHA_DEL = 0.16;
-// Pending suggestions need a visibly stronger state than approved history
-// edits. They keep the author's hue, but use a denser wash in addition to the
-// dashed outline so the distinction survives zoom and dense document layouts.
-const PENDING_AUTHOR_WASH_ALPHA = 0.42;
-const PENDING_AUTHOR_WASH_ALPHA_DEL = 0.34;
 
 // '#rrggbb' → 'rgba(r,g,b,a)'. Returns the input untouched if it is not a plain
 // 6-digit hex (already an rgba() string, say).
@@ -89,11 +84,9 @@ const ACTIVE_BOXES_KEY = '__robinActiveBoxes';
 // Boxes belonging to still-pending (unapproved) assistant edits, ringed with a
 // dashed outline so they read apart from approved edits' solid wash.
 const PENDING_BOXES_KEY = '__robinPendingBoxes';
-// A pending edit's dashed ring must read clearly apart from an approved edit's
-// solid wash — so it is deliberately bolder than the neutral active ring: a
-// thicker stroke and a longer dash-gap (opacity/wash alone is too subtle).
+// History distinguishes pending edits with a thin outline, not a darker wash.
 const PENDING_DASH: [number, number] = [7, 4];
-const PENDING_RING_WIDTH = 3;
+const PENDING_RING_WIDTH = 1;
 
 // True for a live Robin suggestion (`source: robin`) or a synthetic history
 // revision explicitly marked pending. Confirmed history revisions use
@@ -164,7 +157,9 @@ export function installRevisionHighlightRendering(
   // author's brand colour; the viewer and the live editor both pass this so
   // each person's edits are tinted their own colour (following the design
   // mockup). Omitted, the classic green-insert / red-delete washes apply.
-  colorForRevision?: (author: string) => string | undefined
+  colorForRevision?: (author: string) => string | undefined,
+  // Pending outlines belong to version history, not the live editor preview.
+  { showPendingOutline = false }: { showPendingOutline?: boolean } = {}
 ) {
   const renderer = ed?.documentHelper?.render;
   if (!renderer || renderer[REVISION_RENDER_PATCH]) return;
@@ -264,13 +259,7 @@ export function installRevisionHighlightRendering(
         if (authorColor) {
           ctx.fillStyle = hexToRgba(
             authorColor,
-            pending
-              ? info.kind === 'del'
-                ? PENDING_AUTHOR_WASH_ALPHA_DEL
-                : PENDING_AUTHOR_WASH_ALPHA
-              : info.kind === 'del'
-              ? AUTHOR_WASH_ALPHA_DEL
-              : AUTHOR_WASH_ALPHA
+            info.kind === 'del' ? AUTHOR_WASH_ALPHA_DEL : AUTHOR_WASH_ALPHA
           );
           ctx.fillRect(box.x, box.y, box.w, box.h);
         } else {
@@ -326,9 +315,8 @@ export function installRevisionHighlightRendering(
             line: elementBox.line
           });
         }
-        // Still-pending (unapproved) assistant edits get a persistent dashed
-        // outline, drawn the same way but always on (not only when stepped).
-        if (pending) {
+        // History-only pending outlines remain visible between active steps.
+        if (showPendingOutline && pending) {
           (ed[PENDING_BOXES_KEY] ?? (ed[PENDING_BOXES_KEY] = [])).push({
             ...box,
             line: elementBox.line,
@@ -377,12 +365,7 @@ export function installRevisionHighlightRendering(
         if (authorColor) {
           // Author-coloured: a faint wash for either kind (a deleted row still
           // needs a visible tint since its glyphs are struck, not removed).
-          wash = hexToRgba(
-            authorColor,
-            isPendingRevision(rev)
-              ? PENDING_AUTHOR_WASH_ALPHA
-              : AUTHOR_WASH_ALPHA
-          );
+          wash = hexToRgba(authorColor, AUTHOR_WASH_ALPHA);
         } else if (isDel) {
           wash = DELETION_HIGHLIGHT;
         }

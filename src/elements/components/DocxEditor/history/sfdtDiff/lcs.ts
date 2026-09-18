@@ -11,15 +11,22 @@ export interface Pair {
 }
 
 /** Classic O(n*m) LCS on keys. Returns matched index pairs in order. */
-export function lcs(a: string[], b: string[], cap = 4_000_000): Pair[] {
+export function lcs(
+  a: string[],
+  b: string[],
+  cap = 4_000_000,
+  checkBudget?: () => void
+): Pair[] {
+  checkBudget?.();
   const n = a.length;
   const m = b.length;
   if (!n || !m) return [];
-  if (n * m > cap) return greedyMatch(a, b);
+  if (n * m > cap) return greedyMatch(a, b, checkBudget);
   // dp[i][j] = LCS length of a[i:], b[j:]
   const dp: Uint32Array[] = new Array(n + 1);
   for (let i = 0; i <= n; i++) dp[i] = new Uint32Array(m + 1);
   for (let i = n - 1; i >= 0; i--) {
+    checkBudget?.();
     const row = dp[i];
     const next = dp[i + 1];
     for (let j = m - 1; j >= 0; j--) {
@@ -41,10 +48,15 @@ export function lcs(a: string[], b: string[], cap = 4_000_000): Pair[] {
 }
 
 /** Fallback for very large inputs: forward greedy matching on first hit. */
-function greedyMatch(a: string[], b: string[]): Pair[] {
+function greedyMatch(
+  a: string[],
+  b: string[],
+  checkBudget?: () => void
+): Pair[] {
   const out: Pair[] = [];
   let j = 0;
   for (let i = 0; i < a.length && j < b.length; i++) {
+    checkBudget?.();
     let k = j;
     while (k < b.length && b[k] !== a[i]) k++;
     if (k < b.length) {
@@ -60,7 +72,12 @@ function greedyMatch(a: string[], b: string[]): Pair[] {
  * on both — the longest increasing subsequence of the unique matches), then LCS
  * the segments between anchors. Blank keys never anchor.
  */
-export function patienceAlign(a: string[], b: string[]): Pair[] {
+export function patienceAlign(
+  a: string[],
+  b: string[],
+  checkBudget?: () => void
+): Pair[] {
+  checkBudget?.();
   const countA = new Map<string, number>();
   const countB = new Map<string, number>();
   for (const k of a) countA.set(k, (countA.get(k) ?? 0) + 1);
@@ -80,11 +97,17 @@ export function patienceAlign(a: string[], b: string[]): Pair[] {
   let bi = 0;
   const fill = (aEnd: number, bEnd: number) => {
     if (aEnd > ai && bEnd > bi) {
-      for (const p of lcs(a.slice(ai, aEnd), b.slice(bi, bEnd)))
+      for (const p of lcs(
+        a.slice(ai, aEnd),
+        b.slice(bi, bEnd),
+        4_000_000,
+        checkBudget
+      ))
         out.push({ a: ai + p.a, b: bi + p.b });
     }
   };
   for (const anchor of anchors) {
+    checkBudget?.();
     fill(anchor.a, anchor.b);
     out.push(anchor);
     ai = anchor.a + 1;
@@ -165,12 +188,16 @@ export function tokenize(text: string): string[] {
 }
 
 /** Word-level diff (whitespace tokens kept so offsets stay exact). */
-export function wordDiff(oldText: string, newText: string): WordOp[] {
+export function wordDiff(
+  oldText: string,
+  newText: string,
+  checkBudget?: () => void
+): WordOp[] {
   if (oldText === newText)
     return oldText ? [{ type: 'eq', text: oldText }] : [];
   const a = tokenize(oldText);
   const b = tokenize(newText);
-  const pairs = lcs(a, b);
+  const pairs = lcs(a, b, 4_000_000, checkBudget);
   const ops: WordOp[] = [];
   let i = 0;
   let j = 0;

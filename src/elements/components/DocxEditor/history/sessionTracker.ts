@@ -5,7 +5,7 @@
 // rule here is unit-testable without a real editor.
 import { v4 as uuidv4 } from 'uuid';
 
-import { VersionAuthor } from './types';
+import { DocxSaveMeta, VersionAuthor } from './types';
 
 /** A session closes after this long with no edits. */
 export const SESSION_IDLE_MS = 300_000; // 5 minutes
@@ -16,7 +16,7 @@ export type CloseReason = 'idle' | 'turn_end' | 'explicit_save' | 'reset';
 export interface SessionMeta {
   sessionId: string;
   sessionStartedAt: string; // ISO 8601
-  authors: Array<{ kind: VersionAuthor['kind']; label: string }>;
+  authors: DocxSaveMeta['authors'];
 }
 
 export interface SessionTrackerOptions {
@@ -54,12 +54,24 @@ export function createSessionTracker(
   let startedAt = 0;
   let lastEditAt = 0;
   let currentAuthor: VersionAuthor | null = null;
-  // Distinct (kind,label) pairs seen this session, in first-seen order.
-  let authors: Array<{ kind: VersionAuthor['kind']; label: string }> = [];
+  // Stable identities when supplied; legacy default actors retain their wire shape.
+  let authors: DocxSaveMeta['authors'] = [];
 
   const recordAuthor = (actor: VersionAuthor) => {
-    const entry = { kind: actor.kind, label: actor.label };
-    if (!authors.some((a) => a.kind === entry.kind && a.label === entry.label))
+    const entry = {
+      kind: actor.kind,
+      label: actor.label,
+      ...(!['you', 'user', 'robin', 'assistant'].includes(actor.key)
+        ? { key: actor.key }
+        : {})
+    };
+    if (
+      !authors.some(
+        (a) =>
+          a.kind === entry.kind &&
+          (a.key ?? a.label) === (entry.key ?? entry.label)
+      )
+    )
       authors.push(entry);
   };
 

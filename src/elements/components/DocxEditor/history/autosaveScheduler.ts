@@ -8,6 +8,10 @@
 // reported 'blocked' rather than fired (the binding soft-gate, an open document,
 // or an assistant write batch).
 import { SaveStatus } from './types';
+import {
+  canRetryDocumentError,
+  DocumentPersistenceError
+} from '../../../../utils/documentPersistence';
 
 export const AUTOSAVE_IDLE_MS = 3000;
 export const AUTOSAVE_MAX_INTERVAL_MS = 20000;
@@ -22,6 +26,8 @@ export interface AutosaveSchedulerOptions {
   idleMs?: number;
   maxIntervalMs?: number;
   backoffMs?: number[];
+  maxAttempts?: number;
+  onError?: (error: unknown) => void;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => TimerId;
   clearTimer?: (id: TimerId) => void;
@@ -31,11 +37,13 @@ export interface AutosaveScheduler {
   /** An edit happened; (re)arm the debounce. */
   touch(): void;
   /** Save now (explicit Save / session close). Resolves when the save the caller
-   *  triggered has settled; a no-op resolve when the gate is blocked or clean. */
+   *  triggered has settled; rejects if blocked or cancelled. */
   flush(): Promise<void>;
   status(): SaveStatus;
   /** Stop all timers (unmount). */
   cancel(): void;
+  /** Resume after the user has addressed an error. */
+  retry(): void;
 }
 
 export function createAutosaveScheduler(
@@ -56,8 +64,14 @@ export function createAutosaveScheduler(
   let coalesced = false; // edits arrived while a save was running
   let attempt = 0; // backoff index after failures
   let timer: TimerId | null = null;
+  let paused = false;
+  let halted = false;
+  let generation = 0;
   // Resolvers for flush() callers waiting on the current save to settle.
-  let waiters: Array<() => void> = [];
+  let waiters: Array<{
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }> = [];
 
   const setStatus = (next: SaveStatus) => {
     if (next === status) return;
@@ -73,6 +87,7 @@ export function createAutosaveScheduler(
   };
 
   const arm = (delay: number) => {
+    if (paused) return;
     clearArm();
     timer = setTimer(() => {
       timer = null;
@@ -87,10 +102,12 @@ export function createAutosaveScheduler(
     arm(Math.min(idleTarget, ceiling) - now());
   };
 
-  const settleWaiters = () => {
+  const settleWaiters = (error?: unknown) => {
     const pending = waiters;
     waiters = [];
-    pending.forEach((resolve) => resolve());
+    pending.forEach(({ resolve, reject }) =>
+      error ? reject(error) : resolve()
+    );
   };
 
   const runSave = () => {
@@ -106,10 +123,17 @@ export function createAutosaveScheduler(
       setStatus('blocked');
       // Retry once the gate is likely clear; a later touch() re-arms sooner.
       arm(idleMs);
+      settleWaiters(
+        new DocumentPersistenceError(
+          'Document save is blocked. Finish the current edit and retry.',
+          'blocked'
+        )
+      );
       return;
     }
 
     inFlight = true;
+    const startedGeneration = generation;
     coalesced = false;
     dirty = false;
     firstPendingAt = null;
@@ -119,6 +143,10 @@ export function createAutosaveScheduler(
       .save()
       .then(() => {
         inFlight = false;
+        if (paused || startedGeneration !== generation) {
+          if (!paused) armDebounced();
+          return;
+        }
         attempt = 0;
         if (coalesced || dirty) {
           coalesced = false;
@@ -128,36 +156,63 @@ export function createAutosaveScheduler(
         } else {
           setStatus('saved');
         }
+        settleWaiters();
       })
-      .catch(() => {
+      .catch((error) => {
         inFlight = false;
+        if (paused || startedGeneration !== generation) {
+          if (!paused) armDebounced();
+          return;
+        }
         dirty = true; // still unsaved; retry with backoff
         setStatus('error');
-        arm(backoff[Math.min(attempt, backoff.length - 1)]);
         attempt += 1;
-      })
-      .finally(settleWaiters);
+        halted =
+          !canRetryDocumentError(error) ||
+          attempt >= (options.maxAttempts ?? 4);
+        if (!halted) {
+          const retryAfter =
+            (error as { retryAfterMs?: number })?.retryAfterMs ?? 0;
+          arm(
+            Math.max(
+              retryAfter,
+              backoff[Math.min(attempt - 1, backoff.length - 1)]
+            )
+          );
+        }
+        options.onError?.(error);
+        settleWaiters(error);
+      });
   };
 
   return {
     touch() {
+      paused = false;
       const at = now();
       lastEditAt = at;
       if (firstPendingAt === null) firstPendingAt = at;
       dirty = true;
-      if (!inFlight) setStatus('dirty');
-      armDebounced();
+      if (!halted) {
+        if (!inFlight) setStatus('dirty');
+        armDebounced();
+      }
     },
     flush() {
+      if (paused && !dirty) return Promise.resolve();
+      paused = false;
+      halted = false;
+      attempt = 0;
       clearArm();
       if (inFlight) {
         // A save is running; wait for it, then let its coalesced re-run persist
         // the newer edits.
-        return new Promise<void>((resolve) => waiters.push(resolve));
+        return new Promise<void>((resolve, reject) =>
+          waiters.push({ resolve, reject })
+        );
       }
       if (!dirty) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        waiters.push(resolve);
+      return new Promise<void>((resolve, reject) => {
+        waiters.push({ resolve, reject });
         runSave();
       });
     },
@@ -165,7 +220,22 @@ export function createAutosaveScheduler(
       return status;
     },
     cancel() {
+      paused = true;
+      generation++;
+      dirty = false;
+      firstPendingAt = null;
+      halted = false;
+      attempt = 0;
       clearArm();
+      settleWaiters(
+        new DocumentPersistenceError('Document save was cancelled', 'cancelled')
+      );
+    },
+    retry() {
+      paused = false;
+      halted = false;
+      attempt = 0;
+      if (dirty) arm(0);
     }
   };
 }

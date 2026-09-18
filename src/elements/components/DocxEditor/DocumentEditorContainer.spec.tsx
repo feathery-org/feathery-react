@@ -26,6 +26,8 @@ jest.mock('../../../utils/documentEditorPrimitives', () => ({
 // reflects that by exposing the document's revisions only once it has opened, so
 // a rebind at create time observes an empty document and is detectably wrong.
 const OPEN_STATE = { opened: false };
+const mockBeforeReplace = jest.fn().mockResolvedValue(undefined);
+let mockHistory: any;
 
 // Exposes the terminal handlers as buttons so the container's outcome routing
 // can be driven the way the real toolbar drives it.
@@ -39,12 +41,19 @@ jest.mock('./index', () => {
     onChange,
     onReady,
     onSave,
+    onError,
+    onBeforeReplaceReady,
     history,
     reviewChanges,
     terminalAction,
     onTerminalAction,
     onTerminalActionDraft
   }: any) {
+    mockHistory = history;
+    React.useEffect(() => {
+      onBeforeReplaceReady?.(mockBeforeReplace);
+      return () => onBeforeReplaceReady?.(null);
+    }, [onBeforeReplaceReady]);
     const editor = React.useMemo(
       () => ({
         sourceUrl: source?.url,
@@ -104,6 +113,10 @@ jest.mock('./index', () => {
               closeSession: true
             })
         }),
+      React.createElement('button', {
+        'data-testid': 'report-error',
+        onClick: () => onError?.('Save failed; retry')
+      }),
       history &&
         React.createElement('button', {
           key: 'restore',
@@ -615,6 +628,16 @@ describe('DocumentEditorContainer signing outcomes', () => {
     });
   });
 
+  it('keeps the editable document mounted when an operation fails', async () => {
+    seed({});
+    const { getByTestId, getByText } = mount();
+    fireEvent.click(getByTestId('report-error'));
+    expect(getByText('Save failed; retry')).toBeTruthy();
+    expect(
+      getByTestId(`editor:https://example.com/${CONTAINER}.docx`)
+    ).toBeTruthy();
+  });
+
   it('restores a version through the client', async () => {
     mockRestoreEnvelopeVersion.mockClear();
     seed({});
@@ -632,6 +655,57 @@ describe('DocumentEditorContainer signing outcomes', () => {
     expect(envelopeId).toBe(`envelope-${CONTAINER}`);
     expect(versionId).toBe('version-1');
     expect(typeof sessionId).toBe('string'); // a fresh uuid
+  });
+
+  it('reuses the operation ID when a restore response is lost', async () => {
+    seed({});
+    const view = mount();
+    mockRestoreEnvelopeVersion
+      .mockClear()
+      .mockRejectedValueOnce(new Error('lost response'));
+    await act(async () => {
+      await expect(mockHistory.restoreVersion('version-1')).rejects.toThrow(
+        'lost response'
+      );
+    });
+    await act(async () => {
+      await mockHistory.restoreVersion('version-1');
+    });
+    expect(mockRestoreEnvelopeVersion.mock.calls[0][2]).toBe(
+      mockRestoreEnvelopeVersion.mock.calls[1][2]
+    );
+    view.unmount();
+  });
+
+  it('keeps the old document when saving before regenerate fails', async () => {
+    seed({});
+    const view = mount();
+    mockBeforeReplace.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => {
+      featheryWindow().dispatchEvent(
+        new CustomEvent('feathery-docx-editor-refresh', {
+          detail: {
+            containerId: CONTAINER,
+            documents: [`document-${CONTAINER}`],
+            envelopes: [
+              {
+                id: 'replacement',
+                document: `document-${CONTAINER}`,
+                file: 'replacement.docx',
+                type: 'docx'
+              }
+            ]
+          }
+        })
+      );
+    });
+    expect(
+      view.getByTestId(`editor:https://example.com/${CONTAINER}.docx`)
+    ).toBeTruthy();
+    expect(view.getByRole('alert').textContent).toContain(
+      'current edits could not be saved'
+    );
+    view.unmount();
   });
 
   it('sends the reviewed docx to DocuSign instead of the Feathery sign page', async () => {

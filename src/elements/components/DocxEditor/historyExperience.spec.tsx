@@ -13,6 +13,9 @@ import { DocxHistoryHost, DocxSaveMeta, DocxVersion } from './history/types';
 
 let mockText = 'Original';
 let mockOnEdit: (info: { assistant: boolean }) => void;
+let mockSaveShortcut: () => Promise<void>;
+let mockBindingsReady = false;
+const mockCommitBindings = jest.fn(() => true);
 const mockEditor = {
   serialize: () =>
     JSON.stringify({
@@ -20,18 +23,26 @@ const mockEditor = {
     })
 };
 const mockViewerOpen = jest.fn();
+const mockViewerConstruct = jest.fn();
+const mockViewerDestroy = jest.fn();
+let mockViewer: any;
 
 jest.mock('./DocxToolbar', () => ({ __esModule: true, default: () => null }));
 jest.mock('./useDocxEditor', () => ({
   useDocxEditor: (options: any) => {
     mockOnEdit = options.onEdit;
+    mockSaveShortcut = options.onSaveShortcut;
     return {
       containerRef: { current: null },
       editor: mockEditor,
       loading: false,
       error: null,
       exportDoc: async () => new Blob(['docx']),
-      bindings: { ready: false, commitForSave: () => true, diagnostics: [] }
+      bindings: {
+        ready: mockBindingsReady,
+        commitForSave: mockCommitBindings,
+        diagnostics: []
+      }
     };
   },
   isOpeningDocument: () => false,
@@ -44,14 +55,29 @@ jest.mock('./ejLoader', () => ({
   waitForEj: async () => ({
     documenteditor: {
       DocumentEditorContainer: class {
-        documentEditor = { open: mockViewerOpen };
+        documentEditor = (mockViewer = {
+          documentHelper: {
+            viewerContainer: { style: {}, scrollTop: 0, scrollLeft: 0 }
+          },
+          open: (sfdt: string) => {
+            mockViewerOpen(sfdt);
+            mockViewer.documentHelper.viewerContainer.scrollTop = 0;
+            mockViewer.documentHelper.viewerContainer.scrollLeft = 0;
+          }
+        });
+
+        constructor() {
+          mockViewerConstruct();
+        }
 
         addEventListener(event: string, callback: () => void) {
           if (event === 'created') callback();
         }
 
         appendTo() {}
-        destroy() {}
+        destroy() {
+          mockViewerDestroy();
+        }
       }
     }
   })
@@ -65,8 +91,135 @@ describe('version history experience', () => {
     jest.useFakeTimers();
     mockText = 'Original';
     mockViewerOpen.mockClear();
+    mockViewerConstruct.mockClear();
+    mockViewerDestroy.mockClear();
+    mockBindingsReady = false;
+    mockCommitBindings.mockReset().mockReturnValue(true);
   });
   afterEach(() => jest.useRealTimers());
+
+  it('toggles highlights without rebuilding, flashing a loader, or moving the viewport', async () => {
+    let savedMeta: DocxSaveMeta | undefined;
+    const host: DocxHistoryHost = {
+      listVersions: async () => [
+        savedVersion({
+          id: 'current',
+          session_id: savedMeta?.sessionId ?? '',
+          is_current: true,
+          final_sfdt: null,
+          closed_at: null
+        })
+      ],
+      closeVersion: () => new Promise(() => undefined),
+      restoreVersion: jest.fn(),
+      fetchVersionFile: jest.fn(),
+      renameVersion: jest.fn()
+    };
+    const view = render(
+      <DocxEditor
+        history={host}
+        onSave={async (_blob, meta) => {
+          savedMeta = meta;
+        }}
+      />
+    );
+    mockText = 'Original human edit';
+    act(() => mockOnEdit({ assistant: false }));
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    });
+    fireEvent.click(view.getByRole('button', { name: 'History' }));
+    await waitFor(() => expect(mockViewerOpen).toHaveBeenCalled());
+    await view.findByRole('switch', { name: 'Highlight changes' });
+    const viewer = mockViewer;
+    viewer.documentHelper.viewerContainer.scrollTop = 850;
+    viewer.documentHelper.viewerContainer.scrollLeft = 45;
+
+    for (const checked of [false, true, false, true]) {
+      const previousOpens = mockViewerOpen.mock.calls.length;
+      fireEvent.click(view.getByRole('switch', { name: 'Highlight changes' }));
+      expect(view.queryByText('Loading version…')).toBeNull();
+      await waitFor(() =>
+        expect(mockViewerOpen.mock.calls.length).toBeGreaterThan(previousOpens)
+      );
+      expect(mockViewerConstruct).toHaveBeenCalledTimes(1);
+      expect(mockViewerDestroy).not.toHaveBeenCalled();
+      expect(mockViewer).toBe(viewer);
+      expect(viewer.documentHelper.viewerContainer.scrollTop).toBe(850);
+      expect(viewer.documentHelper.viewerContainer.scrollLeft).toBe(45);
+      const display = JSON.parse(mockViewerOpen.mock.calls.slice(-1)[0][0]);
+      expect(Boolean(display.revisions?.length)).toBe(checked);
+    }
+    view.unmount();
+  });
+
+  it('does not clear newer unsaved edits when an older save finishes', async () => {
+    let finish!: () => void;
+    const onChange = jest.fn();
+    const host: DocxHistoryHost = {
+      listVersions: async () => [],
+      closeVersion: async () => null,
+      restoreVersion: jest.fn(),
+      fetchVersionFile: jest.fn(),
+      renameVersion: jest.fn()
+    };
+    const view = render(
+      <DocxEditor
+        history={host}
+        onChange={onChange}
+        onSave={() =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          })
+        }
+      />
+    );
+    mockText = 'First edit';
+    act(() => mockOnEdit({ assistant: false }));
+    let saving!: Promise<void>;
+    await act(async () => {
+      saving = mockSaveShortcut();
+    });
+    mockText = 'Second edit while saving';
+    act(() => mockOnEdit({ assistant: false }));
+    await act(async () => {
+      finish();
+      await saving;
+    });
+    expect(onChange).toHaveBeenCalledWith(true);
+    expect(onChange).not.toHaveBeenCalledWith(false);
+    view.unmount();
+  });
+
+  it('uses the real binding commit gate before an automatic save', async () => {
+    mockBindingsReady = true;
+    const onSave = jest.fn().mockResolvedValue(undefined);
+    const host: DocxHistoryHost = {
+      listVersions: async () => [],
+      closeVersion: async () => null,
+      restoreVersion: jest.fn(),
+      fetchVersionFile: jest.fn(),
+      renameVersion: jest.fn()
+    };
+    const view = render(
+      <DocxEditor history={host} bindings={{ enabled: true }} onSave={onSave} />
+    );
+    mockText = 'Bound edit';
+    act(() => mockOnEdit({ assistant: false }));
+    mockCommitBindings.mockReturnValue(false);
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+    });
+    expect(mockCommitBindings).toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+    mockCommitBindings.mockReturnValue(true);
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
 
   it('shows the human avatar with its live highlight before the checkpoint upload completes', async () => {
     let savedMeta: DocxSaveMeta | undefined;

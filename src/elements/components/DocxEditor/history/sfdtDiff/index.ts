@@ -20,6 +20,8 @@ import {
   flattenSfdt,
   getBlock,
   normalizeForDiff,
+  regionKey,
+  visitDocumentRegions,
   tableParagraphCount,
   TOKEN_CHAR
 } from './ir';
@@ -67,6 +69,11 @@ export function diffSession(
   const s0 = normalizeForDiff(start);
   const working: Working = fromFlat(flattenSfdt(s0));
   const maxBlocks = options.maxBlocks ?? DEFAULT_MAX_BLOCKS;
+  const timedOut = new Error('diff time budget exceeded');
+  const checkBudget = () => {
+    if (options.timeBudgetMs && now() - began > options.timeBudgetMs)
+      throw timedOut;
+  };
 
   for (const slice of slices) {
     if (options.timeBudgetMs && now() - began > options.timeBudgetMs) {
@@ -74,14 +81,25 @@ export function diffSession(
       break;
     }
     const flat = flattenSfdt(normalizeForDiff(slice.sfdt));
-    if (flat.blocks.length > maxBlocks) degraded.push('block-cap');
-    applySlice(working, flat, slice.author, includeFormatting);
+    if (flat.blocks.length > maxBlocks || working.blocks.length > maxBlocks) {
+      degraded.push('block-cap');
+      break;
+    }
+    try {
+      checkBudget();
+      applySlice(working, flat, slice.author, includeFormatting, checkBudget);
+      checkBudget();
+    } catch (error) {
+      if (error !== timedOut) throw error;
+      degraded.push('time-budget');
+      break;
+    }
   }
 
   const finalDoc = normalizeForDiff(slices[slices.length - 1].sfdt);
   // Partial slices are anchored to an intermediate document. Never paint them
   // onto F: their offsets and authors can refer to entirely different content.
-  const hunks = degraded.includes('time-budget') ? [] : emitHunks(working);
+  const hunks = degraded.length ? [] : emitHunks(working);
   const authors = Array.from(
     new Set(hunks.map((h) => h.author))
   ) as AuthorKey[];
@@ -152,19 +170,25 @@ function emitHunks(working: Working): Hunk[] {
   const blocks = working.blocks;
 
   // Anchor for deleted blocks: the path of the next surviving block.
-  const nextSurvivingPath = (from: number): BlockPath => {
+  const nextSurvivingPath = (from: number, origin: BlockPath): BlockPath => {
+    const region = regionKey(origin);
     for (let i = from; i < blocks.length; i++) {
-      if (!blocks[i].delBlock) return blocks[i].path;
+      if (!blocks[i].delBlock && regionKey(blocks[i].path) === region)
+        return blocks[i].path;
     }
     // Past the end: one past the last surviving block's index.
     for (let i = blocks.length - 1; i >= 0; i--) {
-      if (!blocks[i].delBlock) {
+      if (!blocks[i].delBlock && regionKey(blocks[i].path) === region) {
         const p = [...blocks[i].path];
         p[p.length - 1] = (p[p.length - 1] as number) + 1;
         return p;
       }
     }
-    return [0, 'blocks', 0];
+    return [
+      ...origin.slice(0, origin[1] === 'headersFooters' ? 3 : 1),
+      'blocks',
+      0
+    ];
   };
 
   for (let bi = 0; bi < blocks.length; bi++) {
@@ -176,7 +200,11 @@ function emitHunks(working: Working): Hunk[] {
       const tablePath = tablePathOf(block.path);
       let deletesOnlyThisTable = !!tablePath;
       const author = block.delBlock;
-      while (bi + 1 < blocks.length && blocks[bi + 1].delBlock === author) {
+      while (
+        bi + 1 < blocks.length &&
+        blocks[bi + 1].delBlock === author &&
+        regionKey(blocks[bi + 1].path) === regionKey(block.path)
+      ) {
         bi++;
         removed.push(rawParagraphFrom(blocks[bi]));
         runBlocks.push(blocks[bi]);
@@ -190,7 +218,7 @@ function emitHunks(working: Working): Hunk[] {
         id: nextId++,
         author,
         type: 'del_block',
-        at: { block: nextSurvivingPath(bi + 1) },
+        at: { block: nextSurvivingPath(bi + 1, block.path) },
         blocks: removed,
         ...(table ? { table } : {})
       });
@@ -529,7 +557,7 @@ function collectPendingRuns(doc: any, revisionIds?: Set<string>): PendingRun[] {
           for (const cell of row?.cells ?? []) visitBlocks(cell?.blocks ?? []);
     }
   };
-  for (const section of doc?.sections ?? []) visitBlocks(section?.blocks ?? []);
+  visitDocumentRegions(doc, visitBlocks);
   const runs: PendingRun[] = [];
   for (const [id, text] of textById) {
     const meta = metaById.get(id);
@@ -628,7 +656,7 @@ function revisionIdsWithText(doc: any): Set<string> {
           for (const cell of row?.cells ?? []) visitBlocks(cell?.blocks ?? []);
     }
   };
-  for (const section of doc?.sections ?? []) visitBlocks(section?.blocks ?? []);
+  visitDocumentRegions(doc, visitBlocks);
   return ids;
 }
 
@@ -728,7 +756,7 @@ export function demoteNativeRowRevisions(doc: any): boolean {
       if (Array.isArray(b.blocks)) walkBlocks(b.blocks);
     }
   };
-  for (const section of doc?.sections ?? []) walkBlocks(section?.blocks ?? []);
+  visitDocumentRegions(doc, walkBlocks);
   return changed;
 }
 
