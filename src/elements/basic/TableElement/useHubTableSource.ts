@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { featheryWindow } from '../../../utils/browser';
 import { fieldValues } from '../../../utils/init';
 import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
-import { CellRules, hubCellRules } from './spreadsheet/validation';
+import {
+  CellRules,
+  hubCellRules,
+  isChangedConstraintError
+} from './spreadsheet/validation';
 import { CellWrite, Column } from './types';
 import {
   STATUS_COLUMN_NAME,
@@ -392,6 +396,12 @@ export function useHubTableSource({
 
   const hubFieldValues = useMemo(() => {
     const values: Record<string, any[]> = {};
+    // Hidden columns can still be dependencies of a visible cell's rules.
+    schemaFields?.forEach((field) => {
+      values[syntheticKey(tableId, field.key)] = rows.map(
+        (row) => row.data[field.key] ?? ''
+      );
+    });
     hubColumns.forEach((column) => {
       if (column.field_key === statusKey) {
         values[statusKey] = rows.map((row) => statusLabel(row.verified));
@@ -402,15 +412,18 @@ export function useHubTableSource({
       values[column.field_key] = rows.map((row) => row.data[hubFieldKey] ?? '');
     });
     return values;
-  }, [hubColumns, rows, syntheticToHubKey, statusKey]);
+  }, [hubColumns, rows, syntheticToHubKey, statusKey, schemaFields, tableId]);
 
   const entryIds = useMemo(() => rows.map((row) => row.entryId), [rows]);
 
   const rowVerified = useMemo(() => rows.map((row) => row.verified), [rows]);
 
   const cellRules = useMemo(
-    () => hubCellRules(hubColumns, schemaFields),
-    [hubColumns, schemaFields]
+    () =>
+      hubCellRules(hubColumns, schemaFields, (key) =>
+        syntheticKey(tableId, key)
+      ),
+    [hubColumns, schemaFields, tableId]
   );
 
   // Re-key row-local errors onto the (rowIndex, synthetic field key) pairs the
@@ -473,7 +486,17 @@ export function useHubTableSource({
           return {
             ...row,
             data: { ...row.data, ...changes },
-            errors: omitKeys(row.errors, Object.keys(changes))
+            errors: Object.fromEntries(
+              Object.entries(row.errors ?? {}).filter(
+                ([key, message]) =>
+                  !(key in changes) &&
+                  !isChangedConstraintError(
+                    message,
+                    cellRules,
+                    (fieldKey) => syntheticToHubKey[fieldKey] in changes
+                  )
+              )
+            )
           };
         })
       );
@@ -567,7 +590,15 @@ export function useHubTableSource({
         });
       });
     },
-    [syntheticToHubKey, commitRows, updateRow, enqueue, hubId, client]
+    [
+      syntheticToHubKey,
+      commitRows,
+      updateRow,
+      enqueue,
+      hubId,
+      client,
+      cellRules
+    ]
   );
 
   const handleCellEdit = useCallback(
@@ -688,16 +719,6 @@ export function orderLikeGrid(
   return [...fresh, ...kept];
 }
 
-function omitKeys(
-  source: Record<string, string> | undefined,
-  keys: string[]
-): Record<string, string> | undefined {
-  if (!source) return undefined;
-  const remaining = Object.entries(source).filter(
-    ([key]) => !keys.includes(key)
-  );
-  return remaining.length ? Object.fromEntries(remaining) : undefined;
-}
 
 /**
  * The `where` conditions (ANDed by the Hub) a table's row filters resolve to.

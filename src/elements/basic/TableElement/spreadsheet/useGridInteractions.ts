@@ -1,4 +1,5 @@
 import React from 'react';
+import { featheryDoc } from '../../../../utils/browser';
 import type {
   CellSelectionBounds,
   CellSelectionDirection,
@@ -50,6 +51,7 @@ type GridInteractionOptions = {
   undo: () => void;
   redo: () => void;
   canEdit: boolean;
+  onInsertRow?: (atIndex: number) => void;
   scrollToCell: (rowId: string, columnId: string) => void;
   /** Hands the keyboard back to the grid once a cell editor closes. */
   restoreFocus?: () => void;
@@ -88,6 +90,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
     undo,
     redo,
     canEdit,
+    onInsertRow,
     scrollToCell,
     restoreFocus,
     seedAction,
@@ -96,6 +99,76 @@ export function useGridInteractions(options: GridInteractionOptions) {
     choicesFor
   } = options;
   const [editing, setEditing] = React.useState<EditingCell | null>(null);
+  const pendingChoice = React.useRef<{
+    rowId: string;
+    columnId: string;
+  } | null>(null);
+  const pendingRowFocus = React.useRef<{
+    rowIndex: number;
+    columnId: string;
+  } | null>(null);
+
+  // Insertion updates the source asynchronously with React's render. Select
+  // only after the new row exists in the table's model.
+  React.useEffect(() => {
+    const pending = pendingRowFocus.current;
+    if (!pending) return;
+    const row = table
+      .getRowsInDisplayOrder()
+      .find((row) => rowIndexById.get(row.id) === pending.rowIndex);
+    if (!row) return;
+    pendingRowFocus.current = null;
+    table.setFocusedCell(row.id, pending.columnId);
+    scrollToCell(row.id, pending.columnId);
+    restoreFocus?.();
+  }, [restoreFocus, rowIndexById, scrollToCell, table]);
+
+  const appendAfterLastRow = React.useCallback(
+    (rowId: string, columnId: string) => {
+      if (!canEdit || !onInsertRow) return false;
+      if (pendingRowFocus.current) return true;
+      if (table.getRowsInDisplayOrder().at(-1)?.id !== rowId) return false;
+      const rowIndex = rowIndexById.get(rowId);
+      if (rowIndex === undefined) return false;
+      pendingRowFocus.current = { rowIndex: rowIndex + 1, columnId };
+      onInsertRow(rowIndex + 1);
+      return true;
+    },
+    [canEdit, onInsertRow, rowIndexById, table]
+  );
+
+  // A native choice commits and unmounts its select before Enter is released.
+  // That release can reach the document before the grid regains focus. Keep
+  // only this gesture: a later keydown or pointer gesture cancels the handoff.
+  React.useEffect(() => {
+    const doc = featheryDoc();
+    const clear = () => {
+      pendingChoice.current = null;
+    };
+    const release = (event: KeyboardEvent) => {
+      const choice = pendingChoice.current;
+      clear();
+      if (!choice || !canEdit || event.key !== 'Enter') return;
+      table.setFocusedCell(choice.rowId, choice.columnId);
+      if (
+        event.shiftKey ||
+        !appendAfterLastRow(choice.rowId, choice.columnId)
+      ) {
+        table.moveCellSelection(event.shiftKey ? 'up' : 'down');
+        const active = table.atoms.cellSelection.get().at(-1);
+        if (active) scrollToCell(active.focusRowId, active.focusColumnId);
+      }
+      restoreFocus?.();
+    };
+    doc.addEventListener('keydown', clear, true);
+    doc.addEventListener('pointerdown', clear, true);
+    doc.addEventListener('keyup', release, true);
+    return () => {
+      doc.removeEventListener('keydown', clear, true);
+      doc.removeEventListener('pointerdown', clear, true);
+      doc.removeEventListener('keyup', release, true);
+    };
+  }, [appendAfterLastRow, canEdit, restoreFocus, scrollToCell, table]);
 
   const parse = React.useCallback(
     (fieldKey: string, text: string, before: CellValue): CellValue =>
@@ -230,6 +303,13 @@ export function useGridInteractions(options: GridInteractionOptions) {
     if (active) startEditing(active.anchorRowId, active.anchorColumnId);
   }, [getActiveRange, startEditing]);
 
+  const enterActiveCell = React.useCallback(() => {
+    const active = getActiveRange();
+    if (active && appendAfterLastRow(active.focusRowId, active.focusColumnId))
+      return;
+    startEditingActive();
+  }, [appendAfterLastRow, getActiveRange, startEditingActive]);
+
   const setEditingDraft = React.useCallback(
     (draft: string) =>
       setEditing((current) => (current ? { ...current, draft } : current)),
@@ -253,7 +333,10 @@ export function useGridInteractions(options: GridInteractionOptions) {
       setEditing(null);
       if (move === 'next' || move === 'prev') {
         moveTab(move === 'prev');
-      } else if (move) {
+      } else if (
+        move &&
+        !(move === 'down' && appendAfterLastRow(rowId, columnId))
+      ) {
         table.moveCellSelection(move);
         scrollToActiveCorner();
       }
@@ -262,6 +345,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
       restoreFocus?.();
     },
     [
+      appendAfterLastRow,
       execute,
       isReadOnly,
       moveTab,
@@ -290,6 +374,18 @@ export function useGridInteractions(options: GridInteractionOptions) {
       );
     },
     [commitCellValue, editing]
+  );
+
+  const commitChoice = React.useCallback(
+    (draft: string) => {
+      if (!editing) return;
+      pendingChoice.current = {
+        rowId: editing.rowId,
+        columnId: editing.columnId
+      };
+      commitEditing(undefined, draft);
+    },
+    [commitEditing, editing]
   );
 
   const cancelEditing = React.useCallback(() => {
@@ -735,10 +831,12 @@ export function useGridInteractions(options: GridInteractionOptions) {
       getSelectedBounds,
       startEditing,
       startEditingActive,
+      enterActiveCell,
       focusCell,
       moveSelection,
       commitCellValue,
       commitEditing,
+      commitChoice,
       cancelEditing,
       clearSelection,
       copySelection,
@@ -762,10 +860,12 @@ export function useGridInteractions(options: GridInteractionOptions) {
       getSelectedBounds,
       startEditing,
       startEditingActive,
+      enterActiveCell,
       focusCell,
       moveSelection,
       commitCellValue,
       commitEditing,
+      commitChoice,
       cancelEditing,
       clearSelection,
       copySelection,
