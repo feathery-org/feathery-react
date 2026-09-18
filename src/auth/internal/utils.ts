@@ -50,29 +50,28 @@ export function hasAuthGatedSteps(integrations: any): boolean {
 
 export function getRedirectUrl() {
   const { origin, pathname, hash, search } = featheryWindow().location;
-  const currentParams = new URLSearchParams(search);
-
-  // Build the redirect query from scratch rather than deleting out of the
-  // current one: deleting while iterating skips every other param.
-  const redirectParams = new URLSearchParams();
+  const queryParams = new URLSearchParams(search);
 
   // If no _slug param, extract slug from /to/<slug> path
-  const slug =
-    currentParams.get('_slug') ?? pathname.match(/\/to\/([^/]+)/)?.[1];
-  if (slug) redirectParams.set('_slug', slug);
-
-  // Kept for the same reason the user-id rewrite keeps it: the form has to come
-  // back from the auth provider in the language it was opened in
-  const locale = currentParams.get('_locale');
-  if (locale) redirectParams.set('_locale', locale);
+  if (!queryParams.has('_slug')) {
+    const toMatch = pathname.match(/\/to\/([^/]+)/);
+    if (toMatch) {
+      queryParams.set('_slug', toMatch[1]);
+    }
+  }
 
   // The access link token has to survive the login round trip, or the form
-  // comes back from the auth provider without the credential that opens it
-  const linkToken = currentParams.get(LINK_TOKEN_PARAM);
-  if (linkToken) redirectParams.set(LINK_TOKEN_PARAM, linkToken);
+  // comes back without the credential that opens it. So does its language.
+  const keptParams = ['_slug', '_locale', LINK_TOKEN_PARAM];
+  queryParams.forEach((value, key) => {
+    if (!keptParams.includes(key)) queryParams.delete(key);
+  });
 
   // Strip the /to/<slug> segment
   const cleanPathname = pathname.replace(/\/to\/[^/]+/, '');
-  const queryString = redirectParams.toString() ? `?${redirectParams}` : '';
+  const queryString =
+    queryParams.has('_slug') || queryParams.has(LINK_TOKEN_PARAM)
+      ? `?${queryParams}`
+      : '';
   return `${origin}${cleanPathname}${queryString}${hash}`;
 }

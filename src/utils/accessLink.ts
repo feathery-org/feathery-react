@@ -20,18 +20,12 @@ const secretStorageKey = (token: string) => `feathery-link-${token}`;
 const formTokenStorageKey = (formKey: string) =>
   `feathery-link-token-${formKey}`;
 
-/**
- * The 403 messages the backend sends when the access link itself is what
- * failed, copied verbatim from `apps/api/access_links.py`. The user already
- * sees them on the blocked page; matching them tells this device that its
- * stored token is spent, as opposed to a 403 about something else entirely
- * (a login gate, say), which leaves the token alone.
- */
+// The backend's 403s for a presented token that is itself spent, verbatim from
+// `apps/api/access_links.py`; "only from its access link" means none was usable
 const REJECTED_LINK_MESSAGES = new Set([
   'This link is not valid.',
   'This link has expired.',
-  'This link has already been used on another device.',
-  'This submission can only be opened from its access link.'
+  'This link has already been used on another device.'
 ]);
 
 /**
@@ -121,12 +115,13 @@ export type LinkConfirmOutcome =
   | 'storage_blocked';
 
 /**
- * Read the access link token from the page URL. Only meaningful in the browser;
- * hosted forms hand the token to `init` directly instead.
+ * Read the access link token from the page URL. Only meaningful in the browser.
+ * A repeated `_lt` is ambiguous, so neither copy is used.
  */
 export function getLinkTokenFromUrl(): string {
   const search = featheryWindow().location?.search ?? '';
-  return new URLSearchParams(search).get(LINK_TOKEN_PARAM) ?? '';
+  const tokens = new URLSearchParams(search).getAll(LINK_TOKEN_PARAM);
+  return tokens.length === 1 ? tokens[0] : '';
 }
 
 /**
@@ -180,22 +175,15 @@ export function retainLinkToken(formKey: string, token?: string): void {
   if (readLinkStorage(key) === token) stripLinkTokenFromUrl();
 }
 
-/**
- * Drop the token this browser kept for a form once the server has rejected it
- * for good, so the next visit here is an ordinary one (or the form's own
- * require-a-link block) rather than a permanent error replaying a dead token.
- * The device secret goes with it: it only ever proves this device redeemed that
- * one token, so a spent token leaves nothing for it to prove.
- */
-export function forgetLinkToken(formKey: string): void {
-  if (!formKey) return;
+// Drop a rejected token and its secret. The form's kept token goes only if it
+// is that token, so an old emailed link never wipes a newer one
+export function forgetLinkToken(formKey: string, token: string): void {
+  if (!token) return;
 
-  // Read the token before dropping it. The secret is filed under the token
-  // itself, so once the token is gone nothing can find the entry holding it.
+  clearLinkStorage(secretStorageKey(token));
   const tokenKey = formTokenStorageKey(formKey);
-  const token = readLinkStorage(tokenKey);
-  clearLinkStorage(tokenKey);
-  if (token) clearLinkStorage(secretStorageKey(token));
+  if (formKey && readLinkStorage(tokenKey) === token)
+    clearLinkStorage(tokenKey);
 }
 
 export function isRejectedLinkMessage(message?: string): boolean {

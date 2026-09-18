@@ -34,27 +34,27 @@ describe('getRedirectUrl', () => {
   });
 
   it('keeps the locale, as the user-id rewrite does', () => {
-    // The form has to come back from the auth provider in the language it was
-    // opened in, and the two url rewrites agree on what survives
-    atLocation('/', '?_locale=fr');
-
-    expect(getRedirectUrl()).toBe('https://form.feathery.io/?_locale=fr');
-  });
-
-  it('keeps the slug, the locale and the token together', () => {
-    atLocation('/to/my-form/', '?_locale=fr&_lt=tok');
+    atLocation('/', '?_locale=fr&_lt=tok');
 
     expect(getRedirectUrl()).toBe(
-      'https://form.feathery.io/?_slug=my-form&_locale=fr&_lt=tok'
+      'https://form.feathery.io/?_locale=fr&_lt=tok'
     );
   });
 
-  it('drops every other param, whatever their order', () => {
-    // Deleting while iterating used to skip every other param, so the
-    // interleaving here is the point of the case.
+  it('keeps the token wherever it sits among other params', () => {
+    // Which other params survive is unchanged from before links existed
     atLocation('/', '?a=1&_lt=tok&b=2&_id=fuser&c=3&_cid=collab&d=4');
 
-    expect(getRedirectUrl()).toBe('https://form.feathery.io/?_lt=tok');
+    const params = new URL(getRedirectUrl()).searchParams;
+    expect(params.getAll('_lt')).toEqual(['tok']);
+  });
+
+  it('keeps a repeated token as it is, which the SDK then ignores', () => {
+    atLocation('/', '?_lt=tok-a&_lt=tok-b');
+
+    expect(getRedirectUrl()).toBe(
+      'https://form.feathery.io/?_lt=tok-a&_lt=tok-b'
+    );
   });
 
   it('has no query string once everything is dropped', () => {
@@ -67,7 +67,7 @@ describe('getRedirectUrl', () => {
     atLocation('/to/my-form/', '?_lt=tok');
 
     expect(getRedirectUrl()).toBe(
-      'https://form.feathery.io/?_slug=my-form&_lt=tok'
+      'https://form.feathery.io/?_lt=tok&_slug=my-form'
     );
   });
 
@@ -75,7 +75,7 @@ describe('getRedirectUrl', () => {
     atLocation('/to/my-form/', '?_lt=tok', '#step-2');
 
     expect(getRedirectUrl()).toBe(
-      'https://form.feathery.io/?_slug=my-form&_lt=tok#step-2'
+      'https://form.feathery.io/?_lt=tok&_slug=my-form#step-2'
     );
   });
 

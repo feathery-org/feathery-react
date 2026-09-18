@@ -660,15 +660,15 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   /**
-   * Stop sending a link credential the server has rejected for good: the copy
-   * this device kept for the form, and the in-memory pair every request reads
-   * per call, which is what the assistant's own fetches send. The current visit
-   * still shows the blocked page `_fetch` built from the 403.
+   * Stop sending a token the server has rejected for good: this device's stored
+   * copy, and the in-memory pair every request reads if it is still that token.
    */
-  private forgetRejectedLink() {
-    forgetLinkToken(this.formKey);
-    initState.linkToken = '';
-    initState.linkSecret = '';
+  private forgetRejectedLink(token: string) {
+    forgetLinkToken(this.formKey, token);
+    if (initState.linkToken === token) {
+      initState.linkToken = '';
+      initState.linkSecret = '';
+    }
   }
 
   async fetchSession(formPromise = null, block = false) {
@@ -720,14 +720,13 @@ export default class FeatheryClient extends IntegrationClient {
     const url = `${API_URL}panel/session/v3/?${params}`;
     const options = { importance: 'high' };
 
+    // `_fetch` sends nothing once any form on the page is blocked, and the error
+    // it leaves is page-wide, so only this request's own token can be at fault
+    const sentToken = initState.authenticationError ? '' : initState.linkToken;
     const response = await this._fetch(url, options);
     if (!response) {
-      // A link the server rejects outright (expired, used elsewhere, revoked,
-      // or missing on a link-bound submission) will never open again, so this
-      // device stops holding on to it. `_fetch` has already turned the 403 into
-      // the blocked page, which is what this visit still shows.
-      if (isRejectedLinkMessage(initState.authenticationError))
-        this.forgetRejectedLink();
+      if (sentToken && isRejectedLinkMessage(initState.authenticationError))
+        this.forgetRejectedLink(sentToken);
       return [];
     }
 
@@ -812,12 +811,12 @@ export default class FeatheryClient extends IntegrationClient {
       method: 'POST',
       body: JSON.stringify({ token })
     };
+    // Same reasoning as the session fetch: only a request this form sent
+    const sent = !initState.authenticationError;
     const response = await this._fetch(url, options);
     if (!response) {
-      // Same reasoning as the session fetch: a rejected link is spent, so the
-      // stored copy goes rather than being replayed on the next plain visit.
-      if (isRejectedLinkMessage(initState.authenticationError))
-        this.forgetRejectedLink();
+      if (sent && isRejectedLinkMessage(initState.authenticationError))
+        this.forgetRejectedLink(token);
       return undefined;
     }
     return response.json();
