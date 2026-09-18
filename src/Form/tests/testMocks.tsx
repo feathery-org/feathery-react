@@ -73,6 +73,10 @@ jest.mock('../../utils/validation', () => {
   return {
     validateElements: () => ({ invalid: state.invalid, inlineErrors: {} }),
     validators: { phone: () => true, email: () => true },
+    // Simplified stand-in for the real array/type-aware check: good enough for
+    // tests that only care whether a field (e.g. a file upload) has a value.
+    isFieldValueEmpty: (value: any) =>
+      Array.isArray(value) ? value.every((v) => !v) : !value,
     _spies: state
   };
 });
@@ -347,18 +351,27 @@ jest.mock('../../utils/featheryClient', () => {
     .fn()
     .mockResolvedValue({ ok: true, payload: { collaborators: [] } });
 
+  // Mutable so a test can add servar_fields (e.g. a file_upload field) before
+  // rendering. Read lazily inside fetchForm so a mutation made before render
+  // is picked up — class-field methods are per-instance and don't consult
+  // the class's prototype, so overriding FeatheryClient.prototype.fetchForm
+  // from a test has no effect; this state object is the supported way in.
+  const state = {
+    steps: [
+      {
+        key: 'step-1',
+        id: 's1',
+        servar_fields: [] as any[],
+        buttons: [],
+        next_conditions: []
+      }
+    ]
+  };
+
   class MockClient {
     // Return one step so getNewStep can set activeStep and render Grid
     fetchForm = async () => ({
-      steps: [
-        {
-          key: 'step-1',
-          id: 's1',
-          servar_fields: [],
-          buttons: [],
-          next_conditions: []
-        }
-      ],
+      steps: state.steps,
       form_name: 'Test Form',
       completion_behavior: '',
       formOff: false,
@@ -382,6 +395,7 @@ jest.mock('../../utils/featheryClient', () => {
     ];
 
     submitStep = jest.fn();
+    submitFiles = jest.fn().mockResolvedValue(undefined);
     registerEvent = jest.fn().mockResolvedValue(undefined);
     runAIExtraction = jest.fn();
     forwardInboxEmail = jest.fn();
@@ -395,7 +409,9 @@ jest.mock('../../utils/featheryClient', () => {
   return {
     __esModule: true,
     default: MockClient,
-    _spies: { inviteCollaborator: inviteCollaboratorSpy }
+    // `formState` is the same object fetchForm reads from — mutate
+    // `formState.steps` directly (don't reassign _spies.formState itself).
+    _spies: { inviteCollaborator: inviteCollaboratorSpy, formState: state }
   };
 });
 
