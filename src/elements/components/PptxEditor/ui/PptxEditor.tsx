@@ -394,6 +394,7 @@ function PptxEditorInner({
             key={`slide-jump-${state.activeSlide}`}
             defaultValue={state.activeSlide + 1}
             title='Go to slide'
+            aria-label='Go to slide'
             onKeyDown={(e) => {
               if (e.key !== 'Enter') return;
               e.preventDefault();

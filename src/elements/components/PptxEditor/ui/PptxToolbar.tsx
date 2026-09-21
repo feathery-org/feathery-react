@@ -283,6 +283,8 @@ function B(props: {
       // defaults to type=submit and reloads the page.
       type='button'
       title={props.title}
+      aria-label={props.title}
+      aria-pressed={props.on === undefined ? undefined : props.on}
       disabled={props.disabled}
       onClick={props.onClick}
       // Word-style: toolbar clicks never take focus, so the page cannot
@@ -415,6 +417,7 @@ function CommitColorInput(props: {
           : styles.color
       }
       title={props.title}
+      aria-label={props.title}
     />
   );
 }
@@ -873,7 +876,31 @@ export function Toolbar({
       }}
     >
       {/* Tab row: history is always reachable; the Table tab is contextual. */}
-      <div css={styles.tabRow} role='tablist' aria-label='Editor tools'>
+      <div
+        css={styles.tabRow}
+        role='tablist'
+        aria-label='Editor tools'
+        onKeyDown={(e) => {
+          // APG tabs pattern: arrow keys move and activate within the tablist.
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          const order: TabKey[] = isTable
+            ? ['home', 'insert', 'slide', 'table']
+            : ['home', 'insert', 'slide'];
+          const at = order.indexOf(activeTab);
+          if (at < 0) return;
+          e.preventDefault();
+          const next =
+            order[
+              (at + (e.key === 'ArrowRight' ? 1 : order.length - 1)) %
+                order.length
+            ];
+          setTab(next);
+          const tabs = (e.currentTarget as HTMLElement).querySelectorAll(
+            '[role="tab"]'
+          );
+          (tabs[order.indexOf(next)] as HTMLElement | undefined)?.focus();
+        }}
+      >
         <B
           historyAction
           disabled={!undoStack.length && !commitSvgTextEdit}
@@ -945,6 +972,7 @@ export function Toolbar({
             onChange={(e) => applyText({ font: e.target.value })}
             css={styles.select}
             title='Font'
+            aria-label='Font'
           >
             {FONTS.map((f) => (
               <option key={f} value={f}>
@@ -961,6 +989,7 @@ export function Toolbar({
             onChange={(e) => applyText({ sizePt: Number(e.target.value) })}
             css={styles.num()}
             title='Size'
+            aria-label='Size'
           />
           <span css={styles.sep} />
           <B
@@ -1252,6 +1281,7 @@ export function Toolbar({
                 }
                 css={styles.select}
                 title='Crop shape'
+                aria-label='Crop shape'
               >
                 <option value='rect'>Rectangle</option>
                 <option value='ellipse'>Ellipse</option>
@@ -1314,6 +1344,7 @@ export function Toolbar({
                 true
               )
             }
+            title='Insert text box'
           >
             +Text
           </B>
@@ -1450,7 +1481,11 @@ export function Toolbar({
               </div>
             )}
           </div>
-          <B disabled={!slide} onClick={() => imgRef.current?.click()}>
+          <B
+            disabled={!slide}
+            onClick={() => imgRef.current?.click()}
+            title='Insert image from your computer'
+          >
             +Image
           </B>
           <input
@@ -1499,6 +1534,7 @@ export function Toolbar({
             }}
             css={styles.select}
             title='Size preset for this slide'
+            aria-label='Size preset for this slide'
           >
             {Object.entries(SLIDE_SIZE_PRESETS).map(([key, preset]) => (
               <option key={key} value={key}>
@@ -1522,6 +1558,7 @@ export function Toolbar({
             }
             css={styles.num(true)}
             title='Slide width (inches)'
+            aria-label='Slide width (inches)'
           />
           <span css={styles.label}>×</span>
           <input
@@ -1539,6 +1576,7 @@ export function Toolbar({
             }
             css={styles.num(true)}
             title='Slide height (inches)'
+            aria-label='Slide height (inches)'
           />
           <span css={styles.sep} />
           <span css={styles.label}>Background</span>
@@ -1551,6 +1589,7 @@ export function Toolbar({
             }
             css={styles.select}
             title='Background type'
+            aria-label='Background type'
           >
             <option value='solid'>Solid</option>
             <option value='gradient'>Gradient</option>
@@ -1643,6 +1682,7 @@ export function Toolbar({
                 }}
                 css={styles.select}
                 title='Gradient direction'
+                aria-label='Gradient direction'
               >
                 <option value='0'>→</option>
                 <option value='45'>↘</option>
@@ -1748,17 +1788,27 @@ export function Toolbar({
                 <>
                   {(
                     [
-                      ['t', 'Align cell text to the top', 'M7 8h10'],
-                      ['ctr', 'Center cell text vertically', 'M7 12h10'],
-                      ['b', 'Align cell text to the bottom', 'M7 16h10']
+                      ['t', 'Align text to the top', 'M4 5h16M4 9h16M4 13h10'],
+                      [
+                        'ctr',
+                        'Center text vertically',
+                        'M4 8h16M4 12h16M4 16h10'
+                      ],
+                      [
+                        'b',
+                        'Align text to the bottom',
+                        'M4 11h10M4 15h16M4 19h16'
+                      ]
                     ] as const
-                  ).map(([vertical, label, bar]) => (
+                  ).map(([vertical, label, linesPath]) => (
                     <B
                       key={vertical}
                       on={verticalAlign0 === vertical}
                       onClick={() => applyTableVerticalAlign(vertical)}
                       title={label}
                     >
+                      {/* Word's Align Text icons: a line stack anchored at the
+                          top, middle, or bottom of the glyph box. */}
                       <svg
                         viewBox='0 0 24 24'
                         width={16}
@@ -1766,12 +1816,11 @@ export function Toolbar({
                         css={{
                           fill: 'none',
                           stroke: 'currentColor',
-                          strokeWidth: 1.7,
+                          strokeWidth: 2,
                           strokeLinecap: 'round'
                         }}
                       >
-                        <rect x={4} y={5} width={16} height={14} rx={1.5} />
-                        <path d={bar} css={{ strokeWidth: 2.2 }} />
+                        <path d={linesPath} />
                       </svg>
                     </B>
                   ))}
@@ -1813,6 +1862,7 @@ export function Toolbar({
                 }
                 css={styles.select}
                 title='Borders to apply'
+                aria-label='Borders to apply'
               >
                 <option value='all'>All borders</option>
                 <option value='outside'>Outside</option>
@@ -1830,6 +1880,7 @@ export function Toolbar({
                 }
                 css={styles.select}
                 title='Border style'
+                aria-label='Border style'
               >
                 <option value='solid'>Solid</option>
                 <option value='dash'>Dashed</option>
@@ -1844,6 +1895,7 @@ export function Toolbar({
                 onChange={(e) => setBorderWidth(Number(e.target.value))}
                 css={styles.num()}
                 title='Border width (pt)'
+                aria-label='Border width (pt)'
               />
               <input
                 type='color'
@@ -1851,6 +1903,7 @@ export function Toolbar({
                 onChange={(e) => setBorderColor(e.target.value)}
                 css={styles.color}
                 title='Border color'
+                aria-label='Border color'
               />
               <B
                 onClick={() =>
