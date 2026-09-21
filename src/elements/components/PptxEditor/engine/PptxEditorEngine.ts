@@ -552,6 +552,22 @@ export class PptxEditorEngine {
     return this.redoStack.length > 0;
   }
 
+  /** Cheap dirty check against the saved baseline (no snapshot cloning). */
+  isDirty(): boolean {
+    return !!(
+      this.present &&
+      this.baseline &&
+      !sameHistoryDocument(this.present, this.baseline)
+    );
+  }
+
+  /** Mark the current state as the saved baseline; undo/redo stays intact. */
+  markSaved(): void {
+    if (!this.deck) return;
+    this.baseline = this.present ?? captureHistorySnapshot(this.deck);
+    this.revision += 1;
+  }
+
   exportPptx(): Blob {
     const bytes = exportDeckBytes(this.requireDeck());
     return new Blob([bytes as BlobPart], {

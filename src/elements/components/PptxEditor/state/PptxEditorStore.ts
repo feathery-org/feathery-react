@@ -282,6 +282,13 @@ export class PptxEditorStore {
     this.set({ ...historyFields(this.engine.snapshot()) });
   };
 
+  /** After a successful host save: current state becomes the clean baseline. */
+  markSaved = (): void => {
+    if (!this.state.deck) return;
+    this.engine.markSaved();
+    this.set({ rev: this.state.rev + 1 });
+  };
+
   // ---- UI state actions ----
 
   setSvgRoot = (svg: SVGSVGElement | null): void => {
