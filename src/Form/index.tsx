@@ -1,3 +1,4 @@
+import { normalizePhoneValues } from '../utils/normalizePhoneValues';
 import { RouterProvider, useLocation, useNavigate } from '../hooks/router';
 import React, {
   ReactNode,
@@ -990,7 +991,8 @@ function Form({
     // which removeRepeatedRow handles itself (html5 clear + inline reindex).
     updateFieldValues(updatedValues, {
       triggerErrors: false,
-      clearErrors: false
+      clearErrors: false,
+      preserveCanonicalPhones: true
     });
   }
 
@@ -1001,7 +1003,10 @@ function Form({
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
         ...val,
-        getDefaultFieldValue(field)
+        normalizePhoneValues(
+          { [field.servar.key]: getDefaultFieldValue(field) },
+          servarByKey
+        )[field.servar.key]
       ];
     };
     updateRepeatValues(repeatContainer, getNewVal);
@@ -1163,9 +1168,20 @@ function Form({
   // debounced render for hideIf dependencies (perf), and validation if auto-validate is enabled.
   const updateFieldValues = (
     newFieldValues: any,
-    { rerender = true, clearErrors = true, triggerErrors = true } = {}
+    {
+      rerender = true,
+      clearErrors = true,
+      triggerErrors = true,
+      preserveCanonicalPhones = false
+    } = {}
   ) => {
     if (clearErrors) clearBrowserErrors(formRef);
+    newFieldValues = normalizePhoneValues(
+      newFieldValues,
+      servarByKey,
+      preserveCanonicalPhones,
+      fieldValues
+    );
     const entries = Object.entries(newFieldValues);
     if (entries.every(([key, val]) => fieldValues[key] === val)) return false;
 
@@ -1217,7 +1233,13 @@ function Form({
 
   // For audio AI only right now
   const [pollFuserData, setPollFuserData] = useState(_pollFuserData);
-  usePollFuserData(pollFuserData, client, updateFieldValues);
+  // The poll interval captures its callback once; read the latest
+  // updateFieldValues through a ref so it sees the current schema (servarByKey).
+  const updateFieldValuesRef = useRef(updateFieldValues);
+  updateFieldValuesRef.current = updateFieldValues;
+  usePollFuserData(pollFuserData, client, (values: any) =>
+    updateFieldValuesRef.current(values, { preserveCanonicalPhones: true })
+  );
 
   const eventCallbackMap: Record<string, any> = {
     change: onChange,
@@ -1835,7 +1857,10 @@ function Form({
         if (isRepeated) {
           const currentVal = fieldValues[sf.servar.key];
           if (!Array.isArray(currentVal)) return;
-          const defaultVal = getDefaultFieldValue(sf);
+          const defaultVal = normalizePhoneValues(
+            { [sf.servar.key]: getDefaultFieldValue(sf) },
+            servarByKey
+          )[sf.servar.key];
           const defaultJson = JSON.stringify(defaultVal);
           let changed = false;
           const newArray = currentVal.map((val: any, i: number) => {
@@ -1851,7 +1876,10 @@ function Form({
           });
           if (changed) newFieldVals[sf.servar.key] = newArray;
         } else if (!flags[0]) {
-          const newVal = getDefaultFormFieldValue(sf);
+          const newVal = normalizePhoneValues(
+            { [sf.servar.key]: getDefaultFormFieldValue(sf) },
+            servarByKey
+          )[sf.servar.key];
           if (
             JSON.stringify(newVal) !== JSON.stringify(getFieldValue(sf).value)
           ) {
@@ -1860,7 +1888,7 @@ function Form({
         }
       });
       if (Object.keys(newFieldVals).length) {
-        updateFieldValues(newFieldVals);
+        updateFieldValues(newFieldVals, { preserveCanonicalPhones: true });
         client.submitCustom(newFieldVals);
       }
     }
@@ -2109,7 +2137,11 @@ function Form({
         ? value
         : justInsert(fieldValues[servar.key] || [], value, index, field);
 
-    const change = updateFieldValues(updateValues, { rerender, triggerErrors });
+    const change = updateFieldValues(updateValues, {
+      rerender,
+      triggerErrors,
+      preserveCanonicalPhones: true
+    });
     if (repeatRowOperation === 'add' && repeatContainer)
       addRepeatedRow(repeatContainer);
     return change;

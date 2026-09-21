@@ -277,13 +277,22 @@ async function updateTheme(newTheme = '') {
 function setFieldValues(
   userVals: FieldValues,
   rerender = true,
-  skipServerSubmit = false
+  skipServerSubmit = false,
+  preserveCanonicalPhones = false
 ): void {
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
-      result[key] = value.map((entry) => parseUserVal(entry, key));
-    else result[key] = parseUserVal(value, key);
+      result[key] = value.map((entry) =>
+        parseUserVal(entry, key, undefined, preserveCanonicalPhones)
+      );
+    else
+      result[key] = parseUserVal(
+        value,
+        key,
+        undefined,
+        preserveCanonicalPhones
+      );
   });
 
   Object.assign(fieldValues, result);

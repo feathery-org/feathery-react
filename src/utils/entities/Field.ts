@@ -1,3 +1,6 @@
+import { normalizePhoneNumber } from '../phoneNumber';
+import { markPendingPhoneInference } from '../normalizePhoneValues';
+import { phoneLib } from '../validation';
 import { defaultClient, FeatheryFieldTypes, fieldValues } from '../init';
 import debounce from 'lodash.debounce';
 import { rerenderAllForms } from '../formHelperFunctions';
@@ -78,7 +81,11 @@ export default class Field {
     )
       return new Proxy(fieldVal as object, {
         set: (target: any, property: any, value) => {
-          target[property] = parseUserVal(value, this._fieldKey);
+          target[property] = parseUserVal(
+            value,
+            this._fieldKey,
+            this._getSourceField()?.servar
+          );
           this._runFieldUpdate();
           return true;
         }
@@ -90,9 +97,14 @@ export default class Field {
   set value(val: FeatheryFieldTypes) {
     if (Array.isArray(val))
       fieldValues[this._fieldKey] = val.map((entry) =>
-        parseUserVal(entry, this._fieldKey)
+        parseUserVal(entry, this._fieldKey, this._getSourceField()?.servar)
       );
-    else fieldValues[this._fieldKey] = parseUserVal(val, this._fieldKey);
+    else
+      fieldValues[this._fieldKey] = parseUserVal(
+        val,
+        this._fieldKey,
+        this._getSourceField()?.servar
+      );
     this._runFieldUpdate();
   }
 
@@ -111,7 +123,7 @@ export default class Field {
   }
 
   _getSourceField(): any {
-    if (this._sourceField === null && internalState) {
+    if (this._sourceField === null && internalState[this._formUuid]) {
       this._sourceField = Object.values(
         internalState[this._formUuid].steps
       ).reduce((field: any, step: any) => {
@@ -431,8 +443,45 @@ export default class Field {
   }
 }
 
-export function parseUserVal(userVal: FeatheryFieldTypes, key: string) {
+export function parseUserVal(
+  userVal: FeatheryFieldTypes,
+  key: string,
+  sourceServar?: any,
+  preserveCanonicalPhones = false
+) {
   let val: FeatheryFieldTypes | File = userVal;
+  // Bulk custom submissions only provide a key; logic fields supply their
+  // own form's definition so country settings stay scoped to that form.
+  const servar =
+    sourceServar ??
+    Object.values(internalState)
+      .flatMap((state) => Object.values(state.steps ?? {}))
+      .flatMap((step: any) => step.servar_fields ?? [])
+      .find((field: any) => field.servar.key === key)?.servar;
+  if (
+    !preserveCanonicalPhones &&
+    ['string', 'number'].includes(typeof val) &&
+    (!servar || (servar.type === 'phone_number' && !phoneLib))
+  ) {
+    // No form (or no parser) can interpret this yet. Remember it so the value
+    // is inferred as fresh input once its schema arrives, instead of being
+    // preserved as if it were saved canonical digits.
+    markPendingPhoneInference(key, val);
+  }
+  if (servar?.type === 'phone_number') {
+    const previous = fieldValues[key];
+    // Reassigning or reordering existing values must not reinterpret their
+    // country. New raw values still infer a missing country from field settings.
+    const unchanged = Array.isArray(previous)
+      ? (previous as any[]).includes(val)
+      : previous === val;
+    val = normalizePhoneNumber(
+      val,
+      servar.metadata,
+      phoneLib,
+      preserveCanonicalPhones || unchanged
+    );
+  }
   if (isBase64Image(val)) val = dataURLToFile(val, `${key}.png`);
   // If the value is a file type, convert the file or files (if repeated) to Promises
   return val instanceof File ? Promise.resolve(val) : val;

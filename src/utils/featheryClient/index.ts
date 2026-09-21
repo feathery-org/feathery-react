@@ -1,3 +1,8 @@
+import {
+  applyPendingPhoneInference,
+  normalizePhoneValues,
+  phoneServarsFromSteps
+} from '../normalizePhoneValues';
 import IntegrationClient from './integrationClient';
 import {
   fieldValues,
@@ -46,7 +51,10 @@ import {
 import debounce from 'lodash.debounce';
 import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
-import { GetConfigParams, RunComputerAgentOptions } from '../internalState';
+import internalState, {
+  GetConfigParams,
+  RunComputerAgentOptions
+} from '../internalState';
 import {
   dataHubAction as apiDataHubAction,
   extractAIDocument,
@@ -491,11 +499,18 @@ export default class FeatheryClient extends IntegrationClient {
       });
     });
     registerKnownFieldKeys({ servars: Object.keys(values) });
-    Object.assign(fieldValues, {
-      ...values,
-      ...additionalValues,
-      ...fieldValues
-    });
+    const servars = phoneServarsFromSteps(steps);
+    const hydrated = {
+      ...normalizePhoneValues({ ...values, ...additionalValues }, servars),
+      ...normalizePhoneValues(fieldValues, servars, true)
+    };
+    // Values set through setFieldValues before this schema existed are fresh
+    // input, not saved digits, so they get the same inference as initial values.
+    Object.assign(
+      fieldValues,
+      hydrated,
+      applyPendingPhoneInference(hydrated, servars)
+    );
   }
 
   _loadFormPackages(res: any) {
@@ -656,7 +671,7 @@ export default class FeatheryClient extends IntegrationClient {
     } = initInfo();
 
     if (this.formKey in formSessions) {
-      const formData = await (formPromise ?? Promise.resolve());
+      const formData: any = await (formPromise ?? Promise.resolve());
       return [formSessions[this.formKey], formData];
     }
 
@@ -716,7 +731,14 @@ export default class FeatheryClient extends IntegrationClient {
     initState.formSessions[this.formKey] = trueSession;
     initState._internalUserId = trueSession.internal_id;
 
-    const formData = await (formPromise ?? Promise.resolve());
+    const formData: any = await (formPromise ?? Promise.resolve());
+    // Session and schema requests race. Normalize after both have arrived, when
+    // country settings and the phone library are available.
+    if (formData)
+      Object.assign(
+        fieldValues,
+        normalizePhoneValues(fieldValues, phoneServarsFromSteps(formData), true)
+      );
     return [trueSession, formData];
   }
 
@@ -753,7 +775,7 @@ export default class FeatheryClient extends IntegrationClient {
 
         let toReturn;
         if (data?.no_merge) {
-          setFieldValues(data.field_values);
+          setFieldValues(data.field_values, true, false, true);
         } else {
           data.completed_forms.forEach((formKey: string) => {
             if (!initState.formSessions[formKey])
@@ -930,6 +952,24 @@ export default class FeatheryClient extends IntegrationClient {
   ) {
     if (this.draft || this.getNoSave()) return;
     if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
+    // Actions and integrations can submit their original payload after updating
+    // form state, so normalize again before buffering the outgoing values.
+    const schema = initState.formSchemas?.[this.formKey];
+    const phoneServars = schema
+      ? phoneServarsFromSteps(schema.steps)
+      : phoneServarsFromSteps(
+          Object.values(internalState)
+            .filter(
+              (state) => !this.formKey || state.client?.formKey === this.formKey
+            )
+            .flatMap((state) => Object.values(state.steps ?? {}))
+        );
+    customKeyValues = normalizePhoneValues(
+      customKeyValues,
+      phoneServars,
+      false,
+      fieldValues
+    );
     // If there are values passed, aggregate them in the pending queue
     Object.entries(customKeyValues).forEach(([key, value]) => {
       if (value !== undefined) this.pendingCustomFieldUpdates[key] = value;
