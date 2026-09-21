@@ -745,9 +745,17 @@ it('moves a table inserted from the toolbar from its selection handle', async ()
   await act(async () => store.loadFile(sampleBytes(), 'sample.pptx'));
   const slide = store.getState().deck!.slides[0];
   await switchTab(host, 'Insert');
+  // The +Table button opens the size picker; choose 3x3 from the grid.
   await act(async () =>
     (
       host.querySelector('button[title="Insert table"]') as HTMLButtonElement
+    ).click()
+  );
+  await act(async () =>
+    (
+      host.querySelector(
+        'button[aria-label="3 columns by 3 rows"]'
+      ) as HTMLButtonElement
     ).click()
   );
   const table = slide.shapes[slide.shapes.length - 1];

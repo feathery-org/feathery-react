@@ -31,7 +31,7 @@ it('never submits a wrapping form from toolbar buttons or inputs', async () => {
   });
 
   // Every rendered toolbar button must be explicitly type=button, on every tab.
-  for (const tab of ['Home', 'Insert', 'Slide', 'Arrange'] as const) {
+  for (const tab of ['Home', 'Insert', 'Slide'] as const) {
     await switchTab(host, tab);
     const untyped = Array.from(host.querySelectorAll('button')).filter(
       (button) => button.type !== 'button'

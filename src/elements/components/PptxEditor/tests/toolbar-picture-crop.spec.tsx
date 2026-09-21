@@ -2,7 +2,7 @@ import React from 'react';
 import { insertImage, readPictureCrop } from '../core/model/edit';
 import type { Shape } from '../core/model/types';
 import { Toolbar } from '../ui/PptxToolbar';
-import { act, mountEditor, sampleBytes, type Mounted, switchTab } from './harness';
+import { act, mountEditor, sampleBytes, type Mounted } from './harness';
 
 const PNG = Uint8Array.from(
   Buffer.from(
@@ -39,8 +39,6 @@ it('edits a selected picture as a circle and changes its source crop from the to
     store.resetHistory();
   });
   await act(async () => store.select(picture.id));
-  // Picture crop controls live on the Arrange tab in the tabbed toolbar.
-  await switchTab(host, 'Arrange');
 
   expect(host.textContent).toContain('Picture crop');
   const geometry = host.querySelector(

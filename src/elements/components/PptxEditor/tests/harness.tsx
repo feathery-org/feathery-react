@@ -65,7 +65,7 @@ export { act };
 /** Activate a toolbar tab (Option B tabbed toolbar) by its visible label. */
 export async function switchTab(
   host: HTMLElement,
-  label: 'Home' | 'Insert' | 'Slide' | 'Arrange' | 'Table'
+  label: 'Home' | 'Insert' | 'Slide' | 'Table'
 ): Promise<void> {
   const tab = Array.from(host.querySelectorAll('[role="tab"]')).find(
     (el) => el.textContent === label

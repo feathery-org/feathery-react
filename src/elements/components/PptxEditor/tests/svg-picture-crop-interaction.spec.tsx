@@ -10,7 +10,7 @@ import { deepClone } from '../core/opc/deepClone';
 import type { Deck, Shape, Slide } from '../core/model/types';
 import { Toolbar } from '../ui/PptxToolbar';
 import { SvgSlide } from '../ui/SlideStage';
-import { act, mountEditor, sampleBytes, type Mounted, switchTab } from './harness';
+import { act, mountEditor, sampleBytes, type Mounted } from './harness';
 
 
 const PNG_DATA =
@@ -82,7 +82,6 @@ it('crops a picture directly on the slide with live handles, pan, Done, and doub
   await act(async () => store.select(picture.id));
 
   const svg = host.querySelector('svg[data-svg-uid]');
-  await switchTab(host, 'Arrange');
   await act(async () =>
     (
       host.querySelector(
@@ -179,7 +178,6 @@ it('crops a picture directly on the slide with live handles, pan, Done, and doub
   expect(picture.xfrm).toEqual(resizedFrame);
   expect(store.getState().undoStack).toHaveLength(2);
 
-  await switchTab(host, 'Arrange');
   const cropShape = host.querySelector(
     'select[title="Crop shape"]'
   ) as HTMLSelectElement;
@@ -275,7 +273,6 @@ it('repositions an uncropped picture instead of clamping the drag to a no-op', a
     store.resetHistory();
   });
   await act(async () => store.select(picture.id));
-  await switchTab(host, 'Arrange');
   await act(async () =>
     (
       host.querySelector(

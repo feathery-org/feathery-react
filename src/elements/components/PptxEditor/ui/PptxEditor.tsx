@@ -362,10 +362,9 @@ function PptxEditorInner({
         css={{
           display: 'flex',
           alignItems: 'center',
-          gap: 4,
-          height: 30,
+          gap: 6,
           flex: '0 0 auto',
-          padding: '0 10px',
+          padding: '8px 14px',
           borderTop: `1px solid ${LINE}`,
           background: PAPER,
           fontSize: 12,
