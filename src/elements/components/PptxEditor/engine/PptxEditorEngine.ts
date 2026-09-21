@@ -130,8 +130,13 @@ export class PptxEditorEngine {
   }
 
   load(bytes: Uint8Array): void {
-    if (this.deck) releaseObjectUrls(this.deck.pkg);
-    this.deck = importDeck(bytes);
+    this.adopt(importDeck(bytes));
+  }
+
+  /** Adopt an already-imported deck, replacing any current document. */
+  adopt(deck: Deck): void {
+    if (this.deck && this.deck !== deck) releaseObjectUrls(this.deck.pkg);
+    this.deck = deck;
     this.resetHistory();
     this.revision += 1;
     const result = this.result(true, [{ kind: 'deck' }]);
@@ -545,11 +550,6 @@ export class PptxEditorEngine {
 
   canRedo(): boolean {
     return this.redoStack.length > 0;
-  }
-
-  /** Transitional identity check used by the POC's Zustand adapter. */
-  manages(deck: Deck): boolean {
-    return this.deck === deck;
   }
 
   exportPptx(): Blob {
