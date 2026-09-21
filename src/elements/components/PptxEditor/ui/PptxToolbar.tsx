@@ -1746,27 +1746,35 @@ export function Toolbar({
               <span css={styles.sep} />
               {selectedTableRange && (
                 <>
-                  <B
-                    on={verticalAlign0 === 't'}
-                    onClick={() => applyTableVerticalAlign('t')}
-                    title='Align cell top'
-                  >
-                    ⇡
-                  </B>
-                  <B
-                    on={verticalAlign0 === 'ctr'}
-                    onClick={() => applyTableVerticalAlign('ctr')}
-                    title='Align cell middle'
-                  >
-                    ↕
-                  </B>
-                  <B
-                    on={verticalAlign0 === 'b'}
-                    onClick={() => applyTableVerticalAlign('b')}
-                    title='Align cell bottom'
-                  >
-                    ⇣
-                  </B>
+                  {(
+                    [
+                      ['t', 'Align cell text to the top', 'M7 8h10'],
+                      ['ctr', 'Center cell text vertically', 'M7 12h10'],
+                      ['b', 'Align cell text to the bottom', 'M7 16h10']
+                    ] as const
+                  ).map(([vertical, label, bar]) => (
+                    <B
+                      key={vertical}
+                      on={verticalAlign0 === vertical}
+                      onClick={() => applyTableVerticalAlign(vertical)}
+                      title={label}
+                    >
+                      <svg
+                        viewBox='0 0 24 24'
+                        width={16}
+                        height={16}
+                        css={{
+                          fill: 'none',
+                          stroke: 'currentColor',
+                          strokeWidth: 1.7,
+                          strokeLinecap: 'round'
+                        }}
+                      >
+                        <rect x={4} y={5} width={16} height={14} rx={1.5} />
+                        <path d={bar} css={{ strokeWidth: 2.2 }} />
+                      </svg>
+                    </B>
+                  ))}
                   <span css={styles.sep} />
                 </>
               )}

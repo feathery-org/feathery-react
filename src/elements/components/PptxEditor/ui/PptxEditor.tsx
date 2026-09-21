@@ -220,8 +220,6 @@ function PptxEditorInner({
         maxHeight: '100%',
         minHeight: 0,
         background: PAPER,
-        border: `1px solid ${ZINC[200]}`,
-        borderRadius: 8,
         overflow: 'hidden'
       }}
     >
