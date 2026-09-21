@@ -3,7 +3,7 @@ import { Container } from '.';
 
 // Records the props the real container would register dirty state under
 jest.mock(
-  '../../../elements/components/DocxEditor/DocumentEditorContainer',
+  '../../../elements/components/DocumentEditor/DocumentEditorContainer',
   () => ({
     __esModule: true,
     default: ({ containerId, formId }: any) => (
