@@ -69,7 +69,7 @@ function PptxEditorInner({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [activePanel, setActivePanel] = useState<PptxPanelKind | null>(null);
-  const [zoomPct, setZoomPct] = useState(100);
+  const [zoomPct, setZoomPct] = useState(75);
   const loadSeq = useRef(0);
   const dirtyRef = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -221,99 +221,101 @@ function PptxEditorInner({
         overflow: 'hidden'
       }}
     >
-      {/* Toolbar row: PPTX commands + host actions */}
-      <div
-        css={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          borderBottom: `1px solid ${LINE}`,
-          background: PAPER,
-          paddingRight: 8
-        }}
-      >
-        <div css={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
-          {!readOnly && <Toolbar devJson={devJsonPanel} />}
-        </div>
-        <div
-          css={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            flex: '0 0 auto'
-          }}
-        >
-          {/* Mirrors DocxToolbar's ToolbarActions: the dot is always rendered
+      {/* Host actions render on the toolbar's tab row. */}
+      {(() => {
+        const hostActions = (
+          <>
+            {/* Mirrors DocxToolbar's ToolbarActions: the dot is always rendered
               and only toggles visibility so the row never shifts. */}
-          {!readOnly && (
-            <span
-              css={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 13,
-                color: ZINC[500],
-                whiteSpace: 'nowrap',
-                visibility: dirty ? 'visible' : 'hidden'
-              }}
-              aria-hidden={!dirty}
-              title={dirty ? 'You have unsaved changes' : undefined}
-            >
+            {!readOnly && (
               <span
                 css={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: FEATHERY_RED,
-                  flex: '0 0 auto'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 13,
+                  color: ZINC[500],
+                  whiteSpace: 'nowrap',
+                  visibility: dirty ? 'visible' : 'hidden'
                 }}
-              />
-            </span>
-          )}
-          {!hideDownload && (
-            <button
-              type='button'
-              css={downloadBtn}
-              onClick={handleDownload}
-              title='Download'
-            >
-              <DownloadIcon width={16} height={16} />
-              Download
-            </button>
-          )}
-          {onSave && !readOnly && (
-            <button
-              type='button'
-              css={{
-                display: 'flex',
-                height: 32,
-                alignItems: 'center',
-                gap: 6,
-                borderRadius: 6,
-                border: 'none',
-                background: FEATHERY_RED,
-                padding: '0 12px',
-                fontSize: 14,
-                fontWeight: 500,
-                color: '#fff',
-                cursor: saving ? 'default' : 'pointer',
-                '&:hover': {
-                  background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
-                }
-              }}
-              disabled={saving}
-              onClick={handleSave}
-            >
-              {saving ? (
-                <SpinnerIcon width={16} height={16} />
-              ) : (
-                <SaveIcon width={16} height={16} />
-              )}
-              Save
-            </button>
-          )}
-        </div>
-      </div>
+                aria-hidden={!dirty}
+                title={dirty ? 'You have unsaved changes' : undefined}
+              >
+                <span
+                  css={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: FEATHERY_RED,
+                    flex: '0 0 auto'
+                  }}
+                />
+                Unsaved changes
+              </span>
+            )}
+            {!hideDownload && (
+              <button
+                type='button'
+                css={downloadBtn}
+                onClick={handleDownload}
+                title='Download'
+              >
+                <DownloadIcon width={16} height={16} />
+                Download
+              </button>
+            )}
+            {onSave && !readOnly && (
+              <button
+                type='button'
+                css={{
+                  display: 'flex',
+                  height: 32,
+                  alignItems: 'center',
+                  gap: 6,
+                  borderRadius: 6,
+                  border: 'none',
+                  background: FEATHERY_RED,
+                  padding: '0 12px',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: '#fff',
+                  cursor: saving ? 'default' : 'pointer',
+                  '&:hover': {
+                    background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
+                  }
+                }}
+                disabled={saving}
+                onClick={handleSave}
+              >
+                {saving ? (
+                  <SpinnerIcon width={16} height={16} />
+                ) : (
+                  <SaveIcon width={16} height={16} />
+                )}
+                Save
+              </button>
+            )}
+          </>
+        );
+        return !readOnly ? (
+          <Toolbar devJson={devJsonPanel} rightActions={hostActions} />
+        ) : (
+          <div
+            css={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: 8,
+              minHeight: 44,
+              padding: '4px 8px',
+              borderBottom: `1px solid ${LINE}`,
+              background: PAPER
+            }}
+          >
+            {hostActions}
+          </div>
+        );
+      })()}
 
       {/* Body: navigator | stage | (json) | panel | rail */}
       <div
@@ -370,8 +372,47 @@ function PptxEditorInner({
           color: ZINC[500]
         }}
       >
-        <span css={{ whiteSpace: 'nowrap' }}>
-          Slide {state.activeSlide + 1} of {state.deck.slides.length}
+        <span
+          css={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            whiteSpace: 'nowrap'
+          }}
+        >
+          Slide
+          <input
+            type='number'
+            min={1}
+            max={state.deck.slides.length}
+            key={`slide-jump-${state.activeSlide}`}
+            defaultValue={state.activeSlide + 1}
+            title='Go to slide'
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              (e.target as HTMLInputElement).blur();
+            }}
+            onBlur={(e) => {
+              const total = state.deck?.slides.length ?? 1;
+              const requested = Math.round(Number(e.target.value));
+              if (!Number.isFinite(requested)) return;
+              const index = Math.min(Math.max(requested, 1), total) - 1;
+              if (index !== state.activeSlide) store.setActiveSlide(index);
+            }}
+            css={{
+              width: 42,
+              height: 22,
+              border: `1px solid ${ZINC[200]}`,
+              borderRadius: 5,
+              background: '#fff',
+              color: ZINC[700],
+              fontSize: 12,
+              textAlign: 'center',
+              fontVariantNumeric: 'tabular-nums'
+            }}
+          />
+          of {state.deck.slides.length}
         </span>
         <span css={{ flex: 1 }} />
         <button

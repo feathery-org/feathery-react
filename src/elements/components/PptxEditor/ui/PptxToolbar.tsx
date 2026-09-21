@@ -70,6 +70,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: 2,
+    minHeight: TOOLBAR_HEIGHT,
     padding: '4px 8px 0',
     borderBottom: `1px solid ${ZINC[200]}`
   },
@@ -79,7 +80,7 @@ const styles = {
     fontSize: 12.5,
     fontWeight: 600,
     color: active ? ZINC[900] : contextual ? AMBER : ZINC[500],
-    padding: '7px 12px',
+    padding: '10px 12px',
     borderRadius: '7px 7px 0 0',
     cursor: 'pointer',
     borderBottom: `2px solid ${
@@ -366,7 +367,14 @@ function CommitColorInput(props: {
   );
 }
 
-export function Toolbar({ devJson = false }: { devJson?: boolean }) {
+export function Toolbar({
+  devJson = false,
+  rightActions
+}: {
+  devJson?: boolean;
+  /** Host actions (unsaved indicator, Download, Save) pinned to the tab row. */
+  rightActions?: React.ReactNode;
+}) {
   const imgRef = useRef<HTMLInputElement>(null);
   const store = usePptxEditorStore();
   const state = usePptxEditorState();
@@ -851,6 +859,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
             {'{ }'}
           </B>
         )}
+        {rightActions}
       </div>
 
       {/* ---- Home ---- */}
