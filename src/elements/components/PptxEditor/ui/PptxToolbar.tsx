@@ -566,6 +566,7 @@ export function Toolbar({
   const [backgroundColor1, setBackgroundColor1] = useState('#1F4E79');
   const [backgroundColor2, setBackgroundColor2] = useState('#C0143C');
   const [backgroundAngle, setBackgroundAngle] = useState(90);
+  const [lastHighlight, setLastHighlight] = useState('F7B801');
   const [backgroundMode, setBackgroundMode] = useState<
     'solid' | 'gradient' | 'image'
   >('solid');
@@ -1021,37 +1022,90 @@ export function Toolbar({
           >
             A
           </ColorControl>
-          <ColorControl
-            disabled={!isText}
-            value={`#${run?.highlight || 'F7B801'}`}
-            onCommit={(value) =>
-              applyText({ highlight: value.replace('#', '') })
-            }
-            title='Text highlight color'
-          >
-            <svg
-              viewBox='0 0 24 24'
-              width={14}
-              height={14}
+          {/* Word-style split control: the button half toggles the highlight
+              (pressed = the selection is highlighted), the caret half opens
+              the picker for a different color. */}
+          <span css={{ display: 'inline-flex', alignItems: 'stretch' }}>
+            <button
+              type='button'
+              title={run?.highlight ? 'Remove highlight' : 'Highlight'}
+              disabled={!isText}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() =>
+                applyText({
+                  highlight: run?.highlight ? null : lastHighlight
+                })
+              }
               css={{
-                stroke: 'currentColor',
-                fill: 'none',
-                strokeWidth: 1.9,
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round'
+                ...styles.btn(!!run?.highlight, !isText),
+                flexDirection: 'column',
+                gap: 1,
+                padding: '2px 6px 3px',
+                borderTopRightRadius: 0,
+                borderBottomRightRadius: 0
               }}
             >
-              <path d='m9 11-6 6v3h9l3-3' />
-              <path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4l8 8Z' />
-            </svg>
-          </ColorControl>
-          <B
-            disabled={!isText || !run?.highlight}
-            onClick={() => applyText({ highlight: null })}
-            title='Remove highlight'
-          >
-            HL×
-          </B>
+              <span
+                css={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: 15
+                }}
+              >
+                <svg
+                  viewBox='0 0 24 24'
+                  width={14}
+                  height={14}
+                  css={{
+                    stroke: 'currentColor',
+                    fill: 'none',
+                    strokeWidth: 1.9,
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round'
+                  }}
+                >
+                  <path d='m9 11-6 6v3h9l3-3' />
+                  <path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4l8 8Z' />
+                </svg>
+              </span>
+              <span
+                css={{
+                  width: 16,
+                  height: 4,
+                  borderRadius: 1,
+                  background: `#${run?.highlight || lastHighlight}`,
+                  boxShadow: `inset 0 0 0 1px ${ZINC[200]}`
+                }}
+              />
+            </button>
+            <span
+              css={{
+                ...styles.btn(false, !isText),
+                position: 'relative',
+                minWidth: 14,
+                padding: 0,
+                borderTopLeftRadius: 0,
+                borderBottomLeftRadius: 0,
+                fontSize: 9,
+                color: ZINC[500]
+              }}
+              aria-label='Highlight color'
+            >
+              ▾
+              <CommitColorInput
+                disabled={!isText}
+                value={`#${run?.highlight || lastHighlight}`}
+                onCommit={(value) => {
+                  const color = value.replace('#', '');
+                  setLastHighlight(color);
+                  applyText({ highlight: color });
+                }}
+                title='Text highlight color'
+                bare
+              />
+            </span>
+          </span>
           <span css={styles.sep} />
           <B
             disabled={!isText}
