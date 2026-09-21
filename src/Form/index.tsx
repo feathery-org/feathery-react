@@ -1797,7 +1797,7 @@ function Form({
     // Hydrate field descriptions
     newStep.servar_fields.forEach((field: any) => {
       const servar = field.servar;
-      servar.name = replaceTextVariables(servar.name, field.repeat);
+      servar.name = replaceTextVariables(servar.name, field.repeat, true);
       const disabled = !fieldAllowedFromList(allowLists, servar.key);
       const props = field.properties;
       props.disabled = props.disabled || disabled;

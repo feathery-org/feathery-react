@@ -1,5 +1,9 @@
 import { replaceTextVariables } from './TextNodes';
 import { fieldValues, initState } from '../../utils/init';
+import {
+  clearOptionLabels,
+  registerOptionLabels
+} from '../../utils/optionLabels';
 
 const setFieldValues = (values: Record<string, any>) => {
   Object.keys(fieldValues).forEach((key) => delete fieldValues[key]);
@@ -11,6 +15,7 @@ describe('replaceTextVariables', () => {
     setFieldValues({});
     initState.knownFieldKeys.clear();
     initState.textVariableFormats = {};
+    clearOptionLabels();
     initState.sdkKey = 'test-sdk-key';
     initState.userId = 'user-1';
   });
@@ -161,6 +166,152 @@ describe('replaceTextVariables', () => {
       registerFormatted('amount');
       setFieldValues({ amount: [-1234.5, 6] });
       expect(replaceTextVariables('{{amount}}')).toBe('-$1,234.5, $6');
+    });
+  });
+
+  describe('option labels', () => {
+    const registerOptions = (
+      key: string,
+      options: string[],
+      labels?: (string | undefined)[],
+      extra: Record<string, any> = {}
+    ) => {
+      initState.knownFieldKeys.add(key);
+      registerOptionLabels({
+        key,
+        type: 'dropdown',
+        metadata: { options, option_labels: labels, ...extra },
+        ...extra
+      });
+    };
+
+    it('renders the label of the selected option', () => {
+      registerOptions('plan', ['pro'], ['Professional']);
+      setFieldValues({ plan: 'pro' });
+      expect(replaceTextVariables('on {{plan}}', undefined, true)).toBe(
+        'on Professional'
+      );
+    });
+
+    it('falls back to the value when the option has no label', () => {
+      registerOptions('plan', ['pro', 'ent'], ['', 'Enterprise']);
+      setFieldValues({ plan: 'pro' });
+      expect(replaceTextVariables('{{plan}}', undefined, true)).toBe('pro');
+    });
+
+    it('falls back to the value for an option that no longer exists', () => {
+      registerOptions('plan', ['pro'], ['Professional']);
+      setFieldValues({ plan: 'legacy' });
+      expect(replaceTextVariables('{{plan}}', undefined, true)).toBe('legacy');
+    });
+
+    it('leaves the value alone when labels are not opted into', () => {
+      registerOptions('plan', ['pro'], ['Professional']);
+      setFieldValues({ plan: 'pro' });
+      expect(replaceTextVariables('{{plan}}')).toBe('pro');
+    });
+
+    it('labels every selection of a multiselect', () => {
+      registerOptions('plans', ['a', 'b'], ['Alpha', 'Beta']);
+      setFieldValues({ plans: ['a', 'b'] });
+      expect(replaceTextVariables('{{plans}}', undefined, true)).toBe(
+        'Alpha, Beta'
+      );
+    });
+
+    it('does not read per-index options for a non-repeating field', () => {
+      registerOptions('plans', ['a', 'b'], ['Alpha', 'Beta'], {
+        repeat_options: [[{ value: 'a', label: 'Wrong' }]]
+      });
+      setFieldValues({ plans: ['a', 'b'] });
+      expect(replaceTextVariables('{{plans}}', undefined, true)).toBe(
+        'Alpha, Beta'
+      );
+    });
+
+    describe('repeating fields', () => {
+      beforeEach(() => {
+        registerOptions('plan', ['a'], ['Alpha'], {
+          repeated: true,
+          repeat_options: [undefined, [{ value: 'b', label: 'Second Beta' }]]
+        });
+        setFieldValues({ plan: ['a', 'b'] });
+      });
+
+      it('labels the entry at the resolved repeat index', () => {
+        expect(replaceTextVariables('{{plan}}', 1, true)).toBe('Second Beta');
+      });
+
+      it('labels each entry from its own options when joining', () => {
+        expect(replaceTextVariables('{{plan}}', undefined, true)).toBe(
+          'Alpha, Second Beta'
+        );
+      });
+
+      it('falls back to the default options for an unoverridden index', () => {
+        expect(replaceTextVariables('{{plan}}', 0, true)).toBe('Alpha');
+      });
+    });
+
+    it('re-registering replaces the labels an earlier load recorded', () => {
+      registerOptions('plan', ['pro'], ['Professional']);
+      registerOptions('plan', ['pro'], ['Profesional']);
+      setFieldValues({ plan: 'pro' });
+      expect(replaceTextVariables('{{plan}}', undefined, true)).toBe(
+        'Profesional'
+      );
+    });
+
+    it('releases a key once its labels are cleared', () => {
+      registerOptions('plan', ['pro'], ['Professional']);
+      registerOptions('plan', ['pro'], []);
+      setFieldValues({ plan: 'pro' });
+      expect(replaceTextVariables('{{plan}}', undefined, true)).toBe('pro');
+    });
+
+    it('renders a country name for a code-storing country field', () => {
+      initState.knownFieldKeys.add('country');
+      registerOptionLabels({
+        key: 'country',
+        type: 'gmap_country',
+        metadata: { store_abbreviation: true }
+      });
+      setFieldValues({ country: 'US' });
+      expect(replaceTextVariables('{{country}}', undefined, true)).toBe(
+        'United States'
+      );
+    });
+
+    it('honors a country field translation override', () => {
+      initState.knownFieldKeys.add('country');
+      registerOptionLabels(
+        {
+          key: 'country',
+          type: 'gmap_country',
+          metadata: { store_abbreviation: true }
+        },
+        { translate: { US: 'Estados Unidos' } }
+      );
+      setFieldValues({ country: 'US' });
+      expect(replaceTextVariables('{{country}}', undefined, true)).toBe(
+        'Estados Unidos'
+      );
+    });
+
+    it('prefers a number format over an option label', () => {
+      initState.knownFieldKeys.add('amount');
+      initState.textVariableFormats.amount = {
+        type: 'integer_field',
+        format: 'currency',
+        metadata: { currency: 'USD', show_format_in_text: true }
+      };
+      registerOptionLabels({
+        key: 'amount',
+        type: 'dropdown',
+        metadata: { options: [100], option_labels: ['A hundred'] }
+      });
+      setFieldValues({ amount: 100 });
+      expect(replaceTextVariables('{{amount}}', undefined, true)).toBe('$100');
     });
   });
 

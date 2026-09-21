@@ -15,6 +15,7 @@ import { authState } from '../auth/LoginForm';
 // mask.ts imports nothing, so this stays free of the import cycles the rest of
 // the elements tree would introduce here.
 import { showsFormatInText } from '../elements/fields/TextField/mask';
+import { registerOptionLabels } from './optionLabels';
 
 export type FeatheryFieldTypes =
   | null
@@ -202,7 +203,7 @@ function _fetchFormData(formIds: string[]) {
     const formClient = new FeatheryClient(key);
     formClient.fetchCacheForm().then((stepsResponse: any) => {
       initState.formSchemas[key] = stepsResponse;
-      registerTextVariableFormats(stepsResponse);
+      registerTextVariableFields(stepsResponse);
     });
   });
 }
@@ -312,18 +313,22 @@ function registerKnownFieldKeys(session: any) {
 }
 
 /**
- * Record which number fields render their format inside text variables. Driven
- * off the form schema rather than the session, since only the schema carries
- * servar metadata, and re-run per schema load so toggling the option in the
- * builder takes effect on the next fetch.
+ * Record what a field's value renders as inside a text variable: the number
+ * format it opted into, and the labels its options display as. Driven off the
+ * form schema rather than the session, since only the schema carries servar
+ * metadata, and re-run per schema load so a change in the builder — or a
+ * language switch, which reloads the schema with translated labels — takes
+ * effect on the next fetch.
  */
-function registerTextVariableFormats(schema: any) {
+function registerTextVariableFields(schema: any) {
   // Steps arrive keyed by step id from the API and as an array when a form is
   // off; Object.values covers both.
   Object.values(schema?.steps ?? {}).forEach((step: any) => {
     (step?.servar_fields ?? []).forEach((field: any) => {
       const servar = field?.servar;
-      if (servar?.type !== 'integer_field' || !servar.key) return;
+      if (!servar?.key) return;
+      registerOptionLabels(servar, field.properties);
+      if (servar.type !== 'integer_field') return;
       // Drop rather than skip, so turning the option off releases a key that an
       // earlier load registered.
       if (showsFormatInText(servar))
@@ -378,7 +383,7 @@ export {
   setFieldValues,
   getFieldValues,
   registerKnownFieldKeys,
-  registerTextVariableFormats,
+  registerTextVariableFields,
   getCompletedStepKeys,
   markStepCompleted,
   loadCompletedSteps,

@@ -7,6 +7,7 @@ import { getVisibleElements } from './hideAndRepeats';
 import { toBase64 } from './image';
 import { fieldValues } from './init';
 import { isObjectEmpty } from './primitives';
+import { registerOptionLabels } from './optionLabels';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -293,6 +294,11 @@ export function updateStepFieldOptions(
           servar.metadata.repeat_options[repeatIndex] = options;
         }
       }
+      // Options just changed, so the labels text variables resolve against have
+      // to change with them. This is the single choke point for dynamic options
+      // (Salesforce sync and the public setFieldOptions), which is why the
+      // registry is keyed on options rather than on values.
+      registerOptionLabels(servar, field.properties);
     }
   });
 }
