@@ -50,6 +50,7 @@ import {
 } from '../core/model/edit';
 import type { Deck, Shape, Slide } from '../core/model/types';
 import type { CommandMeta, EditorCommand, Invalidation } from './commands';
+import { deriveChangeRecord, type PptxChangeRecord } from './changes';
 
 const HISTORY_LIMIT = 100;
 
@@ -122,6 +123,9 @@ export class PptxEditorEngine {
   private sequence = 0;
   private revision = 0;
   private historyRevision = 0;
+  private changeLog: PptxChangeRecord[] = [];
+  // Records whose transactions are currently undone (they return on redo).
+  private shelvedRecords = new Map<string, PptxChangeRecord>();
 
   constructor(deck: Deck | null = null) {
     this.deck = deck;
@@ -496,7 +500,8 @@ export class PptxEditorEngine {
       meta.label || defaultLabel,
       invalidations,
       'change',
-      createdShapeIds
+      createdShapeIds,
+      meta
     );
   }
 
@@ -510,7 +515,9 @@ export class PptxEditorEngine {
     return this.commit(
       meta.label || 'Edit slide JSON',
       jsonInvalidations(slide.path, applied),
-      'change'
+      'change',
+      [],
+      meta
     );
   }
 
@@ -521,6 +528,13 @@ export class PptxEditorEngine {
     const restored = restoreHistorySnapshot(deck, entry.before);
     this.undoStack.pop();
     this.redoStack.push(entry);
+    const undone = this.changeLog.find(
+      (record) => record.transactionId === String(entry.id)
+    );
+    if (undone) {
+      this.shelvedRecords.set(undone.transactionId, undone);
+      this.changeLog = this.changeLog.filter((record) => record !== undone);
+    }
     this.present = entry.before;
     this.revision += 1;
     this.historyRevision += 1;
@@ -536,6 +550,11 @@ export class PptxEditorEngine {
     const restored = restoreHistorySnapshot(deck, entry.after);
     this.redoStack.pop();
     this.undoStack.push(entry);
+    const shelved = this.shelvedRecords.get(String(entry.id));
+    if (shelved) {
+      this.shelvedRecords.delete(String(entry.id));
+      this.changeLog = [...this.changeLog, shelved];
+    }
     this.present = entry.after;
     this.revision += 1;
     this.historyRevision += 1;
@@ -550,6 +569,130 @@ export class PptxEditorEngine {
 
   canRedo(): boolean {
     return this.redoStack.length > 0;
+  }
+
+  /** The tracked-edit log for the current document (newest last). */
+  changes(): PptxChangeRecord[] {
+    return this.changeLog;
+  }
+
+  pendingChangeCount(): number {
+    return this.changeLog.filter((record) => record.status === 'pending')
+      .length;
+  }
+
+  /** Accept a pending suggestion: the deck already carries it, only the
+   *  record's status flips. */
+  acceptChange(id: string): boolean {
+    const record = this.changeLog.find((candidate) => candidate.id === id);
+    if (!record || record.status !== 'pending') return false;
+    this.changeLog = this.changeLog.map((candidate) =>
+      candidate === record
+        ? { ...candidate, status: 'accepted' as const }
+        : candidate
+    );
+    this.revision += 1;
+    return true;
+  }
+
+  /**
+   * Reject a pending suggestion by executing an inverse engine command - but
+   * only when its targets are unchanged since the suggestion. A target that
+   * moved on is a conflict; later work is never overwritten.
+   */
+  rejectChange(
+    id: string
+  ):
+    | { ok: true; results: CommandResult[] }
+    | { ok: false; reason: 'not-pending' | 'conflict' | 'unsupported' } {
+    const record = this.changeLog.find((candidate) => candidate.id === id);
+    if (!record || record.status !== 'pending')
+      return { ok: false, reason: 'not-pending' };
+    const doc = this.present?.document;
+    if (!doc) return { ok: false, reason: 'conflict' };
+    const before = record.before as Record<string, unknown>;
+    const after = record.after as Record<string, unknown>;
+
+    // Validate every target first: reject is all-or-nothing.
+    type SlidePlan = { slideId: string; draft: any; deletions: string[] };
+    const plans = new Map<string, SlidePlan>();
+    for (const target of record.targets) {
+      if (target.slideId === '*') return { ok: false, reason: 'unsupported' };
+      const slide = doc.slides.find((s) => s.path === target.slideId);
+      if (!slide) return { ok: false, reason: 'conflict' };
+      let plan = plans.get(target.slideId);
+      if (!plan) {
+        plan = {
+          slideId: target.slideId,
+          draft: deepClone(slide),
+          deletions: []
+        };
+        plans.set(target.slideId, plan);
+      }
+      if (target.shapeId) {
+        const key = `${target.slideId}#${target.shapeId}`;
+        const current = slide.shapes.find((s) => s.id === target.shapeId);
+        const expected = after[key];
+        if (JSON.stringify(current ?? null) !== JSON.stringify(expected))
+          return { ok: false, reason: 'conflict' };
+        const previous = before[key];
+        if (previous === null) {
+          // The suggestion created this shape; rejecting deletes it.
+          if (!current) return { ok: false, reason: 'conflict' };
+          plan.deletions.push(target.shapeId);
+        } else if (current) {
+          const index = plan.draft.shapes.findIndex(
+            (s: any) => s.id === target.shapeId
+          );
+          plan.draft.shapes[index] = deepClone(previous);
+        } else {
+          // The suggestion deleted the shape; restoring it needs raw XML we
+          // no longer hold in the public projection.
+          return { ok: false, reason: 'unsupported' };
+        }
+      } else {
+        const expected = after[target.slideId];
+        if (JSON.stringify(slide) !== JSON.stringify(expected))
+          return { ok: false, reason: 'conflict' };
+        plans.set(target.slideId, {
+          slideId: target.slideId,
+          draft: deepClone(before[target.slideId]),
+          deletions: []
+        });
+      }
+    }
+
+    const results: CommandResult[] = [];
+    for (const plan of plans.values()) {
+      if (plan.deletions.length) {
+        results.push(
+          this.execute(
+            {
+              type: 'delete-shapes',
+              slideId: plan.slideId,
+              shapeIds: plan.deletions
+            },
+            { label: 'Reject suggestion', authorLabel: 'Reject' }
+          )
+        );
+        plan.draft.shapes = plan.draft.shapes.filter(
+          (s: any) => !plan.deletions.includes(s.id)
+        );
+      }
+      results.push(
+        this.applySlideJson(plan.slideId, plan.draft, {
+          label: 'Reject suggestion',
+          authorLabel: 'Reject'
+        })
+      );
+    }
+    this.changeLog = this.changeLog.map((candidate) =>
+      candidate.id === id
+        ? { ...candidate, status: 'rejected' as const }
+        : candidate
+    );
+    this.revision += 1;
+    return { ok: true, results };
   }
 
   /** Cheap dirty check against the saved baseline (no snapshot cloning). */
@@ -586,12 +729,16 @@ export class PptxEditorEngine {
     this.baseline = this.present;
     this.undoStack = [];
     this.redoStack = [];
+    this.changeLog = [];
+    this.shelvedRecords.clear();
     this.historyRevision += 1;
   }
 
   dispose(): void {
     this.listeners.clear();
     if (this.deck) releaseObjectUrls(this.deck.pkg);
+    this.changeLog = [];
+    this.shelvedRecords.clear();
     this.deck = null;
     this.present = null;
     this.baseline = null;
@@ -603,18 +750,33 @@ export class PptxEditorEngine {
     label: string,
     invalidations: Invalidation[],
     event: EditorEvent['kind'],
-    createdShapeIds: string[] = []
+    createdShapeIds: string[] = [],
+    meta: CommandMeta = {}
   ): CommandResult {
     const deck = this.requireDeck();
     const before = this.present || captureHistorySnapshot(deck);
     const after = captureHistorySnapshot(deck);
     this.present = after;
     if (sameHistoryDocument(before, after)) return this.result(false, []);
+    const entryId = ++this.sequence;
     this.undoStack = [
       ...this.undoStack,
-      { id: ++this.sequence, label, before, after }
+      { id: entryId, label, before, after }
     ].slice(-HISTORY_LIMIT);
     this.redoStack = [];
+    // Redo is gone, so records shelved by undo can never come back.
+    this.shelvedRecords.clear();
+    this.changeLog = [
+      ...this.changeLog,
+      deriveChangeRecord({
+        transactionId: entryId,
+        label,
+        meta,
+        invalidations,
+        beforeDoc: before.document,
+        afterDoc: after.document
+      })
+    ];
     this.revision += 1;
     const result = this.result(true, invalidations, createdShapeIds);
     this.emit(event, result);

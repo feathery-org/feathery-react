@@ -10,6 +10,7 @@ import { SlideNavigator } from './SlideNavigator';
 import { JsonPanel } from './JsonPanel';
 import PptxPanelRail, { type PptxPanelKind } from './PptxPanelRail';
 import PptxRightPanel from './PptxRightPanel';
+import PptxChangesPanel from './PptxChangesPanel';
 import {
   INK,
   INK_3,
@@ -280,17 +281,17 @@ function PptxEditorInner({
           tab={activePanel ?? 'changes'}
           onClose={() => setActivePanel(null)}
           boundaryKey={`${state.fileName}:${openNonce}`}
+          changesBody={<PptxChangesPanel />}
         />
         <PptxPanelRail
           activePanel={activePanel}
           onToggle={(panel) =>
             setActivePanel((current) => (current === panel ? null : panel))
           }
-          changesCount={0}
+          changesCount={store.engine.pendingChangeCount()}
           historyEnabled={historyEnabled}
         />
       </div>
-      {reviewChanges ? null : null}
     </div>
   );
 }

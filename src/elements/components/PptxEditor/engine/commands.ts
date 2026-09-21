@@ -162,4 +162,6 @@ export type Invalidation =
 export interface CommandMeta {
   label?: string;
   origin?: 'editor' | 'json' | 'binding' | 'assistant';
+  /** Display name for the tracked-edits log (defaults to the author kind). */
+  authorLabel?: string;
 }

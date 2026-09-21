@@ -289,6 +289,26 @@ export class PptxEditorStore {
     this.set({ rev: this.state.rev + 1 });
   };
 
+  // ---- tracked edits ----
+
+  acceptChange = (id: string): boolean => {
+    const accepted = this.engine.acceptChange(id);
+    if (accepted) this.set({ rev: this.state.rev + 1 });
+    return accepted;
+  };
+
+  rejectChange = (id: string): ReturnType<PptxEditorEngine['rejectChange']> => {
+    const outcome = this.engine.rejectChange(id);
+    if (outcome.ok) {
+      for (const result of outcome.results) this.refreshEngineView(result);
+    }
+    this.set({
+      ...historyFields(this.engine.snapshot()),
+      rev: this.state.rev + 1
+    });
+    return outcome;
+  };
+
   // ---- UI state actions ----
 
   setSvgRoot = (svg: SVGSVGElement | null): void => {
