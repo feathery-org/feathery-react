@@ -61,3 +61,15 @@ export async function mountEditor(children: React.ReactNode): Promise<Mounted> {
 }
 
 export { act };
+
+/** Activate a toolbar tab (Option B tabbed toolbar) by its visible label. */
+export async function switchTab(
+  host: HTMLElement,
+  label: 'Home' | 'Insert' | 'Slide' | 'Arrange' | 'Table'
+): Promise<void> {
+  const tab = Array.from(host.querySelectorAll('[role="tab"]')).find(
+    (el) => el.textContent === label
+  ) as HTMLButtonElement | undefined;
+  if (!tab) throw new Error(`Toolbar tab "${label}" not found`);
+  await act(async () => tab.click());
+}

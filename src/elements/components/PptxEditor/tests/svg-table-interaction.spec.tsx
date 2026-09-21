@@ -14,7 +14,7 @@ import { child, descendant, getAttr, setAttr } from '../core/opc/xml';
 import type { Deck, Shape, Slide } from '../core/model/types';
 import { SvgSlide } from '../ui/SlideStage';
 import { Toolbar } from '../ui/PptxToolbar';
-import { act, mountEditor, sampleBytes, type Mounted } from './harness';
+import { act, mountEditor, sampleBytes, type Mounted, switchTab } from './harness';
 
 const STAGE_RECT = {
   x: 16,
@@ -397,6 +397,7 @@ it('leaves Tab available to toolbar controls while a table cell remains highligh
       endCol: 0
     })
   );
+  await switchTab(host, 'Home');
   const font = host.querySelector('select[title="Font"]') as HTMLSelectElement;
   font.focus();
   const event = new KeyboardEvent('keydown', {
@@ -444,9 +445,11 @@ it('drag-selects a rectangular cell range and applies text, fill, and border for
     endCol: 1
   });
   expect(host.querySelector('[data-table-range]')).toBeTruthy();
+  await switchTab(host, 'Home');
   await act(async () =>
     (host.querySelector('button[title="Bold"]') as HTMLButtonElement).click()
   );
+  await switchTab(host, 'Table');
   const fill = host.querySelector(
     'input[title="Selected cell fill"]'
   ) as HTMLInputElement;
@@ -741,6 +744,7 @@ it('moves a table inserted from the toolbar from its selection handle', async ()
   const host = mounted.host;
   await act(async () => store.loadFile(sampleBytes(), 'sample.pptx'));
   const slide = store.getState().deck!.slides[0];
+  await switchTab(host, 'Insert');
   await act(async () =>
     (
       host.querySelector('button[title="Insert table"]') as HTMLButtonElement

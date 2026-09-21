@@ -8,7 +8,7 @@ import type { Deck, Shape } from '../core/model/types';
 import { Toolbar } from '../ui/PptxToolbar';
 import { SvgSlide } from '../ui/SlideStage';
 import { JsonPanel } from '../ui/JsonPanel';
-import { act, mountEditor, sampleBytes, type Mounted } from './harness';
+import { act, mountEditor, sampleBytes, type Mounted, switchTab } from './harness';
 
 const PNG_DATA =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -201,6 +201,8 @@ it('exposes toolbar buttons and keyboard shortcuts for undo and redo', async () 
     'button[title="Undo Move shape"]'
   ) as HTMLButtonElement;
   expect(undo.disabled).toBe(false);
+  // Slide-size controls live on the Slide tab in the tabbed toolbar.
+  await switchTab(host, 'Slide');
   const slideWidth = host.querySelector(
     'input[title="Slide width (inches)"]'
   ) as HTMLInputElement;
@@ -553,6 +555,7 @@ it('routes slide-size toolbar edits through engine history without remounting SV
   );
   const before = deckToJSON(deck).slides[0].sizeEMU;
   const svg = host.querySelector('svg');
+  await switchTab(host, 'Slide');
   const width = host.querySelector(
     'input[title="Slide width (inches)"]'
   ) as HTMLInputElement;

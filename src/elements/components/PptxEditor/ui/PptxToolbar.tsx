@@ -21,6 +21,11 @@ import {
   effectiveSlideSize,
   SLIDE_SIZE_PRESETS
 } from '../core/model/slideSize';
+import {
+  FEATHERY_RED,
+  TOOLBAR_HEIGHT,
+  ZINC
+} from '../../DocxEditor/DocxToolbar/styles';
 import type { ShapeInsertion, TableEditOperation } from '../engine';
 
 const FONTS = [
@@ -34,13 +39,182 @@ const FONTS = [
   'Tahoma'
 ];
 
+// Contextual table tools get a warm tint so they read as tied to the selection,
+// mirroring PowerPoint's contextual-tab convention at Feathery visual weight.
+const AMBER = '#92610e';
+const AMBER_WASH = '#fdf6e7';
+
+type TabKey = 'home' | 'insert' | 'slide' | 'arrange' | 'table';
+
+const TAB_LABELS: Record<Exclude<TabKey, 'table'>, string> = {
+  home: 'Home',
+  insert: 'Insert',
+  slide: 'Slide',
+  arrange: 'Arrange'
+};
+
+const styles = {
+  wrap: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    background: '#fff'
+  },
+  tabRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    padding: '4px 8px 0',
+    borderBottom: `1px solid ${ZINC[200]}`
+  },
+  tab: (active: boolean, contextual = false) => ({
+    border: 'none',
+    background: 'transparent',
+    fontSize: 12.5,
+    fontWeight: 600,
+    color: active ? ZINC[900] : contextual ? AMBER : ZINC[500],
+    padding: '7px 12px',
+    borderRadius: '7px 7px 0 0',
+    cursor: 'pointer',
+    borderBottom: `2px solid ${
+      active ? (contextual ? AMBER : FEATHERY_RED) : 'transparent'
+    }`,
+    transition: 'background .12s',
+    '&:hover': { background: ZINC[100], color: ZINC[900] }
+  }),
+  pane: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    minHeight: TOOLBAR_HEIGHT - 8,
+    padding: '3px 8px',
+    overflowX: 'auto' as const
+  },
+  btn: (on = false, disabled = false) => ({
+    height: 30,
+    minWidth: 30,
+    padding: '0 7px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    border: 'none',
+    borderRadius: 6,
+    background: on ? ZINC[200] : 'transparent',
+    color: on ? ZINC[900] : ZINC[700],
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: disabled ? 'default' : 'pointer',
+    whiteSpace: 'nowrap' as const,
+    opacity: disabled ? 0.4 : 1,
+    transition: 'background .12s',
+    '&:hover': disabled ? {} : { background: on ? ZINC[200] : ZINC[100] },
+    '&:focus-visible': {
+      outline: `2px solid ${FEATHERY_RED}`,
+      outlineOffset: 1
+    }
+  }),
+  select: {
+    height: 30,
+    border: `1px solid ${ZINC[200]}`,
+    borderRadius: 6,
+    background: '#fff',
+    color: ZINC[700],
+    fontSize: 12.5,
+    padding: '0 6px',
+    cursor: 'pointer',
+    '&:hover': { background: ZINC[100] },
+    '&:disabled': { opacity: 0.4, cursor: 'default' }
+  },
+  num: (wide = false) => ({
+    width: wide ? 60 : 48,
+    height: 30,
+    border: `1px solid ${ZINC[200]}`,
+    borderRadius: 6,
+    background: '#fff',
+    color: ZINC[700],
+    fontSize: 12.5,
+    padding: '0 6px',
+    '&:disabled': { opacity: 0.4 }
+  }),
+  color: {
+    width: 30,
+    height: 30,
+    padding: 2,
+    background: '#fff',
+    border: `1px solid ${ZINC[200]}`,
+    borderRadius: 6,
+    cursor: 'pointer',
+    '&:disabled': { opacity: 0.4, cursor: 'default' }
+  },
+  sep: {
+    width: 1,
+    height: 22,
+    background: ZINC[200],
+    margin: '0 5px',
+    flex: '0 0 auto'
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '.05em',
+    textTransform: 'uppercase' as const,
+    color: ZINC[400],
+    padding: '0 4px',
+    whiteSpace: 'nowrap' as const
+  },
+  cropLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    fontSize: 11,
+    color: ZINC[500]
+  },
+  slideIndicator: {
+    fontSize: 12,
+    color: ZINC[400],
+    padding: '0 8px',
+    whiteSpace: 'nowrap' as const
+  },
+  tableInsert: { position: 'relative' as const },
+  tableMenu: {
+    position: 'absolute' as const,
+    top: '100%',
+    left: 0,
+    zIndex: 40,
+    width: 166,
+    padding: 8,
+    background: '#fff',
+    border: `1px solid ${ZINC[200]}`,
+    borderRadius: 8,
+    boxShadow: '0 6px 18px rgba(23,26,28,.13)'
+  },
+  tableLabel: {
+    display: 'block',
+    marginBottom: 6,
+    color: ZINC[700],
+    fontSize: 12
+  },
+  tableGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(8, 16px)',
+    gap: 3
+  },
+  tableCell: (active: boolean) => ({
+    width: 16,
+    height: 16,
+    padding: 0,
+    border: `1px solid ${active ? FEATHERY_RED : ZINC[300]}`,
+    background: active ? 'rgba(226,98,110,.18)' : '#fff',
+    cursor: 'pointer'
+  })
+};
+
 function B(props: {
   on?: boolean;
   disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
   title?: string;
-  w?: number;
   historyAction?: boolean;
 }) {
   return (
@@ -49,11 +223,7 @@ function B(props: {
       disabled={props.disabled}
       onClick={props.onClick}
       data-history-action={props.historyAction ? '' : undefined}
-      style={{
-        ...s.btn,
-        ...(props.on ? s.on : null),
-        ...(props.w ? { minWidth: props.w } : null)
-      }}
+      css={styles.btn(props.on, props.disabled)}
     >
       {props.children}
     </button>
@@ -117,7 +287,7 @@ function CommitColorInput(props: {
       disabled={props.disabled}
       type='color'
       defaultValue={props.value}
-      style={s.color}
+      css={styles.color}
       title={props.title}
     />
   );
@@ -238,6 +408,20 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
       : `auto:${bullet0.scheme || 'arabicPeriod'}`;
   const isText = !!sh?.text || !!selectedTableRange;
   const hasSel = !!sh;
+  const isTable = sh?.type === 'table';
+
+  const [tab, setTab] = useState<TabKey>('home');
+  // The Table tab is contextual: it appears (and takes focus) when a table is
+  // selected, and hands back to Home when the selection leaves the table.
+  const wasTableRef = useRef(false);
+  useEffect(() => {
+    if (isTable && !wasTableRef.current) setTab('table');
+    else if (!isTable)
+      setTab((current) => (current === 'table' ? 'home' : current));
+    wasTableRef.current = isTable;
+  }, [isTable]);
+  const activeTab: TabKey = tab === 'table' && !isTable ? 'home' : tab;
+
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
   const [tableHover, setTableHover] = useState({ rows: 3, cols: 3 });
   const [columnIndex, setColumnIndex] = useState(0);
@@ -517,10 +701,22 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
     );
   };
 
+  const tabButton = (key: Exclude<TabKey, 'table'>) => (
+    <button
+      key={key}
+      role='tab'
+      aria-selected={activeTab === key}
+      onClick={() => setTab(key)}
+      css={styles.tab(activeTab === key)}
+    >
+      {TAB_LABELS[key]}
+    </button>
+  );
+
   return (
-    <div style={s.bar}>
-      {/* History / developer view */}
-      <div style={s.grp}>
+    <div css={styles.wrap}>
+      {/* Tab row: history is always reachable; the Table tab is contextual. */}
+      <div css={styles.tabRow} role='tablist' aria-label='Editor tools'>
         <B
           historyAction
           disabled={!undoStack.length && !commitSvgTextEdit}
@@ -547,477 +743,592 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
         >
           ↷
         </B>
+        <span css={styles.sep} />
+        {tabButton('home')}
+        {tabButton('insert')}
+        {tabButton('slide')}
+        {tabButton('arrange')}
+        {isTable && (
+          <button
+            role='tab'
+            aria-selected={activeTab === 'table'}
+            onClick={() => setTab('table')}
+            css={styles.tab(activeTab === 'table', true)}
+          >
+            Table
+          </button>
+        )}
+        <span css={{ flex: 1 }} />
         {devJson && (
           <B on={showJson} onClick={toggleJson} title='Live JSON panel'>
             {'{ }'}
           </B>
         )}
+        <span css={styles.slideIndicator}>Slide {activeSlide + 1}</span>
       </div>
 
-      <div style={s.grp}>
-        <span style={s.lbl}>Slide size</span>
-        <select
-          disabled={!slide}
-          value={currentPreset}
-          onChange={(e) => {
-            const preset =
-              SLIDE_SIZE_PRESETS[
-                e.target.value as keyof typeof SLIDE_SIZE_PRESETS
-              ];
-            if (preset) resizeSlide(preset.cx, preset.cy);
+      {/* ---- Home ---- */}
+      {activeTab === 'home' && (
+        <div
+          css={styles.pane}
+          role='toolbar'
+          aria-label='Text formatting'
+          onMouseDownCapture={captureTextRangeForToolbar}
+          onMouseUpCapture={(e) => {
+            if (
+              (e.target as HTMLElement).matches('input[type="color"], select')
+            )
+              return;
+            store.setTextToolbarPointer(false);
           }}
-          style={s.sel}
-          title='Size preset for this slide'
         >
-          {Object.entries(SLIDE_SIZE_PRESETS).map(([key, preset]) => (
-            <option key={key} value={key}>
-              {preset.label}
-            </option>
-          ))}
-          <option value='custom'>Custom</option>
-        </select>
-        <input
-          disabled={!slide}
-          key={`sw-${activeSlide}-${currentSlideSize?.cx}`}
-          type='number'
-          min='1'
-          step='0.1'
-          defaultValue={((currentSlideSize?.cx || 0) / 914400).toFixed(2)}
-          onChange={(e) =>
-            resizeSlide(
-              Number(e.target.value) * 914400,
-              currentSlideSize?.cy || 6858000
-            )
-          }
-          style={s.numWide}
-          title='Slide width (inches)'
-        />
-        <span style={s.lbl}>×</span>
-        <input
-          disabled={!slide}
-          key={`sh-${activeSlide}-${currentSlideSize?.cy}`}
-          type='number'
-          min='1'
-          step='0.1'
-          defaultValue={((currentSlideSize?.cy || 0) / 914400).toFixed(2)}
-          onChange={(e) =>
-            resizeSlide(
-              currentSlideSize?.cx || 12192000,
-              Number(e.target.value) * 914400
-            )
-          }
-          style={s.numWide}
-          title='Slide height (inches)'
-        />
-      </div>
-
-      {sh?.type === 'pic' && pictureCrop && (
-        <div style={s.grp}>
-          <span style={s.lbl}>Picture crop</span>
-          <B
-            on={pictureCropModeId === sh.id}
-            onClick={() =>
-              setPictureCropMode(pictureCropModeId === sh.id ? null : sh.id)
-            }
-            title={
-              pictureCropModeId === sh.id
-                ? 'Finish cropping picture'
-                : 'Crop picture on slide'
-            }
-          >
-            {pictureCropModeId === sh.id ? 'Done' : 'Crop'}
-          </B>
           <select
-            value={
-              pictureCrop.clipGeometry === 'ellipse' &&
-              sh.xfrm &&
-              Math.abs(sh.xfrm.cx - sh.xfrm.cy) < 2
-                ? 'circle'
-                : pictureCrop.clipGeometry
-            }
-            onChange={(event) =>
-              applyPictureGeometry(
-                event.target.value as 'rect' | 'ellipse' | 'circle'
-              )
-            }
-            style={s.sel}
-            title='Crop shape'
+            disabled={!isText}
+            value={run?.font || 'Arial'}
+            onChange={(e) => applyText({ font: e.target.value })}
+            css={styles.select}
+            title='Font'
           >
-            <option value='rect'>Rectangle</option>
-            <option value='ellipse'>Ellipse</option>
-            <option value='circle'>Circle</option>
+            {FONTS.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
           </select>
-          {(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
-            <label key={`${sh.id}-${edge}`} style={s.cropLabel}>
-              {edge[0].toUpperCase()}
-              <input
-                key={`${sh.id}-${edge}-${pictureCrop.cropPct[edge]}`}
-                type='number'
-                min='0'
-                max='99'
-                step='1'
-                defaultValue={+pictureCrop.cropPct[edge].toFixed(2)}
-                onChange={(event) =>
-                  applyPictureCrop({
-                    cropPct: {
-                      ...pictureCrop.cropPct,
-                      [edge]: Number(event.target.value)
-                    }
-                  })
-                }
-                style={s.num}
-                title={`${edge} source crop percent`}
-              />
-            </label>
-          ))}
+          <input
+            disabled={!isText}
+            type='number'
+            min={6}
+            max={200}
+            value={Math.round(run?.sizePt || 18)}
+            onChange={(e) => applyText({ sizePt: Number(e.target.value) })}
+            css={styles.num()}
+            title='Size'
+          />
+          <span css={styles.sep} />
           <B
-            onClick={() =>
-              applyPictureCrop({
-                cropPct: { left: 0, top: 0, right: 0, bottom: 0 }
-              })
-            }
-            title='Reset source crop'
+            disabled={!isText}
+            on={!!run?.bold}
+            onClick={() => applyText({ bold: !run?.bold })}
+            title='Bold'
           >
-            Reset
+            <b>B</b>
           </B>
+          <B
+            disabled={!isText}
+            on={!!run?.italic}
+            onClick={() => applyText({ italic: !run?.italic })}
+            title='Italic'
+          >
+            <i>I</i>
+          </B>
+          <B
+            disabled={!isText}
+            on={!!run?.underline}
+            onClick={() => applyText({ underline: !run?.underline })}
+            title='Underline'
+          >
+            <span css={{ textDecoration: 'underline' }}>U</span>
+          </B>
+          <B
+            disabled={!isText}
+            on={!!run?.strike}
+            onClick={() => applyText({ strike: !run?.strike })}
+            title='Strikethrough'
+          >
+            <span css={{ textDecoration: 'line-through' }}>S</span>
+          </B>
+          <B
+            disabled={!isText}
+            on={(run?.baselinePct || 0) > 0}
+            onClick={() =>
+              applyText({ baselinePct: (run?.baselinePct || 0) > 0 ? 0 : 30 })
+            }
+            title='Superscript'
+          >
+            x<sup>2</sup>
+          </B>
+          <B
+            disabled={!isText}
+            on={(run?.baselinePct || 0) < 0}
+            onClick={() =>
+              applyText({ baselinePct: (run?.baselinePct || 0) < 0 ? 0 : -30 })
+            }
+            title='Subscript'
+          >
+            x<sub>2</sub>
+          </B>
+          <CommitColorInput
+            disabled={!isText}
+            value={`#${run?.color || '000000'}`}
+            onCommit={(value) => applyText({ color: value.replace('#', '') })}
+            title='Text color'
+          />
+          <CommitColorInput
+            disabled={!isText}
+            value={`#${run?.highlight || 'F7B801'}`}
+            onCommit={(value) =>
+              applyText({ highlight: value.replace('#', '') })
+            }
+            title='Text highlight color'
+          />
+          <B
+            disabled={!isText || !run?.highlight}
+            onClick={() => applyText({ highlight: null })}
+            title='Remove highlight'
+          >
+            HL×
+          </B>
+          <span css={styles.sep} />
+          <B
+            disabled={!isText}
+            on={align0 === 'l'}
+            onClick={() => applyAlign('l')}
+            title='Left'
+          >
+            ↤
+          </B>
+          <B
+            disabled={!isText}
+            on={align0 === 'ctr'}
+            onClick={() => applyAlign('ctr')}
+            title='Center'
+          >
+            ↔
+          </B>
+          <B
+            disabled={!isText}
+            on={align0 === 'r'}
+            onClick={() => applyAlign('r')}
+            title='Right'
+          >
+            ↦
+          </B>
+          <B
+            disabled={!isText}
+            on={align0 === 'just'}
+            onClick={() => applyAlign('just')}
+            title='Justify'
+          >
+            ≋
+          </B>
+          <span css={styles.sep} />
+          <select
+            disabled={!sh?.text}
+            value={bulletValue}
+            onChange={(e) => applyBullet(e.target.value)}
+            css={styles.select}
+            title='Bullets and numbering'
+          >
+            <option value='none'>No bullets</option>
+            <option value='char:•'>• Bullet</option>
+            <option value='char:–'>– Dash</option>
+            <option value='char:➤'>➤ Arrow</option>
+            <option value='auto:arabicPeriod'>1. Number</option>
+            <option value='auto:alphaLcParenR'>a) Lower alpha</option>
+            <option value='auto:romanLcPeriod'>i. Lower roman</option>
+          </select>
         </div>
       )}
 
-      {/* Text */}
-      <div
-        style={s.grp}
-        onMouseDownCapture={captureTextRangeForToolbar}
-        onMouseUpCapture={(e) => {
-          if ((e.target as HTMLElement).matches('input[type="color"], select'))
-            return;
-          store.setTextToolbarPointer(false);
-        }}
-      >
-        <select
-          disabled={!isText}
-          value={run?.font || 'Arial'}
-          onChange={(e) => applyText({ font: e.target.value })}
-          style={s.sel}
-          title='Font'
-        >
-          {FONTS.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-        <input
-          disabled={!isText}
-          type='number'
-          min={6}
-          max={200}
-          value={Math.round(run?.sizePt || 18)}
-          onChange={(e) => applyText({ sizePt: Number(e.target.value) })}
-          style={s.num}
-          title='Size'
-        />
-        <B
-          disabled={!isText}
-          on={!!run?.bold}
-          onClick={() => applyText({ bold: !run?.bold })}
-          title='Bold'
-        >
-          <b>B</b>
-        </B>
-        <B
-          disabled={!isText}
-          on={!!run?.italic}
-          onClick={() => applyText({ italic: !run?.italic })}
-          title='Italic'
-        >
-          <i>I</i>
-        </B>
-        <B
-          disabled={!isText}
-          on={!!run?.underline}
-          onClick={() => applyText({ underline: !run?.underline })}
-          title='Underline'
-        >
-          <span style={{ textDecoration: 'underline' }}>U</span>
-        </B>
-        <B
-          disabled={!isText}
-          on={!!run?.strike}
-          onClick={() => applyText({ strike: !run?.strike })}
-          title='Strikethrough'
-        >
-          <span style={{ textDecoration: 'line-through' }}>S</span>
-        </B>
-        <CommitColorInput
-          disabled={!isText}
-          value={`#${run?.color || '000000'}`}
-          onCommit={(value) => applyText({ color: value.replace('#', '') })}
-          title='Text color'
-        />
-        <CommitColorInput
-          disabled={!isText}
-          value={`#${run?.highlight || 'F7B801'}`}
-          onCommit={(value) => applyText({ highlight: value.replace('#', '') })}
-          title='Text highlight color'
-        />
-        <B
-          disabled={!isText || !run?.highlight}
-          onClick={() => applyText({ highlight: null })}
-          title='Remove highlight'
-        >
-          HL×
-        </B>
-        <B
-          disabled={!isText}
-          on={(run?.baselinePct || 0) > 0}
-          onClick={() =>
-            applyText({ baselinePct: (run?.baselinePct || 0) > 0 ? 0 : 30 })
-          }
-          title='Superscript'
-        >
-          x<sup>2</sup>
-        </B>
-        <B
-          disabled={!isText}
-          on={(run?.baselinePct || 0) < 0}
-          onClick={() =>
-            applyText({ baselinePct: (run?.baselinePct || 0) < 0 ? 0 : -30 })
-          }
-          title='Subscript'
-        >
-          x<sub>2</sub>
-        </B>
-        <select
-          disabled={!sh?.text}
-          value={bulletValue}
-          onChange={(e) => applyBullet(e.target.value)}
-          style={s.sel}
-          title='Bullets and numbering'
-        >
-          <option value='none'>No bullets</option>
-          <option value='char:•'>• Bullet</option>
-          <option value='char:–'>– Dash</option>
-          <option value='char:➤'>➤ Arrow</option>
-          <option value='auto:arabicPeriod'>1. Number</option>
-          <option value='auto:alphaLcParenR'>a) Lower alpha</option>
-          <option value='auto:romanLcPeriod'>i. Lower roman</option>
-        </select>
-        <B
-          disabled={!isText}
-          on={align0 === 'l'}
-          onClick={() => applyAlign('l')}
-          title='Left'
-        >
-          ↤
-        </B>
-        <B
-          disabled={!isText}
-          on={align0 === 'ctr'}
-          onClick={() => applyAlign('ctr')}
-          title='Center'
-        >
-          ↔
-        </B>
-        <B
-          disabled={!isText}
-          on={align0 === 'r'}
-          onClick={() => applyAlign('r')}
-          title='Right'
-        >
-          ↦
-        </B>
-        <B
-          disabled={!isText}
-          on={align0 === 'just'}
-          onClick={() => applyAlign('just')}
-          title='Justify'
-        >
-          ≋
-        </B>
-        {selectedTableRange && (
-          <>
-            <B
-              on={verticalAlign0 === 't'}
-              onClick={() => applyTableVerticalAlign('t')}
-              title='Align cell top'
-            >
-              ⇡
-            </B>
-            <B
-              on={verticalAlign0 === 'ctr'}
-              onClick={() => applyTableVerticalAlign('ctr')}
-              title='Align cell middle'
-            >
-              ↕
-            </B>
-            <B
-              on={verticalAlign0 === 'b'}
-              onClick={() => applyTableVerticalAlign('b')}
-              title='Align cell bottom'
-            >
-              ⇣
-            </B>
-          </>
-        )}
-      </div>
-
-      {/* Insert */}
-      <div style={s.grp}>
-        <B
-          disabled={!slide}
-          onClick={() =>
-            insertShape(
-              {
-                kind: 'text-box',
-                x: 914400,
-                y: 914400,
-                cx: 3000000,
-                cy: 900000,
-                text: 'Text'
-              },
-              'Insert text box',
-              true
-            )
-          }
-        >
-          +Text
-        </B>
-        <B
-          disabled={!slide}
-          onClick={() =>
-            insertShape(
-              {
-                kind: 'auto-shape',
-                geometry: 'rect',
-                x: 914400,
-                y: 914400,
-                cx: 2000000,
-                cy: 1200000
-              },
-              'Insert rectangle',
-              true
-            )
-          }
-        >
-          +Rect
-        </B>
-        <B
-          disabled={!slide}
-          onClick={() =>
-            insertShape(
-              {
-                kind: 'auto-shape',
-                geometry: 'ellipse',
-                x: 914400,
-                y: 914400,
-                cx: 1600000,
-                cy: 1600000,
-                fill: 'ED7D31'
-              },
-              'Insert oval',
-              true
-            )
-          }
-        >
-          +Oval
-        </B>
-        <div
-          style={s.tableInsert}
-          onMouseEnter={() => setTablePickerOpen(true)}
-          onMouseLeave={() => setTablePickerOpen(false)}
-        >
+      {/* ---- Insert ---- */}
+      {activeTab === 'insert' && (
+        <div css={styles.pane} role='toolbar' aria-label='Insert'>
           <B
             disabled={!slide}
             onClick={() =>
               insertShape(
                 {
-                  kind: 'table',
-                  rows: tableHover.rows,
-                  columns: tableHover.cols,
+                  kind: 'text-box',
                   x: 914400,
-                  y: 1828800,
-                  cx: tableHover.cols * 1100000,
-                  cy: tableHover.rows * 520000
+                  y: 914400,
+                  cx: 3000000,
+                  cy: 900000,
+                  text: 'Text'
                 },
-                'Insert table',
+                'Insert text box',
                 true
               )
             }
-            title='Insert table'
           >
-            +Table
+            +Text
           </B>
-          {tablePickerOpen && (
-            <div style={s.tableMenu}>
-              <span style={s.tableLabel}>
-                {tableHover.cols} × {tableHover.rows} table
-              </span>
-              <div style={s.tableGrid}>
-                {Array.from({ length: 48 }, (_, i) => {
-                  const row = Math.floor(i / 8) + 1;
-                  const col = (i % 8) + 1;
-                  const active =
-                    row <= tableHover.rows && col <= tableHover.cols;
-                  return (
-                    <button
-                      key={i}
-                      onMouseEnter={() =>
-                        setTableHover({ rows: row, cols: col })
-                      }
-                      onClick={() => {
-                        insertShape(
-                          {
-                            kind: 'table',
-                            rows: row,
-                            columns: col,
-                            x: 914400,
-                            y: 1828800,
-                            cx: col * 1100000,
-                            cy: row * 520000
-                          },
-                          'Insert table',
-                          true
-                        );
-                        setTablePickerOpen(false);
-                      }}
-                      style={{
-                        ...s.tableCell,
-                        ...(active ? s.tableCellOn : null)
-                      }}
-                      aria-label={`${col} columns by ${row} rows`}
-                    />
-                  );
-                })}
+          <B
+            disabled={!slide}
+            onClick={() =>
+              insertShape(
+                {
+                  kind: 'auto-shape',
+                  geometry: 'rect',
+                  x: 914400,
+                  y: 914400,
+                  cx: 2000000,
+                  cy: 1200000
+                },
+                'Insert rectangle',
+                true
+              )
+            }
+          >
+            +Rect
+          </B>
+          <B
+            disabled={!slide}
+            onClick={() =>
+              insertShape(
+                {
+                  kind: 'auto-shape',
+                  geometry: 'ellipse',
+                  x: 914400,
+                  y: 914400,
+                  cx: 1600000,
+                  cy: 1600000,
+                  fill: 'ED7D31'
+                },
+                'Insert oval',
+                true
+              )
+            }
+          >
+            +Oval
+          </B>
+          <div
+            css={styles.tableInsert}
+            onMouseEnter={() => setTablePickerOpen(true)}
+            onMouseLeave={() => setTablePickerOpen(false)}
+          >
+            <B
+              disabled={!slide}
+              onClick={() =>
+                insertShape(
+                  {
+                    kind: 'table',
+                    rows: tableHover.rows,
+                    columns: tableHover.cols,
+                    x: 914400,
+                    y: 1828800,
+                    cx: tableHover.cols * 1100000,
+                    cy: tableHover.rows * 520000
+                  },
+                  'Insert table',
+                  true
+                )
+              }
+              title='Insert table'
+            >
+              +Table
+            </B>
+            {tablePickerOpen && (
+              <div css={styles.tableMenu}>
+                <span css={styles.tableLabel}>
+                  {tableHover.cols} × {tableHover.rows} table
+                </span>
+                <div css={styles.tableGrid}>
+                  {Array.from({ length: 48 }, (_, i) => {
+                    const row = Math.floor(i / 8) + 1;
+                    const col = (i % 8) + 1;
+                    const active =
+                      row <= tableHover.rows && col <= tableHover.cols;
+                    return (
+                      <button
+                        key={i}
+                        onMouseEnter={() =>
+                          setTableHover({ rows: row, cols: col })
+                        }
+                        onClick={() => {
+                          insertShape(
+                            {
+                              kind: 'table',
+                              rows: row,
+                              columns: col,
+                              x: 914400,
+                              y: 1828800,
+                              cx: col * 1100000,
+                              cy: row * 520000
+                            },
+                            'Insert table',
+                            true
+                          );
+                          setTablePickerOpen(false);
+                        }}
+                        css={styles.tableCell(active)}
+                        aria-label={`${col} columns by ${row} rows`}
+                      />
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
+          </div>
+          <B disabled={!slide} onClick={() => imgRef.current?.click()}>
+            +Image
+          </B>
+          <input
+            ref={imgRef}
+            type='file'
+            accept='image/*'
+            hidden
+            onChange={onImage}
+          />
+          <B
+            disabled={!slide}
+            onClick={() =>
+              insertShape(
+                { kind: 'slide-number', displayNumber: activeSlide + 1 },
+                'Insert slide number',
+                true
+              )
+            }
+          >
+            +Slide #
+          </B>
+        </div>
+      )}
+
+      {/* ---- Slide ---- */}
+      {activeTab === 'slide' && (
+        <div css={styles.pane} role='toolbar' aria-label='Slide setup'>
+          <span css={styles.label}>Size</span>
+          <select
+            disabled={!slide}
+            value={currentPreset}
+            onChange={(e) => {
+              const preset =
+                SLIDE_SIZE_PRESETS[
+                  e.target.value as keyof typeof SLIDE_SIZE_PRESETS
+                ];
+              if (preset) resizeSlide(preset.cx, preset.cy);
+            }}
+            css={styles.select}
+            title='Size preset for this slide'
+          >
+            {Object.entries(SLIDE_SIZE_PRESETS).map(([key, preset]) => (
+              <option key={key} value={key}>
+                {preset.label}
+              </option>
+            ))}
+            <option value='custom'>Custom</option>
+          </select>
+          <input
+            disabled={!slide}
+            key={`sw-${activeSlide}-${currentSlideSize?.cx}`}
+            type='number'
+            min='1'
+            step='0.1'
+            defaultValue={((currentSlideSize?.cx || 0) / 914400).toFixed(2)}
+            onChange={(e) =>
+              resizeSlide(
+                Number(e.target.value) * 914400,
+                currentSlideSize?.cy || 6858000
+              )
+            }
+            css={styles.num(true)}
+            title='Slide width (inches)'
+          />
+          <span css={styles.label}>×</span>
+          <input
+            disabled={!slide}
+            key={`sh-${activeSlide}-${currentSlideSize?.cy}`}
+            type='number'
+            min='1'
+            step='0.1'
+            defaultValue={((currentSlideSize?.cy || 0) / 914400).toFixed(2)}
+            onChange={(e) =>
+              resizeSlide(
+                currentSlideSize?.cx || 12192000,
+                Number(e.target.value) * 914400
+              )
+            }
+            css={styles.num(true)}
+            title='Slide height (inches)'
+          />
+          <span css={styles.sep} />
+          <span css={styles.label}>Background</span>
+          <CommitColorInput
+            value={backgroundColor1}
+            onCommit={setSolidBg}
+            title='Solid background color'
+          />
+          <input
+            type='color'
+            value={backgroundColor2}
+            onChange={(event) => setBackgroundColor2(event.target.value)}
+            css={styles.color}
+            title='Gradient end color'
+          />
+          <select
+            value={backgroundAngle}
+            onChange={(event) => setBackgroundAngle(Number(event.target.value))}
+            css={styles.select}
+            title='Gradient direction'
+          >
+            <option value='0'>→</option>
+            <option value='45'>↘</option>
+            <option value='90'>↓</option>
+            <option value='135'>↙</option>
+            <option value='270'>↑</option>
+          </select>
+          <B
+            disabled={!slide}
+            onClick={() => setSolidBg()}
+            title='Apply solid background'
+          >
+            Solid
+          </B>
+          <B
+            disabled={!slide}
+            onClick={setGradientBg}
+            title='Gradient background (start → end, direction)'
+          >
+            Gradient
+          </B>
+          <B
+            disabled={!slide}
+            onClick={() => bgImgRef.current?.click()}
+            title='Image background'
+          >
+            Image
+          </B>
+          <input
+            ref={bgImgRef}
+            type='file'
+            accept='image/*'
+            hidden
+            onChange={onBgImage}
+          />
+        </div>
+      )}
+
+      {/* ---- Arrange ---- */}
+      {activeTab === 'arrange' && (
+        <div css={styles.pane} role='toolbar' aria-label='Arrange'>
+          <B
+            disabled={!hasSel}
+            onClick={() => reorder('front')}
+            title='Bring to front'
+          >
+            ⤒ Front
+          </B>
+          <B
+            disabled={!hasSel}
+            onClick={() => reorder('forward')}
+            title='Forward'
+          >
+            ↑ Forward
+          </B>
+          <B
+            disabled={!hasSel}
+            onClick={() => reorder('backward')}
+            title='Backward'
+          >
+            ↓ Backward
+          </B>
+          <B
+            disabled={!hasSel}
+            onClick={() => reorder('back')}
+            title='Send to back'
+          >
+            ⤓ Back
+          </B>
+          <span css={styles.sep} />
+          <B
+            disabled={!hasSel}
+            onClick={() => {
+              if (slide && selectedIds.length) {
+                executeCommand(
+                  {
+                    type: 'delete-shapes',
+                    slideId: slide.path,
+                    shapeIds: selectedIds
+                  },
+                  selectedIds.length > 1 ? 'Delete shapes' : 'Delete shape'
+                );
+                select(null);
+              }
+            }}
+            title='Delete'
+          >
+            🗑 Delete
+          </B>
+          {sh?.type === 'pic' && pictureCrop && (
+            <>
+              <span css={styles.sep} />
+              <span css={styles.label}>Picture crop</span>
+              <B
+                on={pictureCropModeId === sh.id}
+                onClick={() =>
+                  setPictureCropMode(pictureCropModeId === sh.id ? null : sh.id)
+                }
+                title={
+                  pictureCropModeId === sh.id
+                    ? 'Finish cropping picture'
+                    : 'Crop picture on slide'
+                }
+              >
+                {pictureCropModeId === sh.id ? 'Done' : 'Crop'}
+              </B>
+              <select
+                value={
+                  pictureCrop.clipGeometry === 'ellipse' &&
+                  sh.xfrm &&
+                  Math.abs(sh.xfrm.cx - sh.xfrm.cy) < 2
+                    ? 'circle'
+                    : pictureCrop.clipGeometry
+                }
+                onChange={(event) =>
+                  applyPictureGeometry(
+                    event.target.value as 'rect' | 'ellipse' | 'circle'
+                  )
+                }
+                css={styles.select}
+                title='Crop shape'
+              >
+                <option value='rect'>Rectangle</option>
+                <option value='ellipse'>Ellipse</option>
+                <option value='circle'>Circle</option>
+              </select>
+              {(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
+                <label key={`${sh.id}-${edge}`} css={styles.cropLabel}>
+                  {edge[0].toUpperCase()}
+                  <input
+                    key={`${sh.id}-${edge}-${pictureCrop.cropPct[edge]}`}
+                    type='number'
+                    min='0'
+                    max='99'
+                    step='1'
+                    defaultValue={+pictureCrop.cropPct[edge].toFixed(2)}
+                    onChange={(event) =>
+                      applyPictureCrop({
+                        cropPct: {
+                          ...pictureCrop.cropPct,
+                          [edge]: Number(event.target.value)
+                        }
+                      })
+                    }
+                    css={styles.num()}
+                    title={`${edge} source crop percent`}
+                  />
+                </label>
+              ))}
+              <B
+                onClick={() =>
+                  applyPictureCrop({
+                    cropPct: { left: 0, top: 0, right: 0, bottom: 0 }
+                  })
+                }
+                title='Reset source crop'
+              >
+                Reset
+              </B>
+            </>
           )}
         </div>
-        <B disabled={!slide} onClick={() => imgRef.current?.click()}>
-          +Image
-        </B>
-        <input
-          ref={imgRef}
-          type='file'
-          accept='image/*'
-          hidden
-          onChange={onImage}
-        />
-        <B
-          disabled={!slide}
-          onClick={() =>
-            insertShape(
-              { kind: 'slide-number', displayNumber: activeSlide + 1 },
-              'Insert slide number',
-              true
-            )
-          }
-        >
-          +Slide #
-        </B>
-      </div>
+      )}
 
-      {/* Table — operates on the selected table in either render mode. */}
-      {sh?.type === 'table' &&
+      {/* ---- Table (contextual) ---- */}
+      {activeTab === 'table' &&
+        isTable &&
+        sh &&
         slide &&
         deck &&
         (() => {
@@ -1039,8 +1350,11 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
             (tableCellGridSpan(selectedCell) > 1 ||
               tableCellRowSpan(selectedCell) > 1);
           return (
-            <div style={s.grp}>
-              <span style={s.lbl}>Table</span>
+            <div
+              css={{ ...styles.pane, background: AMBER_WASH }}
+              role='toolbar'
+              aria-label='Table tools'
+            >
               <B
                 onClick={() =>
                   editTable([{ kind: 'add-row' }], 'Add table row')
@@ -1073,10 +1387,11 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
               >
                 −C
               </B>
+              <span css={styles.sep} />
               <select
                 value={activeColumn}
                 onChange={(e) => setColumnIndex(Number(e.target.value))}
-                style={s.sel}
+                css={styles.select}
                 title='Column to resize'
               >
                 {cols.map((_, i) => (
@@ -1105,13 +1420,13 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
                     'Resize table column'
                   )
                 }
-                style={s.numWide}
+                css={styles.num(true)}
                 title='Column width (inches)'
               />
               <select
                 value={activeRow}
                 onChange={(e) => setRowIndex(Number(e.target.value))}
-                style={s.sel}
+                css={styles.select}
                 title='Row to resize'
               >
                 {rows.map((_, i) => (
@@ -1140,7 +1455,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
                     'Resize table row'
                   )
                 }
-                style={s.numWide}
+                css={styles.num(true)}
                 title='Row height (inches)'
               />
               <B
@@ -1151,15 +1466,16 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
               >
                 Fit rows
               </B>
+              <span css={styles.sep} />
               <B
                 disabled={!selectedTableRange || rangeIsSingle}
                 onClick={() => {
                   if (!selectedTableRange) return;
-                  const row = Math.min(
+                  const mergedRow = Math.min(
                     selectedTableRange.startRow,
                     selectedTableRange.endRow
                   );
-                  const col = Math.min(
+                  const mergedCol = Math.min(
                     selectedTableRange.startCol,
                     selectedTableRange.endCol
                   );
@@ -1170,10 +1486,10 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
                   if (result?.changed)
                     store.setTableSelection({
                       shapeId: sh.id,
-                      startRow: row,
-                      startCol: col,
-                      endRow: row,
-                      endCol: col
+                      startRow: mergedRow,
+                      startCol: mergedCol,
+                      endRow: mergedRow,
+                      endCol: mergedCol
                     });
                 }}
                 title='Merge cells'
@@ -1193,6 +1509,34 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
               >
                 Unmerge
               </B>
+              <span css={styles.sep} />
+              {selectedTableRange && (
+                <>
+                  <B
+                    on={verticalAlign0 === 't'}
+                    onClick={() => applyTableVerticalAlign('t')}
+                    title='Align cell top'
+                  >
+                    ⇡
+                  </B>
+                  <B
+                    on={verticalAlign0 === 'ctr'}
+                    onClick={() => applyTableVerticalAlign('ctr')}
+                    title='Align cell middle'
+                  >
+                    ↕
+                  </B>
+                  <B
+                    on={verticalAlign0 === 'b'}
+                    onClick={() => applyTableVerticalAlign('b')}
+                    title='Align cell bottom'
+                  >
+                    ⇣
+                  </B>
+                  <span css={styles.sep} />
+                </>
+              )}
+              <span css={styles.label}>Fill</span>
               <CommitColorInput
                 value={`#${tableCellFill(selectedCell) || 'FFFFFF'}`}
                 onCommit={(value) =>
@@ -1218,12 +1562,13 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
                   selectedTableRange ? 'Selected cell fill' : 'Table cell fill'
                 }
               />
+              <span css={styles.label}>Borders</span>
               <select
                 value={borderTarget}
                 onChange={(e) =>
                   setBorderTarget(e.target.value as typeof borderTarget)
                 }
-                style={s.sel}
+                css={styles.select}
                 title='Borders to apply'
               >
                 <option value='all'>All borders</option>
@@ -1240,7 +1585,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
                 onChange={(e) =>
                   setBorderDash(e.target.value as typeof borderDash)
                 }
-                style={s.sel}
+                css={styles.select}
                 title='Border style'
               >
                 <option value='solid'>Solid</option>
@@ -1254,14 +1599,14 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
                 step='0.25'
                 value={borderWidth}
                 onChange={(e) => setBorderWidth(Number(e.target.value))}
-                style={s.num}
+                css={styles.num()}
                 title='Border width (pt)'
               />
               <input
                 type='color'
                 value={borderColor}
                 onChange={(e) => setBorderColor(e.target.value)}
-                style={s.color}
+                css={styles.color}
                 title='Border color'
               />
               <B
@@ -1282,233 +1627,11 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
                 }
                 title='Apply borders'
               >
-                Borders
+                Apply
               </B>
             </div>
           );
         })()}
-
-      {/* Arrange */}
-      <div style={s.grp}>
-        <B
-          disabled={!hasSel}
-          onClick={() => reorder('front')}
-          title='Bring to front'
-        >
-          ⤒
-        </B>
-        <B
-          disabled={!hasSel}
-          onClick={() => reorder('forward')}
-          title='Forward'
-        >
-          ↑
-        </B>
-        <B
-          disabled={!hasSel}
-          onClick={() => reorder('backward')}
-          title='Backward'
-        >
-          ↓
-        </B>
-        <B
-          disabled={!hasSel}
-          onClick={() => reorder('back')}
-          title='Send to back'
-        >
-          ⤓
-        </B>
-        <B
-          disabled={!hasSel}
-          onClick={() => {
-            if (slide && selectedIds.length) {
-              executeCommand(
-                {
-                  type: 'delete-shapes',
-                  slideId: slide.path,
-                  shapeIds: selectedIds
-                },
-                selectedIds.length > 1 ? 'Delete shapes' : 'Delete shape'
-              );
-              select(null);
-            }
-          }}
-          title='Delete'
-        >
-          🗑
-        </B>
-      </div>
-
-      {/* Background */}
-      <div style={s.grp}>
-        <span style={s.lbl}>Bg</span>
-        <CommitColorInput
-          value={backgroundColor1}
-          onCommit={setSolidBg}
-          title='Solid background color'
-        />
-        <input
-          type='color'
-          value={backgroundColor2}
-          onChange={(event) => setBackgroundColor2(event.target.value)}
-          style={s.color}
-          title='Gradient end color'
-        />
-        <select
-          value={backgroundAngle}
-          onChange={(event) => setBackgroundAngle(Number(event.target.value))}
-          style={s.sel}
-          title='Gradient direction'
-        >
-          <option value='0'>→</option>
-          <option value='45'>↘</option>
-          <option value='90'>↓</option>
-          <option value='135'>↙</option>
-          <option value='270'>↑</option>
-        </select>
-        <B
-          disabled={!slide}
-          onClick={() => setSolidBg()}
-          title='Apply solid background'
-        >
-          Solid
-        </B>
-        <B
-          disabled={!slide}
-          onClick={setGradientBg}
-          title='Gradient background (start → end, direction)'
-        >
-          Gradient
-        </B>
-        <B
-          disabled={!slide}
-          onClick={() => bgImgRef.current?.click()}
-          title='Image background'
-        >
-          Image
-        </B>
-        <input
-          ref={bgImgRef}
-          type='file'
-          accept='image/*'
-          hidden
-          onChange={onBgImage}
-        />
-      </div>
-
-      <span style={{ flex: 1 }} />
-      <span style={s.name}>Slide {activeSlide + 1}</span>
     </div>
   );
 }
-
-const s: Record<string, React.CSSProperties> = {
-  bar: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 6,
-    padding: '7px 10px',
-    background: '#1f2430',
-    color: '#fff',
-    borderBottom: '1px solid #000'
-  },
-  grp: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '0 8px',
-    borderRight: '1px solid #333b4a'
-  },
-  btn: {
-    background: '#2c3444',
-    color: '#fff',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: '#3d4658',
-    borderRadius: 5,
-    padding: '5px 8px',
-    cursor: 'pointer',
-    fontSize: 12.5,
-    minWidth: 28,
-    lineHeight: 1.2
-  },
-  on: { background: '#5b8def', borderColor: '#5b8def' },
-  sel: {
-    background: '#2c3444',
-    color: '#fff',
-    border: '1px solid #3d4658',
-    borderRadius: 5,
-    padding: '4px 6px',
-    fontSize: 12
-  },
-  num: {
-    width: 46,
-    background: '#2c3444',
-    color: '#fff',
-    border: '1px solid #3d4658',
-    borderRadius: 5,
-    padding: '4px 6px',
-    fontSize: 12
-  },
-  color: {
-    width: 30,
-    height: 26,
-    padding: 0,
-    background: '#2c3444',
-    border: '1px solid #3d4658',
-    borderRadius: 5,
-    cursor: 'pointer'
-  },
-  numWide: {
-    width: 58,
-    background: '#2c3444',
-    color: '#fff',
-    border: '1px solid #3d4658',
-    borderRadius: 5,
-    padding: '4px 6px',
-    fontSize: 12
-  },
-  lbl: { fontSize: 12, color: '#aeb6c6' },
-  cropLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 2,
-    fontSize: 11,
-    color: '#aeb6c6'
-  },
-  name: { fontSize: 12, color: '#aeb6c6', paddingLeft: 8 },
-  tableInsert: { position: 'relative' },
-  tableMenu: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    zIndex: 40,
-    width: 166,
-    padding: 8,
-    background: '#222a38',
-    border: '1px solid #4d5b72',
-    borderRadius: 6,
-    boxShadow: '0 5px 16px rgba(0,0,0,.35)'
-  },
-  tableLabel: {
-    display: 'block',
-    marginBottom: 6,
-    color: '#cfd6e4',
-    fontSize: 12
-  },
-  tableGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(8, 16px)',
-    gap: 3
-  },
-  tableCell: {
-    width: 16,
-    height: 16,
-    padding: 0,
-    border: '1px solid #69758a',
-    background: '#161c27',
-    cursor: 'pointer'
-  },
-  tableCellOn: { background: '#5b8def', borderColor: '#91b3ff' }
-};
