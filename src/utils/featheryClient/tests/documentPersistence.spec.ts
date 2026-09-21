@@ -43,6 +43,31 @@ describe('document persistence requests', () => {
     ).toBe('form-key');
   });
 
+  it('sends form context on version-history reads', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 403,
+      headers: new Headers(),
+      json: async () => ({ message: 'Denied' })
+    });
+    const client = new FeatheryClient('form-key');
+
+    await expect(client.listEnvelopeVersions('envelope')).rejects.toMatchObject({
+      status: 403
+    });
+    expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toContain(
+      'form_key=form-key'
+    );
+
+    initState.authenticationError = undefined;
+    await expect(
+      client.getEnvelopeVersion('envelope', 'version')
+    ).rejects.toMatchObject({ status: 403 });
+    expect((globalThis.fetch as jest.Mock).mock.calls[1][0]).toContain(
+      'form_key=form-key'
+    );
+  });
+
   it('times out and aborts a request that never settles', async () => {
     jest.useFakeTimers();
     (globalThis.fetch as jest.Mock).mockImplementation(

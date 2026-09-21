@@ -788,7 +788,7 @@ export default class IntegrationClient {
     // Version-history metadata: when a session id is present the backend groups
     // this save into one EnvelopeVersion row. Absent → the PATCH is unchanged.
     if (meta?.sessionId) {
-      if (this.formKey) formData.append('form_key', this.formKey);
+      formData.append('form_key', this.formKey);
       formData.append('session_id', meta.sessionId);
       if (meta.sessionStartedAt)
         formData.append('session_started_at', meta.sessionStartedAt);
@@ -813,13 +813,19 @@ export default class IntegrationClient {
   // envelopes). Shape: EnvelopeVersionSerializer[].
   async listEnvelopeVersions(envelopeId: string) {
     const { userId } = initInfo();
-    const params = encodeGetParams({ fuser_key: userId });
+    const params = encodeGetParams({
+      fuser_key: userId,
+      form_key: this.formKey
+    });
     const url = `${API_URL}document/envelope/${envelopeId}/versions/?${params}`;
     return parseVersionList(await this.documentRequest(url));
   }
 
   async getEnvelopeVersion(envelopeId: string, versionId: string) {
-    const params = encodeGetParams({ fuser_key: initInfo().userId });
+    const params = encodeGetParams({
+      fuser_key: initInfo().userId,
+      form_key: this.formKey
+    });
     return parseDocxVersion(
       await this.documentRequest(
         `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/?${params}`
@@ -838,7 +844,7 @@ export default class IntegrationClient {
     const { userId } = initInfo();
     const formData = new FormData();
     formData.append('fuser_key', userId ?? '');
-    if (this.formKey) formData.append('form_key', this.formKey);
+    formData.append('form_key', this.formKey);
     const collaboratorId = initState.collaboratorId;
     if (collaboratorId) formData.append('collaborator_id', collaboratorId);
     formData.append('final_sfdt', payload.finalSfdtGz, 'final.sfdt.gz');
@@ -869,7 +875,7 @@ export default class IntegrationClient {
     const { userId } = initInfo();
     const formData = new FormData();
     formData.append('fuser_key', userId ?? '');
-    if (this.formKey) formData.append('form_key', this.formKey);
+    formData.append('form_key', this.formKey);
     formData.append('session_id', sessionId);
     const collaboratorId = initState.collaboratorId;
     if (collaboratorId) formData.append('collaborator_id', collaboratorId);
@@ -883,7 +889,7 @@ export default class IntegrationClient {
     const { userId } = initInfo();
     const formData = new FormData();
     formData.append('fuser_key', userId ?? '');
-    if (this.formKey) formData.append('form_key', this.formKey);
+    formData.append('form_key', this.formKey);
     formData.append('name', name);
     const url = `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/`;
     const options = { method: 'PATCH', body: formData, keepalive: false };
