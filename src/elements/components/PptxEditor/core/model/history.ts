@@ -1,5 +1,5 @@
 import { applySlideJSON } from './applyJson';
-import { deckToJSON, type DeckJSON, type SlideJSON } from './json';
+import { deckToJSON, slideToJSON, type DeckJSON, type SlideJSON } from './json';
 import { refreshSlideModel } from './import';
 import type { Deck } from './types';
 import type { OTree } from '../opc/xml';
@@ -13,6 +13,12 @@ import { deepClone } from '../opc/deepClone';
 export interface PptxHistorySnapshot {
   document: DeckJSON;
   sourceSlides: Record<string, OTree>;
+  /**
+   * Per-slide OPCPackage.mutationSeq at capture time. Lets the next capture
+   * reuse this snapshot's clones for untouched slides (structural sharing),
+   * so a commit's cost scales with the changed slides, not the deck.
+   */
+  slideSeqs: Record<string, number>;
 }
 
 export interface PptxHistoryEntry {
@@ -39,14 +45,51 @@ export interface HistoryRestoreResult {
 const clone = <T>(value: T): T => deepClone(value);
 const serialized = (value: unknown): string => JSON.stringify(value);
 
-export function captureHistorySnapshot(deck: Deck): PptxHistorySnapshot {
-  return {
+export function captureHistorySnapshot(
+  deck: Deck,
+  previous?: PptxHistorySnapshot | null
+): PptxHistorySnapshot {
+  const sourceSlides: Record<string, OTree> = {};
+  const slideSeqs: Record<string, number> = {};
+  const slides: SlideJSON[] = [];
+  deck.slides.forEach((slide, i) => {
+    const seq = deck.pkg.mutationSeq(slide.path);
+    slideSeqs[slide.path] = seq;
+    const previousSlide =
+      previous && previous.slideSeqs[slide.path] === seq
+        ? previous.document.slides.find(
+            (candidate) => candidate.path === slide.path
+          )
+        : undefined;
+    if (previousSlide && previous) {
+      // Untouched since the previous snapshot: share its (immutable) clones.
+      sourceSlides[slide.path] = previous.sourceSlides[slide.path];
+      slides.push(
+        previousSlide.index === i + 1
+          ? previousSlide
+          : { ...previousSlide, index: i + 1 }
+      );
+      return;
+    }
     // Match the editable JSON panel exactly: JSON serialization removes
     // undefined optional fields before validation/apply.
-    document: JSON.parse(JSON.stringify(deckToJSON(deck))) as DeckJSON,
-    sourceSlides: Object.fromEntries(
-      deck.slides.map((slide) => [slide.path, clone(slide.raw)])
-    )
+    sourceSlides[slide.path] = clone(slide.raw);
+    slides.push(
+      JSON.parse(JSON.stringify(slideToJSON(deck, slide, i))) as SlideJSON
+    );
+  });
+  return {
+    document: {
+      sizeEMU: { cx: deck.size.cx, cy: deck.size.cy },
+      sizeInches: {
+        w: +(deck.size.cx / 914400).toFixed(2),
+        h: +(deck.size.cy / 914400).toFixed(2)
+      },
+      slideCount: deck.slides.length,
+      slides
+    },
+    sourceSlides,
+    slideSeqs
   };
 }
 
@@ -54,10 +97,22 @@ export function sameHistoryDocument(
   a: PptxHistorySnapshot,
   b: PptxHistorySnapshot
 ): boolean {
-  return (
-    serialized(a.document) === serialized(b.document) &&
-    serialized(a.sourceSlides) === serialized(b.sourceSlides)
-  );
+  if (a === b) return true;
+  const docA = a.document;
+  const docB = b.document;
+  if (docA.slideCount !== docB.slideCount) return false;
+  if (serialized(docA.sizeEMU) !== serialized(docB.sizeEMU)) return false;
+  for (let i = 0; i < docA.slides.length; i++) {
+    const slideA = docA.slides[i];
+    const slideB = docB.slides[i];
+    // Structural sharing makes untouched slides reference-equal.
+    if (slideA !== slideB && serialized(slideA) !== serialized(slideB))
+      return false;
+    const rawA = a.sourceSlides[slideA.path];
+    const rawB = b.sourceSlides[slideB.path];
+    if (rawA !== rawB && serialized(rawA) !== serialized(rawB)) return false;
+  }
+  return true;
 }
 
 function slideJSON(

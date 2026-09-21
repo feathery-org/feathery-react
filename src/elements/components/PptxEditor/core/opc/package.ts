@@ -51,6 +51,7 @@ export class OPCPackage {
   private parts: ZipParts;
   private trees = new Map<string, OTree>(); // parsed & possibly-mutated XML trees
   private dirty = new Set<string>();
+  private mutationSeqs = new Map<string, number>();
 
   constructor(parts: ZipParts) {
     this.parts = parts;
@@ -83,6 +84,15 @@ export class OPCPackage {
   /** Mark a parsed tree as edited so export re-serializes it. */
   markDirty(path: string): void {
     this.dirty.add(path);
+    this.mutationSeqs.set(path, (this.mutationSeqs.get(path) ?? 0) + 1);
+  }
+
+  /**
+   * Monotonic per-part edit counter (bumped by markDirty). History snapshots
+   * use it to reuse untouched slides' clones instead of re-cloning the deck.
+   */
+  mutationSeq(path: string): number {
+    return this.mutationSeqs.get(path) ?? 0;
   }
 
   /** Relationships declared by a part (from its sibling _rels file). */

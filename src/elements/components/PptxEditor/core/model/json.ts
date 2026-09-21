@@ -570,6 +570,21 @@ function shapeJSON(s: Shape, deck: Deck): ShapeJSON {
   };
 }
 
+export function slideToJSON(deck: Deck, sl: Slide, i: number): SlideJSON {
+  const size = effectiveSlideSize(deck, sl);
+  return {
+    index: i + 1,
+    path: sl.path,
+    sizeEMU: size,
+    sizeInches: {
+      w: +(size.cx / 914400).toFixed(2),
+      h: +(size.cy / 914400).toFixed(2)
+    },
+    background: backgroundJSON(deck, sl),
+    shapes: sl.shapes.map((shape) => shapeJSON(shape, deck))
+  };
+}
+
 export function deckToJSON(deck: Deck): DeckJSON {
   return {
     sizeEMU: { cx: deck.size.cx, cy: deck.size.cy },
@@ -578,19 +593,6 @@ export function deckToJSON(deck: Deck): DeckJSON {
       h: +(deck.size.cy / 914400).toFixed(2)
     },
     slideCount: deck.slides.length,
-    slides: deck.slides.map((sl, i) => {
-      const size = effectiveSlideSize(deck, sl);
-      return {
-        index: i + 1,
-        path: sl.path,
-        sizeEMU: size,
-        sizeInches: {
-          w: +(size.cx / 914400).toFixed(2),
-          h: +(size.cy / 914400).toFixed(2)
-        },
-        background: backgroundJSON(deck, sl),
-        shapes: sl.shapes.map((shape) => shapeJSON(shape, deck))
-      };
-    })
+    slides: deck.slides.map((sl, i) => slideToJSON(deck, sl, i))
   };
 }

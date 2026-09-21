@@ -148,9 +148,11 @@ export class PptxEditorEngine {
   }
 
   snapshot(): EditorSnapshot {
-    const projected =
+    // The snapshot document is IMMUTABLE shared state (history snapshots share
+    // untouched slides structurally). Consumers must deepClone before mutating
+    // a draft - the JSON panel and applySlideJson callers already do.
+    const document =
       this.present?.document || (this.deck ? deckToJSON(this.deck) : null);
-    const document = projected ? deepClone(projected) : null;
     return {
       document,
       dirty: !!(
@@ -725,7 +727,7 @@ export class PptxEditorEngine {
 
   resetHistory(): void {
     const deck = this.requireDeck();
-    this.present = captureHistorySnapshot(deck);
+    this.present = captureHistorySnapshot(deck, this.present);
     this.baseline = this.present;
     this.undoStack = [];
     this.redoStack = [];
@@ -755,7 +757,7 @@ export class PptxEditorEngine {
   ): CommandResult {
     const deck = this.requireDeck();
     const before = this.present || captureHistorySnapshot(deck);
-    const after = captureHistorySnapshot(deck);
+    const after = captureHistorySnapshot(deck, before);
     this.present = after;
     if (sameHistoryDocument(before, after)) return this.result(false, []);
     const entryId = ++this.sequence;
