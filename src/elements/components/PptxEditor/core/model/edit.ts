@@ -487,6 +487,14 @@ export function addAutoShape(
   );
 }
 
+/** Shapes carrying a slide-number field (a:fld type=slidenum). */
+export function slideNumberShapes(slide: Slide): Shape[] {
+  return slide.shapes.filter((shape) => {
+    const fld = descendant(shape.node, 'a:fld');
+    return !!fld && getAttr(fld, 'type') === 'slidenum';
+  });
+}
+
 export function deleteShape(deck: Deck, slide: Slide, shape: Shape): void {
   const kids = childrenOf(slide.spTree);
   const idx = kids.indexOf(shape.node);

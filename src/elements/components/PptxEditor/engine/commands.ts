@@ -144,6 +144,7 @@ export type EditorCommand =
       operations: TableEditOperation[];
     }
   | { type: 'insert-shape'; slideId: string; shape: ShapeInsertion }
+  | { type: 'toggle-deck-slide-numbers'; enabled: boolean }
   | { type: 'delete-shapes'; slideId: string; shapeIds: string[] }
   | {
       type: 'reorder-shape';

@@ -130,13 +130,26 @@ const styles = {
     transition: 'background .12s',
     '&:hover': { background: ZINC[100], color: ZINC[900] }
   }),
+  // Fixed height: every tab's pane is the same size, so switching tabs never
+  // shifts the editor below. Only the Insert pane opts out of scroll-clipping
+  // (its dropdown menus must escape the row).
   pane: {
     display: 'flex',
     alignItems: 'center',
     gap: 2,
-    minHeight: TOOLBAR_HEIGHT - 8,
-    padding: '3px 8px',
+    height: 42,
+    flex: '0 0 auto',
+    padding: '4px 8px',
     overflowX: 'auto' as const
+  },
+  paneWithMenus: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    height: 42,
+    flex: '0 0 auto',
+    padding: '4px 8px',
+    overflow: 'visible' as const
   },
   btn: (on = false, disabled = false) => ({
     height: 30,
@@ -1288,7 +1301,7 @@ export function Toolbar({
 
       {/* ---- Insert ---- */}
       {activeTab === 'insert' && (
-        <div css={styles.pane} role='toolbar' aria-label='Insert'>
+        <div css={styles.paneWithMenus} role='toolbar' aria-label='Insert'>
           <B
             disabled={!slide}
             onClick={() =>
@@ -1326,18 +1339,11 @@ export function Toolbar({
                 onMouseLeave={() => setShapePickerOpen(false)}
               >
                 <span css={styles.tableLabel}>Shapes</span>
-                <div
-                  css={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(5, 34px)',
-                    gap: 4
-                  }}
-                >
+                <div css={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {SHAPE_PRESETS.map((preset) => (
                     <button
                       key={preset.geometry}
                       type='button'
-                      title={preset.label}
                       onClick={() => {
                         insertShape(
                           {
@@ -1354,20 +1360,19 @@ export function Toolbar({
                         setShapePickerOpen(false);
                       }}
                       css={{
-                        width: 34,
-                        height: 30,
-                        display: 'inline-flex',
+                        display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        border: `1px solid ${ZINC[200]}`,
+                        gap: 8,
+                        width: '100%',
+                        padding: '6px 8px',
+                        border: 'none',
                         borderRadius: 6,
-                        background: '#fff',
-                        color: ZINC[500],
+                        background: 'transparent',
+                        color: ZINC[700],
+                        fontSize: 12.5,
+                        textAlign: 'left' as const,
                         cursor: 'pointer',
-                        '&:hover': {
-                          background: ZINC[100],
-                          color: ZINC[900]
-                        }
+                        '&:hover': { background: ZINC[100], color: ZINC[900] }
                       }}
                     >
                       <svg
@@ -1375,6 +1380,7 @@ export function Toolbar({
                         width={18}
                         height={18}
                         css={{
+                          flex: '0 0 auto',
                           fill: 'none',
                           stroke: 'currentColor',
                           strokeWidth: 1.7,
@@ -1383,6 +1389,7 @@ export function Toolbar({
                       >
                         <path d={preset.icon} />
                       </svg>
+                      {preset.label}
                     </button>
                   ))}
                 </div>
@@ -1460,26 +1467,20 @@ export function Toolbar({
           <B
             disabled={!slide}
             on={!!slideNumberShape}
-            onClick={() => {
-              if (!slide) return;
-              if (slideNumberShape) {
-                executeCommand(
-                  {
-                    type: 'delete-shapes',
-                    slideId: slide.path,
-                    shapeIds: [slideNumberShape.id]
-                  },
-                  'Remove slide number'
-                );
-                return;
-              }
-              insertShape(
-                { kind: 'slide-number', displayNumber: activeSlide + 1 },
-                'Insert slide number',
-                true
-              );
-            }}
-            title='Slide number'
+            onClick={() =>
+              executeCommand(
+                {
+                  type: 'toggle-deck-slide-numbers',
+                  enabled: !slideNumberShape
+                },
+                slideNumberShape ? 'Remove slide numbers' : 'Add slide numbers'
+              )
+            }
+            title={
+              slideNumberShape
+                ? 'Remove slide numbers from every slide'
+                : 'Add slide numbers to every slide (delete the box on a slide to opt just that slide out)'
+            }
           >
             Slide #
           </B>
@@ -1544,122 +1545,131 @@ export function Toolbar({
             title='Slide height (inches)'
           />
           <span css={styles.sep} />
-          <span
-            css={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '3px 8px',
-              border: `1px solid ${ZINC[200]}`,
-              borderRadius: 8,
-              background: ZINC[50]
-            }}
+          <span css={styles.label}>Background</span>
+          <select
+            value={backgroundMode}
+            onChange={(event) =>
+              setBackgroundMode(
+                event.target.value as 'solid' | 'gradient' | 'image'
+              )
+            }
+            css={styles.select}
+            title='Background type'
           >
-            <span css={styles.label}>Background</span>
-            <select
-              value={backgroundMode}
-              onChange={(event) =>
-                setBackgroundMode(
-                  event.target.value as 'solid' | 'gradient' | 'image'
-                )
-              }
-              css={styles.select}
-              title='Background type'
+            <option value='solid'>Solid</option>
+            <option value='gradient'>Gradient</option>
+            <option value='image'>Image</option>
+          </select>
+          {backgroundMode === 'solid' && (
+            <ColorControl
+              value={backgroundColor1}
+              onCommit={setSolidBg}
+              title='Solid background color'
             >
-              <option value='solid'>Solid</option>
-              <option value='gradient'>Gradient</option>
-              <option value='image'>Image</option>
-            </select>
-            {backgroundMode === 'solid' && (
-              <ColorControl
-                value={backgroundColor1}
-                onCommit={setSolidBg}
-                title='Solid background color'
+              <span
+                css={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: 2,
+                  background: backgroundColor1,
+                  boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
+                }}
+              />
+            </ColorControl>
+          )}
+          {backgroundMode === 'gradient' && (
+            <>
+              {/* Figma-style gradient editor: a live preview bar with a color
+                  stop at each end; picking a stop's color applies at once. */}
+              <span
+                css={{
+                  position: 'relative',
+                  width: 118,
+                  height: 24,
+                  flex: '0 0 auto',
+                  borderRadius: 12,
+                  // CSS 0deg points up; the deck's 0deg points right.
+                  background: `linear-gradient(${
+                    backgroundAngle + 90
+                  }deg, ${backgroundColor1}, ${backgroundColor2})`,
+                  boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
+                }}
               >
-                <span
-                  css={{
-                    width: 12,
-                    height: 12,
-                    borderRadius: 2,
-                    background: backgroundColor1,
-                    boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
-                  }}
-                />
-              </ColorControl>
-            )}
-            {backgroundMode === 'gradient' && (
-              <>
-                <ColorControl
-                  value={backgroundColor1}
-                  onCommit={(value) => {
-                    setBackgroundColor1(value);
-                    setGradientBg({ color1: value });
-                  }}
-                  title='Gradient start color'
-                >
+                {(
+                  [
+                    ['start', backgroundColor1, { left: 3 }],
+                    ['end', backgroundColor2, { right: 3 }]
+                  ] as const
+                ).map(([stop, color, pos]) => (
                   <span
+                    key={stop}
                     css={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: 2,
-                      background: backgroundColor1,
-                      boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
+                      position: 'absolute',
+                      top: 3,
+                      width: 18,
+                      height: 18,
+                      borderRadius: '50%',
+                      background: color,
+                      border: '2px solid #fff',
+                      boxShadow: '0 0 0 1px rgba(23,26,28,.35)',
+                      ...pos
                     }}
-                  />
-                </ColorControl>
-                <ColorControl
-                  value={backgroundColor2}
-                  onCommit={(value) => {
-                    setBackgroundColor2(value);
-                    setGradientBg({ color2: value });
-                  }}
-                  title='Gradient end color'
-                >
-                  <span
-                    css={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: 2,
-                      background: backgroundColor2,
-                      boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
-                    }}
-                  />
-                </ColorControl>
-                <select
-                  value={backgroundAngle}
-                  onChange={(event) => {
-                    const angleDeg = Number(event.target.value);
-                    setBackgroundAngle(angleDeg);
-                    setGradientBg({ angleDeg });
-                  }}
-                  css={styles.select}
-                  title='Gradient direction'
-                >
-                  <option value='0'>→</option>
-                  <option value='45'>↘</option>
-                  <option value='90'>↓</option>
-                  <option value='135'>↙</option>
-                  <option value='270'>↑</option>
-                </select>
-              </>
-            )}
-            {backgroundMode === 'image' && (
-              <B
-                disabled={!slide}
-                onClick={() => bgImgRef.current?.click()}
-                title='Choose background image'
+                  >
+                    <CommitColorInput
+                      value={color}
+                      onCommit={(value) => {
+                        if (stop === 'start') {
+                          setBackgroundColor1(value);
+                          setGradientBg({ color1: value });
+                        } else {
+                          setBackgroundColor2(value);
+                          setGradientBg({ color2: value });
+                        }
+                      }}
+                      title={
+                        stop === 'start'
+                          ? 'Gradient start color'
+                          : 'Gradient end color'
+                      }
+                      bare
+                    />
+                  </span>
+                ))}
+              </span>
+              <select
+                value={backgroundAngle}
+                onChange={(event) => {
+                  const angleDeg = Number(event.target.value);
+                  setBackgroundAngle(angleDeg);
+                  setGradientBg({ angleDeg });
+                }}
+                css={styles.select}
+                title='Gradient direction'
               >
-                Choose image…
-              </B>
-            )}
-            <input
-              ref={bgImgRef}
-              type='file'
-              accept='image/*'
-              hidden
-              onChange={onBgImage}
-            />
-          </span>
+                <option value='0'>→</option>
+                <option value='45'>↘</option>
+                <option value='90'>↓</option>
+                <option value='135'>↙</option>
+                <option value='270'>↑</option>
+              </select>
+            </>
+          )}
+          {backgroundMode === 'image' && (
+            <B
+              disabled={!slide}
+              onClick={() => bgImgRef.current?.click()}
+              title='Choose background image'
+            >
+              Choose image…
+            </B>
+          )}
+          <input
+            ref={bgImgRef}
+            type='file'
+            accept='image/*'
+            hidden
+            onChange={onBgImage}
+          />
         </div>
       )}
 

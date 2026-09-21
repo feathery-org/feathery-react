@@ -43,6 +43,7 @@ import {
   setTableStyle,
   setTextRangeStyle,
   setTextStyle,
+  slideNumberShapes,
   snapTableColumnToContent,
   snapTableRowToContent,
   snapTableRowsToContent,
@@ -467,6 +468,35 @@ export class PptxEditorEngine {
           { kind: 'structure', slideId: slide.path, shapeIds: createdShapeIds }
         ];
         defaultLabel = 'Insert shape';
+        break;
+      }
+      case 'toggle-deck-slide-numbers': {
+        // Deck-wide toggle: turning on adds a slide number to every slide
+        // that lacks one (slides where the user deleted theirs get it back
+        // only through this explicit re-toggle); turning off removes all.
+        invalidations = [];
+        deck.slides.forEach((slide, index) => {
+          const existing = slideNumberShapes(slide);
+          if (command.enabled && !existing.length) {
+            const shape = insertSlideNumber(deck, slide, index + 1);
+            createdShapeIds.push(shape.id);
+            invalidations.push({
+              kind: 'structure',
+              slideId: slide.path,
+              shapeIds: [shape.id]
+            });
+          } else if (!command.enabled && existing.length) {
+            for (const shape of existing) deleteShape(deck, slide, shape);
+            invalidations.push({
+              kind: 'structure',
+              slideId: slide.path,
+              shapeIds: existing.map((shape) => shape.id)
+            });
+          }
+        });
+        defaultLabel = command.enabled
+          ? 'Add slide numbers'
+          : 'Remove slide numbers';
         break;
       }
       case 'delete-shapes': {

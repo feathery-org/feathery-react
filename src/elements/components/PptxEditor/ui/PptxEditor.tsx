@@ -38,6 +38,10 @@ import {
 } from '../../DocxEditor/icons';
 import type { PptxEditorProps } from '../types';
 
+// Tracked edits and version history are built but not user-ready; keep the
+// right rail and panels hidden until their flows are approved.
+const SHOW_REVIEW_RAIL = false;
+
 // The host-facing PowerPoint editor: Feathery-styled toolbar, slide navigator
 // on the left, editable SVG stage in the center, extensible right rail/panel.
 // Mirrors DocxEditor's host contract (source/readOnly/openNonce/onSave/...).
@@ -216,7 +220,7 @@ function PptxEditorInner({
         maxHeight: '100%',
         minHeight: 0,
         background: PAPER,
-        border: `1px solid ${LINE}`,
+        border: `1px solid ${ZINC[200]}`,
         borderRadius: 8,
         overflow: 'hidden'
       }}
@@ -240,6 +244,7 @@ function PptxEditorInner({
                 }}
                 aria-hidden={!dirty}
                 title={dirty ? 'You have unsaved changes' : undefined}
+                style={{ marginRight: 8 }}
               >
                 <span
                   css={{
@@ -340,21 +345,25 @@ function PptxEditorInner({
           <SvgSlide readOnly={readOnly} zoom={zoomPct} />
         </div>
         {devJsonPanel && state.showJson && <JsonPanel />}
-        <PptxRightPanel
-          open={activePanel !== null}
-          tab={activePanel ?? 'changes'}
-          onClose={() => setActivePanel(null)}
-          boundaryKey={`${state.fileName}:${openNonce}`}
-          changesBody={<PptxChangesPanel />}
-        />
-        <PptxPanelRail
-          activePanel={activePanel}
-          onToggle={(panel) =>
-            setActivePanel((current) => (current === panel ? null : panel))
-          }
-          changesCount={store.engine.pendingChangeCount()}
-          historyEnabled={historyEnabled}
-        />
+        {SHOW_REVIEW_RAIL && (
+          <>
+            <PptxRightPanel
+              open={activePanel !== null}
+              tab={activePanel ?? 'changes'}
+              onClose={() => setActivePanel(null)}
+              boundaryKey={`${state.fileName}:${openNonce}`}
+              changesBody={<PptxChangesPanel />}
+            />
+            <PptxPanelRail
+              activePanel={activePanel}
+              onToggle={(panel) =>
+                setActivePanel((current) => (current === panel ? null : panel))
+              }
+              changesCount={store.engine.pendingChangeCount()}
+              historyEnabled={historyEnabled}
+            />
+          </>
+        )}
       </div>
 
       {/* Bottom status bar, like the DOCX editor: slide position + zoom. */}
@@ -365,7 +374,7 @@ function PptxEditorInner({
           gap: 6,
           flex: '0 0 auto',
           padding: '8px 14px',
-          borderTop: `1px solid ${LINE}`,
+          borderTop: `1px solid ${ZINC[200]}`,
           background: PAPER,
           fontSize: 12,
           color: ZINC[500]
