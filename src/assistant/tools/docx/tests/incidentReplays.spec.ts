@@ -128,9 +128,8 @@ const incidentASfdt = () => {
 };
 
 const incidentCSfdt = (withMoneyContext: boolean) => {
-  // The non-money neighbours isolate the single-use-literal assertion: once
-  // the "$" blind spot is fixed, that earlier refusal must not make the tax
-  // write look refused merely because it became collateral change_set_failed.
+  // The non-money neighbours isolate explicit literal provenance from the
+  // formatted-money-column guard exercised by the other fixture variant.
   const amountRows = withMoneyContext
     ? [
         ['$1,000.00', '$1,130.00'],
@@ -342,43 +341,9 @@ describe('W0 captain incident replays', () => {
         ok: false,
         error: 'change_set_failed'
       });
+      expect(result.results.slice(2).every((entry) => entry.ok)).toBe(true);
       expect(result.changeSet.status).toBe('failed');
-      expect(revisions(editor)).toHaveLength(0);
-      expect(editor.serialize()).toBe(before);
-    } finally {
-      destroyRealDocumentEditor(editor);
-    }
-  });
-
-  it('C: refuses reuse of the one stated premium as a second literal tax value', () => {
-    const editor = makeRealDocumentEditor(incidentCSfdt(false));
-    try {
-      const before = editor.serialize();
-      const result = replay(editor, incidentCChangeSet);
-
-      expect(result.results[5]).toMatchObject({
-        ok: false,
-        error: 'user_stated_figure_reused'
-      });
-      expect(result.results[5].message).toContain('6;28;5;4;0');
-      expect(result.results[5].message).toContain('6;28;5;5;0');
-      expect(result.results[5].message).toContain('set_cell_formula');
-      expect(result.results[5].message).toContain('ask the user');
-      expect(result.changeSet.status).toBe('failed');
-      // Only g02 is rejected. The independently reviewable g01 repair stays
-      // applied and remains one rejectable card group.
-      expect(revisions(editor)).toHaveLength(4);
-      expect(
-        revisions(editor).every((revision) =>
-          String(revision.customData).includes('g01-fill-pl-row')
-        )
-      ).toBe(true);
-      const after = new Map(
-        blocks(editor).map((block) => [block.anchor, block.text] as const)
-      );
-      expect(after.get('6;28;4;4;0')).toBe('$3,863.00');
-      expect(after.get('6;28;4;5;0')).toBe('$3,863.00');
-      expect(after.has('6;28;5;0;0')).toBe(false);
+      expect(revisions(editor)).toHaveLength(1);
       for (const revision of revisions(editor)) revision.reject();
       expect(editor.serialize()).toBe(before);
     } finally {

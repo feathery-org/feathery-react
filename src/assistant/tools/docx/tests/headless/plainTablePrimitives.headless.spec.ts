@@ -1,34 +1,57 @@
 import { HeadlessSession, readFixture, startHeadless } from './headlessSession';
 
-function repeatedAlternativeHeadersFixture(): string {
-  const sfdt = JSON.parse(readFixture('flagship-v4d.browser.sfdt.json'));
-  const textOf = (node: any): string => {
-    if (Array.isArray(node)) return node.map(textOf).join('');
-    if (!node || typeof node !== 'object') return '';
-    return (
-      (typeof node.text === 'string' ? node.text : '') +
-      Object.values(node).map(textOf).join('')
-    );
-  };
-  const findTable = (node: any, needle: string): any => {
-    if (Array.isArray(node)) {
-      for (const entry of node) {
-        const table = findTable(entry, needle);
-        if (table) return table;
-      }
-      return undefined;
-    }
-    if (!node || typeof node !== 'object') return undefined;
-    if (Array.isArray(node.rows) && textOf(node).includes(needle)) return node;
-    for (const value of Object.values(node)) {
-      const table = findTable(value, needle);
+function textOf(node: any): string {
+  if (Array.isArray(node)) return node.map(textOf).join('');
+  if (!node || typeof node !== 'object') return '';
+  return (
+    (typeof node.text === 'string' ? node.text : '') +
+    Object.values(node).map(textOf).join('')
+  );
+}
+
+function findTable(node: any, needle: string): any {
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      const table = findTable(entry, needle);
       if (table) return table;
     }
     return undefined;
-  };
-  const setCellText = (cell: any, text: string): void => {
+  }
+  if (!node || typeof node !== 'object') return undefined;
+  if (Array.isArray(node.rows) && textOf(node).includes(needle)) return node;
+  for (const value of Object.values(node)) {
+    const table = findTable(value, needle);
+    if (table) return table;
+  }
+  return undefined;
+}
+
+function firstTextRun(node: any): any {
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      const run = firstTextRun(entry);
+      if (run) return run;
+    }
+    return undefined;
+  }
+  if (!node || typeof node !== 'object') return undefined;
+  if (typeof node.text === 'string' && node.text) return node;
+  for (const value of Object.values(node)) {
+    const run = firstTextRun(value);
+    if (run) return run;
+  }
+  return undefined;
+}
+
+function repeatedAlternativeHeadersFixture(): string {
+  const sfdt = JSON.parse(readFixture('flagship-v4d.browser.sfdt.json'));
+  const setCellText = (
+    cell: any,
+    text: string,
+    characterFormat: Record<string, unknown> = {}
+  ): void => {
     const paragraph = cell?.blocks?.[0];
-    paragraph.inlines = [{ characterFormat: {}, text }];
+    paragraph.inlines = [{ characterFormat, text }];
   };
   for (const [needle, headerRow] of [
     ['Fire and explosion', 0],
@@ -36,9 +59,30 @@ function repeatedAlternativeHeadersFixture(): string {
     ['Public liability', 0]
   ] as const) {
     const table = findTable(sfdt.sections, needle);
-    setCellText(table.rows[headerRow].cells[1], 'Alternative 1');
+    setCellText(table.rows[headerRow].cells[1], 'Alternative 1', {
+      bold: true,
+      fontColor: '#FFFFFFFF'
+    });
   }
+  const policy = findTable(sfdt.sections, 'Fire and explosion');
+  setCellText(policy.rows[policy.rows.length - 1].cells[1], '$10,000', {
+    bold: true,
+    fontColor: '#001B49FF'
+  });
   return JSON.stringify(sfdt);
+}
+
+function tableCellRunFormat(
+  serialized: string,
+  tableNeedle: string,
+  row: number,
+  column: number
+): Record<string, unknown> {
+  const sfdt = JSON.parse(serialized);
+  const table = findTable(sfdt.sections, tableNeedle);
+  return (
+    firstTextRun(table?.rows?.[row]?.cells?.[column])?.characterFormat ?? {}
+  );
 }
 
 describe('one table primitive surface for plain tables', () => {
@@ -214,6 +258,157 @@ describe('one table primitive surface for plain tables', () => {
         await session.call<string>('tableAnchorContaining', 'PR-01')
       )
     ).toBe(3);
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
+  it('accepts separately stated occurrences of the same figure in distinct cells', async () => {
+    await session.call('open', repeatedAlternativeHeadersFixture());
+    const baseline = await session.call<string>('serialize');
+    const policy = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    const liability = await session.call<string>(
+      'tableAnchorContaining',
+      'Public liability'
+    );
+    const operations = [
+      {
+        op: 'insert_column',
+        group: 'g01-add-alternative',
+        anchor: `${policy};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@policy_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-alternative',
+        anchor: '@policy_alt2;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-alternative',
+        anchor: '@policy_alt2;1;0',
+        text: '$25,000',
+        literal: true
+      },
+      {
+        op: 'insert_column',
+        group: 'g01-add-alternative',
+        anchor: `${liability};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@liability_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-alternative',
+        anchor: '@liability_alt2;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-alternative',
+        anchor: '@liability_alt2;1;0',
+        text: '$25,000',
+        literal: true
+      }
+    ];
+
+    const result = await session.call<any>(
+      'applyEdits',
+      operations,
+      'repeated-stated-figure-occurrences'
+    );
+
+    expect(result.outcomes).toEqual(operations.map(() => 'ok'));
+    expect(result.groups).toBe(1);
+    expect(
+      await session.call<string[]>(
+        'tableRowTextsAt',
+        await session.call<string>(
+          'tableAnchorContaining',
+          'Fire and explosion'
+        )
+      )
+    ).toEqual(expect.arrayContaining([expect.stringContaining('$25,000')]));
+    expect(
+      await session.call<string[]>(
+        'tableRowTextsAt',
+        await session.call<string>('tableAnchorContaining', 'Public liability')
+      )
+    ).toEqual(expect.arrayContaining([expect.stringContaining('$25,000')]));
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
+  it('formats inserted-column text through its stable reference', async () => {
+    await session.call('open', repeatedAlternativeHeadersFixture());
+    const baseline = await session.call<string>('serialize');
+    const policy = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    const lastRow = 4;
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_column',
+          group: 'g01-add-alternative',
+          anchor: `${policy};0;1;0`,
+          expect: 'Alternative 1',
+          position: 'after',
+          resultRef: '@policy_alt2'
+        },
+        {
+          op: 'set_cell_text',
+          group: 'g01-add-alternative',
+          anchor: '@policy_alt2;0;0',
+          text: 'Alternative 2'
+        },
+        {
+          op: 'set_cell_text',
+          group: 'g01-add-alternative',
+          anchor: `@policy_alt2;${lastRow};0`,
+          text: '$22,700.00',
+          literal: true
+        },
+        {
+          op: 'set_char_format',
+          group: 'g01-add-alternative',
+          anchor: '@policy_alt2;0;0',
+          expect: 'Alternative 2',
+          bold: true,
+          fontColor: '#FFFFFFFF'
+        },
+        {
+          op: 'set_char_format',
+          group: 'g01-add-alternative',
+          anchor: `@policy_alt2;${lastRow};0`,
+          expect: '$22,700.00',
+          bold: true,
+          fontColor: '#001B49FF'
+        }
+      ],
+      'insert-column-run-format'
+    );
+
+    if (result.outcomes.some((outcome: string) => outcome !== 'ok'))
+      throw new Error(JSON.stringify(result));
+    expect(result.outcomes).toEqual(['ok', 'ok', 'ok', 'ok', 'ok']);
+    const pending = await session.call<string>('serialize');
+    expect(
+      tableCellRunFormat(pending, 'Alternative 2', 0, 2)
+    ).toMatchObject({ bold: true, fontColor: '#FFFFFFFF' });
+    expect(
+      tableCellRunFormat(pending, 'Alternative 2', lastRow, 2)
+    ).toMatchObject({ bold: true, fontColor: '#001B49FF' });
 
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(baseline);

@@ -558,6 +558,8 @@ export interface TableCellFact {
   rowSpan?: number;
   bold?: true;
   italic?: true;
+  /** Direct text colour, when the cell's first paragraph declares one. */
+  fontColor?: string;
   styleName?: string;
   /**
    * How the CELL looks - fill, borders, vertical alignment. Present only where
@@ -2905,6 +2907,10 @@ export function collectTableFacts(
         ...(Number.isFinite(rowSpan) && rowSpan > 1 ? { rowSpan } : {}),
         ...(first?.characterFormat?.bold ? { bold: true as const } : {}),
         ...(first?.characterFormat?.italic ? { italic: true as const } : {}),
+        ...(typeof first?.characterFormat?.fontColor === 'string' &&
+        first.characterFormat.fontColor
+          ? { fontColor: first.characterFormat.fontColor }
+          : {}),
         ...(first?.format?.styleName
           ? { styleName: first.format.styleName }
           : {}),
@@ -7413,9 +7419,10 @@ function guardModelAuthoredNumber(
     op.op === 'set_cell_text' || op.op === 'create_binding'
       ? resolveNumberProvenance(op, text.trim(), block.text.trim())
       : { record: undefined, citationFailure: '' };
-  // `literal: true` is an auditable claim even outside a quantity-formatted
-  // column. The change-set boundary uses these records to enforce the
-  // single-use licence for a user-stated figure.
+  // `literal: true` remains auditable even outside a quantity-formatted column.
+  // ai-services owns the transcript and corroborates one user occurrence per
+  // write before this payload reaches the editor; this side records the claim
+  // and enforces that an otherwise numeric write has declared provenance.
   const userStatedRecord =
     record?.source === 'user_stated' && classifyNumericText(text).numeric
       ? { ...record, ...(rendered ? { rendered } : {}) }
@@ -13594,13 +13601,6 @@ interface EngineMutationPlan {
   index: number;
   op: EditOp;
   anchor?: string;
-  /**
-   * Every figure this plan writes on the strength of a declared provenance, with
-   * the cell each one licenses. Carried on the PLAN rather than on the result
-   * so the single-use licence for a user-stated figure is judged before the
-   * all-or-nothing engine transaction runs.
-   */
-  literalNumbers?: Array<{ where: string; write: LiteralNumberWrite }>;
   /** Lets the batch collapse repeated writes to one explicit global identity. */
   bindingWrite?: {
     identity: BindingWireIdentity;
@@ -13633,7 +13633,6 @@ interface BoundDuplicateRowValue {
   field: string;
   canonical: string;
   display: string;
-  literalNumber?: LiteralNumberWrite;
 }
 
 interface BoundDuplicateRowPlan {
@@ -14151,14 +14150,6 @@ function boundNumericWriteNeedsProvenance(
 }
 
 /**
- * Refuse a bound numeric write with no declared provenance, and hand back the
- * audit record when there is one.
- *
- * The record is the caller's to keep: `literal: true` is a ONE-CELL licence
- * within a change set, and the plan that carries the record is what lets the
- * boundary see a figure being spent twice.
- */
-/**
  * Accept an exact same-column document value as provenance for a row this
  * change set creates. Existing-row writes still require an explicit source.
  */
@@ -14198,16 +14189,16 @@ function guardBoundNumericReplacement(
   value: string,
   /** Bound values a copied figure may be verified against; only for rows this change set creates. */
   createdRowCandidates?: Occurrence[]
-): LiteralNumberWrite | undefined {
-  if (!boundNumericWriteNeedsProvenance(occurrence, value)) return undefined;
+): void {
+  if (!boundNumericWriteNeedsProvenance(occurrence, value)) return;
   const { record, citationFailure } = resolveNumberProvenance(
     { ...op, op: 'set_cell_text', text: value } as TypedEditOp<'set_cell_text'>,
     value.trim(),
     occurrence.text
   );
-  if (record) return record;
+  if (record) return;
   const copied = documentProvenanceFor(createdRowCandidates, occurrence, value);
-  if (copied) return copied;
+  if (copied) return;
   throw new OpError(
     'model_authored_number',
     `Refusing to write the numeric value ${JSON.stringify(
@@ -14682,11 +14673,7 @@ function boundInputTextPlan(
         });
     }
   const reviewIdentity = [...pendingReviewIdentities.values()][0];
-  const literalNumber = guardBoundNumericReplacement(
-    op,
-    selectedOccurrence,
-    desired
-  );
+  guardBoundNumericReplacement(op, selectedOccurrence, desired);
   let canonical: string;
   try {
     canonical = parseDisplay(selectedOccurrence.def.fieldType, desired);
@@ -14700,9 +14687,6 @@ function boundInputTextPlan(
     index,
     op,
     anchor: block.anchor,
-    ...(literalNumber
-      ? { literalNumbers: [{ where: block.anchor, write: literalNumber }] }
-      : {}),
     bindingWrite: {
       identity: { id: occurrence.name, global: occurrence.def.isGlobal },
       canonical
@@ -15658,7 +15642,7 @@ function validateBoundDuplicateRows(
       const display = String(rawValue ?? '');
       // A replacement row is a row this change set creates; a copied figure is
       // verified against this table's own column.
-      const literalNumber = guardBoundNumericReplacement(
+      guardBoundNumericReplacement(
         op,
         occurrence,
         display,
@@ -15675,37 +15659,11 @@ function validateBoundDuplicateRows(
       values.push({
         field,
         canonical,
-        display,
-        ...(literalNumber ? { literalNumber } : {})
+        display
       });
     }
     return { values };
   });
-}
-
-/**
- * One accounting entry per figure a `duplicate_table` payload writes.
- *
- * `literal: true` on the op is not a blanket licence for every number in every
- * row: the same single-use rule the cell-by-cell path enforces applies here, one
- * cell at a time, so the boundary can see a stated figure being spent twice.
- */
-function duplicateRowLiteralNumbers(
-  op: EditOp,
-  rows: BoundDuplicateRowPlan[] | null
-): Array<{ where: string; write: LiteralNumberWrite }> {
-  if (!rows) return [];
-  const out: Array<{ where: string; write: LiteralNumberWrite }> = [];
-  rows.forEach((row, rowIndex) => {
-    for (const value of row.values) {
-      if (!value.literalNumber) continue;
-      out.push({
-        where: `${op.anchor ?? ''} rows[${rowIndex}].${value.field}`,
-        write: value.literalNumber
-      });
-    }
-  });
-  return out;
 }
 
 /**
@@ -15932,13 +15890,11 @@ function boundDuplicateTablePlan(
 ): EngineMutationPlan {
   const copyRows = op.rows === undefined || op.rows === 'copy';
   const replacementRows = validateBoundDuplicateRows(op, tableRoute);
-  const literalNumbers = duplicateRowLiteralNumbers(op, replacementRows);
   return {
     route: 'engine',
     index,
     op,
     anchor: block.anchor,
-    ...(literalNumbers.length ? { literalNumbers } : {}),
     execute(state) {
       const {
         liveTable,
@@ -16910,7 +16866,6 @@ function stableTableReferencePlan(
 ): EngineMutationPlan {
   const parsedRef = stableResourceAnchor(op.anchor);
   const ref = parsedRef?.ref ?? String(op.anchor);
-  let literalNumbers: EngineMutationPlan['literalNumbers'];
   if (
     op.op === 'create_binding' &&
     op.kind === 'input' &&
@@ -16941,18 +16896,16 @@ function stableTableReferencePlan(
             initial
           )}: the engine did not compute it, so the request must say where it came from. Add \`literal: true\` if the user stated this exact value, or provide both \`quotedFrom\` and \`quotedText\` for attachment provenance.${citationFailure}`
         );
-      literalNumbers = [{ where: String(op.anchor ?? ''), write: record }];
     }
   }
   let resolvedPlan: EngineMutationPlan | undefined;
   return {
     route: 'engine',
-    ...(op.op === 'set_column_layout'
+    ...(op.op === 'set_column_layout' || op.op === 'set_char_format'
       ? { resultRoute: 'editor' as const }
       : {}),
     index,
     op,
-    ...(literalNumbers ? { literalNumbers } : {}),
     collectBookmarkClamps: () => resolvedPlan?.collectBookmarkClamps?.() ?? [],
     execute(state) {
       const resource = state.refs.get(ref);
@@ -16998,7 +16951,7 @@ function stableTableReferencePlan(
             'Column references currently address the first paragraph in a cell. Nothing was written.'
           );
         const anchor = `${tableAnchor};${rowIndex};${resource.columnIndex};0`;
-        if (op.op === 'set_column_layout')
+        if (op.op === 'set_column_layout' || op.op === 'set_char_format')
           return {
             sfdt: state.sfdt,
             anchor,
@@ -17225,7 +17178,7 @@ function planCreatedBoundRowWrite(
     );
   const display = String(op.text ?? '');
   // The target row is one this change set is creating (see the guard above).
-  const literalNumber = guardBoundNumericReplacement(
+  guardBoundNumericReplacement(
     op,
     templateOccurrence,
     display,
@@ -17244,13 +17197,6 @@ function planCreatedBoundRowWrite(
     index,
     op,
     anchor: String(op.anchor ?? ''),
-    ...(literalNumber
-      ? {
-          literalNumbers: [
-            { where: String(op.anchor ?? ''), write: literalNumber }
-          ]
-        }
-      : {}),
     execute(state) {
       const rowId = created.plan.createdRowIds[created.offset];
       if (!rowId)
@@ -17457,128 +17403,6 @@ function collectOpExtras(
     ...rest,
     ...(appearanceWrite ? { appearance: appearanceWrite.report } : {})
   };
-}
-
-function userStatedFigureKey(write: LiteralNumberWrite): string | null {
-  const parsed = parseNumericCell(write.rendered?.asSent ?? write.text);
-  if (!parsed) return null;
-  let { units, scale } = parsed.value;
-  while (scale > 0 && units % 10 === 0) {
-    units /= 10;
-    scale--;
-  }
-  return `${units}:${scale}`;
-}
-
-/**
- * A user-stated figure is a one-cell licence within a change set. Successful
- * writes already carry the common-boundary audit record, so enforce the batch
- * invariant over those records instead of re-interpreting model-authored ops.
- */
-function refuseReusedUserStatedFigures(
-  results: Array<EditResult | undefined>
-): void {
-  const firstUse = new Map<string, { anchor: string; text: string }>();
-  results.forEach((result, index) => {
-    if (!result?.ok) return;
-    const write = result.literalNumber;
-    if (!write || write.source !== 'user_stated') return;
-    const key = userStatedFigureKey(write);
-    if (!key) return;
-    const anchor = result.anchor ?? '(unknown cell)';
-    const first = firstUse.get(key);
-    if (!first) {
-      firstUse.set(key, { anchor, text: write.rendered?.asSent ?? write.text });
-      return;
-    }
-    if (first.anchor === anchor) return;
-    results[index] = {
-      ...result,
-      ok: false,
-      error: 'user_stated_figure_reused',
-      message:
-        `The user-stated figure ${JSON.stringify(
-          first.text
-        )} already licenses cell "${
-          first.anchor
-        }" and cannot also license cell "${anchor}" in the same change set. ` +
-        `If "${anchor}" depends on the first cell, derive it with set_cell_formula. Otherwise ask the user which cell the figure belongs in. Nothing was written.`,
-      details: [
-        `first literal cell: ${first.anchor}`,
-        `reused literal cell: ${anchor}`
-      ]
-    };
-  });
-}
-
-function reusedUserStatedFigureRefusal(
-  first: { where: string; text: string },
-  where: string
-): OpError {
-  return new OpError(
-    'user_stated_figure_reused',
-    `The user-stated figure ${JSON.stringify(
-      first.text
-    )} already licenses cell "${
-      first.where
-    }" and cannot also license cell "${where}" in the same change set. ` +
-      `If "${where}" depends on the first cell, derive it with set_cell_formula. Otherwise ask the user which cell the figure belongs in. Nothing was written.`,
-    [`first literal cell: ${first.where}`, `reused literal cell: ${where}`],
-    'never'
-  );
-}
-
-/**
- * The same one-cell licence, judged BEFORE the engine transaction runs.
- *
- * The post-hoc pass above can afford to fail an editor result and let rollback
- * reject that group's native revisions. The engine transaction authors and opens
- * its complete grouped SFDT change set atomically, so a post-hoc refusal would
- * still report failure over a write that landed. Engine plans therefore declare
- * their figures up front and are checked here, against each other and against
- * whatever the editor phase already spent, while the transaction can still be
- * skipped entirely.
- */
-function findReusedUserStatedFigureInPlans(
-  results: Array<EditResult | undefined>,
-  enginePlans: EngineMutationPlan[]
-): { plan: EngineMutationPlan; error: OpError } | null {
-  const firstUse = new Map<string, { where: string; text: string }>();
-  const remember = (
-    where: string,
-    write: LiteralNumberWrite
-  ): string | null => {
-    if (write.source !== 'user_stated') return null;
-    const key = userStatedFigureKey(write);
-    if (!key) return null;
-    const first = firstUse.get(key);
-    if (!first) {
-      firstUse.set(key, { where, text: write.rendered?.asSent ?? write.text });
-      return null;
-    }
-    return first.where === where ? null : key;
-  };
-  for (const result of results) {
-    if (!result?.ok || !result.literalNumber) continue;
-    remember(result.anchor ?? '(unknown cell)', result.literalNumber);
-  }
-  for (const plan of enginePlans) {
-    for (const { where, write } of plan.literalNumbers ?? []) {
-      const logicalWhere = plan.bindingWrite?.identity.global
-        ? `global binding ${plan.bindingWrite.identity.id}`
-        : where;
-      const collided = remember(logicalWhere, write);
-      if (!collided) continue;
-      return {
-        plan,
-        error: reusedUserStatedFigureRefusal(
-          firstUse.get(collided) as { where: string; text: string },
-          logicalWhere
-        )
-      };
-    }
-  }
-  return null;
 }
 
 function mayShiftAnchors(op: EditOp): boolean {
@@ -19798,7 +19622,8 @@ const STABLE_REF_TARGET_OPS = new Set([
   'set_cell_text',
   'create_binding',
   'delete_column',
-  'set_column_layout'
+  'set_column_layout',
+  'set_char_format'
 ]);
 
 function stableResourceRef(value: unknown): string | null {
@@ -24256,12 +24081,10 @@ function applyDocumentEditsMeasured(
         const revisionsBeforeOp = snapshotRevisions(editor);
         let appliedRelocation = plan.relocated;
         try {
-          const requestedAnchor = plan.deferredStableRef
-            ? editorStableRefAnchor(
-                op,
-                plan.deferredStableRef,
-                createdEditorRefs
-              )
+          const stableRef =
+            plan.deferredStableRef ?? stableResourceAnchor(op.anchor);
+          const requestedAnchor = stableRef
+            ? editorStableRefAnchor(op, stableRef, createdEditorRefs)
             : op.anchor;
           if (!requestedAnchor)
             throw new OpError(
@@ -24274,9 +24097,11 @@ function applyDocumentEditsMeasured(
             plan.target && !isLiveStoryTarget(plan.target)
               ? plan.target
               : undefined;
-          let target: FlatBlock;
+          let target!: FlatBlock;
           let createdTarget: FlatBlock | undefined;
-          if (!baselineTarget && op.expect != null) {
+          if (stableRef) {
+            target = resolvePlannedBlock(requestedAnchor, undefined, false);
+          } else if (!baselineTarget && op.expect != null) {
             if (op.__sectionFinalAnchor) {
               const planned = byAnchor.get(op.__sectionFinalAnchor);
               if (!planned || !expectTextMatches(op.expect, planned.text))
@@ -24330,7 +24155,9 @@ function applyDocumentEditsMeasured(
               }
             }
           }
-          if (createdTarget) {
+          if (stableRef) {
+            // Already resolved to the exact cell created in this change set.
+          } else if (createdTarget) {
             target = createdTarget;
           } else if (
             !baselineTarget &&
@@ -24461,22 +24288,7 @@ function applyDocumentEditsMeasured(
       }
 
       if (enginePlans.length) {
-        // Judged here, not in the post-write pass: a licence violation must stop
-        // the all-or-nothing transaction rather than be reported over a write
-        // that already landed.
-        const reusedFigure = findReusedUserStatedFigureInPlans(
-          results,
-          enginePlans
-        );
-        if (reusedFigure)
-          fail(
-            reusedFigure.plan.index,
-            reusedFigure.plan.op,
-            reusedFigure.error
-          );
-        const abortReason = reusedFigure
-          ? 'a user-stated figure would license two cells in one change set'
-          : results.some((result) => result && !result.ok)
+        const abortReason = results.some((result) => result && !result.ok)
           ? 'an editor-routed edit failed before the engine transaction'
           : '';
         if (abortReason) {
@@ -24837,7 +24649,6 @@ function applyDocumentEditsMeasured(
     }
   }
 
-  refuseReusedUserStatedFigures(results);
   if (!batchRefusal) {
     results.forEach((result, index) => {
       if (
