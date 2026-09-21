@@ -31,7 +31,7 @@ it('keeps the SVG slide mounted when a toolbar text edit changes one shape', asy
   await act(async () => store.setActiveSlide(slideIndex));
   await act(async () => store.select(shape.id));
 
-  const svgBefore = host.querySelector('svg');
+  const svgBefore = host.querySelector('svg[data-svg-uid]');
   const otherShapeBefore = host.querySelector(
     `[data-shape-id]:not([data-shape-id="${shape.id}"])`
   );
@@ -40,7 +40,7 @@ it('keeps the SVG slide mounted when a toolbar text edit changes one shape', asy
   expect(bold.disabled).toBe(false);
   await act(async () => bold.click());
 
-  expect(host.querySelector('svg')).toBe(svgBefore);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svgBefore);
   expect(
     host.querySelector(`[data-shape-id]:not([data-shape-id="${shape.id}"])`)
   ).toBe(otherShapeBefore);
@@ -66,11 +66,11 @@ it('undo and redo update the mounted SVG without rebuilding it', async () => {
       'Move shape'
     )
   );
-  const svgBefore = host.querySelector('svg');
+  const svgBefore = host.querySelector('svg[data-svg-uid]');
   await act(async () => store.undo());
   expect(shape.xfrm!.x).toBe(startX);
-  expect(host.querySelector('svg')).toBe(svgBefore);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svgBefore);
   await act(async () => store.redo());
   expect(shape.xfrm!.x).toBe(startX + 914400);
-  expect(host.querySelector('svg')).toBe(svgBefore);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svgBefore);
 });

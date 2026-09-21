@@ -81,7 +81,7 @@ it('crops a picture directly on the slide with live handles, pan, Done, and doub
   });
   await act(async () => store.select(picture.id));
 
-  const svg = host.querySelector('svg');
+  const svg = host.querySelector('svg[data-svg-uid]');
   await switchTab(host, 'Arrange');
   await act(async () =>
     (
@@ -148,7 +148,7 @@ it('crops a picture directly on the slide with live handles, pan, Done, and doub
     originalFrame.cx / 0.8,
     3
   );
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   expect(store.getState().undoStack).toHaveLength(1);
   expect(store.getState().undoStack[0]?.label).toBe('Crop picture');
 
@@ -332,7 +332,7 @@ it('previews shape movement without history and commits once on mouseup', async 
     store.resetHistory();
   });
   await act(async () => store.select(shape.id));
-  const svg = host.querySelector('svg');
+  const svg = host.querySelector('svg[data-svg-uid]');
   const group = host.querySelector(
     `[data-shape-id="${shape.id}"]`
   ) as SVGGElement;
@@ -362,6 +362,6 @@ it('previews shape movement without history and commits once on mouseup', async 
   expect(shape.xfrm!.y).not.toBe(before.y);
   expect(store.getState().undoStack).toHaveLength(1);
   expect(store.getState().undoStack[0]?.label).toBe('Move shape');
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   expect(host.querySelector(`[data-shape-id="${shape.id}"]`)).toBe(group);
 });

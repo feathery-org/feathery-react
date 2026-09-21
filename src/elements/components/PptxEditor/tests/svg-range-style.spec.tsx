@@ -53,7 +53,7 @@ it('colors only selected SVG text through the toolbar after the editor blurs', a
     </>,
     { whiteText: true }
   );
-  const svgBefore = host.querySelector('svg');
+  const svgBefore = host.querySelector('svg[data-svg-uid]');
   const editor = host.querySelector(
     `[data-shape-id="${shape.id}"] [data-textbody]`
   ) as HTMLElement;
@@ -95,7 +95,7 @@ it('colors only selected SVG text through the toolbar after the editor blurs', a
     ['Hello', 'FF0000'],
     [' world', 'FFFFFF']
   ]);
-  expect(host.querySelector('svg')).toBe(svgBefore);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svgBefore);
 });
 
 it('records a dragged text color as one undoable formatting action', async () => {
@@ -156,7 +156,7 @@ it('finishes an active SVG text edit before applying toolbar color to its select
     </>,
     { whiteText: true }
   );
-  const svgBefore = host.querySelector('svg');
+  const svgBefore = host.querySelector('svg[data-svg-uid]');
   const editor = host.querySelector(
     `[data-shape-id="${shape.id}"] [data-textbody]`
   ) as HTMLElement;
@@ -188,7 +188,7 @@ it('finishes an active SVG text edit before applying toolbar color to its select
     ['Hello', 'FF0000'],
     [' world', 'FFFFFF']
   ]);
-  expect(host.querySelector('svg')).toBe(svgBefore);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svgBefore);
   expect(
     host.querySelector(
       `[data-shape-id="${shape.id}"] [data-textbody][contenteditable="true"]`

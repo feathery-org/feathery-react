@@ -123,6 +123,7 @@ const navStyle = {
   minWidth: NAV_WIDTH,
   alignSelf: 'stretch' as const,
   overflowY: 'auto' as const,
+  minHeight: 0,
   display: 'flex',
   flexDirection: 'column' as const,
   gap: 4,

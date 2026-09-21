@@ -22,6 +22,20 @@ import {
   PANEL_3
 } from '../../DocxEditor/TrackedChangeGroups/styles';
 import { featheryDoc } from '../../../../utils/browser';
+import {
+  downloadBtn,
+  FEATHERY_RED,
+  FEATHERY_RED_HOVER,
+  ZINC
+} from '../../DocxEditor/DocxToolbar/styles';
+import {
+  DownloadIcon,
+  FitToPageIcon,
+  MinusIcon,
+  PlusIcon,
+  SaveIcon,
+  SpinnerIcon
+} from '../../DocxEditor/icons';
 import type { PptxEditorProps } from '../types';
 
 // The host-facing PowerPoint editor: Feathery-styled toolbar, slide navigator
@@ -33,21 +47,6 @@ function sourceKey(source: PptxEditorProps['source']): string {
   if ('url' in source) return `url:${source.url}`;
   return `buffer:${source.buffer.byteLength}`;
 }
-
-const actionButton = {
-  height: 30,
-  padding: '0 14px',
-  border: `1px solid ${LINE_STRONG}`,
-  borderRadius: 8,
-  background: PAPER,
-  color: INK_2,
-  fontSize: 12.5,
-  fontWeight: 600,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap' as const,
-  '&:hover': { background: PANEL_3, color: INK },
-  '&:disabled': { opacity: 0.4, cursor: 'default' }
-};
 
 function PptxEditorInner({
   source,
@@ -70,6 +69,7 @@ function PptxEditorInner({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [activePanel, setActivePanel] = useState<PptxPanelKind | null>(null);
+  const [zoomPct, setZoomPct] = useState(100);
   const loadSeq = useRef(0);
   const dirtyRef = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -213,6 +213,7 @@ function PptxEditorInner({
         flexDirection: 'column',
         width: '100%',
         height: '100%',
+        maxHeight: '100%',
         minHeight: 0,
         background: PAPER,
         border: `1px solid ${LINE}`,
@@ -234,20 +235,81 @@ function PptxEditorInner({
         <div css={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
           {!readOnly && <Toolbar devJson={devJsonPanel} />}
         </div>
-        <div css={{ display: 'flex', gap: 6, flex: '0 0 auto' }}>
+        <div
+          css={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flex: '0 0 auto'
+          }}
+        >
+          {/* Mirrors DocxToolbar's ToolbarActions: the dot is always rendered
+              and only toggles visibility so the row never shifts. */}
+          {!readOnly && (
+            <span
+              css={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 13,
+                color: ZINC[500],
+                whiteSpace: 'nowrap',
+                visibility: dirty ? 'visible' : 'hidden'
+              }}
+              aria-hidden={!dirty}
+              title={dirty ? 'You have unsaved changes' : undefined}
+            >
+              <span
+                css={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: FEATHERY_RED,
+                  flex: '0 0 auto'
+                }}
+              />
+            </span>
+          )}
           {!hideDownload && (
-            <button type='button' css={actionButton} onClick={handleDownload}>
+            <button
+              type='button'
+              css={downloadBtn}
+              onClick={handleDownload}
+              title='Download'
+            >
+              <DownloadIcon width={16} height={16} />
               Download
             </button>
           )}
           {onSave && !readOnly && (
             <button
               type='button'
-              css={actionButton}
-              disabled={saving || !dirty}
+              css={{
+                display: 'flex',
+                height: 32,
+                alignItems: 'center',
+                gap: 6,
+                borderRadius: 6,
+                border: 'none',
+                background: FEATHERY_RED,
+                padding: '0 12px',
+                fontSize: 14,
+                fontWeight: 500,
+                color: '#fff',
+                cursor: saving ? 'default' : 'pointer',
+                '&:hover': {
+                  background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
+                }
+              }}
+              disabled={saving}
               onClick={handleSave}
             >
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? (
+                <SpinnerIcon width={16} height={16} />
+              ) : (
+                <SaveIcon width={16} height={16} />
+              )}
+              Save
             </button>
           )}
         </div>
@@ -273,7 +335,7 @@ function PptxEditorInner({
             background: PANEL_2
           }}
         >
-          <SvgSlide readOnly={readOnly} />
+          <SvgSlide readOnly={readOnly} zoom={zoomPct} />
         </div>
         {devJsonPanel && state.showJson && <JsonPanel />}
         <PptxRightPanel
@@ -292,9 +354,80 @@ function PptxEditorInner({
           historyEnabled={historyEnabled}
         />
       </div>
+
+      {/* Bottom status bar, like the DOCX editor: slide position + zoom. */}
+      <div
+        css={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          height: 30,
+          flex: '0 0 auto',
+          padding: '0 10px',
+          borderTop: `1px solid ${LINE}`,
+          background: PAPER,
+          fontSize: 12,
+          color: ZINC[500]
+        }}
+      >
+        <span css={{ whiteSpace: 'nowrap' }}>
+          Slide {state.activeSlide + 1} of {state.deck.slides.length}
+        </span>
+        <span css={{ flex: 1 }} />
+        <button
+          type='button'
+          css={statusButton}
+          title='Zoom out'
+          disabled={zoomPct <= 50}
+          onClick={() => setZoomPct((z) => Math.max(50, z - 25))}
+        >
+          <MinusIcon width={14} height={14} />
+        </button>
+        <span
+          css={{
+            minWidth: 40,
+            textAlign: 'center',
+            fontVariantNumeric: 'tabular-nums'
+          }}
+        >
+          {zoomPct}%
+        </span>
+        <button
+          type='button'
+          css={statusButton}
+          title='Zoom in'
+          disabled={zoomPct >= 400}
+          onClick={() => setZoomPct((z) => Math.min(400, z + 25))}
+        >
+          <PlusIcon width={14} height={14} />
+        </button>
+        <button
+          type='button'
+          css={statusButton}
+          title='Fit to container'
+          onClick={() => setZoomPct(100)}
+        >
+          <FitToPageIcon width={14} height={14} />
+        </button>
+      </div>
     </div>
   );
 }
+
+const statusButton = {
+  height: 24,
+  minWidth: 24,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: 'none',
+  borderRadius: 5,
+  background: 'transparent',
+  color: ZINC[500],
+  cursor: 'pointer',
+  '&:hover': { background: ZINC[100], color: ZINC[900] },
+  '&:disabled': { opacity: 0.35, cursor: 'default' }
+};
 
 export default function PptxEditor(props: PptxEditorProps) {
   return (

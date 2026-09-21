@@ -26,6 +26,13 @@ import {
   TOOLBAR_HEIGHT,
   ZINC
 } from '../../DocxEditor/DocxToolbar/styles';
+import {
+  BulletListIcon,
+  NumberListIcon,
+  RedoIcon,
+  ShadingIcon,
+  UndoIcon
+} from '../../DocxEditor/icons';
 import type { ShapeInsertion, TableEditOperation } from '../engine';
 
 const FONTS = [
@@ -225,6 +232,9 @@ function B(props: {
       title={props.title}
       disabled={props.disabled}
       onClick={props.onClick}
+      // Word-style: toolbar clicks never take focus, so the page cannot
+      // scroll-to-focus and the stage's text selection survives.
+      onMouseDown={(e) => e.preventDefault()}
       data-history-action={props.historyAction ? '' : undefined}
       css={styles.btn(props.on, props.disabled)}
     >
@@ -233,11 +243,58 @@ function B(props: {
   );
 }
 
+function ColorControl(props: {
+  disabled?: boolean;
+  value: string;
+  onCommit: (value: string) => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      css={{
+        ...styles.btn(false, props.disabled),
+        position: 'relative',
+        flexDirection: 'column',
+        gap: 1,
+        padding: '2px 7px 3px'
+      }}
+      aria-label={props.title}
+    >
+      <span
+        css={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 12.5,
+          fontWeight: 600,
+          lineHeight: '15px',
+          height: 15
+        }}
+      >
+        {props.children}
+      </span>
+      <span
+        css={{
+          width: 16,
+          height: 4,
+          borderRadius: 1,
+          background: props.value,
+          boxShadow: `inset 0 0 0 1px ${ZINC[200]}`
+        }}
+      />
+      <CommitColorInput {...props} bare />
+    </span>
+  );
+}
+
 function CommitColorInput(props: {
   disabled?: boolean;
   value: string;
   onCommit: (value: string) => void;
   title: string;
+  /** Fill the parent ColorControl invisibly instead of rendering a swatch. */
+  bare?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const commitRef = useRef(props.onCommit);
@@ -290,7 +347,20 @@ function CommitColorInput(props: {
       disabled={props.disabled}
       type='color'
       defaultValue={props.value}
-      css={styles.color}
+      css={
+        props.bare
+          ? {
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              cursor: props.disabled ? 'default' : 'pointer',
+              border: 'none',
+              padding: 0
+            }
+          : styles.color
+      }
       title={props.title}
     />
   );
@@ -745,7 +815,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
               : 'Nothing to undo'
           }
         >
-          ↶
+          <UndoIcon width={16} height={16} />
         </B>
         <B
           historyAction
@@ -757,7 +827,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
               : 'Nothing to redo'
           }
         >
-          ↷
+          <RedoIcon width={16} height={16} />
         </B>
         <span css={styles.sep} />
         {tabButton('home')}
@@ -781,7 +851,6 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
             {'{ }'}
           </B>
         )}
-        <span css={styles.slideIndicator}>Slide {activeSlide + 1}</span>
       </div>
 
       {/* ---- Home ---- */}
@@ -875,20 +944,38 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
           >
             x<sub>2</sub>
           </B>
-          <CommitColorInput
+          <ColorControl
             disabled={!isText}
             value={`#${run?.color || '000000'}`}
             onCommit={(value) => applyText({ color: value.replace('#', '') })}
             title='Text color'
-          />
-          <CommitColorInput
+          >
+            A
+          </ColorControl>
+          <ColorControl
             disabled={!isText}
             value={`#${run?.highlight || 'F7B801'}`}
             onCommit={(value) =>
               applyText({ highlight: value.replace('#', '') })
             }
             title='Text highlight color'
-          />
+          >
+            <svg
+              viewBox='0 0 24 24'
+              width={14}
+              height={14}
+              css={{
+                stroke: 'currentColor',
+                fill: 'none',
+                strokeWidth: 1.9,
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round'
+              }}
+            >
+              <path d='m9 11-6 6v3h9l3-3' />
+              <path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4l8 8Z' />
+            </svg>
+          </ColorControl>
           <B
             disabled={!isText || !run?.highlight}
             onClick={() => applyText({ highlight: null })}
@@ -930,21 +1017,28 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
             ≋
           </B>
           <span css={styles.sep} />
-          <select
+          <B
             disabled={!sh?.text}
-            value={bulletValue}
-            onChange={(e) => applyBullet(e.target.value)}
-            css={styles.select}
-            title='Bullets and numbering'
+            on={bulletValue.startsWith('char:')}
+            onClick={() =>
+              applyBullet(bulletValue.startsWith('char:') ? 'none' : 'char:•')
+            }
+            title='Bullets'
           >
-            <option value='none'>No bullets</option>
-            <option value='char:•'>• Bullet</option>
-            <option value='char:–'>– Dash</option>
-            <option value='char:➤'>➤ Arrow</option>
-            <option value='auto:arabicPeriod'>1. Number</option>
-            <option value='auto:alphaLcParenR'>a) Lower alpha</option>
-            <option value='auto:romanLcPeriod'>i. Lower roman</option>
-          </select>
+            <BulletListIcon width={16} height={16} />
+          </B>
+          <B
+            disabled={!sh?.text}
+            on={bulletValue.startsWith('auto:')}
+            onClick={() =>
+              applyBullet(
+                bulletValue.startsWith('auto:') ? 'none' : 'auto:arabicPeriod'
+              )
+            }
+            title='Numbering'
+          >
+            <NumberListIcon width={16} height={16} />
+          </B>
         </div>
       )}
 
@@ -1162,11 +1256,21 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
           />
           <span css={styles.sep} />
           <span css={styles.label}>Background</span>
-          <CommitColorInput
+          <ColorControl
             value={backgroundColor1}
             onCommit={setSolidBg}
             title='Solid background color'
-          />
+          >
+            <span
+              css={{
+                width: 12,
+                height: 12,
+                borderRadius: 2,
+                background: backgroundColor1,
+                boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
+              }}
+            />
+          </ColorControl>
           <input
             type='color'
             value={backgroundColor2}
@@ -1554,8 +1658,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
                   <span css={styles.sep} />
                 </>
               )}
-              <span css={styles.label}>Fill</span>
-              <CommitColorInput
+              <ColorControl
                 value={`#${tableCellFill(selectedCell) || 'FFFFFF'}`}
                 onCommit={(value) =>
                   editTable(
@@ -1579,7 +1682,9 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
                 title={
                   selectedTableRange ? 'Selected cell fill' : 'Table cell fill'
                 }
-              />
+              >
+                <ShadingIcon width={14} height={14} />
+              </ColorControl>
               <span css={styles.label}>Borders</span>
               <select
                 value={borderTarget}

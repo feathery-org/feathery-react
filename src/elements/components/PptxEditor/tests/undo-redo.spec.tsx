@@ -191,7 +191,7 @@ it('exposes toolbar buttons and keyboard shortcuts for undo and redo', async () 
     )
   );
 
-  const svg = host.querySelector('svg');
+  const svg = host.querySelector('svg[data-svg-uid]');
   const renderedShape = () =>
     svg?.querySelector(`[data-shape-id="${shape.id}"]`);
   expect(renderedShape()?.getAttribute('transform')).toContain(
@@ -211,7 +211,7 @@ it('exposes toolbar buttons and keyboard shortcuts for undo and redo', async () 
   // mounted here), so the keyboard path is exercised via the store action.
   await act(async () => store.undo());
   expect(shape.xfrm!.x).toBe(beforeX);
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   expect(renderedShape()?.getAttribute('transform')).toContain(`${beforeX}`);
   const redo = host.querySelector(
     'button[title="Redo Move shape"]'
@@ -219,7 +219,7 @@ it('exposes toolbar buttons and keyboard shortcuts for undo and redo', async () 
   expect(redo.disabled).toBe(false);
   await act(async () => redo.click());
   expect(shape.xfrm!.x).toBe(beforeX + 120000);
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   expect(renderedShape()?.getAttribute('transform')).toContain(
     `${beforeX + 120000}`
   );
@@ -252,15 +252,15 @@ it('reconciles inserted shapes during history navigation without replacing the S
       'Insert text box'
     )!.createdShapeIds[0];
   });
-  const svg = host.querySelector('svg');
+  const svg = host.querySelector('svg[data-svg-uid]');
   expect(svg?.querySelector(`[data-shape-id="${addedId}"]`)).not.toBeNull();
 
   await act(async () => store.undo());
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   expect(svg?.querySelector(`[data-shape-id="${addedId}"]`)).toBeNull();
 
   await act(async () => store.redo());
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   expect(svg?.querySelector(`[data-shape-id="${addedId}"]`)).not.toBeNull();
 });
 
@@ -335,13 +335,13 @@ it('records toolbar formatting as one undo step after bullet indentation is norm
 
   expect(shape.text!.paragraphs[0].runs[0].strike).toBe(true);
   expect(store.getState().undoStack).toHaveLength(1);
-  const svg = host.querySelector('svg');
+  const svg = host.querySelector('svg[data-svg-uid]');
   const renderedShape = svg?.querySelector(`[data-shape-id="${shape.id}"]`);
   await act(async () => store.undo());
   const restored = slide.shapes.find((candidate) => candidate.id === shape.id)!;
   expect(restored.text!.paragraphs[0].runs[0].strike).toBe(false);
   expect(store.getState().undoStack).toHaveLength(0);
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   expect(svg?.querySelector(`[data-shape-id="${shape.id}"]`)).toBe(
     renderedShape
   );
@@ -464,7 +464,7 @@ it('keeps picture, image, and clip-path nodes mounted through crop undo and redo
   const slide = deck.slides[0];
   await act(async () => store.select(picture.id));
 
-  const svg = host.querySelector('svg')!;
+  const svg = host.querySelector('svg[data-svg-uid]')!;
   const group = svg.querySelector(`[data-shape-id="${picture.id}"]`)!;
   const image = group.querySelector('image')!;
   const clipId = group
@@ -489,7 +489,7 @@ it('keeps picture, image, and clip-path nodes mounted through crop undo and redo
   );
 
   await act(async () => store.undo());
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   expect(svg.querySelector(`[data-shape-id="${picture.id}"]`)).toBe(group);
   expect(group.querySelector('image')).toBe(image);
   expect(svg.querySelector(`clipPath[id="${clipId}"]`)).toBe(clip);
@@ -503,7 +503,7 @@ it('keeps picture, image, and clip-path nodes mounted through crop undo and redo
   });
 
   await act(async () => store.redo());
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   expect(svg.querySelector(`[data-shape-id="${picture.id}"]`)).toBe(group);
   expect(group.querySelector('image')).toBe(image);
   expect(svg.querySelector(`clipPath[id="${clipId}"]`)).toBe(clip);
@@ -554,7 +554,7 @@ it('routes slide-size toolbar edits through engine history without remounting SV
     </>
   );
   const before = deckToJSON(deck).slides[0].sizeEMU;
-  const svg = host.querySelector('svg');
+  const svg = host.querySelector('svg[data-svg-uid]');
   await switchTab(host, 'Slide');
   const width = host.querySelector(
     'input[title="Slide width (inches)"]'
@@ -571,12 +571,12 @@ it('routes slide-size toolbar edits through engine history without remounting SV
   expect(
     store.getState().undoStack[store.getState().undoStack.length - 1]?.label
   ).toBe('Resize slide');
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
 
   await act(async () => store.undo());
   expect(deckToJSON(deck).slides[0].sizeEMU).toEqual(before);
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   await act(async () => store.redo());
   expect(deckToJSON(deck).slides[0].sizeEMU.cx).toBe(before.cx + 914400);
-  expect(host.querySelector('svg')).toBe(svg);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
 });

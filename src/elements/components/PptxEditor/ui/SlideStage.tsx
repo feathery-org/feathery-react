@@ -472,7 +472,10 @@ function extractRichText(
   return paras.length ? paras : [{ runs: [] }];
 }
 
-export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
+export function SvgSlide({
+  readOnly = false,
+  zoom = 100
+}: { readOnly?: boolean; zoom?: number } = {}) {
   const store = usePptxEditorStore();
   const state = usePptxEditorState();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -663,7 +666,8 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
     rev,
     structureRev,
     activeSlide,
-    layoutTick
+    layoutTick,
+    zoom
   ]);
 
   // ---- inline text editing, IN PLACE ----
@@ -748,7 +752,7 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
     }
     div.style.overflow = 'visible';
     div.setAttribute('contenteditable', 'true');
-    div.focus();
+    div.focus({ preventScroll: true });
     // caret at the double-click point, else at the end
     const sel = featheryWindow().getSelection();
     sel?.removeAllRanges();
@@ -964,7 +968,7 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
     }
     div.setAttribute('contenteditable', 'true');
     div.style.overflow = 'auto';
-    div.focus();
+    div.focus({ preventScroll: true });
     const selection = featheryWindow().getSelection();
     const range = featheryDoc().createRange();
     if (cell.selectAll) {
@@ -1710,7 +1714,8 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
     const t = e.target as HTMLElement;
     // Take keyboard focus so shortcuts stay scoped to THIS editor instance
     // (never focus away from an in-place contenteditable edit).
-    if (!t.closest?.('[contenteditable="true"]')) hostRef.current?.focus();
+    if (!t.closest?.('[contenteditable="true"]'))
+      hostRef.current?.focus({ preventScroll: true });
     // Keep the linked DOM node stable from mouse-down through click. Selecting
     // its shape here can update overlays/focus before the browser dispatches click.
     if (t.closest?.('[data-hyperlink]')) return;
@@ -1959,7 +1964,7 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
       onClick={onHostClick}
       onDoubleClick={onDoubleClick}
     >
-      <div ref={svgHostRef} style={styles.frame} />
+      <div ref={svgHostRef} style={{ ...styles.frame, width: `${zoom}%` }} />
       {/* alignment guides (during a snap) */}
       {guides.map((gd, i) => (
         <div
