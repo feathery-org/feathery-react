@@ -219,6 +219,9 @@ function B(props: {
 }) {
   return (
     <button
+      // The editor can sit inside the hosted form's <form>; an untyped button
+      // defaults to type=submit and reloads the page.
+      type='button'
       title={props.title}
       disabled={props.disabled}
       onClick={props.onClick}
@@ -704,6 +707,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
   const tabButton = (key: Exclude<TabKey, 'table'>) => (
     <button
       key={key}
+      type='button'
       role='tab'
       aria-selected={activeTab === key}
       onClick={() => setTab(key)}
@@ -714,7 +718,19 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
   );
 
   return (
-    <div css={styles.wrap}>
+    <div
+      css={styles.wrap}
+      onKeyDown={(e) => {
+        // Inside a hosted form, Enter in a toolbar input/select submits the
+        // form. Values already commit onChange, so swallow the submit.
+        if (
+          e.key === 'Enter' &&
+          (e.target as HTMLElement).matches('input, select')
+        ) {
+          e.preventDefault();
+        }
+      }}
+    >
       {/* Tab row: history is always reachable; the Table tab is contextual. */}
       <div css={styles.tabRow} role='tablist' aria-label='Editor tools'>
         <B
@@ -750,6 +766,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
         {tabButton('arrange')}
         {isTable && (
           <button
+            type='button'
             role='tab'
             aria-selected={activeTab === 'table'}
             onClick={() => setTab('table')}
@@ -1032,6 +1049,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
                     return (
                       <button
                         key={i}
+                        type='button'
                         onMouseEnter={() =>
                           setTableHover({ rows: row, cols: col })
                         }
