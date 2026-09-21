@@ -11,9 +11,7 @@ import {
   tableCellFill,
   tableCellGridSpan,
   tableCellRowSpan,
-  tableCellVerticalAlign,
-  tableColumns,
-  tableRows
+  tableCellVerticalAlign
 } from '../core/model/table';
 import { child, descendant, getAttr } from '../core/opc/xml';
 import { selectedTextRanges } from './textSelection';
@@ -566,8 +564,6 @@ export function Toolbar({
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
   const [shapePickerOpen, setShapePickerOpen] = useState(false);
   const [tableHover, setTableHover] = useState({ rows: 3, cols: 3 });
-  const [columnIndex, setColumnIndex] = useState(0);
-  const [rowIndex, setRowIndex] = useState(0);
   const [borderTarget, setBorderTarget] = useState<
     'all' | 'outside' | 'inside' | 'top' | 'bottom' | 'left' | 'right' | 'none'
   >('all');
@@ -1605,7 +1601,9 @@ export function Toolbar({
                     key={stop}
                     css={{
                       position: 'absolute',
-                      top: 3,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      boxSizing: 'border-box',
                       width: 18,
                       height: 18,
                       borderRadius: '50%',
@@ -1680,15 +1678,6 @@ export function Toolbar({
         slide &&
         deck &&
         (() => {
-          const cols = tableColumns(sh);
-          const rows = tableRows(sh);
-          const activeColumn = Math.min(
-            columnIndex,
-            Math.max(0, cols.length - 1)
-          );
-          const activeRow = Math.min(rowIndex, Math.max(0, rows.length - 1));
-          const col = cols[activeColumn];
-          const row = rows[activeRow];
           const rangeIsSingle =
             !selectedTableRange ||
             (selectedTableRange.startRow === selectedTableRange.endRow &&
@@ -1703,109 +1692,6 @@ export function Toolbar({
               role='toolbar'
               aria-label='Table tools'
             >
-              <B
-                onClick={() =>
-                  editTable([{ kind: 'add-row' }], 'Add table row')
-                }
-                title='Add row'
-              >
-                +R
-              </B>
-              <B
-                onClick={() =>
-                  editTable([{ kind: 'remove-row' }], 'Remove table row')
-                }
-                title='Remove last row'
-              >
-                −R
-              </B>
-              <B
-                onClick={() =>
-                  editTable([{ kind: 'add-column' }], 'Add table column')
-                }
-                title='Add column'
-              >
-                +C
-              </B>
-              <B
-                onClick={() =>
-                  editTable([{ kind: 'remove-column' }], 'Remove table column')
-                }
-                title='Remove last column'
-              >
-                −C
-              </B>
-              <span css={styles.sep} />
-              <select
-                value={activeColumn}
-                onChange={(e) => setColumnIndex(Number(e.target.value))}
-                css={styles.select}
-                title='Column to resize'
-              >
-                {cols.map((_, i) => (
-                  <option key={i} value={i}>
-                    C{i + 1}
-                  </option>
-                ))}
-              </select>
-              <input
-                key={`cw-${sh.id}-${activeColumn}`}
-                type='number'
-                min='0.1'
-                step='0.1'
-                defaultValue={((Number(col?.[':@']?.w) || 0) / 914400).toFixed(
-                  2
-                )}
-                onChange={(e) =>
-                  editTable(
-                    [
-                      {
-                        kind: 'set-column-width',
-                        index: activeColumn,
-                        width: Number(e.target.value) * 914400
-                      }
-                    ],
-                    'Resize table column'
-                  )
-                }
-                css={styles.num(true)}
-                title='Column width (inches)'
-              />
-              <select
-                value={activeRow}
-                onChange={(e) => setRowIndex(Number(e.target.value))}
-                css={styles.select}
-                title='Row to resize'
-              >
-                {rows.map((_, i) => (
-                  <option key={i} value={i}>
-                    R{i + 1}
-                  </option>
-                ))}
-              </select>
-              <input
-                key={`rh-${sh.id}-${activeRow}`}
-                type='number'
-                min='0.1'
-                step='0.1'
-                defaultValue={((Number(row?.[':@']?.h) || 0) / 914400).toFixed(
-                  2
-                )}
-                onChange={(e) =>
-                  editTable(
-                    [
-                      {
-                        kind: 'set-row-height',
-                        index: activeRow,
-                        height: Number(e.target.value) * 914400
-                      }
-                    ],
-                    'Resize table row'
-                  )
-                }
-                css={styles.num(true)}
-                title='Row height (inches)'
-              />
               <B
                 onClick={() =>
                   editTable([{ kind: 'fit-rows' }], 'Fit table rows')

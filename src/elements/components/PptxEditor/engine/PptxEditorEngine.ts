@@ -312,16 +312,16 @@ export class PptxEditorEngine {
               );
               break;
             case 'add-row':
-              addTableRow(deck, slide, shape);
+              addTableRow(deck, slide, shape, operation.index);
               break;
             case 'remove-row':
-              removeTableRow(deck, slide, shape);
+              removeTableRow(deck, slide, shape, operation.index);
               break;
             case 'add-column':
-              addTableColumn(deck, slide, shape);
+              addTableColumn(deck, slide, shape, operation.index);
               break;
             case 'remove-column':
-              removeTableColumn(deck, slide, shape);
+              removeTableColumn(deck, slide, shape, operation.index);
               break;
             case 'set-column-width':
               setTableColumnWidth(

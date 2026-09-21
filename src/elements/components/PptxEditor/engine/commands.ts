@@ -58,10 +58,10 @@ export type SlideBackground =
 
 export type TableEditOperation =
   | { kind: 'set-cell-text'; row: number; col: number; value: string }
-  | { kind: 'add-row' }
-  | { kind: 'remove-row' }
-  | { kind: 'add-column' }
-  | { kind: 'remove-column' }
+  | { kind: 'add-row'; index?: number }
+  | { kind: 'remove-row'; index?: number }
+  | { kind: 'add-column'; index?: number }
+  | { kind: 'remove-column'; index?: number }
   | { kind: 'set-column-width'; index: number; width: number }
   | { kind: 'set-row-height'; index: number; height: number }
   | { kind: 'fit-rows' }

@@ -522,6 +522,14 @@ export function SvgSlide({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
+  // Right-click context menu on table cells: row/column insert & delete.
+  const [tableMenu, setTableMenu] = useState<{
+    x: number;
+    y: number;
+    shapeId: string;
+    row: number;
+    col: number;
+  } | null>(null);
   const [tableEdgePreview, setTableEdgePreview] = useState<{
     axis: 'column' | 'row';
     position: number;
@@ -1710,6 +1718,7 @@ export function SvgSlide({
 
   // click a shape to select (shift = add/remove); empty space starts a marquee
   const onHostDown = (e: React.MouseEvent) => {
+    if (tableMenu && e.button === 0) setTableMenu(null);
     if (readOnly || gesture.current || editingId || editingCell) return;
     const t = e.target as HTMLElement;
     // Take keyboard focus so shortcuts stay scoped to THIS editor instance
@@ -1787,6 +1796,59 @@ export function SvgSlide({
       if (!e.shiftKey) select(null);
       marqueeRef.current = { startX: e.clientX, startY: e.clientY };
     }
+  };
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    if (readOnly) return;
+    const cell = (e.target as HTMLElement).closest?.(
+      '[data-table-cell], [data-table-cell-bg]'
+    ) as HTMLElement | null;
+    const shapeG = cell?.closest?.('[data-shape-id]') as HTMLElement | null;
+    const shapeId = shapeG?.dataset.shapeId;
+    const row = Number(cell?.dataset.row);
+    const col = Number(cell?.dataset.col);
+    if (!cell || !shapeId || !Number.isInteger(row) || !Number.isInteger(col)) {
+      setTableMenu(null);
+      return;
+    }
+    e.preventDefault();
+    const hostRect = hostRef.current?.getBoundingClientRect();
+    select(shapeId);
+    store.setTableSelection({
+      shapeId,
+      startRow: row,
+      startCol: col,
+      endRow: row,
+      endCol: col
+    });
+    setTableMenu({
+      x: e.clientX - (hostRect?.left ?? 0) + (hostRef.current?.scrollLeft ?? 0),
+      y: e.clientY - (hostRect?.top ?? 0) + (hostRef.current?.scrollTop ?? 0),
+      shapeId,
+      row,
+      col
+    });
+  };
+
+  const runTableMenu = (
+    operations: import('../engine').TableEditOperation[],
+    label: string
+  ) => {
+    const menu = tableMenu;
+    setTableMenu(null);
+    if (!menu) return;
+    const st = store.getState();
+    const sl = st.deck?.slides[st.activeSlide];
+    if (!sl) return;
+    store.executeCommand(
+      {
+        type: 'edit-table',
+        slideId: sl.path,
+        shapeId: menu.shapeId,
+        operations
+      },
+      label
+    );
   };
 
   const onHostClick = (e: React.MouseEvent) => {
@@ -1963,8 +2025,126 @@ export function SvgSlide({
       onMouseDown={onHostDown}
       onClick={onHostClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
     >
       <div ref={svgHostRef} style={{ ...styles.frame, width: `${zoom}%` }} />
+      {tableMenu && (
+        <div
+          data-overlay
+          style={{
+            position: 'absolute',
+            left: tableMenu.x,
+            top: tableMenu.y,
+            zIndex: 40,
+            minWidth: 190,
+            padding: 4,
+            background: '#fff',
+            border: '1px solid #e4e4e7',
+            borderRadius: 8,
+            boxShadow: '0 6px 18px rgba(23,26,28,.13)',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {(
+            [
+              [
+                'Insert row above',
+                [{ kind: 'add-row', index: tableMenu.row }],
+                'Add table row'
+              ],
+              [
+                'Insert row below',
+                [{ kind: 'add-row', index: tableMenu.row + 1 }],
+                'Add table row'
+              ],
+              [
+                'Insert column left',
+                [{ kind: 'add-column', index: tableMenu.col }],
+                'Add table column'
+              ],
+              [
+                'Insert column right',
+                [{ kind: 'add-column', index: tableMenu.col + 1 }],
+                'Add table column'
+              ],
+              [
+                'Delete row',
+                [{ kind: 'remove-row', index: tableMenu.row }],
+                'Remove table row'
+              ],
+              [
+                'Delete column',
+                [{ kind: 'remove-column', index: tableMenu.col }],
+                'Remove table column'
+              ]
+            ] as const
+          ).map(([label, operations, commandLabel]) => (
+            <button
+              key={label}
+              type='button'
+              onClick={() => runTableMenu([...operations], commandLabel)}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '7px 10px',
+                border: 'none',
+                borderRadius: 6,
+                background: 'transparent',
+                color: '#3f3f46',
+                fontSize: 12.5,
+                textAlign: 'left',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) =>
+                ((e.target as HTMLElement).style.background = '#f4f4f5')
+              }
+              onMouseLeave={(e) =>
+                ((e.target as HTMLElement).style.background = 'transparent')
+              }
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            type='button'
+            onClick={() => {
+              const menu = tableMenu;
+              setTableMenu(null);
+              if (!menu) return;
+              const st = store.getState();
+              const sl = st.deck?.slides[st.activeSlide];
+              if (!sl) return;
+              store.executeCommand(
+                {
+                  type: 'delete-shapes',
+                  slideId: sl.path,
+                  shapeIds: [menu.shapeId]
+                },
+                'Delete table'
+              );
+              select(null);
+            }}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '7px 10px',
+              border: 'none',
+              borderTop: '1px solid #e4e4e7',
+              borderRadius: 6,
+              background: 'transparent',
+              color: '#dc3a4b',
+              fontSize: 12.5,
+              textAlign: 'left',
+              cursor: 'pointer'
+            }}
+          >
+            Delete table
+          </button>
+        </div>
+      )}
       {/* alignment guides (during a snap) */}
       {guides.map((gd, i) => (
         <div
