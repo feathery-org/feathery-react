@@ -1,4 +1,5 @@
 import { findCountryByID } from '../elements/components/data/countries';
+import { arrayMove } from './array';
 import { formatDateString } from '../elements/fields/DateSelectorField/utils';
 import { featheryWindow } from './browser';
 import Field from './entities/Field';
@@ -294,6 +295,67 @@ export function updateStepFieldOptions(
         }
       }
     }
+  });
+}
+
+/**
+ * Permutes per-row dropdown options for a container row move. repeat_options is
+ * sparse - a row that never had per-row options is a hole - so holes have to
+ * move as holes or a later row silently inherits the options of the row that
+ * passed it.
+ */
+export function moveStepFieldRepeatOptions(
+  step: any,
+  fieldKeys: Set<string>,
+  from: number,
+  to: number
+) {
+  step.servar_fields.forEach((field: any) => {
+    const servar = field.servar;
+    if (!fieldKeys.has(servar.key)) return;
+
+    const options = servar.metadata?.repeat_options;
+    if (!Array.isArray(options)) return;
+
+    const length = Math.max(options.length, from + 1, to + 1);
+    const padded = Array.from({ length }, (_, i) =>
+      i in options ? options[i] : undefined
+    );
+    servar.metadata.repeat_options = arrayMove(padded, from, to);
+  });
+}
+
+/** Whether any field in the set carries per-row options worth permuting. */
+export function hasRepeatOptionsForFields(step: any, fieldKeys: Set<string>) {
+  return step.servar_fields.some(
+    (field: any) =>
+      fieldKeys.has(field.servar.key) &&
+      Array.isArray(field.servar.metadata?.repeat_options)
+  );
+}
+
+/** Shifts per-row dropdown options down so they stay with their own rows. */
+export function insertStepFieldRepeatOptions(
+  step: any,
+  fieldKeys: Set<string>,
+  at: number
+) {
+  step.servar_fields.forEach((field: any) => {
+    const servar = field.servar;
+    if (!fieldKeys.has(servar.key)) return;
+
+    const options = servar.metadata?.repeat_options;
+    if (!Array.isArray(options)) return;
+
+    const length = Math.max(options.length, at);
+    const padded = Array.from({ length }, (_, i) =>
+      i in options ? options[i] : undefined
+    );
+    servar.metadata.repeat_options = [
+      ...padded.slice(0, at),
+      undefined,
+      ...padded.slice(at)
+    ];
   });
 }
 

@@ -68,9 +68,23 @@ export const nextStepKey = (nextConditions: any, metadata: any) => {
 
 // No origin is possible if there are no steps, e.g. form is disabled
 const NO_ORIGIN_DEFAULT = { key: '' };
-export const getOrigin = (steps: any) =>
-  Object.values(steps).find((step) => (step as any).origin) ??
-  NO_ORIGIN_DEFAULT;
+export const getOrigin = (steps: any) => {
+  const origin = Object.values(steps).find((step) => (step as any).origin);
+  if (origin) return origin;
+
+  // A form with steps but none flagged as the origin would otherwise resolve to
+  // an empty step key and render nothing at all, with no error to explain it.
+  // Starting at the first step is a guess, but a visible one.
+  const [first] = Object.values(steps);
+  if (first) {
+    console.warn(
+      `Feathery: no origin step is set, starting at "${(first as any).key}".`
+    );
+    return first;
+  }
+
+  return NO_ORIGIN_DEFAULT;
+};
 
 /**
  *
