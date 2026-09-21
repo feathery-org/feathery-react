@@ -1,4 +1,5 @@
 import { featheryDoc, featheryWindow } from '../../../../utils/browser';
+import { deepClone } from '../core/opc/deepClone';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   reconcileSlideSvg,
@@ -753,15 +754,24 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
     sel?.removeAllRanges();
     const pt = dblPointRef.current;
     let range: Range | null = null;
-    if (
-      pt &&
-      (
-        featheryDoc() as {
-          caretRangeFromPoint?: (x: number, y: number) => Range | null;
-        }
-      ).caretRangeFromPoint
-    ) {
-      range = featheryDoc().caretRangeFromPoint(pt.x, pt.y);
+    const doc = featheryDoc() as Document & {
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+      caretPositionFromPoint?: (
+        x: number,
+        y: number
+      ) => { offsetNode: Node; offset: number } | null;
+    };
+    if (pt && doc.caretRangeFromPoint) {
+      range = doc.caretRangeFromPoint(pt.x, pt.y);
+    } else if (pt && doc.caretPositionFromPoint) {
+      // Firefox has no caretRangeFromPoint; build the range from the
+      // standards-track caretPositionFromPoint instead.
+      const position = doc.caretPositionFromPoint(pt.x, pt.y);
+      if (position) {
+        range = doc.createRange();
+        range.setStart(position.offsetNode, position.offset);
+        range.collapse(true);
+      }
     }
     if (!range) {
       const fallback: Range = featheryDoc().createRange();
@@ -1172,7 +1182,7 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
         mode: 'crop',
         dir,
         cropMove,
-        startCrop: structuredClone(cropPreview),
+        startCrop: deepClone(cropPreview),
         startMouse: { x: e.clientX, y: e.clientY },
         startBox: box,
         targets: [
@@ -1272,7 +1282,7 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
         const localDy = -dxRaw * Math.sin(radians) + dyRaw * Math.cos(radians);
         const dxPct = (localDx / Math.max(1, g.startBox.width)) * 100;
         const dyPct = (localDy / Math.max(1, g.startBox.height)) * 100;
-        const next = structuredClone(start);
+        const next = deepClone(start);
         const clamp = (value: number, max: number) =>
           Math.max(0, Math.min(max, value));
         if (g.cropMove) {
