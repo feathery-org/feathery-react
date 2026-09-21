@@ -12010,10 +12010,19 @@ function finalizeTableAppearance(
         })[0]
       : undefined;
     const address = boundAnchor ? undefined : sequence[footprint.sequenceIndex];
+    const sequenceAnchor = address
+      ? `${address.section};${address.block}`
+      : undefined;
+    const exactUnboundAnchor = !footprint.tableId
+      ? [sequenceAnchor, footprint.anchor].find(
+          (candidate): candidate is string =>
+            !!candidate &&
+            tableShapeFingerprint(sfdt, candidate, footprint.headerRows) ===
+              footprint.shapeFingerprint
+        )
+      : undefined;
     const anchor =
-      exactBoundAnchor ??
-      boundAnchor ??
-      (address ? `${address.section};${address.block}` : undefined);
+      exactBoundAnchor ?? boundAnchor ?? exactUnboundAnchor ?? sequenceAnchor;
     if (!anchor) {
       warnings.push(
         `Table appearance not finalized for ${footprint.anchor}: nothing is at ` +
@@ -16147,6 +16156,11 @@ function blankColumnCell(source: any): any {
   stripRevisionIds(cell);
   delete cell.contentControlProperties;
   delete cell.ccp;
+  cell.cellFormat = {
+    ...(cell.cellFormat ?? {}),
+    columnSpan: 1,
+    rowSpan: 1
+  };
   const blocks = Array.isArray(cell.blocks) ? cell.blocks : [];
   const paragraph = cloneJson(blocks[0] ?? { inlines: [] });
   delete paragraph.contentControlProperties;
@@ -16216,6 +16230,13 @@ function insertColumnIntoTable(table: any, columnIndex: number): void {
     });
     row.cells = next;
   }
+  const grid = Array.isArray(table?.grid) ? table.grid : undefined;
+  if (grid) {
+    const sourceColumn = columnIndex === 0 ? 0 : columnIndex - 1;
+    grid.splice(columnIndex, 0, Number(grid[sourceColumn]) || 0);
+  }
+  if (Number.isFinite(Number(table?.columnCount)))
+    table.columnCount = Number(table.columnCount) + 1;
 }
 
 function deleteColumnFromTable(table: any, columnIndex: number): void {
@@ -17851,6 +17872,26 @@ function resolveChangeSetBlock(
       `matching blocks: ${matches.map((match) => match.anchor).join(', ')}`
     ]
   );
+}
+
+function anchorAfterTopLevelPastes(
+  baseline: FlatBlock | undefined,
+  originalSequence: Array<{ section: number; block: number }>,
+  liveSequence: Array<{ section: number; block: number }>,
+  shifts: PasteEffect[]
+): string | undefined {
+  if (!baseline || !shifts.length) return undefined;
+  const parts = baseline.anchor.split(';');
+  if (parts.length < 2) return undefined;
+  let index = sequenceIndexOf(
+    originalSequence,
+    topLevelAddress(baseline.anchor)
+  );
+  if (index < 0) return undefined;
+  for (const shift of shifts) if (shift.at <= index) index += shift.blocks;
+  const address = liveSequence[index];
+  if (!address) return undefined;
+  return [address.section, address.block, ...parts.slice(2)].join(';');
 }
 
 function resolveSectionBoundary(
@@ -22961,6 +23002,7 @@ function applyDocumentEditsMeasured(
   // Edit order is preserved because the finalizer keeps the latest footprint
   // for a table touched more than once.
   const tableFootprints: TableFootprint[] = [];
+  const topLevelPasteShifts: PasteEffect[] = [];
   // Existing positions shift before post-paste footprints are appended.
   const recordTableFootprints = (
     footprints: TableFootprint[],
@@ -22970,6 +23012,7 @@ function applyDocumentEditsMeasured(
       for (const footprint of tableFootprints)
         if (shift.at <= footprint.sequenceIndex)
           footprint.sequenceIndex += shift.blocks;
+      topLevelPasteShifts.push(shift);
     }
     tableFootprints.push(...footprints);
   };
@@ -23033,6 +23076,36 @@ function applyDocumentEditsMeasured(
     acceptStream = acceptProjectionStream(sfdt);
   };
   refresh();
+  const originalTopLevelSequence = topLevelSequence(liveSfdt);
+  const resolvePlannedBlock = (
+    anchor: string,
+    baseline: FlatBlock | undefined,
+    anchorsMayHaveShifted: boolean,
+    preferEquivalentDirect = false
+  ): FlatBlock => {
+    const rebasedAnchor = anchorAfterTopLevelPastes(
+      baseline,
+      originalTopLevelSequence,
+      topLevelSequence(liveSfdt),
+      topLevelPasteShifts
+    );
+    if (rebasedAnchor && baseline) {
+      const direct = byAnchor.get(rebasedAnchor);
+      if (
+        direct &&
+        direct.kind === baseline.kind &&
+        direct.text === baseline.text
+      )
+        return direct;
+    }
+    return resolveChangeSetBlock(
+      blocks,
+      anchor,
+      baseline,
+      anchorsMayHaveShifted,
+      preferEquivalentDirect
+    );
+  };
   const stableRefCreators = new Map<string, EditOp>();
   for (const edit of edits) {
     const ref = stableResourceRef(edit?.resultRef);
@@ -23887,8 +23960,7 @@ function applyDocumentEditsMeasured(
                     // content on either side, is the identity contract.
                     undefined
                   )
-                : resolveChangeSetBlock(
-                    blocks,
+                : resolvePlannedBlock(
                     requestedAnchor,
                     plan.target,
                     anchorMayHaveShifted(requestedAnchor)
@@ -23939,8 +24011,7 @@ function applyDocumentEditsMeasured(
               }
               if (op.op === 'insert_text' && !insertInheritance) {
                 const explicitSource = plan.source
-                  ? resolveChangeSetBlock(
-                      blocks,
+                  ? resolvePlannedBlock(
                       String(op.inheritFormatFrom),
                       plan.source,
                       anchorMayHaveShifted(op.inheritFormatFrom),
@@ -24286,8 +24357,7 @@ function applyDocumentEditsMeasured(
               );
             }
           } else {
-            target = resolveChangeSetBlock(
-              blocks,
+            target = resolvePlannedBlock(
               requestedAnchor,
               baselineTarget,
               anchorMayHaveShifted(requestedAnchor) &&
@@ -24302,8 +24372,7 @@ function applyDocumentEditsMeasured(
                 }
               : plan.relocated;
           const source = plan.source
-            ? resolveChangeSetBlock(
-                blocks,
+            ? resolvePlannedBlock(
                 String(op.inheritFormatFrom),
                 plan.source,
                 anchorMayHaveShifted(op.inheritFormatFrom),

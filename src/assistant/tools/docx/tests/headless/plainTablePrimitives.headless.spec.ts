@@ -1,5 +1,46 @@
 import { HeadlessSession, readFixture, startHeadless } from './headlessSession';
 
+function repeatedAlternativeHeadersFixture(): string {
+  const sfdt = JSON.parse(readFixture('flagship-v4d.browser.sfdt.json'));
+  const textOf = (node: any): string => {
+    if (Array.isArray(node)) return node.map(textOf).join('');
+    if (!node || typeof node !== 'object') return '';
+    return (
+      (typeof node.text === 'string' ? node.text : '') +
+      Object.values(node).map(textOf).join('')
+    );
+  };
+  const findTable = (node: any, needle: string): any => {
+    if (Array.isArray(node)) {
+      for (const entry of node) {
+        const table = findTable(entry, needle);
+        if (table) return table;
+      }
+      return undefined;
+    }
+    if (!node || typeof node !== 'object') return undefined;
+    if (Array.isArray(node.rows) && textOf(node).includes(needle)) return node;
+    for (const value of Object.values(node)) {
+      const table = findTable(value, needle);
+      if (table) return table;
+    }
+    return undefined;
+  };
+  const setCellText = (cell: any, text: string): void => {
+    const paragraph = cell?.blocks?.[0];
+    paragraph.inlines = [{ characterFormat: {}, text }];
+  };
+  for (const [needle, headerRow] of [
+    ['Fire and explosion', 0],
+    ['PR-01', 1],
+    ['Public liability', 0]
+  ] as const) {
+    const table = findTable(sfdt.sections, needle);
+    setCellText(table.rows[headerRow].cells[1], 'Alternative 1');
+  }
+  return JSON.stringify(sfdt);
+}
+
 describe('one table primitive surface for plain tables', () => {
   let session: HeadlessSession;
 
@@ -117,6 +158,218 @@ describe('one table primitive surface for plain tables', () => {
     expect(rejected.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
+  it('inserts columns into two plain tables with the same header in one atomic group', async () => {
+    await session.call('open', repeatedAlternativeHeadersFixture());
+    const baseline = await session.call<string>('serialize');
+    const policy = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    const endorsements = await session.call<string>(
+      'tableAnchorContaining',
+      'PR-01'
+    );
+
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_column',
+          group: 'g01-add-alternative',
+          anchor: `${policy};0;1;0`,
+          expect: 'Alternative 1',
+          position: 'after',
+          resultRef: '@policy_alt2'
+        },
+        {
+          op: 'insert_column',
+          group: 'g01-add-alternative',
+          anchor: `${endorsements};1;1;0`,
+          expect: 'Alternative 1',
+          position: 'after',
+          resultRef: '@endorsement_alt2'
+        }
+      ],
+      'plain-repeated-alternative-columns'
+    );
+
+    if (result.outcomes.some((outcome: string) => outcome !== 'ok'))
+      throw new Error(JSON.stringify(result));
+    expect(result.outcomes).toEqual(['ok', 'ok']);
+    expect(result.groups).toBe(1);
+    expect(
+      await session.call<number>(
+        'tableColumnCountAt',
+        await session.call<string>(
+          'tableAnchorContaining',
+          'Fire and explosion'
+        )
+      )
+    ).toBe(3);
+    expect(
+      await session.call<number>(
+        'tableColumnCountAt',
+        await session.call<string>('tableAnchorContaining', 'PR-01')
+      )
+    ).toBe(3);
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
+  it('applies one mixed bound and plain multi-table column batch', async () => {
+    await session.call('open', repeatedAlternativeHeadersFixture());
+    const baseline = await session.call<string>('serialize');
+    const property = await session.call<string>(
+      'tableAnchor',
+      'property_premium'
+    );
+    const liability = await session.call<string>(
+      'tableAnchor',
+      'liability_premium'
+    );
+    const summary = await session.call<string>('tableAnchor', 'summary');
+    const propertyOptions = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    const liabilityOptions = await session.call<string>(
+      'tableAnchorContaining',
+      'Public liability'
+    );
+    const operations = [
+      {
+        op: 'insert_column',
+        group: 'g01-add-alternative',
+        anchor: `${propertyOptions};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@property_options_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-alternative',
+        anchor: '@property_options_alt2;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'insert_column',
+        group: 'g01-add-alternative',
+        anchor: `${liabilityOptions};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@liability_options_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-alternative',
+        anchor: '@liability_options_alt2;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'insert_column',
+        group: 'g01-add-alternative',
+        anchor: `${property};0;3;0`,
+        position: 'after',
+        resultRef: '@property_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-alternative',
+        anchor: '@property_alt2;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'insert_column',
+        group: 'g01-add-alternative',
+        anchor: `${liability};0;3;0`,
+        position: 'after',
+        resultRef: '@liability_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-alternative',
+        anchor: '@liability_alt2;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'insert_column',
+        group: 'g01-add-alternative',
+        anchor: `${summary};0;1;0`,
+        position: 'after',
+        resultRef: '@summary_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-add-alternative',
+        anchor: '@summary_alt2;0;0',
+        text: 'Alternative 2'
+      }
+    ];
+
+    const result = await session.call<any>(
+      'applyEdits',
+      operations,
+      'mixed-alternative-columns'
+    );
+
+    if (result.outcomes.some((outcome: string) => outcome !== 'ok'))
+      throw new Error(JSON.stringify(result));
+    expect(result.outcomes).toEqual(operations.map(() => 'ok'));
+    expect(result.groups).toBe(1);
+    expect(result.warnings).toEqual([]);
+    const applied = result.executionTrace.applied.filter(
+      (entry: any) => entry.op === 'insert_column'
+    );
+    expect(
+      applied.filter((entry: any) => entry.route === 'engine')
+    ).toHaveLength(3);
+    expect(
+      applied.filter((entry: any) => entry.route === 'editor')
+    ).toHaveLength(2);
+    expect(
+      await session.call<number>('tableColumnCount', 'property_premium')
+    ).toBe(5);
+    expect(
+      await session.call<number>('tableColumnCount', 'liability_premium')
+    ).toBe(5);
+    expect(await session.call<number>('tableColumnCount', 'summary')).toBe(3);
+    expect(
+      await session.call<number>(
+        'tableColumnCountAt',
+        await session.call<string>(
+          'tableAnchorContaining',
+          'Fire and explosion'
+        )
+      )
+    ).toBe(3);
+    expect(
+      await session.call<number>(
+        'tableColumnCountAt',
+        await session.call<string>('tableAnchorContaining', 'Public liability')
+      )
+    ).toBe(3);
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+
+    const accepted = await session.call<any>(
+      'applyEdits',
+      operations,
+      'mixed-alternative-columns-accept'
+    );
+    if (accepted.outcomes.some((outcome: string) => outcome !== 'ok'))
+      throw new Error(JSON.stringify(accepted));
+    await session.call('resolveGroups', true);
+    expect(
+      await session.call<number>('tableColumnCount', 'property_premium')
+    ).toBe(5);
+    expect(
+      await session.call<number>('tableColumnCount', 'liability_premium')
+    ).toBe(5);
+    expect(await session.call<number>('tableColumnCount', 'summary')).toBe(3);
   }, 120000);
 
   it('splits noncontiguous rows by composing duplicate_table and delete_row', async () => {
