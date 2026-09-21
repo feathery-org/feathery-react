@@ -162,6 +162,7 @@ describe('version history in the pinned real Chrome engine', () => {
       });
       const after = await session.call('historyReviewState');
       expect(after.revisions).toBe(0);
+      expect(after.ink).toBeGreaterThan(before.ink * 0.5);
       expect(after.text).not.toContain('Update premium');
       expect(JSON.parse(after.sfdt).revisions ?? []).toHaveLength(0);
       expect(after.artifacts.some((changes: any) => changes.confirmed)).toBe(

@@ -16,11 +16,34 @@ let mockOnEdit: (info: { assistant: boolean }) => void;
 let mockSaveShortcut: () => Promise<void>;
 let mockBindingsReady = false;
 const mockCommitBindings = jest.fn(() => true);
+const mockEditorListeners = new Map<string, Set<() => void>>();
 const mockEditor = {
   serialize: () =>
     JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: mockText }] }] }]
-    })
+    }),
+  revisions: { changes: [] as any[] },
+  selection: {
+    getCurrentRevision: () => null,
+    selectRevision: jest.fn(),
+    start: null,
+    end: null
+  },
+  selectionModule: {
+    selectRevision: jest.fn(),
+    start: null,
+    end: null
+  },
+  addEventListener: (event: string, callback: () => void) => {
+    const listeners = mockEditorListeners.get(event) ?? new Set();
+    listeners.add(callback);
+    mockEditorListeners.set(event, listeners);
+  },
+  removeEventListener: (event: string, callback: () => void) => {
+    mockEditorListeners.get(event)?.delete(callback);
+  },
+  focusIn: jest.fn(),
+  viewer: { renderVisiblePages: jest.fn() }
 };
 const mockViewerOpen = jest.fn();
 const mockViewerConstruct = jest.fn();
@@ -46,6 +69,7 @@ jest.mock('./useDocxEditor', () => ({
     };
   },
   isOpeningDocument: () => false,
+  setActiveInlineRevisions: jest.fn(),
   installRevisionHighlightRendering: jest.fn(),
   closeTrackedChangeReviewPane: jest.fn()
 }));
@@ -95,6 +119,8 @@ describe('version history experience', () => {
     mockViewerDestroy.mockClear();
     mockBindingsReady = false;
     mockCommitBindings.mockReset().mockReturnValue(true);
+    mockEditor.revisions.changes = [];
+    mockEditorListeners.clear();
   });
   afterEach(() => jest.useRealTimers());
 
@@ -324,6 +350,52 @@ describe('version history experience', () => {
     highlights_pruned_at: null,
     created_at: '2026-09-17T12:00:00Z',
     ...over
+  });
+
+  it('returns to the live editor when a Robin edit auto-opens Suggested changes', async () => {
+    const current = savedVersion({
+      id: 'current',
+      seq: 2,
+      is_current: true,
+      final_sfdt: null,
+      closed_at: null
+    });
+    const host: DocxHistoryHost = {
+      listVersions: async () => [current],
+      closeVersion: async () => null,
+      restoreVersion: jest.fn(),
+      fetchVersionFile: jest.fn(),
+      renameVersion: jest.fn()
+    };
+    const view = render(
+      <DocxEditor history={host} reviewChanges onSave={jest.fn()} />
+    );
+    fireEvent.click(view.getByRole('button', { name: 'History' }));
+    await view.findByRole('button', { name: 'Back to current version' });
+
+    mockEditor.revisions.changes = [
+      {
+        revisionID: 'robin-pending',
+        revisionType: 'Insertion',
+        author: 'Robin',
+        customData: JSON.stringify({
+          changeSetId: 'turn-1',
+          group: 'new-copy',
+          source: 'robin'
+        }),
+        getRange: () => [{ text: 'New copy' }]
+      }
+    ];
+    act(() => {
+      for (const listener of mockEditorListeners.get('contentChange') ?? [])
+        listener();
+    });
+
+    await view.findAllByText('Suggested changes');
+    expect(
+      view.queryByRole('button', { name: 'Back to current version' })
+    ).toBeNull();
+    view.unmount();
   });
 
   const restoreSetup = () => {

@@ -100,12 +100,25 @@ export const historyReviewHarness = {
   },
   async historyReviewState() {
     for (let i = 0; i < 12; i++) await frame();
+    const canvas = editor.documentHelper.containerCanvas as HTMLCanvasElement;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Review editor has no canvas');
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let ink = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (
+        pixels[i + 3] &&
+        Math.min(pixels[i], pixels[i + 1], pixels[i + 2]) < 180
+      )
+        ink++;
+    }
     return {
       saves,
       artifacts,
       sfdt: editor.serialize(),
       revisions: editor.revisions.changes.length,
-      text: host?.textContent
+      text: host?.textContent,
+      ink
     };
   },
   closeHistoryReview() {

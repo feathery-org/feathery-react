@@ -768,6 +768,15 @@ function DocxEditor({
     setLiveSessionAuthors(null);
   }, []);
 
+  // A version viewer belongs exclusively to the History panel. Suggested
+  // changes can open automatically when a Robin edit lands, bypassing the
+  // rail click handler that normally exits version view. Leaving the stale
+  // read-only viewer mounted over the live editor makes a later acceptance
+  // look like the document disappeared until the step remounts.
+  useEffect(() => {
+    if (activePanel !== 'history' && viewingVersion) exitVersionView();
+  }, [activePanel, viewingVersion, exitVersionView]);
+
   // Step the viewer through EDIT GROUPS, not raw revisions: one click = one
   // logical edit. editGroupKey buckets a replace's delete+insert together and
   // collapses the WHOLE Robin turn into a single group (a session holds at most
