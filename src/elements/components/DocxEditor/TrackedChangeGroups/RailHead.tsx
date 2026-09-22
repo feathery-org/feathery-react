@@ -1,6 +1,16 @@
 import React from 'react';
 import { SpinnerIcon } from '../icons';
-import { INK, INK_3, LINE, MONO, PANEL_3, btn, rejectBtn } from './styles';
+import {
+  DEL,
+  DEL_WASH,
+  INK,
+  INK_3,
+  LINE,
+  MONO,
+  PANEL_3,
+  btn,
+  rejectBtn
+} from './styles';
 
 // Shared by both bulk buttons: fixed icon slot so the spinner swap doesn't
 // resize them.
@@ -21,6 +31,10 @@ interface Props {
    *  the running one's label icon for a spinner, same as the toolbar's Save
    *  button while autosaving. */
   resolvingAll?: 'accept' | 'reject' | null;
+  /** A resolve that could not finish, in plain language. The pending counter
+   *  alone cannot say this: a stalled card just redraws a smaller number, which
+   *  reads as "it worked". */
+  notice?: string | null;
 }
 
 // Rail head: title, pending counter, bulk actions.
@@ -28,7 +42,8 @@ export default function RailHead({
   pendingCount,
   onHide,
   onResolveAll,
-  resolvingAll
+  resolvingAll,
+  notice
 }: Props) {
   return (
     <div
@@ -96,6 +111,23 @@ export default function RailHead({
           Reject all
         </button>
       </div>
+      {notice && (
+        <div
+          role='status'
+          aria-live='polite'
+          css={{
+            border: `1px solid ${DEL}`,
+            background: DEL_WASH,
+            color: INK,
+            borderRadius: 6,
+            padding: '7px 9px',
+            fontSize: 11.5,
+            lineHeight: 1.35
+          }}
+        >
+          {notice}
+        </div>
+      )}
     </div>
   );
 }

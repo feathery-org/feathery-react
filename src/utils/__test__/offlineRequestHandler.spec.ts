@@ -15,22 +15,34 @@ import {
   OfflineRequestHandler,
   markFileUploadRetrySuccess
 } from '../offlineRequestHandler';
-import { fileRetryStatus as mockFileRetryStatus } from '../init';
+import {
+  fileRetryStatus as mockFileRetryStatus,
+  initState as mockInitState
+} from '../init';
 import {
   _resetFileUploadProgress,
   getUploadsSnapshot,
   setUploadIndicatorEnabled,
   startUpload
 } from '../fileUploadProgress';
+import { getApiUrl, setEnvironment } from '@feathery/client-utils';
 
-// Mock init module
+// Mock init module. A replay reads the access link off initState, so the mock
+// carries it too - without it every replay to the API host throws.
 jest.mock('../init', () => {
   const fileRetryStatus: Record<string, boolean> = {};
   return {
     initInfo: () => ({ sdkKey: 'test-sdk-key' }),
-    fileRetryStatus
+    fileRetryStatus,
+    initState: { linkToken: '', linkSecret: '' }
   };
 });
+
+// Mocking '../init' keeps featheryClient, which is what normally configures the
+// environment at module load, out of this file. A replay only carries the
+// access link on a request to the backend, so the host it matches against has
+// to be explicit rather than whatever BACKEND_ENV happened to be.
+setEnvironment('production');
 
 // Mock checkResponseSuccess
 jest.mock('../featheryClient/utils', () => ({
@@ -602,6 +614,47 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       expect(errorCallback).not.toHaveBeenCalled();
       expect(mockFileRetryStatus.FileUpload1).toBe(false);
 
+      (global as any).fetch = originalFetch;
+    });
+
+    it('sends the access link the device holds now, not the queued headers', async () => {
+      // A request is queued before _fetch attaches the header, and a replay can
+      // outlive the page that queued it, so the link is read at replay time.
+      const handlerWithLink = new OfflineRequestHandler(
+        'test-form',
+        errorCallback
+      );
+      const removeSpy = jest
+        .spyOn(handlerWithLink as any, 'removeRequest')
+        .mockResolvedValue(undefined);
+      const originalFetch = (global as any).fetch;
+      (global as any).fetch = jest.fn().mockResolvedValue({ status: 200 });
+      mockInitState.linkToken = 'tok';
+      mockInitState.linkSecret = 'secret';
+
+      await (handlerWithLink as any).replayRequestsInParallel([
+        {
+          url: `${getApiUrl()}panel/step/submit/v3/`,
+          method: 'POST',
+          headers: JSON.stringify({ 'Content-Type': 'application/json' }),
+          body: '',
+          bodyType: 'text',
+          key: 103,
+          retryAttempts: 0
+        }
+      ]);
+
+      // The replay went through on the first attempt, so the header is what the
+      // server accepted rather than what a retry happened to send.
+      expect(removeSpy).toHaveBeenCalled();
+      expect((global as any).fetch).toHaveBeenCalledTimes(1);
+      expect((global as any).fetch.mock.calls[0][1].headers).toEqual({
+        'X-Feathery-Link': 'tok.secret',
+        'Content-Type': 'application/json'
+      });
+
+      mockInitState.linkToken = '';
+      mockInitState.linkSecret = '';
       (global as any).fetch = originalFetch;
     });
   });

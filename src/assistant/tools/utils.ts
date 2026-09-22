@@ -216,6 +216,10 @@ export const getTableCapabilities = (
   rowCount: number
 ): { canEditCells: boolean; canAddRows: boolean; canDeleteRows: boolean } => {
   const props = table?.properties ?? {};
+  // Hub rows are not carried in the live state, so no row index can address them
+  if (props.data_source === 'hub') {
+    return { canEditCells: false, canAddRows: false, canDeleteRows: false };
+  }
   // A transpose table with zero rows renders un-transposed, so it stays editable
   const canEditCells =
     !!props.enable_editing && !(props.transpose && rowCount > 0);
