@@ -12,6 +12,7 @@ import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import internalState from '../../../utils/internalState';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import {
+  buildDocumentReviewTrigger,
   containerToolbarOutcomes,
   editorContainerId,
   getSignUrl,
@@ -417,6 +418,19 @@ export default function DocumentEditorContainer({
       // Nothing here navigates away, so the outcome is only visible if it's
       // announced.
       const announce = internalState[formId ?? '']?.showEnvelopeOutcome;
+      // The overlay viewer fires these from its finalize; a container runs
+      // its signing action here, so it reports the same trigger itself.
+      const fireReviewLogic = (result?: Record<string, any> | null) =>
+        internalState[formId ?? '']?.runDocumentReviewLogic?.(
+          buildDocumentReviewTrigger({
+            action: targetAction ?? {},
+            elementId: containerId ?? '',
+            envelopes: [{ envelopeId: envelope.id }],
+            envelopeAction: 'sign',
+            draft,
+            result
+          })
+        );
 
       if (isDocusignSignAction(targetAction ?? {}, 'sign')) {
         // DocuSign has no Feathery sign page: the backend send (or draft) is
@@ -432,8 +446,11 @@ export default function DocumentEditorContainer({
           draft ? 'Saved as Draft' : 'Sent for Signature',
           targetAction?.documents
         );
+        await fireReviewLogic(result);
         return;
       }
+      // Before the sign page opens: with `redirect` set it navigates away.
+      await fireReviewLogic(finalized);
 
       // A signer id comes back only when the filler signs first. Without one
       // the envelope is someone else's to sign, so there's nothing to open.
@@ -446,7 +463,7 @@ export default function DocumentEditorContainer({
       if (targetAction?.redirect) featheryWindow().location.href = url;
       else openTab(url);
     },
-    [client, envelope, targetAction, activeDocumentId, formId]
+    [client, envelope, targetAction, activeDocumentId, formId, containerId]
   );
 
   // 'draft' as the terminal action means Create Draft is the only signing
