@@ -368,8 +368,6 @@ describe('W0 captain incident replays', () => {
 
       expect(result.changeSet.status).toBe('applied');
       expect(result.results.every((entry) => entry.ok)).toBe(true);
-      expect(result.results[2].literalNumber?.source).toBe('user_stated');
-      expect(result.results[3].literalNumber?.source).toBe('user_stated');
       for (const revision of revisions(editor)) revision.reject();
       expect(editor.serialize()).toBe(before);
     } finally {

@@ -851,9 +851,8 @@ export interface ColumnFormulaReport {
 
 /**
  * A numeric `set_cell_text` the engine re-rendered in its column's own number
- * format, so the bytes written are not the bytes sent. Recorded beside the
- * provenance: the reviewer sees the figure as the model supplied it and as the
- * document dressed it.
+ * format, so the bytes written are not the bytes sent. The guard carries both
+ * forms long enough to describe an unsafe write precisely.
  */
 export interface ColumnFormatRender {
   /** The figure exactly as the op supplied it. */
@@ -864,12 +863,6 @@ export interface ColumnFormatRender {
   formatSource: RenderFormatSource;
 }
 
-/**
- * A numeric `set_cell_text` that got through the model-authored-number gate by
- * declaring where the figure came from. Recorded on the result so the exception
- * is auditable in the change set instead of being indistinguishable from a
- * computed write.
- */
 /**
  * A style the engine resolved from the document where the model had asked for
  * a different one, on a paragraph this change set created. Reported in BOTH
@@ -889,28 +882,6 @@ export interface CreationGap {
   reason: string;
   /** Everywhere the resolver looked, in order. */
   searched: string[];
-}
-
-export interface LiteralNumberWrite {
-  text: string;
-  /** What the cell held before, when it held a number. */
-  previousText: string;
-  /**
-   * The declared provenance. `user_stated` is `literal: true` - a figure the
-   * user dictated in conversation. `attachment` is `quotedFrom`/`quotedText` -
-   * a figure quoted verbatim out of a document the user supplied, whose
-   * excerpt the engine checked actually contains it.
-   */
-  source: 'user_stated' | 'attachment' | 'document';
-  /** `document` only: the bound value the figure was read out of. */
-  copiedFrom?: string;
-  /** `attachment` only: the attachment the figure was read out of. */
-  quotedFrom?: string;
-  /** `attachment` only: the verbatim excerpt the figure was quoted from. */
-  quotedText?: string;
-  /** Set when the written bytes differ from the bytes sent. */
-  rendered?: ColumnFormatRender;
-  note: string;
 }
 
 /**
@@ -982,10 +953,6 @@ export interface EditResult {
   // Present on a successful `set_cell_formula`: the formula, the references it
   // resolved, where it rounded, and the receipt line to relay.
   formula?: FormulaCellReport;
-  // Present on a `set_cell_text` that wrote a number verbatim under the
-  // user-dictated exception: the engine's record that this number was NOT
-  // engine-computed, so a reviewer can see which is which.
-  literalNumber?: LiteralNumberWrite;
   // Present on a successful `set_column_formula`: coverage (how many rows were
   // recomputed) and what actually moved.
   column?: ColumnFormulaReport;
@@ -6192,7 +6159,6 @@ interface OpSuccessExtras {
   details?: string[];
   formula?: FormulaCellReport;
   column?: ColumnFormulaReport;
-  literalNumber?: LiteralNumberWrite;
   /**
    * Set when the op wrote nothing because the value was already there. The
    * executor reads this field to skip the tracked-mutation assertion (there IS
@@ -7170,15 +7136,6 @@ function resolveQuantityCellFormat(
   };
 }
 
-const LITERAL_NUMBER_NOTE =
-  'Written verbatim as a literal figure (literal: true), NOT computed by the engine. Only valid for a figure the user stated; anything derived from other cells must go through set_cell_formula.';
-
-const DOCUMENT_NUMBER_NOTE =
-  'Copied verbatim from a value the document already holds in the same column (the engine verified the match and records the source), NOT computed by the engine. Anything derived from other cells must go through set_cell_formula.';
-
-const QUOTED_NUMBER_NOTE =
-  'Quoted verbatim from an attachment the user supplied (quotedFrom / quotedText), NOT computed by the engine. The engine verified the figure appears in the quoted excerpt; it cannot verify the excerpt came from that attachment, so the citation is recorded for review. Anything derived from other cells must go through set_cell_formula.';
-
 /**
  * What the engine can and cannot check about "this figure came out of the
  * user's document".
@@ -7408,35 +7365,26 @@ function guardModelAuthoredNumber(
   block: FlatBlock,
   byAnchor: Map<string, FlatBlock>,
   rendered?: ColumnFormatRender
-): LiteralNumberWrite | undefined {
+): void {
   const text = modelAuthoredCellText(op);
-  if (text === undefined) return undefined;
+  if (text === undefined) return;
   // Before the numeric-provenance gate, and before the table-cell narrowing:
   // prose bindings are just as destroyable as cell ones.
   refuseBoundWrite(op, block);
-  if (block.kind !== 'table_cell') return undefined;
-  const { record, citationFailure } =
+  if (block.kind !== 'table_cell') return;
+  const { valid, citationFailure } =
     op.op === 'set_cell_text' || op.op === 'create_binding'
-      ? resolveNumberProvenance(op, text.trim(), block.text.trim())
-      : { record: undefined, citationFailure: '' };
-  // `literal: true` remains auditable even outside a quantity-formatted column.
-  // ai-services owns the transcript and corroborates one user occurrence per
-  // write before this payload reaches the editor; this side records the claim
-  // and enforces that an otherwise numeric write has declared provenance.
-  const userStatedRecord =
-    record?.source === 'user_stated' && classifyNumericText(text).numeric
-      ? { ...record, ...(rendered ? { rendered } : {}) }
-      : undefined;
-  if (!isQuantityText(text)) return userStatedRecord;
+      ? verifyNumberProvenance(op, text.trim())
+      : { valid: false, citationFailure: '' };
+  if (!isQuantityText(text)) return;
   // A QUANTITY SLOT IN A QUANTITY COLUMN: either the cell already holds a
   // quantity, or it is empty and sits in a column that plainly holds them - the
   // freshly-inserted Total cell, which is exactly where a fabricated total
   // lands, so leaving the empty case open would leave the gate open.
   const existing = block.text.trim();
   const existingIsQuantity = existing !== '' && isQuantityText(existing);
-  if (!resolveQuantityCellFormat(Array.from(byAnchor.values()), block))
-    return userStatedRecord;
-  if (record) return { ...record, ...(rendered ? { rendered } : {}) };
+  if (!resolveQuantityCellFormat(Array.from(byAnchor.values()), block)) return;
+  if (valid) return;
   throw new OpError(
     'model_authored_number',
     `Refusing to write the number ${JSON.stringify(text.trim())}${
@@ -7458,27 +7406,21 @@ function guardModelAuthoredNumber(
 }
 
 /**
- * The sanctioned provenances for a figure the engine did not compute, and the
- * audit record each one leaves. Anything else is refused by the gate above.
+ * Verify the declared provenance for a figure the engine did not compute.
+ * Anything else is refused by the gate above.
  *
  * `citationFailure` is the sentence the refusal appends when a citation WAS
  * offered and did not hold up. Falling silently back to the generic refusal
  * would read as "attachments are not supported" and send the model round the
  * same loop it was already stuck in.
  */
-function resolveNumberProvenance(
+function verifyNumberProvenance(
   op: EditOp,
-  text: string,
-  previousText: string
-): { record?: LiteralNumberWrite; citationFailure: string } {
+  text: string
+): { valid: boolean; citationFailure: string } {
   if (op.literal === true) {
     return {
-      record: {
-        text,
-        previousText,
-        source: 'user_stated',
-        note: LITERAL_NUMBER_NOTE
-      },
+      valid: true,
       citationFailure: ''
     };
   }
@@ -7486,29 +7428,24 @@ function resolveNumberProvenance(
     typeof op.quotedFrom === 'string' ? op.quotedFrom.trim() : '';
   const quotedText =
     typeof op.quotedText === 'string' ? op.quotedText.trim() : '';
-  if (!quotedFrom && !quotedText) return { citationFailure: '' };
+  if (!quotedFrom && !quotedText) return { valid: false, citationFailure: '' };
   if (!quotedFrom || !quotedText) {
     return {
+      valid: false,
       citationFailure:
         ' `quotedFrom` and `quotedText` must BOTH be sent: the attachment the figure was read out of, and the verbatim excerpt containing it.'
     };
   }
   if (!quotedExcerptContains(quotedText, text)) {
     return {
+      valid: false,
       citationFailure: ` The excerpt sent as \`quotedText\` (${JSON.stringify(
         quotedText
       )}) does not contain this figure, so the citation does not support it.`
     };
   }
   return {
-    record: {
-      text,
-      previousText,
-      source: 'attachment',
-      quotedFrom,
-      quotedText,
-      note: QUOTED_NUMBER_NOTE
-    },
+    valid: true,
     citationFailure: ''
   };
 }
@@ -10419,7 +10356,7 @@ function applyAnchoredOp(
   // The engine, not an individual handler, keeps model arithmetic out of
   // numeric cells. Every registered anchored op crosses this point before its
   // handler can write.
-  const literalNumber = guardModelAuthoredNumber(op, block, byAnchor, rendered);
+  guardModelAuthoredNumber(op, block, byAnchor, rendered);
 
   const handler = ANCHORED_OP_HANDLERS[op.op as AnchoredDocumentOp];
   if (!handler)
@@ -10441,7 +10378,7 @@ function applyAnchoredOp(
       liveText: string;
     }) => OpSuccessExtras | void
   )({ editor, op, block, byAnchor, liveText });
-  return literalNumber ? { ...(extras ?? {}), literalNumber } : extras;
+  return extras;
 }
 
 function applyAnchorlessOp(editor: LiveEditor, op: EditOp): void {
@@ -14153,34 +14090,23 @@ function boundNumericWriteNeedsProvenance(
  * Accept an exact same-column document value as provenance for a row this
  * change set creates. Existing-row writes still require an explicit source.
  */
-function documentProvenanceFor(
+function hasDocumentProvenance(
   candidates: Occurrence[] | undefined,
   occurrence: Occurrence,
   value: string
-): LiteralNumberWrite | undefined {
-  if (!candidates?.length) return undefined;
+): boolean {
+  if (!candidates?.length) return false;
   const wanted = value.trim();
-  if (!wanted) return undefined;
+  if (!wanted) return false;
   // The row being copied may itself be the template the created row was typed
   // from, so identity is no exclusion; a live value of the same field showing
   // exactly this text is the whole test.
-  const match = candidates.find(
+  return candidates.some(
     (candidate) =>
       candidate.name === occurrence.name &&
       candidate.def.kind === 'field' &&
       candidate.text.trim() === wanted
   );
-  if (!match) return undefined;
-  const where = match.tableId
-    ? `${match.tableId}${match.rowId ? ` row ${match.rowId}` : ''}`
-    : 'document';
-  return {
-    text: wanted,
-    previousText: occurrence.text,
-    source: 'document',
-    copiedFrom: `${match.name} in ${where}`,
-    note: DOCUMENT_NUMBER_NOTE
-  };
 }
 
 function guardBoundNumericReplacement(
@@ -14191,14 +14117,12 @@ function guardBoundNumericReplacement(
   createdRowCandidates?: Occurrence[]
 ): void {
   if (!boundNumericWriteNeedsProvenance(occurrence, value)) return;
-  const { record, citationFailure } = resolveNumberProvenance(
+  const { valid, citationFailure } = verifyNumberProvenance(
     { ...op, op: 'set_cell_text', text: value } as TypedEditOp<'set_cell_text'>,
-    value.trim(),
-    occurrence.text
+    value.trim()
   );
-  if (record) return;
-  const copied = documentProvenanceFor(createdRowCandidates, occurrence, value);
-  if (copied) return;
+  if (valid) return;
+  if (hasDocumentProvenance(createdRowCandidates, occurrence, value)) return;
   throw new OpError(
     'model_authored_number',
     `Refusing to write the numeric value ${JSON.stringify(
@@ -16134,6 +16058,14 @@ function insertColumnIntoTable(table: any, columnIndex: number): void {
       'insert_column_unroutable',
       'insert_column could not read any rows from the target table. Nothing was written.'
     );
+  const grid = Array.isArray(table?.grid) ? table.grid : undefined;
+  const sourceColumn = columnIndex === 0 ? 0 : columnIndex - 1;
+  const sourceWidth = grid ? Number(grid[sourceColumn]) : undefined;
+  if (grid && !Number.isFinite(sourceWidth))
+    throw new OpError(
+      'insert_column_unroutable',
+      `insert_column cannot copy logical column ${sourceColumn}: its table grid width is missing or invalid. Nothing was written.`
+    );
   for (const row of rows) {
     const cells = Array.isArray(row?.cells) ? row.cells : undefined;
     if (!cells)
@@ -16186,11 +16118,7 @@ function insertColumnIntoTable(table: any, columnIndex: number): void {
     });
     row.cells = next;
   }
-  const grid = Array.isArray(table?.grid) ? table.grid : undefined;
-  if (grid) {
-    const sourceColumn = columnIndex === 0 ? 0 : columnIndex - 1;
-    grid.splice(columnIndex, 0, Number(grid[sourceColumn]) || 0);
-  }
+  if (grid) grid.splice(columnIndex, 0, sourceWidth);
   if (Number.isFinite(Number(table?.columnCount)))
     table.columnCount = Number(table.columnCount) + 1;
 }
@@ -16882,12 +16810,8 @@ function stableTableReferencePlan(
       fieldType.kind !== 'boolean' &&
       classifyNumericText(initial).numeric
     ) {
-      const { record, citationFailure } = resolveNumberProvenance(
-        op,
-        initial,
-        ''
-      );
-      if (!record)
+      const { valid, citationFailure } = verifyNumberProvenance(op, initial);
+      if (!valid)
         throw new OpError(
           'model_authored_number',
           `Refusing to create numeric binding ${JSON.stringify(
