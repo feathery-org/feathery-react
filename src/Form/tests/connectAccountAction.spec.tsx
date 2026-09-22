@@ -430,6 +430,8 @@ describe('connect_account action', () => {
       if (alreadyConnected)
         (fieldValues as any)[EMAIL_KEY] = 'advisor@example.com';
       render(<JSForm formId='f1' _internalId='iid-sensitive-guest' />);
+      await screen.findByTestId('btn');
+      GridMod._spies.form.client.startAccountConnect = jest.fn().mockRejectedValue(new Error('Please sign in to connect or manage your Box account.'));
       await clickTrigger();
       await waitFor(() =>
         expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(
@@ -451,24 +453,37 @@ describe('connect_account action', () => {
     GridMod._spies.form.client.listAccountCredentials.mockResolvedValue({
       credentials: []
     });
+    GridMod._spies.form.client.startAccountConnect = jest.fn().mockResolvedValue({ state: 's' });
     await clickTrigger();
     await waitFor(() => expect(modalState.props?.show).toBe(true));
-    expect(mockedRunOAuthPopup).toHaveBeenCalledTimes(1);
+    expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+    expect(modalState.props.canSaveCredential).toBe(true);
+    expect(modalState.props.chooseCredential).toBe(true);
   });
 
-  it('shows list failures without starting authorization or leaving the popup open', async () => {
+  it.each([false, true])('continues without saved credentials after a list failure (already connected: %s)', async (alreadyConnected) => {
+    if (alreadyConnected) (fieldValues as any)[EMAIL_KEY] = 'old@example.com';
     render(<JSForm formId='f1' _internalId='iid-list-error' />);
     await screen.findByTestId('btn');
-    GridMod._spies.form.client.listAccountCredentials.mockRejectedValue(
-      new Error('Unable to load saved accounts.')
-    );
+    GridMod._spies.form.client.listAccountCredentials.mockRejectedValue(new Error('Unable to load saved accounts.'));
     await clickTrigger();
-    await waitFor(() =>
-      expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Unable to load saved accounts.' })
-      )
-    );
+    await waitFor(() => expect(modalState.props?.show).toBe(true));
+    expect(mockedRunOAuthPopup).toHaveBeenCalledTimes(alreadyConnected ? 0 : 1);
+    expect(modalState.props.credentials).toEqual([]);
+    expect(modalState.props.canSaveCredential).toBe(false);
+  });
+  it.each([false, true])('requires sign-in before managing Schwab on a sensitive form (connected: %s)', async (connected) => {
+    ClientMod._spies.state.authSensitiveActionsOnly = true;
+    GridMod._spies.actions = [{ type: 'connect_account', provider: 'charles-schwab' }];
+    if (connected) (fieldValues as any)[SCHWAB_KEY] = 'true';
+    render(<JSForm formId='f1' _internalId='iid-sensitive-schwab' />);
+    await screen.findByTestId('btn');
+    GridMod._spies.form.client.startAccountConnect = jest.fn().mockRejectedValue(new Error('Please sign in to connect or manage your Charles Schwab account.'));
+    await clickTrigger();
+    await waitFor(() => expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Please sign in to connect or manage your Charles Schwab account.' })));
     expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+    expect(modalState.props?.show).not.toBe(true);
     expect(fakePopup.close).toHaveBeenCalledTimes(1);
   });
+
 });

@@ -86,4 +86,40 @@ describe('ConnectAccountModal account change remount', () => {
     await waitFor(() => expect(screen.getByText('Applications')).toBeTruthy());
     expect(browseAccountResources).toHaveBeenCalledTimes(3);
   });
+  it.each(['Authorization was cancelled.', 'Please allow pop-ups.'])(
+    'preserves folder navigation when account change fails: %s',
+    async (message) => {
+      const browseAccountResources = jest
+        .fn()
+        .mockResolvedValueOnce(rootPage)
+        .mockResolvedValue(subPage);
+      let finishChange: (error: string) => void = () => {};
+      const onChangeAccount = jest.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            finishChange = resolve;
+          })
+      );
+      render(
+        <ConnectAccountModal
+          {...baseProps}
+          client={{ browseAccountResources }}
+          accountEmail='old@example.com'
+          onChangeAccount={onChangeAccount}
+        />
+      );
+      fireEvent.click(await screen.findByText('Applications'));
+      await screen.findByText('This folder does not contain any folders.');
+      fireEvent.click(screen.getByText('Change account'));
+      expect(
+        screen.getByText('This folder does not contain any folders.')
+      ).toBeTruthy();
+      finishChange(message);
+      await screen.findByText(message);
+      expect(browseAccountResources).toHaveBeenCalledTimes(2);
+      expect(
+        screen.getByText('This folder does not contain any folders.')
+      ).toBeTruthy();
+    }
+  );
 });

@@ -91,4 +91,57 @@ describe('saved Box credentials', () => {
     expect(await screen.findByText('Please allow pop-ups.')).toBeTruthy();
     expect(props.client.browseAccountResources).not.toHaveBeenCalled();
   });
+  it('clears the saved selection after attachment to prevent accidental reattachment', async () => {
+    const props = createProps();
+    render(<ConnectAccountModal {...props} />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'c1' } });
+    fireEvent.click(screen.getByText('Use selected account'));
+    await waitFor(() =>
+      expect(props.client.browseAccountResources).toHaveBeenCalledTimes(1)
+    );
+    expect(screen.getByRole('combobox')).toHaveValue('');
+    expect(screen.getByText('Use selected account')).toBeDisabled();
+  });
+
+  it('switches an existing connection to a saved account and resets its folder picker', async () => {
+    const props = createProps();
+    render(
+      <ConnectAccountModal
+        {...props}
+        chooseCredential={false}
+        accountEmail='old@example.com'
+      />
+    );
+    await waitFor(() =>
+      expect(props.client.browseAccountResources).toHaveBeenCalledTimes(1)
+    );
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'c2' } });
+    fireEvent.click(screen.getByText('Use selected account'));
+    await waitFor(() =>
+      expect(props.client.browseAccountResources).toHaveBeenCalledTimes(2)
+    );
+    expect(props.client.selectAccountCredential).toHaveBeenCalledWith(
+      'box',
+      'c2'
+    );
+    expect(props.onSaved).not.toHaveBeenCalled();
+    expect(screen.getByText('Use selected account')).toBeDisabled();
+  });
+
+  it.each([false, true])(
+    'saves a new connection only when explicitly opted in (%s)',
+    async (optIn) => {
+      const props = createProps();
+      render(<ConnectAccountModal {...props} canSaveCredential />);
+      const checkbox = screen.getByRole('checkbox', {
+        name: 'Save new connections for future submissions'
+      });
+      expect(checkbox).not.toBeChecked();
+      if (optIn) fireEvent.click(checkbox);
+      fireEvent.click(screen.getByText('Connect a new account'));
+      await waitFor(() =>
+        expect(props.onChangeAccount).toHaveBeenCalledWith(optIn)
+      );
+    }
+  );
 });
