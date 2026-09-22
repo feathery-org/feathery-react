@@ -171,3 +171,41 @@ describe('feathery.runComputerAgent return shape', () => {
     ).resolves.toEqual({ status: 'error', message: 'nope' });
   });
 });
+
+describe('feathery.getHubSchemas', () => {
+  const uuid = 'formContext-hub-schemas';
+  const schemas = {
+    hubs: [
+      {
+        id: 'hub-1',
+        key: 'clients',
+        fields: [
+          { id: 'f-1', key: 'first_name', type: 'text', required: true },
+          { id: 'f-2', key: 'middle_name', type: 'text', required: false }
+        ]
+      }
+    ]
+  };
+  let client: any;
+
+  beforeEach(() => {
+    client = { getHubSchemas: jest.fn().mockResolvedValue(schemas) };
+    setFormInternalState(uuid, { fields: {}, client } as any);
+  });
+
+  it('passes the requested hub ids through and returns the hub schemas', async () => {
+    const result = await getFormContext(uuid).getHubSchemas(['hub-1', 'hub-2']);
+
+    expect(client.getHubSchemas).toHaveBeenCalledWith(['hub-1', 'hub-2']);
+    expect(result).toEqual(schemas);
+  });
+
+  it('surfaces the required flag a rule needs to derive its own field list', async () => {
+    const { hubs } = await getFormContext(uuid).getHubSchemas(['hub-1']);
+    const required = hubs[0].fields
+      .filter((field) => field.required)
+      .map((field) => field.key);
+
+    expect(required).toEqual(['first_name']);
+  });
+});

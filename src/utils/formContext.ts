@@ -23,6 +23,7 @@ import internalState, {
   UpdateDocusignEnvelopeParams,
   setFormInternalState
 } from './internalState';
+import type { HubSchema } from '../elements/components/dataMapping/types';
 import { validateElements } from './validation';
 import {
   FillQuikParams,
@@ -240,6 +241,8 @@ export const getFormContext = (formUuid: string) => {
         where,
         verification
       }),
+    getHubSchemas: (hubIds: string[]): Promise<{ hubs: HubSchema[] }> =>
+      formState.client.getHubSchemas(hubIds),
     generateDocuments: ({
       documentIds,
       signers,
