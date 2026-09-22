@@ -596,6 +596,10 @@ export default class IntegrationClient {
           // every role.
           ...(entry.role_id ? { role_id: entry.role_id } : {}),
           email,
+          // Omitted rather than blanked: a present phone is the request to
+          // challenge that recipient by SMS, so an empty one must not read as
+          // one.
+          ...(entry.phone ? { phone: entry.phone.toString() } : {}),
           filler: entry.filler ?? isFiller(email)
         };
       })

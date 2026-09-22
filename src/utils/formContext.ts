@@ -262,10 +262,15 @@ export const getFormContext = (formUuid: string) => {
       // or is left off to cover every role of that document. `filler` marks
       // whoever signs inline in the form rather than being emailed a link —
       // only their signing token comes back.
+      // `phone` challenges that recipient by SMS before the envelope opens
+      // (DocuSign only). Give it in E.164 form, e.g. '+15555555555'; a number
+      // with no country code is taken as +1. Omit it to send without a
+      // challenge.
       signers?: {
         documentId: string;
         roleId?: string;
         email: string;
+        phone?: string;
         filler?: boolean;
       }[];
       envelopeAction?: 'sign' | 'fill' | 'download' | 'save' | 'open_in_editor';
@@ -313,12 +318,14 @@ export const getFormContext = (formUuid: string) => {
             sign_method: signMethod,
             // Omitted rather than nulled: the backend's role_id rejects an
             // explicit null, and leaving it off spreads the email across
-            // every role of that document.
+            // every role of that document. A phone is omitted the same way,
+            // since a present one is the request to challenge that recipient.
             envelope_signers: signers?.map(
-              ({ documentId, roleId, email, filler }) => ({
+              ({ documentId, roleId, email, phone, filler }) => ({
                 document_id: documentId,
                 ...(roleId ? { role_id: roleId } : {}),
                 email,
+                ...(phone ? { phone } : {}),
                 filler: !!filler
               })
             ),
