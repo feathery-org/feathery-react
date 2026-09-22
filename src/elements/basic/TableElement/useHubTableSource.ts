@@ -52,10 +52,8 @@ const LIST_OPERATORS: HubFilterOperator[] = ['in', 'not_in'];
 // Operators that test the hub column alone and bind no form field.
 const VALUELESS_OPERATORS: HubFilterOperator[] = ['is_empty', 'is_filled'];
 
-// A builder-configured row filter: keep the rows whose hub column matches the
-// live value of a form field. `field_key` is filled in server-side from
-// `field_id`/`field_type`, like a column's, and is absent once that field has
-// been deleted.
+// A builder-configured row filter: keep the rows whose hub column matches a form
+// field's live value. `field_key` is hydrated server-side; absent once deleted.
 export type HubFilter = {
   hub_field_id: string;
   hub_field_key: string;
@@ -187,10 +185,8 @@ export function useHubTableSource({
   // nothing to distinguish.
   const showStatusColumn = unverifiedEnabled ?? verification !== 'verified';
 
-  // Row filters read the global `fieldValues`, which is mutated outside React
-  // state, so the conditions are rebuilt every render and keyed by content:
-  // the reference only changes (and the rows only reload) when a compared
-  // field's value actually changed.
+  // `fieldValues` is mutated outside React state, so the conditions are rebuilt
+  // every render and keyed by content: the rows reload only when one changes.
   const hubFilters = element.properties?.hub_filters;
   const whereKey = JSON.stringify(
     hubFilterWhere(hubFilters, schemaFields, fieldValues)
@@ -310,32 +306,45 @@ export function useHubTableSource({
       });
   }, []);
 
+  // The filters the loaded rows reflect, so a change that a write or an unsaved
+  // edit held back is caught up once they clear (see the effect below).
+  const loadedWhereKey = useRef<string | null>(null);
+
   const loadEntries = useCallback(async () => {
     if (!enabled || !hubId || !client?.dataHubAction) return;
     setLoading(true);
     setErrors([]);
+    loadedWhereKey.current = whereKey;
     try {
       // A schema failure (e.g. a backend without the endpoint yet) falls back
       // to the columns stored on the element instead of erroring the table.
+      // The schema is applied even when the read fails: a filter on a renamed
+      // column can only recover once the live key is known.
       const [schemas, entries] = await Promise.all([
         client.getHubSchemas
           ? client.getHubSchemas([hubId]).catch(() => null)
           : Promise.resolve(null),
-        client.dataHubAction({
-          hubId,
-          operation: 'get',
-          verification,
-          // Omitted when there are no filters, so an unfiltered table's
-          // request is unchanged.
-          ...(where.length ? { where } : {})
-        })
+        client
+          .dataHubAction({
+            hubId,
+            operation: 'get',
+            verification,
+            // Omitted when there are no filters, so an unfiltered table's
+            // request is unchanged.
+            ...(where.length ? { where } : {})
+          })
+          .then(
+            (list) => ({ list }),
+            (error) => ({ error })
+          )
       ]);
       const hubSchema = schemas?.hubs?.find((h) => h.id === hubId);
       if (Array.isArray(hubSchema?.fields)) setSchemaFields(hubSchema.fields);
       if (typeof hubSchema?.unverified_enabled === 'boolean') {
         setUnverifiedEnabled(hubSchema.unverified_enabled);
       }
-      const list: HubEntry[] = Array.isArray(entries) ? entries : [];
+      if ('error' in entries) throw entries.error;
+      const list: HubEntry[] = Array.isArray(entries.list) ? entries.list : [];
       commitRows(
         orderLikeGrid(list, rowsRef.current).map((entry) => ({
           localId: `entry:${entry.id}`,
@@ -351,7 +360,7 @@ export function useHubTableSource({
     } finally {
       setLoading(false);
     }
-  }, [enabled, hubId, client, commitRows, verification, where]);
+  }, [enabled, hubId, client, commitRows, verification, where, whereKey]);
 
   const blockRefetchRef = useRef(blockRefetch);
   blockRefetchRef.current = blockRefetch;
@@ -372,21 +381,14 @@ export function useHubTableSource({
     return () => featheryWindow().removeEventListener('focus', onFocus);
   }, [enabled, refetch]);
 
-  // A filter change that arrives while edits are buffered is turned away by
-  // the guard above. Remember the filters in force when the block began, and
-  // once it lifts reload only if they moved meanwhile — so the rows catch up
-  // without a second fetch on a plain save or discard.
-  const blockedWhereKey = useRef<string | null>(null);
+  // A filter change the guard turned away is applied once the write queue
+  // drains and the edits are saved or discarded; unchanged filters cost nothing.
+  const hasProvisionalRows = rows.some((row) => row.entryId == null);
   useEffect(() => {
-    if (blockRefetch) {
-      blockedWhereKey.current ??= whereKey;
-      return;
-    }
-    const stale =
-      blockedWhereKey.current !== null && blockedWhereKey.current !== whereKey;
-    blockedWhereKey.current = null;
-    if (stale) refetch();
-  }, [blockRefetch, whereKey, refetch]);
+    if (!enabled || pending > 0 || blockRefetch || hasProvisionalRows) return;
+    const loaded = loadedWhereKey.current;
+    if (loaded !== null && loaded !== whereKey) refetch();
+  }, [enabled, pending, blockRefetch, hasProvisionalRows, whereKey, refetch]);
 
   const hubFieldValues = useMemo(() => {
     const values: Record<string, any[]> = {};
@@ -698,16 +700,8 @@ function omitKeys(
 }
 
 /**
- * The `where` conditions a table's row filters currently resolve to. Every
- * filter must match (the Hub ANDs its conditions). The hub column is
- * addressed by key (what the Hub API takes), taken from the live schema when
- * it has loaded so a renamed column keeps filtering (and a deleted one stops),
- * and from the key stored on the filter otherwise.
- *
- * A filter is left off while its form field is empty, so an unfilled field
- * behaves like no filter (all rows) rather than matching nothing. A filter
- * whose form field no longer exists has no key to read and is skipped too;
- * the backend drops such filters when the field is deleted.
+ * The `where` conditions (ANDed by the Hub) a table's row filters resolve to.
+ * A filter whose form field is empty or gone is left off, so it matches all rows.
  */
 export function hubFilterWhere(
   filters: HubFilter[] | undefined,
@@ -717,9 +711,8 @@ export function hubFilterWhere(
   if (!filters?.length) return [];
   const conditions: HubWhereCondition[] = [];
   filters.forEach((filter) => {
-    // Until the schema loads, the stored key is the best guess. Once it has,
-    // a column that is no longer in it was deleted: skip that filter rather
-    // than send a key the Hub would reject, which would fail the whole read.
+    // The live schema key once loaded (a renamed column keeps filtering, a
+    // deleted one is skipped rather than failing the read); the stored key before.
     const hubFieldKey = schemaFields
       ? schemaFields.find((field) => field.id === filter.hub_field_id)?.key
       : filter.hub_field_key;

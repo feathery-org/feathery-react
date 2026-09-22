@@ -238,4 +238,73 @@ describe('useHubTableSource row filters', () => {
       })
     );
   });
+
+  test('a filter change while a write is in flight is applied once the queue drains', async () => {
+    Object.assign(fieldValues, { account_id: 'acme' });
+    let finishUpdate: () => void = () => {};
+    const dataHubAction = jest.fn(({ operation }: any) => {
+      if (operation === 'update') {
+        return new Promise<any>((resolve) => {
+          finishUpdate = () => resolve({ updated: 1 });
+        });
+      }
+      return Promise.resolve([{ id: 'e1', data: { account: 'acme' } }]);
+    });
+    const gets = () =>
+      dataHubAction.mock.calls.filter(([o]: any) => o.operation === 'get');
+    const el = element([equalsFilter]);
+    const c = client(dataHubAction);
+    const { result, rerender } = renderHook(() =>
+      useHubTableSource({ element: el, client: c, enabled: true })
+    );
+    await waitFor(() => expect(result.current.entryIds).toEqual(['e1']));
+
+    // Save: the buffer is cleared and the write is enqueued in one go, so the
+    // filter change lands while the queue is busy.
+    act(() => result.current.handleCellEdit('__hub_table1_account', 0, 'x'));
+    Object.assign(fieldValues, { account_id: 'globex' });
+    rerender();
+    await act(async () => {});
+    expect(gets()).toHaveLength(1);
+
+    await act(async () => finishUpdate());
+    await waitFor(() => expect(gets()).toHaveLength(2));
+    expect(gets()[1][0]).toEqual(
+      expect.objectContaining({
+        where: [{ fieldId: 'account', value: 'globex' }]
+      })
+    );
+    // Nothing further once the rows reflect the current filters.
+    await act(async () => {});
+    expect(gets()).toHaveLength(2);
+  });
+
+  test('a filter on a renamed hub column recovers once the live schema loads', async () => {
+    Object.assign(fieldValues, { account_id: 'acme' });
+    const getHubSchemas = jest.fn(() =>
+      Promise.resolve({
+        hubs: [{ id: 'hub1', fields: [{ id: 'hf1', key: 'customer' }] }]
+      })
+    );
+    // The stored key `account` no longer exists on the Hub.
+    const dataHubAction = jest.fn(({ where }: any) =>
+      where?.[0]?.fieldId === 'customer'
+        ? Promise.resolve([{ id: 'e1', data: { customer: 'acme' } }])
+        : Promise.reject({
+            response: { data: { error: 'Unexpected field: account' } }
+          })
+    );
+    const el = element([equalsFilter]);
+    const c = { dataHubAction, getHubSchemas } as any;
+    const { result } = renderHook(() =>
+      useHubTableSource({ element: el, client: c, enabled: true })
+    );
+    await waitFor(() => expect(result.current.entryIds).toEqual(['e1']));
+    expect(result.current.errors).toEqual([]);
+    expect(dataHubAction).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: [{ fieldId: 'customer', value: 'acme' }]
+      })
+    );
+  });
 });
