@@ -101,7 +101,10 @@ export function registerOptionLabels(servar: any, properties?: any) {
     byValue = buildCountryLabelMap(servar, properties);
   else if (OPTION_FIELD_TYPES.has(servar.type))
     byValue = buildLabelMap(meta.options ?? [], meta.option_labels ?? []);
-  else return;
+  else {
+    delete optionLabels[servar.key];
+    return;
+  }
 
   const byRepeatIndex =
     servar.repeated && Array.isArray(meta.repeat_options)
@@ -130,10 +133,20 @@ export function getOptionLabel(key: string, value: any, repeat?: number) {
   const entry = optionLabels[key];
   if (!entry) return undefined;
 
-  const val = stringifyWithNull(value);
   const repeatMap =
     repeat === undefined ? undefined : entry.byRepeatIndex?.[repeat];
-  return repeatMap ? repeatMap.get(val) : entry.byValue.get(val);
+  const map = repeatMap ?? entry.byValue;
+
+  // multiselect stores its selections as an array; label each selection
+  // rather than stringifying the array itself.
+  if (Array.isArray(value))
+    return value
+      .map(
+        (item) => map.get(stringifyWithNull(item)) ?? stringifyWithNull(item)
+      )
+      .join(',');
+
+  return map.get(stringifyWithNull(value));
 }
 
 // Field definitions don't belong to a submitter, so this isn't reset with the
