@@ -251,6 +251,30 @@ export default class IntegrationClient {
     );
   }
 
+  async listAccountCredentials(provider: string) {
+    await initFormsPromise;
+    const params = encodeGetParams({ form_key: this.formKey, provider });
+    const response = await this._fetch(
+      `${API_URL}account-connect/credentials/?${params}`,
+      undefined,
+      false
+    );
+    // A public form or signed-out collaborator has no account-level list.
+    // Do not expose errors or credential metadata from an auth denial.
+    if (response?.status === 401 || response?.status === 403) return null;
+    if (!response) throw new Error('Unable to load saved accounts.');
+    const payload = await response.json();
+    if (response.status === 200) return payload;
+    throw new Error(parseAPIError(payload) || 'Unable to load saved accounts.');
+  }
+
+  async selectAccountCredential(provider: string, credentialId: string) {
+    return this._accountConnectPost('select', {
+      provider,
+      credential_id: credentialId
+    });
+  }
+
   async startAccountConnect(provider: string, parentOrigin: string) {
     await initFormsPromise;
     const { userId } = initInfo();

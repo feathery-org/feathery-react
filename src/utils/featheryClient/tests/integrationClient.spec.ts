@@ -99,4 +99,57 @@ describe('IntegrationClient account connect', () => {
     expect(url).toContain('account-connect/browse/');
     expect(JSON.parse(options.body).create).toBe('New Folder');
   });
+
+  it('lists saved credentials without exposing submission credentials', async () => {
+    const client = new FeatheryClient('form-key') as any;
+    const credentials = [
+      { id: 'credential-1', account_email: 'advisor@example.com' }
+    ];
+    client._fetch = jest.fn().mockResolvedValue(okResponse({ credentials }));
+    await expect(client.listAccountCredentials('box')).resolves.toEqual({
+      credentials
+    });
+    const [url, options, parseResponse] = client._fetch.mock.calls[0];
+    expect(url).toContain('account-connect/credentials/');
+    expect(url).toContain('form_key=form-key');
+    expect(url).toContain('provider=box');
+    expect(url).not.toContain('fuser_key');
+    expect(options).toBeUndefined();
+    expect(parseResponse).toBe(false);
+  });
+
+  it.each([401, 403])(
+    'treats %s as saved credentials being unavailable',
+    async (status) => {
+      const client = new FeatheryClient('form-key') as any;
+      client._fetch = jest.fn().mockResolvedValue({ status });
+      await expect(client.listAccountCredentials('box')).resolves.toBeNull();
+    }
+  );
+
+  it('reports unexpected credential-list failures', async () => {
+    const client = new FeatheryClient('form-key') as any;
+    client._fetch = jest.fn().mockResolvedValue({
+      status: 500,
+      json: async () => ({ detail: 'Failed to load accounts' })
+    });
+    await expect(client.listAccountCredentials('box')).rejects.toThrow();
+  });
+
+  it('explicitly attaches the selected credential to the submission', async () => {
+    const client = new FeatheryClient('form-key') as any;
+    client._fetch = jest
+      .fn()
+      .mockResolvedValue(okResponse({ needs_config: true, values: {} }));
+    await client.selectAccountCredential('box', 'credential-1');
+    const [url, options, parseResponse] = client._fetch.mock.calls[0];
+    expect(url).toContain('account-connect/select/');
+    expect(JSON.parse(options.body)).toEqual({
+      form_key: 'form-key',
+      fuser_key: 'userId',
+      provider: 'box',
+      credential_id: 'credential-1'
+    });
+    expect(parseResponse).toBe(false);
+  });
 });

@@ -1,4 +1,4 @@
-import { BrowserMod, FormHelperMod, GridMod } from './testMocks';
+import { BrowserMod, ClientMod, FormHelperMod, GridMod } from './testMocks';
 import {
   act,
   render,
@@ -89,6 +89,7 @@ describe('connect_account action', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    ClientMod._spies.state.authSensitiveActionsOnly = false;
     modalState.props = null;
     changeAccountOutcome.status = 'idle';
     changeAccountOutcome.value = undefined;
@@ -116,6 +117,7 @@ describe('connect_account action', () => {
   });
 
   afterEach(() => {
+    ClientMod._spies.state.authSensitiveActionsOnly = false;
     cleanup();
   });
 
@@ -391,5 +393,82 @@ describe('connect_account action', () => {
     });
     expect(mockedRunOAuthPopup).toHaveBeenCalledTimes(1);
     expect(fakePopup.close).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers saved Box credentials before starting a new OAuth connection', async () => {
+    render(<JSForm formId='f1' _internalId='iid-saved-box' />);
+    await screen.findByTestId('btn');
+    const credentials = [
+      {
+        id: 'saved',
+        account_email: 'advisor@example.com',
+        account_name: 'Advisor'
+      }
+    ];
+    GridMod._spies.form.client.listAccountCredentials.mockResolvedValue({
+      credentials
+    });
+    await clickTrigger();
+    await waitFor(() => expect(modalState.props?.show).toBe(true));
+    expect(modalState.props.credentials).toEqual(credentials);
+    expect(modalState.props.chooseCredential).toBe(true);
+    expect(fakePopup.close).toHaveBeenCalledTimes(1);
+    expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+    expect((fieldValues as any)[EMAIL_KEY]).toBeUndefined();
+    act(() =>
+      modalState.props.onCredentialSelected({
+        [EMAIL_KEY]: 'advisor@example.com'
+      })
+    );
+    expect((fieldValues as any)[EMAIL_KEY]).toBe('advisor@example.com');
+  });
+
+  it.each([false, true])(
+    'requires sign-in on a sensitive form (already connected: %s)',
+    async (alreadyConnected) => {
+      ClientMod._spies.state.authSensitiveActionsOnly = true;
+      if (alreadyConnected)
+        (fieldValues as any)[EMAIL_KEY] = 'advisor@example.com';
+      render(<JSForm formId='f1' _internalId='iid-sensitive-guest' />);
+      await clickTrigger();
+      await waitFor(() =>
+        expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: 'Please sign in to connect or manage your Box account.'
+          })
+        )
+      );
+      expect(modalState.props?.show).not.toBe(true);
+      expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+      expect(fakePopup.close).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('allows a verified account with no saved credentials to connect on a sensitive form', async () => {
+    ClientMod._spies.state.authSensitiveActionsOnly = true;
+    render(<JSForm formId='f1' _internalId='iid-sensitive-auth' />);
+    await screen.findByTestId('btn');
+    GridMod._spies.form.client.listAccountCredentials.mockResolvedValue({
+      credentials: []
+    });
+    await clickTrigger();
+    await waitFor(() => expect(modalState.props?.show).toBe(true));
+    expect(mockedRunOAuthPopup).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows list failures without starting authorization or leaving the popup open', async () => {
+    render(<JSForm formId='f1' _internalId='iid-list-error' />);
+    await screen.findByTestId('btn');
+    GridMod._spies.form.client.listAccountCredentials.mockRejectedValue(
+      new Error('Unable to load saved accounts.')
+    );
+    await clickTrigger();
+    await waitFor(() =>
+      expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Unable to load saved accounts.' })
+      )
+    );
+    expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+    expect(fakePopup.close).toHaveBeenCalledTimes(1);
   });
 });

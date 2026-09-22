@@ -6,11 +6,20 @@ import { CONFIG_COMPONENTS, PROVIDER_LABELS } from './providers';
 
 const MODAL_TITLE_ID = 'feathery-connect-account-modal-title';
 
+export type SavedAccountCredential = {
+  id: string;
+  account_email: string;
+  account_name: string;
+};
+
 export type ConnectAccountModalProps = {
   show: boolean;
   provider: string;
   client: any;
   accountEmail: string;
+  credentials?: SavedAccountCredential[];
+  chooseCredential?: boolean;
+  onCredentialSelected?: (values: Record<string, string>) => void;
   // Resolves with an error message on failure (popup blocked, OAuth
   // rejected, etc.) so handleChangeAccount can surface it, or undefined on
   // success. Must never reject: this is called fire-and-forget from a click
@@ -25,11 +34,17 @@ function ConnectAccountModal({
   provider,
   client,
   accountEmail,
+  credentials = [],
+  chooseCredential = false,
+  onCredentialSelected,
   onChangeAccount,
   onSaved,
   onClose
 }: ConnectAccountModalProps) {
   const [error, setError] = useState('');
+  const [connected, setConnected] = useState(!chooseCredential);
+  const [selectedCredential, setSelectedCredential] = useState('');
+  const [configurationVersion, setConfigurationVersion] = useState(0);
   const [changingAccount, setChangingAccount] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -67,6 +82,33 @@ function ConnectAccountModal({
     try {
       const errorMessage = await onChangeAccount();
       if (errorMessage) setError(errorMessage);
+      else {
+        setConnected(true);
+        setConfigurationVersion((version) => version + 1);
+      }
+    } finally {
+      setChangingAccount(false);
+    }
+  };
+
+  const handleSelectCredential = async () => {
+    if (!selectedCredential || changingAccount) return;
+    setError('');
+    setChangingAccount(true);
+    try {
+      const result = await client.selectAccountCredential(
+        provider,
+        selectedCredential
+      );
+      onCredentialSelected?.(result.values);
+      setConnected(true);
+      setConfigurationVersion((version) => version + 1);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to select this account.'
+      );
     } finally {
       setChangingAccount(false);
     }
@@ -161,7 +203,9 @@ function ConnectAccountModal({
             }}
           >
             <span>
-              {accountEmail || `Your ${providerLabel} account is connected`}
+              {connected
+                ? accountEmail || `Your ${providerLabel} account is connected`
+                : 'Choose a saved account or connect a new one.'}
             </span>
             <button
               type='button'
@@ -177,12 +221,39 @@ function ConnectAccountModal({
                 '&:disabled': { cursor: 'not-allowed', opacity: 0.6 }
               }}
             >
-              Change account
+              {connected ? 'Change account' : 'Connect a new account'}
             </button>
           </div>
-          {ConfigComponent && (
+          {credentials.length > 0 && (
+            <div css={{ display: 'flex', gap: '10px', paddingBottom: '20px' }}>
+              <select
+                aria-label={`Saved ${providerLabel} accounts`}
+                value={selectedCredential}
+                disabled={changingAccount}
+                onChange={(event) => setSelectedCredential(event.target.value)}
+                css={{ flex: 1, minWidth: 0, padding: '8px' }}
+              >
+                <option value=''>Select a saved account</option>
+                {credentials.map((credential) => (
+                  <option key={credential.id} value={credential.id}>
+                    {credential.account_email ||
+                      credential.account_name ||
+                      providerLabel}
+                  </option>
+                ))}
+              </select>
+              <button
+                type='button'
+                disabled={!selectedCredential || changingAccount}
+                onClick={handleSelectCredential}
+              >
+                Use selected account
+              </button>
+            </div>
+          )}
+          {connected && !changingAccount && ConfigComponent && (
             <ConfigComponent
-              key={accountEmail}
+              key={`${accountEmail}:${configurationVersion}`}
               client={client}
               provider={provider}
               onSaved={onSaved}

@@ -237,7 +237,9 @@ import {
 } from '../utils/error';
 import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
-import ConnectAccountModal from '../integrations/connectAccount/ConnectAccountModal';
+import ConnectAccountModal, {
+  SavedAccountCredential
+} from '../integrations/connectAccount/ConnectAccountModal';
 import {
   CONFIG_COMPONENTS,
   connectionFieldKey,
@@ -462,6 +464,7 @@ function Form({
   const [linkConfirmRequired, setLinkConfirmRequired] = useState(false);
   const [formSettings, setFormSettings] = useState({
     readOnly,
+    authSensitiveActionsOnly: false,
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
@@ -629,6 +632,8 @@ function Form({
   const [reviewViewerPayload, setReviewViewerPayload] = useState<any>(null);
   type ConnectAccountModalState = {
     provider: string;
+    credentials?: SavedAccountCredential[];
+    chooseCredential?: boolean;
     // Captured from the triggering runElementActions call: advances the
     // action chain past this action, and ends the button/action's loading
     // state. Each is a closure local to that call, not reachable from here
@@ -3050,8 +3055,20 @@ function Form({
 
         const alreadyConnected = !!fieldValues[connectionKey];
         let connected = false;
+        let credentials: SavedAccountCredential[] = [];
+        let chooseCredential = false;
         try {
-          if (alreadyConnected) {
+          if (provider === 'box') {
+            const saved = await client.listAccountCredentials(provider);
+            if (!saved && formSettings.authSensitiveActionsOnly) {
+              throw new Error(
+                'Please sign in to connect or manage your Box account.'
+              );
+            }
+            credentials = saved?.credentials ?? [];
+            chooseCredential = !alreadyConnected && credentials.length > 0;
+          }
+          if (alreadyConnected || chooseCredential) {
             popup?.close();
           } else {
             const result = await runOAuthPopup(client, provider, popup);
@@ -3063,6 +3080,7 @@ function Form({
           }
           connected = true;
         } catch (error) {
+          popup?.close();
           elementClicks[id] = false;
           clearButtonActionState();
           setElementError(
@@ -3089,6 +3107,8 @@ function Form({
             // finished configuring the account yet.
             openConnectAccountModal({
               provider,
+              credentials,
+              chooseCredential,
               onFlowSuccess: flowOnSuccess(i),
               onAsyncEnd
             });
@@ -4075,6 +4095,9 @@ function Form({
           <ConnectAccountModal
             show
             provider={connectAccountModal.provider}
+            credentials={connectAccountModal.credentials}
+            chooseCredential={connectAccountModal.chooseCredential}
+            onCredentialSelected={updateFieldValues}
             client={client}
             accountEmail={
               hasEmailIdentity(connectAccountModal.provider)
