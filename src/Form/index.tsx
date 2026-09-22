@@ -3251,7 +3251,10 @@ function Form({
             typeof invitee === 'string' ? invitee.trim() : invitee
           )
           .filter(Boolean);
-        if (!invitees.length) {
+        // With no email field wired up, this role relies on its configured
+        // default invitees (an email or user group), which the backend
+        // resolves - so only require a value here when a field is configured.
+        if (action.email_field_key && !invitees.length) {
           setElementError('Collaborators required');
           break;
         }
