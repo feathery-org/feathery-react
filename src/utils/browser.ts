@@ -58,8 +58,14 @@ export function getCookie(key: string) {
     .map((c: string) => c.split('=')[1])[0];
 }
 
-export function setCookie(key: string, val: string) {
-  featheryDoc().cookie = `${key}=${val}; max-age=31536000; SameSite=strict; path=/;`;
+const ONE_YEAR_SECONDS = 31536000;
+
+/**
+ * @param maxAge how long the cookie lives, in seconds. Defaults to a year,
+ * which is what every identity cookie the SDK writes has always used.
+ */
+export function setCookie(key: string, val: string, maxAge = ONE_YEAR_SECONDS) {
+  featheryDoc().cookie = `${key}=${val}; max-age=${maxAge}; SameSite=strict; path=/;`;
 }
 
 export function deleteCookie(key: string) {

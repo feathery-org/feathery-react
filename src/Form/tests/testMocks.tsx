@@ -86,7 +86,12 @@ jest.mock('../../utils/init', () => {
     renderCallbacks: {},
     redirectCallbacks: {},
     remountCallbacks: {},
-    defaultErrors: {}
+    defaultErrors: {},
+    userId: '',
+    collaboratorId: '',
+    overrideUserId: false,
+    linkToken: '',
+    linkSecret: ''
   };
   return {
     defaultClient: { flushCustomFields: jest.fn() },
@@ -102,6 +107,7 @@ jest.mock('../../utils/init', () => {
       remountCallbacks: {},
       defaultErrors: {}
     })),
+    adoptLinkRedemption: jest.fn(),
     updateUserId: jest.fn()
   };
 });
@@ -117,6 +123,7 @@ jest.mock('../../utils/formHelperFunctions', () => ({
   mapFormSettingsResponse: () => ({}),
   prioritizeActions: (a: any) => a,
   registerRenderCallback: () => {},
+  remountAllForms: jest.fn(),
   rerenderAllForms: () => {},
   setFormElementError: jest.fn(),
   updateCustomCSS: () => {},
@@ -235,11 +242,15 @@ jest.mock('../../utils/browser', () => {
     confirm: jest.fn(),
     open: jest.fn(),
     history,
-    location: { href: 'https://example.com/', pathname: '/', search: '' }
+    location: { href: 'https://example.com/', pathname: '/', search: '' },
+    getCookie: jest.fn(),
+    setCookie: jest.fn()
   };
   return {
     downloadAllFileUrls: jest.fn(),
     featheryDoc: () => globalThis.document,
+    getCookie: state.getCookie,
+    setCookie: state.setCookie,
     featheryWindow: () => ({
       addEventListener: jest.fn(),
       removeEventListener: jest.fn(),
@@ -338,7 +349,7 @@ jest.mock('../../utils/document', () => ({
 // Poll hook
 jest.mock('../../hooks/usePollFuserData', () => ({
   __esModule: true,
-  default: () => {}
+  default: jest.fn()
 }));
 
 // FeatheryClient mock with a REAL step so activeStep renders and Grid appears
@@ -346,6 +357,15 @@ jest.mock('../../utils/featheryClient', () => {
   const inviteCollaboratorSpy = jest
     .fn()
     .mockResolvedValue({ ok: true, payload: { collaborators: [] } });
+  const redeemLinkSpy = jest.fn();
+  // Lets a test answer the session fetch with something other than a loadable
+  // step (e.g. the access link flags that carry no form data), turn the form
+  // off, or fail the session outright.
+  const state = {
+    session: null as any,
+    sessionError: null as any,
+    formOff: false
+  };
 
   class MockClient {
     // Return one step so getNewStep can set activeStep and render Grid
@@ -361,25 +381,28 @@ jest.mock('../../utils/featheryClient', () => {
       ],
       form_name: 'Test Form',
       completion_behavior: '',
-      formOff: false,
+      formOff: state.formOff,
       logic_rules: [],
       shared_codes: [],
       track_hashes: false
     });
 
-    fetchSession = async () => [
-      {
-        current_step_key: 'step-1',
-        collaborator: {},
-        integrations: null,
-        back_nav_map: {},
-        servars: [],
-        hidden_fields: {},
-        production: false,
-        track_location: false
-      },
-      {}
-    ];
+    fetchSession = async () => {
+      if (state.sessionError) throw state.sessionError;
+      return [
+        state.session ?? {
+          current_step_key: 'step-1',
+          collaborator: {},
+          integrations: null,
+          back_nav_map: {},
+          servars: [],
+          hidden_fields: {},
+          production: false,
+          track_location: false
+        },
+        {}
+      ];
+    };
 
     submitStep = jest.fn();
     registerEvent = jest.fn().mockResolvedValue(undefined);
@@ -389,13 +412,18 @@ jest.mock('../../utils/featheryClient', () => {
     startAccountConnect = jest.fn();
     getAccountConnectStatus = jest.fn();
     inviteCollaborator = inviteCollaboratorSpy;
+    redeemLink = redeemLinkSpy;
     offlineRequestHandler = { dbHasRequest: async () => false };
   }
 
   return {
     __esModule: true,
     default: MockClient,
-    _spies: { inviteCollaborator: inviteCollaboratorSpy }
+    _spies: {
+      inviteCollaborator: inviteCollaboratorSpy,
+      redeemLink: redeemLinkSpy,
+      state
+    }
   };
 });
 
@@ -513,3 +541,9 @@ export const FormHelperMod: any = jest.requireMock(
 // Exposes the mocked client's collaborator invite call for assertions.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ClientMod: any = jest.requireMock('../../utils/featheryClient');
+
+// Exposes the mocked fuser data poll so tests can assert when polling is on.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const PollFuserDataMod: any = jest.requireMock(
+  '../../hooks/usePollFuserData'
+);
