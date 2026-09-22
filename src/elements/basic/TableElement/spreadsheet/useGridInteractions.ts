@@ -1,5 +1,4 @@
 import React from 'react';
-import { featheryDoc } from '../../../../utils/browser';
 import type {
   CellSelectionBounds,
   CellSelectionDirection,
@@ -99,10 +98,6 @@ export function useGridInteractions(options: GridInteractionOptions) {
     choicesFor
   } = options;
   const [editing, setEditing] = React.useState<EditingCell | null>(null);
-  const pendingChoice = React.useRef<{
-    rowId: string;
-    columnId: string;
-  } | null>(null);
   const pendingRowFocus = React.useRef<{
     rowIndex: number;
     columnId: string;
@@ -136,39 +131,6 @@ export function useGridInteractions(options: GridInteractionOptions) {
     },
     [canEdit, onInsertRow, rowIndexById, table]
   );
-
-  // A native choice commits and unmounts its select before Enter is released.
-  // That release can reach the document before the grid regains focus. Keep
-  // only this gesture: a later keydown or pointer gesture cancels the handoff.
-  React.useEffect(() => {
-    const doc = featheryDoc();
-    const clear = () => {
-      pendingChoice.current = null;
-    };
-    const release = (event: KeyboardEvent) => {
-      const choice = pendingChoice.current;
-      clear();
-      if (!choice || !canEdit || event.key !== 'Enter') return;
-      table.setFocusedCell(choice.rowId, choice.columnId);
-      if (
-        event.shiftKey ||
-        !appendAfterLastRow(choice.rowId, choice.columnId)
-      ) {
-        table.moveCellSelection(event.shiftKey ? 'up' : 'down');
-        const active = table.atoms.cellSelection.get().at(-1);
-        if (active) scrollToCell(active.focusRowId, active.focusColumnId);
-      }
-      restoreFocus?.();
-    };
-    doc.addEventListener('keydown', clear, true);
-    doc.addEventListener('pointerdown', clear, true);
-    doc.addEventListener('keyup', release, true);
-    return () => {
-      doc.removeEventListener('keydown', clear, true);
-      doc.removeEventListener('pointerdown', clear, true);
-      doc.removeEventListener('keyup', release, true);
-    };
-  }, [appendAfterLastRow, canEdit, restoreFocus, scrollToCell, table]);
 
   const parse = React.useCallback(
     (fieldKey: string, text: string, before: CellValue): CellValue =>
@@ -374,18 +336,6 @@ export function useGridInteractions(options: GridInteractionOptions) {
       );
     },
     [commitCellValue, editing]
-  );
-
-  const commitChoice = React.useCallback(
-    (draft: string) => {
-      if (!editing) return;
-      pendingChoice.current = {
-        rowId: editing.rowId,
-        columnId: editing.columnId
-      };
-      commitEditing(undefined, draft);
-    },
-    [commitEditing, editing]
   );
 
   const cancelEditing = React.useCallback(() => {
@@ -836,7 +786,6 @@ export function useGridInteractions(options: GridInteractionOptions) {
       moveSelection,
       commitCellValue,
       commitEditing,
-      commitChoice,
       cancelEditing,
       clearSelection,
       copySelection,
@@ -865,7 +814,6 @@ export function useGridInteractions(options: GridInteractionOptions) {
       moveSelection,
       commitCellValue,
       commitEditing,
-      commitChoice,
       cancelEditing,
       clearSelection,
       copySelection,

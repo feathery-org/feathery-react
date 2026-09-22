@@ -24,9 +24,8 @@ export type CellEditorProps = {
   stored: string;
   label: string;
   onChange: (draft: string) => void;
-  /** Commit and close; native Enter releases also request row navigation. */
-  onCommit: (draft: string, move?: 'up' | 'down') => void;
-  onChoose: (draft: string) => void;
+  /** Commit a value and close, without moving the selection. */
+  onCommit: (draft: string) => void;
   onCancel: () => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
   onBlur: () => void;
@@ -65,7 +64,6 @@ export function CellEditor({
   onCommit,
   onCancel,
   onKeyDown,
-  onChoose,
   onBlur
 }: CellEditorProps) {
   const kind = editorKindFor(rule);
@@ -129,9 +127,7 @@ export function CellEditor({
           onChange(choice);
           // A pick is the whole edit, so it lands as soon as it is made — and
           // carries its own value, since the draft setState has not applied.
-          // `onChoose` (not `onCommit`) so the grid can append a row after
-          // a pick on the last row, as it does for Enter.
-          onChoose(choice);
+          onCommit(choice);
         }}
         onCancel={onCancel}
       />

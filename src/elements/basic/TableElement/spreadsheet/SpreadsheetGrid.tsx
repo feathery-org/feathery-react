@@ -1195,8 +1195,7 @@ function SpreadsheetCell({
             rowIndex + 1
           }`}
           onChange={interactions.setEditingDraft}
-          onCommit={(draft, move) => interactions.commitEditing(move, draft)}
-          onChoose={interactions.commitChoice}
+          onCommit={(draft) => interactions.commitEditing(undefined, draft)}
           onCancel={interactions.cancelEditing}
           onKeyDown={interactions.handleEditorKeyDown}
           onBlur={() => interactions.commitEditing()}
