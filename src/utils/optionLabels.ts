@@ -112,8 +112,9 @@ export function registerOptionLabels(servar: any, properties?: any) {
     byValue = buildCountryLabelMap(servar, properties);
   else if (OPTION_FIELD_TYPES.has(servar.type))
     byValue = buildLabelMap(meta.options ?? [], meta.option_labels ?? []);
-  else {
+else {
     delete optionLabels[servar.key];
+    delete dynamicOptionLabels[servar.key];
     return;
   }
 
