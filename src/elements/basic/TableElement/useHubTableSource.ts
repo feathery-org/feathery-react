@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { featheryWindow } from '../../../utils/browser';
+import { fieldValues } from '../../../utils/init';
 import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
 import { CellRules, hubCellRules } from './spreadsheet/validation';
 import { CellWrite, Column } from './types';
@@ -30,12 +31,48 @@ type HubRow = {
   errors?: Record<string, string>;
 };
 
+export type HubFilterOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'in'
+  | 'not_in'
+  | 'greater_than'
+  | 'greater_than_or_equal'
+  | 'less_than'
+  | 'less_than_or_equal'
+  | 'contains'
+  | 'not_contains'
+  | 'starts_with'
+  | 'ends_with'
+  | 'is_empty'
+  | 'is_filled';
+
+// Operators whose value is a list of alternatives.
+const LIST_OPERATORS: HubFilterOperator[] = ['in', 'not_in'];
+// Operators that test the hub column alone and bind no form field.
+const VALUELESS_OPERATORS: HubFilterOperator[] = ['is_empty', 'is_filled'];
+
+// A builder-configured row filter: keep the rows whose hub column matches a form
+// field's live value. `field_key` is hydrated server-side; absent once deleted.
+export type HubFilter = {
+  hub_field_id: string;
+  hub_field_key: string;
+  operator: HubFilterOperator;
+  field_id: string;
+  field_type: string;
+  field_key?: string;
+};
+
+export type HubWhereCondition =
+  | { entryId: string }
+  | { fieldId: string; value?: any; operator?: HubFilterOperator };
+
 type DataHubAction = (options: {
   hubId: string;
   operation: 'get' | 'create' | 'update' | 'delete';
   entryId?: string;
   data?: Record<string, any>;
-  where?: Array<{ entryId: string } | { fieldId: string; value?: any }>;
+  where?: HubWhereCondition[];
   verification?: HubVerification;
 }) => Promise<any>;
 
@@ -48,6 +85,7 @@ type UseHubTableSourceProps = {
       hidden_hub_fields?: string[];
       readonly_hub_fields?: string[];
       hub_verification?: HubVerification;
+      hub_filters?: HubFilter[];
     };
   };
   client:
@@ -146,6 +184,17 @@ export function useHubTableSource({
   // table's own row filter is the best guess: a verified-only table has
   // nothing to distinguish.
   const showStatusColumn = unverifiedEnabled ?? verification !== 'verified';
+
+  // `fieldValues` is mutated outside React state, so the conditions are rebuilt
+  // every render and keyed by content: the rows reload only when one changes.
+  const hubFilters = element.properties?.hub_filters;
+  const whereKey = JSON.stringify(
+    hubFilterWhere(hubFilters, schemaFields, fieldValues)
+  );
+  const where: HubWhereCondition[] = useMemo(
+    () => JSON.parse(whereKey),
+    [whereKey]
+  );
 
   // Columns derive from the live Hub schema minus the hidden (blacklisted)
   // fields, so fields added to the Hub later show up without republishing the
@@ -257,25 +306,45 @@ export function useHubTableSource({
       });
   }, []);
 
+  // The filters the loaded rows reflect, so a change that a write or an unsaved
+  // edit held back is caught up once they clear (see the effect below).
+  const loadedWhereKey = useRef<string | null>(null);
+
   const loadEntries = useCallback(async () => {
     if (!enabled || !hubId || !client?.dataHubAction) return;
     setLoading(true);
     setErrors([]);
+    loadedWhereKey.current = whereKey;
     try {
       // A schema failure (e.g. a backend without the endpoint yet) falls back
       // to the columns stored on the element instead of erroring the table.
+      // The schema is applied even when the read fails: a filter on a renamed
+      // column can only recover once the live key is known.
       const [schemas, entries] = await Promise.all([
         client.getHubSchemas
           ? client.getHubSchemas([hubId]).catch(() => null)
           : Promise.resolve(null),
-        client.dataHubAction({ hubId, operation: 'get', verification })
+        client
+          .dataHubAction({
+            hubId,
+            operation: 'get',
+            verification,
+            // Omitted when there are no filters, so an unfiltered table's
+            // request is unchanged.
+            ...(where.length ? { where } : {})
+          })
+          .then(
+            (list) => ({ list }),
+            (error) => ({ error })
+          )
       ]);
       const hubSchema = schemas?.hubs?.find((h) => h.id === hubId);
       if (Array.isArray(hubSchema?.fields)) setSchemaFields(hubSchema.fields);
       if (typeof hubSchema?.unverified_enabled === 'boolean') {
         setUnverifiedEnabled(hubSchema.unverified_enabled);
       }
-      const list: HubEntry[] = Array.isArray(entries) ? entries : [];
+      if ('error' in entries) throw entries.error;
+      const list: HubEntry[] = Array.isArray(entries.list) ? entries.list : [];
       commitRows(
         orderLikeGrid(list, rowsRef.current).map((entry) => ({
           localId: `entry:${entry.id}`,
@@ -291,7 +360,7 @@ export function useHubTableSource({
     } finally {
       setLoading(false);
     }
-  }, [enabled, hubId, client, commitRows, verification]);
+  }, [enabled, hubId, client, commitRows, verification, where, whereKey]);
 
   const blockRefetchRef = useRef(blockRefetch);
   blockRefetchRef.current = blockRefetch;
@@ -311,6 +380,15 @@ export function useHubTableSource({
     featheryWindow().addEventListener('focus', onFocus);
     return () => featheryWindow().removeEventListener('focus', onFocus);
   }, [enabled, refetch]);
+
+  // A filter change the guard turned away is applied once the write queue
+  // drains and the edits are saved or discarded; unchanged filters cost nothing.
+  const hasProvisionalRows = rows.some((row) => row.entryId == null);
+  useEffect(() => {
+    if (!enabled || pending > 0 || blockRefetch || hasProvisionalRows) return;
+    const loaded = loadedWhereKey.current;
+    if (loaded !== null && loaded !== whereKey) refetch();
+  }, [enabled, pending, blockRefetch, hasProvisionalRows, whereKey, refetch]);
 
   const hubFieldValues = useMemo(() => {
     const values: Record<string, any[]> = {};
@@ -619,4 +697,65 @@ function omitKeys(
     ([key]) => !keys.includes(key)
   );
   return remaining.length ? Object.fromEntries(remaining) : undefined;
+}
+
+/**
+ * The `where` conditions (ANDed by the Hub) a table's row filters resolve to.
+ * A filter whose form field is empty or gone is left off, so it matches all rows.
+ */
+export function hubFilterWhere(
+  filters: HubFilter[] | undefined,
+  schemaFields: HubFieldSchema[] | null,
+  values: Record<string, any>
+): HubWhereCondition[] {
+  if (!filters?.length) return [];
+  const conditions: HubWhereCondition[] = [];
+  filters.forEach((filter) => {
+    // The live schema key once loaded (a renamed column keeps filtering, a
+    // deleted one is skipped rather than failing the read); the stored key before.
+    const hubFieldKey = schemaFields
+      ? schemaFields.find((field) => field.id === filter.hub_field_id)?.key
+      : filter.hub_field_key;
+    if (!hubFieldKey) return;
+    const operator = filter.operator;
+    if (VALUELESS_OPERATORS.includes(operator)) {
+      conditions.push({ fieldId: hubFieldKey, operator });
+      return;
+    }
+    if (!filter.field_key) return;
+    const raw = values[filter.field_key];
+    if (LIST_OPERATORS.includes(operator)) {
+      const list = hubFilterList(raw);
+      if (!list.length) return;
+      conditions.push({ fieldId: hubFieldKey, operator, value: list });
+    } else if (raw != null && raw !== '') {
+      // Exact match is the Hub's default, so plain filters keep the request
+      // shape they had before other operators existed.
+      conditions.push({
+        fieldId: hubFieldKey,
+        ...(operator === 'equals' ? {} : { operator }),
+        value: raw
+      });
+    }
+  });
+  return conditions;
+}
+
+/**
+ * The list an `in` filter matches against. A multi-value field is already a
+ * list; a single text value (e.g. a hidden field set from a URL parameter)
+ * is read as comma-separated.
+ */
+export function hubFilterList(raw: any): any[] {
+  if (raw == null || raw === '') return [];
+  if (Array.isArray(raw)) {
+    return raw.filter((item) => item != null && item !== '');
+  }
+  if (typeof raw === 'string') {
+    return raw
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item !== '');
+  }
+  return [raw];
 }

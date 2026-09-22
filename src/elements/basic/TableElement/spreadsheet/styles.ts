@@ -1,3 +1,5 @@
+import { TABLE_CLASS } from '../classNames';
+
 // Layout constants. Rows and the header are fixed-height because the row
 // virtualizer and the drag hit-testing both size themselves from these numbers.
 export const ROW_HEIGHT = 32;
@@ -71,14 +73,26 @@ export function sampleRowCount(
   return SAMPLE_ROWS_MIN;
 }
 
+export type SpreadsheetChrome = {
+  /** The trailing "+ Add row" strip, one row tall. */
+  addRow?: boolean;
+  /** Height of the grid's horizontal scrollbar, when its columns overflow. */
+  scrollbarHeight?: number;
+};
+
+/**
+ * The height an auto-sized grid needs for all its rows (capped) with no vertical
+ * scrollbar: header, rows, add-row strip and horizontal scrollbar; not the border.
+ */
 export function spreadsheetViewportHeight(
   heightUnit: string | undefined,
-  rowCount: number
+  rowCount: number,
+  chrome: SpreadsheetChrome = {}
 ): number | undefined {
   if (heightUnit === 'px') return undefined;
-  // Header, rows and the grid's own 1px borders.
-  const content = HEADER_HEIGHT + rowCount * ROW_HEIGHT + 2;
-  return Math.min(content, FIT_MAX_HEIGHT);
+  const content =
+    HEADER_HEIGHT + (rowCount + (chrome.addRow ? 1 : 0)) * ROW_HEIGHT;
+  return Math.min(content, FIT_MAX_HEIGHT) + (chrome.scrollbarHeight ?? 0);
 }
 
 const colors = {
@@ -242,9 +256,19 @@ export const columnHeaderStyle = {
   '&:hover': { backgroundColor: colors.gray200 }
 } as const;
 
+// Label plus optional sort arrow, filling the header so the label can
+// truncate while the arrow keeps its width.
+export const columnHeaderContentStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '100%',
+  minWidth: 0
+} as const;
+
 export const columnHeaderLabelStyle = {
   display: 'block',
-  width: '100%',
+  minWidth: 0,
   overflow: 'hidden',
   color: colors.gray900,
   fontSize: `${HEADER_FONT_SIZE}px`,
@@ -254,20 +278,34 @@ export const columnHeaderLabelStyle = {
   whiteSpace: 'nowrap'
 } as const;
 
+// A 9px grab area straddling the column's right grid line, drawing a 2px line
+// on it while hovered or dragged; offsets are from the border-box padding edge.
+const RESIZER_HIT_WIDTH = 9;
+const RESIZER_LINE_WIDTH = 2;
+
 export const columnResizerStyle = {
   position: 'absolute',
   top: 0,
-  right: '-3px',
+  right: `-${(RESIZER_HIT_WIDTH - 1) / 2 + 1}px`,
   zIndex: 5,
-  width: '7px',
+  width: `${RESIZER_HIT_WIDTH}px`,
   height: '100%',
   cursor: 'col-resize',
   touchAction: 'none',
-  '&:hover': { backgroundColor: colors.accent }
+  '&::after': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: `${(RESIZER_HIT_WIDTH - 1) / 2 - RESIZER_LINE_WIDTH + 1}px`,
+    width: `${RESIZER_LINE_WIDTH}px`,
+    backgroundColor: 'transparent'
+  },
+  '&:hover::after': { backgroundColor: colors.accent }
 } as const;
 
 export const columnResizerActiveStyle = {
-  backgroundColor: colors.accent
+  '&::after': { backgroundColor: colors.accent }
 } as const;
 
 export const dropIndicatorStyle = {
@@ -335,32 +373,6 @@ export const cellValueStyle = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap'
-} as const;
-
-// The mark on a dropdown cell: a small chevron at the right edge, the way a
-// spreadsheet marks a cell with a validation list, telling the user one click
-// opens it. A flex sibling of the value span rather than part of it, so the
-// text truncates before the chevron instead of underneath it.
-export const cellDropdownIndicatorStyle = {
-  // Pushed to the right edge whether or not a value span sits before it —
-  // while the cell is being edited the transparent <select> is out of flow
-  // and this is the only in-flow child.
-  flex: '0 0 auto',
-  position: 'relative',
-  // Above the editor, which is a positioned sibling earlier in the DOM.
-  zIndex: 1,
-  width: '6px',
-  height: '6px',
-  marginLeft: 'auto',
-  // The rotated square overhangs its box, so without this the chevron's
-  // right arm sits almost on the grid line.
-  marginRight: '4px',
-  // Rotated into a chevron; nudged up so its visual centre, not its box,
-  // sits on the text's centre line.
-  transform: 'translateY(-2px) rotate(45deg)',
-  borderRight: `1.5px solid ${colors.gray500}`,
-  borderBottom: `1.5px solid ${colors.gray500}`,
-  pointerEvents: 'none'
 } as const;
 
 export const cellSelectedStyle = {
@@ -439,35 +451,40 @@ export const cellEditorStyle = {
   WebkitUserSelect: 'text'
 } as const;
 
-// The dropdown variant of the editor. Same box as the text input so swapping
-// between them does not shift the cell, but it keeps the native control's own
-// padding for the disclosure arrow.
-// The dropdown editor is the cell with a menu attached, not a control laid
-// over it. So it has no chrome of its own — the cell already draws the focus
-// ring, the selection tint and the chevron — and the picked value sits exactly
-// where the cell's text did. A native <select> would repaint all of that (a
-// white box, its own border, a black arrow, an indented label) and read as a
-// different control appearing on click.
-export const cellSelectStyle = {
-  position: 'absolute',
-  inset: 0,
-  width: '100%',
-  height: '100%',
-  padding: `0 ${CELL_HORIZONTAL_PADDING / 2}px`,
-  boxSizing: 'border-box',
-  appearance: 'none',
-  WebkitAppearance: 'none',
-  MozAppearance: 'none',
-  border: 'none',
-  borderRadius: 0,
-  backgroundColor: 'transparent',
-  outline: 'none',
-  cursor: 'pointer',
-  font: 'inherit',
-  fontVariantNumeric: 'inherit',
-  color: 'inherit',
-  textOverflow: 'ellipsis'
-} as const;
+// The menu under a dropdown cell. Inside the cell (so it scrolls with the
+// grid) and above the rows beneath, which the focused row's z-index allows.
+export const choiceMenuStyle = (above: boolean) =>
+  ({
+    position: 'absolute',
+    insetInlineStart: 0,
+    ...(above
+      ? { bottom: '100%', marginBottom: '2px' }
+      : { top: '100%', marginTop: '2px' }),
+    zIndex: 30,
+    minWidth: '100%',
+    maxHeight: `${ROW_HEIGHT * 8}px`,
+    overflowY: 'auto',
+    padding: '4px',
+    boxSizing: 'border-box',
+    backgroundColor: colors.white,
+    border: `1px solid ${colors.gray300}`,
+    borderRadius: '6px',
+    boxShadow: '0 6px 16px rgba(0, 0, 0, 0.18)',
+    fontSize: `${FONT_SIZE - 2}px`,
+    lineHeight: 1.4,
+    cursor: 'default',
+    userSelect: 'none'
+  } as const);
+
+export const choiceOptionStyle = (highlighted: boolean, empty: boolean) =>
+  ({
+    padding: '5px 10px',
+    borderRadius: '4px',
+    whiteSpace: 'nowrap',
+    color: empty ? colors.gray500 : colors.gray900,
+    backgroundColor: highlighted ? colors.accentSoft : 'transparent',
+    '&:hover': { backgroundColor: colors.gray100 }
+  } as const);
 
 // A range's perimeter is deliberately lighter than the 2px ring on the focused
 // cell, so the active cell still reads as the active one inside a selection.
@@ -740,3 +757,164 @@ export const cellTooltipStyle = (blocking: boolean, above: boolean) =>
     pointerEvents: 'none',
     boxShadow: '0 4px 10px rgba(0, 0, 0, 0.22)'
   } as const);
+
+// Find-in-grid: matches are tinted amber (every editor's find convention) so
+// they read apart from the blue selection.
+export const SEARCH_MATCH_SHADING = { backgroundColor: '#fef3c7' } as const;
+export const SEARCH_CURRENT_SHADING = {
+  backgroundColor: '#fde68a',
+  borderColor: '#d97706'
+} as const;
+
+export const searchBarStyle = {
+  position: 'absolute',
+  // Clears the vertical scrollbar.
+  right: '20px',
+  zIndex: 50,
+  display: 'flex',
+  alignItems: 'center',
+  gap: '4px',
+  padding: '4px 6px',
+  backgroundColor: colors.white,
+  border: `1px solid ${colors.gray300}`,
+  borderRadius: '6px',
+  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
+  fontFamily: GRID_FONT_FAMILY,
+  fontSize: `${FONT_SIZE - 3}px`,
+  lineHeight: 1.4,
+  color: colors.gray900
+} as const;
+
+export const searchInputStyle = {
+  width: '180px',
+  padding: '4px 8px',
+  boxSizing: 'border-box',
+  border: `1px solid ${colors.gray300}`,
+  borderRadius: '4px',
+  backgroundColor: colors.white,
+  color: colors.gray900,
+  fontFamily: 'inherit',
+  fontSize: 'inherit',
+  lineHeight: 'inherit',
+  outline: 'none',
+  '&:focus': {
+    borderColor: colors.accent,
+    boxShadow: `0 0 0 1px ${colors.accent}`
+  }
+} as const;
+
+export const searchCountStyle = {
+  minWidth: '64px',
+  padding: '0 4px',
+  color: colors.gray500,
+  fontVariantNumeric: 'tabular-nums',
+  textAlign: 'center',
+  whiteSpace: 'nowrap'
+} as const;
+
+export const searchButtonStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '24px',
+  height: '24px',
+  padding: 0,
+  backgroundColor: colors.white,
+  border: `1px solid ${colors.gray300}`,
+  borderRadius: '4px',
+  cursor: 'pointer',
+  color: colors.gray700,
+  fontFamily: 'inherit',
+  fontSize: `${FONT_SIZE - 2}px`,
+  lineHeight: 1,
+  '&:hover:not(:disabled)': { backgroundColor: colors.gray100 },
+  '&:focus-visible': {
+    outline: `2px solid ${colors.accent}`,
+    outlineOffset: '1px'
+  },
+  '&:disabled': { opacity: 0.4, cursor: 'default' }
+} as const;
+
+// Sits after the header label for the sorted column.
+export const sortIndicatorStyle = {
+  flex: '0 0 auto',
+  marginInlineStart: '4px',
+  fontSize: `${HEADER_FONT_SIZE - 4}px`,
+  color: colors.gray500
+} as const;
+
+// A dropdown cell's value as a chip spanning the cell, the way a sheet marks a
+// validation list: label left, chevron right, the same pill when empty.
+export const CHIP_HEIGHT = 22;
+// Room left between the pill and the cell's edges (on top of the cell's own
+// padding), so a click beside the chip still lands on the cell to select it.
+export const CHIP_INSET = 4;
+
+export const cellChipStyle = {
+  position: 'relative',
+  zIndex: 1,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: '6px',
+  width: `calc(100% - ${CHIP_INSET * 2}px)`,
+  margin: `0 ${CHIP_INSET}px`,
+  minWidth: 0,
+  height: `${CHIP_HEIGHT}px`,
+  padding: '0 8px 0 10px',
+  boxSizing: 'border-box',
+  borderRadius: '999px',
+  backgroundColor: colors.gray100,
+  border: `1px solid ${colors.gray300}`,
+  lineHeight: 1.3
+} as const;
+
+// Only a chip that opens a menu invites a click; a read-only one is just a value.
+export const cellChipInteractiveStyle = {
+  cursor: 'pointer',
+  '&:hover': { backgroundColor: colors.gray200 }
+} as const;
+
+// How to leave the grid, for keyboard users: read by screen readers via the
+// grid's aria-describedby, and shown only while the grid has keyboard focus.
+export const gridExitHintStyle = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  [`.${TABLE_CLASS.grid}:focus-visible + &`]: {
+    width: 'auto',
+    height: 'auto',
+    clip: 'auto',
+    right: '8px',
+    bottom: '4px',
+    zIndex: 3,
+    padding: '2px 6px',
+    borderRadius: '4px',
+    backgroundColor: colors.white,
+    border: `1px solid ${colors.gray300}`,
+    color: colors.gray700,
+    fontSize: `${FONT_SIZE - 2}px`,
+    pointerEvents: 'none'
+  }
+} as const;
+
+export const cellChipLabelStyle = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  fontSize: `${FONT_SIZE - 2}px`
+} as const;
+
+export const cellChipChevronStyle = {
+  flex: '0 0 auto',
+  width: '6px',
+  height: '6px',
+  transform: 'translateY(-2px) rotate(45deg)',
+  borderRight: `1.5px solid ${colors.gray500}`,
+  borderBottom: `1.5px solid ${colors.gray500}`,
+  pointerEvents: 'none'
+} as const;

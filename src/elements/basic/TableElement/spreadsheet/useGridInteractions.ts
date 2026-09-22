@@ -19,7 +19,11 @@ import {
   serializeTsv
 } from './model';
 import type { SeedAction } from './fieldEditors';
+import { choiceRows } from './ChoiceMenu';
 import type { SpreadsheetTable } from './table';
+
+/** Where the selection goes after a commit: an arrow direction, or along the Tab order. */
+export type CommitMove = CellSelectionDirection | 'next' | 'prev';
 
 export type EditingCell = {
   rowId: string;
@@ -68,6 +72,11 @@ type GridInteractionOptions = {
    * type instead, so `007` in a text column stays `007`.
    */
   parseValue?: (fieldKey: string, text: string, before: CellValue) => CellValue;
+  /**
+   * The fixed values a column offers, when it has them. Such a column edits
+   * through a menu the grid drives from the keyboard, so focus never leaves.
+   */
+  choicesFor?: (fieldKey: string) => string[] | null;
 };
 
 export function useGridInteractions(options: GridInteractionOptions) {
@@ -83,7 +92,8 @@ export function useGridInteractions(options: GridInteractionOptions) {
     restoreFocus,
     seedAction,
     isReadOnly,
-    parseValue
+    parseValue,
+    choicesFor
   } = options;
   const [editing, setEditing] = React.useState<EditingCell | null>(null);
 
@@ -156,6 +166,45 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [scrollToActiveCorner, table]
   );
 
+  /**
+   * Tab order: along the row, then on to the next row's first cell (or back
+   * to the previous row's last). False only past the grid's first or last
+   * cell, where Tab is left to move focus out of the grid.
+   */
+  const moveTab = React.useCallback(
+    (backwards: boolean): boolean => {
+      const active = getActiveRange();
+      if (!active) return false;
+      const columns = getDisplayColumns();
+      const rows = getDisplayRows();
+      const columnIndex = columns.findIndex(
+        (column) => column.id === active.focusColumnId
+      );
+      const rowIndex = rows.findIndex((row) => row.id === active.focusRowId);
+      if (columnIndex < 0 || rowIndex < 0) return false;
+      let nextColumn = columnIndex + (backwards ? -1 : 1);
+      let nextRow = rowIndex;
+      if (nextColumn >= columns.length) {
+        nextColumn = 0;
+        nextRow += 1;
+      } else if (nextColumn < 0) {
+        nextColumn = columns.length - 1;
+        nextRow -= 1;
+      }
+      if (nextRow < 0 || nextRow >= rows.length) return false;
+      table.setFocusedCell(rows[nextRow].id, columns[nextColumn].id);
+      scrollToActiveCorner();
+      return true;
+    },
+    [
+      getActiveRange,
+      getDisplayColumns,
+      getDisplayRows,
+      scrollToActiveCorner,
+      table
+    ]
+  );
+
   const startEditing = React.useCallback(
     (rowId: string, columnId: string, replacement?: string) => {
       // No editor at all on a read-only column: the stored value may not even
@@ -188,12 +237,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
   );
 
   const commitCellValue = React.useCallback(
-    (
-      rowId: string,
-      columnId: string,
-      draft: string,
-      move?: CellSelectionDirection
-    ) => {
+    (rowId: string, columnId: string, draft: string, move?: CommitMove) => {
       const rowIndex = rowIndexById.get(rowId);
       const before = valueByIds(rowId, columnId);
       const after = parse(columnId, draft, before);
@@ -207,7 +251,9 @@ export function useGridInteractions(options: GridInteractionOptions) {
 
       table.setFocusedCell(rowId, columnId);
       setEditing(null);
-      if (move) {
+      if (move === 'next' || move === 'prev') {
+        moveTab(move === 'prev');
+      } else if (move) {
         table.moveCellSelection(move);
         scrollToActiveCorner();
       }
@@ -218,6 +264,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [
       execute,
       isReadOnly,
+      moveTab,
       parse,
       restoreFocus,
       rowIndexById,
@@ -233,7 +280,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
    * dropdown sets and commits together, before React has applied the setState.
    */
   const commitEditing = React.useCallback(
-    (move?: CellSelectionDirection, draft?: string) => {
+    (move?: CommitMove, draft?: string) => {
       if (!editing) return;
       commitCellValue(
         editing.rowId,
@@ -569,33 +616,80 @@ export function useGridInteractions(options: GridInteractionOptions) {
   const handleGridTabKey = React.useCallback(
     (event: React.KeyboardEvent<HTMLElement>) => {
       if (event.key !== 'Tab' || editing) return;
-      const active = getActiveRange();
-      if (!active) return;
-      const columns = getDisplayColumns();
-      const index = columns.findIndex(
-        (column) => column.id === active.focusColumnId
-      );
-      const atEdge = event.shiftKey ? index <= 0 : index >= columns.length - 1;
-      if (atEdge) return;
-      event.preventDefault();
-      moveSelection(event.shiftKey ? 'left' : 'right');
+      if (moveTab(event.shiftKey)) event.preventDefault();
     },
-    [editing, getActiveRange, getDisplayColumns, moveSelection]
+    [editing, moveTab]
+  );
+
+  /**
+   * Keys while a choice menu is open. The grid holds focus, so they arrive
+   * here: arrows move the highlight, Enter/Tab commit it (moving on like the
+   * text editor does), Escape closes, a letter jumps to the first match.
+   * Everything else is swallowed so nothing reaches the grid underneath.
+   */
+  const handleChoiceMenuKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLElement>): boolean => {
+      if (!editing) return false;
+      const choices = choicesFor?.(editing.columnId);
+      if (!choices) return false;
+      const rows = choiceRows(choices);
+      const step = (delta: number) => {
+        const at = rows.indexOf(editing.draft);
+        const next =
+          at < 0 ? 0 : Math.min(rows.length - 1, Math.max(0, at + delta));
+        setEditingDraft(rows[next]);
+      };
+      switch (event.key) {
+        case 'ArrowDown':
+          step(1);
+          break;
+        case 'ArrowUp':
+          step(-1);
+          break;
+        case 'Home':
+          setEditingDraft(rows[0]);
+          break;
+        case 'End':
+          setEditingDraft(rows[rows.length - 1]);
+          break;
+        case 'Enter':
+          commitEditing(event.shiftKey ? 'up' : 'down');
+          break;
+        case 'Tab':
+          commitEditing(event.shiftKey ? 'prev' : 'next');
+          break;
+        case 'Escape':
+          cancelEditing();
+          break;
+        default: {
+          if (event.metaKey || event.ctrlKey || event.altKey) return false;
+          if (event.key.length !== 1) return false;
+          const prefix = event.key.toLowerCase();
+          const match = choices.find((choice) =>
+            choice.toLowerCase().startsWith(prefix)
+          );
+          if (match) setEditingDraft(match);
+        }
+      }
+      event.preventDefault();
+      return true;
+    },
+    [cancelEditing, choicesFor, commitEditing, editing, setEditingDraft]
   );
 
   const handleGridKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLElement>) => {
+      if (handleChoiceMenuKeyDown(event)) return;
       handleGridTabKey(event);
       if (!event.defaultPrevented) handleGridTextEntry(event);
     },
-    [handleGridTabKey, handleGridTextEntry]
+    [handleChoiceMenuKeyDown, handleGridTabKey, handleGridTextEntry]
   );
 
   /**
-   * Collapses the selection onto one cell and brings it into view. Used to
-   * walk the user through failing cells from the status bar, so it also takes
-   * keyboard focus back to the grid — otherwise the next arrow key would still
-   * go to the button that moved the selection.
+   * Collapses the selection onto one cell and brings it into view. DOM focus
+   * is the caller's call: the issue stepper hands the keyboard back to the
+   * grid afterwards, while find-in-grid keeps it in the search input.
    */
   const focusCell = React.useCallback(
     (rowId: string, columnId: string) => {
@@ -618,7 +712,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
         commitEditing(event.shiftKey ? 'up' : 'down');
       } else if (event.key === 'Tab') {
         event.preventDefault();
-        commitEditing(event.shiftKey ? 'left' : 'right');
+        commitEditing(event.shiftKey ? 'prev' : 'next');
       }
     },
     [cancelEditing, commitEditing]
@@ -627,10 +721,16 @@ export function useGridInteractions(options: GridInteractionOptions) {
   // One identity per set of callbacks: the grid keys document-level listener
   // effects on this object, and a fresh one per keystroke in an editor would
   // tear those listeners down and re-add them on every character.
+  const isColumnReadOnly = React.useCallback(
+    (fieldKey: string) => Boolean(isReadOnly?.(fieldKey)),
+    [isReadOnly]
+  );
+
   return React.useMemo(
     () => ({
       editing,
       setEditingDraft,
+      isColumnReadOnly,
       getActiveRange,
       getSelectedBounds,
       startEditing,
@@ -657,6 +757,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [
       editing,
       setEditingDraft,
+      isColumnReadOnly,
       getActiveRange,
       getSelectedBounds,
       startEditing,

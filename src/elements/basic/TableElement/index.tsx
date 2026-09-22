@@ -130,12 +130,13 @@ function TableElement({
       // rather than cleared off the element, so switching back to the classic
       // table restores whatever the builder had configured.
       //   pagination — every row is virtualized, so paging only hides rows.
-      //   search/sort — the grid has no affordance for either; a header click
-      //     selects the column, Excel-style.
+      //   search — the grid finds with Mod+F instead of a filter box.
+      //   sort — always on: the grid sorts from the column header's menu, so
+      //     the classic table's toggle does not gate it.
       //   transpose — one field per row has no (row, column) coordinates for
       //     selection, fill or the clipboard to work against.
       ...(wantsSpreadsheet
-        ? { pagination: 0, search: false, sort: false, transpose: false }
+        ? { pagination: 0, search: false, sort: true, transpose: false }
         : {})
     };
     return { ...element, properties };
@@ -153,6 +154,7 @@ function TableElement({
     sortDirection,
     sortedColumnIndex,
     handleSort,
+    setSort,
     handleTransposedSort,
 
     // pagination
@@ -785,6 +787,11 @@ function TableElement({
           }
           cellIssues={cellIssues}
           readOnlyFieldKeys={isHub ? hub.readOnlyKeys : undefined}
+          sort={{
+            column: sortColumn,
+            direction: sortDirection,
+            onSort: setSort
+          }}
         />
       ) : (
         <div css={{ overflowX: 'auto' }}>
