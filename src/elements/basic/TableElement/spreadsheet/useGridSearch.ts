@@ -18,12 +18,8 @@ export const searchMatchKey = (rowIndex: number, fieldKey: string) =>
 
 export type SearchableCell = SearchMatch & { text: string };
 
-/**
- * Every cell's displayed text, lowercased, in reading order (down the rows,
- * left to right). Built once per data change so a keystroke only scans
- * strings; formatting (dates, masked tax ids) is the expensive part and the
- * user sees the formatted text, so that is what a query matches.
- */
+/** Every cell's displayed (formatted) text, lowercased, in reading order.
+ * Built once per data change so a keystroke only scans strings. */
 export function indexCells(
   rows: SpreadsheetRow[],
   columns: Column[],
@@ -66,12 +62,8 @@ type UseGridSearchOptions = {
   focusCell: (rowId: string, columnId: string) => void;
 };
 
-/**
- * Find-in-grid state: the query, the cells it matches, and which match is
- * current. Typing jumps to the first match; Enter steps through the rest.
- * The list is recomputed as rows change, so an edit that creates or removes a
- * match updates the count without moving the cursor.
- */
+/** Find-in-grid state: the query, its matches and the current one. Typing
+ * jumps to the first match, Enter steps; edits update the count in place. */
 export function useGridSearch({
   rows,
   columns,

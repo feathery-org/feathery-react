@@ -21,11 +21,8 @@ export type SearchBarProps = {
   top: number;
 };
 
-/**
- * The find toolbar that floats over the grid's top-right corner. Enter and
- * Shift+Enter step through the matches, Escape closes it, and Mod+F while it
- * is open reselects the query rather than reaching the browser's own find.
- */
+/** The find toolbar over the grid's top-right corner: Enter/Shift+Enter step
+ * through matches, Escape closes, Mod+F while open reselects the query. */
 export function SearchBar({
   query,
   onQueryChange,

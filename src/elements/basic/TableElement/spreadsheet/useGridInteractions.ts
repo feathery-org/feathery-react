@@ -19,6 +19,7 @@ import {
   serializeTsv
 } from './model';
 import type { SeedAction } from './fieldEditors';
+import { choiceRows } from './ChoiceMenu';
 import type { SpreadsheetTable } from './table';
 
 /** Where the selection goes after a commit: an arrow direction, or along the Tab order. */
@@ -631,7 +632,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
       if (!editing) return false;
       const choices = choicesFor?.(editing.columnId);
       if (!choices) return false;
-      const rows = ['', ...choices];
+      const rows = choiceRows(choices);
       const step = (delta: number) => {
         const at = rows.indexOf(editing.draft);
         const next =
@@ -720,10 +721,16 @@ export function useGridInteractions(options: GridInteractionOptions) {
   // One identity per set of callbacks: the grid keys document-level listener
   // effects on this object, and a fresh one per keystroke in an editor would
   // tear those listeners down and re-add them on every character.
+  const isColumnReadOnly = React.useCallback(
+    (fieldKey: string) => Boolean(isReadOnly?.(fieldKey)),
+    [isReadOnly]
+  );
+
   return React.useMemo(
     () => ({
       editing,
       setEditingDraft,
+      isColumnReadOnly,
       getActiveRange,
       getSelectedBounds,
       startEditing,
@@ -750,6 +757,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [
       editing,
       setEditingDraft,
+      isColumnReadOnly,
       getActiveRange,
       getSelectedBounds,
       startEditing,

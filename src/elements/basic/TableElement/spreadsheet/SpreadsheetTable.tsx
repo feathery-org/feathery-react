@@ -6,7 +6,6 @@ import React, {
   useState
 } from 'react';
 import { useCreateAtom } from '@tanstack/react-store';
-import { featheryWindow } from '../../../../utils/browser';
 import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
 import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
@@ -39,6 +38,7 @@ import {
 } from './table';
 import { useGridInteractions } from './useGridInteractions';
 import { useGridSearch } from './useGridSearch';
+import { useMeasured } from './useMeasured';
 import { useSpreadsheetHistory } from './useSpreadsheetHistory';
 
 const columnHelper = createColumnHelper<
@@ -335,26 +335,17 @@ export function SpreadsheetTable({
     pending && (pending.count > 0 || pending.saving || issueCount > 0)
   );
 
-  // The status bar sits inside the element's own height box, so an auto-sized
-  // grid grows to make room for it rather than losing a row while it is up.
-  // The horizontal scrollbar lives inside the grid's scroll box, so an
-  // auto-sized grid has to grow by its height or it eats the last row.
+  // The status bar and the horizontal scrollbar both sit inside the element's
+  // height box, so an auto-sized grid grows by their measured heights.
   const [scrollbarHeight, setScrollbarHeight] = useState(0);
-  // The bar wraps its text on narrow tables, so its height is measured rather
-  // than assumed; the constant only stands in until the first measurement.
   const barRef = useRef<HTMLDivElement>(null);
   const [barHeight, setBarHeight] = useState(PENDING_BAR_HEIGHT);
-  useEffect(() => {
-    const bar = barRef.current;
-    if (!bar) return;
-    const report = () => setBarHeight(bar.offsetHeight || PENDING_BAR_HEIGHT);
-    report();
-    const Observer = (featheryWindow() as any).ResizeObserver;
-    if (!Observer) return;
-    const observer = new Observer(report);
-    observer.observe(bar);
-    return () => observer.disconnect();
-  }, [showBar]);
+  const measureBar = useCallback(
+    (bar: HTMLDivElement) =>
+      setBarHeight(bar.offsetHeight || PENDING_BAR_HEIGHT),
+    []
+  );
+  useMeasured(barRef, measureBar, showBar);
   const barSpace = showBar ? barHeight : 0;
   const fitHeight = useMemo(() => {
     const base = spreadsheetViewportHeight(heightUnit, rows.length, {

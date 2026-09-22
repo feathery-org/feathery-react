@@ -7,6 +7,10 @@ import { placeCellTooltip } from './tooltipPlacement';
 /** The value a menu row stands for: a choice, or '' to clear the cell. */
 export const EMPTY_CHOICE_LABEL = '(empty)';
 
+/** The menu's rows in order: a clear-the-cell row, then every choice. The grid's
+ * keyboard handling walks this same list, so what it highlights is what is drawn. */
+export const choiceRows = (choices: string[]): string[] => ['', ...choices];
+
 export type ChoiceMenuProps = {
   choices: string[];
   /** The highlighted row; the value Enter would commit. */
@@ -16,11 +20,8 @@ export type ChoiceMenuProps = {
   onCancel: () => void;
 };
 
-/**
- * The menu under a dropdown cell. Keyboard focus never moves here — the grid
- * keeps it and drives the highlight (see `useGridInteractions`) — so closing
- * the menu can never leave a control behind that eats the arrow keys.
- */
+/** The menu under a dropdown cell. Focus stays on the grid, which drives the
+ * highlight (see `useGridInteractions`), so closing it never strands the keys. */
 export function ChoiceMenu({
   choices,
   value,
@@ -72,7 +73,7 @@ export function ChoiceMenu({
     return () => doc.removeEventListener('mousedown', onPointerDown);
   }, [onCancel]);
 
-  const rows = ['', ...choices];
+  const rows = choiceRows(choices);
   return (
     <div
       ref={ref}
