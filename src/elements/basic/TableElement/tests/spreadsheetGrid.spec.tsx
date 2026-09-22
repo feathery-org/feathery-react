@@ -560,6 +560,73 @@ describe('Tab and the grid boundary', () => {
     );
     expect(cell('Alice')).toHaveAttribute('aria-selected', 'true');
   });
+
+  test('the grid announces its exit, and Escape clears the selection then leaves', async () => {
+    render(
+      <>
+        <TableElement
+          element={makeElement()}
+          responsiveStyles={mockStyles()}
+          updateFieldValues={jest.fn()}
+          submitCustom={jest.fn()}
+        />
+        <button type='button'>After the table</button>
+      </>
+    );
+    const hint = document.getElementById(
+      grid().getAttribute('aria-describedby')!
+    );
+    expect(hint).toHaveTextContent(/Escape/);
+
+    fireEvent.mouseDown(cell('Bob'));
+    await waitFor(() =>
+      expect(cell('Bob')).toHaveAttribute('aria-selected', 'true')
+    );
+    expect(grid()).toHaveFocus();
+
+    fireEvent.keyDown(grid(), { key: 'Escape' });
+    await waitFor(() =>
+      expect(cell('Bob')).toHaveAttribute('aria-selected', 'false')
+    );
+    expect(grid()).toHaveFocus();
+
+    fireEvent.keyDown(grid(), { key: 'Escape' });
+    expect(
+      screen.getByRole('button', { name: 'After the table' })
+    ).toHaveFocus();
+  });
+});
+
+describe('an editor whose cell scrolls out of view', () => {
+  test('is cancelled rather than left open on a cell the user cannot see', async () => {
+    const count = 120;
+    Object.assign(fieldValues, {
+      name_key: Array.from({ length: count }, (_, i) => `Name ${i}`),
+      age_key: Array.from({ length: count }, (_, i) => i),
+      city_key: Array.from({ length: count }, (_, i) => `City ${i}`)
+    });
+    renderTable();
+    fireEvent.mouseDown(cell('Name 0'));
+    fireEvent.doubleClick(cell('Name 0'));
+    expect(await screen.findByRole('textbox')).toBeInTheDocument();
+
+    // Scroll far enough that the virtualizer drops the first row entirely.
+    grid().scrollTop = 3000;
+    fireEvent.scroll(grid());
+    await waitFor(() => expect(screen.queryByText('Name 0')).toBeNull());
+    expect(screen.queryByRole('textbox')).toBeNull();
+
+    // Back at the top the cell shows its value again, not a reopened editor,
+    // and the grid's keys work: the selection can move on.
+    grid().scrollTop = 0;
+    fireEvent.scroll(grid());
+    await waitFor(() => expect(cell('Name 0')).toBeInTheDocument());
+    expect(screen.queryByRole('textbox')).toBeNull();
+    fireEvent.keyDown(grid(), { key: 'ArrowDown' });
+    await waitFor(() =>
+      expect(cell('Name 1')).toHaveAttribute('aria-selected', 'true')
+    );
+  });
 });
 
 describe('fill handle', () => {

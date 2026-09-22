@@ -8,13 +8,14 @@ import {
 } from './styles';
 import { TABLE_CLASS } from './classNames';
 import { Column } from './types';
+import { columnSortKey } from './useTableData';
 
 type SortHeaderProps = {
   columns: Column[];
   enableSort: boolean;
   sortColumn: string | null;
   sortDirection: 'asc' | 'desc';
-  onSort: (columnName: string) => void;
+  onSort: (columnKey: string) => void;
   styles: any;
 };
 
@@ -66,7 +67,8 @@ export function SortHeader({
     <Fragment>
       {columns.map((column, index) => {
         const isSortable = enableSort;
-        const isSorted = sortColumn === column.name;
+        const sortKey = columnSortKey(column.field_key, index);
+        const isSorted = sortColumn === sortKey;
         const isFirstColumn = index === 0;
 
         return (
@@ -75,7 +77,7 @@ export function SortHeader({
             scope='col'
             className={TABLE_CLASS.headerCell}
             data-feathery-field={column.field_key}
-            onClick={() => isSortable && onSort(column.name)}
+            onClick={() => isSortable && onSort(sortKey)}
             css={{
               ...thStyle,
               ...dataColumnMinWidthStyle,

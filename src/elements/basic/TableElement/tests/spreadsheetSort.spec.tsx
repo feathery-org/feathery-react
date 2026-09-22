@@ -120,6 +120,42 @@ describe('spreadsheet column sorting', () => {
     expect(header('Age')).not.toHaveAttribute('aria-sort');
   });
 
+  test('two columns with the same name sort independently', () => {
+    Object.assign(fieldValues, { score_key: [2, 3, 1] });
+    render(
+      <TableElement
+        element={{
+          ...element,
+          properties: {
+            ...element.properties,
+            columns: [
+              COLUMNS[0],
+              { ...COLUMNS[1], name: 'Score' },
+              {
+                name: 'Score',
+                field_id: 'f3',
+                field_type: 'text',
+                field_key: 'score_key'
+              }
+            ]
+          }
+        }}
+        responsiveStyles={mockStyles()}
+        updateFieldValues={jest.fn()}
+        submitCustom={jest.fn()}
+      />
+    );
+    const scores = () =>
+      screen.getAllByRole('columnheader', { name: /^Score/ });
+    fireEvent.contextMenu(scores()[1], { clientX: 10, clientY: 10 });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Sort A → Z' }));
+    // Sorted by the second Score column (2, 3, 1), not the first (40, 50, 30).
+    expect(namesInOrder()).toEqual(['Cara', 'Bob', 'Alice']);
+    expect(scores()[1]).toHaveAttribute('aria-sort', 'ascending');
+    expect(scores()[0]).not.toHaveAttribute('aria-sort');
+    delete (fieldValues as any).score_key;
+  });
+
   test('sorting another column replaces the previous sort', () => {
     renderGrid();
     fireEvent.contextMenu(header('Age'), { clientX: 10, clientY: 10 });

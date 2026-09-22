@@ -418,6 +418,20 @@ describe('cell editors follow the column', () => {
   const option = (text: string) =>
     within(menu()).getByRole('option', { name: text });
 
+  test('a read-only dropdown cell shows its value as a plain chip, not a button', async () => {
+    renderTable(
+      { ...hubProps, readonly_hub_fields: ['hf3'] },
+      { client: client() }
+    );
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+    const readyCell = cell('Ready') as HTMLElement;
+    expect(within(readyCell).queryByRole('button')).toBeNull();
+
+    fireEvent.click(screen.getByText('Ready'));
+    fireEvent.doubleClick(readyCell);
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
   test('a column with options edits through a menu the grid drives', async () => {
     renderTable(hubProps, { client: client() });
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());

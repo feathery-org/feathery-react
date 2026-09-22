@@ -1,3 +1,5 @@
+import { TABLE_CLASS } from '../classNames';
+
 // Layout constants. Rows and the header are fixed-height because the row
 // virtualizer and the drag hit-testing both size themselves from these numbers.
 export const ROW_HEIGHT = 32;
@@ -79,11 +81,8 @@ export type SpreadsheetChrome = {
 };
 
 /**
- * The height an auto-sized grid needs to show all its rows with no vertical
- * scrollbar: header, rows, the add-row strip and, because it sits inside the
- * scroll box, the horizontal scrollbar. The element's border is outside this
- * box and is not counted. Rows are capped; the scrollbar is added on top so
- * the cap still shows whole rows.
+ * The height an auto-sized grid needs for all its rows (capped) with no vertical
+ * scrollbar: header, rows, add-row strip and horizontal scrollbar; not the border.
  */
 export function spreadsheetViewportHeight(
   heightUnit: string | undefined,
@@ -279,10 +278,8 @@ export const columnHeaderLabelStyle = {
   whiteSpace: 'nowrap'
 } as const;
 
-// A 9px grab area straddling the column's right grid line, drawing a 2px
-// line exactly on that line while hovered or dragged. The header is
-// border-box, so its padding edge sits 1px inside the line: the offsets
-// below are measured from there.
+// A 9px grab area straddling the column's right grid line, drawing a 2px line
+// on it while hovered or dragged; offsets are from the border-box padding edge.
 const RESIZER_HIT_WIDTH = 9;
 const RESIZER_LINE_WIDTH = 2;
 
@@ -761,10 +758,8 @@ export const cellTooltipStyle = (blocking: boolean, above: boolean) =>
     boxShadow: '0 4px 10px rgba(0, 0, 0, 0.22)'
   } as const);
 
-// Find-in-grid. The bar floats over the top-right of the sheet, below the
-// header so the column names stay readable; matches are tinted amber, the
-// convention every text editor's find uses, so they read apart from the blue
-// selection.
+// Find-in-grid: matches are tinted amber (every editor's find convention) so
+// they read apart from the blue selection.
 export const SEARCH_MATCH_SHADING = { backgroundColor: '#fef3c7' } as const;
 export const SEARCH_CURRENT_SHADING = {
   backgroundColor: '#fde68a',
@@ -848,10 +843,8 @@ export const sortIndicatorStyle = {
   color: colors.gray500
 } as const;
 
-// A dropdown cell's value as a chip spanning the cell, the way a sheet draws
-// a cell with a validation list: label on the left, chevron on the right, and
-// the same pill whether or not the cell holds a value. Raised above the cell
-// so its click reaches it first.
+// A dropdown cell's value as a chip spanning the cell, the way a sheet marks a
+// validation list: label left, chevron right, the same pill when empty.
 export const CHIP_HEIGHT = 22;
 // Room left between the pill and the cell's edges (on top of the cell's own
 // padding), so a click beside the chip still lands on the cell to select it.
@@ -873,9 +866,39 @@ export const cellChipStyle = {
   borderRadius: '999px',
   backgroundColor: colors.gray100,
   border: `1px solid ${colors.gray300}`,
+  lineHeight: 1.3
+} as const;
+
+// Only a chip that opens a menu invites a click; a read-only one is just a value.
+export const cellChipInteractiveStyle = {
   cursor: 'pointer',
-  lineHeight: 1.3,
   '&:hover': { backgroundColor: colors.gray200 }
+} as const;
+
+// How to leave the grid, for keyboard users: read by screen readers via the
+// grid's aria-describedby, and shown only while the grid has keyboard focus.
+export const gridExitHintStyle = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  [`.${TABLE_CLASS.grid}:focus-visible + &`]: {
+    width: 'auto',
+    height: 'auto',
+    clip: 'auto',
+    right: '8px',
+    bottom: '4px',
+    zIndex: 3,
+    padding: '2px 6px',
+    borderRadius: '4px',
+    backgroundColor: colors.white,
+    border: `1px solid ${colors.gray300}`,
+    color: colors.gray700,
+    fontSize: `${FONT_SIZE - 2}px`,
+    pointerEvents: 'none'
+  }
 } as const;
 
 export const cellChipLabelStyle = {

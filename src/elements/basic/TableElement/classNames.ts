@@ -64,5 +64,6 @@ export const TABLE_CLASS = {
   gridSortIndicator: 'feathery-table-grid-sort-indicator',
   gridCellChip: 'feathery-table-grid-cell-chip',
   gridChoiceMenu: 'feathery-table-grid-choice-menu',
-  gridChoiceOption: 'feathery-table-grid-choice-option'
+  gridChoiceOption: 'feathery-table-grid-choice-option',
+  gridExitHint: 'feathery-table-grid-exit-hint'
 } as const;
