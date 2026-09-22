@@ -1,4 +1,8 @@
 import { initInfo, initState } from './init';
+import type {
+  DocumentReviewAction,
+  DocumentReviewTrigger
+} from '../types/Form';
 
 function isValidUrl(urlString: string): boolean {
   try {
@@ -124,4 +128,42 @@ export function signsViaDocusign(action: Record<string, any>): boolean {
     envelopeAction === 'open_in_editor' &&
     (toolbar.includes('sign') || toolbar.includes('draft'))
   );
+}
+
+/**
+ * The `trigger` a `document_review` logic rule receives once a review-screen
+ * toolbar action has finalized and run its outcome. Built the same way for
+ * the overlay viewer (button or `feathery.generateDocuments`) and for a
+ * document-editor container, so rule code sees one shape.
+ */
+export function buildDocumentReviewTrigger({
+  action,
+  elementId,
+  envelopes,
+  envelopeAction,
+  draft,
+  result
+}: {
+  // The Generate Documents action config that opened the review.
+  action: Record<string, any>;
+  elementId: string;
+  envelopes: { envelopeId: string }[];
+  // The toolbar outcome finalize ran; a draft is reported as 'draft'.
+  envelopeAction: string;
+  draft: boolean;
+  // The finalize response, when there was one.
+  result?: Record<string, any> | null;
+}): DocumentReviewTrigger {
+  const trigger: DocumentReviewTrigger = {
+    id: elementId,
+    type: 'document_review',
+    action: (draft ? 'draft' : envelopeAction) as DocumentReviewAction,
+    envelopeIds: envelopes.map((envelope) => envelope.envelopeId),
+    documentIds: action.documents ?? []
+  };
+  const files = result?.files;
+  if (Array.isArray(files)) trigger.files = files;
+  const docusignEnvelopeId = result?.docusign_envelope_id;
+  if (docusignEnvelopeId) trigger.docusignEnvelopeId = docusignEnvelopeId;
+  return trigger;
 }

@@ -57,6 +57,8 @@ export function hasFlowActions(actions: any[]) {
 
 export const stepEvents = ['submit', 'load'];
 export const elementEvents = ['view', 'change', 'action'];
+// Fired after a toolbar action on the Generate Documents review screen.
+export const DOCUMENT_REVIEW_EVENT = 'document_review';
 
 export function isRunnableStepEventRule(rule: any, curStepId: string) {
   return (
@@ -77,6 +79,13 @@ export function canRunAction(
   altMatchId: string | undefined
 ) {
   const event = logicRule.trigger_event;
+  if (event === DOCUMENT_REVIEW_EVENT) {
+    // Scoped by toolbar action rather than by element: a button or
+    // feathery.generateDocuments opens the same review screen. An empty
+    // filter means every action.
+    const allowed: string[] = logicRule.metadata?.review_actions ?? [];
+    return allowed.length === 0 || allowed.includes(props.trigger?.action);
+  }
   if (![...stepEvents, ...elementEvents].includes(event)) return true;
 
   const runAfterEvent = logicRule.metadata?.after_click;
