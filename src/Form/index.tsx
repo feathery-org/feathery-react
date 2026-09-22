@@ -242,6 +242,7 @@ import ConnectAccountModal, {
 } from '../integrations/connectAccount/ConnectAccountModal';
 import {
   CONFIG_COMPONENTS,
+  PROVIDER_LABELS,
   connectionFieldKey,
   hasEmailIdentity
 } from '../integrations/connectAccount/providers';
@@ -634,6 +635,7 @@ function Form({
     provider: string;
     credentials?: SavedAccountCredential[];
     chooseCredential?: boolean;
+    canSaveCredential?: boolean;
     // Captured from the triggering runElementActions call: advances the
     // action chain past this action, and ends the button/action's loading
     // state. Each is a closure local to that call, not reachable from here
@@ -3057,16 +3059,24 @@ function Form({
         let connected = false;
         let credentials: SavedAccountCredential[] = [];
         let chooseCredential = false;
+        let canSaveCredential = false;
         try {
           if (provider === 'box') {
-            const saved = await client.listAccountCredentials(provider);
-            if (!saved && formSettings.authSensitiveActionsOnly) {
+            // Listing saved accounts is optional; a throttle or temporary outage
+            // must not prevent the existing OAuth or change-account flow.
+            const saved = await client
+              .listAccountCredentials(provider)
+              .catch(() => undefined);
+            if (saved === null && formSettings.authSensitiveActionsOnly) {
               throw new Error(
-                'Please sign in to connect or manage your Box account.'
+                `Please sign in to connect or manage your ${
+                  PROVIDER_LABELS[provider] ?? provider
+                } account.`
               );
             }
             credentials = saved?.credentials ?? [];
-            chooseCredential = !alreadyConnected && credentials.length > 0;
+            canSaveCredential = !!saved;
+            chooseCredential = !alreadyConnected && canSaveCredential;
           }
           if (alreadyConnected || chooseCredential) {
             popup?.close();
@@ -3109,6 +3119,7 @@ function Form({
               provider,
               credentials,
               chooseCredential,
+              canSaveCredential,
               onFlowSuccess: flowOnSuccess(i),
               onAsyncEnd
             });
@@ -4097,6 +4108,7 @@ function Form({
             provider={connectAccountModal.provider}
             credentials={connectAccountModal.credentials}
             chooseCredential={connectAccountModal.chooseCredential}
+            canSaveCredential={connectAccountModal.canSaveCredential}
             onCredentialSelected={updateFieldValues}
             client={client}
             accountEmail={
@@ -4106,7 +4118,7 @@ function Form({
                   ] as string)
                 : ''
             }
-            onChangeAccount={async () => {
+            onChangeAccount={async (saveCredential = false) => {
               // window.open must stay the first statement: the modal's
               // button handler invokes this synchronously from a real click,
               // and any await ahead of it would break the user-gesture chain
@@ -4124,7 +4136,8 @@ function Form({
                 const result = await runOAuthPopup(
                   client,
                   connectAccountModal.provider,
-                  popup
+                  popup,
+                  saveCredential
                 );
                 updateFieldValues({
                   [connectionFieldKey(connectAccountModal.provider)]:

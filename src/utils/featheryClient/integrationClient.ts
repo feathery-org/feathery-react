@@ -12,6 +12,7 @@ import {
   UploadFileToEgnyteParams
 } from '../internalState';
 import { featheryWindow } from '../browser';
+import { PROVIDER_LABELS } from '../../integrations/connectAccount/providers';
 import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
@@ -275,14 +276,19 @@ export default class IntegrationClient {
     });
   }
 
-  async startAccountConnect(provider: string, parentOrigin: string) {
+  async startAccountConnect(
+    provider: string,
+    parentOrigin: string,
+    saveCredential = false
+  ) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
       fuser_key: userId,
       provider,
-      parent_origin: parentOrigin
+      parent_origin: parentOrigin,
+      ...(saveCredential ? { save_credential: true } : {})
     });
     const response = await this._fetch(
       `${API_URL}account-connect/start/?${params}`,
@@ -290,6 +296,13 @@ export default class IntegrationClient {
       false
     );
     if (!response) throw new Error('Unable to start authorization.');
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        `Please sign in to connect or manage your ${
+          PROVIDER_LABELS[provider] ?? provider
+        } account.`
+      );
+    }
 
     const payload = await response.json();
     if (response.status === 200) return payload;

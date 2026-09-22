@@ -4,7 +4,8 @@ import { fieldValues } from '../../utils/init';
 import { ACTION_CONNECT_ACCOUNT } from '../../utils/elementActions';
 
 // The modal shell remounts the config component (via a `key` keyed on
-// accountEmail) whenever the connected account changes, so any state a
+// accountEmail and a successful connection version) whenever the account changes,
+// including reattaching the same saved account, so any state a
 // provider's config component holds - selections, pagination, fetched lists -
 // is always for the currently connected account. A provider component never
 // needs to detect an account change itself; don't add ad hoc handling for it

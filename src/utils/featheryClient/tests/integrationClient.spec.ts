@@ -152,18 +152,33 @@ describe('IntegrationClient account connect', () => {
     });
     expect(parseResponse).toBe(false);
   });
-  it.each([undefined, false, true])('only requests saving a new Box account after opt-in (%s)', async (saveCredential) => {
-    const client = new FeatheryClient('form-key') as any;
-    client._fetch = jest.fn().mockResolvedValue(okResponse({ state: 's' }));
-    await client.startAccountConnect('box', 'https://forms.test', saveCredential);
-    const [url] = client._fetch.mock.calls[0];
-    expect(new URL(url).searchParams.get('save_credential')).toBe(saveCredential ? 'true' : null);
-  });
+  it.each([undefined, false, true])(
+    'only requests saving a new Box account after opt-in (%s)',
+    async (saveCredential) => {
+      const client = new FeatheryClient('form-key') as any;
+      client._fetch = jest.fn().mockResolvedValue(okResponse({ state: 's' }));
+      await client.startAccountConnect(
+        'box',
+        'https://forms.test',
+        saveCredential
+      );
+      const [url] = client._fetch.mock.calls[0];
+      expect(new URL(url).searchParams.get('save_credential')).toBe(
+        saveCredential ? 'true' : null
+      );
+    }
+  );
 
-  it.each([401, 403])('shows the provider name when authorization is required (%s)', async (status) => {
-    const client = new FeatheryClient('form-key') as any;
-    client._fetch = jest.fn().mockResolvedValue({ status });
-    await expect(client.startAccountConnect('charles-schwab', 'https://forms.test')).rejects.toThrow('Please sign in to connect or manage your Charles Schwab account.');
-  });
-
+  it.each([401, 403])(
+    'shows the provider name when authorization is required (%s)',
+    async (status) => {
+      const client = new FeatheryClient('form-key') as any;
+      client._fetch = jest.fn().mockResolvedValue({ status });
+      await expect(
+        client.startAccountConnect('charles-schwab', 'https://forms.test')
+      ).rejects.toThrow(
+        'Please sign in to connect or manage your Charles Schwab account.'
+      );
+    }
+  );
 });

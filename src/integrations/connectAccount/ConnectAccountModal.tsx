@@ -19,12 +19,13 @@ export type ConnectAccountModalProps = {
   accountEmail: string;
   credentials?: SavedAccountCredential[];
   chooseCredential?: boolean;
+  canSaveCredential?: boolean;
   onCredentialSelected?: (values: Record<string, string>) => void;
   // Resolves with an error message on failure (popup blocked, OAuth
   // rejected, etc.) so handleChangeAccount can surface it, or undefined on
   // success. Must never reject: this is called fire-and-forget from a click
   // handler, so an unhandled rejection would fail silently.
-  onChangeAccount: () => Promise<string | void>;
+  onChangeAccount: (saveCredential?: boolean) => Promise<string | void>;
   onSaved: (values: Record<string, string>) => void;
   onClose: () => void;
 };
@@ -36,12 +37,14 @@ function ConnectAccountModal({
   accountEmail,
   credentials = [],
   chooseCredential = false,
+  canSaveCredential = false,
   onCredentialSelected,
   onChangeAccount,
   onSaved,
   onClose
 }: ConnectAccountModalProps) {
   const [error, setError] = useState('');
+  const [saveCredential, setSaveCredential] = useState(false);
   const [connected, setConnected] = useState(!chooseCredential);
   const [selectedCredential, setSelectedCredential] = useState('');
   const [configurationVersion, setConfigurationVersion] = useState(0);
@@ -80,7 +83,9 @@ function ConnectAccountModal({
     // user-gesture chain the popup relies on.
     setChangingAccount(true);
     try {
-      const errorMessage = await onChangeAccount();
+      const errorMessage = await onChangeAccount(
+        canSaveCredential && saveCredential
+      );
       if (errorMessage) setError(errorMessage);
       else {
         setConnected(true);
@@ -101,6 +106,7 @@ function ConnectAccountModal({
         selectedCredential
       );
       onCredentialSelected?.(result.values);
+      setSelectedCredential('');
       setConnected(true);
       setConfigurationVersion((version) => version + 1);
     } catch (error) {
@@ -205,7 +211,9 @@ function ConnectAccountModal({
             <span>
               {connected
                 ? accountEmail || `Your ${providerLabel} account is connected`
-                : 'Choose a saved account or connect a new one.'}
+                : credentials.length
+                ? 'Choose a saved account or connect a new one.'
+                : 'Connect a new account to continue.'}
             </span>
             <button
               type='button'
@@ -224,6 +232,17 @@ function ConnectAccountModal({
               {connected ? 'Change account' : 'Connect a new account'}
             </button>
           </div>
+          {canSaveCredential && (
+            <label css={{ display: 'flex', gap: '8px', paddingBottom: '20px' }}>
+              <input
+                type='checkbox'
+                checked={saveCredential}
+                disabled={changingAccount}
+                onChange={(event) => setSaveCredential(event.target.checked)}
+              />
+              Save new connections for future submissions
+            </label>
+          )}
           {credentials.length > 0 && (
             <div css={{ display: 'flex', gap: '10px', paddingBottom: '20px' }}>
               <select
@@ -251,14 +270,19 @@ function ConnectAccountModal({
               </button>
             </div>
           )}
-          {connected && !changingAccount && ConfigComponent && (
-            <ConfigComponent
-              key={`${accountEmail}:${configurationVersion}`}
-              client={client}
-              provider={provider}
-              onSaved={onSaved}
-              onError={setError}
-            />
+          {connected && ConfigComponent && (
+            <fieldset
+              disabled={changingAccount}
+              css={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+            >
+              <ConfigComponent
+                key={`${accountEmail}:${configurationVersion}`}
+                client={client}
+                provider={provider}
+                onSaved={onSaved}
+                onError={setError}
+              />
+            </fieldset>
           )}
           {error && (
             <div css={{ color: '#d32f2f', paddingTop: '10px' }}>{error}</div>
