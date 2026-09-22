@@ -72,6 +72,19 @@ export type HubFilter = {
   field_key?: string;
 };
 
+// A builder-configured value for a hub column of each row the form user adds:
+// a fixed value, or a form field's live value at the moment the row is added.
+// `field_key` is hydrated server-side for field-mapped entries; absent once deleted.
+export type HubAutofill = {
+  hub_field_id: string;
+  hub_field_key: string;
+  source: 'static' | 'field';
+  value?: string;
+  field_id?: string;
+  field_type?: string;
+  field_key?: string;
+};
+
 export type HubWhereCondition =
   | { entryId: string }
   | { fieldId: string; value?: any; operator?: HubFilterOperator };
@@ -95,6 +108,7 @@ type UseHubTableSourceProps = {
       readonly_hub_fields?: string[];
       hub_verification?: HubVerification;
       hub_filters?: HubFilter[];
+      hub_autofill?: HubAutofill[];
     };
   };
   client:
@@ -203,6 +217,7 @@ export function useHubTableSource({
   // `fieldValues` is mutated outside React state, so the conditions are rebuilt
   // every render and keyed by content: the rows reload only when one changes.
   const hubFilters = element.properties?.hub_filters;
+  const hubAutofill = element.properties?.hub_autofill;
   const whereKey = JSON.stringify(
     hubFilterWhere(hubFilters, schemaFields, fieldValues)
   );
@@ -642,9 +657,18 @@ export function useHubTableSource({
 
   const handleInsertRow = useCallback(
     (atIndex: number) => {
-      const data = Object.fromEntries(
-        Object.values(syntheticToHubKey).map((hubFieldKey) => [hubFieldKey, ''])
-      );
+      // Autofill runs after the blanks so it can also set a hidden column,
+      // which has no grid column of its own. Field values are read now, so a
+      // row keeps what the form said when it was added.
+      const data = {
+        ...Object.fromEntries(
+          Object.values(syntheticToHubKey).map((hubFieldKey) => [
+            hubFieldKey,
+            ''
+          ])
+        ),
+        ...hubAutofillData(hubAutofill, schemaFields, fieldValues)
+      };
       const rows = rowsRef.current;
       const at = Math.max(0, Math.min(atIndex, rows.length));
       commitRows([
@@ -661,7 +685,7 @@ export function useHubTableSource({
       ]);
       setErrors([]);
     },
-    [syntheticToHubKey, commitRows, verification]
+    [syntheticToHubKey, commitRows, verification, hubAutofill, schemaFields]
   );
 
   const handleAddRow = useCallback(() => handleInsertRow(0), [handleInsertRow]);
@@ -792,6 +816,39 @@ export function hubFilterWhere(
     }
   });
   return conditions;
+}
+
+/**
+ * The hub column values a new row starts with, keyed by hub field key. A
+ * static entry contributes its value as typed; a field-mapped one the form
+ * field's current value, or nothing when that field is empty or gone, so the
+ * column stays blank rather than being set to "". Later entries for the same
+ * column win.
+ */
+export function hubAutofillData(
+  autofill: HubAutofill[] | undefined,
+  schemaFields: HubFieldSchema[] | null,
+  values: Record<string, any>
+): Record<string, any> {
+  if (!autofill?.length) return {};
+  const data: Record<string, any> = {};
+  autofill.forEach((entry) => {
+    // The live schema key once loaded (a renamed column keeps filling, a
+    // deleted one is skipped); the stored key before.
+    const hubFieldKey = schemaFields
+      ? schemaFields.find((field) => field.id === entry.hub_field_id)?.key
+      : entry.hub_field_key;
+    if (!hubFieldKey) return;
+    if (entry.source === 'static') {
+      data[hubFieldKey] = entry.value ?? '';
+      return;
+    }
+    if (!entry.field_key) return;
+    const raw = values[entry.field_key];
+    if (raw == null || raw === '') return;
+    data[hubFieldKey] = raw;
+  });
+  return data;
 }
 
 /**
