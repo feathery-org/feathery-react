@@ -37,6 +37,16 @@ type OptionLabelEntry = {
 const optionLabels: Record<string, OptionLabelEntry> = {};
 
 /**
+ * Labels for options a field fetched at runtime, keyed by field key.
+ *
+ * Kept apart from the schema-derived registry rather than merged into it: a
+ * Salesforce picklist never reaches servar.metadata, so a later schema load —
+ * a language switch, say — would re-register the field from its static options
+ * and drop the fetched labels.
+ */
+const dynamicOptionLabels: Record<string, LabelMap> = {};
+
+/**
  * A label that matches its own value is no label at all — the field components
  * fall back to rendering the value in that case, and leaving it out of the map
  * keeps text variables on the same raw-value path.
@@ -53,9 +63,10 @@ function buildLabelMap(options: any[], labels: any[]) {
   return map;
 }
 
-// repeat_options entries arrive either as {value, label} objects or as bare
-// values, matching what DropdownField renders from.
-function buildRepeatLabelMap(options: any[]) {
+// Option lists that carry their own labels: repeat_options entries, which
+// arrive either as {value, label} objects or as bare values, and the options a
+// field fetches at runtime.
+function buildObjectLabelMap(options: any[]) {
   const map: LabelMap = new Map();
   options.forEach((option: any) =>
     addLabel(map, option?.value ?? option, option?.label ?? option)
@@ -109,7 +120,7 @@ export function registerOptionLabels(servar: any, properties?: any) {
   const byRepeatIndex =
     servar.repeated && Array.isArray(meta.repeat_options)
       ? meta.repeat_options.map((options: any) =>
-          Array.isArray(options) ? buildRepeatLabelMap(options) : undefined
+          Array.isArray(options) ? buildObjectLabelMap(options) : undefined
         )
       : undefined;
 
@@ -118,6 +129,21 @@ export function registerOptionLabels(servar: any, properties?: any) {
   if (!byValue.size && !byRepeatIndex?.some((map: any) => map?.size))
     delete optionLabels[servar.key];
   else optionLabels[servar.key] = { byValue, byRepeatIndex };
+}
+
+/**
+ * Record the labels a field's fetched options render as, for option sources
+ * that never reach servar.metadata. Those options replace the schema's in the
+ * field components, so they take precedence here too.
+ *
+ * Passing an empty list releases the key, which is how a failed fetch or a
+ * field that stopped syncing falls back to its schema labels.
+ */
+export function registerDynamicOptionLabels(key: string, options: any[]) {
+  if (!key) return;
+  const map = buildObjectLabelMap(options ?? []);
+  if (map.size) dynamicOptionLabels[key] = map;
+  else delete dynamicOptionLabels[key];
 }
 
 /**
@@ -130,12 +156,15 @@ export function registerOptionLabels(servar: any, properties?: any) {
  * no per-index options at all.
  */
 export function getOptionLabel(key: string, value: any, repeat?: number) {
+  const dynamic = dynamicOptionLabels[key];
   const entry = optionLabels[key];
-  if (!entry) return undefined;
+  if (!dynamic && !entry) return undefined;
 
   const repeatMap =
-    repeat === undefined ? undefined : entry.byRepeatIndex?.[repeat];
-  const map = repeatMap ?? entry.byValue;
+    repeat === undefined ? undefined : entry?.byRepeatIndex?.[repeat];
+  // Fetched options stand in for the whole list, per-index overrides included.
+  const map = dynamic ?? repeatMap ?? entry?.byValue;
+  if (!map) return undefined;
 
   // multiselect stores its selections as an array; label each selection
   // rather than stringifying the array itself.
@@ -153,4 +182,7 @@ export function getOptionLabel(key: string, value: any, repeat?: number) {
 // user ID. Exported for tests, which need a clean registry per case.
 export function clearOptionLabels() {
   Object.keys(optionLabels).forEach((key) => delete optionLabels[key]);
+  Object.keys(dynamicOptionLabels).forEach(
+    (key) => delete dynamicOptionLabels[key]
+  );
 }

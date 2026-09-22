@@ -23,7 +23,7 @@ function ButtonGroupField({
   const containerRef = useRef(null);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar.metadata.salesforce_sync, editMode);
+    useSalesforceSync(servar, editMode);
 
   const selectedOptMap = useMemo(
     () =>

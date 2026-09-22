@@ -2,6 +2,7 @@ import { replaceTextVariables } from './TextNodes';
 import { fieldValues, initState } from '../../utils/init';
 import {
   clearOptionLabels,
+  registerDynamicOptionLabels,
   registerOptionLabels
 } from '../../utils/optionLabels';
 
@@ -267,6 +268,76 @@ describe('replaceTextVariables', () => {
       registerOptions('plan', ['pro'], []);
       setFieldValues({ plan: 'pro' });
       expect(replaceTextVariables('{{plan}}', undefined, true)).toBe('pro');
+    });
+
+    describe('options fetched at runtime', () => {
+      it('renders the label of a fetched option', () => {
+        initState.knownFieldKeys.add('stage');
+        registerDynamicOptionLabels('stage', [
+          { value: 'closed_won', label: 'Closed Won' }
+        ]);
+        setFieldValues({ stage: 'closed_won' });
+        expect(replaceTextVariables('{{stage}}', undefined, true)).toBe(
+          'Closed Won'
+        );
+      });
+
+      it('takes precedence over the labels the schema registered', () => {
+        registerOptions('stage', ['closed_won'], ['Schema Label']);
+        registerDynamicOptionLabels('stage', [
+          { value: 'closed_won', label: 'Closed Won' }
+        ]);
+        setFieldValues({ stage: 'closed_won' });
+        expect(replaceTextVariables('{{stage}}', undefined, true)).toBe(
+          'Closed Won'
+        );
+      });
+
+      it('survives a schema reload re-registering the static options', () => {
+        registerDynamicOptionLabels('stage', [
+          { value: 'closed_won', label: 'Closed Won' }
+        ]);
+        registerOptions('stage', ['closed_won'], ['Schema Label']);
+        setFieldValues({ stage: 'closed_won' });
+        expect(replaceTextVariables('{{stage}}', undefined, true)).toBe(
+          'Closed Won'
+        );
+      });
+
+      it('falls back to the schema labels once the key is released', () => {
+        registerOptions('stage', ['closed_won'], ['Schema Label']);
+        registerDynamicOptionLabels('stage', [
+          { value: 'closed_won', label: 'Closed Won' }
+        ]);
+        registerDynamicOptionLabels('stage', []);
+        setFieldValues({ stage: 'closed_won' });
+        expect(replaceTextVariables('{{stage}}', undefined, true)).toBe(
+          'Schema Label'
+        );
+      });
+
+      it('labels every selection of a multiselect', () => {
+        initState.knownFieldKeys.add('stages');
+        registerDynamicOptionLabels('stages', [
+          { value: 'a', label: 'Alpha' },
+          { value: 'b', label: 'Beta' }
+        ]);
+        setFieldValues({ stages: ['a', 'b'] });
+        expect(replaceTextVariables('{{stages}}', undefined, true)).toBe(
+          'Alpha, Beta'
+        );
+      });
+
+      it('falls back to the value for an option that was not fetched', () => {
+        initState.knownFieldKeys.add('stage');
+        registerDynamicOptionLabels('stage', [
+          { value: 'closed_won', label: 'Closed Won' }
+        ]);
+        setFieldValues({ stage: 'legacy' });
+        expect(replaceTextVariables('{{stage}}', undefined, true)).toBe(
+          'legacy'
+        );
+      });
     });
 
     it('renders a country name for a code-storing country field', () => {
