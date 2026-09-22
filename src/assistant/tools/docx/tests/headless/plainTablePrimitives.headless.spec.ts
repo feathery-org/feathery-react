@@ -9,18 +9,23 @@ function textOf(node: any): string {
   );
 }
 
-function findTable(node: any, needle: string): any {
+function findTable(node: any, needle: string | string[]): any {
+  const needles = Array.isArray(needle) ? needle : [needle];
   if (Array.isArray(node)) {
     for (const entry of node) {
-      const table = findTable(entry, needle);
+      const table = findTable(entry, needles);
       if (table) return table;
     }
     return undefined;
   }
   if (!node || typeof node !== 'object') return undefined;
-  if (Array.isArray(node.rows) && textOf(node).includes(needle)) return node;
+  if (
+    Array.isArray(node.rows) &&
+    needles.every((candidate) => textOf(node).includes(candidate))
+  )
+    return node;
   for (const value of Object.values(node)) {
-    const table = findTable(value, needle);
+    const table = findTable(value, needles);
     if (table) return table;
   }
   return undefined;
@@ -74,7 +79,7 @@ function repeatedAlternativeHeadersFixture(): string {
 
 function tableCellRunFormat(
   serialized: string,
-  tableNeedle: string,
+  tableNeedle: string | string[],
   row: number,
   column: number
 ): Record<string, unknown> {
@@ -403,12 +408,250 @@ describe('one table primitive surface for plain tables', () => {
       throw new Error(JSON.stringify(result));
     expect(result.outcomes).toEqual(['ok', 'ok', 'ok', 'ok', 'ok']);
     const pending = await session.call<string>('serialize');
-    expect(
-      tableCellRunFormat(pending, 'Alternative 2', 0, 2)
-    ).toMatchObject({ bold: true, fontColor: '#FFFFFFFF' });
+    expect(tableCellRunFormat(pending, 'Alternative 2', 0, 2)).toMatchObject({
+      bold: true,
+      fontColor: '#FFFFFFFF'
+    });
     expect(
       tableCellRunFormat(pending, 'Alternative 2', lastRow, 2)
     ).toMatchObject({ bold: true, fontColor: '#001B49FF' });
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
+  it('keeps a lower created-column reference live when a later paste shifts its table', async () => {
+    await session.call('open', repeatedAlternativeHeadersFixture());
+    const baseline = await session.call<string>('serialize');
+    const upper = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    const lower = await session.call<string>(
+      'tableAnchorContaining',
+      'Public liability'
+    );
+    const operations = [
+      {
+        op: 'insert_column',
+        group: 'g01-reverse-order',
+        anchor: `${lower};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@lower_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-reverse-order',
+        anchor: '@lower_alt2;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'insert_column',
+        group: 'g01-reverse-order',
+        anchor: `${upper};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@upper_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-reverse-order',
+        anchor: '@upper_alt2;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'set_char_format',
+        group: 'g01-reverse-order',
+        anchor: '@lower_alt2;0;0',
+        expect: 'Alternative 2',
+        bold: true,
+        fontColor: '#FFFFFFFF'
+      },
+      {
+        op: 'set_char_format',
+        group: 'g01-reverse-order',
+        anchor: '@upper_alt2;0;0',
+        expect: 'Alternative 2',
+        bold: true,
+        fontColor: '#FFFFFFFF'
+      }
+    ];
+
+    const result = await session.call<any>(
+      'applyEdits',
+      operations,
+      'plain-reverse-order-column-refs'
+    );
+
+    expect(result.outcomes).toEqual(operations.map(() => 'ok'));
+    expect(result.groups).toBe(1);
+    const pending = await session.call<string>('serialize');
+    expect(
+      tableCellRunFormat(pending, ['Public liability', 'Alternative 2'], 0, 2)
+    ).toMatchObject({ bold: true, fontColor: '#FFFFFFFF' });
+    expect(
+      tableCellRunFormat(pending, ['Fire and explosion', 'Alternative 2'], 0, 2)
+    ).toMatchObject({ bold: true, fontColor: '#FFFFFFFF' });
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
+  it('keeps repeated-header table targets local across an interleaved multiline insert', async () => {
+    await session.call('open', repeatedAlternativeHeadersFixture());
+    const baseline = await session.call<string>('serialize');
+    const upper = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    const lower = await session.call<string>(
+      'tableAnchorContaining',
+      'Public liability'
+    );
+    const liabilityHeading = (
+      await session.call<Array<{ anchor: string; kind: string; text: string }>>(
+        'inventory'
+      )
+    ).find((entry) => entry.text === 'Section 2 - Liability')?.anchor;
+    expect(liabilityHeading).toBeTruthy();
+    const operations = [
+      {
+        op: 'insert_column',
+        group: 'g01-interleaved-topology',
+        anchor: `${upper};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@upper_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-interleaved-topology',
+        anchor: '@upper_alt2;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'insert_text',
+        group: 'g01-interleaved-topology',
+        anchor: liabilityHeading,
+        expect: 'Section 2 - Liability',
+        position: 'after',
+        text: 'Underwriting note'
+      },
+      {
+        op: 'insert_column',
+        group: 'g01-interleaved-topology',
+        anchor: `${lower};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@lower_alt2'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-interleaved-topology',
+        anchor: '@lower_alt2;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'set_char_format',
+        group: 'g01-interleaved-topology',
+        anchor: '@lower_alt2;0;0',
+        expect: 'Alternative 2',
+        bold: true,
+        fontColor: '#FFFFFFFF'
+      }
+    ];
+
+    const result = await session.call<any>(
+      'applyEdits',
+      operations,
+      'plain-interleaved-topology'
+    );
+
+    expect(result.outcomes).toEqual(operations.map(() => 'ok'));
+    expect(result.groups).toBe(1);
+    const pending = await session.call<string>('serialize');
+    expect(
+      tableCellRunFormat(pending, ['Public liability', 'Alternative 2'], 0, 2)
+    ).toMatchObject({ bold: true, fontColor: '#FFFFFFFF' });
+    expect(
+      findTable(JSON.parse(pending).sections, [
+        'Fire and explosion',
+        'Alternative 2'
+      ])
+    ).toBeTruthy();
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
+  it('discards rolled-back paste positions before applying a later group', async () => {
+    await session.call('open', repeatedAlternativeHeadersFixture());
+    const baseline = await session.call<string>('serialize');
+    const upper = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    const lower = await session.call<string>(
+      'tableAnchorContaining',
+      'Public liability'
+    );
+    const operations = [
+      {
+        op: 'insert_column',
+        group: 'g01-rolled-back',
+        anchor: `${upper};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@discarded'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g01-rolled-back',
+        anchor: '@discarded;99;0',
+        text: 'Cannot land'
+      },
+      {
+        op: 'insert_column',
+        group: 'g02-survives',
+        anchor: `${lower};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@survivor'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g02-survives',
+        anchor: '@survivor;0;0',
+        text: 'Alternative 2'
+      },
+      {
+        op: 'set_char_format',
+        group: 'g02-survives',
+        anchor: '@survivor;0;0',
+        expect: 'Alternative 2',
+        bold: true,
+        fontColor: '#FFFFFFFF'
+      }
+    ];
+
+    const result = await session.call<any>(
+      'applyEdits',
+      operations,
+      'plain-rollback-topology-ledger'
+    );
+
+    expect(result.outcomes.slice(0, 2)).toEqual([
+      'change_set_failed',
+      'anchor_not_found'
+    ]);
+    expect(result.outcomes.slice(2)).toEqual(['ok', 'ok', 'ok']);
+    expect(result.groups).toBe(1);
+    const pending = await session.call<string>('serialize');
+    expect(
+      tableCellRunFormat(pending, ['Public liability', 'Alternative 2'], 0, 2)
+    ).toMatchObject({ bold: true, fontColor: '#FFFFFFFF' });
+    expect(findTable(JSON.parse(pending).sections, 'Cannot land')).toBeFalsy();
 
     await session.call('resolveGroups', false);
     expect(await session.call<string>('serialize')).toBe(baseline);

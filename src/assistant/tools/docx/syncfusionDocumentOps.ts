@@ -17642,6 +17642,61 @@ function anchorAfterTopLevelPastes(
   return [address.section, address.block, ...parts.slice(2)].join(';');
 }
 
+function measuredTopLevelInsertShift(
+  op: EditOp,
+  before: Array<{ section: number; block: number }>,
+  after: Array<{ section: number; block: number }>
+): PasteEffect | null {
+  const blocks = after.length - before.length;
+  if (op.op !== 'insert_text' || blocks <= 0) return null;
+  const anchor = String(op.anchor ?? '');
+  if (anchor.split(';').length !== 2) return null;
+  const target = sequenceIndexOf(before, topLevelAddress(anchor));
+  if (target < 0) return null;
+  const position = String(op.position ?? '').toLowerCase();
+  const startsAtBeginning =
+    position === 'before' ||
+    position === 'start' ||
+    (!position && !(Number(op.offset) > 0));
+  return { at: target + (startsAtBeginning ? 0 : 1), blocks };
+}
+
+function rebaseCreatedEditorRefsAfterShift(
+  refs: Map<string, NonNullable<EditResult['createdRef']>>,
+  shift: PasteEffect,
+  before: Array<{ section: number; block: number }>,
+  after: Array<{ section: number; block: number }>,
+  sfdt: any
+): boolean {
+  const updates: Array<[NonNullable<EditResult['createdRef']>, string]> = [];
+  for (const resource of refs.values()) {
+    const tableAnchor = normalizeTableAnchor(resource.id);
+    if (!tableAnchor) return false;
+    const previousIndex = sequenceIndexOf(before, topLevelAddress(tableAnchor));
+    if (previousIndex < 0) return false;
+    const nextIndex =
+      shift.at <= previousIndex ? previousIndex + shift.blocks : previousIndex;
+    const address = after[nextIndex];
+    if (!address) return false;
+    const nextAnchor = `${address.section};${address.block}`;
+    if (!tableBlockAt(sfdt, nextAnchor)) return false;
+    updates.push([resource, nextAnchor]);
+  }
+  for (const [resource, anchor] of updates) resource.id = anchor;
+  return true;
+}
+
+function topLevelTopologyKey(sfdt: any): string {
+  return topLevelSequence(sfdt)
+    .map(({ section, block }) => {
+      const node = rawSectionBlocks(sfdt, section)[block];
+      return `${section};${block}:${
+        firstTableBlockIn(node) ? 'table' : 'body'
+      }`;
+    })
+    .join('|');
+}
+
 function resolveSectionBoundary(
   blocks: FlatBlock[],
   anchor: string,
@@ -22654,6 +22709,7 @@ function applyDocumentEditsMeasured(
     string,
     NonNullable<EditResult['createdRef']>
   >();
+  const createdEditorRefGroups = new Map<string, string>();
   const createdBoundRows = new Map<string, CreatedBoundRowTarget>();
   const routeByIndex = new Map<number, DocxEditRoute>();
   const routeForIndex = (index: number): DocxEditRoute =>
@@ -22752,16 +22808,38 @@ function applyDocumentEditsMeasured(
   // for a table touched more than once.
   const tableFootprints: TableFootprint[] = [];
   const topLevelPasteShifts: PasteEffect[] = [];
+  let topLevelShiftLedgerValid = true;
+  const invalidateTopLevelShiftLedger = () => {
+    topLevelShiftLedgerValid = false;
+    topLevelPasteShifts.splice(0);
+    createdEditorRefs.clear();
+    createdEditorRefGroups.clear();
+  };
   // Existing positions shift before post-paste footprints are appended.
   const recordTableFootprints = (
     footprints: TableFootprint[],
-    shift?: PasteEffect
+    shift?: PasteEffect,
+    sequenceBeforeShift?: Array<{ section: number; block: number }>
   ) => {
     if (shift) {
       for (const footprint of tableFootprints)
         if (shift.at <= footprint.sequenceIndex)
           footprint.sequenceIndex += shift.blocks;
-      topLevelPasteShifts.push(shift);
+      const sequenceAfterShift = topLevelSequence(liveSfdt);
+      if (
+        !sequenceBeforeShift ||
+        sequenceAfterShift.length - sequenceBeforeShift.length !==
+          shift.blocks ||
+        !rebaseCreatedEditorRefsAfterShift(
+          createdEditorRefs,
+          shift,
+          sequenceBeforeShift,
+          sequenceAfterShift,
+          liveSfdt
+        )
+      )
+        invalidateTopLevelShiftLedger();
+      else if (topLevelShiftLedgerValid) topLevelPasteShifts.push(shift);
     }
     tableFootprints.push(...footprints);
   };
@@ -22826,6 +22904,7 @@ function applyDocumentEditsMeasured(
   };
   refresh();
   const originalTopLevelSequence = topLevelSequence(liveSfdt);
+  const originalTopLevelTopology = topLevelTopologyKey(liveSfdt);
   const resolvePlannedBlock = (
     anchor: string,
     baseline: FlatBlock | undefined,
@@ -22836,7 +22915,7 @@ function applyDocumentEditsMeasured(
       baseline,
       originalTopLevelSequence,
       topLevelSequence(liveSfdt),
-      topLevelPasteShifts
+      topLevelShiftLedgerValid ? topLevelPasteShifts : []
     );
     if (rebasedAnchor && baseline) {
       const direct = byAnchor.get(rebasedAnchor);
@@ -22924,6 +23003,7 @@ function applyDocumentEditsMeasured(
     });
   };
   const rollbackGroup = (groupId: string) => {
+    const topologyBeforeRollback = topLevelTopologyKey(liveSfdt);
     const rollbackErrors: string[] = [];
     const attempt = (work: () => void) => {
       try {
@@ -22963,6 +23043,21 @@ function applyDocumentEditsMeasured(
     if (revisions.length) attempt(() => rejectRevisions(revisions));
     revisionsByAppliedGroup.delete(groupId);
     attempt(() => refresh());
+    for (const [ref, owner] of createdEditorRefGroups)
+      if (owner === groupId) {
+        createdEditorRefs.delete(ref);
+        createdEditorRefGroups.delete(ref);
+      }
+    const topologyAfterRollback = topLevelTopologyKey(liveSfdt);
+    if (topologyAfterRollback !== topologyBeforeRollback) {
+      if (topologyAfterRollback === originalTopLevelTopology) {
+        topLevelPasteShifts.splice(0);
+        topLevelShiftLedgerValid = true;
+        documentShifted = false;
+        shiftedTables.clear();
+        preservedTableAnchors.clear();
+      } else invalidateTopLevelShiftLedger();
+    }
     const withdrawn = plans
       .filter((plan) => opGroupId(plan.op, changeSetId) === groupId)
       .reduce(
@@ -23643,6 +23738,8 @@ function applyDocumentEditsMeasured(
           continue;
         stampRevisionGroup(editor, changeSetId, op);
         const revisionsBeforeOp = snapshotRevisions(editor);
+        const topLevelSequenceBeforeOp = topLevelSequence(liveSfdt);
+        const topLevelTopologyBeforeOp = topLevelTopologyKey(liveSfdt);
         let writtenOp = op;
         let appliedRelocation = plan.relocated;
         let priorRejectStream: string | undefined;
@@ -23847,6 +23944,26 @@ function applyDocumentEditsMeasured(
             priorAcceptStream
           );
           refresh(postWriteSfdt);
+          const topLevelSequenceAfterOp = topLevelSequence(liveSfdt);
+          const reportedPasteEffect = (opExtras as OpSuccessExtras | undefined)
+            ?.pasteEffect;
+          if (
+            !reportedPasteEffect &&
+            topLevelTopologyKey(liveSfdt) !== topLevelTopologyBeforeOp
+          ) {
+            const measuredShift = measuredTopLevelInsertShift(
+              writtenOp,
+              topLevelSequenceBeforeOp,
+              topLevelSequenceAfterOp
+            );
+            if (measuredShift)
+              recordTableFootprints(
+                [],
+                measuredShift,
+                topLevelSequenceBeforeOp
+              );
+            else invalidateTopLevelShiftLedger();
+          }
           if (mayShiftAnchors(op)) {
             const rowOpTable =
               op.op === 'insert_row' || op.op === 'delete_row'
@@ -23944,7 +24061,12 @@ function applyDocumentEditsMeasured(
           const reportedExtras = collectOpExtras(
             opExtras,
             (restores) => recordAppearanceRestores(op, restores),
-            recordTableFootprints,
+            (footprints, shift) =>
+              recordTableFootprints(
+                footprints,
+                shift,
+                topLevelSequenceBeforeOp
+              ),
             (clamps) => recordBookmarkClamps(op, clamps)
           );
           results[index] = {
@@ -23973,6 +24095,8 @@ function applyDocumentEditsMeasured(
               reportedExtras.createdRef.ref,
               reportedExtras.createdRef
             );
+          if (reportedExtras.createdRef)
+            createdEditorRefGroups.set(reportedExtras.createdRef.ref, groupId);
         } catch (err) {
           fail(index, op, err);
           if (appliedRelocation)
@@ -24362,6 +24486,7 @@ function applyDocumentEditsMeasured(
                       `The calculated table "${promotion.tableId}" is no longer present. Nothing was written.`
                     );
                   const marker = getAt(calculated.sfdt, table.markerPath);
+                  const sequenceBeforePromotion = topLevelSequence(liveSfdt);
                   const promoted = promotePlainTableInEditor(
                     editor,
                     promotion,
@@ -24370,7 +24495,11 @@ function applyDocumentEditsMeasured(
                   );
                   promotion.anchor = promoted.anchor;
                   refresh(promoted.postWriteSfdt);
-                  recordTableFootprints([], promoted.paste);
+                  recordTableFootprints(
+                    [],
+                    promoted.paste,
+                    sequenceBeforePromotion
+                  );
                 }
               } finally {
                 rememberGroupRevisions(
