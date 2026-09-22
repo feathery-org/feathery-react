@@ -241,8 +241,13 @@ export const getFormContext = (formUuid: string) => {
         where,
         verification
       }),
-    getHubSchemas: (hubIds: string[]): Promise<{ hubs: HubSchema[] }> =>
-      formState.client.getHubSchemas(hubIds),
+    // Field schemas (key, type, required, unique, constraint_rules,
+    // description) per hub, so rules can read the flags set in hub settings
+    // instead of hardcoding field lists. Accepts one hub ID or several.
+    getHubSchemas: (
+      hubIds: string | string[]
+    ): Promise<{ hubs: HubSchema[] }> =>
+      formState.client.getHubSchemas(Array.isArray(hubIds) ? hubIds : [hubIds]),
     generateDocuments: ({
       documentIds,
       signers,

@@ -174,38 +174,44 @@ describe('feathery.runComputerAgent return shape', () => {
 
 describe('feathery.getHubSchemas', () => {
   const uuid = 'formContext-hub-schemas';
-  const schemas = {
-    hubs: [
-      {
-        id: 'hub-1',
-        key: 'clients',
-        fields: [
-          { id: 'f-1', key: 'first_name', type: 'text', required: true },
-          { id: 'f-2', key: 'middle_name', type: 'text', required: false }
-        ]
-      }
-    ]
-  };
-  let client: any;
+  const hubs = [
+    {
+      id: 'hub-1',
+      key: 'clients',
+      fields: [
+        {
+          id: 'f1',
+          key: 'first_name',
+          type: 'text',
+          required: true,
+          unique: false
+        },
+        { id: 'f2', key: 'gov_id', type: 'text', required: false, unique: true }
+      ]
+    }
+  ];
+  let getHubSchemas: jest.Mock;
 
   beforeEach(() => {
-    client = { getHubSchemas: jest.fn().mockResolvedValue(schemas) };
-    setFormInternalState(uuid, { fields: {}, client } as any);
+    getHubSchemas = jest.fn().mockResolvedValue({ hubs });
+    setFormInternalState(uuid, {
+      fields: {},
+      client: { getHubSchemas }
+    } as any);
   });
 
-  it('passes the requested hub ids through and returns the hub schemas', async () => {
+  it('returns the schema response, required flags included', async () => {
     const result = await getFormContext(uuid).getHubSchemas(['hub-1', 'hub-2']);
 
-    expect(client.getHubSchemas).toHaveBeenCalledWith(['hub-1', 'hub-2']);
-    expect(result).toEqual(schemas);
+    expect(getHubSchemas).toHaveBeenCalledWith(['hub-1', 'hub-2']);
+    expect(result.hubs[0].fields.filter((f: any) => f.required)).toEqual([
+      hubs[0].fields[0]
+    ]);
   });
 
-  it('surfaces the required flag a rule needs to derive its own field list', async () => {
-    const { hubs } = await getFormContext(uuid).getHubSchemas(['hub-1']);
-    const required = hubs[0].fields
-      .filter((field) => field.required)
-      .map((field) => field.key);
+  it('wraps a single hub ID in an array', async () => {
+    await getFormContext(uuid).getHubSchemas('hub-1');
 
-    expect(required).toEqual(['first_name']);
+    expect(getHubSchemas).toHaveBeenCalledWith(['hub-1']);
   });
 });
