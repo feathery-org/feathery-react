@@ -477,6 +477,27 @@ export default function DocumentEditorContainer({
     [runSigningAction]
   );
 
+  // Download and Save-to-field are review actions too. The overlay fires
+  // document_review for them from its finalize; the container has no finalize
+  // for these, so it reports the same trigger from its own toolbar. (Sign/Draft
+  // fire it inside runSigningAction.)
+  const fireReviewAction = useCallback(
+    (envelopeAction: string, result?: Record<string, any> | null) => {
+      if (!envelope) return;
+      internalState[formId ?? '']?.runDocumentReviewLogic?.(
+        buildDocumentReviewTrigger({
+          action: targetAction ?? {},
+          elementId: containerId ?? '',
+          envelopes: [{ envelopeId: envelope.id }],
+          envelopeAction,
+          draft: false,
+          result
+        })
+      );
+    },
+    [envelope, formId, targetAction, containerId]
+  );
+
   // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
   // point. The schema container id is stable for this editor across renders;
   // retain the editor object as well so cleanup can only remove this exact
@@ -601,6 +622,27 @@ export default function DocumentEditorContainer({
         }
       }}
       onSave={saveEnvelope}
+      // A completed Save is the container's Save-to-field review action; a
+      // completed Download is the download action. Only fire when the toolbar
+      // config actually offers that outcome.
+      onSaved={
+        savesToField
+          ? (result) =>
+              fireReviewAction(
+                'save',
+                result?.file ? { files: [result.file] } : null
+              )
+          : undefined
+      }
+      onDownloaded={
+        offersDownload
+          ? () =>
+              fireReviewAction(
+                'download',
+                envelope.file ? { files: [envelope.file] } : null
+              )
+          : undefined
+      }
       // readOnly editors never dirty, so skip registering them entirely
       onChange={
         !readOnly && containerId
