@@ -1,5 +1,6 @@
 import React from 'react';
 import { TABLE_CLASS } from '../classNames';
+import { ColumnControls } from '../types';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 
 export type SortDirection = 'asc' | 'desc';
@@ -15,26 +16,49 @@ export type SpreadsheetSort = {
 export type HeaderMenuTarget = {
   /** The column's sort key; unlike the name it is unique. */
   sortKey: string;
+  /** The column's field key, which the column controls act on. */
+  fieldKey: string;
   /** Column name, for the labels. */
   name: string;
+  /** The header cell, which an editor or confirmation opened from here anchors to. */
+  anchor: HTMLElement;
   x: number;
   y: number;
 };
 
 type HeaderMenuProps = {
   target: HeaderMenuTarget;
-  sort: SpreadsheetSort;
+  sort?: SpreadsheetSort;
+  columnControls?: ColumnControls;
   onClose: () => void;
 };
 
-export function HeaderMenu({ target, sort, onClose }: HeaderMenuProps) {
-  const sortedHere = sort.column === target.sortKey;
-  const items: ContextMenuItem[] = [
-    { label: 'Sort A → Z', run: () => sort.onSort(target.sortKey, 'asc') },
-    { label: 'Sort Z → A', run: () => sort.onSort(target.sortKey, 'desc') }
-  ];
-  if (sortedHere)
-    items.push({ label: 'Clear sort', run: () => sort.onSort(null) });
+export function HeaderMenu({
+  target,
+  sort,
+  columnControls,
+  onClose
+}: HeaderMenuProps) {
+  const items: ContextMenuItem[] = [];
+  if (sort) {
+    items.push(
+      { label: 'Sort A → Z', run: () => sort.onSort(target.sortKey, 'asc') },
+      { label: 'Sort Z → A', run: () => sort.onSort(target.sortKey, 'desc') }
+    );
+    if (sort.column === target.sortKey)
+      items.push({ label: 'Clear sort', run: () => sort.onSort(null) });
+  }
+  const { fieldKey, anchor } = target;
+  if (columnControls?.canEdit)
+    items.push({
+      label: 'Edit column',
+      run: () => columnControls.onRequest({ kind: 'edit', fieldKey, anchor })
+    });
+  if (columnControls?.canDelete)
+    items.push({
+      label: 'Delete column',
+      run: () => columnControls.onRequest({ kind: 'delete', fieldKey, anchor })
+    });
 
   return (
     <ContextMenu

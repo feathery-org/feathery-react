@@ -4,10 +4,14 @@ import {
   dataColumnMinWidthStyle,
   sortIconContainerStyle,
   sortArrowStyle,
-  sortHeaderContentStyle
+  sortHeaderContentStyle,
+  headerColumnControlsStyle,
+  headerColumnButtonStyle,
+  headerColumnDeleteButtonStyle
 } from './styles';
+import { PencilIcon, TrashIcon } from '../../components/icons';
 import { TABLE_CLASS } from './classNames';
-import { Column } from './types';
+import { Column, ColumnControls } from './types';
 import { columnSortKey } from './useTableData';
 
 type SortHeaderProps = {
@@ -17,6 +21,10 @@ type SortHeaderProps = {
   sortDirection: 'asc' | 'desc';
   onSort: (columnKey: string) => void;
   styles: any;
+  /** Edit and delete buttons shown in each header cell while it is hovered. */
+  columnControls?: ColumnControls;
+  /** The column whose editor or delete confirmation is open. */
+  activeColumnKey?: string | null;
 };
 
 type SortIconProps = {
@@ -61,8 +69,11 @@ export function SortHeader({
   sortColumn,
   sortDirection,
   onSort,
-  styles
+  styles,
+  columnControls,
+  activeColumnKey
 }: SortHeaderProps) {
+  const showControls = !!(columnControls?.canEdit || columnControls?.canDelete);
   return (
     <Fragment>
       {columns.map((column, index) => {
@@ -91,6 +102,51 @@ export function SortHeader({
               {isSortable && (
                 <span css={sortIconContainerStyle}>
                   <SortIcon isSorted={isSorted} sortDirection={sortDirection} />
+                </span>
+              )}
+              {showControls && columnControls && (
+                <span
+                  css={{
+                    ...headerColumnControlsStyle,
+                    ...(activeColumnKey === column.field_key && { opacity: 1 })
+                  }}
+                >
+                  {columnControls.canEdit && (
+                    <button
+                      type='button'
+                      aria-label={`Edit column ${column.name}`}
+                      className={TABLE_CLASS.columnEditButton}
+                      css={headerColumnButtonStyle}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        columnControls.onRequest({
+                          kind: 'edit',
+                          fieldKey: column.field_key,
+                          anchor: event.currentTarget
+                        });
+                      }}
+                    >
+                      <PencilIcon width={14} height={14} />
+                    </button>
+                  )}
+                  {columnControls.canDelete && (
+                    <button
+                      type='button'
+                      aria-label={`Delete column ${column.name}`}
+                      className={TABLE_CLASS.columnDeleteButton}
+                      css={headerColumnDeleteButtonStyle}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        columnControls.onRequest({
+                          kind: 'delete',
+                          fieldKey: column.field_key,
+                          anchor: event.currentTarget
+                        });
+                      }}
+                    >
+                      <TrashIcon width={14} height={14} />
+                    </button>
+                  )}
                 </span>
               )}
             </div>

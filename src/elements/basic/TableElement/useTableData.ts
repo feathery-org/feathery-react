@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fieldValues } from '../../../utils/init';
 import { stringifyWithNull } from '../../../utils/primitives';
-import { Action, Column } from './types';
+import { Action, Column, TableDataSource } from './types';
 import { compareSortableValues, parseSortableValue } from './utils';
 import { generateExampleData } from './exampleData';
 
@@ -98,6 +98,7 @@ type UseTableDataProps = {
       transpose?: boolean;
       enable_editing?: boolean;
       add_delete_rows?: boolean;
+      data_source?: TableDataSource;
     };
   };
   editMode?: boolean;
@@ -152,6 +153,21 @@ type UseTableDataReturn = {
  * What a sort is keyed by. The storage key is unique per column where a display
  * name is not; a column without one falls back to its position.
  */
+// A hidden field-backed table takes its columns from the field's value, which
+// the builder does not have, so its preview shows this many placeholder
+// columns instead.
+const HIDDEN_FIELD_SAMPLE_COLUMN_COUNT = 3;
+
+const HIDDEN_FIELD_SAMPLE_COLUMNS: Column[] = Array.from(
+  { length: HIDDEN_FIELD_SAMPLE_COLUMN_COUNT },
+  (_, index) => ({
+    name: `Column ${index + 1}`,
+    field_id: `sample_column_${index}`,
+    field_type: 'text',
+    field_key: `sample_column_${index}`
+  })
+);
+
 export const columnSortKey = (fieldKey: string, index: number): string =>
   fieldKey || `#${index}`;
 
@@ -162,7 +178,13 @@ export function useTableData({
   dataVersion = 0,
   externalFieldValues
 }: UseTableDataProps): UseTableDataReturn {
-  const userColumns: Column[] = element.properties?.columns || [];
+  const configuredColumns: Column[] = element.properties?.columns || [];
+  const userColumns =
+    editMode &&
+    element.properties?.data_source === 'hidden_field' &&
+    configuredColumns.length === 0
+      ? HIDDEN_FIELD_SAMPLE_COLUMNS
+      : configuredColumns;
   const actions: Action[] = (element.properties?.actions || []).filter(
     (action) => action.label && action.label.trim() !== ''
   );

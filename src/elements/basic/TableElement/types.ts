@@ -1,3 +1,5 @@
+import type { CellValueType } from './spreadsheet/validation';
+
 export type Action = {
   label: string;
 };
@@ -14,8 +16,9 @@ export type Column = {
 
 export type CellCoord = { rowIndex: number; colIndex: number };
 
-// Table row storage lives in a Data Hub instead of form field values.
-export type TableDataSource = 'fields' | 'hub';
+// Where table rows are stored: one form field per column, a Data Hub, or one
+// hidden field holding the whole grid as an array of rows of cells.
+export type TableDataSource = 'fields' | 'hub' | 'hidden_field';
 
 // One cell to write. Batched so a range edit (paste, drag-fill, clear, undo)
 // reaches the backend as a single submission per row/column rather than one
@@ -28,14 +31,27 @@ export type CellWrite = {
 
 export type TableDisplayMode = 'classic' | 'spreadsheet';
 
+/** A column as the user defines it when adding or editing one. */
+export type ColumnDraft = { name: string; field_type: CellValueType };
+
+/** What a column control asks the table to open, anchored to that control. */
+export type ColumnRequest =
+  | { kind: 'add'; anchor: HTMLElement }
+  | { kind: 'edit' | 'delete'; fieldKey: string; anchor: HTMLElement };
+
 /**
- * Appends a column to the table. Only a data source that owns its own schema
- * can implement this — neither field-backed tables (columns are designer-set
- * element properties) nor Data Hub tables (columns are the Hub's fields) do,
- * so it is currently supplied by no source. The grid renders its add-column
- * affordance only when a source provides one.
+ * The column changes the form user may make. Only a data source that owns its
+ * own schema can offer them — field-backed tables take their columns from
+ * designer-set element properties and Data Hub tables from the Hub's fields,
+ * so today only a hidden field source supplies this. Each header and grid
+ * affordance renders only when its permission is set.
  */
-export type AddColumnHandler = (name?: string) => void;
+export type ColumnControls = {
+  canAdd: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  onRequest: (request: ColumnRequest) => void;
+};
 
 /**
  * Visual treatment applied to a cell or row by Feathery — not by the form

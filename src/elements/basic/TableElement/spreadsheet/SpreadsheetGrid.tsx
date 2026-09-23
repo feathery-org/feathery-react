@@ -9,7 +9,8 @@ import type {
 import type { VirtualItem } from '@tanstack/react-virtual';
 import { featheryDoc } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
-import { AddColumnHandler, CellShading, GetCellShading } from '../types';
+import { CellShading, ColumnControls, GetCellShading } from '../types';
+import { PencilIcon, TrashIcon } from '../../../components/icons';
 import { CellValue, getFillPreview } from './model';
 import { CellEditor } from './CellEditor';
 import { CellErrorTooltip } from './CellErrorTooltip';
@@ -32,6 +33,9 @@ import {
   cellSelectedStyle,
   cellStyle,
   cellValueStyle,
+  columnControlButtonStyle,
+  columnControlDeleteButtonStyle,
+  columnControlsStyle,
   columnHeaderContentStyle,
   columnHeaderLabelStyle,
   columnHeaderStyle,
@@ -94,10 +98,11 @@ type SpreadsheetGridProps = {
   /** Column rules, so a cell's editor matches what the column accepts. */
   cellRules?: CellRules;
   /**
-   * Renders a trailing add-column header when supplied. No data source
-   * provides one yet, so it is currently never rendered.
+   * The column changes allowed: a trailing add-column header, hover edit and
+   * delete buttons in each column header, and the same actions in its
+   * right-click menu. Supplied only by a source that owns its own schema.
    */
-  onAddColumn?: AddColumnHandler;
+  columnControls?: ColumnControls;
   /** Enables the row context menu's insert items and the trailing add strip. */
   onInsertRow?: (atIndex: number) => void;
   /** Enables the row context menu's delete item. */
@@ -133,7 +138,7 @@ export const SpreadsheetGrid = React.forwardRef<
     rowIndexById,
     getCellShading,
     cellRules,
-    onAddColumn,
+    columnControls,
     onInsertRow,
     onDeleteRow,
     onOpenSearch,
@@ -242,6 +247,8 @@ export const SpreadsheetGrid = React.forwardRef<
     estimateSize: (index) => getColumnSize(columns[index], columnSizing),
     horizontal: true,
     paddingStart: ROW_HEADER_WIDTH,
+    // Room for the trailing add-column header, so it scrolls into view.
+    paddingEnd: columnControls?.canAdd ? HEADER_HEIGHT : 0,
     scrollPaddingStart: ROW_HEADER_WIDTH,
     overscan: 3
   });
@@ -313,6 +320,9 @@ export const SpreadsheetGrid = React.forwardRef<
   );
   const closeHeaderMenu = React.useCallback(() => setHeaderMenu(null), []);
   const hasRowMenu = Boolean(onInsertRow || onDeleteRow);
+  const hasColumnMenuItems = Boolean(
+    columnControls?.canEdit || columnControls?.canDelete
+  );
   const fillDragRef = React.useRef<FillDrag | null>(null);
   const headerSelectionDragRef = React.useRef<HeaderSelectionDrag | null>(null);
 
@@ -559,9 +569,11 @@ export const SpreadsheetGrid = React.forwardRef<
                 headers={table.getLeafHeaders()}
                 onStartSelection={startHeaderSelection}
                 onExtendSelection={extendHeaderSelection}
-                onAddColumn={onAddColumn}
+                columnControls={columnControls}
                 sort={sort}
-                onOpenHeaderMenu={sort ? setHeaderMenu : undefined}
+                onOpenHeaderMenu={
+                  sort || hasColumnMenuItems ? setHeaderMenu : undefined
+                }
               />
             )}
           </table.Subscribe>
@@ -613,8 +625,13 @@ export const SpreadsheetGrid = React.forwardRef<
       >
         Press Escape to clear the selection, and again to leave the table.
       </div>
-      {headerMenu && sort ? (
-        <HeaderMenu target={headerMenu} sort={sort} onClose={closeHeaderMenu} />
+      {headerMenu ? (
+        <HeaderMenu
+          target={headerMenu}
+          sort={sort}
+          columnControls={columnControls}
+          onClose={closeHeaderMenu}
+        />
       ) : null}
       {rowMenu ? (
         <RowMenu
@@ -645,7 +662,7 @@ type HeaderRowProps = {
     fullySelected: boolean
   ) => void;
   onExtendSelection: (axis: 'column', id: string) => void;
-  onAddColumn?: AddColumnHandler;
+  columnControls?: ColumnControls;
   sort?: SpreadsheetSort;
   onOpenHeaderMenu?: (target: HeaderMenuTarget) => void;
 };
@@ -659,7 +676,7 @@ function HeaderRow({
   headers,
   onStartSelection,
   onExtendSelection,
-  onAddColumn,
+  columnControls,
   sort,
   onOpenHeaderMenu
 }: HeaderRowProps) {
@@ -673,7 +690,8 @@ function HeaderRow({
     onStartSelection,
     onExtendSelection,
     sort,
-    onOpenHeaderMenu
+    onOpenHeaderMenu,
+    columnControls
   };
 
   return (
@@ -697,10 +715,11 @@ function HeaderRow({
           />
         );
       })}
-      {onAddColumn ? (
+      {columnControls?.canAdd ? (
         <button
           type='button'
           aria-label='Add column'
+          className={TABLE_CLASS.gridAddColumn}
           css={{
             ...columnHeaderStyle,
             left: table.getTotalSize() + ROW_HEADER_WIDTH,
@@ -708,7 +727,12 @@ function HeaderRow({
             cursor: 'pointer'
           }}
           onMouseDown={(event) => event.stopPropagation()}
-          onClick={() => onAddColumn()}
+          onClick={(event) =>
+            columnControls.onRequest({
+              kind: 'add',
+              anchor: event.currentTarget
+            })
+          }
         >
           +
         </button>
@@ -729,6 +753,7 @@ type HeaderCellProps = {
   left: number;
   sort?: SpreadsheetSort;
   onOpenHeaderMenu?: (target: HeaderMenuTarget) => void;
+  columnControls?: ColumnControls;
 };
 
 function HeaderCell({
@@ -742,7 +767,8 @@ function HeaderCell({
   onExtendSelection,
   left,
   sort,
-  onOpenHeaderMenu
+  onOpenHeaderMenu,
+  columnControls
 }: HeaderCellProps) {
   const { column } = header;
   const columnIndex = table.getCellSelectionColumnIndexes()[column.id] ?? -1;
@@ -785,7 +811,9 @@ function HeaderCell({
         event.preventDefault();
         onOpenHeaderMenu({
           sortKey,
+          fieldKey: column.id,
           name: label,
+          anchor: event.currentTarget,
           x: event.clientX,
           y: event.clientY
         });
@@ -819,6 +847,49 @@ function HeaderCell({
           </span>
         ) : null}
       </span>
+      {columnControls?.canEdit || columnControls?.canDelete ? (
+        <span
+          className={TABLE_CLASS.gridColumnControls}
+          css={columnControlsStyle}
+          // Clicking a control must not select the column.
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {columnControls.canEdit ? (
+            <button
+              type='button'
+              aria-label={`Edit column ${label}`}
+              className={TABLE_CLASS.columnEditButton}
+              css={columnControlButtonStyle}
+              onClick={(event) =>
+                columnControls.onRequest({
+                  kind: 'edit',
+                  fieldKey: column.id,
+                  anchor: event.currentTarget
+                })
+              }
+            >
+              <PencilIcon width={13} height={13} />
+            </button>
+          ) : null}
+          {columnControls.canDelete ? (
+            <button
+              type='button'
+              aria-label={`Delete column ${label}`}
+              className={TABLE_CLASS.columnDeleteButton}
+              css={columnControlDeleteButtonStyle}
+              onClick={(event) =>
+                columnControls.onRequest({
+                  kind: 'delete',
+                  fieldKey: column.id,
+                  anchor: event.currentTarget
+                })
+              }
+            >
+              <TrashIcon width={13} height={13} />
+            </button>
+          ) : null}
+        </span>
+      ) : null}
       <div
         className={TABLE_CLASS.gridColumnResizer}
         role='separator'

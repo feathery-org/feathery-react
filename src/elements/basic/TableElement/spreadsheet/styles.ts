@@ -918,3 +918,49 @@ export const cellChipChevronStyle = {
   borderBottom: `1.5px solid ${colors.gray500}`,
   pointerEvents: 'none'
 } as const;
+
+// Edit and delete buttons over the right end of a column header, shown while
+// it is hovered. They take the header's background, hovered or selected, so
+// they read over a long label.
+export const columnControlsStyle = {
+  position: 'absolute',
+  top: '50%',
+  right: '6px',
+  transform: 'translateY(-50%)',
+  display: 'flex',
+  gap: '1px',
+  backgroundColor: 'inherit',
+  opacity: 0,
+  pointerEvents: 'none',
+  transition: 'opacity 0.15s',
+  [`[role='columnheader']:hover > &, &:focus-within`]: {
+    opacity: 1,
+    pointerEvents: 'auto'
+  }
+} as const;
+
+export const columnControlButtonStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '20px',
+  height: '20px',
+  padding: 0,
+  border: 'none',
+  borderRadius: '3px',
+  backgroundColor: 'transparent',
+  color: 'inherit',
+  cursor: 'pointer',
+  '&:hover': {
+    backgroundColor: colors.gray300,
+    color: colors.gray900
+  }
+} as const;
+
+export const columnControlDeleteButtonStyle = {
+  ...columnControlButtonStyle,
+  '&:hover': {
+    backgroundColor: colors.gray300,
+    color: '#dc2626'
+  }
+} as const;
