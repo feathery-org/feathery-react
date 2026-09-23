@@ -4,6 +4,7 @@
 // binding must canonicalize to the same string.
 import {
   BoundDefinition,
+  canonicalBindingName,
   Definition,
   encodeValue,
   formatTag,
@@ -26,6 +27,15 @@ function bound(tag: string): BoundDefinition {
 }
 
 describe('tag DSL', () => {
+  it('turns readable labels into valid stable binding names', () => {
+    expect(canonicalBindingName('Standard coverage status')).toBe(
+      'standard_coverage_status'
+    );
+    expect(canonicalBindingName('  2026 Premium  ')).toBe('field_2026_premium');
+    expect(canonicalBindingName('project.name')).toBe('project.name');
+    expect(canonicalBindingName('---')).toBe('');
+  });
+
   it('treats key=value tags as order independent', () => {
     const a = parsed('[[name=unit_cost|type=currency|row=r-1]]');
     const b = parsed('[[row=r-1|type=currency|name=unit_cost]]');

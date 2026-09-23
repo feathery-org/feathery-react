@@ -107,8 +107,9 @@ export type PanelRuntimeNavigationSurface = {
 
 export type PanelRuntimeTableEntry = {
   id: string;
+  hubId?: string;
   columns: Array<{ name: string; fieldKey: string }>;
-  rows: unknown[][];
+  rows?: unknown[][];
   actions?: Array<{ label: string }>;
   canAddRows?: boolean;
   canDeleteRows?: boolean;
@@ -647,11 +648,22 @@ export const getPanelRuntimeSnapshot = (
   // Collect tables with their column headers and row data
   const currentStepTables: PanelRuntimeTableEntry[] = [];
   (step.tables ?? []).forEach((el: any) => {
-    const cols = (el?.properties?.columns ?? []) as Array<{
+    // Hub rows live in the Data Hub, not in form fields, so the entry names the hub instead
+    const hubId =
+      el?.properties?.data_source === 'hub' ? el.properties.hub_id : undefined;
+    // A mounted Hub table renders columns resolved from the live Hub schema, so
+    // the ones stored on the element only stand in until it mounts
+    const renderedColumns = hubId
+      ? state.assistantClient?.getTableColumns(el.id ?? '')
+      : null;
+    const cols = (renderedColumns ?? el?.properties?.columns ?? []) as Array<{
       name?: string;
       field_key?: string;
+      hub_field_key?: string;
     }>;
     if (cols.length === 0) return;
+    const fieldKeyFor = (col: { field_key?: string; hub_field_key?: string }) =>
+      (hubId ? col.hub_field_key : col.field_key) ?? '';
     const numRows = cols.reduce((max, col) => {
       const v = col.field_key ? fieldsMap[col.field_key]?.value : undefined;
       return Array.isArray(v) ? Math.max(max, v.length) : max;
@@ -680,11 +692,12 @@ export const getPanelRuntimeSnapshot = (
     );
     currentStepTables.push({
       id: el.id ?? '',
+      ...(hubId ? { hubId } : {}),
       columns: cols.map((c) => ({
         name: c.name ?? c.field_key ?? '',
-        fieldKey: c.field_key ?? ''
+        fieldKey: fieldKeyFor(c)
       })),
-      rows,
+      ...(hubId ? {} : { rows }),
       ...(actions.length > 0 ? { actions } : {}),
       ...(canAddRows ? { canAddRows: true } : {}),
       ...(canDeleteRows ? { canDeleteRows: true } : {}),

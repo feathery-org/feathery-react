@@ -33,6 +33,13 @@ import {
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
 import { downloadAllFileUrls, featheryDoc, featheryWindow } from '../browser';
+import {
+  forgetLinkToken,
+  getStoredLinkCredentials,
+  isRejectedLinkMessage,
+  retainLinkToken,
+  type LinkRedemption
+} from '../accessLink';
 import { authState } from '../../auth/LoginForm';
 import { loadQRScanner } from '../../elements/fields/QRScanner/qrLoader';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
@@ -65,8 +72,10 @@ import {
   parseAPIError,
   pollForCompletion,
   setEnvironment,
+  setRequestHeaderProvider,
   URL_ENUM
 } from '@feathery/client-utils';
+import { linkHeadersForUrl } from '../accessLinkRequest';
 import {
   FEATHERY_INTERACTION_EVENT,
   isInteractionDetected,
@@ -78,6 +87,13 @@ setEnvironment('production');
 try {
   setEnvironment((process.env.BACKEND_ENV || 'production') as URL_ENUM);
 } catch (e) {} // process.env won't exist in production build
+
+// client-utils builds the requests behind its own API helpers, so the SDK hands
+// it the credentials it holds and client-utils cannot see: the access link a
+// form was opened with, and the collaborator a session is acting as. Registered
+// beside the environment because this module is the first thing the SDK loads,
+// and the provider has to be in place before the first request goes out.
+setRequestHeaderProvider(linkHeadersForUrl);
 
 export let API_URL = getApiUrl();
 export let CDN_URL = getCdnUrl();
@@ -643,9 +659,33 @@ export default class FeatheryClient extends IntegrationClient {
     return data.completed_steps ?? [];
   }
 
+  /**
+   * Stop sending a token the server has rejected for good: this device's stored
+   * copy, and the in-memory pair every request reads if it is still that token.
+   */
+  private forgetRejectedLink(token: string) {
+    forgetLinkToken(this.formKey, token);
+    if (initState.linkToken === token) {
+      initState.linkToken = '';
+      initState.linkSecret = '';
+    }
+  }
+
   async fetchSession(formPromise = null, block = false) {
     // Block if there's a chance user id isn't available yet
     await (block ? initFormsPromise : Promise.resolve());
+
+    // The token leaves the address bar as soon as the server accepts it, so a
+    // reload or a new tab arrives with a plain url and nothing to read. The
+    // copy this device kept for the form is what resumes the link session.
+    if (!initState.linkToken) {
+      const { token, secret } = getStoredLinkCredentials(this.formKey);
+      if (token) {
+        initState.linkToken = token;
+        initState.linkSecret = secret;
+      }
+    }
+
     const {
       userId,
       collaboratorId,
@@ -680,8 +720,15 @@ export default class FeatheryClient extends IntegrationClient {
     const url = `${API_URL}panel/session/v3/?${params}`;
     const options = { importance: 'high' };
 
+    // `_fetch` sends nothing once any form on the page is blocked, and the error
+    // it leaves is page-wide, so only this request's own token can be at fault
+    const sentToken = initState.authenticationError ? '' : initState.linkToken;
     const response = await this._fetch(url, options);
-    if (!response) return [];
+    if (!response) {
+      if (sentToken && isRejectedLinkMessage(initState.authenticationError))
+        this.forgetRejectedLink(sentToken);
+      return [];
+    }
 
     const session = await response.json().catch((reason) => {
       throw new Error(
@@ -694,6 +741,34 @@ export default class FeatheryClient extends IntegrationClient {
     if (collab.invalid || collab.completed || collab.direct_submission_disabled)
       // will cause form to be disabled
       return [{ collaborator: collab }];
+
+    // An access link answers with no form data until the device is settled:
+    // `confirm` needs the user to redeem a single-use link here, `required`
+    // means the form only opens from a link and none was presented.
+    const link = session.link ?? {};
+    if (link.confirm || link.required) {
+      if (link.confirm) {
+        // This answer carried no values, and the Continue screen sits here for
+        // as long as the user takes to click it, so the fetch must not pass as
+        // the one that loaded them: a form mounting in that window would be
+        // told to skip values that never arrived. Redeeming resets this too,
+        // through resetSubmissionState. `required` needs neither - it is
+        // terminal for this form, and no fetch follows it.
+        initState.fieldValuesInitialized = false;
+        // The server recognized the token as this form's, so it can move out of
+        // the url now. `required` is the opposite - no usable link was
+        // presented - and leaves both the url and storage alone.
+        retainLinkToken(this.formKey, initState.linkToken);
+      }
+      return [{ link }];
+    }
+
+    // Keep the token only for the form the server actually resolved with it. A
+    // session that came back without `resolved` was opened by the tracked user
+    // instead, which means the token was minted for another form and ignored
+    // here; storing it would send another form's credential on every later
+    // visit to this one.
+    if (link.resolved) retainLinkToken(this.formKey, initState.linkToken);
 
     // If tracking disabled or ID overridden, update user id from backend
     if (!noData && session.new_user_id) initState.userId = session.new_user_id;
@@ -718,6 +793,33 @@ export default class FeatheryClient extends IntegrationClient {
 
     const formData = await (formPromise ?? Promise.resolve());
     return [trueSession, formData];
+  }
+
+  /**
+   * Claim a single-use access link for this device, which is what the Continue
+   * screen is gating. Returns the submission the link opens plus the device
+   * secret that lets this browser reopen it; `collaborator_id` is null outside
+   * collaborative forms. A rejected link (expired, already used elsewhere,
+   * revoked) comes back as a 403, which `_fetch` turns into the blocked form
+   * state and reports here as no redemption. Rate limits and server errors
+   * throw instead, since those leave the link unredeemed and are worth retrying.
+   */
+  async redeemLink(token: string): Promise<LinkRedemption | undefined> {
+    const url = `${API_URL}panel/link/redeem/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({ token })
+    };
+    // Same reasoning as the session fetch: only a request this form sent
+    const sent = !initState.authenticationError;
+    const response = await this._fetch(url, options);
+    if (!response) {
+      if (sent && isRejectedLinkMessage(initState.authenticationError))
+        this.forgetRejectedLink(token);
+      return undefined;
+    }
+    return response.json();
   }
 
   async submitAuthInfo({

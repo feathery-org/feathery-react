@@ -63,7 +63,8 @@ const makeHubElement = (propsOverride: Record<string, any> = {}) =>
     ...propsOverride
   });
 
-// applyTableStyles calls addTargets and apply; the render reads getTarget
+// applyTableStyles calls addTargets and apply; the render applies column sizing
+// and reads getTarget.
 const mockStyles = () => ({
   addTargets: jest.fn(),
   apply: jest.fn(),

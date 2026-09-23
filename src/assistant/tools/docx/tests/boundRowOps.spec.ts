@@ -14,6 +14,7 @@ import {
 import {
   applyDocumentEdits,
   flattenSfdt,
+  isAssistantAuthor,
   LiveEditor
 } from '../syncfusionDocumentOps';
 import { buildCostsFixture } from '../../../../elements/components/DocxEditor/bindings/core/tests/fixtures/costsFixture';
@@ -390,7 +391,7 @@ describe('structural ops on a bound table', () => {
     expect(
       revisions.filter((revision) => revision.revisionType === 'Insertion')
     ).toHaveLength(4);
-    expect(revisions.every((revision) => revision.author === 'Robin')).toBe(
+    expect(revisions.every((revision) => isAssistantAuthor(revision.author))).toBe(
       true
     );
     expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(

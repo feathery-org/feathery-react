@@ -30,6 +30,7 @@ import {
   CellErrors,
   cellErrorKey,
   fieldCellRules,
+  mergeCellErrors,
   validateGrid
 } from './spreadsheet/validation';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
@@ -130,12 +131,13 @@ function TableElement({
       // rather than cleared off the element, so switching back to the classic
       // table restores whatever the builder had configured.
       //   pagination — every row is virtualized, so paging only hides rows.
-      //   search/sort — the grid has no affordance for either; a header click
-      //     selects the column, Excel-style.
+      //   search — the grid finds with Mod+F instead of a filter box.
+      //   sort — always on: the grid sorts from the column header's menu, so
+      //     the classic table's toggle does not gate it.
       //   transpose — one field per row has no (row, column) coordinates for
       //     selection, fill or the clipboard to work against.
       ...(wantsSpreadsheet
-        ? { pagination: 0, search: false, sort: false, transpose: false }
+        ? { pagination: 0, search: false, sort: true, transpose: false }
         : {})
     };
     return { ...element, properties };
@@ -153,6 +155,7 @@ function TableElement({
     sortDirection,
     sortedColumnIndex,
     handleSort,
+    setSort,
     handleTransposedSort,
 
     // pagination
@@ -297,9 +300,9 @@ function TableElement({
   const deleteIconRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const actionCellRefs = useRef<Map<number, HTMLTableCellElement>>(new Map());
 
-  // Adding or deleting a row renumbers the rows below it. The spreadsheet's
-  // undo history is keyed by row index, so it is dropped when this changes
-  // rather than replayed onto the wrong rows.
+  // Inserting before existing rows or deleting a row changes row identities.
+  // The spreadsheet's undo history is keyed by row index, so it is dropped
+  // when this changes rather than replayed onto the wrong rows.
   const [rowIdentityVersion, setRowIdentityVersion] = useState(0);
   const bumpRowIdentity = useCallback(
     () => setRowIdentityVersion((version) => version + 1),
@@ -344,7 +347,9 @@ function TableElement({
   const spreadsheetInsertRow = useCallback(
     (atIndex: number) => {
       setDeleteRowIndex(null);
-      bumpRowIdentity();
+      // Appending preserves every existing row index and its edit history.
+      // Use the source count, which still includes pending deleted rows.
+      if (atIndex < totalRows) bumpRowIdentity();
       handleInsertRow(atIndex);
       // The row lands in the source data straight away, so every buffered edit
       // at or below it now belongs to a different row index.
@@ -362,6 +367,7 @@ function TableElement({
     [
       handleInsertRow,
       bumpRowIdentity,
+      totalRows,
       isHub,
       searchQuery,
       setSearchQuery,
@@ -482,11 +488,21 @@ function TableElement({
         pendingEdits.peek(rowIndex, fieldKey) !== undefined ||
         (isHub ? hub.entryIds[rowIndex] == null : pendingAddRows.has(rowIndex))
     });
-    return isHub ? { ...hub.cellErrors, ...validated } : validated;
+    return isHub
+      ? mergeCellErrors(
+          hub.cellErrors,
+          validated,
+          cellRules,
+          (rowIndex, fieldKey) =>
+            pendingEdits.peek(rowIndex, fieldKey) !== undefined,
+          hub.cellErrorConstraints
+        )
+      : validated;
   }, [
     isSpreadsheet,
     isHub,
     hub.cellErrors,
+    hub.cellErrorConstraints,
     hub.rowVerified,
     hub.entryIds,
     pendingEdits.peek,
@@ -655,6 +671,7 @@ function TableElement({
   useEffect(() => {
     if (!assistantClient || !tableId) return;
     assistantClient.registerTable(tableId, {
+      columns: elementForData.properties.columns,
       handleCellEdit: wrappedHandleCellEdit,
       handleAddRow: wrappedHandleAddRow,
       handleDeleteRow: wrappedHandleDeleteRow,
@@ -665,13 +682,49 @@ function TableElement({
   }, [
     assistantClient,
     tableId,
+    elementForData.properties.columns,
     wrappedHandleCellEdit,
     wrappedHandleAddRow,
     wrappedHandleDeleteRow
   ]);
 
-  const showEmptyState = !hasData || !hasSearchResults;
+  const showEmptyState =
+    (!hasData || !hasSearchResults) &&
+    !(isSpreadsheet && canAddRows && columns.length > 0);
   const showToolbar = enableSearch || showAddRow;
+
+  // Column sizing: 'equal' uses a fixed table layout so data columns share the
+  // width evenly. Resolved through the responsive style path so desktop
+  // (`styles`) and mobile (`mobile_styles`) can differ via a media query; never
+  // applied to transposed tables. The colgroup keeps the action/delete columns
+  // at fixed widths while data columns stay unsized, so only the data columns
+  // split. The colgroup renders whenever either viewport is equal, since DOM
+  // structure can't be media-queried; its widths are, so that the viewport
+  // still on auto keeps sizing those columns to their content.
+  //
+  // `isTransposed` tracks the row count, so it flips as data loads. The apply
+  // stays unconditional to overwrite the memoized target — guarding it would
+  // strand a stale `fixed` on a table that has since become transposed.
+  styles.apply('table', 'column_sizing', (columnSizing: any) => ({
+    tableLayout: !isTransposed && columnSizing === 'equal' ? 'fixed' : 'auto'
+  }));
+  const desktopSizing = element.styles?.column_sizing;
+  const mobileSizing = element.mobile_styles?.column_sizing;
+  const desktopEqual = desktopSizing === 'equal';
+  // An absent mobile override inherits desktop, matching `apply`.
+  const mobileEqual = (mobileSizing ?? desktopSizing) === 'equal';
+  const useFixedColumns = !isTransposed && (desktopEqual || mobileEqual);
+  // Pin the action/delete columns only in the viewport that is actually fixed;
+  // `auto` elsewhere so an auto-layout viewport still sizes them to content.
+  const utilityColStyle = (width: string) => ({
+    width: desktopEqual ? width : 'auto',
+    ...(styles.handleMobile &&
+      mobileSizing !== undefined && {
+        [styles.mobileBreakpointKey]: {
+          width: mobileEqual ? width : 'auto'
+        }
+      })
+  });
 
   return (
     <div
@@ -750,6 +803,11 @@ function TableElement({
           }
           cellIssues={cellIssues}
           readOnlyFieldKeys={isHub ? hub.readOnlyKeys : undefined}
+          sort={{
+            column: sortColumn,
+            direction: sortDirection,
+            onSort: setSort
+          }}
         />
       ) : (
         <div css={{ overflowX: 'auto' }}>
@@ -760,6 +818,17 @@ function TableElement({
               ...styles.getTarget('table')
             }}
           >
+            {useFixedColumns && (
+              <colgroup>
+                {columns.map((col: any) => (
+                  <col key={col.field_key} />
+                ))}
+                {actions.length > 0 && <col css={utilityColStyle('80px')} />}
+                {showStandaloneDeleteColumn && (
+                  <col css={utilityColStyle('40px')} />
+                )}
+              </colgroup>
+            )}
             {!isTransposed && (
               <thead className={TABLE_CLASS.header} css={theadStyle}>
                 <tr>

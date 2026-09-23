@@ -1,32 +1,8 @@
-// `replace_text` inside a text frame reported `untracked_write` and rolled back.
-//
-// Live evidence (captain, 2026-07-27 ~15:00): the advisor-title change landed in
-// the client-services table but failed on the cover page, twice:
-//
-//   {"op":"replace_text","anchor":"0;7;S;1;2","find":"Engineer",
-//    "replace":"Sr. Advisor","expect":"Engineer","error":"untracked_write"}
-//
-// The `S` marks a text frame. The engine wrote, could not prove a tracked
-// revision was produced, and rolled the write back.
-//
-// ROOT CAUSE - the same defect as this morning's `48a5b1f9`, in its last
-// remaining hiding place. That commit replaced a revision-TYPE guess ("demand an
-// Insertion and a Deletion") with the whole-document reject projection, because
-// the guess produces false negatives; its own message names this exact case:
-// SyncFusion authors "no revision at all when the text being overwritten is
-// itself an unaccepted insertion". But `rejectProjectionStream` never descended
-// into text frames, so text-frame writes had no projection to be proven by and
-// were left on the discarded guess - and therefore kept the discarded bug.
-//
-// That is why it needed TWO edits to show up, and why the table edit beside it
-// was fine: the first cover-page edit created a normal Deletion+Insertion pair,
-// and the second one - overwriting text that was still a pending insertion -
-// produced no NEW pair, so the guess called a correct write untracked.
-//
-// It is NOT a SyncFusion limitation. Probed against the bare public API with no
-// repo code in the path, the second tracked replace inside a frame is fully
-// reversible: rejecting every revision restores the document byte for byte. The
-// evidence is asserted directly below, so the claim cannot rot.
+// Text-frame writes participate in the same tracked-change verification as body
+// text. Syncfusion can reject a chain of writes together, but cannot expose a
+// second rewrite of pending inserted text as an independently rejectable card.
+// The engine therefore permits the first write and safely refuses the dependent
+// second write until the first card is resolved.
 import 'jest-canvas-mock';
 import {
   DocumentEditor,
@@ -45,6 +21,7 @@ import {
   rejectProjectionStream,
   LiveEditor
 } from '../syncfusionDocumentOps';
+import { listRevisionGroups } from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
   Editor,
@@ -272,10 +249,11 @@ describe("the captain's advisor-title change on the cover page", () => {
     });
   });
 
-  it('THE LIVE FAILURE: a SECOND replace, over text that is still a pending insertion, now lands too', () => {
+  it('safely refuses a second-card replace over a pending insertion', () => {
     withEditor((ed) => {
       const first = replaceInFrame(ed, 'title-1', 'Engineer', 'Sr. Advisor');
       expect(first.results[0]).toMatchObject({ ok: true });
+      const afterFirst = ed.serialize();
 
       // Nothing is accepted in between - exactly the live state, where the
       // captain's earlier tracked edit was still sitting in the Changes pane.
@@ -286,21 +264,25 @@ describe("the captain's advisor-title change on the cover page", () => {
         'Senior Risk Advisor'
       );
 
-      // Before the fix: untracked_write, "SyncFusion did not create the required
-      // tracked revision pair for replace_text", and the write rolled back.
-      expect(second.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
-      expect(second.changeSet.status).toBe('applied');
+      expect(second.results[0]).toMatchObject({
+        ok: false,
+        op: 'replace_text',
+        error: 'text_verification_failed'
+      });
+      expect(second.changeSet.status).toBe('failed');
+      expect(ed.serialize()).toBe(afterFirst);
+      expect(listRevisionGroups(ed as unknown as LiveEditor)).toHaveLength(1);
     });
   });
 
-  it('the second write is genuinely tracked and reversible - rejecting restores the document byte for byte', () => {
+  it('keeps the first card reversible after refusing the dependent rewrite', () => {
     withEditor((ed) => {
       const before = ed.serialize();
 
       expect(replaceInFrame(ed, 't1', 'Engineer', 'Sr. Advisor').results[0]).toMatchObject({ ok: true });
       expect(
         replaceInFrame(ed, 't2', 'Sr. Advisor', 'Senior Risk Advisor').results[0]
-      ).toMatchObject({ ok: true });
+      ).toMatchObject({ ok: false, error: 'text_verification_failed' });
 
       const revisions = realRevisions(ed);
       expect(revisions.length).toBeGreaterThan(0);

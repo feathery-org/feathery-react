@@ -1,4 +1,7 @@
-import type { RevisionGroupIdentity } from '../../../../utils/documentEditorPrimitives';
+import type {
+  DerivedValueChange,
+  RevisionGroupIdentity
+} from '../../../../utils/documentEditorPrimitives';
 
 /** One pending edit as the rail shows it. */
 export interface ChipView {
@@ -22,5 +25,6 @@ export interface GroupView extends RevisionGroupIdentity {
   /** The group's author, shown once in the header. Omitted for untagged
    *  groups, where the title already IS the author name. */
   author?: string;
+  derivedChanges?: DerivedValueChange[];
   chips: ChipView[];
 }

@@ -71,6 +71,7 @@ import {
   getThreadList
 } from './utils';
 import { initInfo } from '../utils/init';
+import { withLinkRequestHeaders } from '../utils/accessLinkRequest';
 import { featheryDoc, featheryWindow, getCookie } from '../utils/browser';
 import {
   ensureCompletedSteps,
@@ -580,14 +581,18 @@ const AssistantChat = ({
             pendingAudioRef.current = null;
           }
           if (formKey) form.append('form_key', formKey);
-          res = await fetch(`${baseUrl}voice/turn/`, {
-            method: 'POST',
-            headers: headers(),
-            body: form,
-            signal: init?.signal
-          });
+          const voiceUrl = `${baseUrl}voice/turn/`;
+          res = await fetch(
+            voiceUrl,
+            withLinkRequestHeaders(voiceUrl, {
+              method: 'POST',
+              headers: headers(),
+              body: form,
+              signal: init?.signal
+            })
+          );
         } else {
-          res = await fetch(url, init);
+          res = await fetch(url, withLinkRequestHeaders(url, init));
         }
         const threadId = res.headers.get('X-Thread-Id');
         if (threadId && !resolvedThreadId) {

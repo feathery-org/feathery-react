@@ -7,6 +7,9 @@ import {
   INK_2,
   INK_3,
   LINE,
+  MOD,
+  MOD_WASH,
+  MONO,
   PAPER,
   groupPrimaryBtn,
   groupSecondaryBtn
@@ -61,6 +64,7 @@ export default function GroupCard({
   onResolveChips
 }: Props) {
   const count = group.chips.length;
+  const calculated = group.derivedChanges ?? [];
   return (
     <div
       ref={cardRef}
@@ -200,6 +204,48 @@ export default function GroupCard({
               onResolve={(isAccept) => onResolveChips([chip], isAccept)}
             />
           ))}
+          {calculated.length > 0 && (
+            <div
+              css={{
+                marginTop: 2,
+                padding: '8px 9px',
+                border: `1px solid ${LINE}`,
+                borderRadius: 8,
+                background: MOD_WASH
+              }}
+            >
+              <div
+                css={{
+                  marginBottom: 5,
+                  color: MOD,
+                  fontSize: 10.5,
+                  fontWeight: 650
+                }}
+              >
+                Calculated values updated
+              </div>
+              {calculated.map((change) => (
+                <div
+                  key={change.name}
+                  css={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                    gap: 8,
+                    alignItems: 'baseline',
+                    fontSize: 10.5,
+                    '& + &': { marginTop: 4 }
+                  }}
+                >
+                  <span css={{ minWidth: 0, color: INK_3 }}>
+                    {change.name.replace(/[-_]+/g, ' ')}
+                  </span>
+                  <span css={{ fontFamily: MONO, whiteSpace: 'nowrap' }}>
+                    {change.beforeText} → {change.afterText}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
