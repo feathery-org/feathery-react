@@ -100,7 +100,7 @@ describe('IntegrationClient account connect', () => {
     expect(JSON.parse(options.body).create).toBe('New Folder');
   });
 
-  it('lists saved credentials without exposing submission credentials', async () => {
+  it('lists saved credentials for this submission with a plain GET', async () => {
     const client = new FeatheryClient('form-key') as any;
     const credentials = [
       { id: 'credential-1', account_email: 'advisor@example.com' }
@@ -113,7 +113,9 @@ describe('IntegrationClient account connect', () => {
     expect(url).toContain('account-connect/credentials/');
     expect(url).toContain('form_key=form-key');
     expect(url).toContain('provider=box');
-    expect(url).not.toContain('fuser_key');
+    // The submission key lets the server report whether its current
+    // connection is the caller's own (attached.owner) or another user's.
+    expect(url).toContain('fuser_key=');
     expect(options).toBeUndefined();
     expect(parseResponse).toBe(false);
   });
