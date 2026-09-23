@@ -1063,6 +1063,7 @@ export default class IntegrationClient {
     emailSubject,
     emailBlurb,
     signers,
+    ccRecipients,
     existingEnvelopeId,
     draft,
     wetSign,
@@ -1130,6 +1131,8 @@ export default class IntegrationClient {
               }
             : {})
         })),
+        // Bare emails and { email, name } entries both pass through as-is.
+        cc_recipients: ccRecipients,
         docusign_envelope_id: existingEnvelopeId,
         draft,
         wet_sign: wetSign,

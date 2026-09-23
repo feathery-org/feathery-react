@@ -110,6 +110,10 @@ export type SendDocusignParams = {
   libraryDocuments?: DocusignLibraryDocuments;
   existingEnvelopeId?: string;
   signers?: DocusignSigner[];
+  // Copied the completed envelope once every signer finishes; they take no
+  // action themselves. Either a bare email or { email, name }. Added to
+  // whatever the integration already CCs rather than replacing it.
+  ccRecipients?: (string | { email: string; name?: string })[];
   fillData?: Record<string, any>;
   emailSubject?: string;
   emailBlurb?: string;
