@@ -78,7 +78,7 @@ function MatrixField({
                 textAlign: 'center'
               }}
             >
-              {replaceTextVariables(opt, repeatIndex)}
+              {replaceTextVariables(opt, repeatIndex, true)}
             </div>
           );
         })}
@@ -99,10 +99,10 @@ function MatrixField({
             }}
           >
             <TextHoverTooltip
-              text={replaceTextVariables(q.tooltip, repeatIndex)}
+              text={replaceTextVariables(q.tooltip, repeatIndex, true)}
             >
               <div css={firstColStyle}>
-                {replaceTextVariables(q.label, repeatIndex)}
+                {replaceTextVariables(q.label, repeatIndex, true)}
               </div>
             </TextHoverTooltip>
             {options.map((opt: any, j: number) => {

@@ -26,7 +26,7 @@ export default function InlineTooltip({
   const [show, setShow] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
 
-  text = replaceTextVariables(text, repeat);
+  text = replaceTextVariables(text, repeat, true);
 
   if (!text) return null;
 
