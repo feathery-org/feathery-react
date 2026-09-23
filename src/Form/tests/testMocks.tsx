@@ -244,6 +244,7 @@ jest.mock('../../utils/browser', () => {
   const state = {
     confirm: jest.fn(),
     open: jest.fn(),
+    dispatchEvent: jest.fn(),
     history,
     location: { href: 'https://example.com/', pathname: '/', search: '' },
     getCookie: jest.fn(),
@@ -260,6 +261,7 @@ jest.mock('../../utils/browser', () => {
       scrollTo: jest.fn(),
       confirm: state.confirm,
       open: state.open,
+      dispatchEvent: state.dispatchEvent,
       history: state.history,
       location: state.location
     }),

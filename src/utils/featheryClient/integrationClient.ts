@@ -254,7 +254,15 @@ export default class IntegrationClient {
 
   async listAccountCredentials(provider: string) {
     await initFormsPromise;
-    const params = encodeGetParams({ form_key: this.formKey, provider });
+    const { userId } = initInfo();
+    // With the submission key the server also reports whether its current
+    // connection is the caller's own to manage (`attached.owner`) or another
+    // user's, which the caller may only replace.
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      ...(userId ? { fuser_key: userId } : {}),
+      provider
+    });
     const response = await this._fetch(
       `${API_URL}account-connect/credentials/?${params}`,
       undefined,

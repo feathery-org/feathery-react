@@ -81,6 +81,7 @@ const mockedVerifyAlloyId = verifyAlloyId as jest.Mock;
 const EMAIL_KEY = 'feathery.connections.box.email';
 const FOLDER_KEY = 'feathery.connections.box.folder_id';
 const SCHWAB_KEY = 'feathery.connections.charles-schwab.connected';
+const DROPBOX_KEY = 'feathery.connections.dropbox.email';
 
 describe('connect_account action', () => {
   let fakePopup: { close: jest.Mock };
@@ -96,6 +97,7 @@ describe('connect_account action', () => {
     changeAccountOutcome.value = undefined;
     delete (fieldValues as any)[EMAIL_KEY];
     delete (fieldValues as any)[SCHWAB_KEY];
+    delete (fieldValues as any)[DROPBOX_KEY];
 
     fakePopup = { close: jest.fn() };
     BrowserMod._spies.open.mockReturnValue(fakePopup);
@@ -130,22 +132,34 @@ describe('connect_account action', () => {
 
     await waitFor(() => expect(modalState.props?.show).toBe(true));
     expect(modalState.props.provider).toBe('box');
+    expect(modalState.props.chooseCredential).toBe(false);
+    expect(modalState.props.lockedByOwner).toBe(false);
     expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
-    expect(fakePopup.close).toHaveBeenCalledTimes(1);
+    // Box never pre-opens an OAuth popup from the click: it always goes
+    // through its account picker first.
+    expect(BrowserMod._spies.open).not.toHaveBeenCalled();
   });
 
-  it('runs OAuth first when not connected', async () => {
+  it('opens the Box account picker when not connected and runs OAuth only from the modal', async () => {
     render(<JSForm formId='f1' _internalId='iid-connect-new' />);
     await clickTrigger();
 
-    await waitFor(() =>
-      expect(mockedRunOAuthPopup).toHaveBeenCalledWith(
-        expect.anything(),
-        'box',
-        fakePopup
-      )
-    );
     await waitFor(() => expect(modalState.props?.show).toBe(true));
+    expect(modalState.props.chooseCredential).toBe(true);
+    expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+    expect(BrowserMod._spies.open).not.toHaveBeenCalled();
+    expect((fieldValues as any)[EMAIL_KEY]).toBeUndefined();
+
+    // "Connect a new account..." in the modal is the only route to OAuth.
+    await act(async () => {
+      await modalState.props.onChangeAccount();
+    });
+    expect(mockedRunOAuthPopup).toHaveBeenCalledWith(
+      expect.anything(),
+      'box',
+      fakePopup,
+      false
+    );
     expect((fieldValues as any)[EMAIL_KEY]).toBe('connected@example.com');
   });
 
@@ -183,15 +197,17 @@ describe('connect_account action', () => {
     // then, so the second connect can't open a popup for itself. It has to
     // inherit the one pre-opened at click time, or it reports a blocked popup
     // when nothing was ever blocked.
+    // Box opens its picker instead of a popup, so the second connect here is
+    // another setup-less OAuth provider.
     GridMod._spies.actions = [
       { type: 'connect_account', provider: 'charles-schwab' },
-      { type: 'connect_account', provider: 'box' }
+      { type: 'connect_account', provider: 'dropbox' }
     ];
     const schwabPopup = { close: jest.fn() };
-    const boxPopup = { close: jest.fn() };
+    const dropboxPopup = { close: jest.fn() };
     BrowserMod._spies.open
       .mockReturnValueOnce(schwabPopup)
-      .mockReturnValueOnce(boxPopup)
+      .mockReturnValueOnce(dropboxPopup)
       // Past the two opened inside the click, the gesture is spent and the
       // browser hands back nothing.
       .mockReturnValue(null);
@@ -214,11 +230,13 @@ describe('connect_account action', () => {
     expect(mockedRunOAuthPopup).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
-      'box',
-      boxPopup
+      'dropbox',
+      dropboxPopup
     );
     expect((fieldValues as any)[SCHWAB_KEY]).toBe('true');
-    expect((fieldValues as any)[EMAIL_KEY]).toBe('connected@example.com');
+    await waitFor(() =>
+      expect((fieldValues as any)[DROPBOX_KEY]).toBe('connected@example.com')
+    );
     expect(FormHelperMod.setFormElementError).not.toHaveBeenCalledWith(
       expect.objectContaining({
         message: 'Please allow pop-ups to connect your account.'
@@ -269,6 +287,11 @@ describe('connect_account action', () => {
   });
 
   it('surfaces a popup-blocked error without calling the API', async () => {
+    // Box never pre-opens a popup; a provider that does is the one a blocker
+    // can stop at click time.
+    GridMod._spies.actions = [
+      { type: 'connect_account', provider: 'charles-schwab' }
+    ];
     BrowserMod._spies.open.mockReturnValue(null);
 
     render(<JSForm formId='f1' _internalId='iid-connect-blocked' />);
@@ -363,7 +386,9 @@ describe('connect_account action', () => {
       });
     });
     await waitFor(() => expect(modalState.props?.show).toBe(true));
-    expect(mockedRunOAuthPopup).toHaveBeenCalledTimes(1);
+    // Box opens its picker without OAuth or a pre-opened popup.
+    expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+    expect(BrowserMod._spies.open).not.toHaveBeenCalled();
 
     // Trigger B fires on a different element (and provider) while A's modal
     // is still open.
@@ -375,9 +400,10 @@ describe('connect_account action', () => {
       });
     });
 
-    // B must be ignored: no second OAuth call, and its own pre-opened popup
-    // (opened before the guard is reached) is simply closed instead of used.
-    expect(mockedRunOAuthPopup).toHaveBeenCalledTimes(1);
+    // B must be ignored: no OAuth call, and its own pre-opened popup (opened
+    // before the guard is reached) is simply closed instead of used.
+    expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+    expect(BrowserMod._spies.open).toHaveBeenCalledTimes(1);
     expect(fakePopup.close).toHaveBeenCalledTimes(1);
 
     // B's own click lock must not be left stuck: a repeat trigger on the
@@ -392,7 +418,7 @@ describe('connect_account action', () => {
         elementType: 'container'
       });
     });
-    expect(mockedRunOAuthPopup).toHaveBeenCalledTimes(1);
+    expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
     expect(fakePopup.close).toHaveBeenCalledTimes(2);
   });
 
@@ -413,7 +439,9 @@ describe('connect_account action', () => {
     await waitFor(() => expect(modalState.props?.show).toBe(true));
     expect(modalState.props.credentials).toEqual(credentials);
     expect(modalState.props.chooseCredential).toBe(true);
-    expect(fakePopup.close).toHaveBeenCalledTimes(1);
+    expect(modalState.props.canSaveCredential).toBe(true);
+    expect(modalState.props.lockedByOwner).toBe(false);
+    expect(BrowserMod._spies.open).not.toHaveBeenCalled();
     expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
     expect((fieldValues as any)[EMAIL_KEY]).toBeUndefined();
     act(() =>
@@ -424,9 +452,15 @@ describe('connect_account action', () => {
     expect((fieldValues as any)[EMAIL_KEY]).toBe('advisor@example.com');
   });
 
-  it.each([false, true])(
-    'requires sign-in on a sensitive form (already connected: %s)',
-    async (alreadyConnected) => {
+  it.each([
+    [false, 'Please sign in to connect your Box account.'],
+    [
+      true,
+      'This Box connection was set up by a signed-in user. Sign in as that user to change it.'
+    ]
+  ])(
+    'requires sign-in and asks the host for login on a sensitive form (already connected: %s)',
+    async (alreadyConnected, message) => {
       ClientMod._spies.state.authSensitiveActionsOnly = true;
       if (alreadyConnected)
         (fieldValues as any)[EMAIL_KEY] = 'advisor@example.com';
@@ -435,16 +469,56 @@ describe('connect_account action', () => {
       await clickTrigger();
       await waitFor(() =>
         expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(
-          expect.objectContaining({
-            message: 'Please sign in to connect or manage your Box account.'
-          })
+          expect.objectContaining({ message })
         )
+      );
+      expect(BrowserMod._spies.dispatchEvent).toHaveBeenCalledTimes(1);
+      expect(BrowserMod._spies.dispatchEvent.mock.calls[0][0].type).toBe(
+        'feathery:request-login'
       );
       expect(modalState.props?.show).not.toBe(true);
       expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
-      expect(fakePopup.close).toHaveBeenCalledTimes(1);
+      expect(BrowserMod._spies.open).not.toHaveBeenCalled();
     }
   );
+
+  it('opens the modal locked for a signed-in user who does not own the connection', async () => {
+    (fieldValues as any)[EMAIL_KEY] = 'owner@example.com';
+    render(<JSForm formId='f1' _internalId='iid-locked-owner' />);
+    await screen.findByTestId('btn');
+    const credentials = [
+      {
+        id: 'mine',
+        account_email: 'collaborator@example.com',
+        account_name: 'Collaborator'
+      }
+    ];
+    GridMod._spies.form.client.listAccountCredentials.mockResolvedValue({
+      credentials,
+      attached: { owner: false, account_email: 'owner@example.com' }
+    });
+    await clickTrigger();
+    await waitFor(() => expect(modalState.props?.show).toBe(true));
+    expect(modalState.props.lockedByOwner).toBe(true);
+    expect(modalState.props.credentials).toEqual(credentials);
+    expect(modalState.props.chooseCredential).toBe(false);
+    expect(modalState.props.canSaveCredential).toBe(true);
+    expect(modalState.props.accountEmail).toBe('owner@example.com');
+    expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+  });
+
+  it('does not lock the modal for the signed-in owner of the connection', async () => {
+    (fieldValues as any)[EMAIL_KEY] = 'owner@example.com';
+    render(<JSForm formId='f1' _internalId='iid-owner-unlocked' />);
+    await screen.findByTestId('btn');
+    GridMod._spies.form.client.listAccountCredentials.mockResolvedValue({
+      credentials: [],
+      attached: { owner: true, account_email: 'owner@example.com' }
+    });
+    await clickTrigger();
+    await waitFor(() => expect(modalState.props?.show).toBe(true));
+    expect(modalState.props.lockedByOwner).toBe(false);
+  });
 
   it('allows a verified account with no saved credentials to connect on a sensitive form', async () => {
     ClientMod._spies.state.authSensitiveActionsOnly = true;
@@ -456,6 +530,7 @@ describe('connect_account action', () => {
     await clickTrigger();
     await waitFor(() => expect(modalState.props?.show).toBe(true));
     expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+    expect(BrowserMod._spies.dispatchEvent).not.toHaveBeenCalled();
     expect(modalState.props.canSaveCredential).toBe(true);
     expect(modalState.props.chooseCredential).toBe(true);
   });
@@ -471,11 +546,13 @@ describe('connect_account action', () => {
       );
       await clickTrigger();
       await waitFor(() => expect(modalState.props?.show).toBe(true));
-      expect(mockedRunOAuthPopup).toHaveBeenCalledTimes(
-        alreadyConnected ? 0 : 1
-      );
+      // The picker still opens (offering an explicit new-account action)
+      // rather than jumping straight into OAuth.
+      expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+      expect(modalState.props.chooseCredential).toBe(!alreadyConnected);
       expect(modalState.props.credentials).toEqual([]);
       expect(modalState.props.canSaveCredential).toBe(false);
+      expect(modalState.props.lockedByOwner).toBe(false);
     }
   );
   it('shows the provider sign-in error when sensitive Schwab authorization is denied', async () => {

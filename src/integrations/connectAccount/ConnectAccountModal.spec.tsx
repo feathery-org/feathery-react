@@ -38,24 +38,28 @@ describe('ConnectAccountModal', () => {
     onClose: jest.fn()
   };
 
-  it('shows the connected account email', () => {
-    render(<ConnectAccountModal {...baseProps} />);
-    expect(screen.getByText('respondent@example.com')).toBeTruthy();
+  it('shows the connected account email on the account menu trigger', () => {
+    render(<ConnectAccountModal {...baseProps} canSaveCredential />);
+    expect(
+      screen.getByRole('button', { name: 'Saved Box accounts' })
+    ).toHaveTextContent('respondent@example.com');
   });
 
-  it('confirms the connection when the provider reports no account', () => {
-    // Schwab exposes no account identity, so the line would otherwise be blank.
+  it('names the current connection when the provider reports no account', () => {
+    // Schwab exposes no account identity, so the trigger would otherwise be
+    // blank.
     render(
       <ConnectAccountModal
         {...baseProps}
         provider='charles-schwab'
         accountEmail=''
+        canSaveCredential
       />
     );
 
     expect(
-      screen.getByText('Your Charles Schwab account is connected')
-    ).toBeTruthy();
+      screen.getByRole('button', { name: 'Saved Charles Schwab accounts' })
+    ).toHaveTextContent('Current Charles Schwab account');
   });
 
   it('calls onChangeAccount when Change account is clicked', async () => {

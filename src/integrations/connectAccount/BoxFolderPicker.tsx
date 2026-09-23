@@ -19,6 +19,12 @@ interface BrowsePage {
 }
 
 const ROOT_FOLDER_ID = '0';
+const PREFETCH_DELAY_MS = 150;
+
+const requestKeyFor = (
+  folderId: string,
+  opts: { marker?: string; create?: string } = {}
+) => `${folderId}|${opts.marker ?? ''}|${opts.create ?? ''}`;
 
 function getErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : '';
@@ -50,6 +56,10 @@ function BoxFolderPicker({
   const folderRequests = useRef(new Map<string, Promise<BrowsePage>>());
   const activeFolderId = useRef('');
   const refreshingOnFocus = useRef(false);
+  // True once "Load more" has appended pages: a background refresh must not
+  // collapse the list back to page one.
+  const paginated = useRef(false);
+  const prefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const requestFolder = useCallback(
     (
@@ -62,40 +72,55 @@ function BoxFolderPicker({
         const cached = folderCache.current.get(folderId);
         if (cached) return Promise.resolve(cached);
       }
-      const existingRequest = folderRequests.current.get(folderId);
+      // In-flight requests are shared per (folder, page, create) - never by
+      // folder alone, or "Load more" would be handed page one again and a
+      // folder creation would be swallowed by a concurrent plain browse.
+      const requestKey = requestKeyFor(folderId, opts);
+      const existingRequest = folderRequests.current.get(requestKey);
       if (existingRequest) return existingRequest;
       const request = client.browseAccountResources(
         provider,
         folderId,
         opts
       ) as Promise<BrowsePage>;
-      folderRequests.current.set(folderId, request);
+      folderRequests.current.set(requestKey, request);
       return request
         .then((page) => {
-          if (cacheable || !opts.marker)
-            folderCache.current.set(folderId, page);
+          if (!opts.marker) folderCache.current.set(folderId, page);
           return page;
         })
         .finally(() => {
-          folderRequests.current.delete(folderId);
+          folderRequests.current.delete(requestKey);
         });
     },
     [client, provider]
   );
 
   const applyPage = useCallback((page: BrowsePage, append = false) => {
+    paginated.current = append;
     setCurrentFolder(page.current_folder);
     setBreadcrumbs(page.breadcrumbs);
     setFolders((prev) => (append ? [...prev, ...page.folders] : page.folders));
     setNextMarker(page.next_marker);
   }, []);
 
+  // Hover/focus prefetch waits a beat and keeps only the latest target, so
+  // sweeping the pointer down a long list doesn't fire a request per row.
+  const cancelPrefetch = useCallback(() => {
+    if (prefetchTimer.current) clearTimeout(prefetchTimer.current);
+    prefetchTimer.current = null;
+  }, []);
   const prefetchFolder = useCallback(
     (folderId: string) => {
-      requestFolder(folderId).catch(() => undefined);
+      cancelPrefetch();
+      prefetchTimer.current = setTimeout(() => {
+        prefetchTimer.current = null;
+        requestFolder(folderId).catch(() => undefined);
+      }, PREFETCH_DELAY_MS);
     },
-    [requestFolder]
+    [cancelPrefetch, requestFolder]
   );
+  useEffect(() => cancelPrefetch, [cancelPrefetch]);
 
   const loadFolder = useCallback(
     async (
@@ -120,7 +145,10 @@ function BoxFolderPicker({
           setLoading(false);
           requestFolder(folderId, {}, true)
             .then((page) => {
-              if (activeFolderId.current === folderId) applyPage(page);
+              // Same rule as the focus refresh: never collapse a list the
+              // user has since paged through.
+              if (activeFolderId.current === folderId && !paginated.current)
+                applyPage(page);
             })
             .catch(() => undefined);
           return true;
@@ -150,11 +178,18 @@ function BoxFolderPicker({
       if (
         !folderId ||
         refreshingOnFocus.current ||
-        folderRequests.current.has(folderId)
+        folderRequests.current.has(requestKeyFor(folderId))
       )
         return;
       refreshingOnFocus.current = true;
-      loadFolder(folderId)
+      // A silent refresh: it neither clears an error on screen nor resets a
+      // list the user has paged through - it only swaps in fresh contents
+      // when they are still looking at page one of the same folder.
+      requestFolder(folderId, {}, true)
+        .then((page) => {
+          if (activeFolderId.current === folderId && !paginated.current)
+            applyPage(page);
+        })
         .catch(() => undefined)
         .finally(() => {
           refreshingOnFocus.current = false;
@@ -172,7 +207,7 @@ function BoxFolderPicker({
         handleVisibilityChange
       );
     };
-  }, [loadFolder]);
+  }, [applyPage, requestFolder]);
 
   const handleCreateFolder = async () => {
     onClearError?.();
@@ -256,6 +291,8 @@ function BoxFolderPicker({
               onClick={() => loadFolder(crumb.id)}
               onMouseEnter={() => prefetchFolder(crumb.id)}
               onFocus={() => prefetchFolder(crumb.id)}
+              onMouseLeave={cancelPrefetch}
+              onBlur={cancelPrefetch}
               disabled={busy}
               css={{
                 background: 'none',
@@ -285,6 +322,8 @@ function BoxFolderPicker({
             onClick={() => loadFolder(folder.id)}
             onMouseEnter={() => prefetchFolder(folder.id)}
             onFocus={() => prefetchFolder(folder.id)}
+            onMouseLeave={cancelPrefetch}
+            onBlur={cancelPrefetch}
             disabled={busy}
             css={{
               display: 'block',

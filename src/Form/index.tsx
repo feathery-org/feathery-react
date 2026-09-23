@@ -654,6 +654,9 @@ function Form({
     credentials?: SavedAccountCredential[];
     chooseCredential?: boolean;
     canSaveCredential?: boolean;
+    // The submission's connection belongs to another signed-in user; this
+    // user may only replace it with their own, not browse or reconfigure it.
+    lockedByOwner?: boolean;
     // Captured from the triggering runElementActions call: advances the
     // action chain past this action, and ends the button/action's loading
     // state. Each is a closure local to that call, not reachable from here
@@ -3079,6 +3082,7 @@ function Form({
         let credentials: SavedAccountCredential[] = [];
         let chooseCredential = false;
         let canSaveCredential = false;
+        let lockedByOwner = false;
         try {
           if (provider === 'box') {
             // Listing saved accounts is optional; a throttle or temporary outage
@@ -3096,14 +3100,19 @@ function Form({
                   new CustomEvent('feathery:request-login')
                 );
               }
+              const label = PROVIDER_LABELS[provider] ?? provider;
+              // A connection made by a signed-in user is locked to them; a
+              // guest cannot open its settings, only sign in as that user.
               throw new Error(
-                `Please sign in to connect or manage your ${
-                  PROVIDER_LABELS[provider] ?? provider
-                } account.`
+                alreadyConnected
+                  ? `This ${label} connection was set up by a signed-in user. Sign in as that user to change it.`
+                  : `Please sign in to connect your ${label} account.`
               );
             }
             credentials = saved?.credentials ?? [];
             canSaveCredential = !!saved;
+            lockedByOwner =
+              alreadyConnected && saved?.attached?.owner === false;
             // Always open Box's picker first. If the saved-account lookup is
             // unavailable, the picker still offers an explicit new-account
             // action instead of pre-opening and dismissing an OAuth window.
@@ -3151,6 +3160,7 @@ function Form({
               credentials,
               chooseCredential,
               canSaveCredential,
+              lockedByOwner,
               onFlowSuccess: flowOnSuccess(i),
               onAsyncEnd
             });
@@ -4140,6 +4150,7 @@ function Form({
             credentials={connectAccountModal.credentials}
             chooseCredential={connectAccountModal.chooseCredential}
             canSaveCredential={connectAccountModal.canSaveCredential}
+            lockedByOwner={connectAccountModal.lockedByOwner}
             onCredentialSelected={updateFieldValues}
             onDisconnected={updateFieldValues}
             client={client}

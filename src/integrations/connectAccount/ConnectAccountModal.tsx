@@ -22,6 +22,26 @@ const menuItemStyles = {
   cursor: 'pointer',
   '&:hover': { background: '#f4f4f5' }
 } as const;
+const confirmButtonStyles = {
+  padding: '5px 10px',
+  border: '1px solid #dc2626',
+  borderRadius: '6px',
+  background: '#dc2626',
+  color: '#fff',
+  fontSize: '13px',
+  cursor: 'pointer',
+  '&:disabled': { opacity: 0.6, cursor: 'not-allowed' }
+} as const;
+const cancelButtonStyles = {
+  padding: '5px 10px',
+  border: '1px solid #d4d4d8',
+  borderRadius: '6px',
+  background: '#fff',
+  color: '#18181b',
+  fontSize: '13px',
+  cursor: 'pointer',
+  '&:disabled': { opacity: 0.6, cursor: 'not-allowed' }
+} as const;
 const deleteButtonStyles = {
   display: 'grid',
   flex: '0 0 32px',
@@ -54,6 +74,9 @@ export type ConnectAccountModalProps = {
   credentials?: SavedAccountCredential[];
   chooseCredential?: boolean;
   canSaveCredential?: boolean;
+  // The current connection was attached by another signed-in user and is
+  // locked to them: hide its settings and offer only to replace it.
+  lockedByOwner?: boolean;
   onCredentialSelected?: (values: Record<string, string>) => void;
   onDisconnected?: (values: Record<string, string>) => void;
   // Resolves with an error message on failure (popup blocked, OAuth
@@ -78,6 +101,7 @@ function ConnectAccountModal({
   credentials = NO_CREDENTIALS,
   chooseCredential = false,
   canSaveCredential = false,
+  lockedByOwner = false,
   onCredentialSelected,
   onDisconnected,
   onChangeAccount,
@@ -86,7 +110,10 @@ function ConnectAccountModal({
 }: ConnectAccountModalProps) {
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(!chooseCredential);
+  const [locked, setLocked] = useState(lockedByOwner);
   const [selectedCredential, setSelectedCredential] = useState('');
+  const [pendingDelete, setPendingDelete] = useState('');
+  const [deletingCredential, setDeletingCredential] = useState(false);
   const [rememberCredential, setRememberCredential] = useState(false);
   const [configurationVersion, setConfigurationVersion] = useState(0);
   const [changingAccount, setChangingAccount] = useState(false);
@@ -97,6 +124,7 @@ function ConnectAccountModal({
   );
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const accountMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const autoSelectedCredential = useRef('');
   const handleFooterActionChange = useCallback(
     (action: ProviderFooterAction | null) => setFooterAction(action),
@@ -115,14 +143,18 @@ function ConnectAccountModal({
 
   useEffect(() => {
     setVisibleCredentials(credentials);
+    setPendingDelete('');
+    setLocked(lockedByOwner);
     const preferred = credentials.find((credential) => credential.preferred);
-    setSelectedCredential(preferred?.id ?? credentials[0]?.id ?? '');
+    // Nothing is chosen until the user (or a remembered preference) picks;
+    // pre-highlighting the first account would misreport it as attached.
+    setSelectedCredential(preferred?.id ?? '');
     // Authenticated users can reuse credentials across submissions. The
     // explicit save checkbox was removed from the picker, so eligible users
     // now get the remember behavior by default.
     setRememberCredential(canSaveCredential || Boolean(preferred));
     autoSelectedCredential.current = '';
-  }, [canSaveCredential, credentials, show, provider]);
+  }, [canSaveCredential, credentials, lockedByOwner, show, provider]);
 
   // Move focus into the dialog on open; there is otherwise no keyboard path
   // into it.
@@ -130,16 +162,46 @@ function ConnectAccountModal({
     if (show) closeButtonRef.current?.focus();
   }, [show]);
 
-  // Escape dismisses the dialog, matching native dialog expectations.
+  // Escape closes the account menu first if it is open (returning focus to
+  // its trigger), otherwise dismisses the dialog like a native one.
   useEffect(() => {
     if (!show) return undefined;
     const win = featheryWindow();
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape') return;
+      if (accountMenuOpen) {
+        event.stopPropagation();
+        setAccountMenuOpen(false);
+        accountMenuTriggerRef.current?.focus();
+        return;
+      }
+      onClose();
     };
     win.addEventListener('keydown', handleKeyDown);
     return () => win.removeEventListener('keydown', handleKeyDown);
-  }, [show, onClose]);
+  }, [show, onClose, accountMenuOpen]);
+
+  // Keyboard users land on the first option when the menu opens.
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    accountMenuRef.current
+      ?.querySelector<HTMLElement>('[role="option"]')
+      ?.focus();
+  }, [accountMenuOpen]);
+
+  const handleMenuKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const options = Array.from(
+      accountMenuRef.current?.querySelectorAll<HTMLElement>(
+        '[role="option"]'
+      ) ?? []
+    );
+    if (!options.length) return;
+    const index = options.indexOf(featheryDoc().activeElement as HTMLElement);
+    const step = event.key === 'ArrowDown' ? 1 : -1;
+    options[(index + step + options.length) % options.length].focus();
+  };
 
   useEffect(() => {
     if (!accountMenuOpen) return undefined;
@@ -167,6 +229,7 @@ function ConnectAccountModal({
       if (errorMessage) setError(errorMessage);
       else {
         setConnected(true);
+        setLocked(false);
         setSelectedCredential(CONNECTED_ACCOUNT);
         setConfigurationVersion((version) => version + 1);
       }
@@ -175,7 +238,10 @@ function ConnectAccountModal({
     }
   };
 
-  const handleSelectCredential = async (credentialId = selectedCredential) => {
+  const handleSelectCredential = async (
+    credentialId = selectedCredential,
+    remember = rememberCredential
+  ) => {
     if (!credentialId || changingAccount) return;
     setError('');
     setChangingAccount(true);
@@ -183,10 +249,11 @@ function ConnectAccountModal({
       const result = await client.selectAccountCredential(
         provider,
         credentialId,
-        ...(rememberCredential ? [true] : [])
+        ...(remember ? [true] : [])
       );
       onCredentialSelected?.(result.values);
       setConnected(true);
+      setLocked(false);
       setSelectedCredential(CONNECTED_ACCOUNT);
       setConfigurationVersion((version) => version + 1);
     } catch (error) {
@@ -200,15 +267,20 @@ function ConnectAccountModal({
     }
   };
 
+  // Only a remembered (preferred) account is attached on its own when the
+  // picker opens for a fresh connection; any other choice is the user's to
+  // make explicitly.
   useEffect(() => {
     if (!show || connected || !chooseCredential || changingAccount) return;
-    const credentialId =
-      credentials.find((credential) => credential.preferred)?.id ??
-      credentials[0]?.id;
+    const credentialId = credentials.find(
+      (credential) => credential.preferred
+    )?.id;
     if (!credentialId || autoSelectedCredential.current === credentialId)
       return;
     autoSelectedCredential.current = credentialId;
-    handleSelectCredential(credentialId).catch(() => undefined);
+    // Runs in the same commit as the effect that sets rememberCredential, so
+    // pass the intent explicitly: a remembered account stays remembered.
+    handleSelectCredential(credentialId, true).catch(() => undefined);
   }, [
     changingAccount,
     chooseCredential,
@@ -261,19 +333,26 @@ function ConnectAccountModal({
     }
   };
 
+  // Forgetting a saved account is permanent and affects other submissions,
+  // so the trash icon only asks; this runs from the confirmation.
   const handleDeleteCredential = async (credentialId: string) => {
+    if (changingAccount || deletingCredential) return;
     setError('');
+    setDeletingCredential(true);
     try {
       await client.deleteAccountCredential(provider, credentialId);
       setVisibleCredentials((current) =>
         current.filter((credential) => credential.id !== credentialId)
       );
+      setPendingDelete('');
     } catch (error) {
       setError(
         error instanceof Error
           ? error.message
           : 'Unable to delete this saved account.'
       );
+    } finally {
+      setDeletingCredential(false);
     }
   };
 
@@ -363,7 +442,9 @@ function ConnectAccountModal({
                 lineHeight: 1.4
               }}
             >
-              Choose a {providerLabel} account
+              {locked
+                ? `Replace the connected ${providerLabel} account`
+                : `Choose a ${providerLabel} account`}
             </h4>
             <p
               css={{
@@ -373,7 +454,9 @@ function ConnectAccountModal({
                 lineHeight: 1.5
               }}
             >
-              Select a saved account or connect a new one.
+              {locked
+                ? 'This connection was set up by another user and is locked to them. Choose one of your saved accounts or connect a new one to use your own instead.'
+                : 'Select a saved account or connect a new one.'}
             </p>
             {!credentials.length && !canSaveCredential && (
               <button
@@ -390,7 +473,11 @@ function ConnectAccountModal({
                   cursor: 'pointer'
                 }}
               >
-                {connected ? 'Change account' : 'Connect a new account'}
+                {locked
+                  ? 'Connect your own account'
+                  : connected
+                  ? 'Change account'
+                  : 'Connect a new account'}
               </button>
             )}
           </div>
@@ -411,6 +498,7 @@ function ConnectAccountModal({
                   css={{ position: 'relative', flex: 1 }}
                 >
                   <button
+                    ref={accountMenuTriggerRef}
                     type='button'
                     aria-haspopup='listbox'
                     aria-expanded={accountMenuOpen}
@@ -433,8 +521,9 @@ function ConnectAccountModal({
                   >
                     {connected
                       ? accountEmail || `Current ${providerLabel} account`
-                      : credentials.find((c) => c.id === selectedCredential)
-                          ?.account_email || 'Select an account'}
+                      : visibleCredentials.find(
+                          (c) => c.id === selectedCredential
+                        )?.account_email || 'Select an account'}
                     <svg
                       aria-hidden='true'
                       viewBox='0 0 24 24'
@@ -464,6 +553,7 @@ function ConnectAccountModal({
                     <div
                       role='listbox'
                       aria-label={`Saved ${providerLabel} accounts`}
+                      onKeyDown={handleMenuKeyDown}
                       css={{
                         position: 'absolute',
                         zIndex: 2,
@@ -477,10 +567,8 @@ function ConnectAccountModal({
                         boxShadow: '0 8px 24px rgba(0,0,0,.12)'
                       }}
                     >
-                      {connected && (
+                      {connected && !locked && (
                         <div
-                          role='option'
-                          aria-selected
                           css={{
                             position: 'relative',
                             display: 'flex',
@@ -491,6 +579,8 @@ function ConnectAccountModal({
                         >
                           <button
                             type='button'
+                            role='option'
+                            aria-selected
                             onClick={() =>
                               handleCredentialChange(CONNECTED_ACCOUNT)
                             }
@@ -512,48 +602,93 @@ function ConnectAccountModal({
                           </button>
                         </div>
                       )}
-                      {availableCredentials.map((credential) => (
-                        <div
-                          key={credential.id}
-                          role='option'
-                          aria-selected={
-                            !connected && selectedCredential === credential.id
-                          }
-                          css={{
-                            position: 'relative',
-                            display: 'flex',
-                            alignItems: 'center',
-                            borderRadius: '5px',
-                            '&:hover': { background: '#f4f4f5' }
-                          }}
-                        >
-                          <button
-                            type='button'
-                            onClick={() =>
-                              handleCredentialChange(credential.id)
-                            }
+                      {availableCredentials.map((credential) =>
+                        pendingDelete === credential.id ? (
+                          <div
+                            key={credential.id}
+                            role='group'
+                            aria-label={`Forget ${
+                              credential.account_email || providerLabel
+                            }?`}
                             css={{
-                              ...menuItemStyles,
-                              flex: 1,
-                              '&:hover': { background: 'transparent' }
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '6px 10px',
+                              borderRadius: '5px',
+                              background: '#fef2f2',
+                              color: '#7f1d1d',
+                              fontSize: '13px'
                             }}
                           >
-                            {credential.account_email ||
-                              credential.account_name ||
-                              providerLabel}
-                          </button>
-                          <button
-                            type='button'
-                            aria-label={`Delete saved ${providerLabel} account`}
-                            onClick={() =>
-                              handleDeleteCredential(credential.id)
-                            }
-                            css={deleteButtonStyles}
+                            <span css={{ flex: 1 }}>
+                              Forget {credential.account_email || providerLabel}
+                              ? Other submissions using it will be disconnected.
+                            </span>
+                            <button
+                              type='button'
+                              disabled={deletingCredential}
+                              onClick={() =>
+                                handleDeleteCredential(credential.id)
+                              }
+                              css={confirmButtonStyles}
+                            >
+                              Forget
+                            </button>
+                            <button
+                              type='button'
+                              disabled={deletingCredential}
+                              onClick={() => setPendingDelete('')}
+                              css={cancelButtonStyles}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div
+                            key={credential.id}
+                            css={{
+                              position: 'relative',
+                              display: 'flex',
+                              alignItems: 'center',
+                              borderRadius: '5px',
+                              '&:hover': { background: '#f4f4f5' }
+                            }}
                           >
-                            <TrashIcon width={16} height={16} />
-                          </button>
-                        </div>
-                      ))}
+                            <button
+                              type='button'
+                              role='option'
+                              aria-selected={
+                                !connected &&
+                                selectedCredential === credential.id
+                              }
+                              onClick={() =>
+                                handleCredentialChange(credential.id)
+                              }
+                              css={{
+                                ...menuItemStyles,
+                                flex: 1,
+                                '&:hover': { background: 'transparent' }
+                              }}
+                            >
+                              {credential.account_email ||
+                                credential.account_name ||
+                                providerLabel}
+                            </button>
+                            <button
+                              type='button'
+                              aria-label={`Forget saved ${providerLabel} account ${
+                                credential.account_email || ''
+                              }`}
+                              disabled={changingAccount || deletingCredential}
+                              onClick={() => setPendingDelete(credential.id)}
+                              css={deleteButtonStyles}
+                            >
+                              <TrashIcon width={16} height={16} />
+                            </button>
+                          </div>
+                        )
+                      )}
                       {hasSavedAccounts && (
                         <div
                           css={{
@@ -580,7 +715,7 @@ function ConnectAccountModal({
               </div>
             </div>
           )}
-          {connected && ConfigComponent && (
+          {connected && !locked && ConfigComponent && (
             <fieldset
               disabled={changingAccount}
               css={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
@@ -619,7 +754,7 @@ function ConnectAccountModal({
               <span>{error}</span>
             </div>
           )}
-          {connected && footerAction && (
+          {connected && !locked && footerAction && (
             <div
               css={{
                 display: 'flex',
