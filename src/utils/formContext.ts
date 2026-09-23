@@ -246,6 +246,8 @@ export const getFormContext = (formUuid: string) => {
       envelopeAction,
       signMethod,
       toolbarActions,
+      emailSubject,
+      emailBlurb,
       repeatable,
       download,
       merge,
@@ -279,6 +281,10 @@ export const getFormContext = (formUuid: string) => {
       // toolbar offers. 'draft' is DocuSign-only (it finalizes as a sign with
       // draft=true).
       toolbarActions?: ('sign' | 'download' | 'save' | 'draft')[];
+      // Only for signMethod 'docusign': the subject and body of the envelope's
+      // signing email, as sendDocusignEnvelope takes them.
+      emailSubject?: string;
+      emailBlurb?: string;
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
@@ -330,6 +336,8 @@ export const getFormContext = (formUuid: string) => {
               })
             ),
             editor_toolbar_actions: toolbarActions,
+            email_subject: emailSubject,
+            email_blurb: emailBlurb,
             repeatable,
             merge_docs: merge,
             merged_file_name: mergedFileName,

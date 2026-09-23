@@ -770,6 +770,37 @@ describe('IntegrationClient', () => {
       });
     });
 
+    it('forwards email subject and blurb, omitting them when unset', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'ds-2' })
+      });
+
+      await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign',
+        email_subject: 'Please sign this',
+        email_blurb: 'Two signatures needed.'
+      });
+      let body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.email_subject).toBe('Please sign this');
+      expect(body.email_blurb).toBe('Two signatures needed.');
+
+      // Omitted rather than sent empty, so the backend's default subject wins
+      global.fetch.mockClear();
+      await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign'
+      });
+      body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.email_subject).toBeUndefined();
+      expect(body.email_blurb).toBeUndefined();
+    });
+
     it('ignores the form signer field for a docusign sign, keeping the role mappings', async () => {
       // The field names whoever signs inline, in the form. Nobody does on
       // DocuSign - it mails every recipient itself, from the role mappings -
@@ -1078,6 +1109,32 @@ describe('IntegrationClient', () => {
       expect(body.envelopes).toEqual([{ envelope_id: 'env-1' }]);
       expect(body.signer_email).toBeUndefined();
       expect(body.envelope_action).toBe('sign');
+      expect(body.email_subject).toBeUndefined();
+    });
+
+    it('forwards email subject and blurb to finalize', async () => {
+      // An open_in_editor flow does not build the DocuSign envelope until the
+      // filler presses Sign, so finalize has to carry them too.
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'ds-fin' })
+      });
+
+      await integrationClient.finalizeEnvelopeReview(
+        {
+          run_async: false,
+          sign_method: 'docusign',
+          email_subject: 'Signed, sealed',
+          email_blurb: 'Last step.'
+        },
+        { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
+      );
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.email_subject).toBe('Signed, sealed');
+      expect(body.email_blurb).toBe('Last step.');
     });
 
     it('polls until complete when finalize runs async', async () => {
