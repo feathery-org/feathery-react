@@ -1,12 +1,32 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+  waitFor
+} from '@testing-library/react';
 import BoxFolderPicker from './BoxFolderPicker';
+import { featheryWindow } from '../../utils/browser';
+import type { ProviderFooterAction } from './providers';
 
 const rootPage = {
   current_folder: { id: '0', name: 'All Files', can_upload: true },
   breadcrumbs: [{ id: '0', name: 'All Files' }],
   folders: [{ id: '1', name: 'Applications' }],
   next_marker: ''
+};
+
+// The Select button lives in the modal footer; the picker only reports it.
+const latestFooterAction = (spy: jest.Mock): ProviderFooterAction =>
+  spy.mock.calls[spy.mock.calls.length - 1][0];
+
+const deferred = <T,>() => {
+  let settle: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    settle = resolve;
+  });
+  return { promise, resolve: settle };
 };
 
 const renderPicker = (client: any, overrides = {}) =>
@@ -72,6 +92,7 @@ describe('BoxFolderPicker', () => {
 
   it('saves the current folder and reports the values back', async () => {
     const onSaved = jest.fn();
+    const onFooterActionChange = jest.fn();
     const client = {
       browseAccountResources: jest.fn().mockResolvedValue(rootPage),
       saveAccountConfig: jest.fn().mockResolvedValue({
@@ -80,9 +101,14 @@ describe('BoxFolderPicker', () => {
       })
     };
 
-    renderPicker(client, { onSaved });
+    renderPicker(client, { onSaved, onFooterActionChange });
     await waitFor(() => screen.getByText('Applications'));
-    fireEvent.click(screen.getByText('Select this folder'));
+    const action = latestFooterAction(onFooterActionChange);
+    expect(action.label).toBe('Select “All Files”');
+    expect(action.disabled).toBe(false);
+    act(() => {
+      action.onClick();
+    });
 
     await waitFor(() =>
       expect(client.saveAccountConfig).toHaveBeenCalledWith('box', {
@@ -107,16 +133,22 @@ describe('BoxFolderPicker', () => {
       })
     };
 
-    renderPicker(client);
+    const onFooterActionChange = jest.fn();
+    renderPicker(client, { onFooterActionChange });
     await waitFor(() => screen.getByText('Applications'));
 
-    expect(
-      (
-        screen
-          .getByText('Select this folder')
-          .closest('button') as HTMLButtonElement
-      ).disabled
-    ).toBe(true);
+    expect(latestFooterAction(onFooterActionChange).disabled).toBe(true);
+  });
+
+  it('withdraws its footer action on unmount', async () => {
+    const onFooterActionChange = jest.fn();
+    const { unmount } = renderPicker(
+      { browseAccountResources: jest.fn().mockResolvedValue(rootPage) },
+      { onFooterActionChange }
+    );
+    await waitFor(() => screen.getByText('Applications'));
+    unmount();
+    expect(onFooterActionChange).toHaveBeenLastCalledWith(null);
   });
 
   it('creates a new folder in the current folder', async () => {
@@ -170,5 +202,126 @@ describe('BoxFolderPicker', () => {
         screen.getByText('This folder does not contain any folders.')
       ).toBeTruthy()
     );
+  });
+
+  it.each(['load more first', 'refresh first'])(
+    'does not duplicate rows when Load more overlaps a background refresh (%s)',
+    async (order) => {
+      const refresh = deferred<typeof rootPage>();
+      const nextPage = deferred<typeof rootPage>();
+      let pageOneRequests = 0;
+      const client = {
+        browseAccountResources: jest.fn(
+          (_provider: string, _folderId: string, opts: any) => {
+            if (opts.marker) return nextPage.promise;
+            pageOneRequests += 1;
+            return pageOneRequests === 1
+              ? Promise.resolve({ ...rootPage, next_marker: 'm1' })
+              : refresh.promise;
+          }
+        )
+      };
+
+      renderPicker(client);
+      fireEvent.click(await screen.findByText('Load more'));
+      expect(client.browseAccountResources).toHaveBeenLastCalledWith(
+        'box',
+        '0',
+        { marker: 'm1' }
+      );
+      // A window focus while the next page is still loading starts a
+      // separate, silent page-one refresh.
+      fireEvent.focus(featheryWindow());
+      expect(client.browseAccountResources).toHaveBeenCalledTimes(3);
+      expect(client.browseAccountResources).toHaveBeenLastCalledWith(
+        'box',
+        '0',
+        {}
+      );
+
+      const page2 = {
+        ...rootPage,
+        folders: [{ id: '2', name: 'Archive' }],
+        next_marker: ''
+      };
+      const page1 = { ...rootPage, next_marker: 'm1' };
+      await act(async () => {
+        if (order === 'load more first') {
+          nextPage.resolve(page2);
+          await nextPage.promise;
+          refresh.resolve(page1);
+          await refresh.promise;
+        } else {
+          refresh.resolve(page1);
+          await refresh.promise;
+          nextPage.resolve(page2);
+          await nextPage.promise;
+        }
+      });
+
+      await waitFor(() => expect(screen.getByText('Archive')).toBeTruthy());
+      expect(screen.getAllByText('Applications')).toHaveLength(1);
+      expect(screen.getAllByText('Archive')).toHaveLength(1);
+      expect(screen.queryByText('Load more')).toBeNull();
+    }
+  );
+
+  describe('hover prefetch', () => {
+    const threeFolders = {
+      ...rootPage,
+      folders: [
+        { id: '1', name: 'Applications' },
+        { id: '2', name: 'Archive' },
+        { id: '3', name: 'Clients' }
+      ]
+    };
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('debounces a quick sweep down the list into one request for the last row', async () => {
+      const client = {
+        browseAccountResources: jest.fn().mockResolvedValue(threeFolders)
+      };
+      renderPicker(client);
+      await screen.findByText('Clients');
+      expect(client.browseAccountResources).toHaveBeenCalledTimes(1);
+
+      jest.useFakeTimers();
+      ['Applications', 'Archive', 'Clients'].forEach((name) =>
+        fireEvent.mouseEnter(screen.getByText(name))
+      );
+      act(() => {
+        jest.advanceTimersByTime(149);
+      });
+      expect(client.browseAccountResources).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        jest.advanceTimersByTime(1);
+      });
+      expect(client.browseAccountResources).toHaveBeenCalledTimes(2);
+      expect(client.browseAccountResources).toHaveBeenLastCalledWith(
+        'box',
+        '3',
+        {}
+      );
+    });
+
+    it('cancels a pending prefetch when the pointer leaves the row', async () => {
+      const client = {
+        browseAccountResources: jest.fn().mockResolvedValue(threeFolders)
+      };
+      renderPicker(client);
+      await screen.findByText('Clients');
+
+      jest.useFakeTimers();
+      fireEvent.mouseEnter(screen.getByText('Archive'));
+      fireEvent.mouseLeave(screen.getByText('Archive'));
+      act(() => {
+        jest.advanceTimersByTime(500);
+      });
+      expect(client.browseAccountResources).toHaveBeenCalledTimes(1);
+    });
   });
 });

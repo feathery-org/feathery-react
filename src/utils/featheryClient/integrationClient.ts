@@ -12,6 +12,7 @@ import {
   UploadFileToEgnyteParams
 } from '../internalState';
 import { featheryWindow } from '../browser';
+import { PROVIDER_LABELS } from '../../integrations/connectAccount/providers';
 import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
@@ -251,14 +252,67 @@ export default class IntegrationClient {
     );
   }
 
-  async startAccountConnect(provider: string, parentOrigin: string) {
+  async listAccountCredentials(provider: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    // With the submission key the server also reports whether its current
+    // connection is the caller's own to manage (`attached.owner`) or another
+    // user's, which the caller may only replace.
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      ...(userId ? { fuser_key: userId } : {}),
+      provider
+    });
+    const response = await this._fetch(
+      `${API_URL}account-connect/credentials/?${params}`,
+      undefined,
+      false
+    );
+    // A public form or signed-out collaborator has no account-level list.
+    // Do not expose errors or credential metadata from an auth denial.
+    if (response?.status === 401 || response?.status === 403) return null;
+    if (!response) throw new Error('Unable to load saved accounts.');
+    const payload = await response.json();
+    if (response.status === 200) return payload;
+    throw new Error(parseAPIError(payload) || 'Unable to load saved accounts.');
+  }
+
+  async selectAccountCredential(
+    provider: string,
+    credentialId: string,
+    remember = false
+  ) {
+    return this._accountConnectPost('select', {
+      provider,
+      credential_id: credentialId,
+      ...(remember ? { remember: true } : {})
+    });
+  }
+
+  async disconnectAccount(provider: string) {
+    return this._accountConnectPost('disconnect', { provider });
+  }
+
+  async deleteAccountCredential(provider: string, credentialId: string) {
+    return this._accountConnectPost('delete', {
+      provider,
+      credential_id: credentialId
+    });
+  }
+
+  async startAccountConnect(
+    provider: string,
+    parentOrigin: string,
+    saveCredential = false
+  ) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
       fuser_key: userId,
       provider,
-      parent_origin: parentOrigin
+      parent_origin: parentOrigin,
+      ...(saveCredential ? { save_credential: true } : {})
     });
     const response = await this._fetch(
       `${API_URL}account-connect/start/?${params}`,
@@ -266,6 +320,13 @@ export default class IntegrationClient {
       false
     );
     if (!response) throw new Error('Unable to start authorization.');
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        `Please sign in to connect or manage your ${
+          PROVIDER_LABELS[provider] ?? provider
+        } account.`
+      );
+    }
 
     const payload = await response.json();
     if (response.status === 200) return payload;
