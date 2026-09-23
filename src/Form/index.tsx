@@ -243,6 +243,7 @@ import ConnectAccountModal, {
 import {
   CONFIG_COMPONENTS,
   PROVIDER_LABELS,
+  configFieldKey,
   connectionFieldKey,
   hasEmailIdentity
 } from '../integrations/connectAccount/providers';
@@ -374,28 +375,29 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
   windows.forEach((win) => win?.close());
 }
 
-// Pre-open windows synchronously within the user-gesture call stack.
-// Connect Account always needs its popup opened this way since the OAuth
-// start call is async; iOS Safari additionally blocks window.open() for any
-// action once an await breaks the gesture chain, so tab-opening URL actions
-// get the same treatment there.
 type RequiredFlowAction = {
   type: keyof typeof REQUIRED_FLOW_ACTIONS;
   provider?: string;
 };
 
-// A step's connect_account requirement is met by the submission's existing
-// connection, not only by a flow run in this tab. A collaborator continuing a
-// submission whose owner already connected has the connection field but has
-// never run the flow themselves, and must still be able to move on.
+// A step's connect_account requirement is met by the submission's existing,
+// fully configured connection, not only by a flow run in this tab. A
+// collaborator continuing a submission whose owner already connected has the
+// connection fields but has never run the flow themselves, and must still be
+// able to move on. An account that is attached but not yet configured (no Box
+// folder chosen) does not count: uploads would have nowhere to go.
 function isRequiredFlowSatisfied(action: RequiredFlowAction) {
-  return (
-    action.type === ACTION_CONNECT_ACCOUNT &&
-    !!action.provider &&
-    !!fieldValues[connectionFieldKey(action.provider)]
-  );
+  if (action.type !== ACTION_CONNECT_ACCOUNT || !action.provider) return false;
+  if (!fieldValues[connectionFieldKey(action.provider)]) return false;
+  const configKey = configFieldKey(action.provider);
+  return !configKey || !!fieldValues[configKey];
 }
 
+// Pre-open windows synchronously within the user-gesture call stack.
+// Connect Account always needs its popup opened this way since the OAuth
+// start call is async; iOS Safari additionally blocks window.open() for any
+// action once an await breaks the gesture chain, so tab-opening URL actions
+// get the same treatment there.
 function preOpenActionWindows(actions: any[]) {
   const windows = new Map<number, Window | null>();
   actions.forEach((action, idx) => {

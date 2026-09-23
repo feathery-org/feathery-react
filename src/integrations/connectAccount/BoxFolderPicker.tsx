@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { ProviderConfigProps } from './providers';
+import { featheryDoc, featheryWindow } from '../../utils/browser';
 
 interface BoxFolder {
   id: string;
@@ -51,7 +52,11 @@ function BoxFolderPicker({
   const refreshingOnFocus = useRef(false);
 
   const requestFolder = useCallback(
-    (folderId: string, opts: { marker?: string; create?: string } = {}, force = false) => {
+    (
+      folderId: string,
+      opts: { marker?: string; create?: string } = {},
+      force = false
+    ) => {
       const cacheable = !opts.marker && !opts.create;
       if (!force && cacheable) {
         const cached = folderCache.current.get(folderId);
@@ -59,14 +64,21 @@ function BoxFolderPicker({
       }
       const existingRequest = folderRequests.current.get(folderId);
       if (existingRequest) return existingRequest;
-      const request = client.browseAccountResources(provider, folderId, opts) as Promise<BrowsePage>;
+      const request = client.browseAccountResources(
+        provider,
+        folderId,
+        opts
+      ) as Promise<BrowsePage>;
       folderRequests.current.set(folderId, request);
-      return request.then((page) => {
-        if (cacheable || !opts.marker) folderCache.current.set(folderId, page);
-        return page;
-      }).finally(() => {
-        folderRequests.current.delete(folderId);
-      });
+      return request
+        .then((page) => {
+          if (cacheable || !opts.marker)
+            folderCache.current.set(folderId, page);
+          return page;
+        })
+        .finally(() => {
+          folderRequests.current.delete(folderId);
+        });
     },
     [client, provider]
   );
@@ -74,20 +86,23 @@ function BoxFolderPicker({
   const applyPage = useCallback((page: BrowsePage, append = false) => {
     setCurrentFolder(page.current_folder);
     setBreadcrumbs(page.breadcrumbs);
-    setFolders((prev) => append ? [...prev, ...page.folders] : page.folders);
+    setFolders((prev) => (append ? [...prev, ...page.folders] : page.folders));
     setNextMarker(page.next_marker);
   }, []);
 
-  const prefetchFolder = useCallback((folderId: string) => {
-    void requestFolder(folderId);
-  }, [requestFolder]);
+  const prefetchFolder = useCallback(
+    (folderId: string) => {
+      requestFolder(folderId).catch(() => undefined);
+    },
+    [requestFolder]
+  );
 
   const loadFolder = useCallback(
     async (
       folderId: string,
       opts: { marker?: string; create?: string } = {},
       append = false
-  ): Promise<boolean> => {
+    ): Promise<boolean> => {
       onClearError?.();
       activeFolderId.current = folderId;
       if (!append) {
@@ -97,13 +112,17 @@ function BoxFolderPicker({
       setLoading(true);
       try {
         const isStandardNavigation = !append && !opts.marker && !opts.create;
-        const cachedPage = isStandardNavigation ? folderCache.current.get(folderId) : undefined;
+        const cachedPage = isStandardNavigation
+          ? folderCache.current.get(folderId)
+          : undefined;
         if (cachedPage) {
           applyPage(cachedPage);
           setLoading(false);
-          void requestFolder(folderId, {}, true).then((page) => {
-            if (activeFolderId.current === folderId) applyPage(page);
-          }).catch(() => undefined);
+          requestFolder(folderId, {}, true)
+            .then((page) => {
+              if (activeFolderId.current === folderId) applyPage(page);
+            })
+            .catch(() => undefined);
           return true;
         }
         const page = await requestFolder(folderId, opts, !isStandardNavigation);
@@ -128,20 +147,30 @@ function BoxFolderPicker({
   useEffect(() => {
     const refreshActiveFolder = () => {
       const folderId = activeFolderId.current;
-      if (!folderId || refreshingOnFocus.current || folderRequests.current.has(folderId)) return;
+      if (
+        !folderId ||
+        refreshingOnFocus.current ||
+        folderRequests.current.has(folderId)
+      )
+        return;
       refreshingOnFocus.current = true;
-      void loadFolder(folderId).finally(() => {
-        refreshingOnFocus.current = false;
-      });
+      loadFolder(folderId)
+        .catch(() => undefined)
+        .finally(() => {
+          refreshingOnFocus.current = false;
+        });
     };
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') refreshActiveFolder();
+      if (featheryDoc().visibilityState === 'visible') refreshActiveFolder();
     };
-    window.addEventListener('focus', refreshActiveFolder);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    featheryWindow().addEventListener('focus', refreshActiveFolder);
+    featheryDoc().addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
-      window.removeEventListener('focus', refreshActiveFolder);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      featheryWindow().removeEventListener('focus', refreshActiveFolder);
+      featheryDoc().removeEventListener(
+        'visibilitychange',
+        handleVisibilityChange
+      );
     };
   }, [loadFolder]);
 
@@ -275,12 +304,26 @@ function BoxFolderPicker({
           </button>
         ))}
         {!folders.length && loading && (
-          <div css={{ padding: '14px', color: '#71717a', fontSize: '14px', lineHeight: 1.4 }}>
+          <div
+            css={{
+              padding: '14px',
+              color: '#71717a',
+              fontSize: '14px',
+              lineHeight: 1.4
+            }}
+          >
             Loading folders...
           </div>
         )}
         {!folders.length && !loading && (
-          <div css={{ padding: '14px', color: '#71717a', fontSize: '14px', lineHeight: 1.4 }}>
+          <div
+            css={{
+              padding: '14px',
+              color: '#71717a',
+              fontSize: '14px',
+              lineHeight: 1.4
+            }}
+          >
             This folder does not contain any folders.
           </div>
         )}
@@ -385,7 +428,6 @@ function BoxFolderPicker({
           </div>
         )}
       </div>
-
     </div>
   );
 }

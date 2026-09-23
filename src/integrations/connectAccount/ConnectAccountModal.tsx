@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import CloseIcon from '../../elements/components/icons/Close';
 import TrashIcon from '../../elements/components/icons/TrashIcon';
-import { featheryWindow } from '../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../utils/browser';
 import { MODAL_Z_INDEX } from '../../utils/styles';
 import { CONFIG_COMPONENTS, PROVIDER_LABELS } from './providers';
 import type { ProviderFooterAction } from './providers';
@@ -65,12 +65,17 @@ export type ConnectAccountModalProps = {
   onClose: () => void;
 };
 
+// A shared default keeps the prop referentially stable across renders: the
+// selection-sync effect depends on `credentials`, so a fresh `[]` default each
+// render would fire it (and its setState calls) forever.
+const NO_CREDENTIALS: SavedAccountCredential[] = [];
+
 function ConnectAccountModal({
   show,
   provider,
   client,
   accountEmail,
-  credentials = [],
+  credentials = NO_CREDENTIALS,
   chooseCredential = false,
   canSaveCredential = false,
   onCredentialSelected,
@@ -87,7 +92,9 @@ function ConnectAccountModal({
   const [changingAccount, setChangingAccount] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [visibleCredentials, setVisibleCredentials] = useState(credentials);
-  const [footerAction, setFooterAction] = useState<ProviderFooterAction | null>(null);
+  const [footerAction, setFooterAction] = useState<ProviderFooterAction | null>(
+    null
+  );
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const autoSelectedCredential = useRef('');
@@ -95,6 +102,10 @@ function ConnectAccountModal({
     (action: ProviderFooterAction | null) => setFooterAction(action),
     []
   );
+  // Stable identity matters: the picker's select handler depends on this
+  // callback and its footer effect depends on that handler, so an inline
+  // function here re-renders the modal on every render, forever.
+  const handleClearError = useCallback(() => setError(''), []);
 
   // Clears any stale error whenever the modal opens/closes or the provider
   // changes, so a message from a previous account/provider never reappears.
@@ -136,8 +147,9 @@ function ConnectAccountModal({
       if (!accountMenuRef.current?.contains(event.target as Node))
         setAccountMenuOpen(false);
     };
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+    featheryDoc().addEventListener('mousedown', closeOnOutsideClick);
+    return () =>
+      featheryDoc().removeEventListener('mousedown', closeOnOutsideClick);
   }, [accountMenuOpen]);
 
   const handleChangeAccount = async () => {
@@ -191,19 +203,31 @@ function ConnectAccountModal({
   useEffect(() => {
     if (!show || connected || !chooseCredential || changingAccount) return;
     const credentialId =
-      credentials.find((credential) => credential.preferred)?.id ?? credentials[0]?.id;
-    if (!credentialId || autoSelectedCredential.current === credentialId) return;
+      credentials.find((credential) => credential.preferred)?.id ??
+      credentials[0]?.id;
+    if (!credentialId || autoSelectedCredential.current === credentialId)
+      return;
     autoSelectedCredential.current = credentialId;
-    void handleSelectCredential(credentialId);
-  }, [changingAccount, chooseCredential, connected, credentials, show, selectedCredential]);
+    handleSelectCredential(credentialId).catch(() => undefined);
+  }, [
+    changingAccount,
+    chooseCredential,
+    connected,
+    credentials,
+    show,
+    selectedCredential
+  ]);
 
   if (!show) return null;
 
   const providerLabel = PROVIDER_LABELS[provider] ?? provider;
   const ConfigComponent = CONFIG_COMPONENTS[provider];
-  const availableCredentials = connected && accountEmail
-    ? visibleCredentials.filter((credential) => credential.account_email !== accountEmail)
-    : visibleCredentials;
+  const availableCredentials =
+    connected && accountEmail
+      ? visibleCredentials.filter(
+          (credential) => credential.account_email !== accountEmail
+        )
+      : visibleCredentials;
   const hasSavedAccounts = connected || availableCredentials.length > 0;
   const handleCredentialChange = (value: string) => {
     setAccountMenuOpen(false);
@@ -212,7 +236,7 @@ function ConnectAccountModal({
     } else if (value !== CONNECTED_ACCOUNT) {
       setSelectedCredential(value);
       setConnected(false);
-      void handleSelectCredential(value);
+      handleSelectCredential(value).catch(() => undefined);
     }
   };
 
@@ -227,7 +251,11 @@ function ConnectAccountModal({
       setSelectedCredential('');
       setConfigurationVersion((version) => version + 1);
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unable to disconnect this account.');
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to disconnect this account.'
+      );
     } finally {
       setChangingAccount(false);
     }
@@ -237,9 +265,15 @@ function ConnectAccountModal({
     setError('');
     try {
       await client.deleteAccountCredential(provider, credentialId);
-      setVisibleCredentials((current) => current.filter((credential) => credential.id !== credentialId));
+      setVisibleCredentials((current) =>
+        current.filter((credential) => credential.id !== credentialId)
+      );
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unable to delete this saved account.');
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to delete this saved account.'
+      );
     }
   };
 
@@ -369,8 +403,13 @@ function ConnectAccountModal({
                 marginBottom: '20px'
               }}
             >
-              <div css={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
-                <div ref={accountMenuRef} css={{ position: 'relative', flex: 1 }}>
+              <div
+                css={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}
+              >
+                <div
+                  ref={accountMenuRef}
+                  css={{ position: 'relative', flex: 1 }}
+                >
                   <button
                     type='button'
                     aria-haspopup='listbox'
@@ -405,7 +444,9 @@ function ConnectAccountModal({
                         flexShrink: 0,
                         marginLeft: '12px',
                         color: '#71717a',
-                        transform: accountMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transform: accountMenuOpen
+                          ? 'rotate(180deg)'
+                          : 'rotate(0deg)',
                         transition: 'transform 0.15s ease'
                       }}
                     >
@@ -437,8 +478,28 @@ function ConnectAccountModal({
                       }}
                     >
                       {connected && (
-                        <div role='option' aria-selected css={{ position: 'relative', display: 'flex', alignItems: 'center', borderRadius: '5px', '&:hover': { background: '#f4f4f5' } }}>
-                          <button type='button' onClick={() => handleCredentialChange(CONNECTED_ACCOUNT)} css={{ ...menuItemStyles, flex: 1, '&:hover': { background: 'transparent' } }}>
+                        <div
+                          role='option'
+                          aria-selected
+                          css={{
+                            position: 'relative',
+                            display: 'flex',
+                            alignItems: 'center',
+                            borderRadius: '5px',
+                            '&:hover': { background: '#f4f4f5' }
+                          }}
+                        >
+                          <button
+                            type='button'
+                            onClick={() =>
+                              handleCredentialChange(CONNECTED_ACCOUNT)
+                            }
+                            css={{
+                              ...menuItemStyles,
+                              flex: 1,
+                              '&:hover': { background: 'transparent' }
+                            }}
+                          >
                             {accountEmail || `Current ${providerLabel} account`}
                           </button>
                           <button
@@ -452,19 +513,65 @@ function ConnectAccountModal({
                         </div>
                       )}
                       {availableCredentials.map((credential) => (
-                        <div key={credential.id} role='option' aria-selected={!connected && selectedCredential === credential.id} css={{ position: 'relative', display: 'flex', alignItems: 'center', borderRadius: '5px', '&:hover': { background: '#f4f4f5' } }}>
-                          <button type='button' onClick={() => handleCredentialChange(credential.id)} css={{ ...menuItemStyles, flex: 1, '&:hover': { background: 'transparent' } }}>
-                            {credential.account_email || credential.account_name || providerLabel}
+                        <div
+                          key={credential.id}
+                          role='option'
+                          aria-selected={
+                            !connected && selectedCredential === credential.id
+                          }
+                          css={{
+                            position: 'relative',
+                            display: 'flex',
+                            alignItems: 'center',
+                            borderRadius: '5px',
+                            '&:hover': { background: '#f4f4f5' }
+                          }}
+                        >
+                          <button
+                            type='button'
+                            onClick={() =>
+                              handleCredentialChange(credential.id)
+                            }
+                            css={{
+                              ...menuItemStyles,
+                              flex: 1,
+                              '&:hover': { background: 'transparent' }
+                            }}
+                          >
+                            {credential.account_email ||
+                              credential.account_name ||
+                              providerLabel}
                           </button>
-                          <button type='button' aria-label={`Delete saved ${providerLabel} account`} onClick={() => handleDeleteCredential(credential.id)} css={deleteButtonStyles}>
+                          <button
+                            type='button'
+                            aria-label={`Delete saved ${providerLabel} account`}
+                            onClick={() =>
+                              handleDeleteCredential(credential.id)
+                            }
+                            css={deleteButtonStyles}
+                          >
                             <TrashIcon width={16} height={16} />
                           </button>
                         </div>
                       ))}
                       {hasSavedAccounts && (
-                        <div css={{ margin: '4px 0', borderTop: '1px solid #e4e4e7' }} />
+                        <div
+                          css={{
+                            margin: '4px 0',
+                            borderTop: '1px solid #e4e4e7'
+                          }}
+                        />
                       )}
-                      <button type='button' role='option' onClick={() => handleCredentialChange(NEW_ACCOUNT)} css={{ ...menuItemStyles, color: '#71717a', fontWeight: 600 }}>
+                      <button
+                        type='button'
+                        role='option'
+                        onClick={() => handleCredentialChange(NEW_ACCOUNT)}
+                        css={{
+                          ...menuItemStyles,
+                          color: '#71717a',
+                          fontWeight: 600
+                        }}
+                      >
                         Connect a new account...
                       </button>
                     </div>
@@ -484,7 +591,7 @@ function ConnectAccountModal({
                 provider={provider}
                 onSaved={onSaved}
                 onError={setError}
-                onClearError={() => setError('')}
+                onClearError={handleClearError}
                 onFooterActionChange={handleFooterActionChange}
               />
             </fieldset>

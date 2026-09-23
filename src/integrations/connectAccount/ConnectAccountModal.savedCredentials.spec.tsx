@@ -134,9 +134,9 @@ describe('saved Box credentials', () => {
       });
       expect(checkbox).not.toBeChecked();
       if (optIn) fireEvent.click(checkbox);
-    fireEvent.change(screen.getByRole('combobox'), {
-      target: { value: '__new_account__' }
-    });
+      fireEvent.change(screen.getByRole('combobox'), {
+        target: { value: '__new_account__' }
+      });
       await waitFor(() =>
         expect(props.onChangeAccount).toHaveBeenCalledWith(optIn)
       );

@@ -79,6 +79,7 @@ const mockedRunOAuthPopup = runOAuthPopup as jest.Mock;
 const mockedVerifyAlloyId = verifyAlloyId as jest.Mock;
 
 const EMAIL_KEY = 'feathery.connections.box.email';
+const FOLDER_KEY = 'feathery.connections.box.folder_id';
 const SCHWAB_KEY = 'feathery.connections.charles-schwab.connected';
 
 describe('connect_account action', () => {
@@ -538,6 +539,7 @@ describe('required connect_account flow gate', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete (fieldValues as any)[EMAIL_KEY];
+    delete (fieldValues as any)[FOLDER_KEY];
     ClientMod._spies.state.steps = [
       {
         key: 'step-1',
@@ -563,6 +565,7 @@ describe('required connect_account flow gate', () => {
     ClientMod._spies.state.steps = null;
     GridMod._spies.submit = false;
     delete (fieldValues as any)[EMAIL_KEY];
+    delete (fieldValues as any)[FOLDER_KEY];
     cleanup();
   });
 
@@ -580,8 +583,22 @@ describe('required connect_account flow gate', () => {
     );
   });
 
+  it('still blocks when an account is attached but no folder is configured', async () => {
+    (fieldValues as any)[EMAIL_KEY] = 'owner@example.com';
+
+    render(<JSForm formId='f1' _internalId='iid-gate-unconfigured' />);
+    await clickNext();
+
+    await waitFor(() =>
+      expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: REQUIRED_MESSAGE })
+      )
+    );
+  });
+
   it('lets a submit through when the submission already holds the connection', async () => {
     (fieldValues as any)[EMAIL_KEY] = 'owner@example.com';
+    (fieldValues as any)[FOLDER_KEY] = '4206653';
 
     render(<JSForm formId='f1' _internalId='iid-gate-connected' />);
     await clickNext();
