@@ -379,6 +379,23 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
 // start call is async; iOS Safari additionally blocks window.open() for any
 // action once an await breaks the gesture chain, so tab-opening URL actions
 // get the same treatment there.
+type RequiredFlowAction = {
+  type: keyof typeof REQUIRED_FLOW_ACTIONS;
+  provider?: string;
+};
+
+// A step's connect_account requirement is met by the submission's existing
+// connection, not only by a flow run in this tab. A collaborator continuing a
+// submission whose owner already connected has the connection field but has
+// never run the flow themselves, and must still be able to move on.
+function isRequiredFlowSatisfied(action: RequiredFlowAction) {
+  return (
+    action.type === ACTION_CONNECT_ACCOUNT &&
+    !!action.provider &&
+    !!fieldValues[connectionFieldKey(action.provider)]
+  );
+}
+
 function preOpenActionWindows(actions: any[]) {
   const windows = new Map<number, Window | null>();
   actions.forEach((action, idx) => {
@@ -512,9 +529,8 @@ function Form({
     null
   );
   const flowCompleted = useRef(false);
-  const [requiredStepAction, setRequiredStepAction] = useState<
-    keyof typeof REQUIRED_FLOW_ACTIONS | ''
-  >('');
+  const [requiredStepAction, setRequiredStepAction] =
+    useState<RequiredFlowAction | null>(null);
   const formLoadRan = useRef(false);
 
   // Lookup utility to find a servar (server field definition) by its key.
@@ -928,11 +944,11 @@ function Form({
       focusRef.current = 'already focused';
     }
 
-    let requiredStepAction: any = '';
+    let requiredStepAction: RequiredFlowAction | null = null;
     activeStep.buttons.forEach((b: any) =>
       (b.properties.actions ?? []).forEach((action: any) => {
         if (action.type in REQUIRED_FLOW_ACTIONS) {
-          requiredStepAction = action.type;
+          requiredStepAction = action;
         }
       })
     );
@@ -2791,9 +2807,10 @@ function Form({
       if (
         !hasFlowActions(actions) &&
         requiredStepAction &&
-        !flowCompleted.current
+        !flowCompleted.current &&
+        !isRequiredFlowSatisfied(requiredStepAction)
       ) {
-        setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
+        setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction.type]);
         elementClicks[id] = false;
         clearButtonActionState();
 

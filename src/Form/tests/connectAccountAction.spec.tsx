@@ -519,3 +519,82 @@ describe('connect_account action', () => {
     );
   });
 });
+
+// A step whose own button carries a connect_account action gates every other
+// submitting button on that flow. The gate must recognise a connection the
+// submission already holds (e.g. the owner connected, a collaborator continues)
+// and not only a flow run in this tab.
+describe('required connect_account flow gate', () => {
+  const REQUIRED_MESSAGE = 'You must connect your account before proceeding';
+
+  // The step's required action is derived in an effect after the step
+  // renders, so let that effect commit before clicking.
+  const clickNext = async () => {
+    const btn = await screen.findByTestId('btn');
+    await act(async () => {});
+    fireEvent.click(btn);
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete (fieldValues as any)[EMAIL_KEY];
+    ClientMod._spies.state.steps = [
+      {
+        key: 'step-1',
+        id: 's1',
+        servar_fields: [],
+        buttons: [
+          {
+            id: 'connect-btn',
+            properties: {
+              actions: [{ type: 'connect_account', provider: 'box' }]
+            }
+          }
+        ],
+        next_conditions: []
+      }
+    ];
+    // The clicked button is a plain submitting Next, not the connect button.
+    GridMod._spies.actions = [{ type: 'next' }];
+    GridMod._spies.submit = true;
+  });
+
+  afterEach(() => {
+    ClientMod._spies.state.steps = null;
+    GridMod._spies.submit = false;
+    delete (fieldValues as any)[EMAIL_KEY];
+    cleanup();
+  });
+
+  it('blocks a submit while the step has never been connected', async () => {
+    render(<JSForm formId='f1' _internalId='iid-gate-blocked' />);
+    await clickNext();
+
+    await waitFor(() =>
+      expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: REQUIRED_MESSAGE })
+      )
+    );
+    expect(FormHelperMod.setFormElementError).not.toHaveBeenCalledWith(
+      expect.objectContaining({ fieldKey: 'b1', message: '' })
+    );
+  });
+
+  it('lets a submit through when the submission already holds the connection', async () => {
+    (fieldValues as any)[EMAIL_KEY] = 'owner@example.com';
+
+    render(<JSForm formId='f1' _internalId='iid-gate-connected' />);
+    await clickNext();
+
+    // Past the gate, the first thing a submitting click does is clear the
+    // button's previous error; a blocked click never gets that far.
+    await waitFor(() =>
+      expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(
+        expect.objectContaining({ fieldKey: 'b1', message: '' })
+      )
+    );
+    expect(FormHelperMod.setFormElementError).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: REQUIRED_MESSAGE })
+    );
+  });
+});

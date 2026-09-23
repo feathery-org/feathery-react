@@ -97,6 +97,7 @@ jest.mock('../../utils/init', () => {
     defaultClient: { flushCustomFields: jest.fn() },
     FieldValues: {} as any,
     fieldValues: {} as any,
+    fileRetryStatus: {} as any,
     initState,
     initInfo: jest.fn(() => ({
       userId: '',
@@ -367,13 +368,16 @@ jest.mock('../../utils/featheryClient', () => {
     session: null as any,
     sessionError: null as any,
     formOff: false,
-    authSensitiveActionsOnly: false
+    authSensitiveActionsOnly: false,
+    // Lets a test give the single step its own elements (e.g. a button whose
+    // action gates the step) instead of the empty default.
+    steps: null as any[] | null
   };
 
   class MockClient {
     // Return one step so getNewStep can set activeStep and render Grid
     fetchForm = async () => ({
-      steps: [
+      steps: state.steps ?? [
         {
           key: 'step-1',
           id: 's1',
