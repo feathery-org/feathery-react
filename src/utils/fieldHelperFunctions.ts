@@ -1,5 +1,6 @@
 import { findCountryByID } from '../elements/components/data/countries';
 import { formatDateString } from '../elements/fields/DateSelectorField/utils';
+import { LINK_TOKEN_PARAM } from './accessLink';
 import { featheryWindow } from './browser';
 import Field from './entities/Field';
 import FeatheryClient from './featheryClient';
@@ -549,7 +550,8 @@ export function saveInitialValuesAndUrlParams({
   const params = new URLSearchParams(featheryWindow().location.search);
   if (saveUrlParams) {
     params.forEach((value, key) => {
-      if (key === '_slug') return;
+      // The access link token is a credential, not submitted data
+      if (['_slug', LINK_TOKEN_PARAM].includes(key)) return;
       valuesToSubmit[key] = value;
     });
   }

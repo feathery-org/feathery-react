@@ -12,6 +12,7 @@
 // against those stamps.
 
 import { useEffect } from 'react';
+import { withLinkRequestHeaders } from '../../../utils/accessLinkRequest';
 import { buildIndexBlocks, IndexBlock } from './syncfusionDocumentOps';
 import {
   DocxEditorRegistration,
@@ -191,32 +192,36 @@ export const postDocumentIndex = async ({
   const envelopeTarget = getDocumentTarget(targets);
   if (!baseUrl || !envelopeTarget || !blocks?.length) return { posted: false };
   const formKey = targets.find((target) => target.type === 'panel')?.id;
-  const res = await fetch(`${baseUrl}document-index`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers() },
-    body: JSON.stringify(
-      delta
-        ? {
-            envelopeId: envelopeTarget.id,
-            targets,
-            ...(formKey ? { form_key: formKey } : {}),
-            mode: 'delta',
-            baseHash: delta.baseHash,
-            contentHash,
-            changedBlocks: delta.changedBlocks,
-            removedHashes: delta.removedHashes,
-            anchorRemap: delta.anchorRemap,
-            blockCount: blocks.length
-          }
-        : {
-            envelopeId: envelopeTarget.id,
-            targets,
-            blocks,
-            ...(formKey ? { form_key: formKey } : {}),
-            ...(contentHash ? { contentHash, blockCount: blocks.length } : {})
-          }
-    )
-  });
+  const url = `${baseUrl}document-index`;
+  const res = await fetch(
+    url,
+    withLinkRequestHeaders(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers() },
+      body: JSON.stringify(
+        delta
+          ? {
+              envelopeId: envelopeTarget.id,
+              targets,
+              ...(formKey ? { form_key: formKey } : {}),
+              mode: 'delta',
+              baseHash: delta.baseHash,
+              contentHash,
+              changedBlocks: delta.changedBlocks,
+              removedHashes: delta.removedHashes,
+              anchorRemap: delta.anchorRemap,
+              blockCount: blocks.length
+            }
+          : {
+              envelopeId: envelopeTarget.id,
+              targets,
+              blocks,
+              ...(formKey ? { form_key: formKey } : {}),
+              ...(contentHash ? { contentHash, blockCount: blocks.length } : {})
+            }
+      )
+    })
+  );
   let body: any;
   try {
     body = await res.json();

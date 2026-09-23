@@ -1,7 +1,8 @@
 import React from 'react';
 import { TABLE_CLASS } from '../classNames';
 import { CellRule } from './validation';
-import { cellEditorStyle, cellSelectStyle } from './styles';
+import { cellEditorStyle } from './styles';
+import { ChoiceMenu } from './ChoiceMenu';
 import {
   acceptsNumericInput,
   choicesFor,
@@ -48,17 +49,9 @@ const INPUT_TYPES: Record<string, string> = {
 const SELECTABLE_TYPES = new Set(['text', 'search', 'url', 'tel', 'password']);
 
 /**
- * How long after opening an Enter keyup is taken to be the release of the
- * Enter that OPENED the editor. That key is still held when the select mounts
- * and focuses, so its keyup lands here a few milliseconds later; committing on
- * it would close the editor the same instant it opened. A pick from the menu
- * can only come later than this.
- */
-const OPENING_KEY_GRACE_MS = 350;
-
-/**
  * The editor for one cell, shaped by what the column actually holds: a fixed
- * set of values is picked, a date gets the native picker, a number refuses
+ * set of values is picked from a menu the grid drives (focus stays on the
+ * grid, see `ChoiceMenu`), a date gets the native picker, a number refuses
  * letters outright, and an upload reference cannot be typed at all.
  */
 export function CellEditor({
@@ -76,7 +69,6 @@ export function CellEditor({
   const kind = editorKindFor(rule);
   const choices = choicesFor(rule);
   const inputRef = React.useRef<HTMLInputElement>(null);
-  const selectRef = React.useRef<HTMLSelectElement>(null);
 
   /**
    * Focus and place the caret once, on open.
@@ -125,93 +117,20 @@ export function CellEditor({
     onChange(match ?? stored);
   }, [choices, draft, onChange, seeded, stored]);
 
-  const openedAt = React.useRef(Date.now());
-  const sawKeyDown = React.useRef(false);
-
-  /**
-   * Drop the menu as soon as the editor opens, so Enter or a double-click
-   * lands the user on the choices instead of on a closed box they then have to
-   * click again. `showPicker` is recent and throws where it is unsupported or
-   * disallowed, in which case the select is simply focused and Space or a
-   * click opens it as usual.
-   */
-  React.useLayoutEffect(() => {
-    const select = selectRef.current;
-    if (!select) return;
-    select.focus({ preventScroll: true });
-    let closeCheck: ReturnType<typeof setTimeout>;
-    try {
-      (select as any).showPicker?.();
-      // Native menus can swallow Escape entirely, leaving the select focused.
-      // Typed drafts must wait for Enter's keyup so a held key can still commit.
-      if (!seeded && select.matches(':open')) {
-        const checkClosed = () => {
-          if (select.matches(':open')) {
-            closeCheck = setTimeout(checkClosed, 50);
-          } else {
-            onCancel();
-          }
-        };
-        closeCheck = setTimeout(checkClosed, 50);
-      }
-    } catch {
-      // Not user-initiated enough for this browser; focus is still correct.
-    }
-    return () => clearTimeout(closeCheck);
-  }, []);
-
   if (choices) {
     return (
-      <select
-        ref={selectRef}
-        className={TABLE_CLASS.gridCellSelect}
-        aria-label={label}
-        value={choices.includes(draft) ? draft : ''}
-        css={cellSelectStyle}
-        onMouseDown={(event) => event.stopPropagation()}
-        onChange={(event) => {
-          const picked = event.target.value;
-          onChange(picked);
+      <ChoiceMenu
+        choices={choices}
+        value={draft}
+        label={label}
+        onPick={(choice) => {
+          onChange(choice);
           // A pick is the whole edit, so it lands as soon as it is made — and
-          // it has to carry its own value, since the draft setState above has
-          // not been applied yet.
-          onCommit(picked);
+          // carries its own value, since the draft setState has not applied.
+          onCommit(choice);
         }}
-        onKeyDown={(event) => {
-          sawKeyDown.current = true;
-          onKeyDown(event);
-        }}
-        // While the native menu is open the page sees no keydown, and picking
-        // the value that is already set fires no `change` either — so an Enter
-        // on the menu could leave the editor open with the select focused,
-        // where the next arrow key just reopens the menu (macOS). The keyup
-        // does arrive once the menu has closed, so it commits whatever is
-        // selected. After a real pick the select is already gone, so this
-        // never double-commits.
-        onKeyUp={(event) => {
-          // Native menus consume keydown; Escape reaches React on release.
-          if (event.key === 'Escape') {
-            onCancel();
-            return;
-          }
-          if (event.key !== 'Enter') return;
-          const isOpeningKeyRelease =
-            !seeded &&
-            !sawKeyDown.current &&
-            Date.now() - openedAt.current < OPENING_KEY_GRACE_MS;
-          if (isOpeningKeyRelease) return;
-          onCommit(event.currentTarget.value);
-        }}
-        onBlur={onBlur}
-      >
-        {/* Clearing the cell has to stay reachable from the dropdown. */}
-        <option value=''>(empty)</option>
-        {choices.map((choice) => (
-          <option key={choice} value={choice}>
-            {choice}
-          </option>
-        ))}
-      </select>
+        onCancel={onCancel}
+      />
     );
   }
 
