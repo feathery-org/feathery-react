@@ -15,6 +15,14 @@ export type ProviderConfigProps = {
   provider: string;
   onSaved: (values: Record<string, string>) => void;
   onError: (message: string) => void;
+  onClearError?: () => void;
+  onFooterActionChange?: (action: ProviderFooterAction | null) => void;
+};
+
+export type ProviderFooterAction = {
+  label: string;
+  disabled: boolean;
+  onClick: () => void | Promise<void>;
 };
 
 /** Providers whose post-connect setup needs its own UI. A provider absent from

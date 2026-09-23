@@ -32,18 +32,15 @@ const createProps = () => ({
 });
 
 describe('saved Box credentials', () => {
-  it('requires explicit selection before attaching or browsing credentials', async () => {
+  it('attaches the selected saved credential and opens configuration', async () => {
     const props = createProps();
     render(<ConnectAccountModal {...props} />);
     expect(
       screen.getByRole('combobox', { name: 'Saved Box accounts' })
     ).toBeTruthy();
-    expect(screen.getByText('Use selected account')).toBeDisabled();
     expect(props.client.selectAccountCredential).not.toHaveBeenCalled();
     expect(props.client.browseAccountResources).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'c1' } });
-    expect(props.client.selectAccountCredential).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText('Use selected account'));
     await waitFor(() =>
       expect(props.client.browseAccountResources).toHaveBeenCalledTimes(1)
     );
@@ -64,7 +61,6 @@ describe('saved Box credentials', () => {
     );
     render(<ConnectAccountModal {...props} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'c2' } });
-    fireEvent.click(screen.getByText('Use selected account'));
     expect(
       await screen.findByText('Please sign in to connect an account.')
     ).toBeTruthy();
@@ -75,7 +71,9 @@ describe('saved Box credentials', () => {
   it('offers a new OAuth connection directly from a user click', async () => {
     const props = createProps();
     render(<ConnectAccountModal {...props} />);
-    fireEvent.click(screen.getByText('Connect a new account'));
+    fireEvent.change(screen.getByRole('combobox'), {
+      target: { value: '__new_account__' }
+    });
     expect(props.onChangeAccount).toHaveBeenCalledTimes(1);
     await waitFor(() =>
       expect(props.client.browseAccountResources).toHaveBeenCalledTimes(1)
@@ -87,7 +85,9 @@ describe('saved Box credentials', () => {
     const props = createProps();
     props.onChangeAccount.mockResolvedValue('Please allow pop-ups.' as any);
     render(<ConnectAccountModal {...props} />);
-    fireEvent.click(screen.getByText('Connect a new account'));
+    fireEvent.change(screen.getByRole('combobox'), {
+      target: { value: '__new_account__' }
+    });
     expect(await screen.findByText('Please allow pop-ups.')).toBeTruthy();
     expect(props.client.browseAccountResources).not.toHaveBeenCalled();
   });
@@ -95,12 +95,10 @@ describe('saved Box credentials', () => {
     const props = createProps();
     render(<ConnectAccountModal {...props} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'c1' } });
-    fireEvent.click(screen.getByText('Use selected account'));
     await waitFor(() =>
       expect(props.client.browseAccountResources).toHaveBeenCalledTimes(1)
     );
-    expect(screen.getByRole('combobox')).toHaveValue('');
-    expect(screen.getByText('Use selected account')).toBeDisabled();
+    expect(screen.getByRole('combobox')).toHaveValue('__connected_account__');
   });
 
   it('switches an existing connection to a saved account and resets its folder picker', async () => {
@@ -116,7 +114,6 @@ describe('saved Box credentials', () => {
       expect(props.client.browseAccountResources).toHaveBeenCalledTimes(1)
     );
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'c2' } });
-    fireEvent.click(screen.getByText('Use selected account'));
     await waitFor(() =>
       expect(props.client.browseAccountResources).toHaveBeenCalledTimes(2)
     );
@@ -125,7 +122,6 @@ describe('saved Box credentials', () => {
       'c2'
     );
     expect(props.onSaved).not.toHaveBeenCalled();
-    expect(screen.getByText('Use selected account')).toBeDisabled();
   });
 
   it.each([false, true])(
@@ -138,7 +134,9 @@ describe('saved Box credentials', () => {
       });
       expect(checkbox).not.toBeChecked();
       if (optIn) fireEvent.click(checkbox);
-      fireEvent.click(screen.getByText('Connect a new account'));
+    fireEvent.change(screen.getByRole('combobox'), {
+      target: { value: '__new_account__' }
+    });
       await waitFor(() =>
         expect(props.onChangeAccount).toHaveBeenCalledWith(optIn)
       );

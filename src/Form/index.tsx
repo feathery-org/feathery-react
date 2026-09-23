@@ -382,7 +382,7 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
 function preOpenActionWindows(actions: any[]) {
   const windows = new Map<number, Window | null>();
   actions.forEach((action, idx) => {
-    if (action.type === ACTION_CONNECT_ACCOUNT) {
+    if (action.type === ACTION_CONNECT_ACCOUNT && action.provider !== 'box') {
       windows.set(
         idx,
         featheryWindow().open(
@@ -3068,6 +3068,15 @@ function Form({
               .listAccountCredentials(provider)
               .catch(() => undefined);
             if (saved === null && formSettings.authSensitiveActionsOnly) {
+              // Hosted forms can provide an inline login surface for optional
+              // form auth. Ask that host to show it before reporting the
+              // sensitive action as unavailable to a guest.
+              const formWindow = featheryWindow();
+              if (typeof formWindow.dispatchEvent === 'function') {
+                formWindow.dispatchEvent(
+                  new CustomEvent('feathery:request-login')
+                );
+              }
               throw new Error(
                 `Please sign in to connect or manage your ${
                   PROVIDER_LABELS[provider] ?? provider
@@ -3076,7 +3085,10 @@ function Form({
             }
             credentials = saved?.credentials ?? [];
             canSaveCredential = !!saved;
-            chooseCredential = !alreadyConnected && canSaveCredential;
+            // Always open Box's picker first. If the saved-account lookup is
+            // unavailable, the picker still offers an explicit new-account
+            // action instead of pre-opening and dismissing an OAuth window.
+            chooseCredential = !alreadyConnected;
           }
           if (alreadyConnected || chooseCredential) {
             popup?.close();
@@ -4110,6 +4122,7 @@ function Form({
             chooseCredential={connectAccountModal.chooseCredential}
             canSaveCredential={connectAccountModal.canSaveCredential}
             onCredentialSelected={updateFieldValues}
+            onDisconnected={updateFieldValues}
             client={client}
             accountEmail={
               hasEmailIdentity(connectAccountModal.provider)

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { ProviderConfigProps } from './providers';
 
 interface BoxFolder {
@@ -20,14 +20,20 @@ interface BrowsePage {
 const ROOT_FOLDER_ID = '0';
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Something went wrong';
+  const message = error instanceof Error ? error.message : '';
+  if (/unable to reach the connected account/i.test(message)) {
+    return 'We couldn’t access your Box account. Try reconnecting it and then try again.';
+  }
+  return message || 'We couldn’t load your Box folders. Please try again.';
 }
 
 function BoxFolderPicker({
   client,
   provider,
   onSaved,
-  onError
+  onError,
+  onClearError,
+  onFooterActionChange
 }: ProviderConfigProps) {
   const [currentFolder, setCurrentFolder] = useState<BoxCurrentFolder | null>(
     null
@@ -39,26 +45,69 @@ function BoxFolderPicker({
   const [selecting, setSelecting] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [folderName, setFolderName] = useState('');
+  const folderCache = useRef(new Map<string, BrowsePage>());
+  const folderRequests = useRef(new Map<string, Promise<BrowsePage>>());
+  const activeFolderId = useRef('');
+  const refreshingOnFocus = useRef(false);
+
+  const requestFolder = useCallback(
+    (folderId: string, opts: { marker?: string; create?: string } = {}, force = false) => {
+      const cacheable = !opts.marker && !opts.create;
+      if (!force && cacheable) {
+        const cached = folderCache.current.get(folderId);
+        if (cached) return Promise.resolve(cached);
+      }
+      const existingRequest = folderRequests.current.get(folderId);
+      if (existingRequest) return existingRequest;
+      const request = client.browseAccountResources(provider, folderId, opts) as Promise<BrowsePage>;
+      folderRequests.current.set(folderId, request);
+      return request.then((page) => {
+        if (cacheable || !opts.marker) folderCache.current.set(folderId, page);
+        return page;
+      }).finally(() => {
+        folderRequests.current.delete(folderId);
+      });
+    },
+    [client, provider]
+  );
+
+  const applyPage = useCallback((page: BrowsePage, append = false) => {
+    setCurrentFolder(page.current_folder);
+    setBreadcrumbs(page.breadcrumbs);
+    setFolders((prev) => append ? [...prev, ...page.folders] : page.folders);
+    setNextMarker(page.next_marker);
+  }, []);
+
+  const prefetchFolder = useCallback((folderId: string) => {
+    void requestFolder(folderId);
+  }, [requestFolder]);
 
   const loadFolder = useCallback(
     async (
       folderId: string,
       opts: { marker?: string; create?: string } = {},
       append = false
-    ): Promise<boolean> => {
+  ): Promise<boolean> => {
+      onClearError?.();
+      activeFolderId.current = folderId;
+      if (!append) {
+        setFolders([]);
+        setNextMarker('');
+      }
       setLoading(true);
       try {
-        const page: BrowsePage = await client.browseAccountResources(
-          provider,
-          folderId,
-          opts
-        );
-        setCurrentFolder(page.current_folder);
-        setBreadcrumbs(page.breadcrumbs);
-        setFolders((prev) =>
-          append ? [...prev, ...page.folders] : page.folders
-        );
-        setNextMarker(page.next_marker);
+        const isStandardNavigation = !append && !opts.marker && !opts.create;
+        const cachedPage = isStandardNavigation ? folderCache.current.get(folderId) : undefined;
+        if (cachedPage) {
+          applyPage(cachedPage);
+          setLoading(false);
+          void requestFolder(folderId, {}, true).then((page) => {
+            if (activeFolderId.current === folderId) applyPage(page);
+          }).catch(() => undefined);
+          return true;
+        }
+        const page = await requestFolder(folderId, opts, !isStandardNavigation);
+        applyPage(page, append);
         return true;
       } catch (error: unknown) {
         onError(getErrorMessage(error));
@@ -67,7 +116,7 @@ function BoxFolderPicker({
         setLoading(false);
       }
     },
-    [client, provider, onError]
+    [applyPage, onError, requestFolder]
   );
 
   // Only ever runs on mount; loadFolder's identity changes with client/provider,
@@ -76,7 +125,28 @@ function BoxFolderPicker({
     loadFolder(ROOT_FOLDER_ID);
   }, [loadFolder]);
 
+  useEffect(() => {
+    const refreshActiveFolder = () => {
+      const folderId = activeFolderId.current;
+      if (!folderId || refreshingOnFocus.current || folderRequests.current.has(folderId)) return;
+      refreshingOnFocus.current = true;
+      void loadFolder(folderId).finally(() => {
+        refreshingOnFocus.current = false;
+      });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshActiveFolder();
+    };
+    window.addEventListener('focus', refreshActiveFolder);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', refreshActiveFolder);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadFolder]);
+
   const handleCreateFolder = async () => {
+    onClearError?.();
     const name = folderName.trim();
     if (!name || !currentFolder) return;
     const success = await loadFolder(currentFolder.id, { create: name });
@@ -91,7 +161,8 @@ function BoxFolderPicker({
     loadFolder(currentFolder.id, { marker: nextMarker }, true);
   };
 
-  const handleSelect = async () => {
+  const handleSelect = useCallback(async () => {
+    onClearError?.();
     if (!currentFolder) return;
     setSelecting(true);
     try {
@@ -109,20 +180,40 @@ function BoxFolderPicker({
     } finally {
       setSelecting(false);
     }
-  };
+  }, [client, currentFolder, onClearError, onError, onSaved, provider]);
 
   const canUpload = currentFolder?.can_upload ?? false;
   const busy = loading || selecting;
 
+  useEffect(() => {
+    onFooterActionChange?.({
+      label: `Select “${currentFolder?.name || 'this folder'}”`,
+      disabled: busy || !currentFolder || !canUpload,
+      onClick: handleSelect
+    });
+    return () => onFooterActionChange?.(null);
+  }, [busy, canUpload, currentFolder, handleSelect, onFooterActionChange]);
+
   return (
-    <div>
+    <div
+      css={{
+        overflow: 'hidden',
+        border: '1px solid #d4d4d8',
+        borderRadius: '10px',
+        background: '#fff'
+      }}
+    >
       <nav
         aria-label='Folder path'
         css={{
           display: 'flex',
           flexWrap: 'wrap',
           gap: '4px',
-          paddingBottom: '10px'
+          minHeight: '36px',
+          alignItems: 'center',
+          padding: '7px 14px',
+          borderBottom: '1px solid #e4e4e7',
+          background: '#fafafa'
         }}
       >
         {breadcrumbs.map((crumb, index) => (
@@ -134,12 +225,16 @@ function BoxFolderPicker({
             <button
               type='button'
               onClick={() => loadFolder(crumb.id)}
+              onMouseEnter={() => prefetchFolder(crumb.id)}
+              onFocus={() => prefetchFolder(crumb.id)}
               disabled={busy}
               css={{
                 background: 'none',
                 border: 'none',
                 padding: 0,
                 color: '#0061d5',
+                fontSize: '14px',
+                lineHeight: 1.4,
                 cursor: 'pointer',
                 '&:hover': { textDecoration: 'underline' }
               }}
@@ -151,19 +246,16 @@ function BoxFolderPicker({
       </nav>
 
       <div
-        css={{
-          border: '1px solid #d4d4d8',
-          borderRadius: '8px',
-          minHeight: '160px',
-          maxHeight: '320px',
-          overflowY: 'auto'
-        }}
+        aria-busy={loading}
+        css={{ minHeight: '160px', maxHeight: '280px', overflowY: 'auto' }}
       >
         {folders.map((folder) => (
           <button
             key={folder.id}
             type='button'
             onClick={() => loadFolder(folder.id)}
+            onMouseEnter={() => prefetchFolder(folder.id)}
+            onFocus={() => prefetchFolder(folder.id)}
             disabled={busy}
             css={{
               display: 'block',
@@ -173,6 +265,8 @@ function BoxFolderPicker({
               borderBottom: '1px solid #f4f4f5',
               background: 'none',
               textAlign: 'left',
+              fontSize: '14px',
+              lineHeight: 1.4,
               cursor: 'pointer',
               '&:hover': { background: '#f4f8ff' }
             }}
@@ -181,12 +275,12 @@ function BoxFolderPicker({
           </button>
         ))}
         {!folders.length && loading && (
-          <div css={{ padding: '14px', color: '#71717a' }}>
+          <div css={{ padding: '14px', color: '#71717a', fontSize: '14px', lineHeight: 1.4 }}>
             Loading folders...
           </div>
         )}
         {!folders.length && !loading && (
-          <div css={{ padding: '14px', color: '#71717a' }}>
+          <div css={{ padding: '14px', color: '#71717a', fontSize: '14px', lineHeight: 1.4 }}>
             This folder does not contain any folders.
           </div>
         )}
@@ -211,7 +305,7 @@ function BoxFolderPicker({
         )}
       </div>
 
-      <div css={{ paddingTop: '10px' }}>
+      <div css={{ padding: '10px 14px', borderTop: '1px solid #e4e4e7' }}>
         {!showNewFolder ? (
           <button
             type='button'
@@ -221,7 +315,11 @@ function BoxFolderPicker({
               background: 'none',
               border: '1px solid #d4d4d8',
               borderRadius: '6px',
+              height: '32px',
               padding: '6px 10px',
+              boxSizing: 'border-box',
+              fontSize: '14px',
+              lineHeight: 1.4,
               cursor: 'pointer'
             }}
           >
@@ -237,9 +335,13 @@ function BoxFolderPicker({
               disabled={busy}
               css={{
                 flex: 1,
-                padding: '8px 10px',
+                height: '32px',
+                boxSizing: 'border-box',
+                padding: '6px 10px',
                 border: '1px solid #a1a1aa',
-                borderRadius: '6px'
+                borderRadius: '6px',
+                fontSize: '14px',
+                lineHeight: 1.4
               }}
             />
             <button
@@ -251,7 +353,11 @@ function BoxFolderPicker({
                 background: '#0061d5',
                 color: '#fff',
                 borderRadius: '6px',
-                padding: '8px 14px',
+                height: '32px',
+                padding: '6px 14px',
+                boxSizing: 'border-box',
+                fontSize: '14px',
+                lineHeight: 1.4,
                 cursor: 'pointer'
               }}
             >
@@ -268,6 +374,9 @@ function BoxFolderPicker({
                 background: 'none',
                 border: 'none',
                 color: '#71717a',
+                height: '32px',
+                padding: '0 4px',
+                fontSize: '14px',
                 cursor: 'pointer'
               }}
             >
@@ -277,39 +386,6 @@ function BoxFolderPicker({
         )}
       </div>
 
-      <div
-        css={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingTop: '16px'
-        }}
-      >
-        <span css={{ color: '#52525b' }}>
-          {currentFolder ? currentFolder.name : 'No folder selected'}
-        </span>
-        <button
-          type='button'
-          onClick={handleSelect}
-          disabled={busy || !currentFolder || !canUpload}
-          css={{
-            border: '1px solid #0061d5',
-            borderRadius: '6px',
-            padding: '9px 16px',
-            background: '#0061d5',
-            color: '#fff',
-            cursor: 'pointer',
-            '&:disabled': {
-              border: '1px solid #d4d4d8',
-              background: '#e4e4e7',
-              color: '#71717a',
-              cursor: 'not-allowed'
-            }
-          }}
-        >
-          Select this folder
-        </button>
-      </div>
     </div>
   );
 }

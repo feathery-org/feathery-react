@@ -269,8 +269,24 @@ export default class IntegrationClient {
     throw new Error(parseAPIError(payload) || 'Unable to load saved accounts.');
   }
 
-  async selectAccountCredential(provider: string, credentialId: string) {
+  async selectAccountCredential(
+    provider: string,
+    credentialId: string,
+    remember = false
+  ) {
     return this._accountConnectPost('select', {
+      provider,
+      credential_id: credentialId,
+      ...(remember ? { remember: true } : {})
+    });
+  }
+
+  async disconnectAccount(provider: string) {
+    return this._accountConnectPost('disconnect', { provider });
+  }
+
+  async deleteAccountCredential(provider: string, credentialId: string) {
+    return this._accountConnectPost('delete', {
       provider,
       credential_id: credentialId
     });

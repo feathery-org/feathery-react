@@ -96,6 +96,15 @@ describe('ConnectAccountModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('does not dismiss when the dialog content is clicked', () => {
+    const onClose = jest.fn();
+    render(<ConnectAccountModal {...baseProps} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole('dialog'));
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('clears a config error on Change account and does not carry it across a reopen', async () => {
     const onChangeAccount = jest.fn();
     const { rerender } = render(
