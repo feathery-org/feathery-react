@@ -46,9 +46,11 @@ export const sortArrowStyle = {
   }
 } as const;
 
+// Inline so the cell's own `text-align` (the themed header_text_align, which
+// every browser honours) positions the label and arrow together. Safari does
+// not accept `justify-content: left/right` on a flex container.
 export const sortHeaderContentStyle = {
-  justifyContent: v('header_text_align', 'flex-start'),
-  display: 'flex',
+  display: 'inline-flex',
   alignItems: 'center',
   gap: '8px'
 } as const;
