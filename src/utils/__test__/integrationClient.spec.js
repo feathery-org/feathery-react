@@ -1384,6 +1384,24 @@ describe('IntegrationClient', () => {
       ]);
     });
 
+    it('omits cc_recipients when a rule passes null', async () => {
+      // Logic rules are untyped, so `someField || null` is plausible input;
+      // the backend's list field rejects null with a 400.
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        ccRecipients: null
+      });
+
+      expect('cc_recipients' in requestBody()).toBe(false);
+    });
+
     it('forwards ignoreTemplateFieldMapping as ignore_template_field_mapping', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
