@@ -77,6 +77,11 @@ export interface DocxEditorProps {
   onSave?: (
     blob: Blob
   ) => DocxSaveResult | void | Promise<DocxSaveResult | void>;
+  /** Fired after an explicit Save button press succeeds — not the implicit save
+   *  a download or terminal action runs first. Carries the save result. */
+  onSaved?: (result?: DocxSaveResult) => void;
+  /** Fired after an explicit Download (DOCX or PDF) completes. */
+  onDownloaded?: () => void;
   /** Opt-in document bindings: [[...]] tokens become live fields and formulas
    *  that recalculate as the document is edited. Omitting it changes nothing. */
   bindings?: DocxBindingsConfig;
@@ -122,6 +127,8 @@ function DocxEditor({
   onChange,
   onError,
   onSave,
+  onSaved,
+  onDownloaded,
   bindings
 }: DocxEditorProps) {
   const dirtyRef = useRef(false);
@@ -411,8 +418,9 @@ function DocxEditor({
     if (force) bindingsState.commitForSave();
     else if (!gateSave(() => handleSave(true))) return;
     try {
-      await saveCurrentDocument(await exportDoc());
+      const result = await saveCurrentDocument(await exportDoc());
       flashSaveToast('success', 'Document saved');
+      onSaved?.(result);
     } catch (err) {
       flashSaveToast('error', 'Could not save document');
       onError?.((err as Error).message || String(err));
@@ -446,6 +454,7 @@ function DocxEditor({
       // the only source.
       if (url) triggerDownload(await fetchDownloadBlob(url));
       else triggerDownload(blob);
+      onDownloaded?.();
     } catch (err) {
       onError?.((err as Error).message || String(err));
     } finally {
@@ -464,6 +473,7 @@ function DocxEditor({
       const blob = await exportDoc();
       if (onSave && dirtyRef.current) await saveCurrentDocument(blob);
       triggerDownload(await onExportPdf(), 'pdf');
+      onDownloaded?.();
     } catch (err) {
       onError?.((err as Error).message || String(err));
     } finally {
