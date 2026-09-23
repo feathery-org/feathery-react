@@ -53,5 +53,17 @@ export const TABLE_CLASS = {
   gridIssueStep: 'feathery-table-grid-issue-step',
   gridSaveButton: 'feathery-table-grid-save-button',
   gridDiscardButton: 'feathery-table-grid-discard-button',
-  gridCellTooltip: 'feathery-table-grid-cell-tooltip'
+  gridCellTooltip: 'feathery-table-grid-cell-tooltip',
+  gridSearchBar: 'feathery-table-grid-search',
+  gridSearchInput: 'feathery-table-grid-search-input',
+  gridSearchCount: 'feathery-table-grid-search-count',
+  gridSearchStep: 'feathery-table-grid-search-step',
+  gridSearchClose: 'feathery-table-grid-search-close',
+  gridHeaderMenu: 'feathery-table-grid-header-menu',
+  gridHeaderMenuItem: 'feathery-table-grid-header-menu-item',
+  gridSortIndicator: 'feathery-table-grid-sort-indicator',
+  gridCellChip: 'feathery-table-grid-cell-chip',
+  gridChoiceMenu: 'feathery-table-grid-choice-menu',
+  gridChoiceOption: 'feathery-table-grid-choice-option',
+  gridExitHint: 'feathery-table-grid-exit-hint'
 } as const;

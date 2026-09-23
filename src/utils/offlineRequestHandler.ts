@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { featheryWindow, runningInClient } from './browser';
 import { fileRetryStatus, initInfo } from './init';
+import { withLinkRequestHeaders } from './accessLinkRequest';
 import type FeatheryClient from './featheryClient';
 import { isInteractionDetected } from './interactionState';
 import {
@@ -565,7 +566,14 @@ export class OfflineRequestHandler {
 
           while (attempts < this.maxRetryAttempts) {
             try {
-              const response = await fetch(url, fetchOptions);
+              // The queued headers predate the link gate - they were captured
+              // before _fetch attached the header, and a replay can outlive the
+              // page that queued them. The link this device holds now is the
+              // one the submission is open under, so it wins over the snapshot.
+              const response = await fetch(
+                url,
+                withLinkRequestHeaders(url, fetchOptions)
+              );
               await checkResponseSuccess(response);
               markFileUploadRetrySuccess(fieldKey, this.formKey);
               await this.removeRequest(key);
