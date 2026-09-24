@@ -12,7 +12,6 @@ export const TABLE_CLASS = {
   addRowButton: 'feathery-table-add-row-button',
   addColumnButton: 'feathery-table-add-column-button',
   error: 'feathery-table-error',
-  sourceNotice: 'feathery-table-source-notice',
   table: 'feathery-table',
   header: 'feathery-table-header',
   headerCell: 'feathery-table-header-cell',

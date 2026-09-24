@@ -62,7 +62,6 @@ import {
   toolbarStyle,
   addRowButtonStyle,
   errorBannerStyle,
-  sourceNoticeStyle,
   deleteColumnStyle,
   deleteIconStyle
 } from './styles';
@@ -85,7 +84,7 @@ function applyTableStyles(responsiveStyles: any) {
 // Warns before a step transition, a browser back/forward, or a page exit
 // throws buffered spreadsheet edits away.
 const UNSAVED_TABLE_MESSAGE =
-  'You have unsaved changes in a table. If you leave now, your changes will be lost.';
+  'You have unsaved changes in aa table. If you leave now, your changes will be lost.';
 
 function TableElement({
   element,
@@ -973,20 +972,6 @@ function TableElement({
           onConfirm={handleConfirmDeleteColumn}
           onCancel={closeColumnRequest}
         />
-      )}
-      {/* The builder has no submitted value to read, so it previews
-          placeholder data and names the field the rows will come from. */}
-      {isHiddenField && editMode && (
-        <div className={TABLE_CLASS.sourceNotice} css={sourceNoticeStyle}>
-          {element.properties?.hidden_field_key ? (
-            <>
-              Example data. Rows are loaded from the hidden field{' '}
-              <code>{element.properties.hidden_field_key}</code>.
-            </>
-          ) : (
-            'Example data. Select a hidden field to load this table from.'
-          )}
-        </div>
       )}
       {isHiddenField && hiddenField.editErrors.length > 0 && (
         <div role='alert' className={TABLE_CLASS.error} css={errorBannerStyle}>

@@ -399,17 +399,6 @@ export const errorBannerStyle = {
   }
 } as const;
 
-export const sourceNoticeStyle = {
-  padding: '10px 16px',
-  color: colors.gray600,
-  backgroundColor: colors.gray50,
-  borderBottom: `1px solid ${colors.gray200}`,
-  fontSize: '13px',
-  '& code': {
-    fontWeight: 600
-  }
-} as const;
-
 export const clickToEditStyle = {
   color: colors.gray400,
   cursor: 'pointer',
