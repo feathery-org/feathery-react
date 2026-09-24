@@ -234,6 +234,30 @@ describe('mirror rows in an aggregated column', () => {
     expect(totalText(result.index)).toBe('$7,800.00');
   });
 
+  it('leaves an unflagged header row alone instead of adopting it', () => {
+    // A Word table without "Repeat Header Row" set: the header row carries no
+    // isHeader flag and no controls, so it looks like a user-inserted row. Its
+    // text ("Amount") does not parse as the mirror column's currency type, so
+    // it must be skipped, not adopted (PR #1876 review finding).
+    const doc = buildMirrorFixture();
+    const tablePath = scanBindings(doc).tables.get('summary')!.tablePath!;
+    getAt(doc, tablePath).rows[0].rowFormat = { isHeader: false };
+    const result = applyRules(doc, {});
+    expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    expect(result.index.tables.get('summary')!.rows).toHaveLength(2);
+    expect(totalText(result.index)).toBe('$7,800.00');
+  });
+
+  it('skips a typed row whose mirror-column text does not parse as the type', () => {
+    const result = applyRules(withNativeRow('Note', 'call vendor'), {});
+    expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    expect(result.index.tables.get('summary')!.rows).toHaveLength(2);
+    expect(totalText(result.index)).toBe('$7,800.00');
+    expect(
+      result.diagnostics.some((entry) => entry.code === 'row-not-adopted')
+    ).toBe(true);
+  });
+
   it('addLineItem clones a mirror row into a field row, not a second mirror', () => {
     const base = applyRules(buildMirrorFixture(), {});
     const added = addLineItem(base.sfdt, 'summary', 'm-2', base.index);

@@ -1076,26 +1076,31 @@ export function adoptUnboundRows(
     // typed. Text sitting there means this is a totals row or a damaged one,
     // not a new line item - adopting would overwrite it with a pending
     // placeholder. A MIRROR column is different: on a new row it becomes an
-    // editable input, so typed text there is exactly what a fresh line item
-    // looks like and must not block adoption. (The trade-off: in a table whose
-    // only bound columns are mirrors, a totals row that lost its control is
-    // indistinguishable from a new line item by content.)
-    const occupiedFormula = templateCells.findIndex((templateCell, c) => {
-      const binding = findCellBinding(templateCell);
-      return (
-        !!binding &&
-        binding.def.kind === 'formula' &&
-        isRowLocalFormula(binding.def, templateColumnNames) &&
-        cellPlainText(cells[c]).trim() !== ''
-      );
-    });
-    if (occupiedFormula !== -1) {
+    // editable input, so typed text there is what a fresh line item looks
+    // like - but only when it PARSES as the column's type. Prose there means
+    // an unflagged header row ("Amount") or a label row, and adopting one
+    // breaks evaluation for the whole table on load.
+    let occupiedReason: string | null = null;
+    for (let c = 0; c < templateCells.length && !occupiedReason; c++) {
+      const binding = findCellBinding(templateCells[c]);
+      if (!binding || binding.def.kind !== 'formula') continue;
+      const text = cellPlainText(cells[c]).trim();
+      if (text === '') continue;
+      if (isRowLocalFormula(binding.def, templateColumnNames)) {
+        occupiedReason = `cell ${c} holds text where the template has a formula`;
+      } else {
+        try {
+          parseDisplay(binding.def.fieldType, text);
+        } catch (thrown) {
+          if (!isValueError(thrown)) throw thrown;
+          occupiedReason = `cell ${c} holds text that does not parse as ${binding.def.fieldType.kind}`;
+        }
+      }
+    }
+    if (occupiedReason !== null) {
       if (Number.isInteger(firstBoundRowIndex) && r < firstBoundRowIndex)
         continue;
-      skipped.push({
-        rowIndex: r,
-        reason: `cell ${occupiedFormula} holds text where the template has a formula`
-      });
+      skipped.push({ rowIndex: r, reason: occupiedReason });
       continue;
     }
 
