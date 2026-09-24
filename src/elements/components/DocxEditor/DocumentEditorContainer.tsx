@@ -195,6 +195,9 @@ export default function DocumentEditorContainer({
   // session. Keyed by id so a regenerated envelope is editable again without
   // any reset wiring.
   const [finalizedId, setFinalizedId] = useState<string | null>(null);
+  // The finalized PDF's URL, so the post-sign toolbar can offer "Download PDF"
+  // once the editable docx no longer exists.
+  const [finalizedFileUrl, setFinalizedFileUrl] = useState<string | null>(null);
 
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
   // featheryWindow() is {} so a mount-once memo freezes serviceUrl as
@@ -297,6 +300,10 @@ export default function DocumentEditorContainer({
       : false;
   const finalized = !!envelope && envelope.id === finalizedId;
   const readOnly = !!envelope?.signed || !!actionReadOnly || finalized;
+  // Signing is terminal: it converts the docx to a PDF and strips the editable
+  // copy, so once signed there is nothing left to edit, save, or download as
+  // docx. The toolbar then offers only "Download PDF".
+  const documentFinalized = finalized || !!envelope?.signed;
   // The outcomes this container offers, read from `editor_toolbar_actions` —
   // the same key the overlay editor uses. See containerToolbarOutcomes.
   const { terminalAction, offersDraft, offersDownload, savesToField } =
@@ -413,6 +420,9 @@ export default function DocumentEditorContainer({
           targetAction?.sign_method
         );
         setFinalizedId(envelope.id);
+        // envelope_data returns the converted PDF's `file`; keep it so the
+        // post-sign toolbar can offer "Download PDF".
+        setFinalizedFileUrl(finalized?.file ?? null);
       }
 
       // Nothing here navigates away, so the outcome is only visible if it's
@@ -607,9 +617,15 @@ export default function DocumentEditorContainer({
       reviewChanges={reviewChanges}
       openNonce={reloadKey}
       fileName='document'
-      terminalAction={terminalAction}
-      onTerminalAction={terminalAction ? runTerminalAction : undefined}
-      onTerminalActionDraft={offersDraft ? runTerminalActionDraft : undefined}
+      // Post-sign the docx is gone, so no signing/download/save actions — only
+      // the "Download PDF" that signedPdfUrl drives below.
+      terminalAction={documentFinalized ? undefined : terminalAction}
+      onTerminalAction={
+        !documentFinalized && terminalAction ? runTerminalAction : undefined
+      }
+      onTerminalActionDraft={
+        !documentFinalized && offersDraft ? runTerminalActionDraft : undefined
+      }
       // Signing needs a signer to open as, which only finalizing an unsigned
       // envelope hands back - so there's nothing behind the button once signed.
       terminalActionDisabled={!envelope.file || envelope.signed}
@@ -617,24 +633,28 @@ export default function DocumentEditorContainer({
       // errors here and there is nothing else listening.
       onError={setError}
       // Download shows whenever the toolbar config offers it, matching the
-      // overlay, which renders every configured action as its own button —
-      // Save-to-field and Download can coexist.
-      hideDownload={!offersDownload}
+      // overlay — Save-to-field and Download can coexist. Hidden once signed:
+      // the editable docx no longer exists (Download PDF replaces it).
+      hideDownload={documentFinalized || !offersDownload}
       // Downloads serve the stripped public copy, never the editor bytes —
       // content controls must not leave the platform.
       downloadUrl={envelope.file}
+      // Once finalized the editable docx is gone; offer the finalized PDF.
+      signedPdfUrl={
+        documentFinalized ? finalizedFileUrl ?? envelope.file : null
+      }
       bindings={{
         enabled: bindingsEnabled,
         onFieldValues: (values) => {
           bindingValuesRef.current = values;
         }
       }}
-      onSave={saveEnvelope}
+      onSave={documentFinalized ? undefined : saveEnvelope}
       // A completed Save is the container's Save-to-field review action; a
       // completed Download is the download action. Only fire when the toolbar
-      // config actually offers that outcome.
+      // config actually offers that outcome, and never once finalized.
       onSaved={
-        savesToField
+        !documentFinalized && savesToField
           ? (result) =>
               fireReviewAction(
                 'save',
@@ -643,7 +663,7 @@ export default function DocumentEditorContainer({
           : undefined
       }
       onDownloaded={
-        offersDownload
+        !documentFinalized && offersDownload
           ? () =>
               fireReviewAction(
                 'download',

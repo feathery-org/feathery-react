@@ -44,7 +44,8 @@ jest.mock('./index', () => {
     onTerminalActionDraft,
     onSaved,
     onDownloaded,
-    hideDownload
+    hideDownload,
+    signedPdfUrl
   }: any) {
     const editor = React.useMemo(
       () => ({
@@ -105,6 +106,11 @@ jest.mock('./index', () => {
           key: 'downloaded',
           'data-testid': 'downloaded',
           onClick: () => onDownloaded()
+        }),
+      signedPdfUrl &&
+        React.createElement('div', {
+          key: 'signed-pdf',
+          'data-testid': `signed-pdf:${signedPdfUrl}`
         })
     );
   };
@@ -787,5 +793,39 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const trigger = runDocumentReviewLogic.mock.calls[0][0];
     expect(trigger.action).toBe('sign');
     expect(trigger.files).toEqual(['https://x/signable.pdf']);
+  });
+
+  it('gates save/download off after signing and offers the finalized PDF', async () => {
+    setFormInternalState('form-1', { showEnvelopeOutcome });
+    // No signer_id → the container stays mounted (no sign-page redirect), so
+    // its post-sign state is observable. The finalize returns the PDF url.
+    mockFinalizeEnvelope.mockResolvedValue({
+      signer_id: null,
+      invited: true,
+      file: 'https://x/finalized.pdf'
+    });
+    seed({
+      sign_method: 'feathery',
+      editor_toolbar_actions: ['sign', 'save', 'download'],
+      save_document_field_key: 'doc_url_field'
+    });
+    const { getByTestId, queryByTestId } = mount();
+
+    // Pre-sign: Save and Download are both reachable.
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    expect(queryByTestId('saved')).toBeTruthy();
+    expect(queryByTestId('downloaded')).toBeTruthy();
+    expect(queryByTestId('signed-pdf:https://x/finalized.pdf')).toBeNull();
+
+    getByTestId('terminal:sign').click();
+
+    // Post-sign: Save, Download and the Sign button are gone; only the
+    // finalized PDF download remains.
+    await waitFor(() =>
+      expect(queryByTestId('signed-pdf:https://x/finalized.pdf')).toBeTruthy()
+    );
+    expect(queryByTestId('saved')).toBeNull();
+    expect(queryByTestId('downloaded')).toBeNull();
+    expect(queryByTestId('terminal:sign')).toBeNull();
   });
 });
