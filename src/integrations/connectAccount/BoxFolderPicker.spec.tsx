@@ -103,8 +103,14 @@ describe('BoxFolderPicker', () => {
 
     renderPicker(client, { onSaved, onFooterActionChange });
     await waitFor(() => screen.getByText('Applications'));
+    // The footer action is published from an effect after the folder renders,
+    // so wait for the labelled one rather than reading the spy eagerly.
+    await waitFor(() =>
+      expect(latestFooterAction(onFooterActionChange).label).toBe(
+        'Select “All Files”'
+      )
+    );
     const action = latestFooterAction(onFooterActionChange);
-    expect(action.label).toBe('Select “All Files”');
     expect(action.disabled).toBe(false);
     act(() => {
       action.onClick();
@@ -137,6 +143,11 @@ describe('BoxFolderPicker', () => {
     renderPicker(client, { onFooterActionChange });
     await waitFor(() => screen.getByText('Applications'));
 
+    await waitFor(() =>
+      expect(latestFooterAction(onFooterActionChange).label).toBe(
+        'Select “All Files”'
+      )
+    );
     expect(latestFooterAction(onFooterActionChange).disabled).toBe(true);
   });
 
