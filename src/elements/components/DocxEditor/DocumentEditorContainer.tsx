@@ -616,10 +616,10 @@ export default function DocumentEditorContainer({
       // Without this a failed send is swallowed: DocxEditor routes terminal
       // errors here and there is nothing else listening.
       onError={setError}
-      // Download shows only when the toolbar config offers it, and never in
-      // the save-to-field flow: there the document's destination is a form
-      // field (set on every save), not the user's machine.
-      hideDownload={savesToField || !offersDownload}
+      // Download shows whenever the toolbar config offers it, matching the
+      // overlay, which renders every configured action as its own button —
+      // Save-to-field and Download can coexist.
+      hideDownload={!offersDownload}
       // Downloads serve the stripped public copy, never the editor bytes —
       // content controls must not leave the platform.
       downloadUrl={envelope.file}

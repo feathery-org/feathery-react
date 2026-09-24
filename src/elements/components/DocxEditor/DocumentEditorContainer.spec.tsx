@@ -43,7 +43,8 @@ jest.mock('./index', () => {
     onTerminalAction,
     onTerminalActionDraft,
     onSaved,
-    onDownloaded
+    onDownloaded,
+    hideDownload
   }: any) {
     const editor = React.useMemo(
       () => ({
@@ -99,6 +100,7 @@ jest.mock('./index', () => {
           onClick: () => onSaved({ file: 'saved-file-url' })
         }),
       onDownloaded &&
+        !hideDownload &&
         React.createElement('button', {
           key: 'downloaded',
           'data-testid': 'downloaded',
@@ -704,6 +706,28 @@ describe('DocumentEditorContainer signing outcomes', () => {
 
     await waitFor(() => expect(runDocumentReviewLogic).toHaveBeenCalled());
     expect(runDocumentReviewLogic.mock.calls[0][0].action).toBe('save');
+  });
+
+  it('keeps Download alongside Save-to-field, matching the overlay', async () => {
+    const runDocumentReviewLogic = jest.fn();
+    setFormInternalState('form-1', {
+      showEnvelopeOutcome,
+      runDocumentReviewLogic
+    });
+    // Both save and download configured: the overlay shows both buttons, so
+    // the container must not hide Download in the save-to-field flow.
+    seed({
+      sign_method: 'feathery',
+      editor_toolbar_actions: ['sign', 'save', 'download'],
+      save_document_field_key: 'doc_url_field'
+    });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('downloaded')).toBeTruthy());
+    getByTestId('downloaded').click();
+
+    await waitFor(() => expect(runDocumentReviewLogic).toHaveBeenCalled());
+    expect(runDocumentReviewLogic.mock.calls[0][0].action).toBe('download');
   });
 
   it('does not offer save/download review firing when the toolbar omits them', async () => {

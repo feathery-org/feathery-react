@@ -527,6 +527,7 @@ function DocxEditor({
           (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
         if (url) triggerDownload(await fetchDownloadBlob(url));
         else triggerDownload(blob);
+        onDownloaded?.();
       } else {
         await onTerminalAction?.(saveResult);
       }
