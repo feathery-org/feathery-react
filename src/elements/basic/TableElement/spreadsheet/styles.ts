@@ -263,7 +263,10 @@ export const rowHeaderStyle = {
 } as const;
 
 export const headerSelectedStyle = {
-  color: v('selected_font_color', colors.white),
+  // Always white on the accent: `selected_font_color` is the text colour of a
+  // selected CELL on its pale background, and its classic default is the
+  // accent itself — accent on accent would hide the header label.
+  color: colors.white,
   backgroundColor: v('accent_color', colors.accent),
   // The base header's hover rule would otherwise repaint the background grey
   // and leave the selected white text unreadable.
