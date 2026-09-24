@@ -223,8 +223,8 @@ describe('hidden field table columns - classic', () => {
     const expected = {
       columns: [...COLUMNS, { name: 'Email', field_type: 'email' }],
       values: [
-        ['Alice', 30],
-        ['Bob', 41]
+        ['Alice', 30, ''],
+        ['Bob', 41, '']
       ]
     };
     expect(stored()).toEqual(expected);
@@ -329,7 +329,7 @@ describe('hidden field table columns - classic', () => {
 
   describe('column defaults', () => {
     const setDefault = (dialog: HTMLElement, value: string) =>
-      fireEvent.change(within(dialog).getByLabelText('Default for new rows'), {
+      fireEvent.change(within(dialog).getByLabelText('Default value'), {
         target: { value }
       });
 
@@ -351,7 +351,7 @@ describe('hidden field table columns - classic', () => {
       expect(submitCustom).not.toHaveBeenCalled();
     });
 
-    it('adds a column with a default read as its type, leaving rows blank', () => {
+    it('adds a column with a default read as its type, filling existing rows', () => {
       renderTable({ enable_column_adding: true });
 
       fireEvent.click(screen.getByRole('button', { name: '+ Add Column' }));
@@ -365,10 +365,28 @@ describe('hidden field table columns - classic', () => {
           { name: 'Score', field_type: 'number', default: 5 }
         ],
         values: [
-          ['Alice', 30],
-          ['Bob', 41]
+          ['Alice', 30, 5],
+          ['Bob', 41, 5]
         ]
       });
+    });
+
+    it('pads a short row out to reach a new column default', () => {
+      (fieldValues as any)[HIDDEN_KEY] = {
+        columns: COLUMNS,
+        values: [['Alice', 30], ['Bob']]
+      };
+      renderTable({ enable_column_adding: true });
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Add Column' }));
+      const dialog = fillEditor('Score', 'number');
+      setDefault(dialog, '5');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
+
+      expect(stored().values).toEqual([
+        ['Alice', 30, 5],
+        ['Bob', '', 5]
+      ]);
     });
 
     it('picks a true/false default from a list', () => {
@@ -412,9 +430,7 @@ describe('hidden field table columns - classic', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Edit column Age' }));
       let dialog = screen.getByRole('dialog');
-      expect(within(dialog).getByLabelText('Default for new rows')).toHaveValue(
-        '18'
-      );
+      expect(within(dialog).getByLabelText('Default value')).toHaveValue('18');
       setDefault(dialog, '21');
       fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
       expect(stored().columns[1]).toEqual({ ...COLUMNS[1], default: 21 });
@@ -674,6 +690,23 @@ describe('hidden field table columns - spreadsheet', () => {
       expect(
         screen.queryByRole('button', { name: /Delete column/ })
       ).toBeNull();
+    });
+  });
+
+  it('holds back editing a column while cell edits are unsaved', () => {
+    withViewport(() => {
+      spreadsheet({ enable_column_editing: true });
+      expect(
+        screen.getByRole('button', { name: 'Edit column Name' })
+      ).toBeInTheDocument();
+
+      const cell = screen.getByText('Alice').closest('[role="gridcell"]')!;
+      fireEvent.doubleClick(cell);
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: 'Alicia' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect(screen.queryByRole('button', { name: /Edit column/ })).toBeNull();
     });
   });
 });

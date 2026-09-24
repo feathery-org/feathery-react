@@ -749,8 +749,10 @@ function TableElement({
   const canAddColumns =
     columnsEditable && !!element.properties?.enable_column_adding;
   // Held edits are keyed by column position, so removing or inserting one
-  // would shift them onto its neighbours; the spreadsheet saves or discards
-  // them first. Appending shifts nothing, so it is always allowed.
+  // would shift them onto its neighbours, and editing one could change its
+  // type so a held value no longer fits and is dropped on save; the
+  // spreadsheet saves or discards them first. Appending shifts nothing, so it
+  // is always allowed.
   const columnsShiftable = !(buffersEdits && pendingEdits.count > 0);
   const canInsertColumns = canAddColumns && columnsShiftable;
   // A column's own `canEdit` / `canDelete`, when it sets one, overrides the
@@ -761,8 +763,9 @@ function TableElement({
   const canEditColumn = useCallback(
     (fieldKey: string) =>
       columnsEditable &&
+      columnsShiftable &&
       (columnPermissions[fieldKey]?.canEdit ?? tableEditsColumns),
-    [columnsEditable, columnPermissions, tableEditsColumns]
+    [columnsEditable, columnsShiftable, columnPermissions, tableEditsColumns]
   );
   const canDeleteColumn = useCallback(
     (fieldKey: string) =>
@@ -771,6 +774,16 @@ function TableElement({
       (columnPermissions[fieldKey]?.canDelete ?? tableDeletesColumns),
     [columnsEditable, columnsShiftable, columnPermissions, tableDeletesColumns]
   );
+  // A cell edit buffered while a column's editor, insert or delete prompt is
+  // open withdraws that permission, so the open request is withdrawn with it.
+  useEffect(() => {
+    if (columnsShiftable || !columnRequest) return;
+    const appends =
+      columnRequest.kind === 'add' &&
+      (columnRequest.atIndex === undefined ||
+        columnRequest.atIndex >= columns.length);
+    if (!appends) setColumnRequest(null);
+  }, [columnsShiftable, columnRequest, columns.length]);
   const anyColumnChangeable = columns.some(
     (column) =>
       canEditColumn(column.field_key) || canDeleteColumn(column.field_key)

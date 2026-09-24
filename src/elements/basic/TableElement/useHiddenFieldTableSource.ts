@@ -21,7 +21,8 @@ import { CellValue } from './spreadsheet/model';
  * values, an array of rows where each row is an array of cells. A column may also set `canEdit` or `canDelete` to allow or prevent
  * changing or removing it, overriding the table's own column settings,
  * `required` to flag its blank cells the way a required Data Hub field is, and
- * a `default`, the value a newly added row starts with in that column:
+ * a `default`, the value a newly added row starts with in that column (and
+ * every existing row, when the column is added from the table):
  *
  *   {
  *     columns: [
@@ -537,8 +538,6 @@ export function useHiddenFieldTableSource({
     (draft: ColumnDraft, atIndex?: number) => {
       const grid = currentGrid();
       if (!grid) return;
-      // The default only fills rows added from now on; rows already there get
-      // a blank cell, like any new column.
       const column = withDefault(
         withRequired(
           { name: draft.name, field_type: draft.field_type },
@@ -550,8 +549,10 @@ export function useHiddenFieldTableSource({
         atIndex === undefined
           ? grid.header.length
           : Math.max(0, Math.min(atIndex, grid.header.length));
-      // Rows may be shorter than the columns, so only a row that reaches past
-      // the new column needs a cell for it.
+      // Every existing row starts with the column's default, or a blank cell
+      // without one. Rows may be shorter than the columns, so a short row is
+      // padded out to reach the new column.
+      const cell = newCell(column);
       store(
         {
           header: [
@@ -559,9 +560,15 @@ export function useHiddenFieldTableSource({
             column,
             ...grid.header.slice(at)
           ],
-          rows: grid.rows.map((row) =>
-            row.length > at ? [...row.slice(0, at), '', ...row.slice(at)] : row
-          )
+          rows: grid.rows.map((row) => {
+            if (row.length > at)
+              return [...row.slice(0, at), cell, ...row.slice(at)];
+            return [
+              ...row,
+              ...Array<CellValue>(at - row.length).fill(''),
+              cell
+            ];
+          })
         },
         true
       );

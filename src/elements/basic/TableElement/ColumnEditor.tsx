@@ -167,7 +167,7 @@ export function ColumnEditor({
         </select>
       </label>
       <label css={columnEditorLabelStyle}>
-        Default for new rows
+        Default value
         {isBoolean ? (
           <select
             value={defaultInput}
