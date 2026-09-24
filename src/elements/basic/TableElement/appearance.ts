@@ -42,15 +42,6 @@ const lengthProperties: Record<string, number> = {
   controls_border_radius: 200
 };
 
-/**
- * The table's own type stack, for both renderers. Neither inherits the form's
- * font by default: a display face or an inherited line-height would break the
- * fixed row heights the spreadsheet's virtualizer depends on, and the classic
- * table follows the spreadsheet so one theme value styles both.
- */
-export const TABLE_FONT_FAMILY =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-
 export const tableVariable = (name: string, fallback: string | number) =>
   `var(--feathery-table-${name.replace(/_/g, '-')}, ${fallback})`;
 

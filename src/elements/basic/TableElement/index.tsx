@@ -932,11 +932,11 @@ function TableElement({
                             ...thStyle,
                             backgroundColor: tableVariable(
                               'header_background_color',
-                              '#f3f4f6'
+                              '#f9fafb'
                             ),
                             color: tableVariable(
                               'header_font_color',
-                              '#111827'
+                              '#4b5563'
                             ),
                             borderRight: `${tableVariable(
                               'grid_vertical_width',
@@ -1169,9 +1169,9 @@ function TableElement({
                       ...thStyle,
                       backgroundColor: tableVariable(
                         'header_background_color',
-                        '#f3f4f6'
+                        '#f9fafb'
                       ),
-                      color: tableVariable('header_font_color', '#111827'),
+                      color: tableVariable('header_font_color', '#4b5563'),
                       borderRight: `${tableVariable(
                         'grid_vertical_width',
                         '1px'

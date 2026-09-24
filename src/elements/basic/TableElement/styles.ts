@@ -1,5 +1,5 @@
 import { CSSProperties } from 'react';
-import { TABLE_FONT_FAMILY, tableVariable as v } from './appearance';
+import { tableVariable as v } from './appearance';
 
 const colors = {
   white: '#ffffff',
@@ -8,18 +8,15 @@ const colors = {
   gray200: '#e5e7eb',
   gray300: '#d1d5db',
   gray400: '#9ca3af',
+  gray600: '#4b5563',
   gray700: '#374151',
   gray900: '#111827',
   blue50: '#eff6ff',
   blue700: '#1d4ed8',
+  red50: '#fef2f2',
   red500: '#ef4444',
-  red600: '#dc2626',
-  errorSoft: '#fef3f2',
-  errorText: '#b42318'
+  red600: '#dc2626'
 } as const;
-
-// Fallbacks below are the spreadsheet's: the two renderers share one theme
-// value per key, so an unset key must look the same in both.
 
 export const searchIconStyle = {
   width: '16px',
@@ -62,7 +59,7 @@ export const containerStyle = {
   position: 'relative',
   overflowX: 'auto',
   overflowY: 'auto',
-  backgroundColor: v('background_color', colors.gray100),
+  backgroundColor: v('background_color', colors.white),
   boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
   borderRadius: v('border_radius', '8px'),
   border: `${v('border_width', '1px')} solid ${v(
@@ -73,7 +70,7 @@ export const containerStyle = {
   maxWidth: '100%',
   height: '100%',
   boxSizing: 'border-box',
-  fontFamily: v('font_family', TABLE_FONT_FAMILY)
+  fontFamily: v('font_family', 'inherit')
 } as const;
 
 /**
@@ -98,7 +95,7 @@ export const emptyStateContainerStyle = {
 } as const;
 
 export const emptyStateTextStyle = {
-  color: v('font_color', colors.gray900),
+  color: v('font_color', colors.gray600),
   fontSize: v('font_size', '16px'),
   fontWeight: '500',
   margin: 0
@@ -121,8 +118,8 @@ export const searchIconWrapperStyle = {
 } as const;
 
 export const searchInputStyle = {
-  fontWeight: v('controls_font_weight', 400),
-  fontFamily: v('font_family', TABLE_FONT_FAMILY),
+  fontWeight: v('controls_font_weight', 'normal'),
+  fontFamily: v('font_family', 'inherit'),
   display: 'block',
   width: '100%',
   maxWidth: '384px',
@@ -130,20 +127,20 @@ export const searchInputStyle = {
   paddingRight: '12px',
   paddingTop: '10px',
   paddingBottom: '10px',
-  backgroundColor: v('controls_background_color', colors.white),
-  border: `1px solid ${v('controls_border_color', colors.gray300)}`,
+  backgroundColor: v('controls_background_color', colors.gray50),
+  border: `1px solid ${v('controls_border_color', colors.gray200)}`,
   color: v('controls_font_color', colors.gray900),
   fontSize: v('controls_font_size', '14px'),
-  borderRadius: v('controls_border_radius', '6px'),
+  borderRadius: v('controls_border_radius', '8px'),
   boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
   boxSizing: 'border-box' as const
 } as const;
 
 export const tableStyle = {
   width: '100%',
-  fontSize: v('font_size', '16px'),
-  textAlign: v('cell_text_align', 'start') as CSSProperties['textAlign'],
-  color: v('font_color', colors.gray900),
+  fontSize: v('font_size', '14px'),
+  textAlign: v('cell_text_align', 'left') as CSSProperties['textAlign'],
+  color: v('font_color', colors.gray600),
   textIndent: 0,
   borderColor: 'inherit',
   borderCollapse: 'collapse',
@@ -152,8 +149,8 @@ export const tableStyle = {
 
 export const theadStyle = {
   fontSize: v('header_font_size', '14px'),
-  color: v('header_font_color', colors.gray900),
-  backgroundColor: v('header_background_color', colors.gray100),
+  color: v('header_font_color', colors.gray600),
+  backgroundColor: v('header_background_color', colors.gray50),
   borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
     'grid_horizontal_color',
     colors.gray200
@@ -167,18 +164,18 @@ export const dataColumnMinWidthStyle = {
 } as const;
 
 export const thStyle = {
-  padding: `${v('cell_padding_vertical', '0px')} ${v(
+  padding: `${v('cell_padding_vertical', '12px')} ${v(
     'cell_padding_horizontal',
-    '5px'
+    '24px'
   )}`,
-  fontWeight: v('header_font_weight', 600),
+  fontWeight: v('header_font_weight', 500),
   userSelect: 'none',
   whiteSpace: 'nowrap',
-  height: v('header_height', '34px'),
+  height: v('header_height', 'auto'),
   boxSizing: 'border-box',
   fontSize: v('header_font_size', '14px'),
-  color: v('header_font_color', colors.gray900),
-  textAlign: v('header_text_align', 'center') as CSSProperties['textAlign'],
+  color: v('header_font_color', colors.gray600),
+  textAlign: v('header_text_align', 'inherit') as CSSProperties['textAlign'],
   borderRight: `${v('grid_vertical_width', '1px')} solid ${v(
     'grid_vertical_color',
     colors.gray200
@@ -197,7 +194,7 @@ export const rowStyle = {
     colors.gray200
   )}`,
   transition: 'background-color 0.2s',
-  height: v('row_height', '32px'),
+  height: v('row_height', 'auto'),
   '&:nth-of-type(even)': {
     '--feathery-table-current-row-background': v(
       'alternate_row_background_color',
@@ -213,9 +210,9 @@ export const rowStyle = {
 } as const;
 
 export const cellStyle = {
-  padding: `${v('cell_padding_vertical', '0px')} ${v(
+  padding: `${v('cell_padding_vertical', '16px')} ${v(
     'cell_padding_horizontal',
-    '5px'
+    '24px'
   )}`,
   wordBreak: 'break-word',
   overflowWrap: 'anywhere',
@@ -234,13 +231,13 @@ export const navStyle = {
   justifyContent: 'space-between',
   padding: '16px',
   gap: '8px',
-  backgroundColor: v('controls_background_color', colors.white)
+  backgroundColor: v('controls_background_color', 'transparent')
 } as const;
 
 export const navTextStyle = {
   fontSize: v('controls_font_size', '14px'),
-  fontWeight: v('controls_font_weight', 400),
-  color: v('controls_font_color', colors.gray900)
+  fontWeight: v('controls_font_weight', 'normal'),
+  color: v('controls_font_color', colors.gray600)
 } as const;
 
 export const navTextBoldStyle = {
@@ -258,15 +255,15 @@ export const paginationListStyle = {
 } as const;
 
 export const buttonStyle = {
-  fontFamily: v('font_family', TABLE_FONT_FAMILY),
+  fontFamily: v('font_family', 'inherit'),
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: v('controls_font_color', colors.gray900),
-  backgroundColor: v('controls_background_color', colors.white),
+  color: v('controls_font_color', colors.gray600),
+  backgroundColor: v('controls_background_color', colors.gray50),
   boxSizing: 'border-box' as const,
-  border: `1px solid ${v('controls_border_color', colors.gray300)}`,
-  fontWeight: v('controls_font_weight', 400),
+  border: `1px solid ${v('controls_border_color', colors.gray200)}`,
+  fontWeight: v('controls_font_weight', 500),
   fontSize: v('controls_font_size', '14px'),
   textDecoration: 'none',
   cursor: 'pointer',
@@ -274,19 +271,19 @@ export const buttonStyle = {
   wordBreak: 'keep-all',
   overflowWrap: 'normal',
   '&:hover': {
-    backgroundColor: v('controls_hover_background_color', colors.blue50),
+    backgroundColor: v('controls_hover_background_color', colors.gray100),
     color: v('controls_font_color', colors.gray900)
   },
   '&:disabled:hover': {
-    color: v('controls_font_color', colors.gray900),
-    backgroundColor: v('controls_background_color', colors.white),
+    color: v('controls_font_color', colors.gray600),
+    backgroundColor: v('controls_background_color', colors.gray50),
     cursor: 'auto'
   }
 } as const;
 
 export const actionButtonStyle = {
   ...buttonStyle,
-  borderRadius: v('controls_border_radius', '6px'),
+  borderRadius: v('controls_border_radius', '4px'),
   paddingInline: '8px',
   paddingBlock: '4px',
   width: 'auto',
@@ -298,23 +295,23 @@ export const actionButtonStyle = {
 export const menuIconStyle = {
   width: '16px',
   height: '16px',
-  color: v('controls_font_color', colors.gray900)
+  color: v('controls_font_color', colors.gray600)
 } as const;
 
 export const actionMenuStyle = {
-  fontFamily: v('font_family', TABLE_FONT_FAMILY),
+  fontFamily: v('font_family', 'inherit'),
   position: 'fixed' as const,
   backgroundColor: v('controls_background_color', colors.white),
   border: `1px solid ${v('controls_border_color', colors.gray300)}`,
-  borderRadius: v('controls_border_radius', '6px'),
+  borderRadius: v('controls_border_radius', '4px'),
   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
   zIndex: 9999,
   minWidth: '120px'
 } as const;
 
 export const actionMenuItemStyle = {
-  fontWeight: v('controls_font_weight', 400),
-  fontFamily: v('font_family', TABLE_FONT_FAMILY),
+  fontWeight: v('controls_font_weight', 'normal'),
+  fontFamily: v('font_family', 'inherit'),
   display: 'block',
   width: '100%',
   textAlign: 'left' as const,
@@ -323,14 +320,14 @@ export const actionMenuItemStyle = {
   paddingTop: '8px',
   paddingBottom: '8px',
   fontSize: v('controls_font_size', '14px'),
-  color: v('controls_font_color', colors.gray900),
+  color: v('controls_font_color', colors.gray700),
   backgroundColor: 'transparent',
   border: 'none',
   cursor: 'pointer',
   whiteSpace: 'nowrap' as const,
   position: 'relative',
   '&:hover': {
-    backgroundColor: v('controls_hover_background_color', colors.blue50)
+    backgroundColor: v('controls_hover_background_color', colors.gray100)
   },
   '&:disabled:hover': {
     backgroundColor: 'transparent',
@@ -347,7 +344,7 @@ export const actionMenuItemStyle = {
 } as const;
 
 export const actionMenuSeparatorStyle = {
-  borderTop: `1px solid ${v('controls_border_color', colors.gray300)}`,
+  borderTop: `1px solid ${v('controls_border_color', colors.gray200)}`,
   margin: '4px 0'
 } as const;
 
@@ -400,9 +397,9 @@ export const pageButtonNextStyle = {
 
 export const pageButtonActiveStyle = {
   ...pageButtonStyle,
-  color: v('selected_font_color', v('font_color', colors.gray900)),
+  color: v('selected_font_color', v('accent_color', colors.blue700)),
   backgroundColor: v('selected_background_color', colors.blue50),
-  border: `1px solid ${v('controls_border_color', colors.gray300)}`
+  border: `1px solid ${v('controls_border_color', colors.gray200)}`
 } as const;
 
 export const pageButtonDisabledStyle = {
@@ -443,15 +440,15 @@ export const toolbarStyle = {
   padding: '16px',
   borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
     'controls_border_color',
-    colors.gray300
+    v('grid_horizontal_color', colors.gray200)
   )}`,
   gap: '12px',
-  backgroundColor: v('controls_background_color', colors.white)
+  backgroundColor: v('controls_background_color', 'transparent')
 } as const;
 
 export const addRowButtonStyle = {
   ...buttonStyle,
-  borderRadius: v('controls_border_radius', '6px'),
+  borderRadius: v('controls_border_radius', '8px'),
   paddingLeft: '12px',
   paddingRight: '12px',
   whiteSpace: 'nowrap' as const
@@ -459,8 +456,8 @@ export const addRowButtonStyle = {
 
 export const errorBannerStyle = {
   padding: '10px 16px',
-  color: v('error_font_color', colors.errorText),
-  backgroundColor: v('error_background_color', colors.errorSoft),
+  color: v('error_font_color', colors.red600),
+  backgroundColor: v('error_background_color', colors.red50),
   borderBottom: `1px solid ${colors.red500}`,
   fontSize: '13px',
   '& ul': {
@@ -470,7 +467,7 @@ export const errorBannerStyle = {
 } as const;
 
 export const clickToEditStyle = {
-  color: v('controls_font_color', colors.gray900),
+  color: v('controls_font_color', colors.gray400),
   cursor: 'pointer',
   userSelect: 'none' as const,
   fontSize: v('controls_font_size', '14px')
@@ -484,14 +481,14 @@ export const cellInputStyle = {
   maxWidth: '100%',
   padding: '4px 8px',
   border: `1px solid ${v('accent_color', colors.blue700)}`,
-  borderRadius: v('controls_border_radius', '6px'),
-  fontSize: v('font_size', '16px'),
+  borderRadius: v('controls_border_radius', '4px'),
+  fontSize: v('font_size', '14px'),
   color: v('editor_font_color', v('font_color', colors.gray900)),
   outline: 'none',
   boxSizing: 'border-box' as const,
   resize: 'none' as const,
   overflowY: 'auto' as const,
-  fontFamily: v('font_family', TABLE_FONT_FAMILY),
+  fontFamily: 'inherit',
   lineHeight: 1.5,
   fontWeight: v('font_weight', 400),
   textAlign: v('cell_text_align', 'inherit') as CSSProperties['textAlign']
@@ -563,11 +560,11 @@ export const deleteIconStyle = {
 } as const;
 
 export const confirmPopoverStyle = {
-  fontFamily: v('font_family', TABLE_FONT_FAMILY),
+  fontFamily: v('font_family', 'inherit'),
   position: 'fixed' as const,
   backgroundColor: v('controls_background_color', colors.white),
   border: `1px solid ${v('controls_border_color', colors.gray300)}`,
-  borderRadius: v('controls_border_radius', '6px'),
+  borderRadius: v('controls_border_radius', '8px'),
   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
   zIndex: 9999,
   padding: '12px 16px'
@@ -576,7 +573,7 @@ export const confirmPopoverStyle = {
 export const confirmTextStyle = {
   margin: '0 0 12px 0',
   fontSize: v('controls_font_size', '14px'),
-  fontWeight: v('controls_font_weight', 400),
+  fontWeight: v('controls_font_weight', 500),
   color: v('controls_font_color', colors.gray900)
 } as const;
 
