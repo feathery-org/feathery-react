@@ -71,6 +71,14 @@ const edits = (anchor: string) => [
     anchor: '@value_col;0;0',
     text: 'Value'
   },
+  {
+    op: 'set_char_format',
+    group: 'g01-add-value-column',
+    anchor: '@value_col;0;0',
+    expect: 'Value',
+    bold: true,
+    fontColor: '#FFFFFFFF'
+  },
   ...[1, 2].map((row) => ({
     op: 'create_binding',
     group: 'g01-add-value-column',

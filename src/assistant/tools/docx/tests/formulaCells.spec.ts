@@ -799,7 +799,7 @@ describe('the engine refuses a model-authored number', () => {
     }
   });
 
-  it('real SDK: a user-dictated figure goes in verbatim under `literal: true`, recorded as not-engine-computed', () => {
+  it('real SDK: a user-dictated figure goes in verbatim under `literal: true`', () => {
     const ed = makeRealDocumentEditor(proposalSfdt());
     try {
       ed.enableTrackChanges = true;
@@ -815,13 +815,6 @@ describe('the engine refuses a model-authored number', () => {
       });
       expect(result.results[0].error).toBeUndefined();
       expect(cellTextAt(ed, '0;1;2;1;0')).toBe('$90,000.00');
-      expect(result.results[0].literalNumber).toMatchObject({
-        text: '$90,000.00',
-        previousText: '$84,193.99'
-      });
-      expect(result.results[0].literalNumber?.note).toContain(
-        'NOT computed by the engine'
-      );
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -864,7 +857,6 @@ describe('the engine refuses a model-authored number', () => {
         undefined,
         undefined
       ]);
-      expect(result.results.every((entry) => !entry.literalNumber)).toBe(true);
       expect(cellTextAt(ed, '0;1;1;0;0')).toBe('0101');
       expect(cellTextAt(ed, '0;1;1;1;0')).toBe('7 Bay St');
     } finally {

@@ -558,6 +558,8 @@ export interface TableCellFact {
   rowSpan?: number;
   bold?: true;
   italic?: true;
+  /** Direct text colour, when the cell's first paragraph declares one. */
+  fontColor?: string;
   styleName?: string;
   /**
    * How the CELL looks - fill, borders, vertical alignment. Present only where
@@ -849,9 +851,8 @@ export interface ColumnFormulaReport {
 
 /**
  * A numeric `set_cell_text` the engine re-rendered in its column's own number
- * format, so the bytes written are not the bytes sent. Recorded beside the
- * provenance: the reviewer sees the figure as the model supplied it and as the
- * document dressed it.
+ * format, so the bytes written are not the bytes sent. The guard carries both
+ * forms long enough to describe an unsafe write precisely.
  */
 export interface ColumnFormatRender {
   /** The figure exactly as the op supplied it. */
@@ -862,12 +863,6 @@ export interface ColumnFormatRender {
   formatSource: RenderFormatSource;
 }
 
-/**
- * A numeric `set_cell_text` that got through the model-authored-number gate by
- * declaring where the figure came from. Recorded on the result so the exception
- * is auditable in the change set instead of being indistinguishable from a
- * computed write.
- */
 /**
  * A style the engine resolved from the document where the model had asked for
  * a different one, on a paragraph this change set created. Reported in BOTH
@@ -887,28 +882,6 @@ export interface CreationGap {
   reason: string;
   /** Everywhere the resolver looked, in order. */
   searched: string[];
-}
-
-export interface LiteralNumberWrite {
-  text: string;
-  /** What the cell held before, when it held a number. */
-  previousText: string;
-  /**
-   * The declared provenance. `user_stated` is `literal: true` - a figure the
-   * user dictated in conversation. `attachment` is `quotedFrom`/`quotedText` -
-   * a figure quoted verbatim out of a document the user supplied, whose
-   * excerpt the engine checked actually contains it.
-   */
-  source: 'user_stated' | 'attachment' | 'document';
-  /** `document` only: the bound value the figure was read out of. */
-  copiedFrom?: string;
-  /** `attachment` only: the attachment the figure was read out of. */
-  quotedFrom?: string;
-  /** `attachment` only: the verbatim excerpt the figure was quoted from. */
-  quotedText?: string;
-  /** Set when the written bytes differ from the bytes sent. */
-  rendered?: ColumnFormatRender;
-  note: string;
 }
 
 /**
@@ -980,10 +953,6 @@ export interface EditResult {
   // Present on a successful `set_cell_formula`: the formula, the references it
   // resolved, where it rounded, and the receipt line to relay.
   formula?: FormulaCellReport;
-  // Present on a `set_cell_text` that wrote a number verbatim under the
-  // user-dictated exception: the engine's record that this number was NOT
-  // engine-computed, so a reviewer can see which is which.
-  literalNumber?: LiteralNumberWrite;
   // Present on a successful `set_column_formula`: coverage (how many rows were
   // recomputed) and what actually moved.
   column?: ColumnFormulaReport;
@@ -2905,6 +2874,10 @@ export function collectTableFacts(
         ...(Number.isFinite(rowSpan) && rowSpan > 1 ? { rowSpan } : {}),
         ...(first?.characterFormat?.bold ? { bold: true as const } : {}),
         ...(first?.characterFormat?.italic ? { italic: true as const } : {}),
+        ...(typeof first?.characterFormat?.fontColor === 'string' &&
+        first.characterFormat.fontColor
+          ? { fontColor: first.characterFormat.fontColor }
+          : {}),
         ...(first?.format?.styleName
           ? { styleName: first.format.styleName }
           : {}),
@@ -6186,7 +6159,6 @@ interface OpSuccessExtras {
   details?: string[];
   formula?: FormulaCellReport;
   column?: ColumnFormulaReport;
-  literalNumber?: LiteralNumberWrite;
   /**
    * Set when the op wrote nothing because the value was already there. The
    * executor reads this field to skip the tracked-mutation assertion (there IS
@@ -7164,15 +7136,6 @@ function resolveQuantityCellFormat(
   };
 }
 
-const LITERAL_NUMBER_NOTE =
-  'Written verbatim as a literal figure (literal: true), NOT computed by the engine. Only valid for a figure the user stated; anything derived from other cells must go through set_cell_formula.';
-
-const DOCUMENT_NUMBER_NOTE =
-  'Copied verbatim from a value the document already holds in the same column (the engine verified the match and records the source), NOT computed by the engine. Anything derived from other cells must go through set_cell_formula.';
-
-const QUOTED_NUMBER_NOTE =
-  'Quoted verbatim from an attachment the user supplied (quotedFrom / quotedText), NOT computed by the engine. The engine verified the figure appears in the quoted excerpt; it cannot verify the excerpt came from that attachment, so the citation is recorded for review. Anything derived from other cells must go through set_cell_formula.';
-
 /**
  * What the engine can and cannot check about "this figure came out of the
  * user's document".
@@ -7402,34 +7365,26 @@ function guardModelAuthoredNumber(
   block: FlatBlock,
   byAnchor: Map<string, FlatBlock>,
   rendered?: ColumnFormatRender
-): LiteralNumberWrite | undefined {
+): void {
   const text = modelAuthoredCellText(op);
-  if (text === undefined) return undefined;
+  if (text === undefined) return;
   // Before the numeric-provenance gate, and before the table-cell narrowing:
   // prose bindings are just as destroyable as cell ones.
   refuseBoundWrite(op, block);
-  if (block.kind !== 'table_cell') return undefined;
-  const { record, citationFailure } =
+  if (block.kind !== 'table_cell') return;
+  const { valid, citationFailure } =
     op.op === 'set_cell_text' || op.op === 'create_binding'
-      ? resolveNumberProvenance(op, text.trim(), block.text.trim())
-      : { record: undefined, citationFailure: '' };
-  // `literal: true` is an auditable claim even outside a quantity-formatted
-  // column. The change-set boundary uses these records to enforce the
-  // single-use licence for a user-stated figure.
-  const userStatedRecord =
-    record?.source === 'user_stated' && classifyNumericText(text).numeric
-      ? { ...record, ...(rendered ? { rendered } : {}) }
-      : undefined;
-  if (!isQuantityText(text)) return userStatedRecord;
+      ? verifyNumberProvenance(op, text.trim())
+      : { valid: false, citationFailure: '' };
+  if (!isQuantityText(text)) return;
   // A QUANTITY SLOT IN A QUANTITY COLUMN: either the cell already holds a
   // quantity, or it is empty and sits in a column that plainly holds them - the
   // freshly-inserted Total cell, which is exactly where a fabricated total
   // lands, so leaving the empty case open would leave the gate open.
   const existing = block.text.trim();
   const existingIsQuantity = existing !== '' && isQuantityText(existing);
-  if (!resolveQuantityCellFormat(Array.from(byAnchor.values()), block))
-    return userStatedRecord;
-  if (record) return { ...record, ...(rendered ? { rendered } : {}) };
+  if (!resolveQuantityCellFormat(Array.from(byAnchor.values()), block)) return;
+  if (valid) return;
   throw new OpError(
     'model_authored_number',
     `Refusing to write the number ${JSON.stringify(text.trim())}${
@@ -7451,27 +7406,21 @@ function guardModelAuthoredNumber(
 }
 
 /**
- * The sanctioned provenances for a figure the engine did not compute, and the
- * audit record each one leaves. Anything else is refused by the gate above.
+ * Verify the declared provenance for a figure the engine did not compute.
+ * Anything else is refused by the gate above.
  *
  * `citationFailure` is the sentence the refusal appends when a citation WAS
  * offered and did not hold up. Falling silently back to the generic refusal
  * would read as "attachments are not supported" and send the model round the
  * same loop it was already stuck in.
  */
-function resolveNumberProvenance(
+function verifyNumberProvenance(
   op: EditOp,
-  text: string,
-  previousText: string
-): { record?: LiteralNumberWrite; citationFailure: string } {
+  text: string
+): { valid: boolean; citationFailure: string } {
   if (op.literal === true) {
     return {
-      record: {
-        text,
-        previousText,
-        source: 'user_stated',
-        note: LITERAL_NUMBER_NOTE
-      },
+      valid: true,
       citationFailure: ''
     };
   }
@@ -7479,29 +7428,24 @@ function resolveNumberProvenance(
     typeof op.quotedFrom === 'string' ? op.quotedFrom.trim() : '';
   const quotedText =
     typeof op.quotedText === 'string' ? op.quotedText.trim() : '';
-  if (!quotedFrom && !quotedText) return { citationFailure: '' };
+  if (!quotedFrom && !quotedText) return { valid: false, citationFailure: '' };
   if (!quotedFrom || !quotedText) {
     return {
+      valid: false,
       citationFailure:
         ' `quotedFrom` and `quotedText` must BOTH be sent: the attachment the figure was read out of, and the verbatim excerpt containing it.'
     };
   }
   if (!quotedExcerptContains(quotedText, text)) {
     return {
+      valid: false,
       citationFailure: ` The excerpt sent as \`quotedText\` (${JSON.stringify(
         quotedText
       )}) does not contain this figure, so the citation does not support it.`
     };
   }
   return {
-    record: {
-      text,
-      previousText,
-      source: 'attachment',
-      quotedFrom,
-      quotedText,
-      note: QUOTED_NUMBER_NOTE
-    },
+    valid: true,
     citationFailure: ''
   };
 }
@@ -10412,7 +10356,7 @@ function applyAnchoredOp(
   // The engine, not an individual handler, keeps model arithmetic out of
   // numeric cells. Every registered anchored op crosses this point before its
   // handler can write.
-  const literalNumber = guardModelAuthoredNumber(op, block, byAnchor, rendered);
+  guardModelAuthoredNumber(op, block, byAnchor, rendered);
 
   const handler = ANCHORED_OP_HANDLERS[op.op as AnchoredDocumentOp];
   if (!handler)
@@ -10434,7 +10378,7 @@ function applyAnchoredOp(
       liveText: string;
     }) => OpSuccessExtras | void
   )({ editor, op, block, byAnchor, liveText });
-  return literalNumber ? { ...(extras ?? {}), literalNumber } : extras;
+  return extras;
 }
 
 function applyAnchorlessOp(editor: LiveEditor, op: EditOp): void {
@@ -12010,10 +11954,19 @@ function finalizeTableAppearance(
         })[0]
       : undefined;
     const address = boundAnchor ? undefined : sequence[footprint.sequenceIndex];
+    const sequenceAnchor = address
+      ? `${address.section};${address.block}`
+      : undefined;
+    const exactUnboundAnchor = !footprint.tableId
+      ? [sequenceAnchor, footprint.anchor].find(
+          (candidate): candidate is string =>
+            !!candidate &&
+            tableShapeFingerprint(sfdt, candidate, footprint.headerRows) ===
+              footprint.shapeFingerprint
+        )
+      : undefined;
     const anchor =
-      exactBoundAnchor ??
-      boundAnchor ??
-      (address ? `${address.section};${address.block}` : undefined);
+      exactBoundAnchor ?? boundAnchor ?? exactUnboundAnchor ?? sequenceAnchor;
     if (!anchor) {
       warnings.push(
         `Table appearance not finalized for ${footprint.anchor}: nothing is at ` +
@@ -13585,13 +13538,6 @@ interface EngineMutationPlan {
   index: number;
   op: EditOp;
   anchor?: string;
-  /**
-   * Every figure this plan writes on the strength of a declared provenance, with
-   * the cell each one licenses. Carried on the PLAN rather than on the result
-   * so the single-use licence for a user-stated figure is judged before the
-   * all-or-nothing engine transaction runs.
-   */
-  literalNumbers?: Array<{ where: string; write: LiteralNumberWrite }>;
   /** Lets the batch collapse repeated writes to one explicit global identity. */
   bindingWrite?: {
     identity: BindingWireIdentity;
@@ -13624,7 +13570,6 @@ interface BoundDuplicateRowValue {
   field: string;
   canonical: string;
   display: string;
-  literalNumber?: LiteralNumberWrite;
 }
 
 interface BoundDuplicateRowPlan {
@@ -14142,45 +14087,26 @@ function boundNumericWriteNeedsProvenance(
 }
 
 /**
- * Refuse a bound numeric write with no declared provenance, and hand back the
- * audit record when there is one.
- *
- * The record is the caller's to keep: `literal: true` is a ONE-CELL licence
- * within a change set, and the plan that carries the record is what lets the
- * boundary see a figure being spent twice.
- */
-/**
  * Accept an exact same-column document value as provenance for a row this
  * change set creates. Existing-row writes still require an explicit source.
  */
-function documentProvenanceFor(
+function hasDocumentProvenance(
   candidates: Occurrence[] | undefined,
   occurrence: Occurrence,
   value: string
-): LiteralNumberWrite | undefined {
-  if (!candidates?.length) return undefined;
+): boolean {
+  if (!candidates?.length) return false;
   const wanted = value.trim();
-  if (!wanted) return undefined;
+  if (!wanted) return false;
   // The row being copied may itself be the template the created row was typed
   // from, so identity is no exclusion; a live value of the same field showing
   // exactly this text is the whole test.
-  const match = candidates.find(
+  return candidates.some(
     (candidate) =>
       candidate.name === occurrence.name &&
       candidate.def.kind === 'field' &&
       candidate.text.trim() === wanted
   );
-  if (!match) return undefined;
-  const where = match.tableId
-    ? `${match.tableId}${match.rowId ? ` row ${match.rowId}` : ''}`
-    : 'document';
-  return {
-    text: wanted,
-    previousText: occurrence.text,
-    source: 'document',
-    copiedFrom: `${match.name} in ${where}`,
-    note: DOCUMENT_NUMBER_NOTE
-  };
 }
 
 function guardBoundNumericReplacement(
@@ -14189,16 +14115,14 @@ function guardBoundNumericReplacement(
   value: string,
   /** Bound values a copied figure may be verified against; only for rows this change set creates. */
   createdRowCandidates?: Occurrence[]
-): LiteralNumberWrite | undefined {
-  if (!boundNumericWriteNeedsProvenance(occurrence, value)) return undefined;
-  const { record, citationFailure } = resolveNumberProvenance(
+): void {
+  if (!boundNumericWriteNeedsProvenance(occurrence, value)) return;
+  const { valid, citationFailure } = verifyNumberProvenance(
     { ...op, op: 'set_cell_text', text: value } as TypedEditOp<'set_cell_text'>,
-    value.trim(),
-    occurrence.text
+    value.trim()
   );
-  if (record) return record;
-  const copied = documentProvenanceFor(createdRowCandidates, occurrence, value);
-  if (copied) return copied;
+  if (valid) return;
+  if (hasDocumentProvenance(createdRowCandidates, occurrence, value)) return;
   throw new OpError(
     'model_authored_number',
     `Refusing to write the numeric value ${JSON.stringify(
@@ -14673,11 +14597,7 @@ function boundInputTextPlan(
         });
     }
   const reviewIdentity = [...pendingReviewIdentities.values()][0];
-  const literalNumber = guardBoundNumericReplacement(
-    op,
-    selectedOccurrence,
-    desired
-  );
+  guardBoundNumericReplacement(op, selectedOccurrence, desired);
   let canonical: string;
   try {
     canonical = parseDisplay(selectedOccurrence.def.fieldType, desired);
@@ -14691,9 +14611,6 @@ function boundInputTextPlan(
     index,
     op,
     anchor: block.anchor,
-    ...(literalNumber
-      ? { literalNumbers: [{ where: block.anchor, write: literalNumber }] }
-      : {}),
     bindingWrite: {
       identity: { id: occurrence.name, global: occurrence.def.isGlobal },
       canonical
@@ -15649,7 +15566,7 @@ function validateBoundDuplicateRows(
       const display = String(rawValue ?? '');
       // A replacement row is a row this change set creates; a copied figure is
       // verified against this table's own column.
-      const literalNumber = guardBoundNumericReplacement(
+      guardBoundNumericReplacement(
         op,
         occurrence,
         display,
@@ -15666,37 +15583,11 @@ function validateBoundDuplicateRows(
       values.push({
         field,
         canonical,
-        display,
-        ...(literalNumber ? { literalNumber } : {})
+        display
       });
     }
     return { values };
   });
-}
-
-/**
- * One accounting entry per figure a `duplicate_table` payload writes.
- *
- * `literal: true` on the op is not a blanket licence for every number in every
- * row: the same single-use rule the cell-by-cell path enforces applies here, one
- * cell at a time, so the boundary can see a stated figure being spent twice.
- */
-function duplicateRowLiteralNumbers(
-  op: EditOp,
-  rows: BoundDuplicateRowPlan[] | null
-): Array<{ where: string; write: LiteralNumberWrite }> {
-  if (!rows) return [];
-  const out: Array<{ where: string; write: LiteralNumberWrite }> = [];
-  rows.forEach((row, rowIndex) => {
-    for (const value of row.values) {
-      if (!value.literalNumber) continue;
-      out.push({
-        where: `${op.anchor ?? ''} rows[${rowIndex}].${value.field}`,
-        write: value.literalNumber
-      });
-    }
-  });
-  return out;
 }
 
 /**
@@ -15923,13 +15814,11 @@ function boundDuplicateTablePlan(
 ): EngineMutationPlan {
   const copyRows = op.rows === undefined || op.rows === 'copy';
   const replacementRows = validateBoundDuplicateRows(op, tableRoute);
-  const literalNumbers = duplicateRowLiteralNumbers(op, replacementRows);
   return {
     route: 'engine',
     index,
     op,
     anchor: block.anchor,
-    ...(literalNumbers.length ? { literalNumbers } : {}),
     execute(state) {
       const {
         liveTable,
@@ -16147,6 +16036,11 @@ function blankColumnCell(source: any): any {
   stripRevisionIds(cell);
   delete cell.contentControlProperties;
   delete cell.ccp;
+  cell.cellFormat = {
+    ...(cell.cellFormat ?? {}),
+    columnSpan: 1,
+    rowSpan: 1
+  };
   const blocks = Array.isArray(cell.blocks) ? cell.blocks : [];
   const paragraph = cloneJson(blocks[0] ?? { inlines: [] });
   delete paragraph.contentControlProperties;
@@ -16163,6 +16057,14 @@ function insertColumnIntoTable(table: any, columnIndex: number): void {
     throw new OpError(
       'insert_column_unroutable',
       'insert_column could not read any rows from the target table. Nothing was written.'
+    );
+  const grid = Array.isArray(table?.grid) ? table.grid : undefined;
+  const sourceColumn = columnIndex === 0 ? 0 : columnIndex - 1;
+  const sourceWidth = grid ? Number(grid[sourceColumn]) : undefined;
+  if (grid && !Number.isFinite(sourceWidth))
+    throw new OpError(
+      'insert_column_unroutable',
+      `insert_column cannot copy logical column ${sourceColumn}: its table grid width is missing or invalid. Nothing was written.`
     );
   for (const row of rows) {
     const cells = Array.isArray(row?.cells) ? row.cells : undefined;
@@ -16216,6 +16118,9 @@ function insertColumnIntoTable(table: any, columnIndex: number): void {
     });
     row.cells = next;
   }
+  if (grid) grid.splice(columnIndex, 0, sourceWidth);
+  if (Number.isFinite(Number(table?.columnCount)))
+    table.columnCount = Number(table.columnCount) + 1;
 }
 
 function deleteColumnFromTable(table: any, columnIndex: number): void {
@@ -16889,7 +16794,6 @@ function stableTableReferencePlan(
 ): EngineMutationPlan {
   const parsedRef = stableResourceAnchor(op.anchor);
   const ref = parsedRef?.ref ?? String(op.anchor);
-  let literalNumbers: EngineMutationPlan['literalNumbers'];
   if (
     op.op === 'create_binding' &&
     op.kind === 'input' &&
@@ -16906,12 +16810,8 @@ function stableTableReferencePlan(
       fieldType.kind !== 'boolean' &&
       classifyNumericText(initial).numeric
     ) {
-      const { record, citationFailure } = resolveNumberProvenance(
-        op,
-        initial,
-        ''
-      );
-      if (!record)
+      const { valid, citationFailure } = verifyNumberProvenance(op, initial);
+      if (!valid)
         throw new OpError(
           'model_authored_number',
           `Refusing to create numeric binding ${JSON.stringify(
@@ -16920,18 +16820,16 @@ function stableTableReferencePlan(
             initial
           )}: the engine did not compute it, so the request must say where it came from. Add \`literal: true\` if the user stated this exact value, or provide both \`quotedFrom\` and \`quotedText\` for attachment provenance.${citationFailure}`
         );
-      literalNumbers = [{ where: String(op.anchor ?? ''), write: record }];
     }
   }
   let resolvedPlan: EngineMutationPlan | undefined;
   return {
     route: 'engine',
-    ...(op.op === 'set_column_layout'
+    ...(op.op === 'set_column_layout' || op.op === 'set_char_format'
       ? { resultRoute: 'editor' as const }
       : {}),
     index,
     op,
-    ...(literalNumbers ? { literalNumbers } : {}),
     collectBookmarkClamps: () => resolvedPlan?.collectBookmarkClamps?.() ?? [],
     execute(state) {
       const resource = state.refs.get(ref);
@@ -16977,7 +16875,7 @@ function stableTableReferencePlan(
             'Column references currently address the first paragraph in a cell. Nothing was written.'
           );
         const anchor = `${tableAnchor};${rowIndex};${resource.columnIndex};0`;
-        if (op.op === 'set_column_layout')
+        if (op.op === 'set_column_layout' || op.op === 'set_char_format')
           return {
             sfdt: state.sfdt,
             anchor,
@@ -17204,7 +17102,7 @@ function planCreatedBoundRowWrite(
     );
   const display = String(op.text ?? '');
   // The target row is one this change set is creating (see the guard above).
-  const literalNumber = guardBoundNumericReplacement(
+  guardBoundNumericReplacement(
     op,
     templateOccurrence,
     display,
@@ -17223,13 +17121,6 @@ function planCreatedBoundRowWrite(
     index,
     op,
     anchor: String(op.anchor ?? ''),
-    ...(literalNumber
-      ? {
-          literalNumbers: [
-            { where: String(op.anchor ?? ''), write: literalNumber }
-          ]
-        }
-      : {}),
     execute(state) {
       const rowId = created.plan.createdRowIds[created.offset];
       if (!rowId)
@@ -17436,128 +17327,6 @@ function collectOpExtras(
     ...rest,
     ...(appearanceWrite ? { appearance: appearanceWrite.report } : {})
   };
-}
-
-function userStatedFigureKey(write: LiteralNumberWrite): string | null {
-  const parsed = parseNumericCell(write.rendered?.asSent ?? write.text);
-  if (!parsed) return null;
-  let { units, scale } = parsed.value;
-  while (scale > 0 && units % 10 === 0) {
-    units /= 10;
-    scale--;
-  }
-  return `${units}:${scale}`;
-}
-
-/**
- * A user-stated figure is a one-cell licence within a change set. Successful
- * writes already carry the common-boundary audit record, so enforce the batch
- * invariant over those records instead of re-interpreting model-authored ops.
- */
-function refuseReusedUserStatedFigures(
-  results: Array<EditResult | undefined>
-): void {
-  const firstUse = new Map<string, { anchor: string; text: string }>();
-  results.forEach((result, index) => {
-    if (!result?.ok) return;
-    const write = result.literalNumber;
-    if (!write || write.source !== 'user_stated') return;
-    const key = userStatedFigureKey(write);
-    if (!key) return;
-    const anchor = result.anchor ?? '(unknown cell)';
-    const first = firstUse.get(key);
-    if (!first) {
-      firstUse.set(key, { anchor, text: write.rendered?.asSent ?? write.text });
-      return;
-    }
-    if (first.anchor === anchor) return;
-    results[index] = {
-      ...result,
-      ok: false,
-      error: 'user_stated_figure_reused',
-      message:
-        `The user-stated figure ${JSON.stringify(
-          first.text
-        )} already licenses cell "${
-          first.anchor
-        }" and cannot also license cell "${anchor}" in the same change set. ` +
-        `If "${anchor}" depends on the first cell, derive it with set_cell_formula. Otherwise ask the user which cell the figure belongs in. Nothing was written.`,
-      details: [
-        `first literal cell: ${first.anchor}`,
-        `reused literal cell: ${anchor}`
-      ]
-    };
-  });
-}
-
-function reusedUserStatedFigureRefusal(
-  first: { where: string; text: string },
-  where: string
-): OpError {
-  return new OpError(
-    'user_stated_figure_reused',
-    `The user-stated figure ${JSON.stringify(
-      first.text
-    )} already licenses cell "${
-      first.where
-    }" and cannot also license cell "${where}" in the same change set. ` +
-      `If "${where}" depends on the first cell, derive it with set_cell_formula. Otherwise ask the user which cell the figure belongs in. Nothing was written.`,
-    [`first literal cell: ${first.where}`, `reused literal cell: ${where}`],
-    'never'
-  );
-}
-
-/**
- * The same one-cell licence, judged BEFORE the engine transaction runs.
- *
- * The post-hoc pass above can afford to fail an editor result and let rollback
- * reject that group's native revisions. The engine transaction authors and opens
- * its complete grouped SFDT change set atomically, so a post-hoc refusal would
- * still report failure over a write that landed. Engine plans therefore declare
- * their figures up front and are checked here, against each other and against
- * whatever the editor phase already spent, while the transaction can still be
- * skipped entirely.
- */
-function findReusedUserStatedFigureInPlans(
-  results: Array<EditResult | undefined>,
-  enginePlans: EngineMutationPlan[]
-): { plan: EngineMutationPlan; error: OpError } | null {
-  const firstUse = new Map<string, { where: string; text: string }>();
-  const remember = (
-    where: string,
-    write: LiteralNumberWrite
-  ): string | null => {
-    if (write.source !== 'user_stated') return null;
-    const key = userStatedFigureKey(write);
-    if (!key) return null;
-    const first = firstUse.get(key);
-    if (!first) {
-      firstUse.set(key, { where, text: write.rendered?.asSent ?? write.text });
-      return null;
-    }
-    return first.where === where ? null : key;
-  };
-  for (const result of results) {
-    if (!result?.ok || !result.literalNumber) continue;
-    remember(result.anchor ?? '(unknown cell)', result.literalNumber);
-  }
-  for (const plan of enginePlans) {
-    for (const { where, write } of plan.literalNumbers ?? []) {
-      const logicalWhere = plan.bindingWrite?.identity.global
-        ? `global binding ${plan.bindingWrite.identity.id}`
-        : where;
-      const collided = remember(logicalWhere, write);
-      if (!collided) continue;
-      return {
-        plan,
-        error: reusedUserStatedFigureRefusal(
-          firstUse.get(collided) as { where: string; text: string },
-          logicalWhere
-        )
-      };
-    }
-  }
-  return null;
 }
 
 function mayShiftAnchors(op: EditOp): boolean {
@@ -17851,6 +17620,81 @@ function resolveChangeSetBlock(
       `matching blocks: ${matches.map((match) => match.anchor).join(', ')}`
     ]
   );
+}
+
+function anchorAfterTopLevelPastes(
+  baseline: FlatBlock | undefined,
+  originalSequence: Array<{ section: number; block: number }>,
+  liveSequence: Array<{ section: number; block: number }>,
+  shifts: PasteEffect[]
+): string | undefined {
+  if (!baseline || !shifts.length) return undefined;
+  const parts = baseline.anchor.split(';');
+  if (parts.length < 2) return undefined;
+  let index = sequenceIndexOf(
+    originalSequence,
+    topLevelAddress(baseline.anchor)
+  );
+  if (index < 0) return undefined;
+  for (const shift of shifts) if (shift.at <= index) index += shift.blocks;
+  const address = liveSequence[index];
+  if (!address) return undefined;
+  return [address.section, address.block, ...parts.slice(2)].join(';');
+}
+
+function measuredTopLevelInsertShift(
+  op: EditOp,
+  before: Array<{ section: number; block: number }>,
+  after: Array<{ section: number; block: number }>
+): PasteEffect | null {
+  const blocks = after.length - before.length;
+  if (op.op !== 'insert_text' || blocks <= 0) return null;
+  const anchor = String(op.anchor ?? '');
+  if (anchor.split(';').length !== 2) return null;
+  const target = sequenceIndexOf(before, topLevelAddress(anchor));
+  if (target < 0) return null;
+  const position = String(op.position ?? '').toLowerCase();
+  const startsAtBeginning =
+    position === 'before' ||
+    position === 'start' ||
+    (!position && !(Number(op.offset) > 0));
+  return { at: target + (startsAtBeginning ? 0 : 1), blocks };
+}
+
+function rebaseCreatedEditorRefsAfterShift(
+  refs: Map<string, NonNullable<EditResult['createdRef']>>,
+  shift: PasteEffect,
+  before: Array<{ section: number; block: number }>,
+  after: Array<{ section: number; block: number }>,
+  sfdt: any
+): boolean {
+  const updates: Array<[NonNullable<EditResult['createdRef']>, string]> = [];
+  for (const resource of refs.values()) {
+    const tableAnchor = normalizeTableAnchor(resource.id);
+    if (!tableAnchor) return false;
+    const previousIndex = sequenceIndexOf(before, topLevelAddress(tableAnchor));
+    if (previousIndex < 0) return false;
+    const nextIndex =
+      shift.at <= previousIndex ? previousIndex + shift.blocks : previousIndex;
+    const address = after[nextIndex];
+    if (!address) return false;
+    const nextAnchor = `${address.section};${address.block}`;
+    if (!tableBlockAt(sfdt, nextAnchor)) return false;
+    updates.push([resource, nextAnchor]);
+  }
+  for (const [resource, anchor] of updates) resource.id = anchor;
+  return true;
+}
+
+function topLevelTopologyKey(sfdt: any): string {
+  return topLevelSequence(sfdt)
+    .map(({ section, block }) => {
+      const node = rawSectionBlocks(sfdt, section)[block];
+      return `${section};${block}:${
+        firstTableBlockIn(node) ? 'table' : 'body'
+      }`;
+    })
+    .join('|');
 }
 
 function resolveSectionBoundary(
@@ -19757,7 +19601,8 @@ const STABLE_REF_TARGET_OPS = new Set([
   'set_cell_text',
   'create_binding',
   'delete_column',
-  'set_column_layout'
+  'set_column_layout',
+  'set_char_format'
 ]);
 
 function stableResourceRef(value: unknown): string | null {
@@ -22864,6 +22709,7 @@ function applyDocumentEditsMeasured(
     string,
     NonNullable<EditResult['createdRef']>
   >();
+  const createdEditorRefGroups = new Map<string, string>();
   const createdBoundRows = new Map<string, CreatedBoundRowTarget>();
   const routeByIndex = new Map<number, DocxEditRoute>();
   const routeForIndex = (index: number): DocxEditRoute =>
@@ -22961,15 +22807,39 @@ function applyDocumentEditsMeasured(
   // Edit order is preserved because the finalizer keeps the latest footprint
   // for a table touched more than once.
   const tableFootprints: TableFootprint[] = [];
+  const topLevelPasteShifts: PasteEffect[] = [];
+  let topLevelShiftLedgerValid = true;
+  const invalidateTopLevelShiftLedger = () => {
+    topLevelShiftLedgerValid = false;
+    topLevelPasteShifts.splice(0);
+    createdEditorRefs.clear();
+    createdEditorRefGroups.clear();
+  };
   // Existing positions shift before post-paste footprints are appended.
   const recordTableFootprints = (
     footprints: TableFootprint[],
-    shift?: PasteEffect
+    shift?: PasteEffect,
+    sequenceBeforeShift?: Array<{ section: number; block: number }>
   ) => {
     if (shift) {
       for (const footprint of tableFootprints)
         if (shift.at <= footprint.sequenceIndex)
           footprint.sequenceIndex += shift.blocks;
+      const sequenceAfterShift = topLevelSequence(liveSfdt);
+      if (
+        !sequenceBeforeShift ||
+        sequenceAfterShift.length - sequenceBeforeShift.length !==
+          shift.blocks ||
+        !rebaseCreatedEditorRefsAfterShift(
+          createdEditorRefs,
+          shift,
+          sequenceBeforeShift,
+          sequenceAfterShift,
+          liveSfdt
+        )
+      )
+        invalidateTopLevelShiftLedger();
+      else if (topLevelShiftLedgerValid) topLevelPasteShifts.push(shift);
     }
     tableFootprints.push(...footprints);
   };
@@ -23014,6 +22884,28 @@ function applyDocumentEditsMeasured(
   let documentShifted = false;
   const shiftedTables = new Set<string>();
   const preservedTableAnchors = new Set<string>();
+  const anchorShiftEvents: Array<
+    | { groupId: string; kind: 'table'; tableAnchor: string }
+    | {
+        groupId: string;
+        kind: 'document';
+        preservedTableAnchor?: string;
+      }
+  > = [];
+  const rebuildAnchorShiftState = () => {
+    documentShifted = false;
+    shiftedTables.clear();
+    preservedTableAnchors.clear();
+    for (const event of anchorShiftEvents) {
+      if (event.kind === 'table') shiftedTables.add(event.tableAnchor);
+      else {
+        documentShifted = true;
+        if (event.preservedTableAnchor)
+          preservedTableAnchors.add(event.preservedTableAnchor);
+        else preservedTableAnchors.clear();
+      }
+    }
+  };
   const anchorMayHaveShifted = (anchor: unknown): boolean => {
     const tableAnchor = String(anchor ?? '')
       .split(';')
@@ -23033,6 +22925,44 @@ function applyDocumentEditsMeasured(
     acceptStream = acceptProjectionStream(sfdt);
   };
   refresh();
+  const originalTopLevelSequence = topLevelSequence(liveSfdt);
+  const originalTopLevelTopology = topLevelTopologyKey(liveSfdt);
+  const resolvePlannedBlock = (
+    anchor: string,
+    baseline: FlatBlock | undefined,
+    anchorsMayHaveShifted: boolean,
+    preferEquivalentDirect = false
+  ): FlatBlock => {
+    const rebasedAnchor = anchorAfterTopLevelPastes(
+      baseline,
+      originalTopLevelSequence,
+      topLevelSequence(liveSfdt),
+      topLevelShiftLedgerValid ? topLevelPasteShifts : []
+    );
+    const rebasedTableAnchor = normalizeTableAnchor(rebasedAnchor);
+    const plannedTableAnchor = normalizeTableAnchor(anchor);
+    if (
+      rebasedAnchor &&
+      baseline &&
+      (!plannedTableAnchor || !shiftedTables.has(plannedTableAnchor)) &&
+      (!rebasedTableAnchor || !shiftedTables.has(rebasedTableAnchor))
+    ) {
+      const direct = byAnchor.get(rebasedAnchor);
+      if (
+        direct &&
+        direct.kind === baseline.kind &&
+        direct.text === baseline.text
+      )
+        return direct;
+    }
+    return resolveChangeSetBlock(
+      blocks,
+      anchor,
+      baseline,
+      anchorsMayHaveShifted,
+      preferEquivalentDirect
+    );
+  };
   const stableRefCreators = new Map<string, EditOp>();
   for (const edit of edits) {
     const ref = stableResourceRef(edit?.resultRef);
@@ -23102,6 +23032,7 @@ function applyDocumentEditsMeasured(
     });
   };
   const rollbackGroup = (groupId: string) => {
+    const topologyBeforeRollback = topLevelTopologyKey(liveSfdt);
     const rollbackErrors: string[] = [];
     const attempt = (work: () => void) => {
       try {
@@ -23141,6 +23072,22 @@ function applyDocumentEditsMeasured(
     if (revisions.length) attempt(() => rejectRevisions(revisions));
     revisionsByAppliedGroup.delete(groupId);
     attempt(() => refresh());
+    for (const [ref, owner] of createdEditorRefGroups)
+      if (owner === groupId) {
+        createdEditorRefs.delete(ref);
+        createdEditorRefGroups.delete(ref);
+      }
+    const topologyAfterRollback = topLevelTopologyKey(liveSfdt);
+    for (let index = anchorShiftEvents.length - 1; index >= 0; index--)
+      if (anchorShiftEvents[index].groupId === groupId)
+        anchorShiftEvents.splice(index, 1);
+    rebuildAnchorShiftState();
+    if (topologyAfterRollback !== topologyBeforeRollback) {
+      if (topologyAfterRollback === originalTopLevelTopology) {
+        topLevelPasteShifts.splice(0);
+        topLevelShiftLedgerValid = true;
+      } else invalidateTopLevelShiftLedger();
+    }
     const withdrawn = plans
       .filter((plan) => opGroupId(plan.op, changeSetId) === groupId)
       .reduce(
@@ -23821,6 +23768,8 @@ function applyDocumentEditsMeasured(
           continue;
         stampRevisionGroup(editor, changeSetId, op);
         const revisionsBeforeOp = snapshotRevisions(editor);
+        const topLevelSequenceBeforeOp = topLevelSequence(liveSfdt);
+        const topLevelTopologyBeforeOp = topLevelTopologyKey(liveSfdt);
         let writtenOp = op;
         let appliedRelocation = plan.relocated;
         let priorRejectStream: string | undefined;
@@ -23887,8 +23836,7 @@ function applyDocumentEditsMeasured(
                     // content on either side, is the identity contract.
                     undefined
                   )
-                : resolveChangeSetBlock(
-                    blocks,
+                : resolvePlannedBlock(
                     requestedAnchor,
                     plan.target,
                     anchorMayHaveShifted(requestedAnchor)
@@ -23939,8 +23887,7 @@ function applyDocumentEditsMeasured(
               }
               if (op.op === 'insert_text' && !insertInheritance) {
                 const explicitSource = plan.source
-                  ? resolveChangeSetBlock(
-                      blocks,
+                  ? resolvePlannedBlock(
                       String(op.inheritFormatFrom),
                       plan.source,
                       anchorMayHaveShifted(op.inheritFormatFrom),
@@ -24027,8 +23974,28 @@ function applyDocumentEditsMeasured(
             priorAcceptStream
           );
           refresh(postWriteSfdt);
+          const topLevelSequenceAfterOp = topLevelSequence(liveSfdt);
+          const reportedPasteEffect = (opExtras as OpSuccessExtras | undefined)
+            ?.pasteEffect;
+          if (
+            !reportedPasteEffect &&
+            topLevelTopologyKey(liveSfdt) !== topLevelTopologyBeforeOp
+          ) {
+            const measuredShift = measuredTopLevelInsertShift(
+              writtenOp,
+              topLevelSequenceBeforeOp,
+              topLevelSequenceAfterOp
+            );
+            if (measuredShift)
+              recordTableFootprints(
+                [],
+                measuredShift,
+                topLevelSequenceBeforeOp
+              );
+            else invalidateTopLevelShiftLedger();
+          }
           if (mayShiftAnchors(op)) {
-            const rowOpTable =
+            const liveRowOpTable =
               op.op === 'insert_row' || op.op === 'delete_row'
                 ? String(writtenOp.anchor ?? '')
                     .split(';')
@@ -24036,16 +24003,28 @@ function applyDocumentEditsMeasured(
                     .join(';')
                 : '';
             const tableKept = blocks.some((block) =>
-              block.anchor.startsWith(`${rowOpTable};`)
+              block.anchor.startsWith(`${liveRowOpTable};`)
             );
-            if (rowOpTable && tableKept) shiftedTables.add(rowOpTable);
+            const plannedRowOpTable = normalizeTableAnchor(op.anchor);
+            if (liveRowOpTable && tableKept)
+              anchorShiftEvents.push({
+                groupId,
+                kind: 'table',
+                tableAnchor: plannedRowOpTable ?? liveRowOpTable
+              });
             else {
-              documentShifted = true;
-              if (op.op === 'duplicate_table') {
-                const sourceTable = normalizeTableAnchor(writtenOp.anchor);
-                if (sourceTable) preservedTableAnchors.add(sourceTable);
-              } else preservedTableAnchors.clear();
+              const preservedTableAnchor =
+                op.op === 'duplicate_table'
+                  ? normalizeTableAnchor(op.anchor) ??
+                    normalizeTableAnchor(writtenOp.anchor)
+                  : null;
+              anchorShiftEvents.push({
+                groupId,
+                kind: 'document',
+                ...(preservedTableAnchor ? { preservedTableAnchor } : {})
+              });
             }
+            rebuildAnchorShiftState();
           }
           assertInsertedTableIsAddressable(
             writtenOp,
@@ -24124,7 +24103,12 @@ function applyDocumentEditsMeasured(
           const reportedExtras = collectOpExtras(
             opExtras,
             (restores) => recordAppearanceRestores(op, restores),
-            recordTableFootprints,
+            (footprints, shift) =>
+              recordTableFootprints(
+                footprints,
+                shift,
+                topLevelSequenceBeforeOp
+              ),
             (clamps) => recordBookmarkClamps(op, clamps)
           );
           results[index] = {
@@ -24153,6 +24137,8 @@ function applyDocumentEditsMeasured(
               reportedExtras.createdRef.ref,
               reportedExtras.createdRef
             );
+          if (reportedExtras.createdRef)
+            createdEditorRefGroups.set(reportedExtras.createdRef.ref, groupId);
         } catch (err) {
           fail(index, op, err);
           if (appliedRelocation)
@@ -24185,12 +24171,10 @@ function applyDocumentEditsMeasured(
         const revisionsBeforeOp = snapshotRevisions(editor);
         let appliedRelocation = plan.relocated;
         try {
-          const requestedAnchor = plan.deferredStableRef
-            ? editorStableRefAnchor(
-                op,
-                plan.deferredStableRef,
-                createdEditorRefs
-              )
+          const stableRef =
+            plan.deferredStableRef ?? stableResourceAnchor(op.anchor);
+          const requestedAnchor = stableRef
+            ? editorStableRefAnchor(op, stableRef, createdEditorRefs)
             : op.anchor;
           if (!requestedAnchor)
             throw new OpError(
@@ -24203,9 +24187,11 @@ function applyDocumentEditsMeasured(
             plan.target && !isLiveStoryTarget(plan.target)
               ? plan.target
               : undefined;
-          let target: FlatBlock;
+          let target!: FlatBlock;
           let createdTarget: FlatBlock | undefined;
-          if (!baselineTarget && op.expect != null) {
+          if (stableRef) {
+            target = resolvePlannedBlock(requestedAnchor, undefined, false);
+          } else if (!baselineTarget && op.expect != null) {
             if (op.__sectionFinalAnchor) {
               const planned = byAnchor.get(op.__sectionFinalAnchor);
               if (!planned || !expectTextMatches(op.expect, planned.text))
@@ -24259,7 +24245,9 @@ function applyDocumentEditsMeasured(
               }
             }
           }
-          if (createdTarget) {
+          if (stableRef) {
+            // Already resolved to the exact cell created in this change set.
+          } else if (createdTarget) {
             target = createdTarget;
           } else if (
             !baselineTarget &&
@@ -24286,8 +24274,7 @@ function applyDocumentEditsMeasured(
               );
             }
           } else {
-            target = resolveChangeSetBlock(
-              blocks,
+            target = resolvePlannedBlock(
               requestedAnchor,
               baselineTarget,
               anchorMayHaveShifted(requestedAnchor) &&
@@ -24302,8 +24289,7 @@ function applyDocumentEditsMeasured(
                 }
               : plan.relocated;
           const source = plan.source
-            ? resolveChangeSetBlock(
-                blocks,
+            ? resolvePlannedBlock(
                 String(op.inheritFormatFrom),
                 plan.source,
                 anchorMayHaveShifted(op.inheritFormatFrom),
@@ -24392,22 +24378,7 @@ function applyDocumentEditsMeasured(
       }
 
       if (enginePlans.length) {
-        // Judged here, not in the post-write pass: a licence violation must stop
-        // the all-or-nothing transaction rather than be reported over a write
-        // that already landed.
-        const reusedFigure = findReusedUserStatedFigureInPlans(
-          results,
-          enginePlans
-        );
-        if (reusedFigure)
-          fail(
-            reusedFigure.plan.index,
-            reusedFigure.plan.op,
-            reusedFigure.error
-          );
-        const abortReason = reusedFigure
-          ? 'a user-stated figure would license two cells in one change set'
-          : results.some((result) => result && !result.ok)
+        const abortReason = results.some((result) => result && !result.ok)
           ? 'an editor-routed edit failed before the engine transaction'
           : '';
         if (abortReason) {
@@ -24557,6 +24528,7 @@ function applyDocumentEditsMeasured(
                       `The calculated table "${promotion.tableId}" is no longer present. Nothing was written.`
                     );
                   const marker = getAt(calculated.sfdt, table.markerPath);
+                  const sequenceBeforePromotion = topLevelSequence(liveSfdt);
                   const promoted = promotePlainTableInEditor(
                     editor,
                     promotion,
@@ -24565,7 +24537,11 @@ function applyDocumentEditsMeasured(
                   );
                   promotion.anchor = promoted.anchor;
                   refresh(promoted.postWriteSfdt);
-                  recordTableFootprints([], promoted.paste);
+                  recordTableFootprints(
+                    [],
+                    promoted.paste,
+                    sequenceBeforePromotion
+                  );
                 }
               } finally {
                 rememberGroupRevisions(
@@ -24768,7 +24744,6 @@ function applyDocumentEditsMeasured(
     }
   }
 
-  refuseReusedUserStatedFigures(results);
   if (!batchRefusal) {
     results.forEach((result, index) => {
       if (
