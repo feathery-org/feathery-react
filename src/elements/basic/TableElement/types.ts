@@ -1,4 +1,5 @@
 import type { CellValueType } from './spreadsheet/validation';
+import type { CellValue } from './spreadsheet/model';
 
 export type Action = {
   label: string;
@@ -31,8 +32,16 @@ export type CellWrite = {
 
 export type TableDisplayMode = 'classic' | 'spreadsheet';
 
-/** A column as the user defines it when adding or editing one. */
-export type ColumnDraft = { name: string; field_type: CellValueType };
+/**
+ * A column as the user defines it when adding or editing one. `default` is
+ * what a new row starts with in that column; left out (or empty), a new row's
+ * cell is blank.
+ */
+export type ColumnDraft = {
+  name: string;
+  field_type: CellValueType;
+  default?: CellValue;
+};
 
 /** What a column control asks the table to open, anchored to that control. */
 export type ColumnRequest =

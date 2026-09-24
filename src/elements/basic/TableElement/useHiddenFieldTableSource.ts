@@ -1,24 +1,30 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fieldValues } from '../../../utils/init';
 import { CellWrite, Column, ColumnDraft } from './types';
 import {
   CellRules,
   CellValueType,
-  validateCellValue
+  EDITABLE_CELL_VALUE_TYPES,
+  isEditableCellValueType,
+  validateCellValue,
+  validateGrid
 } from './spreadsheet/validation';
 import { parseCellInput } from './spreadsheet/fieldEditors';
+import { CellValue } from './spreadsheet/model';
 
 /**
  * A hidden field-backed table stores the whole grid in one hidden field, as an
- * object with its columns — one `{ name, field_type }` each, typed like a Data
- * Hub field, or as text when `field_type` is left out — and its values, an array of rows where each row is an array of
- * cells. A column may also set `canEdit` or `canDelete` to allow or prevent
- * changing or removing it, overriding the table's own column settings:
+ * object with its columns — one `{ name, field_type }` each, where
+ * `field_type` is any cell type the grid can edit (every type the Data Hub and
+ * field-backed sources use, less `file`), or text when it is left out — and its
+ * values, an array of rows where each row is an array of cells. A column may also set `canEdit` or `canDelete` to allow or prevent
+ * changing or removing it, overriding the table's own column settings, and a
+ * `default`, the value a newly added row starts with in that column:
  *
  *   {
  *     columns: [
  *       { name: "Name", field_type: "text", canDelete: false },
- *       { name: "Age", field_type: "number" }
+ *       { name: "Age", field_type: "number", default: 18 }
  *     ],
  *     values: [["Alice", 30], ["Bob", 41]]
  *   }
@@ -30,42 +36,12 @@ import { parseCellInput } from './spreadsheet/fieldEditors';
 
 const COLUMN_KEY_PREFIX = '__hidden_field_column_';
 
-/**
- * The types a column may have: the Data Hub's field types, less `file`, whose
- * upload references the grid cannot author, and `any`, which carries no rule.
- */
-export const HIDDEN_FIELD_COLUMN_TYPES: CellValueType[] = [
-  'text',
-  'number',
-  'boolean',
-  'date',
-  'datetime',
-  'email',
-  'url',
-  'phone_number',
-  'tax_id',
-  'uuid'
-];
-
-// What each type is called in the column editor.
-export const COLUMN_TYPE_LABELS: Record<string, string> = {
-  text: 'Text',
-  number: 'Number',
-  boolean: 'True/False',
-  date: 'Date',
-  datetime: 'Date & Time',
-  email: 'Email',
-  url: 'URL',
-  phone_number: 'Phone Number',
-  tax_id: 'Tax ID',
-  uuid: 'UUID'
-};
-
 export type HiddenFieldColumn = {
   name: string;
   field_type?: CellValueType;
   canEdit?: boolean;
   canDelete?: boolean;
+  default?: CellValue;
 };
 
 /** A column's own overrides of the table's column edit and delete settings. */
@@ -111,12 +87,43 @@ const isCell = (cell: unknown) =>
 const isObject = (value: unknown): value is Record<string, any> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
-const isColumn = (entry: any): entry is HiddenFieldColumn =>
+const columnRule = (column: HiddenFieldColumn, index: number) => ({
+  label: columnName(column, index),
+  type: columnType(column)
+});
+
+/** Why a column's `default` cannot start a new row, or null when it can. */
+const defaultProblem = (column: HiddenFieldColumn, index: number) => {
+  const value = column.default;
+  if (value === undefined) return null;
+  if (!isCell(value)) return 'Must be text, a number or true/false';
+  return validateCellValue(value, columnRule(column, index));
+};
+
+const isColumn = (entry: any, index: number): entry is HiddenFieldColumn =>
   isObject(entry) &&
   typeof entry.name === 'string' &&
-  (hasNoType(entry.field_type) ||
-    HIDDEN_FIELD_COLUMN_TYPES.includes(entry.field_type)) &&
-  PERMISSION_FLAGS.every((flag) => isOptionalBoolean(entry[flag]));
+  (hasNoType(entry.field_type) || isEditableCellValueType(entry.field_type)) &&
+  PERMISSION_FLAGS.every((flag) => isOptionalBoolean(entry[flag])) &&
+  !defaultProblem(entry as HiddenFieldColumn, index);
+
+// What a new row holds in a column: its default, or a blank cell.
+const newCell = (column: HiddenFieldColumn) =>
+  column.default === undefined || column.default === null ? '' : column.default;
+
+/**
+ * A draft's default, left out when it is empty so a column without one is
+ * stored without the key.
+ */
+const withDefault = (
+  column: HiddenFieldColumn,
+  value: CellValue | undefined
+): HiddenFieldColumn => {
+  const { default: _, ...rest } = column;
+  return value === undefined || value === null || value === ''
+    ? rest
+    : { ...rest, default: value };
+};
 
 export type ParsedHiddenField = {
   header: HiddenFieldColumn[];
@@ -147,9 +154,20 @@ const describeColumnProblem = (entry: any, index: number) => {
       entry[badFlag]
     )}; use true or false.`;
   }
+  if (
+    isEditableCellValueType(entry.field_type) ||
+    hasNoType(entry.field_type)
+  ) {
+    const problem = defaultProblem(entry as HiddenFieldColumn, index);
+    if (problem) {
+      return `${column} has default ${JSON.stringify(
+        entry.default
+      )}: ${problem}.`;
+    }
+  }
   return `${column} has field_type ${JSON.stringify(
     entry.field_type
-  )}; use one of ${HIDDEN_FIELD_COLUMN_TYPES.join(', ')}.`;
+  )}; use one of ${Object.keys(EDITABLE_CELL_VALUE_TYPES).join(', ')}.`;
 };
 
 /**
@@ -176,7 +194,7 @@ export function parseHiddenFieldRows(value: unknown): ParsedHiddenField {
   if (!Array.isArray(header)) {
     return invalid('"columns" is not a list of columns.');
   }
-  const badColumn = header.findIndex((entry) => !isColumn(entry));
+  const badColumn = header.findIndex((entry, index) => !isColumn(entry, index));
   if (badColumn !== -1) {
     return invalid(describeColumnProblem(header[badColumn], badColumn));
   }
@@ -235,6 +253,12 @@ type UseHiddenFieldTableSourceProps = {
   hiddenFieldKey?: string;
   enabled: boolean;
   editMode: boolean;
+  /**
+   * Whether cells already stored when the grid first loads are checked and
+   * listed with the refused edits. The spreadsheet flags every cell against
+   * its rule itself, so only the classic table needs the list.
+   */
+  reportLoadErrors?: boolean;
   updateFieldValues: (values: Record<string, any>) => void;
   submitCustom: (values: Record<string, any>) => void;
   onMutate: () => void;
@@ -244,6 +268,7 @@ export function useHiddenFieldTableSource({
   hiddenFieldKey,
   enabled,
   editMode,
+  reportLoadErrors = true,
   updateFieldValues,
   submitCustom,
   onMutate
@@ -278,10 +303,7 @@ export function useHiddenFieldTableSource({
   const cellRules = useMemo<CellRules>(() => {
     const rules: CellRules = {};
     header.forEach((entry, index) => {
-      rules[columnKey(index)] = {
-        label: columnName(entry, index),
-        type: columnType(entry)
-      };
+      rules[columnKey(index)] = columnRule(entry, index);
     });
     return rules;
   }, [header]);
@@ -310,6 +332,42 @@ export function useHiddenFieldTableSource({
   // Edits refused because they do not match their column's type. The classic
   // table has no per-cell error display, so they are listed on the table.
   const [editErrors, setEditErrors] = useState<string[]>([]);
+
+  // The first readable grid is checked once, so values that were stored
+  // before the table loaded (a prefill, a logic rule, an earlier session) are
+  // flagged without waiting for an edit. Later writes are checked as they are
+  // made, so only a new hidden field loads — and is checked — again.
+  const loadValidatedKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!enabled || editMode || !hiddenFieldKey || formatError) return;
+    if (!header.length || loadValidatedKey.current === hiddenFieldKey) return;
+    loadValidatedKey.current = hiddenFieldKey;
+    if (!reportLoadErrors) return;
+    const errors = validateGrid({
+      rowIndices: rows.map((_, index) => index),
+      fieldKeys: header.map((_, index) => columnKey(index)),
+      getValue: (rowIndex, fieldKey) =>
+        rows[rowIndex][columnIndexOf(fieldKey)] ?? null,
+      rules: cellRules
+    });
+    setEditErrors(
+      Object.entries(errors).map(([key, message]) => {
+        const separator = key.indexOf(':');
+        const rowIndex = Number(key.slice(0, separator));
+        const label = cellRules[key.slice(separator + 1)]?.label;
+        return `${label}, row ${rowIndex + 1}: ${message}`;
+      })
+    );
+  }, [
+    enabled,
+    editMode,
+    hiddenFieldKey,
+    formatError,
+    header,
+    rows,
+    cellRules,
+    reportLoadErrors
+  ]);
 
   // Mutations read the stored value afresh rather than the render's snapshot,
   // so two writes in quick succession don't each start from the same grid.
@@ -341,11 +399,12 @@ export function useHiddenFieldTableSource({
       const grid = currentGrid();
       if (!grid || !grid.header.length) return;
       const at = Math.max(0, Math.min(atIndex, grid.rows.length));
-      const emptyRow = Array(grid.header.length).fill('');
+      // Each cell starts from its column's default, if it has one.
+      const newRow = grid.header.map(newCell);
       store(
         {
           header: grid.header,
-          rows: [...grid.rows.slice(0, at), emptyRow, ...grid.rows.slice(at)]
+          rows: [...grid.rows.slice(0, at), newRow, ...grid.rows.slice(at)]
         },
         false
       );
@@ -399,10 +458,7 @@ export function useHiddenFieldTableSource({
         const colIndex = columnIndexOf(fieldKey);
         const column = grid.header[colIndex];
         if (!column || rowIndex < 0) return;
-        const rule = {
-          label: columnName(column, colIndex),
-          type: columnType(column)
-        };
+        const rule = columnRule(column, colIndex);
         const cell =
           typeof value === 'string' && value.trim()
             ? parseCellInput(value, rule)
@@ -436,7 +492,12 @@ export function useHiddenFieldTableSource({
     (draft: ColumnDraft, atIndex?: number) => {
       const grid = currentGrid();
       if (!grid) return;
-      const column = { name: draft.name, field_type: draft.field_type };
+      // The default only fills rows added from now on; rows already there get
+      // a blank cell, like any new column.
+      const column = withDefault(
+        { name: draft.name, field_type: draft.field_type },
+        draft.default
+      );
       const at =
         atIndex === undefined
           ? grid.header.length
@@ -469,7 +530,10 @@ export function useHiddenFieldTableSource({
       // column's new rule rather than silently cleared.
       const header = grid.header.map((column, index) =>
         index === colIndex
-          ? { ...column, name: draft.name, field_type: draft.field_type }
+          ? withDefault(
+              { ...column, name: draft.name, field_type: draft.field_type },
+              draft.default
+            )
           : column
       );
       store({ header, rows: grid.rows }, true);
@@ -502,7 +566,11 @@ export function useHiddenFieldTableSource({
       const colIndex = columnIndexOf(fieldKey);
       const column = header[colIndex];
       return column
-        ? { name: columnName(column, colIndex), field_type: columnType(column) }
+        ? {
+            name: columnName(column, colIndex),
+            field_type: columnType(column),
+            default: column.default
+          }
         : null;
     },
     [header]

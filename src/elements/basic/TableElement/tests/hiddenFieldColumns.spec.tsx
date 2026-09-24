@@ -290,6 +290,117 @@ describe('hidden field table columns - classic', () => {
     expect(screen.getByText('Years')).toBeInTheDocument();
   });
 
+  describe('column defaults', () => {
+    const setDefault = (dialog: HTMLElement, value: string) =>
+      fireEvent.change(within(dialog).getByLabelText('Default for new rows'), {
+        target: { value }
+      });
+
+    it('starts a new row with each column default', () => {
+      (fieldValues as any)[HIDDEN_KEY] = {
+        columns: [COLUMNS[0], { ...COLUMNS[1], default: 18 }],
+        values: [['Alice', 30]]
+      };
+      const { submitCustom } = renderTable();
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Add Row' }));
+
+      expect(stored().values).toEqual([
+        ['', 18],
+        ['Alice', 30]
+      ]);
+      expect(screen.getByText('18')).toBeInTheDocument();
+      // Still provisional, like a blank new row.
+      expect(submitCustom).not.toHaveBeenCalled();
+    });
+
+    it('adds a column with a default read as its type, leaving rows blank', () => {
+      renderTable({ enable_column_adding: true });
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Add Column' }));
+      const dialog = fillEditor('Score', 'number');
+      setDefault(dialog, '5');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
+
+      expect(stored()).toEqual({
+        columns: [
+          ...COLUMNS,
+          { name: 'Score', field_type: 'number', default: 5 }
+        ],
+        values: [
+          ['Alice', 30],
+          ['Bob', 41]
+        ]
+      });
+    });
+
+    it('picks a true/false default from a list', () => {
+      renderTable({ enable_column_adding: true });
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Add Column' }));
+      const dialog = fillEditor('Active', 'boolean');
+      setDefault(dialog, 'true');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
+
+      expect(stored().columns[2]).toEqual({
+        name: 'Active',
+        field_type: 'boolean',
+        default: true
+      });
+    });
+
+    it('will not save a default that does not fit the type', () => {
+      const { updateFieldValues } = renderTable({ enable_column_adding: true });
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Add Column' }));
+      const dialog = fillEditor('Score', 'number');
+      setDefault(dialog, 'lots');
+
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(
+        'Must be a number'
+      );
+      expect(
+        within(dialog).getByRole('button', { name: 'Add' })
+      ).toBeDisabled();
+      fireEvent.submit(dialog);
+      expect(updateFieldValues).not.toHaveBeenCalled();
+    });
+
+    it('edits and clears a default, starting from the current one', () => {
+      (fieldValues as any)[HIDDEN_KEY] = {
+        columns: [COLUMNS[0], { ...COLUMNS[1], default: 18 }],
+        values: [['Alice', 30]]
+      };
+      renderTable({ enable_column_editing: true });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit column Age' }));
+      let dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByLabelText('Default for new rows')).toHaveValue(
+        '18'
+      );
+      setDefault(dialog, '21');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+      expect(stored().columns[1]).toEqual({ ...COLUMNS[1], default: 21 });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit column Age' }));
+      dialog = screen.getByRole('dialog');
+      setDefault(dialog, '');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+      expect(stored().columns[1]).toEqual(COLUMNS[1]);
+    });
+
+    it('reports a stored default that does not fit its column', () => {
+      (fieldValues as any)[HIDDEN_KEY] = {
+        columns: [COLUMNS[0], { ...COLUMNS[1], default: 'old' }],
+        values: []
+      };
+      renderTable();
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Column 2 has default "old": Must be a number.'
+      );
+    });
+  });
+
   it('opens the editor without sorting the column', () => {
     renderTable({ enable_column_editing: true, sort: true });
     fireEvent.click(screen.getByRole('button', { name: 'Edit column Name' }));

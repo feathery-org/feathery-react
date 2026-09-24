@@ -6,6 +6,7 @@ import {
   INVALID_FORMAT_MESSAGE,
   parseHiddenFieldRows
 } from '../useHiddenFieldTableSource';
+import { EDITABLE_CELL_VALUE_TYPES } from '../spreadsheet/validation';
 
 const HIDDEN_KEY = 'table_grid';
 
@@ -161,6 +162,25 @@ describe('TableElement - hidden field data source', () => {
     expect(screen.queryByText('Alice')).not.toBeInTheDocument();
   });
 
+  it('lists stored cells that do not match their type once loaded', () => {
+    (fieldValues as any)[HIDDEN_KEY] = table([
+      ['Alice', 'old', 'alice@x.co'],
+      ['Bob', 41, 'nope']
+    ]);
+    const { updateFieldValues } = renderTable();
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Age, row 1: Must be a number');
+    expect(alert).toHaveTextContent('Email, row 2: Invalid email');
+    // Checking is not an edit: nothing is written back.
+    expect(updateFieldValues).not.toHaveBeenCalled();
+  });
+
+  it('does not list stored cells that fit their type', () => {
+    renderTable();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('flags stored cells that do not match their type in a spreadsheet', () => {
     // jsdom lays nothing out, so the grid's virtualizers would render no cells
     // without a viewport.
@@ -183,6 +203,8 @@ describe('TableElement - hidden field data source', () => {
       expect(cell('old')).toHaveAttribute('title', 'Must be a number');
       expect(cell('nope')).toHaveAttribute('title', 'Invalid email');
       expect(cell('Alice')).not.toHaveAttribute('title');
+      // The cells carry the errors, so there is no list of them as well.
+      expect(screen.queryByRole('alert')).toBeNull();
     } finally {
       sizes.forEach((prop, index) => {
         const original = originals[index];
@@ -321,7 +343,36 @@ describe('TableElement - hidden field data source', () => {
     });
   });
 
-  it('previews placeholder columns in the builder', () => {
+  it('previews one column saying data loads from the hidden field in the builder', () => {
+    const { container } = render(
+      <TableElement
+        element={makeElement()}
+        responsiveStyles={mockStyles()}
+        editMode
+      />
+    );
+    const dataHeaders = container.querySelectorAll('th[data-feathery-field]');
+    expect(dataHeaders).toHaveLength(1);
+    expect(dataHeaders[0]).toHaveTextContent(
+      'Data is loaded from the hidden field'
+    );
+    expect(screen.queryByText('Alice')).not.toBeInTheDocument();
+  });
+
+  it('asks for a hidden field in the preview column when none is selected', () => {
+    render(
+      <TableElement
+        element={makeElement({ hidden_field_id: undefined })}
+        responsiveStyles={mockStyles()}
+        editMode
+      />
+    );
+    expect(
+      screen.getByText('Select a hidden field to load data from')
+    ).toBeInTheDocument();
+  });
+
+  it('previews two sample rows in the builder', () => {
     render(
       <TableElement
         element={makeElement()}
@@ -329,9 +380,20 @@ describe('TableElement - hidden field data source', () => {
         editMode
       />
     );
-    expect(screen.getByText('Column 1')).toBeInTheDocument();
-    expect(screen.getAllByText('Sample').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Alice')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Sample')).toHaveLength(2);
+  });
+
+  it('shows the add column button in the builder when columns can be added', () => {
+    render(
+      <TableElement
+        element={makeElement({ enable_column_adding: true })}
+        responsiveStyles={mockStyles()}
+        editMode
+      />
+    );
+    expect(
+      screen.getByRole('button', { name: '+ Add Column' })
+    ).toBeInTheDocument();
   });
 
   it('names the referenced hidden field in the builder', () => {
@@ -388,6 +450,14 @@ describe('parseHiddenFieldRows', () => {
     });
   });
 
+  it('accepts every cell type but file', () => {
+    const types = Object.keys(EDITABLE_CELL_VALUE_TYPES);
+    const columns = types.map((type) => ({ name: type, field_type: type }));
+    expect(types).toContain('url');
+    expect(types).not.toContain('file');
+    expect(parseHiddenFieldRows({ columns }).error).toBeNull();
+  });
+
   it('treats missing values as a table with no rows', () => {
     expect(parseHiddenFieldRows({ columns: COLUMNS })).toEqual({
       header: COLUMNS,
@@ -423,8 +493,8 @@ describe('parseHiddenFieldRows', () => {
       'Column 2 has field_type "money"'
     ],
     [
-      { columns: [{ name: 'A', field_type: 'any' }] },
-      'Column 1 has field_type "any"'
+      { columns: [{ name: 'A', field_type: 'file' }] },
+      'Column 1 has field_type "file"'
     ],
     [{ columns: COLUMNS, values: 'rows' }, '"values" is not a list of rows'],
     [table(['row'] as any), 'Row 1 is not an array'],

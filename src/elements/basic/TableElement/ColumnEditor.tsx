@@ -9,11 +9,22 @@ import {
   confirmTextStyle,
   columnEditorStyle,
   columnEditorLabelStyle,
-  columnEditorInputStyle
+  columnEditorInputStyle,
+  columnEditorErrorStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
 import { ColumnDraft } from './types';
-import type { CellValueType } from './spreadsheet/validation';
+import { CellValueType, validateCellValue } from './spreadsheet/validation';
+import { parseCellInput } from './spreadsheet/fieldEditors';
+
+const BOOLEAN_DEFAULTS = [
+  { value: '', label: 'None' },
+  { value: 'true', label: 'True' },
+  { value: 'false', label: 'False' }
+];
+
+const defaultText = (value: ColumnDraft['default']) =>
+  value === undefined || value === null ? '' : String(value);
 
 type ColumnEditorProps = {
   anchorEl: HTMLElement;
@@ -25,7 +36,7 @@ type ColumnEditorProps = {
 };
 
 /**
- * A popover for a column's name and type, anchored under the control that
+ * A popover for a column's name, type and default, anchored under the control that
  * opened it. Like `DeleteConfirm`, it closes on a click elsewhere, a scroll or
  * Escape.
  */
@@ -40,6 +51,11 @@ export function ColumnEditor({
   const [name, setName] = useState(initial?.name ?? '');
   const [fieldType, setFieldType] = useState<CellValueType>(
     initial?.field_type ?? 'text'
+  );
+  // Typed as text and read as the column's type, the way a cell edit is, so
+  // "18" in a number column is stored as 18.
+  const [defaultInput, setDefaultInput] = useState(
+    defaultText(initial?.default)
   );
 
   useEffect(() => {
@@ -71,6 +87,16 @@ export function ColumnEditor({
   const anchorRect = anchorEl.getBoundingClientRect();
   const title = initial ? 'Edit column' : 'Add column';
   const trimmed = name.trim();
+  const isBoolean = fieldType === 'boolean';
+  const defaultValue = parseCellInput(defaultInput, {
+    label: trimmed,
+    type: fieldType
+  });
+  const defaultError =
+    defaultValue === null
+      ? null
+      : validateCellValue(defaultValue, { label: trimmed, type: fieldType });
+  const canSave = !!trimmed && !defaultError;
 
   return createPortal(
     <form
@@ -88,7 +114,13 @@ export function ColumnEditor({
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (trimmed) onSave({ name: trimmed, field_type: fieldType });
+        if (canSave) {
+          onSave({
+            name: trimmed,
+            field_type: fieldType,
+            default: defaultValue
+          });
+        }
       }}
       // Keep the table's own handlers (sorting, grid selection) out of it.
       onClick={(event) => event.stopPropagation()}
@@ -110,9 +142,18 @@ export function ColumnEditor({
         <select
           value={fieldType}
           css={columnEditorInputStyle}
-          onChange={(event) =>
-            setFieldType(event.target.value as CellValueType)
-          }
+          onChange={(event) => {
+            const next = event.target.value as CellValueType;
+            setFieldType(next);
+            // A true/false default is picked from a list that has nothing
+            // else to show, so any other text is dropped rather than hidden.
+            if (
+              next === 'boolean' &&
+              !BOOLEAN_DEFAULTS.some((option) => option.value === defaultInput)
+            ) {
+              setDefaultInput('');
+            }
+          }}
         >
           {typeOptions.map((option) => (
             <option key={option.value} value={option.value}>
@@ -121,6 +162,36 @@ export function ColumnEditor({
           ))}
         </select>
       </label>
+      <label css={columnEditorLabelStyle}>
+        Default for new rows
+        {isBoolean ? (
+          <select
+            value={defaultInput}
+            css={columnEditorInputStyle}
+            onChange={(event) => setDefaultInput(event.target.value)}
+          >
+            {BOOLEAN_DEFAULTS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type='text'
+            value={defaultInput}
+            placeholder='None'
+            aria-invalid={!!defaultError}
+            css={columnEditorInputStyle}
+            onChange={(event) => setDefaultInput(event.target.value)}
+          />
+        )}
+        {defaultError && (
+          <span role='alert' css={columnEditorErrorStyle}>
+            {defaultError}
+          </span>
+        )}
+      </label>
       <div css={confirmButtonRowStyle}>
         <button type='button' css={confirmCancelButtonStyle} onClick={onCancel}>
           Cancel
@@ -128,7 +199,7 @@ export function ColumnEditor({
         <button
           type='submit'
           css={confirmPrimaryButtonStyle}
-          disabled={!trimmed}
+          disabled={!canSave}
         >
           {initial ? 'Save' : 'Add'}
         </button>

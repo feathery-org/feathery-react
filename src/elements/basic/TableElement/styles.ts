@@ -579,6 +579,13 @@ export const columnEditorInputStyle = {
   }
 } as const;
 
+export const columnEditorErrorStyle = {
+  margin: 0,
+  fontSize: '12px',
+  fontWeight: '400',
+  color: colors.red600
+} as const;
+
 export const confirmPrimaryButtonStyle = {
   ...buttonStyle,
   borderRadius: '6px',

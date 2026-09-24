@@ -18,11 +18,7 @@ import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
 import { useHubTableSource } from './useHubTableSource';
-import {
-  COLUMN_TYPE_LABELS,
-  HIDDEN_FIELD_COLUMN_TYPES,
-  useHiddenFieldTableSource
-} from './useHiddenFieldTableSource';
+import { useHiddenFieldTableSource } from './useHiddenFieldTableSource';
 import { ColumnEditor } from './ColumnEditor';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
@@ -35,6 +31,8 @@ import {
 import {
   CellErrors,
   cellErrorKey,
+  CellValueType,
+  EDITABLE_CELL_VALUE_TYPES,
   fieldCellRules,
   mergeCellErrors,
   validateGrid
@@ -144,6 +142,7 @@ function TableElement({
     hiddenFieldKey: element.properties?.hidden_field_key,
     enabled: isHiddenField,
     editMode,
+    reportLoadErrors: !wantsSpreadsheet,
     updateFieldValues,
     submitCustom,
     onMutate
@@ -830,9 +829,9 @@ function TableElement({
 
   const columnTypeOptions = useMemo(
     () =>
-      HIDDEN_FIELD_COLUMN_TYPES.map((value) => ({
-        value,
-        label: COLUMN_TYPE_LABELS[value] ?? value
+      Object.entries(EDITABLE_CELL_VALUE_TYPES).map(([value, label]) => ({
+        value: value as CellValueType,
+        label
       })),
     []
   );

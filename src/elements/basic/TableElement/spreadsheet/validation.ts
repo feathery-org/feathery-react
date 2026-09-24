@@ -17,21 +17,61 @@ import {
  * cell errors from a save. Messages are worded like the backend's so a cell
  * does not change its wording once the server has seen it.
  */
-export type CellValueType =
-  | 'any'
-  | 'boolean'
-  | 'date'
-  | 'datetime'
-  | 'email'
+/**
+ * The Data Hub's field types, each with what it is called where a user picks
+ * one. Keyed rather than listed so a type is looked up, not searched for.
+ */
+export const HUB_FIELD_TYPES = {
+  text: 'Text',
+  number: 'Number',
+  boolean: 'True/False',
+  date: 'Date',
+  datetime: 'Date & Time',
+  email: 'Email',
+  phone_number: 'Phone Number',
+  tax_id: 'Tax ID',
+  uuid: 'UUID',
   // Upload references (`[{url, path}]`), so the grid shows them but cannot
   // edit them — there is no typing your way to an uploaded file.
-  | 'file'
-  | 'number'
-  | 'phone_number'
-  | 'tax_id'
-  | 'text'
-  | 'url'
-  | 'uuid';
+  file: 'File',
+  // No rule beyond required: the cell holds whatever it is given.
+  any: 'Any'
+} as const;
+
+export type HubFieldType = keyof typeof HUB_FIELD_TYPES;
+
+/**
+ * Every type a cell can have, whichever source the table reads from: the Data
+ * Hub's field types, plus `url`, which the hub has no type for but a form
+ * field (via `FIELD_TYPES`) and a hidden field column can.
+ */
+export const CELL_VALUE_TYPES = {
+  ...HUB_FIELD_TYPES,
+  url: 'URL'
+} as const;
+
+export type CellValueType = keyof typeof CELL_VALUE_TYPES;
+
+// Own keys only, so `constructor` and the like are not taken for a type.
+const hasKey = (dictionary: object, value: unknown): boolean =>
+  typeof value === 'string' &&
+  Object.prototype.hasOwnProperty.call(dictionary, value);
+
+export const isHubFieldType = (value: unknown): value is HubFieldType =>
+  hasKey(HUB_FIELD_TYPES, value);
+
+/**
+ * The types a user can author cells of, with their labels: all but `file`,
+ * whose upload references can only come from an upload.
+ */
+export const EDITABLE_CELL_VALUE_TYPES = Object.fromEntries(
+  Object.entries(CELL_VALUE_TYPES).filter(([type]) => type !== 'file')
+) as Readonly<Record<Exclude<CellValueType, 'file'>, string>>;
+
+export const isEditableCellValueType = (
+  value: unknown
+): value is Exclude<CellValueType, 'file'> =>
+  hasKey(EDITABLE_CELL_VALUE_TYPES, value);
 
 export type CellRule = {
   /** Column name, used in messages. */
@@ -339,19 +379,6 @@ type HubFieldLike = {
   constraint_rules?: HubConstraintRule[];
 };
 
-const HUB_TYPES: Record<string, CellValueType> = {
-  boolean: 'boolean',
-  date: 'date',
-  datetime: 'datetime',
-  email: 'email',
-  file: 'file',
-  number: 'number',
-  phone_number: 'phone_number',
-  tax_id: 'tax_id',
-  text: 'text',
-  uuid: 'uuid'
-};
-
 /**
  * Rules for Hub-backed columns, keyed by the synthetic storage key the grid
  * renders. `any` fields carry no client-checkable rule beyond required; `file`
@@ -379,7 +406,9 @@ export function hubCellRules(
     const metadata = field.metadata ?? {};
     rules[column.field_key] = {
       label: column.name,
-      type: HUB_TYPES[field.type] ?? 'any',
+      // A hub field type is the cell type of the same name; one this SDK
+      // does not know yet is left unchecked rather than guessed at.
+      type: isHubFieldType(field.type) ? field.type : 'any',
       required: field.required,
       unique: field.unique,
       options: metadata.options,
