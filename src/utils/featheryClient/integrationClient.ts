@@ -6,6 +6,8 @@ import {
   AlloyEntities,
   CreateEgnyteFolderParams,
   GetDocusignEnvelopeParams,
+  GetEgnyteFileParams,
+  ListEgnyteFolderParams,
   LoanProCustomerObject,
   SendDocusignParams,
   UpdateDocusignEnvelopeParams,
@@ -1253,6 +1255,40 @@ export default class IntegrationClient {
       })
     };
     return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
+  listEgnyteFolder({ path, count, offset }: ListEgnyteFolderParams = {}) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      fuser_key: userId,
+      form_key: this.formKey,
+      ...(path ? { path } : {}),
+      ...(count != null ? { count } : {}),
+      ...(offset != null ? { offset } : {})
+    });
+    const url = `${API_URL}egnyte/folder/?${params}`;
+    return this._fetch(url, {}, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
+  getEgnyteFile({ path }: GetEgnyteFileParams) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      fuser_key: userId,
+      form_key: this.formKey,
+      path
+    });
+    const url = `${API_URL}egnyte/file/?${params}`;
+    return this._fetch(url, {}, false).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
         else throw Error(parseAPIError(await response.json()));

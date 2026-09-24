@@ -155,6 +155,17 @@ export type UploadFileToEgnyteParams = {
 export type CreateEgnyteFolderParams = {
   path: string;
 };
+export type ListEgnyteFolderParams = {
+  // Relative to the root folder configured on the Egnyte integration.
+  // Omit to list the root itself.
+  path?: string;
+  count?: number;
+  offset?: number;
+};
+export type GetEgnyteFileParams = {
+  // File path relative to the root, as returned by listEgnyteFolder
+  path: string;
+};
 export type UpdateDocusignEnvelopeParams = {
   envelopeId: string;
   // 'sent' (send a draft) | 'voided' (cancel) | 'discarded' (move to the
@@ -224,6 +235,8 @@ export interface FormInternalState {
   ) => Promise<any>;
   uploadFileToEgnyte: (params: UploadFileToEgnyteParams) => Promise<any>;
   createEgnyteFolder: (params: CreateEgnyteFolderParams) => Promise<any>;
+  listEgnyteFolder: (params?: ListEgnyteFolderParams) => Promise<any>;
+  getEgnyteFile: (params: GetEgnyteFileParams) => Promise<any>;
   getDocusignBrands: () => Promise<any>;
   getConfig: GetConfig;
   // Registered by <Form /> so the `feathery.generateDocuments` logic-rule
