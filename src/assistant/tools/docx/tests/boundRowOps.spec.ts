@@ -332,7 +332,7 @@ describe('structural ops on a bound table', () => {
     expect(editor.serialize()).toBe(before);
   });
 
-  it('refuses the same user-stated figure twice across engine-routed writes', () => {
+  it('accepts separately corroborated occurrences across engine-routed writes', () => {
     const before = editor.serialize();
     const result = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [
@@ -341,14 +341,15 @@ describe('structural ops on a bound table', () => {
       ]
     });
 
-    expect(result.results[1]).toMatchObject({
-      ok: false,
-      route: 'engine',
-      error: 'user_stated_figure_reused',
-      retry: 'never'
-    });
-    // Nothing landed: an engine write authors no revision, so the refusal has to
-    // stop the transaction rather than be reported over a write that already went in.
+    expect(result.results).toMatchObject([
+      { ok: true, route: 'engine' },
+      { ok: true, route: 'engine' }
+    ]);
+    expect(textAt(editor, '0;2;1;1;0')).toBe('7');
+    expect(textAt(editor, '0;2;2;1;0')).toBe('7');
+
+    rejectAllRevisions(editor);
+    attached.controller.flush({ mode: 'self-heal' });
     expect(editor.serialize()).toBe(before);
   });
 
