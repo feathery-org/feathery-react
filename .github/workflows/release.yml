@@ -20,6 +20,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_url: ${{ steps.gh_release.outputs.url }}
     steps:
       - name: Validate User
         env:
@@ -67,6 +70,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
         run: yarn release -- --release-as ${{ inputs.release-type }}
 
+      - name: Read New Version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       # A missing secret would otherwise fall back to an empty key and publish a
       # silently watermarked package, so fail the release instead. Presence is
       # tested with -z; never echo the value (substrings are not log-masked).
@@ -97,9 +104,64 @@ jobs:
         run: echo "tag=$(git describe --tags --abbrev=0)" >> "$GITHUB_OUTPUT"
 
       - name: Draft GitHub Release
+        id: gh_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_tag.outputs.tag }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
+
+  # Open a "chore: bump @feathery/react to X" PR in each repo that consumes
+  # the package. Failures here don't undo the release above; re-run this job
+  # (or the whole workflow) and it refreshes the same branch/PR.
+  bump-consumers:
+    needs: release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repo: feathery-org/feathery-frontend
+            base: master
+            node: '20.19.5'
+          - repo: feathery-org/hosted-forms-next
+            base: main
+            node: '20'
+    steps:
+      - name: Checkout feathery-react scripts
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/scripts
+          path: sdk
+
+      - name: Checkout ${{ matrix.repo }}
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ matrix.repo }}
+          ref: ${{ matrix.base }}
+          token: ${{ secrets.FEATHERY_BOT_TOKEN }}
+          path: consumer
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'yarn'
+          cache-dependency-path: consumer/yarn.lock
+
+      - name: Setup Git
+        working-directory: consumer
+        run: |
+          git config user.name "feathery-bot"
+          git config user.email "feathery-bot@users.noreply.github.com"
+
+      - name: Open bump PR
+        working-directory: consumer
+        env:
+          GH_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
+          REPO: ${{ matrix.repo }}
+          BASE_BRANCH: ${{ matrix.base }}
+          RELEASE_URL: ${{ needs.release.outputs.release_url }}
+        run: ../sdk/.github/scripts/open-consumer-bump-pr.sh
