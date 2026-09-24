@@ -2625,19 +2625,46 @@ export function SvgSlide({
                 data-overlay
                 onMouseDown={startGesture('rotate')}
                 title='Rotate'
+                aria-label='Rotate shape'
                 style={{
                   position: 'absolute',
-                  left: 'calc(50% - 6px)',
-                  top: -34,
-                  width: 12,
-                  height: 12,
+                  left: 'calc(50% - 9px)',
+                  top: -42,
+                  width: 18,
+                  height: 18,
                   borderRadius: '50%',
                   background: '#fff',
                   border: '1.5px solid #5b8def',
-                  cursor: 'grab',
+                  boxShadow: '0 1px 3px rgba(23,26,28,.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  // No native rotate cursor exists; use a circular-arrow SVG
+                  // cursor (hotspot centered) with grab as the fallback.
+                  cursor: `url("data:image/svg+xml,${encodeURIComponent(
+                    "<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24'><g fill='none' stroke='%23fff' stroke-width='5' stroke-linecap='round'><path d='M20 12a8 8 0 1 1-2.34-5.66'/></g><g fill='none' stroke='%23171a1c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 12a8 8 0 1 1-2.34-5.66'/><path d='M18.5 2.5v4h-4' fill='%23171a1c'/></g></svg>"
+                  )}") 11 11, grab`,
                   pointerEvents: 'auto'
                 }}
-              />
+              >
+                {/* Rotate glyph so the handle reads as rotation, not a dot. */}
+                <svg
+                  viewBox='0 0 24 24'
+                  width={11}
+                  height={11}
+                  style={{
+                    fill: 'none',
+                    stroke: '#5b8def',
+                    strokeWidth: 2.6,
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round',
+                    pointerEvents: 'none'
+                  }}
+                >
+                  <path d='M20 12a8 8 0 1 1-2.34-5.66' />
+                  <path d='M18.5 3v3.5H15' />
+                </svg>
+              </div>
             </>
           )}
         </div>
