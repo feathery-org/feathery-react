@@ -72,6 +72,7 @@ import {
   getTextVariableReferences,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
+import { getNumberBoundReferences } from '../utils/numberBounds';
 import {
   isFieldValueEmpty,
   validateElements,
@@ -982,6 +983,13 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
+  // Fields another field's min/max tracks. The bounded field's mask must pick
+  // up the new limits before the next keystroke lands in it.
+  const numberBoundFieldReferences = useMemo(() => {
+    if (activeStep) return getNumberBoundReferences(getAllElements(activeStep));
+    return new Set<string>();
+  }, [activeStep?.id]);
+
   // Servar per field key. updateFieldValues runs on every keystroke, so this
   // avoids both the linear scan in getServarByFieldKey and the Field entity,
   // whose type getter warns when the field is not on the active form. The whole
@@ -1222,7 +1230,9 @@ function Form({
     );
     const textVariableDependenciesChanged = entries.some(
       ([key, val]) =>
-        fieldValues[key] !== val && textVariableFieldReferences.has(key)
+        fieldValues[key] !== val &&
+        (textVariableFieldReferences.has(key) ||
+          numberBoundFieldReferences.has(key))
     );
 
     const fields = internalState[_internalId]?.fields;
