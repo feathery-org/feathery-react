@@ -693,9 +693,13 @@ function collectRowScopedNames(node: any, names: Set<string>): void {
       def &&
       (def.kind === 'field' || def.kind === 'formula') &&
       def.options.row
-    )
+    ) {
       names.add(def.name);
-    return; // Row bindings do not nest inside other controls.
+      return; // A row binding holds a value, not further bindings.
+    }
+    // A foreign or non-row control can WRAP a binding. Descend through it,
+    // as the scanner and the clone rewriter do - stopping here made a
+    // wrapped column invisible and misclassified its formulas as mirrors.
   }
   for (const key of Object.keys(node)) collectRowScopedNames(node[key], names);
 }
