@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { ProviderConfigProps } from './providers';
+import { featheryDoc, featheryWindow } from '../../utils/browser';
 
 interface BoxFolder {
   id: string;
@@ -18,16 +19,28 @@ interface BrowsePage {
 }
 
 const ROOT_FOLDER_ID = '0';
+const PREFETCH_DELAY_MS = 150;
+
+const requestKeyFor = (
+  folderId: string,
+  opts: { marker?: string; create?: string } = {}
+) => `${folderId}|${opts.marker ?? ''}|${opts.create ?? ''}`;
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Something went wrong';
+  const message = error instanceof Error ? error.message : '';
+  if (/unable to reach the connected account/i.test(message)) {
+    return 'We couldn’t access your Box account. Try reconnecting it and then try again.';
+  }
+  return message || 'We couldn’t load your Box folders. Please try again.';
 }
 
 function BoxFolderPicker({
   client,
   provider,
   onSaved,
-  onError
+  onError,
+  onClearError,
+  onFooterActionChange
 }: ProviderConfigProps) {
   const [currentFolder, setCurrentFolder] = useState<BoxCurrentFolder | null>(
     null
@@ -39,6 +52,75 @@ function BoxFolderPicker({
   const [selecting, setSelecting] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [folderName, setFolderName] = useState('');
+  const folderCache = useRef(new Map<string, BrowsePage>());
+  const folderRequests = useRef(new Map<string, Promise<BrowsePage>>());
+  const activeFolderId = useRef('');
+  const refreshingOnFocus = useRef(false);
+  // True once "Load more" has appended pages: a background refresh must not
+  // collapse the list back to page one.
+  const paginated = useRef(false);
+  const prefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const requestFolder = useCallback(
+    (
+      folderId: string,
+      opts: { marker?: string; create?: string } = {},
+      force = false
+    ) => {
+      const cacheable = !opts.marker && !opts.create;
+      if (!force && cacheable) {
+        const cached = folderCache.current.get(folderId);
+        if (cached) return Promise.resolve(cached);
+      }
+      // In-flight requests are shared per (folder, page, create) - never by
+      // folder alone, or "Load more" would be handed page one again and a
+      // folder creation would be swallowed by a concurrent plain browse.
+      const requestKey = requestKeyFor(folderId, opts);
+      const existingRequest = folderRequests.current.get(requestKey);
+      if (existingRequest) return existingRequest;
+      const request = client.browseAccountResources(
+        provider,
+        folderId,
+        opts
+      ) as Promise<BrowsePage>;
+      folderRequests.current.set(requestKey, request);
+      return request
+        .then((page) => {
+          if (!opts.marker) folderCache.current.set(folderId, page);
+          return page;
+        })
+        .finally(() => {
+          folderRequests.current.delete(requestKey);
+        });
+    },
+    [client, provider]
+  );
+
+  const applyPage = useCallback((page: BrowsePage, append = false) => {
+    paginated.current = append;
+    setCurrentFolder(page.current_folder);
+    setBreadcrumbs(page.breadcrumbs);
+    setFolders((prev) => (append ? [...prev, ...page.folders] : page.folders));
+    setNextMarker(page.next_marker);
+  }, []);
+
+  // Hover/focus prefetch waits a beat and keeps only the latest target, so
+  // sweeping the pointer down a long list doesn't fire a request per row.
+  const cancelPrefetch = useCallback(() => {
+    if (prefetchTimer.current) clearTimeout(prefetchTimer.current);
+    prefetchTimer.current = null;
+  }, []);
+  const prefetchFolder = useCallback(
+    (folderId: string) => {
+      cancelPrefetch();
+      prefetchTimer.current = setTimeout(() => {
+        prefetchTimer.current = null;
+        requestFolder(folderId).catch(() => undefined);
+      }, PREFETCH_DELAY_MS);
+    },
+    [cancelPrefetch, requestFolder]
+  );
+  useEffect(() => cancelPrefetch, [cancelPrefetch]);
 
   const loadFolder = useCallback(
     async (
@@ -46,19 +128,33 @@ function BoxFolderPicker({
       opts: { marker?: string; create?: string } = {},
       append = false
     ): Promise<boolean> => {
+      onClearError?.();
+      activeFolderId.current = folderId;
+      if (!append) {
+        setFolders([]);
+        setNextMarker('');
+      }
       setLoading(true);
       try {
-        const page: BrowsePage = await client.browseAccountResources(
-          provider,
-          folderId,
-          opts
-        );
-        setCurrentFolder(page.current_folder);
-        setBreadcrumbs(page.breadcrumbs);
-        setFolders((prev) =>
-          append ? [...prev, ...page.folders] : page.folders
-        );
-        setNextMarker(page.next_marker);
+        const isStandardNavigation = !append && !opts.marker && !opts.create;
+        const cachedPage = isStandardNavigation
+          ? folderCache.current.get(folderId)
+          : undefined;
+        if (cachedPage) {
+          applyPage(cachedPage);
+          setLoading(false);
+          requestFolder(folderId, {}, true)
+            .then((page) => {
+              // Same rule as the focus refresh: never collapse a list the
+              // user has since paged through.
+              if (activeFolderId.current === folderId && !paginated.current)
+                applyPage(page);
+            })
+            .catch(() => undefined);
+          return true;
+        }
+        const page = await requestFolder(folderId, opts, !isStandardNavigation);
+        applyPage(page, append);
         return true;
       } catch (error: unknown) {
         onError(getErrorMessage(error));
@@ -67,7 +163,7 @@ function BoxFolderPicker({
         setLoading(false);
       }
     },
-    [client, provider, onError]
+    [applyPage, onError, requestFolder]
   );
 
   // Only ever runs on mount; loadFolder's identity changes with client/provider,
@@ -76,7 +172,45 @@ function BoxFolderPicker({
     loadFolder(ROOT_FOLDER_ID);
   }, [loadFolder]);
 
+  useEffect(() => {
+    const refreshActiveFolder = () => {
+      const folderId = activeFolderId.current;
+      if (
+        !folderId ||
+        refreshingOnFocus.current ||
+        folderRequests.current.has(requestKeyFor(folderId))
+      )
+        return;
+      refreshingOnFocus.current = true;
+      // A silent refresh: it neither clears an error on screen nor resets a
+      // list the user has paged through - it only swaps in fresh contents
+      // when they are still looking at page one of the same folder.
+      requestFolder(folderId, {}, true)
+        .then((page) => {
+          if (activeFolderId.current === folderId && !paginated.current)
+            applyPage(page);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          refreshingOnFocus.current = false;
+        });
+    };
+    const handleVisibilityChange = () => {
+      if (featheryDoc().visibilityState === 'visible') refreshActiveFolder();
+    };
+    featheryWindow().addEventListener('focus', refreshActiveFolder);
+    featheryDoc().addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      featheryWindow().removeEventListener('focus', refreshActiveFolder);
+      featheryDoc().removeEventListener(
+        'visibilitychange',
+        handleVisibilityChange
+      );
+    };
+  }, [applyPage, requestFolder]);
+
   const handleCreateFolder = async () => {
+    onClearError?.();
     const name = folderName.trim();
     if (!name || !currentFolder) return;
     const success = await loadFolder(currentFolder.id, { create: name });
@@ -91,7 +225,8 @@ function BoxFolderPicker({
     loadFolder(currentFolder.id, { marker: nextMarker }, true);
   };
 
-  const handleSelect = async () => {
+  const handleSelect = useCallback(async () => {
+    onClearError?.();
     if (!currentFolder) return;
     setSelecting(true);
     try {
@@ -109,20 +244,40 @@ function BoxFolderPicker({
     } finally {
       setSelecting(false);
     }
-  };
+  }, [client, currentFolder, onClearError, onError, onSaved, provider]);
 
   const canUpload = currentFolder?.can_upload ?? false;
   const busy = loading || selecting;
 
+  useEffect(() => {
+    onFooterActionChange?.({
+      label: `Select “${currentFolder?.name || 'this folder'}”`,
+      disabled: busy || !currentFolder || !canUpload,
+      onClick: handleSelect
+    });
+    return () => onFooterActionChange?.(null);
+  }, [busy, canUpload, currentFolder, handleSelect, onFooterActionChange]);
+
   return (
-    <div>
+    <div
+      css={{
+        overflow: 'hidden',
+        border: '1px solid #d4d4d8',
+        borderRadius: '10px',
+        background: '#fff'
+      }}
+    >
       <nav
         aria-label='Folder path'
         css={{
           display: 'flex',
           flexWrap: 'wrap',
           gap: '4px',
-          paddingBottom: '10px'
+          minHeight: '36px',
+          alignItems: 'center',
+          padding: '7px 14px',
+          borderBottom: '1px solid #e4e4e7',
+          background: '#fafafa'
         }}
       >
         {breadcrumbs.map((crumb, index) => (
@@ -134,12 +289,18 @@ function BoxFolderPicker({
             <button
               type='button'
               onClick={() => loadFolder(crumb.id)}
+              onMouseEnter={() => prefetchFolder(crumb.id)}
+              onFocus={() => prefetchFolder(crumb.id)}
+              onMouseLeave={cancelPrefetch}
+              onBlur={cancelPrefetch}
               disabled={busy}
               css={{
                 background: 'none',
                 border: 'none',
                 padding: 0,
                 color: '#0061d5',
+                fontSize: '14px',
+                lineHeight: 1.4,
                 cursor: 'pointer',
                 '&:hover': { textDecoration: 'underline' }
               }}
@@ -151,19 +312,18 @@ function BoxFolderPicker({
       </nav>
 
       <div
-        css={{
-          border: '1px solid #d4d4d8',
-          borderRadius: '8px',
-          minHeight: '160px',
-          maxHeight: '320px',
-          overflowY: 'auto'
-        }}
+        aria-busy={loading}
+        css={{ minHeight: '160px', maxHeight: '280px', overflowY: 'auto' }}
       >
         {folders.map((folder) => (
           <button
             key={folder.id}
             type='button'
             onClick={() => loadFolder(folder.id)}
+            onMouseEnter={() => prefetchFolder(folder.id)}
+            onFocus={() => prefetchFolder(folder.id)}
+            onMouseLeave={cancelPrefetch}
+            onBlur={cancelPrefetch}
             disabled={busy}
             css={{
               display: 'block',
@@ -173,6 +333,8 @@ function BoxFolderPicker({
               borderBottom: '1px solid #f4f4f5',
               background: 'none',
               textAlign: 'left',
+              fontSize: '14px',
+              lineHeight: 1.4,
               cursor: 'pointer',
               '&:hover': { background: '#f4f8ff' }
             }}
@@ -181,12 +343,26 @@ function BoxFolderPicker({
           </button>
         ))}
         {!folders.length && loading && (
-          <div css={{ padding: '14px', color: '#71717a' }}>
+          <div
+            css={{
+              padding: '14px',
+              color: '#71717a',
+              fontSize: '14px',
+              lineHeight: 1.4
+            }}
+          >
             Loading folders...
           </div>
         )}
         {!folders.length && !loading && (
-          <div css={{ padding: '14px', color: '#71717a' }}>
+          <div
+            css={{
+              padding: '14px',
+              color: '#71717a',
+              fontSize: '14px',
+              lineHeight: 1.4
+            }}
+          >
             This folder does not contain any folders.
           </div>
         )}
@@ -211,7 +387,7 @@ function BoxFolderPicker({
         )}
       </div>
 
-      <div css={{ paddingTop: '10px' }}>
+      <div css={{ padding: '10px 14px', borderTop: '1px solid #e4e4e7' }}>
         {!showNewFolder ? (
           <button
             type='button'
@@ -221,7 +397,11 @@ function BoxFolderPicker({
               background: 'none',
               border: '1px solid #d4d4d8',
               borderRadius: '6px',
+              height: '32px',
               padding: '6px 10px',
+              boxSizing: 'border-box',
+              fontSize: '14px',
+              lineHeight: 1.4,
               cursor: 'pointer'
             }}
           >
@@ -237,9 +417,13 @@ function BoxFolderPicker({
               disabled={busy}
               css={{
                 flex: 1,
-                padding: '8px 10px',
+                height: '32px',
+                boxSizing: 'border-box',
+                padding: '6px 10px',
                 border: '1px solid #a1a1aa',
-                borderRadius: '6px'
+                borderRadius: '6px',
+                fontSize: '14px',
+                lineHeight: 1.4
               }}
             />
             <button
@@ -251,7 +435,11 @@ function BoxFolderPicker({
                 background: '#0061d5',
                 color: '#fff',
                 borderRadius: '6px',
-                padding: '8px 14px',
+                height: '32px',
+                padding: '6px 14px',
+                boxSizing: 'border-box',
+                fontSize: '14px',
+                lineHeight: 1.4,
                 cursor: 'pointer'
               }}
             >
@@ -268,6 +456,9 @@ function BoxFolderPicker({
                 background: 'none',
                 border: 'none',
                 color: '#71717a',
+                height: '32px',
+                padding: '0 4px',
+                fontSize: '14px',
                 cursor: 'pointer'
               }}
             >
@@ -275,40 +466,6 @@ function BoxFolderPicker({
             </button>
           </div>
         )}
-      </div>
-
-      <div
-        css={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingTop: '16px'
-        }}
-      >
-        <span css={{ color: '#52525b' }}>
-          {currentFolder ? currentFolder.name : 'No folder selected'}
-        </span>
-        <button
-          type='button'
-          onClick={handleSelect}
-          disabled={busy || !currentFolder || !canUpload}
-          css={{
-            border: '1px solid #0061d5',
-            borderRadius: '6px',
-            padding: '9px 16px',
-            background: '#0061d5',
-            color: '#fff',
-            cursor: 'pointer',
-            '&:disabled': {
-              border: '1px solid #d4d4d8',
-              background: '#e4e4e7',
-              color: '#71717a',
-              cursor: 'not-allowed'
-            }
-          }}
-        >
-          Select this folder
-        </button>
       </div>
     </div>
   );
