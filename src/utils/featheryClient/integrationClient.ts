@@ -720,7 +720,9 @@ export default class IntegrationClient {
         mergeDocs: action.merge_docs ?? false,
         openInEditor,
         envelopeAction,
-        signMethod: action.sign_method
+        signMethod: action.sign_method,
+        emailSubject: action.email_subject,
+        emailBlurb: action.email_blurb
       });
     }
 
@@ -846,7 +848,9 @@ export default class IntegrationClient {
     mergeDocs,
     openInEditor,
     envelopeAction,
-    signMethod
+    signMethod,
+    emailSubject,
+    emailBlurb
   }: {
     documentIds: GenerateDocumentRef[];
     signers: Record<string, any>[];
@@ -859,6 +863,9 @@ export default class IntegrationClient {
     openInEditor: boolean;
     envelopeAction: 'sign' | 'fill';
     signMethod?: string;
+    // DocuSign sign only: subject and body of the envelope's signing email.
+    emailSubject?: string;
+    emailBlurb?: string;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
@@ -879,6 +886,8 @@ export default class IntegrationClient {
       payload.editor_toolbar_actions = toolbarActions;
     }
     if (signMethod) payload.sign_method = signMethod;
+    if (emailSubject) payload.email_subject = emailSubject;
+    if (emailBlurb) payload.email_blurb = emailBlurb;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
 
@@ -957,6 +966,10 @@ export default class IntegrationClient {
     if (action.merged_file_name)
       payload.merged_file_name = action.merged_file_name;
     if (action.sign_method) payload.sign_method = action.sign_method;
+    // Carried to finalize too: an open_in_editor flow does not build the
+    // DocuSign envelope until the filler presses Sign.
+    if (action.email_subject) payload.email_subject = action.email_subject;
+    if (action.email_blurb) payload.email_blurb = action.email_blurb;
 
     const url = `${getApiUrl()}document/form/finalize/`;
     const options = {

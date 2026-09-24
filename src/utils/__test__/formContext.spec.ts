@@ -35,7 +35,9 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       toolbarActions: ['sign', 'download'],
       zipName: 'docs',
       saveDocumentFieldKey: 'saved_files',
-      redirect: 'https://done.example.com'
+      redirect: 'https://done.example.com',
+      emailSubject: 'Please sign this',
+      emailBlurb: 'Two signatures needed.'
     });
 
     expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
@@ -49,6 +51,8 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       envelope_zip_name: 'docs',
       save_document_field_key: 'saved_files',
       redirect: 'https://done.example.com',
+      email_subject: 'Please sign this',
+      email_blurb: 'Two signatures needed.',
       run_async: true
     });
     // role_id is left off entirely for a document-wide signer, not nulled.
