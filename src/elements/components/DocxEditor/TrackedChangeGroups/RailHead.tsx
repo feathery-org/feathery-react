@@ -1,5 +1,5 @@
 import React from 'react';
-import { SpinnerIcon } from '../icons';
+import { CheckIcon, CloseIcon, SpinnerIcon } from '../icons';
 import {
   DEL,
   DEL_WASH,
@@ -98,7 +98,11 @@ export default function RailHead({
           disabled={!!resolvingAll}
           onClick={() => onResolveAll(true)}
         >
-          {resolvingAll === 'accept' && <SpinnerIcon width={11} height={11} />}
+          {resolvingAll === 'accept' ? (
+            <SpinnerIcon width={11} height={11} />
+          ) : (
+            <CheckIcon width={12} height={12} />
+          )}
           Accept all
         </button>
         <button
@@ -107,7 +111,11 @@ export default function RailHead({
           disabled={!!resolvingAll}
           onClick={() => onResolveAll(false)}
         >
-          {resolvingAll === 'reject' && <SpinnerIcon width={11} height={11} />}
+          {resolvingAll === 'reject' ? (
+            <SpinnerIcon width={11} height={11} />
+          ) : (
+            <CloseIcon width={12} height={12} />
+          )}
           Reject all
         </button>
       </div>

@@ -855,7 +855,8 @@ function DocxEditor({
                 position: 'absolute',
                 left: 12,
                 top: '50%',
-                transform: 'translateY(-50%)'
+                transform: 'translateY(-50%)',
+                color: '#10b981'
               }}
             />
           )}
