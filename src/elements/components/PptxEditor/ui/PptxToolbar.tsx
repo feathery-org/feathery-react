@@ -550,6 +550,8 @@ export function Toolbar({
   });
   const isText = !!sh?.text || !!selectedTableRange;
   const hasSel = !!sh;
+  // Solid fill applies to auto-shapes and text boxes (not pictures/tables).
+  const canFillShape = sh?.type === 'shape' || sh?.type === 'text';
   const isTable = sh?.type === 'table';
 
   const [tab, setTab] = useState<TabKey>('home');
@@ -1200,6 +1202,26 @@ export function Toolbar({
           >
             <NumberListIcon width={16} height={16} />
           </B>
+          <span css={styles.sep} />
+          <ColorControl
+            disabled={!canFillShape}
+            value={`#${sh?.fillColor || 'FFFFFF'}`}
+            onCommit={(value) => {
+              if (!slide || !sh) return;
+              executeCommand(
+                {
+                  type: 'set-shape-fill',
+                  slideId: slide.path,
+                  shapeId: sh.id,
+                  color: value.replace('#', '').toUpperCase()
+                },
+                'Change fill color'
+              );
+            }}
+            title='Shape fill color'
+          >
+            <ShadingIcon width={14} height={14} />
+          </ColorControl>
           <span css={styles.sep} />
           <B
             disabled={!hasSel}

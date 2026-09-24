@@ -629,11 +629,12 @@ export function setParagraphAlignAt(
   markDirty(deck, slide);
 }
 
+/** Set a solid fill, or clear the explicit fill (null) back to inherited. */
 export function setShapeFillColor(
   deck: Deck,
   slide: Slide,
   shape: Shape,
-  color: string
+  color: string | null
 ): void {
   if (shape.type !== 'shape' && shape.type !== 'text') return;
   const spPr = shape.spPr || ensureChild(shape.node, 'p:spPr');
@@ -649,6 +650,12 @@ export function setShapeFillColor(
   const oldIndex = kids.findIndex((node) => fillTags.has(tagOf(node) || ''));
   for (let i = kids.length - 1; i >= 0; i--)
     if (fillTags.has(tagOf(kids[i]) || '')) kids.splice(i, 1);
+  if (color === null) {
+    shape.spPr = spPr;
+    shape.fillColor = undefined;
+    markDirty(deck, slide);
+    return;
+  }
   const insertAt =
     oldIndex >= 0 ? oldIndex : kids.findIndex((node) => tagOf(node) === 'a:ln');
   kids.splice(

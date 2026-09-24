@@ -30,6 +30,7 @@ import {
   setParagraphAlignAt,
   setParagraphBullet,
   setPictureCrop,
+  setShapeFillColor,
   setShapeGeometry,
   setShapeRichText,
   setSlideBackground,
@@ -468,6 +469,16 @@ export class PptxEditorEngine {
           { kind: 'structure', slideId: slide.path, shapeIds: createdShapeIds }
         ];
         defaultLabel = 'Insert shape';
+        break;
+      }
+      case 'set-shape-fill': {
+        const slide = this.requireSlide(command.slideId);
+        const shape = this.requireShape(slide, command.shapeId);
+        setShapeFillColor(deck, slide, shape, command.color);
+        invalidations = [
+          { kind: 'shapes', slideId: slide.path, shapeIds: [shape.id] }
+        ];
+        defaultLabel = 'Change fill color';
         break;
       }
       case 'toggle-deck-slide-numbers': {
