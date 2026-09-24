@@ -141,7 +141,7 @@ function TableElement({
     hiddenFieldKey: element.properties?.hidden_field_key,
     enabled: isHiddenField,
     editMode,
-    reportLoadErrors: !wantsSpreadsheet,
+    keepInvalidEdits: !wantsSpreadsheet,
     updateFieldValues,
     submitCustom,
     onMutate
@@ -1174,6 +1174,16 @@ function TableElement({
 
                       const CellElement = isFirstColInTranspose ? 'th' : 'td';
 
+                      // A hidden field cell that breaks its column's rule is
+                      // kept as typed and tinted until it is fixed; the list
+                      // above the table says what is wrong with it.
+                      const cellError =
+                        isHiddenField && !isTransposed
+                          ? hiddenField.cellErrors[
+                              cellErrorKey(rowIndex, column.field_key)
+                            ]
+                          : undefined;
+
                       const handleCellClick = (e: React.MouseEvent) => {
                         if (isSortable) {
                           handleTransposedSort(rowIndex);
@@ -1226,7 +1236,15 @@ function TableElement({
                               : TABLE_CLASS.cell
                           }
                           data-feathery-field={cellFieldKey}
-                          css={cellCss}
+                          css={
+                            cellError
+                              ? {
+                                  ...cellCss,
+                                  backgroundColor: validationColors.errorSurface
+                                }
+                              : cellCss
+                          }
+                          {...(cellError ? { title: cellError } : {})}
                           onClick={handleCellClick}
                           {...(isFirstColInTranspose ? { scope: 'row' } : {})}
                         >

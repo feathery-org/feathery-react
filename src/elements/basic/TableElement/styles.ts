@@ -501,7 +501,7 @@ export const confirmPopoverStyle = {
 
 export const confirmTextStyle = {
   margin: '0 0 12px 0',
-  fontSize: '14px',
+  fontSize: '16px',
   fontWeight: '500',
   color: colors.gray900
 } as const;
@@ -551,14 +551,21 @@ export const columnEditorLabelStyle = {
   color: colors.gray700
 } as const;
 
+// The label sits above its checkbox, like the other fields, and hugs its
+// content so a click beside the box does not toggle it.
 export const columnEditorCheckboxLabelStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-  fontSize: '13px',
-  fontWeight: '500',
-  color: colors.gray700,
+  ...columnEditorLabelStyle,
+  alignSelf: 'flex-start',
   cursor: 'pointer'
+} as const;
+
+// Sized to read as a control of its own under the label, not a text bullet.
+export const columnEditorCheckboxStyle = {
+  width: '20px',
+  height: '20px',
+  margin: '0 0 0 4px',
+  cursor: 'pointer',
+  accentColor: colors.blue700
 } as const;
 
 export const columnEditorInputStyle = {

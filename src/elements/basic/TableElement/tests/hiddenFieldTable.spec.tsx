@@ -110,21 +110,42 @@ describe('TableElement - hidden field data source', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it("refuses an edit that does not match its column's type", () => {
-    const { updateFieldValues, submitCustom } = renderTable();
+  it("keeps and flags an edit that does not match its column's type", () => {
+    const { container, updateFieldValues, submitCustom } = renderTable();
 
     editCell('30', 'thirty');
 
-    expect(updateFieldValues).not.toHaveBeenCalled();
+    // The value is kept as typed rather than thrown away, but the backend
+    // gets nothing while it is wrong.
+    expect(updateFieldValues).toHaveBeenLastCalledWith({
+      [HIDDEN_KEY]: table([
+        ['Alice', 'thirty', 'alice@x.co'],
+        ['Bob', 41]
+      ])
+    });
     expect(submitCustom).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Age, row 1: Must be a number'
     );
-    expect(screen.getByText('30')).toBeInTheDocument();
+    expect(screen.getByText('thirty').closest('td')).toHaveAttribute(
+      'title',
+      'Must be a number'
+    );
+    expect(screen.getByText('Alice').closest('td')).not.toHaveAttribute(
+      'title'
+    );
 
-    // The next valid edit clears the message.
+    // An edit elsewhere leaves the bad cell flagged, and is held back too.
     editCell('alice@x.co', 'alice@y.co');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Age, row 1: Must be a number'
+    );
+    expect(submitCustom).not.toHaveBeenCalled();
+
+    // Fixing the cell clears it and sends the whole grid, held edit included.
+    editCell('thirty', '30');
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(container.querySelector('td[title]')).toBeNull();
     expect(submitCustom).toHaveBeenLastCalledWith({
       [HIDDEN_KEY]: table([
         ['Alice', 30, 'alice@y.co'],
@@ -262,15 +283,46 @@ describe('TableElement - hidden field data source', () => {
       }
     });
 
-    it('refuses clearing its cell in a classic table', () => {
-      const { updateFieldValues } = renderTable();
+    it('keeps and flags clearing its cell in a classic table', () => {
+      const { updateFieldValues, submitCustom } = renderTable();
 
       editCell('Alice', '');
 
-      expect(updateFieldValues).not.toHaveBeenCalled();
+      expect(updateFieldValues).toHaveBeenLastCalledWith({
+        [HIDDEN_KEY]: { columns: REQUIRED_COLUMNS, values: [['', 30]] }
+      });
+      expect(submitCustom).not.toHaveBeenCalled();
       expect(screen.getByRole('alert')).toHaveTextContent(
         'Name, row 1: Required'
       );
+    });
+
+    it('flags its blank cell as soon as a row is added in a classic table', () => {
+      const { submitCustom } = renderTable();
+      expect(screen.queryByRole('alert')).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Add Row' }));
+
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveTextContent('Name, row 1: Required');
+      // A blank cell in a column that is not required is fine.
+      expect(alert).not.toHaveTextContent('Age');
+
+      // Filling it in clears the message and sends the row.
+      fireEvent.click(screen.getAllByText('Click to edit')[0]);
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: 'Carol' } });
+      fireEvent.blur(input);
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(submitCustom).toHaveBeenLastCalledWith({
+        [HIDDEN_KEY]: {
+          columns: REQUIRED_COLUMNS,
+          values: [
+            ['Carol', ''],
+            ['Alice', 30]
+          ]
+        }
+      });
     });
 
     it('lists its blank stored cells once loaded', () => {
@@ -465,7 +517,6 @@ describe('TableElement - hidden field data source', () => {
       screen.getByRole('button', { name: '+ Add Column' })
     ).toBeInTheDocument();
   });
-
 });
 
 describe('parseHiddenFieldRows', () => {

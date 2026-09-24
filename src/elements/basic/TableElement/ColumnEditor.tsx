@@ -10,6 +10,7 @@ import {
   columnEditorStyle,
   columnEditorLabelStyle,
   columnEditorCheckboxLabelStyle,
+  columnEditorCheckboxStyle,
   columnEditorInputStyle,
   columnEditorErrorStyle
 } from './styles';
@@ -165,14 +166,6 @@ export function ColumnEditor({
           ))}
         </select>
       </label>
-      <label css={columnEditorCheckboxLabelStyle}>
-        <input
-          type='checkbox'
-          checked={required}
-          onChange={(event) => setRequired(event.target.checked)}
-        />
-        Required
-      </label>
       <label css={columnEditorLabelStyle}>
         Default for new rows
         {isBoolean ? (
@@ -202,6 +195,15 @@ export function ColumnEditor({
             {defaultError}
           </span>
         )}
+      </label>
+      <label css={columnEditorCheckboxLabelStyle}>
+        Required
+        <input
+          type='checkbox'
+          checked={required}
+          css={columnEditorCheckboxStyle}
+          onChange={(event) => setRequired(event.target.checked)}
+        />
       </label>
       <div css={confirmButtonRowStyle}>
         <button type='button' css={confirmCancelButtonStyle} onClick={onCancel}>

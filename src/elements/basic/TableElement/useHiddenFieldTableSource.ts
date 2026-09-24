@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { fieldValues } from '../../../utils/init';
 import { CellWrite, Column, ColumnDraft } from './types';
 import {
+  CellErrors,
   CellRules,
   CellValueType,
   EDITABLE_CELL_VALUE_TYPES,
@@ -259,6 +260,24 @@ const readSnapshot = (snapshot: string | null, value: unknown) =>
     ? undefined
     : JSON.parse(snapshot);
 
+/** Every cell in the grid that breaks its column's rule. */
+const gridCellErrors = (
+  header: HiddenFieldColumn[],
+  rows: any[][]
+): CellErrors => {
+  const rules: CellRules = {};
+  header.forEach((entry, index) => {
+    rules[columnKey(index)] = columnRule(entry, index);
+  });
+  return validateGrid({
+    rowIndices: rows.map((_, index) => index),
+    fieldKeys: header.map((_, index) => columnKey(index)),
+    getValue: (rowIndex, fieldKey) =>
+      rows[rowIndex][columnIndexOf(fieldKey)] ?? null,
+    rules
+  });
+};
+
 const buildColumns = (header: HiddenFieldColumn[]): Column[] =>
   header.map((entry, index) => ({
     name: columnName(entry, index),
@@ -274,11 +293,13 @@ type UseHiddenFieldTableSourceProps = {
   enabled: boolean;
   editMode: boolean;
   /**
-   * Whether cells already stored when the grid first loads are checked and
-   * listed with the refused edits. The spreadsheet flags every cell against
-   * its rule itself, so only the classic table needs the list.
+   * Whether an edit that breaks its column's rule is stored anyway and every
+   * failing cell listed on the table, rather than the edit being refused. The
+   * classic table does this so a typo is not thrown away, and sends nothing
+   * to the backend while any cell fails; the spreadsheet flags cells itself
+   * and never saves one that fails.
    */
-  reportLoadErrors?: boolean;
+  keepInvalidEdits?: boolean;
   updateFieldValues: (values: Record<string, any>) => void;
   submitCustom: (values: Record<string, any>) => void;
   onMutate: () => void;
@@ -288,7 +309,7 @@ export function useHiddenFieldTableSource({
   hiddenFieldKey,
   enabled,
   editMode,
-  reportLoadErrors = true,
+  keepInvalidEdits = true,
   updateFieldValues,
   submitCustom,
   onMutate
@@ -349,45 +370,33 @@ export function useHiddenFieldTableSource({
     return values;
   }, [rows, header]);
 
-  // Edits refused because they do not match their column's type. The classic
-  // table has no per-cell error display, so they are listed on the table.
-  const [editErrors, setEditErrors] = useState<string[]>([]);
+  // Edits the spreadsheet refused because they do not match their column's
+  // type. It holds back a save with a failing cell, so only a write that
+  // slipped past it (a paste, the assistant) is refused here.
+  const [refusedErrors, setRefusedErrors] = useState<string[]>([]);
 
-  // The first readable grid is checked once, so values that were stored
-  // before the table loaded (a prefill, a logic rule, an earlier session) are
-  // flagged without waiting for an edit. Later writes are checked as they are
-  // made, so only a new hidden field loads — and is checked — again.
-  const loadValidatedKey = useRef<string | null>(null);
-  useEffect(() => {
-    if (!enabled || editMode || !hiddenFieldKey || formatError) return;
-    if (!header.length || loadValidatedKey.current === hiddenFieldKey) return;
-    loadValidatedKey.current = hiddenFieldKey;
-    if (!reportLoadErrors) return;
-    const errors = validateGrid({
-      rowIndices: rows.map((_, index) => index),
-      fieldKeys: header.map((_, index) => columnKey(index)),
-      getValue: (rowIndex, fieldKey) =>
-        rows[rowIndex][columnIndexOf(fieldKey)] ?? null,
-      rules: cellRules
-    });
-    setEditErrors(
-      Object.entries(errors).map(([key, message]) => {
-        const separator = key.indexOf(':');
-        const rowIndex = Number(key.slice(0, separator));
-        const label = cellRules[key.slice(separator + 1)]?.label;
-        return `${label}, row ${rowIndex + 1}: ${message}`;
-      })
-    );
-  }, [
-    enabled,
-    editMode,
-    hiddenFieldKey,
-    formatError,
-    header,
-    rows,
-    cellRules,
-    reportLoadErrors
-  ]);
+  // The classic table has no save to hold back, so it keeps whatever is
+  // written and checks the whole grid as it now stands: cells stored before
+  // the table loaded, a row just added with blank required cells, and an edit
+  // that does not fit its column are all flagged until they are fixed.
+  const cellErrors = useMemo<CellErrors>(() => {
+    if (!keepInvalidEdits || !enabled || editMode || !header.length) return {};
+    return gridCellErrors(header, rows);
+  }, [keepInvalidEdits, enabled, editMode, header, rows]);
+
+  // One line per failing cell, in row order, for the list above the table.
+  const editErrors = useMemo(
+    () =>
+      keepInvalidEdits
+        ? Object.entries(cellErrors).map(([key, message]) => {
+            const separator = key.indexOf(':');
+            const rowIndex = Number(key.slice(0, separator));
+            const label = cellRules[key.slice(separator + 1)]?.label;
+            return `${label}, row ${rowIndex + 1}: ${message}`;
+          })
+        : refusedErrors,
+    [keepInvalidEdits, cellErrors, cellRules, refusedErrors]
+  );
 
   // Mutations read the stored value afresh rather than the render's snapshot,
   // so two writes in quick succession don't each start from the same grid.
@@ -398,6 +407,12 @@ export function useHiddenFieldTableSource({
     return current && !current.error ? current : null;
   }, [hiddenFieldKey]);
 
+  /**
+   * Writes the grid to the form and, when `submit` is set, to the backend. A
+   * grid the classic table is still flagging stays in the form only: the
+   * backend gets nothing until every cell is fixed, and then the whole grid,
+   * so the writes held back in the meantime are not lost.
+   */
   const store = useCallback(
     (grid: { header: HiddenFieldColumn[]; rows: any[][] }, submit: boolean) => {
       if (!hiddenFieldKey) return;
@@ -405,10 +420,20 @@ export function useHiddenFieldTableSource({
         [hiddenFieldKey]: { columns: grid.header, values: grid.rows }
       };
       updateFieldValues(updates);
-      if (submit && !editMode) submitCustom(updates);
+      const blocked =
+        keepInvalidEdits &&
+        Object.keys(gridCellErrors(grid.header, grid.rows)).length > 0;
+      if (submit && !editMode && !blocked) submitCustom(updates);
       onMutate();
     },
-    [hiddenFieldKey, updateFieldValues, submitCustom, editMode, onMutate]
+    [
+      hiddenFieldKey,
+      updateFieldValues,
+      submitCustom,
+      editMode,
+      onMutate,
+      keepInvalidEdits
+    ]
   );
 
   // New rows are not submitted: like a field-backed table, a row stays
@@ -460,10 +485,10 @@ export function useHiddenFieldTableSource({
   );
 
   /**
-   * Every write is checked against its column's type before it is stored. A
-   * typed-in number or true/false is stored as that value rather than as text,
-   * and a write that still does not fit is refused and reported; the rest of
-   * the batch is kept.
+   * Every write is checked against its column's type. A typed-in number or
+   * true/false is stored as that value rather than as text. A write that still
+   * does not fit is kept and flagged by the classic table, and refused and
+   * reported by the spreadsheet; either way the rest of the batch is kept.
    */
   const handleCellsEdit = useCallback(
     (writes: CellWrite[]) => {
@@ -483,7 +508,7 @@ export function useHiddenFieldTableSource({
           typeof value === 'string' && value.trim()
             ? parseCellInput(value, rule)
             : value;
-        const problem = validateCellValue(cell, rule);
+        const problem = keepInvalidEdits ? null : validateCellValue(cell, rule);
         if (problem) {
           refused.push(`${rule.label}, row ${rowIndex + 1}: ${problem}`);
           return;
@@ -496,11 +521,11 @@ export function useHiddenFieldTableSource({
         accepted++;
       });
 
-      setEditErrors(refused);
+      setRefusedErrors(refused);
       if (accepted) store({ header: grid.header, rows: nextRows }, true);
       else onMutate();
     },
-    [currentGrid, store, onMutate]
+    [currentGrid, store, onMutate, keepInvalidEdits]
   );
 
   /**
@@ -573,7 +598,7 @@ export function useHiddenFieldTableSource({
       const grid = currentGrid();
       const colIndex = columnIndexOf(fieldKey);
       if (!grid || !grid.header[colIndex]) return;
-      setEditErrors([]);
+      setRefusedErrors([]);
       store(
         {
           header: grid.header.filter((_, index) => index !== colIndex),
@@ -615,6 +640,8 @@ export function useHiddenFieldTableSource({
     // read-only so no edit replaces the value.
     formatError,
     editErrors,
+    // `${rowIndex}:${fieldKey}` -> message, for the classic table's cells.
+    cellErrors,
     cellRules,
     columnPermissions,
     hiddenFieldColumns,
