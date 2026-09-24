@@ -55,6 +55,10 @@ export interface DocxEditorProps {
    *  the Feathery backend). When provided, Download becomes a DOCX/PDF menu.
    *  Current edits are saved via `onSave` before this is called. */
   onExportPdf?: () => Promise<Blob>;
+  /** Post-sign: the URL of the finalized (signable/signed) PDF. When set, the
+   *  toolbar offers a single "Download PDF" — the editable docx no longer
+   *  exists, so Save and the docx Download are suppressed by the host. */
+  signedPdfUrl?: string | null;
   terminalAction?: 'download' | 'sign' | 'draft';
   onTerminalAction?: (saveResult?: unknown) => void | Promise<void>;
   /** Draft variant of the 'sign' terminal action (DocuSign only). When
@@ -115,6 +119,7 @@ function DocxEditor({
   hideDownload,
   downloadUrl,
   onExportPdf,
+  signedPdfUrl,
   terminalAction,
   onTerminalAction,
   onTerminalActionDraft,
@@ -481,6 +486,21 @@ function DocxEditor({
     }
   };
 
+  // Post-sign: the editable docx is gone (converted + stripped server-side),
+  // so serve the finalized PDF the host handed us. No save-first — there is
+  // nothing left to save.
+  const handleDownloadSignedPdf = async () => {
+    if (!signedPdfUrl || downloading) return;
+    setDownloading(true);
+    try {
+      triggerDownload(await fetchDownloadBlob(signedPdfUrl), 'pdf');
+    } catch (err) {
+      onError?.((err as Error).message || String(err));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // Every terminal action saves the current edits first, then runs its own
   // outcome against the just-saved document.
   const saveThenRun = async (
@@ -527,6 +547,7 @@ function DocxEditor({
           (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
         if (url) triggerDownload(await fetchDownloadBlob(url));
         else triggerDownload(blob);
+        onDownloaded?.();
       } else {
         await onTerminalAction?.(saveResult);
       }
@@ -588,6 +609,9 @@ function DocxEditor({
             hideDownload || terminalAction === 'download' || !onExportPdf
               ? undefined
               : () => handleDownloadPdf()
+          }
+          onDownloadSignedPdf={
+            signedPdfUrl ? () => handleDownloadSignedPdf() : undefined
           }
           downloadBusy={exportingPdf || downloading}
           terminalAction={terminalAction}

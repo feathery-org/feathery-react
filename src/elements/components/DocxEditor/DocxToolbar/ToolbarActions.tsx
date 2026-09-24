@@ -22,6 +22,9 @@ export interface ToolbarActionsProps {
   onDownload?: () => void;
   /** When provided, Download becomes a DOCX / PDF menu. */
   onDownloadPdf?: () => void;
+  /** Post-sign: the finalized envelope is a PDF, so the only download offered
+   *  is the signed PDF (no editable docx exists any more). */
+  onDownloadSignedPdf?: () => void;
   /** True while a download/export is running (disables the control). */
   downloadBusy?: boolean;
   terminalAction?: 'download' | 'sign' | 'draft';
@@ -51,6 +54,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
       onSave,
       onDownload,
       onDownloadPdf,
+      onDownloadSignedPdf,
       downloadBusy,
       terminalAction,
       onTerminalAction,
@@ -177,6 +181,22 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
             Download
           </button>
         ) : null}
+        {onDownloadSignedPdf && (
+          <button
+            type='button'
+            css={{ ...downloadBtn, opacity: downloadBusy ? 0.6 : 1 }}
+            onClick={onDownloadSignedPdf}
+            disabled={downloadBusy}
+            title={downloadBusy ? 'Preparing download…' : 'Download PDF'}
+          >
+            {downloadBusy ? (
+              <SpinnerIcon width={16} height={16} />
+            ) : (
+              <DownloadIcon width={16} height={16} />
+            )}
+            Download PDF
+          </button>
+        )}
         {terminalAction &&
           onTerminalAction &&
           (terminalAction === 'download' && onTerminalActionPdf ? (
