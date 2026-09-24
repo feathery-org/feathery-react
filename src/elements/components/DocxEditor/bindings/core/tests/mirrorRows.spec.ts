@@ -1,6 +1,6 @@
 // Mirror rows inside an aggregated column: a formula cell that carries the
 // column's name but references only values OUTSIDE its own row (a document
-// field, another table) - e.g. [[amount|expr=sum(alpha)|row=m-1]]. Mirrors
+// field, another table) - e.g. [[amount|expr=alpha|row=m-1]]. Mirrors
 // evaluate and aggregate like any other row, but they must never fill down:
 // a row the user inserts next to them becomes a plain editable field of the
 // same name and type, so typed line items and mirrored values interleave in
@@ -78,7 +78,7 @@ function row(label: string, valueInline: SfdtInline): SfdtRow {
  * The user's scenario. A source table defines document fields alpha and beta;
  * the summary table mirrors both into its "amount" column and totals it:
  *
- *   Alpha | [[amount|expr=sum(alpha)|row=m-1]]
+ *   Alpha | [[amount|expr=alpha|row=m-1]]
  *   Beta  | [[amount|expr=sum(beta)|row=m-2]]
  *   Total | [[summary_total|expr=sum(summary.amount)]]
  */
@@ -98,7 +98,8 @@ function buildMirrorFixture(): SfdtDocument {
         ],
         rowFormat: { isHeader: true }
       },
-      row('Alpha', cc(mirrorTag('sum(alpha)', 'm-1'), 'Amount', true, '…')),
+      // One bare-ref mirror and one call-form mirror: both spellings must work.
+      row('Alpha', cc(mirrorTag('alpha', 'm-1'), 'Amount', true, '…')),
       row('Beta', cc(mirrorTag('sum(beta)', 'm-2'), 'Amount', true, '…')),
       row(
         'Total',

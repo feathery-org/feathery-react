@@ -3,9 +3,12 @@
 //   mul(quantity, unit_cost)     multiply, 2+ args
 //   sum(costs.line_total)        sum; a dotted ref aggregates a table column
 //   sub(subtotal, discount)      subtract, exactly 2 args
+//   A                            bare reference; mirrors another value as-is
 //
 // Args are references (bare column/field names or table.column), numeric
-// literals, or nested calls. Anything else is a parse error.
+// literals, or nested calls. A whole expression may also be a single
+// reference, but never a single literal (a constant formula is a typo, not a
+// binding). Anything else is a parse error.
 
 export class FormulaError extends Error {
   constructor(message?: string) {
@@ -136,7 +139,7 @@ export function parseExpression(src: string): Ast {
   const ast = term();
   if (i !== tokens.length)
     throw new FormulaError(`trailing input in ${JSON.stringify(src)}`);
-  if (!('op' in ast))
+  if ('lit' in ast)
     throw new FormulaError(
       `expression must reference a value: ${JSON.stringify(src)}`
     );

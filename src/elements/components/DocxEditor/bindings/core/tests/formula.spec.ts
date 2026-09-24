@@ -28,9 +28,17 @@ describe('formula', () => {
     expect(collectRefs(ast)).toEqual(['costs.line_total']);
   });
 
+  it('parses a bare reference as a whole expression (mirror authoring)', () => {
+    expect(parseExpression('A')).toEqual({ ref: 'A' });
+    expect(parseExpression('costs.line_total')).toEqual({
+      ref: 'costs.line_total'
+    });
+    expect(collectRefs(parseExpression('A'))).toEqual(['A']);
+  });
+
   it('rejects everything outside the allowlist', () => {
     const bad = [
-      'quantity', // bare ref, not a call
+      '100.50', // bare literal: a constant formula is a typo, not a binding
       'div(a,b)', // unknown function
       'eval(x)',
       'mul(quantity)', // arity
