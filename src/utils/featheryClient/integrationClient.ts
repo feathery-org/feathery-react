@@ -656,6 +656,9 @@ export default class IntegrationClient {
           // explicit null, and leaving it off spreads the email across
           // every role.
           ...(entry.role_id ? { role_id: entry.role_id } : {}),
+          ...(entry.repeat_index !== undefined
+            ? { repeat_index: entry.repeat_index }
+            : {}),
           email,
           // Omitted rather than blanked: a present phone is the request to
           // challenge that recipient by SMS, so an empty one must not read as
