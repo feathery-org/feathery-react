@@ -15,6 +15,7 @@ import {
 } from '../core/model/table';
 import { child, descendant, getAttr } from '../core/opc/xml';
 import { selectedTextRanges } from './textSelection';
+import { shortcutHint, withShortcut } from './shortcuts';
 import {
   effectiveSlideSize,
   SLIDE_SIZE_PRESETS
@@ -909,9 +910,11 @@ export function Toolbar({
           onClick={undo}
           title={
             undoStack.length
-              ? `Undo ${undoStack[undoStack.length - 1].label}`
+              ? `Undo ${undoStack[undoStack.length - 1].label} (${shortcutHint(
+                  'Z'
+                )})`
               : commitSvgTextEdit
-              ? 'Undo current text edit'
+              ? `Undo current text edit (${shortcutHint('Z')})`
               : 'Nothing to undo'
           }
         >
@@ -923,7 +926,10 @@ export function Toolbar({
           onClick={redo}
           title={
             redoStack.length
-              ? `Redo ${redoStack[redoStack.length - 1].label}`
+              ? `Redo ${redoStack[redoStack.length - 1].label} (${shortcutHint(
+                  'Z',
+                  true
+                )})`
               : 'Nothing to redo'
           }
         >
@@ -998,7 +1004,7 @@ export function Toolbar({
             disabled={!isText}
             on={!!run?.bold}
             onClick={() => applyText({ bold: !run?.bold })}
-            title='Bold'
+            title={withShortcut('Bold', 'B')}
           >
             <b>B</b>
           </B>
@@ -1006,7 +1012,7 @@ export function Toolbar({
             disabled={!isText}
             on={!!run?.italic}
             onClick={() => applyText({ italic: !run?.italic })}
-            title='Italic'
+            title={withShortcut('Italic', 'I')}
           >
             <i>I</i>
           </B>
@@ -1014,7 +1020,7 @@ export function Toolbar({
             disabled={!isText}
             on={!!run?.underline}
             onClick={() => applyText({ underline: !run?.underline })}
-            title='Underline'
+            title={withShortcut('Underline', 'U')}
           >
             <span css={{ textDecoration: 'underline' }}>U</span>
           </B>
@@ -1267,7 +1273,7 @@ export function Toolbar({
                 select(null);
               }
             }}
-            title='Delete'
+            title='Delete (Del)'
           >
             🗑
           </B>

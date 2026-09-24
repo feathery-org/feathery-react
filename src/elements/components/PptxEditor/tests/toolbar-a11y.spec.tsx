@@ -43,11 +43,11 @@ it('every toolbar control has a tooltip/accessible name; toggles expose pressed 
 
   // Toggle state: Bold exposes aria-pressed and flips it.
   await switchTab(host, 'Home');
-  const bold = host.querySelector('button[title="Bold"]') as HTMLButtonElement;
+  const bold = host.querySelector('button[title^="Bold"]') as HTMLButtonElement;
   const before = bold.getAttribute('aria-pressed');
   await act(async () => bold.click());
   const boldAfter = host.querySelector(
-    'button[title="Bold"]'
+    'button[title^="Bold"]'
   ) as HTMLButtonElement;
   expect(boldAfter.getAttribute('aria-pressed')).not.toBe(before);
   expect(['true', 'false']).toContain(

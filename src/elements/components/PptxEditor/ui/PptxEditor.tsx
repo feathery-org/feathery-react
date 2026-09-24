@@ -37,6 +37,7 @@ import {
   SpinnerIcon
 } from '../../DocxEditor/icons';
 import type { PptxEditorProps } from '../types';
+import { withShortcut } from './shortcuts';
 
 // Tracked edits and version history are built but not user-ready; keep the
 // right rail and panels hidden until their flows are approved.
@@ -289,6 +290,7 @@ function PptxEditorInner({
                 }}
                 disabled={saving}
                 onClick={handleSave}
+                title={withShortcut('Save', 'S')}
               >
                 {saving ? (
                   <SpinnerIcon width={16} height={16} />

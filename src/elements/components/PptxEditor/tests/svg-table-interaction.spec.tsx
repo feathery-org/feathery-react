@@ -447,7 +447,7 @@ it('drag-selects a rectangular cell range and applies text, fill, and border for
   expect(host.querySelector('[data-table-range]')).toBeTruthy();
   await switchTab(host, 'Home');
   await act(async () =>
-    (host.querySelector('button[title="Bold"]') as HTMLButtonElement).click()
+    (host.querySelector('button[title^="Bold"]') as HTMLButtonElement).click()
   );
   await switchTab(host, 'Table');
   const fill = host.querySelector(

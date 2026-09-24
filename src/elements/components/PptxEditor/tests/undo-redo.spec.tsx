@@ -198,7 +198,7 @@ it('exposes toolbar buttons and keyboard shortcuts for undo and redo', async () 
     `${beforeX + 120000}`
   );
   const undo = host.querySelector(
-    'button[title="Undo Move shape"]'
+    'button[title^="Undo Move shape"]'
   ) as HTMLButtonElement;
   expect(undo.disabled).toBe(false);
   // Slide-size controls live on the Slide tab in the tabbed toolbar.
@@ -214,7 +214,7 @@ it('exposes toolbar buttons and keyboard shortcuts for undo and redo', async () 
   expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   expect(renderedShape()?.getAttribute('transform')).toContain(`${beforeX}`);
   const redo = host.querySelector(
-    'button[title="Redo Move shape"]'
+    'button[title^="Redo Move shape"]'
   ) as HTMLButtonElement;
   expect(redo.disabled).toBe(false);
   await act(async () => redo.click());
@@ -389,7 +389,7 @@ it('commits and undoes an active SVG text edit from the keyboard or toolbar', as
   // does this naturally) for the toolbar to re-read it.
   await act(async () => store.setTextToolbarPointer(false));
   const undo = host.querySelector(
-    'button[title="Undo current text edit"]'
+    'button[title^="Undo current text edit"]'
   ) as HTMLButtonElement;
   expect(undo.disabled).toBe(false);
 

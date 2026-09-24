@@ -36,7 +36,7 @@ it('keeps the SVG slide mounted when a toolbar text edit changes one shape', asy
     `[data-shape-id]:not([data-shape-id="${shape.id}"])`
   );
   expect(svgBefore).not.toBeNull();
-  const bold = host.querySelector('button[title="Bold"]') as HTMLButtonElement;
+  const bold = host.querySelector('button[title^="Bold"]') as HTMLButtonElement;
   expect(bold.disabled).toBe(false);
   await act(async () => bold.click());
 

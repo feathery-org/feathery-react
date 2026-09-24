@@ -1932,6 +1932,85 @@ export function SvgSlide({
         setPictureCropMode(null);
         return;
       }
+      if (e.key === 'Escape' && selectedIds.length) {
+        e.preventDefault();
+        select(null);
+        return;
+      }
+      const meta = e.metaKey || e.ctrlKey;
+      // Cmd/Ctrl+A selects every positioned shape on the slide.
+      if (meta && e.key.toLowerCase() === 'a' && slide) {
+        e.preventDefault();
+        store.selectMany(
+          slide.shapes.filter((shape) => shape.xfrm).map((shape) => shape.id)
+        );
+        return;
+      }
+      // Cmd/Ctrl+B/I/U toggle the selected shape's text style (while editing,
+      // the browser handles these inside the contenteditable instead).
+      if (meta && deck && slide && selectedIds.length === 1) {
+        const key = e.key.toLowerCase();
+        const styleKey =
+          key === 'b'
+            ? 'bold'
+            : key === 'i'
+            ? 'italic'
+            : key === 'u'
+            ? 'underline'
+            : null;
+        if (styleKey) {
+          const shape = slide.shapes.find(
+            (candidate) => candidate.id === selectedIds[0]
+          );
+          const run = shape?.text?.paragraphs.flatMap((p) => p.runs)[0];
+          if (shape && run) {
+            e.preventDefault();
+            store.executeCommand(
+              {
+                type: 'format-text',
+                slideId: slide.path,
+                shapeId: shape.id,
+                style: { [styleKey]: !(run as any)[styleKey] }
+              },
+              'Format text'
+            );
+            return;
+          }
+        }
+      }
+      // Arrow keys nudge the selection (Shift = larger step), like PowerPoint.
+      if (
+        !meta &&
+        deck &&
+        slide &&
+        selectedIds.length &&
+        ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)
+      ) {
+        e.preventDefault();
+        const step = (e.shiftKey ? 10 : 1) * 9525; // 1px / 10px at 96dpi, in EMU
+        const dx =
+          e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy =
+          e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        const updates = selectedIds.flatMap((shapeId) => {
+          const shape = slide.shapes.find(
+            (candidate) => candidate.id === shapeId
+          );
+          if (!shape?.xfrm) return [];
+          return [
+            {
+              shapeId,
+              geometry: { x: shape.xfrm.x + dx, y: shape.xfrm.y + dy }
+            }
+          ];
+        });
+        if (updates.length)
+          store.executeCommand(
+            { type: 'set-shape-geometries', slideId: slide.path, updates },
+            updates.length > 1 ? 'Move shapes' : 'Move shape'
+          );
+        return;
+      }
       if (e.key === 'Tab' && deck && slide) {
         const active = featheryDoc().activeElement;
         const host = hostRef.current;
