@@ -739,4 +739,29 @@ describe('DocumentEditorContainer signing outcomes', () => {
       ])
     );
   });
+
+  it('carries the signable file on the sign trigger (single file → files list)', async () => {
+    const runDocumentReviewLogic = jest.fn();
+    setFormInternalState('form-1', {
+      showEnvelopeOutcome,
+      runDocumentReviewLogic
+    });
+    // envelope_data returns a single `file`, not a `files` array like the
+    // overlay's finalize — the trigger must still carry it.
+    mockFinalizeEnvelope.mockResolvedValue({
+      signer_id: null,
+      invited: true,
+      file: 'https://x/signable.pdf'
+    });
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    await waitFor(() => expect(runDocumentReviewLogic).toHaveBeenCalled());
+    const trigger = runDocumentReviewLogic.mock.calls[0][0];
+    expect(trigger.action).toBe('sign');
+    expect(trigger.files).toEqual(['https://x/signable.pdf']);
+  });
 });
