@@ -194,6 +194,20 @@ export const rowRaisedStyle = { zIndex: 2 } as const;
 // rows, or the next row's grid line covers the bottom of the 2px ring.
 export const rowFocusedStyle = { zIndex: 3 } as const;
 
+// Pinned rows sit in a sticky band under the header, above the scrolling rows.
+export const frozenRegionStyle = {
+  position: 'sticky',
+  top: `${HEADER_HEIGHT}px`,
+  zIndex: 20,
+  width: '100%',
+  // Cells paint their own background; this shows only past the last column,
+  // where it should read as the same unused area the scrolling rows show.
+  backgroundColor: colors.gray100,
+  boxShadow: '0 2px 2px -1px rgba(0, 0, 0, 0.25)'
+} as const;
+
+export const frozenRowStyle = { zIndex: 21 } as const;
+
 const gutterBase = {
   position: 'sticky',
   insetInlineStart: 0,
@@ -282,6 +296,38 @@ export const columnHeaderLabelStyle = {
 // on it while hovered or dragged; offsets are from the border-box padding edge.
 const RESIZER_HIT_WIDTH = 9;
 const RESIZER_LINE_WIDTH = 2;
+
+// Sticky pinned columns sit above normal cells but below the gutter. Cell
+// z-index comes from `cellZIndex` so the selected case can stay above.
+export const pinnedHeaderStyle = { position: 'sticky', zIndex: 24 } as const;
+
+/**
+ * The layer a row's scrolling cells sit in while columns are pinned.
+ *
+ * Each row is a stacking context, and a selected row is raised above the rows
+ * around it — including THEIR pinned cells. A selected cell scrolled under the
+ * pinned block is covered by its own row's pinned cell, but its ring and fill
+ * handle overhang the cell box into the rows above and below, where nothing
+ * covers them, and show as blue slivers through the block. Clipping the layer
+ * at the block's edge removes them. The edge moves with the scroll, which the
+ * grid tracks in `--feathery-table-scroll-left` (`--feathery-table-pinned-left`
+ * is the block's width plus the gutter). The other three sides stay open so
+ * the ring's normal overhang onto grid lines is untouched.
+ */
+export const centerCellsClipStyle = {
+  position: 'absolute',
+  inset: 0,
+  clipPath:
+    'inset(-8px -8px -8px calc(var(--feathery-table-scroll-left, 0px) + var(--feathery-table-pinned-left, 0px)))',
+  // The layer covers the row, so it must not take the clicks the cells and
+  // the empty canvas beside them would otherwise get.
+  pointerEvents: 'none',
+  '& > *': { pointerEvents: 'auto' }
+} as const;
+export const pinnedCellStyle = { position: 'sticky' } as const;
+export const lastPinnedStyle = {
+  boxShadow: '2px 0 3px -2px rgba(0, 0, 0, 0.35)'
+} as const;
 
 export const columnResizerStyle = {
   position: 'absolute',
@@ -392,7 +438,10 @@ export const cellSelectedStyle = {
  * would otherwise paint its own background and 1px perimeter over the half of
  * the ring that overhangs into it.
  */
-export function cellZIndex(raised: boolean, focused = false) {
+export function cellZIndex(pinned: boolean, raised: boolean, focused = false) {
+  // Pinned cells already sit above the scrolling ones, so a selected pinned
+  // cell has to stay above THEM rather than dropping to the plain level.
+  if (pinned) return focused ? 14 : raised ? 13 : 12;
   if (focused) return 5;
   return raised ? 4 : undefined;
 }
@@ -841,6 +890,86 @@ export const sortIndicatorStyle = {
   marginInlineStart: '4px',
   fontSize: `${HEADER_FONT_SIZE - 4}px`,
   color: colors.gray500
+} as const;
+
+// The funnel after a filtered column's label, beside any sort arrow.
+export const filterIndicatorStyle = {
+  ...sortIndicatorStyle,
+  display: 'inline-flex',
+  alignItems: 'center',
+  '& svg': { width: '10px', height: '10px', fill: 'currentColor' }
+} as const;
+
+// The column filter popover: a search box over a checklist of the column's
+// values, opened from the header menu at the pointer like the menus are.
+export const FILTER_MENU_WIDTH = 260;
+
+export const filterMenuStyle = {
+  ...rowMenuStyle,
+  width: `${FILTER_MENU_WIDTH}px`,
+  minWidth: 0,
+  padding: '8px',
+  gap: '8px',
+  cursor: 'default'
+} as const;
+
+export const filterSearchInputStyle = {
+  ...searchInputStyle,
+  width: '100%'
+} as const;
+
+export const filterListStyle = {
+  maxHeight: `${ROW_HEIGHT * 7}px`,
+  overflowY: 'auto',
+  padding: '2px',
+  border: `1px solid ${colors.gray200}`,
+  borderRadius: '4px'
+} as const;
+
+export const filterOptionStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '4px 6px',
+  borderRadius: '4px',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+  '&:hover': { backgroundColor: colors.gray100 }
+} as const;
+
+export const filterCheckboxStyle = {
+  flex: '0 0 auto',
+  width: '14px',
+  height: '14px',
+  margin: 0,
+  accentColor: colors.accent
+} as const;
+
+export const filterOptionLabelStyle = (blank: boolean) =>
+  ({
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    color: blank ? colors.gray500 : 'inherit'
+  } as const);
+
+export const filterNoteStyle = {
+  padding: '4px 6px',
+  color: colors.gray500,
+  fontSize: `${FONT_SIZE - 4}px`
+} as const;
+
+export const filterFooterStyle = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: '8px'
+} as const;
+
+export const filterButtonStyle = {
+  ...searchButtonStyle,
+  width: 'auto',
+  height: '26px',
+  padding: '0 10px',
+  fontSize: `${FONT_SIZE - 3}px`
 } as const;
 
 // A dropdown cell's value as a chip spanning the cell, the way a sheet marks a
