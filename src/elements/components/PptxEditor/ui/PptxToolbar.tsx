@@ -1,0 +1,1514 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { featheryWindow } from '../../../../utils/browser';
+import {
+  usePptxEditorState,
+  usePptxEditorStore
+} from '../state/PptxEditorContext';
+import { readPictureCrop, type TextStyle } from '../core/model/edit';
+import {
+  tableCell,
+  tableCellAlign,
+  tableCellFill,
+  tableCellGridSpan,
+  tableCellRowSpan,
+  tableCellVerticalAlign,
+  tableColumns,
+  tableRows
+} from '../core/model/table';
+import { child, descendant, getAttr } from '../core/opc/xml';
+import { selectedTextRanges } from './textSelection';
+import {
+  effectiveSlideSize,
+  SLIDE_SIZE_PRESETS
+} from '../core/model/slideSize';
+import type { ShapeInsertion, TableEditOperation } from '../engine';
+
+const FONTS = [
+  'Arial',
+  'Calibri',
+  'Times New Roman',
+  'Georgia',
+  'Verdana',
+  'Courier New',
+  'Trebuchet MS',
+  'Tahoma'
+];
+
+function B(props: {
+  on?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  title?: string;
+  w?: number;
+  historyAction?: boolean;
+}) {
+  return (
+    <button
+      title={props.title}
+      disabled={props.disabled}
+      onClick={props.onClick}
+      data-history-action={props.historyAction ? '' : undefined}
+      style={{
+        ...s.btn,
+        ...(props.on ? s.on : null),
+        ...(props.w ? { minWidth: props.w } : null)
+      }}
+    >
+      {props.children}
+    </button>
+  );
+}
+
+function CommitColorInput(props: {
+  disabled?: boolean;
+  value: string;
+  onCommit: (value: string) => void;
+  title: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const commitRef = useRef(props.onCommit);
+  const committedValueRef = useRef(props.value.toLowerCase());
+  const fallbackTimerRef = useRef<number | null>(null);
+  commitRef.current = props.onCommit;
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const commit = () => {
+      if (fallbackTimerRef.current !== null)
+        featheryWindow().clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+      const value = input.value.toLowerCase();
+      if (value === committedValueRef.current) return;
+      committedValueRef.current = value;
+      commitRef.current(value);
+    };
+    const scheduleFallback = () => {
+      if (fallbackTimerRef.current !== null)
+        featheryWindow().clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = featheryWindow().setTimeout(commit, 300);
+    };
+    // React maps color-input `onChange` to the continuously firing native
+    // `input` event. Prefer native `change` so history is written once when the
+    // picker is accepted. Some native pickers omit it, so a quiet-period
+    // fallback commits only the final input value instead of making every drag
+    // sample a history entry.
+    input.addEventListener('input', scheduleFallback);
+    input.addEventListener('change', commit);
+    return () => {
+      input.removeEventListener('input', scheduleFallback);
+      input.removeEventListener('change', commit);
+      if (fallbackTimerRef.current !== null)
+        featheryWindow().clearTimeout(fallbackTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const value = props.value.toLowerCase();
+    committedValueRef.current = value;
+    if (inputRef.current && inputRef.current.value !== value)
+      inputRef.current.value = value;
+  }, [props.value]);
+
+  return (
+    <input
+      ref={inputRef}
+      disabled={props.disabled}
+      type='color'
+      defaultValue={props.value}
+      style={s.color}
+      title={props.title}
+    />
+  );
+}
+
+export function Toolbar({ devJson = false }: { devJson?: boolean }) {
+  const imgRef = useRef<HTMLInputElement>(null);
+  const store = usePptxEditorStore();
+  const state = usePptxEditorState();
+  const {
+    deck,
+    activeSlide,
+    selectedIds,
+    textSelection,
+    tableSelection,
+    pictureCropModeId,
+    showJson,
+    undoStack,
+    redoStack
+  } = state;
+  const {
+    selectedShape,
+    select,
+    setPictureCropMode,
+    toggleJson,
+    undo,
+    redo,
+    executeCommand
+  } = store;
+  const { svgRoot, commitSvgTextEdit } = store;
+
+  const slide = deck?.slides[activeSlide];
+  const currentSlideSize =
+    deck && slide ? effectiveSlideSize(deck, slide) : undefined;
+  const currentPreset = currentSlideSize
+    ? Object.entries(SLIDE_SIZE_PRESETS).find(
+        ([, preset]) =>
+          preset.cx === currentSlideSize.cx && preset.cy === currentSlideSize.cy
+      )?.[0] || 'custom'
+    : 'wide';
+  const sh = selectedShape();
+  const pictureCrop = sh?.type === 'pic' ? readPictureCrop(sh) : undefined;
+  const selectedRange =
+    textSelection && textSelection.shapeId === sh?.id
+      ? textSelection.ranges[0]
+      : undefined;
+  const selectedParagraph =
+    selectedRange && sh?.text?.paragraphs[selectedRange.paragraph];
+  let runAtRange = selectedParagraph?.runs[0];
+  if (selectedParagraph && selectedRange) {
+    let offset = 0;
+    runAtRange =
+      selectedParagraph.runs.find((candidate) => {
+        const next = offset + candidate.text.length;
+        const found = selectedRange.start < next;
+        offset = next;
+        return found;
+      }) || selectedParagraph.runs[selectedParagraph.runs.length - 1];
+  }
+  const selectedTableRange =
+    sh?.type === 'table' && tableSelection?.shapeId === sh.id
+      ? tableSelection
+      : undefined;
+  const selectedCell =
+    selectedTableRange && sh
+      ? tableCell(
+          sh,
+          Math.min(selectedTableRange.startRow, selectedTableRange.endRow),
+          Math.min(selectedTableRange.startCol, selectedTableRange.endCol)
+        )
+      : undefined;
+  const cellRPr = selectedCell ? descendant(selectedCell, 'a:rPr') : undefined;
+  const cellFill = cellRPr ? child(cellRPr, 'a:solidFill') : undefined;
+  const cellColor = cellFill ? child(cellFill, 'a:srgbClr') : undefined;
+  const tableRun = cellRPr
+    ? {
+        text: '',
+        node: cellRPr,
+        bold: getAttr(cellRPr, 'b') === '1',
+        italic: getAttr(cellRPr, 'i') === '1',
+        underline: !!getAttr(cellRPr, 'u') && getAttr(cellRPr, 'u') !== 'none',
+        strike:
+          !!getAttr(cellRPr, 'strike') &&
+          getAttr(cellRPr, 'strike') !== 'noStrike',
+        sizePt: Number(getAttr(cellRPr, 'sz')) / 100 || 12,
+        color: cellColor ? getAttr(cellColor, 'val') : undefined,
+        highlight:
+          child(cellRPr, 'a:highlight') &&
+          child(child(cellRPr, 'a:highlight')!, 'a:srgbClr')
+            ? getAttr(
+                child(child(cellRPr, 'a:highlight')!, 'a:srgbClr')!,
+                'val'
+              )
+            : undefined,
+        baselinePct:
+          getAttr(cellRPr, 'baseline') === undefined
+            ? undefined
+            : Number(getAttr(cellRPr, 'baseline')) / 1000,
+        font: child(cellRPr, 'a:latin')
+          ? getAttr(child(cellRPr, 'a:latin')!, 'typeface')
+          : undefined
+      }
+    : undefined;
+  const run =
+    runAtRange || sh?.text?.paragraphs.flatMap((p) => p.runs)[0] || tableRun;
+  const align0 = selectedCell
+    ? tableCellAlign(selectedCell)
+    : selectedParagraph?.align || sh?.text?.paragraphs[0]?.align || 'l';
+  const verticalAlign0 = selectedCell
+    ? tableCellVerticalAlign(selectedCell)
+    : 't';
+  const bullet0 = selectedParagraph?.bullet || sh?.text?.paragraphs[0]?.bullet;
+  const bulletValue =
+    !bullet0 || bullet0.kind === 'none'
+      ? 'none'
+      : bullet0.kind === 'char'
+      ? `char:${bullet0.char || '•'}`
+      : `auto:${bullet0.scheme || 'arabicPeriod'}`;
+  const isText = !!sh?.text || !!selectedTableRange;
+  const hasSel = !!sh;
+  const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  const [tableHover, setTableHover] = useState({ rows: 3, cols: 3 });
+  const [columnIndex, setColumnIndex] = useState(0);
+  const [rowIndex, setRowIndex] = useState(0);
+  const [borderTarget, setBorderTarget] = useState<
+    'all' | 'outside' | 'inside' | 'top' | 'bottom' | 'left' | 'right' | 'none'
+  >('all');
+  const [borderDash, setBorderDash] = useState<'solid' | 'dash' | 'dot'>(
+    'solid'
+  );
+  const [borderWidth, setBorderWidth] = useState(1);
+  const [borderColor, setBorderColor] = useState('#8896A8');
+  const [backgroundColor1, setBackgroundColor1] = useState('#1F4E79');
+  const [backgroundColor2, setBackgroundColor2] = useState('#C0143C');
+  const [backgroundAngle, setBackgroundAngle] = useState(90);
+  const resizeSlide = (cx: number, cy: number) => {
+    if (!deck || !slide) return;
+    executeCommand(
+      { type: 'set-slide-size', slideId: slide.path, cx, cy },
+      'Resize slide'
+    );
+  };
+  const editTable = (
+    operations: TableEditOperation[],
+    label = 'Edit table'
+  ) => {
+    if (!slide || !sh || sh.type !== 'table') return undefined;
+    return executeCommand(
+      { type: 'edit-table', slideId: slide.path, shapeId: sh.id, operations },
+      label
+    );
+  };
+  const insertShape = (
+    shape: ShapeInsertion,
+    label: string,
+    selectCreated = false
+  ) => {
+    if (!slide) return undefined;
+    const result = executeCommand(
+      { type: 'insert-shape', slideId: slide.path, shape },
+      label
+    );
+    const shapeId = result?.createdShapeIds[0];
+    if (selectCreated && shapeId) select(shapeId);
+    return shapeId;
+  };
+  const applyPictureCrop = (
+    patch: Partial<ReturnType<typeof readPictureCrop>>
+  ) => {
+    if (!deck || !slide || !sh || sh.type !== 'pic' || !pictureCrop) return;
+    executeCommand(
+      {
+        type: 'set-picture-crop',
+        slideId: slide.path,
+        shapeId: sh.id,
+        crop: {
+          clipGeometry: patch.clipGeometry || pictureCrop.clipGeometry,
+          cropPct: { ...pictureCrop.cropPct, ...(patch.cropPct || {}) }
+        }
+      },
+      'Crop picture'
+    );
+  };
+  const applyPictureGeometry = (value: 'rect' | 'ellipse' | 'circle') => {
+    if (!deck || !slide || !sh || sh.type !== 'pic' || !pictureCrop) return;
+    const size =
+      value === 'circle' && sh.xfrm
+        ? Math.min(sh.xfrm.cx, sh.xfrm.cy)
+        : undefined;
+    executeCommand(
+      {
+        type: 'set-picture-crop',
+        slideId: slide.path,
+        shapeId: sh.id,
+        crop: {
+          ...pictureCrop,
+          clipGeometry: value === 'rect' ? 'rect' : 'ellipse'
+        },
+        ...(size !== undefined ? { geometry: { cx: size, cy: size } } : {})
+      },
+      'Crop picture'
+    );
+  };
+
+  const applyText = (patch: TextStyle) => {
+    if (!deck || !slide || !sh) return;
+    if (sh.type === 'table' && selectedTableRange) {
+      editTable(
+        [{ kind: 'style-cells', range: selectedTableRange, style: patch }],
+        'Format table cells'
+      );
+      return;
+    }
+    if (!sh.text) return;
+    store.commitSvgTextEdit?.();
+    const currentSelection = store.getState().textSelection;
+    executeCommand(
+      {
+        type: 'format-text',
+        slideId: slide.path,
+        shapeId: sh.id,
+        style: patch,
+        ...(currentSelection?.shapeId === sh.id &&
+        currentSelection.ranges.length
+          ? { ranges: currentSelection.ranges }
+          : {})
+      },
+      'Format text'
+    );
+    store.setTextToolbarPointer(false);
+  };
+  const captureTextRangeForToolbar = () => {
+    if (!svgRoot) return;
+    const editor = svgRoot.querySelector(
+      '[data-textbody][contenteditable="true"]'
+    ) as HTMLElement | null;
+    if (!editor) return;
+    const ranges = selectedTextRanges(editor, featheryWindow().getSelection());
+    const shapeId = (editor.closest('[data-shape-id]') as HTMLElement | null)
+      ?.dataset.shapeId;
+    store.setTextSelection(
+      shapeId && ranges.length ? { shapeId, ranges } : null
+    );
+    store.setTextToolbarPointer(true);
+  };
+  const applyAlign = (algn: 'l' | 'ctr' | 'r' | 'just') => {
+    if (!deck || !slide || !sh) return;
+    if (sh.type === 'table' && selectedTableRange) {
+      editTable(
+        [{ kind: 'align-cells', range: selectedTableRange, align: algn }],
+        'Align table cells'
+      );
+      return;
+    }
+    if (!sh.text) return;
+    store.commitSvgTextEdit?.();
+    executeCommand(
+      {
+        type: 'set-paragraph-align',
+        slideId: slide.path,
+        shapeId: sh.id,
+        align: algn
+      },
+      'Align text'
+    );
+    store.setTextToolbarPointer(false);
+  };
+  const applyTableVerticalAlign = (vertical: 't' | 'ctr' | 'b') => {
+    if (!deck || !slide || !sh || sh.type !== 'table' || !selectedTableRange)
+      return;
+    editTable(
+      [{ kind: 'align-cells', range: selectedTableRange, vertical }],
+      'Align table cells'
+    );
+  };
+  const applyBullet = (value: string) => {
+    if (!deck || !slide || !sh?.text) return;
+    const paragraphIndexes = selectedRange
+      ? [selectedRange.paragraph]
+      : undefined;
+    const bullet =
+      value === 'none'
+        ? { kind: 'none' as const }
+        : value.startsWith('char:')
+        ? { kind: 'char' as const, char: value.slice(5) }
+        : {
+            kind: 'autoNum' as const,
+            scheme: value.slice(5),
+            startAt: 1,
+            font: '+mj-lt'
+          };
+    executeCommand(
+      {
+        type: 'set-paragraph-bullet',
+        slideId: slide.path,
+        shapeId: sh.id,
+        bullet,
+        paragraphIndexes
+      },
+      'Change bullets'
+    );
+  };
+
+  const reorder = (op: 'front' | 'back' | 'forward' | 'backward') => {
+    if (!slide || !sh) return;
+    const labels = {
+      front: 'Bring shape to front',
+      back: 'Send shape to back',
+      forward: 'Bring shape forward',
+      backward: 'Send shape backward'
+    };
+    executeCommand(
+      {
+        type: 'reorder-shape',
+        slideId: slide.path,
+        shapeId: sh.id,
+        operation: op
+      },
+      labels[op]
+    );
+  };
+
+  const onImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !deck || !slide) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const url = URL.createObjectURL(
+      new Blob([bytes], { type: file.type || 'image/png' })
+    );
+    const img = new Image();
+    await new Promise((resolve) => {
+      img.onload = resolve;
+      img.onerror = resolve;
+      img.src = url;
+    });
+    URL.revokeObjectURL(url);
+    const maxW = 4 * 914400;
+    let cx = (img.naturalWidth || 400) * 9525;
+    let cy = (img.naturalHeight || 300) * 9525;
+    if (cx > maxW) {
+      const k = maxW / cx;
+      cx *= k;
+      cy *= k;
+    }
+    insertShape(
+      { kind: 'image', bytes, extension: ext, x: 914400, y: 914400, cx, cy },
+      'Insert image',
+      true
+    );
+    e.target.value = '';
+  };
+
+  // background controls
+  const bgImgRef = useRef<HTMLInputElement>(null);
+  const onBgImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !slide) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    executeCommand(
+      {
+        type: 'set-slide-background',
+        slideId: slide.path,
+        background: { type: 'image', bytes, extension: ext }
+      },
+      'Set background image'
+    );
+    e.target.value = '';
+  };
+  const setSolidBg = (value = backgroundColor1) => {
+    if (!slide) return;
+    setBackgroundColor1(value);
+    executeCommand(
+      {
+        type: 'set-slide-background',
+        slideId: slide.path,
+        background: { type: 'solid', color: value.replace('#', '') }
+      },
+      'Set slide background'
+    );
+  };
+  const setGradientBg = () => {
+    if (!slide) return;
+    executeCommand(
+      {
+        type: 'set-slide-background',
+        slideId: slide.path,
+        background: {
+          type: 'gradient',
+          color1: backgroundColor1.replace('#', ''),
+          color2: backgroundColor2.replace('#', ''),
+          angleDeg: backgroundAngle
+        }
+      },
+      'Set gradient background'
+    );
+  };
+
+  return (
+    <div style={s.bar}>
+      {/* History / developer view */}
+      <div style={s.grp}>
+        <B
+          historyAction
+          disabled={!undoStack.length && !commitSvgTextEdit}
+          onClick={undo}
+          title={
+            undoStack.length
+              ? `Undo ${undoStack[undoStack.length - 1].label}`
+              : commitSvgTextEdit
+              ? 'Undo current text edit'
+              : 'Nothing to undo'
+          }
+        >
+          ↶
+        </B>
+        <B
+          historyAction
+          disabled={!redoStack.length}
+          onClick={redo}
+          title={
+            redoStack.length
+              ? `Redo ${redoStack[redoStack.length - 1].label}`
+              : 'Nothing to redo'
+          }
+        >
+          ↷
+        </B>
+        {devJson && (
+          <B on={showJson} onClick={toggleJson} title='Live JSON panel'>
+            {'{ }'}
+          </B>
+        )}
+      </div>
+
+      <div style={s.grp}>
+        <span style={s.lbl}>Slide size</span>
+        <select
+          disabled={!slide}
+          value={currentPreset}
+          onChange={(e) => {
+            const preset =
+              SLIDE_SIZE_PRESETS[
+                e.target.value as keyof typeof SLIDE_SIZE_PRESETS
+              ];
+            if (preset) resizeSlide(preset.cx, preset.cy);
+          }}
+          style={s.sel}
+          title='Size preset for this slide'
+        >
+          {Object.entries(SLIDE_SIZE_PRESETS).map(([key, preset]) => (
+            <option key={key} value={key}>
+              {preset.label}
+            </option>
+          ))}
+          <option value='custom'>Custom</option>
+        </select>
+        <input
+          disabled={!slide}
+          key={`sw-${activeSlide}-${currentSlideSize?.cx}`}
+          type='number'
+          min='1'
+          step='0.1'
+          defaultValue={((currentSlideSize?.cx || 0) / 914400).toFixed(2)}
+          onChange={(e) =>
+            resizeSlide(
+              Number(e.target.value) * 914400,
+              currentSlideSize?.cy || 6858000
+            )
+          }
+          style={s.numWide}
+          title='Slide width (inches)'
+        />
+        <span style={s.lbl}>×</span>
+        <input
+          disabled={!slide}
+          key={`sh-${activeSlide}-${currentSlideSize?.cy}`}
+          type='number'
+          min='1'
+          step='0.1'
+          defaultValue={((currentSlideSize?.cy || 0) / 914400).toFixed(2)}
+          onChange={(e) =>
+            resizeSlide(
+              currentSlideSize?.cx || 12192000,
+              Number(e.target.value) * 914400
+            )
+          }
+          style={s.numWide}
+          title='Slide height (inches)'
+        />
+      </div>
+
+      {sh?.type === 'pic' && pictureCrop && (
+        <div style={s.grp}>
+          <span style={s.lbl}>Picture crop</span>
+          <B
+            on={pictureCropModeId === sh.id}
+            onClick={() =>
+              setPictureCropMode(pictureCropModeId === sh.id ? null : sh.id)
+            }
+            title={
+              pictureCropModeId === sh.id
+                ? 'Finish cropping picture'
+                : 'Crop picture on slide'
+            }
+          >
+            {pictureCropModeId === sh.id ? 'Done' : 'Crop'}
+          </B>
+          <select
+            value={
+              pictureCrop.clipGeometry === 'ellipse' &&
+              sh.xfrm &&
+              Math.abs(sh.xfrm.cx - sh.xfrm.cy) < 2
+                ? 'circle'
+                : pictureCrop.clipGeometry
+            }
+            onChange={(event) =>
+              applyPictureGeometry(
+                event.target.value as 'rect' | 'ellipse' | 'circle'
+              )
+            }
+            style={s.sel}
+            title='Crop shape'
+          >
+            <option value='rect'>Rectangle</option>
+            <option value='ellipse'>Ellipse</option>
+            <option value='circle'>Circle</option>
+          </select>
+          {(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
+            <label key={`${sh.id}-${edge}`} style={s.cropLabel}>
+              {edge[0].toUpperCase()}
+              <input
+                key={`${sh.id}-${edge}-${pictureCrop.cropPct[edge]}`}
+                type='number'
+                min='0'
+                max='99'
+                step='1'
+                defaultValue={+pictureCrop.cropPct[edge].toFixed(2)}
+                onChange={(event) =>
+                  applyPictureCrop({
+                    cropPct: {
+                      ...pictureCrop.cropPct,
+                      [edge]: Number(event.target.value)
+                    }
+                  })
+                }
+                style={s.num}
+                title={`${edge} source crop percent`}
+              />
+            </label>
+          ))}
+          <B
+            onClick={() =>
+              applyPictureCrop({
+                cropPct: { left: 0, top: 0, right: 0, bottom: 0 }
+              })
+            }
+            title='Reset source crop'
+          >
+            Reset
+          </B>
+        </div>
+      )}
+
+      {/* Text */}
+      <div
+        style={s.grp}
+        onMouseDownCapture={captureTextRangeForToolbar}
+        onMouseUpCapture={(e) => {
+          if ((e.target as HTMLElement).matches('input[type="color"], select'))
+            return;
+          store.setTextToolbarPointer(false);
+        }}
+      >
+        <select
+          disabled={!isText}
+          value={run?.font || 'Arial'}
+          onChange={(e) => applyText({ font: e.target.value })}
+          style={s.sel}
+          title='Font'
+        >
+          {FONTS.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+        <input
+          disabled={!isText}
+          type='number'
+          min={6}
+          max={200}
+          value={Math.round(run?.sizePt || 18)}
+          onChange={(e) => applyText({ sizePt: Number(e.target.value) })}
+          style={s.num}
+          title='Size'
+        />
+        <B
+          disabled={!isText}
+          on={!!run?.bold}
+          onClick={() => applyText({ bold: !run?.bold })}
+          title='Bold'
+        >
+          <b>B</b>
+        </B>
+        <B
+          disabled={!isText}
+          on={!!run?.italic}
+          onClick={() => applyText({ italic: !run?.italic })}
+          title='Italic'
+        >
+          <i>I</i>
+        </B>
+        <B
+          disabled={!isText}
+          on={!!run?.underline}
+          onClick={() => applyText({ underline: !run?.underline })}
+          title='Underline'
+        >
+          <span style={{ textDecoration: 'underline' }}>U</span>
+        </B>
+        <B
+          disabled={!isText}
+          on={!!run?.strike}
+          onClick={() => applyText({ strike: !run?.strike })}
+          title='Strikethrough'
+        >
+          <span style={{ textDecoration: 'line-through' }}>S</span>
+        </B>
+        <CommitColorInput
+          disabled={!isText}
+          value={`#${run?.color || '000000'}`}
+          onCommit={(value) => applyText({ color: value.replace('#', '') })}
+          title='Text color'
+        />
+        <CommitColorInput
+          disabled={!isText}
+          value={`#${run?.highlight || 'F7B801'}`}
+          onCommit={(value) => applyText({ highlight: value.replace('#', '') })}
+          title='Text highlight color'
+        />
+        <B
+          disabled={!isText || !run?.highlight}
+          onClick={() => applyText({ highlight: null })}
+          title='Remove highlight'
+        >
+          HL×
+        </B>
+        <B
+          disabled={!isText}
+          on={(run?.baselinePct || 0) > 0}
+          onClick={() =>
+            applyText({ baselinePct: (run?.baselinePct || 0) > 0 ? 0 : 30 })
+          }
+          title='Superscript'
+        >
+          x<sup>2</sup>
+        </B>
+        <B
+          disabled={!isText}
+          on={(run?.baselinePct || 0) < 0}
+          onClick={() =>
+            applyText({ baselinePct: (run?.baselinePct || 0) < 0 ? 0 : -30 })
+          }
+          title='Subscript'
+        >
+          x<sub>2</sub>
+        </B>
+        <select
+          disabled={!sh?.text}
+          value={bulletValue}
+          onChange={(e) => applyBullet(e.target.value)}
+          style={s.sel}
+          title='Bullets and numbering'
+        >
+          <option value='none'>No bullets</option>
+          <option value='char:•'>• Bullet</option>
+          <option value='char:–'>– Dash</option>
+          <option value='char:➤'>➤ Arrow</option>
+          <option value='auto:arabicPeriod'>1. Number</option>
+          <option value='auto:alphaLcParenR'>a) Lower alpha</option>
+          <option value='auto:romanLcPeriod'>i. Lower roman</option>
+        </select>
+        <B
+          disabled={!isText}
+          on={align0 === 'l'}
+          onClick={() => applyAlign('l')}
+          title='Left'
+        >
+          ↤
+        </B>
+        <B
+          disabled={!isText}
+          on={align0 === 'ctr'}
+          onClick={() => applyAlign('ctr')}
+          title='Center'
+        >
+          ↔
+        </B>
+        <B
+          disabled={!isText}
+          on={align0 === 'r'}
+          onClick={() => applyAlign('r')}
+          title='Right'
+        >
+          ↦
+        </B>
+        <B
+          disabled={!isText}
+          on={align0 === 'just'}
+          onClick={() => applyAlign('just')}
+          title='Justify'
+        >
+          ≋
+        </B>
+        {selectedTableRange && (
+          <>
+            <B
+              on={verticalAlign0 === 't'}
+              onClick={() => applyTableVerticalAlign('t')}
+              title='Align cell top'
+            >
+              ⇡
+            </B>
+            <B
+              on={verticalAlign0 === 'ctr'}
+              onClick={() => applyTableVerticalAlign('ctr')}
+              title='Align cell middle'
+            >
+              ↕
+            </B>
+            <B
+              on={verticalAlign0 === 'b'}
+              onClick={() => applyTableVerticalAlign('b')}
+              title='Align cell bottom'
+            >
+              ⇣
+            </B>
+          </>
+        )}
+      </div>
+
+      {/* Insert */}
+      <div style={s.grp}>
+        <B
+          disabled={!slide}
+          onClick={() =>
+            insertShape(
+              {
+                kind: 'text-box',
+                x: 914400,
+                y: 914400,
+                cx: 3000000,
+                cy: 900000,
+                text: 'Text'
+              },
+              'Insert text box',
+              true
+            )
+          }
+        >
+          +Text
+        </B>
+        <B
+          disabled={!slide}
+          onClick={() =>
+            insertShape(
+              {
+                kind: 'auto-shape',
+                geometry: 'rect',
+                x: 914400,
+                y: 914400,
+                cx: 2000000,
+                cy: 1200000
+              },
+              'Insert rectangle',
+              true
+            )
+          }
+        >
+          +Rect
+        </B>
+        <B
+          disabled={!slide}
+          onClick={() =>
+            insertShape(
+              {
+                kind: 'auto-shape',
+                geometry: 'ellipse',
+                x: 914400,
+                y: 914400,
+                cx: 1600000,
+                cy: 1600000,
+                fill: 'ED7D31'
+              },
+              'Insert oval',
+              true
+            )
+          }
+        >
+          +Oval
+        </B>
+        <div
+          style={s.tableInsert}
+          onMouseEnter={() => setTablePickerOpen(true)}
+          onMouseLeave={() => setTablePickerOpen(false)}
+        >
+          <B
+            disabled={!slide}
+            onClick={() =>
+              insertShape(
+                {
+                  kind: 'table',
+                  rows: tableHover.rows,
+                  columns: tableHover.cols,
+                  x: 914400,
+                  y: 1828800,
+                  cx: tableHover.cols * 1100000,
+                  cy: tableHover.rows * 520000
+                },
+                'Insert table',
+                true
+              )
+            }
+            title='Insert table'
+          >
+            +Table
+          </B>
+          {tablePickerOpen && (
+            <div style={s.tableMenu}>
+              <span style={s.tableLabel}>
+                {tableHover.cols} × {tableHover.rows} table
+              </span>
+              <div style={s.tableGrid}>
+                {Array.from({ length: 48 }, (_, i) => {
+                  const row = Math.floor(i / 8) + 1;
+                  const col = (i % 8) + 1;
+                  const active =
+                    row <= tableHover.rows && col <= tableHover.cols;
+                  return (
+                    <button
+                      key={i}
+                      onMouseEnter={() =>
+                        setTableHover({ rows: row, cols: col })
+                      }
+                      onClick={() => {
+                        insertShape(
+                          {
+                            kind: 'table',
+                            rows: row,
+                            columns: col,
+                            x: 914400,
+                            y: 1828800,
+                            cx: col * 1100000,
+                            cy: row * 520000
+                          },
+                          'Insert table',
+                          true
+                        );
+                        setTablePickerOpen(false);
+                      }}
+                      style={{
+                        ...s.tableCell,
+                        ...(active ? s.tableCellOn : null)
+                      }}
+                      aria-label={`${col} columns by ${row} rows`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+        <B disabled={!slide} onClick={() => imgRef.current?.click()}>
+          +Image
+        </B>
+        <input
+          ref={imgRef}
+          type='file'
+          accept='image/*'
+          hidden
+          onChange={onImage}
+        />
+        <B
+          disabled={!slide}
+          onClick={() =>
+            insertShape(
+              { kind: 'slide-number', displayNumber: activeSlide + 1 },
+              'Insert slide number',
+              true
+            )
+          }
+        >
+          +Slide #
+        </B>
+      </div>
+
+      {/* Table — operates on the selected table in either render mode. */}
+      {sh?.type === 'table' &&
+        slide &&
+        deck &&
+        (() => {
+          const cols = tableColumns(sh);
+          const rows = tableRows(sh);
+          const activeColumn = Math.min(
+            columnIndex,
+            Math.max(0, cols.length - 1)
+          );
+          const activeRow = Math.min(rowIndex, Math.max(0, rows.length - 1));
+          const col = cols[activeColumn];
+          const row = rows[activeRow];
+          const rangeIsSingle =
+            !selectedTableRange ||
+            (selectedTableRange.startRow === selectedTableRange.endRow &&
+              selectedTableRange.startCol === selectedTableRange.endCol);
+          const selectedIsMerged =
+            !!selectedCell &&
+            (tableCellGridSpan(selectedCell) > 1 ||
+              tableCellRowSpan(selectedCell) > 1);
+          return (
+            <div style={s.grp}>
+              <span style={s.lbl}>Table</span>
+              <B
+                onClick={() =>
+                  editTable([{ kind: 'add-row' }], 'Add table row')
+                }
+                title='Add row'
+              >
+                +R
+              </B>
+              <B
+                onClick={() =>
+                  editTable([{ kind: 'remove-row' }], 'Remove table row')
+                }
+                title='Remove last row'
+              >
+                −R
+              </B>
+              <B
+                onClick={() =>
+                  editTable([{ kind: 'add-column' }], 'Add table column')
+                }
+                title='Add column'
+              >
+                +C
+              </B>
+              <B
+                onClick={() =>
+                  editTable([{ kind: 'remove-column' }], 'Remove table column')
+                }
+                title='Remove last column'
+              >
+                −C
+              </B>
+              <select
+                value={activeColumn}
+                onChange={(e) => setColumnIndex(Number(e.target.value))}
+                style={s.sel}
+                title='Column to resize'
+              >
+                {cols.map((_, i) => (
+                  <option key={i} value={i}>
+                    C{i + 1}
+                  </option>
+                ))}
+              </select>
+              <input
+                key={`cw-${sh.id}-${activeColumn}`}
+                type='number'
+                min='0.1'
+                step='0.1'
+                defaultValue={((Number(col?.[':@']?.w) || 0) / 914400).toFixed(
+                  2
+                )}
+                onChange={(e) =>
+                  editTable(
+                    [
+                      {
+                        kind: 'set-column-width',
+                        index: activeColumn,
+                        width: Number(e.target.value) * 914400
+                      }
+                    ],
+                    'Resize table column'
+                  )
+                }
+                style={s.numWide}
+                title='Column width (inches)'
+              />
+              <select
+                value={activeRow}
+                onChange={(e) => setRowIndex(Number(e.target.value))}
+                style={s.sel}
+                title='Row to resize'
+              >
+                {rows.map((_, i) => (
+                  <option key={i} value={i}>
+                    R{i + 1}
+                  </option>
+                ))}
+              </select>
+              <input
+                key={`rh-${sh.id}-${activeRow}`}
+                type='number'
+                min='0.1'
+                step='0.1'
+                defaultValue={((Number(row?.[':@']?.h) || 0) / 914400).toFixed(
+                  2
+                )}
+                onChange={(e) =>
+                  editTable(
+                    [
+                      {
+                        kind: 'set-row-height',
+                        index: activeRow,
+                        height: Number(e.target.value) * 914400
+                      }
+                    ],
+                    'Resize table row'
+                  )
+                }
+                style={s.numWide}
+                title='Row height (inches)'
+              />
+              <B
+                onClick={() =>
+                  editTable([{ kind: 'fit-rows' }], 'Fit table rows')
+                }
+                title='Fit each row to its content'
+              >
+                Fit rows
+              </B>
+              <B
+                disabled={!selectedTableRange || rangeIsSingle}
+                onClick={() => {
+                  if (!selectedTableRange) return;
+                  const row = Math.min(
+                    selectedTableRange.startRow,
+                    selectedTableRange.endRow
+                  );
+                  const col = Math.min(
+                    selectedTableRange.startCol,
+                    selectedTableRange.endCol
+                  );
+                  const result = editTable(
+                    [{ kind: 'merge-cells', range: selectedTableRange }],
+                    'Merge table cells'
+                  );
+                  if (result?.changed)
+                    store.setTableSelection({
+                      shapeId: sh.id,
+                      startRow: row,
+                      startCol: col,
+                      endRow: row,
+                      endCol: col
+                    });
+                }}
+                title='Merge cells'
+              >
+                Merge
+              </B>
+              <B
+                disabled={!selectedTableRange || !selectedIsMerged}
+                onClick={() =>
+                  selectedTableRange &&
+                  editTable(
+                    [{ kind: 'unmerge-cells', range: selectedTableRange }],
+                    'Unmerge table cells'
+                  )
+                }
+                title='Unmerge cells'
+              >
+                Unmerge
+              </B>
+              <CommitColorInput
+                value={`#${tableCellFill(selectedCell) || 'FFFFFF'}`}
+                onCommit={(value) =>
+                  editTable(
+                    selectedTableRange
+                      ? [
+                          {
+                            kind: 'style-cells',
+                            range: selectedTableRange,
+                            style: { fill: value.replace('#', '') }
+                          }
+                        ]
+                      : [
+                          {
+                            kind: 'set-table-style',
+                            fill: value.replace('#', '')
+                          }
+                        ],
+                    'Fill table cells'
+                  )
+                }
+                title={
+                  selectedTableRange ? 'Selected cell fill' : 'Table cell fill'
+                }
+              />
+              <select
+                value={borderTarget}
+                onChange={(e) =>
+                  setBorderTarget(e.target.value as typeof borderTarget)
+                }
+                style={s.sel}
+                title='Borders to apply'
+              >
+                <option value='all'>All borders</option>
+                <option value='outside'>Outside</option>
+                <option value='inside'>Inside</option>
+                <option value='top'>Top</option>
+                <option value='bottom'>Bottom</option>
+                <option value='left'>Left</option>
+                <option value='right'>Right</option>
+                <option value='none'>No borders</option>
+              </select>
+              <select
+                value={borderDash}
+                onChange={(e) =>
+                  setBorderDash(e.target.value as typeof borderDash)
+                }
+                style={s.sel}
+                title='Border style'
+              >
+                <option value='solid'>Solid</option>
+                <option value='dash'>Dashed</option>
+                <option value='dot'>Dotted</option>
+              </select>
+              <input
+                type='number'
+                min='0.25'
+                max='12'
+                step='0.25'
+                value={borderWidth}
+                onChange={(e) => setBorderWidth(Number(e.target.value))}
+                style={s.num}
+                title='Border width (pt)'
+              />
+              <input
+                type='color'
+                value={borderColor}
+                onChange={(e) => setBorderColor(e.target.value)}
+                style={s.color}
+                title='Border color'
+              />
+              <B
+                onClick={() =>
+                  editTable(
+                    [
+                      {
+                        kind: 'set-borders',
+                        range: selectedTableRange,
+                        target: borderTarget,
+                        color: borderColor.replace('#', ''),
+                        widthPt: borderWidth,
+                        dash: borderDash
+                      }
+                    ],
+                    'Style table borders'
+                  )
+                }
+                title='Apply borders'
+              >
+                Borders
+              </B>
+            </div>
+          );
+        })()}
+
+      {/* Arrange */}
+      <div style={s.grp}>
+        <B
+          disabled={!hasSel}
+          onClick={() => reorder('front')}
+          title='Bring to front'
+        >
+          ⤒
+        </B>
+        <B
+          disabled={!hasSel}
+          onClick={() => reorder('forward')}
+          title='Forward'
+        >
+          ↑
+        </B>
+        <B
+          disabled={!hasSel}
+          onClick={() => reorder('backward')}
+          title='Backward'
+        >
+          ↓
+        </B>
+        <B
+          disabled={!hasSel}
+          onClick={() => reorder('back')}
+          title='Send to back'
+        >
+          ⤓
+        </B>
+        <B
+          disabled={!hasSel}
+          onClick={() => {
+            if (slide && selectedIds.length) {
+              executeCommand(
+                {
+                  type: 'delete-shapes',
+                  slideId: slide.path,
+                  shapeIds: selectedIds
+                },
+                selectedIds.length > 1 ? 'Delete shapes' : 'Delete shape'
+              );
+              select(null);
+            }
+          }}
+          title='Delete'
+        >
+          🗑
+        </B>
+      </div>
+
+      {/* Background */}
+      <div style={s.grp}>
+        <span style={s.lbl}>Bg</span>
+        <CommitColorInput
+          value={backgroundColor1}
+          onCommit={setSolidBg}
+          title='Solid background color'
+        />
+        <input
+          type='color'
+          value={backgroundColor2}
+          onChange={(event) => setBackgroundColor2(event.target.value)}
+          style={s.color}
+          title='Gradient end color'
+        />
+        <select
+          value={backgroundAngle}
+          onChange={(event) => setBackgroundAngle(Number(event.target.value))}
+          style={s.sel}
+          title='Gradient direction'
+        >
+          <option value='0'>→</option>
+          <option value='45'>↘</option>
+          <option value='90'>↓</option>
+          <option value='135'>↙</option>
+          <option value='270'>↑</option>
+        </select>
+        <B
+          disabled={!slide}
+          onClick={() => setSolidBg()}
+          title='Apply solid background'
+        >
+          Solid
+        </B>
+        <B
+          disabled={!slide}
+          onClick={setGradientBg}
+          title='Gradient background (start → end, direction)'
+        >
+          Gradient
+        </B>
+        <B
+          disabled={!slide}
+          onClick={() => bgImgRef.current?.click()}
+          title='Image background'
+        >
+          Image
+        </B>
+        <input
+          ref={bgImgRef}
+          type='file'
+          accept='image/*'
+          hidden
+          onChange={onBgImage}
+        />
+      </div>
+
+      <span style={{ flex: 1 }} />
+      <span style={s.name}>Slide {activeSlide + 1}</span>
+    </div>
+  );
+}
+
+const s: Record<string, React.CSSProperties> = {
+  bar: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    padding: '7px 10px',
+    background: '#1f2430',
+    color: '#fff',
+    borderBottom: '1px solid #000'
+  },
+  grp: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '0 8px',
+    borderRight: '1px solid #333b4a'
+  },
+  btn: {
+    background: '#2c3444',
+    color: '#fff',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: '#3d4658',
+    borderRadius: 5,
+    padding: '5px 8px',
+    cursor: 'pointer',
+    fontSize: 12.5,
+    minWidth: 28,
+    lineHeight: 1.2
+  },
+  on: { background: '#5b8def', borderColor: '#5b8def' },
+  sel: {
+    background: '#2c3444',
+    color: '#fff',
+    border: '1px solid #3d4658',
+    borderRadius: 5,
+    padding: '4px 6px',
+    fontSize: 12
+  },
+  num: {
+    width: 46,
+    background: '#2c3444',
+    color: '#fff',
+    border: '1px solid #3d4658',
+    borderRadius: 5,
+    padding: '4px 6px',
+    fontSize: 12
+  },
+  color: {
+    width: 30,
+    height: 26,
+    padding: 0,
+    background: '#2c3444',
+    border: '1px solid #3d4658',
+    borderRadius: 5,
+    cursor: 'pointer'
+  },
+  numWide: {
+    width: 58,
+    background: '#2c3444',
+    color: '#fff',
+    border: '1px solid #3d4658',
+    borderRadius: 5,
+    padding: '4px 6px',
+    fontSize: 12
+  },
+  lbl: { fontSize: 12, color: '#aeb6c6' },
+  cropLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    fontSize: 11,
+    color: '#aeb6c6'
+  },
+  name: { fontSize: 12, color: '#aeb6c6', paddingLeft: 8 },
+  tableInsert: { position: 'relative' },
+  tableMenu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    zIndex: 40,
+    width: 166,
+    padding: 8,
+    background: '#222a38',
+    border: '1px solid #4d5b72',
+    borderRadius: 6,
+    boxShadow: '0 5px 16px rgba(0,0,0,.35)'
+  },
+  tableLabel: {
+    display: 'block',
+    marginBottom: 6,
+    color: '#cfd6e4',
+    fontSize: 12
+  },
+  tableGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(8, 16px)',
+    gap: 3
+  },
+  tableCell: {
+    width: 16,
+    height: 16,
+    padding: 0,
+    border: '1px solid #69758a',
+    background: '#161c27',
+    cursor: 'pointer'
+  },
+  tableCellOn: { background: '#5b8def', borderColor: '#91b3ff' }
+};
