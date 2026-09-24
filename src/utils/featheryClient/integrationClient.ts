@@ -1063,6 +1063,7 @@ export default class IntegrationClient {
     emailSubject,
     emailBlurb,
     signers,
+    ccRecipients,
     existingEnvelopeId,
     draft,
     wetSign,
@@ -1130,6 +1131,11 @@ export default class IntegrationClient {
               }
             : {})
         })),
+        // Bare emails and { email, name } entries both pass through as-is.
+        // `?? undefined` drops the key rather than sending null: logic rules
+        // are untyped, and the backend's list field rejects null with a 400
+        // that would fail the whole send.
+        cc_recipients: ccRecipients ?? undefined,
         docusign_envelope_id: existingEnvelopeId,
         draft,
         wet_sign: wetSign,

@@ -1356,8 +1356,50 @@ describe('IntegrationClient', () => {
       expect(body.wet_sign).toBe(true);
       expect(body.use_disclosure).toBe(true);
       expect(body.signers).toBeUndefined();
+      expect(body.cc_recipients).toBeUndefined();
       expect(body.documents).toEqual(['doc-1']);
       expect(result).toEqual({ docusign_envelope_id: 'wet-1' });
+    });
+
+    it('forwards ccRecipients as cc_recipients in both shapes', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        ccRecipients: [
+          'plain@mail.com',
+          { email: 'named@mail.com', name: 'CC' }
+        ]
+      });
+
+      expect(requestBody().cc_recipients).toEqual([
+        'plain@mail.com',
+        { email: 'named@mail.com', name: 'CC' }
+      ]);
+    });
+
+    it('omits cc_recipients when a rule passes null', async () => {
+      // Logic rules are untyped, so `someField || null` is plausible input;
+      // the backend's list field rejects null with a 400.
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        ccRecipients: null
+      });
+
+      expect('cc_recipients' in requestBody()).toBe(false);
     });
 
     it('forwards ignoreTemplateFieldMapping as ignore_template_field_mapping', async () => {
