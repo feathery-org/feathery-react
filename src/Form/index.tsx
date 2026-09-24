@@ -137,6 +137,8 @@ import { preloadStepFields } from '../elements/fields';
 import { DEFAULT_MOBILE_BREAKPOINT, getViewport } from '../elements/styles';
 import {
   ContextOnAction,
+  ContextOnDocumentReview,
+  DocumentReviewTrigger,
   ContextOnChange,
   ContextOnError,
   ContextOnSubmit,
@@ -256,7 +258,8 @@ import { isNum } from '../utils/primitives';
 import {
   editorContainerId,
   getSignUrl,
-  isDocusignSignAction
+  isDocusignSignAction,
+  buildDocumentReviewTrigger
 } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
@@ -328,6 +331,11 @@ export interface Props {
   onError?: null | ((context: ContextOnError) => Promise<any> | void);
   onView?: null | ((context: ContextOnView) => Promise<any> | void);
   onAction?: null | ((context: ContextOnAction) => Promise<any> | void);
+  // Runs after a toolbar action (Sign / Create Draft / Download / Save /
+  // Continue) on the Generate Documents review screen has completed.
+  onDocumentReview?:
+    | null
+    | ((context: ContextOnDocumentReview) => Promise<any> | void);
   onViewElements?: string[];
   saveUrlParams?: boolean;
   initialValues?: FieldValues;
@@ -436,6 +444,7 @@ function Form({
   onError = null,
   onView = null,
   onAction = null,
+  onDocumentReview = null,
   onViewElements = [],
   saveUrlParams = false,
   hideTestUI = false,
@@ -1280,7 +1289,8 @@ function Form({
     submit: onSubmit,
     error: onError,
     view: onView,
-    action: onAction
+    action: onAction,
+    document_review: onDocumentReview
   };
 
   const eventHasUserLogic = (event: string) => {
@@ -1405,6 +1415,13 @@ function Form({
 
     return logicRan;
   };
+
+  // Fires the `document_review` rules (and onDocumentReview) once a
+  // review-screen toolbar action has finalized and run its outcome, so a rule
+  // can react to what the filler chose - e.g. mark a record as sent for
+  // signature when they press Sign.
+  const runDocumentReviewLogic = (trigger: DocumentReviewTrigger) =>
+    runUserLogic('document_review', () => ({ trigger }));
 
   const getErrorCallback =
     (props1 = {}) =>
@@ -1569,7 +1586,22 @@ function Form({
                   }
                   if (result.status === 'error') return result;
                   await runEnvelopeAction(result, envelopeAction, draft);
-                  finalized = result;
+                  await runDocumentReviewLogic(
+                    buildDocumentReviewTrigger({
+                      action,
+                      elementId: '',
+                      envelopes,
+                      envelopeAction,
+                      draft,
+                      result
+                    })
+                  );
+                  // The toolbar action that produced this outcome rides along
+                  // so the awaiting rule can branch on it.
+                  finalized = {
+                    ...result,
+                    reviewAction: draft ? 'draft' : envelopeAction
+                  };
                   return result;
                 },
                 onComplete: () => {
@@ -1593,6 +1625,8 @@ function Form({
         // outside this flow, report the outcome through the same toast.
         showEnvelopeOutcome: (label: string, documents?: string[]) =>
           showEnvelopeOutcome(ENVELOPE_CONTAINER_TOAST_ID, label, documents),
+        // Same for the document_review rules its signing action fires.
+        runDocumentReviewLogic,
         fields,
         products: Object.seal(
           getSimplifiedProducts(integrations?.stripe, updateFieldValues, client)
@@ -3594,6 +3628,16 @@ function Form({
                   };
                 if (result.status === 'error') return result;
                 await runEnvelopeAction(result, envelopeAction, draft);
+                await runDocumentReviewLogic(
+                  buildDocumentReviewTrigger({
+                    action,
+                    elementId: element.id,
+                    envelopes,
+                    envelopeAction,
+                    draft,
+                    result
+                  })
+                );
                 return result;
               },
               onComplete: () => {

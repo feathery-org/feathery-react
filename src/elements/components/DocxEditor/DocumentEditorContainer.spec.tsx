@@ -41,7 +41,9 @@ jest.mock('./index', () => {
     reviewChanges,
     terminalAction,
     onTerminalAction,
-    onTerminalActionDraft
+    onTerminalActionDraft,
+    onSaved,
+    onDownloaded
   }: any) {
     const editor = React.useMemo(
       () => ({
@@ -89,6 +91,18 @@ jest.mock('./index', () => {
           key: 'clean',
           'data-testid': `clean:${source?.url}`,
           onClick: () => onChange(false)
+        }),
+      onSaved &&
+        React.createElement('button', {
+          key: 'saved',
+          'data-testid': 'saved',
+          onClick: () => onSaved({ file: 'saved-file-url' })
+        }),
+      onDownloaded &&
+        React.createElement('button', {
+          key: 'downloaded',
+          'data-testid': 'downloaded',
+          onClick: () => onDownloaded()
         })
     );
   };
@@ -654,6 +668,59 @@ describe('DocumentEditorContainer signing outcomes', () => {
     expect(mockFinalizeEnvelopeReview.mock.calls[0][1].draft).toBe(true);
   });
 
+  it('fires document_review with action "download" after a container download', async () => {
+    const runDocumentReviewLogic = jest.fn();
+    setFormInternalState('form-1', {
+      showEnvelopeOutcome,
+      runDocumentReviewLogic
+    });
+    seed({ editor_toolbar_actions: ['download'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('downloaded')).toBeTruthy());
+    getByTestId('downloaded').click();
+
+    await waitFor(() => expect(runDocumentReviewLogic).toHaveBeenCalled());
+    const trigger = runDocumentReviewLogic.mock.calls[0][0];
+    expect(trigger.type).toBe('document_review');
+    expect(trigger.action).toBe('download');
+    expect(trigger.envelopeIds).toEqual([`envelope-${CONTAINER}`]);
+  });
+
+  it('fires document_review with action "save" after a container save-to-field', async () => {
+    const runDocumentReviewLogic = jest.fn();
+    setFormInternalState('form-1', {
+      showEnvelopeOutcome,
+      runDocumentReviewLogic
+    });
+    seed({
+      editor_toolbar_actions: ['save'],
+      save_document_field_key: 'doc_url_field'
+    });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('saved')).toBeTruthy());
+    getByTestId('saved').click();
+
+    await waitFor(() => expect(runDocumentReviewLogic).toHaveBeenCalled());
+    expect(runDocumentReviewLogic.mock.calls[0][0].action).toBe('save');
+  });
+
+  it('does not offer save/download review firing when the toolbar omits them', async () => {
+    const runDocumentReviewLogic = jest.fn();
+    setFormInternalState('form-1', {
+      showEnvelopeOutcome,
+      runDocumentReviewLogic
+    });
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { queryByTestId } = mount();
+
+    await waitFor(() => expect(queryByTestId('terminal:sign')).toBeTruthy());
+    // Sign-only toolbar exposes no save/download review hooks.
+    expect(queryByTestId('saved')).toBeNull();
+    expect(queryByTestId('downloaded')).toBeNull();
+  });
+
   it('keeps the Feathery eSign path when sign_method is not docusign', async () => {
     // Invited someone else, so the filler has no document to open and the
     // toast is all they get.
@@ -671,5 +738,30 @@ describe('DocumentEditorContainer signing outcomes', () => {
         `document-${CONTAINER}`
       ])
     );
+  });
+
+  it('carries the signable file on the sign trigger (single file → files list)', async () => {
+    const runDocumentReviewLogic = jest.fn();
+    setFormInternalState('form-1', {
+      showEnvelopeOutcome,
+      runDocumentReviewLogic
+    });
+    // envelope_data returns a single `file`, not a `files` array like the
+    // overlay's finalize — the trigger must still carry it.
+    mockFinalizeEnvelope.mockResolvedValue({
+      signer_id: null,
+      invited: true,
+      file: 'https://x/signable.pdf'
+    });
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    await waitFor(() => expect(runDocumentReviewLogic).toHaveBeenCalled());
+    const trigger = runDocumentReviewLogic.mock.calls[0][0];
+    expect(trigger.action).toBe('sign');
+    expect(trigger.files).toEqual(['https://x/signable.pdf']);
   });
 });

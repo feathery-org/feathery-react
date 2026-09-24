@@ -17,6 +17,7 @@ import {
   ForwardInboxEmailOptions,
   PageSelectionInput
 } from '@feathery/client-utils';
+import type { DocumentReviewTrigger } from '../types/Form';
 
 export type AlloyEntities = Record<string, any>[];
 export type LoanProCustomerObject = Record<string, any>;
@@ -235,6 +236,10 @@ export interface FormInternalState {
   // Registered by <Form /> so a document-editor container can report its
   // signing outcome in the same toast the generate flow uses.
   showEnvelopeOutcome?: (label: string, documents?: string[]) => void;
+  // Registered by <Form /> so a document-editor container, which finalizes
+  // its own signing action outside the generate flow, can fire the
+  // `document_review` logic rules for it.
+  runDocumentReviewLogic?: (trigger: DocumentReviewTrigger) => Promise<any>;
 }
 
 type InternalState = {
