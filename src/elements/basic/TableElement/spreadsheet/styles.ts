@@ -665,7 +665,7 @@ export const addRowStripStyle = {
   color: v('controls_font_color', colors.gray500),
   textAlign: 'start',
   '&:hover': {
-    backgroundColor: v('controls_background_color', colors.accentSoft),
+    backgroundColor: v('controls_hover_background_color', colors.accentSoft),
     color: v('accent_color', colors.accent)
   }
 } as const;
@@ -704,7 +704,9 @@ export const pendingBarStyle = {
   gap: '8px 12px',
   flex: '0 0 auto',
   padding: '8px 12px',
-  backgroundColor: v('controls_background_color', colors.accentSoft),
+  // A band calling attention to unsaved work, so it takes the selection tint
+  // rather than the plain controls surface a theme may set.
+  backgroundColor: v('selected_background_color', colors.accentSoft),
   borderBottom: `1px solid ${v('controls_border_color', colors.gray200)}`,
   fontFamily: v('font_family', GRID_FONT_FAMILY),
   fontSize: v('controls_font_size', '13px'),
@@ -785,7 +787,8 @@ const pendingButtonBase = {
   cursor: 'pointer',
   fontFamily: 'inherit',
   fontSize: 'inherit',
-  fontWeight: v('controls_font_weight', 600),
+  // Action buttons stay heavier than the menu and bar text around them.
+  fontWeight: 600,
   lineHeight: 1.4,
   '&:focus-visible': {
     outline: `2px solid ${v('accent_color', colors.accent)}`,
@@ -804,20 +807,15 @@ export const discardButtonStyle = {
   }
 } as const;
 
+// The primary action: accent fill with white text, whatever the controls
+// surface is themed to — `controls_*` describe menus and bars, and a Save
+// painted in their colours would vanish against them.
 export const saveButtonStyle = {
   ...pendingButtonBase,
-  backgroundColor: v(
-    'controls_background_color',
-    v('accent_color', colors.accent)
-  ),
+  backgroundColor: v('accent_color', colors.accent),
   border: `1px solid ${v('accent_color', colors.accent)}`,
-  color: v('controls_font_color', colors.white),
-  '&:hover:not(:disabled)': {
-    backgroundColor: v(
-      'controls_hover_background_color',
-      v('accent_color', colors.accentDark)
-    )
-  }
+  color: colors.white,
+  '&:hover:not(:disabled)': { filter: 'brightness(0.92)' }
 } as const;
 
 /**
