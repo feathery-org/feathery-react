@@ -3,6 +3,8 @@ import { TABLE_CLASS } from '../classNames';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 
 export type RowMenuTarget = {
+  /** The TanStack row id, which pinning is keyed by. */
+  rowId: string;
   /** Table row index the menu acts on. */
   rowIndex: number;
   /** Row number shown to the user, for the menu's label. */
@@ -15,6 +17,9 @@ type RowMenuProps = {
   target: RowMenuTarget;
   canInsert: boolean;
   canDelete: boolean;
+  /** Whether the row is pinned to the top. */
+  pinned: boolean;
+  onTogglePin: () => void;
   onInsertAbove: () => void;
   onInsertBelow: () => void;
   onDelete: () => void;
@@ -25,12 +30,16 @@ export function RowMenu({
   target,
   canInsert,
   canDelete,
+  pinned,
+  onTogglePin,
   onInsertAbove,
   onInsertBelow,
   onDelete,
   onClose
 }: RowMenuProps) {
-  const items: ContextMenuItem[] = [];
+  const items: ContextMenuItem[] = [
+    { label: pinned ? 'Unpin row' : 'Pin row', run: onTogglePin }
+  ];
   if (canInsert) {
     items.push({ label: 'Insert row above', run: onInsertAbove });
     items.push({ label: 'Insert row below', run: onInsertBelow });

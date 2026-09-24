@@ -21,29 +21,24 @@ type ContextMenuProps = {
 };
 
 /**
- * A right-click menu anchored at the pointer. Shared by the row and column
- * header menus: it keeps itself inside the viewport and closes on any click
- * elsewhere, a scroll, or Escape.
+ * Positions a fixed popover at (x, y) and dismisses it like a menu: it keeps
+ * itself inside the viewport and closes on any click elsewhere, a scroll
+ * outside it, or Escape. Shared by the context menus and the filter popover.
  */
-export function ContextMenu({
-  x,
-  y,
-  label,
-  className,
-  itemClassName,
-  items,
-  onClose
-}: ContextMenuProps) {
-  const ref = React.useRef<HTMLDivElement>(null);
-
-  // The menu opens at the pointer, which near the bottom or right edge of the
-  // viewport would put part of it off screen. Measured once it exists and
+export function useAnchoredPopover(
+  ref: React.RefObject<HTMLElement | null>,
+  x: number,
+  y: number,
+  onClose: () => void
+) {
+  // The popover opens at the pointer, which near the bottom or right edge of
+  // the viewport would put part of it off screen. Measured once it exists and
   // pulled back inside; until then it renders where it was asked to.
   const [position, setPosition] = React.useState({ x, y });
   React.useLayoutEffect(() => {
-    const menu = ref.current;
-    if (!menu) return;
-    const { width, height } = menu.getBoundingClientRect();
+    const popover = ref.current;
+    if (!popover) return;
+    const { width, height } = popover.getBoundingClientRect();
     const view = featheryDoc().defaultView;
     if (!view) return;
     setPosition({
@@ -56,27 +51,52 @@ export function ContextMenu({
         Math.min(y, view.innerHeight - height - VIEWPORT_MARGIN)
       )
     });
-  }, [x, y]);
+  }, [ref, x, y]);
 
-  // `mousedown` rather than `click` so the menu is gone before the grid
-  // handles a selection on the same gesture.
+  // `mousedown` rather than `click` so the popover is gone before the grid
+  // handles a selection on the same gesture. A scroll inside the popover (a
+  // long value list) is its own business and does not dismiss it.
   React.useEffect(() => {
     const doc = featheryDoc();
+    const isInside = (target: EventTarget | null) =>
+      target instanceof Node && Boolean(ref.current?.contains(target));
     const onPointerDown = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) onClose();
+      if (!isInside(event.target)) onClose();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
+    const onScroll = (event: Event) => {
+      if (!isInside(event.target)) onClose();
+    };
     doc.addEventListener('mousedown', onPointerDown);
     doc.addEventListener('keydown', onKeyDown);
-    doc.addEventListener('scroll', onClose, true);
+    doc.addEventListener('scroll', onScroll, true);
     return () => {
       doc.removeEventListener('mousedown', onPointerDown);
       doc.removeEventListener('keydown', onKeyDown);
-      doc.removeEventListener('scroll', onClose, true);
+      doc.removeEventListener('scroll', onScroll, true);
     };
-  }, [onClose]);
+  }, [ref, onClose]);
+
+  return position;
+}
+
+/**
+ * A right-click menu anchored at the pointer. Shared by the row and column
+ * header menus.
+ */
+export function ContextMenu({
+  x,
+  y,
+  label,
+  className,
+  itemClassName,
+  items,
+  onClose
+}: ContextMenuProps) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const position = useAnchoredPopover(ref, x, y, onClose);
 
   if (!items.length) return null;
 

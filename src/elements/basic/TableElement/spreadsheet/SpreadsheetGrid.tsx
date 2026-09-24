@@ -15,6 +15,8 @@ import { CellEditor } from './CellEditor';
 import { CellErrorTooltip } from './CellErrorTooltip';
 import { RowMenu, RowMenuTarget } from './RowMenu';
 import { HeaderMenu, HeaderMenuTarget, SpreadsheetSort } from './HeaderMenu';
+import { FilterMenu } from './FilterMenu';
+import type { SpreadsheetFilters } from './useColumnFilters';
 import { columnSortKey } from '../useTableData';
 import { choicesFor, formatCellDisplay } from './fieldEditors';
 import { CellRules } from './validation';
@@ -32,6 +34,7 @@ import {
   cellSelectedStyle,
   cellStyle,
   cellValueStyle,
+  centerCellsClipStyle,
   columnHeaderContentStyle,
   columnHeaderLabelStyle,
   columnHeaderStyle,
@@ -40,10 +43,16 @@ import {
   cornerHeaderStyle,
   cellEdgeVars,
   fillHandleStyle,
+  filterIndicatorStyle,
+  frozenRegionStyle,
+  frozenRowStyle,
   gridExitHintStyle,
   gridStyle,
   headerRowStyle,
   headerSelectedStyle,
+  lastPinnedStyle,
+  pinnedCellStyle,
+  pinnedHeaderStyle,
   rowHeaderStyle,
   rowFocusedStyle,
   rowRaisedStyle,
@@ -85,6 +94,13 @@ export type SpreadsheetGridHandle = {
   restoreFocus: () => void;
 };
 
+/** Rows pinned to the top: the leading `count` rows of the table's data. */
+export type SpreadsheetRowPinning = {
+  count: number;
+  isPinned: (rowId: string) => boolean;
+  toggle: (rowId: string) => void;
+};
+
 type SpreadsheetGridProps = {
   table: SpreadsheetTable;
   interactions: GridInteractions;
@@ -106,6 +122,9 @@ type SpreadsheetGridProps = {
   onOpenSearch?: () => void;
   /** Enables the column header's right-click sort menu. */
   sort?: SpreadsheetSort;
+  /** Enables the column header's right-click filter menu and popover. */
+  filters?: SpreadsheetFilters;
+  rowPinning: SpreadsheetRowPinning;
   /** Reports the horizontal scrollbar's height (0 when the columns fit). */
   onScrollbarHeight?: (height: number) => void;
 };
@@ -138,6 +157,8 @@ export const SpreadsheetGrid = React.forwardRef<
     onDeleteRow,
     onOpenSearch,
     sort,
+    filters,
+    rowPinning,
     onScrollbarHeight
   },
   forwardedRef
@@ -215,18 +236,58 @@ export const SpreadsheetGrid = React.forwardRef<
     }
   );
 
-  const columns = table.getAllLeafColumns();
-  const rows = table.getRowModel().rows;
+  // Pinned columns and rows render outside the virtualizers: the columns as
+  // a sticky block after the gutter, the rows as a sticky band under the
+  // header. Only the center region scrolls and is virtualized.
+  const startColumns = table.getStartVisibleLeafColumns();
+  const centerColumns = table.getCenterVisibleLeafColumns();
+  const displayColumns = React.useMemo(
+    () => [...startColumns, ...centerColumns],
+    [startColumns, centerColumns]
+  );
+  const allRows = table.getRowModel().rows;
+  const topRows = React.useMemo(
+    () => allRows.slice(0, rowPinning.count),
+    [allRows, rowPinning.count]
+  );
+  const centerRows = React.useMemo(
+    () => allRows.slice(rowPinning.count),
+    [allRows, rowPinning.count]
+  );
   const columnSizing = table.state.columnSizing;
   const exitHintId = React.useId();
 
+  const startWidth = startColumns.reduce(
+    (total, column) => total + getColumnSize(column, columnSizing),
+    0
+  );
+  const frozenRowsHeight = topRows.length * ROW_HEIGHT;
+  const hasPinnedColumns = startColumns.length > 0;
+
+  // Where the pinned block ends, in canvas coordinates, is the scroll offset
+  // plus its width; the rows clip their scrolling cells there (see
+  // `centerCellsClipStyle`). Kept in a CSS variable so a scroll frame does not
+  // need a React render.
+  const lastScrollLeft = React.useRef<number | null>(null);
+  const syncScrollLeft = React.useCallback((element: HTMLDivElement) => {
+    if (lastScrollLeft.current === element.scrollLeft) return;
+    lastScrollLeft.current = element.scrollLeft;
+    element.style.setProperty(
+      '--feathery-table-scroll-left',
+      `${element.scrollLeft}px`
+    );
+  }, []);
+  React.useEffect(() => {
+    if (scrollRef.current) syncScrollLeft(scrollRef.current);
+  }, [syncScrollLeft, hasPinnedColumns]);
+
   const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-    count: rows.length,
+    count: centerRows.length,
     getScrollElement: () => scrollRef.current,
-    getItemKey: (index) => rows[index]?.id ?? index,
+    getItemKey: (index) => centerRows[index]?.id ?? index,
     estimateSize: () => ROW_HEIGHT,
-    paddingStart: HEADER_HEIGHT,
-    scrollPaddingStart: HEADER_HEIGHT,
+    paddingStart: HEADER_HEIGHT + frozenRowsHeight,
+    scrollPaddingStart: HEADER_HEIGHT + frozenRowsHeight,
     // Stop short of the bottom edge so a scrolled-to cell has room beneath it
     // for its message bubble, which hangs below the cell.
     scrollPaddingEnd: TOOLTIP_SCROLL_MARGIN,
@@ -236,15 +297,21 @@ export const SpreadsheetGrid = React.forwardRef<
   });
 
   const columnVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-    count: columns.length,
+    count: centerColumns.length,
     getScrollElement: () => scrollRef.current,
-    getItemKey: (index) => columns[index]?.id ?? index,
-    estimateSize: (index) => getColumnSize(columns[index], columnSizing),
+    getItemKey: (index) => centerColumns[index]?.id ?? index,
+    estimateSize: (index) => getColumnSize(centerColumns[index], columnSizing),
     horizontal: true,
-    paddingStart: ROW_HEADER_WIDTH,
-    scrollPaddingStart: ROW_HEADER_WIDTH,
+    paddingStart: ROW_HEADER_WIDTH + startWidth,
+    scrollPaddingStart: ROW_HEADER_WIDTH + startWidth,
     overscan: 3
   });
+
+  // Pinning a row moves the scrolling rows down by a band; the virtualizer
+  // does not re-measure for a padding change on its own.
+  React.useEffect(() => {
+    rowVirtualizer.measure();
+  }, [rowVirtualizer, frozenRowsHeight]);
 
   // Resizing changes measured widths without changing the column count, which
   // the virtualizer would otherwise not re-measure for.
@@ -284,16 +351,17 @@ export const SpreadsheetGrid = React.forwardRef<
         }, 0);
       },
       scrollToCell(rowId, columnId) {
-        const rowIndex = rows.findIndex((row) => row.id === rowId);
+        // Pinned rows and columns are always on screen already.
+        const rowIndex = centerRows.findIndex((row) => row.id === rowId);
         if (rowIndex >= 0) rowVirtualizer.scrollToIndex(rowIndex);
 
-        const columnIndex = columns.findIndex(
+        const columnIndex = centerColumns.findIndex(
           (column) => column.id === columnId
         );
         if (columnIndex >= 0) columnVirtualizer.scrollToIndex(columnIndex);
       }
     }),
-    [columns, columnVirtualizer, rows, rowVirtualizer]
+    [centerColumns, columnVirtualizer, centerRows, rowVirtualizer]
   );
 
   const measureScrollbar = React.useCallback(
@@ -312,7 +380,23 @@ export const SpreadsheetGrid = React.forwardRef<
     null
   );
   const closeHeaderMenu = React.useCallback(() => setHeaderMenu(null), []);
-  const hasRowMenu = Boolean(onInsertRow || onDeleteRow);
+  const [filterMenu, setFilterMenu] = React.useState<HeaderMenuTarget | null>(
+    null
+  );
+  const closeFilterMenu = React.useCallback(() => setFilterMenu(null), []);
+  // A header menu replaces an open filter popover: a right-click reached
+  // without a mousedown (Shift+F10, a long press) would otherwise stack them.
+  const openHeaderMenu = React.useCallback((target: HeaderMenuTarget) => {
+    setFilterMenu(null);
+    setHeaderMenu(target);
+  }, []);
+  const toggleColumnPin = React.useCallback(
+    (columnId: string) => {
+      const column = table.getColumn(columnId);
+      column?.pin(column.getIsPinned() ? false : 'start');
+    },
+    [table]
+  );
   const fillDragRef = React.useRef<FillDrag | null>(null);
   const headerSelectionDragRef = React.useRef<HeaderSelectionDrag | null>(null);
 
@@ -333,15 +417,36 @@ export const SpreadsheetGrid = React.forwardRef<
         rect.height - 1
       );
 
-      const rowItem = rowVirtualizer.getVirtualItemForOffset(
-        element.scrollTop + localY
-      );
-      const row = rowItem ? rows[rowItem.index] : undefined;
+      let row: SpreadsheetTableRow | undefined;
+      if (topRows.length && localY < HEADER_HEIGHT + frozenRowsHeight) {
+        const topIndex = clamp(
+          Math.floor((localY - HEADER_HEIGHT) / ROW_HEIGHT),
+          0,
+          topRows.length - 1
+        );
+        row = topRows[topIndex];
+      } else {
+        const rowItem = rowVirtualizer.getVirtualItemForOffset(
+          element.scrollTop + localY
+        );
+        row = rowItem ? centerRows[rowItem.index] : undefined;
+      }
 
-      const columnItem = columnVirtualizer.getVirtualItemForOffset(
-        element.scrollLeft + localX
-      );
-      const column = columnItem ? columns[columnItem.index] : undefined;
+      let column: SpreadsheetTableColumn | undefined;
+      if (startColumns.length && localX < ROW_HEADER_WIDTH + startWidth) {
+        let offset = ROW_HEADER_WIDTH;
+        column = startColumns.find((candidate) => {
+          const nextOffset = offset + getColumnSize(candidate, columnSizing);
+          const match = localX >= offset && localX < nextOffset;
+          offset = nextOffset;
+          return match;
+        });
+      } else {
+        const columnItem = columnVirtualizer.getVirtualItemForOffset(
+          element.scrollLeft + localX
+        );
+        column = columnItem ? centerColumns[columnItem.index] : undefined;
+      }
 
       if (!row || !column) return null;
       const columnIndex =
@@ -350,7 +455,18 @@ export const SpreadsheetGrid = React.forwardRef<
       if (rowIndex < 0 || columnIndex < 0) return null;
       return { rowIndex, columnIndex };
     },
-    [columns, columnVirtualizer, rows, rowVirtualizer, table]
+    [
+      centerColumns,
+      centerRows,
+      columnSizing,
+      columnVirtualizer,
+      frozenRowsHeight,
+      rowVirtualizer,
+      startColumns,
+      startWidth,
+      table,
+      topRows
+    ]
   );
 
   const applyHeaderSelectionDrag = React.useCallback(
@@ -391,7 +507,7 @@ export const SpreadsheetGrid = React.forwardRef<
       if (headerDrag) {
         const focusId =
           headerDrag.axis === 'column'
-            ? columns[coordinate.columnIndex]?.id
+            ? displayColumns[coordinate.columnIndex]?.id
             : table.getRowsInDisplayOrder()[coordinate.rowIndex]?.id;
         if (focusId) applyHeaderSelectionDrag(headerDrag, focusId);
         return;
@@ -399,13 +515,13 @@ export const SpreadsheetGrid = React.forwardRef<
 
       if (!table._isSelectingCells) return;
       const row = table.getRowsInDisplayOrder()[coordinate.rowIndex];
-      const column = columns[coordinate.columnIndex];
+      const column = displayColumns[coordinate.columnIndex];
       if (!row || !column) return;
       row.getAllCellsByColumnId()[column.id]?.getSelectionExtendHandler()(
         event
       );
     },
-    [applyHeaderSelectionDrag, columns, resolveCoordinate, table]
+    [applyHeaderSelectionDrag, displayColumns, resolveCoordinate, table]
   );
 
   React.useEffect(() => {
@@ -505,10 +621,17 @@ export const SpreadsheetGrid = React.forwardRef<
   // has been rendered and then dropped (never before it has scrolled into view).
   const editing = interactions.editing;
   const editingKey = editing ? `${editing.rowId}\0${editing.columnId}` : null;
+  // Pinned rows and columns are always rendered.
   const editingRendered =
     editing != null &&
-    virtualRows.some((item) => rows[item.index]?.id === editing.rowId) &&
-    virtualColumns.some((item) => columns[item.index]?.id === editing.columnId);
+    (topRows.some((row) => row.id === editing.rowId) ||
+      virtualRows.some(
+        (item) => centerRows[item.index]?.id === editing.rowId
+      )) &&
+    (startColumns.some((column) => column.id === editing.columnId) ||
+      virtualColumns.some(
+        (item) => centerColumns[item.index]?.id === editing.columnId
+      ));
   const renderedEditorKey = React.useRef<string | null>(null);
   if (editingRendered) renderedEditorKey.current = editingKey;
   React.useEffect(() => {
@@ -531,9 +654,13 @@ export const SpreadsheetGrid = React.forwardRef<
         tabIndex={0}
         aria-describedby={exitHintId}
         aria-rowcount={table.getRowsInDisplayOrder().length + 1}
-        aria-colcount={columns.length}
+        aria-colcount={displayColumns.length}
         aria-readonly={!canEdit || undefined}
-        css={gridStyle}
+        css={{
+          ...gridStyle,
+          '--feathery-table-pinned-left': `${ROW_HEADER_WIDTH + startWidth}px`
+        }}
+        onScroll={(event) => syncScrollLeft(event.currentTarget)}
         onKeyDown={interactions.handleGridKeyDown}
         onCopy={interactions.copySelection}
         onCut={interactions.cutSelection}
@@ -556,24 +683,55 @@ export const SpreadsheetGrid = React.forwardRef<
                 resizingColumnId={table.state.columnResizing.isResizingColumn}
                 selectionBounds={selectionBounds}
                 virtualColumns={virtualColumns}
-                headers={table.getLeafHeaders()}
+                startHeaders={table.getStartLeafHeaders()}
+                centerHeaders={table.getCenterLeafHeaders()}
                 onStartSelection={startHeaderSelection}
                 onExtendSelection={extendHeaderSelection}
                 onAddColumn={onAddColumn}
                 sort={sort}
-                onOpenHeaderMenu={sort ? setHeaderMenu : undefined}
+                filters={filters}
+                onOpenHeaderMenu={sort || filters ? openHeaderMenu : undefined}
               />
             )}
           </table.Subscribe>
 
+          {topRows.length ? (
+            <div css={{ ...frozenRegionStyle, height: frozenRowsHeight }}>
+              {topRows.map((row, index) => (
+                <SubscribedRow
+                  key={row.id}
+                  row={row}
+                  top={index * ROW_HEIGHT}
+                  frozen
+                  pinnedColumns={hasPinnedColumns}
+                  table={table}
+                  columnSizing={columnSizing}
+                  virtualColumns={virtualColumns}
+                  interactions={interactions}
+                  canEdit={canEdit}
+                  rowIndexById={rowIndexById}
+                  getCellShading={getCellShading}
+                  cellRules={cellRules}
+                  fillPreview={fillPreview}
+                  onStartHeaderSelection={startHeaderSelection}
+                  onExtendHeaderSelection={extendHeaderSelection}
+                  onOpenRowMenu={setRowMenu}
+                  onStartFill={startFillDrag}
+                />
+              ))}
+            </div>
+          ) : null}
+
           {virtualRows.map((virtualRow) => {
-            const row = rows[virtualRow.index];
+            const row = centerRows[virtualRow.index];
             if (!row) return null;
             return (
               <SubscribedRow
                 key={row.id}
                 row={row}
                 top={virtualRow.start}
+                frozen={false}
+                pinnedColumns={hasPinnedColumns}
                 table={table}
                 columnSizing={columnSizing}
                 virtualColumns={virtualColumns}
@@ -585,7 +743,7 @@ export const SpreadsheetGrid = React.forwardRef<
                 fillPreview={fillPreview}
                 onStartHeaderSelection={startHeaderSelection}
                 onExtendHeaderSelection={extendHeaderSelection}
-                onOpenRowMenu={hasRowMenu ? setRowMenu : undefined}
+                onOpenRowMenu={setRowMenu}
                 onStartFill={startFillDrag}
               />
             );
@@ -613,14 +771,33 @@ export const SpreadsheetGrid = React.forwardRef<
       >
         Press Escape to clear the selection, and again to leave the table.
       </div>
-      {headerMenu && sort ? (
-        <HeaderMenu target={headerMenu} sort={sort} onClose={closeHeaderMenu} />
+      {headerMenu ? (
+        <HeaderMenu
+          target={headerMenu}
+          sort={sort}
+          filters={filters}
+          onOpenFilter={setFilterMenu}
+          pinned={
+            table.getColumn(headerMenu.fieldKey)?.getIsPinned() === 'start'
+          }
+          onTogglePin={() => toggleColumnPin(headerMenu.fieldKey)}
+          onClose={closeHeaderMenu}
+        />
+      ) : null}
+      {filterMenu && filters ? (
+        <FilterMenu
+          target={filterMenu}
+          filters={filters}
+          onClose={closeFilterMenu}
+        />
       ) : null}
       {rowMenu ? (
         <RowMenu
           target={rowMenu}
           canInsert={Boolean(onInsertRow)}
           canDelete={Boolean(onDeleteRow)}
+          pinned={rowPinning.isPinned(rowMenu.rowId)}
+          onTogglePin={() => rowPinning.toggle(rowMenu.rowId)}
           onInsertAbove={() => onInsertRow?.(rowMenu.rowIndex)}
           onInsertBelow={() => onInsertRow?.(rowMenu.rowIndex + 1)}
           onDelete={() => onDeleteRow?.(rowMenu.rowIndex)}
@@ -637,7 +814,8 @@ type HeaderRowProps = {
   resizingColumnId: false | string;
   selectionBounds: CellSelectionBounds[];
   virtualColumns: VirtualItem[];
-  headers: SpreadsheetTableHeader[];
+  startHeaders: SpreadsheetTableHeader[];
+  centerHeaders: SpreadsheetTableHeader[];
   onStartSelection: (
     event: React.MouseEvent<HTMLElement>,
     axis: 'column',
@@ -647,6 +825,7 @@ type HeaderRowProps = {
   onExtendSelection: (axis: 'column', id: string) => void;
   onAddColumn?: AddColumnHandler;
   sort?: SpreadsheetSort;
+  filters?: SpreadsheetFilters;
   onOpenHeaderMenu?: (target: HeaderMenuTarget) => void;
 };
 
@@ -656,11 +835,13 @@ function HeaderRow({
   resizingColumnId,
   selectionBounds,
   virtualColumns,
-  headers,
+  startHeaders,
+  centerHeaders,
   onStartSelection,
   onExtendSelection,
   onAddColumn,
   sort,
+  filters,
   onOpenHeaderMenu
 }: HeaderRowProps) {
   const rowCount = table.getRowsInDisplayOrder().length;
@@ -673,6 +854,7 @@ function HeaderRow({
     onStartSelection,
     onExtendSelection,
     sort,
+    filters,
     onOpenHeaderMenu
   };
 
@@ -685,8 +867,11 @@ function HeaderRow({
         css={cornerHeaderStyle}
         onClick={() => table.selectAllCells()}
       />
+      {startHeaders.map((header) => (
+        <HeaderCell key={header.id} header={header} pinned {...shared} />
+      ))}
       {virtualColumns.map((virtualColumn) => {
-        const header = headers[virtualColumn.index];
+        const header = centerHeaders[virtualColumn.index];
         if (!header) return null;
         return (
           <HeaderCell
@@ -726,8 +911,11 @@ type HeaderCellProps = {
   rowCount: number;
   onStartSelection: HeaderRowProps['onStartSelection'];
   onExtendSelection: HeaderRowProps['onExtendSelection'];
-  left: number;
+  /** Canvas offset of a scrolling column; a pinned one sticks instead. */
+  left?: number;
+  pinned?: boolean;
   sort?: SpreadsheetSort;
+  filters?: SpreadsheetFilters;
   onOpenHeaderMenu?: (target: HeaderMenuTarget) => void;
 };
 
@@ -741,7 +929,9 @@ function HeaderCell({
   onStartSelection,
   onExtendSelection,
   left,
+  pinned = false,
   sort,
+  filters,
   onOpenHeaderMenu
 }: HeaderCellProps) {
   const { column } = header;
@@ -773,7 +963,8 @@ function HeaderCell({
       title={label}
       css={{
         ...columnHeaderStyle,
-        ...getColumnPositionStyle(column, columnSizing, left),
+        ...(pinned ? pinnedHeaderStyle : {}),
+        ...getColumnPositionStyle(column, columnSizing, left, pinned),
         ...(fullySelected ? headerSelectedStyle : {})
       }}
       onMouseDown={(event) =>
@@ -785,6 +976,7 @@ function HeaderCell({
         event.preventDefault();
         onOpenHeaderMenu({
           sortKey,
+          fieldKey: column.id,
           name: label,
           x: event.clientX,
           y: event.clientY
@@ -816,6 +1008,17 @@ function HeaderCell({
             css={sortIndicatorStyle}
           >
             {sortedHere === 'asc' ? '▲' : '▼'}
+          </span>
+        ) : null}
+        {filters?.isFiltered(column.id) ? (
+          <span
+            className={TABLE_CLASS.gridFilterIndicator}
+            aria-hidden='true'
+            css={filterIndicatorStyle}
+          >
+            <svg viewBox='0 0 10 10'>
+              <path d='M0 0h10L6 5v4l-2 1V5z' />
+            </svg>
           </span>
         ) : null}
       </span>
@@ -892,6 +1095,10 @@ type RowSelectionSnapshot = {
 type SubscribedRowProps = {
   row: SpreadsheetTableRow;
   top: number;
+  /** Rendered in the sticky band of pinned rows under the header. */
+  frozen: boolean;
+  /** Whether any column is pinned, so the scrolling cells clip under them. */
+  pinnedColumns: boolean;
   table: SpreadsheetTable;
   columnSizing: SpreadsheetTable['state']['columnSizing'];
   virtualColumns: VirtualItem[];
@@ -961,6 +1168,8 @@ function SubscribedRow(props: SubscribedRowProps) {
 function SpreadsheetRowView({
   row,
   top,
+  frozen,
+  pinnedColumns,
   table,
   columnSizing,
   virtualColumns,
@@ -977,7 +1186,8 @@ function SpreadsheetRowView({
   selection
 }: SubscribedRowProps & { selection: RowSelectionSnapshot }) {
   const rowIndex = row.getDisplayIndex();
-  const cells = row.getAllCells();
+  const startCells = row.getStartVisibleCells();
+  const centerCells = row.getCenterVisibleCells();
 
   const shared = {
     rowIndex,
@@ -993,6 +1203,19 @@ function SpreadsheetRowView({
     onStartFill
   };
 
+  const centerCellNodes = virtualColumns.map((virtualColumn) => {
+    const cell = centerCells[virtualColumn.index];
+    if (!cell) return null;
+    return (
+      <SpreadsheetCell
+        key={cell.id}
+        cell={cell}
+        left={virtualColumn.start}
+        {...shared}
+      />
+    );
+  });
+
   return (
     <div
       className={TABLE_CLASS.gridRow}
@@ -1000,7 +1223,11 @@ function SpreadsheetRowView({
       aria-rowindex={rowIndex + 2}
       css={{
         ...rowStyle,
-        ...(selection.focusedColumnId
+        // A pinned row is already lifted above the scrolling rows; raising a
+        // selected one further would drop it out of the frozen band.
+        ...(frozen
+          ? frozenRowStyle
+          : selection.focusedColumnId
           ? rowFocusedStyle
           : selection.inSelection
           ? rowRaisedStyle
@@ -1026,6 +1253,7 @@ function SpreadsheetRowView({
           if (!onOpenRowMenu) return;
           event.preventDefault();
           onOpenRowMenu({
+            rowId: row.id,
             rowIndex: rowIndexById.get(row.id) ?? rowIndex,
             displayNumber: rowIndex + 1,
             x: event.clientX,
@@ -1035,18 +1263,14 @@ function SpreadsheetRowView({
       >
         {rowIndex + 1}
       </button>
-      {virtualColumns.map((virtualColumn) => {
-        const cell = cells[virtualColumn.index];
-        if (!cell) return null;
-        return (
-          <SpreadsheetCell
-            key={cell.id}
-            cell={cell}
-            left={virtualColumn.start}
-            {...shared}
-          />
-        );
-      })}
+      {startCells.map((cell) => (
+        <SpreadsheetCell key={cell.id} cell={cell} pinned {...shared} />
+      ))}
+      {pinnedColumns ? (
+        <div css={centerCellsClipStyle}>{centerCellNodes}</div>
+      ) : (
+        centerCellNodes
+      )}
     </div>
   );
 }
@@ -1063,7 +1287,8 @@ type SpreadsheetCellProps = {
   rowIndexById: Map<string, number>;
   getCellShading?: GetCellShading;
   cellRules?: CellRules;
-  left: number;
+  left?: number;
+  pinned?: boolean;
   onStartFill: (event: React.MouseEvent, source: GridBounds) => void;
 };
 
@@ -1080,6 +1305,7 @@ function SpreadsheetCell({
   getCellShading,
   cellRules,
   left,
+  pinned = false,
   onStartFill
 }: SpreadsheetCellProps) {
   const columnIndex =
@@ -1149,8 +1375,9 @@ function SpreadsheetCell({
       // scroll container, which never unmounts.
       css={{
         ...cellStyle,
-        ...getColumnPositionStyle(cell.column, columnSizing, left),
-        zIndex: cellZIndex(isSelected || isFocused, isFocused),
+        ...(pinned ? pinnedCellStyle : {}),
+        ...getColumnPositionStyle(cell.column, columnSizing, left, pinned),
+        zIndex: cellZIndex(pinned, isSelected || isFocused, isFocused),
         ...(isSelected ? cellSelectedStyle : {}),
         ...cellEdgeVars(edges, isFocused, rowIndex === 0),
         ...(isFillTarget ? cellFillPreviewStyle : {}),
@@ -1261,9 +1488,20 @@ function shadingToStyle(shading: CellShading | null | undefined) {
 function getColumnPositionStyle(
   column: SpreadsheetTableColumn,
   columnSizing: SpreadsheetTable['state']['columnSizing'],
-  left: number
+  left: number | undefined,
+  pinned: boolean
 ): React.CSSProperties {
-  return { width: getColumnSize(column, columnSizing), left };
+  const width = getColumnSize(column, columnSizing);
+  if (!pinned) return { width, left };
+  const startColumns = column.table.getStartVisibleLeafColumns();
+  const isLast = startColumns.at(-1)?.id === column.id;
+  return {
+    width,
+    insetInlineStart: ROW_HEADER_WIDTH + column.getStart('start'),
+    // Only the innermost pinned column casts the shadow onto the scrolling
+    // region, so the pinned block reads as one unit.
+    ...(isLast ? lastPinnedStyle : {})
+  };
 }
 
 function getColumnSize(
