@@ -13,13 +13,18 @@ import { CellValue } from './model';
 import {
   choicesFor,
   editorKindFor,
+  formatCellDisplay,
   parseCellInput,
   seedActionFor
 } from './fieldEditors';
 import { PendingChangesBar } from './PendingChangesBar';
 import { SearchBar } from './SearchBar';
 import type { SpreadsheetSort } from './HeaderMenu';
-import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
+import {
+  SpreadsheetGrid,
+  SpreadsheetGridHandle,
+  SpreadsheetRowPinning
+} from './SpreadsheetGrid';
 import { cellErrorKey, CellRules } from './validation';
 import { CellIssues, countIssues, issueRank } from './issues';
 import {
@@ -36,6 +41,7 @@ import {
   SpreadsheetRow,
   SpreadsheetTableState
 } from './table';
+import { useColumnFilters } from './useColumnFilters';
 import { useGridInteractions } from './useGridInteractions';
 import { useGridSearch } from './useGridSearch';
 import { useMeasured } from './useMeasured';
@@ -144,6 +150,70 @@ export function SpreadsheetTable({
     [rows]
   );
 
+  // Column filters match what the cell shows, so a date column filters on the
+  // formatted date the user sees rather than the stored string.
+  const cellText = useCallback(
+    (row: SpreadsheetRow, fieldKey: string) =>
+      formatCellDisplay(
+        row.cells[fieldKey] as CellValue,
+        cellRules?.[fieldKey]
+      ),
+    [cellRules]
+  );
+  const { filters, visibleRows } = useColumnFilters({
+    rows,
+    columns,
+    textOf: cellText
+  });
+
+  // Rows pinned to the top, in pin order. Kept as data order rather than as
+  // TanStack row pinning: the grid's selection geometry runs on the table's
+  // display order, which TanStack's row pinning does not change, so a pinned
+  // row would keep its old index and selection and keyboard movement would
+  // follow the unpinned order. Ids are row-index keyed, so they mean another
+  // row once rows shift: the pins carry the identity version they were made
+  // under and are dropped in the same render that brings a new one, not in an
+  // effect after it, or the row now holding an old id would flash pinned.
+  const [pins, setPins] = useState<{ version: number; ids: string[] }>({
+    version: rowIdentityVersion,
+    ids: []
+  });
+  const pinnedRowIds = useMemo(
+    () => (pins.version === rowIdentityVersion ? pins.ids : []),
+    [pins, rowIdentityVersion]
+  );
+  const { orderedRows, pinnedRowCount } = useMemo(() => {
+    const pinned = pinnedRowIds
+      .map((id) => visibleRows.find((row) => row.id === id))
+      .filter((row): row is SpreadsheetRow => row !== undefined);
+    if (!pinned.length) return { orderedRows: visibleRows, pinnedRowCount: 0 };
+    const pinnedIds = new Set(pinned.map((row) => row.id));
+    return {
+      orderedRows: [
+        ...pinned,
+        ...visibleRows.filter((row) => !pinnedIds.has(row.id))
+      ],
+      pinnedRowCount: pinned.length
+    };
+  }, [pinnedRowIds, visibleRows]);
+  const rowPinning = useMemo<SpreadsheetRowPinning>(
+    () => ({
+      count: pinnedRowCount,
+      isPinned: (rowId) => pinnedRowIds.includes(rowId),
+      toggle: (rowId) =>
+        setPins({
+          version: rowIdentityVersion,
+          ids: pinnedRowIds.includes(rowId)
+            ? pinnedRowIds.filter((id) => id !== rowId)
+            : [...pinnedRowIds, rowId]
+        })
+    }),
+    [pinnedRowCount, pinnedRowIds, rowIdentityVersion]
+  );
+  // A row added under a filter would be hidden the moment it appeared, since
+  // its blank cells match nothing, so rows can only be added unfiltered.
+  const insertRow = filters.active ? undefined : onInsertRow;
+
   const tableColumns = useMemo(
     () =>
       columnHelper.columns(
@@ -174,7 +244,7 @@ export function SpreadsheetTable({
       key: 'feathery-spreadsheet',
       features: spreadsheetFeatures,
       columns: tableColumns,
-      data: rows,
+      data: orderedRows,
       atoms: { cellSelection: cellSelectionAtom },
       getRowId: (row) => row.id,
       enableCellSelection: true,
@@ -184,6 +254,7 @@ export function SpreadsheetTable({
       columnResizeMode: 'onChange'
     },
     (state: SpreadsheetTableState) => ({
+      columnPinning: state.columnPinning,
       columnResizing: state.columnResizing,
       columnSizing: state.columnSizing
     })
@@ -229,7 +300,9 @@ export function SpreadsheetTable({
 
   // Failing cells in reading order — down the rows, left to right — grouped
   // by how much they matter: what holds the save back first, then the other
-  // rule breaks, then the advisory findings.
+  // rule breaks, then the advisory findings. Every row is walked, filtered or
+  // not: the bar's counts and its Save gate cover them all, so the stepper
+  // must be able to reach each one.
   const issues = useMemo(() => {
     if (!cellIssues || !Object.keys(cellIssues).length) return [];
     const ordered: { rank: number; rowId: string; columnId: string }[] = [];
@@ -272,7 +345,7 @@ export function SpreadsheetTable({
     undo: history.undo,
     redo: history.redo,
     canEdit,
-    onInsertRow,
+    onInsertRow: insertRow,
     scrollToCell,
     restoreFocus,
     seedAction,
@@ -280,6 +353,33 @@ export function SpreadsheetTable({
     parseValue,
     choicesFor: columnChoices
   });
+
+  const visibleRowIds = useMemo(
+    () => new Set(visibleRows.map((row) => row.id)),
+    [visibleRows]
+  );
+  // An issue on a row the column filters hide: the filters are lifted and the
+  // cell is focused once the row has rendered, since it cannot be scrolled to
+  // before then.
+  const pendingIssueFocus = useRef<{ rowId: string; columnId: string } | null>(
+    null
+  );
+  const focusIssue = useCallback(
+    (issue: { rowId: string; columnId: string }) => {
+      interactions.focusCell(issue.rowId, issue.columnId);
+      // The stepper button took focus on the click; the grid needs it back or
+      // the next arrow key would step the button instead of the selection.
+      gridRef.current?.focus();
+    },
+    [interactions]
+  );
+  useEffect(() => {
+    const pending = pendingIssueFocus.current;
+    if (pending && visibleRowIds.has(pending.rowId)) {
+      pendingIssueFocus.current = null;
+      focusIssue(pending);
+    }
+  }, [visibleRowIds, focusIssue]);
 
   const stepIssue = useCallback(
     (delta: 1 | -1) => {
@@ -293,16 +393,18 @@ export function SpreadsheetTable({
           : (cursor + delta + issues.length) % issues.length;
       issueCursor.current = next;
       const issue = issues[next];
-      interactions.focusCell(issue.rowId, issue.columnId);
-      // The stepper button took focus on the click; the grid needs it back or
-      // the next arrow key would step the button instead of the selection.
-      gridRef.current?.focus();
+      if (visibleRowIds.has(issue.rowId)) {
+        focusIssue(issue);
+        return;
+      }
+      pendingIssueFocus.current = issue;
+      filters.clearAll();
     },
-    [interactions, issues]
+    [issues, visibleRowIds, focusIssue, filters]
   );
 
   const search = useGridSearch({
-    rows,
+    rows: visibleRows,
     columns,
     cellRules,
     focusCell: interactions.focusCell
@@ -349,13 +451,13 @@ export function SpreadsheetTable({
   useMeasured(barRef, measureBar, showBar);
   const barSpace = showBar ? barHeight : 0;
   const fitHeight = useMemo(() => {
-    const base = spreadsheetViewportHeight(heightUnit, rows.length, {
-      addRow: Boolean(onInsertRow),
+    const base = spreadsheetViewportHeight(heightUnit, visibleRows.length, {
+      addRow: Boolean(insertRow),
       scrollbarHeight
     });
     if (base === undefined) return undefined;
     return base + barSpace;
-  }, [heightUnit, rows.length, onInsertRow, scrollbarHeight, barSpace]);
+  }, [heightUnit, visibleRows.length, insertRow, scrollbarHeight, barSpace]);
 
   return (
     <div
@@ -403,10 +505,12 @@ export function SpreadsheetTable({
         getCellShading={shadeCell}
         cellRules={cellRules}
         onAddColumn={onAddColumn}
-        onInsertRow={onInsertRow}
+        onInsertRow={insertRow}
         onDeleteRow={onDeleteRow}
         onOpenSearch={search.openSearch}
         sort={sort}
+        filters={filters}
+        rowPinning={rowPinning}
         onScrollbarHeight={setScrollbarHeight}
       />
     </div>
