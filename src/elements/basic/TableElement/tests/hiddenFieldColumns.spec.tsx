@@ -290,6 +290,43 @@ describe('hidden field table columns - classic', () => {
     expect(screen.getByText('Years')).toBeInTheDocument();
   });
 
+  it('adds a required column and keeps it required when edited', () => {
+    renderTable({ enable_column_adding: true, enable_column_editing: true });
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Column' }));
+    let dialog = fillEditor('Email', 'email');
+    fireEvent.click(within(dialog).getByLabelText('Required'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
+    expect(stored().columns[2]).toEqual({
+      name: 'Email',
+      field_type: 'email',
+      required: true
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit column Email' }));
+    dialog = screen.getByRole('dialog', { name: 'Edit column' });
+    expect(within(dialog).getByLabelText('Required')).toBeChecked();
+    fillEditor('Work email');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(stored().columns[2]).toEqual({
+      name: 'Work email',
+      field_type: 'email',
+      required: true
+    });
+
+    // Unticking it leaves no flag behind.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Edit column Work email' })
+    );
+    dialog = screen.getByRole('dialog', { name: 'Edit column' });
+    fireEvent.click(within(dialog).getByLabelText('Required'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(stored().columns[2]).toEqual({
+      name: 'Work email',
+      field_type: 'email'
+    });
+  });
+
   describe('column defaults', () => {
     const setDefault = (dialog: HTMLElement, value: string) =>
       fireEvent.change(within(dialog).getByLabelText('Default for new rows'), {

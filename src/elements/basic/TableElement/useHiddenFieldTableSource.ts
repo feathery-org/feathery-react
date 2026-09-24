@@ -18,12 +18,13 @@ import { CellValue } from './spreadsheet/model';
  * `field_type` is any cell type the grid can edit (every type the Data Hub and
  * field-backed sources use, less `file`), or text when it is left out — and its
  * values, an array of rows where each row is an array of cells. A column may also set `canEdit` or `canDelete` to allow or prevent
- * changing or removing it, overriding the table's own column settings, and a
- * `default`, the value a newly added row starts with in that column:
+ * changing or removing it, overriding the table's own column settings,
+ * `required` to flag its blank cells the way a required Data Hub field is, and
+ * a `default`, the value a newly added row starts with in that column:
  *
  *   {
  *     columns: [
- *       { name: "Name", field_type: "text", canDelete: false },
+ *       { name: "Name", field_type: "text", required: true, canDelete: false },
  *       { name: "Age", field_type: "number", default: 18 }
  *     ],
  *     values: [["Alice", 30], ["Bob", 41]]
@@ -41,6 +42,7 @@ export type HiddenFieldColumn = {
   field_type?: CellValueType;
   canEdit?: boolean;
   canDelete?: boolean;
+  required?: boolean;
   default?: CellValue;
 };
 
@@ -48,6 +50,9 @@ export type HiddenFieldColumn = {
 export type ColumnPermissions = { canEdit?: boolean; canDelete?: boolean };
 
 const PERMISSION_FLAGS = ['canEdit', 'canDelete'] as const;
+
+// Every flag a column may set, each true, false or left out.
+const COLUMN_FLAGS = [...PERMISSION_FLAGS, 'required'] as const;
 
 const isOptionalBoolean = (value: unknown) =>
   value === undefined || typeof value === 'boolean';
@@ -89,7 +94,8 @@ const isObject = (value: unknown): value is Record<string, any> =>
 
 const columnRule = (column: HiddenFieldColumn, index: number) => ({
   label: columnName(column, index),
-  type: columnType(column)
+  type: columnType(column),
+  required: column.required === true
 });
 
 /** Why a column's `default` cannot start a new row, or null when it can. */
@@ -97,19 +103,35 @@ const defaultProblem = (column: HiddenFieldColumn, index: number) => {
   const value = column.default;
   if (value === undefined) return null;
   if (!isCell(value)) return 'Must be text, a number or true/false';
-  return validateCellValue(value, columnRule(column, index));
+  // An empty default only means there is none, even in a required column.
+  return validateCellValue(value, {
+    ...columnRule(column, index),
+    required: false
+  });
 };
 
 const isColumn = (entry: any, index: number): entry is HiddenFieldColumn =>
   isObject(entry) &&
   typeof entry.name === 'string' &&
   (hasNoType(entry.field_type) || isEditableCellValueType(entry.field_type)) &&
-  PERMISSION_FLAGS.every((flag) => isOptionalBoolean(entry[flag])) &&
+  COLUMN_FLAGS.every((flag) => isOptionalBoolean(entry[flag])) &&
   !defaultProblem(entry as HiddenFieldColumn, index);
 
 // What a new row holds in a column: its default, or a blank cell.
 const newCell = (column: HiddenFieldColumn) =>
   column.default === undefined || column.default === null ? '' : column.default;
+
+/**
+ * A draft's `required`, stored only when set so an optional column keeps the
+ * shape it had.
+ */
+const withRequired = (
+  column: HiddenFieldColumn,
+  required: boolean | undefined
+): HiddenFieldColumn => {
+  const { required: _, ...rest } = column;
+  return required ? { ...rest, required: true } : rest;
+};
 
 /**
  * A draft's default, left out when it is empty so a column without one is
@@ -146,9 +168,7 @@ const describeColumnProblem = (entry: any, index: number) => {
   if (typeof entry.name !== 'string') {
     return `${column} needs a text "name".`;
   }
-  const badFlag = PERMISSION_FLAGS.find(
-    (flag) => !isOptionalBoolean(entry[flag])
-  );
+  const badFlag = COLUMN_FLAGS.find((flag) => !isOptionalBoolean(entry[flag]));
   if (badFlag) {
     return `${column} has ${badFlag} ${JSON.stringify(
       entry[badFlag]
@@ -495,7 +515,10 @@ export function useHiddenFieldTableSource({
       // The default only fills rows added from now on; rows already there get
       // a blank cell, like any new column.
       const column = withDefault(
-        { name: draft.name, field_type: draft.field_type },
+        withRequired(
+          { name: draft.name, field_type: draft.field_type },
+          draft.required
+        ),
         draft.default
       );
       const at =
@@ -526,12 +549,16 @@ export function useHiddenFieldTableSource({
       const grid = currentGrid();
       const colIndex = columnIndexOf(fieldKey);
       if (!grid || !grid.header[colIndex]) return;
-      // Cells that no longer fit a changed type are kept, and flagged by the
-      // column's new rule rather than silently cleared.
+      // Cells that no longer fit a changed type, or are blank in a column
+      // now required, are kept, and flagged by the column's new rule rather
+      // than silently cleared.
       const header = grid.header.map((column, index) =>
         index === colIndex
           ? withDefault(
-              { ...column, name: draft.name, field_type: draft.field_type },
+              withRequired(
+                { ...column, name: draft.name, field_type: draft.field_type },
+                draft.required
+              ),
               draft.default
             )
           : column
@@ -569,6 +596,7 @@ export function useHiddenFieldTableSource({
         ? {
             name: columnName(column, colIndex),
             field_type: columnType(column),
+            required: column.required === true,
             default: column.default
           }
         : null;

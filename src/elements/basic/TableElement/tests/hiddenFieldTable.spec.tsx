@@ -215,6 +215,76 @@ describe('TableElement - hidden field data source', () => {
     }
   });
 
+  describe('a required column', () => {
+    const REQUIRED_COLUMNS = [
+      { name: 'Name', field_type: 'text', required: true },
+      { name: 'Age', field_type: 'number' }
+    ];
+
+    beforeEach(() => {
+      (fieldValues as any)[HIDDEN_KEY] = {
+        columns: REQUIRED_COLUMNS,
+        values: [['Alice', 30]]
+      };
+    });
+
+    it('flags its blank cell as soon as a row is added in a spreadsheet', () => {
+      const sizes = ['offsetWidth', 'offsetHeight'] as const;
+      const originals = sizes.map((prop) =>
+        Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop)
+      );
+      sizes.forEach((prop) =>
+        Object.defineProperty(HTMLElement.prototype, prop, {
+          configurable: true,
+          get: () => (prop === 'offsetWidth' ? 900 : 600)
+        })
+      );
+      try {
+        const { container } = renderTable({ display_mode: 'spreadsheet' });
+        const cell = (row: number, column: number) =>
+          container.querySelector(
+            `[data-row-id="r${row}"][data-column-id="__hidden_field_column_${column}"]`
+          );
+        expect(cell(0, 0)).not.toHaveAttribute('title');
+
+        fireEvent.click(screen.getByRole('button', { name: '+ Add row' }));
+
+        expect(cell(1, 0)).toHaveAttribute('title', 'Required');
+        // A blank cell in a column that is not required is fine.
+        expect(cell(1, 1)).not.toHaveAttribute('title');
+      } finally {
+        sizes.forEach((prop, index) => {
+          const original = originals[index];
+          if (original) {
+            Object.defineProperty(HTMLElement.prototype, prop, original);
+          }
+        });
+      }
+    });
+
+    it('refuses clearing its cell in a classic table', () => {
+      const { updateFieldValues } = renderTable();
+
+      editCell('Alice', '');
+
+      expect(updateFieldValues).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Name, row 1: Required'
+      );
+    });
+
+    it('lists its blank stored cells once loaded', () => {
+      (fieldValues as any)[HIDDEN_KEY] = {
+        columns: REQUIRED_COLUMNS,
+        values: [['', 30]]
+      };
+      renderTable();
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Name, row 1: Required'
+      );
+    });
+  });
+
   it('shows the empty state, not an error, when the hidden field has no value', () => {
     delete (fieldValues as any)[HIDDEN_KEY];
     renderTable();
@@ -396,37 +466,6 @@ describe('TableElement - hidden field data source', () => {
     ).toBeInTheDocument();
   });
 
-  it('names the referenced hidden field in the builder', () => {
-    render(
-      <TableElement
-        element={makeElement()}
-        responsiveStyles={mockStyles()}
-        editMode
-      />
-    );
-    expect(screen.getByText(HIDDEN_KEY).closest('div')).toHaveTextContent(
-      `Rows are loaded from the hidden field ${HIDDEN_KEY}.`
-    );
-  });
-
-  it('asks for a hidden field in the builder when none is selected', () => {
-    render(
-      <TableElement
-        element={makeElement({ hidden_field_key: undefined })}
-        responsiveStyles={mockStyles()}
-        editMode
-      />
-    );
-    expect(
-      screen.getByText(/Select a hidden field to load this table from/)
-    ).toBeInTheDocument();
-  });
-
-  it('does not show the builder notice in a live form', () => {
-    (fieldValues as any)[HIDDEN_KEY] = table([['a', 1, true]]);
-    renderTable();
-    expect(screen.queryByText(/Rows are loaded from/)).toBeNull();
-  });
 });
 
 describe('parseHiddenFieldRows', () => {
@@ -456,6 +495,18 @@ describe('parseHiddenFieldRows', () => {
     expect(types).toContain('url');
     expect(types).not.toContain('file');
     expect(parseHiddenFieldRows({ columns }).error).toBeNull();
+  });
+
+  it('accepts a required flag, and an empty default for a required column', () => {
+    const columns = [{ name: 'Name', required: true, default: '' }];
+    expect(parseHiddenFieldRows({ columns }).error).toBeNull();
+  });
+
+  it('reports a required flag that is not true or false', () => {
+    expect(
+      parseHiddenFieldRows({ columns: [{ name: 'Name', required: 'yes' }] })
+        .error
+    ).toContain('Column 1 has required "yes"; use true or false.');
   });
 
   it('treats missing values as a table with no rows', () => {

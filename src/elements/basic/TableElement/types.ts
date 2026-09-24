@@ -40,6 +40,8 @@ export type TableDisplayMode = 'classic' | 'spreadsheet';
 export type ColumnDraft = {
   name: string;
   field_type: CellValueType;
+  /** Blank cells in the column are flagged. */
+  required?: boolean;
   default?: CellValue;
 };
 

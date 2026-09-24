@@ -551,6 +551,16 @@ export const columnEditorLabelStyle = {
   color: colors.gray700
 } as const;
 
+export const columnEditorCheckboxLabelStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  fontSize: '13px',
+  fontWeight: '500',
+  color: colors.gray700,
+  cursor: 'pointer'
+} as const;
+
 export const columnEditorInputStyle = {
   width: '100%',
   height: '32px',

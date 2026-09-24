@@ -9,6 +9,7 @@ import {
   confirmTextStyle,
   columnEditorStyle,
   columnEditorLabelStyle,
+  columnEditorCheckboxLabelStyle,
   columnEditorInputStyle,
   columnEditorErrorStyle
 } from './styles';
@@ -52,6 +53,7 @@ export function ColumnEditor({
   const [fieldType, setFieldType] = useState<CellValueType>(
     initial?.field_type ?? 'text'
   );
+  const [required, setRequired] = useState(!!initial?.required);
   // Typed as text and read as the column's type, the way a cell edit is, so
   // "18" in a number column is stored as 18.
   const [defaultInput, setDefaultInput] = useState(
@@ -118,6 +120,7 @@ export function ColumnEditor({
           onSave({
             name: trimmed,
             field_type: fieldType,
+            required,
             default: defaultValue
           });
         }
@@ -161,6 +164,14 @@ export function ColumnEditor({
             </option>
           ))}
         </select>
+      </label>
+      <label css={columnEditorCheckboxLabelStyle}>
+        <input
+          type='checkbox'
+          checked={required}
+          onChange={(event) => setRequired(event.target.checked)}
+        />
+        Required
       </label>
       <label css={columnEditorLabelStyle}>
         Default for new rows

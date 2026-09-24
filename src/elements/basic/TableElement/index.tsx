@@ -84,7 +84,7 @@ function applyTableStyles(responsiveStyles: any) {
 // Warns before a step transition, a browser back/forward, or a page exit
 // throws buffered spreadsheet edits away.
 const UNSAVED_TABLE_MESSAGE =
-  'You have unsaved changes in aa table. If you leave now, your changes will be lost.';
+  'You have unsaved changes in a table. If you leave now, your changes will be lost.';
 
 function TableElement({
   element,
