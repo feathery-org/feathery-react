@@ -22884,6 +22884,28 @@ function applyDocumentEditsMeasured(
   let documentShifted = false;
   const shiftedTables = new Set<string>();
   const preservedTableAnchors = new Set<string>();
+  const anchorShiftEvents: Array<
+    | { groupId: string; kind: 'table'; tableAnchor: string }
+    | {
+        groupId: string;
+        kind: 'document';
+        preservedTableAnchor?: string;
+      }
+  > = [];
+  const rebuildAnchorShiftState = () => {
+    documentShifted = false;
+    shiftedTables.clear();
+    preservedTableAnchors.clear();
+    for (const event of anchorShiftEvents) {
+      if (event.kind === 'table') shiftedTables.add(event.tableAnchor);
+      else {
+        documentShifted = true;
+        if (event.preservedTableAnchor)
+          preservedTableAnchors.add(event.preservedTableAnchor);
+        else preservedTableAnchors.clear();
+      }
+    }
+  };
   const anchorMayHaveShifted = (anchor: unknown): boolean => {
     const tableAnchor = String(anchor ?? '')
       .split(';')
@@ -22917,7 +22939,14 @@ function applyDocumentEditsMeasured(
       topLevelSequence(liveSfdt),
       topLevelShiftLedgerValid ? topLevelPasteShifts : []
     );
-    if (rebasedAnchor && baseline) {
+    const rebasedTableAnchor = normalizeTableAnchor(rebasedAnchor);
+    const plannedTableAnchor = normalizeTableAnchor(anchor);
+    if (
+      rebasedAnchor &&
+      baseline &&
+      (!plannedTableAnchor || !shiftedTables.has(plannedTableAnchor)) &&
+      (!rebasedTableAnchor || !shiftedTables.has(rebasedTableAnchor))
+    ) {
       const direct = byAnchor.get(rebasedAnchor);
       if (
         direct &&
@@ -23049,13 +23078,14 @@ function applyDocumentEditsMeasured(
         createdEditorRefGroups.delete(ref);
       }
     const topologyAfterRollback = topLevelTopologyKey(liveSfdt);
+    for (let index = anchorShiftEvents.length - 1; index >= 0; index--)
+      if (anchorShiftEvents[index].groupId === groupId)
+        anchorShiftEvents.splice(index, 1);
+    rebuildAnchorShiftState();
     if (topologyAfterRollback !== topologyBeforeRollback) {
       if (topologyAfterRollback === originalTopLevelTopology) {
         topLevelPasteShifts.splice(0);
         topLevelShiftLedgerValid = true;
-        documentShifted = false;
-        shiftedTables.clear();
-        preservedTableAnchors.clear();
       } else invalidateTopLevelShiftLedger();
     }
     const withdrawn = plans
@@ -23965,7 +23995,7 @@ function applyDocumentEditsMeasured(
             else invalidateTopLevelShiftLedger();
           }
           if (mayShiftAnchors(op)) {
-            const rowOpTable =
+            const liveRowOpTable =
               op.op === 'insert_row' || op.op === 'delete_row'
                 ? String(writtenOp.anchor ?? '')
                     .split(';')
@@ -23973,16 +24003,28 @@ function applyDocumentEditsMeasured(
                     .join(';')
                 : '';
             const tableKept = blocks.some((block) =>
-              block.anchor.startsWith(`${rowOpTable};`)
+              block.anchor.startsWith(`${liveRowOpTable};`)
             );
-            if (rowOpTable && tableKept) shiftedTables.add(rowOpTable);
+            const plannedRowOpTable = normalizeTableAnchor(op.anchor);
+            if (liveRowOpTable && tableKept)
+              anchorShiftEvents.push({
+                groupId,
+                kind: 'table',
+                tableAnchor: plannedRowOpTable ?? liveRowOpTable
+              });
             else {
-              documentShifted = true;
-              if (op.op === 'duplicate_table') {
-                const sourceTable = normalizeTableAnchor(writtenOp.anchor);
-                if (sourceTable) preservedTableAnchors.add(sourceTable);
-              } else preservedTableAnchors.clear();
+              const preservedTableAnchor =
+                op.op === 'duplicate_table'
+                  ? normalizeTableAnchor(op.anchor) ??
+                    normalizeTableAnchor(writtenOp.anchor)
+                  : null;
+              anchorShiftEvents.push({
+                groupId,
+                kind: 'document',
+                ...(preservedTableAnchor ? { preservedTableAnchor } : {})
+              });
             }
+            rebuildAnchorShiftState();
           }
           assertInsertedTableIsAddressable(
             writtenOp,

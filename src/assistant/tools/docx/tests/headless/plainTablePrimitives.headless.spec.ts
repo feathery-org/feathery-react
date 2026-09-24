@@ -657,6 +657,154 @@ describe('one table primitive surface for plain tables', () => {
     expect(await session.call<string>('serialize')).toBe(baseline);
   }, 120000);
 
+  it.each(['paste-first', 'row-first'] as const)(
+    'refuses an ambiguous cell write when table and row shifts are %s',
+    async (order) => {
+      await session.call('open', repeatedAlternativeHeadersFixture());
+      const baseline = await session.call<string>('serialize');
+      const upper = await session.call<string>(
+        'tableAnchorContaining',
+        'Fire and explosion'
+      );
+      const target = await session.call<string>(
+        'tableAnchorContaining',
+        'Public liability'
+      );
+      const paste = {
+        op: 'insert_column',
+        group: 'g01-composed-shifts',
+        anchor: `${upper};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@upper_alt2'
+      };
+      const shiftRow = {
+        op: 'insert_row',
+        group: 'g01-composed-shifts',
+        anchor: `${target};1;0;0`,
+        above: false,
+        count: 1
+      };
+      const write = {
+        op: 'set_cell_text',
+        group: 'g01-composed-shifts',
+        anchor: `${target};3;1;0`,
+        expect: 'Included',
+        text: 'Changed'
+      };
+      const operations =
+        order === 'paste-first'
+          ? [paste, shiftRow, write]
+          : [shiftRow, paste, write];
+
+      const result = await session.call<any>(
+        'applyEdits',
+        operations,
+        `plain-composed-shifts-${order}`
+      );
+
+      expect(result.outcomes).toEqual([
+        'change_set_failed',
+        'change_set_failed',
+        'anchor_relocation_ambiguous'
+      ]);
+      expect(result.groups).toBe(0);
+      expect(await session.call<string>('serialize')).toBe(baseline);
+    },
+    120000
+  );
+
+  it('preserves a successful row shift when a later topology group rolls back', async () => {
+    await session.call('open', repeatedAlternativeHeadersFixture());
+    const baseline = await session.call<string>('serialize');
+    const upper = await session.call<string>(
+      'tableAnchorContaining',
+      'Fire and explosion'
+    );
+    const target = await session.call<string>(
+      'tableAnchorContaining',
+      'Public liability'
+    );
+    const liabilityHeading = (
+      await session.call<Array<{ anchor: string; kind: string; text: string }>>(
+        'inventory'
+      )
+    ).find((entry) => entry.text === 'Section 2 - Liability')?.anchor;
+    expect(liabilityHeading).toBeTruthy();
+    const operations = [
+      {
+        op: 'insert_row',
+        group: 'g01-row-survives',
+        anchor: `${target};1;0;0`,
+        above: false,
+        count: 1
+      },
+      {
+        op: 'insert_text',
+        group: 'g02-rolls-back',
+        anchor: liabilityHeading,
+        expect: 'Section 2 - Liability',
+        position: 'after',
+        text: 'Temporary note\nSecond line'
+      },
+      {
+        op: 'insert_column',
+        group: 'g02-rolls-back',
+        anchor: `${upper};0;1;0`,
+        expect: 'Alternative 1',
+        position: 'after',
+        resultRef: '@discarded'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g02-rolls-back',
+        anchor: '@discarded;99;0',
+        text: 'Cannot land'
+      },
+      {
+        op: 'set_cell_text',
+        group: 'g03-write-after-rollback',
+        anchor: `${target};3;1;0`,
+        expect: 'Included',
+        text: 'Changed'
+      }
+    ];
+
+    const result = await session.call<any>(
+      'applyEdits',
+      operations,
+      'plain-rollback-preserves-row-shift'
+    );
+
+    expect(result.outcomes[0]).toBe('ok');
+    expect(result.outcomes.slice(1, 4)).toEqual([
+      'change_set_failed',
+      'change_set_failed',
+      'anchor_not_found'
+    ]);
+    expect(result.outcomes[4]).toBe('anchor_relocation_ambiguous');
+    expect(result.groups).toBe(1);
+    const liveTarget = await session.call<string>(
+      'tableAnchorContaining',
+      'Public liability'
+    );
+    const rows = await session.call<string[]>('tableRowTextsAt', liveTarget);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        'Products liabilityIncluded',
+        'Employers liabilityIncluded'
+      ])
+    );
+    expect(rows).not.toContain('Products liabilityChanged');
+    expect(rows).not.toContain('Employers liabilityChanged');
+    expect(await session.call<string>('serialize')).not.toContain(
+      'Temporary note'
+    );
+
+    await session.call('resolveGroups', false);
+    expect(await session.call<string>('serialize')).toBe(baseline);
+  }, 120000);
+
   it('applies one mixed bound and plain multi-table column batch', async () => {
     await session.call('open', repeatedAlternativeHeadersFixture());
     const baseline = await session.call<string>('serialize');
