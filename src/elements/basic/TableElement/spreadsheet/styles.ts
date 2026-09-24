@@ -1,5 +1,5 @@
 import { CSSProperties } from 'react';
-import { tableVariable as v } from '../appearance';
+import { TABLE_FONT_FAMILY, tableVariable as v } from '../appearance';
 import { TABLE_CLASS } from '../classNames';
 
 // Legacy defaults; configured dimensions are resolved by the geometry hook
@@ -16,8 +16,7 @@ export const HEADER_FONT_SIZE = FONT_SIZE - 2;
 export const HEADER_FONT_WEIGHT = 600;
 
 // Use a predictable font until the table has an explicit font override.
-export const GRID_FONT_FAMILY =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+export const GRID_FONT_FAMILY = TABLE_FONT_FAMILY;
 export const DEFAULT_COLUMN_WIDTH = 160;
 export const MIN_COLUMN_WIDTH = 64;
 export const CELL_HORIZONTAL_PADDING = 10;
@@ -201,7 +200,7 @@ export const headerRowStyle = {
   backgroundColor: v('header_background_color', colors.gray100),
   borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
     'grid_horizontal_color',
-    colors.gray300
+    colors.gray200
   )}`
 } as const;
 
@@ -229,12 +228,12 @@ const gutterBase = {
   padding: 0,
   margin: 0,
   boxSizing: 'border-box',
-  color: v('header_font_color', colors.gray700),
-  backgroundColor: v('header_background_color', colors.gray50),
+  color: v('header_font_color', colors.gray900),
+  backgroundColor: v('header_background_color', colors.gray100),
   border: 0,
   borderRight: `${v('grid_vertical_width', '1px')} solid ${v(
     'grid_vertical_color',
-    colors.gray300
+    colors.gray200
   )}`,
   borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
     'grid_horizontal_color',
@@ -290,11 +289,11 @@ export const columnHeaderStyle = {
   backgroundColor: v('header_background_color', colors.gray100),
   borderRight: `${v('grid_vertical_width', '1px')} solid ${v(
     'grid_vertical_color',
-    colors.gray300
+    colors.gray200
   )}`,
   borderBottom: `${v('grid_horizontal_width', '1px')} solid ${v(
     'grid_horizontal_color',
-    colors.gray300
+    colors.gray200
   )}`,
   cursor: 'default',
   userSelect: 'none',
@@ -635,7 +634,7 @@ export const rowMenuItemStyle = {
   padding: '7px 10px',
   backgroundColor: 'transparent',
   border: 0,
-  borderRadius: v('controls_border_radius', '4px'),
+  borderRadius: v('controls_border_radius', '6px'),
   cursor: 'pointer',
   fontFamily: 'inherit',
   fontSize: 'inherit',
@@ -654,18 +653,18 @@ export const addRowStripStyle = {
   alignItems: 'center',
   height: v('effective_row_height', `${ROW_HEIGHT}px`),
   padding: 0,
-  backgroundColor: v('controls_background_color', colors.gray50),
+  backgroundColor: v('controls_background_color', colors.white),
   border: 0,
-  borderTop: `1px solid ${v('controls_border_color', colors.gray200)}`,
-  borderBottom: `1px solid ${v('controls_border_color', colors.gray200)}`,
+  borderTop: `1px solid ${v('controls_border_color', colors.gray300)}`,
+  borderBottom: `1px solid ${v('controls_border_color', colors.gray300)}`,
   boxSizing: 'border-box',
   cursor: 'pointer',
   fontFamily: v('font_family', GRID_FONT_FAMILY),
   fontSize: v('controls_font_size', '14px'),
-  color: v('controls_font_color', colors.gray500),
+  color: v('controls_font_color', colors.gray900),
   textAlign: 'start',
   '&:hover': {
-    backgroundColor: v('controls_background_color', colors.accentSoft),
+    backgroundColor: v('controls_hover_background_color', colors.accentSoft),
     color: v('accent_color', colors.accent)
   }
 } as const;
@@ -704,10 +703,12 @@ export const pendingBarStyle = {
   gap: '8px 12px',
   flex: '0 0 auto',
   padding: '8px 12px',
-  backgroundColor: v('controls_background_color', colors.accentSoft),
-  borderBottom: `1px solid ${v('controls_border_color', colors.gray200)}`,
+  // A band calling attention to unsaved work, so it takes the selection tint
+  // rather than the plain controls surface.
+  backgroundColor: v('selected_background_color', colors.accentSoft),
+  borderBottom: `1px solid ${v('controls_border_color', colors.gray300)}`,
   fontFamily: v('font_family', GRID_FONT_FAMILY),
-  fontSize: v('controls_font_size', '13px'),
+  fontSize: v('controls_font_size', '14px'),
   fontWeight: v('controls_font_weight', 400),
   lineHeight: 1.4,
   color: v('controls_font_color', colors.gray900)
@@ -717,7 +718,7 @@ export const pendingCountStyle = {
   fontWeight: 600,
   whiteSpace: 'nowrap',
   // Reads as the label on the Save/Discard pair it sits beside.
-  color: v('controls_font_color', colors.gray700)
+  color: v('controls_font_color', colors.gray900)
 } as const;
 
 // The issue counter and its stepper read as one control, so the count is
@@ -781,11 +782,12 @@ export const pendingActionsStyle = {
 
 const pendingButtonBase = {
   padding: '5px 12px',
-  borderRadius: v('controls_border_radius', '4px'),
+  borderRadius: v('controls_border_radius', '6px'),
   cursor: 'pointer',
   fontFamily: 'inherit',
   fontSize: 'inherit',
-  fontWeight: v('controls_font_weight', 600),
+  // Action buttons stay heavier than the menu and bar text around them.
+  fontWeight: 600,
   lineHeight: 1.4,
   '&:focus-visible': {
     outline: `2px solid ${v('accent_color', colors.accent)}`,
@@ -796,28 +798,23 @@ const pendingButtonBase = {
 
 export const discardButtonStyle = {
   ...pendingButtonBase,
-  backgroundColor: v('controls_background_color', 'transparent'),
+  backgroundColor: v('controls_background_color', colors.white),
   border: `1px solid ${v('controls_border_color', colors.gray300)}`,
-  color: v('controls_font_color', colors.gray700),
+  color: v('controls_font_color', colors.gray900),
   '&:hover:not(:disabled)': {
-    backgroundColor: v('controls_hover_background_color', colors.white)
+    backgroundColor: v('controls_hover_background_color', colors.accentSoft)
   }
 } as const;
 
+// The primary action: accent fill with white text, whatever the controls
+// surface is themed to — `controls_*` describe menus and bars, and a Save
+// painted in their colours would vanish against them.
 export const saveButtonStyle = {
   ...pendingButtonBase,
-  backgroundColor: v(
-    'controls_background_color',
-    v('accent_color', colors.accent)
-  ),
+  backgroundColor: v('accent_color', colors.accent),
   border: `1px solid ${v('accent_color', colors.accent)}`,
-  color: v('controls_font_color', colors.white),
-  '&:hover:not(:disabled)': {
-    backgroundColor: v(
-      'controls_hover_background_color',
-      v('accent_color', colors.accentDark)
-    )
-  }
+  color: colors.white,
+  '&:hover:not(:disabled)': { filter: 'brightness(0.92)' }
 } as const;
 
 /**
