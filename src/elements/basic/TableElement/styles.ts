@@ -501,7 +501,7 @@ export const confirmPopoverStyle = {
 
 export const confirmTextStyle = {
   margin: '0 0 12px 0',
-  fontSize: '16px',
+  fontSize: '14px',
   fontWeight: '500',
   color: colors.gray900
 } as const;
