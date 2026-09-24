@@ -16,6 +16,7 @@ import {
 } from '../sfdtAdapter';
 import { formatTag, FieldType } from '../tagDsl';
 import { SfdtDocument, SfdtInline, SfdtRow } from '../sfdtTypes';
+import { buildCostsFixture } from './fixtures/costsFixture';
 
 const CURRENCY: FieldType = { kind: 'currency', currency: 'USD', scale: 2 };
 
@@ -256,6 +257,45 @@ describe('mirror rows in an aggregated column', () => {
     expect(
       result.diagnostics.some((entry) => entry.code === 'row-not-adopted')
     ).toBe(true);
+  });
+
+  it('keeps a row-local formula on clone when its inputs sit inside foreign controls', () => {
+    // PR #1876 review finding: the column-name collector stopped at ANY
+    // content control, so a binding wrapped by a foreign RichText control was
+    // invisible - with every referenced input wrapped, mul(quantity,unit_cost)
+    // classified as a mirror and a cloned row lost its computed total.
+    const doc = buildCostsFixture();
+    const index = scanBindings(doc);
+    for (const name of ['quantity', 'unit_cost']) {
+      const occurrence = index.occurrences.find(
+        (entry) => entry.name === name && entry.rowId === 'r-2'
+      )!;
+      const node = getAt(doc, occurrence.path);
+      const wrapped = {
+        contentControlProperties: {
+          lockContentControl: false,
+          lockContents: false,
+          tag: 'not-a-binding-tag',
+          title: 'foreign wrapper',
+          type: 'RichText',
+          hasPlaceHolderText: false,
+          multiline: false,
+          isTemporary: false,
+          color: '#00000000',
+          appearance: 'BoundingBox'
+        },
+        inlines: [JSON.parse(JSON.stringify(node))]
+      };
+      const parent = getAt(doc, occurrence.path.slice(0, -1));
+      parent[occurrence.path[occurrence.path.length - 1] as number] = wrapped;
+    }
+
+    const reindexed = scanBindings(doc);
+    const added = addLineItem(doc, 'costs', 'r-2', reindexed);
+    const clone = scanBindings(added.sfdt)
+      .tables.get('costs')!
+      .rows.find((entry) => entry.rowId === added.rowId)!;
+    expect(clone.bindings.get('line_total')!.def.kind).toBe('formula');
   });
 
   it('addLineItem clones a mirror row into a field row, not a second mirror', () => {
