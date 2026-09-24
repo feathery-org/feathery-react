@@ -90,7 +90,11 @@ export default function InstantTooltips(props: { children: React.ReactNode }) {
             zIndex: 10000,
             pointerEvents: 'none',
             background: '#171a1c',
+            // The hosted form's theme can inherit -webkit-text-fill-color and
+            // font-weight into the tooltip; both must be pinned explicitly.
             color: '#fff',
+            WebkitTextFillColor: '#fff',
+            fontWeight: 400,
             fontSize: 11,
             lineHeight: '15px',
             padding: '4px 8px',
