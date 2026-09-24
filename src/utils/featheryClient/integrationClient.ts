@@ -31,6 +31,16 @@ import {
 } from '@feathery/client-utils';
 import { handleFormAuthenticationError, handleFormConflict } from './utils';
 import {
+  DocumentPersistenceError,
+  documentErrorMessage,
+  withDocumentDeadline
+} from '../documentPersistence';
+import {
+  parseDocxVersion,
+  parseEnvelopeDocument,
+  parseVersionList
+} from '../../elements/components/DocxEditor/history/validation';
+import {
   editorContainerId,
   isDocusignSignAction,
   signsViaDocusign
@@ -116,6 +126,27 @@ const resolveQuikAttachments = (action: Record<string, any>) => {
     getDynamicAttachmentIds
   );
 };
+
+// Version-history metadata appended to the autosave PATCH so the backend can
+// group saves into one EnvelopeVersion row.
+export interface EnvelopeSaveMeta {
+  sessionId: string;
+  sessionStartedAt?: string; // ISO 8601
+  authors?: Array<{ kind: 'user' | 'assistant'; label: string; key?: string }>;
+  closeSession?: boolean;
+}
+
+// Payload for the version close endpoint. In the current PR only finalSfdtGz is
+// produced; the diff fields arrive with the highlights PR.
+export interface EnvelopeClosePayload {
+  finalSfdtGz: Blob;
+  changesJson?: Blob;
+  changeCount: number | null;
+  formatChangeCount: number | null;
+  finalSha256: string;
+  startSha256: string;
+  authors: Array<{ kind: 'user' | 'assistant'; label: string; key?: string }>;
+}
 
 // THIRD-PARTY INTEGRATIONS
 export default class IntegrationClient {
@@ -742,11 +773,100 @@ export default class IntegrationClient {
   // in-form document editor. Returns { id, file, editor_file, updated_at }
   // with fresh signed URLs: `file` is the public copy (content controls
   // stripped server-side), `editor_file` the control-bearing editor copy.
-  saveEnvelopeFile(envelopeId: string, file: Blob, fileName = 'document.docx') {
+  private documentRequest(
+    url: string,
+    options: RequestInit = {}
+  ): Promise<any> {
+    if (initState.authenticationError)
+      return Promise.reject(
+        new DocumentPersistenceError(
+          String(initState.authenticationError),
+          'auth',
+          403
+        )
+      );
+    return withDocumentDeadline(async (signal) => {
+      const response = await this._fetch(
+        url,
+        { ...options, signal },
+        false,
+        true
+      );
+      if (!response)
+        throw new DocumentPersistenceError(
+          'Document request failed',
+          'network'
+        );
+      if (response.status === 204) return null;
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        if (response.ok)
+          throw new DocumentPersistenceError(
+            'Invalid document response',
+            'invalid',
+            response.status
+          );
+        // Gateways can return HTML/empty error bodies; status still determines
+        // authentication and retry behavior.
+        payload = null;
+      }
+      if (response.ok) return payload;
+      const message =
+        documentErrorMessage(payload) || 'Document request failed';
+      const status = response.status;
+      const kind =
+        status === 401 || status === 403
+          ? 'auth'
+          : status === 409 ||
+            /session is (no longer current|already closed)/i.test(message)
+          ? 'conflict'
+          : status === 408 || status === 429 || status >= 500
+          ? 'network'
+          : 'invalid';
+      if (kind === 'auth') handleFormAuthenticationError(message);
+      const retryHeader = response.headers?.get?.('Retry-After');
+      const retryAfterMs = retryHeader
+        ? Math.max(
+            0,
+            Number.isFinite(Number(retryHeader))
+              ? Number(retryHeader) * 1000
+              : Date.parse(retryHeader) - Date.now()
+          )
+        : undefined;
+      throw new DocumentPersistenceError(
+        message,
+        kind,
+        status,
+        Number.isFinite(retryAfterMs) ? retryAfterMs : undefined
+      );
+    });
+  }
+
+  saveEnvelopeFile(
+    envelopeId: string,
+    file: Blob,
+    fileName = 'document.docx',
+    meta?: EnvelopeSaveMeta
+  ) {
     const { userId } = initInfo();
     const formData = new FormData();
     formData.append('fuser_key', userId ?? '');
     formData.append('file', file, fileName);
+    // Version-history metadata: when a session id is present the backend groups
+    // this save into one EnvelopeVersion row. Absent → the PATCH is unchanged.
+    if (meta?.sessionId) {
+      formData.append('form_key', this.formKey);
+      formData.append('session_id', meta.sessionId);
+      if (meta.sessionStartedAt)
+        formData.append('session_started_at', meta.sessionStartedAt);
+      const collaboratorId = initState.collaboratorId;
+      if (collaboratorId) formData.append('collaborator_id', collaboratorId);
+      if (meta.authors)
+        formData.append('authors', JSON.stringify(meta.authors));
+      if (meta.closeSession) formData.append('close_session', 'true');
+    }
     const url = `${API_URL}document/envelope/${envelopeId}/file/`;
     const options = {
       method: 'PATCH',
@@ -755,14 +875,94 @@ export default class IntegrationClient {
       // requests whose body exceeds 64kb — exported .docx files routinely do.
       keepalive: false
     };
-    return this._fetch(url, options, false).then(async (response) => {
-      // _fetch resolves undefined on swallowed network errors — surface that
-      // as a failure so callers never treat an unsaved document as saved
-      // (e.g. the sign flow must not open against a stale envelope).
-      if (!response) throw Error('Document save failed');
-      if (response.ok) return await response.json();
-      throw Error(parseAPIError(await response.json()));
+    return this.documentRequest(url, options).then(parseEnvelopeDocument);
+  }
+
+  // List an envelope's version-history rows, newest first (readable on signed
+  // envelopes). Shape: EnvelopeVersionSerializer[].
+  async listEnvelopeVersions(envelopeId: string) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      fuser_key: userId,
+      form_key: this.formKey
     });
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/?${params}`;
+    return parseVersionList(await this.documentRequest(url));
+  }
+
+  async getEnvelopeVersion(envelopeId: string, versionId: string) {
+    const params = encodeGetParams({
+      fuser_key: initInfo().userId,
+      form_key: this.formKey
+    });
+    return parseDocxVersion(
+      await this.documentRequest(
+        `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/?${params}`
+      )
+    );
+  }
+
+  // Close a session, uploading the final SFDT (gzipped) and, once the highlights
+  // PR lands, its anchored change list. 204 → the session was eliminated as
+  // unchanged (no row). Returns the version row otherwise.
+  closeEnvelopeVersion(
+    envelopeId: string,
+    sessionId: string,
+    payload: EnvelopeClosePayload
+  ) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    formData.append('form_key', this.formKey);
+    const collaboratorId = initState.collaboratorId;
+    if (collaboratorId) formData.append('collaborator_id', collaboratorId);
+    formData.append('final_sfdt', payload.finalSfdtGz, 'final.sfdt.gz');
+    if (payload.changesJson)
+      formData.append('changes', payload.changesJson, 'changes.json');
+    if (payload.changeCount != null)
+      formData.append('change_count', String(payload.changeCount));
+    if (payload.formatChangeCount != null)
+      formData.append('format_change_count', String(payload.formatChangeCount));
+    formData.append('final_sha256', payload.finalSha256);
+    formData.append('start_sha256', payload.startSha256);
+    formData.append('authors', JSON.stringify(payload.authors));
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/${sessionId}/close/`;
+    const options = { method: 'POST', body: formData, keepalive: false };
+    return this.documentRequest(url, options).then((value) =>
+      value === null ? null : parseDocxVersion(value)
+    );
+  }
+
+  // Restore an older version: its docx becomes the live document, saved as a new
+  // version. Returns envelope_data + the new version row. `sessionId` is a fresh
+  // uuid the caller mints for the restore's own version.
+  restoreEnvelopeVersion(
+    envelopeId: string,
+    versionId: string,
+    sessionId: string
+  ) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    formData.append('form_key', this.formKey);
+    formData.append('session_id', sessionId);
+    const collaboratorId = initState.collaboratorId;
+    if (collaboratorId) formData.append('collaborator_id', collaboratorId);
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/restore/`;
+    const options = { method: 'POST', body: formData, keepalive: false };
+    return this.documentRequest(url, options).then(parseEnvelopeDocument);
+  }
+
+  // Rename (or clear the name of) a version. Returns the updated version row.
+  renameEnvelopeVersion(envelopeId: string, versionId: string, name: string) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    formData.append('form_key', this.formKey);
+    formData.append('name', name);
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/`;
+    const options = { method: 'PATCH', body: formData, keepalive: false };
+    return this.documentRequest(url, options).then(parseDocxVersion);
   }
 
   // Finalize an edited docx envelope for signing: the backend converts it to
