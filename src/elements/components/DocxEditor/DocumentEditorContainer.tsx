@@ -420,7 +420,14 @@ export default function DocumentEditorContainer({
       const announce = internalState[formId ?? '']?.showEnvelopeOutcome;
       // The overlay viewer fires these from its finalize; a container runs
       // its signing action here, so it reports the same trigger itself.
-      const fireReviewLogic = (result?: Record<string, any> | null) =>
+      // finalizeEnvelope returns a single `file` (envelope_data); the overlay's
+      // finalize returns a `files` array. Normalize so the sign trigger carries
+      // a file list either way, matching the overlay and DocuSign paths.
+      const fireReviewLogic = (result?: Record<string, any> | null) => {
+        const normalized =
+          result && !result.files && result.file
+            ? { ...result, files: [result.file] }
+            : result;
         internalState[formId ?? '']?.runDocumentReviewLogic?.(
           buildDocumentReviewTrigger({
             action: targetAction ?? {},
@@ -428,9 +435,10 @@ export default function DocumentEditorContainer({
             envelopes: [{ envelopeId: envelope.id }],
             envelopeAction: 'sign',
             draft,
-            result
+            result: normalized
           })
         );
+      };
 
       if (isDocusignSignAction(targetAction ?? {}, 'sign')) {
         // DocuSign has no Feathery sign page: the backend send (or draft) is
