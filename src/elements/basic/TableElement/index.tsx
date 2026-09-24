@@ -750,34 +750,51 @@ function TableElement({
     isHiddenField && !isTransposed && !hiddenField.formatError;
   const canAddColumns =
     columnsEditable && !!element.properties?.enable_column_adding;
-  const canEditColumns =
-    columnsEditable && !!element.properties?.enable_column_editing;
   // Held edits are keyed by column position, so removing or inserting one
   // would shift them onto its neighbours; the spreadsheet saves or discards
   // them first. Appending shifts nothing, so it is always allowed.
   const columnsShiftable = !(buffersEdits && pendingEdits.count > 0);
   const canInsertColumns = canAddColumns && columnsShiftable;
-  const canDeleteColumns =
-    columnsEditable &&
-    !!element.properties?.enable_column_deletion &&
-    columnsShiftable;
+  // A column's own `canEdit` / `canDelete`, when it sets one, overrides the
+  // table's setting for that column.
+  const tableEditsColumns = !!element.properties?.enable_column_editing;
+  const tableDeletesColumns = !!element.properties?.enable_column_deletion;
+  const { columnPermissions } = hiddenField;
+  const canEditColumn = useCallback(
+    (fieldKey: string) =>
+      columnsEditable &&
+      (columnPermissions[fieldKey]?.canEdit ?? tableEditsColumns),
+    [columnsEditable, columnPermissions, tableEditsColumns]
+  );
+  const canDeleteColumn = useCallback(
+    (fieldKey: string) =>
+      columnsEditable &&
+      columnsShiftable &&
+      (columnPermissions[fieldKey]?.canDelete ?? tableDeletesColumns),
+    [columnsEditable, columnsShiftable, columnPermissions, tableDeletesColumns]
+  );
+  const anyColumnChangeable = columns.some(
+    (column) =>
+      canEditColumn(column.field_key) || canDeleteColumn(column.field_key)
+  );
   const columnControls = useMemo<ColumnControls | undefined>(
     () =>
-      canAddColumns || canEditColumns || canDeleteColumns
+      canAddColumns || anyColumnChangeable
         ? {
             canAdd: canAddColumns,
             canInsert: canInsertColumns,
-            canEdit: canEditColumns,
-            canDelete: canDeleteColumns,
+            canEdit: canEditColumn,
+            canDelete: canDeleteColumn,
             // The builder previews the controls but has no value to change.
             onRequest: editMode ? () => {} : setColumnRequest
           }
         : undefined,
     [
       canAddColumns,
+      anyColumnChangeable,
       canInsertColumns,
-      canEditColumns,
-      canDeleteColumns,
+      canEditColumn,
+      canDeleteColumn,
       editMode
     ]
   );

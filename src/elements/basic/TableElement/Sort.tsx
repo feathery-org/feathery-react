@@ -73,10 +73,11 @@ export function SortHeader({
   columnControls,
   activeColumnKey
 }: SortHeaderProps) {
-  const showControls = !!(columnControls?.canEdit || columnControls?.canDelete);
   return (
     <Fragment>
       {columns.map((column, index) => {
+        const canEditColumn = !!columnControls?.canEdit(column.field_key);
+        const canDeleteColumn = !!columnControls?.canDelete(column.field_key);
         const isSortable = enableSort;
         const sortKey = columnSortKey(column.field_key, index);
         const isSorted = sortColumn === sortKey;
@@ -104,14 +105,14 @@ export function SortHeader({
                   <SortIcon isSorted={isSorted} sortDirection={sortDirection} />
                 </span>
               )}
-              {showControls && columnControls && (
+              {(canEditColumn || canDeleteColumn) && columnControls && (
                 <span
                   css={{
                     ...headerColumnControlsStyle,
                     ...(activeColumnKey === column.field_key && { opacity: 1 })
                   }}
                 >
-                  {columnControls.canEdit && (
+                  {canEditColumn && (
                     <button
                       type='button'
                       aria-label={`Edit column ${column.name}`}
@@ -129,7 +130,7 @@ export function SortHeader({
                       <PencilIcon width={14} height={14} />
                     </button>
                   )}
-                  {columnControls.canDelete && (
+                  {canDeleteColumn && (
                     <button
                       type='button'
                       aria-label={`Delete column ${column.name}`}

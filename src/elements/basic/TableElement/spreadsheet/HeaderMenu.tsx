@@ -72,12 +72,12 @@ export function HeaderMenu({
           })
       }
     );
-  if (columnControls?.canEdit)
+  if (columnControls?.canEdit(fieldKey))
     items.push({
       label: 'Edit column',
       run: () => columnControls.onRequest({ kind: 'edit', fieldKey, anchor })
     });
-  if (columnControls?.canDelete)
+  if (columnControls?.canDelete(fieldKey))
     items.push({
       label: 'Delete column',
       run: () => columnControls.onRequest({ kind: 'delete', fieldKey, anchor })

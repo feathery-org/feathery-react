@@ -12,11 +12,12 @@ import { parseCellInput } from './spreadsheet/fieldEditors';
  * A hidden field-backed table stores the whole grid in one hidden field, as an
  * object with its columns — one `{ name, field_type }` each, typed like a Data
  * Hub field, or as text when `field_type` is left out — and its values, an array of rows where each row is an array of
- * cells:
+ * cells. A column may also set `canEdit` or `canDelete` to allow or prevent
+ * changing or removing it, overriding the table's own column settings:
  *
  *   {
  *     columns: [
- *       { name: "Name", field_type: "text" },
+ *       { name: "Name", field_type: "text", canDelete: false },
  *       { name: "Age", field_type: "number" }
  *     ],
  *     values: [["Alice", 30], ["Bob", 41]]
@@ -60,7 +61,20 @@ export const COLUMN_TYPE_LABELS: Record<string, string> = {
   uuid: 'UUID'
 };
 
-export type HiddenFieldColumn = { name: string; field_type?: CellValueType };
+export type HiddenFieldColumn = {
+  name: string;
+  field_type?: CellValueType;
+  canEdit?: boolean;
+  canDelete?: boolean;
+};
+
+/** A column's own overrides of the table's column edit and delete settings. */
+export type ColumnPermissions = { canEdit?: boolean; canDelete?: boolean };
+
+const PERMISSION_FLAGS = ['canEdit', 'canDelete'] as const;
+
+const isOptionalBoolean = (value: unknown) =>
+  value === undefined || typeof value === 'boolean';
 
 // A column that does not name a type holds text.
 const DEFAULT_COLUMN_TYPE: CellValueType = 'text';
@@ -101,7 +115,8 @@ const isColumn = (entry: any): entry is HiddenFieldColumn =>
   isObject(entry) &&
   typeof entry.name === 'string' &&
   (hasNoType(entry.field_type) ||
-    HIDDEN_FIELD_COLUMN_TYPES.includes(entry.field_type));
+    HIDDEN_FIELD_COLUMN_TYPES.includes(entry.field_type)) &&
+  PERMISSION_FLAGS.every((flag) => isOptionalBoolean(entry[flag]));
 
 export type ParsedHiddenField = {
   header: HiddenFieldColumn[];
@@ -123,6 +138,14 @@ const describeColumnProblem = (entry: any, index: number) => {
   }
   if (typeof entry.name !== 'string') {
     return `${column} needs a text "name".`;
+  }
+  const badFlag = PERMISSION_FLAGS.find(
+    (flag) => !isOptionalBoolean(entry[flag])
+  );
+  if (badFlag) {
+    return `${column} has ${badFlag} ${JSON.stringify(
+      entry[badFlag]
+    )}; use true or false.`;
   }
   return `${column} has field_type ${JSON.stringify(
     entry.field_type
@@ -261,6 +284,19 @@ export function useHiddenFieldTableSource({
       };
     });
     return rules;
+  }, [header]);
+
+  // Only the flags a column sets; the rest fall back to the table's settings.
+  const columnPermissions = useMemo(() => {
+    const permissions: Record<string, ColumnPermissions> = {};
+    header.forEach((entry, index) => {
+      const own: ColumnPermissions = {};
+      PERMISSION_FLAGS.forEach((flag) => {
+        if (typeof entry[flag] === 'boolean') own[flag] = entry[flag];
+      });
+      permissions[columnKey(index)] = own;
+    });
+    return permissions;
   }, [header]);
 
   const hiddenFieldValues = useMemo(() => {
@@ -484,6 +520,7 @@ export function useHiddenFieldTableSource({
     formatError,
     editErrors,
     cellRules,
+    columnPermissions,
     hiddenFieldColumns,
     hiddenFieldValues,
     handleAddRow,

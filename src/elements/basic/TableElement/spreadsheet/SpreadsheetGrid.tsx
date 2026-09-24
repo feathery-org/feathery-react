@@ -320,11 +320,6 @@ export const SpreadsheetGrid = React.forwardRef<
   );
   const closeHeaderMenu = React.useCallback(() => setHeaderMenu(null), []);
   const hasRowMenu = Boolean(onInsertRow || onDeleteRow);
-  const hasColumnMenuItems = Boolean(
-    columnControls?.canInsert ||
-      columnControls?.canEdit ||
-      columnControls?.canDelete
-  );
   const fillDragRef = React.useRef<FillDrag | null>(null);
   const headerSelectionDragRef = React.useRef<HeaderSelectionDrag | null>(null);
 
@@ -574,7 +569,7 @@ export const SpreadsheetGrid = React.forwardRef<
                 columnControls={columnControls}
                 sort={sort}
                 onOpenHeaderMenu={
-                  sort || hasColumnMenuItems ? setHeaderMenu : undefined
+                  sort || columnControls ? setHeaderMenu : undefined
                 }
               />
             )}
@@ -774,6 +769,10 @@ function HeaderCell({
 }: HeaderCellProps) {
   const { column } = header;
   const columnIndex = table.getCellSelectionColumnIndexes()[column.id] ?? -1;
+  const canEditColumn = !!columnControls?.canEdit(column.id);
+  const canDeleteColumn = !!columnControls?.canDelete(column.id);
+  const hasMenuItems =
+    !!columnControls?.canInsert || canEditColumn || canDeleteColumn;
   const inSelection = bounds.some(
     (bound) =>
       columnIndex >= bound.minColumnIndex && columnIndex <= bound.maxColumnIndex
@@ -809,7 +808,8 @@ function HeaderCell({
       }
       onMouseEnter={() => onExtendSelection('column', column.id)}
       onContextMenu={(event) => {
-        if (!onOpenHeaderMenu) return;
+        // Left to the browser when the menu would have nothing in it.
+        if (!onOpenHeaderMenu || !(sort || hasMenuItems)) return;
         event.preventDefault();
         onOpenHeaderMenu({
           sortKey,
@@ -850,14 +850,14 @@ function HeaderCell({
           </span>
         ) : null}
       </span>
-      {columnControls?.canEdit || columnControls?.canDelete ? (
+      {columnControls && (canEditColumn || canDeleteColumn) ? (
         <span
           className={TABLE_CLASS.gridColumnControls}
           css={columnControlsStyle}
           // Clicking a control must not select the column.
           onMouseDown={(event) => event.stopPropagation()}
         >
-          {columnControls.canEdit ? (
+          {canEditColumn ? (
             <button
               type='button'
               aria-label={`Edit column ${label}`}
@@ -874,7 +874,7 @@ function HeaderCell({
               <PencilIcon width={13} height={13} />
             </button>
           ) : null}
-          {columnControls.canDelete ? (
+          {canDeleteColumn ? (
             <button
               type='button'
               aria-label={`Delete column ${label}`}

@@ -52,8 +52,10 @@ export type ColumnControls = {
   // Inserting between columns shifts the ones after it, so unlike appending it
   // waits, like a delete, until the spreadsheet's held edits are resolved.
   canInsert: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
+  // Asked per column: a hidden field column's own `canEdit` / `canDelete`
+  // overrides the table's setting for it.
+  canEdit: (fieldKey: string) => boolean;
+  canDelete: (fieldKey: string) => boolean;
   onRequest: (request: ColumnRequest) => void;
 };
 

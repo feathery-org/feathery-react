@@ -144,6 +144,75 @@ describe('hidden field table columns - classic', () => {
     expect(screen.queryByRole('button', { name: '+ Add Column' })).toBeNull();
   });
 
+  describe('per-column canEdit and canDelete', () => {
+    const withColumns = (columns: Record<string, any>[]) => {
+      (fieldValues as any)[HIDDEN_KEY] = {
+        columns,
+        values: [['Alice', 30]]
+      };
+    };
+
+    it('lets a column prevent what the table allows', () => {
+      withColumns([
+        { ...COLUMNS[0], canEdit: false, canDelete: false },
+        COLUMNS[1]
+      ]);
+      renderTable(ALL_COLUMN_OPTIONS);
+      expect(
+        screen.queryByRole('button', { name: 'Edit column Name' })
+      ).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: 'Delete column Name' })
+      ).toBeNull();
+      expect(
+        screen.getByRole('button', { name: 'Edit column Age' })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Delete column Age' })
+      ).toBeInTheDocument();
+    });
+
+    it('lets a column allow what the table does not', () => {
+      withColumns([{ ...COLUMNS[0], canDelete: true }, COLUMNS[1]]);
+      renderTable();
+      expect(
+        screen.getByRole('button', { name: 'Delete column Name' })
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Edit column/ })).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: 'Delete column Age' })
+      ).toBeNull();
+    });
+
+    it("keeps a column's flags when it is edited", () => {
+      withColumns([
+        { ...COLUMNS[0], canEdit: true, canDelete: false },
+        COLUMNS[1]
+      ]);
+      renderTable();
+      fireEvent.click(screen.getByRole('button', { name: 'Edit column Name' }));
+      const dialog = fillEditor('Full name');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+      expect(stored().columns).toEqual([
+        {
+          name: 'Full name',
+          field_type: 'text',
+          canEdit: true,
+          canDelete: false
+        },
+        COLUMNS[1]
+      ]);
+    });
+
+    it('reports a flag that is not true or false', () => {
+      withColumns([{ ...COLUMNS[0], canEdit: 'no' }]);
+      renderTable(ALL_COLUMN_OPTIONS);
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Column 1 has canEdit "no"; use true or false.'
+      );
+    });
+  });
+
   it('adds a column with its name and type and submits it', () => {
     const { submitCustom } = renderTable({ enable_column_adding: true });
 
@@ -410,6 +479,34 @@ describe('hidden field table columns - spreadsheet', () => {
           name: /Insert column/
         })
       ).toBeNull();
+    });
+  });
+
+  it("leaves a column's menu items out when the column prevents them", () => {
+    withViewport(() => {
+      (fieldValues as any)[HIDDEN_KEY] = {
+        columns: [COLUMNS[0], { ...COLUMNS[1], canEdit: false }],
+        values: [['Alice', 30]]
+      };
+      spreadsheet({
+        enable_column_editing: true,
+        enable_column_deletion: true
+      });
+
+      fireEvent.contextMenu(screen.getByRole('columnheader', { name: /Age/ }));
+      const menu = screen.getByRole('menu');
+      expect(
+        within(menu).queryByRole('menuitem', { name: 'Edit column' })
+      ).toBeNull();
+      expect(
+        within(menu).getByRole('menuitem', { name: 'Delete column' })
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Edit column Age' })
+      ).toBeNull();
+      expect(
+        screen.getByRole('button', { name: 'Edit column Name' })
+      ).toBeInTheDocument();
     });
   });
 
