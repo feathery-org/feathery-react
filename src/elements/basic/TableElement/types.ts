@@ -36,7 +36,8 @@ export type ColumnDraft = { name: string; field_type: CellValueType };
 
 /** What a column control asks the table to open, anchored to that control. */
 export type ColumnRequest =
-  | { kind: 'add'; anchor: HTMLElement }
+  // `atIndex` places the new column there; without it the column is appended
+  | { kind: 'add'; anchor: HTMLElement; atIndex?: number }
   | { kind: 'edit' | 'delete'; fieldKey: string; anchor: HTMLElement };
 
 /**
@@ -48,6 +49,9 @@ export type ColumnRequest =
  */
 export type ColumnControls = {
   canAdd: boolean;
+  // Inserting between columns shifts the ones after it, so unlike appending it
+  // waits, like a delete, until the spreadsheet's held edits are resolved.
+  canInsert: boolean;
   canEdit: boolean;
   canDelete: boolean;
   onRequest: (request: ColumnRequest) => void;

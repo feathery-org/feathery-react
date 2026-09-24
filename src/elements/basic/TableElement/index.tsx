@@ -752,46 +752,64 @@ function TableElement({
     columnsEditable && !!element.properties?.enable_column_adding;
   const canEditColumns =
     columnsEditable && !!element.properties?.enable_column_editing;
-  // Held edits are keyed by column, so removing one would shift them onto its
-  // neighbours; the spreadsheet saves or discards them first.
+  // Held edits are keyed by column position, so removing or inserting one
+  // would shift them onto its neighbours; the spreadsheet saves or discards
+  // them first. Appending shifts nothing, so it is always allowed.
+  const columnsShiftable = !(buffersEdits && pendingEdits.count > 0);
+  const canInsertColumns = canAddColumns && columnsShiftable;
   const canDeleteColumns =
     columnsEditable &&
     !!element.properties?.enable_column_deletion &&
-    !(buffersEdits && pendingEdits.count > 0);
+    columnsShiftable;
   const columnControls = useMemo<ColumnControls | undefined>(
     () =>
       canAddColumns || canEditColumns || canDeleteColumns
         ? {
             canAdd: canAddColumns,
+            canInsert: canInsertColumns,
             canEdit: canEditColumns,
             canDelete: canDeleteColumns,
             // The builder previews the controls but has no value to change.
             onRequest: editMode ? () => {} : setColumnRequest
           }
         : undefined,
-    [canAddColumns, canEditColumns, canDeleteColumns, editMode]
+    [
+      canAddColumns,
+      canInsertColumns,
+      canEditColumns,
+      canDeleteColumns,
+      editMode
+    ]
   );
+
+  // Sort keys and the spreadsheet's undo history both carry column positions,
+  // which shift once a column is removed or inserted before others.
+  const resetForColumnShift = useCallback(() => {
+    if (sortColumn !== null) setSort(null);
+    setEditingCell(null);
+    bumpRowIdentity();
+  }, [sortColumn, setSort, bumpRowIdentity]);
 
   const handleSaveColumn = useCallback(
     (draft: ColumnDraft) => {
-      if (columnRequest?.kind === 'add') hiddenField.handleAddColumn(draft);
-      else if (columnRequest?.kind === 'edit')
+      if (columnRequest?.kind === 'add') {
+        const { atIndex } = columnRequest;
+        if (atIndex !== undefined && atIndex < columns.length)
+          resetForColumnShift();
+        hiddenField.handleAddColumn(draft, atIndex);
+      } else if (columnRequest?.kind === 'edit')
         hiddenField.handleEditColumn(columnRequest.fieldKey, draft);
       setColumnRequest(null);
     },
-    [columnRequest, hiddenField]
+    [columnRequest, hiddenField, columns.length, resetForColumnShift]
   );
 
   const handleConfirmDeleteColumn = useCallback(() => {
     if (columnRequest?.kind !== 'delete') return;
-    // Sort keys and the spreadsheet's undo history both carry column
-    // positions, which shift once a column is gone.
-    if (sortColumn !== null) setSort(null);
-    setEditingCell(null);
-    bumpRowIdentity();
+    resetForColumnShift();
     hiddenField.handleDeleteColumn(columnRequest.fieldKey);
     setColumnRequest(null);
-  }, [columnRequest, hiddenField, sortColumn, setSort, bumpRowIdentity]);
+  }, [columnRequest, hiddenField, resetForColumnShift]);
 
   const columnTypeOptions = useMemo(
     () =>

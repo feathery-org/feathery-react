@@ -397,17 +397,26 @@ export function useHiddenFieldTableSource({
    * no provisional state for a column.
    */
   const handleAddColumn = useCallback(
-    (draft: ColumnDraft) => {
+    (draft: ColumnDraft, atIndex?: number) => {
       const grid = currentGrid();
       if (!grid) return;
-      // Rows may be shorter than the columns, so none need padding.
+      const column = { name: draft.name, field_type: draft.field_type };
+      const at =
+        atIndex === undefined
+          ? grid.header.length
+          : Math.max(0, Math.min(atIndex, grid.header.length));
+      // Rows may be shorter than the columns, so only a row that reaches past
+      // the new column needs a cell for it.
       store(
         {
           header: [
-            ...grid.header,
-            { name: draft.name, field_type: draft.field_type }
+            ...grid.header.slice(0, at),
+            column,
+            ...grid.header.slice(at)
           ],
-          rows: grid.rows
+          rows: grid.rows.map((row) =>
+            row.length > at ? [...row.slice(0, at), '', ...row.slice(at)] : row
+          )
         },
         true
       );

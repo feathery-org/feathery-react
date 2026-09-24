@@ -18,6 +18,8 @@ export type HeaderMenuTarget = {
   sortKey: string;
   /** The column's field key, which the column controls act on. */
   fieldKey: string;
+  /** The column's position, which inserted columns are placed around. */
+  columnIndex: number;
   /** Column name, for the labels. */
   name: string;
   /** The header cell, which an editor or confirmation opened from here anchors to. */
@@ -48,7 +50,28 @@ export function HeaderMenu({
     if (sort.column === target.sortKey)
       items.push({ label: 'Clear sort', run: () => sort.onSort(null) });
   }
-  const { fieldKey, anchor } = target;
+  const { fieldKey, anchor, columnIndex } = target;
+  if (columnControls?.canInsert && columnIndex >= 0)
+    items.push(
+      {
+        label: 'Insert column left',
+        run: () =>
+          columnControls.onRequest({
+            kind: 'add',
+            anchor,
+            atIndex: columnIndex
+          })
+      },
+      {
+        label: 'Insert column right',
+        run: () =>
+          columnControls.onRequest({
+            kind: 'add',
+            anchor,
+            atIndex: columnIndex + 1
+          })
+      }
+    );
   if (columnControls?.canEdit)
     items.push({
       label: 'Edit column',

@@ -321,7 +321,9 @@ export const SpreadsheetGrid = React.forwardRef<
   const closeHeaderMenu = React.useCallback(() => setHeaderMenu(null), []);
   const hasRowMenu = Boolean(onInsertRow || onDeleteRow);
   const hasColumnMenuItems = Boolean(
-    columnControls?.canEdit || columnControls?.canDelete
+    columnControls?.canInsert ||
+      columnControls?.canEdit ||
+      columnControls?.canDelete
   );
   const fillDragRef = React.useRef<FillDrag | null>(null);
   const headerSelectionDragRef = React.useRef<HeaderSelectionDrag | null>(null);
@@ -812,6 +814,7 @@ function HeaderCell({
         onOpenHeaderMenu({
           sortKey,
           fieldKey: column.id,
+          columnIndex,
           name: label,
           anchor: event.currentTarget,
           x: event.clientX,

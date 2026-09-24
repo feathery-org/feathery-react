@@ -357,6 +357,62 @@ describe('hidden field table columns - spreadsheet', () => {
     });
   });
 
+  it('inserts a column left or right from the header right-click menu', () => {
+    withViewport(() => {
+      spreadsheet({ enable_column_adding: true });
+
+      const header = () => screen.getByRole('columnheader', { name: /Age/ });
+      fireEvent.contextMenu(header());
+      fireEvent.click(
+        within(screen.getByRole('menu')).getByRole('menuitem', {
+          name: 'Insert column left'
+        })
+      );
+      fireEvent.click(
+        within(fillEditor('City')).getByRole('button', { name: 'Add' })
+      );
+
+      expect(stored()).toEqual({
+        columns: [COLUMNS[0], { name: 'City', field_type: 'text' }, COLUMNS[1]],
+        values: [
+          ['Alice', '', 30],
+          ['Bob', '', 41]
+        ]
+      });
+
+      fireEvent.contextMenu(header());
+      fireEvent.click(
+        within(screen.getByRole('menu')).getByRole('menuitem', {
+          name: 'Insert column right'
+        })
+      );
+      fireEvent.click(
+        within(fillEditor('Active', 'boolean')).getByRole('button', {
+          name: 'Add'
+        })
+      );
+
+      expect(stored().columns).toEqual([
+        COLUMNS[0],
+        { name: 'City', field_type: 'text' },
+        COLUMNS[1],
+        { name: 'Active', field_type: 'boolean' }
+      ]);
+    });
+  });
+
+  it('offers no insert items unless adding columns is enabled', () => {
+    withViewport(() => {
+      spreadsheet({ enable_column_editing: true });
+      fireEvent.contextMenu(screen.getByRole('columnheader', { name: /Age/ }));
+      expect(
+        within(screen.getByRole('menu')).queryByRole('menuitem', {
+          name: /Insert column/
+        })
+      ).toBeNull();
+    });
+  });
+
   it('holds back deleting a column while cell edits are unsaved', () => {
     withViewport(() => {
       spreadsheet({ enable_column_deletion: true });
