@@ -1374,13 +1374,19 @@ describe('IntegrationClient', () => {
         documents: ['doc-1'],
         ccRecipients: [
           'plain@mail.com',
-          { email: 'named@mail.com', name: 'CC' }
+          { email: 'named@mail.com', name: 'CC' },
+          { email: 'scoped@mail.com', name: 'Scoped', excludedDocuments: [1] }
         ]
       });
 
       expect(requestBody().cc_recipients).toEqual([
         'plain@mail.com',
-        { email: 'named@mail.com', name: 'CC' }
+        { email: 'named@mail.com', name: 'CC' },
+        {
+          email: 'scoped@mail.com',
+          name: 'Scoped',
+          excluded_documents: [1]
+        }
       ]);
     });
 

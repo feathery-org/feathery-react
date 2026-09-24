@@ -1131,11 +1131,22 @@ export default class IntegrationClient {
               }
             : {})
         })),
-        // Bare emails and { email, name } entries both pass through as-is.
-        // `?? undefined` drops the key rather than sending null: logic rules
-        // are untyped, and the backend's list field rejects null with a 400
-        // that would fail the whole send.
-        cc_recipients: ccRecipients ?? undefined,
+        // Bare emails pass through; object entries are sent with snake_case
+        // keys. `?? undefined` drops the key rather than sending null: logic
+        // rules are untyped, and the backend's list field rejects null with a
+        // 400 that would fail the whole send.
+        // Anything that isn't an object is left for the backend to validate,
+        // so a malformed rule value is still a 400 rather than a throw here.
+        cc_recipients:
+          ccRecipients?.map((cc) =>
+            cc && typeof cc === 'object'
+              ? {
+                  email: cc.email,
+                  name: cc.name,
+                  excluded_documents: cc.excludedDocuments
+                }
+              : cc
+          ) ?? undefined,
         docusign_envelope_id: existingEnvelopeId,
         draft,
         wet_sign: wetSign,
