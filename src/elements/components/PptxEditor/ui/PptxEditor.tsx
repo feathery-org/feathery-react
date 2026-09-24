@@ -6,6 +6,7 @@ import {
 } from '../state/PptxEditorContext';
 import { SvgSlide } from './SlideStage';
 import { Toolbar } from './PptxToolbar';
+import InstantTooltips from './InstantTooltips';
 import { SlideNavigator } from './SlideNavigator';
 import { JsonPanel } from './JsonPanel';
 import PptxPanelRail, { type PptxPanelKind } from './PptxPanelRail';
@@ -367,99 +368,101 @@ function PptxEditorInner({
       </div>
 
       {/* Bottom status bar, like the DOCX editor: slide position + zoom. */}
-      <div
-        css={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          flex: '0 0 auto',
-          padding: '8px 14px',
-          borderTop: `1px solid ${ZINC[200]}`,
-          background: PAPER,
-          fontSize: 12,
-          color: ZINC[500]
-        }}
-      >
-        <span
+      <InstantTooltips>
+        <div
           css={{
-            display: 'inline-flex',
+            display: 'flex',
             alignItems: 'center',
-            gap: 4,
-            whiteSpace: 'nowrap'
+            gap: 6,
+            flex: '0 0 auto',
+            padding: '8px 14px',
+            borderTop: `1px solid ${ZINC[200]}`,
+            background: PAPER,
+            fontSize: 12,
+            color: ZINC[500]
           }}
         >
-          Slide
-          <input
-            type='number'
-            min={1}
-            max={state.deck.slides.length}
-            key={`slide-jump-${state.activeSlide}`}
-            defaultValue={state.activeSlide + 1}
-            title='Go to slide'
-            aria-label='Go to slide'
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              (e.target as HTMLInputElement).blur();
-            }}
-            onBlur={(e) => {
-              const total = state.deck?.slides.length ?? 1;
-              const requested = Math.round(Number(e.target.value));
-              if (!Number.isFinite(requested)) return;
-              const index = Math.min(Math.max(requested, 1), total) - 1;
-              if (index !== state.activeSlide) store.setActiveSlide(index);
-            }}
+          <span
             css={{
-              width: 42,
-              height: 22,
-              border: `1px solid ${ZINC[200]}`,
-              borderRadius: 5,
-              background: '#fff',
-              color: ZINC[700],
-              fontSize: 12,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Slide
+            <input
+              type='number'
+              min={1}
+              max={state.deck.slides.length}
+              key={`slide-jump-${state.activeSlide}`}
+              defaultValue={state.activeSlide + 1}
+              title='Go to slide'
+              aria-label='Go to slide'
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+              }}
+              onBlur={(e) => {
+                const total = state.deck?.slides.length ?? 1;
+                const requested = Math.round(Number(e.target.value));
+                if (!Number.isFinite(requested)) return;
+                const index = Math.min(Math.max(requested, 1), total) - 1;
+                if (index !== state.activeSlide) store.setActiveSlide(index);
+              }}
+              css={{
+                width: 42,
+                height: 22,
+                border: `1px solid ${ZINC[200]}`,
+                borderRadius: 5,
+                background: '#fff',
+                color: ZINC[700],
+                fontSize: 12,
+                textAlign: 'center',
+                fontVariantNumeric: 'tabular-nums'
+              }}
+            />
+            of {state.deck.slides.length}
+          </span>
+          <span css={{ flex: 1 }} />
+          <button
+            type='button'
+            css={statusButton}
+            title='Zoom out'
+            disabled={zoomPct <= 50}
+            onClick={() => setZoomPct((z) => Math.max(50, z - 25))}
+          >
+            <MinusIcon width={14} height={14} />
+          </button>
+          <span
+            css={{
+              minWidth: 40,
               textAlign: 'center',
               fontVariantNumeric: 'tabular-nums'
             }}
-          />
-          of {state.deck.slides.length}
-        </span>
-        <span css={{ flex: 1 }} />
-        <button
-          type='button'
-          css={statusButton}
-          title='Zoom out'
-          disabled={zoomPct <= 50}
-          onClick={() => setZoomPct((z) => Math.max(50, z - 25))}
-        >
-          <MinusIcon width={14} height={14} />
-        </button>
-        <span
-          css={{
-            minWidth: 40,
-            textAlign: 'center',
-            fontVariantNumeric: 'tabular-nums'
-          }}
-        >
-          {zoomPct}%
-        </span>
-        <button
-          type='button'
-          css={statusButton}
-          title='Zoom in'
-          disabled={zoomPct >= 400}
-          onClick={() => setZoomPct((z) => Math.min(400, z + 25))}
-        >
-          <PlusIcon width={14} height={14} />
-        </button>
-        <button
-          type='button'
-          css={statusButton}
-          title='Fit to container'
-          onClick={() => setZoomPct(100)}
-        >
-          <FitToPageIcon width={14} height={14} />
-        </button>
-      </div>
+          >
+            {zoomPct}%
+          </span>
+          <button
+            type='button'
+            css={statusButton}
+            title='Zoom in'
+            disabled={zoomPct >= 400}
+            onClick={() => setZoomPct((z) => Math.min(400, z + 25))}
+          >
+            <PlusIcon width={14} height={14} />
+          </button>
+          <button
+            type='button'
+            css={statusButton}
+            title='Fit to container'
+            onClick={() => setZoomPct(100)}
+          >
+            <FitToPageIcon width={14} height={14} />
+          </button>
+        </div>
+      </InstantTooltips>
     </div>
   );
 }
