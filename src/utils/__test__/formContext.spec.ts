@@ -35,7 +35,9 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       toolbarActions: ['sign', 'download'],
       zipName: 'docs',
       saveDocumentFieldKey: 'saved_files',
-      redirect: 'https://done.example.com'
+      redirect: 'https://done.example.com',
+      emailSubject: 'Please sign this',
+      emailBlurb: 'Two signatures needed.'
     });
 
     expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
@@ -49,6 +51,8 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       envelope_zip_name: 'docs',
       save_document_field_key: 'saved_files',
       redirect: 'https://done.example.com',
+      email_subject: 'Please sign this',
+      email_blurb: 'Two signatures needed.',
       run_async: true
     });
     // role_id is left off entirely for a document-wide signer, not nulled.
@@ -74,6 +78,55 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(flow).toHaveBeenCalledTimes(1);
     expect(flow.mock.calls[0][0]).toMatchObject({ envelope_action: 'sign' });
     expect(client.generateDocuments).not.toHaveBeenCalled();
+  });
+
+  it('keeps zero-based copy indices and omits them for all-copy signers', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      repeatable: true,
+      signMethod: 'docusign',
+      envelopeAction: 'open_in_editor',
+      signers: [
+        {
+          documentId: 'tpl-1',
+          roleId: 'client',
+          repeatIndex: 0,
+          email: 'john@example.com',
+          phone: '+15551234567'
+        },
+        {
+          documentId: 'tpl-1',
+          roleId: 'client',
+          repeatIndex: 1,
+          email: 'mary@example.com',
+          filler: true
+        },
+        { documentId: 'tpl-1', roleId: 'advisor', email: 'advisor@example.com' }
+      ]
+    });
+    expect(flow.mock.calls[0][0].envelope_signers).toEqual([
+      {
+        document_id: 'tpl-1',
+        role_id: 'client',
+        repeat_index: 0,
+        email: 'john@example.com',
+        phone: '+15551234567',
+        filler: false
+      },
+      {
+        document_id: 'tpl-1',
+        role_id: 'client',
+        repeat_index: 1,
+        email: 'mary@example.com',
+        filler: true
+      },
+      {
+        document_id: 'tpl-1',
+        role_id: 'advisor',
+        email: 'advisor@example.com',
+        filler: false
+      }
+    ]);
   });
 
   it('routes a quik-only document list through the flow even with no other options', async () => {

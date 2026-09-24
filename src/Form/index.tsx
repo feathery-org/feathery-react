@@ -237,9 +237,13 @@ import {
 } from '../utils/error';
 import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
-import ConnectAccountModal from '../integrations/connectAccount/ConnectAccountModal';
+import ConnectAccountModal, {
+  SavedAccountCredential
+} from '../integrations/connectAccount/ConnectAccountModal';
 import {
   CONFIG_COMPONENTS,
+  PROVIDER_LABELS,
+  configFieldKey,
   connectionFieldKey,
   hasEmailIdentity
 } from '../integrations/connectAccount/providers';
@@ -371,6 +375,24 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
   windows.forEach((win) => win?.close());
 }
 
+type RequiredFlowAction = {
+  type: keyof typeof REQUIRED_FLOW_ACTIONS;
+  provider?: string;
+};
+
+// A step's connect_account requirement is met by the submission's existing,
+// fully configured connection, not only by a flow run in this tab. A
+// collaborator continuing a submission whose owner already connected has the
+// connection fields but has never run the flow themselves, and must still be
+// able to move on. An account that is attached but not yet configured (no Box
+// folder chosen) does not count: uploads would have nowhere to go.
+function isRequiredFlowSatisfied(action: RequiredFlowAction) {
+  if (action.type !== ACTION_CONNECT_ACCOUNT || !action.provider) return false;
+  if (!fieldValues[connectionFieldKey(action.provider)]) return false;
+  const configKey = configFieldKey(action.provider);
+  return !configKey || !!fieldValues[configKey];
+}
+
 // Pre-open windows synchronously within the user-gesture call stack.
 // Connect Account always needs its popup opened this way since the OAuth
 // start call is async; iOS Safari additionally blocks window.open() for any
@@ -379,7 +401,7 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
 function preOpenActionWindows(actions: any[]) {
   const windows = new Map<number, Window | null>();
   actions.forEach((action, idx) => {
-    if (action.type === ACTION_CONNECT_ACCOUNT) {
+    if (action.type === ACTION_CONNECT_ACCOUNT && action.provider !== 'box') {
       windows.set(
         idx,
         featheryWindow().open(
@@ -462,6 +484,7 @@ function Form({
   const [linkConfirmRequired, setLinkConfirmRequired] = useState(false);
   const [formSettings, setFormSettings] = useState({
     readOnly,
+    authSensitiveActionsOnly: false,
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
@@ -508,9 +531,8 @@ function Form({
     null
   );
   const flowCompleted = useRef(false);
-  const [requiredStepAction, setRequiredStepAction] = useState<
-    keyof typeof REQUIRED_FLOW_ACTIONS | ''
-  >('');
+  const [requiredStepAction, setRequiredStepAction] =
+    useState<RequiredFlowAction | null>(null);
   const formLoadRan = useRef(false);
 
   // Lookup utility to find a servar (server field definition) by its key.
@@ -629,6 +651,12 @@ function Form({
   const [reviewViewerPayload, setReviewViewerPayload] = useState<any>(null);
   type ConnectAccountModalState = {
     provider: string;
+    credentials?: SavedAccountCredential[];
+    chooseCredential?: boolean;
+    canSaveCredential?: boolean;
+    // The submission's connection belongs to another signed-in user; this
+    // user may only replace it with their own, not browse or reconfigure it.
+    lockedByOwner?: boolean;
     // Captured from the triggering runElementActions call: advances the
     // action chain past this action, and ends the button/action's loading
     // state. Each is a closure local to that call, not reachable from here
@@ -921,11 +949,11 @@ function Form({
       focusRef.current = 'already focused';
     }
 
-    let requiredStepAction: any = '';
+    let requiredStepAction: RequiredFlowAction | null = null;
     activeStep.buttons.forEach((b: any) =>
       (b.properties.actions ?? []).forEach((action: any) => {
         if (action.type in REQUIRED_FLOW_ACTIONS) {
-          requiredStepAction = action.type;
+          requiredStepAction = action;
         }
       })
     );
@@ -1822,7 +1850,7 @@ function Form({
     // Hydrate field descriptions
     newStep.servar_fields.forEach((field: any) => {
       const servar = field.servar;
-      servar.name = replaceTextVariables(servar.name, field.repeat);
+      servar.name = replaceTextVariables(servar.name, field.repeat, true);
       const disabled = !fieldAllowedFromList(allowLists, servar.key);
       const props = field.properties;
       props.disabled = props.disabled || disabled;
@@ -2784,9 +2812,10 @@ function Form({
       if (
         !hasFlowActions(actions) &&
         requiredStepAction &&
-        !flowCompleted.current
+        !flowCompleted.current &&
+        !isRequiredFlowSatisfied(requiredStepAction)
       ) {
-        setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
+        setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction.type]);
         elementClicks[id] = false;
         clearButtonActionState();
 
@@ -3050,8 +3079,46 @@ function Form({
 
         const alreadyConnected = !!fieldValues[connectionKey];
         let connected = false;
+        let credentials: SavedAccountCredential[] = [];
+        let chooseCredential = false;
+        let canSaveCredential = false;
+        let lockedByOwner = false;
         try {
-          if (alreadyConnected) {
+          if (provider === 'box') {
+            // Listing saved accounts is optional; a throttle or temporary outage
+            // must not prevent the existing OAuth or change-account flow.
+            const saved = await client
+              .listAccountCredentials(provider)
+              .catch(() => undefined);
+            if (saved === null && formSettings.authSensitiveActionsOnly) {
+              // Hosted forms can provide an inline login surface for optional
+              // form auth. Ask that host to show it before reporting the
+              // sensitive action as unavailable to a guest.
+              const formWindow = featheryWindow();
+              if (typeof formWindow.dispatchEvent === 'function') {
+                formWindow.dispatchEvent(
+                  new CustomEvent('feathery:request-login')
+                );
+              }
+              const label = PROVIDER_LABELS[provider] ?? provider;
+              // A connection made by a signed-in user is locked to them; a
+              // guest cannot open its settings, only sign in as that user.
+              throw new Error(
+                alreadyConnected
+                  ? `This ${label} connection was set up by a signed-in user. Sign in as that user to change it.`
+                  : `Please sign in to connect your ${label} account.`
+              );
+            }
+            credentials = saved?.credentials ?? [];
+            canSaveCredential = !!saved;
+            lockedByOwner =
+              alreadyConnected && saved?.attached?.owner === false;
+            // Always open Box's picker first. If the saved-account lookup is
+            // unavailable, the picker still offers an explicit new-account
+            // action instead of pre-opening and dismissing an OAuth window.
+            chooseCredential = !alreadyConnected;
+          }
+          if (alreadyConnected || chooseCredential) {
             popup?.close();
           } else {
             const result = await runOAuthPopup(client, provider, popup);
@@ -3063,6 +3130,7 @@ function Form({
           }
           connected = true;
         } catch (error) {
+          popup?.close();
           elementClicks[id] = false;
           clearButtonActionState();
           setElementError(
@@ -3089,6 +3157,10 @@ function Form({
             // finished configuring the account yet.
             openConnectAccountModal({
               provider,
+              credentials,
+              chooseCredential,
+              canSaveCredential,
+              lockedByOwner,
               onFlowSuccess: flowOnSuccess(i),
               onAsyncEnd
             });
@@ -4075,6 +4147,12 @@ function Form({
           <ConnectAccountModal
             show
             provider={connectAccountModal.provider}
+            credentials={connectAccountModal.credentials}
+            chooseCredential={connectAccountModal.chooseCredential}
+            canSaveCredential={connectAccountModal.canSaveCredential}
+            lockedByOwner={connectAccountModal.lockedByOwner}
+            onCredentialSelected={updateFieldValues}
+            onDisconnected={updateFieldValues}
             client={client}
             accountEmail={
               hasEmailIdentity(connectAccountModal.provider)
@@ -4083,7 +4161,7 @@ function Form({
                   ] as string)
                 : ''
             }
-            onChangeAccount={async () => {
+            onChangeAccount={async (saveCredential = false) => {
               // window.open must stay the first statement: the modal's
               // button handler invokes this synchronously from a real click,
               // and any await ahead of it would break the user-gesture chain
@@ -4101,7 +4179,8 @@ function Form({
                 const result = await runOAuthPopup(
                   client,
                   connectAccountModal.provider,
-                  popup
+                  popup,
+                  saveCredential
                 );
                 updateFieldValues({
                   [connectionFieldKey(connectAccountModal.provider)]:

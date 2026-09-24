@@ -110,6 +110,16 @@ export type SendDocusignParams = {
   libraryDocuments?: DocusignLibraryDocuments;
   existingEnvelopeId?: string;
   signers?: DocusignSigner[];
+  // Copied the completed envelope once every signer finishes; they take no
+  // action themselves. Either a bare email or { email, name }. Added to
+  // whatever the integration already CCs rather than replacing it. New
+  // envelopes only - rejected alongside existingEnvelopeId, which adds
+  // documents to an envelope whose recipients are already set.
+  // excludedDocuments hides those documents from the copy, as on a signer.
+  ccRecipients?: (
+    | string
+    | { email: string; name?: string; excludedDocuments?: number[] }
+  )[];
   fillData?: Record<string, any>;
   emailSubject?: string;
   emailBlurb?: string;
@@ -122,8 +132,8 @@ export type SendDocusignParams = {
   notification?: DocusignNotification;
   // DocuSign brand profile GUID to apply to the envelope
   brandId?: string;
-  // Enforce per-signer document visibility (auto-on when a signer has
-  // excludedDocuments)
+  // Enforce per-recipient document visibility (auto-on when a signer or cc
+  // recipient has excludedDocuments)
   enforceSignerVisibility?: boolean;
   // Fill documents only from fillData, ignoring the template's field mapping
   // to the fuser's stored field values
