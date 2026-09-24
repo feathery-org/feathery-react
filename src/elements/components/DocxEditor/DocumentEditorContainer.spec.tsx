@@ -38,6 +38,7 @@ jest.mock('./index', () => {
     onEditorReady,
     onChange,
     onReady,
+    preview,
     reviewChanges,
     terminalAction,
     onTerminalAction,
@@ -64,6 +65,7 @@ jest.mock('./index', () => {
       'div',
       {
         'data-testid': `editor:${source?.url ?? 'none'}`,
+        'data-preview': String(!!preview),
         'data-review-changes': String(!!reviewChanges)
       },
       onTerminalAction &&
@@ -161,6 +163,21 @@ describe('DocumentEditorContainer registry lifecycle', () => {
     initState.formSchemas = {};
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
     jest.restoreAllMocks();
+  });
+
+  it('shows a blank editor preview without connecting it to a generated envelope', () => {
+    const { getByTestId } = render(
+      <DocumentEditorContainer
+        containerId='document-container-a'
+        formId='form-1'
+        editMode
+      />
+    );
+
+    const preview = getByTestId('editor:none');
+    expect(preview).toHaveAttribute('data-preview', 'true');
+    expect(getDocxEditor('form-1')).toBeUndefined();
+    expect(hasDirtyDocxEditors('form-1')).toBe(false);
   });
 
   it('keeps both same-step editors usable and silently selects one assistant target', async () => {
