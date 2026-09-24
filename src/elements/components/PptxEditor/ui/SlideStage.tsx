@@ -1133,6 +1133,22 @@ export function SvgSlide({
           origin.y + size.cy * scale
         );
       }
+      // box.left/top are host-relative (including host scroll); the gesture
+      // compares against viewport clientX/Y, so shift the center into
+      // viewport space or rotation pivots around the wrong point (and can
+      // read as spinning the opposite way when the editor sits mid-page).
+      const hostEl = hostRef.current;
+      const hostRect = hostEl?.getBoundingClientRect();
+      const centerX =
+        (hostRect?.left ?? 0) -
+        (hostEl?.scrollLeft ?? 0) +
+        box.left +
+        box.width / 2;
+      const centerY =
+        (hostRect?.top ?? 0) -
+        (hostEl?.scrollTop ?? 0) +
+        box.top +
+        box.height / 2;
       gesture.current = {
         mode,
         dir,
@@ -1141,14 +1157,9 @@ export function SvgSlide({
         targets,
         snapX,
         snapY,
-        center: { x: box.left + box.width / 2, y: box.top + box.height / 2 },
+        center: { x: centerX, y: centerY },
         startAngle:
-          (Math.atan2(
-            e.clientY - (box.top + box.height / 2),
-            e.clientX - (box.left + box.width / 2)
-          ) *
-            180) /
-          Math.PI
+          (Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180) / Math.PI
       };
     };
 
@@ -2721,7 +2732,7 @@ export function SvgSlide({
                   // No native rotate cursor exists; use a circular-arrow SVG
                   // cursor (hotspot centered) with grab as the fallback.
                   cursor: `url("data:image/svg+xml,${encodeURIComponent(
-                    "<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24'><g fill='none' stroke='%23fff' stroke-width='5' stroke-linecap='round'><path d='M20 12a8 8 0 1 1-2.34-5.66'/></g><g fill='none' stroke='%23171a1c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 12a8 8 0 1 1-2.34-5.66'/><path d='M18.5 2.5v4h-4' fill='%23171a1c'/></g></svg>"
+                    "<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24'><g fill='none' stroke='#fff' stroke-width='5' stroke-linecap='round'><path d='M20 12a8 8 0 1 1-2.34-5.66'/></g><g fill='none' stroke='#171a1c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 12a8 8 0 1 1-2.34-5.66'/><path d='M18.5 2.5v4h-4'/></g></svg>"
                   )}") 11 11, grab`,
                   pointerEvents: 'auto'
                 }}
