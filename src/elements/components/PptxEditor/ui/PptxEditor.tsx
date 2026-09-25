@@ -4,8 +4,9 @@ import {
   usePptxEditorState,
   usePptxEditorStore
 } from '../state/PptxEditorContext';
-import { SvgSlide } from './SlideStage';
+import { SvgSlide, ZOOM_MAX, ZOOM_MIN } from './SlideStage';
 import { Toolbar } from './PptxToolbar';
+import InstantTooltips from './InstantTooltips';
 import { SlideNavigator } from './SlideNavigator';
 import { JsonPanel } from './JsonPanel';
 import PptxPanelRail, { type PptxPanelKind } from './PptxPanelRail';
@@ -22,7 +23,26 @@ import {
   PANEL_3
 } from '../../DocxEditor/TrackedChangeGroups/styles';
 import { featheryDoc } from '../../../../utils/browser';
+import {
+  downloadBtn,
+  FEATHERY_RED,
+  FEATHERY_RED_HOVER,
+  ZINC
+} from '../../DocxEditor/DocxToolbar/styles';
+import {
+  DownloadIcon,
+  FitToPageIcon,
+  MinusIcon,
+  PlusIcon,
+  SaveIcon,
+  SpinnerIcon
+} from '../../DocxEditor/icons';
 import type { PptxEditorProps } from '../types';
+import { withShortcut } from './shortcuts';
+
+// Tracked edits and version history are built but not user-ready; keep the
+// right rail and panels hidden until their flows are approved.
+const SHOW_REVIEW_RAIL = false;
 
 // The host-facing PowerPoint editor: Feathery-styled toolbar, slide navigator
 // on the left, editable SVG stage in the center, extensible right rail/panel.
@@ -33,21 +53,6 @@ function sourceKey(source: PptxEditorProps['source']): string {
   if ('url' in source) return `url:${source.url}`;
   return `buffer:${source.buffer.byteLength}`;
 }
-
-const actionButton = {
-  height: 30,
-  padding: '0 14px',
-  border: `1px solid ${LINE_STRONG}`,
-  borderRadius: 8,
-  background: PAPER,
-  color: INK_2,
-  fontSize: 12.5,
-  fontWeight: 600,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap' as const,
-  '&:hover': { background: PANEL_3, color: INK },
-  '&:disabled': { opacity: 0.4, cursor: 'default' }
-};
 
 function PptxEditorInner({
   source,
@@ -70,6 +75,7 @@ function PptxEditorInner({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [activePanel, setActivePanel] = useState<PptxPanelKind | null>(null);
+  const [zoomPct, setZoomPct] = useState(75);
   const loadSeq = useRef(0);
   const dirtyRef = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -213,45 +219,109 @@ function PptxEditorInner({
         flexDirection: 'column',
         width: '100%',
         height: '100%',
+        maxHeight: '100%',
         minHeight: 0,
         background: PAPER,
-        border: `1px solid ${LINE}`,
-        borderRadius: 8,
         overflow: 'hidden'
       }}
     >
-      {/* Toolbar row: PPTX commands + host actions */}
-      <div
-        css={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          borderBottom: `1px solid ${LINE}`,
-          background: PAPER,
-          paddingRight: 8
-        }}
-      >
-        <div css={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
-          {!readOnly && <Toolbar devJson={devJsonPanel} />}
-        </div>
-        <div css={{ display: 'flex', gap: 6, flex: '0 0 auto' }}>
-          {!hideDownload && (
-            <button type='button' css={actionButton} onClick={handleDownload}>
-              Download
-            </button>
-          )}
-          {onSave && !readOnly && (
-            <button
-              type='button'
-              css={actionButton}
-              disabled={saving || !dirty}
-              onClick={handleSave}
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-          )}
-        </div>
-      </div>
+      {/* Host actions render on the toolbar's tab row. */}
+      {(() => {
+        const hostActions = (
+          <>
+            {/* Mirrors DocxToolbar's ToolbarActions: the dot is always rendered
+              and only toggles visibility so the row never shifts. */}
+            {!readOnly && (
+              <span
+                css={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 13,
+                  color: ZINC[500],
+                  whiteSpace: 'nowrap',
+                  visibility: dirty ? 'visible' : 'hidden'
+                }}
+                aria-hidden={!dirty}
+                title={dirty ? 'You have unsaved changes' : undefined}
+                style={{ marginRight: 8 }}
+              >
+                <span
+                  css={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: FEATHERY_RED,
+                    flex: '0 0 auto'
+                  }}
+                />
+                Unsaved changes
+              </span>
+            )}
+            {!hideDownload && (
+              <button
+                type='button'
+                css={downloadBtn}
+                onClick={handleDownload}
+                title='Download'
+              >
+                <DownloadIcon width={16} height={16} />
+                Download
+              </button>
+            )}
+            {onSave && !readOnly && (
+              <button
+                type='button'
+                css={{
+                  display: 'flex',
+                  height: 32,
+                  alignItems: 'center',
+                  gap: 6,
+                  borderRadius: 6,
+                  border: 'none',
+                  background: FEATHERY_RED,
+                  padding: '0 12px',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: '#fff',
+                  cursor: saving ? 'default' : 'pointer',
+                  '&:hover': {
+                    background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
+                  }
+                }}
+                disabled={saving}
+                onClick={handleSave}
+                title={withShortcut('Save', 'S')}
+              >
+                {saving ? (
+                  <SpinnerIcon width={16} height={16} />
+                ) : (
+                  <SaveIcon width={16} height={16} />
+                )}
+                Save
+              </button>
+            )}
+          </>
+        );
+        return !readOnly ? (
+          <Toolbar devJson={devJsonPanel} rightActions={hostActions} />
+        ) : (
+          <div
+            css={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: 8,
+              minHeight: 44,
+              padding: '4px 8px',
+              borderBottom: `1px solid ${LINE}`,
+              background: PAPER
+            }}
+          >
+            {hostActions}
+          </div>
+        );
+      })()}
 
       {/* Body: navigator | stage | (json) | panel | rail */}
       <div
@@ -262,7 +332,7 @@ function PptxEditorInner({
           alignItems: 'stretch'
         }}
       >
-        <SlideNavigator />
+        <SlideNavigator readOnly={readOnly} />
         <div
           css={{
             flex: 1,
@@ -273,28 +343,148 @@ function PptxEditorInner({
             background: PANEL_2
           }}
         >
-          <SvgSlide readOnly={readOnly} />
+          <SvgSlide
+            readOnly={readOnly}
+            zoom={zoomPct}
+            onZoomChange={setZoomPct}
+          />
         </div>
         {devJsonPanel && state.showJson && <JsonPanel />}
-        <PptxRightPanel
-          open={activePanel !== null}
-          tab={activePanel ?? 'changes'}
-          onClose={() => setActivePanel(null)}
-          boundaryKey={`${state.fileName}:${openNonce}`}
-          changesBody={<PptxChangesPanel />}
-        />
-        <PptxPanelRail
-          activePanel={activePanel}
-          onToggle={(panel) =>
-            setActivePanel((current) => (current === panel ? null : panel))
-          }
-          changesCount={store.engine.pendingChangeCount()}
-          historyEnabled={historyEnabled}
-        />
+        {SHOW_REVIEW_RAIL && (
+          <>
+            <PptxRightPanel
+              open={activePanel !== null}
+              tab={activePanel ?? 'changes'}
+              onClose={() => setActivePanel(null)}
+              boundaryKey={`${state.fileName}:${openNonce}`}
+              changesBody={<PptxChangesPanel />}
+            />
+            <PptxPanelRail
+              activePanel={activePanel}
+              onToggle={(panel) =>
+                setActivePanel((current) => (current === panel ? null : panel))
+              }
+              changesCount={store.engine.pendingChangeCount()}
+              historyEnabled={historyEnabled}
+            />
+          </>
+        )}
       </div>
+
+      {/* Bottom status bar, like the DOCX editor: slide position + zoom. */}
+      <InstantTooltips>
+        <div
+          css={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            flex: '0 0 auto',
+            padding: '8px 14px',
+            borderTop: `1px solid ${ZINC[200]}`,
+            background: PAPER,
+            fontSize: 12,
+            color: ZINC[500]
+          }}
+        >
+          <span
+            css={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Slide
+            <input
+              type='number'
+              min={1}
+              max={state.deck.slides.length}
+              key={`slide-jump-${state.activeSlide}`}
+              defaultValue={state.activeSlide + 1}
+              title='Go to slide'
+              aria-label='Go to slide'
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+              }}
+              onBlur={(e) => {
+                const total = state.deck?.slides.length ?? 1;
+                const requested = Math.round(Number(e.target.value));
+                if (!Number.isFinite(requested)) return;
+                const index = Math.min(Math.max(requested, 1), total) - 1;
+                if (index !== state.activeSlide) store.setActiveSlide(index);
+              }}
+              css={{
+                width: 42,
+                height: 22,
+                border: `1px solid ${ZINC[200]}`,
+                borderRadius: 5,
+                background: '#fff',
+                color: ZINC[700],
+                fontSize: 12,
+                textAlign: 'center',
+                fontVariantNumeric: 'tabular-nums'
+              }}
+            />
+            of {state.deck.slides.length}
+          </span>
+          <span css={{ flex: 1 }} />
+          <button
+            type='button'
+            css={statusButton}
+            title='Zoom out'
+            disabled={zoomPct <= ZOOM_MIN}
+            onClick={() => setZoomPct((z) => Math.max(ZOOM_MIN, z - 25))}
+          >
+            <MinusIcon width={14} height={14} />
+          </button>
+          <span
+            css={{
+              minWidth: 40,
+              textAlign: 'center',
+              fontVariantNumeric: 'tabular-nums'
+            }}
+          >
+            {zoomPct}%
+          </span>
+          <button
+            type='button'
+            css={statusButton}
+            title='Zoom in'
+            disabled={zoomPct >= ZOOM_MAX}
+            onClick={() => setZoomPct((z) => Math.min(ZOOM_MAX, z + 25))}
+          >
+            <PlusIcon width={14} height={14} />
+          </button>
+          <button
+            type='button'
+            css={statusButton}
+            title='Fit to container'
+            onClick={() => setZoomPct(100)}
+          >
+            <FitToPageIcon width={14} height={14} />
+          </button>
+        </div>
+      </InstantTooltips>
     </div>
   );
 }
+
+const statusButton = {
+  height: 24,
+  minWidth: 24,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: 'none',
+  borderRadius: 5,
+  background: 'transparent',
+  color: ZINC[500],
+  cursor: 'pointer',
+  '&:hover': { background: ZINC[100], color: ZINC[900] },
+  '&:disabled': { opacity: 0.35, cursor: 'default' }
+};
 
 export default function PptxEditor(props: PptxEditorProps) {
   return (

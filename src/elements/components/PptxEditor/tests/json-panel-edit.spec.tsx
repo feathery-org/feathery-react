@@ -77,7 +77,7 @@ async function applyDraft(host: HTMLElement) {
 
 it('applies table cell and grid edits from the JSON viewer without replacing the SVG slide', async () => {
   const { deck, table, store, host } = await mount();
-  const svgBefore = host.querySelector('svg');
+  const svgBefore = host.querySelector('svg[data-svg-uid]');
   const otherShapeBefore = host.querySelector(
     `[data-shape-id]:not([data-shape-id="${table.id}"])`
   );
@@ -93,7 +93,7 @@ it('applies table cell and grid edits from the JSON viewer without replacing the
   await setEditor(host, JSON.stringify(draft, null, 2));
   await applyDraft(host);
 
-  expect(host.querySelector('svg')).toBe(svgBefore);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svgBefore);
   expect(
     host.querySelector(`[data-shape-id]:not([data-shape-id="${table.id}"])`)
   ).toBe(otherShapeBefore);
@@ -115,13 +115,13 @@ it('applies table cell and grid edits from the JSON viewer without replacing the
   ).toBe('Edit slide JSON');
 
   await act(async () => store.undo());
-  expect(host.querySelector('svg')).toBe(svgBefore);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svgBefore);
   expect(
     deckToJSON(deck).slides[0].shapes.find((shape) => shape.id === table.id)!
       .table!.rows[0].cells[0].text
   ).toBe('');
   await act(async () => store.redo());
-  expect(host.querySelector('svg')).toBe(svgBefore);
+  expect(host.querySelector('svg[data-svg-uid]')).toBe(svgBefore);
   expect(
     deckToJSON(deck).slides[0].shapes.find((shape) => shape.id === table.id)!
       .table!.rows[0].cells[0].text

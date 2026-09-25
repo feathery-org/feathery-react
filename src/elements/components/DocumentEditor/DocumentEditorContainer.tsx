@@ -160,13 +160,19 @@ export default function DocumentEditorContainer({
   formId,
   stepId,
   editMode,
-  assistantEnabled
+  assistantEnabled,
+  // Gates the (beta) PPTX editor. Defaults to enabled so it is undisturbed
+  // when unset; the backend sends `pptx_editor_enabled: false` to hide it for
+  // orgs outside the Feathery-internal rollout. Internal-org identification is
+  // resolved server-side (org identity is not available to the SDK client).
+  pptxEditorEnabled = true
 }: {
   containerId?: string;
   formId?: string;
   stepId?: string;
   editMode?: boolean;
   assistantEnabled?: boolean;
+  pptxEditorEnabled?: boolean;
 }) {
   const pendingDraft = useMemo(
     () => getPendingDraft(containerId),
@@ -546,29 +552,34 @@ export default function DocumentEditorContainer({
       </div>
     );
   }
-  if (envelope.type === 'pptx') {
+  if (envelope.type === 'pptx' && pptxEditorEnabled) {
     return box(
       <React.Suspense
         fallback={<div css={placeholder}>Loading presentation editor…</div>}
       >
-        <PptxEditor
-          source={source}
-          readOnly={readOnly}
-          reviewChanges={reviewChanges}
-          openNonce={reloadKey}
-          fileName='document.pptx'
-          // Signing and PDF conversion stay docx-only until the backend
-          // defines the PPTX flow; the terminal-action props are not passed.
-          hideDownload={savesToField || !offersDownload}
-          onError={setError}
-          onSave={saveEnvelope}
-          onChange={
-            !readOnly && containerId
-              ? (dirty: boolean) =>
-                  setDocxEditorDirty(formId, containerId, dirty)
-              : undefined
-          }
-        />
+        {/* Absolute fill inside the container's relative box: the editor is
+            bounded by the container's dimensions and scrolls internally,
+            never growing the hosting page. */}
+        <div css={{ position: 'absolute', inset: 0 }}>
+          <PptxEditor
+            source={source}
+            readOnly={readOnly}
+            reviewChanges={reviewChanges}
+            openNonce={reloadKey}
+            fileName='document.pptx'
+            // Signing and PDF conversion stay docx-only until the backend
+            // defines the PPTX flow; the terminal-action props are not passed.
+            hideDownload={savesToField || !offersDownload}
+            onError={setError}
+            onSave={saveEnvelope}
+            onChange={
+              !readOnly && containerId
+                ? (dirty: boolean) =>
+                    setDocxEditorDirty(formId, containerId, dirty)
+                : undefined
+            }
+          />
+        </div>
       </React.Suspense>
     );
   }

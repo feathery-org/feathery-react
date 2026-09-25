@@ -61,3 +61,17 @@ export async function mountEditor(children: React.ReactNode): Promise<Mounted> {
 }
 
 export { act };
+
+/** Activate a toolbar tab (Option B tabbed toolbar) by its visible label. */
+/** Open a toolbar dropdown menu (Insert, Slide, Table borders) if closed. */
+export async function openMenu(
+  host: HTMLElement,
+  name: 'Insert' | 'Slide' | 'Table borders'
+): Promise<void> {
+  const btn = host.querySelector(
+    `button[title="${name}"]`
+  ) as HTMLButtonElement | null;
+  if (!btn) throw new Error(`Toolbar menu "${name}" not found`);
+  if (btn.getAttribute('aria-expanded') !== 'true')
+    await act(async () => btn.click());
+}

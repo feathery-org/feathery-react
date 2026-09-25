@@ -472,7 +472,18 @@ function extractRichText(
   return paras.length ? paras : [{ runs: [] }];
 }
 
-export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
+export const ZOOM_MIN = 50;
+export const ZOOM_MAX = 400;
+
+export function SvgSlide({
+  readOnly = false,
+  zoom = 100,
+  onZoomChange
+}: {
+  readOnly?: boolean;
+  zoom?: number;
+  onZoomChange?: (zoom: number) => void;
+} = {}) {
   const store = usePptxEditorStore();
   const state = usePptxEditorState();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -500,6 +511,65 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
   const [box, setBox] = useState<OverlayBox | null>(null);
   const [layoutTick, setLayoutTick] = useState(0);
 
+  // Trackpad pinch arrives as a wheel event with ctrlKey set, so one listener
+  // covers pinch, Ctrl+scroll and Cmd+scroll. Native (non-passive) because
+  // React's synthetic wheel handlers cannot preventDefault the page zoom.
+  const zoomFloatRef = useRef(zoom);
+  const zoomAnchorRef = useRef<{
+    ax: number;
+    ay: number;
+    contentX: number;
+    contentY: number;
+    fromZoom: number;
+  } | null>(null);
+  useEffect(() => {
+    if (Math.round(zoomFloatRef.current) !== zoom) zoomFloatRef.current = zoom;
+  }, [zoom]);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !onZoomChange) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      // Wheel notches send ~100/notch, pinch a few units per event; clamping
+      // the delta keeps one notch a step and the pinch smooth.
+      const delta = Math.max(-30, Math.min(30, e.deltaY));
+      const next = Math.max(
+        ZOOM_MIN,
+        Math.min(ZOOM_MAX, zoomFloatRef.current * Math.exp(-delta * 0.01))
+      );
+      const rounded = Math.round(next);
+      if (rounded !== Math.round(zoomFloatRef.current)) {
+        const rect = host.getBoundingClientRect();
+        const ax = e.clientX - rect.left;
+        const ay = e.clientY - rect.top;
+        zoomAnchorRef.current = {
+          ax,
+          ay,
+          contentX: host.scrollLeft + ax,
+          contentY: host.scrollTop + ay,
+          fromZoom: zoomFloatRef.current
+        };
+        onZoomChange(rounded);
+      }
+      zoomFloatRef.current = next;
+    };
+    host.addEventListener('wheel', onWheel, { passive: false });
+    return () => host.removeEventListener('wheel', onWheel);
+    // !!deck: before a deck loads the stage renders a placeholder without
+    // hostRef, so bind again once the real stage mounts.
+  }, [onZoomChange, !!deck]);
+  // After the width re-renders, restore the content point under the pointer.
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    const anchor = zoomAnchorRef.current;
+    zoomAnchorRef.current = null;
+    if (!host || !anchor || !anchor.fromZoom) return;
+    const scale = zoom / anchor.fromZoom;
+    host.scrollLeft = anchor.contentX * scale - anchor.ax;
+    host.scrollTop = anchor.contentY * scale - anchor.ay;
+  }, [zoom]);
+
   // The stage is sized by its container, not the window: observe the host and
   // reposition the selection overlay on any size change.
   useEffect(() => {
@@ -519,6 +589,20 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
+  // Right-click context menu on table cells: row/column insert & delete.
+  const [tableMenu, setTableMenu] = useState<{
+    x: number;
+    y: number;
+    shapeId: string;
+    row: number;
+    col: number;
+  } | null>(null);
+  // Right-click z-ordering menu for any non-table shape.
+  const [shapeMenu, setShapeMenu] = useState<{
+    x: number;
+    y: number;
+    shapeId: string;
+  } | null>(null);
   const [tableEdgePreview, setTableEdgePreview] = useState<{
     axis: 'column' | 'row';
     position: number;
@@ -663,7 +747,8 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
     rev,
     structureRev,
     activeSlide,
-    layoutTick
+    layoutTick,
+    zoom
   ]);
 
   // ---- inline text editing, IN PLACE ----
@@ -748,7 +833,7 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
     }
     div.style.overflow = 'visible';
     div.setAttribute('contenteditable', 'true');
-    div.focus();
+    div.focus({ preventScroll: true });
     // caret at the double-click point, else at the end
     const sel = featheryWindow().getSelection();
     sel?.removeAllRanges();
@@ -964,7 +1049,7 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
     }
     div.setAttribute('contenteditable', 'true');
     div.style.overflow = 'auto';
-    div.focus();
+    div.focus({ preventScroll: true });
     const selection = featheryWindow().getSelection();
     const range = featheryDoc().createRange();
     if (cell.selectAll) {
@@ -1121,6 +1206,22 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
           origin.y + size.cy * scale
         );
       }
+      // box.left/top are host-relative (including host scroll); the gesture
+      // compares against viewport clientX/Y, so shift the center into
+      // viewport space or rotation pivots around the wrong point (and can
+      // read as spinning the opposite way when the editor sits mid-page).
+      const hostEl = hostRef.current;
+      const hostRect = hostEl?.getBoundingClientRect();
+      const centerX =
+        (hostRect?.left ?? 0) -
+        (hostEl?.scrollLeft ?? 0) +
+        box.left +
+        box.width / 2;
+      const centerY =
+        (hostRect?.top ?? 0) -
+        (hostEl?.scrollTop ?? 0) +
+        box.top +
+        box.height / 2;
       gesture.current = {
         mode,
         dir,
@@ -1129,14 +1230,9 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
         targets,
         snapX,
         snapY,
-        center: { x: box.left + box.width / 2, y: box.top + box.height / 2 },
+        center: { x: centerX, y: centerY },
         startAngle:
-          (Math.atan2(
-            e.clientY - (box.top + box.height / 2),
-            e.clientX - (box.left + box.width / 2)
-          ) *
-            180) /
-          Math.PI
+          (Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180) / Math.PI
       };
     };
 
@@ -1706,11 +1802,16 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
 
   // click a shape to select (shift = add/remove); empty space starts a marquee
   const onHostDown = (e: React.MouseEvent) => {
+    if (e.button === 0) {
+      if (tableMenu) setTableMenu(null);
+      if (shapeMenu) setShapeMenu(null);
+    }
     if (readOnly || gesture.current || editingId || editingCell) return;
     const t = e.target as HTMLElement;
     // Take keyboard focus so shortcuts stay scoped to THIS editor instance
     // (never focus away from an in-place contenteditable edit).
-    if (!t.closest?.('[contenteditable="true"]')) hostRef.current?.focus();
+    if (!t.closest?.('[contenteditable="true"]'))
+      hostRef.current?.focus({ preventScroll: true });
     // Keep the linked DOM node stable from mouse-down through click. Selecting
     // its shape here can update overlays/focus before the browser dispatches click.
     if (t.closest?.('[data-hyperlink]')) return;
@@ -1782,6 +1883,104 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
       if (!e.shiftKey) select(null);
       marqueeRef.current = { startX: e.clientX, startY: e.clientY };
     }
+  };
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    if (readOnly) return;
+    const cell = (e.target as HTMLElement).closest?.(
+      '[data-table-cell], [data-table-cell-bg]'
+    ) as HTMLElement | null;
+    const shapeG = cell?.closest?.('[data-shape-id]') as HTMLElement | null;
+    const shapeId = shapeG?.dataset.shapeId;
+    const row = Number(cell?.dataset.row);
+    const col = Number(cell?.dataset.col);
+    const localX = (rect?: DOMRect | null) =>
+      e.clientX - (rect?.left ?? 0) + (hostRef.current?.scrollLeft ?? 0);
+    const localY = (rect?: DOMRect | null) =>
+      e.clientY - (rect?.top ?? 0) + (hostRef.current?.scrollTop ?? 0);
+    const hostRect = hostRef.current?.getBoundingClientRect();
+    if (!cell || !shapeId || !Number.isInteger(row) || !Number.isInteger(col)) {
+      // Not a table cell: offer the z-ordering menu for any other shape.
+      const anyShapeG = (e.target as HTMLElement).closest?.(
+        '[data-shape-id]'
+      ) as HTMLElement | null;
+      const anyShapeId = anyShapeG?.dataset.shapeId;
+      setTableMenu(null);
+      if (!anyShapeId) {
+        setShapeMenu(null);
+        return;
+      }
+      e.preventDefault();
+      select(anyShapeId);
+      setShapeMenu({
+        x: localX(hostRect),
+        y: localY(hostRect),
+        shapeId: anyShapeId
+      });
+      return;
+    }
+    e.preventDefault();
+    setShapeMenu(null);
+    select(shapeId);
+    store.setTableSelection({
+      shapeId,
+      startRow: row,
+      startCol: col,
+      endRow: row,
+      endCol: col
+    });
+    setTableMenu({
+      x: localX(hostRect),
+      y: localY(hostRect),
+      shapeId,
+      row,
+      col
+    });
+  };
+
+  const runShapeReorder = (op: 'front' | 'forward' | 'backward' | 'back') => {
+    const menu = shapeMenu;
+    setShapeMenu(null);
+    if (!menu) return;
+    const st = store.getState();
+    const sl = st.deck?.slides[st.activeSlide];
+    if (!sl) return;
+    const labels = {
+      front: 'Bring to front',
+      forward: 'Bring forward',
+      backward: 'Send backward',
+      back: 'Send to back'
+    };
+    store.executeCommand(
+      {
+        type: 'reorder-shape',
+        slideId: sl.path,
+        shapeId: menu.shapeId,
+        operation: op
+      },
+      labels[op]
+    );
+  };
+
+  const runTableMenu = (
+    operations: import('../engine').TableEditOperation[],
+    label: string
+  ) => {
+    const menu = tableMenu;
+    setTableMenu(null);
+    if (!menu) return;
+    const st = store.getState();
+    const sl = st.deck?.slides[st.activeSlide];
+    if (!sl) return;
+    store.executeCommand(
+      {
+        type: 'edit-table',
+        slideId: sl.path,
+        shapeId: menu.shapeId,
+        operations
+      },
+      label
+    );
   };
 
   const onHostClick = (e: React.MouseEvent) => {
@@ -1863,6 +2062,85 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
       if (e.key === 'Escape' && pictureCropModeId) {
         e.preventDefault();
         setPictureCropMode(null);
+        return;
+      }
+      if (e.key === 'Escape' && selectedIds.length) {
+        e.preventDefault();
+        select(null);
+        return;
+      }
+      const meta = e.metaKey || e.ctrlKey;
+      // Cmd/Ctrl+A selects every positioned shape on the slide.
+      if (meta && e.key.toLowerCase() === 'a' && slide) {
+        e.preventDefault();
+        store.selectMany(
+          slide.shapes.filter((shape) => shape.xfrm).map((shape) => shape.id)
+        );
+        return;
+      }
+      // Cmd/Ctrl+B/I/U toggle the selected shape's text style (while editing,
+      // the browser handles these inside the contenteditable instead).
+      if (meta && deck && slide && selectedIds.length === 1) {
+        const key = e.key.toLowerCase();
+        const styleKey =
+          key === 'b'
+            ? 'bold'
+            : key === 'i'
+            ? 'italic'
+            : key === 'u'
+            ? 'underline'
+            : null;
+        if (styleKey) {
+          const shape = slide.shapes.find(
+            (candidate) => candidate.id === selectedIds[0]
+          );
+          const run = shape?.text?.paragraphs.flatMap((p) => p.runs)[0];
+          if (shape && run) {
+            e.preventDefault();
+            store.executeCommand(
+              {
+                type: 'format-text',
+                slideId: slide.path,
+                shapeId: shape.id,
+                style: { [styleKey]: !(run as any)[styleKey] }
+              },
+              'Format text'
+            );
+            return;
+          }
+        }
+      }
+      // Arrow keys nudge the selection (Shift = larger step), like PowerPoint.
+      if (
+        !meta &&
+        deck &&
+        slide &&
+        selectedIds.length &&
+        ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)
+      ) {
+        e.preventDefault();
+        const step = (e.shiftKey ? 10 : 1) * 9525; // 1px / 10px at 96dpi, in EMU
+        const dx =
+          e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy =
+          e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        const updates = selectedIds.flatMap((shapeId) => {
+          const shape = slide.shapes.find(
+            (candidate) => candidate.id === shapeId
+          );
+          if (!shape?.xfrm) return [];
+          return [
+            {
+              shapeId,
+              geometry: { x: shape.xfrm.x + dx, y: shape.xfrm.y + dy }
+            }
+          ];
+        });
+        if (updates.length)
+          store.executeCommand(
+            { type: 'set-shape-geometries', slideId: slide.path, updates },
+            updates.length > 1 ? 'Move shapes' : 'Move shape'
+          );
         return;
       }
       if (e.key === 'Tab' && deck && slide) {
@@ -1953,13 +2231,239 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
   return (
     <div
       ref={hostRef}
+      data-pptx-stage
       tabIndex={-1}
       style={styles.wrap}
       onMouseDown={onHostDown}
       onClick={onHostClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
     >
-      <div ref={svgHostRef} style={styles.frame} />
+      <div ref={svgHostRef} style={{ ...styles.frame, width: `${zoom}%` }} />
+      {tableMenu && (
+        <div
+          data-overlay
+          style={{
+            position: 'absolute',
+            left: tableMenu.x,
+            top: tableMenu.y,
+            zIndex: 40,
+            minWidth: 190,
+            padding: 4,
+            background: '#fff',
+            border: '1px solid #e4e4e7',
+            borderRadius: 8,
+            boxShadow: '0 6px 18px rgba(23,26,28,.13)',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {(
+            [
+              [
+                'Insert row above',
+                [{ kind: 'add-row', index: tableMenu.row }],
+                'Add table row'
+              ],
+              [
+                'Insert row below',
+                [{ kind: 'add-row', index: tableMenu.row + 1 }],
+                'Add table row'
+              ],
+              [
+                'Insert column left',
+                [{ kind: 'add-column', index: tableMenu.col }],
+                'Add table column'
+              ],
+              [
+                'Insert column right',
+                [{ kind: 'add-column', index: tableMenu.col + 1 }],
+                'Add table column'
+              ],
+              [
+                'Delete row',
+                [{ kind: 'remove-row', index: tableMenu.row }],
+                'Remove table row'
+              ],
+              [
+                'Delete column',
+                [{ kind: 'remove-column', index: tableMenu.col }],
+                'Remove table column'
+              ]
+            ] as const
+          ).map(([label, operations, commandLabel]) => (
+            <button
+              key={label}
+              type='button'
+              onClick={() => runTableMenu([...operations], commandLabel)}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '7px 10px',
+                border: 'none',
+                borderRadius: 6,
+                background: 'transparent',
+                color: '#3f3f46',
+                fontSize: 12.5,
+                textAlign: 'left',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) =>
+                ((e.target as HTMLElement).style.background = '#f4f4f5')
+              }
+              onMouseLeave={(e) =>
+                ((e.target as HTMLElement).style.background = 'transparent')
+              }
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            type='button'
+            onClick={() => {
+              const menu = tableMenu;
+              setTableMenu(null);
+              if (!menu) return;
+              const st = store.getState();
+              const sl = st.deck?.slides[st.activeSlide];
+              if (!sl) return;
+              store.executeCommand(
+                {
+                  type: 'delete-shapes',
+                  slideId: sl.path,
+                  shapeIds: [menu.shapeId]
+                },
+                'Delete table'
+              );
+              select(null);
+            }}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '7px 10px',
+              border: 'none',
+              borderTop: '1px solid #e4e4e7',
+              borderRadius: 6,
+              background: 'transparent',
+              color: '#dc3a4b',
+              fontSize: 12.5,
+              textAlign: 'left',
+              cursor: 'pointer'
+            }}
+          >
+            Delete table
+          </button>
+        </div>
+      )}
+      {shapeMenu && (
+        <div
+          data-overlay
+          style={{
+            position: 'absolute',
+            left: shapeMenu.x,
+            top: shapeMenu.y,
+            zIndex: 40,
+            minWidth: 176,
+            padding: 4,
+            background: '#fff',
+            border: '1px solid #e4e4e7',
+            borderRadius: 8,
+            boxShadow: '0 6px 18px rgba(23,26,28,.13)',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {(
+            [
+              ['Bring to front', 'front', 'M6 11l6-6 6 6M6 17l6-6 6 6'],
+              ['Bring forward', 'forward', 'M6 14l6-6 6 6'],
+              ['Send backward', 'backward', 'M6 10l6 6 6-6'],
+              ['Send to back', 'back', 'M6 7l6 6 6-6M6 13l6 6 6-6']
+            ] as const
+          ).map(([label, op, iconPath]) => (
+            <button
+              key={op}
+              type='button'
+              onClick={() => runShapeReorder(op)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 9,
+                width: '100%',
+                padding: '7px 10px',
+                border: 'none',
+                borderRadius: 6,
+                background: 'transparent',
+                color: '#3f3f46',
+                fontSize: 12.5,
+                textAlign: 'left',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = '#f4f4f5')
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = 'transparent')
+              }
+            >
+              <svg
+                viewBox='0 0 24 24'
+                width={15}
+                height={15}
+                style={{
+                  flex: '0 0 auto',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: 1.7,
+                  strokeLinejoin: 'round'
+                }}
+              >
+                <path d={iconPath} />
+              </svg>
+              {label}
+            </button>
+          ))}
+          <button
+            type='button'
+            onClick={() => {
+              const menu = shapeMenu;
+              setShapeMenu(null);
+              if (!menu) return;
+              const st = store.getState();
+              const sl = st.deck?.slides[st.activeSlide];
+              if (!sl) return;
+              store.executeCommand(
+                {
+                  type: 'delete-shapes',
+                  slideId: sl.path,
+                  shapeIds: [menu.shapeId]
+                },
+                'Delete shape'
+              );
+              select(null);
+            }}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '7px 10px',
+              border: 'none',
+              borderTop: '1px solid #e4e4e7',
+              borderRadius: 6,
+              background: 'transparent',
+              color: '#dc3a4b',
+              fontSize: 12.5,
+              textAlign: 'left',
+              cursor: 'pointer'
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
       {/* alignment guides (during a snap) */}
       {guides.map((gd, i) => (
         <div
@@ -2440,19 +2944,46 @@ export function SvgSlide({ readOnly = false }: { readOnly?: boolean } = {}) {
                 data-overlay
                 onMouseDown={startGesture('rotate')}
                 title='Rotate'
+                aria-label='Rotate shape'
                 style={{
                   position: 'absolute',
-                  left: 'calc(50% - 6px)',
-                  top: -34,
-                  width: 12,
-                  height: 12,
+                  left: 'calc(50% - 9px)',
+                  top: -42,
+                  width: 18,
+                  height: 18,
                   borderRadius: '50%',
                   background: '#fff',
                   border: '1.5px solid #5b8def',
-                  cursor: 'grab',
+                  boxShadow: '0 1px 3px rgba(23,26,28,.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  // No native rotate cursor exists; use a circular-arrow SVG
+                  // cursor (hotspot centered) with grab as the fallback.
+                  cursor: `url("data:image/svg+xml,${encodeURIComponent(
+                    "<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24'><g fill='none' stroke='#fff' stroke-width='5' stroke-linecap='round'><path d='M20 12a8 8 0 1 1-2.34-5.66'/></g><g fill='none' stroke='#171a1c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 12a8 8 0 1 1-2.34-5.66'/><path d='M18.5 2.5v4h-4'/></g></svg>"
+                  )}") 11 11, grab`,
                   pointerEvents: 'auto'
                 }}
-              />
+              >
+                {/* Rotate glyph so the handle reads as rotation, not a dot. */}
+                <svg
+                  viewBox='0 0 24 24'
+                  width={11}
+                  height={11}
+                  style={{
+                    fill: 'none',
+                    stroke: '#5b8def',
+                    strokeWidth: 2.6,
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round',
+                    pointerEvents: 'none'
+                  }}
+                >
+                  <path d='M20 12a8 8 0 1 1-2.34-5.66' />
+                  <path d='M18.5 3v3.5H15' />
+                </svg>
+              </div>
             </>
           )}
         </div>
@@ -2467,7 +2998,6 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative',
     overflow: 'auto',
     display: 'flex',
-    justifyContent: 'center',
     alignItems: 'flex-start',
     padding: 16,
     background: '#e9ecf2',
@@ -2477,6 +3007,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   frame: {
     width: 'min(1100px, 100%)',
+    // A shrinkable flex child caps the zoom at 100%: the width climbs but the
+    // box is squeezed back to fit. Auto margins (not justify-content) center
+    // it so the left edge stays reachable once it overflows.
+    flexShrink: 0,
+    margin: '0 auto',
     boxShadow: '0 2px 16px rgba(0,0,0,0.18)',
     background: '#fff'
   },

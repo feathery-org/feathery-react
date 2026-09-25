@@ -14,7 +14,11 @@ type ContainerProps = PropsWithChildren & {
   form: {
     activeStep?: { id?: string };
     formInstanceId?: string;
-    formSettings: { mobileBreakpoint: number; assistantEnabled?: boolean };
+    formSettings: {
+      mobileBreakpoint: number;
+      assistantEnabled?: boolean;
+      pptxEditorEnabled?: boolean;
+    };
   };
 };
 
@@ -113,6 +117,7 @@ export const Container = ({
         formId={form.formInstanceId}
         stepId={form.activeStep?.id}
         assistantEnabled={form.formSettings.assistantEnabled}
+        pptxEditorEnabled={form.formSettings.pptxEditorEnabled}
         {...tooltipHoverProps}
       >
         {children}

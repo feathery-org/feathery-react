@@ -14,7 +14,13 @@ import { child, descendant, getAttr, setAttr } from '../core/opc/xml';
 import type { Deck, Shape, Slide } from '../core/model/types';
 import { SvgSlide } from '../ui/SlideStage';
 import { Toolbar } from '../ui/PptxToolbar';
-import { act, mountEditor, sampleBytes, type Mounted } from './harness';
+import {
+  act,
+  mountEditor,
+  openMenu,
+  sampleBytes,
+  type Mounted
+} from './harness';
 
 const STAGE_RECT = {
   x: 16,
@@ -445,7 +451,7 @@ it('drag-selects a rectangular cell range and applies text, fill, and border for
   });
   expect(host.querySelector('[data-table-range]')).toBeTruthy();
   await act(async () =>
-    (host.querySelector('button[title="Bold"]') as HTMLButtonElement).click()
+    (host.querySelector('button[title^="Bold"]') as HTMLButtonElement).click()
   );
   const fill = host.querySelector(
     'input[title="Selected cell fill"]'
@@ -454,6 +460,8 @@ it('drag-selects a rectangular cell range and applies text, fill, and border for
     fill.value = '#ff0000';
     fill.dispatchEvent(new Event('change', { bubbles: true }));
   });
+  // Border controls live in the contextual Borders popover.
+  await openMenu(host, 'Table borders');
   const dash = host.querySelector(
     'select[title="Border style"]'
   ) as HTMLSelectElement;
@@ -741,9 +749,16 @@ it('moves a table inserted from the toolbar from its selection handle', async ()
   const host = mounted.host;
   await act(async () => store.loadFile(sampleBytes(), 'sample.pptx'));
   const slide = store.getState().deck!.slides[0];
+  // The Insert menu holds a Table submenu whose flyout is the size picker.
+  await openMenu(host, 'Insert');
+  await act(async () =>
+    (host.querySelector('button[title="Table"]') as HTMLButtonElement).click()
+  );
   await act(async () =>
     (
-      host.querySelector('button[title="Insert table"]') as HTMLButtonElement
+      host.querySelector(
+        'button[aria-label="3 columns by 3 rows"]'
+      ) as HTMLButtonElement
     ).click()
   );
   const table = slide.shapes[slide.shapes.length - 1];

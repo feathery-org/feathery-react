@@ -487,6 +487,14 @@ export function addAutoShape(
   );
 }
 
+/** Shapes carrying a slide-number field (a:fld type=slidenum). */
+export function slideNumberShapes(slide: Slide): Shape[] {
+  return slide.shapes.filter((shape) => {
+    const fld = descendant(shape.node, 'a:fld');
+    return !!fld && getAttr(fld, 'type') === 'slidenum';
+  });
+}
+
 export function deleteShape(deck: Deck, slide: Slide, shape: Shape): void {
   const kids = childrenOf(slide.spTree);
   const idx = kids.indexOf(shape.node);
@@ -621,11 +629,12 @@ export function setParagraphAlignAt(
   markDirty(deck, slide);
 }
 
+/** Set a solid fill, or clear the explicit fill (null) back to inherited. */
 export function setShapeFillColor(
   deck: Deck,
   slide: Slide,
   shape: Shape,
-  color: string
+  color: string | null
 ): void {
   if (shape.type !== 'shape' && shape.type !== 'text') return;
   const spPr = shape.spPr || ensureChild(shape.node, 'p:spPr');
@@ -641,6 +650,12 @@ export function setShapeFillColor(
   const oldIndex = kids.findIndex((node) => fillTags.has(tagOf(node) || ''));
   for (let i = kids.length - 1; i >= 0; i--)
     if (fillTags.has(tagOf(kids[i]) || '')) kids.splice(i, 1);
+  if (color === null) {
+    shape.spPr = spPr;
+    shape.fillColor = undefined;
+    markDirty(deck, slide);
+    return;
+  }
   const insertAt =
     oldIndex >= 0 ? oldIndex : kids.findIndex((node) => tagOf(node) === 'a:ln');
   kids.splice(
@@ -1135,69 +1150,111 @@ export function setTableCellPlainText(
   markDirty(deck, slide);
 }
 
-export function addTableRow(deck: Deck, slide: Slide, shape: Shape): void {
+/** Insert a row; `atIndex` places it at that position (default: append). */
+export function addTableRow(
+  deck: Deck,
+  slide: Slide,
+  shape: Shape,
+  atIndex?: number
+): void {
   const tbl = tableNode(shape);
   const rows = tableRows(shape);
   const cols = tableColumns(shape);
   if (!tbl) return;
-  const h = rows.length
-    ? Number(getAttr(rows[rows.length - 1], 'h')) || 400000
-    : 400000;
-  childrenOf(tbl).push(
-    el(
-      'a:tr',
-      { h: String(h) },
-      Array.from({ length: Math.max(1, cols.length) }, blankCell)
-    )
+  const neighbor =
+    rows[Math.min(atIndex ?? rows.length - 1, rows.length - 1)] ??
+    rows[rows.length - 1];
+  const h = neighbor ? Number(getAttr(neighbor, 'h')) || 400000 : 400000;
+  const newRow = el(
+    'a:tr',
+    { h: String(h) },
+    Array.from({ length: Math.max(1, cols.length) }, blankCell)
   );
+  const kids = childrenOf(tbl);
+  if (atIndex !== undefined && rows[atIndex]) {
+    kids.splice(kids.indexOf(rows[atIndex]), 0, newRow);
+  } else {
+    kids.push(newRow);
+  }
   syncTableFrame(shape);
   markDirty(deck, slide);
 }
 
-export function removeTableRow(deck: Deck, slide: Slide, shape: Shape): void {
+/** Remove a row; `index` picks which (default: the last). */
+export function removeTableRow(
+  deck: Deck,
+  slide: Slide,
+  shape: Shape,
+  index?: number
+): void {
   const tbl = tableNode(shape);
   const rows = tableRows(shape);
   if (!tbl || rows.length <= 1) return;
+  const victim = rows[index ?? rows.length - 1];
+  if (!victim) return;
   const kids = childrenOf(tbl);
-  kids.splice(kids.indexOf(rows[rows.length - 1]), 1);
+  kids.splice(kids.indexOf(victim), 1);
   syncTableFrame(shape);
   markDirty(deck, slide);
 }
 
-export function addTableColumn(deck: Deck, slide: Slide, shape: Shape): void {
+/** Insert a column; `atIndex` places it at that position (default: append). */
+export function addTableColumn(
+  deck: Deck,
+  slide: Slide,
+  shape: Shape,
+  atIndex?: number
+): void {
   const tbl = tableNode(shape);
   const cols = tableColumns(shape);
   if (!tbl) return;
-  const w = cols.length
-    ? Number(getAttr(cols[cols.length - 1], 'w')) || 800000
-    : 800000;
+  const neighbor =
+    cols[Math.min(atIndex ?? cols.length - 1, cols.length - 1)] ??
+    cols[cols.length - 1];
+  const w = neighbor ? Number(getAttr(neighbor, 'w')) || 800000 : 800000;
   const grid = child(tbl, 'a:tblGrid');
   if (!grid) return;
-  childrenOf(grid).push(el('a:gridCol', { w: String(w) }));
-  for (const row of tableRows(shape)) childrenOf(row).push(blankCell());
+  const gridKids = childrenOf(grid);
+  const newCol = el('a:gridCol', { w: String(w) });
+  if (atIndex !== undefined && cols[atIndex]) {
+    gridKids.splice(gridKids.indexOf(cols[atIndex]), 0, newCol);
+  } else {
+    gridKids.push(newCol);
+  }
+  for (const row of tableRows(shape)) {
+    const cells = tableCells(row);
+    const rowKids = childrenOf(row);
+    if (atIndex !== undefined && cells[atIndex]) {
+      rowKids.splice(rowKids.indexOf(cells[atIndex]), 0, blankCell());
+    } else {
+      rowKids.push(blankCell());
+    }
+  }
   syncTableFrame(shape);
   markDirty(deck, slide);
 }
 
+/** Remove a column; `index` picks which (default: the last). */
 export function removeTableColumn(
   deck: Deck,
   slide: Slide,
-  shape: Shape
+  shape: Shape,
+  index?: number
 ): void {
   const tbl = tableNode(shape);
   const cols = tableColumns(shape);
   if (!tbl || cols.length <= 1) return;
   const grid = child(tbl, 'a:tblGrid');
   if (!grid) return;
+  const victimIndex = index ?? cols.length - 1;
+  const victim = cols[victimIndex];
+  if (!victim) return;
   const gridKids = childrenOf(grid);
-  gridKids.splice(gridKids.indexOf(cols[cols.length - 1]), 1);
+  gridKids.splice(gridKids.indexOf(victim), 1);
   for (const row of tableRows(shape)) {
     const cells = tableCells(row);
-    if (cells.length)
-      childrenOf(row).splice(
-        childrenOf(row).indexOf(cells[cells.length - 1]),
-        1
-      );
+    const cell = cells[victimIndex];
+    if (cell) childrenOf(row).splice(childrenOf(row).indexOf(cell), 1);
   }
   syncTableFrame(shape);
   markDirty(deck, slide);
@@ -1576,6 +1633,20 @@ export function setTableCellRangeBorders(
   dash: 'solid' | 'dash' | 'dot'
 ): void {
   const dashValue = dash === 'dot' ? 'sysDot' : dash;
+  // a:tcPr is a schema sequence: the ln* borders must precede the fill and
+  // everything else, in lnL/lnT/lnR/lnB order - PowerPoint drops appended-at-
+  // the-end borders as invalid.
+  const LN_ORDER = ['a:lnL', 'a:lnT', 'a:lnR', 'a:lnB'];
+  const insertLn = (pr: ONode, node: ONode, tag: string) => {
+    const kids = childrenOf(pr);
+    const myOrder = LN_ORDER.indexOf(tag);
+    let at = 0;
+    for (let i = 0; i < kids.length; i++) {
+      const order = LN_ORDER.indexOf(tagOf(kids[i]) || '');
+      if (order !== -1 && order < myOrder) at = i + 1;
+    }
+    kids.splice(at, 0, node);
+  };
   for (const item of selectedTableCells(shape, range)) {
     let pr = child(item.cell, 'a:tcPr');
     if (!pr) {
@@ -1620,7 +1691,8 @@ export function setTableCellRangeBorders(
       if (!edge.applies && target !== 'none') continue;
       const old = child(pr, edge.tag);
       if (old) childrenOf(pr).splice(childrenOf(pr).indexOf(old), 1);
-      childrenOf(pr).push(
+      insertLn(
+        pr,
         target === 'none'
           ? el(edge.tag, { w: String(Math.round(widthPt * 12700)) }, [
               el('a:noFill')
@@ -1630,7 +1702,8 @@ export function setTableCellRangeBorders(
                 el('a:srgbClr', { val: color.toUpperCase() })
               ]),
               el('a:prstDash', { val: dashValue })
-            ])
+            ]),
+        edge.tag
       );
     }
   }

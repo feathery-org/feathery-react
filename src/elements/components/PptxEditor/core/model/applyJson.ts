@@ -131,7 +131,8 @@ interface ParagraphEdit {
 interface ShapeEdit {
   shape: Shape;
   frame: Partial<Xfrm>;
-  fill?: string;
+  /** New solid fill; null clears the explicit fill back to inherited. */
+  fill?: string | null;
   picture?: PictureCrop;
   table?: TableJSON;
   runs: RunEdit[];
@@ -486,11 +487,15 @@ export function applySlideJSON(
     );
     const shape = slide.shapes[si];
     const frame = validateFrame(source, next, `slide.shapes[${si}]`);
-    let fill: string | undefined;
+    // undefined = untouched; null = clear the explicit fill (inherit again)
+    let fill: string | null | undefined;
     if (!same(next.fill, source.fill)) {
       if (shape.type !== 'shape' && shape.type !== 'text')
         throw new Error(`slide.shapes[${si}].fill cannot be edited`);
-      fill = color(next.fill, `slide.shapes[${si}].fill`);
+      fill =
+        next.fill === undefined
+          ? null
+          : color(next.fill, `slide.shapes[${si}].fill`);
     }
     let table: TableJSON | undefined;
     let picture: PictureCrop | undefined;
@@ -522,7 +527,7 @@ export function applySlideJSON(
       throw new Error(`slide.shapes[${si}].text cannot be added`);
     if (
       Object.keys(frame).length ||
-      fill ||
+      fill !== undefined ||
       picture ||
       table ||
       text.runs.length ||
@@ -545,7 +550,8 @@ export function applySlideJSON(
       : edit.frame;
     if (Object.keys(frame).length)
       setShapeGeometry(deck, slide, edit.shape, frame);
-    if (edit.fill) setShapeFillColor(deck, slide, edit.shape, edit.fill);
+    if (edit.fill !== undefined)
+      setShapeFillColor(deck, slide, edit.shape, edit.fill);
     if (edit.picture) setPictureCrop(deck, slide, edit.shape, edit.picture);
     if (edit.table) {
       while (tableColumns(edit.shape).length < edit.table.columns.length)

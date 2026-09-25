@@ -718,6 +718,7 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
     columnWidths.slice(0, index).reduce((sum, width) => sum + width, 0)
   );
   let y = 0;
+  const borderLines: SVGLineElement[] = [];
   rows.forEach((row, rowIndex) => {
     const rowHeight = rowHeights[rowIndex];
     let x = 0;
@@ -775,7 +776,9 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
               ? `${border.widthEMU} ${border.widthEMU * 2}`
               : `${border.widthEMU * 4} ${border.widthEMU * 3}`
           );
-        g.appendChild(line);
+        // Deferred: a border along a shared edge must paint ABOVE the next
+        // cell's opaque background rect, or half its stroke disappears.
+        borderLines.push(line);
       }
 
       const textG = featheryDoc().createElementNS(SVGNS, 'g');
@@ -839,6 +842,7 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
     });
     y += rowHeight;
   });
+  for (const line of borderLines) g.appendChild(line);
   return g;
 }
 
