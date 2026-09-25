@@ -12,6 +12,7 @@ import {
   childrenOf,
   getAttr,
   el,
+  tagOf,
   type OTree,
   type ONode
 } from './xml';
@@ -211,6 +212,93 @@ export class OPCPackage {
     childrenOf(relsRoot).push(el('Relationship', attrs));
     this.markDirty(relsPath);
     return id;
+  }
+
+  /** The rels part path for a given part (…/_rels/<name>.rels). */
+  relsPath(part: string): string {
+    return relsPathFor(part);
+  }
+
+  /** All XML (text) part paths currently in the package. */
+  xmlPartPaths(): string[] {
+    return [...this.parts.text.keys()];
+  }
+
+  /**
+   * Add a new XML part, or replace an existing part's contents in place.
+   * In-place replacement keeps any live reference (e.g. a Slide's `raw`)
+   * valid. Marks the part dirty so export re-serializes it.
+   */
+  setXmlPart(path: string, tree: OTree): void {
+    const existing = this.trees.get(path);
+    if (existing) existing.splice(0, existing.length, ...tree);
+    else this.trees.set(path, tree);
+    if (!this.parts.text.has(path)) this.parts.order.push(path);
+    this.parts.text.set(path, '');
+    this.markDirty(path);
+  }
+
+  /** Remove a part entirely (text/binary/tree/order/dirty). */
+  removePart(path: string): void {
+    this.parts.text.delete(path);
+    this.parts.binary.delete(path);
+    this.trees.delete(path);
+    this.dirty.delete(path);
+    const i = this.parts.order.indexOf(path);
+    if (i >= 0) this.parts.order.splice(i, 1);
+    this.mutationSeqs.set(path, (this.mutationSeqs.get(path) ?? 0) + 1);
+  }
+
+  /** A free slide part path (ppt/slides/slideN.xml). */
+  nextSlidePath(): string {
+    let max = 0;
+    for (const p of this.parts.text.keys()) {
+      const m = /ppt\/slides\/slide(\d+)\.xml$/.exec(p);
+      if (m) max = Math.max(max, Number(m[1]));
+    }
+    return `ppt/slides/slide${max + 1}.xml`;
+  }
+
+  /** Remove a relationship (by rId) from a part's rels file. */
+  removeRelationship(sourcePart: string, id: string): void {
+    const relsPath = relsPathFor(sourcePart);
+    if (!this.parts.text.has(relsPath)) return;
+    const relsRoot = root(this.tree(relsPath));
+    const kids = childrenOf(relsRoot);
+    const keep = kids.filter(
+      (rel) => !(tagOf(rel) === 'Relationship' && getAttr(rel, 'Id') === id)
+    );
+    kids.splice(0, kids.length, ...keep);
+    this.markDirty(relsPath);
+  }
+
+  /** Ensure [Content_Types].xml has an Override entry for a full part name. */
+  ensureOverride(partName: string, contentType: string): void {
+    const path = '[Content_Types].xml';
+    const types = root(this.tree(path));
+    const has = children(types, 'Override').some(
+      (o) => getAttr(o, 'PartName') === partName
+    );
+    if (!has) {
+      childrenOf(types).push(
+        el('Override', { PartName: partName, ContentType: contentType })
+      );
+      this.markDirty(path);
+    }
+  }
+
+  /** Remove the Override entry for a full part name, if present. */
+  removeOverride(partName: string): void {
+    const path = '[Content_Types].xml';
+    const types = root(this.tree(path));
+    const kids = childrenOf(types);
+    const keep = kids.filter(
+      (o) => !(tagOf(o) === 'Override' && getAttr(o, 'PartName') === partName)
+    );
+    if (keep.length !== kids.length) {
+      kids.splice(0, kids.length, ...keep);
+      this.markDirty(path);
+    }
   }
 
   /** Ensure [Content_Types].xml has a Default entry for a file extension. */

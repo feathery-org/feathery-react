@@ -152,7 +152,15 @@ export type EditorCommand =
       slideId: string;
       shapeId: string;
       operation: 'front' | 'back' | 'forward' | 'backward';
-    };
+    }
+  | {
+      // Insert a slide at `atIndex`; when `duplicateOf` is set the slide's
+      // body and relationships are cloned from that slide.
+      type: 'add-slide';
+      atIndex: number;
+      duplicateOf?: string;
+    }
+  | { type: 'delete-slide'; slideId: string };
 
 export type Invalidation =
   | { kind: 'shapes'; slideId: string; shapeIds: string[] }

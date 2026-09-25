@@ -332,7 +332,7 @@ function PptxEditorInner({
           alignItems: 'stretch'
         }}
       >
-        <SlideNavigator />
+        <SlideNavigator readOnly={readOnly} />
         <div
           css={{
             flex: 1,

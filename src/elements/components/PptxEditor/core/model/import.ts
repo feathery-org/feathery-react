@@ -48,7 +48,7 @@ function pictureRelationship(node: ONode): string | undefined {
   return blip && getAttr(blip, 'r:embed');
 }
 
-function readSlide(
+export function readSlide(
   pkg: OPCPackage,
   path: string,
   retainedImages = new Map<string, string>()
@@ -110,6 +110,28 @@ export function refreshSlideModel(deck: Deck, slide: Slide): void {
       if (x) shape.xfrm = x;
     }
   }
+}
+
+/**
+ * Rebuild `deck.slides` from the package's current slide order after a
+ * structural change (add/delete/duplicate slide). Existing Slide objects are
+ * reused by path so their resolved geometry and retained image URLs survive;
+ * only newly added paths are read fresh.
+ */
+export function rebuildSlides(deck: Deck): void {
+  const byPath = new Map(deck.slides.map((slide) => [slide.path, slide]));
+  deck.slides = deck.pkg.slidePaths().map((path) => {
+    const existing = byPath.get(path);
+    if (existing) return existing;
+    const slide = readSlide(deck.pkg, path);
+    for (const shape of slide.shapes) {
+      if (!shape.xfrm) {
+        const x = resolveXfrm(deck, slide, shape);
+        if (x) shape.xfrm = x;
+      }
+    }
+    return slide;
+  });
 }
 
 export function importDeck(bytes: Uint8Array): Deck {

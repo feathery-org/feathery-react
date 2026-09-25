@@ -13,6 +13,7 @@ import {
 import { importDeck } from '../core/model/import';
 import { deckToJSON, type DeckJSON } from '../core/model/json';
 import { setSlideSize } from '../core/model/slideSize';
+import { addSlide, deleteSlide } from '../core/model/slides';
 import {
   addAutoShape,
   addTableColumn,
@@ -84,6 +85,9 @@ export interface EditorEvent {
 export type EditorListener = (event: EditorEvent) => void;
 
 function historyInvalidations(result: HistoryRestoreResult): Invalidation[] {
+  // A slide add/delete/duplicate changed the deck structure; a full redraw
+  // covers the navigator and the active slide.
+  if (result.deck) return [{ kind: 'deck' }];
   const invalidations: Invalidation[] = [];
   for (const change of result.slides) {
     if (change.fullContent || change.structure || change.slideSize) {
@@ -536,6 +540,21 @@ export class PptxEditorEngine {
           { kind: 'structure', slideId: slide.path, shapeIds: [shape.id] }
         ];
         defaultLabel = 'Reorder shape';
+        break;
+      }
+      case 'add-slide': {
+        // A duplicate source, when named, must exist.
+        if (command.duplicateOf) this.requireSlide(command.duplicateOf);
+        addSlide(deck, command.atIndex, command.duplicateOf);
+        invalidations = [{ kind: 'deck' }];
+        defaultLabel = command.duplicateOf ? 'Duplicate slide' : 'Add slide';
+        break;
+      }
+      case 'delete-slide': {
+        this.requireSlide(command.slideId);
+        deleteSlide(deck, command.slideId);
+        invalidations = [{ kind: 'deck' }];
+        defaultLabel = 'Delete slide';
         break;
       }
     }
