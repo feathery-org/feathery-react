@@ -4,17 +4,27 @@ import { SvgSlide } from '../ui/SlideStage';
 import { act, mountEditor, sampleBytes, type Mounted } from './harness';
 
 let mounted: Mounted | null = null;
-afterEach(async () => { await mounted?.unmount(); mounted = null; });
+afterEach(async () => {
+  await mounted?.unmount();
+  mounted = null;
+});
 
 function stageHost(host: HTMLElement): HTMLElement {
   return host.querySelector('div[tabindex="-1"]') as HTMLElement;
 }
 function press(el: HTMLElement, key: string, init: KeyboardEventInit = {}) {
-  el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }));
+  el.dispatchEvent(
+    new KeyboardEvent('keydown', { key, bubbles: true, ...init })
+  );
 }
 
 it('supports the well-known editor shortcuts on the stage', async () => {
-  mounted = await mountEditor(<><Toolbar /><SvgSlide /></>);
+  mounted = await mountEditor(
+    <>
+      <Toolbar />
+      <SvgSlide />
+    </>
+  );
   const { host, store } = mounted;
   await act(async () => store.loadFile(sampleBytes(), 'sample.pptx'));
   const slide = store.getState().deck!.slides[0];
@@ -44,7 +54,12 @@ it('supports the well-known editor shortcuts on the stage', async () => {
 });
 
 it('tooltips carry the platform shortcut hints', async () => {
-  mounted = await mountEditor(<><Toolbar /><SvgSlide /></>);
+  mounted = await mountEditor(
+    <>
+      <Toolbar />
+      <SvgSlide />
+    </>
+  );
   const { host, store } = mounted;
   await act(async () => store.loadFile(sampleBytes(), 'sample.pptx'));
   // jsdom is not a Mac platform, so hints render as Ctrl+.

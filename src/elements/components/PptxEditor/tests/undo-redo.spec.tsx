@@ -11,9 +11,9 @@ import { JsonPanel } from '../ui/JsonPanel';
 import {
   act,
   mountEditor,
+  openMenu,
   sampleBytes,
-  type Mounted,
-  switchTab
+  type Mounted
 } from './harness';
 
 const PNG_DATA =
@@ -207,8 +207,8 @@ it('exposes toolbar buttons and keyboard shortcuts for undo and redo', async () 
     'button[title^="Undo Move shape"]'
   ) as HTMLButtonElement;
   expect(undo.disabled).toBe(false);
-  // Slide-size controls live on the Slide tab in the tabbed toolbar.
-  await switchTab(host, 'Slide');
+  // Slide-size controls live in the Slide dropdown menu.
+  await openMenu(host, 'Slide');
   const sizePreset = host.querySelector(
     'select[title="Size preset for this slide"]'
   ) as HTMLSelectElement;
@@ -561,7 +561,7 @@ it('routes slide-size toolbar edits through engine history without remounting SV
   );
   const before = deckToJSON(deck).slides[0].sizeEMU;
   const svg = host.querySelector('svg[data-svg-uid]');
-  await switchTab(host, 'Slide');
+  await openMenu(host, 'Slide');
   const preset = host.querySelector(
     'select[title="Size preset for this slide"]'
   ) as HTMLSelectElement;

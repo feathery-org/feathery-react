@@ -4,8 +4,8 @@ import { SvgSlide } from '../ui/SlideStage';
 import {
   act,
   mountEditor,
+  openMenu,
   sampleBytes,
-  switchTab,
   type Mounted
 } from './harness';
 
@@ -36,19 +36,16 @@ it('never submits a wrapping form from toolbar buttons or inputs', async () => {
     e.preventDefault();
   });
 
-  // Every rendered toolbar button must be explicitly type=button, on every tab.
-  for (const tab of ['Home', 'Insert', 'Slide'] as const) {
-    await switchTab(host, tab);
-    const untyped = Array.from(host.querySelectorAll('button')).filter(
-      (button) => button.type !== 'button'
-    );
-    expect(untyped.map((b) => `${tab}:${b.title || b.textContent}`)).toEqual(
-      []
-    );
-  }
+  // Every rendered toolbar button must be explicitly type=button, including
+  // the buttons inside the Insert and Slide dropdown menus.
+  await openMenu(host, 'Insert');
+  await openMenu(host, 'Slide');
+  const untyped = Array.from(host.querySelectorAll('button')).filter(
+    (button) => button.type !== 'button'
+  );
+  expect(untyped.map((b) => b.title || b.textContent)).toEqual([]);
 
   // Enter inside a toolbar input must not reach the form as a submit.
-  await switchTab(host, 'Home');
   const sizeInput = host.querySelector(
     'input[title="Size"]'
   ) as HTMLInputElement;

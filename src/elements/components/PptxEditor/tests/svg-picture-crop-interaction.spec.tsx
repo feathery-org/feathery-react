@@ -12,7 +12,6 @@ import { Toolbar } from '../ui/PptxToolbar';
 import { SvgSlide } from '../ui/SlideStage';
 import { act, mountEditor, sampleBytes, type Mounted } from './harness';
 
-
 const PNG_DATA =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const PNG = Uint8Array.from(Buffer.from(PNG_DATA.split(',')[1], 'base64'));

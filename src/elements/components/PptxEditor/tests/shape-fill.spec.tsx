@@ -1,19 +1,26 @@
 import React from 'react';
 import { Toolbar } from '../ui/PptxToolbar';
 import { SvgSlide } from '../ui/SlideStage';
-import { act, mountEditor, sampleBytes, switchTab, type Mounted } from './harness';
+import { act, mountEditor, sampleBytes, type Mounted } from './harness';
 
 let mounted: Mounted | null = null;
-afterEach(async () => { await mounted?.unmount(); mounted = null; });
+afterEach(async () => {
+  await mounted?.unmount();
+  mounted = null;
+});
 
 it('changes a shape fill from the toolbar, renders it, and round-trips undo', async () => {
-  mounted = await mountEditor(<><Toolbar /><SvgSlide /></>);
+  mounted = await mountEditor(
+    <>
+      <Toolbar />
+      <SvgSlide />
+    </>
+  );
   const { host, store } = mounted;
   await act(async () => store.loadFile(sampleBytes(), 'sample.pptx'));
   const slide = store.getState().deck!.slides[0];
   let created = '';
   await act(async () => {
-    await switchTab(host, 'Insert');
     const res = store.executeCommand({
       type: 'insert-shape',
       slideId: slide.path,
@@ -29,7 +36,6 @@ it('changes a shape fill from the toolbar, renders it, and round-trips undo', as
     created = res!.createdShapeIds[0];
     store.select(created);
   });
-  await switchTab(host, 'Home');
   const fill = host.querySelector(
     'input[title="Shape fill color"]'
   ) as HTMLInputElement;
