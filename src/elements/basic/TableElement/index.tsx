@@ -18,6 +18,8 @@ import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
 import { useHubTableSource } from './useHubTableSource';
+import { useHiddenFieldTableSource } from './useHiddenFieldTableSource';
+import { ColumnEditor } from './ColumnEditor';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
 import {
@@ -29,12 +31,20 @@ import {
 import {
   CellErrors,
   cellErrorKey,
+  CellValueType,
+  EDITABLE_CELL_VALUE_TYPES,
   fieldCellRules,
   mergeCellErrors,
   validateGrid
 } from './spreadsheet/validation';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
-import { AddColumnHandler, CellWrite, GetCellShading } from './types';
+import {
+  CellWrite,
+  ColumnControls,
+  ColumnDraft,
+  ColumnRequest,
+  GetCellShading
+} from './types';
 import { STATUS_HUB_FIELD_ID } from './hubStatus';
 import { TrashIcon } from '../../components/icons';
 import { clearUnsavedWork, setUnsavedWork } from '../../../utils/unsavedWork';
@@ -103,6 +113,10 @@ function TableElement({
     !!element.properties?.hub_id &&
     !editMode;
 
+  // Hidden field-backed tables keep the whole grid, as an array of rows of
+  // cells, in one hidden field. The builder previews placeholder columns.
+  const isHiddenField = element.properties?.data_source === 'hidden_field';
+
   const wantsSpreadsheet = element.properties?.display_mode === 'spreadsheet';
 
   /**
@@ -123,10 +137,21 @@ function TableElement({
     blockRefetch: hasPendingEdits
   });
 
+  const hiddenField = useHiddenFieldTableSource({
+    hiddenFieldKey: element.properties?.hidden_field_key,
+    enabled: isHiddenField,
+    editMode,
+    keepInvalidEdits: !wantsSpreadsheet,
+    updateFieldValues,
+    submitCustom,
+    onMutate
+  });
+
   const elementForData = useMemo(() => {
     const properties = {
       ...element.properties,
       ...(isHub ? { columns: hub.hubColumns } : {}),
+      ...(isHiddenField ? { columns: hiddenField.hiddenFieldColumns } : {}),
       // Features the spreadsheet has no place for. They are overridden here
       // rather than cleared off the element, so switching back to the classic
       // table restores whatever the builder had configured.
@@ -141,7 +166,14 @@ function TableElement({
         : {})
     };
     return { ...element, properties };
-  }, [isHub, element, hub.hubColumns, wantsSpreadsheet]);
+  }, [
+    isHub,
+    isHiddenField,
+    element,
+    hub.hubColumns,
+    hiddenField.hiddenFieldColumns,
+    wantsSpreadsheet
+  ]);
 
   const {
     // search
@@ -190,7 +222,11 @@ function TableElement({
       ? sampleRowCount(element.styles?.height_unit, element.styles?.height)
       : undefined,
     dataVersion,
-    externalFieldValues: isHub ? hub.hubFieldValues : undefined
+    externalFieldValues: isHub
+      ? hub.hubFieldValues
+      : isHiddenField
+      ? hiddenField.hiddenFieldValues
+      : undefined
   });
 
   const fieldMutations = useTableMutations({
@@ -206,7 +242,8 @@ function TableElement({
     onMutate
   });
 
-  // In Hub mode the writes go to the Data Hub instead of form field values.
+  // In Hub mode the writes go to the Data Hub instead of form field values,
+  // and in hidden field mode they are folded into that field's grid.
   const {
     handleAddRow,
     handleInsertRow,
@@ -221,20 +258,21 @@ function TableElement({
         handleCellEdit: hub.handleCellEdit,
         handleCellsEdit: hub.handleCellsEdit
       }
+    : isHiddenField
+    ? hiddenField
     : fieldMutations;
-
-  /**
-   * Adding a column only has a meaning for a data source that owns its own
-   * schema — the columns of a field-backed table are designer-defined element
-   * properties, and a Hub's are the Hub's own fields. The grid renders its add
-   * affordance only when a source supplies this, so today it never appears.
-   */
-  const handleAddColumn: AddColumnHandler | undefined = undefined;
+  const handleRemoveRowLocal = isHiddenField
+    ? hiddenField.handleRemoveRowLocal
+    : fieldMutations.handleRemoveRowLocal;
 
   const tableId = element?.id;
 
   const isSpreadsheet = wantsSpreadsheet;
-  const canEdit = enableEditing && !isTransposed && !(isHub && hub.loading);
+  const canEdit =
+    enableEditing &&
+    !isTransposed &&
+    !(isHub && hub.loading) &&
+    !(isHiddenField && hiddenField.formatError);
   const canAddRows = canEdit && enableAddDeleteRows;
   // The spreadsheet has its own trailing "add row" strip and a row-header
   // context menu, so the toolbar button would be a second way to do the same
@@ -453,13 +491,19 @@ function TableElement({
 
   /**
    * The column rules the spreadsheet validates against. A Hub owns its own
-   * field schema; a field-backed table has only each column's form field type,
+   * field schema, and a hidden field's header row types each column; a
+   * field-backed table has only each column's form field type,
    * so it can check formats but not the field's own required/length settings —
    * those are enforced when the step is submitted.
    */
   const cellRules = useMemo(
-    () => (isHub ? hub.cellRules : fieldCellRules(columns)),
-    [isHub, hub.cellRules, columns]
+    () =>
+      isHub
+        ? hub.cellRules
+        : isHiddenField
+        ? hiddenField.cellRules
+        : fieldCellRules(columns),
+    [isHub, hub.cellRules, isHiddenField, hiddenField.cellRules, columns]
   );
 
   /**
@@ -634,7 +678,7 @@ function TableElement({
     else {
       [...pendingAddRowsRef.current]
         .sort((a, b) => b - a)
-        .forEach((rowIndex) => fieldMutations.handleRemoveRowLocal(rowIndex));
+        .forEach((rowIndex) => handleRemoveRowLocal(rowIndex));
     }
     setPendingAddRows(new Set());
     bumpRowIdentity();
@@ -643,7 +687,7 @@ function TableElement({
     bumpRowIdentity,
     isHub,
     hub.discardNewRows,
-    fieldMutations.handleRemoveRowLocal
+    handleRemoveRowLocal
   ]);
 
   /**
@@ -688,10 +732,139 @@ function TableElement({
     wrappedHandleDeleteRow
   ]);
 
+  /**
+   * Changing columns only has a meaning for a data source that owns its own
+   * schema — the columns of a field-backed table are designer-defined element
+   * properties, and a Hub's are the Hub's own fields — so only a hidden field
+   * source offers it, each change behind its own builder setting. A flipped
+   * table has no column headers to put the controls on, and an unreadable
+   * value is never rewritten.
+   */
+  const [columnRequest, setColumnRequest] = useState<ColumnRequest | null>(
+    null
+  );
+  const closeColumnRequest = useCallback(() => setColumnRequest(null), []);
+  const columnsEditable =
+    isHiddenField && !isTransposed && !hiddenField.formatError;
+  const canAddColumns =
+    columnsEditable && !!element.properties?.enable_column_adding;
+  // Held edits are keyed by column position, so removing or inserting one
+  // would shift them onto its neighbours, and editing one could change its
+  // type so a held value no longer fits and is dropped on save; the
+  // spreadsheet saves or discards them first. Appending shifts nothing, so it
+  // is always allowed.
+  const columnsShiftable = !(buffersEdits && pendingEdits.count > 0);
+  const canInsertColumns = canAddColumns && columnsShiftable;
+  // A column's own `canEdit` / `canDelete`, when it sets one, overrides the
+  // table's setting for that column.
+  const tableEditsColumns = !!element.properties?.enable_column_editing;
+  const tableDeletesColumns = !!element.properties?.enable_column_deletion;
+  const { columnPermissions } = hiddenField;
+  const canEditColumn = useCallback(
+    (fieldKey: string) =>
+      columnsEditable &&
+      columnsShiftable &&
+      (columnPermissions[fieldKey]?.canEdit ?? tableEditsColumns),
+    [columnsEditable, columnsShiftable, columnPermissions, tableEditsColumns]
+  );
+  const canDeleteColumn = useCallback(
+    (fieldKey: string) =>
+      columnsEditable &&
+      columnsShiftable &&
+      (columnPermissions[fieldKey]?.canDelete ?? tableDeletesColumns),
+    [columnsEditable, columnsShiftable, columnPermissions, tableDeletesColumns]
+  );
+  // A cell edit buffered while a column's editor, insert or delete prompt is
+  // open withdraws that permission, so the open request is withdrawn with it.
+  useEffect(() => {
+    if (columnsShiftable || !columnRequest) return;
+    const appends =
+      columnRequest.kind === 'add' &&
+      (columnRequest.atIndex === undefined ||
+        columnRequest.atIndex >= columns.length);
+    if (!appends) setColumnRequest(null);
+  }, [columnsShiftable, columnRequest, columns.length]);
+  const anyColumnChangeable = columns.some(
+    (column) =>
+      canEditColumn(column.field_key) || canDeleteColumn(column.field_key)
+  );
+  const columnControls = useMemo<ColumnControls | undefined>(
+    () =>
+      canAddColumns || anyColumnChangeable
+        ? {
+            canAdd: canAddColumns,
+            canInsert: canInsertColumns,
+            canEdit: canEditColumn,
+            canDelete: canDeleteColumn,
+            // The builder previews the controls but has no value to change.
+            onRequest: editMode ? () => {} : setColumnRequest
+          }
+        : undefined,
+    [
+      canAddColumns,
+      anyColumnChangeable,
+      canInsertColumns,
+      canEditColumn,
+      canDeleteColumn,
+      editMode
+    ]
+  );
+
+  // Sort keys and the spreadsheet's undo history both carry column positions,
+  // which shift once a column is removed or inserted before others.
+  const resetForColumnShift = useCallback(() => {
+    if (sortColumn !== null) setSort(null);
+    setEditingCell(null);
+    bumpRowIdentity();
+  }, [sortColumn, setSort, bumpRowIdentity]);
+
+  const handleSaveColumn = useCallback(
+    (draft: ColumnDraft) => {
+      if (columnRequest?.kind === 'add') {
+        const { atIndex } = columnRequest;
+        if (atIndex !== undefined && atIndex < columns.length)
+          resetForColumnShift();
+        hiddenField.handleAddColumn(draft, atIndex);
+      } else if (columnRequest?.kind === 'edit')
+        hiddenField.handleEditColumn(columnRequest.fieldKey, draft);
+      setColumnRequest(null);
+    },
+    [columnRequest, hiddenField, columns.length, resetForColumnShift]
+  );
+
+  const handleConfirmDeleteColumn = useCallback(() => {
+    if (columnRequest?.kind !== 'delete') return;
+    resetForColumnShift();
+    hiddenField.handleDeleteColumn(columnRequest.fieldKey);
+    setColumnRequest(null);
+  }, [columnRequest, hiddenField, resetForColumnShift]);
+
+  const columnTypeOptions = useMemo(
+    () =>
+      Object.entries(EDITABLE_CELL_VALUE_TYPES).map(([value, label]) => ({
+        value: value as CellValueType,
+        label
+      })),
+    []
+  );
+
+  const hiddenFieldFormatError = isHiddenField ? hiddenField.formatError : null;
+  // The builder has no submitted value to read, so rather than claim the
+  // table is empty it names the hidden field the rows will sync with.
+  const hiddenFieldKey = element.properties?.hidden_field_key;
+  const hiddenFieldEmptyMessage =
+    isHiddenField && editMode
+      ? hiddenFieldKey
+        ? `Syncing data with hidden field: {{${hiddenFieldKey}}}`
+        : 'Select a hidden field to sync data with'
+      : undefined;
   const showEmptyState =
     (!hasData || !hasSearchResults) &&
     !(isSpreadsheet && canAddRows && columns.length > 0);
-  const showToolbar = enableSearch || showAddRow;
+  // The spreadsheet adds columns from its trailing header, but with no
+  // columns there is no grid to hold one, so the toolbar offers it instead.
+  const showAddColumn = canAddColumns && (!isSpreadsheet || showEmptyState);
+  const showToolbar = enableSearch || showAddRow || showAddColumn;
 
   // Column sizing: 'equal' uses a fixed table layout so data columns share the
   // width evenly. Resolved through the responsive style path so desktop
@@ -754,16 +927,72 @@ function TableElement({
           ) : (
             <div />
           )}
-          {showAddRow && (
-            <button
-              type='button'
-              className={TABLE_CLASS.addRowButton}
-              css={addRowButtonStyle}
-              onClick={wrappedHandleAddRow}
-            >
-              + Add Row
-            </button>
+          {(showAddRow || showAddColumn) && (
+            <div css={{ display: 'flex', gap: '8px' }}>
+              {showAddColumn && (
+                <button
+                  type='button'
+                  className={TABLE_CLASS.addColumnButton}
+                  css={addRowButtonStyle}
+                  onClick={(event) =>
+                    columnControls?.onRequest({
+                      kind: 'add',
+                      anchor: event.currentTarget
+                    })
+                  }
+                >
+                  + Add Column
+                </button>
+              )}
+              {showAddRow && (
+                <button
+                  type='button'
+                  className={TABLE_CLASS.addRowButton}
+                  css={addRowButtonStyle}
+                  onClick={wrappedHandleAddRow}
+                >
+                  + Add Row
+                </button>
+              )}
+            </div>
           )}
+        </div>
+      )}
+      {columnRequest && columnRequest.kind !== 'delete' && (
+        <ColumnEditor
+          key={
+            columnRequest.kind === 'edit'
+              ? `edit:${columnRequest.fieldKey}`
+              : 'add'
+          }
+          anchorEl={columnRequest.anchor}
+          initial={
+            columnRequest.kind === 'edit'
+              ? hiddenField.getColumnDraft(columnRequest.fieldKey)
+              : null
+          }
+          typeOptions={columnTypeOptions}
+          onSave={handleSaveColumn}
+          onCancel={closeColumnRequest}
+        />
+      )}
+      {columnRequest?.kind === 'delete' && (
+        <DeleteConfirm
+          anchorEl={columnRequest.anchor}
+          message={`Delete column "${
+            hiddenField.getColumnDraft(columnRequest.fieldKey)?.name ?? ''
+          }" and its values?`}
+          onConfirm={handleConfirmDeleteColumn}
+          onCancel={closeColumnRequest}
+        />
+      )}
+      {isHiddenField && hiddenField.editErrors.length > 0 && (
+        <div role='alert' className={TABLE_CLASS.error} css={errorBannerStyle}>
+          <ul>
+            {hiddenField.editErrors.map((error, index) => (
+              <li key={`${error}-${index}`}>{error}</li>
+            ))}
+          </ul>
         </div>
       )}
       {isHub && hub.errors.length > 0 && (
@@ -775,8 +1004,17 @@ function TableElement({
           </ul>
         </div>
       )}
-      {showEmptyState ? (
-        <EmptyState hasSearchQuery={searchQuery.trim().length > 0} />
+      {/* An unreadable value replaces the table: there are no rows or columns
+          to show, and "No data available" would misstate what is stored. */}
+      {hiddenFieldFormatError ? (
+        <div role='alert' className={TABLE_CLASS.error} css={errorBannerStyle}>
+          {hiddenFieldFormatError}
+        </div>
+      ) : showEmptyState ? (
+        <EmptyState
+          hasSearchQuery={searchQuery.trim().length > 0}
+          message={hiddenFieldEmptyMessage}
+        />
       ) : isSpreadsheet ? (
         <SpreadsheetTable
           columns={columns}
@@ -785,7 +1023,7 @@ function TableElement({
           canEdit={canEdit}
           heightUnit={element.styles?.height_unit}
           onCellsEdit={spreadsheetCellsEdit}
-          onAddColumn={handleAddColumn}
+          columnControls={columnControls}
           onInsertRow={canAddRows ? spreadsheetInsertRow : undefined}
           onDeleteRow={canDeleteRows ? spreadsheetDeleteRow : undefined}
           getCellShading={getCellShading}
@@ -839,6 +1077,12 @@ function TableElement({
                     sortDirection={sortDirection}
                     onSort={handleSort}
                     styles={styles}
+                    columnControls={columnControls}
+                    activeColumnKey={
+                      columnRequest && columnRequest.kind !== 'add'
+                        ? columnRequest.fieldKey
+                        : null
+                    }
                   />
                   {actions.length > 0 && (
                     <th
@@ -943,6 +1187,16 @@ function TableElement({
 
                       const CellElement = isFirstColInTranspose ? 'th' : 'td';
 
+                      // A hidden field cell that breaks its column's rule is
+                      // kept as typed and tinted until it is fixed; the list
+                      // above the table says what is wrong with it.
+                      const cellError =
+                        isHiddenField && !isTransposed
+                          ? hiddenField.cellErrors[
+                              cellErrorKey(rowIndex, column.field_key)
+                            ]
+                          : undefined;
+
                       const handleCellClick = (e: React.MouseEvent) => {
                         if (isSortable) {
                           handleTransposedSort(rowIndex);
@@ -995,7 +1249,15 @@ function TableElement({
                               : TABLE_CLASS.cell
                           }
                           data-feathery-field={cellFieldKey}
-                          css={cellCss}
+                          css={
+                            cellError
+                              ? {
+                                  ...cellCss,
+                                  backgroundColor: validationColors.errorSurface
+                                }
+                              : cellCss
+                          }
+                          {...(cellError ? { title: cellError } : {})}
                           onClick={handleCellClick}
                           {...(isFirstColInTranspose ? { scope: 'row' } : {})}
                         >

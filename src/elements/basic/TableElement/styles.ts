@@ -534,3 +534,123 @@ export const confirmDeleteButtonStyle = {
     color: colors.white
   }
 } as const;
+
+export const columnEditorStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '10px',
+  width: '240px'
+} as const;
+
+export const columnEditorLabelStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '4px',
+  fontSize: '13px',
+  fontWeight: '500',
+  color: colors.gray700
+} as const;
+
+// The label sits above its checkbox, like the other fields, and hugs its
+// content so a click beside the box does not toggle it.
+export const columnEditorCheckboxLabelStyle = {
+  ...columnEditorLabelStyle,
+  alignSelf: 'flex-start',
+  cursor: 'pointer'
+} as const;
+
+// Sized to read as a control of its own under the label, not a text bullet.
+export const columnEditorCheckboxStyle = {
+  width: '20px',
+  height: '20px',
+  margin: '0 0 0 4px',
+  cursor: 'pointer',
+  accentColor: colors.blue700
+} as const;
+
+export const columnEditorInputStyle = {
+  width: '100%',
+  height: '32px',
+  padding: '4px 8px',
+  border: `1px solid ${colors.gray300}`,
+  borderRadius: '6px',
+  fontSize: '14px',
+  color: colors.gray900,
+  backgroundColor: colors.white,
+  boxSizing: 'border-box' as const,
+  fontFamily: 'inherit',
+  '&:focus': {
+    outline: 'none',
+    borderColor: colors.blue700
+  }
+} as const;
+
+export const columnEditorErrorStyle = {
+  margin: 0,
+  fontSize: '12px',
+  fontWeight: '400',
+  color: colors.red600
+} as const;
+
+export const confirmPrimaryButtonStyle = {
+  ...buttonStyle,
+  borderRadius: '6px',
+  paddingLeft: '12px',
+  paddingRight: '12px',
+  height: '32px',
+  backgroundColor: colors.blue700,
+  color: colors.white,
+  border: `1px solid ${colors.blue700}`,
+  '&:hover': {
+    backgroundColor: colors.blue700,
+    color: colors.white,
+    opacity: 0.9
+  },
+  '&:disabled': {
+    opacity: 0.5,
+    cursor: 'auto'
+  },
+  '&:disabled:hover': {
+    backgroundColor: colors.blue700,
+    color: colors.white
+  }
+} as const;
+
+// Edit and delete controls in a classic header cell, shown while it is hovered.
+export const headerColumnControlsStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '2px',
+  marginLeft: '4px',
+  opacity: 0,
+  transition: 'opacity 0.15s',
+  'th:hover &, &:focus-within': {
+    opacity: 1
+  }
+} as const;
+
+export const headerColumnButtonStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '24px',
+  height: '24px',
+  borderRadius: '4px',
+  border: 'none',
+  backgroundColor: 'transparent',
+  color: colors.gray400,
+  cursor: 'pointer',
+  padding: 0,
+  '&:hover': {
+    backgroundColor: colors.gray100,
+    color: colors.gray900
+  }
+} as const;
+
+export const headerColumnDeleteButtonStyle = {
+  ...headerColumnButtonStyle,
+  '&:hover': {
+    backgroundColor: colors.gray100,
+    color: colors.red500
+  }
+} as const;

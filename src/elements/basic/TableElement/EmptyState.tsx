@@ -3,9 +3,11 @@ import { TABLE_CLASS } from './classNames';
 
 type EmptyStateProps = {
   hasSearchQuery: boolean;
+  // Replaces the default "No data available" when there are no rows to show
+  message?: string;
 };
 
-export function EmptyState({ hasSearchQuery }: EmptyStateProps) {
+export function EmptyState({ hasSearchQuery, message }: EmptyStateProps) {
   return (
     <div className={TABLE_CLASS.empty} css={emptyStateContainerStyle}>
       {hasSearchQuery && (
@@ -29,7 +31,7 @@ export function EmptyState({ hasSearchQuery }: EmptyStateProps) {
         </svg>
       )}
       <p css={emptyStateTextStyle}>
-        {hasSearchQuery ? 'No results found' : 'No data available'}
+        {hasSearchQuery ? 'No results found' : message ?? 'No data available'}
       </p>
       {hasSearchQuery && (
         <p css={{ ...emptyStateTextStyle, fontSize: '14px', marginTop: '8px' }}>

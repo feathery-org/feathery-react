@@ -9,6 +9,7 @@ import FormClosedIcon from './FormClosed';
 import HideEyeIcon from './HideEyeIcon';
 import ShowEyeIcon from './ShowEyeIcon';
 import TrashIcon from './TrashIcon';
+import PencilIcon from './PencilIcon';
 import MicrophoneIcon from './Microphone';
 
 export {
@@ -22,6 +23,7 @@ export {
   FormClosedIcon,
   HideEyeIcon,
   MicrophoneIcon,
+  PencilIcon,
   ShowEyeIcon,
   TrashIcon
 };
