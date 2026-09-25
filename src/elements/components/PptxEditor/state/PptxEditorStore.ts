@@ -350,6 +350,25 @@ export class PptxEditorStore {
     this.setActiveSlide(Math.min(Math.max(atIndex, 0), count - 1));
   };
 
+  /** Reorder: move the slide at fromIndex to toIndex; active follows it. */
+  moveSlide = (fromIndex: number, toIndex: number): void => {
+    const deck = this.state.deck;
+    if (!deck) return;
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      fromIndex >= deck.slides.length
+    )
+      return;
+    const result = this.executeCommand(
+      { type: 'move-slide', fromIndex, toIndex },
+      'Move slide'
+    );
+    if (!result?.changed) return;
+    const count = this.state.deck?.slides.length ?? 1;
+    this.setActiveSlide(Math.max(0, Math.min(toIndex, count - 1)));
+  };
+
   /** Delete a slide by path; never removes the deck's last slide. */
   deleteSlide = (slideId: string): void => {
     const deck = this.state.deck;

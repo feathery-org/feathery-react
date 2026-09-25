@@ -13,7 +13,7 @@ import {
 import { importDeck } from '../core/model/import';
 import { deckToJSON, type DeckJSON } from '../core/model/json';
 import { setSlideSize } from '../core/model/slideSize';
-import { addSlide, deleteSlide } from '../core/model/slides';
+import { addSlide, deleteSlide, moveSlide } from '../core/model/slides';
 import {
   addAutoShape,
   addTableColumn,
@@ -555,6 +555,12 @@ export class PptxEditorEngine {
         deleteSlide(deck, command.slideId);
         invalidations = [{ kind: 'deck' }];
         defaultLabel = 'Delete slide';
+        break;
+      }
+      case 'move-slide': {
+        moveSlide(deck, command.fromIndex, command.toIndex);
+        invalidations = [{ kind: 'deck' }];
+        defaultLabel = 'Move slide';
         break;
       }
     }

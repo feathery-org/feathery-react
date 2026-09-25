@@ -128,6 +128,22 @@ export function addSlide(
   return newPath;
 }
 
+/** Move the slide at `fromIndex` to `toIndex` (final position in the list). */
+export function moveSlide(
+  deck: Deck,
+  fromIndex: number,
+  toIndex: number
+): void {
+  const lst = sldIdLst(deck);
+  const entries = childrenOf(lst);
+  if (fromIndex < 0 || fromIndex >= entries.length) return;
+  const [moved] = entries.splice(fromIndex, 1);
+  const to = Math.max(0, Math.min(toIndex, entries.length));
+  entries.splice(to, 0, moved);
+  deck.pkg.markDirty(PRES);
+  rebuildSlides(deck);
+}
+
 /** Delete a slide by part path. Leaves orphaned media parts (harmless). */
 export function deleteSlide(deck: Deck, slidePath: string): void {
   const pkg = deck.pkg;

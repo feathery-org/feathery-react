@@ -81,6 +81,22 @@ describe('slide add / delete / duplicate', () => {
     expect(restored).toBe(victimJson);
   });
 
+  it('moves a slide and is undoable', () => {
+    const engine = loadedEngine();
+    const before = paths(engine);
+    // Move slide 0 to position 2.
+    engine.execute({ type: 'move-slide', fromIndex: 0, toIndex: 2 });
+    const after = paths(engine);
+    expect(after.length).toBe(before.length);
+    expect(after[2]).toBe(before[0]);
+    expect(after[0]).toBe(before[1]);
+
+    engine.undo();
+    expect(paths(engine)).toEqual(before);
+    engine.redo();
+    expect(paths(engine)).toEqual(after);
+  });
+
   it('exports a valid package after add and delete (reimports cleanly)', () => {
     const deck = importDeck(fixture);
     const original = deck.slides.length;

@@ -91,7 +91,6 @@ const SHAPE_PRESETS = [
 // Contextual table tools get a warm tint so they read as tied to the selection,
 // mirroring PowerPoint's contextual-tab convention at Feathery visual weight.
 const AMBER = '#92610e';
-const AMBER_WASH = '#fdf6e7';
 
 const styles = {
   wrap: {
@@ -724,6 +723,10 @@ export function Toolbar({
   const canFillShape = sh?.type === 'shape' || sh?.type === 'text';
   const isTable = sh?.type === 'table';
   const isPicture = sh?.type === 'pic';
+  // Hide the text/fill cluster when it does not apply: a picture (crop tools
+  // only) or a table with no cell context. Font editing appears for a table
+  // only once a cell is clicked into or its content is selected.
+  const hideTextCluster = isPicture || (isTable && !selectedTableRange);
 
   const [tableHover, setTableHover] = useState({ rows: 3, cols: 3 });
   const [borderTarget, setBorderTarget] = useState<
@@ -1442,10 +1445,9 @@ export function Toolbar({
             store.setTextToolbarPointer(false);
           }}
         >
-          {/* A selected picture only exposes arrange/delete/crop; the text and
-            fill controls are all inert for it, so hide them to keep the crop
-            controls from overflowing the row. */}
-          {!isPicture && (
+          {/* The text/fill cluster is hidden when it does not apply (a picture,
+            or a table with no active cell) so the contextual tools have room. */}
+          {!hideTextCluster && (
             <>
               <select
                 disabled={!isText}
@@ -1784,10 +1786,13 @@ export function Toolbar({
           </B>
           <span css={styles.sep} />
           {/* Deck-wide slide-number toggle: not tied to the selection, so it
-            lives on the persistent row rather than the Insert menu. */}
-          <B
+            lives on the persistent row rather than the Insert menu. Active
+            state is shown as red text (no heavy grey fill). */}
+          <button
+            type='button'
             disabled={!slide}
-            on={!!slideNumberShape}
+            aria-pressed={!!slideNumberShape}
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() =>
               executeCommand(
                 {
@@ -1802,9 +1807,14 @@ export function Toolbar({
                 ? 'Remove slide numbers from every slide'
                 : 'Add slide numbers to every slide (delete the box on a slide to opt just that slide out)'
             }
+            css={{
+              ...styles.btn(false, !slide),
+              color: slideNumberShape ? FEATHERY_RED : ZINC[700],
+              fontWeight: slideNumberShape ? 600 : 500
+            }}
           >
             Slide #
-          </B>
+          </button>
           {sh?.type === 'pic' && pictureCrop && (
             <>
               <span css={styles.sep} />
@@ -1894,8 +1904,7 @@ export function Toolbar({
               return (
                 <>
                   <span css={styles.sep} />
-                  {/* Contextual table tools: appear while a table is
-                      selected, tinted so they read as tied to the selection. */}
+                  {/* Contextual table tools: appear while a table is selected. */}
                   <span
                     role='group'
                     aria-label='Table tools'
@@ -1903,13 +1912,10 @@ export function Toolbar({
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 2,
-                      padding: '2px 6px',
-                      borderRadius: 8,
-                      background: AMBER_WASH,
                       flex: '0 0 auto'
                     }}
                   >
-                    <span css={{ ...styles.label, color: AMBER }}>Table</span>
+                    <span css={styles.label}>Table</span>
                     <B
                       onClick={() =>
                         editTable([{ kind: 'fit-rows' }], 'Fit table rows')
@@ -2041,7 +2047,6 @@ export function Toolbar({
                       title='Table borders'
                       label='Borders'
                       width={216}
-                      amber
                     >
                       {(close) => (
                         <>

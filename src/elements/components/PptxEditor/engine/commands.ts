@@ -160,7 +160,8 @@ export type EditorCommand =
       atIndex: number;
       duplicateOf?: string;
     }
-  | { type: 'delete-slide'; slideId: string };
+  | { type: 'delete-slide'; slideId: string }
+  | { type: 'move-slide'; fromIndex: number; toIndex: number };
 
 export type Invalidation =
   | { kind: 'shapes'; slideId: string; shapeIds: string[] }
