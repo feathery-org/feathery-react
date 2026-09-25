@@ -29,11 +29,76 @@ describe('formula', () => {
   });
 
   it('parses a bare reference as a whole expression (mirror authoring)', () => {
-    expect(parseExpression('A')).toEqual({ ref: 'A' });
+    expect(parseExpression('alpha')).toEqual({ ref: 'alpha' });
     expect(parseExpression('costs.line_total')).toEqual({
       ref: 'costs.line_total'
     });
-    expect(collectRefs(parseExpression('A'))).toEqual(['A']);
+    expect(collectRefs(parseExpression('alpha'))).toEqual(['alpha']);
+  });
+
+  it('parses positional cells and ranges', () => {
+    expect(parseExpression('B3')).toEqual({
+      cell: { table: null, col: 1, row: 3 }
+    });
+    expect(parseExpression('summary!B3')).toEqual({
+      cell: { table: 'summary', col: 1, row: 3 }
+    });
+    expect(parseExpression('sum(B2:B9)')).toEqual({
+      op: 'sum',
+      args: [
+        { range: { table: null, startCol: 1, startRow: 2, endCol: 1, endRow: 9 } }
+      ]
+    });
+    expect(parseExpression('sum(B2:end)')).toEqual({
+      op: 'sum',
+      args: [
+        {
+          range: {
+            table: null,
+            startCol: 1,
+            startRow: 2,
+            endCol: 1,
+            endRow: 'end'
+          }
+        }
+      ]
+    });
+    expect(parseExpression('sum(summary!B2:end)')).toEqual({
+      op: 'sum',
+      args: [
+        {
+          range: {
+            table: 'summary',
+            startCol: 1,
+            startRow: 2,
+            endCol: 1,
+            endRow: 'end'
+          }
+        }
+      ]
+    });
+    // Bounds normalize: B9:B2 is the same range as B2:B9. AA -> col 26.
+    expect(parseExpression('sum(B9:B2)')).toEqual(parseExpression('sum(B2:B9)'));
+    expect(parseExpression('AA2')).toEqual({
+      cell: { table: null, col: 26, row: 2 }
+    });
+    // Lowercase is a NAME, not a cell (uppercase-only classification).
+    expect(parseExpression('b2')).toEqual({ ref: 'b2' });
+  });
+
+  it('rejects malformed positional refs', () => {
+    const bad = [
+      'end', // only valid as a range bound
+      'sum(end:B2)',
+      'sum(B2:)',
+      'sum(B2:foo)',
+      'foo:B2', // range must start with a cell
+      'a.b!B2', // dotted table qualifier
+      'summary!foo' // qualifier must be followed by a cell
+    ];
+    for (const src of bad) {
+      expect(() => parseExpression(src)).toThrow(FormulaError);
+    }
   });
 
   it('rejects everything outside the allowlist', () => {
