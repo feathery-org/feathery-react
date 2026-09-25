@@ -749,8 +749,11 @@ it('moves a table inserted from the toolbar from its selection handle', async ()
   const host = mounted.host;
   await act(async () => store.loadFile(sampleBytes(), 'sample.pptx'));
   const slide = store.getState().deck!.slides[0];
-  // The Insert menu carries the size picker; choose 3x3 from the grid.
+  // The Insert menu holds a Table submenu whose flyout is the size picker.
   await openMenu(host, 'Insert');
+  await act(async () =>
+    (host.querySelector('button[title="Table"]') as HTMLButtonElement).click()
+  );
   await act(async () =>
     (
       host.querySelector(

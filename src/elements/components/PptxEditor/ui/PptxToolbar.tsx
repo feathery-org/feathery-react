@@ -508,6 +508,70 @@ function MenuButton(props: {
   );
 }
 
+/**
+ * A nested menu row inside a MenuButton panel: hovering the row opens a
+ * flyout panel beside it (to the right, flipping left near the viewport
+ * edge). Used to collapse the shape list and table-size grid.
+ */
+function SubMenu(props: {
+  label: React.ReactNode;
+  icon?: React.ReactNode;
+  title: string;
+  width?: number;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ left: 0, top: 0 });
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const width = props.width ?? 200;
+
+  const openFlyout = () => {
+    const r = rowRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const win = featheryWindow();
+    const overflowRight = r.right + width + 8 > (win.innerWidth ?? Infinity);
+    setPos({
+      left: overflowRight ? r.left - width - 2 : r.right + 2,
+      top: r.top - 6
+    });
+    setOpen(true);
+  };
+
+  return (
+    <span
+      css={{ display: 'block', position: 'relative' }}
+      onMouseEnter={openFlyout}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        ref={rowRef}
+        type='button'
+        css={styles.menuItem}
+        title={props.title}
+        aria-haspopup='true'
+        aria-expanded={open}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => (open ? setOpen(false) : openFlyout())}
+      >
+        {props.icon}
+        {props.label}
+        <span css={{ marginLeft: 'auto', fontSize: 10, color: ZINC[500] }}>
+          ▸
+        </span>
+      </button>
+      {open && (
+        <div
+          role='group'
+          aria-label={props.title}
+          css={styles.menuPanel(pos.left, pos.top, width)}
+        >
+          {props.children}
+        </div>
+      )}
+    </span>
+  );
+}
+
 export function Toolbar({
   devJson = false,
   rightActions
@@ -1038,47 +1102,28 @@ export function Toolbar({
                   </svg>
                   Image…
                 </button>
-                <button
-                  type='button'
-                  css={styles.menuItem}
-                  title={
-                    slideNumberShape
-                      ? 'Remove slide numbers from every slide'
-                      : 'Add slide numbers to every slide (delete the box on a slide to opt just that slide out)'
-                  }
-                  onClick={() => {
-                    executeCommand(
-                      {
-                        type: 'toggle-deck-slide-numbers',
-                        enabled: !slideNumberShape
-                      },
-                      slideNumberShape
-                        ? 'Remove slide numbers'
-                        : 'Add slide numbers'
-                    );
-                    close();
-                  }}
-                >
-                  <span
-                    css={{
-                      width: 18,
-                      textAlign: 'center',
-                      fontWeight: 600,
-                      flex: '0 0 auto'
-                    }}
-                  >
-                    #
-                  </span>
-                  Slide numbers
-                  {slideNumberShape && (
-                    <span css={{ marginLeft: 'auto', color: ZINC[500] }}>
-                      ✓
-                    </span>
-                  )}
-                </button>
                 <div css={styles.menuDivider} />
-                <span css={styles.tableLabel}>Shapes</span>
-                <div css={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <SubMenu
+                  title='Shapes'
+                  label='Shapes'
+                  width={200}
+                  icon={
+                    <svg
+                      viewBox='0 0 24 24'
+                      width={18}
+                      height={18}
+                      css={{
+                        flex: '0 0 auto',
+                        fill: 'none',
+                        stroke: 'currentColor',
+                        strokeWidth: 1.7,
+                        strokeLinejoin: 'round'
+                      }}
+                    >
+                      <path d='M4 6h9v9H4zM14 13a5 5 0 1 0 6 6' />
+                    </svg>
+                  }
+                >
                   {SHAPE_PRESETS.map((preset) => (
                     <button
                       key={preset.geometry}
@@ -1117,46 +1162,67 @@ export function Toolbar({
                       {preset.label}
                     </button>
                   ))}
-                </div>
-                <div css={styles.menuDivider} />
-                <span css={styles.tableLabel}>
-                  {tableHover.cols} × {tableHover.rows} table
-                </span>
-                <div css={styles.tableGrid}>
-                  {Array.from({ length: 48 }, (_, i) => {
-                    const row = Math.floor(i / 8) + 1;
-                    const col = (i % 8) + 1;
-                    const active =
-                      row <= tableHover.rows && col <= tableHover.cols;
-                    return (
-                      <button
-                        key={i}
-                        type='button'
-                        onMouseEnter={() =>
-                          setTableHover({ rows: row, cols: col })
-                        }
-                        onClick={() => {
-                          insertShape(
-                            {
-                              kind: 'table',
-                              rows: row,
-                              columns: col,
-                              x: 914400,
-                              y: 1828800,
-                              cx: col * 1100000,
-                              cy: row * 520000
-                            },
-                            'Insert table',
-                            true
-                          );
-                          close();
-                        }}
-                        css={styles.tableCell(active)}
-                        aria-label={`${col} columns by ${row} rows`}
-                      />
-                    );
-                  })}
-                </div>
+                </SubMenu>
+                <SubMenu
+                  title='Table'
+                  label='Table'
+                  width={166}
+                  icon={
+                    <svg
+                      viewBox='0 0 24 24'
+                      width={18}
+                      height={18}
+                      css={{
+                        flex: '0 0 auto',
+                        fill: 'none',
+                        stroke: 'currentColor',
+                        strokeWidth: 1.7,
+                        strokeLinejoin: 'round'
+                      }}
+                    >
+                      <path d='M4 5h16v14H4zM4 10h16M4 15h16M10 5v14M15 5v14' />
+                    </svg>
+                  }
+                >
+                  <span css={styles.tableLabel}>
+                    {tableHover.cols} × {tableHover.rows} table
+                  </span>
+                  <div css={styles.tableGrid}>
+                    {Array.from({ length: 48 }, (_, i) => {
+                      const row = Math.floor(i / 8) + 1;
+                      const col = (i % 8) + 1;
+                      const active =
+                        row <= tableHover.rows && col <= tableHover.cols;
+                      return (
+                        <button
+                          key={i}
+                          type='button'
+                          onMouseEnter={() =>
+                            setTableHover({ rows: row, cols: col })
+                          }
+                          onClick={() => {
+                            insertShape(
+                              {
+                                kind: 'table',
+                                rows: row,
+                                columns: col,
+                                x: 914400,
+                                y: 1828800,
+                                cx: col * 1100000,
+                                cy: row * 520000
+                              },
+                              'Insert table',
+                              true
+                            );
+                            close();
+                          }}
+                          css={styles.tableCell(active)}
+                          aria-label={`${col} columns by ${row} rows`}
+                        />
+                      );
+                    })}
+                  </div>
+                </SubMenu>
               </>
             )}
           </MenuButton>
@@ -1675,6 +1741,29 @@ export function Toolbar({
               <path d='M6 7l1 12a2 2 0 0 0 2 1.8h6A2 2 0 0 0 17 19l1-12' />
               <path d='M10 11v6M14 11v6' />
             </svg>
+          </B>
+          <span css={styles.sep} />
+          {/* Deck-wide slide-number toggle: not tied to the selection, so it
+            lives on the persistent row rather than the Insert menu. */}
+          <B
+            disabled={!slide}
+            on={!!slideNumberShape}
+            onClick={() =>
+              executeCommand(
+                {
+                  type: 'toggle-deck-slide-numbers',
+                  enabled: !slideNumberShape
+                },
+                slideNumberShape ? 'Remove slide numbers' : 'Add slide numbers'
+              )
+            }
+            title={
+              slideNumberShape
+                ? 'Remove slide numbers from every slide'
+                : 'Add slide numbers to every slide (delete the box on a slide to opt just that slide out)'
+            }
+          >
+            Slide #
           </B>
           {sh?.type === 'pic' && pictureCrop && (
             <>
