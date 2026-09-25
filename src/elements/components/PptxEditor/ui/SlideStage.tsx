@@ -597,6 +597,12 @@ export function SvgSlide({
     row: number;
     col: number;
   } | null>(null);
+  // Right-click z-ordering menu for any non-table shape.
+  const [shapeMenu, setShapeMenu] = useState<{
+    x: number;
+    y: number;
+    shapeId: string;
+  } | null>(null);
   const [tableEdgePreview, setTableEdgePreview] = useState<{
     axis: 'column' | 'row';
     position: number;
@@ -1796,7 +1802,10 @@ export function SvgSlide({
 
   // click a shape to select (shift = add/remove); empty space starts a marquee
   const onHostDown = (e: React.MouseEvent) => {
-    if (tableMenu && e.button === 0) setTableMenu(null);
+    if (e.button === 0) {
+      if (tableMenu) setTableMenu(null);
+      if (shapeMenu) setShapeMenu(null);
+    }
     if (readOnly || gesture.current || editingId || editingCell) return;
     const t = e.target as HTMLElement;
     // Take keyboard focus so shortcuts stay scoped to THIS editor instance
@@ -1885,12 +1894,33 @@ export function SvgSlide({
     const shapeId = shapeG?.dataset.shapeId;
     const row = Number(cell?.dataset.row);
     const col = Number(cell?.dataset.col);
+    const localX = (rect?: DOMRect | null) =>
+      e.clientX - (rect?.left ?? 0) + (hostRef.current?.scrollLeft ?? 0);
+    const localY = (rect?: DOMRect | null) =>
+      e.clientY - (rect?.top ?? 0) + (hostRef.current?.scrollTop ?? 0);
+    const hostRect = hostRef.current?.getBoundingClientRect();
     if (!cell || !shapeId || !Number.isInteger(row) || !Number.isInteger(col)) {
+      // Not a table cell: offer the z-ordering menu for any other shape.
+      const anyShapeG = (e.target as HTMLElement).closest?.(
+        '[data-shape-id]'
+      ) as HTMLElement | null;
+      const anyShapeId = anyShapeG?.dataset.shapeId;
       setTableMenu(null);
+      if (!anyShapeId) {
+        setShapeMenu(null);
+        return;
+      }
+      e.preventDefault();
+      select(anyShapeId);
+      setShapeMenu({
+        x: localX(hostRect),
+        y: localY(hostRect),
+        shapeId: anyShapeId
+      });
       return;
     }
     e.preventDefault();
-    const hostRect = hostRef.current?.getBoundingClientRect();
+    setShapeMenu(null);
     select(shapeId);
     store.setTableSelection({
       shapeId,
@@ -1900,12 +1930,36 @@ export function SvgSlide({
       endCol: col
     });
     setTableMenu({
-      x: e.clientX - (hostRect?.left ?? 0) + (hostRef.current?.scrollLeft ?? 0),
-      y: e.clientY - (hostRect?.top ?? 0) + (hostRef.current?.scrollTop ?? 0),
+      x: localX(hostRect),
+      y: localY(hostRect),
       shapeId,
       row,
       col
     });
+  };
+
+  const runShapeReorder = (op: 'front' | 'forward' | 'backward' | 'back') => {
+    const menu = shapeMenu;
+    setShapeMenu(null);
+    if (!menu) return;
+    const st = store.getState();
+    const sl = st.deck?.slides[st.activeSlide];
+    if (!sl) return;
+    const labels = {
+      front: 'Bring to front',
+      forward: 'Bring forward',
+      backward: 'Send backward',
+      back: 'Send to back'
+    };
+    store.executeCommand(
+      {
+        type: 'reorder-shape',
+        slideId: sl.path,
+        shapeId: menu.shapeId,
+        operation: op
+      },
+      labels[op]
+    );
   };
 
   const runTableMenu = (
@@ -2300,6 +2354,113 @@ export function SvgSlide({
             }}
           >
             Delete table
+          </button>
+        </div>
+      )}
+      {shapeMenu && (
+        <div
+          data-overlay
+          style={{
+            position: 'absolute',
+            left: shapeMenu.x,
+            top: shapeMenu.y,
+            zIndex: 40,
+            minWidth: 176,
+            padding: 4,
+            background: '#fff',
+            border: '1px solid #e4e4e7',
+            borderRadius: 8,
+            boxShadow: '0 6px 18px rgba(23,26,28,.13)',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {(
+            [
+              ['Bring to front', 'front', 'M6 11l6-6 6 6M6 17l6-6 6 6'],
+              ['Bring forward', 'forward', 'M6 14l6-6 6 6'],
+              ['Send backward', 'backward', 'M6 10l6 6 6-6'],
+              ['Send to back', 'back', 'M6 7l6 6 6-6M6 13l6 6 6-6']
+            ] as const
+          ).map(([label, op, iconPath]) => (
+            <button
+              key={op}
+              type='button'
+              onClick={() => runShapeReorder(op)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 9,
+                width: '100%',
+                padding: '7px 10px',
+                border: 'none',
+                borderRadius: 6,
+                background: 'transparent',
+                color: '#3f3f46',
+                fontSize: 12.5,
+                textAlign: 'left',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = '#f4f4f5')
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = 'transparent')
+              }
+            >
+              <svg
+                viewBox='0 0 24 24'
+                width={15}
+                height={15}
+                style={{
+                  flex: '0 0 auto',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: 1.7,
+                  strokeLinejoin: 'round'
+                }}
+              >
+                <path d={iconPath} />
+              </svg>
+              {label}
+            </button>
+          ))}
+          <button
+            type='button'
+            onClick={() => {
+              const menu = shapeMenu;
+              setShapeMenu(null);
+              if (!menu) return;
+              const st = store.getState();
+              const sl = st.deck?.slides[st.activeSlide];
+              if (!sl) return;
+              store.executeCommand(
+                {
+                  type: 'delete-shapes',
+                  slideId: sl.path,
+                  shapeIds: [menu.shapeId]
+                },
+                'Delete shape'
+              );
+              select(null);
+            }}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '7px 10px',
+              border: 'none',
+              borderTop: '1px solid #e4e4e7',
+              borderRadius: 6,
+              background: 'transparent',
+              color: '#dc3a4b',
+              fontSize: 12.5,
+              textAlign: 'left',
+              cursor: 'pointer'
+            }}
+          >
+            Delete
           </button>
         </div>
       )}
