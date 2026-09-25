@@ -450,6 +450,9 @@ export function mapFormSettingsResponse(res: any) {
     showDocumentProgress: res.show_document_progress ?? true,
     mobileBreakpoint: res.mobile_breakpoint ?? DEFAULT_MOBILE_BREAKPOINT,
     assistantEnabled: res.ai_assistant_settings?.enabled,
+    // Beta PPTX editor gate. Undefined (backend not sending it) leaves the
+    // editor enabled; a non-internal org receives `false` server-side.
+    pptxEditorEnabled: res.pptx_editor_enabled,
     assistantColor: res.ai_assistant_settings?.color
       ? `#${res.ai_assistant_settings.color}`
       : '#6b7280',

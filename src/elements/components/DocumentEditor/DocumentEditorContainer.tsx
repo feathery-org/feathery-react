@@ -160,13 +160,19 @@ export default function DocumentEditorContainer({
   formId,
   stepId,
   editMode,
-  assistantEnabled
+  assistantEnabled,
+  // Gates the (beta) PPTX editor. Defaults to enabled so it is undisturbed
+  // when unset; the backend sends `pptx_editor_enabled: false` to hide it for
+  // orgs outside the Feathery-internal rollout. Internal-org identification is
+  // resolved server-side (org identity is not available to the SDK client).
+  pptxEditorEnabled = true
 }: {
   containerId?: string;
   formId?: string;
   stepId?: string;
   editMode?: boolean;
   assistantEnabled?: boolean;
+  pptxEditorEnabled?: boolean;
 }) {
   const pendingDraft = useMemo(
     () => getPendingDraft(containerId),
@@ -546,7 +552,7 @@ export default function DocumentEditorContainer({
       </div>
     );
   }
-  if (envelope.type === 'pptx') {
+  if (envelope.type === 'pptx' && pptxEditorEnabled) {
     return box(
       <React.Suspense
         fallback={<div css={placeholder}>Loading presentation editor…</div>}

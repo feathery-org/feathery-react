@@ -152,6 +152,23 @@ describe('DocumentEditorContainer pptx dispatch', () => {
     ).toBeInTheDocument();
   });
 
+  it('hides the PptxEditor when the feature flag is off for the org', async () => {
+    stashEnvelope();
+    render(
+      <DocumentEditorContainer
+        containerId={CONTAINER}
+        formId='form-1'
+        pptxEditorEnabled={false}
+      />
+    );
+    expect(
+      await screen.findByText("Editing pptx documents isn't supported yet.")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).not.toBeInTheDocument();
+  });
+
   it('saves through the envelope API with a .pptx filename', async () => {
     stashEnvelope();
     render(<DocumentEditorContainer containerId={CONTAINER} formId='form-1' />);
