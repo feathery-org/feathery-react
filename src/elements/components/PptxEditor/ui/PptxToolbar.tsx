@@ -523,25 +523,43 @@ function SubMenu(props: {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ left: 0, top: 0 });
   const rowRef = useRef<HTMLButtonElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const width = props.width ?? 200;
 
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  useEffect(() => cancelClose, []);
+
   const openFlyout = () => {
+    cancelClose();
     const r = rowRef.current?.getBoundingClientRect();
     if (!r) return;
     const win = featheryWindow();
     const overflowRight = r.right + width + 8 > (win.innerWidth ?? Infinity);
     setPos({
-      left: overflowRight ? r.left - width - 2 : r.right + 2,
+      // Overlap the row by 1px so moving the pointer into the flyout never
+      // crosses a dead gap that would fire mouseleave and close it.
+      left: overflowRight ? r.left - width + 1 : r.right - 1,
       top: r.top - 6
     });
     setOpen(true);
+  };
+  // Delay closing so a brief transit off the row (into the flyout) does not
+  // dismiss the submenu before it can be clicked.
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), 160);
   };
 
   return (
     <span
       css={{ display: 'block', position: 'relative' }}
       onMouseEnter={openFlyout}
-      onMouseLeave={() => setOpen(false)}
+      onMouseLeave={scheduleClose}
     >
       <button
         ref={rowRef}
@@ -563,6 +581,8 @@ function SubMenu(props: {
         <div
           role='group'
           aria-label={props.title}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
           css={styles.menuPanel(pos.left, pos.top, width)}
         >
           {props.children}
@@ -703,6 +723,7 @@ export function Toolbar({
   // Solid fill applies to auto-shapes and text boxes (not pictures/tables).
   const canFillShape = sh?.type === 'shape' || sh?.type === 'text';
   const isTable = sh?.type === 'table';
+  const isPicture = sh?.type === 'pic';
 
   const [tableHover, setTableHover] = useState({ rows: 3, cols: 3 });
   const [borderTarget, setBorderTarget] = useState<
@@ -1421,263 +1442,282 @@ export function Toolbar({
             store.setTextToolbarPointer(false);
           }}
         >
-          <select
-            disabled={!isText}
-            value={run?.font || 'Arial'}
-            onChange={(e) => applyText({ font: e.target.value })}
-            css={styles.select}
-            title='Font'
-            aria-label='Font'
-          >
-            {FONTS.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
-          <input
-            disabled={!isText}
-            type='number'
-            min={6}
-            max={200}
-            value={Math.round(run?.sizePt || 18)}
-            onChange={(e) => applyText({ sizePt: Number(e.target.value) })}
-            css={styles.num()}
-            title='Size'
-            aria-label='Size'
-          />
-          <span css={styles.sep} />
-          <B
-            disabled={!isText}
-            on={!!run?.bold}
-            onClick={() => applyText({ bold: !run?.bold })}
-            title={withShortcut('Bold', 'B')}
-          >
-            <b>B</b>
-          </B>
-          <B
-            disabled={!isText}
-            on={!!run?.italic}
-            onClick={() => applyText({ italic: !run?.italic })}
-            title={withShortcut('Italic', 'I')}
-          >
-            <i>I</i>
-          </B>
-          <B
-            disabled={!isText}
-            on={!!run?.underline}
-            onClick={() => applyText({ underline: !run?.underline })}
-            title={withShortcut('Underline', 'U')}
-          >
-            <span css={{ textDecoration: 'underline' }}>U</span>
-          </B>
-          <B
-            disabled={!isText}
-            on={!!run?.strike}
-            onClick={() => applyText({ strike: !run?.strike })}
-            title='Strikethrough'
-          >
-            <span css={{ textDecoration: 'line-through' }}>S</span>
-          </B>
-          <B
-            disabled={!isText}
-            on={(run?.baselinePct || 0) > 0}
-            onClick={() =>
-              applyText({ baselinePct: (run?.baselinePct || 0) > 0 ? 0 : 30 })
-            }
-            title='Superscript'
-          >
-            <span css={{ display: 'inline-flex', alignItems: 'flex-start' }}>
-              x
-              <span css={{ fontSize: 9, transform: 'translateY(-3px)' }}>
-                2
-              </span>
-            </span>
-          </B>
-          <B
-            disabled={!isText}
-            on={(run?.baselinePct || 0) < 0}
-            onClick={() =>
-              applyText({
-                baselinePct: (run?.baselinePct || 0) < 0 ? 0 : -30
-              })
-            }
-            title='Subscript'
-          >
-            <span css={{ display: 'inline-flex', alignItems: 'flex-end' }}>
-              x
-              <span css={{ fontSize: 9, transform: 'translateY(3px)' }}>2</span>
-            </span>
-          </B>
-          <ColorControl
-            disabled={!isText}
-            value={`#${run?.color || '000000'}`}
-            onCommit={(value) => applyText({ color: value.replace('#', '') })}
-            title='Text color'
-          >
-            A
-          </ColorControl>
-          {/* Word-style split control: the button half toggles the highlight
+          {/* A selected picture only exposes arrange/delete/crop; the text and
+            fill controls are all inert for it, so hide them to keep the crop
+            controls from overflowing the row. */}
+          {!isPicture && (
+            <>
+              <select
+                disabled={!isText}
+                value={run?.font || 'Arial'}
+                onChange={(e) => applyText({ font: e.target.value })}
+                css={styles.select}
+                title='Font'
+                aria-label='Font'
+              >
+                {FONTS.map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+              </select>
+              <input
+                disabled={!isText}
+                type='number'
+                min={6}
+                max={200}
+                value={Math.round(run?.sizePt || 18)}
+                onChange={(e) => applyText({ sizePt: Number(e.target.value) })}
+                css={styles.num()}
+                title='Size'
+                aria-label='Size'
+              />
+              <span css={styles.sep} />
+              <B
+                disabled={!isText}
+                on={!!run?.bold}
+                onClick={() => applyText({ bold: !run?.bold })}
+                title={withShortcut('Bold', 'B')}
+              >
+                <b>B</b>
+              </B>
+              <B
+                disabled={!isText}
+                on={!!run?.italic}
+                onClick={() => applyText({ italic: !run?.italic })}
+                title={withShortcut('Italic', 'I')}
+              >
+                <i>I</i>
+              </B>
+              <B
+                disabled={!isText}
+                on={!!run?.underline}
+                onClick={() => applyText({ underline: !run?.underline })}
+                title={withShortcut('Underline', 'U')}
+              >
+                <span css={{ textDecoration: 'underline' }}>U</span>
+              </B>
+              <B
+                disabled={!isText}
+                on={!!run?.strike}
+                onClick={() => applyText({ strike: !run?.strike })}
+                title='Strikethrough'
+              >
+                <span css={{ textDecoration: 'line-through' }}>S</span>
+              </B>
+              <B
+                disabled={!isText}
+                on={(run?.baselinePct || 0) > 0}
+                onClick={() =>
+                  applyText({
+                    baselinePct: (run?.baselinePct || 0) > 0 ? 0 : 30
+                  })
+                }
+                title='Superscript'
+              >
+                <span
+                  css={{ display: 'inline-flex', alignItems: 'flex-start' }}
+                >
+                  x
+                  <span css={{ fontSize: 9, transform: 'translateY(-3px)' }}>
+                    2
+                  </span>
+                </span>
+              </B>
+              <B
+                disabled={!isText}
+                on={(run?.baselinePct || 0) < 0}
+                onClick={() =>
+                  applyText({
+                    baselinePct: (run?.baselinePct || 0) < 0 ? 0 : -30
+                  })
+                }
+                title='Subscript'
+              >
+                <span css={{ display: 'inline-flex', alignItems: 'flex-end' }}>
+                  x
+                  <span css={{ fontSize: 9, transform: 'translateY(3px)' }}>
+                    2
+                  </span>
+                </span>
+              </B>
+              <ColorControl
+                disabled={!isText}
+                value={`#${run?.color || '000000'}`}
+                onCommit={(value) =>
+                  applyText({ color: value.replace('#', '') })
+                }
+                title='Text color'
+              >
+                A
+              </ColorControl>
+              {/* Word-style split control: the button half toggles the highlight
               (pressed = the selection is highlighted), the caret half opens
               the picker for a different color. */}
-          <span css={{ display: 'inline-flex', alignItems: 'stretch' }}>
-            <button
-              type='button'
-              title={run?.highlight ? 'Remove highlight' : 'Highlight'}
-              disabled={!isText}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() =>
-                applyText({
-                  highlight: run?.highlight ? null : lastHighlight
-                })
-              }
-              css={{
-                ...styles.btn(!!run?.highlight, !isText),
-                flexDirection: 'column',
-                gap: 1,
-                padding: '2px 6px 3px',
-                borderTopRightRadius: 0,
-                borderBottomRightRadius: 0
-              }}
-            >
-              <span
-                css={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  height: 15
-                }}
-              >
-                <svg
-                  viewBox='0 0 24 24'
-                  width={14}
-                  height={14}
+              <span css={{ display: 'inline-flex', alignItems: 'stretch' }}>
+                <button
+                  type='button'
+                  title={run?.highlight ? 'Remove highlight' : 'Highlight'}
+                  disabled={!isText}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() =>
+                    applyText({
+                      highlight: run?.highlight ? null : lastHighlight
+                    })
+                  }
                   css={{
-                    stroke: 'currentColor',
-                    fill: 'none',
-                    strokeWidth: 1.9,
-                    strokeLinecap: 'round',
-                    strokeLinejoin: 'round'
+                    ...styles.btn(!!run?.highlight, !isText),
+                    flexDirection: 'column',
+                    gap: 1,
+                    padding: '2px 6px 3px',
+                    borderTopRightRadius: 0,
+                    borderBottomRightRadius: 0
                   }}
                 >
-                  <path d='m9 11-6 6v3h9l3-3' />
-                  <path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4l8 8Z' />
-                </svg>
+                  <span
+                    css={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: 15
+                    }}
+                  >
+                    <svg
+                      viewBox='0 0 24 24'
+                      width={14}
+                      height={14}
+                      css={{
+                        stroke: 'currentColor',
+                        fill: 'none',
+                        strokeWidth: 1.9,
+                        strokeLinecap: 'round',
+                        strokeLinejoin: 'round'
+                      }}
+                    >
+                      <path d='m9 11-6 6v3h9l3-3' />
+                      <path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4l8 8Z' />
+                    </svg>
+                  </span>
+                  <span
+                    css={{
+                      width: 16,
+                      height: 4,
+                      borderRadius: 1,
+                      background: `#${run?.highlight || lastHighlight}`,
+                      boxShadow: `inset 0 0 0 1px ${ZINC[200]}`
+                    }}
+                  />
+                </button>
+                <span
+                  css={{
+                    ...styles.btn(false, !isText),
+                    position: 'relative',
+                    minWidth: 14,
+                    padding: 0,
+                    borderTopLeftRadius: 0,
+                    borderBottomLeftRadius: 0,
+                    fontSize: 9,
+                    color: ZINC[500]
+                  }}
+                  aria-label='Highlight color'
+                >
+                  ▾
+                  <CommitColorInput
+                    disabled={!isText}
+                    value={`#${run?.highlight || lastHighlight}`}
+                    onCommit={(value) => {
+                      const color = value.replace('#', '');
+                      setLastHighlight(color);
+                      applyText({ highlight: color });
+                    }}
+                    title='Text highlight color'
+                    bare
+                  />
+                </span>
               </span>
-              <span
-                css={{
-                  width: 16,
-                  height: 4,
-                  borderRadius: 1,
-                  background: `#${run?.highlight || lastHighlight}`,
-                  boxShadow: `inset 0 0 0 1px ${ZINC[200]}`
-                }}
-              />
-            </button>
-            <span
-              css={{
-                ...styles.btn(false, !isText),
-                position: 'relative',
-                minWidth: 14,
-                padding: 0,
-                borderTopLeftRadius: 0,
-                borderBottomLeftRadius: 0,
-                fontSize: 9,
-                color: ZINC[500]
-              }}
-              aria-label='Highlight color'
-            >
-              ▾
-              <CommitColorInput
+              <span css={styles.sep} />
+              <B
                 disabled={!isText}
-                value={`#${run?.highlight || lastHighlight}`}
+                on={align0 === 'l'}
+                onClick={() => applyAlign('l')}
+                title='Left'
+              >
+                <AlignLeftIcon width={16} height={16} />
+              </B>
+              <B
+                disabled={!isText}
+                on={align0 === 'ctr'}
+                onClick={() => applyAlign('ctr')}
+                title='Center'
+              >
+                <AlignCenterIcon width={16} height={16} />
+              </B>
+              <B
+                disabled={!isText}
+                on={align0 === 'r'}
+                onClick={() => applyAlign('r')}
+                title='Right'
+              >
+                <AlignRightIcon width={16} height={16} />
+              </B>
+              <B
+                disabled={!isText}
+                on={align0 === 'just'}
+                onClick={() => applyAlign('just')}
+                title='Justify'
+              >
+                <AlignJustifyIcon width={16} height={16} />
+              </B>
+              <span css={styles.sep} />
+              <B
+                disabled={!sh?.text}
+                on={bulletValue.startsWith('char:')}
+                onClick={() =>
+                  applyBullet(
+                    bulletValue.startsWith('char:') ? 'none' : 'char:•'
+                  )
+                }
+                title='Bullets'
+              >
+                <BulletListIcon width={16} height={16} />
+              </B>
+              <B
+                disabled={!sh?.text}
+                on={bulletValue.startsWith('auto:')}
+                onClick={() =>
+                  applyBullet(
+                    bulletValue.startsWith('auto:')
+                      ? 'none'
+                      : 'auto:arabicPeriod'
+                  )
+                }
+                title='Numbering'
+              >
+                <NumberListIcon width={16} height={16} />
+              </B>
+              <span css={styles.sep} />
+              <ColorControl
+                disabled={!canFillShape}
+                value={`#${sh?.fillColor || 'FFFFFF'}`}
                 onCommit={(value) => {
-                  const color = value.replace('#', '');
-                  setLastHighlight(color);
-                  applyText({ highlight: color });
+                  if (!slide || !sh) return;
+                  executeCommand(
+                    {
+                      type: 'set-shape-fill',
+                      slideId: slide.path,
+                      shapeId: sh.id,
+                      color: value.replace('#', '').toUpperCase()
+                    },
+                    'Change fill color'
+                  );
                 }}
-                title='Text highlight color'
-                bare
-              />
-            </span>
-          </span>
-          <span css={styles.sep} />
-          <B
-            disabled={!isText}
-            on={align0 === 'l'}
-            onClick={() => applyAlign('l')}
-            title='Left'
-          >
-            <AlignLeftIcon width={16} height={16} />
-          </B>
-          <B
-            disabled={!isText}
-            on={align0 === 'ctr'}
-            onClick={() => applyAlign('ctr')}
-            title='Center'
-          >
-            <AlignCenterIcon width={16} height={16} />
-          </B>
-          <B
-            disabled={!isText}
-            on={align0 === 'r'}
-            onClick={() => applyAlign('r')}
-            title='Right'
-          >
-            <AlignRightIcon width={16} height={16} />
-          </B>
-          <B
-            disabled={!isText}
-            on={align0 === 'just'}
-            onClick={() => applyAlign('just')}
-            title='Justify'
-          >
-            <AlignJustifyIcon width={16} height={16} />
-          </B>
-          <span css={styles.sep} />
-          <B
-            disabled={!sh?.text}
-            on={bulletValue.startsWith('char:')}
-            onClick={() =>
-              applyBullet(bulletValue.startsWith('char:') ? 'none' : 'char:•')
-            }
-            title='Bullets'
-          >
-            <BulletListIcon width={16} height={16} />
-          </B>
-          <B
-            disabled={!sh?.text}
-            on={bulletValue.startsWith('auto:')}
-            onClick={() =>
-              applyBullet(
-                bulletValue.startsWith('auto:') ? 'none' : 'auto:arabicPeriod'
-              )
-            }
-            title='Numbering'
-          >
-            <NumberListIcon width={16} height={16} />
-          </B>
-          <span css={styles.sep} />
-          <ColorControl
-            disabled={!canFillShape}
-            value={`#${sh?.fillColor || 'FFFFFF'}`}
-            onCommit={(value) => {
-              if (!slide || !sh) return;
-              executeCommand(
-                {
-                  type: 'set-shape-fill',
-                  slideId: slide.path,
-                  shapeId: sh.id,
-                  color: value.replace('#', '').toUpperCase()
-                },
-                'Change fill color'
-              );
-            }}
-            title='Shape fill color'
-          >
-            <ShadingIcon width={14} height={14} />
-          </ColorControl>
-          <span css={styles.sep} />
+                title='Shape fill color'
+              >
+                <ShadingIcon width={14} height={14} />
+              </ColorControl>
+              <span css={styles.sep} />
+            </>
+          )}
           <B
             disabled={!hasSel}
             onClick={() => reorder('front')}
