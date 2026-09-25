@@ -112,6 +112,7 @@ import {
   renderDisplay
 } from '../../../elements/components/DocxEditor/bindings/core/valueTypes';
 import {
+  Ast,
   collectRefs,
   parseExpression
 } from '../../../elements/components/DocxEditor/bindings/core/formula';
@@ -16566,6 +16567,44 @@ function setCellContent(
   return setAt(sfdt, cellPath, { ...cell, blocks });
 }
 
+/**
+ * A whole expression that is a bare table.column reference or a bare range
+ * evaluates to a column, never a value - every reconcile would then fail with
+ * "formula produced a column". Reject it at creation with a usable message
+ * instead of shipping a permanently erroring binding.
+ */
+export function assertExpressionYieldsValue(
+  expression: string,
+  bindingIndex: BindingIndex
+): void {
+  let ast: Ast;
+  try {
+    ast = parseExpression(expression);
+  } catch {
+    return; // parse failures surface through the caller's parseExpression call
+  }
+  if ('range' in ast)
+    throw new OpError(
+      'binding_expression_whole_column',
+      `Expression ${JSON.stringify(
+        expression
+      )} is a whole range. Wrap it in sum(...) to produce a value. Nothing was written.`
+    );
+  if (!('ref' in ast)) return;
+  const ref = ast.ref;
+  const dot = ref.lastIndexOf('.');
+  if (dot === -1) return;
+  // A dotted doc field or formula name (project.name) is a legitimate mirror.
+  if (bindingIndex.fields.has(ref) || bindingIndex.formulas.has(ref)) return;
+  if (bindingIndex.tables.has(ref.slice(0, dot)))
+    throw new OpError(
+      'binding_expression_whole_column',
+      `Expression ${JSON.stringify(
+        expression
+      )} names a whole table column. Wrap it in sum(...) to produce a value. Nothing was written.`
+    );
+}
+
 function createBindingInCell(
   state: EngineMutationState,
   op: EditOp,
@@ -16608,6 +16647,7 @@ function createBindingInCell(
         'A formula binding requires an expression. Nothing was written.'
       );
     parseExpression(expression);
+    assertExpressionYieldsValue(expression, state.index);
   }
   const definition: Definition =
     kind === 'formula'
@@ -16728,6 +16768,7 @@ function redefineBoundFormulaPlan(
     op,
     anchor: block.anchor,
     execute(state) {
+      assertExpressionYieldsValue(expression, state.index);
       const scope = formulaScopeKey(occurrence);
       const targets = formulaOccurrences(state.index, occurrence.name).filter(
         (candidate) => formulaScopeKey(candidate) === scope
