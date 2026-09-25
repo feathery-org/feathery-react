@@ -8,7 +8,13 @@ import type { Deck, Shape } from '../core/model/types';
 import { Toolbar } from '../ui/PptxToolbar';
 import { SvgSlide } from '../ui/SlideStage';
 import { JsonPanel } from '../ui/JsonPanel';
-import { act, mountEditor, sampleBytes, type Mounted, switchTab } from './harness';
+import {
+  act,
+  mountEditor,
+  sampleBytes,
+  type Mounted,
+  switchTab
+} from './harness';
 
 const PNG_DATA =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -203,10 +209,10 @@ it('exposes toolbar buttons and keyboard shortcuts for undo and redo', async () 
   expect(undo.disabled).toBe(false);
   // Slide-size controls live on the Slide tab in the tabbed toolbar.
   await switchTab(host, 'Slide');
-  const slideWidth = host.querySelector(
-    'input[title="Slide width (inches)"]'
-  ) as HTMLInputElement;
-  slideWidth.focus();
+  const sizePreset = host.querySelector(
+    'select[title="Size preset for this slide"]'
+  ) as HTMLSelectElement;
+  sizePreset.focus();
   // The POC's global Ctrl+Z handler moved onto the PptxEditor wrapper (not
   // mounted here), so the keyboard path is exercised via the store action.
   await act(async () => store.undo());
@@ -556,18 +562,21 @@ it('routes slide-size toolbar edits through engine history without remounting SV
   const before = deckToJSON(deck).slides[0].sizeEMU;
   const svg = host.querySelector('svg[data-svg-uid]');
   await switchTab(host, 'Slide');
-  const width = host.querySelector(
-    'input[title="Slide width (inches)"]'
-  ) as HTMLInputElement;
+  const preset = host.querySelector(
+    'select[title="Size preset for this slide"]'
+  ) as HTMLSelectElement;
+  // Pick whichever preset differs from the current size.
+  const target = before.cx === 9144000 ? 'wide' : 'standard';
+  const targetCx = target === 'wide' ? 12192000 : 9144000;
 
   await act(async () => {
     Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
+      HTMLSelectElement.prototype,
       'value'
-    )!.set!.call(width, String(before.cx / 914400 + 1));
-    width.dispatchEvent(new Event('input', { bubbles: true }));
+    )!.set!.call(preset, target);
+    preset.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  expect(deckToJSON(deck).slides[0].sizeEMU.cx).toBe(before.cx + 914400);
+  expect(deckToJSON(deck).slides[0].sizeEMU.cx).toBe(targetCx);
   expect(
     store.getState().undoStack[store.getState().undoStack.length - 1]?.label
   ).toBe('Resize slide');
@@ -577,6 +586,6 @@ it('routes slide-size toolbar edits through engine history without remounting SV
   expect(deckToJSON(deck).slides[0].sizeEMU).toEqual(before);
   expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
   await act(async () => store.redo());
-  expect(deckToJSON(deck).slides[0].sizeEMU.cx).toBe(before.cx + 914400);
+  expect(deckToJSON(deck).slides[0].sizeEMU.cx).toBe(targetCx);
   expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
 });

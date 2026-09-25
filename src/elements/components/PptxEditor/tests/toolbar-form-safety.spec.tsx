@@ -1,7 +1,13 @@
 import React from 'react';
 import { Toolbar } from '../ui/PptxToolbar';
 import { SvgSlide } from '../ui/SlideStage';
-import { act, mountEditor, sampleBytes, switchTab, type Mounted } from './harness';
+import {
+  act,
+  mountEditor,
+  sampleBytes,
+  switchTab,
+  type Mounted
+} from './harness';
 
 let mounted: Mounted | null = null;
 
@@ -42,13 +48,13 @@ it('never submits a wrapping form from toolbar buttons or inputs', async () => {
   }
 
   // Enter inside a toolbar input must not reach the form as a submit.
-  await switchTab(host, 'Slide');
-  const width = host.querySelector(
-    'input[title="Slide width (inches)"]'
+  await switchTab(host, 'Home');
+  const sizeInput = host.querySelector(
+    'input[title="Size"]'
   ) as HTMLInputElement;
   await act(async () => {
-    width.focus();
-    width.dispatchEvent(
+    sizeInput.focus();
+    sizeInput.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
     );
   });

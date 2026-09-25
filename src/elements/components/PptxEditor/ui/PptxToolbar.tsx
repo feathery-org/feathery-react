@@ -1598,41 +1598,6 @@ export function Toolbar({
               ))}
               <option value='custom'>Custom</option>
             </select>
-            <input
-              disabled={!slide}
-              key={`sw-${activeSlide}-${currentSlideSize?.cx}`}
-              type='number'
-              min='1'
-              step='0.1'
-              defaultValue={((currentSlideSize?.cx || 0) / 914400).toFixed(2)}
-              onChange={(e) =>
-                resizeSlide(
-                  Number(e.target.value) * 914400,
-                  currentSlideSize?.cy || 6858000
-                )
-              }
-              css={styles.num(true)}
-              title='Slide width (inches)'
-              aria-label='Slide width (inches)'
-            />
-            <span css={styles.label}>×</span>
-            <input
-              disabled={!slide}
-              key={`sh-${activeSlide}-${currentSlideSize?.cy}`}
-              type='number'
-              min='1'
-              step='0.1'
-              defaultValue={((currentSlideSize?.cy || 0) / 914400).toFixed(2)}
-              onChange={(e) =>
-                resizeSlide(
-                  currentSlideSize?.cx || 12192000,
-                  Number(e.target.value) * 914400
-                )
-              }
-              css={styles.num(true)}
-              title='Slide height (inches)'
-              aria-label='Slide height (inches)'
-            />
             <span css={styles.sep} />
             <span css={styles.label}>Background</span>
             <select
