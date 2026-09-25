@@ -19,7 +19,15 @@ import {
   setCalculatedValue,
   setOccurrenceText
 } from './sfdtAdapter';
-import { Ast, FormulaError, isFormulaError, parseExpression } from './formula';
+import {
+  Ast,
+  CellRef,
+  collectPositional,
+  FormulaError,
+  isFormulaError,
+  parseExpression,
+  RangeRef
+} from './formula';
 import {
   isNumericType,
   isValueError,
@@ -470,6 +478,291 @@ export function applyRules(
     nodes.set(id, { occ: occurrence, ast, deps: new Set() });
   }
 
+  /* ---- 2b. positional grids ----
+     Excel-shaped refs (B3, sum(B2:end)) read a table by POSITION: a plain
+     typed cell participates in a sum without acquiring any binding, which is
+     what lets an inserted row join a total with no adoption and no kind
+     conversion. Grids are rebuilt from the current document every reconcile,
+     so row inserts, deletes and moves are picked up statelessly. Row 1 is the
+     first physical row (headers count); columns are span-aware. */
+
+  interface GridCell {
+    text: string;
+    occ: Occurrence | null;
+  }
+  interface Grid {
+    /** rows[physicalRow - 1][col] -> cell; a span shares one cell object. */
+    rows: Array<Array<GridCell | undefined>>;
+  }
+
+  const deletionRevisionIds = new Set<string>();
+  for (const revision of Array.isArray(sfdt.revisions) ? sfdt.revisions : []) {
+    if (revision && String((revision as any).revisionType) === 'Deletion') {
+      const revId = (revision as any).revisionId ?? (revision as any).revisionID;
+      if (revId != null) deletionRevisionIds.add(String(revId));
+    }
+  }
+
+  function isDeletedInline(inline: any): boolean {
+    return (
+      Array.isArray(inline?.revisionIds) &&
+      inline.revisionIds.length > 0 &&
+      inline.revisionIds.every((id: unknown) =>
+        deletionRevisionIds.has(String(id))
+      )
+    );
+  }
+
+  /** All visible text in a node, including inside content controls. */
+  function displayText(node: any): string {
+    if (!node || typeof node !== 'object') return '';
+    let out = '';
+    const inlines =
+      node.inlines || (node.blocks || []).flatMap((b: any) => b?.inlines || []);
+    for (const inline of inlines || []) {
+      if (isDeletedInline(inline)) continue;
+      if (typeof inline?.text === 'string' && !inline.contentControlProperties)
+        out += inline.text;
+      else if (inline && typeof inline === 'object') out += displayText(inline);
+    }
+    return out;
+  }
+
+  function isPositionalPathPrefix(prefix: SfdtPath, path: SfdtPath): boolean {
+    if (prefix.length > path.length) return false;
+    for (let k = 0; k < prefix.length; k++)
+      if (String(prefix[k]) !== String(path[k])) return false;
+    return true;
+  }
+
+  /** Physical (1-based row, span-aware col) of an occurrence in a table. */
+  function positionIn(
+    tablePath: SfdtPath,
+    tableNode: any,
+    occurrence: Occurrence
+  ): { row: number; col: number } | null {
+    const rest = occurrence.path.slice(tablePath.length);
+    if (String(rest[0]) !== 'rows' || String(rest[2]) !== 'cells') return null;
+    const r = Number(rest[1]);
+    const c = Number(rest[3]);
+    if (!Number.isInteger(r) || !Number.isInteger(c)) return null;
+    const row = tableNode.rows?.[r];
+    if (!row) return null;
+    let col = 0;
+    for (let k = 0; k < c; k++)
+      col += Number(row.cells?.[k]?.cellFormat?.columnSpan) || 1;
+    return { row: r + 1, col };
+  }
+
+  const grids = new Map<string, Grid | null>();
+  function gridFor(tableId: string): Grid | null {
+    if (grids.has(tableId)) return grids.get(tableId) as Grid | null;
+    const entry = index.tables.get(tableId);
+    const tableNode =
+      entry && entry.tablePath
+        ? (getAt(next, entry.tablePath) as { rows?: any[] } | undefined)
+        : undefined;
+    if (!entry || !entry.tablePath || !Array.isArray(tableNode?.rows)) {
+      grids.set(tableId, null);
+      return null;
+    }
+    const byPos = new Map<string, Occurrence>();
+    for (const occurrence of index.occurrences) {
+      if (!isPositionalPathPrefix(entry.tablePath, occurrence.path)) continue;
+      const pos = positionIn(entry.tablePath, tableNode, occurrence);
+      if (pos) byPos.set(`${pos.row}:${pos.col}`, occurrence);
+    }
+    const rows: Array<Array<GridCell | undefined>> = [];
+    (tableNode!.rows as any[]).forEach((row: any, r: number) => {
+      const line: Array<GridCell | undefined> = [];
+      let col = 0;
+      for (const cell of row.cells || []) {
+        const span = Number(cell?.cellFormat?.columnSpan) || 1;
+        const gridCell: GridCell = {
+          text: displayText(cell).trim(),
+          occ: byPos.get(`${r + 1}:${col}`) || null
+        };
+        for (let s = 0; s < span; s++) line[col + s] = gridCell;
+        col += span;
+      }
+      rows.push(line);
+    });
+    const grid: Grid = { rows };
+    grids.set(tableId, grid);
+    return grid;
+  }
+
+  /** The table that physically contains an occurrence. */
+  const owningTableCache = new Map<string, string | null>();
+  function owningTableId(occurrence: Occurrence): string | null {
+    if (occurrence.tableId) return occurrence.tableId;
+    const hit = owningTableCache.get(occurrence.key);
+    if (hit !== undefined) return hit;
+    let found: string | null = null;
+    for (const [tableId, entry] of index.tables) {
+      if (
+        entry.tablePath &&
+        isPositionalPathPrefix(entry.tablePath, occurrence.path)
+      ) {
+        found = tableId;
+        break;
+      }
+    }
+    owningTableCache.set(occurrence.key, found);
+    return found;
+  }
+
+  function positionalGrid(
+    refTable: string | null,
+    node: FormulaNode,
+    label: string
+  ): { grid: Grid; tableId: string } {
+    const tableId = refTable ?? owningTableId(node.occ);
+    if (!tableId)
+      throw new FormulaError(`${label}: positional reference outside a table`);
+    const grid = gridFor(tableId);
+    if (!grid) throw new FormulaError(`${label}: unknown table "${tableId}"`);
+    return { grid, tableId };
+  }
+
+  function ownPosition(
+    node: FormulaNode,
+    tableId: string
+  ): { row: number; col: number } | null {
+    const entry = index.tables.get(tableId);
+    if (!entry || !entry.tablePath) return null;
+    if (!isPositionalPathPrefix(entry.tablePath, node.occ.path)) return null;
+    return positionIn(entry.tablePath, getAt(next, entry.tablePath), node.occ);
+  }
+
+  function cellLabel(col: number, row: number | 'end'): string {
+    let letters = '';
+    let c = col + 1;
+    while (c > 0) {
+      letters = String.fromCharCode(65 + ((c - 1) % 26)) + letters;
+      c = Math.floor((c - 1) / 26);
+    }
+    return row === 'end' ? 'end' : `${letters}${row}`;
+  }
+
+  /** Lenient numeric read of a plain cell: "$1,200.50" -> "1200.50". */
+  function parseLooseNumber(text: string): string | null {
+    const trimmed = text.trim();
+    if (trimmed === '') return '0';
+    let cleaned = trimmed.replace(/[$€£\s,]/g, '');
+    const negParen = /^\((.*)\)$/.exec(cleaned);
+    if (negParen) cleaned = `-${negParen[1]}`;
+    return /^-?\d+(\.\d+)?$/.test(cleaned) ? cleaned : null;
+  }
+
+  function positionalCellValue(cell: CellRef, node: FormulaNode): string {
+    const label = `${cell.table ? `${cell.table}!` : ''}${cellLabel(
+      cell.col,
+      cell.row
+    )}`;
+    const { grid } = positionalGrid(cell.table, node, label);
+    const gridCell = grid.rows[cell.row - 1]?.[cell.col];
+    if (!gridCell) throw new FormulaError(`${label} is outside the table`);
+    if (gridCell.occ) {
+      if (gridCell.occ.def.kind === 'formula') {
+        const id = nodeId(gridCell.occ);
+        if (!results.has(id))
+          throw new FormulaError(`${label} did not evaluate`);
+        return results.get(id) as string;
+      }
+      if (!values.has(gridCell.occ.key))
+        throw new FormulaError(`${label} has an invalid value`);
+      return values.get(gridCell.occ.key) as string;
+    }
+    const parsed = parseLooseNumber(gridCell.text);
+    if (parsed === null)
+      throw new FormulaError(`${label} does not contain a number`);
+    return parsed;
+  }
+
+  function positionalRangeValues(
+    range: RangeRef,
+    node: FormulaNode
+  ): string[] {
+    const label = `${range.table ? `${range.table}!` : ''}${cellLabel(
+      range.startCol,
+      range.startRow
+    )}:${cellLabel(range.endCol, range.endRow)}`;
+    const { grid, tableId } = positionalGrid(range.table, node, label);
+    const own = ownPosition(node, tableId);
+    const endRow =
+      range.endRow === 'end'
+        ? grid.rows.length
+        : Math.min(range.endRow, grid.rows.length);
+    const out: string[] = [];
+    const seen = new Set<GridCell>();
+    for (let row = range.startRow; row <= endRow; row++) {
+      for (let col = range.startCol; col <= range.endCol; col++) {
+        // Self-exclusion, like Word's SUM(ABOVE): a sum whose own cell falls
+        // inside its range does not count itself.
+        if (own && own.row === row && own.col === col) continue;
+        const gridCell = grid.rows[row - 1]?.[col];
+        if (!gridCell || seen.has(gridCell)) continue;
+        seen.add(gridCell);
+        if (gridCell.occ) {
+          if (gridCell.occ.def.kind === 'formula') {
+            const id = nodeId(gridCell.occ);
+            if (id === nodeId(node.occ)) continue; // own node under a span
+            if (!results.has(id))
+              throw new FormulaError(
+                `${label} includes a formula that did not evaluate`
+              );
+            out.push(results.get(id) as string);
+          } else if (values.has(gridCell.occ.key)) {
+            out.push(values.get(gridCell.occ.key) as string);
+          }
+          // A bound field with invalid input counts as text -> skipped (0),
+          // matching Word's SUM over text cells.
+        } else {
+          const parsed = parseLooseNumber(gridCell.text);
+          if (parsed !== null) out.push(parsed);
+        }
+      }
+    }
+    return out;
+  }
+
+  function addPositionalDeps(
+    node: FormulaNode,
+    cells: CellRef[],
+    ranges: RangeRef[]
+  ): void {
+    try {
+      for (const cell of cells) {
+        const { grid } = positionalGrid(cell.table, node, 'dep');
+        const gridCell = grid.rows[cell.row - 1]?.[cell.col];
+        if (gridCell?.occ?.def.kind === 'formula')
+          node.deps.add(nodeId(gridCell.occ));
+      }
+      for (const range of ranges) {
+        const { grid, tableId } = positionalGrid(range.table, node, 'dep');
+        const own = ownPosition(node, tableId);
+        const endRow =
+          range.endRow === 'end'
+            ? grid.rows.length
+            : Math.min(range.endRow, grid.rows.length);
+        for (let row = range.startRow; row <= endRow; row++) {
+          for (let col = range.startCol; col <= range.endCol; col++) {
+            if (own && own.row === row && own.col === col) continue;
+            const gridCell = grid.rows[row - 1]?.[col];
+            if (gridCell?.occ?.def.kind === 'formula') {
+              const dep = nodeId(gridCell.occ);
+              if (dep !== nodeId(node.occ)) node.deps.add(dep);
+            }
+          }
+        }
+      }
+    } catch (thrown) {
+      if (!isFormulaError(thrown)) throw thrown;
+      // Resolution failures surface at evaluation with a proper message.
+    }
+  }
+
   /**
    * Resolve a reference. Precedence: (1) the formula's own row, so bare column
    * names always mean "current row"; (2) document fields/formulas by full -
@@ -527,7 +820,12 @@ export function applyRules(
     }
     if ('args' in ast) for (const arg of ast.args) collectDeps(arg, node);
   }
-  for (const node of nodes.values()) collectDeps(node.ast, node);
+  for (const node of nodes.values()) {
+    collectDeps(node.ast, node);
+    const positional = collectPositional(node.ast);
+    if (positional.cells.length || positional.ranges.length)
+      addPositionalDeps(node, positional.cells, positional.ranges);
+  }
 
   /* ---- 3. topological order with cycle reporting ---- */
   const order: string[] = [];
@@ -559,6 +857,8 @@ export function applyRules(
   const results = new Map<string, string>();
   function evalAst(ast: Ast, node: FormulaNode): string | string[] {
     if ('lit' in ast) return ast.lit;
+    if ('cell' in ast) return positionalCellValue(ast.cell, node);
+    if ('range' in ast) return positionalRangeValues(ast.range, node);
     if ('ref' in ast) {
       const target = refTargets(ast.ref, node.occ);
       if (!target) throw new FormulaError(`unresolved reference "${ast.ref}"`);

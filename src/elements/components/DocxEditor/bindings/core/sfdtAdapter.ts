@@ -19,12 +19,9 @@ import {
   Definition,
   FieldDefinition,
   formatTag,
-  FormulaDefinition,
   isTagError,
-  parseTag,
-  TagOptions
+  parseTag
 } from './tagDsl';
-import { collectRefs, isFormulaError, parseExpression } from './formula';
 import {
   defaultValue,
   isValueError,
@@ -632,91 +629,13 @@ export const freshRowId = createRowIdGenerator();
 
 /* ---------------- row operations ---------------- */
 
-// A row formula is one of two things. A ROW-LOCAL formula reads at least one
-// column of its own row (mul(quantity,unit_cost)) and fills down: every new row
-// gets its own copy. A MIRROR references only values outside the row (a
-// document field, another table's column) - copying it into a new row would
-// duplicate the mirror, so a new row gets a plain editable field of the same
-// name and type instead, and joins the column's aggregates like any other row.
-
-function isRowLocalFormula(
-  def: FormulaDefinition,
-  rowColumnNames: ReadonlySet<string>
-): boolean {
-  try {
-    return collectRefs(parseExpression(def.expression)).some((ref) =>
-      rowColumnNames.has(ref)
-    );
-  } catch (thrown) {
-    if (!isFormulaError(thrown)) throw thrown;
-    // Unparseable: keep the fill-down handling; the engine reports the parse
-    // error on its own.
-    return true;
-  }
-}
-
-/** The editable field a new row gets where the template row has a mirror. */
-function mirrorColumnField(
-  def: FormulaDefinition,
-  rowId: string
-): FieldDefinition {
-  const options: TagOptions = { row: rowId };
-  if (def.options.default !== undefined) options.default = def.options.default;
-  if (def.options.label !== undefined) options.label = def.options.label;
-  return {
-    version: def.version,
-    kind: 'field',
-    name: def.name,
-    fieldType: def.fieldType,
-    isEditable: true,
-    isDeletable: true,
-    isGlobal: false,
-    options
-  };
-}
-
-/** Names of every row-scoped binding under a node (a row's column names). */
-function collectRowScopedNames(node: any, names: Set<string>): void {
-  if (Array.isArray(node)) {
-    for (const entry of node) collectRowScopedNames(entry, names);
-    return;
-  }
-  if (!node || typeof node !== 'object') return;
-  if (node.contentControlProperties) {
-    let def: Definition | null = null;
-    try {
-      def = parseTag(String(node.contentControlProperties.tag || ''));
-    } catch {
-      def = null;
-    }
-    if (
-      def &&
-      (def.kind === 'field' || def.kind === 'formula') &&
-      def.options.row
-    ) {
-      names.add(def.name);
-      return; // A row binding holds a value, not further bindings.
-    }
-    // A foreign or non-row control can WRAP a binding. Descend through it,
-    // as the scanner and the clone rewriter do - stopping here made a
-    // wrapped column invisible and misclassified its formulas as mirrors.
-  }
-  for (const key of Object.keys(node)) collectRowScopedNames(node[key], names);
-}
-
+// Cloning never changes a binding's KIND: a field clones as a field with its
+// default, a formula (row-local or mirror) clones as the same formula. A typed
+// row joins a sum through positional ranges (sum(B2:end)), which read raw cell
+// values, so nothing ever needs converting.
 export function rewriteRowClone(node: any, newRowId: string): void {
-  const columnNames = new Set<string>();
-  collectRowScopedNames(node, columnNames);
-  rewriteRowCloneInner(node, newRowId, columnNames);
-}
-
-function rewriteRowCloneInner(
-  node: any,
-  newRowId: string,
-  columnNames: ReadonlySet<string>
-): void {
   if (Array.isArray(node)) {
-    node.forEach((entry) => rewriteRowCloneInner(entry, newRowId, columnNames));
+    node.forEach((entry) => rewriteRowClone(entry, newRowId));
     return;
   }
   if (!node || typeof node !== 'object') return;
@@ -732,24 +651,13 @@ function rewriteRowCloneInner(
       (def.kind === 'field' || def.kind === 'formula') &&
       def.options.row
     ) {
-      const asField =
-        def.kind === 'field'
-          ? def
-          : isRowLocalFormula(def, columnNames)
-          ? null
-          : mirrorColumnField(def, newRowId);
       def.options.row = newRowId;
       node.contentControlProperties = {
         ...node.contentControlProperties,
-        tag: formatTag(asField || def),
-        // A mirror converted to a field must also stop being read-only.
-        ...(asField && def.kind === 'formula' ? { lockContents: false } : {})
+        tag: formatTag(def)
       };
-      if (asField) {
-        const rendered = renderDisplay(
-          asField.fieldType,
-          defaultValue(asField)
-        );
+      if (def.kind === 'field') {
+        const rendered = renderDisplay(def.fieldType, defaultValue(def));
         const first = (node.inlines || []).find(
           (inline: SfdtInline) => inline && typeof inline.text === 'string'
         );
@@ -761,8 +669,7 @@ function rewriteRowCloneInner(
       return; // Do not descend into this content control again.
     }
   }
-  for (const key of Object.keys(node))
-    rewriteRowCloneInner(node[key], newRowId, columnNames);
+  for (const key of Object.keys(node)) rewriteRowClone(node[key], newRowId);
 }
 
 /**
@@ -852,11 +759,10 @@ export function removeLineItem(
 // The engine's answer to rows inserted with the editor's own table tools: a data
 // row that carries no bindings at all is "adopted" by inferring each column's
 // binding from the last bound data row above it (the template). Field columns
-// keep whatever the user already typed (normalized when it parses); row-local
-// formula columns get the template's formula with fresh row identity and a
-// pending placeholder the engine computes in the same transaction; mirror
-// columns (a formula referencing nothing in its own row) become editable
-// fields. Cells under unbound columns keep the user's content.
+// keep whatever the user already typed (normalized when it parses); formula
+// columns get the template's formula with fresh row identity and a pending
+// placeholder the engine computes in the same transaction. Cells under unbound
+// columns keep the user's content.
 
 function cellPlainText(cell: SfdtCell): string {
   let out = '';
@@ -1053,8 +959,18 @@ export function adoptUnboundRows(
   // inserting rows entirely.
   const allRows = tableNode.rows || [];
   const templateCells = templateRow.cells || [];
-  const templateColumnNames = new Set<string>();
-  collectRowScopedNames(templateRow, templateColumnNames);
+
+  // Adoption exists to give a new LINE ITEM its input bindings; formula cells
+  // (row-local or mirror) ride along as copies. A table whose bound columns
+  // are ONLY formulas/mirrors has no inputs to bind - adopting there would
+  // fabricate duplicate mirrors over rows the user meant to type into. Leave
+  // such rows unbound: positional ranges (sum(B2:end)) read them by value.
+  const templateHasFieldColumn = templateCells.some(
+    (templateCell) => findCellBinding(templateCell)?.def.kind === 'field'
+  );
+  if (!templateHasFieldColumn)
+    return { sfdt, adopted: [], mutations: [], skipped: [] };
+
   const firstBoundRowIndex = table.rows
     .map((entry) => Number(entry.path?.[entry.path.length - 1]))
     .filter(Number.isInteger)
@@ -1076,35 +992,26 @@ export function adoptUnboundRows(
       });
       continue;
     }
-    // A ROW-LOCAL formula column holds engine output, never anything the user
-    // typed. Text sitting there means this is a totals row or a damaged one,
-    // not a new line item - adopting would overwrite it with a pending
-    // placeholder. A MIRROR column is different: on a new row it becomes an
-    // editable input, so typed text there is what a fresh line item looks
-    // like - but only when it PARSES as the column's type. Prose there means
-    // an unflagged header row ("Amount") or a label row, and adopting one
-    // breaks evaluation for the whole table on load.
-    let occupiedReason: string | null = null;
-    for (let c = 0; c < templateCells.length && !occupiedReason; c++) {
-      const binding = findCellBinding(templateCells[c]);
-      if (!binding || binding.def.kind !== 'formula') continue;
-      const text = cellPlainText(cells[c]).trim();
-      if (text === '') continue;
-      if (isRowLocalFormula(binding.def, templateColumnNames)) {
-        occupiedReason = `cell ${c} holds text where the template has a formula`;
-      } else {
-        try {
-          parseDisplay(binding.def.fieldType, text);
-        } catch (thrown) {
-          if (!isValueError(thrown)) throw thrown;
-          occupiedReason = `cell ${c} holds text that does not parse as ${binding.def.fieldType.kind}`;
-        }
-      }
-    }
-    if (occupiedReason !== null) {
+    // A formula column holds engine output, never anything the user typed. Text
+    // sitting there means this is a totals row or a damaged one (or a header row
+    // without the isHeader flag), not a new line item - adopting would overwrite
+    // it with a pending placeholder. This applies to mirrors too: a typed row
+    // joins a sum through positional ranges, never by acquiring a binding.
+    const occupiedFormula = templateCells.findIndex((templateCell, c) => {
+      const binding = findCellBinding(templateCell);
+      return (
+        !!binding &&
+        binding.def.kind === 'formula' &&
+        cellPlainText(cells[c]).trim() !== ''
+      );
+    });
+    if (occupiedFormula !== -1) {
       if (Number.isInteger(firstBoundRowIndex) && r < firstBoundRowIndex)
         continue;
-      skipped.push({ rowIndex: r, reason: occupiedReason });
+      skipped.push({
+        rowIndex: r,
+        reason: `cell ${occupiedFormula} holds text where the template has a formula`
+      });
       continue;
     }
 
@@ -1139,22 +1046,10 @@ export function adoptUnboundRows(
         control.inlines = [
           { ...run, text: adoptedFieldText(def, cellPlainText(cells[c])) }
         ];
-      } else if (isRowLocalFormula(def, templateColumnNames)) {
-        // Pending; the engine computes it in this same transaction.
-        control.inlines = [{ ...run, text: '…' }];
       } else {
-        // Mirror column: the template's formula points outside the row, so a
-        // copy would only duplicate the mirror. The new row gets an editable
-        // field of the same name and type instead.
-        const fieldDef = mirrorColumnField(def, rowId);
-        control.contentControlProperties = {
-          ...control.contentControlProperties,
-          tag: formatTag(fieldDef),
-          lockContents: false
-        };
-        control.inlines = [
-          { ...run, text: adoptedFieldText(fieldDef, cellPlainText(cells[c])) }
-        ];
+        // Pending; the engine computes it in this same transaction. Mirrors
+        // included: a cloned mirror is a mirror.
+        control.inlines = [{ ...run, text: '…' }];
       }
     });
     next = setAt(next, [...(table.tablePath as SfdtPath), 'rows', r], newRow);
