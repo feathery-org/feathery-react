@@ -40,6 +40,9 @@ export type NativeToolHandlers = {
   addTableRow: (tableId: string) => Promise<any>;
   deleteTableRow: (tableId: string, rowIndex: number) => Promise<any>;
   setTableCellValue: (tableId: string, cells: any[]) => Promise<any>;
+  setCellValidation: (tableId: string, findings: any[]) => Promise<any>;
+  focusTableCell: (tableId: string, target: unknown) => Promise<any>;
+  getTableIssues: (tableId: string, scope: unknown) => Promise<any>;
 };
 
 export type AssistantToolCallDeps = {
@@ -75,7 +78,11 @@ const NATIVE_TOOL_CALLS: Record<
   deleteTableRow: (i, n) =>
     n.deleteTableRow(asString(i.tableId), asNumber(i.rowIndex)),
   setTableCellValue: (i, n) =>
-    n.setTableCellValue(asString(i.tableId), asArray(i.cells))
+    n.setTableCellValue(asString(i.tableId), asArray(i.cells)),
+  setCellValidation: (i, n) =>
+    n.setCellValidation(asString(i.tableId), asArray(i.findings)),
+  focusTableCell: (i, n) => n.focusTableCell(asString(i.tableId), i),
+  getTableIssues: (i, n) => n.getTableIssues(asString(i.tableId), i)
 };
 
 /**
