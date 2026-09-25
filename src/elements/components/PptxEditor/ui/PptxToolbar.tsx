@@ -1251,7 +1251,7 @@ export function Toolbar({
             )}
           </MenuButton>
           <MenuButton title='Slide' label='Slide' disabled={!slide} width={250}>
-            {() => (
+            {(close) => (
               <>
                 <span css={styles.tableLabel}>Dimensions</span>
                 <div css={styles.menuRow}>
@@ -1403,6 +1403,45 @@ export function Toolbar({
                     </select>
                   </div>
                 )}
+                <div css={styles.menuDivider} />
+                <button
+                  type='button'
+                  css={styles.menuItem}
+                  title={
+                    slideNumberShape
+                      ? 'Remove slide numbers from every slide'
+                      : 'Add slide numbers to every slide (delete the box on a slide to opt just that slide out)'
+                  }
+                  onClick={() => {
+                    executeCommand(
+                      {
+                        type: 'toggle-deck-slide-numbers',
+                        enabled: !slideNumberShape
+                      },
+                      slideNumberShape
+                        ? 'Remove slide numbers'
+                        : 'Add slide numbers'
+                    );
+                    close();
+                  }}
+                >
+                  <span
+                    css={{
+                      width: 18,
+                      textAlign: 'center',
+                      fontWeight: 600,
+                      flex: '0 0 auto'
+                    }}
+                  >
+                    #
+                  </span>
+                  Slide numbers
+                  {slideNumberShape && (
+                    <span css={{ marginLeft: 'auto', color: ZINC[500] }}>
+                      ✓
+                    </span>
+                  )}
+                </button>
               </>
             )}
           </MenuButton>
@@ -1748,73 +1787,6 @@ export function Toolbar({
           >
             ⤓
           </B>
-          <span css={styles.sep} />
-          <B
-            disabled={!hasSel}
-            onClick={() => {
-              if (slide && selectedIds.length) {
-                executeCommand(
-                  {
-                    type: 'delete-shapes',
-                    slideId: slide.path,
-                    shapeIds: selectedIds
-                  },
-                  selectedIds.length > 1 ? 'Delete shapes' : 'Delete shape'
-                );
-                select(null);
-              }
-            }}
-            title='Delete (Del)'
-          >
-            <svg
-              viewBox='0 0 24 24'
-              width={16}
-              height={16}
-              css={{
-                fill: 'none',
-                stroke: 'currentColor',
-                strokeWidth: 1.8,
-                strokeLinecap: 'round',
-                strokeLinejoin: 'round'
-              }}
-            >
-              <path d='M4 7h16' />
-              <path d='M10 7V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2' />
-              <path d='M6 7l1 12a2 2 0 0 0 2 1.8h6A2 2 0 0 0 17 19l1-12' />
-              <path d='M10 11v6M14 11v6' />
-            </svg>
-          </B>
-          <span css={styles.sep} />
-          {/* Deck-wide slide-number toggle: not tied to the selection, so it
-            lives on the persistent row rather than the Insert menu. Active
-            state is shown as red text (no heavy grey fill). */}
-          <button
-            type='button'
-            disabled={!slide}
-            aria-pressed={!!slideNumberShape}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() =>
-              executeCommand(
-                {
-                  type: 'toggle-deck-slide-numbers',
-                  enabled: !slideNumberShape
-                },
-                slideNumberShape ? 'Remove slide numbers' : 'Add slide numbers'
-              )
-            }
-            title={
-              slideNumberShape
-                ? 'Remove slide numbers from every slide'
-                : 'Add slide numbers to every slide (delete the box on a slide to opt just that slide out)'
-            }
-            css={{
-              ...styles.btn(false, !slide),
-              color: slideNumberShape ? FEATHERY_RED : ZINC[700],
-              fontWeight: slideNumberShape ? 600 : 500
-            }}
-          >
-            Slide #
-          </button>
           {sh?.type === 'pic' && pictureCrop && (
             <>
               <span css={styles.sep} />
@@ -2140,6 +2112,48 @@ export function Toolbar({
                 </>
               );
             })()}
+          {/* Delete is pinned to the end of the row, after any contextual
+            tools, so it stays in a predictable place for every selection. */}
+          {hasSel && (
+            <>
+              <span css={{ flex: 1, minWidth: 8 }} />
+              <B
+                disabled={!hasSel}
+                onClick={() => {
+                  if (slide && selectedIds.length) {
+                    executeCommand(
+                      {
+                        type: 'delete-shapes',
+                        slideId: slide.path,
+                        shapeIds: selectedIds
+                      },
+                      selectedIds.length > 1 ? 'Delete shapes' : 'Delete shape'
+                    );
+                    select(null);
+                  }
+                }}
+                title='Delete (Del)'
+              >
+                <svg
+                  viewBox='0 0 24 24'
+                  width={16}
+                  height={16}
+                  css={{
+                    fill: 'none',
+                    stroke: 'currentColor',
+                    strokeWidth: 1.8,
+                    strokeLinecap: 'round',
+                    strokeLinejoin: 'round'
+                  }}
+                >
+                  <path d='M4 7h16' />
+                  <path d='M10 7V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2' />
+                  <path d='M6 7l1 12a2 2 0 0 0 2 1.8h6A2 2 0 0 0 17 19l1-12' />
+                  <path d='M10 11v6M14 11v6' />
+                </svg>
+              </B>
+            </>
+          )}
         </div>
       </div>
     </InstantTooltips>
