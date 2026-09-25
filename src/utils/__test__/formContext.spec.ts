@@ -224,3 +224,47 @@ describe('feathery.runComputerAgent return shape', () => {
     ).resolves.toEqual({ status: 'error', message: 'nope' });
   });
 });
+
+describe('feathery.getHubSchemas', () => {
+  const uuid = 'formContext-hub-schemas';
+  const hubs = [
+    {
+      id: 'hub-1',
+      key: 'clients',
+      fields: [
+        {
+          id: 'f1',
+          key: 'first_name',
+          type: 'text',
+          required: true,
+          unique: false
+        },
+        { id: 'f2', key: 'gov_id', type: 'text', required: false, unique: true }
+      ]
+    }
+  ];
+  let getHubSchemas: jest.Mock;
+
+  beforeEach(() => {
+    getHubSchemas = jest.fn().mockResolvedValue({ hubs });
+    setFormInternalState(uuid, {
+      fields: {},
+      client: { getHubSchemas }
+    } as any);
+  });
+
+  it('returns the schema response, required flags included', async () => {
+    const result = await getFormContext(uuid).getHubSchemas(['hub-1', 'hub-2']);
+
+    expect(getHubSchemas).toHaveBeenCalledWith(['hub-1', 'hub-2']);
+    expect(result.hubs[0].fields.filter((f: any) => f.required)).toEqual([
+      hubs[0].fields[0]
+    ]);
+  });
+
+  it('wraps a single hub ID in an array', async () => {
+    await getFormContext(uuid).getHubSchemas('hub-1');
+
+    expect(getHubSchemas).toHaveBeenCalledWith(['hub-1']);
+  });
+});
