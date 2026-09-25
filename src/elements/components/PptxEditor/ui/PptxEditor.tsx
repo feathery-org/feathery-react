@@ -4,7 +4,7 @@ import {
   usePptxEditorState,
   usePptxEditorStore
 } from '../state/PptxEditorContext';
-import { SvgSlide } from './SlideStage';
+import { SvgSlide, ZOOM_MAX, ZOOM_MIN } from './SlideStage';
 import { Toolbar } from './PptxToolbar';
 import InstantTooltips from './InstantTooltips';
 import { SlideNavigator } from './SlideNavigator';
@@ -343,7 +343,11 @@ function PptxEditorInner({
             background: PANEL_2
           }}
         >
-          <SvgSlide readOnly={readOnly} zoom={zoomPct} />
+          <SvgSlide
+            readOnly={readOnly}
+            zoom={zoomPct}
+            onZoomChange={setZoomPct}
+          />
         </div>
         {devJsonPanel && state.showJson && <JsonPanel />}
         {SHOW_REVIEW_RAIL && (
@@ -430,8 +434,8 @@ function PptxEditorInner({
             type='button'
             css={statusButton}
             title='Zoom out'
-            disabled={zoomPct <= 50}
-            onClick={() => setZoomPct((z) => Math.max(50, z - 25))}
+            disabled={zoomPct <= ZOOM_MIN}
+            onClick={() => setZoomPct((z) => Math.max(ZOOM_MIN, z - 25))}
           >
             <MinusIcon width={14} height={14} />
           </button>
@@ -448,8 +452,8 @@ function PptxEditorInner({
             type='button'
             css={statusButton}
             title='Zoom in'
-            disabled={zoomPct >= 400}
-            onClick={() => setZoomPct((z) => Math.min(400, z + 25))}
+            disabled={zoomPct >= ZOOM_MAX}
+            onClick={() => setZoomPct((z) => Math.min(ZOOM_MAX, z + 25))}
           >
             <PlusIcon width={14} height={14} />
           </button>

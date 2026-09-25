@@ -472,10 +472,18 @@ function extractRichText(
   return paras.length ? paras : [{ runs: [] }];
 }
 
+export const ZOOM_MIN = 50;
+export const ZOOM_MAX = 400;
+
 export function SvgSlide({
   readOnly = false,
-  zoom = 100
-}: { readOnly?: boolean; zoom?: number } = {}) {
+  zoom = 100,
+  onZoomChange
+}: {
+  readOnly?: boolean;
+  zoom?: number;
+  onZoomChange?: (zoom: number) => void;
+} = {}) {
   const store = usePptxEditorStore();
   const state = usePptxEditorState();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -502,6 +510,65 @@ export function SvgSlide({
 
   const [box, setBox] = useState<OverlayBox | null>(null);
   const [layoutTick, setLayoutTick] = useState(0);
+
+  // Trackpad pinch arrives as a wheel event with ctrlKey set, so one listener
+  // covers pinch, Ctrl+scroll and Cmd+scroll. Native (non-passive) because
+  // React's synthetic wheel handlers cannot preventDefault the page zoom.
+  const zoomFloatRef = useRef(zoom);
+  const zoomAnchorRef = useRef<{
+    ax: number;
+    ay: number;
+    contentX: number;
+    contentY: number;
+    fromZoom: number;
+  } | null>(null);
+  useEffect(() => {
+    if (Math.round(zoomFloatRef.current) !== zoom) zoomFloatRef.current = zoom;
+  }, [zoom]);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !onZoomChange) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      // Wheel notches send ~100/notch, pinch a few units per event; clamping
+      // the delta keeps one notch a step and the pinch smooth.
+      const delta = Math.max(-30, Math.min(30, e.deltaY));
+      const next = Math.max(
+        ZOOM_MIN,
+        Math.min(ZOOM_MAX, zoomFloatRef.current * Math.exp(-delta * 0.01))
+      );
+      const rounded = Math.round(next);
+      if (rounded !== Math.round(zoomFloatRef.current)) {
+        const rect = host.getBoundingClientRect();
+        const ax = e.clientX - rect.left;
+        const ay = e.clientY - rect.top;
+        zoomAnchorRef.current = {
+          ax,
+          ay,
+          contentX: host.scrollLeft + ax,
+          contentY: host.scrollTop + ay,
+          fromZoom: zoomFloatRef.current
+        };
+        onZoomChange(rounded);
+      }
+      zoomFloatRef.current = next;
+    };
+    host.addEventListener('wheel', onWheel, { passive: false });
+    return () => host.removeEventListener('wheel', onWheel);
+    // !!deck: before a deck loads the stage renders a placeholder without
+    // hostRef, so bind again once the real stage mounts.
+  }, [onZoomChange, !!deck]);
+  // After the width re-renders, restore the content point under the pointer.
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    const anchor = zoomAnchorRef.current;
+    zoomAnchorRef.current = null;
+    if (!host || !anchor || !anchor.fromZoom) return;
+    const scale = zoom / anchor.fromZoom;
+    host.scrollLeft = anchor.contentX * scale - anchor.ax;
+    host.scrollTop = anchor.contentY * scale - anchor.ay;
+  }, [zoom]);
 
   // The stage is sized by its container, not the window: observe the host and
   // reposition the selection overlay on any size change.
@@ -2110,6 +2177,7 @@ export function SvgSlide({
   return (
     <div
       ref={hostRef}
+      data-pptx-stage
       tabIndex={-1}
       style={styles.wrap}
       onMouseDown={onHostDown}
@@ -2769,7 +2837,6 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative',
     overflow: 'auto',
     display: 'flex',
-    justifyContent: 'center',
     alignItems: 'flex-start',
     padding: 16,
     background: '#e9ecf2',
@@ -2779,6 +2846,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   frame: {
     width: 'min(1100px, 100%)',
+    // A shrinkable flex child caps the zoom at 100%: the width climbs but the
+    // box is squeezed back to fit. Auto margins (not justify-content) center
+    // it so the left edge stays reachable once it overflows.
+    flexShrink: 0,
+    margin: '0 auto',
     boxShadow: '0 2px 16px rgba(0,0,0,0.18)',
     background: '#fff'
   },
