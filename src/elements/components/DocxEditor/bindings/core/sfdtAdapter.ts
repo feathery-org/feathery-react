@@ -17,6 +17,7 @@
 import {
   BoundDefinition,
   Definition,
+  FieldDefinition,
   formatTag,
   isTagError,
   parseTag
@@ -665,6 +666,10 @@ export const freshRowId = createRowIdGenerator();
 
 /* ---------------- row operations ---------------- */
 
+// Cloning never changes a binding's KIND: a field clones as a field with its
+// default, a formula (row-local or mirror) clones as the same formula. A typed
+// row joins a sum through positional ranges (sum(B2:end)), which read raw cell
+// values, so nothing ever needs converting.
 export function rewriteRowClone(node: any, newRowId: string): void {
   if (Array.isArray(node)) {
     node.forEach((entry) => rewriteRowClone(entry, newRowId));
@@ -811,6 +816,19 @@ interface CellBinding {
   b: number;
   i: number;
   def: BoundDefinition;
+}
+
+/** Display text for an adopted field cell: typed input normalized, else default. */
+function adoptedFieldText(def: FieldDefinition, typedRaw: string): string {
+  const typed = typedRaw.trim();
+  if (typed === '') return renderDisplay(def.fieldType, defaultValue(def));
+  try {
+    return renderDisplay(def.fieldType, parseDisplay(def.fieldType, typed));
+  } catch (thrown) {
+    if (!isValueError(thrown)) throw thrown;
+    // Invalid: keep it visible and let the engine diagnose it.
+    return typed;
+  }
 }
 
 /** First row-scoped binding content control in a cell. */
@@ -978,6 +996,18 @@ export function adoptUnboundRows(
   // inserting rows entirely.
   const allRows = tableNode.rows || [];
   const templateCells = templateRow.cells || [];
+
+  // Adoption exists to give a new LINE ITEM its input bindings; formula cells
+  // (row-local or mirror) ride along as copies. A table whose bound columns
+  // are ONLY formulas/mirrors has no inputs to bind - adopting there would
+  // fabricate duplicate mirrors over rows the user meant to type into. Leave
+  // such rows unbound: positional ranges (sum(B2:end)) read them by value.
+  const templateHasFieldColumn = templateCells.some(
+    (templateCell) => findCellBinding(templateCell)?.def.kind === 'field'
+  );
+  if (!templateHasFieldColumn)
+    return { sfdt, adopted: [], mutations: [], skipped: [] };
+
   const firstBoundRowIndex = table.rows
     .map((entry) => Number(entry.path?.[entry.path.length - 1]))
     .filter(Number.isInteger)
@@ -1000,8 +1030,10 @@ export function adoptUnboundRows(
       continue;
     }
     // A formula column holds engine output, never anything the user typed. Text
-    // sitting there means this is a totals row or a damaged one, not a new line
-    // item - adopting would overwrite it with a pending placeholder.
+    // sitting there means this is a totals row or a damaged one (or a header row
+    // without the isHeader flag), not a new line item - adopting would overwrite
+    // it with a pending placeholder. This applies to mirrors too: a typed row
+    // joins a sum through positional ranges, never by acquiring a binding.
     const occupiedFormula = templateCells.findIndex((templateCell, c) => {
       const binding = findCellBinding(templateCell);
       return (
@@ -1048,25 +1080,12 @@ export function adoptUnboundRows(
           ? { characterFormat: first.characterFormat }
           : {};
       if (def.kind === 'field') {
-        const typed = cellPlainText(cells[c]).trim();
-        let text: string;
-        if (typed === '') {
-          text = renderDisplay(def.fieldType, defaultValue(def));
-        } else {
-          try {
-            text = renderDisplay(
-              def.fieldType,
-              parseDisplay(def.fieldType, typed)
-            );
-          } catch (thrown) {
-            if (!isValueError(thrown)) throw thrown;
-            // Invalid: keep it visible and let the engine diagnose it.
-            text = typed;
-          }
-        }
-        control.inlines = [{ ...run, text }];
+        control.inlines = [
+          { ...run, text: adoptedFieldText(def, cellPlainText(cells[c])) }
+        ];
       } else {
-        // Pending; the engine computes it in this same transaction.
+        // Pending; the engine computes it in this same transaction. Mirrors
+        // included: a cloned mirror is a mirror.
         control.inlines = [{ ...run, text: '…' }];
       }
     });
