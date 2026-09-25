@@ -9,6 +9,7 @@ import { color, radius, shadow, fontSize } from './tokens';
 import { secondaryButtonCss } from './buttonStyles';
 import { AlertIcon } from './icons';
 import { featheryWindow } from '../../../utils/browser';
+import { scopeReviewAnnotations } from './fieldIsolation';
 
 const PAGE_GAP = 24;
 // US Letter aspect for loading placeholders; actual pages size themselves.
@@ -438,7 +439,7 @@ function PdfPage({
           const annotations = await page.getAnnotations();
           if (cancelled) return;
           await annotationLayer.render({
-            annotations,
+            annotations: scopeReviewAnnotations(pdfProxy, annotations),
             imageResourcesPath: '',
             renderForms: true,
             downloadManager: null,
