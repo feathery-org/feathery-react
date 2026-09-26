@@ -66,6 +66,7 @@ function PptxEditorInner({
   onChange,
   onError,
   onSave,
+  onExportPdf,
   historyHost,
   devJsonPanel = false
 }: PptxEditorProps) {
@@ -74,6 +75,8 @@ function PptxEditorInner({
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<PptxPanelKind | null>(null);
   const [zoomPct, setZoomPct] = useState(75);
   const loadSeq = useRef(0);
@@ -160,6 +163,33 @@ function PptxEditorInner({
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [state.deck, store, fileName]);
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (!onExportPdf || downloadingPdf) return;
+    // Save first so the PDF reflects the current edits (host converts the
+    // persisted envelope), mirroring the docx editor.
+    setDownloadingPdf(true);
+    try {
+      if (onSave) {
+        store.commitSvgTextEdit?.({ render: false });
+        await onSave(store.engine.exportPptx());
+        store.markSaved();
+        dirtyRef.current = false;
+        onChange?.(false);
+      }
+      const blob = await onExportPdf();
+      const url = URL.createObjectURL(blob);
+      const anchor = featheryDoc().createElement('a');
+      anchor.href = url;
+      anchor.download = fileName.replace(/\.pptx$/i, '') + '.pdf';
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err: any) {
+      onError?.(err?.message || 'Exporting the presentation as PDF failed.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }, [onExportPdf, downloadingPdf, onSave, store, onChange, onError, fileName]);
 
   // ---- keyboard shortcuts, scoped to this editor instance ----
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -258,17 +288,61 @@ function PptxEditorInner({
                 Unsaved changes
               </span>
             )}
-            {!hideDownload && (
-              <button
-                type='button'
-                css={downloadBtn}
-                onClick={handleDownload}
-                title='Download'
-              >
-                <DownloadIcon width={16} height={16} />
-                Download
-              </button>
-            )}
+            {!hideDownload &&
+              (onExportPdf ? (
+                <span css={{ position: 'relative', display: 'inline-flex' }}>
+                  <button
+                    type='button'
+                    css={downloadBtn}
+                    disabled={downloadingPdf}
+                    onClick={() => setDownloadMenuOpen((open) => !open)}
+                    aria-haspopup='true'
+                    aria-expanded={downloadMenuOpen}
+                    title='Download'
+                  >
+                    <DownloadIcon width={16} height={16} />
+                    {downloadingPdf ? 'Preparing…' : 'Download'}
+                    <span css={{ fontSize: 9 }}>▾</span>
+                  </button>
+                  {downloadMenuOpen && (
+                    <div
+                      css={downloadMenu}
+                      onMouseLeave={() => setDownloadMenuOpen(false)}
+                    >
+                      <button
+                        type='button'
+                        css={downloadMenuItem}
+                        onClick={() => {
+                          setDownloadMenuOpen(false);
+                          handleDownload();
+                        }}
+                      >
+                        Download as PPTX
+                      </button>
+                      <button
+                        type='button'
+                        css={downloadMenuItem}
+                        onClick={() => {
+                          setDownloadMenuOpen(false);
+                          handleDownloadPdf();
+                        }}
+                      >
+                        Download as PDF
+                      </button>
+                    </div>
+                  )}
+                </span>
+              ) : (
+                <button
+                  type='button'
+                  css={downloadBtn}
+                  onClick={handleDownload}
+                  title='Download'
+                >
+                  <DownloadIcon width={16} height={16} />
+                  Download
+                </button>
+              ))}
             {onSave && !readOnly && (
               <button
                 type='button'
@@ -470,6 +544,35 @@ function PptxEditorInner({
     </div>
   );
 }
+
+const downloadMenu = {
+  position: 'absolute' as const,
+  top: 'calc(100% + 4px)',
+  right: 0,
+  zIndex: 40,
+  minWidth: 168,
+  padding: 4,
+  background: '#fff',
+  border: `1px solid ${ZINC[200]}`,
+  borderRadius: 8,
+  boxShadow: '0 6px 18px rgba(23,26,28,.13)',
+  display: 'flex',
+  flexDirection: 'column' as const
+};
+
+const downloadMenuItem = {
+  display: 'block',
+  width: '100%',
+  padding: '7px 10px',
+  border: 'none',
+  borderRadius: 6,
+  background: 'transparent',
+  color: ZINC[700],
+  fontSize: 13,
+  textAlign: 'left' as const,
+  cursor: 'pointer',
+  '&:hover': { background: ZINC[100] }
+};
 
 const statusButton = {
   height: 24,

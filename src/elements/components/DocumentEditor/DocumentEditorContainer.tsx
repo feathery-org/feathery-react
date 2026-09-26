@@ -567,9 +567,14 @@ export default function DocumentEditorContainer({
             reviewChanges={reviewChanges}
             openNonce={reloadKey}
             fileName='document.pptx'
-            // Signing and PDF conversion stay docx-only until the backend
-            // defines the PPTX flow; the terminal-action props are not passed.
+            // Signing stays docx-only (no pptx signature flow); PDF export is
+            // supported server-side via the shared conversion endpoint.
             hideDownload={savesToField || !offersDownload}
+            onExportPdf={
+              envelope.id
+                ? () => client.downloadEnvelopePdf(envelope.id)
+                : undefined
+            }
             onError={setError}
             onSave={saveEnvelope}
             onChange={
