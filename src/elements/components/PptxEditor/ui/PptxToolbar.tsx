@@ -187,7 +187,9 @@ const styles = {
     background: '#fff',
     color: ZINC[700],
     fontSize: 12.5,
-    padding: '0 6px',
+    // Extra right padding gives the native dropdown caret room to breathe.
+    padding: '0 10px',
+    paddingRight: 14,
     cursor: 'pointer',
     '&:hover': { background: ZINC[100] },
     '&:disabled': { opacity: 0.4, cursor: 'default' }
@@ -481,7 +483,14 @@ function MenuButton(props: {
         onClick={() => {
           if (!open) {
             const r = btnRef.current?.getBoundingClientRect();
-            if (r) setPos({ left: r.left, top: r.bottom + 4 });
+            if (r) {
+              // Keep the panel within the viewport: shift left when opening it
+              // at r.left would overflow the right edge.
+              const width = props.width ?? 230;
+              const vw = featheryWindow().innerWidth ?? Infinity;
+              const left = Math.max(8, Math.min(r.left, vw - width - 8));
+              setPos({ left, top: r.bottom + 4 });
+            }
           }
           setOpen(!open);
         }}
