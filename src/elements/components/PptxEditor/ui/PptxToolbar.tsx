@@ -124,7 +124,7 @@ const styles = {
     top,
     zIndex: 60,
     width,
-    padding: 8,
+    padding: 12,
     background: '#fff',
     border: `1px solid ${ZINC[200]}`,
     borderRadius: 8,
@@ -133,8 +133,8 @@ const styles = {
   menuRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 4,
-    padding: '2px 0'
+    gap: 8,
+    padding: '4px 0 8px'
   },
   menuItem: {
     display: 'flex',
@@ -1436,11 +1436,34 @@ export function Toolbar({
                     #
                   </span>
                   Slide numbers
-                  {slideNumberShape && (
-                    <span css={{ marginLeft: 'auto', color: ZINC[500] }}>
-                      ✓
-                    </span>
-                  )}
+                  {/* On/off switch, Feathery red when enabled. */}
+                  <span
+                    aria-hidden='true'
+                    css={{
+                      marginLeft: 'auto',
+                      flex: '0 0 auto',
+                      position: 'relative',
+                      width: 30,
+                      height: 16,
+                      borderRadius: 999,
+                      background: slideNumberShape ? FEATHERY_RED : ZINC[300],
+                      transition: 'background .15s'
+                    }}
+                  >
+                    <span
+                      css={{
+                        position: 'absolute',
+                        top: 2,
+                        left: slideNumberShape ? 16 : 2,
+                        width: 12,
+                        height: 12,
+                        borderRadius: '50%',
+                        background: '#fff',
+                        transition: 'left .15s',
+                        boxShadow: '0 1px 2px rgba(23,26,28,.35)'
+                      }}
+                    />
+                  </span>
                 </button>
               </>
             )}
