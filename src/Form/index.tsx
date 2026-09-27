@@ -460,7 +460,6 @@ function Form({
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
     assistantEnabled: false,
-    pptxEditorEnabled: undefined as boolean | undefined,
     assistantColor: '#6b7280',
     assistantWorkflowActions: [],
     assistantStepSettings: {} as AssistantStepSettings

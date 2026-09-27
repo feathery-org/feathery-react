@@ -59,7 +59,6 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       formId,
       stepId,
       assistantEnabled,
-      pptxEditorEnabled,
       ...props
     },
     ref
@@ -138,7 +137,6 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           stepId={stepId}
           editMode={editMode}
           assistantEnabled={assistantEnabled}
-          pptxEditorEnabled={pptxEditorEnabled}
         />
       );
     }
