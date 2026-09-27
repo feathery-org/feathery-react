@@ -12,6 +12,7 @@ import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import internalState from '../../../utils/internalState';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import {
+  buildDocumentReviewTrigger,
   containerToolbarOutcomes,
   editorContainerId,
   getSignUrl,
@@ -417,6 +418,27 @@ export default function DocumentEditorContainer({
       // Nothing here navigates away, so the outcome is only visible if it's
       // announced.
       const announce = internalState[formId ?? '']?.showEnvelopeOutcome;
+      // The overlay viewer fires these from its finalize; a container runs
+      // its signing action here, so it reports the same trigger itself.
+      // finalizeEnvelope returns a single `file` (envelope_data); the overlay's
+      // finalize returns a `files` array. Normalize so the sign trigger carries
+      // a file list either way, matching the overlay and DocuSign paths.
+      const fireReviewLogic = (result?: Record<string, any> | null) => {
+        const normalized =
+          result && !result.files && result.file
+            ? { ...result, files: [result.file] }
+            : result;
+        internalState[formId ?? '']?.runDocumentReviewLogic?.(
+          buildDocumentReviewTrigger({
+            action: targetAction ?? {},
+            elementId: containerId ?? '',
+            envelopes: [{ envelopeId: envelope.id }],
+            envelopeAction: 'sign',
+            draft,
+            result: normalized
+          })
+        );
+      };
 
       if (isDocusignSignAction(targetAction ?? {}, 'sign')) {
         // DocuSign has no Feathery sign page: the backend send (or draft) is
@@ -432,8 +454,11 @@ export default function DocumentEditorContainer({
           draft ? 'Saved as Draft' : 'Sent for Signature',
           targetAction?.documents
         );
+        await fireReviewLogic(result);
         return;
       }
+      // Before the sign page opens: with `redirect` set it navigates away.
+      await fireReviewLogic(finalized);
 
       // A signer id comes back only when the filler signs first. Without one
       // the envelope is someone else's to sign, so there's nothing to open.
@@ -446,7 +471,7 @@ export default function DocumentEditorContainer({
       if (targetAction?.redirect) featheryWindow().location.href = url;
       else openTab(url);
     },
-    [client, envelope, targetAction, activeDocumentId, formId]
+    [client, envelope, targetAction, activeDocumentId, formId, containerId]
   );
 
   // 'draft' as the terminal action means Create Draft is the only signing
@@ -458,6 +483,27 @@ export default function DocumentEditorContainer({
   const runTerminalActionDraft = useCallback(
     () => runSigningAction(true),
     [runSigningAction]
+  );
+
+  // Download and Save-to-field are review actions too. The overlay fires
+  // document_review for them from its finalize; the container has no finalize
+  // for these, so it reports the same trigger from its own toolbar. (Sign/Draft
+  // fire it inside runSigningAction.)
+  const fireReviewAction = useCallback(
+    (envelopeAction: string, result?: Record<string, any> | null) => {
+      if (!envelope) return;
+      internalState[formId ?? '']?.runDocumentReviewLogic?.(
+        buildDocumentReviewTrigger({
+          action: targetAction ?? {},
+          elementId: containerId ?? '',
+          envelopes: [{ envelopeId: envelope.id }],
+          envelopeAction,
+          draft: false,
+          result
+        })
+      );
+    },
+    [envelope, formId, targetAction, containerId]
   );
 
   // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
@@ -584,6 +630,27 @@ export default function DocumentEditorContainer({
         }
       }}
       onSave={saveEnvelope}
+      // A completed Save is the container's Save-to-field review action; a
+      // completed Download is the download action. Only fire when the toolbar
+      // config actually offers that outcome.
+      onSaved={
+        savesToField
+          ? (result) =>
+              fireReviewAction(
+                'save',
+                result?.file ? { files: [result.file] } : null
+              )
+          : undefined
+      }
+      onDownloaded={
+        offersDownload
+          ? () =>
+              fireReviewAction(
+                'download',
+                envelope.file ? { files: [envelope.file] } : null
+              )
+          : undefined
+      }
       // readOnly editors never dirty, so skip registering them entirely
       onChange={
         !readOnly && containerId
