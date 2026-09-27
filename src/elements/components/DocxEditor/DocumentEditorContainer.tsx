@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState
 } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
@@ -24,6 +25,8 @@ import {
 } from '../../../assistant/tools/docx/docxEditorRegistry';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
+import { DocxHistoryHost, DocxSaveMeta } from './history/types';
+import { fetchDocumentBytes } from '../../../utils/documentPersistence';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose editor_mode matches
@@ -73,6 +76,20 @@ interface Envelope {
 // legacy and control-free envelopes only have the public `file`.
 function envelopeSourceUrl(envelope?: Envelope | null): string | undefined {
   return envelope?.editor_file ?? envelope?.file ?? undefined;
+}
+
+/** Fetch the clean SFDT recorded for a restored version. The history endpoint
+ * stores it gzipped; using it lets the live editor bypass DOCX import. */
+async function fetchRestoredSfdt(url: string): Promise<string> {
+  const bytes = new Uint8Array(await fetchDocumentBytes(url));
+  const gzipped = bytes[0] === 0x1f && bytes[1] === 0x8b;
+  if (!gzipped) return new TextDecoder().decode(bytes);
+  const DecompressionStreamImpl = (globalThis as any).DecompressionStream;
+  if (!DecompressionStreamImpl)
+    throw new Error('gzip decompression unavailable');
+  return new Response(
+    new Blob([bytes]).stream().pipeThrough(new DecompressionStreamImpl('gzip'))
+  ).text();
 }
 
 interface RefreshEventDetail {
@@ -184,8 +201,19 @@ export default function DocumentEditorContainer({
   const [sourceUrl, setSourceUrl] = useState<string | undefined>(() =>
     envelopeSourceUrl(getGeneratedEnvelope(pendingDraft, documentId))
   );
+  // Set only for a just-restored snapshot. It stays in memory while the user
+  // edits, then a generated/external refresh clears it and reopens the DOCX.
+  const [restoredSfdt, setRestoredSfdt] = useState<string | undefined>();
   const [loading, setLoading] = useState(!envelope);
   const [error, setError] = useState<string | null>(null);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const beforeReplaceRef = useRef<(() => Promise<unknown>) | null>(null);
+  const registerBeforeReplace = useCallback(
+    (save: (() => Promise<unknown>) | null) => {
+      beforeReplaceRef.current = save;
+    },
+    []
+  );
   // Bumped to force the editor to reload its source after a (re)generate.
   // NOT bumped on save (so saving doesn't reload the document out from under
   // the user).
@@ -219,6 +247,7 @@ export default function DocumentEditorContainer({
       const env = await client.getCurrentEnvelope(documentId);
       const nextEnvelope = env && env.id ? (env as Envelope) : null;
       setEnvelope(nextEnvelope);
+      setRestoredSfdt(undefined);
       setSourceUrl(envelopeSourceUrl(nextEnvelope));
       setError(null);
     } catch (e: any) {
@@ -240,6 +269,7 @@ export default function DocumentEditorContainer({
     );
     if (pendingEnvelope?.id) {
       setEnvelope(pendingEnvelope);
+      setRestoredSfdt(undefined);
       setSourceUrl(envelopeSourceUrl(pendingEnvelope));
       setLoading(false);
       return;
@@ -249,7 +279,7 @@ export default function DocumentEditorContainer({
 
   useEffect(() => {
     if (editMode) return undefined;
-    const handler = (event: Event) => {
+    const handler = async (event: Event) => {
       const detail = (event as CustomEvent<RefreshEventDetail>).detail;
       if (
         detail?.containerId &&
@@ -259,9 +289,22 @@ export default function DocumentEditorContainer({
         return;
       }
 
+      try {
+        await beforeReplaceRef.current?.();
+      } catch (error) {
+        setOperationError(
+          `The new document could not be opened because your current edits could not be saved. ${
+            error instanceof Error ? error.message : ''
+          }`
+        );
+        return;
+      }
+
       const generatedEnvelope = getGeneratedEnvelope(detail, documentId);
       if (generatedEnvelope?.id) {
+        setOperationError(null);
         setEnvelope(generatedEnvelope);
+        setRestoredSfdt(undefined);
         setSourceUrl(envelopeSourceUrl(generatedEnvelope));
         setError(null);
         setLoading(false);
@@ -280,8 +323,13 @@ export default function DocumentEditorContainer({
   // signalled (reloadKey) — a plain save leaves both unchanged, so it doesn't
   // reload the document.
   const source = useMemo(
-    () => (sourceUrl ? { url: sourceUrl } : undefined),
-    [sourceUrl]
+    () =>
+      restoredSfdt
+        ? { sfdt: restoredSfdt }
+        : sourceUrl
+        ? { url: sourceUrl }
+        : undefined,
+    [restoredSfdt, sourceUrl]
   );
   // The loaded editor is authoritative. If a generate action contains several
   // documents, the envelope actually displayed here wins over the action's
@@ -309,14 +357,19 @@ export default function DocumentEditorContainer({
     FORCE_DOCUMENT_BINDINGS || syncfusion.bindings === true;
   // The most recent committed document-field values, read at save time.
   const bindingValuesRef = useRef<Record<string, string>>({});
+  const pendingWritebackRef = useRef<Record<string, any>>({});
 
   const saveEnvelope = useCallback(
-    async (blob: Blob) => {
+    async (blob: Blob, meta?: DocxSaveMeta) => {
       if (!envelope) return;
+      const savedBindings = {
+        ...(meta?.bindingValues ?? bindingValuesRef.current)
+      };
       const updated = await client.saveEnvelopeFile(
         envelope.id,
         blob,
-        'document.docx'
+        'document.docx',
+        meta
       );
       const savedFileUrl = updated?.file ?? envelope.file;
       if (updated?.file) {
@@ -342,17 +395,98 @@ export default function DocumentEditorContainer({
       // ONLY to fields the form already has - a binding in a template is not
       // permission to invent a field. Pushed here with the save rather than on
       // every reconcile: pressing Enter should not cost a network round trip.
-      for (const [name, value] of Object.entries(bindingValuesRef.current)) {
+      for (const [name, value] of Object.entries(savedBindings)) {
         if (name in fieldValues) newValues[name] = value;
       }
+      for (const name of Object.keys(newValues)) {
+        if (
+          fieldValues[name] === newValues[name] &&
+          !(name in pendingWritebackRef.current)
+        )
+          delete newValues[name];
+      }
       if (Object.keys(newValues).length) {
+        Object.assign(pendingWritebackRef.current, newValues);
         setFieldValues(newValues, true, true);
         await client.submitCustom(newValues);
+        for (const [name, value] of Object.entries(newValues)) {
+          if (pendingWritebackRef.current[name] === value)
+            delete pendingWritebackRef.current[name];
+        }
       }
+      setOperationError(null);
       return updated;
     },
     [client, envelope, targetAction, savesToField]
   );
+
+  // The version-history I/O adapter DocxEditor injects into its session hook.
+  // Keeps index.tsx free of the Feathery API. Disabled in the designer preview.
+  const envelopeId = envelope?.id;
+  const restoreOperationRef = useRef<{
+    envelopeId: string;
+    versionId: string;
+    sessionId: string;
+  } | null>(null);
+  const historyHost = useMemo<DocxHistoryHost | undefined>(() => {
+    if (editMode || !envelopeId) return undefined;
+    return {
+      listVersions: () => client.listEnvelopeVersions(envelopeId),
+      getVersion: (versionId) =>
+        client.getEnvelopeVersion(envelopeId, versionId),
+      closeVersion: (sessionId, payload) =>
+        client.closeEnvelopeVersion(envelopeId, sessionId, payload),
+      fetchVersionFile: fetchDocumentBytes,
+      restoreVersion: async (versionId) => {
+        let operation = restoreOperationRef.current;
+        if (
+          !operation ||
+          operation.envelopeId !== envelopeId ||
+          operation.versionId !== versionId
+        ) {
+          operation = { envelopeId, versionId, sessionId: uuidv4() };
+          restoreOperationRef.current = operation;
+        }
+        const updated = await client.restoreEnvelopeVersion(
+          envelopeId,
+          versionId,
+          operation.sessionId
+        );
+        // The backend deliberately copies only final SFDT, not a change list,
+        // into the restored row. Reopen it directly when present: this removes
+        // the DOCX download + Syncfusion Import round-trip from restore.
+        let cleanSfdt: string | undefined;
+        const finalSfdtUrl = (updated as any)?.version?.final_sfdt as
+          | string
+          | null
+          | undefined;
+        if (finalSfdtUrl && updated.version?.is_current !== false) {
+          try {
+            cleanSfdt = await fetchRestoredSfdt(finalSfdtUrl);
+          } catch {
+            // The authoritative DOCX URL below remains a safe fallback.
+          }
+        }
+        // Point the live editor at the restored bytes and force a reopen.
+        setEnvelope((current) =>
+          current?.id === envelopeId
+            ? {
+                ...current,
+                file: updated.file,
+                editor_file: updated.editor_file ?? null
+              }
+            : current
+        );
+        setRestoredSfdt(cleanSfdt);
+        setSourceUrl(envelopeSourceUrl({ ...updated } as Envelope));
+        setReloadKey((k) => k + 1);
+        restoreOperationRef.current = null;
+        return updated.version;
+      },
+      renameVersion: (versionId, name) =>
+        client.renameEnvelopeVersion(envelopeId, versionId, name)
+    };
+  }, [client, envelopeId, editMode]);
 
   // Only the signing actions run here; 'download' is handled inside DocxEditor,
   // which saves first and then serves the envelope's public (stripped) copy.
@@ -552,49 +686,59 @@ export default function DocumentEditorContainer({
   }
 
   return box(
-    <DocxEditor
-      source={source}
-      serviceUrl={serviceUrl}
-      headers={serviceHeaders}
-      licenseKey={syncfusion.licenseKey}
-      readOnly={readOnly}
-      reviewChanges={reviewChanges}
-      openNonce={reloadKey}
-      fileName='document'
-      terminalAction={terminalAction}
-      onTerminalAction={terminalAction ? runTerminalAction : undefined}
-      onTerminalActionDraft={offersDraft ? runTerminalActionDraft : undefined}
-      // Signing needs a signer to open as, which only finalizing an unsigned
-      // envelope hands back - so there's nothing behind the button once signed.
-      terminalActionDisabled={!envelope.file || envelope.signed}
-      // Without this a failed send is swallowed: DocxEditor routes terminal
-      // errors here and there is nothing else listening.
-      onError={setError}
-      // Download shows only when the toolbar config offers it, and never in
-      // the save-to-field flow: there the document's destination is a form
-      // field (set on every save), not the user's machine.
-      hideDownload={savesToField || !offersDownload}
-      // Downloads serve the stripped public copy, never the editor bytes —
-      // content controls must not leave the platform.
-      downloadUrl={envelope.file}
-      bindings={{
-        enabled: bindingsEnabled,
-        onFieldValues: (values) => {
-          bindingValuesRef.current = values;
+    <>
+      {operationError && (
+        <div role='alert' css={{ color: '#b42318', padding: 8 }}>
+          {operationError}
+        </div>
+      )}
+      <DocxEditor
+        source={source}
+        envelopeId={envelope.id}
+        serviceUrl={serviceUrl}
+        headers={serviceHeaders}
+        licenseKey={syncfusion.licenseKey}
+        readOnly={readOnly}
+        reviewChanges={reviewChanges}
+        openNonce={reloadKey}
+        fileName='document'
+        terminalAction={terminalAction}
+        onTerminalAction={terminalAction ? runTerminalAction : undefined}
+        onTerminalActionDraft={offersDraft ? runTerminalActionDraft : undefined}
+        // Signing needs a signer to open as, which only finalizing an unsigned
+        // envelope hands back - so there's nothing behind the button once signed.
+        terminalActionDisabled={!envelope.file || envelope.signed}
+        // Without this a failed send is swallowed: DocxEditor routes terminal
+        // errors here and there is nothing else listening.
+        onError={setOperationError}
+        onBeforeReplaceReady={registerBeforeReplace}
+        // Download shows only when the toolbar config offers it, and never in
+        // the save-to-field flow: there the document's destination is a form
+        // field (set on every save), not the user's machine.
+        hideDownload={savesToField || !offersDownload}
+        // Downloads serve the stripped public copy, never the editor bytes —
+        // content controls must not leave the platform.
+        downloadUrl={envelope.file}
+        bindings={{
+          enabled: bindingsEnabled,
+          onFieldValues: (values) => {
+            bindingValuesRef.current = values;
+          }
+        }}
+        onSave={saveEnvelope}
+        history={historyHost}
+        // readOnly editors never dirty, so skip registering them entirely
+        onChange={
+          !readOnly && containerId
+            ? (dirty: boolean) => setDocxEditorDirty(formId, containerId, dirty)
+            : undefined
         }
-      }}
-      onSave={saveEnvelope}
-      // readOnly editors never dirty, so skip registering them entirely
-      onChange={
-        !readOnly && containerId
-          ? (dirty: boolean) => setDocxEditorDirty(formId, containerId, dirty)
-          : undefined
-      }
-      onEditorReady={onEditorReady}
-      onReady={onDocumentReady}
-      // Server-side docx→pdf conversion (doc-conversion Lambda); does not
-      // persist anything — the envelope stays an editable docx.
-      onExportPdf={() => client.downloadEnvelopePdf(envelope.id)}
-    />
+        onEditorReady={onEditorReady}
+        onReady={onDocumentReady}
+        // Server-side docx→pdf conversion (doc-conversion Lambda); does not
+        // persist anything — the envelope stays an editable docx.
+        onExportPdf={() => client.downloadEnvelopePdf(envelope.id)}
+      />
+    </>
   );
 }

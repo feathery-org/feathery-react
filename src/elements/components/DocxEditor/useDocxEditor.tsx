@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { featheryDoc, featheryWindow } from '../../../utils/browser';
+import { featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
 import {
   disableUserTrackChanges,
@@ -9,7 +9,9 @@ import {
   preserveDocumentViewDuring,
   registerWrappingDocumentEditorContainer
 } from '../../../utils/documentEditorPrimitives';
-import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
+import { isAssistantApplyingEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { EJ2_SCRIPT_URL } from './constants';
+import { loadStyles, waitForDocumentLoad, waitForEj } from './ejLoader';
 import { stampMissingContentControlColors } from './contentControlSafety';
 import { installDocumentTailInvariant } from './documentTailInvariant';
 import { DocxSource } from './types';
@@ -28,47 +30,20 @@ const BUILT_IN_SYNCFUSION_LICENSE_KEY =
     ? ''
     : __SYNCFUSION_LICENSE_KEY__;
 
-// Inject the Syncfusion theme CSS once (deduped across all editor instances).
-const LOADED_STYLES = new Set<string>();
-function loadStyles() {
-  const doc = featheryDoc();
-  EJ2_STYLE_URLS.forEach((href) => {
-    if (LOADED_STYLES.has(href)) return;
-    LOADED_STYLES.add(href);
-    const link = doc.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = href;
-    doc.head.appendChild(link);
-  });
-  loadAccentOverride();
-}
-
-// The Syncfusion tailwind3 theme's accent is indigo (--color-sf-primary
-// #6366f1). Retint the primary family to the Feathery red so the editor's
-// accents — context menus, primary buttons, focus rings, selection highlight,
-// title bar — match the rest of the product. Applied at :root because the
-// context menu renders in a portal on <body>, out of the editor's subtree.
-const ACCENT_STYLE_ID = 'feathery-docx-accent';
-function loadAccentOverride() {
-  const doc = featheryDoc();
-  if (doc.getElementById(ACCENT_STYLE_ID)) return;
-  const style = doc.createElement('style');
-  style.id = ACCENT_STYLE_ID;
-  style.textContent = `:root{
-    --color-sf-primary:#e2626e;
-    --color-sf-primary-bg-color:#e2626e;
-    --color-sf-primary-bg-color-hover:#dc3a4b;
-    --color-sf-primary-bg-color-focus:#dc3a4b;
-    --color-sf-primary-bg-color-pressed:#c9313f;
-    --color-sf-primary-outline:#e2626e;
-    --color-sf-primary-border-color:#e2626e;
-    --color-sf-primary-border-color-hover:#dc3a4b;
-    --color-sf-primary-border-color-focus:#dc3a4b;
-    --color-sf-primary-border-color-pressed:#c9313f;
-    --color-sf-primary-dark:#dc3a4b;
-    --color-sf-primary-darker:#c9313f;
-  }`;
-  doc.head.appendChild(style);
+/** Snapshot synchronously, with a separate archive for overlapping saves. */
+export function exportDocxSnapshot(editor: any): Promise<Blob> {
+  if (!editor) return Promise.reject(new Error('Editor is not ready'));
+  const Writer = editor.wordExportModule?.constructor;
+  if (!Writer || Writer === Object) return editor.saveAsBlob('Docx');
+  const writer = new Writer();
+  try {
+    return writer
+      .saveAsBlob(editor.documentHelper, 'Docx')
+      .finally(() => writer.destroy());
+  } catch (error) {
+    writer.destroy();
+    return Promise.reject(error);
+  }
 }
 
 // GitHub-style tracked-change rendering: green wash for insertions, red wash
@@ -87,11 +62,45 @@ const DELETION_TEXT_COLOR = '#b0302b';
 // fully INSIDE the highlight box, flush with its edge.
 const RING_LINE = 'rgba(43, 49, 52, 0.34)';
 const RING_WIDTH = 2;
+// Alpha for an author-coloured wash. Insertions carry the full wash so the
+// edit clearly reads in the author's colour; deletions are a touch lighter
+// because their glyphs are additionally struck through.
+const AUTHOR_WASH_ALPHA = 0.18;
+const AUTHOR_WASH_ALPHA_DEL = 0.16;
+
+// '#rrggbb' → 'rgba(r,g,b,a)'. Returns the input untouched if it is not a plain
+// 6-digit hex (already an rgba() string, say).
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
 const RING_RADIUS = 4;
 
 // Editor-instance keys shared with the review UI and overlays.
 const ACTIVE_REVISION_KEY = '__robinActiveRevision';
 const ACTIVE_BOXES_KEY = '__robinActiveBoxes';
+// Boxes belonging to still-pending (unapproved) assistant edits, ringed with a
+// dashed outline so they read apart from approved edits' solid wash.
+const PENDING_BOXES_KEY = '__robinPendingBoxes';
+// History distinguishes pending edits with a thin outline, not a darker wash.
+const PENDING_DASH: [number, number] = [7, 4];
+const PENDING_RING_WIDTH = 1;
+
+// True for a live Robin suggestion (`source: robin`) or a synthetic history
+// revision explicitly marked pending. Confirmed history revisions use
+// `source: history` without the pending flag.
+function isPendingRevision(rev: any): boolean {
+  if (!rev?.customData) return false;
+  try {
+    const data = JSON.parse(rev.customData);
+    return data.pending === true || data.source === 'robin';
+  } catch {
+    return false;
+  }
+}
+
 const REVISION_RECTS_KEY = '__robinRevisionRects';
 const AFTER_RENDER_KEY = '__robinAfterRender';
 // Opening a document plants Syncfusion's default caret, firing a
@@ -101,37 +110,6 @@ const OPENING_DOCUMENT_KEY = '__featheryOpeningDocument';
 /** True while a source document is being opened/reopened on this editor. */
 export function isOpeningDocument(ed: any): boolean {
   return !!ed?.[OPENING_DOCUMENT_KEY];
-}
-
-// A conversion that never completes must not strand the editor in `loading`.
-const DOCUMENT_LOAD_TIMEOUT_MS = 20000;
-
-/**
- * Resolves when Syncfusion finishes laying the document out. `documentChange`
- * fires exactly once per open, after open()/openAsync() has already resolved,
- * and is the only signal that the document is really on screen.
- */
-function waitForDocumentLoad(ed: any): Promise<void> {
-  return new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      try {
-        ed.removeEventListener?.('documentChange', finish);
-      } catch {
-        /* instance already torn down */
-      }
-      resolve();
-    };
-    try {
-      ed.addEventListener?.('documentChange', finish);
-    } catch {
-      finish();
-      return;
-    }
-    setTimeout(finish, DOCUMENT_LOAD_TIMEOUT_MS);
-  });
 }
 
 /** One pending edit's painted extent, in viewport-canvas coordinates. */
@@ -173,7 +151,16 @@ export function setAfterRenderCallback(ed: any, cb: (() => void) | null): void {
 }
 
 // Exported for tests (installed automatically at editor create).
-export function installRevisionHighlightRendering(ed: any) {
+export function installRevisionHighlightRendering(
+  ed: any,
+  // Optional per-author colouring. Given a revision's author, return that
+  // author's brand colour; the viewer and the live editor both pass this so
+  // each person's edits are tinted their own colour (following the design
+  // mockup). Omitted, the classic green-insert / red-delete washes apply.
+  colorForRevision?: (author: string) => string | undefined,
+  // Pending outlines belong to version history, not the live editor preview.
+  { showPendingOutline = false }: { showPendingOutline?: boolean } = {}
+) {
   const renderer = ed?.documentHelper?.render;
   if (!renderer || renderer[REVISION_RENDER_PATCH]) return;
   renderer[REVISION_RENDER_PATCH] = true;
@@ -244,6 +231,13 @@ export function installRevisionHighlightRendering(ed: any) {
     underlineY: number
   ) => {
     const info = elementBox?.width > 0 ? classifyBox(elementBox) : undefined;
+    // The author's brand colour for this box, when per-author colouring is on.
+    const authorColor = info
+      ? colorForRevision?.(info.revision?.author ?? '')
+      : undefined;
+    const pending = info
+      ? isPendingRevision(info.revision) || isPendingRevision(info.counterpart)
+      : false;
     let box: { x: number; y: number; w: number; h: number } | undefined;
     if (info) {
       box = {
@@ -258,9 +252,21 @@ export function installRevisionHighlightRendering(ed: any) {
       };
       try {
         const ctx = renderer.pageContext;
-        ctx.fillStyle =
-          info.kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
-        ctx.fillRect(box.x, box.y, box.w, box.h);
+        // Author-coloured: BOTH insertions and deletions get the author's wash
+        // so every edit is visibly highlighted in that author's colour (Robin's
+        // brand red), with deletions a touch lighter since their glyphs are also
+        // struck. Otherwise the classic fixed green/red washes.
+        if (authorColor) {
+          ctx.fillStyle = hexToRgba(
+            authorColor,
+            info.kind === 'del' ? AUTHOR_WASH_ALPHA_DEL : AUTHOR_WASH_ALPHA
+          );
+          ctx.fillRect(box.x, box.y, box.w, box.h);
+        } else {
+          ctx.fillStyle =
+            info.kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
+          ctx.fillRect(box.x, box.y, box.w, box.h);
+        }
       } catch {
         // Highlight is decoration only; the text itself must still render.
       }
@@ -268,12 +274,24 @@ export function installRevisionHighlightRendering(ed: any) {
     }
     let out;
     if (info?.kind === 'del') {
-      // Per-call swap: the fake Deletion entry makes the engine itself draw
-      // red glyphs + its baseline-aware single strike (no Insertion type in
-      // the entry → no underline).
+      // Per-call swap: the fake Deletion entry makes the engine itself draw the
+      // glyphs in the deletion colour + its baseline-aware single strike (no
+      // Insertion type in the entry → no underline).
       const prevCheck = renderer.checkRevisionType;
       renderer.checkRevisionType = () => [
-        { type: 'Deletion', color: DELETION_TEXT_COLOR }
+        { type: 'Deletion', color: authorColor ?? DELETION_TEXT_COLOR }
+      ];
+      try {
+        out = originalRenderText(elementBox, left, top, underlineY);
+      } finally {
+        renderer.checkRevisionType = prevCheck;
+      }
+    } else if (info && authorColor) {
+      // Author-coloured insertion: draw the glyphs in the author's colour and
+      // underlined (an Insertion entry adds the underline the mockup shows).
+      const prevCheck = renderer.checkRevisionType;
+      renderer.checkRevisionType = () => [
+        { type: 'Insertion', color: authorColor }
       ];
       try {
         out = originalRenderText(elementBox, left, top, underlineY);
@@ -295,6 +313,14 @@ export function installRevisionHighlightRendering(ed: any) {
           (ed[ACTIVE_BOXES_KEY] ?? (ed[ACTIVE_BOXES_KEY] = [])).push({
             ...box,
             line: elementBox.line
+          });
+        }
+        // History-only pending outlines remain visible between active steps.
+        if (showPendingOutline && pending) {
+          (ed[PENDING_BOXES_KEY] ?? (ed[PENDING_BOXES_KEY] = [])).push({
+            ...box,
+            line: elementBox.line,
+            color: authorColor ?? DELETION_TEXT_COLOR
           });
         }
       } catch {
@@ -332,9 +358,17 @@ export function installRevisionHighlightRendering(ed: any) {
       // Same choice the engine makes: the row's LAST revision decides.
       let wash = INSERTION_HIGHLIGHT;
       try {
-        const type = rowFormat.getRevision?.(count - 1)?.revisionType;
-        if (type === 'Deletion' || type === 'MoveFrom')
+        const rev = rowFormat.getRevision?.(count - 1);
+        const type = rev?.revisionType;
+        const isDel = type === 'Deletion' || type === 'MoveFrom';
+        const authorColor = colorForRevision?.(rev?.author ?? '');
+        if (authorColor) {
+          // Author-coloured: a faint wash for either kind (a deleted row still
+          // needs a visible tint since its glyphs are struck, not removed).
+          wash = hexToRgba(authorColor, AUTHOR_WASH_ALPHA);
+        } else if (isDel) {
           wash = DELETION_HIGHLIGHT;
+        }
       } catch {
         // Unreadable revision: keep the insertion wash.
       }
@@ -388,20 +422,27 @@ export function installRevisionHighlightRendering(ed: any) {
     };
   }
 
-  // Active-edit boundary ring, drawn after page content. Boxes group by LINE
-  // (the ±1px fudge overlaps adjacent lines vertically — cross-line unions
-  // would ring the whole paragraph) and only TOUCHING runs merge within a
-  // line, so a replace rings as one while disjoint runs ring separately.
-  const drawActiveRing = (fromIndex: number) => {
-    const boxes: Array<{
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-      line: any;
-    }> = (ed[ACTIVE_BOXES_KEY] ?? []).slice(fromIndex);
-    if (!boxes.length) return;
-    const byLine = new Map<any, typeof boxes>();
+  // Merge boxes into per-LINE unions of TOUCHING runs. Grouping by line (the
+  // ±1px fudge overlaps adjacent lines vertically — cross-line unions would ring
+  // the whole paragraph) keeps a replace ringed as one while disjoint runs ring
+  // separately. Each union carries the first box's colour.
+  type OutlineBox = {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    line: any;
+    color?: string;
+  };
+  type Union = {
+    x: number;
+    y: number;
+    right: number;
+    bottom: number;
+    color?: string;
+  };
+  const unionBoxesByLine = (boxes: OutlineBox[]): Union[] => {
+    const byLine = new Map<any, OutlineBox[]>();
     for (const b of boxes) {
       // Fall back to a coarse y-bucket if the line widget is unavailable.
       const key = b.line ?? `y:${Math.round(b.y / 8)}`;
@@ -409,15 +450,10 @@ export function installRevisionHighlightRendering(ed: any) {
       if (group) group.push(b);
       else byLine.set(key, [b]);
     }
-    const unions: Array<{
-      x: number;
-      y: number;
-      right: number;
-      bottom: number;
-    }> = [];
+    const unions: Union[] = [];
     const TOUCH_GAP = 3;
     for (const group of byLine.values()) {
-      const lineUnions: typeof unions = [];
+      const lineUnions: Union[] = [];
       for (const b of group.sort((a, z) => a.x - z.x)) {
         const u = lineUnions[lineUnions.length - 1];
         if (u && b.x <= u.right + TOUCH_GAP) {
@@ -430,25 +466,39 @@ export function installRevisionHighlightRendering(ed: any) {
             x: b.x,
             y: b.y,
             right: b.x + b.w,
-            bottom: b.y + b.h
+            bottom: b.y + b.h,
+            color: b.color
           });
         }
       }
       unions.push(...lineUnions);
     }
+    return unions;
+  };
+
+  const strokeUnions = (
+    unions: Union[],
+    stroke: string,
+    dash: number[] | null,
+    perUnionColor: boolean,
+    lineWidth: number = RING_WIDTH
+  ) => {
+    if (!unions.length) return;
     try {
       const ctx = renderer.pageContext;
       ctx.save();
-      ctx.strokeStyle = RING_LINE;
-      ctx.lineWidth = RING_WIDTH;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      if (dash) ctx.setLineDash(dash);
       // Strokes straddle the path: inset by half the width so the ring's
       // OUTER edge lands on the highlight boundary (no gap, no bleed).
-      const inset = RING_WIDTH / 2;
+      const inset = lineWidth / 2;
       for (const u of unions) {
+        if (perUnionColor && u.color) ctx.strokeStyle = u.color;
         const x = u.x + inset;
         const y = u.y + inset;
-        const w = u.right - u.x - RING_WIDTH;
-        const h = u.bottom - u.y - RING_WIDTH;
+        const w = u.right - u.x - lineWidth;
+        const h = u.bottom - u.y - lineWidth;
         if (w <= 0 || h <= 0) continue;
         if (typeof ctx.roundRect === 'function') {
           ctx.beginPath();
@@ -462,6 +512,25 @@ export function installRevisionHighlightRendering(ed: any) {
     } catch {
       // Decoration only.
     }
+  };
+
+  // Active-edit boundary ring (the stepped edit): solid, neutral.
+  const drawActiveRing = (fromIndex: number) => {
+    const boxes: OutlineBox[] = (ed[ACTIVE_BOXES_KEY] ?? []).slice(fromIndex);
+    strokeUnions(unionBoxesByLine(boxes), RING_LINE, null, false);
+  };
+
+  // Persistent dashed outline on every still-pending (unapproved) assistant
+  // edit, in the author's colour — so pending reads apart from approved.
+  const drawPendingOutline = (fromIndex: number) => {
+    const boxes: OutlineBox[] = (ed[PENDING_BOXES_KEY] ?? []).slice(fromIndex);
+    strokeUnions(
+      unionBoxesByLine(boxes),
+      DELETION_TEXT_COLOR,
+      PENDING_DASH,
+      true,
+      PENDING_RING_WIDTH
+    );
   };
 
   // Per-page hook (renderWidgets renders ONE page): reset collections on the
@@ -479,10 +548,16 @@ export function installRevisionHighlightRendering(ed: any) {
     if (!visible.length || visible[0] === page) {
       ed[REVISION_RECTS_KEY] = new Map();
       ed[ACTIVE_BOXES_KEY] = [];
+      ed[PENDING_BOXES_KEY] = [];
     }
     const startCount = (ed[ACTIVE_BOXES_KEY] ?? []).length;
+    const pendingStart = (ed[PENDING_BOXES_KEY] ?? []).length;
     const out = originalRenderWidgets(page, left, top, width, height);
     drawActiveRing(startCount);
+    // Paint the pending dash last. A pending edit can also be the active
+    // step, and both outlines share the same bounds; painting the solid active
+    // ring last used to cover the dash completely.
+    drawPendingOutline(pendingStart);
     if (!visible.length || visible[visible.length - 1] === page) {
       try {
         ed[AFTER_RENDER_KEY]?.();
@@ -519,15 +594,54 @@ export function installRevisionHighlightRendering(ed: any) {
 // Keep every shared-surface review customization behind the same predicate as
 // the rail. Gated-off editors retain Syncfusion's native rendering, Changes
 // pane, and revision merge behavior.
-export function configureTrackedChangeReview(ed: any, enabled: boolean): void {
+export function configureTrackedChangeReview(
+  ed: any,
+  enabled: boolean,
+  // Optional per-author colouring, forwarded to the highlight renderer. Both
+  // the version viewer and the live editor pass it; omitting it falls back to
+  // the classic green-insert / red-delete washes.
+  colorForRevision?: (author: string) => string | undefined
+): void {
   if (!enabled) return;
+  // Inline highlights only — never Syncfusion's own tracked-change markup or its
+  // Changes/review pane. showRevisions:false suppresses the default markup; the
+  // custom renderer draws our washes instead.
   ed.showRevisions = false;
   // Assist is the only author that may turn tracking on, and only inside a
   // synchronous write batch. User typing in a review host starts untracked.
   disableUserTrackChanges(ed);
-  if (ed.commentReviewPane) ed.commentReviewPane.isUserClosed = true;
+  closeTrackedChangeReviewPane();
   installRevisionGroupIsolation(ed);
-  installRevisionHighlightRendering(ed);
+  installRevisionHighlightRendering(ed, colorForRevision);
+}
+
+const REVIEW_PANE_STYLE_ID = 'feathery-hide-de-review-pane';
+
+// Suppress Syncfusion's native side panes. We render our own tracked-change UI
+// (TrackedChangeGroups), so the built-in Changes/Comments review pane must
+// never appear; every path that opens it (the showRevisions handler, the
+// assistant's tracked edits) ends by setting inline display:block on its
+// wrapper (.e-de-review-pane), and a stylesheet rule with !important overrides
+// that in every case — no per-instance monkey-patching. The Restrict Editing
+// pane (.e-de-restrict-pane) is suppressed the same way: Syncfusion auto-opens
+// it on the LEFT of the document the first time someone clicks or types in a
+// read-only editor (Editor.checkAndShowRestrictPane) and whenever a protected
+// document opens — the read-only version viewer trips it constantly, and its
+// editing-restriction controls have no place in our product. Layout is safe:
+// the viewer only subtracts the pane's computed width, which is 0 while
+// display:none. Injected once, idempotent.
+export function closeTrackedChangeReviewPane(): void {
+  const doc = featheryWindow().document;
+  if (!doc || doc.getElementById(REVIEW_PANE_STYLE_ID)) return;
+  try {
+    const style = doc.createElement('style');
+    style.id = REVIEW_PANE_STYLE_ID;
+    style.textContent =
+      '.e-de-review-pane,.e-de-restrict-pane{display:none!important}';
+    (doc.head ?? doc.documentElement).appendChild(style);
+  } catch {
+    /* no document (SSR/tests): the pane cannot render there anyway */
+  }
 }
 
 export function resizeDocxEditor(
@@ -685,7 +799,11 @@ export function installTableRowResizeFix(ed: any) {
 
 async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
   if ('buffer' in source) return source.buffer;
-  const res = await fetch(source.url);
+  if ('sfdt' in source) throw new Error('SFDT does not have DOCX bytes');
+  // Saves and restores replace the object behind the same live envelope URL.
+  // Reopening with the browser cache can therefore load the pre-restore bytes
+  // even though openNonce correctly triggered a new fetch.
+  const res = await fetch(source.url, { cache: 'no-store' });
   if (!res.ok) {
     throw new Error(`Failed to fetch document (${res.status})`);
   }
@@ -695,20 +813,6 @@ async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
 // scriptjs can report the CDN bundle "loaded" a beat before the (multi-MB) ej2
 // UMD finishes attaching `ej` to window (notably under Next). Poll for it rather
 // than checking once.
-function waitForEj(timeoutMs = 15000): Promise<any> {
-  return new Promise((resolve) => {
-    const done = () => (featheryWindow() as any).ej?.documenteditor;
-    if (done()) return resolve((featheryWindow() as any).ej);
-    const start = Date.now();
-    const iv = setInterval(() => {
-      if (done() || Date.now() - start > timeoutMs) {
-        clearInterval(iv);
-        resolve((featheryWindow() as any).ej);
-      }
-    }, 50);
-  });
-}
-
 export interface DocxBindingsConfig
   extends Omit<UseDocxBindingsOptions, 'editor' | 'loading' | 'readOnly'> {
   enabled?: boolean;
@@ -730,6 +834,13 @@ interface Props {
    *  drives the document directly through this — no iframe boundary). */
   onEditorReady?: (editor: any) => void;
   onDirty?: () => void;
+  /** Fired on every content change (not edge-collapsed like onDirty), tagged
+   *  with whether the assistant is driving the edit. The version-history
+   *  session tracker uses this to attribute edits and keep autosave alive. */
+  onEdit?: (info: { assistant: boolean }) => void;
+  /** Ctrl/Cmd+S in the editor. Provided so the save shortcut routes to the host
+   *  Save instead of Syncfusion's default (which downloads the raw SFDT). */
+  onSaveShortcut?: () => void;
   onError?: (error: string) => void;
   /**
    * Opt-in document bindings: [[...]] tokens become live fields and formulas that
@@ -763,6 +874,8 @@ export function useDocxEditor({
   onReady,
   onEditorReady,
   onDirty,
+  onEdit,
+  onSaveShortcut,
   onError,
   bindings
 }: Props): Result {
@@ -774,6 +887,10 @@ export function useDocxEditor({
   const ignoreContentChangeRef = useRef(true);
   const onDirtyRef = useRef(onDirty);
   onDirtyRef.current = onDirty;
+  const onEditRef = useRef(onEdit);
+  onEditRef.current = onEdit;
+  const onSaveShortcutRef = useRef(onSaveShortcut);
+  onSaveShortcutRef.current = onSaveShortcut;
   const [editor, setEditor] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -916,15 +1033,47 @@ export function useDocxEditor({
           | undefined;
         if (viewer) viewer.style.overflowAnchor = 'none';
         ed.isReadOnly = isReadOnly;
+        // Suppress Syncfusion's native review pane for every host (not just
+        // review-gated ones) — we render our own tracked-change UI.
+        closeTrackedChangeReviewPane();
         ed.addEventListener('contentChange', () => {
+          // A tracked edit (e.g. the assistant's) can spawn/reopen the native
+          // pane; keep it suppressed. Idempotent once patched.
+          closeTrackedChangeReviewPane();
           if (ignoreContentChangeRef.current) return;
           unsavedRef.current = true;
           onDirtyRef.current?.();
+          // Unlike onDirty (edge-only), onEdit fires on every change so the
+          // session tracker can debounce autosave and attribute each edit.
+          onEditRef.current?.({ assistant: isAssistantApplyingEdits(ed) });
+        });
+        // Ctrl/Cmd+S: Syncfusion's default saves the document as a downloaded
+        // SFDT file. Intercept it, stop that default (isHandled + preventDefault),
+        // and route to the host's Save so the shortcut persists like the toolbar.
+        ed.addEventListener('keyDown', (args: any) => {
+          const e = args?.event as KeyboardEvent | undefined;
+          if (!e) return;
+          const isSaveCombo =
+            (e.ctrlKey || e.metaKey) &&
+            !e.shiftKey &&
+            !e.altKey &&
+            (e.key === 's' || e.key === 'S' || e.keyCode === 83);
+          if (!isSaveCombo) return;
+          args.isHandled = true;
+          try {
+            e.preventDefault();
+          } catch {
+            /* some synthetic events aren't cancelable */
+          }
+          onSaveShortcutRef.current?.();
         });
         // Native right-click menu — insert/delete table rows & columns,
         // cut/copy/paste, etc. (the built-in toolbar is disabled).
         ed.enableContextMenu = true;
         try {
+          // The editing surface keeps the classic green-insertion/red-deletion
+          // treatment. Per-author colours belong only to version history, where
+          // attribution is the point of the view.
           configureTrackedChangeReview(ed, reviewGate);
           if (reviewGate) disableUserTrackChanges(ed, instance);
           // Engine-level fixes to the editing surface itself, not review
@@ -1007,19 +1156,22 @@ export function useDocxEditor({
   // NOT a .docx blob — so a .docx is converted server-side first: POST it to
   // `${serviceUrl}Import` (multipart field "files"); the response is SFDT,
   // sometimes wrapped in `{"sfdt": "..."}` depending on the service build.
-  // Depend on the URL/buffer identity (not the wrapper object) so parent
+  // Depend on the URL/buffer/SFDT identity (not the wrapper object) so parent
   // re-renders that recreate `{ url }` don't cancel an in-flight open.
   const sourceUrl = source && 'url' in source ? source.url : undefined;
   const sourceBuffer = source && 'buffer' in source ? source.buffer : undefined;
+  const sourceSfdt = source && 'sfdt' in source ? source.sfdt : undefined;
   // What "the same document, opened the same time" means, for the carried stash.
-  const openKey = `${openNonce ?? 0}|${sourceUrl ?? ''}|${
-    sourceBuffer ? sourceBuffer.byteLength : ''
-  }`;
+  const openKey = sourceSfdt
+    ? `${openNonce ?? 0}|sfdt|${sourceSfdt}`
+    : `${openNonce ?? 0}|${sourceUrl ?? ''}|${
+        sourceBuffer ? sourceBuffer.byteLength : ''
+      }`;
   const openKeyRef = useRef(openKey);
   openKeyRef.current = openKey;
 
   useEffect(() => {
-    if (!editor || (!sourceUrl && !sourceBuffer)) return;
+    if (!editor || (!sourceUrl && !sourceBuffer && !sourceSfdt)) return;
     const carried = carriedRef.current;
     carriedRef.current = null;
     if (carried && carried.key === openKey) {
@@ -1042,7 +1194,9 @@ export function useDocxEditor({
       }
     }
     let cancelled = false;
-    const openSource: DocxSource = sourceBuffer
+    const openSource: DocxSource = sourceSfdt
+      ? { sfdt: sourceSfdt }
+      : sourceBuffer
       ? { buffer: sourceBuffer }
       : { url: sourceUrl as string };
 
@@ -1051,17 +1205,6 @@ export function useDocxEditor({
         ignoreContentChangeRef.current = true;
         setLoading(true);
         setError(null);
-        const buffer = await resolveBuffer(openSource);
-        if (cancelled) return;
-        if (!serviceUrl) {
-          throw new Error('serviceUrl is required to open a .docx');
-        }
-        // Match the dashboard DocxPage path: hand Syncfusion the .docx blob
-        // and let it convert via serviceUrl. Manual Import→SFDT was returning
-        // optimized/base64 SFDT that open() often left as a blank document.
-        const blob = new Blob([buffer], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        });
         const liveEditor = containerInstRef.current?.documentEditor ?? editor;
         liveEditor[OPENING_DOCUMENT_KEY] = true;
         // open() resolves before the converted document is laid out, so anything
@@ -1069,10 +1212,28 @@ export function useDocxEditor({
         // Registered before the open so a fast load cannot outrun the listener.
         const documentLoaded = waitForDocumentLoad(liveEditor);
         try {
-          if (typeof liveEditor.openAsync === 'function') {
-            await liveEditor.openAsync(blob);
+          if ('sfdt' in openSource) {
+            // A restored version can carry this exact clean snapshot. Opening
+            // it directly avoids downloading the DOCX and asking Syncfusion's
+            // Import service to convert it before the user can continue.
+            liveEditor.open(openSource.sfdt);
           } else {
-            liveEditor.open(blob);
+            const buffer = await resolveBuffer(openSource);
+            if (cancelled) return;
+            if (!serviceUrl) {
+              throw new Error('serviceUrl is required to open a .docx');
+            }
+            // Match the dashboard DocxPage path: hand Syncfusion the .docx blob
+            // and let it convert via serviceUrl. Manual Import→SFDT was returning
+            // optimized/base64 SFDT that open() often left as a blank document.
+            const blob = new Blob([buffer], {
+              type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            });
+            if (typeof liveEditor.openAsync === 'function') {
+              await liveEditor.openAsync(blob);
+            } else {
+              liveEditor.open(blob);
+            }
           }
         } catch (err) {
           // A failed open must not leave the flag stuck true — that would
@@ -1084,7 +1245,8 @@ export function useDocxEditor({
           liveEditor[OPENING_DOCUMENT_KEY] = false;
           return;
         }
-        await documentLoaded;
+        if (!(await documentLoaded))
+          throw new Error('Document editor did not finish loading');
         if (cancelled) {
           liveEditor[OPENING_DOCUMENT_KEY] = false;
           return;
@@ -1120,7 +1282,7 @@ export function useDocxEditor({
       cancelled = true;
       ignoreContentChangeRef.current = true;
     };
-  }, [editor, sourceUrl, sourceBuffer, serviceUrl, openNonce]);
+  }, [editor, sourceUrl, sourceBuffer, sourceSfdt, serviceUrl, openNonce]);
 
   // Bindings attach only once a document is actually open, and never to a
   // read-only one: reconciliation writes to the document, and a finalized or
@@ -1140,8 +1302,7 @@ export function useDocxEditor({
   });
 
   const exportDoc = useCallback((): Promise<Blob> => {
-    if (!editor) return Promise.reject(new Error('Editor is not ready'));
-    return editor.saveAsBlob('Docx');
+    return exportDocxSnapshot(editor);
   }, [editor]);
 
   const resizeEditor = useCallback(
