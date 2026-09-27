@@ -184,14 +184,22 @@ const styles = {
     height: 30,
     border: `1px solid ${ZINC[200]}`,
     borderRadius: 6,
-    background: '#fff',
+    // Native caret spacing is not controllable, so draw our own chevron and
+    // reserve room for it with padding-right.
+    appearance: 'none' as const,
+    WebkitAppearance: 'none' as const,
+    MozAppearance: 'none' as const,
+    backgroundColor: '#fff',
+    backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'
+    )}")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 9px center',
     color: ZINC[700],
     fontSize: 12.5,
-    // Extra right padding gives the native dropdown caret room to breathe.
-    padding: '0 10px',
-    paddingRight: 14,
+    padding: '0 28px 0 10px',
     cursor: 'pointer',
-    '&:hover': { background: ZINC[100] },
+    '&:hover': { backgroundColor: ZINC[100] },
     '&:disabled': { opacity: 0.4, cursor: 'default' }
   },
   num: (wide = false) => ({
