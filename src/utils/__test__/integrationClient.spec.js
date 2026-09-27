@@ -518,6 +518,54 @@ describe('IntegrationClient', () => {
   });
 
   describe('generateEnvelopes', () => {
+    it('forwards copy-specific signers, SMS and all-copy defaults to the API', async () => {
+      const client = new IntegrationClient('test_form_key');
+      const signers = [
+        {
+          document_id: 'aaf',
+          role_id: 'owner',
+          repeat_index: 0,
+          email: 'john@example.com',
+          phone: '+15551234567',
+          filler: false
+        },
+        {
+          document_id: 'aaf',
+          role_id: 'owner',
+          repeat_index: 1,
+          email: 'mary@example.com',
+          filler: false
+        },
+        {
+          document_id: 'aaf',
+          role_id: 'advisor',
+          email: 'advisor@example.com',
+          filler: false
+        }
+      ];
+      for (const envelopeAction of ['open_in_editor', 'sign']) {
+        global.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ files: [] })
+        });
+        await client.generateEnvelopes({
+          documents: [{ kind: 'quik' }, 'aaf'],
+          repeatable: true,
+          sign_method: 'docusign',
+          envelope_action: envelopeAction,
+          editor_toolbar_actions: ['draft'],
+          envelope_signers: signers,
+          run_async: false
+        });
+        const calls = global.fetch.mock.calls;
+        const body = JSON.parse(calls[calls.length - 1][1].body);
+        expect(body.signers).toEqual(signers);
+        expect(body.repeatable).toBe(true);
+        expect(body.sign_method).toBe('docusign');
+        expect(body.documents).toEqual([{ kind: 'quik' }, 'aaf']);
+      }
+    });
+
     it('calls document generate endpoint with correct parameters', async () => {
       // Arrange
       const formKey = 'test_form_key';
@@ -768,6 +816,37 @@ describe('IntegrationClient', () => {
         docusign_envelope_id: 'ds-1',
         status: 'sent'
       });
+    });
+
+    it('forwards email subject and blurb, omitting them when unset', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'ds-2' })
+      });
+
+      await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign',
+        email_subject: 'Please sign this',
+        email_blurb: 'Two signatures needed.'
+      });
+      let body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.email_subject).toBe('Please sign this');
+      expect(body.email_blurb).toBe('Two signatures needed.');
+
+      // Omitted rather than sent empty, so the backend's default subject wins
+      global.fetch.mockClear();
+      await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign'
+      });
+      body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.email_subject).toBeUndefined();
+      expect(body.email_blurb).toBeUndefined();
     });
 
     it('ignores the form signer field for a docusign sign, keeping the role mappings', async () => {
@@ -1078,6 +1157,32 @@ describe('IntegrationClient', () => {
       expect(body.envelopes).toEqual([{ envelope_id: 'env-1' }]);
       expect(body.signer_email).toBeUndefined();
       expect(body.envelope_action).toBe('sign');
+      expect(body.email_subject).toBeUndefined();
+    });
+
+    it('forwards email subject and blurb to finalize', async () => {
+      // An open_in_editor flow does not build the DocuSign envelope until the
+      // filler presses Sign, so finalize has to carry them too.
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'ds-fin' })
+      });
+
+      await integrationClient.finalizeEnvelopeReview(
+        {
+          run_async: false,
+          sign_method: 'docusign',
+          email_subject: 'Signed, sealed',
+          email_blurb: 'Last step.'
+        },
+        { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
+      );
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.email_subject).toBe('Signed, sealed');
+      expect(body.email_blurb).toBe('Last step.');
     });
 
     it('polls until complete when finalize runs async', async () => {
@@ -1356,8 +1461,56 @@ describe('IntegrationClient', () => {
       expect(body.wet_sign).toBe(true);
       expect(body.use_disclosure).toBe(true);
       expect(body.signers).toBeUndefined();
+      expect(body.cc_recipients).toBeUndefined();
       expect(body.documents).toEqual(['doc-1']);
       expect(result).toEqual({ docusign_envelope_id: 'wet-1' });
+    });
+
+    it('forwards ccRecipients as cc_recipients in both shapes', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        ccRecipients: [
+          'plain@mail.com',
+          { email: 'named@mail.com', name: 'CC' },
+          { email: 'scoped@mail.com', name: 'Scoped', excludedDocuments: [1] }
+        ]
+      });
+
+      expect(requestBody().cc_recipients).toEqual([
+        'plain@mail.com',
+        { email: 'named@mail.com', name: 'CC' },
+        {
+          email: 'scoped@mail.com',
+          name: 'Scoped',
+          excluded_documents: [1]
+        }
+      ]);
+    });
+
+    it('omits cc_recipients when a rule passes null', async () => {
+      // Logic rules are untyped, so `someField || null` is plausible input;
+      // the backend's list field rejects null with a 400.
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        ccRecipients: null
+      });
+
+      expect('cc_recipients' in requestBody()).toBe(false);
     });
 
     it('forwards ignoreTemplateFieldMapping as ignore_template_field_mapping', async () => {

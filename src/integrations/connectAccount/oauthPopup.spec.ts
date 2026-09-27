@@ -13,60 +13,65 @@ describe('runOAuthPopup', () => {
     jest.useRealTimers();
   });
 
-  it('resolves only for the expected popup, origin, and state', async () => {
-    const client = {
-      startAccountConnect: jest.fn().mockResolvedValue(authorization)
-    };
-    const popup = {
-      closed: false,
-      close: jest.fn(),
-      focus: jest.fn(),
-      location: { href: 'about:blank' }
-    } as unknown as Window;
-    const win = featheryWindow();
-    let messageHandler: ((event: MessageEvent) => void) | undefined;
-    const addEventListener = jest
-      .spyOn(win, 'addEventListener')
-      .mockImplementation((type, listener) => {
-        if (type === 'message') {
-          messageHandler = listener as (event: MessageEvent) => void;
+  it.each([false, true])(
+    'resolves only for the expected popup, origin, and state (save: %s)',
+    async (saveCredential) => {
+      const client = {
+        startAccountConnect: jest.fn().mockResolvedValue(authorization)
+      };
+      const popup = {
+        closed: false,
+        close: jest.fn(),
+        focus: jest.fn(),
+        location: { href: 'about:blank' }
+      } as unknown as Window;
+      const win = featheryWindow();
+      let messageHandler: ((event: MessageEvent) => void) | undefined;
+      const addEventListener = jest
+        .spyOn(win, 'addEventListener')
+        .mockImplementation((type, listener) => {
+          if (type === 'message') {
+            messageHandler = listener as (event: MessageEvent) => void;
+          }
+        });
+      const removeEventListener = jest
+        .spyOn(win, 'removeEventListener')
+        .mockImplementation(() => {});
+
+      const resultPromise = runOAuthPopup(client, 'box', popup, saveCredential);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(messageHandler).toBeDefined();
+      if (!messageHandler)
+        throw new Error('Message handler was not registered');
+      messageHandler({
+        source: popup,
+        origin: authorization.callback_origin,
+        data: {
+          type: 'feathery-account-connect',
+          state: authorization.state,
+          success: true,
+          account_email: 'respondent@example.com'
         }
-      });
-    const removeEventListener = jest
-      .spyOn(win, 'removeEventListener')
-      .mockImplementation(() => {});
+      } as MessageEvent);
 
-    const resultPromise = runOAuthPopup(client, 'box', popup);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(messageHandler).toBeDefined();
-    if (!messageHandler) throw new Error('Message handler was not registered');
-    messageHandler({
-      source: popup,
-      origin: authorization.callback_origin,
-      data: {
-        type: 'feathery-account-connect',
-        state: authorization.state,
-        success: true,
-        account_email: 'respondent@example.com'
-      }
-    } as MessageEvent);
-
-    await expect(resultPromise).resolves.toEqual(
-      expect.objectContaining({
-        success: true,
-        account_email: 'respondent@example.com'
-      })
-    );
-    expect(client.startAccountConnect).toHaveBeenCalledWith(
-      'box',
-      win.location.origin
-    );
-    expect(popup.location.href).toBe(authorization.authorization_url);
-    expect(popup.close).toHaveBeenCalled();
-    expect(addEventListener).toHaveBeenCalled();
-    expect(removeEventListener).toHaveBeenCalled();
-  });
+      await expect(resultPromise).resolves.toEqual(
+        expect.objectContaining({
+          success: true,
+          account_email: 'respondent@example.com'
+        })
+      );
+      expect(client.startAccountConnect).toHaveBeenCalledWith(
+        'box',
+        win.location.origin,
+        saveCredential
+      );
+      expect(popup.location.href).toBe(authorization.authorization_url);
+      expect(popup.close).toHaveBeenCalled();
+      expect(addEventListener).toHaveBeenCalled();
+      expect(removeEventListener).toHaveBeenCalled();
+    }
+  );
 
   it('surfaces provider errors from the callback', async () => {
     const client = {

@@ -3,8 +3,15 @@ import BoxFolderPicker from './BoxFolderPicker';
 import { fieldValues } from '../../utils/init';
 import { ACTION_CONNECT_ACCOUNT } from '../../utils/elementActions';
 
+export type ProviderFooterAction = {
+  label: string;
+  disabled: boolean;
+  onClick: () => void | Promise<void>;
+};
+
 // The modal shell remounts the config component (via a `key` keyed on
-// accountEmail) whenever the connected account changes, so any state a
+// accountEmail and a successful connection version) whenever the account changes,
+// including reattaching the same saved account, so any state a
 // provider's config component holds - selections, pagination, fetched lists -
 // is always for the currently connected account. A provider component never
 // needs to detect an account change itself; don't add ad hoc handling for it
@@ -14,6 +21,8 @@ export type ProviderConfigProps = {
   provider: string;
   onSaved: (values: Record<string, string>) => void;
   onError: (message: string) => void;
+  onClearError?: () => void;
+  onFooterActionChange?: (action: ProviderFooterAction | null) => void;
 };
 
 /** Providers whose post-connect setup needs its own UI. A provider absent from
@@ -44,6 +53,18 @@ export const connectionFieldKey = (provider: string) =>
   `feathery.connections.${provider}.${
     PROVIDER_CONNECTION_FIELD[provider] ?? 'email'
   }`;
+
+/** The field under `feathery.connections.<provider>.` that a provider's setup
+ *  step writes once configuration is complete. A connection whose setup is
+ *  unfinished (account attached, no folder picked) is not yet usable. */
+const PROVIDER_CONFIG_FIELD: Record<string, string> = {
+  box: 'folder_id'
+};
+
+export const configFieldKey = (provider: string) => {
+  const field = PROVIDER_CONFIG_FIELD[provider];
+  return field ? `feathery.connections.${provider}.${field}` : null;
+};
 
 /** Whether a connection's stored value is the account's email, and so worth
  *  showing as the button's label. */

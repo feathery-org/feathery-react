@@ -12,6 +12,7 @@ import {
   UploadFileToEgnyteParams
 } from '../internalState';
 import { featheryWindow } from '../browser';
+import { PROVIDER_LABELS } from '../../integrations/connectAccount/providers';
 import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
@@ -251,14 +252,67 @@ export default class IntegrationClient {
     );
   }
 
-  async startAccountConnect(provider: string, parentOrigin: string) {
+  async listAccountCredentials(provider: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    // With the submission key the server also reports whether its current
+    // connection is the caller's own to manage (`attached.owner`) or another
+    // user's, which the caller may only replace.
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      ...(userId ? { fuser_key: userId } : {}),
+      provider
+    });
+    const response = await this._fetch(
+      `${API_URL}account-connect/credentials/?${params}`,
+      undefined,
+      false
+    );
+    // A public form or signed-out collaborator has no account-level list.
+    // Do not expose errors or credential metadata from an auth denial.
+    if (response?.status === 401 || response?.status === 403) return null;
+    if (!response) throw new Error('Unable to load saved accounts.');
+    const payload = await response.json();
+    if (response.status === 200) return payload;
+    throw new Error(parseAPIError(payload) || 'Unable to load saved accounts.');
+  }
+
+  async selectAccountCredential(
+    provider: string,
+    credentialId: string,
+    remember = false
+  ) {
+    return this._accountConnectPost('select', {
+      provider,
+      credential_id: credentialId,
+      ...(remember ? { remember: true } : {})
+    });
+  }
+
+  async disconnectAccount(provider: string) {
+    return this._accountConnectPost('disconnect', { provider });
+  }
+
+  async deleteAccountCredential(provider: string, credentialId: string) {
+    return this._accountConnectPost('delete', {
+      provider,
+      credential_id: credentialId
+    });
+  }
+
+  async startAccountConnect(
+    provider: string,
+    parentOrigin: string,
+    saveCredential = false
+  ) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
       fuser_key: userId,
       provider,
-      parent_origin: parentOrigin
+      parent_origin: parentOrigin,
+      ...(saveCredential ? { save_credential: true } : {})
     });
     const response = await this._fetch(
       `${API_URL}account-connect/start/?${params}`,
@@ -266,6 +320,13 @@ export default class IntegrationClient {
       false
     );
     if (!response) throw new Error('Unable to start authorization.');
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        `Please sign in to connect or manage your ${
+          PROVIDER_LABELS[provider] ?? provider
+        } account.`
+      );
+    }
 
     const payload = await response.json();
     if (response.status === 200) return payload;
@@ -595,7 +656,14 @@ export default class IntegrationClient {
           // explicit null, and leaving it off spreads the email across
           // every role.
           ...(entry.role_id ? { role_id: entry.role_id } : {}),
+          ...(entry.repeat_index !== undefined
+            ? { repeat_index: entry.repeat_index }
+            : {}),
           email,
+          // Omitted rather than blanked: a present phone is the request to
+          // challenge that recipient by SMS, so an empty one must not read as
+          // one.
+          ...(entry.phone ? { phone: entry.phone.toString() } : {}),
           filler: entry.filler ?? isFiller(email)
         };
       })
@@ -655,7 +723,9 @@ export default class IntegrationClient {
         mergeDocs: action.merge_docs ?? false,
         openInEditor,
         envelopeAction,
-        signMethod: action.sign_method
+        signMethod: action.sign_method,
+        emailSubject: action.email_subject,
+        emailBlurb: action.email_blurb
       });
     }
 
@@ -781,7 +851,9 @@ export default class IntegrationClient {
     mergeDocs,
     openInEditor,
     envelopeAction,
-    signMethod
+    signMethod,
+    emailSubject,
+    emailBlurb
   }: {
     documentIds: GenerateDocumentRef[];
     signers: Record<string, any>[];
@@ -794,6 +866,9 @@ export default class IntegrationClient {
     openInEditor: boolean;
     envelopeAction: 'sign' | 'fill';
     signMethod?: string;
+    // DocuSign sign only: subject and body of the envelope's signing email.
+    emailSubject?: string;
+    emailBlurb?: string;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
@@ -814,6 +889,8 @@ export default class IntegrationClient {
       payload.editor_toolbar_actions = toolbarActions;
     }
     if (signMethod) payload.sign_method = signMethod;
+    if (emailSubject) payload.email_subject = emailSubject;
+    if (emailBlurb) payload.email_blurb = emailBlurb;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
 
@@ -892,6 +969,10 @@ export default class IntegrationClient {
     if (action.merged_file_name)
       payload.merged_file_name = action.merged_file_name;
     if (action.sign_method) payload.sign_method = action.sign_method;
+    // Carried to finalize too: an open_in_editor flow does not build the
+    // DocuSign envelope until the filler presses Sign.
+    if (action.email_subject) payload.email_subject = action.email_subject;
+    if (action.email_blurb) payload.email_blurb = action.email_blurb;
 
     const url = `${getApiUrl()}document/form/finalize/`;
     const options = {
@@ -998,6 +1079,7 @@ export default class IntegrationClient {
     emailSubject,
     emailBlurb,
     signers,
+    ccRecipients,
     existingEnvelopeId,
     draft,
     wetSign,
@@ -1065,6 +1147,22 @@ export default class IntegrationClient {
               }
             : {})
         })),
+        // Bare emails pass through; object entries are sent with snake_case
+        // keys. `?? undefined` drops the key rather than sending null: logic
+        // rules are untyped, and the backend's list field rejects null with a
+        // 400 that would fail the whole send.
+        // Anything that isn't an object is left for the backend to validate,
+        // so a malformed rule value is still a 400 rather than a throw here.
+        cc_recipients:
+          ccRecipients?.map((cc) =>
+            cc && typeof cc === 'object'
+              ? {
+                  email: cc.email,
+                  name: cc.name,
+                  excluded_documents: cc.excludedDocuments
+                }
+              : cc
+          ) ?? undefined,
         docusign_envelope_id: existingEnvelopeId,
         draft,
         wet_sign: wetSign,

@@ -97,6 +97,7 @@ jest.mock('../../utils/init', () => {
     defaultClient: { flushCustomFields: jest.fn() },
     FieldValues: {} as any,
     fieldValues: {} as any,
+    fileRetryStatus: {} as any,
     initState,
     initInfo: jest.fn(() => ({
       userId: '',
@@ -120,7 +121,9 @@ jest.mock('../../utils/formHelperFunctions', () => ({
   httpHelpers: () => ({}),
   isElementInViewport: () => true,
   lookUpTrigger: () => ({}),
-  mapFormSettingsResponse: () => ({}),
+  mapFormSettingsResponse: (res: any) => ({
+    authSensitiveActionsOnly: res.auth_sensitive_actions_only ?? false
+  }),
   prioritizeActions: (a: any) => a,
   registerRenderCallback: () => {},
   remountAllForms: jest.fn(),
@@ -241,6 +244,7 @@ jest.mock('../../utils/browser', () => {
   const state = {
     confirm: jest.fn(),
     open: jest.fn(),
+    dispatchEvent: jest.fn(),
     history,
     location: { href: 'https://example.com/', pathname: '/', search: '' },
     getCookie: jest.fn(),
@@ -257,6 +261,7 @@ jest.mock('../../utils/browser', () => {
       scrollTo: jest.fn(),
       confirm: state.confirm,
       open: state.open,
+      dispatchEvent: state.dispatchEvent,
       history: state.history,
       location: state.location
     }),
@@ -364,13 +369,17 @@ jest.mock('../../utils/featheryClient', () => {
   const state = {
     session: null as any,
     sessionError: null as any,
-    formOff: false
+    formOff: false,
+    authSensitiveActionsOnly: false,
+    // Lets a test give the single step its own elements (e.g. a button whose
+    // action gates the step) instead of the empty default.
+    steps: null as any[] | null
   };
 
   class MockClient {
     // Return one step so getNewStep can set activeStep and render Grid
     fetchForm = async () => ({
-      steps: [
+      steps: state.steps ?? [
         {
           key: 'step-1',
           id: 's1',
@@ -380,6 +389,7 @@ jest.mock('../../utils/featheryClient', () => {
         }
       ],
       form_name: 'Test Form',
+      auth_sensitive_actions_only: state.authSensitiveActionsOnly,
       completion_behavior: '',
       formOff: state.formOff,
       logic_rules: [],
@@ -409,6 +419,7 @@ jest.mock('../../utils/featheryClient', () => {
     runAIExtraction = jest.fn();
     forwardInboxEmail = jest.fn();
     flushCustomFields = jest.fn();
+    listAccountCredentials = jest.fn().mockResolvedValue(null);
     startAccountConnect = jest.fn();
     getAccountConnectStatus = jest.fn();
     inviteCollaborator = inviteCollaboratorSpy;

@@ -522,4 +522,38 @@ describe('duplicate_table over an unreviewed assistant edit', () => {
     expect(editor.enableTrackChanges).toBe(false);
     expect(container.enableTrackChanges).toBe(false);
   });
+
+  it('refuses an invalid donor grid width before changing content', () => {
+    const before = documentContentOf(editor);
+    const malformed = fixture();
+    malformed.sections[0].blocks[1].grid = [250, 'invalid'];
+    const serializeSpy = jest
+      .spyOn(editor, 'serialize')
+      .mockReturnValue(JSON.stringify(malformed));
+
+    const result = apply(
+      editor,
+      [
+        {
+          op: 'insert_column',
+          anchor: '0;1;0;1;0',
+          position: 'after'
+        }
+      ],
+      'invalid-column-grid'
+    );
+    serializeSpy.mockRestore();
+
+    expect(result.results[0]).toMatchObject({
+      ok: false,
+      error: 'insert_column_unroutable'
+    });
+    expect(result.results[0].message).toContain(
+      'table grid width is missing or invalid'
+    );
+    expect(editor.revisions.length).toBe(0);
+    expect(documentContentOf(editor)).toEqual(before);
+    expect(editor.enableTrackChanges).toBe(false);
+    expect(container.enableTrackChanges).toBe(false);
+  });
 });

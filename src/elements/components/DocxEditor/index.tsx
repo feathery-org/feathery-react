@@ -41,6 +41,8 @@ export interface DocxEditorProps {
   /** Extra headers for serviceUrl requests (e.g. Feathery Authorization). */
   headers?: Record<string, string>[];
   readOnly?: boolean;
+  /** Builder preview: show a read-only sample and leave pointer input to the canvas. */
+  preview?: boolean;
   /** Enables the assistant tracked-change review rail and its editor hooks. */
   reviewChanges?: boolean;
   /** Controlled reveal. When explicitly false the editor is unmounted. */
@@ -77,6 +79,11 @@ export interface DocxEditorProps {
   onSave?: (
     blob: Blob
   ) => DocxSaveResult | void | Promise<DocxSaveResult | void>;
+  /** Fired after an explicit Save button press succeeds — not the implicit save
+   *  a download or terminal action runs first. Carries the save result. */
+  onSaved?: (result?: DocxSaveResult) => void;
+  /** Fired after an explicit Download (DOCX or PDF) completes. */
+  onDownloaded?: () => void;
   /** Opt-in document bindings: [[...]] tokens become live fields and formulas
    *  that recalculate as the document is edited. Omitting it changes nothing. */
   bindings?: DocxBindingsConfig;
@@ -93,6 +100,28 @@ const overlay = {
   color: '#3f3f46'
 };
 
+const PREVIEW_DOCUMENT = JSON.stringify({
+  sections: [
+    {
+      blocks: [
+        {
+          inlines: [
+            {
+              text: 'Sample document',
+              characterFormat: { bold: true, fontSize: 18 }
+            }
+          ]
+        },
+        {
+          inlines: [
+            { text: 'Your generated document content will appear here.' }
+          ]
+        }
+      ]
+    }
+  ]
+});
+
 // Reusable Syncfusion DOCX editor: custom toolbar + inline editing in one unit
 // that fills its container and manages its own overflow. Syncfusion loads from
 // the CDN at runtime (no bundle bloat) and renders directly in the page (no
@@ -105,6 +134,7 @@ function DocxEditor({
   serviceUrl,
   headers,
   readOnly,
+  preview = false,
   reviewChanges = false,
   visible = true,
   hideDownload,
@@ -122,6 +152,8 @@ function DocxEditor({
   onChange,
   onError,
   onSave,
+  onSaved,
+  onDownloaded,
   bindings
 }: DocxEditorProps) {
   const dirtyRef = useRef(false);
@@ -235,6 +267,14 @@ function DocxEditor({
     setSaveToast(null);
   }, []);
 
+  const handleEditorReady = useCallback(
+    (readyEditor: any) => {
+      if (preview) readyEditor.open(PREVIEW_DOCUMENT);
+      onEditorReady?.(readyEditor);
+    },
+    [onEditorReady, preview]
+  );
+
   const {
     containerRef,
     editor,
@@ -247,11 +287,11 @@ function DocxEditor({
     licenseKey,
     serviceUrl,
     headers,
-    readOnly,
+    readOnly: preview || readOnly,
     reviewChanges,
     openNonce,
     onReady,
-    onEditorReady,
+    onEditorReady: handleEditorReady,
     onDirty: markDirty,
     onError,
     bindings: bindings
@@ -411,8 +451,9 @@ function DocxEditor({
     if (force) bindingsState.commitForSave();
     else if (!gateSave(() => handleSave(true))) return;
     try {
-      await saveCurrentDocument(await exportDoc());
+      const result = await saveCurrentDocument(await exportDoc());
       flashSaveToast('success', 'Document saved');
+      onSaved?.(result);
     } catch (err) {
       flashSaveToast('error', 'Could not save document');
       onError?.((err as Error).message || String(err));
@@ -446,6 +487,7 @@ function DocxEditor({
       // the only source.
       if (url) triggerDownload(await fetchDownloadBlob(url));
       else triggerDownload(blob);
+      onDownloaded?.();
     } catch (err) {
       onError?.((err as Error).message || String(err));
     } finally {
@@ -464,6 +506,7 @@ function DocxEditor({
       const blob = await exportDoc();
       if (onSave && dirtyRef.current) await saveCurrentDocument(blob);
       triggerDownload(await onExportPdf(), 'pdf');
+      onDownloaded?.();
     } catch (err) {
       onError?.((err as Error).message || String(err));
     } finally {
@@ -552,7 +595,8 @@ function DocxEditor({
         height: '100%',
         overflow: 'hidden',
         position: 'relative',
-        background: '#fff'
+        background: '#fff',
+        pointerEvents: preview ? 'none' : undefined
       }}
     >
       {/* Reserve the toolbar's space until it mounts (it needs `editor`), so its
@@ -600,7 +644,7 @@ function DocxEditor({
           terminalActionLoading={!!terminalActionLoading || terminalRunning}
           saving={saving}
           dirty={dirty}
-          readOnly={readOnly}
+          readOnly={preview || readOnly}
         />
       )}
       <div css={{ flex: 1, minHeight: 0, display: 'flex' }}>
@@ -654,7 +698,7 @@ function DocxEditor({
             (Suggested changes · Sections). Stays mounted while review is on so
             its pending count keeps the edge-rail badge live; collapses to zero
             width when no panel is open. */}
-        {editor && (
+        {editor && !preview && (
           <DocumentPanel
             editor={editor}
             open={activePanel !== null}
@@ -668,7 +712,7 @@ function DocxEditor({
         )}
         {/* Slim edge rail on the far right: one icon per side panel. Always
             present so a panel is one click away and future panels can slot in. */}
-        {editor && (
+        {editor && !preview && (
           <PanelRail
             activePanel={activePanel}
             showChanges={!!reviewChanges}

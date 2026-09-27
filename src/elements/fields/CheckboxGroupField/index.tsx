@@ -34,7 +34,7 @@ function CheckboxGroupField({
 }: any) {
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar.metadata.salesforce_sync, editMode);
+    useSalesforceSync(servar, editMode);
   const otherChecked = fieldVal.includes(otherVal);
   const otherLabel = servar.metadata.other_label ?? 'Other';
   const selectAllLabel = servar.metadata.select_all_label || 'Select All';

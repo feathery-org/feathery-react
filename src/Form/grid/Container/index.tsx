@@ -41,7 +41,7 @@ export const Container = ({
   // icon-based InlineTooltip, so they must be excluded here.
   const tooltipText =
     !node.isElement && node.properties?.tooltipText
-      ? replaceTextVariables(node.properties.tooltipText, node.repeat)
+      ? replaceTextVariables(node.properties.tooltipText, node.repeat, true)
       : '';
   const isMobile = _isMobile();
   const tooltipHoverProps = tooltipText

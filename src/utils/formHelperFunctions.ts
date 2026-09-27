@@ -430,6 +430,7 @@ export function prioritizeActions(actions: any[]) {
 
 export function mapFormSettingsResponse(res: any) {
   return {
+    authSensitiveActionsOnly: res.auth_sensitive_actions_only ?? false,
     errorType: res.error_type,
     autocomplete: res.autocomplete ? 'on' : 'off',
     autofocus: res.autofocus,

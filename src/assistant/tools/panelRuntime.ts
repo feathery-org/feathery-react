@@ -149,7 +149,7 @@ const extractRawText = (props: Record<string, unknown>): string => {
 const resolveText = (text: string, repeat?: number): string => {
   if (!text) return '';
   try {
-    return replaceTextVariables(text, repeat);
+    return replaceTextVariables(text, repeat, true);
   } catch {
     return text;
   }

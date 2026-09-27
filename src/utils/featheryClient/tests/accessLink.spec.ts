@@ -33,7 +33,7 @@ jest.mock('../../init', () => ({
   fieldValues: {},
   filePathMap: {},
   registerKnownFieldKeys: jest.fn(),
-  registerTextVariableFormats: jest.fn(),
+  registerTextVariableFields: jest.fn(),
   setFieldValues: jest.fn(),
   markStepCompleted: jest.fn(),
   fileDeduplicationCount: {},
