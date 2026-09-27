@@ -551,24 +551,34 @@ export default function DocumentEditorContainer({
       <React.Suspense
         fallback={<div css={placeholder}>Loading presentation editor…</div>}
       >
-        <PptxEditor
-          source={source}
-          readOnly={readOnly}
-          reviewChanges={reviewChanges}
-          openNonce={reloadKey}
-          fileName='document.pptx'
-          // Signing and PDF conversion stay docx-only until the backend
-          // defines the PPTX flow; the terminal-action props are not passed.
-          hideDownload={savesToField || !offersDownload}
-          onError={setError}
-          onSave={saveEnvelope}
-          onChange={
-            !readOnly && containerId
-              ? (dirty: boolean) =>
-                  setDocxEditorDirty(formId, containerId, dirty)
-              : undefined
-          }
-        />
+        {/* Absolute fill inside the container's relative box: the editor is
+            bounded by the container's dimensions and scrolls internally,
+            never growing the hosting page. */}
+        <div css={{ position: 'absolute', inset: 0 }}>
+          <PptxEditor
+            source={source}
+            readOnly={readOnly}
+            reviewChanges={reviewChanges}
+            openNonce={reloadKey}
+            fileName='document.pptx'
+            // Signing stays docx-only (no pptx signature flow); PDF export is
+            // supported server-side via the shared conversion endpoint.
+            hideDownload={savesToField || !offersDownload}
+            onExportPdf={
+              envelope.id
+                ? () => client.downloadEnvelopePdf(envelope.id)
+                : undefined
+            }
+            onError={setError}
+            onSave={saveEnvelope}
+            onChange={
+              !readOnly && containerId
+                ? (dirty: boolean) =>
+                    setDocxEditorDirty(formId, containerId, dirty)
+                : undefined
+            }
+          />
+        </div>
       </React.Suspense>
     );
   }

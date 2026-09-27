@@ -260,12 +260,19 @@ export class PptxEditorStore {
 
   private afterHistoryRestore(result: CommandResult): void {
     const rendering = this.refreshEngineView(result);
-    const slide = this.state.deck?.slides[this.state.activeSlide];
+    // Undo/redo of a slide add/delete can leave activeSlide out of range.
+    const count = this.state.deck?.slides.length ?? 0;
+    const activeSlide = Math.min(
+      this.state.activeSlide,
+      Math.max(0, count - 1)
+    );
+    const slide = this.state.deck?.slides[activeSlide];
     const selectedIds = this.state.selectedIds.filter((id) =>
       slide?.shapes.some((shape) => shape.id === id)
     );
     this.set({
       ...historyFields(result.snapshot),
+      activeSlide,
       selectedIds,
       selectedId: selectedIds[0] ?? null,
       textSelection: null,
@@ -330,6 +337,52 @@ export class PptxEditorStore {
       tableSelection: null,
       pictureCropModeId: null
     });
+
+  /** Insert a slide at `atIndex` (blank, or a clone of `duplicateOf`). */
+  addSlide = (atIndex: number, duplicateOf?: string): void => {
+    if (!this.state.deck) return;
+    const result = this.executeCommand(
+      { type: 'add-slide', atIndex, duplicateOf },
+      duplicateOf ? 'Duplicate slide' : 'Add slide'
+    );
+    if (!result?.changed) return;
+    const count = this.state.deck?.slides.length ?? 1;
+    this.setActiveSlide(Math.min(Math.max(atIndex, 0), count - 1));
+  };
+
+  /** Reorder: move the slide at fromIndex to toIndex; active follows it. */
+  moveSlide = (fromIndex: number, toIndex: number): void => {
+    const deck = this.state.deck;
+    if (!deck) return;
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      fromIndex >= deck.slides.length
+    )
+      return;
+    const result = this.executeCommand(
+      { type: 'move-slide', fromIndex, toIndex },
+      'Move slide'
+    );
+    if (!result?.changed) return;
+    const count = this.state.deck?.slides.length ?? 1;
+    this.setActiveSlide(Math.max(0, Math.min(toIndex, count - 1)));
+  };
+
+  /** Delete a slide by path; never removes the deck's last slide. */
+  deleteSlide = (slideId: string): void => {
+    const deck = this.state.deck;
+    if (!deck || deck.slides.length <= 1) return;
+    const index = deck.slides.findIndex((slide) => slide.path === slideId);
+    if (index < 0) return;
+    const result = this.executeCommand(
+      { type: 'delete-slide', slideId },
+      'Delete slide'
+    );
+    if (!result?.changed) return;
+    const count = this.state.deck?.slides.length ?? 1;
+    this.setActiveSlide(Math.min(index, count - 1));
+  };
 
   select = (id: string | null): void =>
     this.set({
