@@ -8,12 +8,9 @@ import { deepClone } from '../opc/deepClone';
 const PRES = 'ppt/presentation.xml';
 const CONTENT_TYPES = '[Content_Types].xml';
 
-/**
- * The package-level parts that define which slides exist and in what order:
- * presentation.xml (its <p:sldIdLst>), its rels, [Content_Types] (slide
- * Overrides), and each slide's rels. Captured so undo/redo can reconstruct a
- * slide that was added or deleted, not just per-slide content.
- */
+// The parts that define which slides exist and their order (presentation.xml,
+// its rels, content-type Overrides, each slide's rels). Captured so undo/redo
+// can reconstruct an added/deleted slide, not just per-slide content.
 export interface PptxSlideManifest {
   presentation: OTree;
   presentationRels: OTree;
@@ -37,11 +34,8 @@ export interface PptxHistorySnapshot {
   slideSeqs: Record<string, number>;
   /** The slide manifest (see PptxSlideManifest). */
   manifest: PptxSlideManifest;
-  /**
-   * Combined mutationSeq of every manifest part. When unchanged between
-   * snapshots the manifest is reused by reference, so an ordinary content edit
-   * never re-clones the manifest.
-   */
+  // Combined mutationSeq of every manifest part; when unchanged between
+  // snapshots the manifest is reused by reference (no re-clone).
   manifestSeq: number;
 }
 
@@ -100,11 +94,8 @@ function captureManifest(deck: Deck): PptxSlideManifest {
   };
 }
 
-/**
- * Reconcile the package's slide set to match `target` before content restore:
- * restore the manifest parts, add back missing slide parts (from the target's
- * captured bodies), drop extra ones, then rebuild deck.slides.
- */
+// Reconcile the package's slide set to `target` before content restore:
+// restore manifest parts, re-add missing/drop extra slide parts, rebuild slides.
 function reconcileManifest(deck: Deck, target: PptxHistorySnapshot): void {
   const pkg = deck.pkg;
   const m = target.manifest;

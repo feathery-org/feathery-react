@@ -86,11 +86,8 @@ function blankSlideTree(): OTree {
   return [sld];
 }
 
-/**
- * Insert a slide at `atIndex`. When `sourcePath` is given the slide's body and
- * relationships are cloned (duplicate); otherwise a blank slide is created that
- * reuses the first slide's layout. Returns the new slide's part path.
- */
+// Insert a slide at atIndex: cloned from sourcePath (duplicate) or blank
+// reusing the first slide's layout. Returns the new slide's part path.
 export function addSlide(
   deck: Deck,
   atIndex: number,

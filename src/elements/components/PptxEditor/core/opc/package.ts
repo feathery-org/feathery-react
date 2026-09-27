@@ -224,11 +224,8 @@ export class OPCPackage {
     return [...this.parts.text.keys()];
   }
 
-  /**
-   * Add a new XML part, or replace an existing part's contents in place.
-   * In-place replacement keeps any live reference (e.g. a Slide's `raw`)
-   * valid. Marks the part dirty so export re-serializes it.
-   */
+  // Add a new XML part, or replace an existing part's contents in place so a
+  // live reference (e.g. a Slide's raw) stays valid; marks it dirty.
   setXmlPart(path: string, tree: OTree): void {
     const existing = this.trees.get(path);
     if (existing) existing.splice(0, existing.length, ...tree);

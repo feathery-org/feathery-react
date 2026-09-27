@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { featheryDoc } from '../../../../utils/browser';
 import { renderSlideSvg } from '../core/render/svg';
+import { useOutsideClose } from './useOutsideClose';
 import {
   INK,
   INK_3,
@@ -72,26 +72,11 @@ export function SlideNavigator({ readOnly = false }: { readOnly?: boolean }) {
   // (0..slideCount) shown as a drop line.
   const [drag, setDrag] = useState<{ from: number; gap: number } | null>(null);
 
-  useEffect(() => {
-    if (!menu) return;
-    const doc = featheryDoc();
-    // A React onMouseDown+stopPropagation on the panel would NOT stop this
-    // native document listener (React re-dispatches, native bubbling still
-    // reaches document), so the menu must ignore mousedowns inside itself.
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current?.contains(e.target as Node)) return;
-      setMenu(null);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(null);
-    };
-    doc.addEventListener('mousedown', onDown);
-    doc.addEventListener('keydown', onKey);
-    return () => {
-      doc.removeEventListener('mousedown', onDown);
-      doc.removeEventListener('keydown', onKey);
-    };
-  }, [menu]);
+  useOutsideClose(
+    !!menu,
+    () => setMenu(null),
+    (t) => !!menuRef.current?.contains(t)
+  );
 
   if (!deck) return <div css={navStyle} />;
 

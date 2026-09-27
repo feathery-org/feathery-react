@@ -161,10 +161,8 @@ export default function DocumentEditorContainer({
   stepId,
   editMode,
   assistantEnabled,
-  // Gates the (beta) PPTX editor. Defaults to enabled so it is undisturbed
-  // when unset; the backend sends `pptx_editor_enabled: false` to hide it for
-  // orgs outside the Feathery-internal rollout. Internal-org identification is
-  // resolved server-side (org identity is not available to the SDK client).
+  // Gates the beta PPTX editor; defaults on, backend sends false to hide it
+  // for orgs outside the Feathery-internal rollout (org identity is server-side).
   pptxEditorEnabled = true
 }: {
   containerId?: string;

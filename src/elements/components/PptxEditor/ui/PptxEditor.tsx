@@ -23,6 +23,7 @@ import {
   PANEL_3
 } from '../../DocxEditor/TrackedChangeGroups/styles';
 import { featheryDoc } from '../../../../utils/browser';
+import { useOutsideClose } from './useOutsideClose';
 import {
   downloadBtn,
   FEATHERY_RED,
@@ -77,6 +78,7 @@ function PptxEditorInner({
   const [saving, setSaving] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
+  const downloadMenuRef = useRef<HTMLSpanElement>(null);
   const [activePanel, setActivePanel] = useState<PptxPanelKind | null>(null);
   const [zoomPct, setZoomPct] = useState(75);
   const loadSeq = useRef(0);
@@ -166,16 +168,21 @@ function PptxEditorInner({
 
   const handleDownloadPdf = useCallback(async () => {
     if (!onExportPdf || downloadingPdf) return;
-    // Save first so the PDF reflects the current edits (host converts the
-    // persisted envelope), mirroring the docx editor.
     setDownloadingPdf(true);
     try {
+      // Save first so the PDF reflects current edits; a save failure is
+      // reported as a save error, distinct from a conversion failure.
       if (onSave) {
-        store.commitSvgTextEdit?.({ render: false });
-        await onSave(store.engine.exportPptx());
-        store.markSaved();
-        dirtyRef.current = false;
-        onChange?.(false);
+        try {
+          store.commitSvgTextEdit?.({ render: false });
+          await onSave(store.engine.exportPptx());
+          store.markSaved();
+          dirtyRef.current = false;
+          onChange?.(false);
+        } catch (err: any) {
+          onError?.(err?.message || 'Saving the presentation failed.');
+          return;
+        }
       }
       const blob = await onExportPdf();
       const url = URL.createObjectURL(blob);
@@ -190,6 +197,12 @@ function PptxEditorInner({
       setDownloadingPdf(false);
     }
   }, [onExportPdf, downloadingPdf, onSave, store, onChange, onError, fileName]);
+
+  useOutsideClose(
+    downloadMenuOpen,
+    () => setDownloadMenuOpen(false),
+    (t) => !!downloadMenuRef.current?.contains(t)
+  );
 
   // ---- keyboard shortcuts, scoped to this editor instance ----
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -290,7 +303,10 @@ function PptxEditorInner({
             )}
             {!hideDownload &&
               (onExportPdf ? (
-                <span css={{ position: 'relative', display: 'inline-flex' }}>
+                <span
+                  ref={downloadMenuRef}
+                  css={{ position: 'relative', display: 'inline-flex' }}
+                >
                   <button
                     type='button'
                     css={downloadBtn}

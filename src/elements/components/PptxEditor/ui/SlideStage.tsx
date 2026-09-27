@@ -511,9 +511,8 @@ export function SvgSlide({
   const [box, setBox] = useState<OverlayBox | null>(null);
   const [layoutTick, setLayoutTick] = useState(0);
 
-  // Trackpad pinch arrives as a wheel event with ctrlKey set, so one listener
-  // covers pinch, Ctrl+scroll and Cmd+scroll. Native (non-passive) because
-  // React's synthetic wheel handlers cannot preventDefault the page zoom.
+  // Pinch arrives as a ctrlKey wheel event; one native (non-passive) listener
+  // covers pinch + Ctrl/Cmd+scroll and can preventDefault the page zoom.
   const zoomFloatRef = useRef(zoom);
   const zoomAnchorRef = useRef<{
     ax: number;
@@ -1206,10 +1205,8 @@ export function SvgSlide({
           origin.y + size.cy * scale
         );
       }
-      // box.left/top are host-relative (including host scroll); the gesture
-      // compares against viewport clientX/Y, so shift the center into
-      // viewport space or rotation pivots around the wrong point (and can
-      // read as spinning the opposite way when the editor sits mid-page).
+      // box is host-relative but the gesture uses viewport clientX/Y, so shift
+      // the center into viewport space or rotation pivots around the wrong point.
       const hostEl = hostRef.current;
       const hostRect = hostEl?.getBoundingClientRect();
       const centerX =
@@ -3007,9 +3004,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   frame: {
     width: 'min(1100px, 100%)',
-    // A shrinkable flex child caps the zoom at 100%: the width climbs but the
-    // box is squeezed back to fit. Auto margins (not justify-content) center
-    // it so the left edge stays reachable once it overflows.
+    // A shrinkable flex child caps zoom at 100%; flexShrink:0 lets it overflow
+    // and auto margins center it while keeping the left edge reachable.
     flexShrink: 0,
     margin: '0 auto',
     boxShadow: '0 2px 16px rgba(0,0,0,0.18)',

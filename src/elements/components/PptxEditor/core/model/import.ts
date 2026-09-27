@@ -112,12 +112,8 @@ export function refreshSlideModel(deck: Deck, slide: Slide): void {
   }
 }
 
-/**
- * Rebuild `deck.slides` from the package's current slide order after a
- * structural change (add/delete/duplicate slide). Existing Slide objects are
- * reused by path so their resolved geometry and retained image URLs survive;
- * only newly added paths are read fresh.
- */
+// Rebuild deck.slides from the package's slide order after a structural change,
+// reusing existing Slide objects by path so their geometry/images survive.
 export function rebuildSlides(deck: Deck): void {
   const byPath = new Map(deck.slides.map((slide) => [slide.path, slide]));
   deck.slides = deck.pkg.slidePaths().map((path) => {
