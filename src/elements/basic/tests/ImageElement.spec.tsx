@@ -11,6 +11,7 @@ jest.mock('../../../utils/image', () => ({
 const mockResponsiveStyles = {
   addTargets: jest.fn(),
   applyCorners: jest.fn(),
+  applyObjectFit: jest.fn(),
   applyWidth: jest.fn(),
   getTarget: jest.fn().mockReturnValue({})
 };

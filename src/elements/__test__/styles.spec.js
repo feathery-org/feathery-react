@@ -65,6 +65,49 @@ describe('responsiveStyles', () => {
     });
   });
 
+  describe('applyObjectFit', () => {
+    it('applies the object_fit style', () => {
+      const objectUnderTest = new ResponsiveStyles(
+        { styles: { object_fit: 'cover' } },
+        ['image']
+      );
+
+      objectUnderTest.applyObjectFit('image');
+
+      expect(objectUnderTest.getTarget('image')).toEqual({
+        objectFit: 'cover'
+      });
+    });
+
+    it('leaves objectFit unset when no object_fit style exists', () => {
+      const objectUnderTest = new ResponsiveStyles({ styles: {} }, ['image']);
+
+      objectUnderTest.applyObjectFit('image');
+
+      expect(objectUnderTest.getTarget('image')).toEqual({});
+    });
+
+    it('applies a mobile object_fit override', () => {
+      const objectUnderTest = new ResponsiveStyles(
+        {
+          styles: { object_fit: 'contain' },
+          mobile_styles: { object_fit: 'fill' }
+        },
+        ['image'],
+        true
+      );
+
+      objectUnderTest.applyObjectFit('image');
+
+      expect(objectUnderTest.getTarget('image')).toEqual({
+        objectFit: 'contain',
+        [`@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`]: {
+          objectFit: 'fill'
+        }
+      });
+    });
+  });
+
   describe('applyFontStyles with a prefix', () => {
     it('reads the prefixed property namespace, not the unprefixed one', () => {
       // Arrange

@@ -10,6 +10,7 @@ function applyImageStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets('imageContainer', 'image', 'dimension');
   responsiveStyles.applyCorners('imageContainer');
   responsiveStyles.applyCorners('image');
+  responsiveStyles.applyObjectFit('image');
   responsiveStyles.applyWidth('dimension');
   return responsiveStyles;
 }
