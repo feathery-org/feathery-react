@@ -16472,12 +16472,9 @@ function setCellContent(
   return setAt(sfdt, cellPath, { ...cell, blocks });
 }
 
-/**
- * A whole expression that is a bare table.column reference or a bare range
- * evaluates to a column, never a value - every reconcile would then fail with
- * "formula produced a column". Reject it at creation with a usable message
- * instead of shipping a permanently erroring binding.
- */
+// A bare table.column ref or bare range evaluates to a column, not a value, so
+// every reconcile would fail; reject it at creation instead of shipping a
+// permanently erroring binding.
 export function assertExpressionYieldsValue(
   expression: string,
   bindingIndex: BindingIndex

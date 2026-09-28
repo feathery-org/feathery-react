@@ -674,10 +674,8 @@ export const freshRowId = createRowIdGenerator();
 
 /* ---------------- row operations ---------------- */
 
-// Cloning never changes a binding's KIND: a field clones as a field with its
-// default, a formula (row-local or mirror) clones as the same formula. A typed
-// row joins a sum through positional ranges (sum(B2:end)), which read raw cell
-// values, so nothing ever needs converting.
+// Cloning never changes a binding's KIND: a field stays a field (reset to its
+// default), a formula (row-local or mirror) stays the same formula.
 export function rewriteRowClone(node: any, newRowId: string): void {
   if (Array.isArray(node)) {
     node.forEach((entry) => rewriteRowClone(entry, newRowId));
@@ -946,19 +944,10 @@ function countAdoptableRows(sfdt: SfdtDocument, tablePath: SfdtPath): number[] {
   return out;
 }
 
-/**
- * A MIRROR is a formula that reads only values OUTSIDE its own row - a document
- * field or another table (expr=A, sum(beta)). A ROW-LOCAL formula reads a
- * column of its own row (mul(quantity,unit_cost)) or any positional cell/range
- * (sum(B2:end)); the latter is how a totals cell is written, so a positional
- * formula is treated as structural, never a line-item input.
- *
- * The distinction drives adoption: a new row typed into a mirror column is a
- * user-supplied value and becomes an editable FIELD, while a row-local/
- * positional column with text is a totals or damaged row and blocks adoption.
- * Duplication (rewriteRowClone) never uses this - a duplicated mirror stays a
- * mirror; only a freshly TYPED row converts.
- */
+// A MIRROR reads only values outside its own row (expr=A, sum(beta)). A
+// row-local formula reads an own-row column (mul(quantity,unit_cost)) or any
+// positional ref (sum(B2:end) — how a totals cell is written); those are
+// structural and block adoption, while a typed mirror column becomes a field.
 function isMirrorFormula(
   def: FormulaDefinition,
   ownColumnNames: ReadonlySet<string>
@@ -1087,13 +1076,9 @@ export function adoptUnboundRows(
     );
   });
 
-  // Does any bound column take user input directly (a field, or a row-local
-  // formula fed by fields)? If not, the only bound columns are mirrors - the
-  // summary/mirror case - and a NEW row's mirror cell becomes an editable field
-  // straight away (like row=auto on an input column), so the content control
-  // appears the moment the row is inserted rather than only once typed into. In
-  // a table that DOES have input columns, an empty mirror cell instead stays a
-  // mirror and propagates (a shared-rate column on a real line item).
+  // With no non-mirror bound column (the summary/mirror case), a new row's
+  // mirror cell becomes an editable field on insert (row=auto style); with input
+  // columns present, an empty mirror cell instead stays a mirror and propagates.
   const templateHasNonMirrorColumn = templateCells.some((templateCell, c) => {
     const binding = findCellBinding(templateCell);
     return !!binding && !mirrorColumn[c];
@@ -1104,13 +1089,9 @@ export function adoptUnboundRows(
     .filter(Number.isInteger)
     .sort((left, right) => left - right)[0];
 
-  // Syncfusion's own "insert row" copies the reference row's content controls
-  // into the new row when they are editable, so the inserted row arrives with a
-  // control whose row id DUPLICATES the row above. Left alone it collapses onto
-  // that row in the index (a "duplicate-column" ghost that edits both at once),
-  // so a row whose id was already claimed by an earlier physical row is treated
-  // as a fresh insert and re-adopted with a new id below. The first physical
-  // occurrence of an id is the real bound row and is recorded, not touched.
+  // Syncfusion's insert-row copies an editable control into the new row, so it
+  // arrives with a row id duplicating the row above. The first occurrence of an
+  // id is the real bound row; a later row reusing it is a copy, re-adopted fresh.
   const seenRowIds = new Set<string>();
 
   for (let r = 0; r < allRows.length; r++) {
@@ -1118,7 +1099,9 @@ export function adoptUnboundRows(
     if (!row) continue;
     if (row.rowFormat && row.rowFormat.isHeader) continue;
     const existingRowId = rowBindingId(row);
-    const hasControls = JSON.stringify(row).includes('contentControlProperties');
+    const hasControls = JSON.stringify(row).includes(
+      'contentControlProperties'
+    );
     if (hasControls) {
       const isCopiedRow =
         existingRowId !== null && seenRowIds.has(existingRowId);
@@ -1141,12 +1124,9 @@ export function adoptUnboundRows(
       });
       continue;
     }
-    // A ROW-LOCAL or POSITIONAL formula column holds engine output. Text there
-    // means a totals row, a damaged one, or an unflagged header - not a new
-    // line item - so the row is not adopted. A MIRROR column is different: text
-    // there is a value the user typed, and it makes the cell an editable field
-    // (below), so it must NOT block adoption - unless the text fails to parse
-    // as the column's type, which marks a header ("Amount") or a label row.
+    // Text in a row-local/positional formula column means a totals, damaged, or
+    // unflagged-header row: block adoption. Text in a mirror column is a typed
+    // value (adopted as a field), unless it fails to parse - then it's a header.
     let blockingReason: string | null = null;
     for (let c = 0; c < templateCells.length && !blockingReason; c++) {
       const binding = findCellBinding(templateCells[c]);
@@ -1192,11 +1172,8 @@ export function adoptUnboundRows(
           ? { characterFormat: first.characterFormat }
           : {};
       // A mirror column becomes an editable field on a new row when the user
-      // typed a value into it (the value is theirs, not a copy of the source),
-      // or - in a mirror-only table - always, so the input control appears the
-      // moment the row is inserted. An empty mirror cell in a table that has
-      // real input columns instead stays a mirror and propagates (a shared-rate
-      // column on a line item). Duplication never converts - only adoption does.
+      // typed into it, or always in a mirror-only table (immediate control);
+      // otherwise an empty mirror cell stays a mirror and propagates.
       const convertMirror =
         def.kind === 'formula' &&
         mirrorColumn[c] &&

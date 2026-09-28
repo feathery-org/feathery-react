@@ -7,17 +7,13 @@
 //   sum(B2:B9)  sum(B2:end)      positional range over the formula's own table
 //   summary!B3, sum(summary!B2:end)   positional refs into a named table
 //
-// Args are references (bare column/field names or table.column), positional
-// cells/ranges, numeric literals, or nested calls. A whole expression may also
-// be a single reference, but never a single literal (a constant formula is a
-// typo, not a binding). Anything else is a parse error.
+// Args are references, positional cells/ranges, literals, or nested calls. A
+// whole expression may be a single reference, never a single literal.
 //
-// Positional refs are Excel-shaped and classified at PARSE time: a bare token
-// matching /^[A-Z]{1,2}[1-9][0-9]*$/ (uppercase only) is a cell, `:` makes a
-// range, `end` is the table's last physical row and is only valid as a range
-// bound. Row 1 is the first physical table row (headers count). A binding
-// named like an uppercase cell is shadowed - canonical binding names are
-// effectively lowercase, so this does not bite in practice.
+// Positional refs classify at parse time: an uppercase token /^[A-Z]{1,2}[1-9]
+// [0-9]*$/ is a cell, `:` a range, `end` the last physical row (range bound
+// only). Row 1 is the first physical row; an uppercase-cell-shaped name is
+// shadowed (canonical names are lowercase, so it never bites).
 
 export class FormulaError extends Error {
   constructor(message?: string) {
@@ -151,7 +147,9 @@ export function parseExpression(src: string): Ast {
     const startCell = parseCellToken(start.v as string);
     if (!startCell)
       throw new FormulaError(
-        `expected a cell like B2, got ${JSON.stringify(start.v)} in ${JSON.stringify(src)}`
+        `expected a cell like B2, got ${JSON.stringify(
+          start.v
+        )} in ${JSON.stringify(src)}`
       );
     if (peek()?.t !== ':') return { cell: { table, ...startCell } };
     eat(':');
