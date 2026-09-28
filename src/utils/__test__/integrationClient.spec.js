@@ -1587,7 +1587,9 @@ describe('IntegrationClient', () => {
 
       const libraryDocuments = {
         library: 'quik',
-        groups: [{ forms: [{ id: '44252' }], rolePrefixes: ['1own'], index: 0 }],
+        groups: [
+          { forms: [{ id: '44252' }], rolePrefixes: ['1own'], index: 0 }
+        ],
         field_mapping: [
           { roleField: '1own.H.Email', featheryField: 'owner_email' }
         ],
