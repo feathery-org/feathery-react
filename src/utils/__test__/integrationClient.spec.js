@@ -1575,6 +1575,29 @@ describe('IntegrationClient', () => {
       });
       expect(plain.authentication).toBeUndefined();
     });
+
+    it('forwards libraryDocuments verbatim, skipEsignFields included', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'lib-1' })
+      });
+
+      const libraryDocuments = {
+        library: 'quik',
+        groups: [{ forms: [{ id: '44252' }], rolePrefixes: ['1own'], index: 0 }],
+        field_mapping: [
+          { roleField: '1own.H.Email', featheryField: 'owner_email' }
+        ],
+        skipEsignFields: ['1own.44252.2.Sign', '*.44252.2.SignDate']
+      };
+      await integrationClient.sendDocusignEnvelope({ libraryDocuments });
+
+      // The backend reads these keys as sent, so nothing here is renamed.
+      expect(requestBody().library_documents).toEqual(libraryDocuments);
+    });
   });
 
   describe('updateDocusignEnvelope', () => {

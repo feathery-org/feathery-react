@@ -97,6 +97,10 @@ type DocusignLibraryDocuments = {
     index: number;
   }[];
   field_mapping: { roleField: string; featheryField: string }[];
+  // Quik esign field names that get no DocuSign tab, as an exact name
+  // ('1own.44252.2.Sign') or a pattern covering every role
+  // ('*.44252.2.Sign'). The page still ships; only the tab is dropped.
+  skipEsignFields?: string[];
 };
 // Reminder + expiration schedule (day counts). Omit either block to leave that
 // part on the DocuSign account default.
