@@ -1,9 +1,5 @@
-// The working model a session is diffed through, one slice at a time.
-//
-// Every character of the document carries who inserted it, who deleted it and
-// who last changed its formatting. Applying a slice diffs the slice against the
-// ACCEPTED text (characters not marked deleted), so earlier authors' marks ride
-// along and end up positioned against the final document for free.
+// Per-character working model; each slice diffs against the ACCEPTED text so
+// earlier authors' marks carry through to final-document positions.
 
 import {
   BLOCK_FMT_PROPS,
@@ -208,10 +204,7 @@ function markDeleted(block: WBlock, author: AuthorKey): void {
   );
 }
 
-/**
- * Apply one slice: align the working (accepted) blocks against the slice's
- * blocks, then mark insertions, deletions and formatting changes by `author`.
- */
+/** Diff one slice against the accepted working text; mark edits by `author`. */
 export function applySlice(
   working: Working,
   slice: FlatDoc,

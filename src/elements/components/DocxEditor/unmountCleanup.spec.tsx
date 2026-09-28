@@ -2,11 +2,8 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import DocxEditor from './index';
 
-// On step navigation React tears the subtree down parent-first, so by the time
-// DocxEditor's own effect cleanups run, useDocxEditor has already destroy()ed
-// the Syncfusion instance — whose removeEventListener then THROWS. An unguarded
-// cleanup turns that into an uncaught unmount error that crashes the whole
-// form (the "can't go back to the previous step" bug). Model that engine here.
+// By DocxEditor's cleanups the Syncfusion instance is already destroyed and
+// removeEventListener throws; this mock models that engine.
 const mockEditor: any = {
   zoomFactor: 1,
   addEventListener: jest.fn(),

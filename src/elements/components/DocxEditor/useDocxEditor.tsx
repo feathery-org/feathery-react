@@ -169,10 +169,8 @@ export function setAfterRenderCallback(ed: any, cb: (() => void) | null): void {
 // Exported for tests (installed automatically at editor create).
 export function installRevisionHighlightRendering(
   ed: any,
-  // Optional per-author colouring. Given a revision's author, return that
-  // author's brand colour; the viewer and the live editor both pass this so
-  // each person's edits are tinted their own colour (following the design
-  // mockup). Omitted, the classic green-insert / red-delete washes apply.
+  // Per-author colour (version viewer only); omitted, the classic
+  // green-insert / red-delete washes apply.
   colorForRevision?: (author: string) => string | undefined,
   // Pending outlines belong to version history, not the live editor preview.
   { showPendingOutline = false }: { showPendingOutline?: boolean } = {}
@@ -451,10 +449,8 @@ export function installRevisionHighlightRendering(
     };
   }
 
-  // Merge boxes into per-LINE unions of TOUCHING runs. Grouping by line (the
-  // ±1px fudge overlaps adjacent lines vertically — cross-line unions would ring
-  // the whole paragraph) keeps a replace ringed as one while disjoint runs ring
-  // separately. Each union carries the first box's colour.
+  // Union touching boxes per LINE: the ±1px fudge overlaps adjacent lines, so
+  // cross-line unions would ring the whole paragraph.
   type OutlineBox = {
     x: number;
     y: number;
@@ -556,9 +552,8 @@ export function installRevisionHighlightRendering(
     );
   };
 
-  // Per-page hook (renderWidgets renders ONE page): reset collections on the
-  // first visible page, outline pending edits after each page, publish after
-  // the last. The selected edit is shown by its wash (see washFor), not a ring. Hooking the renderer — not the viewer — survives every render path.
+  // Per-page hook (renderWidgets renders ONE page); hooking the renderer, not
+  // the viewer, survives every render path.
   const originalRenderWidgets = renderer.renderWidgets.bind(renderer);
   renderer.renderWidgets = (
     page: any,
@@ -614,9 +609,8 @@ export function installRevisionHighlightRendering(
 export function configureTrackedChangeReview(
   ed: any,
   enabled: boolean,
-  // Optional per-author colouring, forwarded to the highlight renderer. Both
-  // the version viewer and the live editor pass it; omitting it falls back to
-  // the classic green-insert / red-delete washes.
+  // Optional per-author colouring (version viewer only), forwarded to the
+  // highlight renderer.
   colorForRevision?: (author: string) => string | undefined
 ): void {
   if (!enabled) return;
@@ -634,19 +628,8 @@ export function configureTrackedChangeReview(
 
 const REVIEW_PANE_STYLE_ID = 'feathery-hide-de-review-pane';
 
-// Suppress Syncfusion's native side panes. We render our own tracked-change UI
-// (TrackedChangeGroups), so the built-in Changes/Comments review pane must
-// never appear; every path that opens it (the showRevisions handler, the
-// assistant's tracked edits) ends by setting inline display:block on its
-// wrapper (.e-de-review-pane), and a stylesheet rule with !important overrides
-// that in every case — no per-instance monkey-patching. The Restrict Editing
-// pane (.e-de-restrict-pane) is suppressed the same way: Syncfusion auto-opens
-// it on the LEFT of the document the first time someone clicks or types in a
-// read-only editor (Editor.checkAndShowRestrictPane) and whenever a protected
-// document opens — the read-only version viewer trips it constantly, and its
-// editing-restriction controls have no place in our product. Layout is safe:
-// the viewer only subtracts the pane's computed width, which is 0 while
-// display:none. Injected once, idempotent.
+// Hide Syncfusion's review and Restrict Editing panes with !important CSS:
+// every path that opens them sets inline display:block, which this overrides.
 export function closeTrackedChangeReviewPane(): void {
   const doc = featheryWindow().document;
   if (!doc || doc.getElementById(REVIEW_PANE_STYLE_ID)) return;

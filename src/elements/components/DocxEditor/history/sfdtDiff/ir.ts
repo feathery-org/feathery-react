@@ -1,7 +1,5 @@
-// Flattens a verbose SFDT document into the per-character representation the
-// diff works on. Only paragraphs are blocks here; a table contributes its cell
-// paragraphs (with their full path) so text inside tables diffs like any other
-// text. Row add/remove is recognised downstream from whole-row membership.
+// Flattens SFDT into per-character blocks; only paragraphs are blocks, so table
+// cell paragraphs (with full paths) diff like any other text.
 
 import type { BlockPath, FormatDelta } from './types';
 
@@ -277,10 +275,8 @@ export function containerOf(
 }
 
 // ---------------------------------------------------------------------------
-// Normalisation before diffing: drop pending tracked changes (Robin's
-// suggestions live in the document as revisions; the history must see the
-// document as it would read with everything accepted) and replace image
-// payloads with a short digest so snapshots stay small and comparable.
+// Normalise before diffing: accept pending tracked changes and digest image
+// payloads so snapshots stay small and comparable.
 
 function revisionIdsOfType(sfdt: any, type: string): Set<string> {
   const ids = new Set<string>();

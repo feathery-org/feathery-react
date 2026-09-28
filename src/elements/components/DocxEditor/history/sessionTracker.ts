@@ -1,8 +1,5 @@
-// A version is one editing session. This pure state machine decides where one
-// session ends and the next begins, and when an author switch inside a session
-// marks a slice boundary. It holds no editor and no timers of its own — the
-// hook drives it (calling checkIdle on a timer) and injects the clock, so every
-// rule here is unit-testable without a real editor.
+// Pure state machine: where one editing session (= one version) ends, and
+// where an author switch marks a slice boundary. The hook drives checkIdle.
 import { v4 as uuidv4 } from 'uuid';
 
 import { DocxSaveMeta, VersionAuthor } from './types';

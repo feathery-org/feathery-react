@@ -1,7 +1,5 @@
-// Unapproved assistant edits stay in F as live tracked changes; approved ones
-// are baked into the content. applyHunks must mark the still-tracked ones so the
-// viewer can outline them apart from approved edits, and countPendingGroups must
-// count them (a replace counting once).
+// Unapproved assistant edits stay in F as live tracked changes: applyHunks
+// marks them pending and countPendingGroups counts them.
 import {
   destroyRealDocumentEditor,
   docWith,

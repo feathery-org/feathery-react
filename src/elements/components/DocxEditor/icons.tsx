@@ -592,10 +592,8 @@ export const HistoryIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
-// Robin (the assistant): the Feathery bird logo — the same mark the dashboard
-// renders (feathery-frontend src/components/Icons/system/RobinIcon.tsx). Its own
-// 28x28 viewBox (not the shared 24x24 Svg helper) and currentColor fills, so it
-// inherits the avatar's colour (white on Robin's red circle).
+// Robin's bird logo (mirrors feathery-frontend RobinIcon). Own 28x28 viewBox
+// and currentColor fills so it inherits the avatar's colour.
 export const RobinIcon = ({
   width = 24,
   height = 24,

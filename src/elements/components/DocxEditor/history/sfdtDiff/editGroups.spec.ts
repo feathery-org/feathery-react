@@ -1,7 +1,5 @@
-// Stepping/counting buckets: one per CONTIGUOUS block of edits (not per turn).
-// A replace's delete+insert share a bucket; consecutive same-author block
-// insertions coalesce into one bucket (so a whole table steps as one edit);
-// separate edits — assistant or human — are separate buckets.
+// Stepping/counting buckets: one per contiguous edit block (not per turn); a
+// replace or a whole inserted table is one bucket.
 import {
   cellText,
   destroyRealDocumentEditor,

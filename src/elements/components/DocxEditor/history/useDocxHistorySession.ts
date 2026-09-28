@@ -1,12 +1,5 @@
-// Ties the pure autosave engine (tracker + slice store + scheduler) to a live
-// DocumentEditor and the history I/O host. It owns nothing the engine already
-// owns; it only bridges editor signals in and persistence out.
-//
-// PR 2 scope: sessions drive an autosave PATCH carrying the session id, and a
-// session close persists the final document. The close-time DIFF (per-author
-// highlights) lands in a later PR — closeVersion is called with F only, and a
-// backend that has not shipped the close endpoint yet simply leaves the row
-// with its docx pair (a one-colour fallback at view time).
+// Bridges the autosave engine (tracker + slice store + scheduler) to a live
+// DocumentEditor: editor signals in, autosave and version-close uploads out.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
 import { featheryDoc } from '../../../../utils/browser';
@@ -51,10 +44,8 @@ const ROBIN: VersionAuthor = {
   label: 'Robin'
 };
 const IDLE_CHECK_MS = 30_000;
-// Minimum spacing between autosave-piggybacked redline checkpoints. Autosaves
-// can fire every ~3s while typing; diffing + uploading the change list that
-// often is wasteful, and one checkpoint per interval keeps an abandoned
-// session's stored highlights at most this stale.
+// Min spacing of autosave-piggybacked highlight checkpoints; bounds how stale
+// an abandoned session's stored highlights can be.
 export const CHECKPOINT_MIN_INTERVAL_MS = 20_000;
 const ARTIFACT_UPLOAD_ERROR =
   'Document saved, but version details could not be uploaded. Retry to preserve its highlights.';
@@ -193,12 +184,8 @@ export function useDocxHistorySession(
   canSaveRef.current = canSave;
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
-  // The document as the session began — the diff baseline (S0). This MUST be the
-  // pristine document from BEFORE the first edit: the diff attributes S0 → F to
-  // the authors, so a post-first-edit S0 loses that edit (and, for a same-author
-  // session with no boundary slices, loses ALL highlights). It cannot be captured
-  // in onEdit, which fires on contentChange AFTER the edit applies — so we snapshot
-  // it when the document finishes opening (below) and refresh it after each close.
+  // Diff baseline (S0): must predate the first edit, and contentChange fires
+  // after it, so it is snapshotted on open and refreshed after each close.
   const baselineRef = useRef<string | null>(null);
   // The starting document copied into s0 for the currently-open session.
   const s0Ref = useRef<string | null>(null);
@@ -208,10 +195,8 @@ export function useDocxHistorySession(
   // contentChange is emitted AFTER an edit. Retain the previous document for
   // BOTH directions of author switch, including typing between Robin batches.
   const lastSnapshotRef = useRef<string | null>(null);
-  // Text Robin authored this session, captured on each assistant edit WHILE its
-  // revision is live — so it survives the user accepting the suggestion before
-  // the version closes. Stored on the change list to keep accepted Robin edits
-  // coloured as Robin at view time (deduped by kind, text, and group).
+  // Robin's text, captured while its revision is live so accepted Robin edits
+  // still render as Robin's at view time.
   const robinRunsRef = useRef<RevisionRun[]>([]);
   // Present only while the review rail is applying an accept operation. It
   // changes both attribution (the accepted text remains Robin's) and the diff
@@ -280,11 +265,8 @@ export function useDocxHistorySession(
       }
     };
 
-    // The closing session's diff inputs, captured SYNCHRONOUSLY at close time.
-    // Anything serialized later (after the PATCH round-trip) can already carry
-    // the next session's edits — or a binding/engine write that flipped the
-    // last-edit author to the viewer — which is exactly how assistant edits
-    // were being mis-attributed.
+    // Diff inputs captured synchronously at close: after the PATCH await they
+    // can carry the next session's edits and mis-attribute assistant edits.
     interface CloseSnapshot {
       host: DocxHistoryHost | null | undefined;
       fStr: string | null;
@@ -352,15 +334,11 @@ export function useDocxHistorySession(
           if (snap.acceptance) changes.confirmed = true;
           changeCount = changes.changeCount;
           formatChangeCount = changes.formatChangeCount;
-          // Attach Robin's captured runs so accepted Robin edits stay coloured
-          // as Robin at view time. Bounded well under the backend's 512KB change
-          // limit; if Robin authored more than the budget, drop the runs and let
-          // attribution degrade to today's behaviour rather than risk rejection.
+          // Kept well under the backend's 512KB limit; over budget, all runs
+          // are dropped rather than risk the upload being rejected.
           const ROBIN_RUNS_BUDGET = 100_000;
-          // The preceding pending-edit version has already closed when the user
-          // accepts it, so its in-memory Robin runs have been reset. Recover the
-          // original groups from the acceptance snapshot for the confirmation
-          // version; this is the version later copied by Restore.
+          // On accept the pending-edit version already closed (runs reset), so
+          // recover Robin's groups from the acceptance snapshot.
           const acceptanceRuns = snap.acceptance
             ? collectRobinRuns(
                 JSON.parse(snap.acceptance.beforeSfdt),
@@ -438,10 +416,8 @@ export function useDocxHistorySession(
       sessionStartedAt: string;
       authors: DocxSaveMeta['authors'];
     }) => {
-      // Restore only needs the DOCX snapshot to be durable before it can
-      // replace the live document. Its SFDT/diff upload can safely attach to
-      // the now-closed pre-restore row afterwards (the backend permits this
-      // late close), so keep it off the click's critical path.
+      // Restore needs only the DOCX durable; the SFDT/diff upload may attach
+      // to the closed row later (backend allows it), off the click's path.
       const deferDiffForRestore = holdFinalDiffForRestoreRef.current;
       holdFinalDiffForRestoreRef.current = false;
       // Create the release gate before persistence so a failed restore can
@@ -452,10 +428,8 @@ export function useDocxHistorySession(
           })
         : Promise.resolve();
       scheduler.cancel();
-      // Capture the closing session's diff inputs before the first await: F,
-      // its author, S0 and the boundary slices all belong to THIS session, and
-      // the PATCH round-trip below leaves plenty of time for the next session's
-      // edits (or an engine write) to corrupt them.
+      // Capture diff inputs before the first await, or the next session's
+      // edits can leak into them during the PATCH round-trip.
       let fStr: string | null = null;
       try {
         fStr = editorRef.current?.serialize() ?? null;
@@ -553,10 +527,8 @@ export function useDocxHistorySession(
           });
         });
         if (!failedArtifacts.size) setSaveError(null);
-        // Piggyback a throttled redline checkpoint on the successful autosave:
-        // the PATCH persists only the docx, so a session abandoned before close
-        // (reload / navigation) would otherwise store a version with NO
-        // highlights. This keeps the open row's diff at most one autosave stale.
+        // The PATCH stores only the docx; checkpoint so a session abandoned
+        // before close still keeps its highlights.
         if (epoch === documentEpochRef.current) {
           checkpoint?.();
           savedCheckpoint = checkpointRequest;
@@ -608,12 +580,8 @@ export function useDocxHistorySession(
       }
     });
 
-    // Persist the open session's redlines WITHOUT closing it, so a session
-    // abandoned before it closes (reload / navigation / tab-death) still stores
-    // a version WITH its highlights. Runs at an assistant turn's end (forced)
-    // and piggybacked on autosaves (throttled). closeSession only uploads
-    // final_sfdt + changes — it does NOT close the row on the backend — so
-    // editing continues in the same session afterwards.
+    // Upload the open session's highlights without closing it (closeSession
+    // only uploads artifacts; the backend row stays open).
     let lastCheckpointAt = 0;
     const prepareCheckpoint = (force = false): (() => void) | undefined => {
       if (!force && Date.now() - lastCheckpointAt < CHECKPOINT_MIN_INTERVAL_MS)
@@ -664,12 +632,8 @@ export function useDocxHistorySession(
       scheduler.flush().catch(() => undefined);
     };
 
-    // After a reload the backend can have a current row containing live tracked
-    // revisions while the in-memory tracker has no open session. Preserve that
-    // row before native acceptance removes the revisions; otherwise the only
-    // durable snapshot is the later confirmed one and both history rows look
-    // approved. The backend close endpoint accepts this late artifact upload
-    // for the current row even when its original session is already closed.
+    // After a reload the current row may hold pending revisions with no open
+    // session; save it before accept strips them, or both rows look approved.
     const preservePendingCurrentVersion = async (
       acceptance: TrackedChangeAcceptance
     ) => {
@@ -789,10 +753,8 @@ export function useDocxHistorySession(
         // Do not reuse a stale snapshot as evidence for the next boundary.
       }
       lastSnapshotRef.current = snapshot;
-      // Snapshot Robin's authored runs now, while their revisions are still live
-      // (the user may accept them before this version closes, after which they
-      // are unrecoverable). Deduped by kind, text, and group; only runs on
-      // assistant edits.
+      // Capture Robin's runs while still live: once accepted before close,
+      // they are unrecoverable.
       if (info.assistant && snapshot) {
         try {
           const runs = collectRobinRuns(JSON.parse(snapshot));
@@ -832,11 +794,8 @@ export function useDocxHistorySession(
           lastSnapshotRef.current = null;
         }
       } else {
-        // An assistant turn ending no longer CLOSES the session — user and
-        // assistant edits share one session (a version is cut on save / idle /
-        // restore instead). Save its DOCX first, then checkpoint its redlines,
-        // while keeping the session open. Every turn bypasses the highlight
-        // throttle, but not the binding gate or ordered document-save queue.
+        // Turn end checkpoints but keeps the session open (versions cut on
+        // save/idle/restore); skips the throttle, not the gate or save queue.
         checkpointSession();
       }
     });
@@ -1041,10 +1000,8 @@ export function useDocxHistorySession(
       );
       changes.attribution = 'slices';
       if (changes.degraded?.includes('time-budget')) return null;
-      // Same re-attribution the stored close path applies (closeSession): hand
-      // the captured Robin runs to applyHunks so a Robin edit the user just
-      // accepted in THIS open session stays coloured as Robin in the live
-      // "Current" preview instead of falling back to the viewer ('you').
+      // As in closeSession: keeps Robin edits accepted this session coloured
+      // as Robin in the live preview.
       if (robinRunsRef.current.length) changes.robinRuns = robinRunsRef.current;
       const display = applyHunks(fDoc, changes);
       return {

@@ -1,10 +1,5 @@
-// Public API of the version-history diff engine.
-//
-//   diffSession(S0, slices)            → ChangeList (hunks anchored to the final slice)
-//   applyHunks(finalSfdt, changeList)  → display SFDT with synthetic revisions
-//
-// Both are pure. The engine runs at session close (in the browser) and the
-// viewer applies the stored hunks later without diffing anything.
+// Version-history diff engine: diffSession (close time) → ChangeList;
+// applyHunks (view time) → display SFDT. Both are pure.
 
 import {
   acceptedText,
@@ -49,11 +44,8 @@ export const FMT_AUTHOR_PREFIX = 'fmt:';
 
 const DEFAULT_MAX_BLOCKS = 5000;
 
-/**
- * Diff a session. `slices` are the document states in order, each tagged with
- * the author whose edits produced that state; the LAST slice must be the final
- * document (F). `start` is the state at session start.
- */
+/** Diff a session from `start` through author-tagged `slices`; the last slice
+ *  must be the final document. */
 export function diffSession(
   start: unknown,
   slices: Slice[],
@@ -152,11 +144,8 @@ const samePath = (a: BlockPath | null, b: BlockPath | null): boolean =>
   a.length === b.length &&
   a.every((part, index) => part === b[index]);
 
-// The deleted run's table, but ONLY when the run removes the whole table: every
-// block shares one carried table reference (so it is the real structure from
-// the document the blocks last lived in — never a stale S0 path lookup) and the
-// run covers all of its paragraphs (a partial row deletion must not resurrect
-// the surviving rows as a duplicate struck table).
+// The table only if the run deletes ALL of it; a partial row deletion must not
+// resurrect the surviving rows as a duplicate struck table.
 function wholeDeletedTable(runBlocks: WBlock[]): unknown {
   const table = runBlocks[0]?.rawTable as any;
   if (!table || !Array.isArray(table.rows)) return undefined;
@@ -491,14 +480,8 @@ function authorKeyOf(author: string): AuthorKey {
   return author.trim().toLowerCase().startsWith('robin') ? 'robin' : author;
 }
 
-/**
- * Every LIVE tracked change still in F — the assistant's edits the user has not
- * accepted yet. Our own display revisions use `vh-` ids and are skipped, so what
- * remains is the pending suggestions. Each run is one live revision's
- * concatenated text with its author, tagged insert or delete; applyHunks matches
- * a hunk's text against these to mark it pending AND re-attribute it to the real
- * author (the diff can mis-credit a still-tracked assistant edit to the viewer).
- */
+/** Live tracked changes in F (pending suggestions; our `vh-` revisions skipped)
+ *  as per-revision text runs that applyHunks matches hunks against. */
 function collectPendingRuns(doc: any, revisionIds?: Set<string>): PendingRun[] {
   const revs: any[] = Array.isArray(doc?.revisions) ? doc.revisions : [];
   const metaById = new Map<
@@ -572,12 +555,8 @@ function collectPendingRuns(doc: any, revisionIds?: Set<string>): PendingRun[] {
   return runs;
 }
 
-/**
- * The text Robin has authored in a live document, as {kind,text} runs. Captured
- * at edit time (while the revisions are still live) so it survives the user
- * accepting the suggestion — the session hook stores these on the change list,
- * and applyHunks uses them to keep an accepted Robin edit coloured as Robin.
- */
+/** Robin's live tracked text runs, captured at edit time so an edit accepted
+ *  later can still be coloured as Robin. */
 export function collectRobinRuns(
   doc: any,
   revisionIds?: string[]
@@ -591,17 +570,8 @@ export function collectRobinRuns(
     }));
 }
 
-/**
- * The bucket a display revision steps/counts under. Every revision — assistant
- * or human — groups by its hunk group, so one CONTIGUOUS block of edits is one
- * step: a replace's halves share a hunk id (emitInlineHunks), and consecutive
- * same-author block insertions coalesce into one ins_block hunk (emitHunks), so
- * e.g. a whole table Robin inserted steps as a single edit. Empty paragraphs
- * at the edge of such a hunk get their own group so stepping lands on text.
- * Grouping is by the
- * edit's shape, NOT by session/turn, so it stays correct when a session holds
- * several assistant turns. Returns null for revisions that are not ours.
- */
+/** Step/count bucket of a history revision (its stored group), or null if the
+ *  revision is not ours. */
 export function editGroupKey(revision: any): string | null {
   let cd: any;
   try {
@@ -626,9 +596,8 @@ export function trackedAuthorKeys(displayDoc: any): string[] {
   );
 }
 
-/** Revision ids that mark at least one NON-EMPTY text inline in the display —
- *  i.e. edits with visible content. A blank inserted line's revision only sits
- *  on a paragraph mark, so it never lands in this set. */
+/** Revision ids on at least one non-empty text inline (blank-line inserts only
+ *  mark a paragraph mark, so they are excluded). */
 function revisionIdsWithText(doc: any): Set<string> {
   const ids = new Set<string>();
   const visitInlines = (inlines: any[]) => {
@@ -660,15 +629,8 @@ function revisionIdsWithText(doc: any): Set<string> {
   return ids;
 }
 
-/**
- * Count the distinct EDITS in a display document the way the version bar and
- * the prev/next steppers present them: one per edit group (see editGroupKey),
- * with formatting-only revisions excluded — they are counted separately.
- * Groups with no visible content (an inserted blank line: paragraph-mark-only)
- * are excluded, matching the steppers, so the "N edits" label never exceeds
- * what stepping visits. Falls back to counting every group only when a version
- * holds nothing but blank-line edits (again mirroring the steppers).
- */
+/** Count edit groups as the steppers visit them: formatting and blank-line
+ *  groups excluded, unless blank lines are the only edits. */
 export function countEditGroups(displayDoc: any): number {
   const textIds = revisionIdsWithText(displayDoc);
   const withContent = new Set<string>();
@@ -684,11 +646,8 @@ export function countEditGroups(displayDoc: any): number {
   return withContent.size || all.size;
 }
 
-/**
- * Count the distinct pending edits in an applyHunks display document — the
- * assistant suggestions still awaiting the user's approval — grouped so a
- * replace (its delete + insert) counts once. Drives the "N pending" label.
- */
+/** Count pending suggestion groups in a display document (a replace counts
+ *  once). */
 export function countPendingGroups(displayDoc: any): number {
   const groups = new Set<string>();
   for (const r of displayDoc?.revisions ?? []) {
@@ -702,15 +661,8 @@ export function countPendingGroups(displayDoc: any): number {
   return groups.size;
 }
 
-/**
- * Move NATIVE row-level revision marks (Syncfusion tags a tracked row insert /
- * delete on rowFormat) down onto the row's cell content, in place. The renderer
- * paints a row-level mark as a wash across every cell — a whole tracked table
- * floods solid — while cell-content marks paint like any other tracked text.
- * Used on documents shown WITHOUT a change list (a restored version, a degraded
- * row), where applyHunks never ran to normalize the marks. Returns whether
- * anything was moved.
- */
+/** Move native rowFormat revision marks onto the cells' content, in place
+ *  (Syncfusion paints row marks as a solid wash). Returns whether any moved. */
 export function demoteNativeRowRevisions(doc: any): boolean {
   let changed = false;
   const markParagraphs = (blocks: any[], ids: string[]) => {
@@ -760,25 +712,15 @@ export function demoteNativeRowRevisions(doc: any): boolean {
   return changed;
 }
 
-/**
- * Build the display document: the final document plus synthetic revisions for
- * every hunk. Deleted text is re-inserted as Deletion runs, inserted ranges
- * become Insertion runs, formatting ranges become Insertion runs authored
- * `fmt:<author>` (Syncfusion has no formatting revision type; the renderer
- * keys off the prefix).
- */
+/** Final document plus synthetic revisions per hunk; formatting hunks are
+ *  Insertions authored `fmt:<author>` (Syncfusion has no formatting type). */
 export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
-  // The assistant's edits arrive as live tracked changes; the user's edits are
-  // not tracked, so any revision already in F (i.e. NOT one of our synthetic
-  // `vh-` history revisions) is an assistant suggestion the user has not yet
-  // accepted. Read those from the RAW document first — they tell us both which
-  // edits are still pending AND who really made them.
+  // Live revisions in F are unaccepted assistant suggestions; read them from
+  // the RAW document before normalizing drops them.
   const raw = JSON.parse(JSON.stringify(finalSfdt));
   const pendingRuns = collectPendingRuns(raw);
-  // Build the display on the ACCEPTED document: dropping the live revisions (and
-  // their markup) leaves only our synthetic revisions to render — no orphaned
-  // originals mis-colouring the text, and offsets that line up with the hunks
-  // (which are anchored to the accepted document). Keep real image bytes.
+  // Build on the ACCEPTED document so offsets match the hunks and no live
+  // revision mis-colours text. Keep real image bytes.
   const doc = normalizeForDiff(raw, { digestImages: false });
   const revisions: any[] = [];
   // A hunk's pending match, if its text belongs to a still-tracked edit. Used to
@@ -793,10 +735,8 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
     return pendingRuns.find((r) => {
       if (r.kind !== kind) return false;
       const candidate = r.text.trim();
-      // Short substrings are common words ("the", punctuation, etc.) and are
-      // not reliable identity evidence across unrelated edits. Permit fuzzy
-      // containment only once both sides carry enough context; exact matches
-      // remain valid for short runs.
+      // Short substrings (common words) are not identity evidence; fuzzy
+      // containment needs 8+ chars on both sides.
       return (
         candidate === t ||
         (candidate.length >= 8 &&
@@ -805,10 +745,8 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
       );
     });
   };
-  // Robin's authored text, captured while its revisions were live (stored on the
-  // change list). Unlike pendingRuns this survives the user ACCEPTING the edit,
-  // so it keeps an accepted Robin edit coloured as Robin. Matched only when there
-  // is no live pending match, and it never marks the edit pending (it's approved).
+  // Unlike pendingRuns, robinRuns survive acceptance; tried only after a live
+  // match fails and never mark the edit pending.
   const robinRuns = changes.robinRuns ?? [];
   const matchRobin = (
     kind: 'ins' | 'del',
@@ -865,11 +803,8 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
   const date = new Date().toISOString();
   const changeSetId = `version:${changes.sessionId}`;
   let seq = 0;
-  // Step/count bucket for a hunk: its TOP-LEVEL block, scoped by author. Every
-  // hunk inside one structure shares that structure's top-level index — all of a
-  // table's cells are `[section,'blocks',tableIdx,...]` — so a whole table (or a
-  // single paragraph) steps as ONE edit, while separate structures stay separate.
-  // A replace's delete+insert share a paragraph + author, so they stay one group.
+  // Bucket by author + TOP-LEVEL block, so all of a table's cells (and a
+  // replace's delete+insert) step as one edit.
   const blockGroupKey = (author: string, block: BlockPath): string => {
     const a = authorKeyOf(String(author).replace(FMT_AUTHOR_PREFIX, ''));
     const sec = Array.isArray(block) ? block[0] : 0;

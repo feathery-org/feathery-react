@@ -371,15 +371,8 @@ export function attachBindings(
       // Set first: removing a listener can itself fire an event, and any stray
       // timer that fires after this point must find the handlers inert.
       disposed = true;
-      // React runs the host's instance.destroy() cleanup BEFORE this one, so by
-      // the time dispose runs the editor is often already torn down. Its own
-      // destroy dropped the listeners and patched internals with it, so the
-      // editor-touching steps are skipped: calling removeEventListener (or the
-      // un-patch helpers) on a destroyed Syncfusion instance dereferences null
-      // internals and throws "Cannot convert undefined or null to object".
-      // A LIVE editor still runs every step; a failure there is logged, never
-      // thrown (dispose runs inside React's unmount commit, where a throw hits
-      // the nearest error boundary and takes the form down).
+      // The host's destroy() often ran first; touching a destroyed editor
+      // throws, so skip those steps. Steps log, never throw (unmount commit).
       const editorGone = !!(editor as { isDestroyed?: boolean }).isDestroyed;
       const step = (
         label: string,

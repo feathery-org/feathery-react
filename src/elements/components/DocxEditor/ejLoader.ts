@@ -22,11 +22,8 @@ export function loadStyles(): void {
   loadAccentOverride();
 }
 
-// The Syncfusion tailwind3 theme's accent is indigo (--color-sf-primary
-// #6366f1). Retint the primary family to the Feathery red so the editor's
-// accents — context menus, primary buttons, focus rings, selection highlight,
-// title bar — match the rest of the product. Applied at :root because the
-// context menu renders in a portal on <body>, out of the editor's subtree.
+// Retint Syncfusion's indigo accent to Feathery red. Set on :root because
+// the context menu portals to <body>, outside the editor's subtree.
 const ACCENT_STYLE_ID = 'feathery-docx-accent';
 function loadAccentOverride(): void {
   const doc = featheryDoc();
@@ -52,12 +49,8 @@ function loadAccentOverride(): void {
 // A conversion that never completes must not strand the editor in `loading`.
 const DOCUMENT_LOAD_TIMEOUT_MS = 20000;
 
-/**
- * Resolves true when Syncfusion finishes laying the document out. `documentChange`
- * fires exactly once per open, after open()/openAsync() has already resolved,
- * and is the only signal that the document is really on screen. A missing event
- * is a failed load, never permission to reveal the editor's blank default page.
- */
+/** Resolves true on `documentChange`, the only real "laid out" signal (it
+ *  fires after open() resolves); no event means a failed load. */
 export function waitForDocumentLoad(ed: any): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let settled = false;

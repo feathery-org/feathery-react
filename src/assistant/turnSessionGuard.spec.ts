@@ -11,10 +11,8 @@ import {
 import { useAssistantSessionClear } from './turnSessionGuard';
 import { TURN_IDLE_GRACE_MS, useTurnRunning } from './workingPhrases';
 
-// One user turn is several HTTP round-trips, and the SDK's status dips
-// through 'ready' between them. These pin the rail's writing guard to the
-// latch that spans those dips — clearing on the raw flag instead reopens
-// the unguarded window that auto-expands the tracked-changes rail.
+// A turn's status dips through 'ready' between round-trips; the guard must
+// follow the latch that spans those dips, not the raw flag.
 describe('assistant docx session guard', () => {
   let editor: any;
 

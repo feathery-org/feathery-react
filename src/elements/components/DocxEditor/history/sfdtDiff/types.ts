@@ -1,9 +1,5 @@
-// Shared types for the version-history diff engine.
-//
-// A "hunk" is one change a session made, anchored to an exact position in the
-// session's FINAL document (F). Insertions are a range in F; deletions carry the
-// removed text because it no longer exists in F; formatting hunks describe a
-// range whose characters survived but whose formatting changed.
+// A hunk is one session change anchored in the FINAL document (F); deletions
+// carry their removed text because it no longer exists in F.
 
 export type AuthorKey = string;
 
@@ -83,10 +79,8 @@ export type Hunk =
   | DelBlockHunk
   | FmtBlockHunk;
 
-/** One run of text a specific author inserted or deleted, captured from the live
- *  tracked revisions. Stored on the change list so an edit that was ACCEPTED
- *  before the version closed (no live revision left) can still be re-attributed
- *  to its real author at view time. */
+/** Text an author inserted/deleted, captured from live revisions so an edit
+ *  accepted before close can still be attributed at view time. */
 export interface RevisionRun {
   kind: 'ins' | 'del';
   text: string;
@@ -107,10 +101,8 @@ export interface ChangeList {
   attribution?: 'slices';
   /** Authors of revisions actually rendered from the final change list. */
   trackedAuthors?: AuthorKey[];
-  /** Text Robin authored during the session, captured while its revisions were
-   *  live. Used at view time to keep an ACCEPTED Robin edit coloured as Robin
-   *  (the live-revision rescue can't see accepted edits). Optional/back-compat:
-   *  versions stored before this field behave exactly as before. */
+  /** Robin's text captured while live, to keep ACCEPTED Robin edits coloured
+   *  as Robin. Absent on older versions. */
   robinRuns?: RevisionRun[];
   /** This version records the user confirming tracked edits. Its synthetic
    *  revisions stay attributed to the original author and render as approved
@@ -127,7 +119,7 @@ export interface Slice {
 }
 
 export interface DiffOptions {
-  /** Above this many blocks the engine only aligns by identity (no LCS). */
+  /** Above this many blocks the diff stops, degraded 'block-cap' (no hunks). */
   maxBlocks?: number;
   timeBudgetMs?: number;
   includeFormatting?: boolean;

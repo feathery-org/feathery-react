@@ -533,10 +533,8 @@ describe('useDocxHistorySession', () => {
   });
 
   it('diffs the first edit even though contentChange fires after it applies', async () => {
-    // The real editor fires contentChange (→ onEdit) AFTER the edit is applied,
-    // so by then serialize() already returns the CHANGED document. If S0 were
-    // taken here it would equal F and the edit would vanish. The baseline must
-    // come from the pristine document captured at open.
+    // contentChange fires AFTER the edit applies, so S0 must come from the
+    // pristine document captured at open, not from the first onEdit.
     let doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
     });
@@ -906,10 +904,8 @@ describe('useDocxHistorySession', () => {
   });
 
   it('attributes Robin’s first op to Robin via the pre-turn snapshot', async () => {
-    // contentChange (→ onEdit) fires AFTER an op applies, so at the user→Robin
-    // boundary the document already holds Robin's first op. The slice must come
-    // from the snapshot taken at the turn-START edge, or that op is credited to
-    // the user.
+    // At the user→Robin boundary the document already holds Robin's first op,
+    // so the slice must come from the turn-start snapshot.
     (globalThis as any).CompressionStream = undefined; // changesJson as raw JSON
     let doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
@@ -1343,10 +1339,8 @@ describe('useDocxHistorySession', () => {
   });
 
   it('keeps Robin as the closing author when a user-attributed change fires during the close', async () => {
-    // The live mis-attribution: after the turn-end close begins, an engine
-    // write (or the user's next keystroke) fires onEdit(assistant=false) while
-    // the PATCH is in flight. The closing session's F and author are captured
-    // synchronously at close, so the stored hunks stay Robin's.
+    // onEdit(assistant=false) fires while the close PATCH is in flight; F and
+    // author are captured synchronously at close, so hunks stay Robin's.
     (globalThis as any).CompressionStream = undefined;
     let doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]

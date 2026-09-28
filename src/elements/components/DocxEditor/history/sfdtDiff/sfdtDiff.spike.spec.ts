@@ -1,10 +1,5 @@
-// Spike: does the close-time SFDT diff produce hunks the real Syncfusion engine
-// (34.1.31, jsdom) will render as revisions? Answers, against the engine:
-//   1. synthesized revisions open without error and survive serialize();
-//   2. ids resolve on inlines and paragraph marks; authors come back intact,
-//      including the `fmt:` prefixed formatting pseudo-author;
-//   3. chained two-author slices land on final-document positions;
-//   4. rough timing on a 400-paragraph document.
+// Spike: synthetic history revisions open, round-trip and land on
+// final-document positions in the real Syncfusion engine (jsdom).
 import {
   destroyRealDocumentEditor,
   docWith,

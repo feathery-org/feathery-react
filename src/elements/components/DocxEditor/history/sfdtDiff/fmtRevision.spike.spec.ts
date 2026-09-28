@@ -1,21 +1,5 @@
-// Spike (item 1 of the browser-only list): can a formatting change be shown as
-// a COLORED GLYPH WITH NO UNDERLINE without patching the renderer?
-//
-// Source reading of ej2-documenteditor 34.1.31 render.js says yes:
-//   - render.js:2806  glyph color = getRevisionColor() fires for ANY revision,
-//                     whatever its type;
-//   - render.js:2941  the insertion underline is drawn ONLY when the revision
-//                     type is 'Insertion' or 'MoveTo';
-//   - render.js:2945  the deletion strikethrough ONLY for 'Deletion'/'MoveFrom';
-//   - sfdt-reader.js:3513  an unrecognized revisionType string is passed through
-//                     unchanged (the 4 known types are numeric 1-4).
-// So a revision typed 'Formatting' should color the run in the author colour and
-// draw neither an underline nor a strikethrough - no `checkRevisionType` swap.
-//
-// jsdom cannot assert the pixels (canvas is mocked), but it CAN prove the two
-// preconditions the source logic depends on: the engine must (a) accept the
-// non-standard type on open() without throwing, and (b) actually ATTACH the
-// revision to the run's element (non-empty range) so checkRevisionType sees it.
+// Spike: Syncfusion accepts a non-standard 'Formatting' revision type on open()
+// and attaches it to the run (colour, no underline/strike); pixels unchecked.
 // A browser screenshot remains as final visual confirmation, now low-risk.
 import {
   destroyRealDocumentEditor,

@@ -3,11 +3,8 @@ import { useEffect } from 'react';
 import { getDocxEditor } from './tools/docx/docxEditorRegistry';
 import { setAssistantSessionActive } from './tools/docx/syncfusionDocumentOps';
 
-// The docx bridge raises the session flag on a turn's first document write;
-// this owns the CLEAR, at turn end and unmount.
-//
-// `turnRunning` must be the latched turn signal (useTurnRunning), never raw
-// isLoading: status dips through 'ready' mid-turn and would drop the guard.
+// Clears the session flag the docx bridge raised. `turnRunning` must be the
+// useTurnRunning latch: raw isLoading dips mid-turn and would drop the guard.
 export const useAssistantSessionClear = (
   turnRunning: boolean,
   instanceId?: string

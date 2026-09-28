@@ -1,9 +1,5 @@
-// In-memory snapshots of the open session's document at each author boundary.
-// A slice is a full serialize() taken when the acting author changed; the diff
-// engine uses S0 + these slices + F to attribute every change to its author.
-//
-// Two things keep memory bounded: image payloads are digested away (they dwarf
-// the text and never need to be diffed byte-for-byte), and the count is capped.
+// Snapshots of the open session's document at each author switch; the diff
+// uses S0 + slices + F for attribution. Images are digested to bound memory.
 import { AuthorKey, Slice } from './types';
 import {
   hash32,
@@ -13,11 +9,8 @@ import {
 
 export const MAX_SLICES = 20;
 
-/**
- * Replace long `imageString` payloads with the SAME digest normalizeForDiff
- * would produce, so a stored slice and the final document (digested at diff
- * time) compare equal on unchanged images. Returns a new SFDT string.
- */
+/** Digest images exactly as normalizeForDiff does, so unchanged images in a
+ *  slice and the final document compare equal. */
 export function stripImages(sfdt: string): string {
   const walk = (node: any): void => {
     if (Array.isArray(node)) {

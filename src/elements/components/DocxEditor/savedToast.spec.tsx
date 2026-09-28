@@ -64,10 +64,8 @@ describe('DocxEditor save confirmation toast', () => {
     );
   });
 
-  // A restored version's .docx can carry back tracked changes that were still
-  // awaiting review when it was saved. When the reopened document reports a
-  // pending count shortly after a restore, the host toasts it (see
-  // handleChangesCount); this pins the decision + copy that toast uses.
+  // A restore can bring back unreviewed tracked changes; handleChangesCount
+  // toasts them with this message.
   describe('restoredSuggestionsMessage', () => {
     const now = 1_000_000;
 

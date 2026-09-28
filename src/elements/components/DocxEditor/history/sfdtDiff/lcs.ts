@@ -1,9 +1,5 @@
-// Sequence alignment primitives. Two layers:
-//   1. patience: pair items whose key is unique on both sides (stable anchors),
-//      then recurse between anchors;
-//   2. lcs: a bounded dynamic-programming longest-common-subsequence for the
-//      gaps, which is what handles repeated short lines (table cells, bullets).
-// No dependency: the inputs are small (blocks, or words of one paragraph).
+// Patience alignment on unique keys, with bounded LCS for the gaps between
+// anchors (handles repeated short lines like table cells and bullets).
 
 export interface Pair {
   a: number;
@@ -67,11 +63,8 @@ function greedyMatch(
   return out;
 }
 
-/**
- * Patience alignment: anchor on keys unique to both sides (in increasing order
- * on both — the longest increasing subsequence of the unique matches), then LCS
- * the segments between anchors. Blank keys never anchor.
- */
+/** Anchor on keys unique to both sides (LIS of those matches), LCS the gaps;
+ *  blank keys never anchor. */
 export function patienceAlign(
   a: string[],
   b: string[],
@@ -171,12 +164,8 @@ export interface WordOp {
   text: string;
 }
 
-// A whole monetary/numeric value is ONE token — optional currency symbol, the
-// digits with thousands/decimal separators, and a trailing percent — so a
-// changed number diffs as a single unit (strike the old value, write the new)
-// instead of fragmenting into the differing digits. The trailing lookahead
-// keeps it from swallowing part of an alphanumeric word (e.g. "3rd", "v2").
-// Ordered before the alphanumeric run so it wins when it starts on a number.
+// A whole number/amount is ONE token so a changed value diffs as a unit; the
+// lookahead avoids words like "3rd", and it precedes the alphanumeric run.
 const NUMBER = String.raw`[$€£¥]?\d(?:[\d.,]*\d)?%?(?![A-Za-z0-9À-￿])`;
 const TOKEN = new RegExp(
   `\\s+|${NUMBER}|[A-Za-z0-9À-￿]+|[^\\sA-Za-z0-9À-￿]`,

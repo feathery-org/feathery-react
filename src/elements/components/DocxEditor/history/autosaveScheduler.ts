@@ -1,12 +1,5 @@
-// Debounced autosave for the docx editor. Mirrors the document-index sync shape
-// in assistant/tools/docx/documentIndex.ts: one save in flight at a time, a
-// coalesced re-run when edits land mid-save, an idle debounce with a hard
-// ceiling so a stream of edits still saves, and exponential backoff on failure.
-//
-// Timers and the clock are injectable so every rule is unit-testable without
-// real time. `canSave` is the gate: when it is false a due save is skipped and
-// reported 'blocked' rather than fired (the binding soft-gate, an open document,
-// or an assistant write batch).
+// Debounced docx autosave: one save in flight, idle debounce with a hard
+// ceiling, backoff on failure. A false `canSave` reports 'blocked', not fired.
 import { SaveStatus } from './types';
 import {
   canRetryDocumentError,

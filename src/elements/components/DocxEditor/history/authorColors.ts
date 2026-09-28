@@ -1,7 +1,5 @@
-// Stable per-actor colours (Google-Docs style): the same person is the same
-// colour in every version and session. Drives the History panel's avatar dots
-// and the highlight renderer's washes. The first human editor is orange,
-// Robin is Feathery red, and later human editors use stable palette colours.
+// Stable per-actor colours: the same person gets the same colour in every
+// version and session, for avatar dots and highlight washes.
 
 export const CURRENT_USER_COLOR = '#f97316'; // orange — first human editor
 export const ASSISTANT_COLOR = '#e2626e'; // Feathery red — always Robin
@@ -86,10 +84,8 @@ export function colorForRevisionAuthor(
 ): string {
   let key = author || '';
   if (key.startsWith(FMT_PREFIX)) key = key.slice(FMT_PREFIX.length);
-  // Robin is the assistant no matter how the author was spelled: the diff uses
-  // the key 'robin', but a live tracked change carries the document author
-  // string 'Robin' (ASSISTANT_DOCUMENT_AUTHOR). Match case-insensitively so the
-  // assistant's edits always get the brand red, never a palette colour.
+  // Diffs use 'robin' but live tracked changes use 'Robin'
+  // (ASSISTANT_DOCUMENT_AUTHOR), so match case-insensitively.
   const kind = key.toLowerCase() === 'robin' ? 'assistant' : 'user';
   if (kind === 'user' && key.toLowerCase() === 'you' && versionActorKey) {
     key = versionActorKey;

@@ -25,7 +25,7 @@ import {
 interface Props {
   host: DocxHistoryHost;
   currentUser: VersionAuthor;
-  /** Selecting a version opens it in the viewer (later PR). */
+  /** Selecting a version opens it in the viewer. */
   onSelect?: (version: DocxVersion) => void;
   /** Reports the loaded version list up (for auto-selecting the latest). */
   onVersionsLoaded?: (versions: DocxVersion[]) => void;

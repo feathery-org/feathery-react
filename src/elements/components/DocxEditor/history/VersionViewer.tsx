@@ -18,10 +18,8 @@ import { withDocumentDeadline } from '../../../../utils/documentPersistence';
 const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-// Syncfusion still paints revision text with its native author colour when
-// showRevisions is false. Open an accepted, revision-free copy for the plain
-// view so the run's own characterFormat (including fontColor) remains in
-// control. Keep image bytes intact because this copy is rendered, not diffed.
+// showRevisions=false still paints revision text in Syncfusion's author
+// colour, so the plain view opens an accepted, revision-free copy instead.
 const acceptedSfdt = (sfdt: string): string => {
   try {
     return JSON.stringify(
@@ -32,10 +30,8 @@ const acceptedSfdt = (sfdt: string): string => {
   }
 };
 
-// SFDT opens lay out synchronously but select the document start and paint that
-// viewport. Replace the content and repaint at the reader's position in the
-// same task, before the browser can show a blank canvas or the first page.
-// Do not restore selection offsets: accepting deletions changes those offsets.
+// open() jumps to the document start; repaint at the reader's scroll in the
+// same task. Don't restore selection: accepting deletions shifts offsets.
 const preservePreviewViewport = (viewer: any, open: () => void): void => {
   const helper = viewer.documentHelper;
   const container = helper?.viewerContainer;
@@ -67,10 +63,8 @@ const shimmer = keyframes({
   '100%': { opacity: 0.5 }
 });
 
-// A full-page document placeholder shown OPAQUELY over the editor while a
-// version loads — so the reader never sees the bare editor (blank page +
-// blinking caret) before the document paints. The card fills the pane height
-// like a real page; line widths vary per paragraph so it reads like prose.
+// Opaque page placeholder over the editor while a version loads, so the bare
+// editor (blank page + caret) never shows.
 const SKELETON_PARAGRAPHS: number[][] = [
   [46, 100, 96, 90, 72],
   [100, 94, 98, 88, 64],
@@ -99,10 +93,8 @@ interface Props {
   /** Show tracked-change highlights (default true). Off opens the accepted
    *  final state in the same viewer, preserving its scroll position. */
   highlightsOn?: boolean;
-  /** A ready-resolved document to open directly, bypassing the version fetch.
-   *  Used for the in-progress current version, which has no stored files yet:
-   *  the parent supplies a live-diffed display document (highlights baked in via
-   *  applyHunks) so it renders exactly like a stored version. */
+  /** Pre-resolved document that skips the fetch; used for the unsaved current
+   *  version, which has no stored files. */
   liveDoc?: VersionDocument;
   /** Reports the version's edit counts + whether highlights are available, so
    *  the version bar can label them. */
@@ -117,10 +109,8 @@ interface Props {
   onDisplayedVersion?: (version: DocxVersion) => void;
 }
 
-// A second, read-only DocumentEditor overlaid on the live editor's pane. It is
-// never registered (the assistant/rail must not see it). The parent reuses it
-// between selections so its last painted page can remain visible while the next
-// version resolves.
+// Read-only editor overlaid on the live pane; never registered, so the
+// assistant/rail can't see it. Reused across version selections.
 export default function VersionViewer({
   host,
   version,
@@ -165,10 +155,8 @@ export default function VersionViewer({
   const onDisplayedVersionRef = useRef(onDisplayedVersion);
   onDisplayedVersionRef.current = onDisplayedVersion;
 
-  // Create the read-only editor once. Use a DocumentEditorContainer (as the
-  // live editor does) rather than a bare DocumentEditor: the container reliably
-  // fills a height:100% host and sizes its inner editor correctly, so the page
-  // lays out at the right scale instead of appearing zoomed in.
+  // Use a DocumentEditorContainer, not a bare DocumentEditor: only the
+  // container sizes to a height:100% host, so the page isn't laid out zoomed.
   useEffect(() => {
     let cancelled = false;
     let cancelCreation: (() => void) | undefined;
@@ -273,10 +261,8 @@ export default function VersionViewer({
     containerRef.current?.statusBar?.updateZoomContent?.();
   }, [editorReady, zoomFactor]);
 
-  // Opens run strictly one after another. The viewer is reused across version
-  // selections, and openAsync (the docx fallback) cannot be aborted mid-flight:
-  // without the chain, a slow stale open lands AFTER the newer version's open
-  // and paints the wrong (still-unpopulated) document over it.
+  // Opens run one at a time: openAsync can't be aborted, so a slow stale open
+  // would otherwise paint over the newer version.
   const openSeqRef = useRef(0);
   const openChainRef = useRef<Promise<void>>(Promise.resolve());
   const displayedVersionIdRef = useRef<string | null>(null);
@@ -299,11 +285,8 @@ export default function VersionViewer({
         // Install our palette before their first paint; restores stay plain.
         if (showHighlights) {
           try {
-            // Inline author-coloured highlights. showRevisions stays ON so the
-            // re-inserted deleted text lays out (false would show the accepted
-            // doc and hide deletions); the custom renderer overrides Syncfusion's
-            // default track-change styling with our washes, and we keep the
-            // Changes/review pane shut so no tracked-change panel appears.
+            // showRevisions must stay on: false shows the accepted doc and
+            // hides the re-inserted deletions.
             installRevisionHighlightRendering(
               viewer,
               (author) =>
@@ -360,10 +343,8 @@ export default function VersionViewer({
         if (!(await loaded))
           throw new Error('Version preview did not finish loading');
         if (cancelled) return;
-        // Highlights off = the accepted (plain) view, explicitly and AFTER the
-        // open: opening a document that carries tracked changes can flip
-        // showRevisions back on natively, which would paint Syncfusion's own
-        // author tints over the "plain" view.
+        // Re-apply after the open: opening a doc with tracked changes can flip
+        // showRevisions back on and paint Syncfusion's author tints.
         if (!showHighlights) {
           try {
             viewer.showRevisions = false;
@@ -373,10 +354,8 @@ export default function VersionViewer({
         }
         // Opening can re-open the review pane; keep it shut.
         closeTrackedChangeReviewPane();
-        // The raw-docx fallback still holds [[field]] / {{ jinja }} tokens (it
-        // never went through the binding engine); populate them the way the live
-        // editor does before showing the read-only version. The SFDT path is
-        // already populated upstream in useVersionDocument.
+        // The docx fallback still holds raw [[field]] / {{ jinja }} tokens; the
+        // SFDT path was already populated in useVersionDocument.
         let populated = true;
         if (doc.docxUrl) {
           try {

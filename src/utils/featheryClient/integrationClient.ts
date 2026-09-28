@@ -172,8 +172,7 @@ export interface EnvelopeSaveMeta {
   closeSession?: boolean;
 }
 
-// Payload for the version close endpoint. In the current PR only finalSfdtGz is
-// produced; the diff fields arrive with the highlights PR.
+// Payload for the version close endpoint: final SFDT plus its change list.
 export interface EnvelopeClosePayload {
   finalSfdtGz: Blob;
   changesJson?: Blob;
@@ -962,9 +961,9 @@ export default class IntegrationClient {
     );
   }
 
-  // Close a session, uploading the final SFDT (gzipped) and, once the highlights
-  // PR lands, its anchored change list. 204 → the session was eliminated as
-  // unchanged (no row). Returns the version row otherwise.
+  // Close a session, uploading the final SFDT (gzipped) and its anchored change
+  // list. 204 → the session was eliminated as unchanged (no row). Returns the
+  // version row otherwise.
   closeEnvelopeVersion(
     envelopeId: string,
     sessionId: string,

@@ -1,8 +1,5 @@
-// Resolves the document to show for a selected version. When the version was
-// closed with a final SFDT AND a change list, its hunks are applied so the
-// viewer renders them as tracked-change highlights; without a change list it
-// shows the document plain (degraded — a tab-death row, a >30-day pruned row, or
-// a hash mismatch). An old docx-only row falls back to its stored docx.
+// Resolves a version's display document: final SFDT + change list gets
+// highlights; no change list opens plain (degraded); docx-only rows use docx.
 import { useEffect, useRef, useState } from 'react';
 
 import { populateVersionBindings } from './populateVersionBindings';
@@ -38,10 +35,8 @@ export interface VersionDocument {
   degraded: boolean;
 }
 
-// Older versions are immutable, so a resolved document can be cached locally.
-// Current can still receive a later checkpoint or close at the same id, and
-// must be fetched again when its row is refreshed.
-// Bounded to the most-recently-used few so memory stays flat on long sessions.
+// Older versions are immutable and cached (small LRU); current can still get
+// a checkpoint or close at the same id, so it is refetched on refresh.
 type ResolvedVersion = Omit<VersionDocument, 'loading'>;
 const CACHE_MAX = 8;
 const CACHE_BYTES_MAX = 16 * 1024 * 1024;

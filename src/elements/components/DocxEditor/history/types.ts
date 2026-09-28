@@ -59,9 +59,8 @@ export interface DocxVersion {
   created_at: string;
 }
 
-/** Payload for closing a session: the final document plus (later PRs) its
- *  anchored change list. In PR 2 only `finalSfdtGz` is sent; the diff fields
- *  arrive with the highlights PR. */
+/** Payload for closing a session: the final document plus its anchored
+ *  change list. */
 export interface CloseVersionPayload {
   finalSfdtGz: Blob;
   changesJson?: Blob;
@@ -72,10 +71,8 @@ export interface CloseVersionPayload {
   authors: DocxSaveMeta['authors'];
 }
 
-/**
- * The I/O adapter the container injects so the history modules never import the
- * Feathery API directly (index.tsx stays API-free, per its :98 comment).
- */
+/** I/O adapter the container injects so history modules (and index.tsx)
+ *  never import the Feathery API directly. */
 export interface DocxHistoryHost {
   listVersions(): Promise<DocxVersion[]>;
   /** Refresh signed artifact URLs after expiry. */

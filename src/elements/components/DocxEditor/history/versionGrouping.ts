@@ -1,8 +1,5 @@
-// Pure grouping for the History panel. The list endpoint returns versions
-// newest-first; this buckets them under month headers as a FLAT list — one row
-// per version, no clustering. (The VersionCluster shape is kept so the panel's
-// row renderer is unchanged; `earlier` is always empty, so no expand chevron
-// ever shows.)
+// Buckets newest-first versions under Today/month headers, one row each.
+// VersionCluster is kept for the row renderer; `earlier` is always empty.
 import { DocxVersion } from './types';
 
 const MONTHS = [
@@ -23,7 +20,7 @@ const MONTHS = [
 export interface VersionCluster {
   /** Newest version in the cluster (the visible row). */
   primary: DocxVersion;
-  /** Older versions in the cluster, newest-first (revealed on expand). */
+  /** Always empty: every version gets its own row. */
   earlier: DocxVersion[];
   /** Distinct authors across the cluster, in first-seen (newest-first) order. */
   authors: Array<{ kind: string; label: string }>;

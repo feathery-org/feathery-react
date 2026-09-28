@@ -276,10 +276,8 @@ function DocxEditor({
   const [viewingVersion, setViewingVersion] = useState<DocxVersion | null>(
     null
   );
-  // The selected row can resolve in the background while the viewer keeps the
-  // last fully painted page on screen. This identity drives the bar only after
-  // the replacement document is ready, so its label/counts never get ahead of
-  // what the reader is looking at.
+  // The version actually painted; drives the bar so its label/counts never
+  // run ahead of a selection still loading in the background.
   const [displayedVersion, setDisplayedVersion] = useState<DocxVersion | null>(
     null
   );
@@ -296,8 +294,6 @@ function DocxEditor({
   // completed list request is allowed to choose the initial Current version.
   const historyAutoSelectedRef = useRef(false);
   const firstUserKey = firstUserActorKey(historyVersions);
-  // Version highlights are always shown when available (no user toggle). The
-  // resolved counts below drive the version bar's summary; reset per version.
   // Highlight-changes toggle (version bar). Toggling remounts the viewer.
   const [highlightsOn, setHighlightsOn] = useState(true);
   const [sharedZoomFactor, setSharedZoomFactor] = useState<number | undefined>(
@@ -305,8 +301,8 @@ function DocxEditor({
   );
   // The read-only version viewer's editor, for stepping through its changes.
   const viewerEditorRef = useRef<any>(null);
-  // Which change group the steppers are on (index into orderedChangeGroups);
-  // -1 before the first step. Reset when the viewer's editor changes.
+  // Which change group the steppers are on (index into stepChange's order);
+  // -1 before the first step. Reset per shown version.
   const changeStepRef = useRef(-1);
   const [versionMeta, setVersionMeta] = useState<{
     editCount?: number;
@@ -318,10 +314,8 @@ function DocxEditor({
   // Pending tracked-change count, reported by the (always-mounted) rail; drives
   // the toolbar's Changes badge and whether that button is offered at all.
   const [changesCount, setChangesCount] = useState(0);
-  // When the last restore finished. A restored .docx can carry back tracked
-  // changes that were still awaiting review when that version was saved; once
-  // the reopened document reports them (see the changesCount effect), a toast
-  // says so, and this timestamp scopes that toast to the restore itself.
+  // When the last restore finished; scopes the "restored suggestions" toast
+  // to that restore's reopen.
   const restoredAtRef = useRef(0);
 
   // A single dirty transition. Shared by ordinary edits (via the hook's
@@ -807,32 +801,20 @@ function DocxEditor({
     setLiveSessionAuthors(null);
   }, []);
 
-  // A version viewer belongs exclusively to the History panel. Suggested
-  // changes can open automatically when a Robin edit lands, bypassing the
-  // rail click handler that normally exits version view. Leaving the stale
-  // read-only viewer mounted over the live editor makes a later acceptance
-  // look like the document disappeared until the step remounts.
+  // The viewer belongs to the History panel; Changes can auto-open on a Robin
+  // edit without the click handler that normally exits version view.
   useEffect(() => {
     if (activePanel !== 'history' && viewingVersion) exitVersionView();
   }, [activePanel, viewingVersion, exitVersionView]);
 
-  // Step the viewer through EDIT GROUPS, not raw revisions: one click = one
-  // logical edit. editGroupKey buckets a replace's delete+insert together and
-  // collapses the WHOLE Robin turn into a single group (a session holds at most
-  // one turn), so the assistant's changes step as one edit however many places
-  // it touched. setActiveInlineRevisions rings every revision in the group (so
-  // both the strikethrough and the rewritten text are ringed, not just the
-  // deletion), and selectRevision scrolls the group into view (skipGroupSelect
-  // keeps it on this exact edit; the native pane it would open is hidden by
-  // closeTrackedChangeReviewPane's rule).
-  // The viewer persists across version switches and highlight toggles, so
-  // onViewerEditor no longer fires per version. Reset the
-  // prev/next stepping cursor whenever the shown version (or highlight mode)
-  // changes so stepping starts from the top of the newly-opened document.
+  // The viewer persists across version switches, so onViewerEditor doesn't
+  // fire per version; reset the stepping cursor here instead.
   useEffect(() => {
     changeStepRef.current = -1;
   }, [viewingVersion?.id, highlightsOn]);
 
+  // Steps edit groups, not raw revisions: a replace's delete+insert, or a
+  // whole Robin turn, is one step.
   const stepChange = useCallback((direction: 1 | -1) => {
     const ed = viewerEditorRef.current;
     const revisions = stepperRevisions(ed);
@@ -852,11 +834,8 @@ function DocxEditor({
       bucket.push(rev);
     });
     if (!order.length) return;
-    // An inserted blank line is a paragraph-mark-only revision with an EMPTY
-    // range; stepping onto it lands the caret on an empty line with nothing to
-    // review ("steps on the empty line, never on the edit"). Step only among
-    // groups that carry visible content — fall back to all groups only if a
-    // version somehow has nothing but blank-line edits.
+    // Blank-line inserts are empty-range revisions with nothing to review;
+    // skip them unless they are the only edits.
     const hasContent = (revs: any[]): boolean =>
       revs.some((r) =>
         (r.range ?? []).some(
@@ -926,12 +905,8 @@ function DocxEditor({
     );
   };
 
-  // The rail reports the live document's pending tracked-change count here.
-  // Right after a restore, a nonzero count means the restored version carried
-  // suggestions that were still awaiting review when it was saved (a .docx
-  // keeps its tracked changes) — say so, or the wash on those edits reads as a
-  // mystery. The time window scopes the toast to the restore's own reopen; a
-  // later assistant edit must not replay it.
+  // Just after a restore, a nonzero count means the restored .docx brought
+  // back unreviewed suggestions; toast so their highlighting isn't a mystery.
   const handleChangesCount = (count: number) => {
     setChangesCount(count);
     const message = restoredSuggestionsMessage(count, restoredAtRef.current);
