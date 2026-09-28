@@ -504,7 +504,7 @@ describe('TrackedChangeGroups', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 
     await waitFor(() => expect(revision.accept).toHaveBeenCalledTimes(1));
     expect(onAcceptTrackedChanges).toHaveBeenCalledWith(
