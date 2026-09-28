@@ -214,11 +214,20 @@ describe('mirrors + positional range totals', () => {
     expect(totalText(result.index)).toBe('$8,800.00');
   });
 
-  it('leaves an empty inserted row plain and the total unchanged', () => {
+  it('gives an empty inserted row its field control immediately (row=auto style)', () => {
     const result = applyRules(withNativeRow('', ''), {});
     expect(hasBlockingErrors(result.diagnostics)).toBe(false);
-    // Mirror-only table: an untyped row is not adopted (no duplicate mirror).
-    expect(result.index.tables.get('summary')!.rows).toHaveLength(2);
+    // Mirror-only table: the new row's amount cell is an editable field with the
+    // default right away - not a duplicate mirror, not plain text - so the
+    // control is there the moment the row is inserted.
+    const rows = result.index.tables.get('summary')!.rows;
+    expect(rows).toHaveLength(3);
+    const adopted = rows.find(
+      (entry) => entry.rowId !== 'm-1' && entry.rowId !== 'm-2'
+    )!;
+    const amount = adopted.bindings.get('amount')!;
+    expect(amount.def.kind).toBe('field');
+    expect(amount.text).toBe('$0.00');
     expect(totalText(result.index)).toBe('$7,800.00');
   });
 
