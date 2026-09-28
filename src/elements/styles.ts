@@ -769,6 +769,13 @@ export default class ResponsiveStyles {
     );
   }
 
+  // Leaves the browser default (center) when unset
+  applyObjectPosition(target: string, prefix = '') {
+    this.apply(target, `${prefix}object_position`, (a: any) =>
+      a ? { objectPosition: a } : {}
+    );
+  }
+
   applyColor(target: string, jsonProp: any, cssProp: any, important = false) {
     this.apply(target, jsonProp, (color: any) => {
       if (!color) return {};
