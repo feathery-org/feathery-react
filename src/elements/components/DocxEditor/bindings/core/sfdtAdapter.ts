@@ -1016,13 +1016,40 @@ function mirrorColumnField(
   };
 }
 
-/** Names bound to the cells of a template row (its column names). */
+/**
+ * Every row-scoped binding name in a template row (its column names). Descends
+ * through foreign wrappers like the scanner does, so a binding nested in a
+ * foreign content control still counts - otherwise a row-local formula whose
+ * input is wrapped would be misread as a mirror.
+ */
 function templateColumnNames(templateCells: SfdtCell[]): Set<string> {
   const names = new Set<string>();
-  for (const cell of templateCells) {
-    const binding = findCellBinding(cell);
-    if (binding) names.add(binding.def.name);
-  }
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    const record = node as { contentControlProperties?: { tag?: unknown } };
+    if (record.contentControlProperties) {
+      let def: Definition | null = null;
+      try {
+        def = parseTag(String(record.contentControlProperties.tag || ''));
+      } catch {
+        def = null;
+      }
+      if (
+        def &&
+        (def.kind === 'field' || def.kind === 'formula') &&
+        def.options.row
+      ) {
+        names.add(def.name);
+        return; // A row binding holds a value, not further bindings.
+      }
+    }
+    for (const value of Object.values(record)) visit(value);
+  };
+  templateCells.forEach(visit);
   return names;
 }
 
