@@ -241,6 +241,45 @@ describe('mirrors + positional range totals', () => {
     expect(totalText(result.index)).toBe('$7,800.00');
   });
 
+  it('re-adopts a row whose control was copied by native insert (duplicate id)', () => {
+    // Syncfusion's insert-row copies an editable control into the new row, so it
+    // arrives carrying a field control with the SAME row id as the row above.
+    // Left alone the two collapse to one binding (a duplicate-column ghost that
+    // edits both). The copy must be re-adopted with a fresh id and reset to its
+    // default - a genuine new, independently editable row.
+    const doc = buildMirrorFixture();
+    const tablePath = scanBindings(doc).tables.get('summary')!.tablePath!;
+    // An earlier insert already produced a field row (One, $100)...
+    const fieldOne = row([
+      'One',
+      cc(fieldTag('amount', CURRENCY, 'r-1'), 'Amount', false, '$100.00')
+    ]);
+    // ...and a fresh insert below it copied that control verbatim (row=r-1).
+    const copied = row([
+      'Two',
+      cc(fieldTag('amount', CURRENCY, 'r-1'), 'Amount', false, '$100.00')
+    ]);
+    getAt(doc, tablePath).rows.splice(3, 0, fieldOne, copied);
+
+    const result = applyRules(doc, {});
+    expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    expect(
+      result.diagnostics.some((entry) => entry.code === 'duplicate-column')
+    ).toBe(false);
+    const rows = result.index.tables.get('summary')!.rows;
+    const ids = rows.map((entry) => entry.rowId);
+    expect(new Set(ids).size).toBe(ids.length); // every row id distinct
+    expect(rows).toHaveLength(4); // m-1, m-2, One, and the re-adopted copy
+    const copyRow = rows.find((entry) => entry.rowId !== 'r-1' && ![
+      'm-1',
+      'm-2'
+    ].includes(entry.rowId as string))!;
+    expect(copyRow.bindings.get('amount')!.def.kind).toBe('field');
+    expect(copyRow.bindings.get('amount')!.text).toBe('$0.00'); // reset, not $100
+    // 1800 (A) + 6000 (B) + 100 (One) + 0 (copy) - self-excluded total.
+    expect(totalText(result.index)).toBe('$7,900.00');
+  });
+
   it('protects an intact totals row (it still has its content control)', () => {
     const result = applyRules(buildMirrorFixture(), {});
     // The Total row keeps its formula; only the two mirrors are bound rows.

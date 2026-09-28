@@ -1005,6 +1005,15 @@ function templateColumnNames(templateCells: SfdtCell[]): Set<string> {
   return names;
 }
 
+/** The row-scoped id a row's bindings carry, or null if it has none. */
+function rowBindingId(row: SfdtRow): string | null {
+  for (const cell of row.cells || []) {
+    const binding = findCellBinding(cell);
+    if (binding && binding.def.options.row) return binding.def.options.row;
+  }
+  return null;
+}
+
 export function adoptUnboundRows(
   sfdt: SfdtDocument,
   tableId: string,
@@ -1095,13 +1104,34 @@ export function adoptUnboundRows(
     .filter(Number.isInteger)
     .sort((left, right) => left - right)[0];
 
+  // Syncfusion's own "insert row" copies the reference row's content controls
+  // into the new row when they are editable, so the inserted row arrives with a
+  // control whose row id DUPLICATES the row above. Left alone it collapses onto
+  // that row in the index (a "duplicate-column" ghost that edits both at once),
+  // so a row whose id was already claimed by an earlier physical row is treated
+  // as a fresh insert and re-adopted with a new id below. The first physical
+  // occurrence of an id is the real bound row and is recorded, not touched.
+  const seenRowIds = new Set<string>();
+
   for (let r = 0; r < allRows.length; r++) {
     const row = allRows[r];
     if (!row) continue;
     if (row.rowFormat && row.rowFormat.isHeader) continue;
-    // Any content control (bound row, intact totals row, foreign control) is not
-    // ours to touch.
-    if (JSON.stringify(row).includes('contentControlProperties')) continue;
+    const existingRowId = rowBindingId(row);
+    const hasControls = JSON.stringify(row).includes('contentControlProperties');
+    if (hasControls) {
+      const isCopiedRow =
+        existingRowId !== null && seenRowIds.has(existingRowId);
+      if (!isCopiedRow) {
+        // A real bound row, an intact totals row, or a foreign control - not
+        // ours to touch. Remember its id so a later copy of it is caught.
+        if (existingRowId !== null) seenRowIds.add(existingRowId);
+        continue;
+      }
+      // Fall through: re-adopt the copy with a fresh id. Its values live inside
+      // the copied controls, invisible to cellPlainText below, so every cell
+      // reads as empty and the new row starts from defaults.
+    }
     const cells = row.cells || [];
     if (!cells.length) continue;
     if (cells.length !== templateCells.length) {
