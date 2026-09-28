@@ -316,6 +316,34 @@ describe('mirrors + positional range totals', () => {
     expect(totalText(result.index)).toBe('$7,800.00');
   });
 
+  it('treats a row-scoped self-table aggregate as structural, not a mirror', () => {
+    // A row=auto self-total (sum(costs.amount) in a row-scoped cell) references
+    // its own table's column, so it is structural: a typed row in that column
+    // must block adoption, not be converted to an editable field.
+    const table = {
+      rows: [
+        row(['Item', 'Amount'], true),
+        row([
+          'Seed',
+          cc(formulaTag('amount', 'sum(costs.amount)', 'r-1'), 'Amount', true, '…')
+        ])
+      ]
+    };
+    const doc = {
+      optimizeSfdt: false,
+      sections: [{ blocks: [tableCc('costs', table)] }]
+    } as unknown as SfdtDocument;
+    const tablePath = scanBindings(doc).tables.get('costs')!.tablePath!;
+    getAt(doc, tablePath).rows.splice(2, 0, nativeRow('New', '500'));
+
+    const result = applyRules(doc, {});
+    // Not adopted: only the seed row is bound, and a diagnostic explains why.
+    expect(result.index.tables.get('costs')!.rows).toHaveLength(1);
+    expect(
+      result.diagnostics.some((entry) => entry.code === 'row-not-adopted')
+    ).toBe(true);
+  });
+
   it('addLineItem duplicates a mirror as a mirror, and the range counts it', () => {
     const base = applyRules(buildMirrorFixture(), {});
     const added = addLineItem(base.sfdt, 'summary', 'm-2', base.index);

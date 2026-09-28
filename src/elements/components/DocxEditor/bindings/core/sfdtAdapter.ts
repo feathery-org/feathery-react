@@ -971,12 +971,14 @@ function countAdoptableRows(sfdt: SfdtDocument, tablePath: SfdtPath): number[] {
 }
 
 // A MIRROR reads only values outside its own row (expr=A, sum(beta)). A
-// row-local formula reads an own-row column (mul(quantity,unit_cost)) or any
-// positional ref (sum(B2:end) — how a totals cell is written); those are
-// structural and block adoption, while a typed mirror column becomes a field.
+// row-local formula reads an own-row column (mul(quantity,unit_cost)), any
+// positional ref (sum(B2:end)), or its own table's column (sum(costs.amount) -
+// a self-total); those are structural and block adoption, while a typed mirror
+// column becomes a field.
 function isMirrorFormula(
   def: FormulaDefinition,
-  ownColumnNames: ReadonlySet<string>
+  ownColumnNames: ReadonlySet<string>,
+  ownTableId: string
 ): boolean {
   let ast;
   try {
@@ -987,7 +989,11 @@ function isMirrorFormula(
   }
   const positional = collectPositional(ast);
   if (positional.cells.length || positional.ranges.length) return false;
-  return !collectRefs(ast).some((ref) => ownColumnNames.has(ref));
+  return !collectRefs(ast).some((ref) => {
+    if (ownColumnNames.has(ref)) return true;
+    const dot = ref.lastIndexOf('.');
+    return dot !== -1 && ref.slice(0, dot) === ownTableId;
+  });
 }
 
 /** The editable field a new row gets where a mirror column was typed into. */
@@ -1098,7 +1104,7 @@ export function adoptUnboundRows(
     return (
       !!binding &&
       binding.def.kind === 'formula' &&
-      isMirrorFormula(binding.def, columnNames)
+      isMirrorFormula(binding.def, columnNames, tableId)
     );
   });
 
