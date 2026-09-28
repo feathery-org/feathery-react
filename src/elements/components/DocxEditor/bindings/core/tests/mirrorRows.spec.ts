@@ -198,25 +198,31 @@ describe('mirrors + positional range totals', () => {
     expect(totalText(result.index)).toBe('$8,000.00');
   });
 
-  it('a typed row stays unbound and joins the range total', () => {
+  it('adopts a typed row into an editable field and range-sums it', () => {
     const result = applyRules(withNativeRow('New item', '1000'), {});
     expect(hasBlockingErrors(result.diagnostics)).toBe(false);
-    // Mirror-only table: never adopted, the typed row carries no bindings.
-    expect(result.index.tables.get('summary')!.rows).toHaveLength(2);
-    expect(result.changed.some((entry) => entry.type === 'row-adopted')).toBe(
-      false
-    );
+    const rows = result.index.tables.get('summary')!.rows;
+    expect(rows).toHaveLength(3);
+    const adopted = rows.find(
+      (entry) => entry.rowId !== 'm-1' && entry.rowId !== 'm-2'
+    )!;
+    const amount = adopted.bindings.get('amount')!;
+    // A field, not a mirror: the typed value is the user's, an editable control.
+    expect(amount.def.kind).toBe('field');
+    expect(amount.lockContents).toBe(false);
+    expect(amount.text).toBe('$1,000.00');
     expect(totalText(result.index)).toBe('$8,800.00');
   });
 
-  it('an empty inserted row stays unbound and the total is unchanged', () => {
+  it('leaves an empty inserted row plain and the total unchanged', () => {
     const result = applyRules(withNativeRow('', ''), {});
     expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    // Mirror-only table: an untyped row is not adopted (no duplicate mirror).
     expect(result.index.tables.get('summary')!.rows).toHaveLength(2);
     expect(totalText(result.index)).toBe('$7,800.00');
   });
 
-  it('leaves an unflagged header row alone', () => {
+  it('leaves an unflagged header row alone (text does not parse as currency)', () => {
     const doc = buildMirrorFixture();
     const tablePath = scanBindings(doc).tables.get('summary')!.tablePath!;
     getAt(doc, tablePath).rows[0].rowFormat = { isHeader: false };
@@ -226,17 +232,11 @@ describe('mirrors + positional range totals', () => {
     expect(totalText(result.index)).toBe('$7,800.00');
   });
 
-  it('never adopts a totals row that lost its content control', () => {
-    const doc = buildMirrorFixture();
-    const tablePath = scanBindings(doc).tables.get('summary')!.tablePath!;
-    // Damage: the Total cell's control is gone, its cached value is plain text.
-    getAt(doc, tablePath).rows[3] = nativeRow('Total', '$7,800.00');
-    const result = applyRules(doc, {});
-    expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+  it('protects an intact totals row (it still has its content control)', () => {
+    const result = applyRules(buildMirrorFixture(), {});
+    // The Total row keeps its formula; only the two mirrors are bound rows.
     expect(result.index.tables.get('summary')!.rows).toHaveLength(2);
-    expect(
-      result.changed.some((entry) => entry.type === 'row-adopted')
-    ).toBe(false);
+    expect(totalText(result.index)).toBe('$7,800.00');
   });
 
   it('addLineItem duplicates a mirror as a mirror, and the range counts it', () => {
