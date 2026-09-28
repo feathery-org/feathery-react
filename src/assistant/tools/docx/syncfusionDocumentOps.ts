@@ -112,7 +112,6 @@ import {
   renderDisplay
 } from '../../../elements/components/DocxEditor/bindings/core/valueTypes';
 import {
-  Ast,
   collectRefs,
   parseExpression
 } from '../../../elements/components/DocxEditor/bindings/core/formula';
@@ -121,6 +120,7 @@ import type { Diagnostic } from '../../../elements/components/DocxEditor/binding
 import { analyzeBindingOrphans } from '../../../elements/components/DocxEditor/bindings/core/tableDeleteImpact';
 import {
   addLineItem,
+  expressionResolvesToColumn,
   formulaOccurrences,
   formulaScopeKey,
   getAt,
@@ -16472,39 +16472,22 @@ function setCellContent(
   return setAt(sfdt, cellPath, { ...cell, blocks });
 }
 
-// A bare table.column ref or bare range evaluates to a column, not a value, so
-// every reconcile would fail; reject it at creation instead of shipping a
-// permanently erroring binding.
+// Op-layer wrapper: translate the core's column-expression verdict into an
+// OpError so create_binding rejects a permanently-erroring binding at creation.
 export function assertExpressionYieldsValue(
   expression: string,
   bindingIndex: BindingIndex
 ): void {
-  let ast: Ast;
-  try {
-    ast = parseExpression(expression);
-  } catch {
-    return; // parse failures surface through the caller's parseExpression call
-  }
-  if ('range' in ast)
-    throw new OpError(
-      'binding_expression_whole_column',
-      `Expression ${JSON.stringify(
-        expression
-      )} is a whole range. Wrap it in sum(...) to produce a value. Nothing was written.`
-    );
-  if (!('ref' in ast)) return;
-  const ref = ast.ref;
-  const dot = ref.lastIndexOf('.');
-  if (dot === -1) return;
-  // A dotted doc field or formula name (project.name) is a legitimate mirror.
-  if (bindingIndex.fields.has(ref) || bindingIndex.formulas.has(ref)) return;
-  if (bindingIndex.tables.has(ref.slice(0, dot)))
-    throw new OpError(
-      'binding_expression_whole_column',
-      `Expression ${JSON.stringify(
-        expression
-      )} names a whole table column. Wrap it in sum(...) to produce a value. Nothing was written.`
-    );
+  const kind = expressionResolvesToColumn(bindingIndex, expression);
+  if (!kind) return;
+  const what =
+    kind === 'range' ? 'is a whole range' : 'names a whole table column';
+  throw new OpError(
+    'binding_expression_whole_column',
+    `Expression ${JSON.stringify(
+      expression
+    )} ${what}. Wrap it in sum(...) to produce a value. Nothing was written.`
+  );
 }
 
 function createBindingInCell(

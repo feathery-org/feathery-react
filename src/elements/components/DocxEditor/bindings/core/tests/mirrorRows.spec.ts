@@ -198,6 +198,35 @@ describe('mirrors + positional range totals', () => {
     expect(totalText(result.index)).toBe('$8,000.00');
   });
 
+  it('skips a non-numeric bound field inside a summed range (counts as 0)', () => {
+    const doc = buildMirrorFixture();
+    const tablePath = scanBindings(doc).tables.get('summary')!.tablePath!;
+    // A text-typed bound cell in column B must not poison sum(B2:end).
+    getAt(doc, tablePath).rows.splice(3, 0, {
+      cells: [
+        { blocks: [{ inlines: [{ text: 'Note' }] }] },
+        {
+          blocks: [
+            {
+              inlines: [
+                cc(
+                  fieldTag('note', { kind: 'text' }, 't-1'),
+                  'Note',
+                  false,
+                  'see appendix'
+                )
+              ]
+            }
+          ]
+        }
+      ],
+      rowFormat: { isHeader: false }
+    });
+    const result = applyRules(doc, {});
+    expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    expect(totalText(result.index)).toBe('$7,800.00'); // text row contributes 0
+  });
+
   it('adopts a typed row into an editable field and range-sums it', () => {
     const result = applyRules(withNativeRow('New item', '1000'), {});
     expect(hasBlockingErrors(result.diagnostics)).toBe(false);
