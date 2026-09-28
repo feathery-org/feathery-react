@@ -136,6 +136,12 @@ export function attachBindings(
     clearTimeoutFn
   }: BindingsOptions = {}
 ): AttachedBindings {
+  if (
+    typeof window !== 'undefined' &&
+    (window as unknown as { __FX_DEBUG?: boolean }).__FX_DEBUG
+  )
+    // eslint-disable-next-line no-console
+    console.log('[fx] bindings attached — build 6e7e96c6+debug');
   // Best effort - the reliable place is the constructor. When this fails the
   // engine still refuses minified SFDT loudly rather than reading no bindings.
   configureEditorForBindings(editor);
