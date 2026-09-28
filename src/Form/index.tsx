@@ -3949,6 +3949,7 @@ function Form({
     tableOnClick,
     fieldOnChange,
     buttonLoaders,
+    logicRules,
     inlineErrors,
     setInlineErrors,
     changeValue,
