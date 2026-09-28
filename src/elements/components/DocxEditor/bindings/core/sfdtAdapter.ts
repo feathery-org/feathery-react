@@ -1035,6 +1035,22 @@ function rowBindingId(row: SfdtRow): string | null {
   return null;
 }
 
+// A data row holds at least one INPUT column - a field, or a mirror. A row whose
+// only bound columns are structural formulas (a totals row: sum(B2:end) or a
+// self-aggregate) is not a data row and makes a poor adoption template.
+function rowHasInputColumn(entry: TableRowEntry, tableId: string): boolean {
+  const names = new Set(entry.bindings.keys());
+  for (const occurrence of entry.bindings.values()) {
+    if (occurrence.def.kind === 'field') return true;
+    if (
+      occurrence.def.kind === 'formula' &&
+      isMirrorFormula(occurrence.def, names, tableId)
+    )
+      return true;
+  }
+  return false;
+}
+
 export function adoptUnboundRows(
   sfdt: SfdtDocument,
   tableId: string,
@@ -1049,7 +1065,15 @@ export function adoptUnboundRows(
   const table = index.tables.get(tableId);
   if (!table || !table.tablePath)
     return { sfdt, adopted: [], mutations: [], skipped: [] };
-  const lastBoundRow = table.rows.length
+  // Prefer the last DATA row as the template; a row-scoped totals row is a bound
+  // row too, but cloning it would give a new row a structural aggregate instead
+  // of an input control. Fall back to the last bound row when none has inputs.
+  const inputRows = table.rows.filter((entry) =>
+    rowHasInputColumn(entry, tableId)
+  );
+  const lastBoundRow = inputRows.length
+    ? inputRows[inputRows.length - 1]
+    : table.rows.length
     ? table.rows[table.rows.length - 1]
     : undefined;
   const templateRow =

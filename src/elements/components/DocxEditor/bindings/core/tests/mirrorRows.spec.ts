@@ -344,6 +344,61 @@ describe('mirrors + positional range totals', () => {
     ).toBe(true);
   });
 
+  it('adopts a row between mirrors when the total row is row-scoped', () => {
+    // A row-scoped total (row=t-1) is a bound row and would be picked as the
+    // adoption template - but it is a structural aggregate, not a data row.
+    // Template selection must skip it and use a mirror row, so the inserted
+    // cell in the summed column still becomes an editable field control.
+    const table = {
+      rows: [
+        row(['Item', 'Amount'], true),
+        row(['Alpha', cc(formulaTag('amount', 'alpha', 'm-1'), 'Amount', true, '…')]),
+        row(['Beta', cc(formulaTag('amount', 'beta', 'm-2'), 'Amount', true, '…')]),
+        row([
+          'Total',
+          cc(formulaTag('total', 'sum(summary.amount)', 't-1'), 'Total', true, '…')
+        ])
+      ]
+    };
+    const doc = {
+      optimizeSfdt: false,
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { text: 'A ' },
+                cc(fieldTag('alpha'), 'Alpha', false, '$1,800.00'),
+                { text: ' B ' },
+                cc(fieldTag('beta'), 'Beta', false, '$6,000.00')
+              ]
+            },
+            tableCc('summary', table)
+          ]
+        }
+      ]
+    } as unknown as SfdtDocument;
+    const tablePath = scanBindings(doc).tables.get('summary')!.tablePath!;
+    getAt(doc, tablePath).rows.splice(2, 0, nativeRow('New', '1000')); // between mirrors
+
+    const result = applyRules(doc, {});
+    expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    const adopted = result.index.tables
+      .get('summary')!
+      .rows.find(
+        (entry) => !['m-1', 'm-2', 't-1'].includes(entry.rowId as string)
+      )!;
+    // An editable field control - the summed column is an input column.
+    expect(adopted.bindings.get('amount')!.def.kind).toBe('field');
+    expect(adopted.bindings.get('amount')!.lockContents).toBe(false);
+    expect(adopted.bindings.get('amount')!.text).toBe('$1,000.00');
+    // The row-scoped total sums all three inputs.
+    const totalRow = result.index.tables
+      .get('summary')!
+      .rows.find((entry) => entry.rowId === 't-1')!;
+    expect(totalRow.bindings.get('total')!.text).toBe('$8,800.00');
+  });
+
   it('addLineItem duplicates a mirror as a mirror, and the range counts it', () => {
     const base = applyRules(buildMirrorFixture(), {});
     const added = addLineItem(base.sfdt, 'summary', 'm-2', base.index);
