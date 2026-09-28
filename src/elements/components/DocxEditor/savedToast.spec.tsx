@@ -6,7 +6,7 @@ import {
   screen,
   waitFor
 } from '@testing-library/react';
-import DocxEditor from './index';
+import DocxEditor, { restoredSuggestionsMessage } from './index';
 
 // Drive the real DocxEditor (toolbar + save flow) against a stubbed engine so
 // the Save-confirmation toast can be exercised without SyncFusion. The `mock`
@@ -62,6 +62,33 @@ describe('DocxEditor save confirmation toast', () => {
     await waitFor(() =>
       expect(screen.queryByText('Document saved')).not.toBeInTheDocument()
     );
+  });
+
+  // A restored version's .docx can carry back tracked changes that were still
+  // awaiting review when it was saved. When the reopened document reports a
+  // pending count shortly after a restore, the host toasts it (see
+  // handleChangesCount); this pins the decision + copy that toast uses.
+  describe('restoredSuggestionsMessage', () => {
+    const now = 1_000_000;
+
+    it('announces the count reported right after a restore', () => {
+      expect(restoredSuggestionsMessage(18, now - 3000, now)).toBe(
+        '18 pending Robin edits restored'
+      );
+      // Singular form.
+      expect(restoredSuggestionsMessage(1, now - 3000, now)).toBe(
+        '1 pending Robin edit restored'
+      );
+    });
+
+    it('stays quiet with no restore, no suggestions, or a stale window', () => {
+      // No restore recorded.
+      expect(restoredSuggestionsMessage(5, 0, now)).toBeNull();
+      // Restored version had no pending suggestions.
+      expect(restoredSuggestionsMessage(0, now - 3000, now)).toBeNull();
+      // A count arriving well after the restore is a new edit, not the restore.
+      expect(restoredSuggestionsMessage(5, now - 60_000, now)).toBeNull();
+    });
   });
 
   it('shows an error toast (not the success one) when the save fails', async () => {

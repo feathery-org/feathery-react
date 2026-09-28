@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChangesIcon, NotebookIcon } from './icons';
+import { ChangesIcon, HistoryIcon, NotebookIcon } from './icons';
 import { FEATHERY_RED } from './DocxToolbar/styles';
 import {
   ACCENT_LINE,
@@ -16,7 +16,7 @@ import {
 // review is on, Suggested changes — each toggling its panel in the slot to the
 // rail's left. Always visible; scales to future panels (comments, history).
 
-export type PanelKind = 'changes' | 'sections';
+export type PanelKind = 'changes' | 'sections' | 'history';
 
 export const PANEL_RAIL_WIDTH = 44;
 
@@ -27,6 +27,8 @@ interface Props {
   showChanges: boolean;
   /** Pending tracked-change count, badged on the changes button. */
   changesCount: number;
+  /** Show the version-history button (a history host is present). */
+  showHistory?: boolean;
 }
 
 function RailButton({
@@ -102,7 +104,8 @@ export default function PanelRail({
   activePanel,
   onToggle,
   showChanges,
-  changesCount
+  changesCount,
+  showHistory
 }: Props) {
   return (
     <div
@@ -138,6 +141,15 @@ export default function PanelRail({
       >
         <NotebookIcon width={18} height={18} />
       </RailButton>
+      {showHistory && (
+        <RailButton
+          label='History'
+          active={activePanel === 'history'}
+          onClick={() => onToggle('history')}
+        >
+          <HistoryIcon width={18} height={18} />
+        </RailButton>
+      )}
     </div>
   );
 }
