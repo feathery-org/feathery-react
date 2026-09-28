@@ -1041,10 +1041,13 @@ export function adoptUnboundRows(
     );
   });
 
-  // A table whose only bound columns are mirrors (no field or row-local formula
-  // column) - the summary/mirror case - is adopted only for rows the user has
-  // actually typed a value into. Empty inserted rows there stay plain, so they
-  // neither clone a duplicate mirror nor inflate a positional total.
+  // Does any bound column take user input directly (a field, or a row-local
+  // formula fed by fields)? If not, the only bound columns are mirrors - the
+  // summary/mirror case - and a NEW row's mirror cell becomes an editable field
+  // straight away (like row=auto on an input column), so the content control
+  // appears the moment the row is inserted rather than only once typed into. In
+  // a table that DOES have input columns, an empty mirror cell instead stays a
+  // mirror and propagates (a shared-rate column on a real line item).
   const templateHasNonMirrorColumn = templateCells.some((templateCell, c) => {
     const binding = findCellBinding(templateCell);
     return !!binding && !mirrorColumn[c];
@@ -1078,7 +1081,6 @@ export function adoptUnboundRows(
     // (below), so it must NOT block adoption - unless the text fails to parse
     // as the column's type, which marks a header ("Amount") or a label row.
     let blockingReason: string | null = null;
-    let typedMirror = false;
     for (let c = 0; c < templateCells.length && !blockingReason; c++) {
       const binding = findCellBinding(templateCells[c]);
       if (!binding || binding.def.kind !== 'formula') continue;
@@ -1089,7 +1091,6 @@ export function adoptUnboundRows(
       } else {
         try {
           parseDisplay(binding.def.fieldType, text);
-          typedMirror = true;
         } catch (thrown) {
           if (!isValueError(thrown)) throw thrown;
           blockingReason = `cell ${c} holds text that does not parse as ${binding.def.fieldType.kind}`;
@@ -1102,8 +1103,6 @@ export function adoptUnboundRows(
       skipped.push({ rowIndex: r, reason: blockingReason });
       continue;
     }
-    // Mirror-only table: only adopt a row the user has typed a value into.
-    if (!templateHasNonMirrorColumn && !typedMirror) continue;
 
     const rowId = rowIdGen();
     const newRow = deepClone(templateRow);
@@ -1125,13 +1124,18 @@ export function adoptUnboundRows(
         first && first.characterFormat
           ? { characterFormat: first.characterFormat }
           : {};
-      // A mirror column the user typed a value into becomes an editable field:
-      // the typed value is theirs, not a copy of the source. An empty mirror
-      // cell stays a mirror and propagates (a supporting column on a real line
-      // item, like a shared rate). Duplication is handled elsewhere and never
-      // converts - only a freshly typed row does.
-      if (def.kind === 'formula' && mirrorColumn[c] && typedText !== '') {
-        const fieldDef = mirrorColumnField(def, rowId);
+      // A mirror column becomes an editable field on a new row when the user
+      // typed a value into it (the value is theirs, not a copy of the source),
+      // or - in a mirror-only table - always, so the input control appears the
+      // moment the row is inserted. An empty mirror cell in a table that has
+      // real input columns instead stays a mirror and propagates (a shared-rate
+      // column on a line item). Duplication never converts - only adoption does.
+      const convertMirror =
+        def.kind === 'formula' &&
+        mirrorColumn[c] &&
+        (typedText !== '' || !templateHasNonMirrorColumn);
+      if (convertMirror) {
+        const fieldDef = mirrorColumnField(def as FormulaDefinition, rowId);
         control.contentControlProperties = {
           ...control.contentControlProperties,
           tag: formatTag(fieldDef),
