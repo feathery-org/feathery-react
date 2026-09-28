@@ -503,4 +503,56 @@ describe('mirrors inside line-item tables (adoption keeps working)', () => {
     expect(first.bindings.get('rate')!.text).toBe('$200.00');
     expect(first.bindings.get('line_total')!.text).toBe('$400.00');
   });
+
+  it('classifies a row-local formula correctly when its input is wrapped', () => {
+    // A value field wrapped in a foreign RichText control is invisible to a
+    // flat cell scan, so a row-local self-sum reading it would look like a
+    // mirror and, on an empty inserted row, get converted to an editable field.
+    // Column-name collection descends into the wrapper, so it stays structural.
+    const wrapped = {
+      contentControlProperties: {
+        lockContentControl: false,
+        lockContents: false,
+        tag: 'foreign',
+        title: 'x',
+        type: 'RichText',
+        hasPlaceHolderText: false,
+        multiline: false,
+        isTemporary: false,
+        color: '#00000000',
+        appearance: 'BoundingBox'
+      },
+      inlines: [cc(fieldTag('value', CURRENCY, 'r-1'), 'Value', false, '$5.00')]
+    } as unknown as SfdtInline;
+    const table = {
+      rows: [
+        row(['Item', 'Value', 'Total'], true),
+        {
+          cells: [
+            { blocks: [{ inlines: [{ text: 'Seed' }] }] },
+            { blocks: [{ inlines: [wrapped] }] },
+            {
+              blocks: [
+                { inlines: [cc(formulaTag('total', 'sum(value)', 'r-1'), 'Total', true, '…')] }
+              ]
+            }
+          ],
+          rowFormat: { isHeader: false }
+        }
+      ]
+    };
+    const doc = {
+      optimizeSfdt: false,
+      sections: [{ blocks: [tableCc('wrap', table)] }]
+    } as unknown as SfdtDocument;
+    const tablePath = scanBindings(doc).tables.get('wrap')!.tablePath!;
+    getAt(doc, tablePath).rows.push(row(['New', '', '']));
+
+    const result = applyRules(doc, {});
+    const adopted = result.index.tables
+      .get('wrap')!
+      .rows.find((entry) => entry.rowId !== 'r-1')!;
+    // Structural self-sum stays a formula, not a converted editable field.
+    expect(adopted.bindings.get('total')!.def.kind).toBe('formula');
+  });
 });
