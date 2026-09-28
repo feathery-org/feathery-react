@@ -968,16 +968,6 @@ function templateColumnNames(templateCells: SfdtCell[]): Set<string> {
   return names;
 }
 
-/** Debug logging, inert unless window.__FX_DEBUG is set. Temporary. */
-function fxDebug(...args: unknown[]): void {
-  if (
-    typeof window !== 'undefined' &&
-    (window as unknown as { __FX_DEBUG?: boolean }).__FX_DEBUG
-  )
-    // eslint-disable-next-line no-console
-    console.log('[fx-adopt]', ...args);
-}
-
 /** The row-scoped id a row's bindings carry, or null if it has none. */
 function rowBindingId(row: SfdtRow): string | null {
   for (const cell of row.cells || []) {
@@ -1085,26 +1075,13 @@ export function adoptUnboundRows(
   // as a fresh insert and re-adopted with a new id below. The first physical
   // occurrence of an id is the real bound row and is recorded, not touched.
   const seenRowIds = new Set<string>();
-  fxDebug(
-    `table "${tableId}": ${allRows.length} rows, mirrorOnly=${!templateHasNonMirrorColumn}, mirrorColumns=${JSON.stringify(
-      mirrorColumn
-    )}`
-  );
 
   for (let r = 0; r < allRows.length; r++) {
     const row = allRows[r];
     if (!row) continue;
-    if (row.rowFormat && row.rowFormat.isHeader) {
-      fxDebug(`  row ${r}: header, skip`);
-      continue;
-    }
+    if (row.rowFormat && row.rowFormat.isHeader) continue;
     const existingRowId = rowBindingId(row);
     const hasControls = JSON.stringify(row).includes('contentControlProperties');
-    fxDebug(
-      `  row ${r}: hasControls=${hasControls}, existingRowId=${existingRowId}, cellText=${JSON.stringify(
-        (row.cells || []).map((cell) => cellPlainText(cell).trim())
-      )}`
-    );
     if (hasControls) {
       const isCopiedRow =
         existingRowId !== null && seenRowIds.has(existingRowId);
@@ -1112,10 +1089,8 @@ export function adoptUnboundRows(
         // A real bound row, an intact totals row, or a foreign control - not
         // ours to touch. Remember its id so a later copy of it is caught.
         if (existingRowId !== null) seenRowIds.add(existingRowId);
-        fxDebug(`    -> legit bound row, skip (remember ${existingRowId})`);
         continue;
       }
-      fxDebug(`    -> COPY of ${existingRowId}, re-adopt`);
       // Fall through: re-adopt the copy with a fresh id. Its values live inside
       // the copied controls, invisible to cellPlainText below, so every cell
       // reads as empty and the new row starts from defaults.
@@ -1155,11 +1130,9 @@ export function adoptUnboundRows(
     if (blockingReason !== null) {
       if (Number.isInteger(firstBoundRowIndex) && r < firstBoundRowIndex)
         continue;
-      fxDebug(`    -> blocked: ${blockingReason}`);
       skipped.push({ rowIndex: r, reason: blockingReason });
       continue;
     }
-    fxDebug(`    -> ADOPT as row ${r} (fresh id)`);
 
     const rowId = rowIdGen();
     const newRow = deepClone(templateRow);
