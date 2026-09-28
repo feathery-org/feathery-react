@@ -59,6 +59,8 @@ interface Props {
   /** Disable Restore even when a version is open — e.g. the current version is
    *  showing, which is already the live state and can't be restored to. */
   restoreDisabled?: boolean;
+  /** Tooltip explaining why Restore is disabled. */
+  restoreDisabledReason?: string;
   restoring?: boolean;
   /** Id of the version open in the viewer (highlights its row). */
   selectedVersionId?: string | null;
@@ -89,6 +91,7 @@ export default function DocumentPanel({
   onRestoreVersion,
   versionSelected,
   restoreDisabled,
+  restoreDisabledReason,
   restoring = false,
   selectedVersionId,
   currentPendingCount,
@@ -249,7 +252,7 @@ export default function DocumentPanel({
               disabled={!canRestore}
               title={
                 versionSelected && restoreDisabled
-                  ? 'This is the current version'
+                  ? restoreDisabledReason ?? 'This is the current version'
                   : undefined
               }
               css={{

@@ -1,6 +1,7 @@
 // Bridges the autosave engine (tracker + slice store + scheduler) to a live
 // DocumentEditor: editor signals in, autosave and version-close uploads out.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
 import { featheryDoc } from '../../../../utils/browser';
 
@@ -235,6 +236,29 @@ export function useDocxHistorySession(
         !isAssistantWriting(ed)
       );
     };
+    const isSessionConflict = (error: unknown) =>
+      error instanceof DocumentPersistenceError && error.kind === 'conflict';
+    const freshSession = (meta: DocxSaveMeta): DocxSaveMeta => ({
+      ...meta,
+      sessionId: uuidv4(),
+      sessionStartedAt: new Date().toISOString()
+    });
+    // Another tab closed or superseded the session: retry once under a fresh
+    // id. `sent` keeps that id, so a retained job never reuses the stale one.
+    const saveInSession = async (
+      saveDocument: UseDocxHistorySessionOptions['save'],
+      blob: Blob,
+      sent: { current: DocxSaveMeta },
+      renew: (stale: DocxSaveMeta) => DocxSaveMeta
+    ) => {
+      try {
+        return await saveDocument(blob, sent.current);
+      } catch (error) {
+        if (!isSessionConflict(error)) throw error;
+        sent.current = renew(sent.current);
+        return saveDocument(blob, sent.current);
+      }
+    };
     // Close/checkpoint uploads mutate the same backend row. Keep them in one
     // FIFO so an older checkpoint can never complete after a newer final close.
     let closeQueue: Promise<void> = Promise.resolve();
@@ -254,6 +278,11 @@ export function useDocxHistorySession(
             current === ARTIFACT_UPLOAD_ERROR ? null : current
           );
       } catch (error) {
+        // Another tab closed or finalized this row; its highlights are gone.
+        if (isSessionConflict(error)) {
+          failedArtifacts.delete(sessionId);
+          return;
+        }
         // Retain the encoded upload, not every full author-boundary snapshot,
         // and retry through the same FIFO as newer checkpoints.
         failedArtifacts.set(sessionId, () =>
@@ -470,16 +499,30 @@ export function useDocxHistorySession(
         const exported = exportRef.current();
         exported.catch(() => undefined);
         let artifacts = Promise.resolve();
-        const result = await documentWrites.submit(async () => {
-          const blob = await exported;
-          const result = await saveSnapshot(blob, {
+        const sent = {
+          current: {
             sessionId: meta.sessionId,
             sessionStartedAt: meta.sessionStartedAt,
             authors: meta.authors,
             closeSession: true
-          });
+          } as DocxSaveMeta
+        };
+        const result = await documentWrites.submit(async () => {
+          const blob = await exported;
+          const result = await saveInSession(
+            saveSnapshot,
+            blob,
+            sent,
+            freshSession
+          );
+          const { sessionId } = sent.current;
+          if (sessionId !== meta.sessionId) {
+            ownedSessions.current.add(sessionId);
+            if (fStr && mountedRef.current)
+              registerLocalVersionArtifacts(sessionId, { finalSfdt: fStr });
+          }
           artifacts = diffReady.then(() =>
-            queueClose(meta.sessionId, meta.authors, snap)
+            queueClose(sessionId, meta.authors, snap)
           );
           pendingArtifacts.add(artifacts);
           artifacts
@@ -518,18 +561,26 @@ export function useDocxHistorySession(
         );
         const exported = exportRef.current();
         exported.catch(() => undefined);
+        const sent = { current: meta as DocxSaveMeta };
         await documentWrites.submit(async () => {
           const blob = await exported;
-          return saveDocument(blob, {
-            sessionId: meta.sessionId,
-            sessionStartedAt: meta.sessionStartedAt,
-            authors: meta.authors
-          });
+          return saveInSession(
+            saveDocument,
+            blob,
+            sent,
+            (stale) =>
+              tracker.renew(stale.sessionId) ??
+              tracker.currentMeta() ??
+              freshSession(stale)
+          );
         });
         if (!failedArtifacts.size) setSaveError(null);
         // The PATCH stores only the docx; checkpoint so a session abandoned
         // before close still keeps its highlights.
-        if (epoch === documentEpochRef.current) {
+        if (
+          epoch === documentEpochRef.current &&
+          sent.current.sessionId === meta.sessionId
+        ) {
           checkpoint?.();
           savedCheckpoint = checkpointRequest;
         }

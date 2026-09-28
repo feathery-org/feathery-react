@@ -688,6 +688,26 @@ describe('DocumentEditorContainer signing outcomes', () => {
     expect(typeof sessionId).toBe('string'); // a fresh uuid
   });
 
+  it('reopens the restored live DOCX, not the source version SFDT', async () => {
+    seed({});
+    const fetchSpy = jest.fn();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy;
+    mockRestoreEnvelopeVersion.mockClear().mockResolvedValueOnce({
+      id: `envelope-${CONTAINER}`,
+      file: 'restored.docx',
+      editor_file: 'restored-editor.docx',
+      version: { id: 'v-new', is_current: true, final_sfdt: 'old.sfdt.gz' }
+    });
+    const { getByTestId } = mount();
+    await act(async () => {
+      await mockHistory.restoreVersion('version-1');
+    });
+    expect(getByTestId('editor:restored-editor.docx')).toBeTruthy();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    globalThis.fetch = originalFetch;
+  });
+
   it('reuses the operation ID when a restore response is lost', async () => {
     seed({});
     const view = mount();

@@ -77,7 +77,8 @@ export const washFor = (
 // document's own font color.
 const DELETION_TEXT_COLOR = '#b0302b';
 
-// Outline geometry for the pending-edit dash.
+// Outline around the stepped edit in the version viewer; drawn inside its box.
+const RING_LINE = 'rgba(43, 49, 52, 0.34)';
 const RING_WIDTH = 2;
 // Alpha for an author-coloured wash. Insertions carry the full wash so the
 // edit clearly reads in the author's colour; deletions are a touch lighter
@@ -97,6 +98,7 @@ const RING_RADIUS = 4;
 
 // Editor-instance keys shared with the review UI and overlays.
 const ACTIVE_REVISION_KEY = '__robinActiveRevision';
+const ACTIVE_BOXES_KEY = '__robinActiveBoxes';
 // Boxes belonging to still-pending (unapproved) assistant edits, ringed with a
 // dashed outline so they read apart from approved edits' solid wash.
 const PENDING_BOXES_KEY = '__robinPendingBoxes';
@@ -172,8 +174,11 @@ export function installRevisionHighlightRendering(
   // Per-author colour (version viewer only); omitted, the classic
   // green-insert / red-delete washes apply.
   colorForRevision?: (author: string) => string | undefined,
-  // Pending outlines belong to version history, not the live editor preview.
-  { showPendingOutline = false }: { showPendingOutline?: boolean } = {}
+  // Pending outlines and the active ring belong to the version viewer only.
+  {
+    showPendingOutline = false,
+    showActiveRing = false
+  }: { showPendingOutline?: boolean; showActiveRing?: boolean } = {}
 ) {
   const renderer = ed?.documentHelper?.render;
   if (!renderer || renderer[REVISION_RENDER_PATCH]) return;
@@ -326,6 +331,17 @@ export function installRevisionHighlightRendering(
     }
     if (info && box) {
       try {
+        const active: Set<any> | null = ed[ACTIVE_REVISION_KEY];
+        if (
+          showActiveRing &&
+          active &&
+          (active.has(info.revision) || active.has(info.counterpart))
+        ) {
+          (ed[ACTIVE_BOXES_KEY] ?? (ed[ACTIVE_BOXES_KEY] = [])).push({
+            ...box,
+            line: elementBox.line
+          });
+        }
         // History-only pending outlines remain visible between active steps.
         if (showPendingOutline && pending) {
           (ed[PENDING_BOXES_KEY] ?? (ed[PENDING_BOXES_KEY] = [])).push({
@@ -539,6 +555,11 @@ export function installRevisionHighlightRendering(
     }
   };
 
+  const drawActiveRing = (fromIndex: number) => {
+    const boxes: OutlineBox[] = (ed[ACTIVE_BOXES_KEY] ?? []).slice(fromIndex);
+    strokeUnions(unionBoxesByLine(boxes), RING_LINE, null, false);
+  };
+
   // Persistent dashed outline on every still-pending (unapproved) assistant
   // edit, in the author's colour — so pending reads apart from approved.
   const drawPendingOutline = (fromIndex: number) => {
@@ -565,10 +586,14 @@ export function installRevisionHighlightRendering(
     const visible: any[] = ed.viewer?.visiblePages ?? [];
     if (!visible.length || visible[0] === page) {
       ed[REVISION_RECTS_KEY] = new Map();
+      ed[ACTIVE_BOXES_KEY] = [];
       ed[PENDING_BOXES_KEY] = [];
     }
+    const activeStart = (ed[ACTIVE_BOXES_KEY] ?? []).length;
     const pendingStart = (ed[PENDING_BOXES_KEY] ?? []).length;
     const out = originalRenderWidgets(page, left, top, width, height);
+    drawActiveRing(activeStart);
+    // Dash last: a pending edit can also be the active step, same bounds.
     drawPendingOutline(pendingStart);
     if (!visible.length || visible[visible.length - 1] === page) {
       try {

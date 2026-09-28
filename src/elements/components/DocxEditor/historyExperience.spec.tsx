@@ -10,6 +10,7 @@ import {
 import DocxEditor from './index';
 import { AUTOSAVE_IDLE_MS } from './history/autosaveScheduler';
 import { DocxHistoryHost, DocxSaveMeta, DocxVersion } from './history/types';
+import { setAssistantSessionActive } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 
 let mockText = 'Original';
 let mockOnEdit: (info: { assistant: boolean }) => void;
@@ -435,7 +436,7 @@ describe('version history experience', () => {
   };
 
   it.each([true, false])(
-    'shows restore progress through saving and selects the new row (host returns row: %s)',
+    'shows restore progress through saving, then returns to the live editor (host returns row: %s)',
     async (returnsRow) => {
       const { host, older, current, restored } = restoreSetup();
       let finishSave: () => void = () => undefined;
@@ -495,28 +496,20 @@ describe('version history experience', () => {
       ]);
       await act(async () => finishRestore(returnsRow ? restored : undefined));
       await waitFor(() =>
-        expect(
-          view.getByText('Just now').closest('[aria-current="true"]')
-        ).not.toBeNull()
+        expect(view.getByText(/Restored from /)).toBeTruthy()
       );
       expect(view.queryByText('Restoring version…')).toBeNull();
-      expect(view.getByText(/Restored from /)).toBeTruthy();
+      expect(view.getByText('Restored — saved as a new version')).toBeTruthy();
+      expect(view.container.querySelector('[aria-current="true"]')).toBeNull();
       expect(
         view.getByRole('button', { name: 'Restore version' })
       ).toBeDisabled();
-      await waitFor(() =>
-        expect(mockViewerOpen).toHaveBeenLastCalledWith(
-          expect.stringContaining('restored-sfdt')
-        )
-      );
-      // A delayed pre-restore diff must not move selection back to the old row.
+      // A delayed pre-restore diff must not reopen version view.
       await act(async () => {
         jest.advanceTimersByTime(0);
         finishDiff(null);
       });
-      expect(
-        view.getByText('Just now').closest('[aria-current="true"]')
-      ).not.toBeNull();
+      expect(view.container.querySelector('[aria-current="true"]')).toBeNull();
       view.unmount();
     }
   );
@@ -552,6 +545,44 @@ describe('version history experience', () => {
       view.getByRole('button', { name: 'Restore version' })
     ).not.toBeDisabled();
     expect(onError).toHaveBeenCalledWith('Restore failed');
+    view.unmount();
+  });
+
+  it('disables Restore with a reason on a read-only document', async () => {
+    const { host } = restoreSetup();
+    const view = render(<DocxEditor history={host} readOnly />);
+    fireEvent.click(view.getByRole('button', { name: 'History' }));
+    fireEvent.click(await view.findByText('Older draft'));
+    const restore = view.getByRole('button', { name: 'Restore version' });
+    expect(restore).toBeDisabled();
+    expect(restore.getAttribute('title')).toBe(
+      "Signed or read-only documents can't be restored"
+    );
+    view.unmount();
+  });
+
+  it('blocks Restore while Robin is writing, including after confirming', async () => {
+    const { host } = restoreSetup();
+    const view = render(<DocxEditor history={host} />);
+    fireEvent.click(view.getByRole('button', { name: 'History' }));
+    fireEvent.click(await view.findByText('Older draft'));
+    fireEvent.click(view.getByRole('button', { name: 'Restore version' }));
+    act(() => setAssistantSessionActive(mockEditor as any, true));
+    const restore = view.getByRole('button', { name: 'Restore version' });
+    expect(restore).toBeDisabled();
+    expect(restore.getAttribute('title')).toBe('Wait for Robin to finish');
+    fireEvent.click(
+      within(view.getByRole('alertdialog')).getByRole('button', {
+        name: 'Restore'
+      })
+    );
+    await act(async () => undefined);
+    expect(host.restoreVersion).not.toHaveBeenCalled();
+    expect(view.getByText('Wait for Robin to finish')).toBeTruthy();
+    act(() => setAssistantSessionActive(mockEditor as any, false));
+    expect(
+      view.getByRole('button', { name: 'Restore version' })
+    ).not.toBeDisabled();
     view.unmount();
   });
 });

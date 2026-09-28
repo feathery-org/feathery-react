@@ -24,7 +24,7 @@ describe('document persistence requests', () => {
     jest.useRealTimers();
   });
 
-  it('preserves form authentication and surfaces a non-retryable auth failure', async () => {
+  it('surfaces a document auth failure without blocking the form', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue({
       ok: false,
       status: 403,
@@ -37,7 +37,7 @@ describe('document persistence requests', () => {
         sessionId: 'session'
       })
     ).rejects.toMatchObject({ kind: 'auth', status: 403 });
-    expect(initState.authenticationError).toBe('Session expired');
+    expect(initState.authenticationError).toBeUndefined();
     expect(
       (globalThis.fetch as jest.Mock).mock.calls[0][1].body.get('form_key')
     ).toBe('form-key');
@@ -52,9 +52,11 @@ describe('document persistence requests', () => {
     });
     const client = new FeatheryClient('form-key');
 
-    await expect(client.listEnvelopeVersions('envelope')).rejects.toMatchObject({
-      status: 403
-    });
+    await expect(client.listEnvelopeVersions('envelope')).rejects.toMatchObject(
+      {
+        status: 403
+      }
+    );
     expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toContain(
       'form_key=form-key'
     );
@@ -96,14 +98,46 @@ describe('document persistence requests', () => {
   });
 
   it('classifies a non-JSON 403 as authentication failure too', async () => {
-    (globalThis.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 403, json: async () => { throw new Error('HTML error page'); } });
-    await expect(new FeatheryClient('form-key').listEnvelopeVersions('env')).rejects.toMatchObject({ kind: 'auth', status: 403 });
-    expect(initState.authenticationError).toBeTruthy();
+    (globalThis.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => {
+        throw new Error('HTML error page');
+      }
+    });
+    await expect(
+      new FeatheryClient('form-key').listEnvelopeVersions('env')
+    ).rejects.toMatchObject({ kind: 'auth', status: 403 });
+    expect(initState.authenticationError).toBeUndefined();
+  });
+
+  it('classifies another tab finalizing the session as a conflict', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        session_id: 'Version artifacts are already finalized'
+      })
+    });
+    await expect(
+      new FeatheryClient('form-key').closeEnvelopeVersion('env', 'session', {
+        finalSfdtGz: new Blob(['{}']),
+        changeCount: null,
+        formatChangeCount: null,
+        finalSha256: '',
+        startSha256: '',
+        authors: []
+      })
+    ).rejects.toMatchObject({ kind: 'conflict', status: 400 });
   });
 
   it('bounds reading a stalled response body, not just the initial fetch', async () => {
     jest.useFakeTimers();
-    (globalThis.fetch as jest.Mock).mockResolvedValue({ ok: true, status: 200, json: () => new Promise(() => undefined) });
+    (globalThis.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => new Promise(() => undefined)
+    });
     const pending = new FeatheryClient('form-key').listEnvelopeVersions('env');
     const rejected = expect(pending).rejects.toMatchObject({ kind: 'timeout' });
     await Promise.resolve();
@@ -113,8 +147,19 @@ describe('document persistence requests', () => {
   });
 
   it('preserves Retry-After on transient rate limiting', async () => {
-    (globalThis.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 429, headers: new Headers({ 'Retry-After': '60' }), json: async () => ({ detail: 'Slow down' }) });
-    await expect(new FeatheryClient('form-key').listEnvelopeVersions('env')).rejects.toMatchObject({ kind: 'network', status: 429, retryAfterMs: 60_000 });
+    (globalThis.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: new Headers({ 'Retry-After': '60' }),
+      json: async () => ({ detail: 'Slow down' })
+    });
+    await expect(
+      new FeatheryClient('form-key').listEnvelopeVersions('env')
+    ).rejects.toMatchObject({
+      kind: 'network',
+      status: 429,
+      retryAfterMs: 60_000
+    });
   });
 
   it('rejects malformed version lists before returning them to the history panel', async () => {

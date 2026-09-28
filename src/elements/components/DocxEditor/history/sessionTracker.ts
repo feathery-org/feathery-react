@@ -37,6 +37,8 @@ export interface SessionTracker {
   /** Close the session if it has gone idle. The hook calls this on a timer. */
   checkIdle(): void;
   reset(): void;
+  /** Swap `id` for a fresh session id (same authors) when it is still open. */
+  renew(id: string): SessionMeta | null;
   isOpen(): boolean;
   currentMeta(): SessionMeta | null;
 }
@@ -132,6 +134,12 @@ export function createSessionTracker(
     },
     reset() {
       close('reset');
+    },
+    renew(id) {
+      if (sessionId !== id) return null;
+      sessionId = uuidv4();
+      startedAt = now();
+      return buildMeta();
     },
     isOpen() {
       return sessionId !== null;

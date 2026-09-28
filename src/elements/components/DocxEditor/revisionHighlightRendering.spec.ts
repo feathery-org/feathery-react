@@ -132,7 +132,9 @@ function renderedOutline(
   installRevisionHighlightRendering(
     editor,
     robinColor,
-    historyPreview ? { showPendingOutline: true } : undefined
+    historyPreview
+      ? { showPendingOutline: true, showActiveRing: true }
+      : undefined
   );
 
   if (active) setActiveInlineRevisions(editor, [revision]);
@@ -172,10 +174,15 @@ describe('revision highlight rendering', () => {
     expect(renderedOutline({ v: 1, source: 'robin' }).calls).toEqual([]);
   });
 
-  it('retains only the neutral active outline in the live editor', () => {
-    expect(renderedOutline({ v: 1, source: 'robin' }, true).calls).toEqual([
-      'stroke:rgba(43, 49, 52, 0.34)'
-    ]);
+  it('draws no active outline in the live editor', () => {
+    expect(renderedOutline({ v: 1, source: 'robin' }, true).calls).toEqual([]);
+  });
+
+  it('rings the active step in version history', () => {
+    expect(
+      renderedOutline({ v: 1, source: 'history', confirmed: true }, true, true)
+        .calls
+    ).toEqual(['stroke:rgba(43, 49, 52, 0.34)']);
   });
 
   it('draws a 1px author-colored dashed outline in version history', () => {

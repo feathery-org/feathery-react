@@ -36,6 +36,10 @@ import {
   VersionAuthor
 } from './history/types';
 import { DocxSource } from './types';
+import {
+  isAssistantWriting,
+  onAssistantSessionChange
+} from '../../../assistant/tools/docx/syncfusionDocumentOps';
 
 const DEFAULT_CURRENT_USER: VersionAuthor = {
   kind: 'user',
@@ -229,12 +233,8 @@ function DocxEditor({
   const [saving, setSaving] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const restoreInFlightRef = useRef(false);
+  const [assistantWriting, setAssistantWriting] = useState(false);
   const [restoreRefreshKey, setRestoreRefreshKey] = useState(0);
-  const restoredSelectionRef = useRef<{
-    id?: string;
-    sourceId: string;
-    afterSeq: number;
-  } | null>(null);
   // Brief feedback shown after an explicit Save — the button otherwise gives
   // no sign of whether the document actually persisted.
   // Confirmation / warning modal. Primarily the binding-error export gate, but
@@ -650,6 +650,11 @@ function DocxEditor({
     return () => onBeforeReplaceReady?.(null);
   }, [onBeforeReplaceReady]);
 
+  useEffect(() => {
+    setAssistantWriting(isAssistantWriting(editor));
+    return onAssistantSessionChange(editor, setAssistantWriting);
+  }, [editor]);
+
   // Opening the history rail is a good idle point to resolve its recent,
   // immutable snapshots. This cache only contains rendered preview data; live
   // restores continue to fetch the current editor file without caching.
@@ -743,23 +748,6 @@ function DocxEditor({
       // callback's payload is the fresh list that the panel is displaying.
       if (activePanel !== 'history') return;
       if (restoreInFlightRef.current) return;
-      const pendingRestore = restoredSelectionRef.current;
-      if (pendingRestore) {
-        const restored = versions.find((version) =>
-          pendingRestore.id
-            ? version.id === pendingRestore.id
-            : version.restored_from === pendingRestore.sourceId &&
-              version.seq > pendingRestore.afterSeq
-        );
-        if (!restored) return;
-        restoredSelectionRef.current = null;
-        historyAutoSelectedRef.current = true;
-        // Use saved bytes, not the live editor, which may still be reopening.
-        setLiveDoc(null);
-        setLiveSessionAuthors(null);
-        setViewingVersion(restored);
-        return;
-      }
       if (historyAutoSelectedRef.current && !viewingVersion?.is_current) return;
       const current = versions.find((version) => version.is_current);
       if (!current) return;
@@ -794,7 +782,6 @@ function DocxEditor({
   // Back to the live editor (its toolbar returns because viewingVersion clears).
   const exitVersionView = useCallback(() => {
     if (restoreInFlightRef.current) return;
-    restoredSelectionRef.current = null;
     setViewingVersion(null);
     setDisplayedVersion(null);
     setLiveDoc(null);
@@ -1074,14 +1061,22 @@ function DocxEditor({
     }
   };
 
+  const restoreBlockedReason = () =>
+    readOnly
+      ? "Signed or read-only documents can't be restored"
+      : assistantWriting || isAssistantWriting(editor)
+      ? 'Wait for Robin to finish'
+      : null;
+
   // Restore the version currently open in the viewer. Confirms first (the
   // current document is saved as a version, so the restore is undoable), then
-  // restores and selects the new saved baseline in the History panel.
+  // restores and returns to the live editor.
   const restoreViewingVersion = () => {
     if (
       !history ||
       !viewingVersion ||
       viewingVersion.is_current ||
+      restoreBlockedReason() ||
       restoreInFlightRef.current
     )
       return;
@@ -1095,6 +1090,12 @@ function DocxEditor({
       confirmTitle: 'Restore this version',
       proceed: async () => {
         if (restoreInFlightRef.current) return;
+        const blocked = restoreBlockedReason();
+        if (blocked) {
+          setGateWarning(null);
+          flashSaveToast('error', blocked);
+          return;
+        }
         restoreInFlightRef.current = true;
         setRestoring(true);
         setGateWarning(null);
@@ -1102,22 +1103,16 @@ function DocxEditor({
           // Preserve the current DOCX first; its detailed history uploads
           // after restore so computing the diff does not delay the operation.
           await historySession.saveForRestore();
-          const restored = await history.restoreVersion(target.id);
-          restoredSelectionRef.current = {
-            id: restored?.id,
-            sourceId: target.id,
-            afterSeq: Math.max(
-              target.seq,
-              ...historyVersions.map((version) => version.seq)
-            )
-          };
+          await history.restoreVersion(target.id);
+          // Back to the live editor, which reopens the restored document.
+          setViewingVersion(null);
+          setDisplayedVersion(null);
           setLiveDoc(null);
           setLiveSessionAuthors(null);
           setVersionMeta(null);
-          if (restored) setViewingVersion(restored);
           setRestoreRefreshKey((key) => key + 1);
           restoredAtRef.current = Date.now();
-          flashSaveToast('success', 'Version restored');
+          flashSaveToast('success', 'Restored — saved as a new version');
         } catch (err) {
           flashSaveToast('error', 'Could not restore this version');
           onError?.((err as Error).message || String(err));
@@ -1327,21 +1322,21 @@ function DocxEditor({
             currentUser={currentUser ?? DEFAULT_CURRENT_USER}
             // Every version opens read-only in the viewer with highlights; the
             // in-progress current version is diffed live inside selectVersion.
-            onSelectVersion={
-              restoring
-                ? undefined
-                : (version) => {
-                    restoredSelectionRef.current = null;
-                    selectVersion(version);
-                  }
-            }
+            onSelectVersion={restoring ? undefined : selectVersion}
             // Report the loaded list up so the panel can auto-select the latest.
             onVersionsLoaded={handleHistoryVersionsLoaded}
             // Footer actions: Restore the open version; enabled while viewing,
             // but never for the current version (already the live document).
             onRestoreVersion={restoreViewingVersion}
             versionSelected={!!viewingVersion}
-            restoreDisabled={!!viewingVersion?.is_current}
+            restoreDisabled={
+              !!viewingVersion?.is_current || !!restoreBlockedReason()
+            }
+            restoreDisabledReason={
+              viewingVersion?.is_current
+                ? 'This is the current version'
+                : restoreBlockedReason() ?? undefined
+            }
             restoring={restoring}
             selectedVersionId={viewingVersion?.id ?? null}
             // Unapproved Robin edits still tracked in the in-progress current

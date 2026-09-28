@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 
 import { setAssistantSessionActive } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
 import { AUTOSAVE_IDLE_MS } from './autosaveScheduler';
+import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
 import { applyHunks } from './sfdtDiff';
 import {
   useDocxHistorySession,
@@ -408,6 +409,141 @@ describe('useDocxHistorySession', () => {
     expect(save.mock.calls[1][1].sessionId).toBe(
       save.mock.calls[0][1].sessionId
     );
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces an auth failure without auto-retrying, and lets Save try again', async () => {
+    jest.useFakeTimers();
+    const save = jest
+      .fn()
+      .mockRejectedValueOnce(
+        new DocumentPersistenceError('Denied', 'auth', 403)
+      )
+      .mockResolvedValue(undefined);
+    const { view } = setup({ save });
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(view.result.current.status).toBe('error');
+    expect(view.result.current.error).toBe('Denied');
+    await act(async () => {
+      jest.advanceTimersByTime(60_000);
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await view.result.current.save();
+    });
+    // The retained autosave snapshot runs first, then the closing save.
+    expect(save).toHaveBeenCalledTimes(3);
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it('saves under a fresh session when another tab closed this one', async () => {
+    const conflict = new DocumentPersistenceError(
+      'Session is already closed',
+      'conflict',
+      400
+    );
+    const save = jest
+      .fn()
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValue(undefined);
+    const { view, host } = setup({ save });
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+    expect(save).toHaveBeenCalledTimes(2);
+    const [stale, fresh] = save.mock.calls.map((call) => call[1]);
+    expect(fresh.sessionId).not.toBe(stale.sessionId);
+    expect(fresh.closeSession).toBe(true);
+    expect(save.mock.calls[1][0]).toBe(save.mock.calls[0][0]);
+    expect(host.closeVersion.mock.calls[0][0]).toBe(fresh.sessionId);
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it('moves an autosaving session to a fresh id after a conflict', async () => {
+    jest.useFakeTimers();
+    const save = jest
+      .fn()
+      .mockRejectedValueOnce(
+        new DocumentPersistenceError(
+          'Session is no longer current',
+          'conflict',
+          400
+        )
+      )
+      .mockResolvedValue(undefined);
+    const { view } = setup({ save });
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(save).toHaveBeenCalledTimes(2);
+    const renewed = save.mock.calls[1][1].sessionId;
+    expect(renewed).not.toBe(save.mock.calls[0][1].sessionId);
+    expect(view.result.current.status).toBe('saved');
+    await act(async () => {
+      await view.result.current.save();
+    });
+    expect(save.mock.calls[2][1]).toMatchObject({
+      sessionId: renewed,
+      closeSession: true
+    });
+  });
+
+  it('does not wedge later saves when the fresh-session retry also fails', async () => {
+    const conflict = () =>
+      new DocumentPersistenceError(
+        'Session is already closed',
+        'conflict',
+        400
+      );
+    const save = jest
+      .fn()
+      .mockRejectedValueOnce(conflict())
+      .mockRejectedValueOnce(conflict())
+      .mockResolvedValue(undefined);
+    const { view } = setup({ save });
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await expect(view.result.current.save()).rejects.toMatchObject({
+        kind: 'conflict'
+      });
+    });
+    expect(view.result.current.error).toBe('Session is already closed');
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+    const ids = save.mock.calls.map((call) => call[1].sessionId);
+    expect(ids[1]).not.toBe(ids[0]);
+    // The retained snapshot retries under its fresh id, never the stale one.
+    expect(ids[2]).toBe(ids[1]);
+    expect(save).toHaveBeenCalledTimes(4);
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it('drops version details another tab already finalized instead of retrying them', async () => {
+    const { view, host } = setup();
+    host.closeVersion.mockRejectedValue(
+      new DocumentPersistenceError(
+        'Version artifacts are already finalized',
+        'conflict',
+        400
+      )
+    );
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+    expect(view.result.current.error).toBeNull();
+    await act(async () => {
+      await view.result.current.save();
+    });
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
   });
 

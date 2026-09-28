@@ -96,6 +96,9 @@ export const TYPE_MESSAGES_TO_IGNORE = [
 ];
 
 const QUIK_DYNAMIC_ATTACHMENTS_OPTION = '__quik_dynamic_attachments__';
+// Backend 400s meaning another tab closed, superseded or finalized the session.
+const SESSION_CONFLICT =
+  /session is (no longer current|already closed)|artifacts are already finalized/i;
 
 const getQuikAttachmentPosition = (position: any) =>
   position === 'before' ? 'before' : 'after';
@@ -878,13 +881,11 @@ export default class IntegrationClient {
       const kind =
         status === 401 || status === 403
           ? 'auth'
-          : status === 409 ||
-            /session is (no longer current|already closed)/i.test(message)
+          : status === 409 || SESSION_CONFLICT.test(message)
           ? 'conflict'
           : status === 408 || status === 429 || status >= 500
           ? 'network'
           : 'invalid';
-      if (kind === 'auth') handleFormAuthenticationError(message);
       const retryHeader = response.headers?.get?.('Retry-After');
       const retryAfterMs = retryHeader
         ? Math.max(

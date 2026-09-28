@@ -295,7 +295,7 @@ export default function VersionViewer({
                   versionActorKeyRef.current,
                   firstUserKeyRef.current
                 ),
-              { showPendingOutline: true }
+              { showPendingOutline: true, showActiveRing: true }
             );
             viewer.showRevisions = true;
             closeTrackedChangeReviewPane();

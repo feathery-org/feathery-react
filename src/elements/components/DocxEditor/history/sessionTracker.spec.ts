@@ -141,4 +141,19 @@ describe('createSessionTracker', () => {
     expect(closes).toEqual([]);
     expect(tracker.currentMeta()).toBeNull();
   });
+
+  it('renews only the matching open session, keeping its authors', () => {
+    const { tracker, closes } = make();
+    tracker.noteEdit(USER);
+    tracker.noteEdit(ROBIN);
+    const before = tracker.currentMeta()!;
+    expect(tracker.renew('another-session')).toBeNull();
+    clock += 1000;
+    const renewed = tracker.renew(before.sessionId)!;
+    expect(renewed.sessionId).not.toBe(before.sessionId);
+    expect(renewed.authors).toEqual(before.authors);
+    expect(renewed.sessionStartedAt).toBe(new Date(clock).toISOString());
+    expect(tracker.currentMeta()!.sessionId).toBe(renewed.sessionId);
+    expect(closes).toEqual([]);
+  });
 });

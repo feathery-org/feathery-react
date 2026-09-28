@@ -186,7 +186,7 @@ describe('VersionViewer', () => {
       expect(installRevisionHighlightRendering).toHaveBeenCalledWith(
         lastEditor,
         expect.any(Function),
-        { showPendingOutline: true }
+        { showPendingOutline: true, showActiveRing: true }
       )
     );
     const colorForRevision = (installRevisionHighlightRendering as jest.Mock)
