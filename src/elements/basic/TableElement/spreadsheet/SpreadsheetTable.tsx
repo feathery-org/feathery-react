@@ -457,12 +457,21 @@ export function SpreadsheetTable({
   const barSpace = showBar ? barHeight : 0;
   const fitHeight = useMemo(() => {
     const base = spreadsheetViewportHeight(heightUnit, visibleRows.length, {
-      addRow: Boolean(insertRow),
+      // The no-match strip takes the add-row strip's place under a filter.
+      addRow:
+        Boolean(insertRow) || (filters.active && visibleRows.length === 0),
       scrollbarHeight
     });
     if (base === undefined) return undefined;
     return base + barSpace;
-  }, [heightUnit, visibleRows.length, insertRow, scrollbarHeight, barSpace]);
+  }, [
+    heightUnit,
+    visibleRows.length,
+    insertRow,
+    filters.active,
+    scrollbarHeight,
+    barSpace
+  ]);
 
   return (
     <div

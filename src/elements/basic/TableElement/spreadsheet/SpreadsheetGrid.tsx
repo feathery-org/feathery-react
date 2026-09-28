@@ -43,6 +43,8 @@ import {
   cornerHeaderStyle,
   cellEdgeVars,
   fillHandleStyle,
+  filterEmptyButtonStyle,
+  filterEmptyStripStyle,
   filterIndicatorStyle,
   frozenRegionStyle,
   frozenRowStyle,
@@ -384,6 +386,12 @@ export const SpreadsheetGrid = React.forwardRef<
     null
   );
   const closeFilterMenu = React.useCallback(() => setFilterMenu(null), []);
+  // The popover's search box held focus, which would fall to the page once it
+  // unmounts; the grid takes it back so the keyboard carries on where it was.
+  const finishFilterMenu = React.useCallback(() => {
+    setFilterMenu(null);
+    scrollRef.current?.focus({ preventScroll: true });
+  }, []);
   // A header menu replaces an open filter popover: a right-click reached
   // without a mousedown (Shift+F10, a long press) would otherwise stack them.
   const openHeaderMenu = React.useCallback((target: HeaderMenuTarget) => {
@@ -643,7 +651,10 @@ export const SpreadsheetGrid = React.forwardRef<
   // No trailing gutter: a bubble on one of the last rows flips above the cell
   // instead (CellErrorTooltip measures against the grid's visible box), so
   // the canvas ends at the last row and nothing blank scrolls into view.
-  const canvasHeight = rowsHeight + (onInsertRow ? ROW_HEIGHT : 0);
+  // Every row filtered out leaves a bare header; a strip under it says why.
+  const noFilterMatches = Boolean(filters?.active) && allRows.length === 0;
+  const canvasHeight =
+    rowsHeight + (onInsertRow || noFilterMatches ? ROW_HEIGHT : 0);
 
   return (
     <>
@@ -762,6 +773,27 @@ export const SpreadsheetGrid = React.forwardRef<
               <span css={addRowStripLabelStyle}>+ Add row</span>
             </button>
           ) : null}
+          {noFilterMatches && filters ? (
+            <div
+              className={TABLE_CLASS.gridFilterEmpty}
+              css={{
+                ...filterEmptyStripStyle,
+                transform: `translateY(${rowsHeight}px)`
+              }}
+            >
+              <span css={addRowStripLabelStyle}>
+                No rows match the filters.
+                <button
+                  type='button'
+                  className={TABLE_CLASS.gridFilterAction}
+                  css={filterEmptyButtonStyle}
+                  onClick={filters.clearAll}
+                >
+                  Clear filters
+                </button>
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
       <div
@@ -789,6 +821,7 @@ export const SpreadsheetGrid = React.forwardRef<
           target={filterMenu}
           filters={filters}
           onClose={closeFilterMenu}
+          onDone={finishFilterMenu}
         />
       ) : null}
       {rowMenu ? (

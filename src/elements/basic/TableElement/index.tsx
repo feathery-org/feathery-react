@@ -71,6 +71,19 @@ function applyTableStyles(responsiveStyles: any) {
   return responsiveStyles;
 }
 
+// The table renders inside the form's <form>, where Enter in a text input
+// submits implicitly — clicking the step's submit button, or with no button
+// submitting the whole form. No input in the table means that: the cell
+// editor, the search and find boxes and the filter popover handle Enter
+// themselves. React events bubble through portals, so this covers the
+// table's popovers wherever they mount.
+function preventEnterSubmit(event: React.KeyboardEvent<HTMLElement>) {
+  const target = event.target as HTMLElement;
+  if (event.key === 'Enter' && target.tagName === 'INPUT') {
+    event.preventDefault();
+  }
+}
+
 // Warns before a step transition, a browser back/forward, or a page exit
 // throws buffered spreadsheet edits away.
 const UNSAVED_TABLE_MESSAGE =
@@ -748,6 +761,7 @@ function TableElement({
           : {}),
         ...styles.getTarget('container')
       }}
+      onKeyDown={preventEnterSubmit}
     >
       {showToolbar && (
         <div className={TABLE_CLASS.toolbar} css={toolbarStyle}>

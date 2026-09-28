@@ -24,7 +24,10 @@ import type { SpreadsheetFilters } from './useColumnFilters';
 type FilterMenuProps = {
   target: HeaderMenuTarget;
   filters: SpreadsheetFilters;
+  /** Dismissed by a click or scroll elsewhere, which keeps its own focus. */
   onClose: () => void;
+  /** Finished from inside (Done, Enter, Escape): focus goes back to the grid. */
+  onDone: () => void;
 };
 
 /**
@@ -32,7 +35,12 @@ type FilterMenuProps = {
  * narrows the column to values containing the text, over a checklist of the
  * column's values. Every change applies to the grid as it is made.
  */
-export function FilterMenu({ target, filters, onClose }: FilterMenuProps) {
+export function FilterMenu({
+  target,
+  filters,
+  onClose,
+  onDone
+}: FilterMenuProps) {
   const ref = React.useRef<HTMLDivElement>(null);
   const position = useAnchoredPopover(ref, target.x, target.y, onClose);
 
@@ -78,6 +86,15 @@ export function FilterMenu({ target, filters, onClose }: FilterMenuProps) {
       aria-label={`Filter column ${name}`}
       className={TABLE_CLASS.gridFilterMenu}
       css={{ ...filterMenuStyle, left: position.x, top: position.y }}
+      onKeyDown={(event) => {
+        if (
+          event.key === 'Escape' ||
+          (event.key === 'Enter' && event.target === inputRef.current)
+        ) {
+          event.preventDefault();
+          onDone();
+        }
+      }}
     >
       <input
         ref={inputRef}
@@ -140,7 +157,7 @@ export function FilterMenu({ target, filters, onClose }: FilterMenuProps) {
           disabled={!filters.isFiltered(fieldKey)}
           onClick={() => {
             filters.clear(fieldKey);
-            onClose();
+            onDone();
           }}
         >
           Clear filter
@@ -149,7 +166,7 @@ export function FilterMenu({ target, filters, onClose }: FilterMenuProps) {
           type='button'
           className={TABLE_CLASS.gridFilterAction}
           css={filterButtonStyle}
-          onClick={onClose}
+          onClick={onDone}
         >
           Done
         </button>

@@ -67,6 +67,7 @@ export const TABLE_CLASS = {
   gridFilterSearch: 'feathery-table-grid-filter-search',
   gridFilterOption: 'feathery-table-grid-filter-option',
   gridFilterAction: 'feathery-table-grid-filter-action',
+  gridFilterEmpty: 'feathery-table-grid-filter-empty',
   gridCellChip: 'feathery-table-grid-cell-chip',
   gridChoiceMenu: 'feathery-table-grid-choice-menu',
   gridChoiceOption: 'feathery-table-grid-choice-option',

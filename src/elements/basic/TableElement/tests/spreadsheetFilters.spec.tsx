@@ -256,4 +256,55 @@ describe('spreadsheet column filters', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Sort Z → A' }));
     expect(namesInOrder()).toEqual(['Dan', 'Cara', 'Bob']);
   });
+
+  test('Enter in the search box finishes the popover without submitting the form, and the grid takes focus back', () => {
+    renderGrid();
+    const dialog = openFilter('City');
+    const search = within(dialog).getByRole('textbox', {
+      name: 'Search City values'
+    });
+    fireEvent.change(search, { target: { value: 'ost' } });
+    // `fireEvent` returns false once the default action is prevented.
+    expect(fireEvent.keyDown(search, { key: 'Enter' })).toBe(false);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('grid'));
+    expect(namesInOrder()).toEqual(['Alice']);
+  });
+
+  test('Escape in the popover returns focus to the grid', () => {
+    renderGrid();
+    const dialog = openFilter('City');
+    fireEvent.keyDown(
+      within(dialog).getByRole('textbox', { name: 'Search City values' }),
+      { key: 'Escape' }
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('grid'));
+  });
+
+  test('Enter in an input the table does not otherwise handle never submits the form', () => {
+    renderGrid();
+    const dialog = openFilter('City');
+    // The value checkboxes leave Enter alone; the element-wide guard stops it.
+    expect(
+      fireEvent.keyDown(
+        within(dialog).getByRole('checkbox', { name: 'Boston' }),
+        { key: 'Enter' }
+      )
+    ).toBe(false);
+  });
+
+  test('a filter that hides every row says so and offers to clear the filters', () => {
+    renderGrid();
+    const dialog = openFilter('City');
+    fireEvent.click(
+      within(dialog).getByRole('checkbox', { name: '(Select all)' })
+    );
+    expect(namesInOrder()).toEqual([]);
+    expect(screen.getByText('No rows match the filters.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(namesInOrder()).toEqual(['Bob', 'Alice', 'Cara', 'Dan']);
+    expect(screen.queryByText('No rows match the filters.')).toBeNull();
+  });
 });

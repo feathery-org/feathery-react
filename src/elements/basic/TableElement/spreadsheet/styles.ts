@@ -959,6 +959,22 @@ export const filterNoteStyle = {
   fontSize: `${FONT_SIZE - 4}px`
 } as const;
 
+// Stands in for the rows when the filters hide every one of them.
+export const filterEmptyStripStyle = {
+  ...addRowStripStyle,
+  cursor: 'default'
+} as const;
+
+export const filterEmptyButtonStyle = {
+  padding: 0,
+  border: 0,
+  background: 'none',
+  font: 'inherit',
+  color: colors.accent,
+  cursor: 'pointer',
+  '&:hover': { textDecoration: 'underline' }
+} as const;
+
 export const filterFooterStyle = {
   display: 'flex',
   justifyContent: 'space-between',
