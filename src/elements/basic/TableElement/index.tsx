@@ -215,6 +215,7 @@ function TableElement({
 
   const fieldMutations = useTableMutations({
     columns: baseColumns,
+    rowDefaults: element.properties?.row_defaults,
     updateFieldValues,
     submitCustom,
     editMode,

@@ -1,9 +1,11 @@
 import { useCallback, useRef } from 'react';
 import { fieldValues } from '../../../utils/init';
-import { CellWrite, Column } from './types';
+import { CellWrite, Column, TableRowDefault } from './types';
+import { fieldRowDefaults } from './rowDefaults';
 
 type UseTableMutationsProps = {
   columns: Column[];
+  rowDefaults?: TableRowDefault[];
   updateFieldValues: (values: Record<string, any>) => void;
   submitCustom: (values: Record<string, any>) => void;
   editMode: boolean;
@@ -26,6 +28,7 @@ type UseTableMutationsReturn = {
 
 export function useTableMutations({
   columns,
+  rowDefaults,
   updateFieldValues,
   submitCustom,
   editMode,
@@ -48,15 +51,26 @@ export function useTableMutations({
     [editMode]
   );
 
+  // The new row's value for each column: its default, else blank. Every
+  // column still gets a slot so the arrays stay aligned. Field values are
+  // read now, so a row keeps what the form said when it was added.
+  const buildNewRow = useCallback((): Record<string, any> => {
+    const defaults = fieldRowDefaults(rowDefaults, fieldValues);
+    return Object.fromEntries(
+      columns.map((col) => [col.field_key, defaults[col.field_id] ?? ''])
+    );
+  }, [columns, rowDefaults]);
+
   const handleInsertRow = useCallback(
     (atIndex: number) => {
+      const newRow = buildNewRow();
       const updates: Record<string, any> = {};
       columns.forEach((col) => {
         const existing = getFieldArray(col.field_key);
         const at = Math.max(0, Math.min(atIndex, existing.length));
         updates[col.field_key] = [
           ...existing.slice(0, at),
-          '',
+          newRow[col.field_key],
           ...existing.slice(at)
         ];
       });
@@ -65,14 +79,15 @@ export function useTableMutations({
       updateFieldValues(updates);
       onMutate();
     },
-    [columns, getFieldArray, updateFieldValues, onMutate]
+    [columns, buildNewRow, getFieldArray, updateFieldValues, onMutate]
   );
 
   const handleAddRow = useCallback(() => {
+    const newRow = buildNewRow();
     const updates: Record<string, any> = {};
     columns.forEach((col) => {
       const existing = getFieldArray(col.field_key);
-      updates[col.field_key] = ['', ...existing];
+      updates[col.field_key] = [newRow[col.field_key], ...existing];
     });
     // Clear search so the new row is visible
     if (searchQuery) setSearchQuery('');
@@ -84,6 +99,7 @@ export function useTableMutations({
     if (enablePagination) setCurrentPage(0);
   }, [
     columns,
+    buildNewRow,
     getFieldArray,
     updateFieldValues,
     onMutate,
