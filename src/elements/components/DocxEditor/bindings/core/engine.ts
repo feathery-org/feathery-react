@@ -675,9 +675,9 @@ export function applyRules(
       : null;
   }
 
-  // Visit each unique cell of a range once. Self-exclusion (Word's SUM(ABOVE))
-  // drops the formula's own cell, by position and by node identity so a spanned
-  // own-cell is covered too.
+  // Visit each unique range cell once. The formula's own cell is self-excluded
+  // (Word's SUM(ABOVE)) by two complementary checks below: neither alone covers
+  // both a spanned own-cell and one whose occurrence isn't grid-mapped.
   function forEachRangeCell(
     range: RangeRef,
     node: FormulaNode,
@@ -693,10 +693,12 @@ export function applyRules(
     const seen = new Set<GridCell>();
     for (let row = range.startRow; row <= endRow; row++) {
       for (let col = range.startCol; col <= range.endCol; col++) {
+        // by position: fallback, but only knows the own cell's anchor column
         if (own && own.row === row && own.col === col) continue;
         const gridCell = grid.rows[row - 1]?.[col];
         if (!gridCell || seen.has(gridCell)) continue;
         seen.add(gridCell);
+        // by identity: covers every column a spanned own-cell occupies
         if (gridCell.occ && nodeId(gridCell.occ) === nodeId(node.occ)) continue;
         visit(gridCell);
       }
