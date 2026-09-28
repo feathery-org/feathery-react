@@ -479,12 +479,9 @@ export function applyRules(
   }
 
   /* ---- 2b. positional grids ----
-     Excel-shaped refs (B3, sum(B2:end)) read a table by POSITION: a plain
-     typed cell participates in a sum without acquiring any binding, which is
-     what lets an inserted row join a total with no adoption and no kind
-     conversion. Grids are rebuilt from the current document every reconcile,
-     so row inserts, deletes and moves are picked up statelessly. Row 1 is the
-     first physical row (headers count); columns are span-aware. */
+     Excel-shaped refs (B3, sum(B2:end)) read a table by POSITION, so a plain
+     typed cell joins a sum with no binding. Grids rebuild every reconcile;
+     row 1 is the first physical row (headers count), columns are span-aware. */
 
   interface GridCell {
     text: string;
@@ -494,11 +491,18 @@ export function applyRules(
     /** rows[physicalRow - 1][col] -> cell; a span shares one cell object. */
     rows: Array<Array<GridCell | undefined>>;
   }
+  /** A physical cell position: 1-based row, span-aware 0-based column. */
+  interface Pos {
+    row: number;
+    col: number;
+  }
+  const posKey = (row: number, col: number): string => `${row}:${col}`;
 
   const deletionRevisionIds = new Set<string>();
   for (const revision of Array.isArray(sfdt.revisions) ? sfdt.revisions : []) {
     if (revision && String((revision as any).revisionType) === 'Deletion') {
-      const revId = (revision as any).revisionId ?? (revision as any).revisionID;
+      const revId =
+        (revision as any).revisionId ?? (revision as any).revisionID;
       if (revId != null) deletionRevisionIds.add(String(revId));
     }
   }
@@ -535,12 +539,12 @@ export function applyRules(
     return true;
   }
 
-  /** Physical (1-based row, span-aware col) of an occurrence in a table. */
+  /** Physical position of an occurrence in a table (span-aware column). */
   function positionIn(
     tablePath: SfdtPath,
     tableNode: any,
     occurrence: Occurrence
-  ): { row: number; col: number } | null {
+  ): Pos | null {
     const rest = occurrence.path.slice(tablePath.length);
     if (String(rest[0]) !== 'rows' || String(rest[2]) !== 'cells') return null;
     const r = Number(rest[1]);
@@ -566,21 +570,22 @@ export function applyRules(
       grids.set(tableId, null);
       return null;
     }
+    const tableRows = tableNode.rows as any[];
     const byPos = new Map<string, Occurrence>();
     for (const occurrence of index.occurrences) {
       if (!isPositionalPathPrefix(entry.tablePath, occurrence.path)) continue;
       const pos = positionIn(entry.tablePath, tableNode, occurrence);
-      if (pos) byPos.set(`${pos.row}:${pos.col}`, occurrence);
+      if (pos) byPos.set(posKey(pos.row, pos.col), occurrence);
     }
     const rows: Array<Array<GridCell | undefined>> = [];
-    (tableNode!.rows as any[]).forEach((row: any, r: number) => {
+    tableRows.forEach((row: any, r: number) => {
       const line: Array<GridCell | undefined> = [];
       let col = 0;
       for (const cell of row.cells || []) {
         const span = Number(cell?.cellFormat?.columnSpan) || 1;
         const gridCell: GridCell = {
           text: displayText(cell).trim(),
-          occ: byPos.get(`${r + 1}:${col}`) || null
+          occ: byPos.get(posKey(r + 1, col)) || null
         };
         for (let s = 0; s < span; s++) line[col + s] = gridCell;
         col += span;
@@ -625,10 +630,7 @@ export function applyRules(
     return { grid, tableId };
   }
 
-  function ownPosition(
-    node: FormulaNode,
-    tableId: string
-  ): { row: number; col: number } | null {
+  function ownPosition(node: FormulaNode, tableId: string): Pos | null {
     const entry = index.tables.get(tableId);
     if (!entry || !entry.tablePath) return null;
     if (!isPositionalPathPrefix(entry.tablePath, node.occ.path)) return null;
@@ -655,6 +657,50 @@ export function applyRules(
     return /^-?\d+(\.\d+)?$/.test(cleaned) ? cleaned : null;
   }
 
+  // The single formula/field/plain switch every positional read shares. Returns
+  // the numeric value string, or null when the cell can't contribute (an
+  // invalid bound field, or plain non-numeric text) - the caller decides
+  // whether that skips (a range) or throws (a single cell).
+  function resolveGridCell(gridCell: GridCell, label: string): string | null {
+    if (!gridCell.occ) return parseLooseNumber(gridCell.text);
+    if (gridCell.occ.def.kind === 'formula') {
+      const id = nodeId(gridCell.occ);
+      if (!results.has(id)) throw new FormulaError(`${label} did not evaluate`);
+      return results.get(id) as string;
+    }
+    return values.has(gridCell.occ.key)
+      ? (values.get(gridCell.occ.key) as string)
+      : null;
+  }
+
+  // Visit each unique cell of a range once. Self-exclusion (Word's SUM(ABOVE))
+  // drops the formula's own cell, by position and by node identity so a spanned
+  // own-cell is covered too.
+  function forEachRangeCell(
+    range: RangeRef,
+    node: FormulaNode,
+    label: string,
+    visit: (gridCell: GridCell) => void
+  ): void {
+    const { grid, tableId } = positionalGrid(range.table, node, label);
+    const own = ownPosition(node, tableId);
+    const endRow =
+      range.endRow === 'end'
+        ? grid.rows.length
+        : Math.min(range.endRow, grid.rows.length);
+    const seen = new Set<GridCell>();
+    for (let row = range.startRow; row <= endRow; row++) {
+      for (let col = range.startCol; col <= range.endCol; col++) {
+        if (own && own.row === row && own.col === col) continue;
+        const gridCell = grid.rows[row - 1]?.[col];
+        if (!gridCell || seen.has(gridCell)) continue;
+        seen.add(gridCell);
+        if (gridCell.occ && nodeId(gridCell.occ) === nodeId(node.occ)) continue;
+        visit(gridCell);
+      }
+    }
+  }
+
   function positionalCellValue(cell: CellRef, node: FormulaNode): string {
     const label = `${cell.table ? `${cell.table}!` : ''}${cellLabel(
       cell.col,
@@ -663,67 +709,21 @@ export function applyRules(
     const { grid } = positionalGrid(cell.table, node, label);
     const gridCell = grid.rows[cell.row - 1]?.[cell.col];
     if (!gridCell) throw new FormulaError(`${label} is outside the table`);
-    if (gridCell.occ) {
-      if (gridCell.occ.def.kind === 'formula') {
-        const id = nodeId(gridCell.occ);
-        if (!results.has(id))
-          throw new FormulaError(`${label} did not evaluate`);
-        return results.get(id) as string;
-      }
-      if (!values.has(gridCell.occ.key))
-        throw new FormulaError(`${label} has an invalid value`);
-      return values.get(gridCell.occ.key) as string;
-    }
-    const parsed = parseLooseNumber(gridCell.text);
-    if (parsed === null)
-      throw new FormulaError(`${label} does not contain a number`);
-    return parsed;
+    const value = resolveGridCell(gridCell, label);
+    if (value === null) throw new FormulaError(`${label} is not a number`);
+    return value;
   }
 
-  function positionalRangeValues(
-    range: RangeRef,
-    node: FormulaNode
-  ): string[] {
+  function positionalRangeValues(range: RangeRef, node: FormulaNode): string[] {
     const label = `${range.table ? `${range.table}!` : ''}${cellLabel(
       range.startCol,
       range.startRow
     )}:${cellLabel(range.endCol, range.endRow)}`;
-    const { grid, tableId } = positionalGrid(range.table, node, label);
-    const own = ownPosition(node, tableId);
-    const endRow =
-      range.endRow === 'end'
-        ? grid.rows.length
-        : Math.min(range.endRow, grid.rows.length);
     const out: string[] = [];
-    const seen = new Set<GridCell>();
-    for (let row = range.startRow; row <= endRow; row++) {
-      for (let col = range.startCol; col <= range.endCol; col++) {
-        // Self-exclusion, like Word's SUM(ABOVE): a sum whose own cell falls
-        // inside its range does not count itself.
-        if (own && own.row === row && own.col === col) continue;
-        const gridCell = grid.rows[row - 1]?.[col];
-        if (!gridCell || seen.has(gridCell)) continue;
-        seen.add(gridCell);
-        if (gridCell.occ) {
-          if (gridCell.occ.def.kind === 'formula') {
-            const id = nodeId(gridCell.occ);
-            if (id === nodeId(node.occ)) continue; // own node under a span
-            if (!results.has(id))
-              throw new FormulaError(
-                `${label} includes a formula that did not evaluate`
-              );
-            out.push(results.get(id) as string);
-          } else if (values.has(gridCell.occ.key)) {
-            out.push(values.get(gridCell.occ.key) as string);
-          }
-          // A bound field with invalid input counts as text -> skipped (0),
-          // matching Word's SUM over text cells.
-        } else {
-          const parsed = parseLooseNumber(gridCell.text);
-          if (parsed !== null) out.push(parsed);
-        }
-      }
-    }
+    forEachRangeCell(range, node, label, (gridCell) => {
+      const value = resolveGridCell(gridCell, label);
+      if (value !== null) out.push(value);
+    });
     return out;
   }
 
@@ -732,34 +732,20 @@ export function applyRules(
     cells: CellRef[],
     ranges: RangeRef[]
   ): void {
+    const addDep = (gridCell: GridCell): void => {
+      if (gridCell.occ?.def.kind === 'formula')
+        node.deps.add(nodeId(gridCell.occ));
+    };
     try {
       for (const cell of cells) {
         const { grid } = positionalGrid(cell.table, node, 'dep');
         const gridCell = grid.rows[cell.row - 1]?.[cell.col];
-        if (gridCell?.occ?.def.kind === 'formula')
-          node.deps.add(nodeId(gridCell.occ));
+        if (gridCell) addDep(gridCell);
       }
-      for (const range of ranges) {
-        const { grid, tableId } = positionalGrid(range.table, node, 'dep');
-        const own = ownPosition(node, tableId);
-        const endRow =
-          range.endRow === 'end'
-            ? grid.rows.length
-            : Math.min(range.endRow, grid.rows.length);
-        for (let row = range.startRow; row <= endRow; row++) {
-          for (let col = range.startCol; col <= range.endCol; col++) {
-            if (own && own.row === row && own.col === col) continue;
-            const gridCell = grid.rows[row - 1]?.[col];
-            if (gridCell?.occ?.def.kind === 'formula') {
-              const dep = nodeId(gridCell.occ);
-              if (dep !== nodeId(node.occ)) node.deps.add(dep);
-            }
-          }
-        }
-      }
+      for (const range of ranges) forEachRangeCell(range, node, 'dep', addDep);
     } catch (thrown) {
       if (!isFormulaError(thrown)) throw thrown;
-      // Resolution failures surface at evaluation with a proper message.
+      // Resolution failures resurface at evaluation with a proper message.
     }
   }
 
