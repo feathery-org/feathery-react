@@ -85,6 +85,16 @@ function liveTablePrefix(
   return section && block ? `${section};${block}` : null;
 }
 
+/** Debug logging, inert unless window.__FX_DEBUG is set. Temporary. */
+function fxDebug(...args: unknown[]): void {
+  if (
+    typeof window !== 'undefined' &&
+    (window as unknown as { __FX_DEBUG?: boolean }).__FX_DEBUG
+  )
+    // eslint-disable-next-line no-console
+    console.log('[fx-native]', ...args);
+}
+
 function applyRowAdoptions(
   editor: SyncfusionEditorLike,
   mutations: AdoptedRowMutation[]
@@ -104,13 +114,22 @@ function applyRowAdoptions(
   try {
     for (const mutation of mutations) {
       const prefix = liveTablePrefix(editor, live, mutation.tablePath);
-      if (!prefix) return false;
+      fxDebug(
+        `adopt-row rowIndex=${mutation.rowIndex} rowId=${mutation.rowId} prefix=${prefix}`
+      );
+      if (!prefix) {
+        fxDebug('  FAIL: no liveTablePrefix');
+        return false;
+      }
       const cells = mutation.row.cells ?? [];
       for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
         const cell = cells[cellIndex];
         if (!cell) return false;
         const plan = plannedControl(cell);
-        if (!plan?.properties.tag) continue;
+        if (!plan?.properties.tag) {
+          fxDebug(`  cell ${cellIndex}: no planned control, skip`);
+          continue;
+        }
         const liveCell = getAt(live, [
           ...mutation.tablePath,
           'rows',
@@ -118,9 +137,17 @@ function applyRowAdoptions(
           'cells',
           cellIndex
         ]) as SfdtCell | undefined;
-        if (!liveCell) return false;
+        if (!liveCell) {
+          fxDebug(`  cell ${cellIndex}: FAIL no liveCell at rowIndex`);
+          return false;
+        }
         const existing = textIn(liveCell.blocks);
         const existingPlan = plannedControl(liveCell);
+        fxDebug(
+          `  cell ${cellIndex}: planTag=${plan.properties.tag} existingTag=${existingPlan?.properties.tag} existingText=${JSON.stringify(
+            existing
+          )}`
+        );
         if (existingPlan?.properties.tag) {
           const targetPrefix = `${prefix};${mutation.rowIndex};${cellIndex};`;
           const existingControl = collection
@@ -136,7 +163,13 @@ function applyRowAdoptions(
                 targetPrefix
               );
             });
-          if (!existingControl?.contentControlProperties) return false;
+          if (!existingControl?.contentControlProperties) {
+            fxDebug(
+              `  cell ${cellIndex}: FAIL retag - no attached control at ${targetPrefix}`
+            );
+            return false;
+          }
+          fxDebug(`  cell ${cellIndex}: retag in place -> ${plan.properties.tag}`);
           const properties = existingControl.contentControlProperties;
           const titleFollowedTag = properties.title === properties.tag;
           properties.tag = plan.properties.tag;
@@ -156,6 +189,9 @@ function applyRowAdoptions(
           }
           continue;
         }
+        fxDebug(
+          `  cell ${cellIndex}: insert fresh control, select ${prefix};${mutation.rowIndex};${cellIndex};0;0..${existing.length}`
+        );
         selection.select(
           `${prefix};${mutation.rowIndex};${cellIndex};0;0`,
           `${prefix};${mutation.rowIndex};${cellIndex};0;${existing.length}`
@@ -169,8 +205,11 @@ function applyRowAdoptions(
             canDelete: !plan.properties.lockContentControl,
             canEdit: !plan.properties.lockContents
           })
-        )
+        ) {
+          fxDebug(`  cell ${cellIndex}: FAIL insertContentControl returned false`);
           return false;
+        }
+        fxDebug(`  cell ${cellIndex}: inserted OK`);
       }
     }
     refreshContentControlCollection(editor);
