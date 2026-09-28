@@ -658,9 +658,9 @@ export function applyRules(
   }
 
   // The single formula/field/plain switch every positional read shares. Returns
-  // the numeric value string, or null when the cell can't contribute (an
-  // invalid bound field, or plain non-numeric text) - the caller decides
-  // whether that skips (a range) or throws (a single cell).
+  // the numeric value string, or null when the cell can't contribute (a
+  // non-numeric bound field, an invalid one, or plain non-numeric text) - the
+  // caller decides whether that skips (a range) or throws (a single cell).
   function resolveGridCell(gridCell: GridCell, label: string): string | null {
     if (!gridCell.occ) return parseLooseNumber(gridCell.text);
     if (gridCell.occ.def.kind === 'formula') {
@@ -668,6 +668,8 @@ export function applyRules(
       if (!results.has(id)) throw new FormulaError(`${label} did not evaluate`);
       return results.get(id) as string;
     }
+    // A non-numeric bound field (its canonical value is text) can't feed sum.
+    if (!isNumericType(gridCell.occ.def.fieldType)) return null;
     return values.has(gridCell.occ.key)
       ? (values.get(gridCell.occ.key) as string)
       : null;
@@ -710,7 +712,10 @@ export function applyRules(
     const gridCell = grid.rows[cell.row - 1]?.[cell.col];
     if (!gridCell) throw new FormulaError(`${label} is outside the table`);
     const value = resolveGridCell(gridCell, label);
-    if (value === null) throw new FormulaError(`${label} is not a number`);
+    if (value === null) {
+      const shown = gridCell.text ? ` ("${gridCell.text}")` : ' (empty)';
+      throw new FormulaError(`cell ${label}${shown} is not a number`);
+    }
     return value;
   }
 

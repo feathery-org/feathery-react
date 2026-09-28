@@ -107,6 +107,32 @@ export function formulaScopeKey(occurrence: Occurrence): string {
   return `document:${occurrence.name}`;
 }
 
+/**
+ * When a whole expression resolves to a column rather than a value - a bare
+ * range, or a bare `table.column` aggregate - it can never yield a value. A
+ * dotted document field/formula name is a legitimate mirror, not a column.
+ * Parse failures return null; the caller reports those separately.
+ */
+export type ColumnExpressionKind = 'range' | 'table-column' | null;
+export function expressionResolvesToColumn(
+  index: BindingIndex,
+  expression: string
+): ColumnExpressionKind {
+  let ast;
+  try {
+    ast = parseExpression(expression);
+  } catch (thrown) {
+    if (!isFormulaError(thrown)) throw thrown;
+    return null;
+  }
+  if ('range' in ast) return 'range';
+  if (!('ref' in ast)) return null;
+  const dot = ast.ref.lastIndexOf('.');
+  if (dot === -1) return null;
+  if (index.fields.has(ast.ref) || index.formulas.has(ast.ref)) return null;
+  return index.tables.has(ast.ref.slice(0, dot)) ? 'table-column' : null;
+}
+
 export interface CellValue {
   text: string;
   canonical: string | null;
