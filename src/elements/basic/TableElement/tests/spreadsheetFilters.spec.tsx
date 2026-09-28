@@ -155,6 +155,19 @@ describe('spreadsheet column filters', () => {
     expect(isFiltered('City')).toBe(true);
   });
 
+  test('the popover survives the grid scrolling on its own but not a scroll gesture outside it', () => {
+    renderGrid();
+    const dialog = openFilter('City');
+    const grid = screen.getByRole('grid');
+    // Filtering can shrink the grid, which clamps its scroll position and
+    // fires `scroll` without the user touching it.
+    fireEvent.scroll(grid);
+    fireEvent.wheel(dialog);
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    fireEvent.wheel(grid);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   test('select all unchecks everything, then checking a value restores it; all checked lifts the filter', () => {
     renderGrid();
     const dialog = openFilter('City');

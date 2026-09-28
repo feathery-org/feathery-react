@@ -375,11 +375,16 @@ export function SpreadsheetTable({
   );
   useEffect(() => {
     const pending = pendingIssueFocus.current;
-    if (pending && visibleRowIds.has(pending.rowId)) {
+    if (!pending) return;
+    if (visibleRowIds.has(pending.rowId)) {
       pendingIssueFocus.current = null;
       focusIssue(pending);
+    } else if (!filters.active) {
+      // Every row is showing and the target still is not: it was removed in
+      // the meantime, so a later row with that id must not take the focus.
+      pendingIssueFocus.current = null;
     }
-  }, [visibleRowIds, focusIssue]);
+  }, [visibleRowIds, focusIssue, filters.active]);
 
   const stepIssue = useCallback(
     (delta: 1 | -1) => {

@@ -23,7 +23,7 @@ type ContextMenuProps = {
 /**
  * Positions a fixed popover at (x, y) and dismisses it like a menu: it keeps
  * itself inside the viewport and closes on any click elsewhere, a scroll
- * outside it, or Escape. Shared by the context menus and the filter popover.
+ * gesture outside it, or Escape. Shared by the context menus and the filter popover.
  */
 export function useAnchoredPopover(
   ref: React.RefObject<HTMLElement | null>,
@@ -54,8 +54,11 @@ export function useAnchoredPopover(
   }, [ref, x, y]);
 
   // `mousedown` rather than `click` so the popover is gone before the grid
-  // handles a selection on the same gesture. A scroll inside the popover (a
-  // long value list) is its own business and does not dismiss it.
+  // handles a selection on the same gesture. Only a scroll the user makes
+  // outside it dismisses it — `wheel`/`touchmove`, not `scroll`, since the
+  // grid also scrolls on its own when filtering shrinks it under the popover
+  // (a scrollbar drag is a `mousedown`). One inside it (a long value list) is
+  // its own business.
   React.useEffect(() => {
     const doc = featheryDoc();
     const isInside = (target: EventTarget | null) =>
@@ -66,16 +69,19 @@ export function useAnchoredPopover(
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
-    const onScroll = (event: Event) => {
+    const onScrollGesture = (event: Event) => {
       if (!isInside(event.target)) onClose();
     };
+    const listenerOptions = { capture: true, passive: true };
     doc.addEventListener('mousedown', onPointerDown);
     doc.addEventListener('keydown', onKeyDown);
-    doc.addEventListener('scroll', onScroll, true);
+    doc.addEventListener('wheel', onScrollGesture, listenerOptions);
+    doc.addEventListener('touchmove', onScrollGesture, listenerOptions);
     return () => {
       doc.removeEventListener('mousedown', onPointerDown);
       doc.removeEventListener('keydown', onKeyDown);
-      doc.removeEventListener('scroll', onScroll, true);
+      doc.removeEventListener('wheel', onScrollGesture, listenerOptions);
+      doc.removeEventListener('touchmove', onScrollGesture, listenerOptions);
     };
   }, [ref, onClose]);
 

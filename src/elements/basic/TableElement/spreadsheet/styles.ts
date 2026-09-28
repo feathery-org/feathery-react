@@ -312,13 +312,14 @@ export const pinnedHeaderStyle = { position: 'sticky', zIndex: 24 } as const;
  * at the block's edge removes them. The edge moves with the scroll, which the
  * grid tracks in `--feathery-table-scroll-left` (`--feathery-table-pinned-left`
  * is the block's width plus the gutter). The other three sides stay open so
- * the ring's normal overhang onto grid lines is untouched.
+ * the ring's normal overhang onto grid lines is untouched. They stay open well
+ * past the row, since a cell's error bubble and choice menu hang below it.
  */
 export const centerCellsClipStyle = {
   position: 'absolute',
   inset: 0,
   clipPath:
-    'inset(-8px -8px -8px calc(var(--feathery-table-scroll-left, 0px) + var(--feathery-table-pinned-left, 0px)))',
+    'inset(-100vh -100vw -100vh calc(var(--feathery-table-scroll-left, 0px) + var(--feathery-table-pinned-left, 0px)))',
   // The layer covers the row, so it must not take the clicks the cells and
   // the empty canvas beside them would otherwise get.
   pointerEvents: 'none',
