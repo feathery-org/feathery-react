@@ -25,6 +25,7 @@ import {
   TagOptions
 } from './tagDsl';
 import {
+  Ast,
   bareCellRef,
   collectPositional,
   collectRefs,
@@ -108,30 +109,50 @@ export function formulaScopeKey(occurrence: Occurrence): string {
   return `document:${occurrence.name}`;
 }
 
-/**
- * When a whole expression resolves to a column rather than a value - a bare
- * range, or a bare `table.column` aggregate - it can never yield a value. A
- * dotted document field/formula name is a legitimate mirror, not a column.
- * Parse failures return null; the caller reports those separately.
- */
 export type ColumnExpressionKind = 'range' | 'table-column' | null;
+
+/** Does this node BY ITSELF yield a whole column - a bare range or aggregate? */
+function nodeColumnKind(ast: Ast, index: BindingIndex): ColumnExpressionKind {
+  if ('range' in ast) return 'range';
+  if (!('ref' in ast)) return null; // cell, literal, or a call (a scalar)
+  const dot = ast.ref.lastIndexOf('.');
+  if (dot === -1) return null;
+  if (index.fields.has(ast.ref) || index.formulas.has(ast.ref)) return null;
+  return index.tables.has(ast.ref.slice(0, dot)) ? 'table-column' : null;
+}
+
+/**
+ * The first place the expression uses a whole column where a value is required -
+ * as the whole expression, or as an argument to anything but sum() - or null if
+ * it can yield a value. `sum(costs.amount)` is fine; a bare `costs.amount`,
+ * `mul(costs.amount, 2)`, or a bare range is not. Catches the case that would
+ * otherwise pass create_binding and then fail every reconcile.
+ */
 export function expressionResolvesToColumn(
   index: BindingIndex,
   expression: string
 ): ColumnExpressionKind {
-  let ast;
+  let ast: Ast;
   try {
     ast = parseExpression(expression);
   } catch (thrown) {
     if (!isFormulaError(thrown)) throw thrown;
     return null;
   }
-  if ('range' in ast) return 'range';
-  if (!('ref' in ast)) return null;
-  const dot = ast.ref.lastIndexOf('.');
-  if (dot === -1) return null;
-  if (index.fields.has(ast.ref) || index.formulas.has(ast.ref)) return null;
-  return index.tables.has(ast.ref.slice(0, dot)) ? 'table-column' : null;
+  const walk = (node: Ast): ColumnExpressionKind => {
+    if (!('op' in node)) return nodeColumnKind(node, index);
+    for (const arg of node.args) {
+      const argColumn = nodeColumnKind(arg, index);
+      if (argColumn) {
+        if (node.op !== 'sum') return argColumn; // mul/sub can't take a column
+      } else {
+        const nested = walk(arg); // a column misused deeper in, e.g. mul inside
+        if (nested) return nested;
+      }
+    }
+    return null; // a call yields a value
+  };
+  return walk(ast);
 }
 
 export interface CellValue {
@@ -846,8 +867,8 @@ function cellPlainText(cell: SfdtCell): string {
 }
 
 interface CellBinding {
-  b: number;
-  i: number;
+  /** Path from the cell to the control node (descends through foreign wrappers). */
+  path: SfdtPath;
   def: BoundDefinition;
 }
 
@@ -864,30 +885,40 @@ function adoptedFieldText(def: FieldDefinition, typedRaw: string): string {
   }
 }
 
-/** First row-scoped binding content control in a cell. */
+/**
+ * First row-scoped binding control in a cell, with the path to it. Descends
+ * through foreign/non-row content controls like the scanner, so a binding
+ * nested inside a foreign wrapper is found (and can be stamped through the path).
+ */
 function findCellBinding(cell: SfdtCell): CellBinding | null {
-  const blocks = cell.blocks || [];
-  for (let b = 0; b < blocks.length; b++) {
-    const inlines = blocks[b].inlines || [];
-    for (let i = 0; i < inlines.length; i++) {
-      const inline = inlines[i];
-      if (!inline || !inline.contentControlProperties) continue;
+  let found: CellBinding | null = null;
+  const visit = (node: any, path: SfdtPath): void => {
+    if (found || !node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach((entry, idx) => visit(entry, [...path, idx]));
+      return;
+    }
+    if (node.contentControlProperties) {
       let def: Definition | null = null;
       try {
-        def = parseTag(String(inline.contentControlProperties.tag || ''));
+        def = parseTag(String(node.contentControlProperties.tag || ''));
       } catch {
-        continue;
+        def = null;
       }
       if (
         def &&
         (def.kind === 'field' || def.kind === 'formula') &&
         def.options.row
       ) {
-        return { b, i, def };
+        found = { path, def };
+        return;
       }
+      // A foreign or non-row control: descend to find a binding wrapped inside.
     }
-  }
-  return null;
+    for (const key of Object.keys(node)) visit(node[key], [...path, key]);
+  };
+  visit(cell, []);
+  return found;
 }
 
 export interface AdoptedRowMutation {
@@ -1269,8 +1300,7 @@ export function adoptUnboundRows(
         (newRow.cells as SfdtCell[])[c] = deepClone(cells[c]);
         return;
       }
-      const controls = (cell.blocks as any[])[binding.b].inlines;
-      const control = controls[binding.i];
+      const control = getAt(cell, binding.path);
       const def = binding.def;
       const typedText = cellPlainText(cells[c]).trim();
       const first = (control.inlines || []).find(
