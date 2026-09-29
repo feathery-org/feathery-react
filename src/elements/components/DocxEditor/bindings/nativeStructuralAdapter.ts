@@ -58,7 +58,45 @@ function plannedControl(
 
 // A foreign block-level control ahead of the table shifts the live block
 // index away from the SFDT path, so the address is read off the marker
-function liveTablePrefix(
+/**
+ * The table + physical row the caret sits in, used to tell the reconcile which
+ * row the user just inserted. Best-effort and fully guarded: any failure
+ * returns undefined and adoption falls back to its default heuristic. The caret
+ * lands in the new row after insertRow, so this identifies the copy in a
+ * duplicated-id pair - which is what an insert-above needs.
+ */
+export function captureInsertedRow(
+  editor: SyncfusionEditorLike
+): { tableId: string; rowIndex: number } | undefined {
+  try {
+    const selection = editor.selection as any;
+    const caret = selection?.startOffset;
+    if (typeof caret !== 'string') return undefined;
+    const parsed = JSON.parse(editor.serialize()) as SfdtDocument;
+    const index = scanBindings(parsed);
+    let found: { tableId: string; rowIndex: number } | undefined;
+    for (const [tableId, table] of index.tables) {
+      if (!table.tablePath) continue;
+      const prefix = liveTablePrefix(editor, parsed, table.tablePath);
+      if (prefix && caret.startsWith(`${prefix};`)) {
+        const rowIndex = Number(caret.slice(prefix.length + 1).split(';')[0]);
+        if (Number.isInteger(rowIndex)) {
+          found = { tableId, rowIndex };
+          break;
+        }
+      }
+    }
+    // liveTablePrefix moved the selection to a marker; put the caret back.
+    if (selection?.select) selection.select(caret, caret);
+    return found;
+  } catch {
+    return undefined;
+  }
+}
+
+// A foreign block-level control ahead of the table shifts the live block
+// index away from the SFDT path, so the address is read off the marker
+export function liveTablePrefix(
   editor: SyncfusionEditorLike,
   live: SfdtDocument,
   tablePath: Array<string | number>
