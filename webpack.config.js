@@ -32,7 +32,10 @@ module.exports = {
       },
       {
         test: /\.(js|jsx)$/,
-        exclude: /node_modules/,
+        // Linked packages (yarn link) resolve to their real path outside
+        // node_modules, so also skip prebuilt dist output — otherwise
+        // transform-runtime injects @babel/runtime imports into it.
+        exclude: [/node_modules/, /client-utils[\\/]dist/],
         use: ['babel-loader']
       }
     ]

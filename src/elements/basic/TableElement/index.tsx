@@ -100,7 +100,9 @@ function TableElement({
   // the builder keeps rendering example data).
   const isHub =
     element.properties?.data_source === 'hub' &&
-    !!element.properties?.hub_id &&
+    (element.properties?.hub_dynamic
+      ? !!element.properties?.hub_id_field_key
+      : !!element.properties?.hub_id) &&
     !editMode;
 
   const wantsSpreadsheet = element.properties?.display_mode === 'spreadsheet';
