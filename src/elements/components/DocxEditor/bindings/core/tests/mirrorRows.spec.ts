@@ -177,6 +177,33 @@ const amountText = (index: BindingIndex, rowId: string) =>
 const totalText = (index: BindingIndex) =>
   index.formulas.get('summary_total')![0].text;
 
+describe('cell-shaped binding names are not stolen by cell parsing', () => {
+  it('sum(Q1,Q2) sums the fields named Q1/Q2, not cells', () => {
+    const doc = {
+      optimizeSfdt: false,
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { text: 'Q1 ' },
+                cc(fieldTag('Q1'), 'Q1', false, '$100.00'),
+                { text: ' Q2 ' },
+                cc(fieldTag('Q2'), 'Q2', false, '$200.00'),
+                { text: ' Total ' },
+                cc(formulaTag('grand', 'sum(Q1,Q2)'), 'Total', true, '…')
+              ]
+            }
+          ]
+        }
+      ]
+    } as unknown as SfdtDocument;
+    const result = applyRules(doc, {});
+    expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    expect(result.index.formulas.get('grand')![0].text).toBe('$300.00');
+  });
+});
+
 describe('mirrors + positional range totals', () => {
   it('evaluates mirrors from document fields and range-sums the column', () => {
     const result = applyRules(buildMirrorFixture(), {});
