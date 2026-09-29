@@ -1,5 +1,11 @@
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within
+} from '@testing-library/react';
 import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
 
@@ -77,15 +83,21 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-const renderGrid = () =>
+const renderGrid = (properties: Record<string, unknown> = {}) => {
+  const updateFieldValues = jest.fn();
   render(
     <TableElement
-      element={element}
+      element={{
+        ...element,
+        properties: { ...element.properties, ...properties }
+      }}
       responsiveStyles={mockStyles()}
-      updateFieldValues={jest.fn()}
+      updateFieldValues={updateFieldValues}
       submitCustom={jest.fn()}
     />
   );
+  return { updateFieldValues };
+};
 const header = (name: string) =>
   screen.getByRole('columnheader', { name: new RegExp(`^${name}`) });
 const headerOrder = () =>
@@ -107,6 +119,11 @@ const rowTexts = () =>
   );
 const rowNumber = (n: number) =>
   screen.getByRole('button', { name: `Select row ${n}` });
+const gutterNumbers = () =>
+  dataRows().map(
+    (row) =>
+      within(row).getByRole('button', { name: /^Select row/ }).textContent
+  );
 
 describe('spreadsheet pinning', () => {
   test('pinning a column moves it to the left edge and unpinning restores it', () => {
@@ -146,9 +163,11 @@ describe('spreadsheet pinning', () => {
       'Alice'
     ]);
     expect(dataRows()[0]).toHaveAttribute('aria-rowindex', '2');
+    // It keeps its own number rather than taking 1.
+    expect(gutterNumbers()).toEqual(['3', '1', '2']);
 
-    // The pinned row is now row 1; its menu offers to unpin it.
-    fireEvent.contextMenu(rowNumber(1), { clientX: 10, clientY: 10 });
+    // Its menu offers to unpin it.
+    fireEvent.contextMenu(rowNumber(3), { clientX: 10, clientY: 10 });
     fireEvent.click(screen.getByRole('menuitem', { name: 'Unpin row' }));
     expect(rowTexts().map((t) => t.split('|')[0])).toEqual([
       'Bob',
@@ -183,5 +202,21 @@ describe('spreadsheet pinning', () => {
       'Cara',
       'Bob'
     ]);
+  });
+
+  test('Enter on the last row shown appends at the end when the last data row is pinned', async () => {
+    const { updateFieldValues } = renderGrid({ add_delete_rows: true });
+    updateFieldValues.mockImplementation((updates) =>
+      Object.assign(fieldValues, updates)
+    );
+    fireEvent.contextMenu(rowNumber(3), { clientX: 10, clientY: 10 });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Pin row' }));
+    // Cara is pinned to the top, so Alice (row 2) is the last row shown.
+    fireEvent.mouseDown(screen.getByRole('gridcell', { name: 'Alice' }));
+    fireEvent.keyDown(screen.getByRole('grid'), { key: 'Enter' });
+
+    await waitFor(() => expect(dataRows()).toHaveLength(4));
+    // Appended after Cara, not inserted between Alice and Cara.
+    expect(fieldValues.name_key).toEqual(['Bob', 'Alice', 'Cara', '']);
   });
 });

@@ -142,7 +142,8 @@ export function FilterMenu({
         ))}
         {unlisted > 0 ? (
           <div css={filterNoteStyle}>
-            {unlisted} more values. Search to narrow the list.
+            {unlisted} more values, which Select all includes. Search to narrow
+            the list.
           </div>
         ) : null}
       </div>

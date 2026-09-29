@@ -108,6 +108,8 @@ type SpreadsheetGridProps = {
   interactions: GridInteractions;
   canEdit: boolean;
   rowIndexById: Map<string, number>;
+  /** The number each row shows in its gutter, which filters and pins leave alone. */
+  rowNumberById: Map<string, number>;
   getCellShading?: GetCellShading;
   /** Column rules, so a cell's editor matches what the column accepts. */
   cellRules?: CellRules;
@@ -152,6 +154,7 @@ export const SpreadsheetGrid = React.forwardRef<
     interactions,
     canEdit,
     rowIndexById,
+    rowNumberById,
     getCellShading,
     cellRules,
     onAddColumn,
@@ -721,6 +724,7 @@ export const SpreadsheetGrid = React.forwardRef<
                   interactions={interactions}
                   canEdit={canEdit}
                   rowIndexById={rowIndexById}
+                  rowNumberById={rowNumberById}
                   getCellShading={getCellShading}
                   cellRules={cellRules}
                   fillPreview={fillPreview}
@@ -749,6 +753,7 @@ export const SpreadsheetGrid = React.forwardRef<
                 interactions={interactions}
                 canEdit={canEdit}
                 rowIndexById={rowIndexById}
+                rowNumberById={rowNumberById}
                 getCellShading={getCellShading}
                 cellRules={cellRules}
                 fillPreview={fillPreview}
@@ -1138,6 +1143,7 @@ type SubscribedRowProps = {
   interactions: GridInteractions;
   canEdit: boolean;
   rowIndexById: Map<string, number>;
+  rowNumberById: Map<string, number>;
   getCellShading?: GetCellShading;
   cellRules?: CellRules;
   fillPreview: FillPreview | null;
@@ -1209,6 +1215,7 @@ function SpreadsheetRowView({
   interactions,
   canEdit,
   rowIndexById,
+  rowNumberById,
   getCellShading,
   cellRules,
   fillPreview,
@@ -1219,11 +1226,13 @@ function SpreadsheetRowView({
   selection
 }: SubscribedRowProps & { selection: RowSelectionSnapshot }) {
   const rowIndex = row.getDisplayIndex();
+  const rowNumber = rowNumberById.get(row.id) ?? rowIndex + 1;
   const startCells = row.getStartVisibleCells();
   const centerCells = row.getCenterVisibleCells();
 
   const shared = {
     rowIndex,
+    rowNumber,
     selection,
     fillPreview,
     table,
@@ -1272,7 +1281,7 @@ function SpreadsheetRowView({
       <button
         type='button'
         className={TABLE_CLASS.gridRowNumber}
-        aria-label={`Select row ${rowIndex + 1}`}
+        aria-label={`Select row ${rowNumber}`}
         aria-selected={selection.fullySelected}
         css={{
           ...rowHeaderStyle,
@@ -1288,13 +1297,13 @@ function SpreadsheetRowView({
           onOpenRowMenu({
             rowId: row.id,
             rowIndex: rowIndexById.get(row.id) ?? rowIndex,
-            displayNumber: rowIndex + 1,
+            displayNumber: rowNumber,
             x: event.clientX,
             y: event.clientY
           });
         }}
       >
-        {rowIndex + 1}
+        {rowNumber}
       </button>
       {startCells.map((cell) => (
         <SpreadsheetCell key={cell.id} cell={cell} pinned {...shared} />
@@ -1311,6 +1320,8 @@ function SpreadsheetRowView({
 type SpreadsheetCellProps = {
   cell: SpreadsheetTableCell;
   rowIndex: number;
+  /** The row's gutter number, for the cell's labels. */
+  rowNumber: number;
   selection: RowSelectionSnapshot;
   fillPreview: FillPreview | null;
   table: SpreadsheetTable;
@@ -1328,6 +1339,7 @@ type SpreadsheetCellProps = {
 function SpreadsheetCell({
   cell,
   rowIndex,
+  rowNumber,
   selection,
   fillPreview,
   table,
@@ -1436,7 +1448,7 @@ function SpreadsheetCell({
         // Stays up while the menu is open, the way a chip does in a sheet.
         <DropdownChip
           text={formatCellDisplay(value as CellValue, rule)}
-          label={`Choose ${columnName} for row ${rowIndex + 1}`}
+          label={`Choose ${columnName} for row ${rowNumber}`}
           interactive={chipOpens}
           onOpen={openFromChip}
         />
@@ -1451,9 +1463,9 @@ function SpreadsheetCell({
           draft={interactions.editing?.draft ?? ''}
           seeded={Boolean(interactions.editing?.seeded)}
           stored={interactions.editing?.stored ?? ''}
-          label={`Edit ${cell.column.columnDef.meta?.name ?? ''} row ${
-            rowIndex + 1
-          }`}
+          label={`Edit ${
+            cell.column.columnDef.meta?.name ?? ''
+          } row ${rowNumber}`}
           onChange={interactions.setEditingDraft}
           onCommit={(draft) => interactions.commitEditing(undefined, draft)}
           onCancel={interactions.cancelEditing}

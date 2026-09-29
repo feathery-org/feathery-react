@@ -149,6 +149,13 @@ export function SpreadsheetTable({
     () => new Map(rows.map((row) => [row.id, row.rowIndex])),
     [rows]
   );
+  // A row's gutter number is its place in the sorted rows, before filters
+  // hide any or pins lift any, so a filtered sheet skips numbers and a pinned
+  // row keeps its own instead of taking 1.
+  const rowNumberById = useMemo(
+    () => new Map(rows.map((row, index) => [row.id, index + 1])),
+    [rows]
+  );
 
   // Column filters match what the cell shows, so a date column filters on the
   // formatted date the user sees rather than the stored string.
@@ -516,6 +523,7 @@ export function SpreadsheetTable({
         interactions={interactions}
         canEdit={canEdit}
         rowIndexById={rowIndexById}
+        rowNumberById={rowNumberById}
         getCellShading={shadeCell}
         cellRules={cellRules}
         onAddColumn={onAddColumn}
