@@ -276,6 +276,7 @@ export const getFormContext = (formUuid: string) => {
         roleId?: string;
         repeatIndex?: number;
         email: string;
+        name?: string;
         phone?: string;
         filler?: boolean;
       }[];
@@ -331,13 +332,22 @@ export const getFormContext = (formUuid: string) => {
             // every role of that document. A phone is omitted the same way,
             // since a present one is the request to challenge that recipient.
             envelope_signers: signers?.map(
-              ({ documentId, roleId, repeatIndex, email, phone, filler }) => ({
+              ({
+                documentId,
+                roleId,
+                repeatIndex,
+                email,
+                name,
+                phone,
+                filler
+              }) => ({
                 document_id: documentId,
                 ...(roleId ? { role_id: roleId } : {}),
                 ...(repeatIndex !== undefined
                   ? { repeat_index: repeatIndex }
                   : {}),
                 email,
+                ...(name ? { name } : {}),
                 ...(phone ? { phone } : {}),
                 filler: !!filler
               })
