@@ -617,4 +617,56 @@ describe('mirrors inside line-item tables (adoption keeps working)', () => {
     // Structural self-sum stays a formula, not a converted editable field.
     expect(adopted.bindings.get('total')!.def.kind).toBe('formula');
   });
+
+  it('reproduces a wrapped column control on an adopted row', () => {
+    // The value field is wrapped in a foreign control. Adoption must descend
+    // into the wrapper to stamp the new row's value control, or the new row
+    // gets no value binding and formulas referencing it break.
+    const wrap = (text: string) =>
+      ({
+        contentControlProperties: {
+          lockContentControl: false,
+          lockContents: false,
+          tag: 'foreign',
+          title: 'x',
+          type: 'RichText',
+          hasPlaceHolderText: false,
+          multiline: false,
+          isTemporary: false,
+          color: '#00000000',
+          appearance: 'BoundingBox'
+        },
+        inlines: [cc(fieldTag('value', CURRENCY, 'r-1'), 'Value', false, text)]
+      } as unknown as SfdtInline);
+    const table = {
+      rows: [
+        row(['Item', 'Value'], true),
+        {
+          cells: [
+            {
+              blocks: [
+                { inlines: [cc(fieldTag('item', { kind: 'text' }, 'r-1'), 'Item', false, 'Seed')] }
+              ]
+            },
+            { blocks: [{ inlines: [wrap('$5.00')] }] }
+          ],
+          rowFormat: { isHeader: false }
+        }
+      ]
+    };
+    const doc = {
+      optimizeSfdt: false,
+      sections: [{ blocks: [tableCc('t', table)] }]
+    } as unknown as SfdtDocument;
+    const tablePath = scanBindings(doc).tables.get('t')!.tablePath!;
+    getAt(doc, tablePath).rows.push(nativeRow('New', '42'));
+
+    const result = applyRules(doc, {});
+    const adopted = result.index.tables
+      .get('t')!
+      .rows.find((entry) => entry.rowId !== 'r-1')!;
+    // The wrapped value column is reproduced on the new row with the typed value.
+    expect(adopted.bindings.has('value')).toBe(true);
+    expect(adopted.bindings.get('value')!.text).toBe('$42.00');
+  });
 });

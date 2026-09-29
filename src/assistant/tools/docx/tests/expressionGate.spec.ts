@@ -21,13 +21,27 @@ describe('assertExpressionYieldsValue', () => {
     );
   });
 
+  it('rejects a whole column used as a mul/sub argument (not just at the top)', () => {
+    expect(() =>
+      assertExpressionYieldsValue('mul(costs.line_total,2)', index)
+    ).toThrow(/whole table column/);
+    expect(() =>
+      assertExpressionYieldsValue('sub(subtotal,B2:end)', index)
+    ).toThrow(/whole range/);
+    // A column misused deeper in, under an allowed sum.
+    expect(() =>
+      assertExpressionYieldsValue('sum(mul(costs.line_total,2))', index)
+    ).toThrow(/whole table column/);
+  });
+
   it.each([
     'sum(costs.line_total)', // aggregated column
     'project.name', // dotted DOC FIELD name is a legitimate mirror
     'tax_rate', // bare doc field mirror
     'sum(B2:end)', // aggregated range
     'B3', // single cell yields a value
-    'mul(quantity,unit_cost)' // ordinary row formula
+    'mul(quantity,unit_cost)', // ordinary row formula
+    'sum(costs.line_total,B3,tax_rate)' // sum may mix a column, a cell, a field
   ])('allows %s', (expression) => {
     expect(() => assertExpressionYieldsValue(expression, index)).not.toThrow();
   });
