@@ -14,7 +14,7 @@ import {
   firstUserActorKey,
   initialsForAuthor
 } from './authorColors';
-import { groupVersions, MonthSection } from './versionGrouping';
+import { groupVersions, MonthSection, VersionCluster } from './versionGrouping';
 import {
   DocxHistoryHost,
   DocxVersion,
@@ -135,35 +135,43 @@ function AuthorLine({
   );
 }
 
+// Activity alone is not proof of a surviving edit. A saved snapshot without a
+// diff retains known authors, so a temporary diff failure doesn't erase them.
+const hasAuthorEvidence = (version: DocxVersion): boolean => {
+  const hasTrackedChanges =
+    Boolean(version.changes) &&
+    ((version.change_count ?? 0) > 0 || (version.format_change_count ?? 0) > 0);
+  return hasTrackedChanges || (Boolean(version.final_sfdt) && !version.changes);
+};
+
 function VersionRow({
   version,
+  folded = [],
   authors,
   isCurrent,
   selected,
   pendingCount,
   liveAuthors,
   firstUserKey,
+  toggle,
   onSelect
 }: {
   version: DocxVersion;
+  /** Older versions folded under this row; their edits count for authors. */
+  folded?: DocxVersion[];
   authors: Author[];
   isCurrent: boolean;
   selected?: boolean;
   pendingCount?: number;
   liveAuthors?: VersionAuthor[];
   firstUserKey: string;
+  toggle?: React.ReactNode;
   onSelect?: (v: DocxVersion) => void;
 }) {
-  // Activity alone is not proof of a surviving edit. A live diff supplies the
-  // same evidence as a saved checkpoint, including an empty list after undo.
-  const hasTrackedChanges =
-    Boolean(version.changes) &&
-    ((version.change_count ?? 0) > 0 || (version.format_change_count ?? 0) > 0);
-  // A saved snapshot without a diff retains known authors; a temporary diff
-  // failure must not erase them from the list. Unsaved activity stays hidden.
-  const hasSavedFallback = Boolean(version.final_sfdt) && !version.changes;
+  // A live diff supplies the same evidence, including an empty list after undo.
   const effectiveAuthors: Author[] =
-    liveAuthors ?? (hasTrackedChanges || hasSavedFallback ? authors : []);
+    liveAuthors ??
+    ([version, ...folded].some(hasAuthorEvidence) ? authors : []);
   // The session writes "You" in the browser; the saved actor identifies who
   // that session belonged to. Use the durable label for display and colour.
   const displayedAuthors = effectiveAuthors.map((author) =>
@@ -237,6 +245,7 @@ function VersionRow({
             {pendingCount} pending
           </span>
         )}
+        {toggle}
       </div>
       {version.restored_from_at && (
         <div css={{ marginTop: 2, fontSize: 13, color: INK_3 }}>
@@ -263,6 +272,140 @@ function VersionRow({
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+const caretSvg = (
+  <svg width='11' height='11' viewBox='0 0 16 16' fill='none' aria-hidden>
+    <path
+      d='M6 3.5 10.5 8 6 12.5'
+      stroke='currentColor'
+      strokeWidth='1.8'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
+
+// Time-only row for a version folded under a cluster (shown when expanded).
+function EarlierRow({
+  version,
+  selected,
+  onSelect
+}: {
+  version: DocxVersion;
+  selected: boolean;
+  onSelect?: (v: DocxVersion) => void;
+}) {
+  return (
+    <div
+      onClick={() => onSelect?.(version)}
+      aria-current={selected ? 'true' : undefined}
+      css={{
+        padding: '6px 12px 6px 28px',
+        borderRadius: 8,
+        fontSize: 13.5,
+        color: INK_2,
+        cursor: onSelect ? 'pointer' : 'default',
+        background: selected ? ROW_ACTIVE : 'transparent',
+        '&:hover': { background: selected ? ROW_ACTIVE : PANEL_2 }
+      }}
+    >
+      {formatWhen(version.ended_at)}
+    </div>
+  );
+}
+
+function ClusterRow({
+  cluster,
+  currentSeq,
+  selectedId,
+  currentPendingCount,
+  liveSessionAuthors,
+  firstUserKey,
+  onSelect
+}: {
+  cluster: VersionCluster;
+  currentSeq: number;
+  selectedId?: string | null;
+  currentPendingCount?: number;
+  liveSessionAuthors?: LiveSessionAuthors | null;
+  firstUserKey: string;
+  onSelect?: (v: DocxVersion) => void;
+}) {
+  const { primary, earlier } = cluster;
+  const holdsSelected = earlier.some((v) => v.id === selectedId);
+  const [expanded, setExpanded] = useState(holdsSelected);
+  // Stepping to a folded version from the viewer reveals its row.
+  useEffect(() => {
+    if (holdsSelected) setExpanded(true);
+  }, [holdsSelected]);
+
+  const count = earlier.length;
+  const toggle = count > 0 && (
+    <button
+      type='button'
+      aria-expanded={expanded}
+      aria-label={`${expanded ? 'Collapse' : 'Expand'} ${count} earlier ${
+        count === 1 ? 'version' : 'versions'
+      }`}
+      onClick={(e) => {
+        e.stopPropagation();
+        setExpanded((open) => !open);
+      }}
+      css={{
+        flex: 'none',
+        alignSelf: 'center',
+        width: 20,
+        height: 20,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        border: 'none',
+        background: 'none',
+        padding: 0,
+        color: INK_3,
+        cursor: 'pointer',
+        transform: expanded ? 'rotate(90deg)' : 'none',
+        transition: 'transform 0.18s ease',
+        '&:hover': { color: INK }
+      }}
+    >
+      {caretSvg}
+    </button>
+  );
+
+  const isCurrent = primary.seq === currentSeq;
+  return (
+    <div>
+      <VersionRow
+        version={primary}
+        folded={earlier}
+        authors={cluster.authors}
+        liveAuthors={
+          primary.is_current &&
+          !primary.closed_at &&
+          primary.session_id === liveSessionAuthors?.sessionId
+            ? liveSessionAuthors.authors
+            : undefined
+        }
+        firstUserKey={firstUserKey}
+        isCurrent={isCurrent}
+        selected={selectedId != null && primary.id === selectedId}
+        pendingCount={isCurrent ? currentPendingCount : undefined}
+        toggle={toggle}
+        onSelect={onSelect}
+      />
+      {expanded &&
+        earlier.map((v) => (
+          <EarlierRow
+            key={v.id}
+            version={v}
+            selected={v.id === selectedId}
+            onSelect={onSelect}
+          />
+        ))}
     </div>
   );
 }
@@ -365,25 +508,14 @@ export default function HistoryPanel({
             {section.label}
           </div>
           {section.clusters.map((cluster) => (
-            <VersionRow
+            <ClusterRow
               key={cluster.primary.id}
-              version={cluster.primary}
-              authors={cluster.authors}
-              liveAuthors={
-                cluster.primary.is_current &&
-                !cluster.primary.closed_at &&
-                cluster.primary.session_id === liveSessionAuthors?.sessionId
-                  ? liveSessionAuthors.authors
-                  : undefined
-              }
+              cluster={cluster}
+              currentSeq={currentSeq}
+              selectedId={selectedId}
+              currentPendingCount={currentPendingCount}
+              liveSessionAuthors={liveSessionAuthors}
               firstUserKey={firstUserKey}
-              isCurrent={cluster.primary.seq === currentSeq}
-              selected={selectedId != null && cluster.primary.id === selectedId}
-              pendingCount={
-                cluster.primary.seq === currentSeq
-                  ? currentPendingCount
-                  : undefined
-              }
               onSelect={onSelect}
             />
           ))}
