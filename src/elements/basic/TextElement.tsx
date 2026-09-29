@@ -77,6 +77,7 @@ function TextElement({
   focused = false,
   textCallbacks = {},
   textSpanOnClick = () => {},
+  hasClickLogic = false,
   conditions = [],
   elementProps = {},
   children,
@@ -117,6 +118,7 @@ function TextElement({
         element={element}
         responsiveStyles={responsiveStyles}
         textSpanOnClick={textSpanOnClick}
+        hasClickLogic={hasClickLogic}
         conditions={conditions}
         editMode={editMode}
         focused={focused}
