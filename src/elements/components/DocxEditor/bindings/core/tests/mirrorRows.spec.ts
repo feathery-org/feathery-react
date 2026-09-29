@@ -336,6 +336,41 @@ describe('mirrors + positional range totals', () => {
     expect(totalText(result.index)).toBe('$7,900.00');
   });
 
+  it('an insert-above copy re-adopts the copy, not the original', () => {
+    // The copy is placed BEFORE the original (insert-above): physical row 1 is
+    // the copy, row 2 is the real one, both row=r-1 with $100.
+    const build = () => {
+      const table = {
+        rows: [
+          row(['Item', 'Amount'], true),
+          row(['Copy', cc(fieldTag('amount', CURRENCY, 'r-1'), 'Amount', false, '$100.00')]),
+          row(['Orig', cc(fieldTag('amount', CURRENCY, 'r-1'), 'Amount', false, '$100.00')])
+        ]
+      };
+      return {
+        optimizeSfdt: false,
+        sections: [{ blocks: [tableCc('t', table)] }]
+      } as unknown as SfdtDocument;
+    };
+    const amountAtPhysicalRow = (result: ReturnType<typeof applyRules>, phys: number) =>
+      result.index.tables
+        .get('t')!
+        .rows.find((entry) => Number(entry.path![entry.path!.length - 1]) === phys)!
+        .bindings.get('amount')!.text;
+
+    // Without the hint, the LATER occurrence (the original at row 2) is reset.
+    const noHint = applyRules(build(), {});
+    expect(amountAtPhysicalRow(noHint, 2)).toBe('$0.00'); // the bug
+
+    // With the hint that row 1 is the freshly inserted copy, the original keeps
+    // its value and the copy is the one reset.
+    const withHint = applyRules(build(), {
+      insertedRow: { tableId: 't', rowIndex: 1 }
+    });
+    expect(amountAtPhysicalRow(withHint, 2)).toBe('$100.00'); // original kept
+    expect(amountAtPhysicalRow(withHint, 1)).toBe('$0.00'); // copy reset
+  });
+
   it('protects an intact totals row (it still has its content control)', () => {
     const result = applyRules(buildMirrorFixture(), {});
     // The Total row keeps its formula; only the two mirrors are bound rows.

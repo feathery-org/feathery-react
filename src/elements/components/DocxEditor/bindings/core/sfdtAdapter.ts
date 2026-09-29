@@ -1068,6 +1068,9 @@ function rowBindingId(row: SfdtRow): string | null {
   return null;
 }
 
+const rowHasControls = (row: SfdtRow): boolean =>
+  JSON.stringify(row).includes('contentControlProperties');
+
 // A data row holds at least one INPUT column - a field, or a mirror. A row whose
 // only bound columns are structural formulas (a totals row: sum(B2:end) or a
 // self-aggregate) is not a data row and makes a poor adoption template.
@@ -1097,7 +1100,14 @@ export function adoptUnboundRows(
    * Row shape from an earlier reconcile, used when the user has deleted every
    * bound row - the document then holds no copy of it at all.
    */
-  fallbackTemplate?: SfdtRow
+  fallbackTemplate?: SfdtRow,
+  /**
+   * Physical index of the row the user just inserted, when known from the live
+   * editor. It is the copy in a duplicated-id pair, so an insert-above (copy
+   * before the original) re-adopts the right row instead of resetting the
+   * original.
+   */
+  insertedRowIndex?: number
 ): AdoptionResult {
   const table = index.tables.get(tableId);
   if (!table || !table.tablePath)
@@ -1183,31 +1193,37 @@ export function adoptUnboundRows(
     .sort((left, right) => left - right)[0];
 
   // Syncfusion's insert-row copies an editable control into the new row, so it
-  // arrives with a row id duplicating the row above. The first occurrence of an
-  // id is the real bound row; a later row reusing it is a copy, re-adopted fresh.
-  const seenRowIds = new Set<string>();
+  // arrives with a row id duplicating a sibling. One occurrence of the id is the
+  // real bound row; the other is the copy, re-adopted fresh. By default the
+  // LATER occurrence is the copy, but an insert-above places the copy BEFORE the
+  // original, so an explicit inserted-row hint overrides which one is the copy.
+  const copyIndices = new Set<number>();
+  const indicesById = new Map<string, number[]>();
+  allRows.forEach((row, r) => {
+    const id = row ? rowBindingId(row) : null;
+    if (row && id !== null && rowHasControls(row))
+      indicesById.set(id, [...(indicesById.get(id) || []), r]);
+  });
+  for (const indices of indicesById.values()) {
+    if (indices.length < 2) continue;
+    if (insertedRowIndex !== undefined && indices.includes(insertedRowIndex))
+      copyIndices.add(insertedRowIndex);
+    else for (const idx of indices.slice(1)) copyIndices.add(idx);
+  }
 
   for (let r = 0; r < allRows.length; r++) {
     const row = allRows[r];
     if (!row) continue;
     if (row.rowFormat && row.rowFormat.isHeader) continue;
-    const existingRowId = rowBindingId(row);
-    const hasControls = JSON.stringify(row).includes(
-      'contentControlProperties'
-    );
-    if (hasControls) {
-      const isCopiedRow =
-        existingRowId !== null && seenRowIds.has(existingRowId);
-      if (!isCopiedRow) {
-        // A real bound row, an intact totals row, or a foreign control - not
-        // ours to touch. Remember its id so a later copy of it is caught.
-        if (existingRowId !== null) seenRowIds.add(existingRowId);
-        continue;
-      }
-      // Fall through: re-adopt the copy with a fresh id. Its values live inside
-      // the copied controls, invisible to cellPlainText below, so every cell
-      // reads as empty and the new row starts from defaults.
+    const hasControls = rowHasControls(row);
+    if (hasControls && !copyIndices.has(r)) {
+      // A real bound row, an intact totals row, or a foreign control - not ours
+      // to touch.
+      continue;
     }
+    // A copied row (in copyIndices) falls through to be re-adopted fresh. Its
+    // value lives inside the copied control, invisible to cellPlainText below,
+    // so every cell reads as empty and the new row starts from defaults.
     const cells = row.cells || [];
     if (!cells.length) continue;
     if (cells.length !== templateCells.length) {
