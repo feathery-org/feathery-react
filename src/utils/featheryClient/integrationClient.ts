@@ -1084,9 +1084,11 @@ export default class IntegrationClient {
   // or {} — the editor opens editor_file (controls intact) when present.
   getCurrentEnvelope(documentId: string) {
     const { userId } = initInfo();
+    // The form key scopes the lookup to envelopes this form generated.
     const params = encodeGetParams({
       fuser_key: userId,
-      document_id: documentId
+      document_id: documentId,
+      ...(this.formKey ? { form_key: this.formKey } : {})
     });
     const url = `${API_URL}document/current-envelope/?${params}`;
     return this._fetch(url, {}, false).then(async (response) => {

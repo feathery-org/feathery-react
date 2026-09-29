@@ -43,6 +43,20 @@ describe('document persistence requests', () => {
     ).toBe('form-key');
   });
 
+  it('scopes the current-envelope lookup to the form', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({})
+    });
+
+    await new FeatheryClient('form-key').getCurrentEnvelope('doc');
+    await new FeatheryClient('').getCurrentEnvelope('doc');
+
+    const [scoped, unscoped] = (globalThis.fetch as jest.Mock).mock.calls;
+    expect(scoped[0]).toContain('form_key=form-key');
+    expect(unscoped[0]).not.toContain('form_key');
+  });
+
   it('sends form context on version-history reads', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue({
       ok: false,
