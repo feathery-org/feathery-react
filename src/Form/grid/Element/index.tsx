@@ -13,7 +13,10 @@ import {
 import { justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
 import { isButtonDisabled } from '../../../utils/button';
-import { ACTION_NEXT } from '../../../utils/elementActions';
+import {
+  ACTION_NEXT,
+  elementHasClickLogic
+} from '../../../utils/elementActions';
 import {
   fileFieldShouldSubmit,
   getInlineError,
@@ -47,6 +50,7 @@ const Element = ({ node: el, form }: any) => {
     elementProps,
     activeStep,
     buttonLoaders,
+    logicRules,
     customClickSelectionState,
     runElementActions,
     buttonOnClick,
@@ -175,6 +179,7 @@ const Element = ({ node: el, form }: any) => {
           buttonOnClick(el);
         }}
         disabled={disabled}
+        hasClickLogic={elementHasClickLogic(logicRules, el)}
         {...basicProps}
       />
     );
