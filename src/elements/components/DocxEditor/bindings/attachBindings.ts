@@ -28,7 +28,6 @@ import {
 import { installKeystrokeGuard } from './keystrokeGuard';
 import { createCommitTriggers } from './commitTriggers';
 import { watchRowCommands } from './rowCommandWatch';
-import { captureInsertedRow } from './nativeStructuralAdapter';
 import {
   installTableDeleteGuard,
   isDeleteGuardBusy,
@@ -217,10 +216,7 @@ export function attachBindings(
     if (controller.phase !== 'idle') return;
     const history = editor.editorHistoryModule;
     if (history?.isUndoing || history?.isRedoing) return;
-    // The caret is in the just-inserted row; tell adoption which row that is so
-    // an insert-above re-adopts the copy, not the original.
-    const insertedRow = captureInsertedRow(editor);
-    controller.flush({ mode: 'self-heal', insertedRow });
+    controller.flush({ mode: 'self-heal' });
   });
 
   const eventful = editor as EventfulEditor;
