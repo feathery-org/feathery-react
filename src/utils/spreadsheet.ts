@@ -125,7 +125,12 @@ export async function parseWorkbook(file: File): Promise<SpreadsheetSheet[]> {
       XLSX.utils.sheet_to_json(sheet, {
         header: 1,
         raw: false,
-        defval: ''
+        defval: '',
+        // Anchor at A1 so leading empty rows/columns do not renumber the
+        // header-row picker or the column identities displayed by the mapper.
+        range: sheet['!ref']
+          ? `A1:${sheet['!ref'].split(':').pop()}`
+          : undefined
       })
     );
   }
@@ -137,21 +142,25 @@ export async function parseWorkbook(file: File): Promise<SpreadsheetSheet[]> {
 export interface ParsedSpreadsheet {
   headers: string[];
   rows: string[][];
+  // Original zero-based worksheet positions, before empty columns are removed.
+  columnIndexes?: number[];
 }
 
 export function normalizeSpreadsheet(parsed: string[][]): ParsedSpreadsheet {
-  if (parsed.length === 0) return { headers: [], rows: [] };
+  if (parsed.length === 0) return { headers: [], rows: [], columnIndexes: [] };
 
   const rawHeaders = parsed[0];
   const dataRows = parsed
     .slice(1)
     .filter((row) => row.some((col) => col && col.trim() !== ''));
 
-  const keptIndexes = rawHeaders
-    .map((_h, colIndex) => colIndex)
-    .filter((colIndex) =>
-      dataRows.some((row) => (row[colIndex] ?? '').trim() !== '')
-    );
+  const width = dataRows.reduce(
+    (max, row) => Math.max(max, row.length),
+    rawHeaders.length
+  );
+  const keptIndexes = Array.from({ length: width }, (_, i) => i).filter(
+    (colIndex) => dataRows.some((row) => (row[colIndex] ?? '').trim() !== '')
+  );
 
   const headers = keptIndexes.map((colIndex) => {
     const h = (rawHeaders[colIndex] ?? '').trim();
@@ -161,20 +170,89 @@ export function normalizeSpreadsheet(parsed: string[][]): ParsedSpreadsheet {
     keptIndexes.map((colIndex) => row[colIndex] ?? '')
   );
 
-  return { headers, rows };
+  return { headers, rows, columnIndexes: keptIndexes };
 }
 
-export interface NormalizedSheet {
+export interface NormalizedSheet extends ParsedSpreadsheet {
   name: string;
-  headers: string[];
-  rows: string[][];
 }
 
 export interface ColumnRef {
   sheet: string;
   header: string;
+  // Optional only for cached mappings created before column identity existed.
+  columnIndex?: number;
 }
 export type FieldMapping = Record<string, ColumnRef>;
+
+export function columnRefAt(sheet: NormalizedSheet, index: number): ColumnRef {
+  return {
+    sheet: sheet.name,
+    header: sheet.headers[index],
+    columnIndex: sheet.columnIndexes?.[index] ?? index
+  };
+}
+
+// Return a normalized row index. An explicit stale position must never fall
+// back to a same-named column; legacy names resolve only when unambiguous.
+export function resolveColumnIndex(
+  sheet: NormalizedSheet,
+  ref: ColumnRef
+): number {
+  if (sheet.name !== ref.sheet) return -1;
+  if (ref.columnIndex !== undefined) {
+    if (!Number.isInteger(ref.columnIndex) || ref.columnIndex < 0) return -1;
+    const index = sheet.columnIndexes
+      ? sheet.columnIndexes.indexOf(ref.columnIndex)
+      : ref.columnIndex;
+    return index >= 0 && sheet.headers[index] === ref.header ? index : -1;
+  }
+  const index = sheet.headers.indexOf(ref.header);
+  return index >= 0 && sheet.headers.lastIndexOf(ref.header) === index
+    ? index
+    : -1;
+}
+
+export function columnLabel(ref: ColumnRef): string {
+  if (ref.columnIndex === undefined) return ref.header;
+  let n = ref.columnIndex + 1;
+  let letter = '';
+  while (n > 0) {
+    n--;
+    letter = String.fromCharCode(65 + (n % 26)) + letter;
+    n = Math.floor(n / 26);
+  }
+  return `${ref.header} — ${letter}`;
+}
+
+export function autoMapColumns(
+  fields: { key: string }[],
+  sheets: NormalizedSheet[],
+  preferSheet?: string
+): FieldMapping {
+  const ordered = preferSheet
+    ? [
+        ...sheets.filter((s) => s.name === preferSheet),
+        ...sheets.filter((s) => s.name !== preferSheet)
+      ]
+    : sheets;
+  const mapping: FieldMapping = {};
+  fields.forEach((field) => {
+    for (const sheet of ordered) {
+      const matches = sheet.headers.reduce<number[]>((indexes, header, i) => {
+        if (header.toLowerCase() === field.key.toLowerCase()) indexes.push(i);
+        return indexes;
+      }, []);
+      if (!matches.length) continue;
+      // A duplicate on the preferred sheet requires an explicit choice, not
+      // a guess from this sheet or a fallback to another sheet.
+      if (matches.length === 1)
+        mapping[field.key] = columnRefAt(sheet, matches[0]);
+      break;
+    }
+  });
+  return mapping;
+}
 
 // Fields mapped to different sheets are zipped by row index; shorter sheets
 // yield blanks on the extra rows.
@@ -188,7 +266,7 @@ export function buildUnverifiedRows(
   Object.entries(mapping).forEach(([fieldKey, ref]) => {
     const sheet = byName.get(ref.sheet);
     if (!sheet) return;
-    const colIndex = sheet.headers.indexOf(ref.header);
+    const colIndex = resolveColumnIndex(sheet, ref);
     if (colIndex < 0) return;
     resolved.push({
       fieldKey,
