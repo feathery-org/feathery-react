@@ -56,7 +56,9 @@ export function useColumnFilters<R>({
 
   const set = useCallback((fieldKey: string, filter: ColumnFilter) => {
     setStored((prev) => {
-      if (!isFilterActive(filter)) {
+      // Kept while the search box holds only spaces, which filter nothing but
+      // would otherwise be wiped from under the cursor as they are typed.
+      if (!filter.hidden.size && filter.search === '') {
         return Object.fromEntries(
           Object.entries(prev).filter(([key]) => key !== fieldKey)
         );

@@ -2,6 +2,7 @@ import React from 'react';
 import { TABLE_CLASS } from '../classNames';
 import {
   BLANK_LABEL,
+  isValueChecked,
   MAX_LISTED_VALUES,
   searchedValues,
   setValuesChecked
@@ -55,21 +56,17 @@ export function FilterMenu({
     () => filters.candidates(fieldKey),
     [filters, fieldKey]
   );
-  // The search narrows what is shown; the checks below act on `searched`,
-  // but seed from `candidates` so the hidden values keep their state.
+  // The search narrows what is shown; the checks below act on `searched`
+  // alone, so the values it hides keep their state.
   const searched = searchedValues(candidates, filter);
   const listed = searched.slice(0, MAX_LISTED_VALUES);
   const unlisted = searched.length - listed.length;
 
-  const isChecked = (value: string) =>
-    filter.values === null || filter.values.has(value);
+  const isChecked = (value: string) => isValueChecked(filter, value);
   const checkedCount = searched.filter(isChecked).length;
   const allChecked = searched.length > 0 && checkedCount === searched.length;
   const setChecked = (values: string[], checked: boolean) =>
-    filters.set(
-      fieldKey,
-      setValuesChecked(filter, candidates, values, checked)
-    );
+    filters.set(fieldKey, setValuesChecked(filter, values, checked));
 
   // A partly checked list shows as indeterminate, which only the DOM can set.
   const selectAllRef = React.useRef<HTMLInputElement>(null);

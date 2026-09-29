@@ -17,7 +17,7 @@ import { getNextEditableCell } from './utils';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
-import { useHubTableSource } from './useHubTableSource';
+import { entryIdsShifted, useHubTableSource } from './useHubTableSource';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
 import {
@@ -76,10 +76,15 @@ function applyTableStyles(responsiveStyles: any) {
 // submitting the whole form. No input in the table means that: the cell
 // editor, the search and find boxes and the filter popover handle Enter
 // themselves. React events bubble through portals, so this covers the
-// table's popovers wherever they mount.
+// table's popovers wherever they mount. An Enter that confirms an IME
+// composition is left alone: it submits nothing, and is the IME's to handle.
 function preventEnterSubmit(event: React.KeyboardEvent<HTMLElement>) {
   const target = event.target as HTMLElement;
-  if (event.key === 'Enter' && target.tagName === 'INPUT') {
+  if (
+    event.key === 'Enter' &&
+    !event.nativeEvent.isComposing &&
+    target.tagName === 'INPUT'
+  ) {
     event.preventDefault();
   }
 }
@@ -323,6 +328,15 @@ function TableElement({
     () => setRowIdentityVersion((version) => version + 1),
     []
   );
+  // A Hub resync renumbers rows too: entries the grid has not seen (another
+  // user's new rows) land at the top, and one deleted elsewhere closes its gap.
+  // Bumped in the same render the rows move in, not in an effect after it, so
+  // nothing keyed to the old indices shows against the new rows for a frame.
+  const [seenEntryIds, setSeenEntryIds] = useState(hub.entryIds);
+  if (seenEntryIds !== hub.entryIds) {
+    setSeenEntryIds(hub.entryIds);
+    if (entryIdsShifted(seenEntryIds, hub.entryIds)) bumpRowIdentity();
+  }
 
   const wrappedHandleAddRow = useCallback(() => {
     setDeleteRowIndex(null);

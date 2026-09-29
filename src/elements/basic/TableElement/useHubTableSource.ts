@@ -845,6 +845,22 @@ export function orderLikeGrid(
 }
 
 /**
+ * Whether a row index that held a saved entry now holds a different row,
+ * which leaves anything keyed by row index pointing at the wrong one. A
+ * provisional row gaining its id on save, or rows dropped off the end, move
+ * nothing.
+ */
+export function entryIdsShifted(
+  previous: Array<string | null>,
+  next: Array<string | null>
+): boolean {
+  return previous.some(
+    (entryId, index) =>
+      entryId != null && index < next.length && next[index] !== entryId
+  );
+}
+
+/**
  * The `where` conditions (ANDed by the Hub) a table's row filters resolve to.
  * A filter whose form field is empty or gone is left off, so it matches all rows.
  */

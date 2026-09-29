@@ -1,23 +1,29 @@
 /**
  * Column filters for the spreadsheet, the way a sheet's header filter works:
- * each column may keep only some of its values and/or only values containing
+ * each column may hide some of its values and/or keep only values containing
  * a piece of text. Both are matched against the cell's DISPLAYED text, so a
- * date column filters on "Jul 19, 1982", not on the stored ISO string.
+ * date column filters on "Jul 19, 1982", not on the stored ISO string, and
+ * both ignore case, so "Austin" and "austin" are one value.
  *
  * Pure. State and rendering live in `useColumnFilters` and `FilterMenu`.
  */
 
 export type ColumnFilter = {
-  /** Displayed values the column keeps; `null` keeps every value. */
-  values: ReadonlySet<string> | null;
-  /** Text (case-insensitive) the displayed value must contain. */
+  /**
+   * The values the user unchecked, by `valueKey`. Stored as what is hidden
+   * rather than what is kept, so a value the list never offered — one only
+   * other columns' filters were hiding, a row a refresh brings in, a cell
+   * edited to something new — shows rather than vanishing unasked.
+   */
+  hidden: ReadonlySet<string>;
+  /** Text the displayed value must contain. */
   search: string;
 };
 
 /** Active filters keyed by the column's field key. */
 export type ColumnFilters = Readonly<Record<string, ColumnFilter>>;
 
-export const EMPTY_FILTER: ColumnFilter = { values: null, search: '' };
+export const EMPTY_FILTER: ColumnFilter = { hidden: new Set(), search: '' };
 
 /** How an empty cell is listed among a column's values. */
 export const BLANK_LABEL = '(Blanks)';
@@ -30,15 +36,21 @@ export const MAX_LISTED_VALUES = 500;
 
 export type CellTextOf<R> = (row: R, fieldKey: string) => string;
 
+/** What a displayed value is compared by: its text, ignoring case. */
+export function valueKey(text: string): string {
+  return text.toLowerCase();
+}
+
 export function isFilterActive(filter?: ColumnFilter): boolean {
   if (!filter) return false;
-  return filter.values !== null || filter.search.trim() !== '';
+  return filter.hidden.size > 0 || filter.search.trim() !== '';
 }
 
 export function matchesFilter(text: string, filter: ColumnFilter): boolean {
-  const needle = filter.search.trim().toLowerCase();
-  if (needle && !text.toLowerCase().includes(needle)) return false;
-  return filter.values === null || filter.values.has(text);
+  const key = valueKey(text);
+  const needle = valueKey(filter.search.trim());
+  if (needle && !key.includes(needle)) return false;
+  return !filter.hidden.has(key);
 }
 
 /**
@@ -77,10 +89,9 @@ export function compareValues(a: string, b: string): number {
 
 /**
  * The distinct displayed values one column offers to pick from: those of the
- * rows every OTHER column's filter lets through. Its own filter is ignored —
- * an unchecked value must stay listed to be checked again, and the popover
- * narrows the list by the search text only for display, so unchecking under
- * a search never drops the values the search happened to hide.
+ * rows every OTHER column's filter lets through, one per `valueKey` (spelled
+ * as the first row has it). Its own filter is ignored — an unchecked value
+ * must stay listed to be checked again.
  */
 export function candidateValues<R>(
   rows: R[],
@@ -88,11 +99,13 @@ export function candidateValues<R>(
   filters: ColumnFilters,
   textOf: CellTextOf<R>
 ): string[] {
-  const seen = new Set<string>();
-  filterRows(rows, filters, textOf, fieldKey).forEach((row) =>
-    seen.add(textOf(row, fieldKey))
-  );
-  return [...seen].sort(compareValues);
+  const seen = new Map<string, string>();
+  filterRows(rows, filters, textOf, fieldKey).forEach((row) => {
+    const text = textOf(row, fieldKey);
+    const key = valueKey(text);
+    if (!seen.has(key)) seen.set(key, text);
+  });
+  return [...seen.values()].sort(compareValues);
 }
 
 /** The candidates the popover lists under the filter's search text. */
@@ -100,24 +113,27 @@ export function searchedValues(
   candidates: string[],
   filter: ColumnFilter
 ): string[] {
-  const searchOnly: ColumnFilter = { values: null, search: filter.search };
+  const searchOnly: ColumnFilter = { ...EMPTY_FILTER, search: filter.search };
   return candidates.filter((value) => matchesFilter(value, searchOnly));
+}
+
+export function isValueChecked(filter: ColumnFilter, value: string): boolean {
+  return !filter.hidden.has(valueKey(value));
 }
 
 /**
  * Some values checked or unchecked — one row of the list, or every listed
- * value at once. Unchecking from "every value" pins the remaining candidates;
- * once every candidate is checked again the restriction is lifted, so the
- * filter reads as inactive rather than as an explicit list.
+ * value at once. Only those values change, so unchecking under a search
+ * leaves the values the search hid as they were.
  */
 export function setValuesChecked(
   filter: ColumnFilter,
-  candidates: string[],
   values: string[],
   checked: boolean
 ): ColumnFilter {
-  const next = new Set(filter.values ?? candidates);
-  values.forEach((value) => (checked ? next.add(value) : next.delete(value)));
-  const everyCandidate = candidates.every((candidate) => next.has(candidate));
-  return { ...filter, values: everyCandidate ? null : next };
+  const hidden = new Set(filter.hidden);
+  values.forEach((value) =>
+    checked ? hidden.delete(valueKey(value)) : hidden.add(valueKey(value))
+  );
+  return { ...filter, hidden };
 }
