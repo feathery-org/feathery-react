@@ -1,6 +1,9 @@
-// Buckets newest-first versions under Today/month headers, one row each.
-// VersionCluster is kept for the row renderer; `earlier` is always empty.
+// Buckets newest-first versions under Today/month headers and folds bursts of
+// sessions (each within 15 minutes of the next) into one expandable row.
 import { DocxVersion } from './types';
+
+// Max idle gap between a session's end and the next session's start to fold.
+export const CLUSTER_GAP_MS = 15 * 60 * 1000;
 
 const MONTHS = [
   'January',
@@ -20,7 +23,7 @@ const MONTHS = [
 export interface VersionCluster {
   /** Newest version in the cluster (the visible row). */
   primary: DocxVersion;
-  /** Always empty: every version gets its own row. */
+  /** Older versions folded under the row, newest-first (shown on expand). */
   earlier: DocxVersion[];
   /** Distinct authors across the cluster, in first-seen (newest-first) order. */
   authors: Array<{ kind: string; label: string }>;
@@ -62,14 +65,26 @@ function sectionFor(ended: Date, now: Date): { key: string; label: string } {
   return { key: `${ended.getFullYear()}-${ended.getMonth()}`, label };
 }
 
-/** Group versions (newest-first) into Today + month sections — flat, one row
- *  each. `now` is injectable for tests. */
+// Current, named, restored and baseline versions keep their own visible row:
+// they may head a cluster but are never folded under another one.
+const keepsOwnRow = (version: DocxVersion, currentSeq: number): boolean =>
+  version.is_current ||
+  version.seq === currentSeq ||
+  Boolean(version.name) ||
+  Boolean(version.restored_from_at || version.restored_from) ||
+  version.is_baseline;
+
+/** Group versions (newest-first) into Today + month sections of 15-minute
+ *  clusters. `now` is injectable for tests. */
 export function groupVersions(
   versions: DocxVersion[],
   now: Date = new Date()
 ): MonthSection[] {
   const sections: MonthSection[] = [];
+  const currentSeq = versions.reduce((max, v) => Math.max(max, v.seq), -1);
   let section: MonthSection | null = null;
+  let cluster: VersionCluster | null = null;
+  let newer: DocxVersion | null = null;
 
   for (const version of versions) {
     const ended = new Date(version.ended_at);
@@ -78,16 +93,25 @@ export function groupVersions(
     if (!section || section.key !== key) {
       section = { key, label, clusters: [] };
       sections.push(section);
+      cluster = null; // clusters never cross a section boundary
     }
 
-    // One version per row: its own cluster with no `earlier` entries.
-    const cluster: VersionCluster = {
-      primary: version,
-      earlier: [],
-      authors: []
-    };
+    // Chained: compare with the next-newer version, and only on the same day.
+    const withinGap =
+      newer !== null &&
+      isSameDay(new Date(newer.ended_at), ended) &&
+      new Date(newer.started_at || newer.ended_at).getTime() -
+        ended.getTime() <=
+        CLUSTER_GAP_MS;
+
+    if (cluster && withinGap && !keepsOwnRow(version, currentSeq)) {
+      cluster.earlier.push(version);
+    } else {
+      cluster = { primary: version, earlier: [], authors: [] };
+      section.clusters.push(cluster);
+    }
     mergeAuthors(cluster, version);
-    section.clusters.push(cluster);
+    newer = version;
   }
 
   return sections;
