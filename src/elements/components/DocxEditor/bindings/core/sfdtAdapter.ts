@@ -25,6 +25,7 @@ import {
   TagOptions
 } from './tagDsl';
 import {
+  bareCellRef,
   collectPositional,
   collectRefs,
   isFormulaError,
@@ -972,13 +973,14 @@ function countAdoptableRows(sfdt: SfdtDocument, tablePath: SfdtPath): number[] {
 
 // A MIRROR reads only values outside its own row (expr=A, sum(beta)). A
 // row-local formula reads an own-row column (mul(quantity,unit_cost)), any
-// positional ref (sum(B2:end)), or its own table's column (sum(costs.amount) -
-// a self-total); those are structural and block adoption, while a typed mirror
-// column becomes a field.
+// positional ref (sum(B2:end) or a bare unbound cell like B3), or its own
+// table's column (sum(costs.amount) - a self-total); those are structural and
+// block adoption, while a typed mirror column becomes a field.
 function isMirrorFormula(
   def: FormulaDefinition,
   ownColumnNames: ReadonlySet<string>,
-  ownTableId: string
+  ownTableId: string,
+  index: BindingIndex
 ): boolean {
   let ast;
   try {
@@ -990,9 +992,13 @@ function isMirrorFormula(
   const positional = collectPositional(ast);
   if (positional.cells.length || positional.ranges.length) return false;
   return !collectRefs(ast).some((ref) => {
-    if (ownColumnNames.has(ref)) return true;
+    if (ownColumnNames.has(ref)) return true; // own-row column
     const dot = ref.lastIndexOf('.');
-    return dot !== -1 && ref.slice(0, dot) === ownTableId;
+    if (dot !== -1) return ref.slice(0, dot) === ownTableId; // own-table aggregate
+    // A doc field/formula name is an external mirror; a cell-shaped name that
+    // binds nothing is a positional cell, which is structural.
+    if (index.fields.has(ref) || index.formulas.has(ref)) return false;
+    return bareCellRef(ref) !== null;
   });
 }
 
@@ -1065,13 +1071,17 @@ function rowBindingId(row: SfdtRow): string | null {
 // A data row holds at least one INPUT column - a field, or a mirror. A row whose
 // only bound columns are structural formulas (a totals row: sum(B2:end) or a
 // self-aggregate) is not a data row and makes a poor adoption template.
-function rowHasInputColumn(entry: TableRowEntry, tableId: string): boolean {
+function rowHasInputColumn(
+  entry: TableRowEntry,
+  tableId: string,
+  index: BindingIndex
+): boolean {
   const names = new Set(entry.bindings.keys());
   for (const occurrence of entry.bindings.values()) {
     if (occurrence.def.kind === 'field') return true;
     if (
       occurrence.def.kind === 'formula' &&
-      isMirrorFormula(occurrence.def, names, tableId)
+      isMirrorFormula(occurrence.def, names, tableId, index)
     )
       return true;
   }
@@ -1096,7 +1106,7 @@ export function adoptUnboundRows(
   // row too, but cloning it would give a new row a structural aggregate instead
   // of an input control. Fall back to the last bound row when none has inputs.
   const inputRows = table.rows.filter((entry) =>
-    rowHasInputColumn(entry, tableId)
+    rowHasInputColumn(entry, tableId, index)
   );
   const lastBoundRow = inputRows.length
     ? inputRows[inputRows.length - 1]
@@ -1155,7 +1165,7 @@ export function adoptUnboundRows(
     return (
       !!binding &&
       binding.def.kind === 'formula' &&
-      isMirrorFormula(binding.def, columnNames, tableId)
+      isMirrorFormula(binding.def, columnNames, tableId, index)
     );
   });
 

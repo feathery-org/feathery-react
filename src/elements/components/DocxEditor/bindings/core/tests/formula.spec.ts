@@ -37,9 +37,16 @@ describe('formula', () => {
   });
 
   it('parses positional cells and ranges', () => {
-    expect(parseExpression('B3')).toEqual({
-      cell: { table: null, col: 1, row: 3 }
+    // A BARE cell-shaped token stays a ref; the engine decides cell-vs-name at
+    // eval, so a binding named B3/Q1/FY2024 is never stolen by cell parsing.
+    expect(parseExpression('B3')).toEqual({ ref: 'B3' });
+    expect(parseExpression('Q1')).toEqual({ ref: 'Q1' });
+    expect(parseExpression('FY2024')).toEqual({ ref: 'FY2024' });
+    expect(parseExpression('sum(Q1,Q2,Q3,Q4)')).toEqual({
+      op: 'sum',
+      args: [{ ref: 'Q1' }, { ref: 'Q2' }, { ref: 'Q3' }, { ref: 'Q4' }]
     });
+    // A `table!`-qualified cell is unambiguous, so it stays a cell.
     expect(parseExpression('summary!B3')).toEqual({
       cell: { table: 'summary', col: 1, row: 3 }
     });
@@ -77,12 +84,15 @@ describe('formula', () => {
         }
       ]
     });
-    // Bounds normalize: B9:B2 is the same range as B2:B9. AA -> col 26.
+    // Bounds normalize: B9:B2 is the same range as B2:B9.
     expect(parseExpression('sum(B9:B2)')).toEqual(parseExpression('sum(B2:B9)'));
-    expect(parseExpression('AA2')).toEqual({
-      cell: { table: null, col: 26, row: 2 }
+    // A range's bounds are always positional (a range of names is meaningless).
+    expect(parseExpression('sum(Q1:Q4)')).toEqual({
+      op: 'sum',
+      args: [
+        { range: { table: null, startCol: 16, startRow: 1, endCol: 16, endRow: 4 } }
+      ]
     });
-    // Lowercase is a NAME, not a cell (uppercase-only classification).
     expect(parseExpression('b2')).toEqual({ ref: 'b2' });
   });
 

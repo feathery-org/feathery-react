@@ -10,10 +10,10 @@
 // Args are references, positional cells/ranges, literals, or nested calls. A
 // whole expression may be a single reference, never a single literal.
 //
-// Positional refs classify at parse time: an uppercase token /^[A-Z]{1,2}[1-9]
-// [0-9]*$/ is a cell, `:` a range, `end` the last physical row (range bound
-// only). Row 1 is the first physical row; an uppercase-cell-shaped name is
-// shadowed (canonical names are lowercase, so it never bites).
+// Only a range (`:`) or a `table!`-qualified ref is positional at parse time; a
+// BARE cell-shaped token (B3) stays a ref, and the engine reads it as a cell
+// only when nothing binds that name. So a binding named Q1 or FY2024 is never
+// stolen. `end` is the last physical row and is valid only as a range bound.
 
 export class FormulaError extends Error {
   constructor(message?: string) {
@@ -225,9 +225,12 @@ export function parseExpression(src: string): Ast {
       }
       return { op, args };
     }
-    const cellStart = parseCellToken(token.v as string);
-    if (cellStart || peek()?.t === ':') {
-      i--; // hand the name back to the positional parser
+    // A bare token stays a reference; the engine decides at eval whether it
+    // names a binding or (only when it is cell-shaped AND unbound) a positional
+    // cell. This keeps a binding named Q1 or FY2024 from being stolen by cell
+    // parsing. A range (`:`) or a `table!`-qualified ref is unambiguous here.
+    if (peek()?.t === ':') {
+      i--; // hand the start cell back to the positional parser
       return positional(null);
     }
     if (token.v === 'end')
@@ -245,6 +248,12 @@ export function parseExpression(src: string): Ast {
       `expression must reference a value: ${JSON.stringify(src)}`
     );
   return ast;
+}
+
+/** A cell-shaped bare token (B3, AA12) as a CellRef in the own table, else null. */
+export function bareCellRef(name: string): CellRef | null {
+  const cell = parseCellToken(name);
+  return cell ? { table: null, col: cell.col, row: cell.row } : null;
 }
 
 /** Every reference mentioned anywhere in the AST. */

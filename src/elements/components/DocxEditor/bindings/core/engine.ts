@@ -21,6 +21,7 @@ import {
 } from './sfdtAdapter';
 import {
   Ast,
+  bareCellRef,
   CellRef,
   collectPositional,
   FormulaError,
@@ -809,6 +810,11 @@ export function applyRules(
           if (item.kind === 'formula') node.deps.add(item.id);
         }
       }
+      // A cell-shaped ref that names nothing is a positional cell.
+      if (!target) {
+        const cell = bareCellRef(ast.ref);
+        if (cell) addPositionalDeps(node, [cell], []);
+      }
       return;
     }
     if ('args' in ast) for (const arg of ast.args) collectDeps(arg, node);
@@ -854,7 +860,12 @@ export function applyRules(
     if ('range' in ast) return positionalRangeValues(ast.range, node);
     if ('ref' in ast) {
       const target = refTargets(ast.ref, node.occ);
-      if (!target) throw new FormulaError(`unresolved reference "${ast.ref}"`);
+      if (!target) {
+        // A cell-shaped ref that names nothing reads a positional cell.
+        const cell = bareCellRef(ast.ref);
+        if (cell) return positionalCellValue(cell, node);
+        throw new FormulaError(`unresolved reference "${ast.ref}"`);
+      }
       if (target.kind === 'field') {
         const occurrences = (
           index.fields.get(target.name) as Occurrence[]
