@@ -762,6 +762,20 @@ export default class ResponsiveStyles {
     );
   }
 
+  // Falls back to the caller's default object-fit when unset
+  applyObjectFit(target: string, prefix = '') {
+    this.apply(target, `${prefix}object_fit`, (a: any) =>
+      a ? { objectFit: a } : {}
+    );
+  }
+
+  // Leaves the browser default (center) when unset
+  applyObjectPosition(target: string, prefix = '') {
+    this.apply(target, `${prefix}object_position`, (a: any) =>
+      a ? { objectPosition: a } : {}
+    );
+  }
+
   applyColor(target: string, jsonProp: any, cssProp: any, important = false) {
     this.apply(target, jsonProp, (color: any) => {
       if (!color) return {};
