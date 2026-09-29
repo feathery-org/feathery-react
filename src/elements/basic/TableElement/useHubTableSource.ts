@@ -342,12 +342,20 @@ export function useHubTableSource({
       });
   }, []);
 
-  // The filters the loaded rows reflect, so a change that a write or an unsaved
-  // edit held back is caught up once they clear (see the effect below).
-  const loadedWhereKey = useRef<string | null>(null);
+  // The hub reference and filters the loaded rows reflect, so a change that a
+  // write or an unsaved edit held back is caught up once they clear (see the
+  // effect below).
+  const loadKey = JSON.stringify([hubRef, whereKey]);
+  const loadedKey = useRef<string | null>(null);
+  // Bumped by every load, so a slower, older one (e.g. for the hub the hidden
+  // field named before) cannot land on top of the current one.
+  const loadSeq = useRef(0);
 
   const loadEntries = useCallback(async () => {
     if (!enabled || !client?.dataHubAction) return;
+    const seq = ++loadSeq.current;
+    const isStale = () => seq !== loadSeq.current;
+    loadedKey.current = loadKey;
     if (hubDynamic) {
       // An empty or unknown reference is a table with no hub: clear rather
       // than keep showing the previous hub's rows.
@@ -357,6 +365,9 @@ export function useHubTableSource({
         setSchemaFields(null);
         commitRows([]);
         setErrors([]);
+        // An in-flight load for the old reference is now stale and will not
+        // clear its own spinner.
+        setLoading(false);
         return;
       }
       if (!client.getHubSchemas) return;
@@ -365,7 +376,6 @@ export function useHubTableSource({
     }
     setLoading(true);
     setErrors([]);
-    loadedWhereKey.current = whereKey;
     try {
       // Dynamic mode fills this in once the reference resolves. Deliberately
       // not the resolved id from state: depending on it would recreate this
@@ -390,6 +400,7 @@ export function useHubTableSource({
         // both and answers with the id every other call needs, so the entries
         // can only be fetched once it has.
         schemas = await client.getHubSchemas!([hubRef], [hubRef]);
+        if (isStale()) return;
         const match =
           schemas?.hubs?.find((h) => h.id === hubRef) ??
           schemas?.hubs?.find((h) => h.key === hubRef);
@@ -421,6 +432,7 @@ export function useHubTableSource({
           readEntries(targetHubId)
         ]);
       }
+      if (isStale()) return;
       const hubSchema = schemas?.hubs?.find((h) => h.id === targetHubId);
       if (Array.isArray(hubSchema?.fields)) setSchemaFields(hubSchema.fields);
       if (typeof hubSchema?.unverified_enabled === 'boolean') {
@@ -439,9 +451,10 @@ export function useHubTableSource({
         }))
       );
     } catch (error) {
-      setErrors(errorMessages(error));
+      if (!isStale()) setErrors(errorMessages(error));
     } finally {
-      setLoading(false);
+      // The newer load owns the spinner.
+      if (!isStale()) setLoading(false);
     }
   }, [
     enabled,
@@ -452,7 +465,7 @@ export function useHubTableSource({
     commitRows,
     verification,
     where,
-    whereKey
+    loadKey
   ]);
 
   const blockRefetchRef = useRef(blockRefetch);
@@ -474,14 +487,15 @@ export function useHubTableSource({
     return () => featheryWindow().removeEventListener('focus', onFocus);
   }, [enabled, refetch]);
 
-  // A filter change the guard turned away is applied once the write queue
-  // drains and the edits are saved or discarded; unchanged filters cost nothing.
+  // A filter or hub change the guard turned away is applied once the write
+  // queue drains and the edits are saved or discarded; unchanged ones cost
+  // nothing.
   const hasProvisionalRows = rows.some((row) => row.entryId == null);
   useEffect(() => {
     if (!enabled || pending > 0 || blockRefetch || hasProvisionalRows) return;
-    const loaded = loadedWhereKey.current;
-    if (loaded !== null && loaded !== whereKey) refetch();
-  }, [enabled, pending, blockRefetch, hasProvisionalRows, whereKey, refetch]);
+    const loaded = loadedKey.current;
+    if (loaded !== null && loaded !== loadKey) refetch();
+  }, [enabled, pending, blockRefetch, hasProvisionalRows, loadKey, refetch]);
 
   const hubFieldValues = useMemo(() => {
     const values: Record<string, any[]> = {};
