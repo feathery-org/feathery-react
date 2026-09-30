@@ -91,6 +91,10 @@ type UseHubTableSourceProps = {
     properties: {
       columns: Column[];
       hub_id?: string;
+      // When set, the hub is whichever one's key or id equals this hidden
+      // field's value at runtime, and `hub_id` is ignored.
+      hub_dynamic?: boolean;
+      hub_id_field_key?: string;
       hidden_hub_fields?: string[];
       readonly_hub_fields?: string[];
       hub_verification?: HubVerification;
@@ -100,7 +104,10 @@ type UseHubTableSourceProps = {
   client:
     | {
         dataHubAction?: DataHubAction;
-        getHubSchemas?: (hubIds: string[]) => Promise<{ hubs: HubSchema[] }>;
+        getHubSchemas?: (
+          hubIds: string[],
+          hubKeys?: string[]
+        ) => Promise<{ hubs: HubSchema[] }>;
       }
     | null
     | undefined;
@@ -176,7 +183,21 @@ export function useHubTableSource({
   blockRefetch = false
 }: UseHubTableSourceProps): UseHubTableSourceReturn {
   const tableId = element.id;
-  const hubId = element.properties?.hub_id;
+  const staticHubId = element.properties?.hub_id;
+  const hubDynamic = !!element.properties?.hub_dynamic;
+  const hubFieldKey = element.properties?.hub_id_field_key;
+  // The hidden field's current value, read on every render: `fieldValues` is
+  // mutated outside React, and the form re-renders its elements when a field
+  // changes, so this is what makes the table follow the field.
+  const hubRef: string = hubDynamic
+    ? String((hubFieldKey && fieldValues[hubFieldKey]) ?? '').trim()
+    : '';
+  // Dynamic mode: the id the reference resolved to, once the schema answered.
+  // Every write goes to this id, never to the raw field value, since that may
+  // be a key.
+  const [resolvedHubId, setResolvedHubId] = useState<string | null>(null);
+  const resolvedHubIdRef = useRef<string | null>(null);
+  const hubId = hubDynamic ? resolvedHubId ?? undefined : staticHubId;
   const userColumns: Column[] = element.properties?.columns || [];
   const hiddenHubFields = element.properties?.hidden_hub_fields;
   const readonlyHubFields: string[] | undefined =
@@ -321,39 +342,98 @@ export function useHubTableSource({
       });
   }, []);
 
-  // The filters the loaded rows reflect, so a change that a write or an unsaved
-  // edit held back is caught up once they clear (see the effect below).
-  const loadedWhereKey = useRef<string | null>(null);
+  // The hub reference and filters the loaded rows reflect, so a change that a
+  // write or an unsaved edit held back is caught up once they clear (see the
+  // effect below).
+  const loadKey = JSON.stringify([hubRef, whereKey]);
+  const loadedKey = useRef<string | null>(null);
+  // Bumped by every load, so a slower, older one (e.g. for the hub the hidden
+  // field named before) cannot land on top of the current one.
+  const loadSeq = useRef(0);
 
   const loadEntries = useCallback(async () => {
-    if (!enabled || !hubId || !client?.dataHubAction) return;
+    if (!enabled || !client?.dataHubAction) return;
+    const seq = ++loadSeq.current;
+    const isStale = () => seq !== loadSeq.current;
+    loadedKey.current = loadKey;
+    if (hubDynamic) {
+      // An empty or unknown reference is a table with no hub: clear rather
+      // than keep showing the previous hub's rows.
+      if (!hubRef) {
+        resolvedHubIdRef.current = null;
+        setResolvedHubId(null);
+        setSchemaFields(null);
+        commitRows([]);
+        setErrors([]);
+        // An in-flight load for the old reference is now stale and will not
+        // clear its own spinner.
+        setLoading(false);
+        return;
+      }
+      if (!client.getHubSchemas) return;
+    } else if (!staticHubId) {
+      return;
+    }
     setLoading(true);
     setErrors([]);
-    loadedWhereKey.current = whereKey;
     try {
-      // A schema failure (e.g. a backend without the endpoint yet) falls back
-      // to the columns stored on the element instead of erroring the table.
-      // The schema is applied even when the read fails: a filter on a renamed
-      // column can only recover once the live key is known.
-      const [schemas, entries] = await Promise.all([
-        client.getHubSchemas
-          ? client.getHubSchemas([hubId]).catch(() => null)
-          : Promise.resolve(null),
-        client
-          .dataHubAction({
-            hubId,
-            operation: 'get',
-            verification,
-            // Omitted when there are no filters, so an unfiltered table's
-            // request is unchanged.
-            ...(where.length ? { where } : {})
-          })
-          .then(
-            (list) => ({ list }),
-            (error) => ({ error })
-          )
-      ]);
-      const hubSchema = schemas?.hubs?.find((h) => h.id === hubId);
+      // Dynamic mode fills this in once the reference resolves. Deliberately
+      // not the resolved id from state: depending on it would recreate this
+      // loader (and refetch) every time a resolution landed.
+      let targetHubId = (hubDynamic ? '' : staticHubId) as string;
+      let schemas: { hubs: HubSchema[] } | null = null;
+      // Omitted when there are no filters, so an unfiltered table's request
+      // is unchanged.
+      const getOptions = {
+        operation: 'get' as const,
+        verification,
+        ...(where.length ? { where } : {})
+      };
+      const readEntries = (hubId: string) =>
+        client.dataHubAction!({ hubId, ...getOptions }).then(
+          (list) => ({ list }),
+          (error) => ({ error })
+        );
+      let entries: { list?: any; error?: any };
+      if (hubDynamic) {
+        // The reference may be a hub key or id; the schema endpoint accepts
+        // both and answers with the id every other call needs, so the entries
+        // can only be fetched once it has.
+        schemas = await client.getHubSchemas!([hubRef], [hubRef]);
+        if (isStale()) return;
+        const match =
+          schemas?.hubs?.find((h) => h.id === hubRef) ??
+          schemas?.hubs?.find((h) => h.key === hubRef);
+        if (!match) {
+          resolvedHubIdRef.current = null;
+          setResolvedHubId(null);
+          setSchemaFields(null);
+          commitRows([]);
+          setErrors([`No Data Hub matches "${hubRef}"`]);
+          return;
+        }
+        targetHubId = match.id;
+        if (match.id !== resolvedHubIdRef.current) {
+          // Switching hubs: the old rows belong to a different schema.
+          rowsRef.current = [];
+          resolvedHubIdRef.current = match.id;
+          setResolvedHubId(match.id);
+        }
+        entries = await readEntries(targetHubId);
+      } else {
+        // A schema failure (e.g. a backend without the endpoint yet) falls
+        // back to the columns stored on the element instead of erroring the
+        // table. The schema is applied even when the read fails: a filter on
+        // a renamed column can only recover once the live key is known.
+        [schemas, entries] = await Promise.all([
+          client.getHubSchemas
+            ? client.getHubSchemas([targetHubId]).catch(() => null)
+            : Promise.resolve(null),
+          readEntries(targetHubId)
+        ]);
+      }
+      if (isStale()) return;
+      const hubSchema = schemas?.hubs?.find((h) => h.id === targetHubId);
       if (Array.isArray(hubSchema?.fields)) setSchemaFields(hubSchema.fields);
       if (typeof hubSchema?.unverified_enabled === 'boolean') {
         setUnverifiedEnabled(hubSchema.unverified_enabled);
@@ -371,11 +451,22 @@ export function useHubTableSource({
         }))
       );
     } catch (error) {
-      setErrors(errorMessages(error));
+      if (!isStale()) setErrors(errorMessages(error));
     } finally {
-      setLoading(false);
+      // The newer load owns the spinner.
+      if (!isStale()) setLoading(false);
     }
-  }, [enabled, hubId, client, commitRows, verification, where, whereKey]);
+  }, [
+    enabled,
+    staticHubId,
+    hubDynamic,
+    hubRef,
+    client,
+    commitRows,
+    verification,
+    where,
+    loadKey
+  ]);
 
   const blockRefetchRef = useRef(blockRefetch);
   blockRefetchRef.current = blockRefetch;
@@ -396,14 +487,15 @@ export function useHubTableSource({
     return () => featheryWindow().removeEventListener('focus', onFocus);
   }, [enabled, refetch]);
 
-  // A filter change the guard turned away is applied once the write queue
-  // drains and the edits are saved or discarded; unchanged filters cost nothing.
+  // A filter or hub change the guard turned away is applied once the write
+  // queue drains and the edits are saved or discarded; unchanged ones cost
+  // nothing.
   const hasProvisionalRows = rows.some((row) => row.entryId == null);
   useEffect(() => {
     if (!enabled || pending > 0 || blockRefetch || hasProvisionalRows) return;
-    const loaded = loadedWhereKey.current;
-    if (loaded !== null && loaded !== whereKey) refetch();
-  }, [enabled, pending, blockRefetch, hasProvisionalRows, whereKey, refetch]);
+    const loaded = loadedKey.current;
+    if (loaded !== null && loaded !== loadKey) refetch();
+  }, [enabled, pending, blockRefetch, hasProvisionalRows, loadKey, refetch]);
 
   const hubFieldValues = useMemo(() => {
     const values: Record<string, any[]> = {};
