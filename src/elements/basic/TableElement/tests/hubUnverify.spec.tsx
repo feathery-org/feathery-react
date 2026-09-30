@@ -256,6 +256,22 @@ describe('auto-validating Data Hub rows on save', () => {
     );
   });
 
+  test('a verify that fails for another reason stays staged and says why', async () => {
+    const dataHubAction = mockHub(({ operation }) =>
+      operation === 'verify'
+        ? Promise.reject(new Error('Network error'))
+        : Promise.resolve({ updated: 1 })
+    );
+    const { result } = setup(dataHubAction, { hub_auto_verify: true });
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+
+    edit(result, 1, 'bob@x.io');
+    await waitFor(() => expect(result.current.saving).toBe(false));
+
+    expect(result.current.rowVerified).toEqual([true, false]);
+    expect(result.current.errors).toEqual(['Network error']);
+  });
+
   test('a row the full gate rejects stays staged with the blocking cells flagged', async () => {
     const dataHubAction = mockHub(({ operation }) =>
       operation === 'verify'
@@ -355,6 +371,76 @@ describe('deleting a row right after its save auto-verified it', () => {
     ]);
     expect(calls[2].verification).toBeUndefined();
     expect(result.current.entryIds).toEqual(['entry1']);
+  });
+});
+
+describe('writes queued around a flip name the set the Hub holds the row in', () => {
+  const deferred = () => {
+    let settle: (fail?: boolean) => void = () => {};
+    const promise = new Promise<any>((resolve, reject) => {
+      settle = (fail) =>
+        fail ? reject(new Error('flip failed')) : resolve({ updated: 1 });
+    });
+    return { promise, settle };
+  };
+
+  test('an edit queued ahead of an unverify still targets the verified set', async () => {
+    const held = deferred();
+    const dataHubAction = mockHub(({ operation, where }) => {
+      if (operation === 'update' && where[0].entryId === 'entry2') {
+        return held.promise;
+      }
+      return Promise.resolve(
+        operation === 'unverify' ? { unverified_count: 1 } : { updated: 1 }
+      );
+    });
+    const { result } = setup(dataHubAction, { hub_allow_unverify: true });
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+    dataHubAction.mockClear();
+
+    // Row 1's save holds the queue, row 0's edit waits behind it, and the
+    // flip of row 0 is clicked before either has run.
+    act(() => {
+      result.current.handleCellsEdit([
+        { fieldKey: key('email'), rowIndex: 1, value: 'bob@x.io' }
+      ]);
+      result.current.handleCellsEdit([
+        { fieldKey: key('email'), rowIndex: 0, value: 'alice@x.io' }
+      ]);
+    });
+    act(() => result.current.handleUnverifyRows([0]));
+    act(() => held.settle());
+    await waitFor(() => expect(result.current.saving).toBe(false));
+
+    const calls = dataHubAction.mock.calls.map((c) => c[0]);
+    expect(calls.map((c) => [c.operation, c.where[0].entryId])).toEqual([
+      ['update', 'entry2'],
+      ['update', 'entry1'],
+      ['unverify', 'entry1']
+    ]);
+    expect(calls[1].verification).toBeUndefined();
+    expect(result.current.errors).toEqual([]);
+    expect(result.current.rowVerified).toEqual([false, false]);
+  });
+
+  test('a delete queued behind a failed unverify targets the verified set', async () => {
+    const held = deferred();
+    const dataHubAction = mockHub(({ operation }) =>
+      operation === 'unverify' ? held.promise : Promise.resolve({ deleted: 1 })
+    );
+    const { result } = setup(dataHubAction, { hub_allow_unverify: true });
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+    dataHubAction.mockClear();
+
+    act(() => result.current.handleUnverifyRows([0]));
+    act(() => result.current.handleDeleteRow(0));
+    act(() => held.settle(true));
+    await waitFor(() => expect(result.current.saving).toBe(false));
+
+    const calls = dataHubAction.mock.calls.map((c) => c[0]);
+    expect(calls.map((c) => c.operation)).toEqual(['unverify', 'delete']);
+    expect(calls[1].verification).toBeUndefined();
+    expect(result.current.entryIds).toEqual(['entry2']);
   });
 });
 

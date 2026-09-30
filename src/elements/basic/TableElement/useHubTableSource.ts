@@ -323,11 +323,17 @@ export function useHubTableSource({
   rowsRef.current = rows;
   const pendingRef = useRef(0);
   const nextLocalId = useRef(0);
-  // Which set (verified or staged) queued writes found each row in, by local
-  // id. A write queued before an earlier one moved the row (a delete clicked
-  // right after a save that auto-verified it) reads this instead of its
-  // click-time snapshot, which may be gone from `rows` by the time it runs.
+  // Which set (verified or staged) the Hub holds each row in as of the writes
+  // queued so far, by local id. The table shows a row's flip before the write
+  // that makes it has run, so a queued write reads this rather than the row
+  // (or its click-time snapshot, which may be gone from `rows` by then): an
+  // edit queued ahead of an unverify still names the verified set, and a
+  // delete queued behind a failed one does too.
   const settledVerified = useRef(new Map<string, boolean>());
+  const hubVerified = useCallback(
+    (row: HubRow) => settledVerified.current.get(row.localId) ?? row.verified,
+    []
+  );
 
   const commitRows = useCallback((nextRows: HubRow[]) => {
     rowsRef.current = nextRows;
@@ -594,6 +600,13 @@ export function useHubTableSource({
       } catch (error) {
         const fieldErrors = errorPayload(error)?.errors?.[0]?.field_errors;
         if (!fieldErrors || typeof fieldErrors !== 'object' || !schemaFields) {
+          // Not the gate turning the row down (a network or server error), so
+          // there are no cells to flag; the banner says why it stayed staged.
+          const messages = errorMessages(error);
+          setErrors((prev) => [
+            ...prev,
+            ...messages.filter((message) => !prev.includes(message))
+          ]);
           return;
         }
         const keyById = new Map(schemaFields.map((f) => [f.id, f.key]));
@@ -681,7 +694,7 @@ export function useHubTableSource({
                 operation: 'update',
                 // Update defaults to the verified set, so correcting a staged
                 // row has to name it explicitly.
-                ...(row.verified ? {} : { verification: 'unverified' }),
+                ...(hubVerified(row) ? {} : { verification: 'unverified' }),
                 where: [{ entryId: row.entryId }],
                 data: Object.fromEntries(
                   changedKeys.map((key) => [key, row.data[key]])
@@ -711,7 +724,7 @@ export function useHubTableSource({
                     )
                   }
                 }));
-              } else if (!row.verified && autoVerify) {
+              } else if (!hubVerified(row) && autoVerify) {
                 await autoVerifyRow(localId, row.entryId);
               }
               return;
@@ -787,7 +800,8 @@ export function useHubTableSource({
       client,
       cellRules,
       autoVerify,
-      autoVerifyRow
+      autoVerifyRow,
+      hubVerified
     ]
   );
 
@@ -842,8 +856,7 @@ export function useHubTableSource({
 
       enqueue(async () => {
         if (!hubId || !client?.dataHubAction) return;
-        const verified =
-          settledVerified.current.get(target.localId) ?? target.verified;
+        const verified = hubVerified(target);
         try {
           const result = await client.dataHubAction({
             hubId,
@@ -864,7 +877,7 @@ export function useHubTableSource({
         }
       });
     },
-    [commitRows, enqueue, hubId, client]
+    [commitRows, enqueue, hubId, client, hubVerified]
   );
 
   /**
@@ -880,6 +893,8 @@ export function useHubTableSource({
         .filter((row): row is HubRow => !!row?.entryId && row.verified);
       if (!targets.length) return;
       const localIds = new Set(targets.map((row) => row.localId));
+      // Verified on the Hub until each row's own unverify has run.
+      targets.forEach((row) => settledVerified.current.set(row.localId, true));
       commitRows(
         rowsRef.current.map((row) =>
           localIds.has(row.localId) ? { ...row, verified: false } : row
@@ -903,6 +918,7 @@ export function useHubTableSource({
             }
             settledVerified.current.set(target.localId, false);
           } catch (error) {
+            // `settledVerified` still says verified, which is where it stays.
             updateRow(target.localId, (r) => ({ ...r, verified: true }));
             // A bulk flip reports every failed row, not just the last one.
             const messages = errorMessages(error);
