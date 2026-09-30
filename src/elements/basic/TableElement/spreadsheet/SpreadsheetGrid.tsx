@@ -102,6 +102,13 @@ type SpreadsheetGridProps = {
   onInsertRow?: (atIndex: number) => void;
   /** Enables the row context menu's delete item. */
   onDeleteRow?: (rowIndex: number) => void;
+  /**
+   * Enables the row context menu's "mark as unvalidated" item, which acts on
+   * every selected row when opened on a selected row.
+   */
+  onUnverifyRows?: (rowIndexes: number[]) => void;
+  /** Whether a given table row can be marked unvalidated right now. */
+  canUnverifyRow?: (rowIndex: number) => boolean;
   /** Opens the find bar; bound to Mod+F while the grid has focus. */
   onOpenSearch?: () => void;
   /** Enables the column header's right-click sort menu. */
@@ -136,6 +143,8 @@ export const SpreadsheetGrid = React.forwardRef<
     onAddColumn,
     onInsertRow,
     onDeleteRow,
+    onUnverifyRows,
+    canUnverifyRow,
     onOpenSearch,
     sort,
     onScrollbarHeight
@@ -308,11 +317,46 @@ export const SpreadsheetGrid = React.forwardRef<
   );
   const [rowMenu, setRowMenu] = React.useState<RowMenuTarget | null>(null);
   const closeRowMenu = React.useCallback(() => setRowMenu(null), []);
+  /**
+   * Opens the row menu. A menu opened on a row inside the current selection
+   * takes the whole selection as its bulk target, the way a spreadsheet's
+   * row actions apply to every selected row; elsewhere it is just that row.
+   */
+  const openRowMenu = React.useCallback(
+    (target: Omit<RowMenuTarget, 'rowIndexes'>) => {
+      const displayRows = table.getRowsInDisplayOrder();
+      const bounds = table.getCellSelectionBounds();
+      const clickedDisplayIndex = displayRows.findIndex(
+        (row) => rowIndexById.get(row.id) === target.rowIndex
+      );
+      const inSelection = bounds.some(
+        (bound) =>
+          clickedDisplayIndex >= bound.minRowIndex &&
+          clickedDisplayIndex <= bound.maxRowIndex
+      );
+      const rowIndexes = new Set<number>([target.rowIndex]);
+      if (inSelection) {
+        bounds.forEach((bound) => {
+          for (let i = bound.minRowIndex; i <= bound.maxRowIndex; i++) {
+            const row = displayRows[i];
+            const rowIndex = row ? rowIndexById.get(row.id) : undefined;
+            if (rowIndex != null) rowIndexes.add(rowIndex);
+          }
+        });
+      }
+      setRowMenu({ ...target, rowIndexes: [...rowIndexes] });
+    },
+    [table, rowIndexById]
+  );
   const [headerMenu, setHeaderMenu] = React.useState<HeaderMenuTarget | null>(
     null
   );
   const closeHeaderMenu = React.useCallback(() => setHeaderMenu(null), []);
-  const hasRowMenu = Boolean(onInsertRow || onDeleteRow);
+  const hasRowMenu = Boolean(onInsertRow || onDeleteRow || onUnverifyRows);
+  const unverifyTargets =
+    rowMenu && onUnverifyRows && canUnverifyRow
+      ? rowMenu.rowIndexes.filter(canUnverifyRow)
+      : [];
   const fillDragRef = React.useRef<FillDrag | null>(null);
   const headerSelectionDragRef = React.useRef<HeaderSelectionDrag | null>(null);
 
@@ -585,7 +629,7 @@ export const SpreadsheetGrid = React.forwardRef<
                 fillPreview={fillPreview}
                 onStartHeaderSelection={startHeaderSelection}
                 onExtendHeaderSelection={extendHeaderSelection}
-                onOpenRowMenu={hasRowMenu ? setRowMenu : undefined}
+                onOpenRowMenu={hasRowMenu ? openRowMenu : undefined}
                 onStartFill={startFillDrag}
               />
             );
@@ -621,9 +665,11 @@ export const SpreadsheetGrid = React.forwardRef<
           target={rowMenu}
           canInsert={Boolean(onInsertRow)}
           canDelete={Boolean(onDeleteRow)}
+          unverifyCount={unverifyTargets.length}
           onInsertAbove={() => onInsertRow?.(rowMenu.rowIndex)}
           onInsertBelow={() => onInsertRow?.(rowMenu.rowIndex + 1)}
           onDelete={() => onDeleteRow?.(rowMenu.rowIndex)}
+          onUnverify={() => onUnverifyRows?.(unverifyTargets)}
           onClose={closeRowMenu}
         />
       ) : null}
@@ -908,7 +954,7 @@ type SubscribedRowProps = {
     fullySelected: boolean
   ) => void;
   onExtendHeaderSelection: (axis: 'row', id: string) => void;
-  onOpenRowMenu?: (target: RowMenuTarget) => void;
+  onOpenRowMenu?: (target: Omit<RowMenuTarget, 'rowIndexes'>) => void;
   onStartFill: (event: React.MouseEvent, source: GridBounds) => void;
 };
 

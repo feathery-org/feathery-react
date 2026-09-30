@@ -78,7 +78,7 @@ export type HubWhereCondition =
 
 type DataHubAction = (options: {
   hubId: string;
-  operation: 'get' | 'create' | 'update' | 'delete';
+  operation: 'get' | 'create' | 'update' | 'delete' | 'verify' | 'unverify';
   entryId?: string;
   data?: Record<string, any>;
   where?: HubWhereCondition[];
@@ -99,6 +99,11 @@ type UseHubTableSourceProps = {
       readonly_hub_fields?: string[];
       hub_verification?: HubVerification;
       hub_filters?: HubFilter[];
+      // Lets the form user send a verified row back to the staged set.
+      hub_allow_unverify?: boolean;
+      // Verifies a staged row as soon as a save leaves it passing every hub
+      // rule. Off keeps rows staged until someone verifies them.
+      hub_auto_verify?: boolean;
     };
   };
   client:
@@ -143,6 +148,11 @@ type UseHubTableSourceReturn = {
   handleDeleteRow: (rowIndex: number) => void;
   // Drops rows added since the last save that were never written to the Hub.
   discardNewRows: () => void;
+  // Whether rows can be sent back to the staged set: the builder allowed it
+  // and the Hub stages rows at all.
+  canUnverify: boolean;
+  // Sends the verified rows among these back to the staged set.
+  handleUnverifyRows: (rowIndexes: number[]) => void;
   // Storage keys of columns the form user cannot write: the status column and
   // any hub field the builder marked read-only.
   readOnlyKeys: Set<string>;
@@ -205,6 +215,8 @@ export function useHubTableSource({
   // Omitted means verified-only, which is what the Hub API already defaults to.
   const verification: HubVerification =
     element.properties?.hub_verification ?? 'verified';
+  const allowUnverify = !!element.properties?.hub_allow_unverify;
+  const autoVerify = !!element.properties?.hub_auto_verify;
 
   const [schemaFields, setSchemaFields] = useState<HubFieldSchema[] | null>(
     null
@@ -220,6 +232,7 @@ export function useHubTableSource({
   // table's own row filter is the best guess: a verified-only table has
   // nothing to distinguish.
   const showStatusColumn = unverifiedEnabled ?? verification !== 'verified';
+  const canUnverify = allowUnverify && unverifiedEnabled === true;
 
   // `fieldValues` is mutated outside React state, so the conditions are rebuilt
   // every render and keyed by content: the rows reload only when one changes.
@@ -553,6 +566,44 @@ export function useHubTableSource({
   }, [rows, syntheticToHubKey]);
 
   /**
+   * Asks the Hub to verify a staged row that was just saved clean. The Hub
+   * runs its full gate (rules, required, uniqueness), so a row that fails
+   * simply stays staged; what blocked it is flagged on the cells, since the
+   * write itself reported nothing wrong.
+   */
+  const autoVerifyRow = useCallback(
+    async (localId: string, entryId: string) => {
+      if (!hubId || !client?.dataHubAction) return;
+      try {
+        const result = await client.dataHubAction({
+          hubId,
+          operation: 'verify',
+          where: [{ entryId }]
+        });
+        if (result?.verified_count) {
+          updateRow(localId, (r) => ({ ...r, verified: true, errors: {} }));
+        }
+      } catch (error) {
+        const fieldErrors = errorPayload(error)?.errors?.[0]?.field_errors;
+        if (!fieldErrors || typeof fieldErrors !== 'object' || !schemaFields) {
+          return;
+        }
+        const keyById = new Map(schemaFields.map((f) => [f.id, f.key]));
+        const flagged: NonNullable<HubRow['errors']> = {};
+        Object.entries(fieldErrors).forEach(([fieldId, message]) => {
+          const key = keyById.get(fieldId);
+          if (key && typeof message === 'string') flagged[key] = { message };
+        });
+        updateRow(localId, (r) => ({
+          ...r,
+          errors: { ...r.errors, ...flagged }
+        }));
+      }
+    },
+    [hubId, client, updateRow, schemaFields]
+  );
+
+  /**
    * Commit any number of cells. Writes are grouped by row so a pasted or
    * drag-filled block costs one request per touched row instead of one per
    * cell, and every cell in a row lands in a single atomic Hub update.
@@ -652,6 +703,8 @@ export function useHubTableSource({
                     )
                   }
                 }));
+              } else if (!row.verified && autoVerify) {
+                await autoVerifyRow(localId, row.entryId);
               }
               return;
             }
@@ -691,6 +744,9 @@ export function useHubTableSource({
               data: { ...r.data, ...created.data },
               errors: { ...r.errors, ...createdErrors }
             }));
+            if (!createdError && !row.verified && autoVerify) {
+              await autoVerifyRow(localId, created.id);
+            }
           } catch (error) {
             const messages = errorMessages(error);
             const message = messages[0];
@@ -721,7 +777,9 @@ export function useHubTableSource({
       enqueue,
       hubId,
       client,
-      cellRules
+      cellRules,
+      autoVerify,
+      autoVerifyRow
     ]
   );
 
@@ -799,6 +857,50 @@ export function useHubTableSource({
     [commitRows, enqueue, hubId, client]
   );
 
+  /**
+   * Sends rows back to the staged set. The flip is applied at once so the
+   * status column answers immediately and later writes to the row name the
+   * staged set; a rejected flip is undone. Rows without an entry, or already
+   * staged, are skipped. One request per row, like delete.
+   */
+  const handleUnverifyRows = useCallback(
+    (rowIndexes: number[]) => {
+      const targets = rowIndexes
+        .map((rowIndex) => rowsRef.current[rowIndex])
+        .filter((row): row is HubRow => !!row?.entryId && row.verified);
+      if (!targets.length) return;
+      const localIds = new Set(targets.map((row) => row.localId));
+      commitRows(
+        rowsRef.current.map((row) =>
+          localIds.has(row.localId) ? { ...row, verified: false } : row
+        )
+      );
+      setErrors([]);
+
+      targets.forEach((target) => {
+        enqueue(async () => {
+          if (!hubId || !client?.dataHubAction) return;
+          try {
+            const result = await client.dataHubAction({
+              hubId,
+              operation: 'unverify',
+              where: [{ entryId: target.entryId as string }]
+            });
+            // Zero matches means the Hub's copy has moved on (the row was
+            // staged or removed elsewhere), which the user has to hear about.
+            if (result?.unverified_count === 0) {
+              throw new Error(ROW_GONE_MESSAGE);
+            }
+          } catch (error) {
+            updateRow(target.localId, (r) => ({ ...r, verified: true }));
+            setErrors(errorMessages(error));
+          }
+        });
+      });
+    },
+    [commitRows, updateRow, enqueue, hubId, client]
+  );
+
   return {
     hubColumns,
     hubFieldValues,
@@ -817,6 +919,8 @@ export function useHubTableSource({
     handleInsertRow,
     handleDeleteRow,
     discardNewRows,
+    canUnverify,
+    handleUnverifyRows,
     readOnlyKeys
   };
 }
