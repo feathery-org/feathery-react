@@ -329,6 +329,7 @@ describe('hub field formats', () => {
       expect(formatCellDisplay(12, percentage())).toBe('12%');
       expect(formatCellDisplay(12.5, percentage())).toBe('12.5%');
       expect(formatCellDisplay(1200, percentage())).toBe('1,200%');
+      expect(formatCellDisplay(12.345, percentage())).toBe('12.345%');
       expect(formatCellDisplay(12, percentage({ decimalDigits: 1 }))).toBe(
         '12.0%'
       );
@@ -365,6 +366,10 @@ describe('hub field formats', () => {
       // Anything else passes through to fail validation.
       expect(parseCellInput('12', zip)).toBe('12');
       expect(normalizeZip('1234567')).toBe('1234567');
+      expect(normalizeZip('1234 5678')).toBe('01234-5678');
+      expect(normalizeZip('12345  6789')).toBe('12345-6789');
+      expect(normalizeZip('12345 - 6789')).toBe('12345-6789');
+      expect(normalizeZip('12 345')).toBe('12345');
     });
 
     test('a state or country is stored as its code', () => {

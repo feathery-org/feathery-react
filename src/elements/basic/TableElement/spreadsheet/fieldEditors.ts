@@ -154,13 +154,19 @@ export function acceptsZipInput(draft: string): boolean {
  */
 export function normalizeZip(text: string): string {
   const trimmed = text.trim();
-  if (/^\d{3,4}$/.test(trimmed)) return trimmed.padStart(5, '0');
-  const digits = /^\d{8,9}$/.test(trimmed)
-    ? trimmed.padStart(9, '0')
-    : /^\d{5}[ -]\d{4}$/.test(trimmed)
-    ? trimmed.replace(/[ -]/, '')
-    : null;
-  return digits ? `${digits.slice(0, 5)}-${digits.slice(5)}` : trimmed;
+  // Mirrors the hub's _coerce_zip: whitespace anywhere is dropped first.
+  const compact = trimmed.replace(/\s+/g, '');
+  if (!/^\d+$/.test(compact)) {
+    return /^\d{5}-\d{4}$/.test(compact) ? compact : trimmed;
+  }
+  if (compact.length >= 3 && compact.length <= 5) {
+    return compact.padStart(5, '0');
+  }
+  if (compact.length === 8 || compact.length === 9) {
+    const digits = compact.padStart(9, '0');
+    return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  }
+  return trimmed;
 }
 
 /**
@@ -347,13 +353,16 @@ function numberServar(rule: CellRule) {
   };
 }
 
-/** Wider than `formatNumberValue` goes: the same shape through Intl directly. */
+/**
+ * Wider than `formatNumberValue` goes: the same shape through Intl directly.
+ * With no decimal_digits set, every stored digit is shown, as the dashboard does.
+ */
 function formatWideNumber(value: number, rule: CellRule): string {
-  const digits = rule.decimalDigits as number;
-  const options: Intl.NumberFormatOptions = {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits
-  };
+  const digits = rule.decimalDigits;
+  const options: Intl.NumberFormatOptions =
+    digits == null
+      ? { minimumFractionDigits: 0, maximumFractionDigits: 20 }
+      : { minimumFractionDigits: digits, maximumFractionDigits: digits };
   try {
     if (rule.format === 'currency') {
       return new Intl.NumberFormat('en-US', {
@@ -374,7 +383,9 @@ function formatNumberCell(value: CellValue, rule: CellRule): string {
   if (typeof value === 'boolean' || Number.isNaN(num)) {
     return formatCellValue(value);
   }
-  if ((rule.decimalDigits ?? 0) > MAX_MASK_DECIMALS) {
+  const unboundedPercent =
+    rule.format === 'percentage' && rule.decimalDigits == null;
+  if (unboundedPercent || (rule.decimalDigits ?? 0) > MAX_MASK_DECIMALS) {
     return formatWideNumber(num, rule);
   }
   return formatNumberValue(numberServar(rule), num);
