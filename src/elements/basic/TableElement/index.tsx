@@ -10,7 +10,7 @@ import { stringifyWithNull } from '../../../utils/primitives';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
 import { Pagination } from './Pagination';
-import { ActionButtons } from './Actions';
+import { ActionButtons, UnverifyIcon } from './Actions';
 import { EmptyState } from './EmptyState';
 import { EditableCell } from './EditableCell';
 import { getNextEditableCell } from './utils';
@@ -35,7 +35,7 @@ import {
 } from './spreadsheet/validation';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
-import { STATUS_HUB_FIELD_ID } from './hubStatus';
+import { STATUS_HUB_FIELD_ID, UNVERIFY_ACTION_LABEL } from './hubStatus';
 import { TrashIcon } from '../../components/icons';
 import { clearUnsavedWork, setUnsavedWork } from '../../../utils/unsavedWork';
 import {
@@ -53,7 +53,8 @@ import {
   addRowButtonStyle,
   errorBannerStyle,
   deleteColumnStyle,
-  deleteIconStyle
+  deleteIconStyle,
+  unverifyIconStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
 
@@ -245,6 +246,18 @@ function TableElement({
   const canDeleteRows = canEdit && enableAddDeleteRows;
   const hasOverflowMenu = actions.length > 1;
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
+  // Sending a Hub row back for review lives where delete does: in the
+  // overflow menu, or in its own icon column when there is no menu. Only a
+  // validated row with an entry qualifies, so the check is per row.
+  const canUnverifyRows = isHub && hub.canUnverify;
+  const canUnverifyRow = useCallback(
+    (rowIndex: number) =>
+      canUnverifyRows &&
+      hub.rowVerified[rowIndex] === true &&
+      hub.entryIds[rowIndex] != null,
+    [canUnverifyRows, hub.rowVerified, hub.entryIds]
+  );
+  const showStandaloneUnverifyColumn = canUnverifyRows && !hasOverflowMenu;
 
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
   // Findings the assistant has placed on this table (see `setIssues` below).
@@ -790,6 +803,8 @@ function TableElement({
           onAddColumn={handleAddColumn}
           onInsertRow={canAddRows ? spreadsheetInsertRow : undefined}
           onDeleteRow={canDeleteRows ? spreadsheetDeleteRow : undefined}
+          onUnverifyRows={canUnverifyRows ? hub.handleUnverifyRows : undefined}
+          canUnverifyRow={canUnverifyRow}
           getCellShading={getCellShading}
           cellRules={cellRules}
           rowIdentityVersion={rowIdentityVersion}
@@ -826,6 +841,9 @@ function TableElement({
                   <col key={col.field_key} />
                 ))}
                 {actions.length > 0 && <col css={utilityColStyle('80px')} />}
+                {showStandaloneUnverifyColumn && (
+                  <col css={utilityColStyle('40px')} />
+                )}
                 {showStandaloneDeleteColumn && (
                   <col css={utilityColStyle('40px')} />
                 )}
@@ -854,6 +872,17 @@ function TableElement({
                     >
                       {/* Empty header for actions column */}
                     </th>
+                  )}
+                  {showStandaloneUnverifyColumn && (
+                    <th
+                      scope='col'
+                      className={TABLE_CLASS.headerCell}
+                      css={{
+                        ...thStyle,
+                        ...deleteColumnStyle,
+                        ...styles.getTarget('th')
+                      }}
+                    />
                   )}
                   {showStandaloneDeleteColumn && (
                     <th
@@ -1066,6 +1095,10 @@ function TableElement({
                           buttonLoaders={buttonLoaders}
                           canDeleteRows={canDeleteRows && hasOverflowMenu}
                           onDeleteRow={(ri) => setDeleteRowIndex(ri)}
+                          canUnverifyRow={
+                            hasOverflowMenu && canUnverifyRow(rowIndex)
+                          }
+                          onUnverifyRow={(ri) => hub.handleUnverifyRows([ri])}
                         />
                         {hasOverflowMenu &&
                           canDeleteRows &&
@@ -1078,6 +1111,31 @@ function TableElement({
                               onCancel={handleCancelDelete}
                             />
                           )}
+                      </td>
+                    )}
+                    {showStandaloneUnverifyColumn && (
+                      <td
+                        className={TABLE_CLASS.cell}
+                        css={{
+                          ...deleteColumnStyle,
+                          ...styles.getTarget('td')
+                        }}
+                      >
+                        {canUnverifyRow(rowIndex) && (
+                          <button
+                            type='button'
+                            className={TABLE_CLASS.unverifyButton}
+                            css={unverifyIconStyle}
+                            title={UNVERIFY_ACTION_LABEL}
+                            aria-label={UNVERIFY_ACTION_LABEL}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              hub.handleUnverifyRows([rowIndex]);
+                            }}
+                          >
+                            <UnverifyIcon />
+                          </button>
+                        )}
                       </td>
                     )}
                     {showStandaloneDeleteColumn && (
