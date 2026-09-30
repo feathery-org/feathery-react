@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fieldValues } from '../../../utils/init';
 import { stringifyWithNull } from '../../../utils/primitives';
-import { Action, Column } from './types';
+import { Action, Column, TableDataSource } from './types';
 import { compareSortableValues, parseSortableValue } from './utils';
 import { generateExampleData } from './exampleData';
 
@@ -98,6 +98,8 @@ type UseTableDataProps = {
       transpose?: boolean;
       enable_editing?: boolean;
       add_delete_rows?: boolean;
+      data_source?: TableDataSource;
+      hidden_field_id?: string;
     };
   };
   editMode?: boolean;
@@ -148,6 +150,20 @@ type UseTableDataReturn = {
   handleTransposedSort: (rowIndex: number) => void;
 };
 
+// A hidden field-backed table takes its columns from the field's value, which
+// the builder does not have, so its preview shows one column saying where the
+// data comes from.
+const hiddenFieldPreviewColumns = (hasHiddenField: boolean): Column[] => [
+  {
+    name: hasHiddenField
+      ? 'Data is loaded from the hidden field'
+      : 'Select a hidden field to load data from',
+    field_id: 'hidden_field_preview',
+    field_type: 'text',
+    field_key: 'hidden_field_preview'
+  }
+];
+
 /**
  * What a sort is keyed by. The storage key is unique per column where a display
  * name is not; a column without one falls back to its position.
@@ -162,7 +178,17 @@ export function useTableData({
   dataVersion = 0,
   externalFieldValues
 }: UseTableDataProps): UseTableDataReturn {
-  const userColumns: Column[] = element.properties?.columns || [];
+  const configuredColumns: Column[] = element.properties?.columns || [];
+  const previewsHiddenField =
+    editMode && element.properties?.data_source === 'hidden_field';
+  const hasHiddenField = !!element.properties?.hidden_field_id;
+  const hiddenFieldColumns = useMemo(
+    () => hiddenFieldPreviewColumns(hasHiddenField),
+    [hasHiddenField]
+  );
+  const userColumns = previewsHiddenField
+    ? hiddenFieldColumns
+    : configuredColumns;
   const actions: Action[] = (element.properties?.actions || []).filter(
     (action) => action.label && action.label.trim() !== ''
   );

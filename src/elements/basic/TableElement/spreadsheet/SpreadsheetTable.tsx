@@ -8,7 +8,7 @@ import React, {
 import { useCreateAtom } from '@tanstack/react-store';
 import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
-import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
+import { CellWrite, Column, ColumnControls, GetCellShading } from '../types';
 import { CellValue } from './model';
 import {
   choicesFor,
@@ -56,11 +56,10 @@ export type SpreadsheetTableProps = {
   heightUnit?: string;
   onCellsEdit: (writes: CellWrite[]) => void;
   /**
-   * Supplied only by a data source that owns its own schema. No current source
-   * does, so the grid's add-column affordance stays unrendered — the plumbing
-   * exists so a future source can turn it on without reworking the grid.
+   * Column add, edit and delete, supplied only by a data source that owns its
+   * own schema (a hidden field).
    */
-  onAddColumn?: AddColumnHandler;
+  columnControls?: ColumnControls;
   /** Supplied when the table allows adding rows. */
   onInsertRow?: (atIndex: number) => void;
   /** Supplied when the table allows deleting rows. */
@@ -104,7 +103,7 @@ export function SpreadsheetTable({
   canEdit,
   heightUnit,
   onCellsEdit,
-  onAddColumn,
+  columnControls,
   onInsertRow,
   onDeleteRow,
   getCellShading,
@@ -402,7 +401,7 @@ export function SpreadsheetTable({
         rowIndexById={rowIndexById}
         getCellShading={shadeCell}
         cellRules={cellRules}
-        onAddColumn={onAddColumn}
+        columnControls={columnControls}
         onInsertRow={onInsertRow}
         onDeleteRow={onDeleteRow}
         onOpenSearch={search.openSearch}
