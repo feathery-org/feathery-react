@@ -1,0 +1,45 @@
+import React from 'react';
+import type { Meta, StoryObj } from '@storybook/react-webpack5';
+import { fieldElement } from './fixtures';
+import { StatefulCheckbox } from './StatefulFields';
+import { checkboxStyling } from './theme/elementStyling';
+import { styleElement, themeArgTypes, ThemedArgs } from './theme/storyHelpers';
+
+type Args = ThemedArgs & {
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+};
+
+const meta: Meta<Args> = {
+  title: 'Fields/Checkbox',
+  args: {
+    label: 'I agree to the terms and conditions',
+    checked: true,
+    disabled: false
+  },
+  argTypes: themeArgTypes,
+  render: ({ label, checked, disabled, ...args }, context) => {
+    const element = fieldElement(
+      'checkbox',
+      { key: 'story_checkbox', label },
+      styleElement(args, context, checkboxStyling)
+    );
+    return (
+      <StatefulCheckbox
+        element={element}
+        checked={checked}
+        disabled={disabled}
+      />
+    );
+  }
+};
+
+export default meta;
+type Story = StoryObj<Args>;
+
+export const Checked: Story = {};
+
+export const Unchecked: Story = { args: { checked: false } };
+
+export const Disabled: Story = { args: { disabled: true } };

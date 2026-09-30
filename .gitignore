@@ -62,3 +62,6 @@ harness/bindings/bundle.js
 
 # Screenshots the headless lane takes at each settled state (yarn test:headless)
 .headless-evidence
+
+# Storybook build output (yarn build-storybook)
+storybook-static

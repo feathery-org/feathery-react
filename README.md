@@ -10,6 +10,28 @@ Use this library to embed and extend Feathery forms in your codebase
 
 For details on how to use this library, check out our [documentation](https://docs.feathery.io/develop/react).
 
+## Storybook
+
+`yarn storybook` serves stories for a handful of elements (button, text,
+progress bar, table, text field, checkbox) at http://localhost:6006. They render
+through the same `Elements` registry the form uses, so styling runs through
+`ResponsiveStyles` exactly as it does in production.
+
+Styling is layered, each layer overriding the one before:
+
+1. **Theme preset** — the paintbrush menu in the toolbar (`stories/theme/tokens.ts`).
+   Choosing **backend** instead styles elements from a real form fetched from a
+   Feathery backend; copy `.env.example` to `.env.local` to configure it.
+2. **Theme tokens** — per-story controls such as `primaryColor` or `borderRadius`.
+3. **Raw styles** — a `rawStyles` object of Feathery style keys (`shadow_blur_radius`, …) merged last.
+
+`stories/theme/toFeatheryStyles.ts` maps tokens onto each element's `styles`.
+To add a preset, add an entry to `themePresets`.
+
+Elements that render differently in the form builder (button, text, text field,
+table) have an `editMode` control to switch between the live form and the
+builder canvas.
+
 ## FAQ
 
 ### Q: How do I use the Feathery React library with Vite?
