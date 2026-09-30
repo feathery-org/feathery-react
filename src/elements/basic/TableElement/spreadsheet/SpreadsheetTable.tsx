@@ -24,7 +24,6 @@ import { cellErrorKey, CellRules } from './validation';
 import { CellIssues, countIssues, issueRank } from './issues';
 import {
   DEFAULT_COLUMN_WIDTH,
-  HEADER_HEIGHT,
   MIN_COLUMN_WIDTH,
   PENDING_BAR_HEIGHT,
   SEARCH_CURRENT_SHADING,
@@ -38,6 +37,10 @@ import {
 } from './table';
 import { useGridInteractions } from './useGridInteractions';
 import { useGridSearch } from './useGridSearch';
+import {
+  SpreadsheetGeometryContext,
+  useSpreadsheetGeometry
+} from './useSpreadsheetGeometry';
 import { useMeasured } from './useMeasured';
 import { useSpreadsheetHistory } from './useSpreadsheetHistory';
 
@@ -338,6 +341,8 @@ export function SpreadsheetTable({
 
   // The status bar and the horizontal scrollbar both sit inside the element's
   // height box, so an auto-sized grid grows by their measured heights.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const geometry = useSpreadsheetGeometry(containerRef);
   const [scrollbarHeight, setScrollbarHeight] = useState(0);
   const barRef = useRef<HTMLDivElement>(null);
   const [barHeight, setBarHeight] = useState(PENDING_BAR_HEIGHT);
@@ -349,66 +354,84 @@ export function SpreadsheetTable({
   useMeasured(barRef, measureBar, showBar);
   const barSpace = showBar ? barHeight : 0;
   const fitHeight = useMemo(() => {
-    const base = spreadsheetViewportHeight(heightUnit, rows.length, {
-      addRow: Boolean(onInsertRow),
-      scrollbarHeight
-    });
+    const base = spreadsheetViewportHeight(
+      heightUnit,
+      rows.length,
+      { addRow: Boolean(onInsertRow), scrollbarHeight },
+      geometry
+    );
     if (base === undefined) return undefined;
     return base + barSpace;
-  }, [heightUnit, rows.length, onInsertRow, scrollbarHeight, barSpace]);
+  }, [
+    heightUnit,
+    rows.length,
+    onInsertRow,
+    scrollbarHeight,
+    barSpace,
+    geometry
+  ]);
 
   return (
-    <div
-      css={{
-        position: 'relative',
-        display: 'flex',
-        flex: '1 1 auto',
-        flexDirection: 'column',
-        minHeight: 0,
-        ...(fitHeight ? { height: `${fitHeight}px` } : {})
-      }}
-    >
-      {search.open && (
-        <SearchBar
-          query={search.query}
-          onQueryChange={search.setQuery}
-          matchCount={search.matches.length}
-          cursor={search.cursor}
-          onStep={search.step}
-          onClose={closeSearch}
-          focusToken={search.focusToken}
-          top={barSpace + HEADER_HEIGHT + 8}
-        />
-      )}
-      {showBar && pending ? (
-        <div ref={barRef} css={{ flex: '0 0 auto' }}>
-          <PendingChangesBar
-            pendingCount={pending.count}
-            blockingCount={counts.blocking}
-            errorCount={counts.errors}
-            warningCount={counts.warnings}
-            saving={pending.saving}
-            onSave={pending.onSave}
-            onDiscard={pending.onDiscard}
-            onStepIssue={stepIssue}
+    <SpreadsheetGeometryContext.Provider value={geometry}>
+      <div
+        ref={containerRef}
+        style={
+          {
+            '--feathery-table-effective-row-height': `${geometry.rowHeight}px`,
+            '--feathery-table-effective-header-height': `${geometry.headerHeight}px`
+          } as React.CSSProperties
+        }
+        css={{
+          position: 'relative',
+          display: 'flex',
+          flex: '1 1 auto',
+          flexDirection: 'column',
+          minHeight: 0,
+          ...(fitHeight ? { height: `${fitHeight}px` } : {})
+        }}
+      >
+        {search.open && (
+          <SearchBar
+            query={search.query}
+            onQueryChange={search.setQuery}
+            matchCount={search.matches.length}
+            cursor={search.cursor}
+            onStep={search.step}
+            onClose={closeSearch}
+            focusToken={search.focusToken}
+            top={barSpace + geometry.headerHeight + 8}
           />
-        </div>
-      ) : null}
-      <SpreadsheetGrid
-        ref={gridRef}
-        table={table}
-        interactions={interactions}
-        canEdit={canEdit}
-        rowIndexById={rowIndexById}
-        getCellShading={shadeCell}
-        cellRules={cellRules}
-        onAddColumn={onAddColumn}
-        onInsertRow={onInsertRow}
-        onDeleteRow={onDeleteRow}
-        onOpenSearch={search.openSearch}
-        sort={sort}
-        onScrollbarHeight={setScrollbarHeight}
-      />
-    </div>
+        )}
+        {showBar && pending ? (
+          <div ref={barRef} css={{ flex: '0 0 auto' }}>
+            <PendingChangesBar
+              pendingCount={pending.count}
+              blockingCount={counts.blocking}
+              errorCount={counts.errors}
+              warningCount={counts.warnings}
+              saving={pending.saving}
+              onSave={pending.onSave}
+              onDiscard={pending.onDiscard}
+              onStepIssue={stepIssue}
+            />
+          </div>
+        ) : null}
+        <SpreadsheetGrid
+          ref={gridRef}
+          table={table}
+          interactions={interactions}
+          canEdit={canEdit}
+          rowIndexById={rowIndexById}
+          getCellShading={shadeCell}
+          cellRules={cellRules}
+          onAddColumn={onAddColumn}
+          onInsertRow={onInsertRow}
+          onDeleteRow={onDeleteRow}
+          onOpenSearch={search.openSearch}
+          sort={sort}
+          onScrollbarHeight={setScrollbarHeight}
+        />
+      </div>
+    </SpreadsheetGeometryContext.Provider>
   );
 }
