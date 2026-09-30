@@ -1,13 +1,21 @@
 import React from 'react';
 import { TABLE_CLASS } from '../classNames';
 import { CellRule } from './validation';
-import { cellEditorStyle } from './styles';
+import {
+  cellEditorAdornedPadding,
+  cellEditorAdornmentStyle,
+  cellEditorStyle
+} from './styles';
 import { ChoiceMenu } from './ChoiceMenu';
 import {
   acceptsNumericInput,
+  acceptsZipInput,
+  choiceLabelsFor,
   choicesFor,
   editorKindFor,
   fromEditorValue,
+  matchChoice,
+  numberAdornments,
   toEditorValue
 } from './fieldEditors';
 
@@ -68,6 +76,7 @@ export function CellEditor({
 }: CellEditorProps) {
   const kind = editorKindFor(rule);
   const choices = choicesFor(rule);
+  const labels = choiceLabelsFor(rule);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   /**
@@ -108,19 +117,16 @@ export function CellEditor({
     if (!choices || !seeded || resolvedRef.current) return;
     resolvedRef.current = true;
     if (choices.includes(draft)) return;
-    const prefix = draft.trim().toLowerCase();
-    const match = prefix
-      ? choices.find((choice) => choice.toLowerCase().startsWith(prefix))
-      : undefined;
     // No match means the menu simply opens on the stored value, as Enter
     // would have — never on an emptied cell.
-    onChange(match ?? stored);
-  }, [choices, draft, onChange, seeded, stored]);
+    onChange(matchChoice(choices, labels, draft) ?? stored);
+  }, [choices, labels, draft, onChange, seeded, stored]);
 
   if (choices) {
     return (
       <ChoiceMenu
         choices={choices}
+        labels={labels}
         value={draft}
         label={label}
         onPick={(choice) => {
@@ -134,7 +140,8 @@ export function CellEditor({
     );
   }
 
-  return (
+  const { prefix, suffix } = numberAdornments(rule);
+  const input = (
     <input
       ref={inputRef}
       className={TABLE_CLASS.gridCellEditor}
@@ -143,15 +150,18 @@ export function CellEditor({
       value={toEditorValue(draft, kind)}
       // The numeric keypad on touch. The keystroke filter below is what
       // actually keeps letters out.
-      inputMode={kind === 'number' ? 'decimal' : undefined}
+      inputMode={
+        kind === 'number' ? 'decimal' : kind === 'zip' ? 'numeric' : undefined
+      }
       readOnly={kind === 'readonly'}
-      css={cellEditorStyle}
+      css={{ ...cellEditorStyle, ...cellEditorAdornedPadding(prefix, suffix) }}
       onMouseDown={(event) => event.stopPropagation()}
       onChange={(event) => {
         const next = event.target.value;
         // A number column refuses anything that is not on its way to being a
         // number, rather than accepting it and failing validation later.
         if (kind === 'number' && !acceptsNumericInput(next)) return;
+        if (kind === 'zip' && !acceptsZipInput(next)) return;
         if (kind === 'readonly') return;
         // A datetime picker reports local wall-clock time; the cell stores
         // the UTC instant.
@@ -160,5 +170,24 @@ export function CellEditor({
       onKeyDown={onKeyDown}
       onBlur={onBlur}
     />
+  );
+
+  if (!prefix && !suffix) return input;
+  // A formatted number is edited raw — the draft is `1234.5`, never `$1,234.50`
+  // — with its currency symbol or `%` drawn beside it so the unit stays clear.
+  return (
+    <>
+      {input}
+      {prefix && (
+        <span aria-hidden css={cellEditorAdornmentStyle('start')}>
+          {prefix}
+        </span>
+      )}
+      {suffix && (
+        <span aria-hidden css={cellEditorAdornmentStyle('end')}>
+          {suffix}
+        </span>
+      )}
+    </>
   );
 }

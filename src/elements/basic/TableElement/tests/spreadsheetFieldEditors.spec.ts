@@ -1,13 +1,19 @@
 import {
   acceptsNumericInput,
+  acceptsZipInput,
+  choiceLabelsFor,
   choicesFor,
   editorKindFor,
   formatCellDisplay,
   fromEditorValue,
+  matchChoice,
+  normalizeZip,
+  numberAdornments,
   parseCellInput,
   seedActionFor,
   toEditorValue
 } from '../spreadsheet/fieldEditors';
+import { CellRule } from '../spreadsheet/validation';
 
 // What a `datetime-local` input shows for an instant: local wall-clock time.
 // Derived from Date rather than written out so the test holds in any zone.
@@ -267,5 +273,165 @@ describe('seedActionFor', () => {
       seedActionFor({ label: 'Tier', type: 'text', options: ['Gold'] }, 'G')
     ).toBe('seed');
     expect(seedActionFor(undefined, 'A')).toBe('seed');
+  });
+});
+
+describe('hub field formats', () => {
+  const currency = (extra: Partial<CellRule> = {}): CellRule => ({
+    label: 'Price',
+    type: 'number',
+    format: 'currency',
+    ...extra
+  });
+  const percentage = (extra: Partial<CellRule> = {}): CellRule => ({
+    label: 'Rate',
+    type: 'number',
+    format: 'percentage',
+    ...extra
+  });
+  const zip: CellRule = { label: 'ZIP', type: 'text', format: 'us_zip' };
+  const state: CellRule = {
+    label: 'State',
+    type: 'text',
+    format: 'us_state',
+    options: ['CA', 'CO', 'NY'],
+    optionLabels: ['California', 'Colorado', 'New York']
+  };
+  const country: CellRule = {
+    label: 'Country',
+    type: 'text',
+    format: 'country',
+    options: ['US', 'CA', 'GB'],
+    optionLabels: ['United States', 'Canada', 'United Kingdom']
+  };
+
+  describe('formatCellDisplay', () => {
+    test('currency pads to two decimals by default, with grouping', () => {
+      expect(formatCellDisplay(1234.5, currency())).toBe('$1,234.50');
+      expect(formatCellDisplay(-100, currency())).toBe('-$100.00');
+      expect(formatCellDisplay('7', currency())).toBe('$7.00');
+    });
+
+    test('currency honours the field currency and decimal digits', () => {
+      expect(formatCellDisplay(1234.5, currency({ currency: 'EUR' }))).toBe(
+        '€1,234.50'
+      );
+      expect(formatCellDisplay(1234.5, currency({ decimalDigits: 0 }))).toBe(
+        '$1,235'
+      );
+      // Wider than a form field goes, still exact.
+      expect(formatCellDisplay(0.125, currency({ decimalDigits: 3 }))).toBe(
+        '$0.125'
+      );
+    });
+
+    test('percentage shows only the digits it has unless decimals are fixed', () => {
+      expect(formatCellDisplay(12, percentage())).toBe('12%');
+      expect(formatCellDisplay(12.5, percentage())).toBe('12.5%');
+      expect(formatCellDisplay(1200, percentage())).toBe('1,200%');
+      expect(formatCellDisplay(12, percentage({ decimalDigits: 1 }))).toBe(
+        '12.0%'
+      );
+    });
+
+    test('a non-numeric value in a formatted column shows as typed', () => {
+      expect(formatCellDisplay('abc', currency())).toBe('abc');
+    });
+
+    test('state, country and ZIP cells show the stored value', () => {
+      expect(formatCellDisplay('CA', state)).toBe('CA');
+      expect(formatCellDisplay('US', country)).toBe('US');
+      expect(formatCellDisplay('02134', zip)).toBe('02134');
+    });
+  });
+
+  describe('parseCellInput', () => {
+    test('a formatted number accepts its own symbols and grouping', () => {
+      expect(parseCellInput('$1,234.50', currency())).toBe(1234.5);
+      expect(parseCellInput('-$100', currency())).toBe(-100);
+      expect(parseCellInput('12%', percentage())).toBe(12);
+      expect(parseCellInput('1234', currency())).toBe(1234);
+      expect(parseCellInput('abc', currency())).toBe('abc');
+    });
+
+    test('a ZIP is normalized the way the hub stores it', () => {
+      expect(parseCellInput('2134', zip)).toBe('02134');
+      expect(parseCellInput('501', zip)).toBe('00501');
+      expect(parseCellInput(' 12345 ', zip)).toBe('12345');
+      expect(parseCellInput('123456789', zip)).toBe('12345-6789');
+      expect(parseCellInput('21346789', zip)).toBe('02134-6789');
+      expect(parseCellInput('12345 6789', zip)).toBe('12345-6789');
+      expect(parseCellInput('12345-6789', zip)).toBe('12345-6789');
+      // Anything else passes through to fail validation.
+      expect(parseCellInput('12', zip)).toBe('12');
+      expect(normalizeZip('1234567')).toBe('1234567');
+    });
+
+    test('a state or country is stored as its code', () => {
+      expect(parseCellInput('ca', state)).toBe('CA');
+      expect(parseCellInput(' california ', state)).toBe('CA');
+      expect(parseCellInput('United States', country)).toBe('US');
+      expect(parseCellInput('gb', country)).toBe('GB');
+      expect(parseCellInput('Narnia', country)).toBe('Narnia');
+    });
+  });
+
+  describe('editing', () => {
+    test('a ZIP column gets its own editor that takes digits, dash and space', () => {
+      expect(editorKindFor(zip)).toBe('zip');
+      expect(acceptsZipInput('12345-67')).toBe(true);
+      expect(acceptsZipInput('12345 6')).toBe(true);
+      expect(acceptsZipInput('1234a')).toBe(false);
+      expect(seedActionFor(zip, '1')).toBe('seed');
+      expect(seedActionFor(zip, 'a')).toBe('ignore');
+    });
+
+    test('state and country columns are dropdowns with labels', () => {
+      expect(editorKindFor(state)).toBe('select');
+      expect(choicesFor(country)).toEqual(['US', 'CA', 'GB']);
+      expect(choiceLabelsFor(country)).toEqual([
+        'United States',
+        'Canada',
+        'United Kingdom'
+      ]);
+      expect(
+        choiceLabelsFor({ label: 'x', type: 'text', options: ['a'] })
+      ).toBeNull();
+    });
+
+    test('formatted numbers show their unit around the raw draft', () => {
+      expect(numberAdornments(currency())).toEqual({ prefix: '$', suffix: '' });
+      expect(numberAdornments(currency({ currency: 'EUR' }))).toEqual({
+        prefix: '€',
+        suffix: ''
+      });
+      expect(numberAdornments(percentage())).toEqual({
+        prefix: '',
+        suffix: '%'
+      });
+      expect(numberAdornments({ label: 'n', type: 'number' })).toEqual({
+        prefix: '',
+        suffix: ''
+      });
+    });
+  });
+
+  describe('matchChoice', () => {
+    const codes = country.options as string[];
+    const names = country.optionLabels as string[];
+
+    test('a whole code wins, then a code prefix, then a name prefix', () => {
+      expect(matchChoice(codes, names, 'ca')).toBe('CA');
+      expect(matchChoice(codes, names, 'g')).toBe('GB');
+      expect(matchChoice(codes, names, 'unit')).toBe('US');
+      expect(matchChoice(codes, names, 'united k')).toBe('GB');
+      expect(matchChoice(codes, names, 'can')).toBe('CA');
+    });
+
+    test('no match, and no labels, find nothing extra', () => {
+      expect(matchChoice(codes, names, 'zz')).toBeUndefined();
+      expect(matchChoice(codes, null, 'canada')).toBeUndefined();
+      expect(matchChoice(codes, names, '  ')).toBeUndefined();
+    });
   });
 });

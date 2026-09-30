@@ -11,8 +11,14 @@ const EMPTY_CHOICE_LABEL = '(empty)';
  * keyboard handling walks this same list, so what it highlights is what is drawn. */
 export const choiceRows = (choices: string[]): string[] => ['', ...choices];
 
+/** A choice as its menu row reads: `CA · California`, or the choice alone. */
+export const choiceRowText = (choice: string, label?: string): string =>
+  label ? `${choice} · ${label}` : choice;
+
 type ChoiceMenuProps = {
   choices: string[];
+  /** Display names for `choices`, index for index. Picking stores the choice. */
+  labels?: string[] | null;
   /** The highlighted row; the value Enter would commit. */
   value: string;
   label: string;
@@ -24,6 +30,7 @@ type ChoiceMenuProps = {
  * highlight (see `useGridInteractions`), so closing it never strands the keys. */
 export function ChoiceMenu({
   choices,
+  labels,
   value,
   label,
   onPick,
@@ -85,7 +92,7 @@ export function ChoiceMenu({
       // selection or a range drag underneath.
       onMouseDown={(event) => event.stopPropagation()}
     >
-      {rows.map((choice) => (
+      {rows.map((choice, row) => (
         <div
           key={choice}
           role='option'
@@ -97,7 +104,9 @@ export function ChoiceMenu({
             onPick(choice);
           }}
         >
-          {choice || EMPTY_CHOICE_LABEL}
+          {choice
+            ? choiceRowText(choice, labels?.[row - 1])
+            : EMPTY_CHOICE_LABEL}
         </div>
       ))}
     </div>

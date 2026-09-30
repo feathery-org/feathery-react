@@ -1,3 +1,7 @@
+import {
+  formatNumberValue,
+  getFormatAffixes
+} from '../../../fields/TextField/mask';
 import { CellValue, formatCellValue, parseInputValue } from './model';
 import { CellRule } from './validation';
 
@@ -16,6 +20,8 @@ type EditorKind =
   | 'email'
   | 'url'
   | 'text'
+  // A US ZIP: text, but only digits, `-` and a space can be typed.
+  | 'zip'
   // Held in the grid but not editable there: a hub file field stores upload
   // references (`[{url, path}]`), which no amount of typing can produce.
   | 'readonly';
@@ -37,7 +43,7 @@ export function editorKindFor(rule?: CellRule): EditorKind {
     case 'file':
       return 'readonly';
     default:
-      return 'text';
+      return rule.format === 'us_zip' ? 'zip' : 'text';
   }
 }
 
@@ -46,6 +52,39 @@ export function choicesFor(rule?: CellRule): string[] | null {
   if (rule?.options?.length) return rule.options;
   if (rule?.type === 'boolean') return ['true', 'false'];
   return null;
+}
+
+/**
+ * Display names for a `select` column's choices, index for index, when it has
+ * them (`us_state` / `country`). The value stored is always the choice itself.
+ */
+export function choiceLabelsFor(rule?: CellRule): string[] | null {
+  return rule?.options?.length && rule.optionLabels?.length
+    ? rule.optionLabels
+    : null;
+}
+
+/**
+ * The choice typed text points at: a code typed whole (`ca`), then the first
+ * code it starts, then the first name it starts (`cali` -> `CA`). Case-blind.
+ */
+export function matchChoice(
+  choices: string[],
+  labels: string[] | null | undefined,
+  typed: string
+): string | undefined {
+  const query = typed.trim().toLowerCase();
+  if (!query) return undefined;
+  const exact = choices.find((choice) => choice.toLowerCase() === query);
+  if (exact !== undefined) return exact;
+  const byChoice = choices.find((choice) =>
+    choice.toLowerCase().startsWith(query)
+  );
+  if (byChoice !== undefined) return byChoice;
+  const at = labels?.findIndex((label) =>
+    label.toLowerCase().startsWith(query)
+  );
+  return at != null && at >= 0 ? choices[at] : undefined;
 }
 
 /**
@@ -71,6 +110,8 @@ export function seedActionFor(
     case 'number':
       // Only what could still become a number gets through.
       return acceptsNumericInput(char) ? 'seed' : 'ignore';
+    case 'zip':
+      return acceptsZipInput(char) ? 'seed' : 'ignore';
     case 'readonly':
       return 'ignore';
     case 'date':
@@ -95,6 +136,66 @@ const PARTIAL_NUMBER = /^-?\d*\.?\d*$/;
 /** Whether a keystroke may land in a `number` column's editor at all. */
 export function acceptsNumericInput(draft: string): boolean {
   return PARTIAL_NUMBER.test(draft);
+}
+
+// Digits plus the separators of `12345-6789` / `12345 6789`. The shape itself
+// is judged by the rule, so a half-typed ZIP stays typeable.
+const PARTIAL_ZIP = /^[\d -]*$/;
+
+/** Whether a keystroke may land in a ZIP column's editor. */
+export function acceptsZipInput(draft: string): boolean {
+  return PARTIAL_ZIP.test(draft);
+}
+
+/**
+ * A ZIP as the hub stores it. Spreadsheets drop leading zeros, so 3-4 digits
+ * are padded back to 5 (`2134` -> `02134`) and 8 to 9 before the ZIP+4 dash;
+ * `12345 6789` gets its dash. Anything else is left for validation to flag.
+ */
+export function normalizeZip(text: string): string {
+  const trimmed = text.trim();
+  if (/^\d{3,4}$/.test(trimmed)) return trimmed.padStart(5, '0');
+  const digits = /^\d{8,9}$/.test(trimmed)
+    ? trimmed.padStart(9, '0')
+    : /^\d{5}[ -]\d{4}$/.test(trimmed)
+    ? trimmed.replace(/[ -]/, '')
+    : null;
+  return digits ? `${digits.slice(0, 5)}-${digits.slice(5)}` : trimmed;
+}
+
+/**
+ * A state or country as its code: a code in any case, or a full name
+ * (`california` -> `CA`). Unknown text is kept, to fail validation visibly.
+ */
+function normalizeChoiceCode(text: string, rule: CellRule): string {
+  const trimmed = text.trim();
+  const options = rule.options ?? [];
+  const upper = trimmed.toUpperCase();
+  if (options.includes(upper)) return upper;
+  const lower = trimmed.toLowerCase();
+  const at = rule.optionLabels?.findIndex(
+    (label) => label.toLowerCase() === lower
+  );
+  return at != null && at >= 0 ? options[at] : trimmed;
+}
+
+/**
+ * A formatted number as typed or pasted (`$1,234.50`, `12%`) with the
+ * column's own affixes and grouping taken off, the way the hub reads it.
+ */
+function stripNumberFormat(text: string, rule: CellRule): string {
+  const { prefix, suffix } = getFormatAffixes(numberServar(rule));
+  let stripped = text.trim().replace(/,/g, '');
+  const sign = stripped.startsWith('-') ? '-' : '';
+  if (sign) stripped = stripped.slice(1);
+  const affix = prefix.trim();
+  if (affix && stripped.startsWith(affix)) {
+    stripped = stripped.slice(affix.length);
+  }
+  if (suffix && stripped.endsWith(suffix)) {
+    stripped = stripped.slice(0, -suffix.length);
+  }
+  return `${sign}${stripped.trim()}`;
 }
 
 const ISO_DATE = /^(\d{4}-\d{2}-\d{2})/;
@@ -198,10 +299,98 @@ export function parseCellInput(
       ? typeof before
       : undefined);
   if (type === 'number' || type === 'boolean') {
-    const guessed = parseInputValue(text);
+    const source =
+      type === 'number' && rule && isNumberFormat(rule)
+        ? stripNumberFormat(text, rule)
+        : text;
+    const guessed = parseInputValue(source);
     return typeof guessed === type ? guessed : text;
   }
+  if (rule?.format === 'us_zip') return normalizeZip(text);
+  if (
+    (rule?.format === 'us_state' || rule?.format === 'country') &&
+    rule.options?.length
+  ) {
+    return normalizeChoiceCode(text, rule);
+  }
   return text;
+}
+
+const isNumberFormat = (rule: CellRule) =>
+  rule.type === 'number' &&
+  (rule.format === 'currency' || rule.format === 'percentage');
+
+// Precision `formatNumberValue` honours; hub fields may ask for more.
+const MAX_MASK_DECIMALS = 2;
+const CURRENCY_DECIMALS = 2;
+
+/**
+ * The rule as the number-field servar `mask.ts` formats, so a hub cell reads
+ * exactly like a form field with the same format. Currency pads to its
+ * decimals (`$1,234.50`); a percentage shows only the digits it has unless
+ * the field fixes its decimals.
+ */
+function numberServar(rule: CellRule) {
+  const fixed = rule.decimalDigits != null;
+  return {
+    type: 'integer_field',
+    format: rule.format,
+    metadata: {
+      currency: rule.currency || 'USD',
+      decimal_places: fixed
+        ? rule.decimalDigits
+        : rule.format === 'currency'
+        ? CURRENCY_DECIMALS
+        : undefined,
+      pad_decimals: rule.format === 'currency' || fixed
+    }
+  };
+}
+
+/** Wider than `formatNumberValue` goes: the same shape through Intl directly. */
+function formatWideNumber(value: number, rule: CellRule): string {
+  const digits = rule.decimalDigits as number;
+  const options: Intl.NumberFormatOptions = {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  };
+  try {
+    if (rule.format === 'currency') {
+      return new Intl.NumberFormat('en-US', {
+        ...options,
+        style: 'currency',
+        currency: rule.currency || 'USD'
+      }).format(value);
+    }
+  } catch {
+    // A malformed currency code; fall through to the plain number.
+  }
+  const body = new Intl.NumberFormat('en-US', options).format(value);
+  return rule.format === 'percentage' ? `${body}%` : body;
+}
+
+function formatNumberCell(value: CellValue, rule: CellRule): string {
+  const num = typeof value === 'number' ? value : Number(String(value));
+  if (typeof value === 'boolean' || Number.isNaN(num)) {
+    return formatCellValue(value);
+  }
+  if ((rule.decimalDigits ?? 0) > MAX_MASK_DECIMALS) {
+    return formatWideNumber(num, rule);
+  }
+  return formatNumberValue(numberServar(rule), num);
+}
+
+/**
+ * What a formatted number's editor shows around the raw value — `$` before a
+ * currency, `%` after a percentage. The draft itself stays the bare number.
+ */
+export function numberAdornments(rule?: CellRule): {
+  prefix: string;
+  suffix: string;
+} {
+  if (!rule || !isNumberFormat(rule)) return { prefix: '', suffix: '' };
+  const { prefix, suffix } = getFormatAffixes(numberServar(rule));
+  return { prefix: prefix.trim(), suffix };
 }
 
 // Mask everything but the last four, the way an SSN is shown on a statement.
@@ -228,6 +417,8 @@ export function formatCellDisplay(value: CellValue, rule?: CellRule): string {
   if (rule?.type === 'date' || rule?.type === 'datetime') {
     return formatDateValue(String(value), rule.type);
   }
+
+  if (rule && isNumberFormat(rule)) return formatNumberCell(value, rule);
 
   return formatCellValue(value);
 }

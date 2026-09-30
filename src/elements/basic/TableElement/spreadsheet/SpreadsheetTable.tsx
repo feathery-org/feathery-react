@@ -11,6 +11,7 @@ import type { CellSelectionState } from '@tanstack/react-table';
 import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
 import {
+  choiceLabelsFor,
   choicesFor,
   editorKindFor,
   formatCellDisplay,
@@ -309,6 +310,10 @@ export function SpreadsheetTable({
     (fieldKey: string) => choicesFor(cellRules?.[fieldKey]),
     [cellRules]
   );
+  const columnChoiceLabels = useCallback(
+    (fieldKey: string) => choiceLabelsFor(cellRules?.[fieldKey]),
+    [cellRules]
+  );
 
   // Failing cells in reading order — down the rows, left to right — grouped
   // by how much they matter: what holds the save back first, then the other
@@ -363,7 +368,8 @@ export function SpreadsheetTable({
     seedAction,
     isReadOnly,
     parseValue,
-    choicesFor: columnChoices
+    choicesFor: columnChoices,
+    choiceLabelsFor: columnChoiceLabels
   });
 
   const visibleRowIds = useMemo(
