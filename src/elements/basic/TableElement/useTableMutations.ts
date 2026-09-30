@@ -3,6 +3,16 @@ import { fieldValues } from '../../../utils/init';
 import { CellWrite, Column, TableRowDefault } from './types';
 import { fieldRowDefaults } from './rowDefaults';
 
+export type CellsEditOptions = {
+  /**
+   * Submit every column's array, not just the edited ones. Set when the edit
+   * commits a provisional row: its default cells sit only in local field
+   * values until then, and a partial submit would leave them unsaved (and
+   * the unedited columns one row short on the server).
+   */
+  submitAllColumns?: boolean;
+};
+
 type UseTableMutationsProps = {
   columns: Column[];
   rowDefaults?: TableRowDefault[];
@@ -23,7 +33,7 @@ type UseTableMutationsReturn = {
   handleDeleteRow: (rowIndex: number) => void;
   handleRemoveRowLocal: (rowIndex: number) => void;
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
-  handleCellsEdit: (writes: CellWrite[]) => void;
+  handleCellsEdit: (writes: CellWrite[], options?: CellsEditOptions) => void;
 };
 
 export function useTableMutations({
@@ -153,10 +163,15 @@ export function useTableMutations({
    * an earlier one, since each rebuilds its column array from `fieldValues`.
    */
   const handleCellsEdit = useCallback(
-    (writes: CellWrite[]) => {
+    (writes: CellWrite[], options?: CellsEditOptions) => {
       if (!writes.length) return;
 
       const updates: Record<string, any[]> = {};
+      if (options?.submitAllColumns) {
+        columns.forEach((col) => {
+          updates[col.field_key] = [...getFieldArray(col.field_key)];
+        });
+      }
       writes.forEach(({ fieldKey, rowIndex, value }) => {
         // Each column's array is copied once and then written in place, so
         // several cells in the same column land in the same submitted array.
@@ -169,7 +184,14 @@ export function useTableMutations({
       if (!editMode) submitCustom(updates);
       onMutate();
     },
-    [getFieldArray, updateFieldValues, submitCustom, editMode, onMutate]
+    [
+      columns,
+      getFieldArray,
+      updateFieldValues,
+      submitCustom,
+      editMode,
+      onMutate
+    ]
   );
 
   const handleCellEdit = useCallback(
