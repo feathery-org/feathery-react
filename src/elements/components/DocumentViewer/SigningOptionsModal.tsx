@@ -23,6 +23,7 @@ export interface SigningOptions {
 export interface SigningOptionsModalProps {
   initialValues: SigningOptions;
   draft?: boolean;
+  signMethod?: string;
   busy: boolean;
   error?: string;
   onClose: () => void;
@@ -45,6 +46,7 @@ const labelCss = { display: 'grid', gap: 6 } as const;
 export default function SigningOptionsModal({
   initialValues,
   draft = false,
+  signMethod,
   busy,
   error,
   onClose,
@@ -224,6 +226,13 @@ export default function SigningOptionsModal({
         {step === 1 ? (
           <>
             <p>Recipients with the same signing order sign in parallel.</p>
+            {multipleDocuments && (
+              <p>
+                {signMethod === 'docusign'
+                  ? 'Use the same signing order for a recipient across documents.'
+                  : 'Signing order applies separately to each document.'}
+              </p>
+            )}
             {values.recipients.map((row, index) => (
               <fieldset
                 key={`${row.envelope_id}:${row.recipient_index}`}

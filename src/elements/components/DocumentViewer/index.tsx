@@ -542,6 +542,7 @@ export default function DocumentViewer({
             email_blurb: action.email_blurb ?? ''
           }}
           draft={signingAction === 'draft'}
+          signMethod={action.sign_method}
           busy={busyKey !== null}
           error={
             error ||
