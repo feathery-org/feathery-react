@@ -4,7 +4,9 @@ import { TableRowDefault } from './types';
 /**
  * The value one default puts in a new row: a static entry's value as typed, a
  * field entry's live form value. `undefined` when the source field is empty
- * or gone, so each caller decides what a blank means for its storage.
+ * or gone, so each caller decides what a blank means for its storage. Only a
+ * scalar is copied: a list, matrix or file value has no single-cell meaning
+ * (and an untouched multi-select is `[]`, which would leak in as a default).
  */
 export function resolveRowDefaultValue(
   entry: TableRowDefault,
@@ -13,7 +15,8 @@ export function resolveRowDefaultValue(
   if (entry.source === 'static') return entry.value ?? '';
   if (!entry.field_key) return undefined;
   const raw = values[entry.field_key];
-  return raw == null || raw === '' ? undefined : raw;
+  if (raw === '') return undefined;
+  return ['string', 'number', 'boolean'].includes(typeof raw) ? raw : undefined;
 }
 
 /**

@@ -1,4 +1,13 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import React from 'react';
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor
+} from '@testing-library/react';
+import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
 import { useHubTableSource } from '../useHubTableSource';
 import { useTableMutations } from '../useTableMutations';
@@ -60,13 +69,23 @@ describe('hubRowDefaults', () => {
     ).toEqual({});
   });
 
-  test('a static value may be empty, and a list value is kept as a list', () => {
+  test('a static value may be empty', () => {
     expect(hubRowDefaults([{ ...staticOwner, value: '' }], null, {})).toEqual({
       owner: ''
     });
-    expect(
-      hubRowDefaults([fieldAccount], null, { account_id: ['a1', 'a2'] })
-    ).toEqual({ account: ['a1', 'a2'] });
+  });
+
+  test('only scalar field values are copied', () => {
+    [['a1', 'a2'], [], [''], {}, { a: 1 }, [Promise.resolve()]].forEach(
+      (account_id) =>
+        expect(hubRowDefaults([fieldAccount], null, { account_id })).toEqual({})
+    );
+    expect(hubRowDefaults([fieldAccount], null, { account_id: 0 })).toEqual({
+      account: 0
+    });
+    expect(hubRowDefaults([fieldAccount], null, { account_id: false })).toEqual(
+      { account: false }
+    );
   });
 
   test('uses the live schema key: a renamed column keeps filling, a deleted one stops', () => {
@@ -260,6 +279,35 @@ describe('useTableMutations row defaults', () => {
     expect(submitCustom).not.toHaveBeenCalled();
   });
 
+  test('submitAllColumns sends every column, so a provisional row keeps its defaults', () => {
+    const { hook, submitCustom } = setup([
+      { column_field_id: 'f3', source: 'static', value: '18' }
+    ]);
+    act(() => hook.result.current.handleAddRow());
+
+    act(() =>
+      hook.result.current.handleCellsEdit(
+        [{ fieldKey: 'name_key', rowIndex: 0, value: 'Jane' }],
+        { submitAllColumns: true }
+      )
+    );
+    expect(submitCustom).toHaveBeenLastCalledWith({
+      name_key: ['Jane', 'Alice'],
+      acct_key: ['', 'x'],
+      age_key: ['18', '30']
+    });
+
+    // An edit to a committed row still submits just its own column.
+    act(() =>
+      hook.result.current.handleCellsEdit([
+        { fieldKey: 'name_key', rowIndex: 1, value: 'Al' }
+      ])
+    );
+    expect(submitCustom).toHaveBeenLastCalledWith({
+      name_key: ['Jane', 'Al']
+    });
+  });
+
   test('an empty source field still inserts a blank slot', () => {
     const { hook, updateFieldValues } = setup([columnAccount('f2')]);
     act(() => hook.result.current.handleAddRow());
@@ -267,6 +315,79 @@ describe('useTableMutations row defaults', () => {
       name_key: ['', 'Alice'],
       acct_key: ['', 'x'],
       age_key: ['', '30']
+    });
+  });
+});
+
+describe('TableElement row defaults on a field-backed table', () => {
+  const COLUMNS = [
+    { name: 'Name', field_id: 'f1', field_type: 'text', field_key: 'name_key' },
+    {
+      name: 'Email',
+      field_id: 'f2',
+      field_type: 'email',
+      field_key: 'email_key'
+    }
+  ];
+  const mockStyles = () => ({
+    addTargets: jest.fn(),
+    apply: jest.fn(),
+    getTarget: jest.fn(() => ({}))
+  });
+
+  beforeEach(() => {
+    Object.assign(fieldValues, {
+      name_key: ['Alice'],
+      email_key: ['alice@test.com']
+    });
+  });
+  afterEach(() => {
+    ['name_key', 'email_key'].forEach(
+      (key) => delete (fieldValues as any)[key]
+    );
+  });
+
+  test('the first edit to an added row submits its default cells too', () => {
+    const submitCustom = jest.fn();
+    render(
+      <TableElement
+        element={{
+          id: 'table1',
+          styles: {},
+          properties: {
+            columns: COLUMNS,
+            actions: [],
+            search: false,
+            sort: false,
+            pagination: 0,
+            transpose: false,
+            enable_editing: true,
+            add_delete_rows: true,
+            row_defaults: [
+              { column_field_id: 'f2', source: 'static', value: 'def@x.com' }
+            ]
+          }
+        }}
+        responsiveStyles={mockStyles()}
+        updateFieldValues={(updates: Record<string, any>) =>
+          Object.assign(fieldValues, updates)
+        }
+        submitCustom={submitCustom}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Row' }));
+    expect(submitCustom).not.toHaveBeenCalled();
+
+    // The added row's blank Name cell.
+    fireEvent.click(screen.getByText('Click to edit'));
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Jane' } });
+    fireEvent.blur(input);
+
+    expect(submitCustom).toHaveBeenLastCalledWith({
+      name_key: ['Jane', 'Alice'],
+      email_key: ['def@x.com', 'alice@test.com']
     });
   });
 });

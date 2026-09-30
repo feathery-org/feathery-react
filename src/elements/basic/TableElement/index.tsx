@@ -273,16 +273,21 @@ function TableElement({
 
   const wrappedHandleCellEdit = useCallback(
     (fieldKey: string, rowIndex: number, newValue: any) => {
-      if (pendingAddRowsRef.current.has(rowIndex)) {
-        setPendingAddRows((prev) => {
-          const next = new Set(prev);
-          next.delete(rowIndex);
-          return next;
-        });
+      if (!pendingAddRowsRef.current.has(rowIndex)) {
+        handleCellEdit(fieldKey, rowIndex, newValue);
+        return;
       }
-      handleCellEdit(fieldKey, rowIndex, newValue);
+      setPendingAddRows((prev) => {
+        const next = new Set(prev);
+        next.delete(rowIndex);
+        return next;
+      });
+      // The first edit commits the provisional row, default cells included.
+      handleCellsEdit([{ fieldKey, rowIndex, value: newValue }], {
+        submitAllColumns: true
+      });
     },
-    [handleCellEdit]
+    [handleCellEdit, handleCellsEdit]
   );
 
   const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
@@ -436,16 +441,17 @@ function TableElement({
         return;
       }
       const touched = new Set(writes.map((write) => write.rowIndex));
-      if (
-        [...touched].some((rowIndex) => pendingAddRowsRef.current.has(rowIndex))
-      ) {
+      const commitsProvisional = [...touched].some((rowIndex) =>
+        pendingAddRowsRef.current.has(rowIndex)
+      );
+      if (commitsProvisional) {
         setPendingAddRows((prev) => {
           const next = new Set(prev);
           touched.forEach((rowIndex) => next.delete(rowIndex));
           return next;
         });
       }
-      handleCellsEdit(writes);
+      handleCellsEdit(writes, { submitAllColumns: commitsProvisional });
     },
     [handleCellsEdit, buffersEdits, pendingEdits]
   );
@@ -641,14 +647,19 @@ function TableElement({
     const { writes, deletedRows } = pendingEdits;
     if (!writes.length && !deletedRows.length) return;
     pendingEdits.clear();
-    if (writes.length) handleCellsEdit(writes);
+    // With rows added since the last save, the edits go up with every column
+    // in full so those rows' default and blank cells are saved too. A row
+    // deletion already submits every column.
+    if (writes.length)
+      handleCellsEdit(writes, {
+        submitAllColumns: pendingAddRowsRef.current.size > 0
+      });
     if (deletedRows.length) {
       bumpRowIdentity();
       deletedRows.forEach((rowIndex) => handleDeleteRow(rowIndex));
     }
-    // Saving submits every column in full, blank rows included, so nothing
-    // is provisional any more (a Hub row still without an entry is tracked by
-    // the Hub source itself).
+    // Nothing is provisional any more (a Hub row still without an entry is
+    // tracked by the Hub source itself).
     setPendingAddRows(new Set());
   }, [pendingEdits, handleCellsEdit, handleDeleteRow, bumpRowIdentity]);
 
