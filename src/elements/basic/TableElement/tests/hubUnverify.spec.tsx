@@ -59,7 +59,7 @@ const setup = (
     properties: {
       columns: HUB_COLUMNS,
       hub_id: 'hub1',
-      hub_verification: 'all',
+      hub_verification: 'all' as const,
       ...properties
     }
   };
@@ -321,6 +321,15 @@ describe('spreadsheet row menu unvalidate item', () => {
   test('counts the rows for a selection-wide action', () => {
     renderMenu({ unverifyCount: 4, onUnverify: jest.fn() });
     expect(screen.getByText('Mark 4 rows as unvalidated')).toBeTruthy();
+  });
+
+  test('renders nothing when there is no action to offer', () => {
+    const { container } = renderMenu({
+      canDelete: false,
+      unverifyCount: 0,
+      onUnverify: jest.fn()
+    });
+    expect(container.firstChild).toBeNull();
   });
 
   test('is absent when no target row can be unvalidated', () => {

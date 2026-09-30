@@ -57,6 +57,9 @@ export function RowMenu({
   if (canDelete) {
     items.push({ label: `Delete row ${target.displayNumber}`, run: onDelete });
   }
+  // A read-only table whose only action is "mark as unvalidated" has nothing
+  // to offer on a row that is already unvalidated.
+  if (!items.length) return null;
 
   return (
     <ContextMenu
