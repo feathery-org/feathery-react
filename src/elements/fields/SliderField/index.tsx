@@ -4,6 +4,7 @@ import { hoverStylesGuard } from '../../../utils/browser';
 
 import SliderStyles from './styles';
 import HiddenValueInput from '../../components/HiddenValueInput';
+import { resolveNumberBounds } from '../../../utils/numberBounds';
 
 export default function SliderField({
   element,
@@ -15,6 +16,7 @@ export default function SliderField({
   rightToLeft,
   onChange = () => {},
   elementProps = {},
+  repeatIndex = null,
   children
 }: any) {
   const [internalValue, setInternalValue] = useState(fieldVal);
@@ -24,11 +26,14 @@ export default function SliderField({
   }, [fieldVal]);
 
   const servar = element.servar;
-  const minVal = servar.min_length ?? 0;
-  const maxVal = servar.max_length ?? 100;
+  const stepSize = servar.metadata.step_size || 1;
+  const bounds = resolveNumberBounds(servar, repeatIndex);
+  const minVal = bounds.min ?? 0;
+  let maxVal = bounds.max ?? 100;
+  // A dynamic max at or below the min leaves the track no room to move
+  if (maxVal <= minVal) maxVal = minVal + stepSize;
   const minLabel = servar.metadata.min_val_label || minVal;
   const maxLabel = servar.metadata.max_val_label || maxVal;
-  const stepSize = servar.metadata.step_size || 1;
 
   return (
     <div

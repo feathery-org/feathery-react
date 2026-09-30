@@ -9,6 +9,7 @@ import {
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import TextField from '../index';
+import { fieldValues } from '../../../../utils/init';
 
 describe('TextField - Integer Type', () => {
   const input = () => screen.getByLabelText('Test field') as HTMLInputElement;
@@ -16,6 +17,88 @@ describe('TextField - Integer Type', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetMockFieldValue();
+  });
+
+  describe('Bounds that track a field', () => {
+    const ceiling = {
+      field_type: 'servar',
+      field_id: 'ceiling-id',
+      field_key: 'ceiling'
+    };
+    const trackingElement = () =>
+      createTextFieldElement('integer_field', {
+        decimal_places: 0,
+        bound_fields: { min: null, max: ceiling }
+      });
+
+    afterEach(() => {
+      delete fieldValues.ceiling;
+    });
+
+    it('clamps typing to the referenced field', () => {
+      Object.assign(fieldValues, { ceiling: 20 });
+      const mockOnAccept = createStatefulAcceptHandler();
+      render(
+        <TextField
+          {...createTextFieldProps(trackingElement())}
+          onAccept={mockOnAccept}
+        />
+      );
+
+      act(() => {
+        fireEvent.focus(input());
+        fireEvent.input(input(), { target: { value: '25' } });
+        fireEvent.blur(input());
+      });
+
+      // imask refuses the keystroke that would exceed the max rather than
+      // clamping down to it, so the trailing digit never lands
+      expect(getMockFieldValue()).toBe('2');
+    });
+
+    it('picks up a new limit when the referenced field changes', () => {
+      Object.assign(fieldValues, { ceiling: 20 });
+      const mockOnAccept = createStatefulAcceptHandler();
+      const props = createTextFieldProps(trackingElement());
+      // Element hands TextField a fresh onAccept closure every render, which
+      // is what gets a memoized TextField past its props check
+      const field = () => (
+        <TextField
+          {...props}
+          onAccept={(...args: any[]) => (mockOnAccept as any)(...args)}
+        />
+      );
+      const { rerender } = render(field());
+
+      Object.assign(fieldValues, { ceiling: 30 });
+      rerender(field());
+      act(() => {
+        fireEvent.focus(input());
+        fireEvent.input(input(), { target: { value: '25' } });
+        fireEvent.blur(input());
+      });
+
+      expect(getMockFieldValue()).toBe('25');
+    });
+
+    it('mounts a stored value the limit no longer admits without rewriting it', () => {
+      Object.assign(fieldValues, { ceiling: 20 });
+      const mockOnAccept = createStatefulAcceptHandler();
+      setMockFieldValue('25');
+      render(
+        <TextField
+          {...createTextFieldProps(trackingElement(), { rawValue: '25' })}
+          onAccept={mockOnAccept}
+        />
+      );
+
+      expect(input().value).toBe('25');
+      // imask may echo the mounted value back, but never a truncated one
+      expect(
+        mockOnAccept.mock.calls.map(([value]: any[]) => value)
+      ).not.toContain('2');
+      expect(getMockFieldValue()).toBe('25');
+    });
   });
 
   describe('Integer Field Rendering', () => {

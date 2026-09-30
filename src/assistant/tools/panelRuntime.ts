@@ -20,6 +20,11 @@ import {
 } from '../../utils/stepper';
 import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
 import { sanitizeTransportValue } from '../../utils/transportValue';
+import {
+  NUMBER_BOUND_TYPES,
+  hasDynamicBounds,
+  resolveNumberBounds
+} from '../../utils/numberBounds';
 import { getImageAltText } from '../../utils/accessibility';
 
 export type PanelRuntimeFieldEntry = {
@@ -447,6 +452,13 @@ export const getPanelRuntimeSnapshot = (
             ...(meta.max_val_label ? { max: String(meta.max_val_label) } : {})
           }
         : undefined;
+    // Row-agnostic snapshot: a dynamic bound reads the first repeat row
+    const numberBounds = NUMBER_BOUND_TYPES.has(servar.type)
+      ? resolveNumberBounds(servar)
+      : {
+          min: typeof servar.min_length === 'number' ? servar.min_length : null,
+          max: typeof servar.max_length === 'number' ? servar.max_length : null
+        };
     const disabled = !!(props.disabled || formReadOnly);
     const hasLogicRules = elementHasLogicRules(
       logicRules,
@@ -488,12 +500,9 @@ export const getPanelRuntimeSnapshot = (
       ...(options ? { options } : {}),
       ...(rowOptions ? { rowOptions } : {}),
       ...(questions ? { questions } : {}),
-      ...(typeof servar.min_length === 'number'
-        ? { minLength: servar.min_length }
-        : {}),
-      ...(typeof servar.max_length === 'number'
-        ? { maxLength: servar.max_length }
-        : {}),
+      ...(numberBounds.min !== null ? { minLength: numberBounds.min } : {}),
+      ...(numberBounds.max !== null ? { maxLength: numberBounds.max } : {}),
+      ...(hasDynamicBounds(servar) ? { dynamicBounds: true } : {}),
       ...(servar.format ? { format: String(servar.format) } : {}),
       ...(fileTypes.length > 0 ? { fileTypes } : {}),
       ...(meta.multiple ? { multipleFiles: true } : {}),

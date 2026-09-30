@@ -7,6 +7,7 @@ import React from 'react';
 import { stateFieldHasNoOptions } from './addressState';
 import { fieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
+import { NUMBER_BOUND_TYPES, resolveNumberBounds } from './numberBounds';
 import { Trigger } from '../types/Form';
 // @ts-ignore
 import isUrl from 'is-url';
@@ -292,6 +293,31 @@ function isFieldValueEmpty(value: any, servar: any) {
   return noVal;
 }
 
+// Older backends do not serve these keys
+const NUMBER_RANGE_ERRORS: Record<string, string> = {
+  minimum_value: 'Your entry must be at least {value}',
+  maximum_value: 'Your entry must be at most {value}'
+};
+
+function getNumberRangeError(
+  value: any,
+  servar: any,
+  repeat: any,
+  defaultErrors: Record<string, string>
+) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '';
+  const { min, max } = resolveNumberBounds(servar, repeat);
+  const message = (key: string, bound: number) =>
+    (defaultErrors[key] ?? NUMBER_RANGE_ERRORS[key]).replace(
+      '{value}',
+      String(bound)
+    );
+  if (min !== null && num < min) return message('minimum_value', min);
+  if (max !== null && num > max) return message('maximum_value', max);
+  return '';
+}
+
 /**
  * Default validations.
  * Returns the error message for a field value if it's invalid.
@@ -304,6 +330,10 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
     // If no value, error if field is required
     return servar.required ? defaultErrors.required : '';
   }
+
+  // Number values have no length; their min/max are numeric bounds
+  if (NUMBER_BOUND_TYPES.has(servar.type))
+    return getNumberRangeError(value, servar, repeat, defaultErrors);
 
   if (servar.min_length && value.length < servar.min_length) {
     return defaultErrors.minimum.replace('{length}', servar.min_length);
