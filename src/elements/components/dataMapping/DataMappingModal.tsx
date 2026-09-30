@@ -296,7 +296,12 @@ function DataMappingModal({
           })
           .then((r: any) => ({
             hubId: hub.id,
-            count: (Array.isArray(r) ? r : []).length
+            // Rows a form user sent back for review are staged too, but an
+            // upload doesn't replace them, so they aren't "your previous
+            // upload".
+            count: (Array.isArray(r) ? r : []).filter(
+              (entry: any) => !entry?.user_unverified
+            ).length
           }));
       })
     );
