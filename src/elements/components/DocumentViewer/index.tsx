@@ -18,6 +18,11 @@ import {
   runningInClient
 } from '../../../utils/browser';
 import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
+import SigningOptionsModal, {
+  SigningOptions,
+  SigningRecipient
+} from './SigningOptionsModal';
+import type { FinalizeEnvelopeReviewOptions } from '../../../utils/featheryClient/integrationClient';
 
 export type ReviewEnvelopeAction = 'sign' | 'fill' | 'download' | 'save';
 export type EditorToolbarAction = ReviewEnvelopeAction | 'draft';
@@ -91,6 +96,7 @@ export interface ViewerDocument {
   // The filler's own signing token, present only when they sign this one.
   signer_id?: string | null;
   name?: string;
+  recipients?: Omit<SigningRecipient, 'envelope_id'>[];
 }
 
 export interface DocumentViewerPayload {
@@ -107,12 +113,10 @@ interface DocumentViewerProps {
   onComplete: () => void;
   // The toolbar exposes a single Continue action (label varies by
   // `envelope_action`) that calls this to finalize the reviewed envelopes.
-  onFinalize?: (params: {
-    envelopes: { envelopeId: string; signerId?: string }[];
-    envelopeAction: ReviewEnvelopeAction;
-    // DocuSign sign only: save the envelope as a draft instead of sending it.
-    draft: boolean;
-  }) => Promise<{ status?: string; message?: string } | void>;
+  onFinalize?: (params: FinalizeEnvelopeReviewOptions) => Promise<{
+    status?: string;
+    message?: string;
+  } | void>;
   // Persist a PDF the filler edited in the viewer back to its envelope.
   // Called before finalize for every document with unsaved field edits, so
   // whatever outcome finalize runs (download, sign, ...) acts on the edited
@@ -146,6 +150,16 @@ export default function DocumentViewer({
   // Key of the toolbar action currently running (spinner + disable-all), or
   // null when idle. Keys: 'primary', 'draft', 'download'.
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [signingAction, setSigningAction] = useState<'sign' | 'draft' | null>(
+    null
+  );
+  const signingActionRef = useRef(signingAction);
+  signingActionRef.current = signingAction;
+  useEffect(() => {
+    const container = containerRef.current;
+    if (signingAction) container?.setAttribute('inert', '');
+    else container?.removeAttribute('inert');
+  }, [signingAction]);
   // Freeze the PDF widgets while an action runs. pdf.js only fires
   // onSetModified when the modified flag flips false→true, and during a save
   // it is already true — so an edit made mid-save never re-marks the doc
@@ -231,6 +245,7 @@ export default function DocumentViewer({
     containerRef.current?.focus();
     const doc = featheryDoc();
     const onKeyDown = (e: KeyboardEvent) => {
+      if (signingActionRef.current) return;
       const container = containerRef.current;
       if (!container) return;
       if (e.key === 'Escape') {
@@ -368,7 +383,8 @@ export default function DocumentViewer({
 
   const finalizeWith = async (
     toolbarAction: EditorToolbarAction,
-    busyActionKey: string
+    busyActionKey: string,
+    signingOptions?: SigningOptions
   ) => {
     setBusyKey(busyActionKey);
     setError('');
@@ -381,14 +397,38 @@ export default function DocumentViewer({
       // way forward. Required values belong to the form step that feeds
       // generation.
       const result = await onFinalize?.({
-        envelopes: reviewedEnvelopes,
+        envelopes: signingOptions
+          ? reviewedEnvelopes.map((envelope) => ({
+              ...envelope,
+              recipients: signingOptions.recipients
+                .filter(
+                  (recipient) => recipient.envelope_id === envelope.envelopeId
+                )
+                .map((recipient) => ({
+                  recipient_index: recipient.recipient_index,
+                  name: recipient.name,
+                  email: recipient.email,
+                  routing_order: recipient.routing_order
+                }))
+            }))
+          : reviewedEnvelopes,
         envelopeAction: TOOLBAR_ACTION_ENVELOPE_ACTION[toolbarAction],
-        draft: toolbarAction === 'draft'
+        draft: toolbarAction === 'draft',
+        ...(signingOptions &&
+        (signingOptions.email_subject || action.email_subject !== undefined)
+          ? { emailSubject: signingOptions.email_subject }
+          : {}),
+        ...(signingOptions &&
+        (signingOptions.email_blurb || action.email_blurb !== undefined)
+          ? { emailBlurb: signingOptions.email_blurb }
+          : {})
       });
       if (result?.status === 'error') {
         if (/expired/i.test(result.message ?? '')) setExpiredBanner(true);
         else setError(result.message ?? 'Something went wrong');
       } else if (closesEditor(toolbarAction, orderedToolbarActions)) {
+        containerRef.current?.removeAttribute('inert');
+        setSigningAction(null);
         onComplete();
       }
       // Otherwise the outcome has run (file downloaded, field saved) and the
@@ -409,7 +449,17 @@ export default function DocumentViewer({
         label: TOOLBAR_ACTION_LABELS[toolbarAction],
         variant:
           i === orderedToolbarActions.length - 1 ? 'primary' : 'secondary',
-        onClick: () => finalizeWith(toolbarAction, toolbarAction)
+        onClick: () => {
+          if (
+            (toolbarAction === 'sign' || toolbarAction === 'draft') &&
+            payload.documents.some(
+              (document) => document.recipients !== undefined
+            )
+          ) {
+            setError('');
+            setSigningAction(toolbarAction);
+          } else finalizeWith(toolbarAction, toolbarAction);
+        }
       }))
     : [
         {
@@ -422,56 +472,96 @@ export default function DocumentViewer({
 
   if (!portalElRef.current) return null;
   return createPortal(
-    <div
-      ref={containerRef}
-      role='dialog'
-      aria-modal='true'
-      aria-label={VIEWER_TITLE}
-      tabIndex={-1}
-      css={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        display: 'flex',
-        flexDirection: 'column',
-        backgroundColor: '#f4f5f8',
-        outline: 'none'
-      }}
-    >
-      <Toolbar
-        title={VIEWER_TITLE}
-        onBack={() => setShow(false)}
-        actions={toolbarActions}
-        busyKey={busyKey}
-      />
-      {expiredBanner && (
-        <AlertBanner message='This session has expired. Please close and reopen the viewer.' />
-      )}
-      {error && <AlertBanner message={error} onDismiss={() => setError('')} />}
-      <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <ViewerSidebar
-          documents={payload.documents}
-          pageCounts={pageCounts}
-          pdfProxies={loadedDocs.current}
-          activeKey={activeKey}
-          onNavigate={onNavigate}
-          isNarrow={isNarrow}
+    <>
+      <div
+        ref={containerRef}
+        role='dialog'
+        aria-modal='true'
+        aria-hidden={signingAction ? true : undefined}
+        aria-label={VIEWER_TITLE}
+        tabIndex={-1}
+        css={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 100,
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: '#f4f5f8',
+          outline: 'none'
+        }}
+      >
+        <Toolbar
+          title={VIEWER_TITLE}
+          onBack={() => setShow(false)}
+          actions={toolbarActions}
+          busyKey={busyKey}
         />
-        <div
-          ref={scrollContainerRef}
-          css={{ flex: 1, overflow: 'auto', padding: 24 }}
-        >
-          <DocumentCanvas
+        {expiredBanner && (
+          <AlertBanner message='This session has expired. Please close and reopen the viewer.' />
+        )}
+        {error && (
+          <AlertBanner message={error} onDismiss={() => setError('')} />
+        )}
+        <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          <ViewerSidebar
             documents={payload.documents}
-            pageWidth={pageWidth}
-            onDocLoad={onDocLoad}
-            registerPageRef={registerPageRef}
-            inputLocked={isInputLocked}
-            readOnly={readOnly}
+            pageCounts={pageCounts}
+            pdfProxies={loadedDocs.current}
+            activeKey={activeKey}
+            onNavigate={onNavigate}
+            isNarrow={isNarrow}
           />
+          <div
+            ref={scrollContainerRef}
+            css={{ flex: 1, overflow: 'auto', padding: 24 }}
+          >
+            <DocumentCanvas
+              documents={payload.documents}
+              pageWidth={pageWidth}
+              onDocLoad={onDocLoad}
+              registerPageRef={registerPageRef}
+              inputLocked={isInputLocked}
+              readOnly={readOnly}
+            />
+          </div>
         </div>
       </div>
-    </div>,
+      {signingAction && (
+        <SigningOptionsModal
+          initialValues={{
+            recipients: payload.documents.flatMap((document) =>
+              document.envelope_id
+                ? (document.recipients ?? []).map((recipient) => ({
+                    ...recipient,
+                    envelope_id: document.envelope_id as string,
+                    document_name: document.name
+                  }))
+                : []
+            ),
+            email_subject: action.email_subject ?? '',
+            email_blurb: action.email_blurb ?? ''
+          }}
+          draft={signingAction === 'draft'}
+          busy={busyKey !== null}
+          error={
+            error ||
+            (expiredBanner
+              ? 'This session has expired. Please close and reopen the viewer.'
+              : '')
+          }
+          onClose={() => {
+            // Restore interactivity before the modal restores focus to its
+            // opener during unmount; browsers cannot focus an inert element.
+            containerRef.current?.removeAttribute('inert');
+            setSigningAction(null);
+            setError('');
+          }}
+          onSubmit={(options) =>
+            finalizeWith(signingAction, signingAction, options)
+          }
+        />
+      )}
+    </>,
     portalElRef.current
   );
 }

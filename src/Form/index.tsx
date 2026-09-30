@@ -1,3 +1,4 @@
+import type { FinalizeEnvelopeReviewOptions } from '../utils/featheryClient/integrationClient';
 import { RouterProvider, useLocation, useNavigate } from '../hooks/router';
 import React, {
   ReactNode,
@@ -1571,16 +1572,12 @@ function Form({
               setReviewViewerPayload({
                 payload: data,
                 action,
-                onFinalize: async ({
-                  envelopes,
-                  envelopeAction,
-                  draft
-                }: any) => {
-                  const result = await client.finalizeEnvelopeReview(action, {
-                    envelopes,
-                    envelopeAction,
-                    draft
-                  });
+                onFinalize: async (options: FinalizeEnvelopeReviewOptions) => {
+                  const { envelopes, envelopeAction, draft = false } = options;
+                  const result = await client.finalizeEnvelopeReview(
+                    action,
+                    options
+                  );
                   if (!result) {
                     return { status: 'error', message: 'Finalize failed' };
                   }
@@ -3602,20 +3599,12 @@ function Form({
             setReviewViewerPayload({
               payload: data,
               action,
-              onFinalize: async ({
-                envelopes,
-                envelopeAction,
-                draft
-              }: {
-                envelopes: { envelopeId: string }[];
-                envelopeAction: 'sign' | 'fill' | 'download' | 'save';
-                draft: boolean;
-              }) => {
-                const result = await client.finalizeEnvelopeReview(action, {
-                  envelopes,
-                  envelopeAction,
-                  draft
-                });
+              onFinalize: async (options: FinalizeEnvelopeReviewOptions) => {
+                const { envelopes, envelopeAction, draft = false } = options;
+                const result = await client.finalizeEnvelopeReview(
+                  action,
+                  options
+                );
                 // A missing result is a failure, not a success: _fetch
                 // resolves undefined on a network blip / 403 / 409, and
                 // `result?.status` would let that fall through to the sign

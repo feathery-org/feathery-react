@@ -104,6 +104,16 @@ it('validates email recipients and permits parallel in-person recipients', () =>
   expect(props.onSubmit).toHaveBeenCalledWith(parallel);
 });
 
+it('rejects signing orders beyond the supported limit', () => {
+  const { props } = setup();
+  fireEvent.change(screen.getByLabelText('Signing order 1'), {
+    target: { value: '32768' }
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('32767 or less');
+  expect(props.onSubmit).not.toHaveBeenCalled();
+});
+
 it('retains edits after server errors and blocks all actions while busy', () => {
   const { props, rerender } = setup();
   fireEvent.click(screen.getByRole('button', { name: 'Next' }));
@@ -111,6 +121,7 @@ it('retains edits after server errors and blocks all actions while busy', () => 
     target: { value: 'Keep this' }
   });
   rerender(<SigningOptionsModal {...props} busy error='Send failed' />);
+  expect(screen.getByRole('dialog')).toHaveFocus();
   expect(screen.getByRole('alert')).toHaveTextContent('Send failed');
   for (const button of screen.getAllByRole('button'))
     expect(button).toBeDisabled();

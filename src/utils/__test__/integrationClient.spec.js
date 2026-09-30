@@ -1100,18 +1100,36 @@ describe('IntegrationClient', () => {
         ok: true,
         json: jest.fn().mockResolvedValue({ status: 'sent' })
       });
-      const recipients = [{
-        recipient_index: 0, name: 'Alex', email: 'alex@example.com', routing_order: 2
-      }];
-      await client.finalizeEnvelopeReview({
-        run_async: false, email_subject: 'Default', email_blurb: 'Default message'
-      }, {
-        envelopes: [{ envelopeId: 'env-1', signerId: 'own-token', recipients }],
-        envelopeAction: 'sign', emailSubject: 'Please review', emailBlurb: ''
-      });
-      expect(requestBody().envelopes).toEqual([{
-        envelope_id: 'env-1', signer_id: 'own-token', recipients
-      }]);
+      const recipients = [
+        {
+          recipient_index: 0,
+          name: 'Alex',
+          email: 'alex@example.com',
+          routing_order: 2
+        }
+      ];
+      await client.finalizeEnvelopeReview(
+        {
+          run_async: false,
+          email_subject: 'Default',
+          email_blurb: 'Default message'
+        },
+        {
+          envelopes: [
+            { envelopeId: 'env-1', signerId: 'own-token', recipients }
+          ],
+          envelopeAction: 'sign',
+          emailSubject: 'Please review',
+          emailBlurb: ''
+        }
+      );
+      expect(requestBody().envelopes).toEqual([
+        {
+          envelope_id: 'env-1',
+          signer_id: 'own-token',
+          recipients
+        }
+      ]);
       expect(requestBody().email_subject).toBe('Please review');
       expect(requestBody().email_blurb).toBe('');
     });

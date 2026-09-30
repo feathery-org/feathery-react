@@ -77,6 +77,12 @@ export default function SigningOptionsModal({
     headingRef.current?.focus();
   }, [step]);
 
+  useEffect(() => {
+    // Disabling the focused Send button can move browser focus to the body.
+    // Keep keyboard events in the dialog while every control is disabled.
+    if (busy) dialogRef.current?.focus();
+  }, [busy]);
+
   const updateRecipient = (
     index: number,
     field: 'name' | 'email',
@@ -97,6 +103,7 @@ export default function SigningOptionsModal({
       const order = Number(orders[index]);
       if (!Number.isSafeInteger(order) || order < 1)
         return 'Signing order must be a positive integer.';
+      if (order > 32767) return 'Signing order must be 32767 or less.';
       const inPerson = row.is_self && !row.email.trim();
       if (!inPerson && !row.name.trim())
         return `Enter a name for recipient ${index + 1}.`;
@@ -143,7 +150,7 @@ export default function SigningOptionsModal({
   return (
     <div
       css={{
-        position: 'absolute',
+        position: 'fixed',
         inset: 0,
         zIndex: 110,
         backgroundColor: 'rgba(17,24,39,0.4)',
@@ -249,6 +256,7 @@ export default function SigningOptionsModal({
                     Name
                     <input
                       aria-label={`Name ${index + 1}`}
+                      maxLength={100}
                       css={inputCss}
                       value={row.name}
                       onChange={(event) =>
@@ -275,6 +283,7 @@ export default function SigningOptionsModal({
                       aria-label={`Signing order ${index + 1}`}
                       type='number'
                       min={1}
+                      max={32767}
                       step={1}
                       css={inputCss}
                       value={orders[index]}
