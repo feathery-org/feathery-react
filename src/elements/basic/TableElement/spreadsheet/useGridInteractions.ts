@@ -118,18 +118,20 @@ export function useGridInteractions(options: GridInteractionOptions) {
     restoreFocus?.();
   }, [restoreFocus, rowIndexById, scrollToCell, table]);
 
+  // The new row goes at the end of the data, like the add-row strip's. The
+  // row shown last is not the data's last row under a sort or a pinned row,
+  // and inserting after it would land the new row mid-sheet.
   const appendAfterLastRow = React.useCallback(
     (rowId: string, columnId: string) => {
       if (!canEdit || !onInsertRow) return false;
       if (pendingRowFocus.current) return true;
-      if (table.getRowsInDisplayOrder().at(-1)?.id !== rowId) return false;
-      const rowIndex = rowIndexById.get(rowId);
-      if (rowIndex === undefined) return false;
-      pendingRowFocus.current = { rowIndex: rowIndex + 1, columnId };
-      onInsertRow(rowIndex + 1);
+      const displayRows = table.getRowsInDisplayOrder();
+      if (displayRows.at(-1)?.id !== rowId) return false;
+      pendingRowFocus.current = { rowIndex: displayRows.length, columnId };
+      onInsertRow(displayRows.length);
       return true;
     },
-    [canEdit, onInsertRow, rowIndexById, table]
+    [canEdit, onInsertRow, table]
   );
 
   const parse = React.useCallback(
@@ -171,7 +173,10 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [table]
   );
   const getDisplayColumns = React.useCallback(
-    () => table.getAllLeafColumns(),
+    () => [
+      ...table.getStartVisibleLeafColumns(),
+      ...table.getCenterVisibleLeafColumns()
+    ],
     [table]
   );
 
