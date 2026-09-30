@@ -121,6 +121,7 @@ export interface PositionedElement {
 export interface Subgrid extends PositionedElement {
   id: string;
   repeated: boolean;
+  properties?: { allow_empty?: boolean; [key: string]: any };
 }
 
 interface LogicRuleBase {
