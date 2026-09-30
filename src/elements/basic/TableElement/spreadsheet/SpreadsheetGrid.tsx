@@ -659,6 +659,25 @@ export const SpreadsheetGrid = React.forwardRef<
   const canvasHeight =
     rowsHeight + (onInsertRow || noFilterMatches ? ROW_HEIGHT : 0);
 
+  // Props shared by every SubscribedRow, frozen band and scrolling body alike.
+  const sharedRowProps = {
+    pinnedColumns: hasPinnedColumns,
+    table,
+    columnSizing,
+    virtualColumns,
+    interactions,
+    canEdit,
+    rowIndexById,
+    rowNumberById,
+    getCellShading,
+    cellRules,
+    fillPreview,
+    onStartHeaderSelection: startHeaderSelection,
+    onExtendHeaderSelection: extendHeaderSelection,
+    onOpenRowMenu: setRowMenu,
+    onStartFill: startFillDrag
+  };
+
   return (
     <>
       <div
@@ -717,21 +736,7 @@ export const SpreadsheetGrid = React.forwardRef<
                   row={row}
                   top={index * ROW_HEIGHT}
                   frozen
-                  pinnedColumns={hasPinnedColumns}
-                  table={table}
-                  columnSizing={columnSizing}
-                  virtualColumns={virtualColumns}
-                  interactions={interactions}
-                  canEdit={canEdit}
-                  rowIndexById={rowIndexById}
-                  rowNumberById={rowNumberById}
-                  getCellShading={getCellShading}
-                  cellRules={cellRules}
-                  fillPreview={fillPreview}
-                  onStartHeaderSelection={startHeaderSelection}
-                  onExtendHeaderSelection={extendHeaderSelection}
-                  onOpenRowMenu={setRowMenu}
-                  onStartFill={startFillDrag}
+                  {...sharedRowProps}
                 />
               ))}
             </div>
@@ -746,21 +751,7 @@ export const SpreadsheetGrid = React.forwardRef<
                 row={row}
                 top={virtualRow.start}
                 frozen={false}
-                pinnedColumns={hasPinnedColumns}
-                table={table}
-                columnSizing={columnSizing}
-                virtualColumns={virtualColumns}
-                interactions={interactions}
-                canEdit={canEdit}
-                rowIndexById={rowIndexById}
-                rowNumberById={rowNumberById}
-                getCellShading={getCellShading}
-                cellRules={cellRules}
-                fillPreview={fillPreview}
-                onStartHeaderSelection={startHeaderSelection}
-                onExtendHeaderSelection={extendHeaderSelection}
-                onOpenRowMenu={setRowMenu}
-                onStartFill={startFillDrag}
+                {...sharedRowProps}
               />
             );
           })}
