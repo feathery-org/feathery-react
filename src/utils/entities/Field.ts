@@ -1,4 +1,9 @@
-import { defaultClient, FeatheryFieldTypes, fieldValues } from '../init';
+import {
+  defaultClient,
+  FeatheryFieldTypes,
+  fieldValues,
+  normalizeKnownAsciiValues
+} from '../init';
 import debounce from 'lodash.debounce';
 import { rerenderAllForms } from '../formHelperFunctions';
 import {
@@ -63,7 +68,11 @@ export default class Field {
       const field = this._getSourceField();
       newVal = getDefaultFormFieldValue(field);
     }
-    fieldValues[this._fieldKey] = newVal;
+    fieldValues[this._fieldKey] = parseUserVal(
+      newVal,
+      this._fieldKey,
+      internalState[this._formUuid]?.client.formKey
+    );
     this._runFieldUpdate();
   }
 
@@ -78,7 +87,11 @@ export default class Field {
     )
       return new Proxy(fieldVal as object, {
         set: (target: any, property: any, value) => {
-          target[property] = parseUserVal(value, this._fieldKey);
+          target[property] = parseUserVal(
+            value,
+            this._fieldKey,
+            internalState[this._formUuid]?.client.formKey
+          );
           this._runFieldUpdate();
           return true;
         }
@@ -90,9 +103,18 @@ export default class Field {
   set value(val: FeatheryFieldTypes) {
     if (Array.isArray(val))
       fieldValues[this._fieldKey] = val.map((entry) =>
-        parseUserVal(entry, this._fieldKey)
+        parseUserVal(
+          entry,
+          this._fieldKey,
+          internalState[this._formUuid]?.client.formKey
+        )
       );
-    else fieldValues[this._fieldKey] = parseUserVal(val, this._fieldKey);
+    else
+      fieldValues[this._fieldKey] = parseUserVal(
+        val,
+        this._fieldKey,
+        internalState[this._formUuid]?.client.formKey
+      );
     this._runFieldUpdate();
   }
 
@@ -431,8 +453,17 @@ export default class Field {
   }
 }
 
-export function parseUserVal(userVal: FeatheryFieldTypes, key: string) {
-  let val: FeatheryFieldTypes | File = userVal;
+export function parseUserVal(
+  userVal: FeatheryFieldTypes,
+  key: string,
+  formKey?: string
+) {
+  let val: FeatheryFieldTypes | File = normalizeKnownAsciiValues(
+    {
+      [key]: userVal
+    },
+    formKey
+  )[key];
   if (isBase64Image(val)) val = dataURLToFile(val, `${key}.png`);
   // If the value is a file type, convert the file or files (if repeated) to Promises
   return val instanceof File ? Promise.resolve(val) : val;

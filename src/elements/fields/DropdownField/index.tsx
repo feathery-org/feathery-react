@@ -12,6 +12,7 @@ import { getStateOptions, hasState } from '../../components/data/states';
 import { css, Global } from '@emotion/react';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { fieldValues } from '../../../utils/init';
+import { toAscii } from '../../../utils/ascii';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
 
 export default function DropdownField({
@@ -24,6 +25,7 @@ export default function DropdownField({
   fieldVal = '',
   repeatIndex = null,
   countryCode = '',
+  asciiOnly = false,
   editMode,
   rightToLeft,
   onChange = () => {},
@@ -42,18 +44,22 @@ export default function DropdownField({
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly);
 
   useEffect(() => {
     if (servar.type === 'gmap_state') {
       const code = countryCode.toLowerCase() || servar.metadata.default_country;
-      if (code && fieldVal && !hasState(code, fieldVal, short, true)) {
+      if (
+        code &&
+        fieldVal &&
+        !hasState(code, fieldVal, short, true, asciiOnly)
+      ) {
         fieldVal = '';
         onChange({ target: { value: fieldVal } });
       }
       setCurCountry(code || 'us');
     }
-  }, [countryCode, setCurCountry]);
+  }, [countryCode, setCurCountry, asciiOnly]);
 
   let options;
   if (shouldSalesforceSync) {
@@ -64,7 +70,10 @@ export default function DropdownField({
     ));
   } else if (servar.type === 'gmap_state') {
     if (curCountry === null) options = [];
-    else if (fieldVal && !hasState(curCountry, fieldVal, short)) {
+    else if (
+      fieldVal &&
+      !hasState(curCountry, fieldVal, short, false, asciiOnly)
+    ) {
       // If user selected a country without states defined
       options = [
         <option key={fieldVal} value={fieldVal}>
@@ -75,7 +84,8 @@ export default function DropdownField({
       options = getStateOptions(
         curCountry,
         short,
-        servar.metadata.include_territories
+        servar.metadata.include_territories,
+        asciiOnly
       );
   } else if (servar.type === 'gmap_country') {
     const translation = element.properties.translate || {};
@@ -85,7 +95,7 @@ export default function DropdownField({
         : countryName;
       const label = translation[countryCode] || countryName;
       return (
-        <option key={countryCode} value={val}>
+        <option key={countryCode} value={asciiOnly ? toAscii(val) : val}>
           {label}
         </option>
       );

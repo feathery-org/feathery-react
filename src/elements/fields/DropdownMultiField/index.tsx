@@ -38,6 +38,7 @@ export default function DropdownMultiField({
   fieldVal = [],
   repeatIndex = null,
   editMode,
+  asciiOnly = false,
   onChange = () => {},
   elementProps = {},
   rightToLeft,
@@ -54,7 +55,7 @@ export default function DropdownMultiField({
   const servar = element.servar;
   const fieldKey = servar.key;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly);
 
   const properties = element.properties || {};
   const translation = properties.translate || {};

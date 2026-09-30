@@ -15,6 +15,7 @@ function ButtonGroupField({
   fieldVal = null,
   repeatIndex = null,
   editMode,
+  asciiOnly = false,
   onClick = () => {},
   elementProps = {},
   disabled = false,
@@ -23,7 +24,7 @@ function ButtonGroupField({
   const containerRef = useRef(null);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly);
 
   const selectedOptMap = useMemo(
     () =>

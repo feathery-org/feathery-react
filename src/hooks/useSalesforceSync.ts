@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { asciiOption } from '../utils/asciiOptions';
 import FeatheryClient from '../utils/featheryClient';
 import { registerDynamicOptionLabels } from '../utils/optionLabels';
 
@@ -7,7 +8,11 @@ type SalesforceOption = {
   label: string;
 };
 
-export default function useSalesforceSync(servar: any, editMode: boolean) {
+export default function useSalesforceSync(
+  servar: any,
+  editMode: boolean,
+  asciiOnly = false
+) {
   const [dynamicOptions, setDynamicOptions] = useState<SalesforceOption[]>([]);
   const [loadingDynamicOptions, setLoadingDynamicOptions] = useState(false);
   const salesforceSync = servar?.metadata?.salesforce_sync;
@@ -25,7 +30,8 @@ export default function useSalesforceSync(servar: any, editMode: boolean) {
           salesforceSync.field_name,
           salesforceSync.credential_key
         );
-        const options = data.options || [];
+        const rawOptions = data.options || [];
+        const options = asciiOnly ? rawOptions.map(asciiOption) : rawOptions;
         setDynamicOptions(options);
         // These options replace the schema's in the field, so text variables
         // have to resolve labels against them too - nothing else registers
@@ -43,7 +49,11 @@ export default function useSalesforceSync(servar: any, editMode: boolean) {
     };
 
     fetchSalesforceOptions();
-  }, [salesforceSync]);
+  }, [salesforceSync, asciiOnly]);
 
-  return { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync };
+  return {
+    dynamicOptions,
+    loadingDynamicOptions,
+    shouldSalesforceSync
+  };
 }
