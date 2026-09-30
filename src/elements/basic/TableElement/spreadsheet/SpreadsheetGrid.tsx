@@ -321,9 +321,11 @@ export const SpreadsheetGrid = React.forwardRef<
    * Opens the row menu. A menu opened on a row inside the current selection
    * takes the whole selection as its bulk target, the way a spreadsheet's
    * row actions apply to every selected row; elsewhere it is just that row.
+   * Returns whether it opened: a row with no action left for it (a read-only
+   * table's already-unvalidated row) keeps the browser's own menu.
    */
   const openRowMenu = React.useCallback(
-    (target: Omit<RowMenuTarget, 'rowIndexes'>) => {
+    (target: Omit<RowMenuTarget, 'rowIndexes'>): boolean => {
       const displayRows = table.getRowsInDisplayOrder();
       const bounds = table.getCellSelectionBounds();
       const clickedDisplayIndex = displayRows.findIndex(
@@ -344,9 +346,24 @@ export const SpreadsheetGrid = React.forwardRef<
           }
         });
       }
+      const hasItems =
+        onInsertRow ||
+        onDeleteRow ||
+        (onUnverifyRows &&
+          canUnverifyRow &&
+          [...rowIndexes].some(canUnverifyRow));
+      if (!hasItems) return false;
       setRowMenu({ ...target, rowIndexes: [...rowIndexes] });
+      return true;
     },
-    [table, rowIndexById]
+    [
+      table,
+      rowIndexById,
+      onInsertRow,
+      onDeleteRow,
+      onUnverifyRows,
+      canUnverifyRow
+    ]
   );
   const [headerMenu, setHeaderMenu] = React.useState<HeaderMenuTarget | null>(
     null
@@ -357,6 +374,26 @@ export const SpreadsheetGrid = React.forwardRef<
     rowMenu && onUnverifyRows && canUnverifyRow
       ? rowMenu.rowIndexes.filter(canUnverifyRow)
       : [];
+  // The menu names the rows it will act on, which are not always the one it
+  // was opened on (that one may already be unvalidated).
+  const unverifyNumbers: number[] = [];
+  if (unverifyTargets.length) {
+    const displayNumbers = new Map<number, number>();
+    table.getRowsInDisplayOrder().forEach((row, index) => {
+      const rowIndex = rowIndexById.get(row.id);
+      if (rowIndex != null) displayNumbers.set(rowIndex, index + 1);
+    });
+    unverifyTargets.forEach((rowIndex) =>
+      unverifyNumbers.push(displayNumbers.get(rowIndex) ?? rowIndex + 1)
+    );
+  }
+  // A menu whose last action went away while open (a refetch or load landing)
+  // closes rather than lingering unmounted and reappearing later on its own.
+  const rowMenuEmpty =
+    !!rowMenu && !onInsertRow && !onDeleteRow && !unverifyTargets.length;
+  React.useEffect(() => {
+    if (rowMenuEmpty) setRowMenu(null);
+  }, [rowMenuEmpty]);
   const fillDragRef = React.useRef<FillDrag | null>(null);
   const headerSelectionDragRef = React.useRef<HeaderSelectionDrag | null>(null);
 
@@ -665,7 +702,7 @@ export const SpreadsheetGrid = React.forwardRef<
           target={rowMenu}
           canInsert={Boolean(onInsertRow)}
           canDelete={Boolean(onDeleteRow)}
-          unverifyCount={unverifyTargets.length}
+          unverifyNumbers={unverifyNumbers}
           onInsertAbove={() => onInsertRow?.(rowMenu.rowIndex)}
           onInsertBelow={() => onInsertRow?.(rowMenu.rowIndex + 1)}
           onDelete={() => onDeleteRow?.(rowMenu.rowIndex)}
@@ -954,7 +991,7 @@ type SubscribedRowProps = {
     fullySelected: boolean
   ) => void;
   onExtendHeaderSelection: (axis: 'row', id: string) => void;
-  onOpenRowMenu?: (target: Omit<RowMenuTarget, 'rowIndexes'>) => void;
+  onOpenRowMenu?: (target: Omit<RowMenuTarget, 'rowIndexes'>) => boolean;
   onStartFill: (event: React.MouseEvent, source: GridBounds) => void;
 };
 
@@ -1070,13 +1107,13 @@ function SpreadsheetRowView({
         onMouseEnter={() => onExtendHeaderSelection('row', row.id)}
         onContextMenu={(event) => {
           if (!onOpenRowMenu) return;
-          event.preventDefault();
-          onOpenRowMenu({
+          const opened = onOpenRowMenu({
             rowIndex: rowIndexById.get(row.id) ?? rowIndex,
             displayNumber: rowIndex + 1,
             x: event.clientX,
             y: event.clientY
           });
+          if (opened) event.preventDefault();
         }}
       >
         {rowIndex + 1}

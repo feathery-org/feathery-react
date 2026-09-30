@@ -323,6 +323,11 @@ export function useHubTableSource({
   rowsRef.current = rows;
   const pendingRef = useRef(0);
   const nextLocalId = useRef(0);
+  // Which set (verified or staged) queued writes found each row in, by local
+  // id. A write queued before an earlier one moved the row (a delete clicked
+  // right after a save that auto-verified it) reads this instead of its
+  // click-time snapshot, which may be gone from `rows` by the time it runs.
+  const settledVerified = useRef(new Map<string, boolean>());
 
   const commitRows = useCallback((nextRows: HubRow[]) => {
     rowsRef.current = nextRows;
@@ -453,6 +458,8 @@ export function useHubTableSource({
       }
       if ('error' in entries) throw entries.error;
       const list: HubEntry[] = Array.isArray(entries.list) ? entries.list : [];
+      // The fresh rows carry the Hub's own verified flags.
+      settledVerified.current.clear();
       commitRows(
         orderLikeGrid(list, rowsRef.current).map((entry) => ({
           localId: `entry:${entry.id}`,
@@ -581,6 +588,7 @@ export function useHubTableSource({
           where: [{ entryId }]
         });
         if (result?.verified_count) {
+          settledVerified.current.set(localId, true);
           updateRow(localId, (r) => ({ ...r, verified: true, errors: {} }));
         }
       } catch (error) {
@@ -834,11 +842,13 @@ export function useHubTableSource({
 
       enqueue(async () => {
         if (!hubId || !client?.dataHubAction) return;
+        const verified =
+          settledVerified.current.get(target.localId) ?? target.verified;
         try {
           const result = await client.dataHubAction({
             hubId,
             operation: 'delete',
-            ...(target.verified ? {} : { verification: 'unverified' }),
+            ...(verified ? {} : { verification: 'unverified' }),
             where: [{ entryId: target.entryId as string }]
           });
           // Zero matches means the Hub's copy has moved on (the row was
@@ -848,7 +858,7 @@ export function useHubTableSource({
         } catch (error) {
           // Put the row back so the table keeps matching the Hub.
           const restored = [...rowsRef.current];
-          restored.splice(rowIndex, 0, target);
+          restored.splice(rowIndex, 0, { ...target, verified });
           commitRows(restored);
           setErrors(errorMessages(error));
         }
@@ -891,9 +901,15 @@ export function useHubTableSource({
             if (result?.unverified_count === 0) {
               throw new Error(ROW_GONE_MESSAGE);
             }
+            settledVerified.current.set(target.localId, false);
           } catch (error) {
             updateRow(target.localId, (r) => ({ ...r, verified: true }));
-            setErrors(errorMessages(error));
+            // A bulk flip reports every failed row, not just the last one.
+            const messages = errorMessages(error);
+            setErrors((prev) => [
+              ...prev,
+              ...messages.filter((message) => !prev.includes(message))
+            ]);
           }
         });
       });

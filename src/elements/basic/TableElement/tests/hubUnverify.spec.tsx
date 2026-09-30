@@ -1,5 +1,11 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor
+} from '@testing-library/react';
 import { useHubTableSource } from '../useHubTableSource';
 import { RowMenu } from '../spreadsheet/RowMenu';
 
@@ -151,6 +157,23 @@ describe('marking Data Hub rows unvalidated', () => {
     expect(result.current.rowVerified).toEqual([true, false]);
     expect(result.current.errors[0]).toMatch(/Refresh/);
   });
+
+  test('a bulk flip reports each distinct failure', async () => {
+    const failures = ['first', 'second'];
+    const dataHubAction = jest.fn((options: any) =>
+      options.operation === 'get'
+        ? Promise.resolve(entries().map((e) => ({ ...e, verified: true })))
+        : Promise.reject(new Error(failures.shift()))
+    );
+    const { result } = setup(dataHubAction, { hub_allow_unverify: true });
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+
+    act(() => result.current.handleUnverifyRows([0, 1]));
+    await waitFor(() => expect(result.current.saving).toBe(false));
+
+    expect(result.current.rowVerified).toEqual([true, true]);
+    expect(result.current.errors).toEqual(['first', 'second']);
+  });
 });
 
 describe('auto-validating Data Hub rows on save', () => {
@@ -295,6 +318,46 @@ describe('auto-validating Data Hub rows on save', () => {
   });
 });
 
+describe('deleting a row right after its save auto-verified it', () => {
+  test('scopes the delete to the set the row ended up in', async () => {
+    let finishUpdate: () => void = () => {};
+    const dataHubAction = mockHub(({ operation }) => {
+      if (operation === 'update') {
+        return new Promise((resolve) => {
+          finishUpdate = () => resolve({ updated: 1 });
+        });
+      }
+      return Promise.resolve(
+        operation === 'verify' ? { verified_count: 1 } : { deleted: 1 }
+      );
+    });
+    const { result } = setup(dataHubAction, { hub_auto_verify: true });
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+    dataHubAction.mockClear();
+
+    // The delete is clicked while the save is still in flight, so its
+    // snapshot of row 1 still says staged.
+    act(() => {
+      result.current.handleCellsEdit([
+        { fieldKey: key('email'), rowIndex: 1, value: 'bob@x.io' }
+      ]);
+    });
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(1));
+    act(() => result.current.handleDeleteRow(1));
+    act(() => finishUpdate());
+    await waitFor(() => expect(result.current.saving).toBe(false));
+
+    const calls = dataHubAction.mock.calls.map((c) => c[0]);
+    expect(calls.map((c) => c.operation)).toEqual([
+      'update',
+      'verify',
+      'delete'
+    ]);
+    expect(calls[2].verification).toBeUndefined();
+    expect(result.current.entryIds).toEqual(['entry1']);
+  });
+});
+
 describe('spreadsheet row menu unvalidate item', () => {
   const target = { rowIndex: 2, displayNumber: 3, rowIndexes: [2], x: 0, y: 0 };
   const renderMenu = (props: Partial<Parameters<typeof RowMenu>[0]>) =>
@@ -302,7 +365,7 @@ describe('spreadsheet row menu unvalidate item', () => {
       <RowMenu
         target={target}
         canInsert={false}
-        canDelete={true}
+        canDelete
         onInsertAbove={jest.fn()}
         onInsertBelow={jest.fn()}
         onDelete={jest.fn()}
@@ -311,29 +374,29 @@ describe('spreadsheet row menu unvalidate item', () => {
       />
     );
 
-  test('names the row when it is the only target', () => {
+  test('names the row it acts on, not the one it was opened on', () => {
     const onUnverify = jest.fn();
-    renderMenu({ unverifyCount: 1, onUnverify });
-    fireEvent.click(screen.getByText('Mark row 3 as unvalidated'));
+    renderMenu({ unverifyNumbers: [2], onUnverify });
+    fireEvent.click(screen.getByText('Mark as unvalidated (row 2)'));
     expect(onUnverify).toHaveBeenCalled();
   });
 
   test('counts the rows for a selection-wide action', () => {
-    renderMenu({ unverifyCount: 4, onUnverify: jest.fn() });
-    expect(screen.getByText('Mark 4 rows as unvalidated')).toBeTruthy();
+    renderMenu({ unverifyNumbers: [1, 2, 4, 5], onUnverify: jest.fn() });
+    expect(screen.getByText('Mark as unvalidated (4 rows)')).toBeTruthy();
   });
 
   test('renders nothing when there is no action to offer', () => {
     const { container } = renderMenu({
       canDelete: false,
-      unverifyCount: 0,
+      unverifyNumbers: [],
       onUnverify: jest.fn()
     });
     expect(container.firstChild).toBeNull();
   });
 
   test('is absent when no target row can be unvalidated', () => {
-    renderMenu({ unverifyCount: 0, onUnverify: jest.fn() });
+    renderMenu({ unverifyNumbers: [], onUnverify: jest.fn() });
     expect(screen.queryByText(/unvalidated/)).toBeNull();
     expect(screen.getByText('Delete row 3')).toBeTruthy();
   });

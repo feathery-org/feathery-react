@@ -1,5 +1,6 @@
 import React from 'react';
 import { TABLE_CLASS } from '../classNames';
+import { UNVERIFY_ACTION_LABEL } from '../hubStatus';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 
 export type RowMenuTarget = {
@@ -20,8 +21,11 @@ type RowMenuProps = {
   target: RowMenuTarget;
   canInsert: boolean;
   canDelete: boolean;
-  /** How many of the target rows can be sent back to the staged set. */
-  unverifyCount?: number;
+  /**
+   * Row numbers, as shown to the user, of the target rows that can be sent
+   * back to the staged set.
+   */
+  unverifyNumbers?: number[];
   onInsertAbove: () => void;
   onInsertBelow: () => void;
   onDelete: () => void;
@@ -33,7 +37,7 @@ export function RowMenu({
   target,
   canInsert,
   canDelete,
-  unverifyCount = 0,
+  unverifyNumbers = [],
   onInsertAbove,
   onInsertBelow,
   onDelete,
@@ -45,20 +49,20 @@ export function RowMenu({
     items.push({ label: 'Insert row above', run: onInsertAbove });
     items.push({ label: 'Insert row below', run: onInsertBelow });
   }
-  if (unverifyCount > 0 && onUnverify) {
+  if (unverifyNumbers.length && onUnverify) {
     items.push({
       label:
-        unverifyCount === 1
-          ? `Mark row ${target.displayNumber} as unvalidated`
-          : `Mark ${unverifyCount} rows as unvalidated`,
+        unverifyNumbers.length === 1
+          ? `${UNVERIFY_ACTION_LABEL} (row ${unverifyNumbers[0]})`
+          : `${UNVERIFY_ACTION_LABEL} (${unverifyNumbers.length} rows)`,
       run: onUnverify
     });
   }
   if (canDelete) {
     items.push({ label: `Delete row ${target.displayNumber}`, run: onDelete });
   }
-  // A read-only table whose only action is "mark as unvalidated" has nothing
-  // to offer on a row that is already unvalidated.
+  // The grid only opens the menu when there is something in it; this covers
+  // the moment between a row losing its last action and the grid closing it.
   if (!items.length) return null;
 
   return (

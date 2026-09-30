@@ -248,8 +248,11 @@ function TableElement({
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
   // Sending a Hub row back for review lives where delete does: in the
   // overflow menu, or in its own icon column when there is no menu. Only a
-  // validated row with an entry qualifies, so the check is per row.
-  const canUnverifyRows = isHub && hub.canUnverify;
+  // validated row with an entry qualifies, so the check is per row. Like
+  // delete it waits out a load (a landing refetch would overwrite the flip)
+  // and a flipped table, whose rows are fields rather than entries.
+  const canUnverifyRows =
+    isHub && hub.canUnverify && !isTransposed && !hub.loading;
   const canUnverifyRow = useCallback(
     (rowIndex: number) =>
       canUnverifyRows &&
