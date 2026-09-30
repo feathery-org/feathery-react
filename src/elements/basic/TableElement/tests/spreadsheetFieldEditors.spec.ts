@@ -4,6 +4,7 @@ import {
   choiceLabelsFor,
   choicesFor,
   editorKindFor,
+  cellSearchText,
   formatCellDisplay,
   fromEditorValue,
   matchChoice,
@@ -304,6 +305,24 @@ describe('hub field formats', () => {
     options: ['US', 'CA', 'GB'],
     optionLabels: ['United States', 'Canada', 'United Kingdom']
   };
+
+  describe('cellSearchText', () => {
+    test('carries the displayed text and the stored value', () => {
+      expect(cellSearchText(1234.5, currency())).toBe('$1,234.50\n1234.5');
+      expect(cellSearchText(12, { label: 'P', type: 'number' })).toBe('12');
+    });
+
+    test('adds a labelled choice its label', () => {
+      expect(cellSearchText('CA', state)).toBe('CA\nCalifornia');
+      expect(cellSearchText('ZZ', state)).toBe('ZZ');
+    });
+
+    test('keeps masked tax IDs masked', () => {
+      expect(cellSearchText('123456789', { label: 'T', type: 'tax_id' })).toBe(
+        '•••••6789'
+      );
+    });
+  });
 
   describe('formatCellDisplay', () => {
     test('currency pads to two decimals by default, with grouping', () => {

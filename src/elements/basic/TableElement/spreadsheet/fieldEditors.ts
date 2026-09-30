@@ -434,6 +434,22 @@ export function formatCellDisplay(value: CellValue, rule?: CellRule): string {
   return formatCellValue(value);
 }
 
+/**
+ * What find-in-grid and column-filter searches match a cell by: its displayed
+ * text plus the stored value (`1234.5` finds `$1,234.50`, `1982-07-19` finds
+ * `Jul 19, 1982`) and, for a labelled choice, its label (`calif` finds `CA`).
+ * Masked tax IDs and file JSON contribute only what they display.
+ */
+export function cellSearchText(value: CellValue, rule?: CellRule): string {
+  const display = formatCellDisplay(value, rule);
+  if (rule?.type === 'tax_id' || rule?.type === 'file') return display;
+  const parts = [display, formatCellValue(value)];
+  const labels = choiceLabelsFor(rule);
+  const label = labels?.[rule?.options?.indexOf(String(value)) ?? -1];
+  if (label) parts.push(label);
+  return [...new Set(parts.filter(Boolean))].join('\n');
+}
+
 // The viewer's locale, so "Jul 19, 1982" or "19 Jul 1982" as they would expect.
 // A date is a calendar day with no zone, so it is read AND shown in UTC — the
 // viewer's zone must not shift it to the day before. A datetime is an instant,

@@ -119,6 +119,15 @@ describe('findMatches', () => {
     ]);
   });
 
+  test('matches a formatted cell by its displayed or its stored text', () => {
+    const cells = indexCells(rows, columns, {
+      b: { label: 'B', type: 'number', format: 'currency' }
+    });
+    const found = [{ rowId: 'r0', rowIndex: 0, columnId: 'b' }];
+    expect(findMatches(cells, '$30.00')).toEqual(found);
+    expect(findMatches(cells, '30')).toEqual(found);
+  });
+
   test('a blank query matches nothing', () => {
     expect(findMatches(indexCells(rows, columns), '   ')).toEqual([]);
   });

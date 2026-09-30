@@ -58,7 +58,11 @@ export function FilterMenu({
   );
   // The search narrows what is shown; the checks below act on `searched`
   // alone, so the values it hides keep their state.
-  const searched = searchedValues(candidates, filter);
+  const searchTexts = React.useMemo(
+    () => filters.searchTexts(fieldKey),
+    [filters, fieldKey]
+  );
+  const searched = searchedValues(candidates, filter, searchTexts);
   const listed = searched.slice(0, MAX_LISTED_VALUES);
   const unlisted = searched.length - listed.length;
 

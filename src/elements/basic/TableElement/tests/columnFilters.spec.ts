@@ -9,7 +9,8 @@ import {
   isValueChecked,
   matchesFilter,
   searchedValues,
-  setValuesChecked
+  setValuesChecked,
+  valueSearchTexts
 } from '../spreadsheet/columnFilters';
 
 type Row = { id: string; cells: Record<string, string> };
@@ -110,6 +111,27 @@ describe('column filter model', () => {
     expect(ids(filterRows(rows, { team }, textOf))).toEqual(['a', 'b', 'd']);
     // Likewise a cell edited to a brand-new value is not hidden by the filter.
     expect(matchesFilter('Green', team)).toBe(true);
+  });
+
+  test('the text search also matches a cell search text', () => {
+    const money = [
+      { id: 'a', cells: { amount: '$1,234.50' }, raw: '1234.5' },
+      { id: 'b', cells: { amount: '$20.00' }, raw: '20' }
+    ];
+    const shown = (row: typeof money[0]) => row.cells.amount;
+    const search = (row: typeof money[0]) => `${row.cells.amount}\n${row.raw}`;
+    const filters = { amount: { ...EMPTY_FILTER, search: '1234' } };
+    expect(filterRows(money, filters, shown).map((r) => r.id)).toEqual([]);
+    expect(
+      filterRows(money, filters, shown, undefined, search).map((r) => r.id)
+    ).toEqual(['a']);
+
+    const texts = valueSearchTexts(money, 'amount', shown, search);
+    expect(
+      searchedValues(['$1,234.50', '$20.00'], filters.amount, texts)
+    ).toEqual(['$1,234.50']);
+    // Hiding still goes by the displayed value.
+    expect(matchesFilter('$20.00', hiding('$20.00'), '$20.00\n20')).toBe(false);
   });
 
   test('a blank cell is listed under its own label', () => {
