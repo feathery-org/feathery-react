@@ -18,6 +18,7 @@ import {
   BoundDefinition,
   Definition,
   FieldDefinition,
+  FieldType,
   formatTag,
   FormulaDefinition,
   isTagError,
@@ -1144,6 +1145,107 @@ function rowHasInputColumn(
   return false;
 }
 
+// A table with no bound row can still adopt: a formula that CONSUMES its
+// columns positionally (sum(B2:end), summary!B2:B9) marks those columns as
+// input. Mint a template whose consumed columns carry fresh row-scoped field
+// controls typed from the consuming formula; other columns stay unbound so an
+// adopted row keeps the user's own cells.
+function syntheticColumnTemplate(
+  sfdt: SfdtDocument,
+  tableId: string,
+  index: BindingIndex
+): SfdtRow | undefined {
+  const table = index.tables.get(tableId);
+  if (!table || !table.tablePath) return undefined;
+  const consumed = new Map<number, FieldType>();
+  for (const occurrence of index.occurrences) {
+    if (occurrence.def.kind !== 'formula') continue;
+    let ast: Ast;
+    try {
+      ast = parseExpression(occurrence.def.expression);
+    } catch (thrown) {
+      if (!isFormulaError(thrown)) throw thrown;
+      continue;
+    }
+    for (const range of collectPositional(ast).ranges) {
+      const consumesThisTable =
+        range.table === tableId ||
+        (range.table === null &&
+          isPathPrefix(table.tablePath, occurrence.path));
+      if (!consumesThisTable) continue;
+      for (let col = range.startCol; col <= range.endCol; col++)
+        if (!consumed.has(col)) consumed.set(col, occurrence.def.fieldType);
+    }
+  }
+  if (!consumed.size) return undefined;
+  const tableNode = getAt(sfdt, table.tablePath) as { rows?: SfdtRow[] };
+  const mold = (tableNode.rows || []).find(
+    (row) => row && !(row.rowFormat && row.rowFormat.isHeader)
+  );
+  if (!mold || !mold.cells || !mold.cells.length) return undefined;
+  // Span-aware: which CELL of the mold covers each consumed grid column.
+  const cellOfCol = new Map<number, number>();
+  let col = 0;
+  mold.cells.forEach((cell, c) => {
+    const span = Number(cell?.cellFormat?.columnSpan) || 1;
+    for (let s = 0; s < span; s++) cellOfCol.set(col + s, c);
+    col += span;
+  });
+  const letters = (c: number): string => {
+    let out = '';
+    let n = c + 1;
+    while (n > 0) {
+      out = String.fromCharCode(65 + ((n - 1) % 26)) + out;
+      n = Math.floor((n - 1) / 26);
+    }
+    return out;
+  };
+  const freshName = (c: number): string => {
+    let name = `col${letters(c)}`;
+    while (index.fields.has(name) || index.formulas.has(name))
+      name = `${name}_`;
+    return name;
+  };
+  const cells = mold.cells.map((moldCell) => ({
+    ...(moldCell.cellFormat
+      ? { cellFormat: deepClone(moldCell.cellFormat) }
+      : {}),
+    blocks: [{ inlines: [] as SfdtInline[] }]
+  })) as SfdtCell[];
+  for (const [consumedCol, fieldType] of consumed) {
+    const c = cellOfCol.get(consumedCol);
+    if (c === undefined) continue;
+    const def: FieldDefinition = {
+      version: 2,
+      kind: 'field',
+      name: freshName(consumedCol),
+      fieldType,
+      isEditable: true,
+      isDeletable: true,
+      isGlobal: false,
+      options: { row: 'tpl' }
+    };
+    cells[c].blocks![0].inlines = [
+      {
+        contentControlProperties: {
+          lockContentControl: true,
+          lockContents: false,
+          tag: formatTag(def),
+          title: def.name,
+          type: 'Text',
+          hasPlaceHolderText: false,
+          multiline: false,
+          isTemporary: false,
+          color: '#00000000',
+          appearance: 'BoundingBox'
+        },
+        inlines: [{ text: '' }]
+      } as unknown as SfdtInline
+    ];
+  }
+  return { cells, rowFormat: {} } as unknown as SfdtRow;
+}
+
 export function adoptUnboundRows(
   sfdt: SfdtDocument,
   tableId: string,
@@ -1172,7 +1274,7 @@ export function adoptUnboundRows(
   const templateRow =
     lastBoundRow && lastBoundRow.path
       ? (getAt(sfdt, lastBoundRow.path) as SfdtRow)
-      : fallbackTemplate;
+      : fallbackTemplate ?? syntheticColumnTemplate(sfdt, tableId, index);
   if (!templateRow) {
     // Nothing to copy from. Report it rather than leaving rows plain in silence.
     const unbound = countAdoptableRows(sfdt, table.tablePath);
