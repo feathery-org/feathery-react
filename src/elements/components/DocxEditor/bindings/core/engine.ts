@@ -13,6 +13,8 @@ import {
   adoptUnboundRows,
   BindingIndex,
   getAt,
+  inlineText,
+  isPathPrefix,
   NativeStructuralMutation,
   Occurrence,
   scanBindings,
@@ -528,28 +530,6 @@ export function applyRules(
     );
   }
 
-  /** All visible text in a node, including inside content controls. */
-  function displayText(node: any): string {
-    if (!node || typeof node !== 'object') return '';
-    let out = '';
-    const inlines =
-      node.inlines || (node.blocks || []).flatMap((b: any) => b?.inlines || []);
-    for (const inline of inlines || []) {
-      if (isDeletedInline(inline)) continue;
-      if (typeof inline?.text === 'string' && !inline.contentControlProperties)
-        out += inline.text;
-      else if (inline && typeof inline === 'object') out += displayText(inline);
-    }
-    return out;
-  }
-
-  function isPositionalPathPrefix(prefix: SfdtPath, path: SfdtPath): boolean {
-    if (prefix.length > path.length) return false;
-    for (let k = 0; k < prefix.length; k++)
-      if (String(prefix[k]) !== String(path[k])) return false;
-    return true;
-  }
-
   /** Physical position of an occurrence in a table (span-aware column). */
   function positionIn(
     tablePath: SfdtPath,
@@ -584,7 +564,7 @@ export function applyRules(
     const tableRows = tableNode.rows as any[];
     const byPos = new Map<string, Occurrence>();
     for (const occurrence of index.occurrences) {
-      if (!isPositionalPathPrefix(entry.tablePath, occurrence.path)) continue;
+      if (!isPathPrefix(entry.tablePath, occurrence.path)) continue;
       const pos = positionIn(entry.tablePath, tableNode, occurrence);
       if (pos) byPos.set(posKey(pos.row, pos.col), occurrence);
     }
@@ -595,7 +575,7 @@ export function applyRules(
       for (const cell of row.cells || []) {
         const span = Number(cell?.cellFormat?.columnSpan) || 1;
         const gridCell: GridCell = {
-          text: displayText(cell).trim(),
+          text: inlineText(cell, isDeletedInline).trim(),
           occ: byPos.get(posKey(r + 1, col)) || null
         };
         for (let s = 0; s < span; s++) line[col + s] = gridCell;
@@ -616,10 +596,7 @@ export function applyRules(
     if (hit !== undefined) return hit;
     let found: string | null = null;
     for (const [tableId, entry] of index.tables) {
-      if (
-        entry.tablePath &&
-        isPositionalPathPrefix(entry.tablePath, occurrence.path)
-      ) {
+      if (entry.tablePath && isPathPrefix(entry.tablePath, occurrence.path)) {
         found = tableId;
         break;
       }
@@ -644,7 +621,7 @@ export function applyRules(
   function ownPosition(node: FormulaNode, tableId: string): Pos | null {
     const entry = index.tables.get(tableId);
     if (!entry || !entry.tablePath) return null;
-    if (!isPositionalPathPrefix(entry.tablePath, node.occ.path)) return null;
+    if (!isPathPrefix(entry.tablePath, node.occ.path)) return null;
     return positionIn(entry.tablePath, getAt(next, entry.tablePath), node.occ);
   }
 
@@ -716,11 +693,16 @@ export function applyRules(
     }
   }
 
+  const cellRefLabel = (cell: CellRef): string =>
+    `${cell.table ? `${cell.table}!` : ''}${cellLabel(cell.col, cell.row)}`;
+  const rangeRefLabel = (range: RangeRef): string =>
+    `${range.table ? `${range.table}!` : ''}${cellLabel(
+      range.startCol,
+      range.startRow
+    )}:${cellLabel(range.endCol, range.endRow)}`;
+
   function positionalCellValue(cell: CellRef, node: FormulaNode): string {
-    const label = `${cell.table ? `${cell.table}!` : ''}${cellLabel(
-      cell.col,
-      cell.row
-    )}`;
+    const label = cellRefLabel(cell);
     const { grid } = positionalGrid(cell.table, node, label);
     const gridCell = grid.rows[cell.row - 1]?.[cell.col];
     if (!gridCell) throw new FormulaError(`${label} is outside the table`);
@@ -733,10 +715,7 @@ export function applyRules(
   }
 
   function positionalRangeValues(range: RangeRef, node: FormulaNode): string[] {
-    const label = `${range.table ? `${range.table}!` : ''}${cellLabel(
-      range.startCol,
-      range.startRow
-    )}:${cellLabel(range.endCol, range.endRow)}`;
+    const label = rangeRefLabel(range);
     const out: string[] = [];
     forEachRangeCell(range, node, label, (gridCell) => {
       const value = resolveGridCell(gridCell, label);
