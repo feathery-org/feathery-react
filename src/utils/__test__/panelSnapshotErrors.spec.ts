@@ -1,5 +1,5 @@
 import { getPanelRuntimeSnapshot } from '../panelRuntime';
-import internalState from '../../../utils/internalState';
+import internalState from '../internalState';
 
 // `error` (field-wide) and `errorRows` (per-row) must be DISJOINT, so a
 // field-wide failure and a row failure can coexist without either masking the
@@ -44,7 +44,9 @@ describe('panel snapshot error vs errorRows', () => {
   });
 
   it('does NOT copy a row message into error', () => {
-    const f = snapshotFor({ name: { byIndex: { 1: { message: 'Row 1 bad' } } } });
+    const f = snapshotFor({
+      name: { byIndex: { 1: { message: 'Row 1 bad' } } }
+    });
     // error stays absent: the failure is row-scoped, not field-wide.
     expect(f.error).toBeUndefined();
     expect(f.errorRows).toEqual({ 1: 'Row 1 bad' });
@@ -52,7 +54,10 @@ describe('panel snapshot error vs errorRows', () => {
 
   it('reports BOTH when a field-wide and a row error coexist', () => {
     const f = snapshotFor({
-      name: { message: 'Field failed', byIndex: { 2: { message: 'Row 2 bad' } } }
+      name: {
+        message: 'Field failed',
+        byIndex: { 2: { message: 'Row 2 bad' } }
+      }
     });
     // Neither masks the other.
     expect(f.error).toBe('Field failed');

@@ -1,8 +1,5 @@
-import {
-  findTableOnCurrentStep,
-  getTableCapabilities,
-  type TableLookupErrorType
-} from './utils';
+import { findTableOnCurrentStep, type TableLookupErrorType } from './utils';
+import { getTableCapabilities } from '../../utils/panelRuntime';
 
 type TableMutationErrorType =
   | TableLookupErrorType

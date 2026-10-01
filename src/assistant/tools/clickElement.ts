@@ -6,12 +6,12 @@ import { isButtonDisabled } from '../../utils/button';
 import {
   awaitPendingInlineErrors,
   diffInlineErrorSnapshots,
-  findClickableAncestorSubgrids,
   getLiveStepKey,
   InlineErrorReport,
   snapshotInlineErrors,
   validateRepeatIndex
 } from './utils';
+import { findClickableAncestorSubgrids } from '../../utils/panelRuntime';
 
 type ClickErrorType =
   | 'not_on_step'

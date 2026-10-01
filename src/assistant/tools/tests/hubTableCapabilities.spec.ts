@@ -1,4 +1,4 @@
-import { getTableCapabilities } from '../utils';
+import { getTableCapabilities } from '../../../utils/panelRuntime';
 
 describe('hub-backed table capabilities', () => {
   it('withholds every mutation capability even when editing is enabled', () => {

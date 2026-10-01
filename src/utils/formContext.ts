@@ -23,7 +23,11 @@ import internalState, {
   UpdateDocusignEnvelopeParams,
   setFormInternalState
 } from './internalState';
+import type { FormRuntimeEvent } from './internalState';
 import { validateElements } from './validation';
+import { getPanelRuntimeSnapshot } from './panelRuntime';
+import { subscribeToUploads } from './fileUploadProgress';
+import { linkRequestHeaders } from './accessLink';
 import {
   FillQuikParams,
   ForwardInboxEmailOptions,
@@ -89,6 +93,32 @@ export const getFormContext = (formUuid: string) => {
       if (changed) formState.latestStepName = stepKey;
     },
     isTestForm: () => initState.isTestEnv,
+    // What the person sees right now: current step, its fields and elements, entered values
+    snapshot: () => getPanelRuntimeSnapshot(formUuid),
+    // What a host sends with its own backend requests to act as this submission, read when the request is made
+    requestIdentity: (): {
+      fuserKey?: string;
+      headers: Record<string, string>;
+    } => ({
+      fuserKey: initState.userId,
+      headers: {
+        ...linkRequestHeaders(initState.linkToken, initState.linkSecret),
+        ...(initState.collaboratorId
+          ? { 'X-Feathery-Collaborator': initState.collaboratorId }
+          : {})
+      }
+    }),
+    subscribe: (listener: (event: FormRuntimeEvent) => void) => {
+      const listeners = (formState.runtimeListeners ??= new Set());
+      listeners.add(listener);
+      const unsubscribeUploads = subscribeToUploads(() =>
+        listener({ type: 'upload' })
+      );
+      return () => {
+        listeners.delete(listener);
+        unsubscribeUploads();
+      };
+    },
     isLastStep: () => {
       const step = formState.currentStep;
       return step.next_conditions.length === 0;

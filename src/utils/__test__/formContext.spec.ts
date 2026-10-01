@@ -1,4 +1,5 @@
 import { getFormContext } from '../formContext';
+import { initState } from '../init';
 import { setFormInternalState } from '../internalState';
 
 describe('feathery.generateDocuments logic-rule method routing', () => {
@@ -224,5 +225,31 @@ describe('feathery.runComputerAgent return shape', () => {
     await expect(
       getFormContext(uuid).runComputerAgent('agent_1')
     ).resolves.toEqual({ status: 'error', message: 'nope' });
+  });
+});
+
+describe('requestIdentity', () => {
+  const uuid = 'formContext-identity-test';
+
+  beforeEach(() => {
+    setFormInternalState(uuid, { fields: {} } as any);
+    initState.userId = 'cookie-id';
+    initState.linkToken = '';
+    initState.collaboratorId = '';
+  });
+
+  it('reads the fuser the session resolved, not the id at mount', () => {
+    const context = getFormContext(uuid);
+    initState.userId = 'server-id';
+
+    expect(context.requestIdentity().fuserKey).toBe('server-id');
+  });
+
+  it('names the collaborator a link-bound submission belongs to', () => {
+    initState.collaboratorId = 'collab-1';
+
+    expect(getFormContext(uuid).requestIdentity().headers).toEqual({
+      'X-Feathery-Collaborator': 'collab-1'
+    });
   });
 });

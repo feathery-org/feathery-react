@@ -1,26 +1,15 @@
-import internalState from '../../utils/internalState';
-import {
-  getCompletedStepKeys,
-  initState,
-  loadCompletedSteps
-} from '../../utils/init';
-import { replaceTextVariables } from '../../elements/components/TextNodes';
-import {
-  getRepeatedContainer,
-  getRepeatedContainers
-} from '../../utils/repeat';
-import { getPositionKey } from '../../utils/hideAndRepeats';
-import { getDefaultFieldValue } from '../../utils/fieldHelperFunctions';
-import { isButtonDisabled } from '../../utils/button';
-import { ACTION_BACK, ACTION_NEXT } from '../../utils/elementActions';
-import { getPrevStepKey, nextStepKey } from '../../utils/stepHelperFunctions';
-import {
-  isStepperStepReachable,
-  isStepperStepVisible
-} from '../../utils/stepper';
-import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
-import { sanitizeTransportValue } from '../../utils/transportValue';
-import { getImageAltText } from '../../utils/accessibility';
+import internalState from './internalState';
+import { getCompletedStepKeys, initState, loadCompletedSteps } from './init';
+import { replaceTextVariables } from '../elements/components/TextNodes';
+import { getRepeatedContainer, getRepeatedContainers } from './repeat';
+import { getPositionKey } from './hideAndRepeats';
+import { getDefaultFieldValue } from './fieldHelperFunctions';
+import { isButtonDisabled } from './button';
+import { ACTION_BACK, ACTION_NEXT } from './elementActions';
+import { getPrevStepKey, nextStepKey } from './stepHelperFunctions';
+import { isStepperStepReachable, isStepperStepVisible } from './stepper';
+import { sanitizeTransportValue } from './transportValue';
+import { getImageAltText } from './accessibility';
 
 export type PanelRuntimeFieldEntry = {
   key: string;
@@ -719,4 +708,49 @@ export const getPanelRuntimeSnapshot = (
     hiddenFieldValues,
     hiddenFieldsEmpty
   };
+};
+
+// Subgrids whose position is a strict prefix of `position` (callers pre-filter to those whose handler does anything), innermost first.
+export const findClickableAncestorSubgrids = (
+  subgrids: any[] | undefined,
+  position: number[]
+): any[] => {
+  if (
+    !Array.isArray(subgrids) ||
+    !Array.isArray(position) ||
+    position.length === 0
+  )
+    return [];
+  const matches: any[] = [];
+  for (const sg of subgrids) {
+    const pos = Array.isArray(sg?.position) ? sg.position : [];
+    if (pos.length >= position.length) continue;
+    let isPrefix = true;
+    for (let i = 0; i < pos.length; i++) {
+      if (pos[i] !== position[i]) {
+        isPrefix = false;
+        break;
+      }
+    }
+    if (!isPrefix) continue;
+    matches.push(sg);
+  }
+  matches.sort((a, b) => b.position.length - a.position.length);
+  return matches;
+};
+
+export const getTableCapabilities = (
+  table: any,
+  rowCount: number
+): { canEditCells: boolean; canAddRows: boolean; canDeleteRows: boolean } => {
+  const props = table?.properties ?? {};
+  // Hub rows are not carried in the live state, so no row index can address them
+  if (props.data_source === 'hub') {
+    return { canEditCells: false, canAddRows: false, canDeleteRows: false };
+  }
+  // A transpose table with zero rows renders un-transposed, so it stays editable
+  const canEditCells =
+    !!props.enable_editing && !(props.transpose && rowCount > 0);
+  const addDelete = canEditCells && !!props.add_delete_rows;
+  return { canEditCells, canAddRows: addDelete, canDeleteRows: addDelete };
 };

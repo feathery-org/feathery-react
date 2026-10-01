@@ -7,8 +7,9 @@ export default function Watermark({
   width = 150,
   height = 35
 }: any) {
+  // A host chat panel docked on the right declares how much edge it takes
   const horizontalAlignment = brandPosition.endsWith('right')
-    ? { right: 15 }
+    ? { right: 'calc(15px + var(--feathery-fixed-inset-right, 0px))' }
     : { left: 15 };
   const verticalAlignment = brandPosition.startsWith('bottom')
     ? { bottom: 15 }
@@ -35,6 +36,7 @@ export default function Watermark({
       style={{
         position: 'fixed',
         zIndex: MODAL_Z_INDEX + 1,
+        transition: 'right 220ms cubic-bezier(0.2, 0.75, 0.2, 1)',
         ...horizontalAlignment,
         ...verticalAlignment
       }}
