@@ -2105,6 +2105,7 @@ function Form({
           initialStepId,
           steps,
           sessionCurrentStep: session.current_step_key,
+          collaboratorStartStep: session.collaborator?.start_step_key,
           formId: _internalId
         });
         if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
