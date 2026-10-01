@@ -1153,14 +1153,7 @@ export function adoptUnboundRows(
    * Row shape from an earlier reconcile, used when the user has deleted every
    * bound row - the document then holds no copy of it at all.
    */
-  fallbackTemplate?: SfdtRow,
-  /**
-   * Physical index of the row the user just inserted, when known from the live
-   * editor. It is the copy in a duplicated-id pair, so an insert-above (copy
-   * before the original) re-adopts the right row instead of resetting the
-   * original.
-   */
-  insertedRowIndex?: number
+  fallbackTemplate?: SfdtRow
 ): AdoptionResult {
   const table = index.tables.get(tableId);
   if (!table || !table.tablePath)
@@ -1259,9 +1252,7 @@ export function adoptUnboundRows(
   });
   for (const indices of indicesById.values()) {
     if (indices.length < 2) continue;
-    if (insertedRowIndex !== undefined && indices.includes(insertedRowIndex))
-      copyIndices.add(insertedRowIndex);
-    else for (const idx of indices.slice(1)) copyIndices.add(idx);
+    for (const idx of indices.slice(1)) copyIndices.add(idx);
   }
 
   for (let r = 0; r < allRows.length; r++) {

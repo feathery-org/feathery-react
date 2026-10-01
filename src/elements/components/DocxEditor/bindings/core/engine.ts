@@ -91,12 +91,6 @@ export interface ApplyRulesOptions {
    * original bindings.
    */
   adoptRows?: boolean;
-  /**
-   * The row the user just inserted, when the live editor knows it. Used only to
-   * pick the copy in a duplicated-id pair so an insert-above re-adopts the new
-   * row rather than the original.
-   */
-  insertedRow?: { tableId: string; rowIndex: number };
 }
 
 export interface ApplyRulesResult {
@@ -267,8 +261,7 @@ export function applyRules(
     prevValues = null,
     mode = 'commit',
     rowTemplates = null,
-    adoptRows = true,
-    insertedRow = undefined
+    adoptRows = true
   }: ApplyRulesOptions = {}
 ): ApplyRulesResult {
   const diagnostics: Diagnostic[] = [];
@@ -293,10 +286,7 @@ export function applyRules(
       tableId,
       index,
       undefined,
-      nextTemplates.get(tableId),
-      insertedRow && insertedRow.tableId === tableId
-        ? insertedRow.rowIndex
-        : undefined
+      nextTemplates.get(tableId)
     );
     for (const skipped of result.skipped) {
       diag(

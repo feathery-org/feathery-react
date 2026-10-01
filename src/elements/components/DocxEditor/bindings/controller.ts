@@ -250,12 +250,10 @@ export class ReconciliationController {
    */
   flush({
     mode = 'commit',
-    adoptRows,
-    insertedRow
+    adoptRows
   }: {
     mode?: ReconcileMode;
     adoptRows?: boolean;
-    insertedRow?: { tableId: string; rowIndex: number };
   } = {}): void {
     this.clearTimeoutFn(this.debounceTimer);
     if (this.phase !== 'idle') {
@@ -285,8 +283,7 @@ export class ReconciliationController {
         prevValues: this.values,
         mode,
         rowTemplates: this.rowTemplates,
-        ...(adoptRows === false ? { adoptRows: false } : {}),
-        ...(insertedRow ? { insertedRow } : {})
+        ...(adoptRows === false ? { adoptRows: false } : {})
       });
       this.timings.reconcileMs = Date.now() - started;
     } catch (thrown) {
