@@ -4,11 +4,11 @@ import {
   diffInlineErrorSnapshots,
   findTableOnCurrentStep,
   getLiveStepKey,
-  getTableCapabilities,
   type InlineErrorReport,
   snapshotInlineErrors,
   type TableLookupErrorType
 } from './utils';
+import { getTableCapabilities } from '../../utils/panelRuntime';
 
 type TableActionErrorType =
   | TableLookupErrorType

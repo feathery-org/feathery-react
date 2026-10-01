@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { getPanelRuntimeSnapshot } from '../panelRuntime';
+import { getPanelRuntimeSnapshot } from '../../../utils/panelRuntime';
 
 const ASSISTANT_SOURCE = fs.readFileSync(
   path.join(__dirname, '../../AssistantChat.tsx'),

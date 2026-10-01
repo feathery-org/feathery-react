@@ -172,6 +172,11 @@ export type UpdateDocusignEnvelopeParams = {
   voidedReason?: string; // required by the backend when status is 'voided'
 };
 
+// Runtime changes a host embedding the form may react to
+export type FormRuntimeEvent =
+  | { type: 'step'; stepId: string; stepKey: string }
+  | { type: 'upload' };
+
 export interface FormInternalState {
   language: string | undefined;
   currentStep: any;
@@ -181,6 +186,7 @@ export interface FormInternalState {
   visiblePositions: any;
   logicRules?: LogicRule[];
   assistantClient?: AssistantClient;
+  runtimeListeners?: Set<(event: FormRuntimeEvent) => void>;
   client: FeatheryClient;
   formName: string;
   formId: string;

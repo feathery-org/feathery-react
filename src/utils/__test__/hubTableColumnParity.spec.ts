@@ -1,4 +1,4 @@
-import internalState from '../../../utils/internalState';
+import internalState from '../internalState';
 import { getPanelRuntimeSnapshot } from '../panelRuntime';
 
 const FORM = 'hub-table-parity-form';

@@ -5,8 +5,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState,
-  useSyncExternalStore
+  useState
 } from 'react';
 
 import debounce from 'lodash.debounce';
@@ -89,7 +88,7 @@ import {
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
 import { InlineErrors, shiftInlineErrorRows } from '../utils/inlineErrors';
-import FeatheryClient, { API_URL } from '../utils/featheryClient';
+import FeatheryClient from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
 import {
@@ -276,24 +275,12 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
 import FileUploadToast from './components/FileUploadToast';
-import {
-  getUploadToastHeight,
-  setUploadIndicatorEnabled,
-  subscribeToUploadToastHeight
-} from '../utils/fileUploadProgress';
+import { setUploadIndicatorEnabled } from '../utils/fileUploadProgress';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
-import { AssistantChat } from '../assistant';
-import type {
-  AssistantLayoutState,
-  AssistantStepSettings
-} from '../assistant/AssistantChat';
+import type { AssistantStepSettings } from '../assistant/AssistantChat';
 import AssistantClient from '../assistant/AssistantClient';
-import {
-  getActiveDocxEditorEnvelopeTarget,
-  getActiveDocxEditorTarget
-} from '../assistant/tools/docx/docxEditorRegistry';
 import { confirmLeavingUnsavedWork } from '../utils/unsavedWork';
 
 const DocumentViewer = React.lazy(
@@ -694,46 +681,6 @@ function Form({
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
-  const [assistantLayout, setAssistantLayout] = useState<AssistantLayoutState>({
-    mode: 'current',
-    isOpen: false,
-    side: null,
-    width: 0,
-    isResizing: false
-  });
-  const handleAssistantLayoutChange = useCallback(
-    (state: AssistantLayoutState) => setAssistantLayout(state),
-    []
-  );
-  const assistantOffsetCSS = useMemo(() => {
-    const { side, width, isResizing } = assistantLayout;
-    const root = activeStep?.subgrids?.find(
-      (g: any) => g.position?.length === 0
-    );
-    const isFillWidth = root?.width === 'fill' || root?.mobile_width === 'fill';
-    const transition = isResizing
-      ? 'none'
-      : 'max-width 0.25s ease, min-width 0.25s ease, margin 0.25s ease';
-    const left = side === 'left' ? width : 0;
-    const right = side === 'right' ? width : 0;
-    if (isFillWidth) {
-      const calc = `calc(100% - ${left + right}px)`;
-      const sidebarOpen = !!side && width > 0;
-      return {
-        minWidth: calc,
-        maxWidth: calc,
-        marginLeft: `${left}px`,
-        marginRight: `${right}px`,
-        transition,
-        ...(sidebarOpen ? { height: '100vh', overflowY: 'auto' } : {})
-      };
-    }
-    if (!side || !width) return {};
-    return {
-      marginLeft: side === 'left' ? `${width}px` : 'auto',
-      marginRight: side === 'right' ? `${width}px` : 'auto'
-    };
-  }, [assistantLayout, activeStep]);
   const globalCSS = useMemo(
     () => calculateGlobalCSS(formSettings.globalStyles),
     [formSettings.globalStyles]
@@ -865,14 +812,6 @@ function Form({
     }
   }, []);
 
-  // The file upload box is page-level and may be rendered by another form
-  // instance, so its height comes from the shared tracker rather than a ref
-  const fileUploadToastHeight = useSyncExternalStore(
-    subscribeToUploadToastHeight,
-    getUploadToastHeight,
-    getUploadToastHeight
-  );
-
   // The Feathery badge sits in the bottom-right corner, so overlays there start
   // above it
   const bottomRightBase =
@@ -967,6 +906,10 @@ function Form({
       })
     );
     setRequiredStepAction(requiredStepAction);
+
+    internalState[_internalId]?.runtimeListeners?.forEach((listener) =>
+      listener({ type: 'step', stepId: activeStep.id, stepKey: activeStep.key })
+    );
   }, [activeStep?.id]);
 
   // viewElements state
@@ -1180,22 +1123,6 @@ function Form({
     }),
     [setRender]
   );
-
-  const getAssistantTargets = useCallback(() => {
-    const targets: { type: string; id: string }[] = [];
-    if (formId) targets.push({ type: 'panel', id: formId });
-    if (initState.userId) targets.push({ type: 'fuser', id: initState.userId });
-    // The mounted editor is the only source of truth. Generation commonly
-    // happens on a previous step, so scanning the current step's actions loses
-    // the document exactly when the editor is open. This is still only the
-    // document template target; the editor separately publishes its real
-    // envelope as the only per-submission index scope.
-    const documentTarget = getActiveDocxEditorTarget(_internalId);
-    if (documentTarget) targets.push(documentTarget);
-    const envelopeTarget = getActiveDocxEditorEnvelopeTarget(_internalId);
-    if (envelopeTarget) targets.push(envelopeTarget);
-    return targets;
-  }, [formId]);
 
   useEffect(() => {
     return () => {
@@ -4072,7 +3999,6 @@ function Form({
           ...globalCSS.getTarget('form'),
           ...stepCSS,
           ...style,
-          ...assistantOffsetCSS,
           position: 'relative',
           display: 'flex',
           ...(popupOptions ? { borderRadius: '10px' } : {})
@@ -4172,23 +4098,6 @@ function Form({
           bottom={bottomRightBase + stackAbove(actionToastHeight)}
         />
 
-        {formSettings.assistantEnabled && (
-          <AssistantChat
-            instanceId={_internalId}
-            baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
-            getTargets={getAssistantTargets}
-            bottom={
-              bottomRightBase +
-              stackAbove(actionToastHeight) +
-              stackAbove(fileUploadToastHeight)
-            }
-            color={formSettings.assistantColor}
-            workflowActions={formSettings.assistantWorkflowActions}
-            stepSettings={formSettings.assistantStepSettings}
-            activeStepId={activeStep?.id}
-            onLayoutChange={handleAssistantLayoutChange}
-          />
-        )}
         {connectAccountModal && (
           <ConnectAccountModal
             show

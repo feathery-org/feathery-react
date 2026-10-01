@@ -1,6 +1,6 @@
 import internalState from '../../utils/internalState';
 import { ACTION_NEXT } from '../../utils/elementActions';
-import { collectNavigableSteps } from './panelRuntime';
+import { collectNavigableSteps } from '../../utils/panelRuntime';
 import {
   awaitPendingInlineErrors,
   diffInlineErrorSnapshots,

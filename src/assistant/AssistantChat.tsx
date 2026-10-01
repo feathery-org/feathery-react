@@ -77,7 +77,7 @@ import {
   ensureCompletedSteps,
   getCurrentStepKey,
   getPanelRuntimeSnapshot
-} from './tools/panelRuntime';
+} from '../utils/panelRuntime';
 import { dispatchSetFieldValue } from './tools/setFieldValue';
 import { dispatchClickElement } from './tools/clickElement';
 import { dispatchNavigate } from './tools/navigate';
