@@ -13,14 +13,13 @@ import {
   adoptUnboundRows,
   BindingIndex,
   getAt,
-  inlineText,
-  isPathPrefix,
   NativeStructuralMutation,
   Occurrence,
   scanBindings,
   setCalculatedValue,
   setOccurrenceText
 } from './sfdtAdapter';
+import { createPositionalGrid } from './positionalGrid';
 import {
   Ast,
   bareCellRef,
@@ -491,260 +490,15 @@ export function applyRules(
     nodes.set(id, { occ: occurrence, ast, deps: new Set() });
   }
 
-  /* ---- 2b. positional grids ----
-     Excel-shaped refs (B3, sum(B2:end)) read a table by POSITION, so a plain
-     typed cell joins a sum with no binding. Grids rebuild every reconcile;
-     row 1 is the first physical row (headers count), columns are span-aware. */
-
-  interface GridCell {
-    text: string;
-    occ: Occurrence | null;
-  }
-  interface Grid {
-    /** rows[physicalRow - 1][col] -> cell; a span shares one cell object. */
-    rows: Array<Array<GridCell | undefined>>;
-  }
-  /** A physical cell position: 1-based row, span-aware 0-based column. */
-  interface Pos {
-    row: number;
-    col: number;
-  }
-  const posKey = (row: number, col: number): string => `${row}:${col}`;
-
-  const deletionRevisionIds = new Set<string>();
-  for (const revision of Array.isArray(sfdt.revisions) ? sfdt.revisions : []) {
-    if (revision && String((revision as any).revisionType) === 'Deletion') {
-      const revId =
-        (revision as any).revisionId ?? (revision as any).revisionID;
-      if (revId != null) deletionRevisionIds.add(String(revId));
-    }
-  }
-
-  function isDeletedInline(inline: any): boolean {
-    return (
-      Array.isArray(inline?.revisionIds) &&
-      inline.revisionIds.length > 0 &&
-      inline.revisionIds.every((id: unknown) =>
-        deletionRevisionIds.has(String(id))
-      )
-    );
-  }
-
-  /** Physical position of an occurrence in a table (span-aware column). */
-  function positionIn(
-    tablePath: SfdtPath,
-    tableNode: any,
-    occurrence: Occurrence
-  ): Pos | null {
-    const rest = occurrence.path.slice(tablePath.length);
-    if (String(rest[0]) !== 'rows' || String(rest[2]) !== 'cells') return null;
-    const r = Number(rest[1]);
-    const c = Number(rest[3]);
-    if (!Number.isInteger(r) || !Number.isInteger(c)) return null;
-    const row = tableNode.rows?.[r];
-    if (!row) return null;
-    let col = 0;
-    for (let k = 0; k < c; k++)
-      col += Number(row.cells?.[k]?.cellFormat?.columnSpan) || 1;
-    return { row: r + 1, col };
-  }
-
-  const grids = new Map<string, Grid | null>();
-  function gridFor(tableId: string): Grid | null {
-    if (grids.has(tableId)) return grids.get(tableId) as Grid | null;
-    const entry = index.tables.get(tableId);
-    const tableNode =
-      entry && entry.tablePath
-        ? (getAt(next, entry.tablePath) as { rows?: any[] } | undefined)
-        : undefined;
-    if (!entry || !entry.tablePath || !Array.isArray(tableNode?.rows)) {
-      grids.set(tableId, null);
-      return null;
-    }
-    const tableRows = tableNode.rows as any[];
-    const byPos = new Map<string, Occurrence>();
-    for (const occurrence of index.occurrences) {
-      if (!isPathPrefix(entry.tablePath, occurrence.path)) continue;
-      const pos = positionIn(entry.tablePath, tableNode, occurrence);
-      if (pos) byPos.set(posKey(pos.row, pos.col), occurrence);
-    }
-    const rows: Array<Array<GridCell | undefined>> = [];
-    tableRows.forEach((row: any, r: number) => {
-      const line: Array<GridCell | undefined> = [];
-      let col = 0;
-      for (const cell of row.cells || []) {
-        const span = Number(cell?.cellFormat?.columnSpan) || 1;
-        const gridCell: GridCell = {
-          text: inlineText(cell, isDeletedInline).trim(),
-          occ: byPos.get(posKey(r + 1, col)) || null
-        };
-        for (let s = 0; s < span; s++) line[col + s] = gridCell;
-        col += span;
-      }
-      rows.push(line);
-    });
-    const grid: Grid = { rows };
-    grids.set(tableId, grid);
-    return grid;
-  }
-
-  /** The table that physically contains an occurrence. */
-  const owningTableCache = new Map<string, string | null>();
-  function owningTableId(occurrence: Occurrence): string | null {
-    if (occurrence.tableId) return occurrence.tableId;
-    const hit = owningTableCache.get(occurrence.key);
-    if (hit !== undefined) return hit;
-    let found: string | null = null;
-    for (const [tableId, entry] of index.tables) {
-      if (entry.tablePath && isPathPrefix(entry.tablePath, occurrence.path)) {
-        found = tableId;
-        break;
-      }
-    }
-    owningTableCache.set(occurrence.key, found);
-    return found;
-  }
-
-  function positionalGrid(
-    refTable: string | null,
-    node: FormulaNode,
-    label: string
-  ): { grid: Grid; tableId: string } {
-    const tableId = refTable ?? owningTableId(node.occ);
-    if (!tableId)
-      throw new FormulaError(`${label}: positional reference outside a table`);
-    const grid = gridFor(tableId);
-    if (!grid) throw new FormulaError(`${label}: unknown table "${tableId}"`);
-    return { grid, tableId };
-  }
-
-  function ownPosition(node: FormulaNode, tableId: string): Pos | null {
-    const entry = index.tables.get(tableId);
-    if (!entry || !entry.tablePath) return null;
-    if (!isPathPrefix(entry.tablePath, node.occ.path)) return null;
-    return positionIn(entry.tablePath, getAt(next, entry.tablePath), node.occ);
-  }
-
-  function cellLabel(col: number, row: number | 'end'): string {
-    let letters = '';
-    let c = col + 1;
-    while (c > 0) {
-      letters = String.fromCharCode(65 + ((c - 1) % 26)) + letters;
-      c = Math.floor((c - 1) / 26);
-    }
-    return row === 'end' ? 'end' : `${letters}${row}`;
-  }
-
-  /** Lenient numeric read of a plain cell: "$1,200.50" -> "1200.50". */
-  function parseLooseNumber(text: string): string | null {
-    const trimmed = text.trim();
-    if (trimmed === '') return '0';
-    let cleaned = trimmed.replace(/[$€£\s,]/g, '');
-    const negParen = /^\((.*)\)$/.exec(cleaned);
-    if (negParen) cleaned = `-${negParen[1]}`;
-    return /^-?\d+(\.\d+)?$/.test(cleaned) ? cleaned : null;
-  }
-
-  // The single formula/field/plain switch every positional read shares. Returns
-  // the numeric value string, or null when the cell can't contribute (a
-  // non-numeric bound field, an invalid one, or plain non-numeric text) - the
-  // caller decides whether that skips (a range) or throws (a single cell).
-  function resolveGridCell(gridCell: GridCell, label: string): string | null {
-    if (!gridCell.occ) return parseLooseNumber(gridCell.text);
-    if (gridCell.occ.def.kind === 'formula') {
-      const id = nodeId(gridCell.occ);
-      if (!results.has(id)) throw new FormulaError(`${label} did not evaluate`);
-      return results.get(id) as string;
-    }
-    // A non-numeric bound field (its canonical value is text) can't feed sum.
-    if (!isNumericType(gridCell.occ.def.fieldType)) return null;
-    return values.has(gridCell.occ.key)
-      ? (values.get(gridCell.occ.key) as string)
-      : null;
-  }
-
-  // Visit each unique range cell once. The formula's own cell is self-excluded
-  // (Word's SUM(ABOVE)) by two complementary checks below: neither alone covers
-  // both a spanned own-cell and one whose occurrence isn't grid-mapped.
-  function forEachRangeCell(
-    range: RangeRef,
-    node: FormulaNode,
-    label: string,
-    visit: (gridCell: GridCell) => void
-  ): void {
-    const { grid, tableId } = positionalGrid(range.table, node, label);
-    const own = ownPosition(node, tableId);
-    const endRow =
-      range.endRow === 'end'
-        ? grid.rows.length
-        : Math.min(range.endRow, grid.rows.length);
-    const seen = new Set<GridCell>();
-    for (let row = range.startRow; row <= endRow; row++) {
-      for (let col = range.startCol; col <= range.endCol; col++) {
-        // by position: fallback, but only knows the own cell's anchor column
-        if (own && own.row === row && own.col === col) continue;
-        const gridCell = grid.rows[row - 1]?.[col];
-        if (!gridCell || seen.has(gridCell)) continue;
-        seen.add(gridCell);
-        // by identity: covers every column a spanned own-cell occupies
-        if (gridCell.occ && nodeId(gridCell.occ) === nodeId(node.occ)) continue;
-        visit(gridCell);
-      }
-    }
-  }
-
-  const cellRefLabel = (cell: CellRef): string =>
-    `${cell.table ? `${cell.table}!` : ''}${cellLabel(cell.col, cell.row)}`;
-  const rangeRefLabel = (range: RangeRef): string =>
-    `${range.table ? `${range.table}!` : ''}${cellLabel(
-      range.startCol,
-      range.startRow
-    )}:${cellLabel(range.endCol, range.endRow)}`;
-
-  function positionalCellValue(cell: CellRef, node: FormulaNode): string {
-    const label = cellRefLabel(cell);
-    const { grid } = positionalGrid(cell.table, node, label);
-    const gridCell = grid.rows[cell.row - 1]?.[cell.col];
-    if (!gridCell) throw new FormulaError(`${label} is outside the table`);
-    const value = resolveGridCell(gridCell, label);
-    if (value === null) {
-      const shown = gridCell.text ? ` ("${gridCell.text}")` : ' (empty)';
-      throw new FormulaError(`cell ${label}${shown} is not a number`);
-    }
-    return value;
-  }
-
-  function positionalRangeValues(range: RangeRef, node: FormulaNode): string[] {
-    const label = rangeRefLabel(range);
-    const out: string[] = [];
-    forEachRangeCell(range, node, label, (gridCell) => {
-      const value = resolveGridCell(gridCell, label);
-      if (value !== null) out.push(value);
-    });
-    return out;
-  }
-
-  function addPositionalDeps(
-    node: FormulaNode,
-    cells: CellRef[],
-    ranges: RangeRef[]
-  ): void {
-    const addDep = (gridCell: GridCell): void => {
-      if (gridCell.occ?.def.kind === 'formula')
-        node.deps.add(nodeId(gridCell.occ));
-    };
-    try {
-      for (const cell of cells) {
-        const { grid } = positionalGrid(cell.table, node, 'dep');
-        const gridCell = grid.rows[cell.row - 1]?.[cell.col];
-        if (gridCell) addDep(gridCell);
-      }
-      for (const range of ranges) forEachRangeCell(range, node, 'dep', addDep);
-    } catch (thrown) {
-      if (!isFormulaError(thrown)) throw thrown;
-      // Resolution failures resurface at evaluation with a proper message.
-    }
-  }
+  /* ---- 2b. positional grids: see positionalGrid.ts ---- */
+  const results = new Map<string, string>();
+  const posGrid = createPositionalGrid({
+    sfdt: next,
+    index,
+    nodeId,
+    getFormulaResult: (id) => results.get(id),
+    getFieldValue: (key) => values.get(key)
+  });
 
   /**
    * Resolve a reference. Precedence: (1) the formula's own row, so bare column
@@ -802,7 +556,9 @@ export function applyRules(
       // A cell-shaped ref that names nothing is a positional cell.
       if (!target) {
         const cell = bareCellRef(ast.ref);
-        if (cell) addPositionalDeps(node, [cell], []);
+        if (cell)
+          for (const id of posGrid.positionalDepIds([cell], [], node.occ))
+            node.deps.add(id);
       }
       return;
     }
@@ -812,7 +568,12 @@ export function applyRules(
     collectDeps(node.ast, node);
     const positional = collectPositional(node.ast);
     if (positional.cells.length || positional.ranges.length)
-      addPositionalDeps(node, positional.cells, positional.ranges);
+      for (const id of posGrid.positionalDepIds(
+        positional.cells,
+        positional.ranges,
+        node.occ
+      ))
+        node.deps.add(id);
   }
 
   /* ---- 3. topological order with cycle reporting ---- */
@@ -842,17 +603,17 @@ export function applyRules(
   for (const id of nodes.keys()) visit(id, []);
 
   /* ---- 4. evaluate in order ---- */
-  const results = new Map<string, string>();
   function evalAst(ast: Ast, node: FormulaNode): string | string[] {
     if ('lit' in ast) return ast.lit;
-    if ('cell' in ast) return positionalCellValue(ast.cell, node);
-    if ('range' in ast) return positionalRangeValues(ast.range, node);
+    if ('cell' in ast) return posGrid.positionalCellValue(ast.cell, node.occ);
+    if ('range' in ast)
+      return posGrid.positionalRangeValues(ast.range, node.occ);
     if ('ref' in ast) {
       const target = refTargets(ast.ref, node.occ);
       if (!target) {
         // A cell-shaped ref that names nothing reads a positional cell.
         const cell = bareCellRef(ast.ref);
-        if (cell) return positionalCellValue(cell, node);
+        if (cell) return posGrid.positionalCellValue(cell, node.occ);
         throw new FormulaError(`unresolved reference "${ast.ref}"`);
       }
       if (target.kind === 'field') {
