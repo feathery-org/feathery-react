@@ -186,7 +186,7 @@ export function setAt<T>(doc: T, path: SfdtPath, value: unknown): T {
 }
 
 /** True when `prefix` addresses an ancestor of (or the same node as) `path`. */
-function isPathPrefix(prefix: SfdtPath, path: SfdtPath): boolean {
+export function isPathPrefix(prefix: SfdtPath, path: SfdtPath): boolean {
   if (prefix.length > path.length) return false;
   for (let i = 0; i < prefix.length; i++) {
     if (String(prefix[i]) !== String(path[i])) return false;
@@ -731,17 +731,8 @@ export function rewriteRowClone(node: any, newRowId: string): void {
   }
   if (!node || typeof node !== 'object') return;
   if (node.contentControlProperties) {
-    let def: Definition | null = null;
-    try {
-      def = parseTag(String(node.contentControlProperties.tag || ''));
-    } catch {
-      def = null;
-    }
-    if (
-      def &&
-      (def.kind === 'field' || def.kind === 'formula') &&
-      def.options.row
-    ) {
+    const def = rowScopedDef(node.contentControlProperties.tag);
+    if (def) {
       def.options.row = newRowId;
       node.contentControlProperties = {
         ...node.contentControlProperties,
@@ -855,6 +846,23 @@ export function removeLineItem(
 // placeholder the engine computes in the same transaction. Cells under unbound
 // columns keep the user's content.
 
+/** Visible text of a node, descending into control wrappers; `skip` drops inlines. */
+export function inlineText(node: any, skip?: (inline: any) => boolean): string {
+  if (!node || typeof node !== 'object') return '';
+  let out = '';
+  const inlines =
+    node.inlines || (node.blocks || []).flatMap((b: any) => b?.inlines || []);
+  for (const inline of inlines || []) {
+    if (skip?.(inline)) continue;
+    if (typeof inline?.text === 'string' && !inline.contentControlProperties)
+      out += inline.text;
+    else if (inline && typeof inline === 'object')
+      out += inlineText(inline, skip);
+  }
+  return out;
+}
+
+// Not inlineText: adoption must read only user-typed text, never control content.
 function cellPlainText(cell: SfdtCell): string {
   let out = '';
   for (const block of cell.blocks || []) {
@@ -864,6 +872,21 @@ function cellPlainText(cell: SfdtCell): string {
     }
   }
   return out;
+}
+
+/** A row-scoped field/formula parsed from a control tag, else null. */
+function rowScopedDef(tag: unknown): BoundDefinition | null {
+  let def: Definition | null = null;
+  try {
+    def = parseTag(String(tag || ''));
+  } catch {
+    def = null;
+  }
+  return def &&
+    (def.kind === 'field' || def.kind === 'formula') &&
+    def.options.row
+    ? def
+    : null;
 }
 
 interface CellBinding {
@@ -899,17 +922,8 @@ function findCellBinding(cell: SfdtCell): CellBinding | null {
       return;
     }
     if (node.contentControlProperties) {
-      let def: Definition | null = null;
-      try {
-        def = parseTag(String(node.contentControlProperties.tag || ''));
-      } catch {
-        def = null;
-      }
-      if (
-        def &&
-        (def.kind === 'field' || def.kind === 'formula') &&
-        def.options.row
-      ) {
+      const def = rowScopedDef(node.contentControlProperties.tag);
+      if (def) {
         found = { path, def };
         return;
       }
@@ -1069,17 +1083,8 @@ function templateColumnNames(templateCells: SfdtCell[]): Set<string> {
     if (!node || typeof node !== 'object') return;
     const record = node as { contentControlProperties?: { tag?: unknown } };
     if (record.contentControlProperties) {
-      let def: Definition | null = null;
-      try {
-        def = parseTag(String(record.contentControlProperties.tag || ''));
-      } catch {
-        def = null;
-      }
-      if (
-        def &&
-        (def.kind === 'field' || def.kind === 'formula') &&
-        def.options.row
-      ) {
+      const def = rowScopedDef(record.contentControlProperties.tag);
+      if (def) {
         names.add(def.name);
         return; // A row binding holds a value, not further bindings.
       }
