@@ -112,13 +112,30 @@ export function formulaScopeKey(occurrence: Occurrence): string {
 export type ColumnExpressionKind = 'range' | 'table-column' | null;
 
 /** Does this node BY ITSELF yield a whole column - a bare range or aggregate? */
+/** Facts about a bare reference; each caller applies its own precedence. */
+interface RefFacts {
+  /** Text before the last '.', else null. */
+  dottedPrefix: string | null;
+  /** Names a document-level field or formula. */
+  isDocName: boolean;
+  /** Shaped like a positional cell (B3). */
+  isCellShaped: boolean;
+}
+function refFacts(ref: string, index: BindingIndex): RefFacts {
+  const dot = ref.lastIndexOf('.');
+  return {
+    dottedPrefix: dot === -1 ? null : ref.slice(0, dot),
+    isDocName: index.fields.has(ref) || index.formulas.has(ref),
+    isCellShaped: bareCellRef(ref) !== null
+  };
+}
+
 function nodeColumnKind(ast: Ast, index: BindingIndex): ColumnExpressionKind {
   if ('range' in ast) return 'range';
   if (!('ref' in ast)) return null; // cell, literal, or a call (a scalar)
-  const dot = ast.ref.lastIndexOf('.');
-  if (dot === -1) return null;
-  if (index.fields.has(ast.ref) || index.formulas.has(ast.ref)) return null;
-  return index.tables.has(ast.ref.slice(0, dot)) ? 'table-column' : null;
+  const facts = refFacts(ast.ref, index);
+  if (facts.dottedPrefix === null || facts.isDocName) return null;
+  return index.tables.has(facts.dottedPrefix) ? 'table-column' : null;
 }
 
 /**
@@ -1038,12 +1055,12 @@ function isMirrorFormula(
   if (positional.cells.length || positional.ranges.length) return false;
   return !collectRefs(ast).some((ref) => {
     if (ownColumnNames.has(ref)) return true; // own-row column
-    const dot = ref.lastIndexOf('.');
-    if (dot !== -1) return ref.slice(0, dot) === ownTableId; // own-table aggregate
+    const facts = refFacts(ref, index);
+    if (facts.dottedPrefix !== null) return facts.dottedPrefix === ownTableId; // own-table aggregate
     // A doc field/formula name is an external mirror; a cell-shaped name that
     // binds nothing is a positional cell, which is structural.
-    if (index.fields.has(ref) || index.formulas.has(ref)) return false;
-    return bareCellRef(ref) !== null;
+    if (facts.isDocName) return false;
+    return facts.isCellShaped;
   });
 }
 
