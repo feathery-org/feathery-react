@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MODAL_Z_INDEX } from '../../../utils/styles';
 import { featheryDoc } from '../../../utils/browser';
-import { initInfo } from '../../../utils/init';
 import {
   autoMapColumns,
   buildUnverifiedRows,
@@ -183,17 +182,12 @@ function DataMappingModal({
   onClose
 }: DataMappingModalProps) {
   // Draft restore is synchronous so reopening the modal is instant; only the
-  // hub schemas/counts load over the network.
+  // hub schemas load over the network.
   const initialDraft = draftCache.get(draftKey(hubs.map((h) => h.hub_id)));
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [schemas, setSchemas] = useState<HubSchema[]>([]);
-  const [view, setView] = useState<'resume' | 'import'>('import');
   const [activeStep, setActiveStep] = useState(0);
-
-  const [unverifiedCounts, setUnverifiedCounts] = useState<
-    Record<string, number>
-  >({});
 
   // Header row is NOT assumed to be line 1; `sheets` slices at the chosen one.
   const [rawSheets, setRawSheets] = useState<
@@ -212,10 +206,6 @@ function DataMappingModal({
   const [perHub, setPerHub] = useState<Record<string, HubImportState>>(
     () => initialDraft?.perHub ?? {}
   );
-  // Once the user drops a file, a late-arriving count must not yank them to
-  // the resume screen.
-  const interactedRef = useRef(false);
-
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
 
@@ -251,44 +241,7 @@ function DataMappingModal({
     );
   };
 
-  const refreshUnverifiedCounts = async (hubList: HubSchema[]) => {
-    const results = await Promise.all(
-      hubList.map((hub) => {
-        // Scope to this user's import batch when the action configures an ID
-        // field. `where` conditions use field keys, so translate the id.
-        const idFieldId = idFieldByHub[hub.id];
-        const idFieldKey = idFieldId
-          ? (hub.fields || []).find((f) => f.id === idFieldId)?.key
-          : undefined;
-        // Configured batch field no longer exists on the hub: fail closed
-        // (report nothing) instead of silently counting every user's rows.
-        if (idFieldId && !idFieldKey)
-          return Promise.resolve({ hubId: hub.id, count: 0 });
-        return client
-          .dataHubAction({
-            hubId: hub.id,
-            operation: 'get',
-            verification: 'unverified',
-            where: idFieldKey
-              ? [{ fieldId: idFieldKey, value: initInfo().userId }]
-              : undefined
-          })
-          .then((r: any) => ({
-            hubId: hub.id,
-            count: (Array.isArray(r) ? r : []).length
-          }));
-      })
-    );
-    const counts: Record<string, number> = {};
-    results.forEach((r) => {
-      counts[r.hubId] = r.count;
-    });
-    setUnverifiedCounts(counts);
-    return counts;
-  };
-
-  // Entry screen: in-memory draft -> mapping step, else leftover unverified rows ->
-  // resume, else dropzone.
+  // Open the upload view regardless of existing unverified entries.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -299,13 +252,9 @@ function DataMappingModal({
           .map((id) => schemaResp.hubs.find((h) => h.id === id))
           .filter(Boolean) as HubSchema[];
 
-        const counts = await refreshUnverifiedCounts(orderedSchemas);
         if (cancelled) return;
 
-        const hasUnverified = Object.values(counts).some((n) => n > 0);
         setSchemas(orderedSchemas);
-        if (!initialDraft && !interactedRef.current && hasUnverified)
-          setView('resume');
         setLoading(false);
       } catch {
         if (!cancelled) {
@@ -354,10 +303,6 @@ function DataMappingModal({
 
   const isLastStep = activeStep >= schemas.length - 1;
 
-  const totalUnverified = Object.values(unverifiedCounts).reduce(
-    (n, c) => n + c,
-    0
-  );
   // Memoized: buildUnverifiedRows walks every row of every mapped column.
   const totalMappedRows = useMemo(
     () =>
@@ -423,7 +368,6 @@ function DataMappingModal({
       setFileError('Unsupported file type. Upload a CSV or Excel file.');
       return;
     }
-    interactedRef.current = true;
     setFileError('');
     setParsingFile(file.name);
     const parseStart = Date.now();
@@ -520,8 +464,7 @@ function DataMappingModal({
 
   // Rows are left unverified on purpose: unverified rows are exempt from the hub's field
   // requirements, so an import never fails validation. Nothing calls `verify`.
-  // Uploading clears this batch's existing unverified rows first, so this
-  // replaces them.
+  // Each upload appends rows; existing entries are preserved.
   const handleConfirm = async () => {
     if (!canImport) return;
     setBusy(true);
@@ -550,7 +493,6 @@ function DataMappingModal({
       }
     } catch (e: any) {
       setActionError(e?.message || 'Failed to save the mapped rows.');
-      await refreshUnverifiedCounts(schemas).catch(() => ({}));
       setBusy(false);
       return;
     }
@@ -727,52 +669,7 @@ function DataMappingModal({
     </div>
   );
 
-  // ---- Resume: rows from a previous import are still in the hub ----
-  if (view === 'resume') {
-    const resumeBody = (
-      <div css={{ color: '#3f3f46', lineHeight: 1.5 }}>
-        <div css={{ fontWeight: 600, marginBottom: '6px' }}>
-          {totalUnverified} row{totalUnverified === 1 ? '' : 's'} already
-          imported
-        </div>
-        <div css={{ color: '#71717a' }}>
-          A previous upload put{' '}
-          {totalUnverified === 1 ? 'this row' : 'these rows'} into{' '}
-          {schemas.length > 1 ? 'these data hubs' : 'this data hub'}. Uploading
-          a new file replaces {totalUnverified === 1 ? 'it' : 'them'}.
-        </div>
-      </div>
-    );
-    const resumeFooter = (
-      <>
-        <button
-          type='button'
-          disabled={busy}
-          onClick={onClose}
-          css={btn(false, busy)}
-        >
-          Done
-        </button>
-        <button
-          type='button'
-          disabled={busy}
-          // Uploading clears the old unverified rows, so no delete call is needed.
-          onClick={() => {
-            setActionError('');
-            setView('import');
-          }}
-          css={btn(true, busy)}
-        >
-          Upload a new file
-        </button>
-      </>
-    );
-    return shell(resumeBody, resumeFooter, true);
-  }
-
-  // ---- Import: upload + map ----
-  // Resume needs counts; the mapping step needs schemas. Only block once the
-  // user is past the dropzone and the background load hasn't finished.
+  // Mapping needs schemas; the dropzone can appear while they load.
   if (loading && sheets.length > 0) {
     return shell(
       <div css={{ color: '#71717a' }}>Loading…</div>,
@@ -1163,10 +1060,6 @@ function DataMappingModal({
       <span css={{ color: '#3f3f46', fontSize: '13px', marginRight: '4px' }}>
         Save {totalMappedRows} row{totalMappedRows === 1 ? '' : 's'} into{' '}
         {schemas.length > 1 ? 'the data hubs' : 'the data hub'}?
-        {totalUnverified > 0 &&
-          ` This replaces the ${totalUnverified} row${
-            totalUnverified === 1 ? '' : 's'
-          } from your previous upload.`}
       </span>
       <button
         type='button'
