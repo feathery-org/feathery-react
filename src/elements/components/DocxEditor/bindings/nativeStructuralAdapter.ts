@@ -151,6 +151,11 @@ function applyRowAdoptions(
           const titleFollowedTag = properties.title === properties.tag;
           properties.tag = plan.properties.tag;
           if (titleFollowedTag) properties.title = plan.properties.title;
+          // A copied control keeps the ORIGINAL's lock state, so a locked
+          // mirror re-tagged as a field stays uneditable unless forced here -
+          // and the text write below silently refuses on locked content.
+          properties.lockContents = plan.properties.lockContents;
+          properties.lockContentControl = plan.properties.lockContentControl;
           const replacement = plan.text || '\u200b';
           if (
             properties.type === 'RichText' &&
