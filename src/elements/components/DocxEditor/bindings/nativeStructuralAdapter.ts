@@ -202,7 +202,6 @@ function applyRowAdoptions(
             plan.properties.lockContents;
           created.contentControlProperties.lockContentControl =
             plan.properties.lockContentControl;
-        } else {
         }
       }
       restyleAsDataRow(editor, prefix, mutation.rowIndex);
@@ -317,7 +316,9 @@ function restyleAsDataRow(
       if (runFmt) stampRunFormat(cell, runFmt);
     });
     if (source.rowFormat) insertedRow.rowFormat?.copyFormat?.(source.rowFormat);
-  } catch (thrown) {}
+  } catch {
+    // Best effort: a restyle failure must never break row adoption.
+  }
 }
 
 // Later mutations address pasted controls by tag before the closing relayout.

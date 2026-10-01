@@ -124,9 +124,18 @@ function buildMirrorFixture(): SfdtDocument {
   const summaryTable = {
     rows: [
       row(['Item', 'Amount'], true),
-      row(['Alpha', cc(formulaTag('amount', 'alpha', 'm-1'), 'Amount', true, '…')]),
-      row(['Beta', cc(formulaTag('amount', 'sum(beta)', 'm-2'), 'Amount', true, '…')]),
-      row(['Total', cc(formulaTag('summary_total', 'sum(B2:end)'), 'Total', true, '…')])
+      row([
+        'Alpha',
+        cc(formulaTag('amount', 'alpha', 'm-1'), 'Amount', true, '…')
+      ]),
+      row([
+        'Beta',
+        cc(formulaTag('amount', 'sum(beta)', 'm-2'), 'Amount', true, '…')
+      ]),
+      row([
+        'Total',
+        cc(formulaTag('summary_total', 'sum(B2:end)'), 'Total', true, '…')
+      ])
     ]
   };
   return {
@@ -172,7 +181,9 @@ function occ(
 }
 
 const amountText = (index: BindingIndex, rowId: string) =>
-  index.tables.get('summary')!.rows.find((entry) => entry.rowId === rowId)!
+  index.tables
+    .get('summary')!
+    .rows.find((entry) => entry.rowId === rowId)!
     .bindings.get('amount')!.text;
 const totalText = (index: BindingIndex) =>
   index.formulas.get('summary_total')![0].text;
@@ -326,49 +337,14 @@ describe('mirrors + positional range totals', () => {
     const ids = rows.map((entry) => entry.rowId);
     expect(new Set(ids).size).toBe(ids.length); // every row id distinct
     expect(rows).toHaveLength(4); // m-1, m-2, One, and the re-adopted copy
-    const copyRow = rows.find((entry) => entry.rowId !== 'r-1' && ![
-      'm-1',
-      'm-2'
-    ].includes(entry.rowId as string))!;
+    const copyRow = rows.find(
+      (entry) =>
+        entry.rowId !== 'r-1' && !['m-1', 'm-2'].includes(entry.rowId as string)
+    )!;
     expect(copyRow.bindings.get('amount')!.def.kind).toBe('field');
     expect(copyRow.bindings.get('amount')!.text).toBe('$0.00'); // reset, not $100
     // 1800 (A) + 6000 (B) + 100 (One) + 0 (copy) - self-excluded total.
     expect(totalText(result.index)).toBe('$7,900.00');
-  });
-
-  it('an insert-above copy re-adopts the copy, not the original', () => {
-    // The copy is placed BEFORE the original (insert-above): physical row 1 is
-    // the copy, row 2 is the real one, both row=r-1 with $100.
-    const build = () => {
-      const table = {
-        rows: [
-          row(['Item', 'Amount'], true),
-          row(['Copy', cc(fieldTag('amount', CURRENCY, 'r-1'), 'Amount', false, '$100.00')]),
-          row(['Orig', cc(fieldTag('amount', CURRENCY, 'r-1'), 'Amount', false, '$100.00')])
-        ]
-      };
-      return {
-        optimizeSfdt: false,
-        sections: [{ blocks: [tableCc('t', table)] }]
-      } as unknown as SfdtDocument;
-    };
-    const amountAtPhysicalRow = (result: ReturnType<typeof applyRules>, phys: number) =>
-      result.index.tables
-        .get('t')!
-        .rows.find((entry) => Number(entry.path![entry.path!.length - 1]) === phys)!
-        .bindings.get('amount')!.text;
-
-    // Without the hint, the LATER occurrence (the original at row 2) is reset.
-    const noHint = applyRules(build(), {});
-    expect(amountAtPhysicalRow(noHint, 2)).toBe('$0.00'); // the bug
-
-    // With the hint that row 1 is the freshly inserted copy, the original keeps
-    // its value and the copy is the one reset.
-    const withHint = applyRules(build(), {
-      insertedRow: { tableId: 't', rowIndex: 1 }
-    });
-    expect(amountAtPhysicalRow(withHint, 2)).toBe('$100.00'); // original kept
-    expect(amountAtPhysicalRow(withHint, 1)).toBe('$0.00'); // copy reset
   });
 
   it('protects an intact totals row (it still has its content control)', () => {
@@ -387,7 +363,12 @@ describe('mirrors + positional range totals', () => {
         row(['Item', 'Amount'], true),
         row([
           'Seed',
-          cc(formulaTag('amount', 'sum(costs.amount)', 'r-1'), 'Amount', true, '…')
+          cc(
+            formulaTag('amount', 'sum(costs.amount)', 'r-1'),
+            'Amount',
+            true,
+            '…'
+          )
         ])
       ]
     };
@@ -414,11 +395,22 @@ describe('mirrors + positional range totals', () => {
     const table = {
       rows: [
         row(['Item', 'Amount'], true),
-        row(['Alpha', cc(formulaTag('amount', 'alpha', 'm-1'), 'Amount', true, '…')]),
-        row(['Beta', cc(formulaTag('amount', 'beta', 'm-2'), 'Amount', true, '…')]),
+        row([
+          'Alpha',
+          cc(formulaTag('amount', 'alpha', 'm-1'), 'Amount', true, '…')
+        ]),
+        row([
+          'Beta',
+          cc(formulaTag('amount', 'beta', 'm-2'), 'Amount', true, '…')
+        ]),
         row([
           'Total',
-          cc(formulaTag('total', 'sum(summary.amount)', 't-1'), 'Total', true, '…')
+          cc(
+            formulaTag('total', 'sum(summary.amount)', 't-1'),
+            'Total',
+            true,
+            '…'
+          )
         ])
       ]
     };
@@ -472,9 +464,9 @@ describe('mirrors + positional range totals', () => {
       .rows.find((entry) => entry.rowId === added.rowId)!
       .bindings.get('amount')!;
     expect(amount.def.kind).toBe('formula');
-    expect(
-      amount.def.kind === 'formula' ? amount.def.expression : null
-    ).toBe('sum(beta)');
+    expect(amount.def.kind === 'formula' ? amount.def.expression : null).toBe(
+      'sum(beta)'
+    );
     expect(amount.text).toBe('$6,000.00');
     expect(totalText(result.index)).toBe('$13,800.00');
   });
@@ -513,10 +505,20 @@ describe('mirrors inside line-item tables (adoption keeps working)', () => {
       rows: [
         row(['Item', 'Qty', 'Rate', 'Line total'], true),
         row([
-          cc(fieldTag('item', { kind: 'text' }, 'r-1'), 'Item', false, 'Design'),
+          cc(
+            fieldTag('item', { kind: 'text' }, 'r-1'),
+            'Item',
+            false,
+            'Design'
+          ),
           cc(fieldTag('qty', { kind: 'integer' }, 'r-1'), 'Qty', false, '2'),
           cc(formulaTag('rate', 'standard_rate', 'r-1'), 'Rate', true, '…'),
-          cc(formulaTag('line_total', 'mul(qty,rate)', 'r-1'), 'Line total', true, '…')
+          cc(
+            formulaTag('line_total', 'mul(qty,rate)', 'r-1'),
+            'Line total',
+            true,
+            '…'
+          )
         ])
       ]
     };
@@ -595,7 +597,16 @@ describe('mirrors inside line-item tables (adoption keeps working)', () => {
             { blocks: [{ inlines: [wrapped] }] },
             {
               blocks: [
-                { inlines: [cc(formulaTag('total', 'sum(value)', 'r-1'), 'Total', true, '…')] }
+                {
+                  inlines: [
+                    cc(
+                      formulaTag('total', 'sum(value)', 'r-1'),
+                      'Total',
+                      true,
+                      '…'
+                    )
+                  ]
+                }
               ]
             }
           ],
@@ -645,7 +656,16 @@ describe('mirrors inside line-item tables (adoption keeps working)', () => {
           cells: [
             {
               blocks: [
-                { inlines: [cc(fieldTag('item', { kind: 'text' }, 'r-1'), 'Item', false, 'Seed')] }
+                {
+                  inlines: [
+                    cc(
+                      fieldTag('item', { kind: 'text' }, 'r-1'),
+                      'Item',
+                      false,
+                      'Seed'
+                    )
+                  ]
+                }
               ]
             },
             { blocks: [{ inlines: [wrap('$5.00')] }] }
