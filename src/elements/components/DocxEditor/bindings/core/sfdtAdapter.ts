@@ -1383,22 +1383,40 @@ export function adoptUnboundRows(
     // unflagged-header row: block adoption. Text in a mirror column is a typed
     // value (adopted as a field), unless it fails to parse - then it's a header.
     let blockingReason: string | null = null;
+    let parsedFieldCells = 0;
+    let fieldParseFailure: string | null = null;
     for (let c = 0; c < templateCells.length && !blockingReason; c++) {
       const binding = findCellBinding(templateCells[c]);
-      if (!binding || binding.def.kind !== 'formula') continue;
+      if (!binding) continue;
       const text = cellPlainText(cells[c]).trim();
       if (text === '') continue;
-      if (!mirrorColumn[c]) {
-        blockingReason = `cell ${c} holds text where the template has a formula`;
+      if (binding.def.kind === 'formula') {
+        if (!mirrorColumn[c]) {
+          blockingReason = `cell ${c} holds text where the template has a formula`;
+        } else {
+          try {
+            parseDisplay(binding.def.fieldType, text);
+          } catch (thrown) {
+            if (!isValueError(thrown)) throw thrown;
+            blockingReason = `cell ${c} holds text that does not parse as ${binding.def.fieldType.kind}`;
+          }
+        }
       } else {
         try {
           parseDisplay(binding.def.fieldType, text);
+          parsedFieldCells++;
         } catch (thrown) {
           if (!isValueError(thrown)) throw thrown;
-          blockingReason = `cell ${c} holds text that does not parse as ${binding.def.fieldType.kind}`;
+          fieldParseFailure = `cell ${c} holds text that does not parse as ${binding.def.fieldType.kind}`;
         }
       }
     }
+    // A row whose every typed input cell fails to parse is a label (Shipping |
+    // included): keep it plain, counted as 0 by ranges, instead of minting a
+    // field that blocks save. A row where some cells parse is a data row with
+    // a typo: adopt it and let validation flag the bad cell.
+    if (blockingReason === null && fieldParseFailure !== null && !parsedFieldCells)
+      blockingReason = fieldParseFailure;
     if (blockingReason !== null) {
       if (Number.isInteger(firstBoundRowIndex) && r < firstBoundRowIndex)
         continue;
