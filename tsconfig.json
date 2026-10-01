@@ -4,12 +4,10 @@
     "declaration": true,
     "outDir": "dist",
     "declarationMap": true,
-    "strictNullChecks": true,
     "module": "esnext",
     "jsx": "react-jsx",
     "jsxImportSource": "@emotion/react",
     "target": "es5",
-    "allowJs": false,
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "lib": ["dom", "dom.iterable", "esnext"],
@@ -20,7 +18,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": false, // This is true in feathery-frontend, but needs to be false here
-    "noImplicitAny": true,
     "downlevelIteration": true // This enables to iterate the string set (Form/utils)
   },
   // Test-only helpers import devDependencies and must stay out of dist.

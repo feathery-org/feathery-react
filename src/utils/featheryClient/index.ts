@@ -1470,8 +1470,11 @@ export default class FeatheryClient extends IntegrationClient {
     return apiDataHubAction(sdkKey, resolved, this.formKey);
   }
 
-  async getHubSchemas(hubIds: string[]) {
+  // `hubKeys` resolves hubs by key as well as id, for a table whose hub is
+  // named at runtime by a hidden field's value.
+  async getHubSchemas(hubIds: string[], hubKeys: string[] = []) {
     const params = new URLSearchParams({ hub_ids: hubIds.join(',') });
+    if (hubKeys.length) params.set('hub_keys', hubKeys.join(','));
     if (this.formKey) params.set('form_key', this.formKey);
     const url = `${API_URL}hub/schema/?${params.toString()}`;
     const res = await this._fetch(

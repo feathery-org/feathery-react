@@ -129,6 +129,26 @@ export function canRunAction(
   );
 }
 
+// Whether any 'action' logic rule runs when this element is clicked. Mirrors
+// the element matching in canRunAction: the element's id or its link_id, or
+// for containers, the container's key or its id.
+export function elementHasClickLogic(
+  logicRules: any[] | undefined,
+  element: any,
+  isContainer = false
+) {
+  const ids = (
+    isContainer
+      ? [element?.key, element?.id]
+      : [element?.id, element?.properties?.link_id]
+  ).filter(Boolean);
+  return (logicRules ?? []).some(
+    (rule) =>
+      rule.trigger_event === 'action' &&
+      ids.some((id) => rule.elements?.includes(id))
+  );
+}
+
 // Lower execution order actions are executed before higher execution order actions.
 // Actions within a execution level are executed in the order they are defined by the designer
 // relative to other actions in the same execution level.

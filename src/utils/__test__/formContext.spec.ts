@@ -92,6 +92,7 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
           roleId: 'client',
           repeatIndex: 0,
           email: 'john@example.com',
+          name: 'John Smith',
           phone: '+15551234567'
         },
         {
@@ -110,6 +111,7 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
         role_id: 'client',
         repeat_index: 0,
         email: 'john@example.com',
+        name: 'John Smith',
         phone: '+15551234567',
         filler: false
       },
