@@ -6,6 +6,7 @@
 // that the reconcile it schedules is the restricted kind, neither of which needs
 // Syncfusion to verify.
 import { createCommitTriggers } from '../commitTriggers';
+import { formatTag } from '../core/tagDsl';
 import { ReconciliationController } from '../controller';
 import { SyncfusionEditorLike } from '../editorAdapter';
 import { watchRowCommands } from '../rowCommandWatch';
@@ -144,6 +145,97 @@ describe('watchRowCommands', () => {
     watchRowCommands(editor, () => order.push('adopt'));
     expect((editor as any).editorModule.insertRow(false, 1)).toBe('ok');
     expect(order).toEqual(['command', 'adopt']);
+  });
+
+  describe('insert-above on a bound row', () => {
+    const boundTag = formatTag({
+      version: 2,
+      kind: 'field',
+      name: 'amount',
+      fieldType: { kind: 'currency', currency: 'USD', scale: 2 },
+      isEditable: true,
+      isDeletable: true,
+      isGlobal: false,
+      options: { row: 'r-1' }
+    });
+    const plainRow = { cells: [{ blocks: [{ inlines: [] }] }] };
+    const boundRow = {
+      cells: [
+        {
+          blocks: [
+            {
+              inlines: [
+                {
+                  contentControlProperties: { tag: boundTag },
+                  inlines: [{ text: '$50.00' }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const docWithBoundRow = {
+      sections: [{ blocks: [{ rows: [plainRow, boundRow] }] }]
+    };
+
+    /** Caret in (section 0, block 0, row) of the doc above. */
+    function editorAt(row: number, original: jest.Mock) {
+      const editor = fakeEditor(original);
+      (editor as any).serialize = () => JSON.stringify(docWithBoundRow);
+      (editor as any).selection = { startOffset: `0;0;${row};0;0;0` };
+      (editor as any).documentHelper = {
+        contentControlCollection: [{ contentControlProperties: {} }]
+      };
+      return editor;
+    }
+
+    it('refuses it and tells the host, leaving the document untouched', () => {
+      const original = jest.fn(() => 'ok');
+      const editor = editorAt(1, original);
+      let blocked = 0;
+      watchRowCommands(editor, () => undefined, {
+        onInsertAboveBlocked: () => (blocked += 1)
+      });
+      expect((editor as any).editorModule.insertRow(true, 1)).toBeUndefined();
+      expect(original).not.toHaveBeenCalled();
+      expect(blocked).toBe(1);
+    });
+
+    it('still allows insert-below on the same row', () => {
+      const original = jest.fn(() => 'ok');
+      const editor = editorAt(1, original);
+      let blocked = 0;
+      watchRowCommands(editor, () => undefined, {
+        onInsertAboveBlocked: () => (blocked += 1)
+      });
+      expect((editor as any).editorModule.insertRow(false, 1)).toBe('ok');
+      expect(original).toHaveBeenCalledWith(false, 1);
+      expect(blocked).toBe(0);
+    });
+
+    it('still allows insert-above on an unbound row', () => {
+      const original = jest.fn(() => 'ok');
+      const editor = editorAt(0, original);
+      watchRowCommands(editor, () => undefined, {
+        onInsertAboveBlocked: () => {
+          throw new Error('must not block');
+        }
+      });
+      expect((editor as any).editorModule.insertRow(true, 1)).toBe('ok');
+    });
+
+    it('never blocks history replay', () => {
+      const original = jest.fn(() => 'ok');
+      const editor = editorAt(1, original);
+      (editor as any).editorHistoryModule = { isRedoing: true };
+      watchRowCommands(editor, () => undefined, {
+        onInsertAboveBlocked: () => {
+          throw new Error('must not block');
+        }
+      });
+      expect((editor as any).editorModule.insertRow(true, 1)).toBe('ok');
+    });
   });
 
   it('does not re-enter when follow-up work itself inserts a row', () => {

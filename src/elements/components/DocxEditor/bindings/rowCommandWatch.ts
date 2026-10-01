@@ -17,6 +17,8 @@
 // leaves redo a no-op and strips remaining bindings. Let the native history
 // finish; commitTriggers schedules a formulas-only self-heal afterwards.
 
+import { rowCarriesRowBindings } from './core/tableDeleteImpact';
+import { SfdtDocument } from './core/sfdtTypes';
 import {
   pruneDetachedContentControls,
   withContentControlLocksBypassed,
@@ -25,6 +27,45 @@ import {
 import { isApplyingNativeStructuralMutations } from './nativeStructuralAdapter';
 
 type RowCommand = (...args: unknown[]) => unknown;
+
+export interface RowCommandWatchOptions {
+  /**
+   * Fired when an insert-above on a bound row is refused (see
+   * blocksInsertAbove below), so the host can explain instead of a silent
+   * no-op.
+   */
+  onInsertAboveBlocked?: () => void;
+}
+
+/** A top-level table cell's hierarchical offset: s;b;row;cell;para;offset. */
+const CELL_OFFSET_PARTS = 6;
+
+/**
+ * Insert-above clones the selected row's controls into the new row, giving two
+ * rows the same row id. The reconcile snapshot cannot tell which is the copy -
+ * insert-above and copy-below produce identical documents - so adopting would
+ * silently move the original's value into the new row. Until the live insert
+ * can be attributed reliably, refuse insert-above on a bound row; insert-below
+ * attributes correctly (later occurrence is the copy) and stays available.
+ */
+function blocksInsertAbove(editor: SyncfusionEditorLike): boolean {
+  try {
+    const anyEditor = editor as SyncfusionEditorLike & Record<string, any>;
+    if (!editor.documentHelper?.contentControlCollection?.length) return false;
+    const parts = String(anyEditor.selection?.startOffset ?? '')
+      .split(';')
+      .map(Number);
+    if (
+      parts.length !== CELL_OFFSET_PARTS ||
+      parts.some((n) => !Number.isInteger(n))
+    )
+      return false;
+    const doc = JSON.parse(editor.serialize()) as SfdtDocument;
+    return rowCarriesRowBindings(doc, parts[0], parts[1], parts[2]);
+  } catch {
+    return false;
+  }
+}
 
 const WATCHED: ReadonlyArray<'insertRow' | 'deleteRow'> = [
   'insertRow',
@@ -55,7 +96,8 @@ function allowRowCommandDuringReplay(
  */
 export function watchRowCommands(
   editor: SyncfusionEditorLike,
-  onRowChange: () => void
+  onRowChange: () => void,
+  options: RowCommandWatchOptions = {}
 ): () => void {
   const editorModule = editor.editorModule as
     | Record<string, RowCommand | undefined>
@@ -75,6 +117,21 @@ export function watchRowCommands(
         const result = original.apply(this, args);
         pruneDetachedContentControls(editor);
         return result;
+      }
+      const replayHistory = editor.editorHistoryModule;
+      if (
+        name === 'insertRow' &&
+        args[0] === true &&
+        !replayHistory?.isUndoing &&
+        !replayHistory?.isRedoing &&
+        blocksInsertAbove(editor)
+      ) {
+        try {
+          options.onInsertAboveBlocked?.();
+        } catch {
+          // The hint must never break the refusal itself.
+        }
+        return undefined;
       }
       running = true;
       try {

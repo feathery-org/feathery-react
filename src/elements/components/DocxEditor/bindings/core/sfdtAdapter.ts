@@ -893,7 +893,7 @@ function cellPlainText(cell: SfdtCell): string {
 }
 
 /** A row-scoped field/formula parsed from a control tag, else null. */
-function rowScopedDef(tag: unknown): BoundDefinition | null {
+export function rowScopedDef(tag: unknown): BoundDefinition | null {
   let def: Definition | null = null;
   try {
     def = parseTag(String(tag || ''));
