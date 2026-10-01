@@ -1,15 +1,15 @@
-import { loadGoogleFonts, setFontFallbacks } from '../../src/utils/fonts';
+import { loadGoogleFonts } from '../../src/utils/fonts';
 
-// Reads a real form from a Feathery backend (the same panel endpoint the SDK
-// renders from) and pulls fully resolved element styles out of it. Configure
-// with STORYBOOK_* variables in .env.local -- see .env.example.
+// Reads a theme from a Feathery backend through the public theme API
+// (GET /api/theme/ and /api/theme/<id>/), which resolves its element styles
+// the way the panel endpoint does before a form renders. Configure with STORYBOOK_*
+// variables in .env.local -- see .env.example.
 
 type Styles = Record<string, any>;
 
 export interface BackendElement {
-  /** Element id in the source form, for tracing where styles came from */
-  id: string;
-  stepKey: string;
+  /** Where the styles came from in the theme, e.g. "field:email" */
+  source: string;
   styles: Styles;
   mobileStyles: Styles;
   /** Attributes of the element's first rich-text run, if it has text */
@@ -17,160 +17,240 @@ export interface BackendElement {
 }
 
 export interface BackendTheme {
-  formName: string;
+  themeName: string;
   canvasColor?: string;
-  mobileBreakpoint?: number;
+  /** The form root's styles, which every element inherits its font from */
+  globalStyles: Styles;
   button?: BackendElement;
   heading?: BackendElement;
   body?: BackendElement;
   progressBar?: BackendElement;
-  /** First field of each servar type, keyed by type */
+  /** Styles for each servar type the theme defines, keyed by type */
   fields: Record<string, BackendElement>;
+  /** Styles for each non-field element type (tab, table, image...) */
+  elements: Record<string, BackendElement>;
 }
 
 export const backendConfig = {
   apiUrl:
     process.env.STORYBOOK_FEATHERY_API_URL || 'http://localhost:8006/api/',
-  sdkKey: process.env.STORYBOOK_FEATHERY_SDK_KEY || '',
-  formKey: process.env.STORYBOOK_FEATHERY_FORM_KEY || ''
+  apiKey: process.env.STORYBOOK_FEATHERY_API_KEY || '',
+  /** Theme id or name; blank picks the org's first theme */
+  theme: process.env.STORYBOOK_FEATHERY_THEME || ''
 };
 
-const toElement = (element: any, stepKey: string): BackendElement => ({
-  id: element.id,
-  stepKey,
-  styles: element.styles ?? {},
-  mobileStyles: element.mobile_styles ?? {},
-  textAttributes: element.properties?.text_formatted?.[0]?.attributes ?? {}
-});
+interface ResolvedElement {
+  level_2: string;
+  level_1: string;
+  styles: Styles;
+  mobile_styles: Styles;
+}
 
-const fontSizeOf = (element: any) =>
+// Font keys a rich-text run carries (what getRichFontStyles reads)
+const RUN_FONT_KEYS = [
+  'font_size',
+  'font_family',
+  'font_color',
+  'font_weight',
+  'font_italic',
+  'font_strike',
+  'font_underline',
+  'text_transform',
+  'letter_spacing'
+];
+
+const isSet = (value: any) =>
+  value !== undefined && value !== null && value !== '';
+
+/**
+ * Buttons and texts paint their label only from its rich-text run, not from
+ * the element's font_* styles, so an element placed from a theme starts with
+ * a run carrying the theme's font. Mobile values ride as mobile_* attributes.
+ * The asset's own run attributes, if any, go on top.
+ */
+function runAttributes(
+  styles: Styles,
+  mobileStyles: Styles,
+  own: Styles = {}
+): Styles {
+  const attrs: Styles = {};
+  RUN_FONT_KEYS.forEach((key) => {
+    if (isSet(styles[key])) attrs[key] = styles[key];
+    if (isSet(mobileStyles[key]) && mobileStyles[key] !== styles[key])
+      attrs[`mobile_${key}`] = mobileStyles[key];
+  });
+  return { ...attrs, ...own };
+}
+
+const TEXT_RUN_TYPES = ['button', 'text'];
+
+const fontSizeOf = (asset: any) =>
   Number(
-    element.properties?.text_formatted?.[0]?.attributes?.font_size ??
-      element.styles?.font_size ??
+    asset.properties?.text_formatted?.[0]?.attributes?.font_size ??
+      asset.resolved_styles?.font_size ??
       0
   );
 
+// The theme endpoint resolves styles the way the panel endpoint does for a
+// form: `resolved_elements` are flattened global -> element type -> servar
+// type (labels filled from the field font), and each asset's
+// `resolved_styles` are layered over its element type's. Used as sent, so
+// stories see exactly what a hosted form would.
 function extractTheme(res: any): BackendTheme {
-  const steps: any[] = res.data ?? [];
-  const all = (kind: string) =>
-    steps.flatMap((step) =>
-      (step[kind] ?? []).map((element: any) => ({ element, step }))
+  const resolved: ResolvedElement[] | undefined = res.resolved_elements;
+  if (!resolved) {
+    throw new Error(
+      'The theme endpoint returned no resolved_elements; update the backend'
     );
+  }
 
-  // A text-only primary action is the most representative button: icon
-  // buttons (back arrows and the like) carry styles specific to their image.
-  const buttons = all('buttons');
-  const button =
-    buttons.find(
-      ({ element }) => element.properties.submit && !element.properties.image
-    ) ??
-    buttons.find(({ element }) => !element.properties.image) ??
-    buttons[0];
-
-  // The largest text on the form stands in for a heading, and the most common
-  // smaller size for body copy. Question-per-step forms often have as many
-  // headings as body lines, so the most common size alone can be the heading.
-  const texts = all('texts').filter(({ element }) =>
-    element.properties?.text?.trim()
-  );
-  const heading = [...texts].sort(
-    (a, b) => fontSizeOf(b.element) - fontSizeOf(a.element)
-  )[0];
-  const headingSize = heading ? fontSizeOf(heading.element) : 0;
-  const mostCommonSize = (candidates: typeof texts) => {
-    const counts: Record<number, number> = {};
-    candidates.forEach(({ element }) => {
-      const size = fontSizeOf(element);
-      counts[size] = (counts[size] ?? 0) + 1;
-    });
-    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-    return top ? Number(top[0]) : undefined;
+  const toElement = (el: ResolvedElement): BackendElement => {
+    const styles = el.styles ?? {};
+    const mobileStyles = el.mobile_styles ?? {};
+    return {
+      source: el.level_1 ? `${el.level_2}:${el.level_1}` : el.level_2,
+      styles,
+      mobileStyles,
+      textAttributes: TEXT_RUN_TYPES.includes(el.level_2)
+        ? runAttributes(styles, mobileStyles)
+        : {}
+    };
   };
-  const smaller = texts.filter(
-    ({ element }) => fontSizeOf(element) < headingSize
-  );
-  const bodySize = mostCommonSize(smaller.length ? smaller : texts);
-  const body = texts.find(({ element }) => fontSizeOf(element) === bodySize);
 
   const fields: Record<string, BackendElement> = {};
-  all('servar_fields').forEach(({ element, step }) => {
-    const type = element.servar?.type;
-    if (type && !fields[type]) fields[type] = toElement(element, step.key);
+  const elements: Record<string, BackendElement> = {};
+  resolved.forEach((el) => {
+    if (el.level_2 === 'field') {
+      if (el.level_1) fields[el.level_1] = toElement(el);
+    } else if (!el.level_1) {
+      elements[el.level_2] = toElement(el);
+    }
   });
 
-  const progressBar = all('progress_bars')[0];
+  const fromAsset = (level2: string, asset: any): BackendElement => {
+    const styles = asset.resolved_styles ?? {};
+    const mobileStyles = asset.resolved_mobile_styles ?? {};
+    return {
+      source: `${level2} asset "${asset.key}"`,
+      styles,
+      mobileStyles,
+      textAttributes: runAttributes(
+        styles,
+        mobileStyles,
+        asset.properties?.text_formatted?.[0]?.attributes
+      )
+    };
+  };
 
-  // The first step's root container carries the page background
-  const root = steps[0]?.subgrids?.find((grid: any) => !grid.position?.length);
-  const background = root?.styles?.background_color;
+  // Themes carry no heading level, so the text asset with the largest text
+  // stands in for one. Body copy is the theme's base text styling.
+  const body = elements.text;
+  const heading = [...(res.text_assets ?? [])]
+    .filter((asset) => fontSizeOf(asset) > Number(body?.styles.font_size ?? 0))
+    .sort((a, b) => fontSizeOf(b) - fontSizeOf(a))[0];
 
+  const background = res.step_background_color;
   return {
-    formName: res.form_name ?? backendConfig.formKey,
+    themeName: res.name,
     canvasColor: background ? `#${background}` : undefined,
-    mobileBreakpoint: res.mobile_breakpoint,
-    button: button && toElement(button.element, button.step.key),
-    heading: heading && toElement(heading.element, heading.step.key),
-    body: body && toElement(body.element, body.step.key),
-    progressBar:
-      progressBar && toElement(progressBar.element, progressBar.step.key),
-    fields
+    globalStyles: res.global_styles ?? {},
+    button: elements.button,
+    heading: heading && fromAsset('text', heading),
+    body,
+    progressBar: elements.progress_bar,
+    fields,
+    elements
   };
 }
 
-// Mirrors the SDK's _loadFormPackages so text renders in the form's fonts
-function loadFormFonts(res: any) {
-  loadGoogleFonts(res.fonts ?? []);
-  setFontFallbacks(res.font_fallbacks ?? {});
-  Object.entries(res.uploaded_fonts ?? {}).forEach(([family, variants]) => {
-    (variants as any[]).forEach(({ source, style, weight }) =>
-      new FontFace(family, `url(${source})`, { style, weight: `${weight}` })
-        .load()
-        .then((font) => document.fonts.add(font))
-        .catch((e) => console.warn(`Font load issue: ${e}`))
-    );
+// The panel endpoint lists a form's fonts for the SDK to load, but a theme
+// doesn't, so load every single-family font_family it uses from Google.
+// Stacks like the system font default are left to the browser.
+function loadThemeFonts(theme: BackendTheme) {
+  const weights: Record<string, Set<number>> = {};
+  const add = (styles: Styles) => {
+    const family = styles.font_family;
+    if (!family || family.includes(',')) return;
+    const name = family.replace(/^['"]|['"]$/g, '');
+    (weights[name] ??= new Set()).add(Number(styles.font_weight) || 400);
+  };
+  add(theme.globalStyles);
+  [
+    theme.heading,
+    ...Object.values(theme.elements),
+    ...Object.values(theme.fields)
+  ].forEach((el) => {
+    if (!el) return;
+    add(el.styles);
+    add({ ...el.styles, ...el.textAttributes });
+    add({ ...el.styles, ...el.mobileStyles });
   });
+  loadGoogleFonts(
+    Object.entries(weights).map(
+      ([name, set]) => `${name}:${[...set].join(',')}`
+    )
+  );
+}
+
+async function getJson(path: string) {
+  const { apiUrl, apiKey } = backendConfig;
+  const response = await fetch(`${apiUrl}${path}`, {
+    headers: { Authorization: `Token ${apiKey}` }
+  });
+  const res = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = Array.isArray(res)
+      ? res[0]?.message
+      : res.detail ?? res.message;
+    throw new Error(
+      `${response.status} from ${apiUrl}${path}${detail ? `: ${detail}` : ''}`
+    );
+  }
+  return res;
+}
+
+async function findTheme(wanted: string) {
+  const res = await getJson('theme/');
+  const themes: any[] = Array.isArray(res) ? res : res.results ?? [];
+  if (!themes.length) throw new Error('The API key’s org has no themes');
+  if (!wanted) return themes[0];
+  const theme = themes.find(({ id, name }) => id === wanted || name === wanted);
+  if (!theme) {
+    throw new Error(
+      `No theme "${wanted}". Available: ${themes
+        .map(({ name }) => name)
+        .join(', ')}`
+    );
+  }
+  return theme;
 }
 
 const cache: Record<string, Promise<BackendTheme>> = {};
 
 export function fetchBackendTheme(
-  formKey = backendConfig.formKey
+  themeKey = backendConfig.theme
 ): Promise<BackendTheme> {
-  const { apiUrl, sdkKey } = backendConfig;
-  if (!sdkKey || !formKey) {
+  if (!backendConfig.apiKey) {
     return Promise.reject(
       new Error(
-        'Set STORYBOOK_FEATHERY_SDK_KEY and STORYBOOK_FEATHERY_FORM_KEY in .env.local (see .env.example), then restart Storybook.'
+        'Set STORYBOOK_FEATHERY_API_KEY in .env.local (see .env.example), then restart Storybook.'
       )
     );
   }
 
-  if (!cache[formKey]) {
-    const params = new URLSearchParams({ form_key: formKey });
-    cache[formKey] = fetch(`${apiUrl}panel/v20/?${params}`, {
-      headers: { Authorization: `Token ${sdkKey}` }
-    })
-      .then(async (response) => {
-        const res = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          const detail = Array.isArray(res)
-            ? res[0]?.message
-            : res.detail ?? res.message;
-          throw new Error(
-            `${response.status} from ${apiUrl}panel/v20/ for form "${formKey}"${
-              detail ? `: ${detail}` : ''
-            }`
-          );
-        }
-        if (!res.data) throw new Error(`Form "${formKey}" is disabled`);
-        loadFormFonts(res);
-        return extractTheme(res);
+  if (!cache[themeKey]) {
+    cache[themeKey] = findTheme(themeKey)
+      .then(({ id }) => getJson(`theme/${id}/`))
+      .then((res) => {
+        const theme = extractTheme(res);
+        loadThemeFonts(theme);
+        return theme;
       })
       .catch((error) => {
         // Let the next story load retry, e.g. once the backend is up
-        delete cache[formKey];
+        delete cache[themeKey];
         throw error;
       });
   }
-  return cache[formKey];
+  return cache[themeKey];
 }

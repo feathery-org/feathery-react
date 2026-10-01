@@ -1,5 +1,5 @@
-import type { ArgTypes, Loader, StoryContext } from '@storybook/react-webpack5';
-import { resolveTheme, StoryTheme, THEME_TOKEN_KEYS } from './tokens';
+import type { Loader, StoryContext } from '@storybook/react-webpack5';
+import { resolveTheme, StoryTheme } from './tokens';
 import { PRESET_BASE_STYLES, textAttributes } from './toFeatheryStyles';
 import {
   BackendElement,
@@ -7,27 +7,10 @@ import {
   fetchBackendTheme
 } from '../backend/backendForm';
 
-/**
- * Args every themed story accepts: one control per theme token, plus a raw
- * escape hatch for any Feathery style key the tokens don't cover.
- */
-export type ThemedArgs = Partial<StoryTheme> & {
-  /** Merged over the token-derived styles, keyed like element.styles */
-  rawStyles?: Record<string, any>;
-};
-
 type Styles = Record<string, any>;
 
 /** Toolbar value that styles stories from a real form instead of a preset */
 export const BACKEND_THEME = 'backend';
-
-const THEME = 'Theme tokens';
-
-const tokenControl = (key: keyof StoryTheme) => {
-  if (key.endsWith('Color')) return { type: 'color' as const };
-  if (key === 'fontFamily') return { type: 'text' as const };
-  return { type: 'number' as const };
-};
 
 /**
  * The form builder renders elements with editMode='editable'; a live form
@@ -47,31 +30,11 @@ export const editModeArgType = {
   }
 };
 
-export const themeArgTypes: Partial<ArgTypes<ThemedArgs>> = {
-  ...Object.fromEntries(
-    THEME_TOKEN_KEYS.map((key) => [
-      key,
-      {
-        control: tokenControl(key),
-        description:
-          'Unset follows the toolbar theme (a preset, or the backend form)',
-        table: { category: THEME }
-      }
-    ])
-  ),
-  rawStyles: {
-    control: 'object',
-    description:
-      'Raw Feathery style keys (e.g. `{ "shadow_blur_radius": 12 }`), applied last',
-    table: { category: 'Raw Feathery styles' }
-  }
-};
-
 export const isBackendTheme = (context: StoryContext) =>
   context.globals.theme === BACKEND_THEME;
 
 /**
- * Fetches the backend form once per form key when the toolbar is on
+ * Fetches the backend theme once per theme when the toolbar is on
  * "backend". Failures are handed to the canvas decorator to explain rather
  * than thrown, which would blank the story.
  */
@@ -89,27 +52,25 @@ export const loadedBackendTheme = (
 ): BackendTheme | undefined =>
   isBackendTheme(context) ? context.loaded?.backendTheme : undefined;
 
-/** Only the token args a story's controls actually set */
-const explicitTokens = (args: ThemedArgs): Partial<StoryTheme> =>
-  Object.fromEntries(
-    THEME_TOKEN_KEYS.filter(
-      (key) => args[key] !== undefined && args[key] !== ''
-    ).map((key) => [key, args[key]])
-  );
+/** The toolbar preset's tokens; unused while the toolbar is on "backend" */
+export const themeFor = (context: StoryContext) =>
+  resolveTheme(isBackendTheme(context) ? undefined : context.globals.theme);
 
-/** The theme a story renders with: toolbar preset, then token args. */
-export const themeFor = (args: ThemedArgs, context: StoryContext) =>
-  resolveTheme(
-    isBackendTheme(context) ? undefined : context.globals.theme,
-    args
-  );
-
-/** What the canvas is painted with, which follows the backend form too */
-export const canvasFor = (args: ThemedArgs, context: StoryContext) => {
+/** What the canvas is painted with, which follows the backend theme too */
+export const canvasFor = (context: StoryContext) => {
   const backend = loadedBackendTheme(context);
-  if (backend) return args.canvasColor ?? backend.canvasColor ?? '#FFFFFF';
-  return themeFor(args, context).canvasColor;
+  if (backend) return backend.canvasColor ?? '#FFFFFF';
+  return themeFor(context).canvasColor;
 };
+
+/**
+ * What the form root is styled with, which every element inherits from
+ * unless its own targets say otherwise: the backend's global_styles, or the
+ * preset's font.
+ */
+export const globalStylesFor = (context: StoryContext) =>
+  loadedBackendTheme(context)?.globalStyles ??
+  textAttributes(themeFor(context));
 
 interface StylingOptions {
   /** Base styles for PRESET_BASE_STYLES and the fallback preset */
@@ -133,40 +94,29 @@ export interface Styling {
 }
 
 /**
- * Resolves an element's styles in layers:
- *   backend form element  OR  preset (toolbar)
- *   → token args (in backend mode, only the ones set)
- *   → rawStyles
- * A backend form without a matching element falls back to the default preset.
+ * An element's styles: the backend theme's resolved element, used as sent, or
+ * the toolbar preset's tokens. A backend theme without a matching element
+ * falls back to the default preset.
  */
 export function styleElement(
-  args: ThemedArgs,
   context: StoryContext,
   { kind, fromBackend, tokens, text }: StylingOptions
 ): Styling {
-  const presetBase = kind ? PRESET_BASE_STYLES[kind] : {};
   const backend = loadedBackendTheme(context);
   const source = backend && fromBackend(backend);
-
+  // Copies, since stories set behavioural keys like mark_required_asterisk
+  // and the fetched theme is cached across stories
   if (source) {
-    const overrides = explicitTokens(args);
     return {
-      styles: { ...source.styles, ...tokens(overrides), ...args.rawStyles },
-      mobileStyles: source.mobileStyles,
-      textAttributes: {
-        ...source.textAttributes,
-        // The run keeps its own weight; size and color follow set tokens
-        ...textAttributes(overrides, {
-          ...(text?.color && { color: text.color(overrides) }),
-          scale: text?.scale
-        })
-      }
+      styles: { ...source.styles },
+      mobileStyles: { ...source.mobileStyles },
+      textAttributes: { ...source.textAttributes }
     };
   }
 
-  const theme = themeFor(args, context);
+  const theme = themeFor(context);
   return {
-    styles: { ...presetBase, ...tokens(theme), ...args.rawStyles },
+    styles: { ...(kind ? PRESET_BASE_STYLES[kind] : {}), ...tokens(theme) },
     mobileStyles: {},
     textAttributes: textAttributes(theme, {
       ...(text?.color && { color: text.color(theme) }),

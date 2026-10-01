@@ -41,24 +41,6 @@ export const themePresets: Record<ThemePresetName, StoryTheme> = {
   }
 };
 
-export const THEME_TOKEN_KEYS = Object.keys(
-  themePresets.default
-) as (keyof StoryTheme)[];
-
-/**
- * Layers a story's token args over a preset. Args left unset (undefined) fall
- * through to the preset; an unknown or missing name means the default preset.
- */
-export function resolveTheme(
-  presetName: string | undefined,
-  overrides: Partial<StoryTheme> = {}
-): StoryTheme {
-  const preset =
-    themePresets[presetName as ThemePresetName] ?? themePresets.default;
-  const resolved = { ...preset };
-  THEME_TOKEN_KEYS.forEach((key) => {
-    const value = overrides[key];
-    if (value !== undefined && value !== '') (resolved as any)[key] = value;
-  });
-  return resolved;
-}
+/** A preset by name; an unknown or missing name means the default preset */
+export const resolveTheme = (presetName: string | undefined): StoryTheme =>
+  themePresets[presetName as ThemePresetName] ?? themePresets.default;

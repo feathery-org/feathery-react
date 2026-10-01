@@ -3,9 +3,9 @@ import type { Meta, StoryObj } from '@storybook/react-webpack5';
 import { fieldElement } from './fixtures';
 import { StatefulCheckbox } from './StatefulFields';
 import { checkboxStyling } from './theme/elementStyling';
-import { styleElement, themeArgTypes, ThemedArgs } from './theme/storyHelpers';
+import { styleElement } from './theme/storyHelpers';
 
-type Args = ThemedArgs & {
+type Args = {
   label: string;
   checked: boolean;
   disabled: boolean;
@@ -18,12 +18,11 @@ const meta: Meta<Args> = {
     checked: true,
     disabled: false
   },
-  argTypes: themeArgTypes,
-  render: ({ label, checked, disabled, ...args }, context) => {
+  render: ({ label, checked, disabled }, context) => {
     const element = fieldElement(
       'checkbox',
       { key: 'story_checkbox', label },
-      styleElement(args, context, checkboxStyling)
+      styleElement(context, checkboxStyling)
     );
     return (
       <StatefulCheckbox

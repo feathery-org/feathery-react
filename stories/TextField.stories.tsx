@@ -6,20 +6,17 @@ import { textFieldStyling } from './theme/elementStyling';
 import {
   editModeArgType,
   EditModeArgs,
-  styleElement,
-  themeArgTypes,
-  ThemedArgs
+  styleElement
 } from './theme/storyHelpers';
 
-type Args = ThemedArgs &
-  EditModeArgs & {
-    label: string;
-    placeholder: string;
-    fieldType: 'text_field' | 'email' | 'integer_field' | 'ssn';
-    required: boolean;
-    disabled: boolean;
-    width: number;
-  };
+type Args = EditModeArgs & {
+  label: string;
+  placeholder: string;
+  fieldType: 'text_field' | 'email' | 'integer_field' | 'ssn';
+  required: boolean;
+  disabled: boolean;
+  width: number;
+};
 
 const meta: Meta<Args> = {
   title: 'Fields/Text Field',
@@ -33,7 +30,6 @@ const meta: Meta<Args> = {
   },
   argTypes: {
     ...editModeArgType,
-    ...themeArgTypes,
     fieldType: {
       control: 'select',
       options: ['text_field', 'email', 'integer_field', 'ssn']
@@ -41,19 +37,10 @@ const meta: Meta<Args> = {
     width: { control: { type: 'range', min: 160, max: 640, step: 10 } }
   },
   render: (
-    {
-      label,
-      placeholder,
-      fieldType,
-      required,
-      disabled,
-      width,
-      editMode,
-      ...args
-    },
+    { label, placeholder, fieldType, required, disabled, width, editMode },
     context
   ) => {
-    const styling = styleElement(args, context, textFieldStyling(fieldType));
+    const styling = styleElement(context, textFieldStyling(fieldType));
     styling.styles.mark_required_asterisk = required;
     const element = fieldElement(
       fieldType,

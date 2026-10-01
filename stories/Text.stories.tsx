@@ -1,23 +1,18 @@
 import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react-webpack5';
-import Elements from '../src/elements';
+import Elements from './FormFrame';
 import { textElement } from './fixtures';
 import { TEXT_VARIANTS, textStyling } from './theme/elementStyling';
 import {
   editModeArgType,
   EditModeArgs,
-  styleElement,
-  themeArgTypes,
-  ThemedArgs
+  styleElement
 } from './theme/storyHelpers';
 
-type Args = ThemedArgs &
-  EditModeArgs & {
-    text: string;
-    variant: keyof typeof TEXT_VARIANTS;
-    /** Unset keeps the theme's alignment */
-    align?: 'flex-start' | 'center' | 'flex-end';
-  };
+type Args = EditModeArgs & {
+  text: string;
+  variant: keyof typeof TEXT_VARIANTS;
+};
 
 const meta: Meta<Args> = {
   title: 'Elements/Text',
@@ -27,16 +22,10 @@ const meta: Meta<Args> = {
   },
   argTypes: {
     ...editModeArgType,
-    ...themeArgTypes,
-    variant: { control: 'inline-radio', options: Object.keys(TEXT_VARIANTS) },
-    align: {
-      control: 'inline-radio',
-      options: ['flex-start', 'center', 'flex-end']
-    }
+    variant: { control: 'inline-radio', options: Object.keys(TEXT_VARIANTS) }
   },
-  render: ({ text, variant, align, editMode, ...args }, context) => {
-    const styling = styleElement(args, context, textStyling(variant));
-    if (align) styling.styles.horizontal_align = align;
+  render: ({ text, variant, editMode }, context) => {
+    const styling = styleElement(context, textStyling(variant));
     return (
       <div style={{ maxWidth: 520 }}>
         <Elements.TextElement

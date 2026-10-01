@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react-webpack5';
-import Elements from '../src/elements';
+import Elements from './FormFrame';
 import {
   buttonElement,
   fieldElement,
@@ -19,23 +19,18 @@ import {
 import {
   editModeArgType,
   EditModeArgs,
-  styleElement,
-  themeArgTypes,
-  ThemedArgs
+  styleElement
 } from './theme/storyHelpers';
 
-// Every element on one step, so a preset or token change can be judged as a
-// whole. Raw styles are per element type, so they're left to the single stories.
-const { ...tokenArgTypes } = themeArgTypes;
-
-type Args = ThemedArgs & EditModeArgs;
+// Every element on one step, so a theme can be judged as a whole.
+type Args = EditModeArgs;
 
 const meta: Meta<Args> = {
   title: 'Theming/Showcase',
-  argTypes: { ...editModeArgType, ...tokenArgTypes },
-  render: ({ editMode, ...args }, context) => {
-    const style = (options: Parameters<typeof styleElement>[2]) =>
-      styleElement(args, context, options);
+  argTypes: { ...editModeArgType },
+  render: ({ editMode }, context) => {
+    const style = (options: Parameters<typeof styleElement>[1]) =>
+      styleElement(context, options);
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
         <div

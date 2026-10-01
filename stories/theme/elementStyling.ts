@@ -6,7 +6,7 @@ import {
   textFieldStyles
 } from './toFeatheryStyles';
 
-// How each story's element is styled: which element of a backend form it is
+// How each story's element is styled: which element of the backend theme it is
 // modelled on, and how theme tokens map onto it. Shared by the single-element
 // stories and the showcase so the two can't drift apart.
 
@@ -35,7 +35,7 @@ export const textStyling = (variant: keyof typeof TEXT_VARIANTS) => ({
 });
 
 // These all render through TextField, so any of them can stand in for another
-// when the backend form lacks the exact type.
+// when the backend theme lacks the exact type.
 const TEXT_INPUT_TYPES = [
   'text_field',
   'email',

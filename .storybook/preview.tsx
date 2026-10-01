@@ -5,9 +5,10 @@ import {
   BACKEND_THEME,
   backendThemeLoader,
   canvasFor,
-  isBackendTheme,
-  themeFor
+  globalStylesFor,
+  isBackendTheme
 } from '../stories/theme/storyHelpers';
+import { FormFrame } from '../stories/FormFrame';
 import type { BackendTheme } from '../stories/backend/backendForm';
 
 const bannerStyle: React.CSSProperties = {
@@ -40,30 +41,29 @@ function BackendBanner({
     theme.heading && 'heading',
     theme.body && 'body text',
     theme.progressBar && 'progress bar',
-    ...Object.keys(theme.fields)
+    `${Object.keys(theme.fields).length} field types`
   ].filter(Boolean);
   return (
     <div style={{ ...bannerStyle, background: '#E0F2FE', color: '#0C4A6E' }}>
-      Styles from <strong>{theme.formName}</strong>. Found: {found.join(', ')}.
-      Anything else falls back to the default preset.
+      Styles from theme <strong>{theme.themeName}</strong>. Found:{' '}
+      {found.join(', ')}. Anything else falls back to the default preset.
     </div>
   );
 }
 
 // Paints the canvas in the active theme so dark presets are legible. Reads the
 // same theme + args the story does, so a canvasColor override applies too.
+// The theme's global styles go on a form root around the story, as a hosted
+// form applies them, rather than on the canvas where elements can't see them.
 const withThemeCanvas: Decorator = (Story, context) => {
   const backend = isBackendTheme(context);
   return (
     <div
       style={{
-        background: canvasFor(context.args, context),
+        background: canvasFor(context),
         padding: 32,
         minHeight: '100vh',
-        boxSizing: 'border-box',
-        fontFamily: backend
-          ? undefined
-          : themeFor(context.args, context).fontFamily
+        boxSizing: 'border-box'
       }}
     >
       {backend && (
@@ -72,7 +72,9 @@ const withThemeCanvas: Decorator = (Story, context) => {
           error={context.loaded?.backendError}
         />
       )}
-      <Story />
+      <FormFrame globalStyles={globalStylesFor(context)}>
+        <Story />
+      </FormFrame>
     </div>
   );
 };
@@ -86,7 +88,7 @@ const preview: Preview = {
         icon: 'paintbrush',
         items: [
           ...Object.keys(themePresets),
-          { value: BACKEND_THEME, title: 'backend (from .env.local form)' }
+          { value: BACKEND_THEME, title: 'backend (from .env.local theme)' }
         ],
         dynamicTitle: true
       }

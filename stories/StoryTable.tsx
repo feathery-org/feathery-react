@@ -1,5 +1,5 @@
 import React from 'react';
-import Elements from '../src/elements';
+import Elements from './FormFrame';
 import { fieldValues } from '../src/utils/init';
 
 // A live table reads its rows from the form's field values: each column is
