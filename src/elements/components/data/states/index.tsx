@@ -1,3 +1,4 @@
+import { toAscii } from '../../../../utils/ascii';
 import ae from './ae';
 import au from './au';
 import br from './br';
@@ -69,11 +70,12 @@ export function hasState(
   country: string,
   state: string,
   shortcode: boolean,
-  coerce = false
+  coerce = false,
+  asciiOnly = false
 ) {
   if (coerce && !(country in stateMap)) return true;
   const stateVals = (stateMap[country] ?? []).map(({ name, code }: any) =>
-    shortcode ? code : name
+    shortcode ? code : asciiOnly ? toAscii(name) : name
   );
   return stateVals.includes(state);
 }
@@ -81,12 +83,16 @@ export function hasState(
 export function getStateOptions(
   country: string,
   shortcode: boolean,
-  territories: boolean
+  territories: boolean,
+  asciiOnly = false
 ) {
   let stateOptions = stateMap[country] ?? [];
   if (country === 'us' && !territories) stateOptions = onlyStates;
   return stateOptions.map(({ name, code }) => (
-    <option key={code} value={shortcode ? code : name}>
+    <option
+      key={code}
+      value={shortcode ? code : asciiOnly ? toAscii(name) : name}
+    >
       {name}
     </option>
   ));

@@ -24,6 +24,7 @@ function CheckboxGroupField({
   otherVal = '',
   repeatIndex = null,
   editMode,
+  asciiOnly = false,
   onChange = () => {},
   onSelectAllChange = () => {},
   onOtherChange = () => {},
@@ -34,7 +35,7 @@ function CheckboxGroupField({
 }: any) {
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly);
   const otherChecked = fieldVal.includes(otherVal);
   const otherLabel = servar.metadata.other_label ?? 'Other';
   const selectAllLabel = servar.metadata.select_all_label || 'Select All';

@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import Elements from '../../../elements';
 import {
   clearFilePathMapEntry,
@@ -39,8 +39,21 @@ import {
   getControllingCountryCode,
   stateFieldHasNoOptions
 } from '../../../utils/addressState';
+import { asciiElement } from '../../../utils/asciiOptions';
 
-const Element = ({ node: el, form }: any) => {
+const Element = ({ node, form }: any) => {
+  const el = useMemo(
+    () => asciiElement(node, form.formSettings.asciiOnly),
+    [
+      node,
+      node.servar?.metadata,
+      node.servar?.metadata?.options,
+      node.servar?.metadata?.option_labels,
+      node.servar?.metadata?.repeat_options,
+      node.servar?.metadata?.repeat_options?.[node.repeat ?? 0],
+      form.formSettings.asciiOnly
+    ]
+  );
   const { type } = el;
 
   const {
@@ -80,7 +93,8 @@ const Element = ({ node: el, form }: any) => {
     elementProps: elementProps[el.id],
     inlineError: getInlineError(el, inlineErrors),
     featheryContext,
-    formSettings
+    formSettings,
+    asciiOnly: formSettings.asciiOnly
   };
   const fieldId = el.servar?.key ?? el.id;
   const linkId = el.properties?.link_id;
@@ -201,7 +215,9 @@ const Element = ({ node: el, form }: any) => {
 
     const isOtherVal = (curVal: string) => {
       if (hasRepeatOptions) {
-        return !servar.metadata.repeat_options[index].includes(curVal);
+        return !servar.metadata.repeat_options[index].some(
+          (option: any) => (option.value ?? option) === curVal
+        );
       }
       return !servar.metadata.options.includes(curVal);
     };

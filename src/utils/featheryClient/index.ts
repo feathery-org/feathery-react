@@ -1,4 +1,5 @@
 import IntegrationClient from './integrationClient';
+import { isAsciiTextField } from '../ascii';
 import {
   fieldValues,
   fileDeduplicationCount,
@@ -10,7 +11,8 @@ import {
   markStepCompleted,
   registerKnownFieldKeys,
   registerTextVariableFields,
-  setFieldValues
+  setFieldValues,
+  normalizeKnownAsciiValues
 } from '../init';
 import { dataURLToFile, isBase64Image } from '../image';
 import { encodeGetParams } from '../primitives';
@@ -227,7 +229,19 @@ export default class FeatheryClient extends IntegrationClient {
     const data: Record<string, any> = {
       fuser_key: userId,
       step_key: stepKey,
-      servars,
+      servars: servars.map((servar: any) =>
+        Object.fromEntries(
+          Object.entries(servar).map(([type, value]) => [
+            type,
+            isAsciiTextField(type)
+              ? normalizeKnownAsciiValues(
+                  { [servar.key]: value },
+                  this.formKey
+                )[servar.key]
+              : value
+          ])
+        )
+      ),
       panel_key: this.formKey,
       __feathery_version: this.version,
       no_complete: noComplete
@@ -507,11 +521,17 @@ export default class FeatheryClient extends IntegrationClient {
       });
     });
     registerKnownFieldKeys({ servars: Object.keys(values) });
-    Object.assign(fieldValues, {
-      ...values,
-      ...additionalValues,
-      ...fieldValues
-    });
+    Object.assign(
+      fieldValues,
+      normalizeKnownAsciiValues(
+        {
+          ...values,
+          ...additionalValues,
+          ...fieldValues
+        },
+        this.formKey
+      )
+    );
   }
 
   _loadFormPackages(res: any) {
@@ -783,7 +803,7 @@ export default class FeatheryClient extends IntegrationClient {
     // Registered even when the session carries no data, since the field keys are
     // returned regardless and text variables need them to resolve empty fields
     registerKnownFieldKeys(trueSession);
-    if (!noData) updateSessionValues(trueSession);
+    if (!noData) updateSessionValues(trueSession, this.formKey);
 
     // submitAuthInfo can set formCompleted before the session is set, so we don't want to override completed flags
     if (initState.formSessions[this.formKey]?.form_completed)
@@ -792,6 +812,10 @@ export default class FeatheryClient extends IntegrationClient {
     initState._internalUserId = trueSession.internal_id;
 
     const formData = await (formPromise ?? Promise.resolve());
+    Object.assign(
+      fieldValues,
+      normalizeKnownAsciiValues(fieldValues, this.formKey)
+    );
     return [trueSession, formData];
   }
 
@@ -1033,7 +1057,11 @@ export default class FeatheryClient extends IntegrationClient {
     if (this.draft || this.getNoSave()) return;
     if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
     // If there are values passed, aggregate them in the pending queue
-    Object.entries(customKeyValues).forEach(([key, value]) => {
+    Object.entries(
+      this.formKey
+        ? normalizeKnownAsciiValues(customKeyValues, this.formKey)
+        : customKeyValues
+    ).forEach(([key, value]) => {
       if (value !== undefined) this.pendingCustomFieldUpdates[key] = value;
     });
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush

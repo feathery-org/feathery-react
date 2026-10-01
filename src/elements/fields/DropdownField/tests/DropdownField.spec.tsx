@@ -29,6 +29,23 @@ describe('DropdownField - Base Functionality', () => {
     resetMockFieldValue();
   });
 
+  it('keeps Brazilian state selections after their values are converted to ASCII', () => {
+    const props = createDropdownProps(createDropdownElement('gmap_state'), {
+      asciiOnly: true,
+      countryCode: 'BR'
+    });
+    const { rerender } = render(<DropdownField {...props} />);
+    fireEvent.change(dropdown(), { target: { value: 'Sao Paulo' } });
+    expect(props.onChange).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <DropdownField {...props} fieldVal='Sao Paulo' countryCode='br' />
+    );
+    expect(dropdown().value).toBe('Sao Paulo');
+    expect(dropdown().selectedOptions[0].textContent).toBe('São Paulo');
+    expect(props.onChange).toHaveBeenCalledTimes(1);
+  });
+
   describe('Basic Rendering', () => {
     it('renders DropdownField component with default props', () => {
       const element = createDropdownElement(
