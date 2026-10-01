@@ -159,6 +159,50 @@ describe('synthetic column template from positional consumption', () => {
     );
   });
 
+  it('skips label rows whose consumed cell does not parse, like the sum does', () => {
+    const result = applyRules(
+      doc([
+        positionalTable([
+          row(['Widget', '$50.00']),
+          row(['Shipping', 'included']),
+          row(['Tax', 'N/A'])
+        ])
+      ]),
+      {}
+    );
+    // Labels stay plain text: a warning each, never a save-blocking error.
+    expect(
+      result.diagnostics.filter((d) => d.severity === 'error')
+    ).toEqual([]);
+    expect(
+      result.diagnostics.filter((d) => d.code === 'row-not-adopted')
+    ).toHaveLength(2);
+    const table = result.index.tables.get('summary')!;
+    expect(table.rows).toHaveLength(1);
+    expect(table.rows[0].bindings.get('colB')!.text).toBe('$50.00');
+    expect((result.index.formulas.get('total') as any[])[0].text).toBe(
+      '$50.00'
+    );
+  });
+
+  it('keeps skipping label rows once a bound row exists as the template', () => {
+    const first = applyRules(
+      doc([
+        positionalTable([
+          row(['Widget', '$50.00']),
+          row(['Shipping', 'included'])
+        ])
+      ]),
+      {}
+    );
+    // Second pass: the adopted Widget row is now the normal template.
+    const second = applyRules(first.sfdt, {});
+    expect(
+      second.diagnostics.filter((d) => d.severity === 'error')
+    ).toEqual([]);
+    expect(second.index.tables.get('summary')!.rows).toHaveLength(1);
+  });
+
   it('an explicit table-qualified range from outside the table consumes it', () => {
     const result = applyRules(
       doc([
