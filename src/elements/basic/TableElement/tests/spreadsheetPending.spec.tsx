@@ -204,6 +204,33 @@ describe('unsaved changes bar', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  test('Save submits every column when rows were added, so their defaults are kept', () => {
+    const submitCustom = jest.fn();
+    renderTable(
+      {
+        row_defaults: [
+          { column_field_id: 'f2', source: 'static', value: 'def@x.com' }
+        ]
+      },
+      {
+        submitCustom,
+        updateFieldValues: (updates: Record<string, any>) =>
+          Object.assign(fieldValues, updates)
+      }
+    );
+    fireEvent.click(screen.getByRole('button', { name: '+ Add row' }));
+    expect(screen.getByText('def@x.com')).toBeInTheDocument();
+    // An edit on another row: the added row's cells were never typed.
+    editCell('Alice', 'Alicia');
+    fireEvent.click(saveButton());
+
+    expect(submitCustom).toHaveBeenCalledTimes(1);
+    expect(submitCustom).toHaveBeenCalledWith({
+      name_key: ['Alicia', 'Bob', ''],
+      email_key: ['alice@test.com', 'bob@test.com', 'def@x.com']
+    });
+  });
+
   test('Discard restores the stored values and writes nothing', async () => {
     const { updateFieldValues } = renderTable();
     editCell('Alice', 'Alicia');
