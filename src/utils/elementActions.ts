@@ -130,12 +130,18 @@ export function canRunAction(
 }
 
 // Whether any 'action' logic rule runs when this element is clicked. Mirrors
-// the element matching in canRunAction: the element's id or its link_id.
+// the element matching in canRunAction: the element's id or its link_id, or
+// for containers, the container's key or its id.
 export function elementHasClickLogic(
   logicRules: any[] | undefined,
-  element: any
+  element: any,
+  isContainer = false
 ) {
-  const ids = [element?.id, element?.properties?.link_id].filter(Boolean);
+  const ids = (
+    isContainer
+      ? [element?.key, element?.id]
+      : [element?.id, element?.properties?.link_id]
+  ).filter(Boolean);
   return (logicRules ?? []).some(
     (rule) =>
       rule.trigger_event === 'action' &&

@@ -98,17 +98,26 @@ export function getInitialStep({
   initialStepId,
   steps,
   sessionCurrentStep,
+  collaboratorStartStep,
   formId
 }: {
   initialStepId: string;
   steps: any;
   sessionCurrentStep?: string;
+  collaboratorStartStep?: string;
   formId?: string;
 }) {
+  // Only use a configured collaborator start step if the step still exists;
+  // sessionCurrentStep (the saved/resume step) wins over it.
+  const validStartStep =
+    collaboratorStartStep && steps[collaboratorStartStep]
+      ? collaboratorStartStep
+      : '';
   return (
     (formId && getSavedStepKey(formId)) || // saved step from remounting
     initialStepId ||
     sessionCurrentStep ||
+    validStartStep ||
     (getOrigin as any)(steps).key
   );
 }

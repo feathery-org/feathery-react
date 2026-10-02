@@ -126,6 +126,7 @@ function TextNodes({
   disabled = false,
   focused = false,
   textSpanOnClick = () => {},
+  hasClickLogic = false,
   textCallbacks = {},
   featheryContext = {},
   expand = true
@@ -162,7 +163,10 @@ function TextNodes({
           delta = applyNewDelta(delta, start, end);
         }
       });
-    } else if (actions.length > 0) delta = applyNewDelta(delta);
+    } else if (actions.length > 0 || hasClickLogic) {
+      // Text with no click actions is still clickable if a logic rule runs on click
+      delta = applyNewDelta(delta);
+    }
 
     // If text_mode property is set to 'data', then we don't want to render the text_formatted
     // property, instead we the text from the data element specified in the text_source property
@@ -188,7 +192,14 @@ function TextNodes({
         {textIsFromData ? (
           <TextNode
             index={0}
-            cursor='inherit'
+            {...(hasClickLogic && !editMode && !disabled
+              ? {
+                  // Data-sourced text has no spans, so the whole text is the
+                  // click target for its logic rule
+                  onClick: () => textSpanOnClick(undefined, undefined),
+                  cursor: 'pointer'
+                }
+              : { cursor: 'inherit' })}
             fontStyles={responsiveStyles.getRichFontStyles(
               element.properties?.text_formatted[0]?.attributes ?? {}
             )}
@@ -240,7 +251,7 @@ function TextNodes({
         )}
       </span>
     );
-  }, [element, responsiveStyles, editableProps]);
+  }, [element, responsiveStyles, editableProps, hasClickLogic]);
 }
 
 export default TextNodes;

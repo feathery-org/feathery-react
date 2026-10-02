@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.100.2",
+  "version": "2.102.1",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -74,7 +74,6 @@
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^14.5.0",
-    "@types/acorn": "^6.0.0",
     "@types/jest": "^28.1.6",
     "@types/lodash": "^4.17.24",
     "@types/lodash.debounce": "^4.0.8",
@@ -99,7 +98,6 @@
     "eslint-plugin-promise": "^4.2.1",
     "eslint-plugin-react": "^7.17.0",
     "eslint-plugin-standard": "^4.0.1",
-    "eslint-plugin-typescript": "^0.14.0",
     "husky": "^9.1.6",
     "jest": "^26.6.3",
     "jest-canvas-mock": "2.5.2",
@@ -202,28 +200,5 @@
     "transformIgnorePatterns": [
       "/node_modules/(?!@tanstack/(react-table|table-core)/)"
     ]
-  },
-  "babel": {
-    "presets": [
-      "@babel/preset-env",
-      "@babel/preset-typescript",
-      "@babel/preset-react",
-      "@emotion/babel-preset-css-prop"
-    ],
-    "plugins": [
-      [
-        "@babel/transform-runtime",
-        {
-          "regenerator": true
-        }
-      ]
-    ],
-    "env": {
-      "test": {
-        "plugins": [
-          "babel-plugin-transform-import-meta"
-        ]
-      }
-    }
   }
 }

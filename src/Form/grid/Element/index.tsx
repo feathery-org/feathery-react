@@ -154,6 +154,7 @@ const Element = ({ node: el, form }: any) => {
           });
         }}
         conditions={activeStep.next_conditions}
+        hasClickLogic={elementHasClickLogic(logicRules, el)}
         {...basicProps}
       />
     );
