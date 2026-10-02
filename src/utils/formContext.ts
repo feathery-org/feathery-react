@@ -26,7 +26,6 @@ import internalState, {
 import type { FormRuntimeEvent } from './internalState';
 import { validateElements } from './validation';
 import { getPanelRuntimeSnapshot } from './panelRuntime';
-import { subscribeToUploads } from './fileUploadProgress';
 import { linkRequestHeaders } from './accessLink';
 import {
   FillQuikParams,
@@ -111,12 +110,8 @@ export const getFormContext = (formUuid: string) => {
     subscribe: (listener: (event: FormRuntimeEvent) => void) => {
       const listeners = (formState.runtimeListeners ??= new Set());
       listeners.add(listener);
-      const unsubscribeUploads = subscribeToUploads(() =>
-        listener({ type: 'upload' })
-      );
       return () => {
         listeners.delete(listener);
-        unsubscribeUploads();
       };
     },
     isLastStep: () => {
