@@ -85,6 +85,9 @@ import { dispatchTriggerTableAction } from './tools/triggerTableAction';
 import {
   dispatchAddTableRow,
   dispatchDeleteTableRow,
+  dispatchFocusTableCell,
+  dispatchGetTableIssues,
+  dispatchSetCellValidation,
   dispatchSetTableCellValue
 } from './tools/tableMutations';
 import {
@@ -667,7 +670,13 @@ const AssistantChat = ({
             deleteTableRow: (tableId, rowIndex) =>
               dispatchDeleteTableRow(instanceId, tableId, rowIndex),
             setTableCellValue: (tableId, cells) =>
-              dispatchSetTableCellValue(instanceId, tableId, cells)
+              dispatchSetTableCellValue(instanceId, tableId, cells),
+            setCellValidation: (tableId, findings) =>
+              dispatchSetCellValidation(instanceId, tableId, findings),
+            focusTableCell: (tableId, target) =>
+              dispatchFocusTableCell(instanceId, tableId, target),
+            getTableIssues: (tableId, scope) =>
+              dispatchGetTableIssues(instanceId, tableId, scope)
           },
           unhandled: unhandledToolOutput,
           emit: (args) => chat.addToolOutput(args)
