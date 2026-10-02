@@ -103,16 +103,18 @@ describe('watchRowCommands', () => {
     ]);
   });
 
-  it('does not reconcile while undo or redo is replaying the command', () => {
-    let changes = 0;
+  it('still reports during replay - the CALLER gates flushing, not the wrap', () => {
     const original = jest.fn(() => 'deleted');
     const editor = fakeEditor(undefined);
     (editor as any).editorModule = { deleteRow: original };
     (editor as any).editorHistoryModule = { isRedoing: true };
-    watchRowCommands(editor, () => (changes += 1));
+    const hints: unknown[] = [];
+    watchRowCommands(editor, (hint) => hints.push(hint));
 
     expect((editor as any).editorModule.deleteRow()).toBe('deleted');
-    expect(changes).toBe(0);
+    // Reported (clearing any stale hint downstream); attachBindings skips the
+    // flush while history is replaying.
+    expect(hints).toEqual([undefined]);
   });
 
   it('never lets a failing watcher break the insert', () => {
@@ -220,6 +222,22 @@ describe('watchRowCommands', () => {
       (editor as any).editorModule.insertRow(true, 3);
       expect(hints).toEqual([
         { sectionIndex: 0, blockIndex: 0, rowIndices: [2, 3, 4] }
+      ]);
+    });
+
+    it('records the hint for a redone insert-above too', () => {
+      const original = jest.fn();
+      const { editor, state } = editorWithTable(original, 4);
+      original.mockImplementation(() => {
+        state.rows += 1;
+        return 'ok';
+      });
+      (editor as any).editorHistoryModule = { isRedoing: true };
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      (editor as any).editorModule.insertRow(true, 1);
+      expect(hints).toEqual([
+        { sectionIndex: 0, blockIndex: 0, rowIndices: [2] }
       ]);
     });
 

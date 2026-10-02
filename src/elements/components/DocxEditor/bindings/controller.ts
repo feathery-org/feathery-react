@@ -289,10 +289,12 @@ export class ReconciliationController {
     }
 
     this.phase = 'reconciling';
-    // Consume the hint whether or not adoption runs: the indices describe the
-    // document as it was at the insert, and only this first reconcile sees it.
-    const insertedRows = this.insertedRowsHint;
-    this.insertedRowsHint = null;
+    // Consume the hint only when adoption can act on it. The post-replay
+    // self-heal runs with adoptRows false (a redone insert-above records a
+    // hint mid-replay), so it must leave the hint for the next adopting
+    // reconcile instead of eating it.
+    const insertedRows = adoptRows === false ? null : this.insertedRowsHint;
+    if (adoptRows !== false) this.insertedRowsHint = null;
     let result: ApplyRulesResult;
     try {
       const started = Date.now();

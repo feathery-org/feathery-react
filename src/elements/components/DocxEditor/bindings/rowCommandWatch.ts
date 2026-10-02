@@ -14,8 +14,12 @@
 // clone crashes Syncfusion undo, so adoption stays history-invisible.
 // Undo/redo replay those same methods with isUndoing/isRedoing set. Flushing
 // then would insert content controls or record writes mid-replay, which
-// leaves redo a no-op and strips remaining bindings. Let the native history
-// finish; commitTriggers schedules a formulas-only self-heal afterwards.
+// leaves redo a no-op and strips remaining bindings - so the CALLER must not
+// flush during replay (attachBindings checks). The callback itself still
+// fires: a redone insert re-clones the row and needs its attribution hint
+// recorded, which is pure note-taking and safe mid-replay. The native history
+// finishes, commitTriggers schedules a formulas-only self-heal, and the next
+// adopting reconcile consumes the hint.
 
 import { InsertedRowsHint } from './core/sfdtAdapter';
 import { tableRowsAt } from './core/tableDeleteImpact';
@@ -153,18 +157,14 @@ export function watchRowCommands(
       }
       running = true;
       try {
-        const preHistory = editor.editorHistoryModule;
-        const replaying = !!preHistory?.isUndoing || !!preHistory?.isRedoing;
-        const site =
-          name === 'insertRow' && !replaying
-            ? captureInsertSite(editor)
-            : null;
+        // Captured during replay too: a REDO re-invokes insertRow and re-clones
+        // the row, so redo needs attribution as much as the first insert did.
+        // Recording positions is side-effect-free; the caller gates flushing.
+        const site = name === 'insertRow' ? captureInsertSite(editor) : null;
         const result = allowRowCommandDuringReplay(editor, () =>
           original.apply(this, args)
         );
         pruneDetachedContentControls(editor);
-        const history = editor.editorHistoryModule;
-        if (history?.isUndoing || history?.isRedoing) return result;
         try {
           onRowChange(
             site ? insertedRowsHint(editor, site, args[0] === true) : undefined
