@@ -84,7 +84,36 @@ export function buttonStyles(theme: Tokens): Styles {
 export const PRESET_BASE_STYLES: Record<string, Styles> = {
   button: { flex_direction: 'row', text_align: 'center' },
   text: { horizontal_align: 'flex-start' },
-  progress_bar: { percent_text_layout: 'top' }
+  progress_bar: { percent_text_layout: 'top' },
+  button_group: {
+    flex_direction: 'column',
+    text_align: 'center',
+    vertical_align: 'center',
+    horizontal_align: 'flex-start',
+    gap: 8,
+    button_width: 120,
+    button_width_unit: 'px',
+    content_responsive: false,
+    image_width: 32,
+    image_width_unit: 'px'
+  },
+  file_upload: {
+    height: 120,
+    height_unit: 'px',
+    flex_direction: 'column',
+    image_width: 36,
+    image_width_unit: 'px',
+    image_margin_bottom: 8
+  },
+  signature: { height: 140, height_unit: 'px' },
+  audio_recording: {
+    height: 44,
+    height_unit: 'px',
+    flex_direction: 'row',
+    image_width: 20,
+    image_width_unit: 'px',
+    image_margin_right: 8
+  }
 };
 
 function fieldFont(theme: Tokens): Styles {
@@ -164,4 +193,104 @@ export function progressBarStyles(theme: Tokens): Styles {
     ...when(theme.fontFamily, (family) => ({ font_family: family })),
     ...corners(theme.borderRadius)
   };
+}
+
+// Radio and checkbox groups size their inputs from the font, so they take the
+// checkbox's colors without its explicit box size
+export function choiceGroupStyles(theme: Tokens): Styles {
+  const { height, width, height_unit, width_unit, ...styles } =
+    checkboxStyles(theme);
+  return styles;
+}
+
+// Fields drawn as a bordered panel rather than an input: signature pad, file
+// upload, audio recorder, QR scanner, custom component
+export function panelFieldStyles(theme: Tokens): Styles {
+  return {
+    ...fieldFont(theme),
+    ...when(theme.surfaceColor, (c) => ({ background_color: opaque(c) })),
+    ...borders(theme.borderColor, theme.borderWidth),
+    ...borders(theme.primaryColor, theme.borderWidth, 'hover_'),
+    ...borders(theme.primaryColor, theme.borderWidth, 'selected_'),
+    ...corners(theme.borderRadius)
+  };
+}
+
+export function buttonGroupStyles(theme: Tokens): Styles {
+  return {
+    ...fieldFont(theme),
+    ...when(theme.surfaceColor, (c) => ({ background_color: opaque(c) })),
+    ...when(theme.controlHeight, (h) => ({
+      button_height: h,
+      button_height_unit: 'px'
+    })),
+    ...when(theme.primaryColor, (c) => ({
+      selected_background_color: hex(c)
+    })),
+    ...when(theme.onPrimaryColor, (c) => ({ selected_font_color: hex(c) })),
+    ...when(theme.primaryColor, (c) => ({ hover_font_color: hex(c) })),
+    ...borders(theme.borderColor, theme.borderWidth),
+    ...borders(theme.primaryColor, theme.borderWidth, 'hover_'),
+    ...borders(theme.primaryColor, theme.borderWidth, 'selected_'),
+    ...corners(theme.borderRadius)
+  };
+}
+
+export function sliderStyles(theme: Tokens): Styles {
+  return {
+    ...fieldFont(theme),
+    // background_color paints both the handle and the filled track
+    ...when(theme.primaryColor, (c) => ({ background_color: hex(c) })),
+    ...when(theme.controlHeight, (h) => {
+      const handle = Math.round(h / 2);
+      return {
+        height: handle,
+        height_unit: 'px',
+        ...corners(handle)
+      };
+    })
+  };
+}
+
+export function ratingStyles(theme: Tokens): Styles {
+  return {
+    ...fieldFont(theme),
+    // Unselected icons take the border color, selected ones the primary
+    ...when(theme.borderColor, (c) => ({ background_color: hex(c) })),
+    ...when(theme.primaryColor, (c) => ({
+      selected_background_color: hex(c),
+      hover_background_color: hex(c)
+    }))
+  };
+}
+
+export function colorPickerStyles(theme: Tokens): Styles {
+  return {
+    ...fieldFont(theme),
+    ...when(theme.controlHeight, (h) => ({ height: h, height_unit: 'px' })),
+    ...borders(theme.borderColor, theme.borderWidth),
+    ...corners(theme.borderRadius)
+  };
+}
+
+export function tabsStyles(theme: Tokens): Styles {
+  return {
+    ...when(theme.textColor, (c) => ({ font_color: hex(c) })),
+    ...when(theme.fontSize, (size) => ({ font_size: size })),
+    ...when(theme.fontFamily, (family) => ({ font_family: family })),
+    ...when(theme.surfaceColor, (c) => ({ background_color: hex(c) })),
+    ...when(theme.primaryColor, (c) => ({
+      selected_background_color: hex(c),
+      hover_font_color: hex(c)
+    })),
+    ...when(theme.onPrimaryColor, (c) => ({ selected_font_color: hex(c) })),
+    ...when(theme.controlHeight, (h) => ({ height: h, height_unit: 'px' })),
+    ...borders(theme.borderColor, theme.borderWidth),
+    ...borders(theme.primaryColor, theme.borderWidth, 'selected_'),
+    ...corners(theme.borderRadius)
+  };
+}
+
+export function imageStyles(theme: Tokens): Styles {
+  return corners(theme.borderRadius);
 }

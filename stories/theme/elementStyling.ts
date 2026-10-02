@@ -1,8 +1,17 @@
 import type { BackendTheme } from '../backend/backendForm';
 import {
+  buttonGroupStyles,
   buttonStyles,
   checkboxStyles,
+  choiceGroupStyles,
+  colorPickerStyles,
+  imageStyles,
+  PRESET_BASE_STYLES,
+  panelFieldStyles,
   progressBarStyles,
+  ratingStyles,
+  sliderStyles,
+  tabsStyles,
   textFieldStyles
 } from './toFeatheryStyles';
 
@@ -45,6 +54,62 @@ const TEXT_INPUT_TYPES = [
   'phone_number'
 ];
 
+// Not TextField, but drawn as the same bordered input box, so they borrow a
+// text input's styles when the backend theme lacks their own
+const INPUT_BOX_TYPES = [
+  'text_area',
+  'password',
+  'dropdown',
+  'dropdown_multi',
+  'gmap_line_1',
+  'gmap_city',
+  'gmap_state',
+  'gmap_country',
+  'gmap_zip',
+  'date_selector',
+  'pin_input',
+  'payment_method'
+];
+
+const PANEL_TYPES = [
+  'signature',
+  'file_upload',
+  'audio_recording',
+  'qr_scanner',
+  'custom'
+];
+
+const FIELD_TOKENS: Record<string, typeof textFieldStyles> = {
+  checkbox: checkboxStyles,
+  select: choiceGroupStyles,
+  multiselect: choiceGroupStyles,
+  matrix: choiceGroupStyles,
+  button_group: buttonGroupStyles,
+  slider: sliderStyles,
+  rating: ratingStyles,
+  hex_color: colorPickerStyles,
+  ...Object.fromEntries(PANEL_TYPES.map((type) => [type, panelFieldStyles]))
+};
+
+/** Any servar type: the backend theme's styles for it, or preset tokens */
+export const fieldStyling = (type: string) => {
+  const textInput = TEXT_INPUT_TYPES.includes(type);
+  const inputBox = textInput || INPUT_BOX_TYPES.includes(type);
+  return {
+    kind: type in PRESET_BASE_STYLES ? type : undefined,
+    fromBackend: (theme: BackendTheme) =>
+      theme.fields[type] ??
+      (inputBox
+        ? TEXT_INPUT_TYPES.map((t) => theme.fields[t]).find(Boolean)
+        : undefined),
+    tokens: (theme: Parameters<typeof textFieldStyles>[0]) => ({
+      ...(FIELD_TOKENS[type] ?? textFieldStyles)(theme),
+      // A text area is several lines tall
+      ...(type === 'text_area' && { height: 120, height_unit: 'px' })
+    })
+  };
+};
+
 export const textFieldStyling = (type: string) => ({
   fromBackend: (theme: BackendTheme) =>
     theme.fields[type] ??
@@ -57,6 +122,21 @@ export const textFieldStyling = (type: string) => ({
 export const checkboxStyling = {
   fromBackend: (theme: BackendTheme) => theme.fields.checkbox,
   tokens: checkboxStyles
+};
+
+export const imageStyling = {
+  fromBackend: (theme: BackendTheme) => theme.elements.image,
+  tokens: imageStyles
+};
+
+export const videoStyling = {
+  fromBackend: (theme: BackendTheme) => theme.elements.video,
+  tokens: () => ({ height: 220, height_unit: 'px' })
+};
+
+export const tabsStyling = {
+  fromBackend: (theme: BackendTheme) => theme.elements.tab,
+  tokens: tabsStyles
 };
 
 export const progressBarStyling = {

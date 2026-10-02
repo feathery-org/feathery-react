@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react-webpack5';
 import { fieldElement } from './fixtures';
-import { StatefulCheckbox } from './StatefulFields';
+import { StoryField } from './StoryField';
 import { checkboxStyling } from './theme/elementStyling';
 import { styleElement } from './theme/storyHelpers';
 
@@ -25,9 +25,9 @@ const meta: Meta<Args> = {
       styleElement(context, checkboxStyling)
     );
     return (
-      <StatefulCheckbox
+      <StoryField
         element={element}
-        checked={checked}
+        value={checked}
         disabled={disabled}
       />
     );

@@ -12,8 +12,8 @@ For details on how to use this library, check out our [documentation](https://do
 
 ## Storybook
 
-`yarn storybook` serves stories for a handful of elements (button, text,
-progress bar, table, text field, checkbox) at http://localhost:6006. They render
+`yarn storybook` serves stories for every element and field type at
+http://localhost:6006, plus a showcase with all of them on one page. They render
 through the same `Elements` registry the form uses, so styling runs through
 `ResponsiveStyles` exactly as it does in production.
 

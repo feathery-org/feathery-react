@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react-webpack5';
 import { fieldElement } from './fixtures';
-import { StatefulTextField } from './StatefulFields';
+import { StoryField } from './StoryField';
 import { textFieldStyling } from './theme/elementStyling';
 import {
   editModeArgType,
@@ -49,7 +49,7 @@ const meta: Meta<Args> = {
     );
     return (
       <div style={{ width }}>
-        <StatefulTextField
+        <StoryField
           element={element}
           disabled={disabled}
           editMode={editMode}
