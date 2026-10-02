@@ -52,7 +52,13 @@ const FIELD_SECTIONS: { title: string; types: string[] }[] = [
   },
   {
     title: 'Address',
-    types: ['gmap_line_1', 'gmap_city', 'gmap_state', 'gmap_country', 'gmap_zip']
+    types: [
+      'gmap_line_1',
+      'gmap_city',
+      'gmap_state',
+      'gmap_country',
+      'gmap_zip'
+    ]
   },
   {
     title: 'Choices',
@@ -211,7 +217,9 @@ const meta: Meta<Args> = {
             />
           </div>
           <div style={{ width: 360 }}>
-            <Elements.VideoElement element={videoElement(style(videoStyling))} />
+            <Elements.VideoElement
+              element={videoElement(style(videoStyling))}
+            />
           </div>
         </Section>
 

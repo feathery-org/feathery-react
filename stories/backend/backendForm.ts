@@ -1,10 +1,5 @@
 import { loadGoogleFonts } from '../../src/utils/fonts';
-import {
-  backendConfig,
-  getJson,
-  listThemes,
-  MISSING_API_KEY
-} from './themeApi';
+import { backendConfig, getJson, MISSING_API_KEY } from './themeApi';
 
 // Reads a theme from a Feathery backend through the public theme API
 // (GET /api/theme/ and /api/theme/<id>/), which resolves its element styles
@@ -190,33 +185,15 @@ function loadThemeFonts(theme: BackendTheme) {
   );
 }
 
-async function findTheme(wanted: string) {
-  const themes = await listThemes();
-  if (!themes.length) throw new Error('The API key’s org has no themes');
-  if (!wanted) return themes[0];
-  const theme = themes.find(({ id, name }) => id === wanted || name === wanted);
-  if (!theme) {
-    throw new Error(
-      `No theme "${wanted}". Available: ${themes
-        .map(({ name }) => name)
-        .join(', ')}`
-    );
-  }
-  return theme;
-}
-
 const cache: Record<string, Promise<BackendTheme>> = {};
 
-export function fetchBackendTheme(
-  themeKey = backendConfig.theme
-): Promise<BackendTheme> {
+export function fetchBackendTheme(themeId: string): Promise<BackendTheme> {
   if (!backendConfig.apiKey) {
     return Promise.reject(new Error(MISSING_API_KEY));
   }
 
-  if (!cache[themeKey]) {
-    cache[themeKey] = findTheme(themeKey)
-      .then(({ id }) => getJson(`theme/${id}/`))
+  if (!cache[themeId]) {
+    cache[themeId] = getJson(`theme/${themeId}/`)
       .then((res) => {
         const theme = extractTheme(res);
         loadThemeFonts(theme);
@@ -224,9 +201,9 @@ export function fetchBackendTheme(
       })
       .catch((error) => {
         // Let the next story load retry, e.g. once the backend is up
-        delete cache[themeKey];
+        delete cache[themeId];
         throw error;
       });
   }
-  return cache[themeKey];
+  return cache[themeId];
 }

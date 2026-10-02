@@ -7,8 +7,6 @@ import { Select } from 'storybook/internal/components';
 import { PaintBrushIcon } from '@storybook/icons';
 import { themePresets } from '../stories/theme/tokens';
 import {
-  BACKEND_THEME,
-  backendConfig,
   listThemes,
   ThemeSummary,
   toolbarValueFor
@@ -18,7 +16,7 @@ const ADDON_ID = 'feathery/theme';
 
 // The theme picker. A native globalTypes toolbar needs its items up front,
 // but the backend's themes are only known once fetched, so this lists the
-// presets, the .env.local theme, then every theme in the API key's org.
+// presets, then every theme in the API key's org.
 function ThemePicker() {
   const [globals, updateGlobals] = useGlobals();
   const [themes, setThemes] = useState<ThemeSummary[]>([]);
@@ -30,22 +28,12 @@ function ThemePicker() {
       .catch((e) => setError(e?.message ?? String(e)));
   }, []);
 
-  const envTheme =
-    themes.find(({ id }) => id === backendConfig.theme)?.name ??
-    backendConfig.theme;
   const options = [
     ...Object.keys(themePresets).map((name) => ({
       value: name,
       title: name,
       description: 'Preset'
     })),
-    {
-      value: BACKEND_THEME,
-      title: 'backend',
-      description: envTheme
-        ? `.env.local theme: ${envTheme}`
-        : '.env.local theme: the org’s first'
-    },
     ...themes.map(({ id, name }) => ({
       value: toolbarValueFor(id),
       title: name,
@@ -58,7 +46,7 @@ function ThemePicker() {
       // Select only reads defaultOptions on mount, so remount it when the
       // theme changes elsewhere (the URL, a story's globals) or the list loads
       key={`${globals.theme}|${themes.length}`}
-      ariaLabel="Theme"
+      ariaLabel='Theme'
       tooltip={error ? `Couldn’t list backend themes. ${error}` : 'Theme'}
       icon={<PaintBrushIcon />}
       options={options}

@@ -5,15 +5,11 @@
 export const backendConfig = {
   apiUrl:
     process.env.STORYBOOK_FEATHERY_API_URL || 'http://localhost:8006/api/',
-  apiKey: process.env.STORYBOOK_FEATHERY_API_KEY || '',
-  /** Theme id or name; blank picks the org's first theme */
-  theme: process.env.STORYBOOK_FEATHERY_THEME || ''
+  apiKey: process.env.STORYBOOK_FEATHERY_API_KEY || ''
 };
 
-/** Toolbar value for the theme .env.local names (or the org's first) */
-export const BACKEND_THEME = 'backend';
 /**
- * Toolbar values for a specific theme are this prefix plus its id. Not a
+ * Toolbar values for a backend theme are this prefix plus its id. Not a
  * colon: Storybook drops globals from the URL unless they match
  * /^[a-zA-Z0-9 _-]*$/.
  */
@@ -22,12 +18,8 @@ export const BACKEND_THEME_PREFIX = 'backend_';
 export const toolbarValueFor = (themeId: string) =>
   `${BACKEND_THEME_PREFIX}${themeId}`;
 
-/**
- * The theme id or name a toolbar value asks for, '' for the .env.local
- * theme, or undefined when it's a preset.
- */
+/** The theme id a toolbar value asks for, or undefined when it's a preset */
 export function backendThemeKey(value: string | undefined) {
-  if (value === BACKEND_THEME) return backendConfig.theme;
   if (value?.startsWith(BACKEND_THEME_PREFIX))
     return value.slice(BACKEND_THEME_PREFIX.length);
   return undefined;

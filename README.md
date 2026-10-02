@@ -21,8 +21,8 @@ Styling is layered, each layer overriding the one before:
 
 1. **Theme preset** — the paintbrush menu in the toolbar (`stories/theme/tokens.ts`).
    The menu also lists every theme in your org, fetched from a Feathery
-   backend, and choosing one styles all elements from it (**backend** is the
-   one `.env.local` names). Copy `.env.example` to `.env.local` to configure it.
+   backend, and choosing one styles all elements from it. Copy `.env.example`
+   to `.env.local` to configure it.
 2. **Theme tokens** — per-story controls such as `primaryColor` or `borderRadius`.
 3. **Raw styles** — a `rawStyles` object of Feathery style keys (`shadow_blur_radius`, …) merged last.
 
