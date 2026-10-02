@@ -1,3 +1,4 @@
+import type { GenerateDocumentRef } from './featheryClient/integrationClient';
 import { featheryWindow } from './browser';
 import { getAllElements } from './formHelperFunctions';
 import { changeStep } from './stepHelperFunctions';
@@ -258,7 +259,7 @@ export const getFormContext = (formUuid: string) => {
     }: {
       // A plain template UUID string, or a source object such as the Quik item
       // `{ kind: 'quik' }` — mirroring the action config's `documents` array.
-      documentIds: (string | { kind: string; [key: string]: any })[];
+      documentIds: GenerateDocumentRef[];
       // Per-document, per-role signer emails; a document with no entry here
       // gets no signer. `roleId` targets one of the document's signer roles,
       // or is left off to cover every role of that document. `filler` marks
@@ -308,6 +309,19 @@ export const getFormContext = (formUuid: string) => {
         documentIds.some(
           (doc) => typeof doc === 'object' && doc.kind === 'quik'
         );
+      // Capture explicit Quik inputs before awaiting saves or opening review.
+      // Caller edits to the original object must not change this request.
+      documentIds = documentIds.map((doc) =>
+        typeof doc !== 'string' && doc.kind === 'quik' && doc.forms
+          ? {
+              ...doc,
+              forms: doc.forms.map((form) => ({
+                ...form,
+                fields: { ...form.fields }
+              }))
+            }
+          : doc
+      );
       // Document generation reads whatever the fuser has on file, so pending
       // field edits have to land before it runs or it fills/signs stale data.
       const flushFields = () =>
