@@ -79,12 +79,6 @@ export interface BindingsOptions {
    * its timeout.
    */
   onLockedEditResolved?: () => void;
-  /**
-   * Fired when an insert-above on a bound row is refused (the engine cannot
-   * tell the inserted copy from the original), so the host can suggest
-   * inserting below instead.
-   */
-  onInsertAboveBlocked?: () => void;
   persistence?: DocumentPersistence | null;
   setTimeoutFn?: (fn: () => void, ms: number) => TimerId;
   clearTimeoutFn?: (id: TimerId) => void;
@@ -137,7 +131,6 @@ export function attachBindings(
     confirmTableDelete,
     onLockedEdit,
     onLockedEditResolved,
-    onInsertAboveBlocked,
     persistence = null,
     setTimeoutFn,
     clearTimeoutFn
@@ -219,16 +212,15 @@ export function attachBindings(
   // the interceptor adopts and recomputes in the same turn. Replay during
   // undo/redo must not flush: that inserts content controls mid-history and
   // leaves redo unable to delete the row.
-  const unwatchRowCommands = watchRowCommands(
-    editor,
-    () => {
-      if (controller.phase !== 'idle') return;
-      const history = editor.editorHistoryModule;
-      if (history?.isUndoing || history?.isRedoing) return;
-      controller.flush({ mode: 'self-heal' });
-    },
-    onInsertAboveBlocked ? { onInsertAboveBlocked } : {}
-  );
+  const unwatchRowCommands = watchRowCommands(editor, (insertedRows) => {
+    // An insert says which rows it created, so adoption re-adopts exactly
+    // those; any other row command clears the hint before indices go stale.
+    controller.noteInsertedRows(insertedRows ?? null);
+    if (controller.phase !== 'idle') return;
+    const history = editor.editorHistoryModule;
+    if (history?.isUndoing || history?.isRedoing) return;
+    controller.flush({ mode: 'self-heal' });
+  });
 
   const eventful = editor as EventfulEditor;
   // Going back a form step unmounts the editor: the host destroys the Syncfusion

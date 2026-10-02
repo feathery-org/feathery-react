@@ -267,18 +267,6 @@ function DocxEditor({
     setSaveToast(null);
   }, []);
 
-  // Insert-above on a bound row is refused (the engine cannot tell the
-  // inserted copy from the original row); say so instead of a silent no-op.
-  const handleInsertAboveBlocked = useCallback(() => {
-    setSaveToast({
-      type: 'info',
-      message:
-        "Inserting above a bound row isn't supported yet — insert a row below instead."
-    });
-    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
-    saveToastTimer.current = setTimeout(() => setSaveToast(null), 5000);
-  }, []);
-
   const handleEditorReady = useCallback(
     (readyEditor: any) => {
       if (preview) readyEditor.open(PREVIEW_DOCUMENT);
@@ -311,8 +299,7 @@ function DocxEditor({
           ...bindings,
           confirmTableDelete,
           onLockedEdit: handleLockedEdit,
-          onLockedEditResolved: handleLockedEditResolved,
-          onInsertAboveBlocked: handleInsertAboveBlocked
+          onLockedEditResolved: handleLockedEditResolved
         }
       : bindings
   });

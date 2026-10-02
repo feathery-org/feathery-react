@@ -31,6 +31,7 @@ import {
   BindingIndex,
   formulaOccurrences,
   getAt,
+  InsertedRowsHint,
   NativeStructuralMutation,
   removeLineItem,
   scanBindings,
@@ -205,6 +206,8 @@ export class ReconciliationController {
 
   private pendingFlush = false;
 
+  private insertedRowsHint: InsertedRowsHint | null = null;
+
   constructor({
     editor,
     persistence = null,
@@ -228,6 +231,16 @@ export class ReconciliationController {
     const result = applyRules(sfdt, { rowTemplates: this.rowTemplates });
     this.commit(result, { apply: 'open', markDirty: false, event: 'load' });
     this.persistedRevision = revision;
+  }
+
+  /**
+   * Record which rows a native insert just created (from the insertRow wrap),
+   * so the next adopting reconcile re-adopts exactly those instead of guessing
+   * by position. Held until consumed; null clears it - any later row command
+   * that shifts indices passes null rather than leaving a stale hint.
+   */
+  noteInsertedRows(hint: InsertedRowsHint | null): void {
+    this.insertedRowsHint = hint;
   }
 
   /** Wire this to the editor's contentChange event. */
@@ -276,6 +289,10 @@ export class ReconciliationController {
     }
 
     this.phase = 'reconciling';
+    // Consume the hint whether or not adoption runs: the indices describe the
+    // document as it was at the insert, and only this first reconcile sees it.
+    const insertedRows = this.insertedRowsHint;
+    this.insertedRowsHint = null;
     let result: ApplyRulesResult;
     try {
       const started = Date.now();
@@ -283,7 +300,8 @@ export class ReconciliationController {
         prevValues: this.values,
         mode,
         rowTemplates: this.rowTemplates,
-        ...(adoptRows === false ? { adoptRows: false } : {})
+        ...(adoptRows === false ? { adoptRows: false } : {}),
+        ...(insertedRows ? { insertedRows } : {})
       });
       this.timings.reconcileMs = Date.now() - started;
     } catch (thrown) {
