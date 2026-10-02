@@ -120,6 +120,7 @@ import type { Diagnostic } from '../../../elements/components/DocxEditor/binding
 import { analyzeBindingOrphans } from '../../../elements/components/DocxEditor/bindings/core/tableDeleteImpact';
 import {
   addLineItem,
+  expressionResolvesToColumn,
   formulaOccurrences,
   formulaScopeKey,
   getAt,
@@ -16471,6 +16472,24 @@ function setCellContent(
   return setAt(sfdt, cellPath, { ...cell, blocks });
 }
 
+// Op-layer wrapper: translate the core's column-expression verdict into an
+// OpError so create_binding rejects a permanently-erroring binding at creation.
+export function assertExpressionYieldsValue(
+  expression: string,
+  bindingIndex: BindingIndex
+): void {
+  const kind = expressionResolvesToColumn(bindingIndex, expression);
+  if (!kind) return;
+  const what =
+    kind === 'range' ? 'is a whole range' : 'names a whole table column';
+  throw new OpError(
+    'binding_expression_whole_column',
+    `Expression ${JSON.stringify(
+      expression
+    )} ${what}. Wrap it in sum(...) to produce a value. Nothing was written.`
+  );
+}
+
 function createBindingInCell(
   state: EngineMutationState,
   op: EditOp,
@@ -16513,6 +16532,7 @@ function createBindingInCell(
         'A formula binding requires an expression. Nothing was written.'
       );
     parseExpression(expression);
+    assertExpressionYieldsValue(expression, state.index);
   }
   const definition: Definition =
     kind === 'formula'
@@ -16633,6 +16653,7 @@ function redefineBoundFormulaPlan(
     op,
     anchor: block.anchor,
     execute(state) {
+      assertExpressionYieldsValue(expression, state.index);
       const scope = formulaScopeKey(occurrence);
       const targets = formulaOccurrences(state.index, occurrence.name).filter(
         (candidate) => formulaScopeKey(candidate) === scope

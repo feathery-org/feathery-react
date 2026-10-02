@@ -92,7 +92,9 @@ function applyRowAdoptions(
   const selection = editor.selection;
   const module = editor.editorModule as any;
   const collection = editor.documentHelper?.contentControlCollection;
-  if (!selection?.select || !module?.insertContentControl) return false;
+  if (!selection?.select || !module?.insertContentControl) {
+    return false;
+  }
   if (!Array.isArray(collection)) return false;
   const live = JSON.parse(editor.serialize()) as SfdtDocument;
   const previousHistory = editor.enableEditorHistory;
@@ -104,13 +106,17 @@ function applyRowAdoptions(
   try {
     for (const mutation of mutations) {
       const prefix = liveTablePrefix(editor, live, mutation.tablePath);
-      if (!prefix) return false;
+      if (!prefix) {
+        return false;
+      }
       const cells = mutation.row.cells ?? [];
       for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
         const cell = cells[cellIndex];
         if (!cell) return false;
         const plan = plannedControl(cell);
-        if (!plan?.properties.tag) continue;
+        if (!plan?.properties.tag) {
+          continue;
+        }
         const liveCell = getAt(live, [
           ...mutation.tablePath,
           'rows',
@@ -118,7 +124,9 @@ function applyRowAdoptions(
           'cells',
           cellIndex
         ]) as SfdtCell | undefined;
-        if (!liveCell) return false;
+        if (!liveCell) {
+          return false;
+        }
         const existing = textIn(liveCell.blocks);
         const existingPlan = plannedControl(liveCell);
         if (existingPlan?.properties.tag) {
@@ -136,11 +144,18 @@ function applyRowAdoptions(
                 targetPrefix
               );
             });
-          if (!existingControl?.contentControlProperties) return false;
+          if (!existingControl?.contentControlProperties) {
+            return false;
+          }
           const properties = existingControl.contentControlProperties;
           const titleFollowedTag = properties.title === properties.tag;
           properties.tag = plan.properties.tag;
           if (titleFollowedTag) properties.title = plan.properties.title;
+          // A copied control keeps the ORIGINAL's lock state, so a locked
+          // mirror re-tagged as a field stays uneditable unless forced here -
+          // and the text write below silently refuses on locked content.
+          properties.lockContents = plan.properties.lockContents;
+          properties.lockContentControl = plan.properties.lockContentControl;
           const replacement = plan.text || '\u200b';
           if (
             properties.type === 'RichText' &&
@@ -169,9 +184,32 @@ function applyRowAdoptions(
             canDelete: !plan.properties.lockContentControl,
             canEdit: !plan.properties.lockContents
           })
-        )
+        ) {
           return false;
+        }
+        // insertContentControl's canEdit is not reliably honored; set the lock
+        // state on the created control directly so a field stays editable.
+        const created = collection
+          .filter(
+            (candidate) =>
+              isContentControlAttached(candidate) &&
+              String(candidate.contentControlProperties?.tag || '') ===
+                String(plan.properties.tag)
+          )
+          .find((candidate) => {
+            (selection as any).selectContentControl?.(candidate);
+            return String(selection.startOffset ?? '').startsWith(
+              `${prefix};${mutation.rowIndex};${cellIndex};`
+            );
+          });
+        if (created?.contentControlProperties) {
+          created.contentControlProperties.lockContents =
+            plan.properties.lockContents;
+          created.contentControlProperties.lockContentControl =
+            plan.properties.lockContentControl;
+        }
       }
+      restyleAsDataRow(editor, prefix, mutation.rowIndex);
     }
     refreshContentControlCollection(editor);
   } finally {
@@ -179,6 +217,113 @@ function applyRowAdoptions(
     editor.enableTrackChanges = previousTracking;
   }
   return true;
+}
+
+// Syncfusion copies the ADJACENT row's formatting into a newly inserted row, so
+// a row inserted above the first data row is styled like the header, and one
+// inserted above a totals row is styled like the totals row. Copy formatting
+// from the CLOSEST non-header sibling, preferring the one above on a tie.
+function restyleAsDataRow(
+  editor: SyncfusionEditorLike,
+  prefix: string,
+  rowIndex: number
+): void {
+  try {
+    const selection = editor.selection as any;
+    if (!selection?.select) return;
+    selection.select(
+      `${prefix};${rowIndex};0;0;0`,
+      `${prefix};${rowIndex};0;0;0`
+    );
+    const insertedRow = selection.start?.paragraph?.associatedCell?.ownerRow;
+    const rows: any[] = insertedRow?.ownerTable?.childWidgets ?? [];
+    const myIndex = rows.indexOf(insertedRow);
+    if (myIndex < 0) return;
+    const isHeader = (row: any): boolean => !!row?.rowFormat?.isHeader;
+    let source: any;
+    for (
+      let d = 1;
+      !source && (myIndex - d >= 0 || myIndex + d < rows.length);
+      d++
+    ) {
+      const above = rows[myIndex - d];
+      const below = rows[myIndex + d];
+      if (above && !isHeader(above)) source = above;
+      else if (below && !isHeader(below)) source = below;
+    }
+    if (!source) {
+      return;
+    }
+    // The source row's run character format (bold/colour/font): the first
+    // element in the cell subtree that carries a text character format.
+    const firstRunFormat = (node: any): any => {
+      let fmt: any;
+      const walk = (w: any): void => {
+        if (fmt || !w || typeof w !== 'object') return;
+        if (w.characterFormat && typeof w.text === 'string') {
+          fmt = w.characterFormat;
+          return;
+        }
+        for (const child of w.childWidgets ?? w.children ?? []) walk(child);
+      };
+      walk(node);
+      return fmt;
+    };
+    // copyFormat only merges explicitly-set properties, so an inherited source
+    // value never overrides the inserted row's explicit header/totals value.
+    // Read EFFECTIVE values through the getters and assign them explicitly.
+    const CHAR_PROPS = [
+      'fontColor',
+      'bold',
+      'italic',
+      'fontSize',
+      'fontFamily',
+      'underline',
+      'strikethrough',
+      'highlightColor'
+    ];
+    const stampRunFormat = (node: any, srcFmt: any): void => {
+      if (!node || typeof node !== 'object') return;
+      if (node.characterFormat) {
+        for (const prop of CHAR_PROPS) {
+          try {
+            const value = srcFmt[prop];
+            if (value !== undefined) node.characterFormat[prop] = value;
+          } catch {
+            /* a property a given format class doesn't carry */
+          }
+        }
+      }
+      for (const child of node.childWidgets ?? node.children ?? [])
+        stampRunFormat(child, srcFmt);
+    };
+    const srcCells: any[] = source.childWidgets ?? [];
+    (insertedRow.childWidgets ?? []).forEach((cell: any, c: number) => {
+      const src = srcCells[Math.min(c, srcCells.length - 1)];
+      if (!src) return;
+      cell.cellFormat?.copyFormat?.(src.cellFormat);
+      // Stamp the source cell's effective shading over whatever explicit
+      // shading the insert cloned from the adjacent (header/totals) row.
+      const srcShading = src.cellFormat?.shading;
+      const destShading = cell.cellFormat?.shading;
+      if (srcShading && destShading) {
+        destShading.backgroundColor = srcShading.backgroundColor;
+        destShading.foregroundColor = srcShading.foregroundColor;
+        destShading.textureStyle = srcShading.textureStyle;
+      }
+      const srcPara = (src.childWidgets ?? [])[0];
+      (cell.childWidgets ?? []).forEach((para: any) => {
+        if (srcPara?.paragraphFormat)
+          para.paragraphFormat?.copyFormat?.(srcPara.paragraphFormat);
+      });
+      // Reset the run fonts (incl. the control's text) to the source cell's.
+      const runFmt = firstRunFormat(src);
+      if (runFmt) stampRunFormat(cell, runFmt);
+    });
+    if (source.rowFormat) insertedRow.rowFormat?.copyFormat?.(source.rowFormat);
+  } catch {
+    // Best effort: a restyle failure must never break row adoption.
+  }
 }
 
 // Later mutations address pasted controls by tag before the closing relayout.
@@ -378,7 +523,9 @@ export function applyNativeStructuralMutations(
         );
         registerPastedContentControls(editor);
       } else if (mutation.kind === 'adopt-row') {
-        if (!applyRowAdoptions(editor, [mutation])) return false;
+        if (!applyRowAdoptions(editor, [mutation])) {
+          return false;
+        }
       } else if (mutation.kind === 'delete-row') {
         const control = controlForTag(mutation.tag);
         if (!control || !module.deleteRow || !selection.select) return false;

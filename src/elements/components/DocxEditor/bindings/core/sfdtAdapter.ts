@@ -17,10 +17,22 @@
 import {
   BoundDefinition,
   Definition,
+  FieldDefinition,
+  FieldType,
   formatTag,
+  FormulaDefinition,
   isTagError,
-  parseTag
+  parseTag,
+  TagOptions
 } from './tagDsl';
+import {
+  Ast,
+  bareCellRef,
+  collectPositional,
+  collectRefs,
+  isFormulaError,
+  parseExpression
+} from './formula';
 import {
   defaultValue,
   isValueError,
@@ -98,6 +110,69 @@ export function formulaScopeKey(occurrence: Occurrence): string {
   return `document:${occurrence.name}`;
 }
 
+export type ColumnExpressionKind = 'range' | 'table-column' | null;
+
+/** Does this node BY ITSELF yield a whole column - a bare range or aggregate? */
+/** Facts about a bare reference; each caller applies its own precedence. */
+interface RefFacts {
+  /** Text before the last '.', else null. */
+  dottedPrefix: string | null;
+  /** Names a document-level field or formula. */
+  isDocName: boolean;
+  /** Shaped like a positional cell (B3). */
+  isCellShaped: boolean;
+}
+function refFacts(ref: string, index: BindingIndex): RefFacts {
+  const dot = ref.lastIndexOf('.');
+  return {
+    dottedPrefix: dot === -1 ? null : ref.slice(0, dot),
+    isDocName: index.fields.has(ref) || index.formulas.has(ref),
+    isCellShaped: bareCellRef(ref) !== null
+  };
+}
+
+function nodeColumnKind(ast: Ast, index: BindingIndex): ColumnExpressionKind {
+  if ('range' in ast) return 'range';
+  if (!('ref' in ast)) return null; // cell, literal, or a call (a scalar)
+  const facts = refFacts(ast.ref, index);
+  if (facts.dottedPrefix === null || facts.isDocName) return null;
+  return index.tables.has(facts.dottedPrefix) ? 'table-column' : null;
+}
+
+/**
+ * The first place the expression uses a whole column where a value is required -
+ * as the whole expression, or as an argument to anything but sum() - or null if
+ * it can yield a value. `sum(costs.amount)` is fine; a bare `costs.amount`,
+ * `mul(costs.amount, 2)`, or a bare range is not. Catches the case that would
+ * otherwise pass create_binding and then fail every reconcile.
+ */
+export function expressionResolvesToColumn(
+  index: BindingIndex,
+  expression: string
+): ColumnExpressionKind {
+  let ast: Ast;
+  try {
+    ast = parseExpression(expression);
+  } catch (thrown) {
+    if (!isFormulaError(thrown)) throw thrown;
+    return null;
+  }
+  const walk = (node: Ast): ColumnExpressionKind => {
+    if (!('op' in node)) return nodeColumnKind(node, index);
+    for (const arg of node.args) {
+      const argColumn = nodeColumnKind(arg, index);
+      if (argColumn) {
+        if (node.op !== 'sum') return argColumn; // mul/sub can't take a column
+      } else {
+        const nested = walk(arg); // a column misused deeper in, e.g. mul inside
+        if (nested) return nested;
+      }
+    }
+    return null; // a call yields a value
+  };
+  return walk(ast);
+}
+
 export interface CellValue {
   text: string;
   canonical: string | null;
@@ -129,7 +204,7 @@ export function setAt<T>(doc: T, path: SfdtPath, value: unknown): T {
 }
 
 /** True when `prefix` addresses an ancestor of (or the same node as) `path`. */
-function isPathPrefix(prefix: SfdtPath, path: SfdtPath): boolean {
+export function isPathPrefix(prefix: SfdtPath, path: SfdtPath): boolean {
   if (prefix.length > path.length) return false;
   for (let i = 0; i < prefix.length; i++) {
     if (String(prefix[i]) !== String(path[i])) return false;
@@ -665,6 +740,8 @@ export const freshRowId = createRowIdGenerator();
 
 /* ---------------- row operations ---------------- */
 
+// Cloning never changes a binding's KIND: a field stays a field (reset to its
+// default), a formula (row-local or mirror) stays the same formula.
 export function rewriteRowClone(node: any, newRowId: string): void {
   if (Array.isArray(node)) {
     node.forEach((entry) => rewriteRowClone(entry, newRowId));
@@ -672,17 +749,8 @@ export function rewriteRowClone(node: any, newRowId: string): void {
   }
   if (!node || typeof node !== 'object') return;
   if (node.contentControlProperties) {
-    let def: Definition | null = null;
-    try {
-      def = parseTag(String(node.contentControlProperties.tag || ''));
-    } catch {
-      def = null;
-    }
-    if (
-      def &&
-      (def.kind === 'field' || def.kind === 'formula') &&
-      def.options.row
-    ) {
+    const def = rowScopedDef(node.contentControlProperties.tag);
+    if (def) {
       def.options.row = newRowId;
       node.contentControlProperties = {
         ...node.contentControlProperties,
@@ -796,6 +864,23 @@ export function removeLineItem(
 // placeholder the engine computes in the same transaction. Cells under unbound
 // columns keep the user's content.
 
+/** Visible text of a node, descending into control wrappers; `skip` drops inlines. */
+export function inlineText(node: any, skip?: (inline: any) => boolean): string {
+  if (!node || typeof node !== 'object') return '';
+  let out = '';
+  const inlines =
+    node.inlines || (node.blocks || []).flatMap((b: any) => b?.inlines || []);
+  for (const inline of inlines || []) {
+    if (skip?.(inline)) continue;
+    if (typeof inline?.text === 'string' && !inline.contentControlProperties)
+      out += inline.text;
+    else if (inline && typeof inline === 'object')
+      out += inlineText(inline, skip);
+  }
+  return out;
+}
+
+// Not inlineText: adoption must read only user-typed text, never control content.
 function cellPlainText(cell: SfdtCell): string {
   let out = '';
   for (const block of cell.blocks || []) {
@@ -807,36 +892,65 @@ function cellPlainText(cell: SfdtCell): string {
   return out;
 }
 
+/** A row-scoped field/formula parsed from a control tag, else null. */
+function rowScopedDef(tag: unknown): BoundDefinition | null {
+  let def: Definition | null = null;
+  try {
+    def = parseTag(String(tag || ''));
+  } catch {
+    def = null;
+  }
+  return def &&
+    (def.kind === 'field' || def.kind === 'formula') &&
+    def.options.row
+    ? def
+    : null;
+}
+
 interface CellBinding {
-  b: number;
-  i: number;
+  /** Path from the cell to the control node (descends through foreign wrappers). */
+  path: SfdtPath;
   def: BoundDefinition;
 }
 
-/** First row-scoped binding content control in a cell. */
-function findCellBinding(cell: SfdtCell): CellBinding | null {
-  const blocks = cell.blocks || [];
-  for (let b = 0; b < blocks.length; b++) {
-    const inlines = blocks[b].inlines || [];
-    for (let i = 0; i < inlines.length; i++) {
-      const inline = inlines[i];
-      if (!inline || !inline.contentControlProperties) continue;
-      let def: Definition | null = null;
-      try {
-        def = parseTag(String(inline.contentControlProperties.tag || ''));
-      } catch {
-        continue;
-      }
-      if (
-        def &&
-        (def.kind === 'field' || def.kind === 'formula') &&
-        def.options.row
-      ) {
-        return { b, i, def };
-      }
-    }
+/** Display text for an adopted field cell: typed input normalized, else default. */
+function adoptedFieldText(def: FieldDefinition, typedRaw: string): string {
+  const typed = typedRaw.trim();
+  if (typed === '') return renderDisplay(def.fieldType, defaultValue(def));
+  try {
+    return renderDisplay(def.fieldType, parseDisplay(def.fieldType, typed));
+  } catch (thrown) {
+    if (!isValueError(thrown)) throw thrown;
+    // Invalid: keep it visible and let the engine diagnose it.
+    return typed;
   }
-  return null;
+}
+
+/**
+ * First row-scoped binding control in a cell, with the path to it. Descends
+ * through foreign/non-row content controls like the scanner, so a binding
+ * nested inside a foreign wrapper is found (and can be stamped through the path).
+ */
+function findCellBinding(cell: SfdtCell): CellBinding | null {
+  let found: CellBinding | null = null;
+  const visit = (node: any, path: SfdtPath): void => {
+    if (found || !node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach((entry, idx) => visit(entry, [...path, idx]));
+      return;
+    }
+    if (node.contentControlProperties) {
+      const def = rowScopedDef(node.contentControlProperties.tag);
+      if (def) {
+        found = { path, def };
+        return;
+      }
+      // A foreign or non-row control: descend to find a binding wrapped inside.
+    }
+    for (const key of Object.keys(node)) visit(node[key], [...path, key]);
+  };
+  visit(cell, []);
+  return found;
 }
 
 export interface AdoptedRowMutation {
@@ -920,6 +1034,229 @@ function countAdoptableRows(sfdt: SfdtDocument, tablePath: SfdtPath): number[] {
   return out;
 }
 
+// A MIRROR reads only values outside its own row (expr=A, sum(beta)). A
+// row-local formula reads an own-row column (mul(quantity,unit_cost)), any
+// positional ref (sum(B2:end) or a bare unbound cell like B3), or its own
+// table's column (sum(costs.amount) - a self-total); those are structural and
+// block adoption, while a typed mirror column becomes a field.
+function isMirrorFormula(
+  def: FormulaDefinition,
+  ownColumnNames: ReadonlySet<string>,
+  ownTableId: string,
+  index: BindingIndex
+): boolean {
+  let ast;
+  try {
+    ast = parseExpression(def.expression);
+  } catch (thrown) {
+    if (!isFormulaError(thrown)) throw thrown;
+    return false; // Unparseable: treat as structural, leave it be.
+  }
+  const positional = collectPositional(ast);
+  if (positional.cells.length || positional.ranges.length) return false;
+  return !collectRefs(ast).some((ref) => {
+    if (ownColumnNames.has(ref)) return true; // own-row column
+    const facts = refFacts(ref, index);
+    if (facts.dottedPrefix !== null) return facts.dottedPrefix === ownTableId; // own-table aggregate
+    // A doc field/formula name is an external mirror; a cell-shaped name that
+    // binds nothing is a positional cell, which is structural.
+    if (facts.isDocName) return false;
+    return facts.isCellShaped;
+  });
+}
+
+/** The editable field a new row gets where a mirror column was typed into. */
+function mirrorColumnField(
+  def: FormulaDefinition,
+  rowId: string
+): FieldDefinition {
+  const options: TagOptions = { row: rowId };
+  if (def.options.default !== undefined) options.default = def.options.default;
+  if (def.options.label !== undefined) options.label = def.options.label;
+  return {
+    version: def.version,
+    kind: 'field',
+    name: def.name,
+    fieldType: def.fieldType,
+    isEditable: true,
+    isDeletable: true,
+    isGlobal: false,
+    options
+  };
+}
+
+/**
+ * Every row-scoped binding name in a template row (its column names). Descends
+ * through foreign wrappers like the scanner does, so a binding nested in a
+ * foreign content control still counts - otherwise a row-local formula whose
+ * input is wrapped would be misread as a mirror.
+ */
+function templateColumnNames(templateCells: SfdtCell[]): Set<string> {
+  const names = new Set<string>();
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    const record = node as { contentControlProperties?: { tag?: unknown } };
+    if (record.contentControlProperties) {
+      const def = rowScopedDef(record.contentControlProperties.tag);
+      if (def) {
+        names.add(def.name);
+        return; // A row binding holds a value, not further bindings.
+      }
+    }
+    for (const value of Object.values(record)) visit(value);
+  };
+  templateCells.forEach(visit);
+  return names;
+}
+
+/** The row-scoped id a row's bindings carry, or null if it has none. */
+function rowBindingId(row: SfdtRow): string | null {
+  for (const cell of row.cells || []) {
+    const binding = findCellBinding(cell);
+    if (binding && binding.def.options.row) return binding.def.options.row;
+  }
+  return null;
+}
+
+const rowHasControls = (row: SfdtRow): boolean =>
+  JSON.stringify(row).includes('contentControlProperties');
+
+// A data row holds at least one INPUT column - a field, or a mirror. A row whose
+// only bound columns are structural formulas (a totals row: sum(B2:end) or a
+// self-aggregate) is not a data row and makes a poor adoption template.
+function rowHasInputColumn(
+  entry: TableRowEntry,
+  tableId: string,
+  index: BindingIndex
+): boolean {
+  const names = new Set(entry.bindings.keys());
+  for (const occurrence of entry.bindings.values()) {
+    if (occurrence.def.kind === 'field') return true;
+    if (
+      occurrence.def.kind === 'formula' &&
+      isMirrorFormula(occurrence.def, names, tableId, index)
+    )
+      return true;
+  }
+  return false;
+}
+
+// A table with no bound row can still adopt: a formula that CONSUMES its
+// columns positionally (sum(B2:end), summary!B2:B9) marks those columns as
+// input. Mint a template whose consumed columns carry fresh row-scoped field
+// controls typed from the consuming formula; other columns stay unbound so an
+// adopted row keeps the user's own cells.
+function syntheticColumnTemplate(
+  sfdt: SfdtDocument,
+  tableId: string,
+  index: BindingIndex
+): SfdtRow | undefined {
+  const table = index.tables.get(tableId);
+  if (!table || !table.tablePath) return undefined;
+  const consumed = new Map<number, FieldType>();
+  for (const occurrence of index.occurrences) {
+    if (occurrence.def.kind !== 'formula') continue;
+    let ast: Ast;
+    try {
+      ast = parseExpression(occurrence.def.expression);
+    } catch (thrown) {
+      if (!isFormulaError(thrown)) throw thrown;
+      continue;
+    }
+    for (const range of collectPositional(ast).ranges) {
+      const consumesThisTable =
+        range.table === tableId ||
+        (range.table === null &&
+          isPathPrefix(table.tablePath, occurrence.path));
+      if (!consumesThisTable) continue;
+      for (let col = range.startCol; col <= range.endCol; col++)
+        if (!consumed.has(col)) consumed.set(col, occurrence.def.fieldType);
+    }
+  }
+  if (!consumed.size) return undefined;
+  const tableNode = getAt(sfdt, table.tablePath) as { rows?: SfdtRow[] };
+  const mold = (tableNode.rows || []).find(
+    (row) => row && !(row.rowFormat && row.rowFormat.isHeader)
+  );
+  if (!mold || !mold.cells || !mold.cells.length) return undefined;
+  // Span-aware: which CELL of the mold covers each consumed grid column.
+  const cellOfCol = new Map<number, number>();
+  let col = 0;
+  mold.cells.forEach((cell, c) => {
+    const span = Number(cell?.cellFormat?.columnSpan) || 1;
+    for (let s = 0; s < span; s++) cellOfCol.set(col + s, c);
+    col += span;
+  });
+  const letters = (c: number): string => {
+    let out = '';
+    let n = c + 1;
+    while (n > 0) {
+      out = String.fromCharCode(65 + ((n - 1) % 26)) + out;
+      n = Math.floor((n - 1) / 26);
+    }
+    return out;
+  };
+  const freshName = (c: number): string => {
+    let name = `col${letters(c)}`;
+    while (index.fields.has(name) || index.formulas.has(name))
+      name = `${name}_`;
+    return name;
+  };
+  const cells = mold.cells.map((moldCell) => ({
+    ...(moldCell.cellFormat
+      ? { cellFormat: deepClone(moldCell.cellFormat) }
+      : {}),
+    blocks: [{ inlines: [] as SfdtInline[] }]
+  })) as SfdtCell[];
+  for (const [consumedCol, fieldType] of consumed) {
+    const c = cellOfCol.get(consumedCol);
+    if (c === undefined) continue;
+    const def: FieldDefinition = {
+      version: 2,
+      kind: 'field',
+      name: freshName(consumedCol),
+      fieldType,
+      isEditable: true,
+      isDeletable: true,
+      isGlobal: false,
+      options: { row: 'tpl' }
+    };
+    cells[c].blocks![0].inlines = [
+      {
+        contentControlProperties: {
+          lockContentControl: true,
+          lockContents: false,
+          tag: formatTag(def),
+          title: def.name,
+          type: 'Text',
+          hasPlaceHolderText: false,
+          multiline: false,
+          isTemporary: false,
+          color: '#00000000',
+          appearance: 'BoundingBox'
+        },
+        inlines: [{ text: '' }]
+      } as unknown as SfdtInline
+    ];
+  }
+  return { cells, rowFormat: {} } as unknown as SfdtRow;
+}
+
+/**
+ * Which rows a just-executed native insert created, recorded by the insertRow
+ * wrap where above/below and the selection are still known. Row indices are
+ * positions in the table at (sectionIndex, blockIndex) at serialize time.
+ */
+export interface InsertedRowsHint {
+  sectionIndex: number;
+  blockIndex: number;
+  rowIndices: number[];
+}
+
 export function adoptUnboundRows(
   sfdt: SfdtDocument,
   tableId: string,
@@ -929,18 +1266,27 @@ export function adoptUnboundRows(
    * Row shape from an earlier reconcile, used when the user has deleted every
    * bound row - the document then holds no copy of it at all.
    */
-  fallbackTemplate?: SfdtRow
+  fallbackTemplate?: SfdtRow,
+  insertedRows?: InsertedRowsHint | null
 ): AdoptionResult {
   const table = index.tables.get(tableId);
   if (!table || !table.tablePath)
     return { sfdt, adopted: [], mutations: [], skipped: [] };
-  const lastBoundRow = table.rows.length
+  // Prefer the last DATA row as the template; a row-scoped totals row is a bound
+  // row too, but cloning it would give a new row a structural aggregate instead
+  // of an input control. Fall back to the last bound row when none has inputs.
+  const inputRows = table.rows.filter((entry) =>
+    rowHasInputColumn(entry, tableId, index)
+  );
+  const lastBoundRow = inputRows.length
+    ? inputRows[inputRows.length - 1]
+    : table.rows.length
     ? table.rows[table.rows.length - 1]
     : undefined;
   const templateRow =
     lastBoundRow && lastBoundRow.path
       ? (getAt(sfdt, lastBoundRow.path) as SfdtRow)
-      : fallbackTemplate;
+      : fallbackTemplate ?? syntheticColumnTemplate(sfdt, tableId, index);
   if (!templateRow) {
     // Nothing to copy from. Report it rather than leaving rows plain in silence.
     const unbound = countAdoptableRows(sfdt, table.tablePath);
@@ -978,18 +1324,88 @@ export function adoptUnboundRows(
   // inserting rows entirely.
   const allRows = tableNode.rows || [];
   const templateCells = templateRow.cells || [];
+  const columnNames = templateColumnNames(templateCells);
+
+  // Classify each template column once. A mirror column accepts a typed value
+  // (it becomes a field); a field column takes input as always; a row-local or
+  // positional formula column is engine output and blocks adoption when a row
+  // has text there.
+  const mirrorColumn = templateCells.map((templateCell) => {
+    const binding = findCellBinding(templateCell);
+    return (
+      !!binding &&
+      binding.def.kind === 'formula' &&
+      isMirrorFormula(binding.def, columnNames, tableId, index)
+    );
+  });
+
+  // With no non-mirror bound column (the summary/mirror case), a new row's
+  // mirror cell becomes an editable field on insert (row=auto style); with input
+  // columns present, an empty mirror cell instead stays a mirror and propagates.
+  const templateHasNonMirrorColumn = templateCells.some((templateCell, c) => {
+    const binding = findCellBinding(templateCell);
+    return !!binding && !mirrorColumn[c];
+  });
+
   const firstBoundRowIndex = table.rows
     .map((entry) => Number(entry.path?.[entry.path.length - 1]))
     .filter(Number.isInteger)
     .sort((left, right) => left - right)[0];
 
+  // Syncfusion's insert-row copies an editable control into the new row, so it
+  // arrives with a row id duplicating a sibling. One occurrence of the id is the
+  // real bound row; the other is the copy, re-adopted fresh. The insertRow wrap
+  // records WHICH rows the user just inserted (the document alone cannot tell:
+  // insert-above and copy-below serialize identically), so the hint names the
+  // copies. Without one, or when it fails validation, the LATER occurrence is
+  // the copy - correct for insert-below and .docx round trips.
+  const hintedRows =
+    insertedRows &&
+    isPathPrefix(
+      [
+        'sections',
+        insertedRows.sectionIndex,
+        'blocks',
+        insertedRows.blockIndex
+      ],
+      table.tablePath
+    )
+      ? new Set(insertedRows.rowIndices)
+      : null;
+  const copyIndices = new Set<number>();
+  const indicesById = new Map<string, number[]>();
+  allRows.forEach((row, r) => {
+    const id = row ? rowBindingId(row) : null;
+    if (row && id !== null && rowHasControls(row))
+      indicesById.set(id, [...(indicesById.get(id) || []), r]);
+  });
+  for (const indices of indicesById.values()) {
+    if (indices.length < 2) continue;
+    // A valid hint leaves at least one original; one covering every occurrence
+    // (or none) is stale and position decides instead.
+    const hinted = hintedRows
+      ? indices.filter((i) => hintedRows.has(i))
+      : [];
+    const copies =
+      hinted.length && hinted.length < indices.length
+        ? hinted
+        : indices.slice(1);
+    for (const idx of copies) copyIndices.add(idx);
+  }
+
   for (let r = 0; r < allRows.length; r++) {
     const row = allRows[r];
     if (!row) continue;
     if (row.rowFormat && row.rowFormat.isHeader) continue;
-    // Any content control (bound row, intact totals row, foreign control) is not
-    // ours to touch.
-    if (JSON.stringify(row).includes('contentControlProperties')) continue;
+    const hasControls = rowHasControls(row);
+    if (hasControls && !copyIndices.has(r)) {
+      // A real bound row, an intact totals row, or a foreign control - not ours
+      // to touch.
+      continue;
+    }
+    // A copied row (in copyIndices) falls through to be re-adopted fresh. Its
+    // value lives inside the copied control, invisible to cellPlainText below,
+    // so every cell reads as empty and the new row starts from defaults.
     const cells = row.cells || [];
     if (!cells.length) continue;
     if (cells.length !== templateCells.length) {
@@ -999,24 +1415,48 @@ export function adoptUnboundRows(
       });
       continue;
     }
-    // A formula column holds engine output, never anything the user typed. Text
-    // sitting there means this is a totals row or a damaged one, not a new line
-    // item - adopting would overwrite it with a pending placeholder.
-    const occupiedFormula = templateCells.findIndex((templateCell, c) => {
-      const binding = findCellBinding(templateCell);
-      return (
-        !!binding &&
-        binding.def.kind === 'formula' &&
-        cellPlainText(cells[c]).trim() !== ''
-      );
-    });
-    if (occupiedFormula !== -1) {
+    // Text in a row-local/positional formula column means a totals, damaged, or
+    // unflagged-header row: block adoption. Text in a mirror column is a typed
+    // value (adopted as a field), unless it fails to parse - then it's a header.
+    let blockingReason: string | null = null;
+    let parsedFieldCells = 0;
+    let fieldParseFailure: string | null = null;
+    for (let c = 0; c < templateCells.length && !blockingReason; c++) {
+      const binding = findCellBinding(templateCells[c]);
+      if (!binding) continue;
+      const text = cellPlainText(cells[c]).trim();
+      if (text === '') continue;
+      if (binding.def.kind === 'formula') {
+        if (!mirrorColumn[c]) {
+          blockingReason = `cell ${c} holds text where the template has a formula`;
+        } else {
+          try {
+            parseDisplay(binding.def.fieldType, text);
+          } catch (thrown) {
+            if (!isValueError(thrown)) throw thrown;
+            blockingReason = `cell ${c} holds text that does not parse as ${binding.def.fieldType.kind}`;
+          }
+        }
+      } else {
+        try {
+          parseDisplay(binding.def.fieldType, text);
+          parsedFieldCells++;
+        } catch (thrown) {
+          if (!isValueError(thrown)) throw thrown;
+          fieldParseFailure = `cell ${c} holds text that does not parse as ${binding.def.fieldType.kind}`;
+        }
+      }
+    }
+    // A row whose every typed input cell fails to parse is a label (Shipping |
+    // included): keep it plain, counted as 0 by ranges, instead of minting a
+    // field that blocks save. A row where some cells parse is a data row with
+    // a typo: adopt it and let validation flag the bad cell.
+    if (blockingReason === null && fieldParseFailure !== null && !parsedFieldCells)
+      blockingReason = fieldParseFailure;
+    if (blockingReason !== null) {
       if (Number.isInteger(firstBoundRowIndex) && r < firstBoundRowIndex)
         continue;
-      skipped.push({
-        rowIndex: r,
-        reason: `cell ${occupiedFormula} holds text where the template has a formula`
-      });
+      skipped.push({ rowIndex: r, reason: blockingReason });
       continue;
     }
 
@@ -1029,9 +1469,35 @@ export function adoptUnboundRows(
         (newRow.cells as SfdtCell[])[c] = deepClone(cells[c]);
         return;
       }
-      const controls = (cell.blocks as any[])[binding.b].inlines;
-      const control = controls[binding.i];
+      const control = getAt(cell, binding.path);
       const def = binding.def;
+      const typedText = cellPlainText(cells[c]).trim();
+      const first = (control.inlines || []).find(
+        (inline: SfdtInline) => inline && typeof inline.text === 'string'
+      );
+      const run: Partial<SfdtInline> =
+        first && first.characterFormat
+          ? { characterFormat: first.characterFormat }
+          : {};
+      // A mirror column becomes an editable field on a new row when the user
+      // typed into it, or always in a mirror-only table (immediate control);
+      // otherwise an empty mirror cell stays a mirror and propagates.
+      const convertMirror =
+        def.kind === 'formula' &&
+        mirrorColumn[c] &&
+        (typedText !== '' || !templateHasNonMirrorColumn);
+      if (convertMirror) {
+        const fieldDef = mirrorColumnField(def as FormulaDefinition, rowId);
+        control.contentControlProperties = {
+          ...control.contentControlProperties,
+          tag: formatTag(fieldDef),
+          lockContents: false
+        };
+        control.inlines = [
+          { ...run, text: adoptedFieldText(fieldDef, typedText) }
+        ];
+        return;
+      }
       def.options.row = rowId;
       // `value` describes the row it was authored on; a new row starts from
       // `default` instead, so carrying it over would clone stale data.
@@ -1040,33 +1506,11 @@ export function adoptUnboundRows(
         ...control.contentControlProperties,
         tag: formatTag(def)
       };
-      const first = (control.inlines || []).find(
-        (inline: SfdtInline) => inline && typeof inline.text === 'string'
-      );
-      const run: Partial<SfdtInline> =
-        first && first.characterFormat
-          ? { characterFormat: first.characterFormat }
-          : {};
       if (def.kind === 'field') {
-        const typed = cellPlainText(cells[c]).trim();
-        let text: string;
-        if (typed === '') {
-          text = renderDisplay(def.fieldType, defaultValue(def));
-        } else {
-          try {
-            text = renderDisplay(
-              def.fieldType,
-              parseDisplay(def.fieldType, typed)
-            );
-          } catch (thrown) {
-            if (!isValueError(thrown)) throw thrown;
-            // Invalid: keep it visible and let the engine diagnose it.
-            text = typed;
-          }
-        }
-        control.inlines = [{ ...run, text }];
+        control.inlines = [{ ...run, text: adoptedFieldText(def, typedText) }];
       } else {
-        // Pending; the engine computes it in this same transaction.
+        // Pending; the engine computes it in this same transaction. Mirrors
+        // with no typed value clone as mirrors and propagate.
         control.inlines = [{ ...run, text: '…' }];
       }
     });

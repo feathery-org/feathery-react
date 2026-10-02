@@ -413,6 +413,44 @@ describe('saving', () => {
   });
 });
 
+describe('inserted-row hints', () => {
+  it('survives a non-adopting self-heal and steers the next adopting reconcile', () => {
+    // The redo shape: insertRow replays and re-clones the row (the wrap notes
+    // the hint), the post-replay self-heal runs with adoptRows false, and only
+    // a later ordinary reconcile adopts.
+    const { editor, clock, controller } = setup();
+    controller.loadInitial(buildCostsFixture(), 1);
+    clock.fire();
+    const tablePath = scanBindings(editor.doc as SfdtDocument).tables.get(
+      'costs'
+    )!.tablePath!;
+    const rows = (getAt(editor.doc, tablePath) as { rows: SfdtRow[] }).rows;
+    rows.splice(2, 0, JSON.parse(JSON.stringify(rows[2]))); // twin ABOVE r-2
+    controller.noteInsertedRows({
+      sectionIndex: Number(tablePath[1]),
+      blockIndex: Number(tablePath[3]),
+      rowIndices: [2]
+    });
+
+    controller.flush({ mode: 'self-heal', adoptRows: false });
+    clock.fire();
+    controller.flush();
+    clock.fire();
+
+    const tableRows = scanBindings(editor.doc as SfdtDocument).tables.get(
+      'costs'
+    )!.rows;
+    expect(tableRows).toHaveLength(3);
+    const original = tableRows.find((row) => row.rowId === 'r-2')!;
+    expect(original.bindings.get('quantity')!.text).toBe('30');
+    expect(original.bindings.get('line_total')!.text).toBe('$6,000.00');
+    // Document order: the fresh default row landed ABOVE the original.
+    expect(tableRows[1].rowId).not.toBe('r-2');
+    expect(tableRows[1].bindings.get('quantity')!.text).toBe('0');
+    expect(grandTotals(editor)).toEqual(['$7,800.00', '$7,800.00']);
+  });
+});
+
 describe('failure handling', () => {
   it('surfaces a serialize failure as a diagnostic and stays usable', () => {
     // A real editor can throw mid-serialize while tearing down; the controller

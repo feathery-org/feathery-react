@@ -14,9 +14,16 @@
 // clone crashes Syncfusion undo, so adoption stays history-invisible.
 // Undo/redo replay those same methods with isUndoing/isRedoing set. Flushing
 // then would insert content controls or record writes mid-replay, which
-// leaves redo a no-op and strips remaining bindings. Let the native history
-// finish; commitTriggers schedules a formulas-only self-heal afterwards.
+// leaves redo a no-op and strips remaining bindings - so the CALLER must not
+// flush during replay (attachBindings checks). The callback itself still
+// fires: a redone insert re-clones the row and needs its attribution hint
+// recorded, which is pure note-taking and safe mid-replay. The native history
+// finishes, commitTriggers schedules a formulas-only self-heal, and the next
+// adopting reconcile consumes the hint.
 
+import { InsertedRowsHint } from './core/sfdtAdapter';
+import { tableRowsAt } from './core/tableDeleteImpact';
+import { SfdtDocument } from './core/sfdtTypes';
 import {
   pruneDetachedContentControls,
   withContentControlLocksBypassed,
@@ -25,6 +32,77 @@ import {
 import { isApplyingNativeStructuralMutations } from './nativeStructuralAdapter';
 
 type RowCommand = (...args: unknown[]) => unknown;
+
+/** A top-level table cell's hierarchical offset: s;b;row;cell;para;offset. */
+const CELL_OFFSET_PARTS = 6;
+
+/**
+ * The selection's table location before an insert: the one moment above/below
+ * and the cursor row are both known. The reconcile snapshot alone cannot tell
+ * an inserted clone from its original (insert-above and copy-below serialize
+ * identically), so this is where the truth gets recorded.
+ */
+interface InsertSite {
+  sectionIndex: number;
+  blockIndex: number;
+  rowStart: number;
+  rowEnd: number;
+  rowCount: number;
+}
+
+function captureInsertSite(editor: SyncfusionEditorLike): InsertSite | null {
+  try {
+    const anyEditor = editor as SyncfusionEditorLike & Record<string, any>;
+    if (!editor.documentHelper?.contentControlCollection?.length) return null;
+    const offsets = [
+      anyEditor.selection?.startOffset,
+      anyEditor.selection?.endOffset
+    ].map((offset) => String(offset ?? '').split(';').map(Number));
+    for (const parts of offsets) {
+      if (
+        parts.length !== CELL_OFFSET_PARTS ||
+        parts.some((n) => !Number.isInteger(n))
+      )
+        return null;
+    }
+    const [start, end] = offsets;
+    if (start[0] !== end[0] || start[1] !== end[1]) return null;
+    const doc = JSON.parse(editor.serialize()) as SfdtDocument;
+    const rows = tableRowsAt(doc, start[0], start[1]);
+    if (!rows) return null;
+    return {
+      sectionIndex: start[0],
+      blockIndex: start[1],
+      rowStart: Math.min(start[2], end[2]),
+      rowEnd: Math.max(start[2], end[2]),
+      rowCount: rows.length
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Which rows the insert created: measured, not guessed from the count arg. */
+function insertedRowsHint(
+  editor: SyncfusionEditorLike,
+  site: InsertSite,
+  above: boolean
+): InsertedRowsHint | undefined {
+  try {
+    const doc = JSON.parse(editor.serialize()) as SfdtDocument;
+    const rows = tableRowsAt(doc, site.sectionIndex, site.blockIndex);
+    const delta = rows ? rows.length - site.rowCount : 0;
+    if (delta <= 0) return undefined;
+    const first = above ? site.rowStart : site.rowEnd + 1;
+    return {
+      sectionIndex: site.sectionIndex,
+      blockIndex: site.blockIndex,
+      rowIndices: Array.from({ length: delta }, (_, i) => first + i)
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 const WATCHED: ReadonlyArray<'insertRow' | 'deleteRow'> = [
   'insertRow',
@@ -49,13 +127,14 @@ function allowRowCommandDuringReplay(
 }
 
 /**
- * Run `onRowChange` immediately after each native insert or delete. Returns a
- * function that puts the original methods back, so a detached instance is left
- * as we found it.
+ * Run `onRowChange` immediately after each native insert or delete. An insert
+ * passes the rows it created, so adoption re-adopts exactly those; a delete
+ * passes nothing, which also clears any stale hint. Returns a function that
+ * puts the original methods back, so a detached instance is left as we found it.
  */
 export function watchRowCommands(
   editor: SyncfusionEditorLike,
-  onRowChange: () => void
+  onRowChange: (insertedRows?: InsertedRowsHint) => void
 ): () => void {
   const editorModule = editor.editorModule as
     | Record<string, RowCommand | undefined>
@@ -78,14 +157,18 @@ export function watchRowCommands(
       }
       running = true;
       try {
+        // Captured during replay too: a REDO re-invokes insertRow and re-clones
+        // the row, so redo needs attribution as much as the first insert did.
+        // Recording positions is side-effect-free; the caller gates flushing.
+        const site = name === 'insertRow' ? captureInsertSite(editor) : null;
         const result = allowRowCommandDuringReplay(editor, () =>
           original.apply(this, args)
         );
         pruneDetachedContentControls(editor);
-        const history = editor.editorHistoryModule;
-        if (history?.isUndoing || history?.isRedoing) return result;
         try {
-          onRowChange();
+          onRowChange(
+            site ? insertedRowsHint(editor, site, args[0] === true) : undefined
+          );
         } catch {
           // A failure here must never break the user's row command.
         }
