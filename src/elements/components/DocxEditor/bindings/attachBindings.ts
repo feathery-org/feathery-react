@@ -215,6 +215,8 @@ export function attachBindings(
   const unwatchRowCommands = watchRowCommands(editor, (insertedRows) => {
     // An insert says which rows it created, so adoption re-adopts exactly
     // those; any other row command clears the hint before indices go stale.
+    // Fires during undo/redo replay too (a redone insert needs its hint);
+    // the replay check below is what keeps flushes out of the history stream.
     controller.noteInsertedRows(insertedRows ?? null);
     if (controller.phase !== 'idle') return;
     const history = editor.editorHistoryModule;
