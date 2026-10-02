@@ -1046,7 +1046,17 @@ describe('IntegrationClient', () => {
       // to the generate endpoint exactly as configured, without reshaping.
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
-      const mixedDocuments = ['uuid-1', { kind: 'quik' }, 'uuid-2'];
+      const mixedDocuments = [
+        'uuid-1',
+        {
+          kind: 'quik',
+          forms: [
+            { id: 44249, fields: { '1own.FName': 'First' } },
+            { id: 44249, fields: {} }
+          ]
+        },
+        'uuid-2'
+      ];
       const action = {
         documents: mixedDocuments,
         run_async: false,
