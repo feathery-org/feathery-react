@@ -1,8 +1,6 @@
 import React from 'react';
 import type { Decorator, Preview } from '@storybook/react-webpack5';
-import { themePresets } from '../stories/theme/tokens';
 import {
-  BACKEND_THEME,
   backendThemeLoader,
   canvasFor,
   globalStylesFor,
@@ -81,18 +79,9 @@ const withThemeCanvas: Decorator = (Story, context) => {
 
 const preview: Preview = {
   globalTypes: {
-    theme: {
-      description: 'Theme the stories are styled with',
-      toolbar: {
-        title: 'Theme',
-        icon: 'paintbrush',
-        items: [
-          ...Object.keys(themePresets),
-          { value: BACKEND_THEME, title: 'backend (from .env.local theme)' }
-        ],
-        dynamicTitle: true
-      }
-    }
+    // No `toolbar`: manager.tsx draws the picker, since the backend's themes
+    // are only known once fetched
+    theme: { description: 'Theme the stories are styled with' }
   },
   initialGlobals: { theme: 'default' },
   loaders: [backendThemeLoader],

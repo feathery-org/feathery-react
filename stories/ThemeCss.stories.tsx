@@ -6,7 +6,7 @@ import { loadedBackendTheme } from './theme/storyHelpers';
 
 // Plain HTML styled only by CSS generated from the backend theme's style keys,
 // with no Feathery components involved. Shows what themeCss.ts produces and
-// that it holds up outside the SDK. Needs the toolbar on "backend".
+// that it holds up outside the SDK. Needs the toolbar on a backend theme.
 
 // Not `css`: emotion's JSX runtime claims that prop on every element
 const Sheet = ({ sheet }: { sheet: string }) => (
@@ -65,7 +65,7 @@ const meta: Meta = {
     if (!theme) {
       return (
         <p style={{ font: '14px system-ui' }}>
-          Switch the Theme toolbar to <strong>backend</strong> to map a theme
+          Switch the Theme toolbar to a <strong>backend</strong> theme to map it
           from the API onto plain HTML.
         </p>
       );

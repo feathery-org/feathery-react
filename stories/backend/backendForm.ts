@@ -1,4 +1,10 @@
 import { loadGoogleFonts } from '../../src/utils/fonts';
+import {
+  backendConfig,
+  getJson,
+  listThemes,
+  MISSING_API_KEY
+} from './themeApi';
 
 // Reads a theme from a Feathery backend through the public theme API
 // (GET /api/theme/ and /api/theme/<id>/), which resolves its element styles
@@ -30,14 +36,6 @@ export interface BackendTheme {
   /** Styles for each non-field element type (tab, table, image...) */
   elements: Record<string, BackendElement>;
 }
-
-export const backendConfig = {
-  apiUrl:
-    process.env.STORYBOOK_FEATHERY_API_URL || 'http://localhost:8006/api/',
-  apiKey: process.env.STORYBOOK_FEATHERY_API_KEY || '',
-  /** Theme id or name; blank picks the org's first theme */
-  theme: process.env.STORYBOOK_FEATHERY_THEME || ''
-};
 
 interface ResolvedElement {
   level_2: string;
@@ -192,26 +190,8 @@ function loadThemeFonts(theme: BackendTheme) {
   );
 }
 
-async function getJson(path: string) {
-  const { apiUrl, apiKey } = backendConfig;
-  const response = await fetch(`${apiUrl}${path}`, {
-    headers: { Authorization: `Token ${apiKey}` }
-  });
-  const res = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = Array.isArray(res)
-      ? res[0]?.message
-      : res.detail ?? res.message;
-    throw new Error(
-      `${response.status} from ${apiUrl}${path}${detail ? `: ${detail}` : ''}`
-    );
-  }
-  return res;
-}
-
 async function findTheme(wanted: string) {
-  const res = await getJson('theme/');
-  const themes: any[] = Array.isArray(res) ? res : res.results ?? [];
+  const themes = await listThemes();
   if (!themes.length) throw new Error('The API key’s org has no themes');
   if (!wanted) return themes[0];
   const theme = themes.find(({ id, name }) => id === wanted || name === wanted);
@@ -231,11 +211,7 @@ export function fetchBackendTheme(
   themeKey = backendConfig.theme
 ): Promise<BackendTheme> {
   if (!backendConfig.apiKey) {
-    return Promise.reject(
-      new Error(
-        'Set STORYBOOK_FEATHERY_API_KEY in .env.local (see .env.example), then restart Storybook.'
-      )
-    );
+    return Promise.reject(new Error(MISSING_API_KEY));
   }
 
   if (!cache[themeKey]) {

@@ -6,11 +6,9 @@ import {
   BackendTheme,
   fetchBackendTheme
 } from '../backend/backendForm';
+import { backendThemeKey } from '../backend/themeApi';
 
 type Styles = Record<string, any>;
-
-/** Toolbar value that styles stories from a real form instead of a preset */
-export const BACKEND_THEME = 'backend';
 
 /**
  * The form builder renders elements with editMode='editable'; a live form
@@ -31,17 +29,18 @@ export const editModeArgType = {
 };
 
 export const isBackendTheme = (context: StoryContext) =>
-  context.globals.theme === BACKEND_THEME;
+  backendThemeKey(context.globals.theme) !== undefined;
 
 /**
- * Fetches the backend theme once per theme when the toolbar is on
- * "backend". Failures are handed to the canvas decorator to explain rather
+ * Fetches the toolbar's backend theme, once per theme, when it's on one
+ * rather than a preset. Failures are handed to the canvas decorator to explain rather
  * than thrown, which would blank the story.
  */
 export const backendThemeLoader: Loader = async (context) => {
-  if (!isBackendTheme(context)) return {};
+  const themeKey = backendThemeKey(context.globals.theme);
+  if (themeKey === undefined) return {};
   try {
-    return { backendTheme: await fetchBackendTheme() };
+    return { backendTheme: await fetchBackendTheme(themeKey) };
   } catch (error: any) {
     return { backendError: error?.message ?? String(error) };
   }
@@ -52,7 +51,7 @@ export const loadedBackendTheme = (
 ): BackendTheme | undefined =>
   isBackendTheme(context) ? context.loaded?.backendTheme : undefined;
 
-/** The toolbar preset's tokens; unused while the toolbar is on "backend" */
+/** The toolbar preset's tokens; unused while the toolbar is on a backend theme */
 export const themeFor = (context: StoryContext) =>
   resolveTheme(isBackendTheme(context) ? undefined : context.globals.theme);
 
