@@ -6,7 +6,6 @@
 // that the reconcile it schedules is the restricted kind, neither of which needs
 // Syncfusion to verify.
 import { createCommitTriggers } from '../commitTriggers';
-import { formatTag } from '../core/tagDsl';
 import { ReconciliationController } from '../controller';
 import { SyncfusionEditorLike } from '../editorAdapter';
 import { watchRowCommands } from '../rowCommandWatch';
@@ -147,94 +146,114 @@ describe('watchRowCommands', () => {
     expect(order).toEqual(['command', 'adopt']);
   });
 
-  describe('insert-above on a bound row', () => {
-    const boundTag = formatTag({
-      version: 2,
-      kind: 'field',
-      name: 'amount',
-      fieldType: { kind: 'currency', currency: 'USD', scale: 2 },
-      isEditable: true,
-      isDeletable: true,
-      isGlobal: false,
-      options: { row: 'r-1' }
-    });
-    const plainRow = { cells: [{ blocks: [{ inlines: [] }] }] };
-    const boundRow = {
-      cells: [
-        {
-          blocks: [
+  describe('inserted-row attribution', () => {
+    /**
+     * Editor over a one-table doc whose row count lives in `state`, so the
+     * mocked native command can "insert" by bumping it; caret on row 2.
+     */
+    function editorWithTable(original: jest.Mock, rowsBefore: number) {
+      const state = { rows: rowsBefore };
+      const editor = fakeEditor(original);
+      (editor as any).serialize = () =>
+        JSON.stringify({
+          sections: [
             {
-              inlines: [
+              blocks: [
                 {
-                  contentControlProperties: { tag: boundTag },
-                  inlines: [{ text: '$50.00' }]
+                  rows: Array.from({ length: state.rows }, () => ({
+                    cells: []
+                  }))
                 }
               ]
             }
           ]
-        }
-      ]
-    };
-    const docWithBoundRow = {
-      sections: [{ blocks: [{ rows: [plainRow, boundRow] }] }]
-    };
-
-    /** Caret in (section 0, block 0, row) of the doc above. */
-    function editorAt(row: number, original: jest.Mock) {
-      const editor = fakeEditor(original);
-      (editor as any).serialize = () => JSON.stringify(docWithBoundRow);
-      (editor as any).selection = { startOffset: `0;0;${row};0;0;0` };
+        });
+      (editor as any).selection = {
+        startOffset: '0;0;2;0;0;0',
+        endOffset: '0;0;2;0;0;0'
+      };
       (editor as any).documentHelper = {
         contentControlCollection: [{ contentControlProperties: {} }]
       };
-      return editor;
+      return { editor, state };
     }
 
-    it('refuses it and tells the host, leaving the document untouched', () => {
-      const original = jest.fn(() => 'ok');
-      const editor = editorAt(1, original);
-      let blocked = 0;
-      watchRowCommands(editor, () => undefined, {
-        onInsertAboveBlocked: () => (blocked += 1)
+    it('reports the inserted row for insert-above', () => {
+      const original = jest.fn();
+      const { editor, state } = editorWithTable(original, 4);
+      original.mockImplementation(() => {
+        state.rows += 1;
+        return 'ok';
       });
-      expect((editor as any).editorModule.insertRow(true, 1)).toBeUndefined();
-      expect(original).not.toHaveBeenCalled();
-      expect(blocked).toBe(1);
-    });
-
-    it('still allows insert-below on the same row', () => {
-      const original = jest.fn(() => 'ok');
-      const editor = editorAt(1, original);
-      let blocked = 0;
-      watchRowCommands(editor, () => undefined, {
-        onInsertAboveBlocked: () => (blocked += 1)
-      });
-      expect((editor as any).editorModule.insertRow(false, 1)).toBe('ok');
-      expect(original).toHaveBeenCalledWith(false, 1);
-      expect(blocked).toBe(0);
-    });
-
-    it('still allows insert-above on an unbound row', () => {
-      const original = jest.fn(() => 'ok');
-      const editor = editorAt(0, original);
-      watchRowCommands(editor, () => undefined, {
-        onInsertAboveBlocked: () => {
-          throw new Error('must not block');
-        }
-      });
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
       expect((editor as any).editorModule.insertRow(true, 1)).toBe('ok');
+      expect(hints).toEqual([
+        { sectionIndex: 0, blockIndex: 0, rowIndices: [2] }
+      ]);
     });
 
-    it('never blocks history replay', () => {
-      const original = jest.fn(() => 'ok');
-      const editor = editorAt(1, original);
-      (editor as any).editorHistoryModule = { isRedoing: true };
-      watchRowCommands(editor, () => undefined, {
-        onInsertAboveBlocked: () => {
-          throw new Error('must not block');
-        }
+    it('reports the row below for insert-below', () => {
+      const original = jest.fn();
+      const { editor, state } = editorWithTable(original, 4);
+      original.mockImplementation(() => {
+        state.rows += 1;
+        return 'ok';
       });
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      (editor as any).editorModule.insertRow(false, 1);
+      expect(hints).toEqual([
+        { sectionIndex: 0, blockIndex: 0, rowIndices: [3] }
+      ]);
+    });
+
+    it('reports every row of a multi-row insert, measured not assumed', () => {
+      const original = jest.fn();
+      const { editor, state } = editorWithTable(original, 4);
+      original.mockImplementation(() => {
+        state.rows += 3;
+        return 'ok';
+      });
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      (editor as any).editorModule.insertRow(true, 3);
+      expect(hints).toEqual([
+        { sectionIndex: 0, blockIndex: 0, rowIndices: [2, 3, 4] }
+      ]);
+    });
+
+    it('reports no hint when the command inserted nothing', () => {
+      const original = jest.fn(() => undefined); // refused by Syncfusion
+      const { editor } = editorWithTable(original, 4);
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      (editor as any).editorModule.insertRow(true, 1);
+      expect(hints).toEqual([undefined]);
+    });
+
+    it('reports no hint for a delete, which clears a stale one downstream', () => {
+      const original = jest.fn(() => 'deleted');
+      const { editor } = editorWithTable(jest.fn(), 4);
+      (editor as any).editorModule = { deleteRow: original };
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      (editor as any).editorModule.deleteRow();
+      expect(hints).toEqual([undefined]);
+    });
+
+    it('reports no hint when the selection is not a top-level table cell', () => {
+      const original = jest.fn();
+      const { editor, state } = editorWithTable(original, 4);
+      original.mockImplementation(() => {
+        state.rows += 1;
+        return 'ok';
+      });
+      (editor as any).selection = { startOffset: '0;0;0', endOffset: '0;0;0' };
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
       expect((editor as any).editorModule.insertRow(true, 1)).toBe('ok');
+      expect(hints).toEqual([undefined]);
     });
   });
 

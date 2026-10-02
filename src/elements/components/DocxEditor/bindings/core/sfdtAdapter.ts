@@ -893,7 +893,7 @@ function cellPlainText(cell: SfdtCell): string {
 }
 
 /** A row-scoped field/formula parsed from a control tag, else null. */
-export function rowScopedDef(tag: unknown): BoundDefinition | null {
+function rowScopedDef(tag: unknown): BoundDefinition | null {
   let def: Definition | null = null;
   try {
     def = parseTag(String(tag || ''));
@@ -1246,6 +1246,17 @@ function syntheticColumnTemplate(
   return { cells, rowFormat: {} } as unknown as SfdtRow;
 }
 
+/**
+ * Which rows a just-executed native insert created, recorded by the insertRow
+ * wrap where above/below and the selection are still known. Row indices are
+ * positions in the table at (sectionIndex, blockIndex) at serialize time.
+ */
+export interface InsertedRowsHint {
+  sectionIndex: number;
+  blockIndex: number;
+  rowIndices: number[];
+}
+
 export function adoptUnboundRows(
   sfdt: SfdtDocument,
   tableId: string,
@@ -1255,7 +1266,8 @@ export function adoptUnboundRows(
    * Row shape from an earlier reconcile, used when the user has deleted every
    * bound row - the document then holds no copy of it at all.
    */
-  fallbackTemplate?: SfdtRow
+  fallbackTemplate?: SfdtRow,
+  insertedRows?: InsertedRowsHint | null
 ): AdoptionResult {
   const table = index.tables.get(tableId);
   if (!table || !table.tablePath)
@@ -1342,9 +1354,24 @@ export function adoptUnboundRows(
 
   // Syncfusion's insert-row copies an editable control into the new row, so it
   // arrives with a row id duplicating a sibling. One occurrence of the id is the
-  // real bound row; the other is the copy, re-adopted fresh. By default the
-  // LATER occurrence is the copy, but an insert-above places the copy BEFORE the
-  // original, so an explicit inserted-row hint overrides which one is the copy.
+  // real bound row; the other is the copy, re-adopted fresh. The insertRow wrap
+  // records WHICH rows the user just inserted (the document alone cannot tell:
+  // insert-above and copy-below serialize identically), so the hint names the
+  // copies. Without one, or when it fails validation, the LATER occurrence is
+  // the copy - correct for insert-below and .docx round trips.
+  const hintedRows =
+    insertedRows &&
+    isPathPrefix(
+      [
+        'sections',
+        insertedRows.sectionIndex,
+        'blocks',
+        insertedRows.blockIndex
+      ],
+      table.tablePath
+    )
+      ? new Set(insertedRows.rowIndices)
+      : null;
   const copyIndices = new Set<number>();
   const indicesById = new Map<string, number[]>();
   allRows.forEach((row, r) => {
@@ -1354,7 +1381,16 @@ export function adoptUnboundRows(
   });
   for (const indices of indicesById.values()) {
     if (indices.length < 2) continue;
-    for (const idx of indices.slice(1)) copyIndices.add(idx);
+    // A valid hint leaves at least one original; one covering every occurrence
+    // (or none) is stale and position decides instead.
+    const hinted = hintedRows
+      ? indices.filter((i) => hintedRows.has(i))
+      : [];
+    const copies =
+      hinted.length && hinted.length < indices.length
+        ? hinted
+        : indices.slice(1);
+    for (const idx of copies) copyIndices.add(idx);
   }
 
   for (let r = 0; r < allRows.length; r++) {

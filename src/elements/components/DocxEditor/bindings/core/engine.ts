@@ -13,6 +13,7 @@ import {
   adoptUnboundRows,
   BindingIndex,
   getAt,
+  InsertedRowsHint,
   NativeStructuralMutation,
   Occurrence,
   scanBindings,
@@ -91,6 +92,8 @@ export interface ApplyRulesOptions {
    * original bindings.
    */
   adoptRows?: boolean;
+  /** Rows a just-executed native insert created, from the insertRow wrap. */
+  insertedRows?: InsertedRowsHint | null;
 }
 
 export interface ApplyRulesResult {
@@ -261,7 +264,8 @@ export function applyRules(
     prevValues = null,
     mode = 'commit',
     rowTemplates = null,
-    adoptRows = true
+    adoptRows = true,
+    insertedRows = null
   }: ApplyRulesOptions = {}
 ): ApplyRulesResult {
   const diagnostics: Diagnostic[] = [];
@@ -286,7 +290,8 @@ export function applyRules(
       tableId,
       index,
       undefined,
-      nextTemplates.get(tableId)
+      nextTemplates.get(tableId),
+      insertedRows
     );
     for (const skipped of result.skipped) {
       diag(

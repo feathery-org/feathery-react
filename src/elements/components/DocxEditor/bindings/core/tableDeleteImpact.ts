@@ -9,7 +9,6 @@
 // on reference resolution; nothing here re-implements it.
 
 import { applyRules, ApplyRulesResult } from './engine';
-import { rowScopedDef } from './sfdtAdapter';
 import { parseTag } from './tagDsl';
 import { SfdtBlock, SfdtDocument, SfdtRow } from './sfdtTypes';
 
@@ -27,18 +26,12 @@ export interface TableDeleteImpact {
   orphans: OrphanedFormula[];
 }
 
-/**
- * True when the table row at (section, block, row) carries row-scoped binding
- * controls. Syncfusion's insert-above clones them into the new row, and a
- * snapshot cannot tell the copy from the original - the live editor refuses
- * that insert rather than silently moving the original's value.
- */
-export function rowCarriesRowBindings(
+/** Rows of the table at (section, block): a bare table or a cc-wrapped one. */
+export function tableRowsAt(
   doc: SfdtDocument,
   sectionIndex: number,
-  blockIndex: number,
-  rowIndex: number
-): boolean {
+  blockIndex: number
+): SfdtRow[] | null {
   const block = tableBlockAt(doc, sectionIndex, blockIndex);
   const rows = !block
     ? undefined
@@ -49,28 +42,7 @@ export function rowCarriesRowBindings(
           Array.isArray((child as SfdtBlock).rows)
         ) as SfdtBlock
       )?.rows;
-  const row = (Array.isArray(rows) ? rows[rowIndex] : undefined) as
-    | SfdtRow
-    | undefined;
-  if (!row) return false;
-  let found = false;
-  const visit = (node: unknown): void => {
-    if (found || !node || typeof node !== 'object') return;
-    if (Array.isArray(node)) {
-      node.forEach(visit);
-      return;
-    }
-    const record = node as { contentControlProperties?: { tag?: unknown } };
-    if (record.contentControlProperties) {
-      if (rowScopedDef(record.contentControlProperties.tag)) {
-        found = true;
-        return;
-      }
-    }
-    Object.values(record).forEach(visit);
-  };
-  visit(row);
-  return found;
+  return Array.isArray(rows) ? (rows as SfdtRow[]) : null;
 }
 
 /** The block when it is a table or a block content control wrapping one. */

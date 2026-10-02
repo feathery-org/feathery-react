@@ -17,7 +17,8 @@
 // leaves redo a no-op and strips remaining bindings. Let the native history
 // finish; commitTriggers schedules a formulas-only self-heal afterwards.
 
-import { rowCarriesRowBindings } from './core/tableDeleteImpact';
+import { InsertedRowsHint } from './core/sfdtAdapter';
+import { tableRowsAt } from './core/tableDeleteImpact';
 import { SfdtDocument } from './core/sfdtTypes';
 import {
   pruneDetachedContentControls,
@@ -28,42 +29,74 @@ import { isApplyingNativeStructuralMutations } from './nativeStructuralAdapter';
 
 type RowCommand = (...args: unknown[]) => unknown;
 
-export interface RowCommandWatchOptions {
-  /**
-   * Fired when an insert-above on a bound row is refused (see
-   * blocksInsertAbove below), so the host can explain instead of a silent
-   * no-op.
-   */
-  onInsertAboveBlocked?: () => void;
-}
-
 /** A top-level table cell's hierarchical offset: s;b;row;cell;para;offset. */
 const CELL_OFFSET_PARTS = 6;
 
 /**
- * Insert-above clones the selected row's controls into the new row, giving two
- * rows the same row id. The reconcile snapshot cannot tell which is the copy -
- * insert-above and copy-below produce identical documents - so adopting would
- * silently move the original's value into the new row. Until the live insert
- * can be attributed reliably, refuse insert-above on a bound row; insert-below
- * attributes correctly (later occurrence is the copy) and stays available.
+ * The selection's table location before an insert: the one moment above/below
+ * and the cursor row are both known. The reconcile snapshot alone cannot tell
+ * an inserted clone from its original (insert-above and copy-below serialize
+ * identically), so this is where the truth gets recorded.
  */
-function blocksInsertAbove(editor: SyncfusionEditorLike): boolean {
+interface InsertSite {
+  sectionIndex: number;
+  blockIndex: number;
+  rowStart: number;
+  rowEnd: number;
+  rowCount: number;
+}
+
+function captureInsertSite(editor: SyncfusionEditorLike): InsertSite | null {
   try {
     const anyEditor = editor as SyncfusionEditorLike & Record<string, any>;
-    if (!editor.documentHelper?.contentControlCollection?.length) return false;
-    const parts = String(anyEditor.selection?.startOffset ?? '')
-      .split(';')
-      .map(Number);
-    if (
-      parts.length !== CELL_OFFSET_PARTS ||
-      parts.some((n) => !Number.isInteger(n))
-    )
-      return false;
+    if (!editor.documentHelper?.contentControlCollection?.length) return null;
+    const offsets = [
+      anyEditor.selection?.startOffset,
+      anyEditor.selection?.endOffset
+    ].map((offset) => String(offset ?? '').split(';').map(Number));
+    for (const parts of offsets) {
+      if (
+        parts.length !== CELL_OFFSET_PARTS ||
+        parts.some((n) => !Number.isInteger(n))
+      )
+        return null;
+    }
+    const [start, end] = offsets;
+    if (start[0] !== end[0] || start[1] !== end[1]) return null;
     const doc = JSON.parse(editor.serialize()) as SfdtDocument;
-    return rowCarriesRowBindings(doc, parts[0], parts[1], parts[2]);
+    const rows = tableRowsAt(doc, start[0], start[1]);
+    if (!rows) return null;
+    return {
+      sectionIndex: start[0],
+      blockIndex: start[1],
+      rowStart: Math.min(start[2], end[2]),
+      rowEnd: Math.max(start[2], end[2]),
+      rowCount: rows.length
+    };
   } catch {
-    return false;
+    return null;
+  }
+}
+
+/** Which rows the insert created: measured, not guessed from the count arg. */
+function insertedRowsHint(
+  editor: SyncfusionEditorLike,
+  site: InsertSite,
+  above: boolean
+): InsertedRowsHint | undefined {
+  try {
+    const doc = JSON.parse(editor.serialize()) as SfdtDocument;
+    const rows = tableRowsAt(doc, site.sectionIndex, site.blockIndex);
+    const delta = rows ? rows.length - site.rowCount : 0;
+    if (delta <= 0) return undefined;
+    const first = above ? site.rowStart : site.rowEnd + 1;
+    return {
+      sectionIndex: site.sectionIndex,
+      blockIndex: site.blockIndex,
+      rowIndices: Array.from({ length: delta }, (_, i) => first + i)
+    };
+  } catch {
+    return undefined;
   }
 }
 
@@ -90,14 +123,14 @@ function allowRowCommandDuringReplay(
 }
 
 /**
- * Run `onRowChange` immediately after each native insert or delete. Returns a
- * function that puts the original methods back, so a detached instance is left
- * as we found it.
+ * Run `onRowChange` immediately after each native insert or delete. An insert
+ * passes the rows it created, so adoption re-adopts exactly those; a delete
+ * passes nothing, which also clears any stale hint. Returns a function that
+ * puts the original methods back, so a detached instance is left as we found it.
  */
 export function watchRowCommands(
   editor: SyncfusionEditorLike,
-  onRowChange: () => void,
-  options: RowCommandWatchOptions = {}
+  onRowChange: (insertedRows?: InsertedRowsHint) => void
 ): () => void {
   const editorModule = editor.editorModule as
     | Record<string, RowCommand | undefined>
@@ -118,23 +151,14 @@ export function watchRowCommands(
         pruneDetachedContentControls(editor);
         return result;
       }
-      const replayHistory = editor.editorHistoryModule;
-      if (
-        name === 'insertRow' &&
-        args[0] === true &&
-        !replayHistory?.isUndoing &&
-        !replayHistory?.isRedoing &&
-        blocksInsertAbove(editor)
-      ) {
-        try {
-          options.onInsertAboveBlocked?.();
-        } catch {
-          // The hint must never break the refusal itself.
-        }
-        return undefined;
-      }
       running = true;
       try {
+        const preHistory = editor.editorHistoryModule;
+        const replaying = !!preHistory?.isUndoing || !!preHistory?.isRedoing;
+        const site =
+          name === 'insertRow' && !replaying
+            ? captureInsertSite(editor)
+            : null;
         const result = allowRowCommandDuringReplay(editor, () =>
           original.apply(this, args)
         );
@@ -142,7 +166,9 @@ export function watchRowCommands(
         const history = editor.editorHistoryModule;
         if (history?.isUndoing || history?.isRedoing) return result;
         try {
-          onRowChange();
+          onRowChange(
+            site ? insertedRowsHint(editor, site, args[0] === true) : undefined
+          );
         } catch {
           // A failure here must never break the user's row command.
         }
