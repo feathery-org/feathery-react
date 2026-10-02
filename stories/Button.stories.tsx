@@ -48,8 +48,3 @@ export default meta;
 type Story = StoryObj<Args>;
 
 export const Primary: Story = {};
-
-export const Disabled: Story = { args: { disabled: true } };
-
-/** As the form builder canvas renders it: the label is editable in place */
-export const Editable: Story = { args: { editMode: 'editable' } };

@@ -47,11 +47,7 @@ export function fieldMeta(types: string[]): Omit<Meta<FieldArgs>, 'title'> {
     ) => {
       const styling = styleElement(context, fieldStyling(fieldType));
       styling.styles.mark_required_asterisk = required;
-      const element = specFieldElement(
-        fieldType,
-        { label, required },
-        styling
-      );
+      const element = specFieldElement(fieldType, { label, required }, styling);
       return (
         <div style={{ width }}>
           <StoryField

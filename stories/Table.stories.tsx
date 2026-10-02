@@ -46,14 +46,3 @@ type Story = StoryObj<Args>;
 
 /** A live form's table, over the seeded rows */
 export const Live: Story = {};
-
-/** As the form builder canvas renders it: the builder's example rows */
-export const Editable: Story = { args: { editMode: 'editable' } };
-
-export const Spreadsheet: Story = { args: { displayMode: 'spreadsheet' } };
-
-export const SpreadsheetEditable: Story = {
-  args: { displayMode: 'spreadsheet', editMode: 'editable' }
-};
-
-export const Paginated: Story = { args: { pagination: 2 } };

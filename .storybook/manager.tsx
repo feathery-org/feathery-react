@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+/** @jsxRuntime automatic */
 // The manager is bundled apart from the stories, without emotion's css prop,
 // so it uses React's JSX runtime rather than tsconfig's @emotion/react.
 import React, { useEffect, useState } from 'react';

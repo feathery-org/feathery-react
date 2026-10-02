@@ -41,17 +41,3 @@ export default meta;
 type Story = StoryObj<Args>;
 
 export const Heading: Story = {};
-
-export const Body: Story = {
-  args: {
-    variant: 'body',
-    text: 'We use this information to tailor the rest of the form to you. It only takes a couple of minutes.'
-  }
-};
-
-/** As the form builder canvas renders it: the text is editable in place */
-export const Editable: Story = { args: { editMode: 'editable' } };
-
-export const Caption: Story = {
-  args: { variant: 'caption', text: 'Step 2 of 4' }
-};

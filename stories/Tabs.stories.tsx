@@ -59,8 +59,3 @@ export default meta;
 type Story = StoryObj<Args>;
 
 export const Horizontal: Story = {};
-
-export const Vertical: Story = { args: { direction: 'vertical', width: 200 } };
-
-/** As the form builder canvas renders it */
-export const Editable: Story = { args: { editMode: 'editable' } };

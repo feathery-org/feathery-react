@@ -37,5 +37,3 @@ export default meta;
 type Story = StoryObj<Args>;
 
 export const Continuous: Story = {};
-
-export const Segmented: Story = { args: { progress: 50, segments: 4 } };

@@ -49,11 +49,7 @@ const meta: Meta<Args> = {
     );
     return (
       <div style={{ width }}>
-        <StoryField
-          element={element}
-          disabled={disabled}
-          editMode={editMode}
-        />
+        <StoryField element={element} disabled={disabled} editMode={editMode} />
       </div>
     );
   }
@@ -63,25 +59,3 @@ export default meta;
 type Story = StoryObj<Args>;
 
 export const Email: Story = {};
-
-export const Required: Story = {
-  args: {
-    label: 'Full name',
-    placeholder: 'Jane Doe',
-    fieldType: 'text_field',
-    required: true
-  }
-};
-
-export const Integer: Story = {
-  args: {
-    label: 'Household size',
-    placeholder: '0',
-    fieldType: 'integer_field'
-  }
-};
-
-export const Disabled: Story = { args: { disabled: true } };
-
-/** As the form builder canvas renders it: the input ignores the pointer */
-export const Editable: Story = { args: { editMode: 'editable' } };

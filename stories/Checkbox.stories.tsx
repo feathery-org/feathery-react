@@ -24,13 +24,7 @@ const meta: Meta<Args> = {
       { key: 'story_checkbox', label },
       styleElement(context, checkboxStyling)
     );
-    return (
-      <StoryField
-        element={element}
-        value={checked}
-        disabled={disabled}
-      />
-    );
+    return <StoryField element={element} value={checked} disabled={disabled} />;
   }
 };
 
@@ -38,7 +32,3 @@ export default meta;
 type Story = StoryObj<Args>;
 
 export const Checked: Story = {};
-
-export const Unchecked: Story = { args: { checked: false } };
-
-export const Disabled: Story = { args: { disabled: true } };
