@@ -27,6 +27,7 @@ import internalState, {
 } from './internalState';
 import { validateElements } from './validation';
 import { STEP_EVENT_SKIP } from './stepEvents';
+import { buildHubFileRefs } from './hubFileRefs';
 import {
   FillQuikParams,
   ForwardInboxEmailOptions,
@@ -238,22 +239,28 @@ export const getFormContext = (formUuid: string) => {
       formState.client.setCollaboratorAsCompleted(templateId),
     setTaskStatus: (templateId: string, taskStatusId: string) =>
       formState.client.setTaskStatus(templateId, taskStatusId),
-    dataHubAction: ({
+    dataHubAction: async ({
       hubId,
       operation,
       entryId,
       data,
       where,
       verification
-    }: HubActionOptions) =>
-      formState.client.dataHubAction({
+    }: HubActionOptions) => {
+      // A form file field in `data` is filed from the server's copy, so it
+      // only has to be uploaded if this form hasn't submitted it yet.
+      const refs = buildHubFileRefs(data, formState.steps);
+      if (refs.submissions.length)
+        await formState.client.submitFiles(refs.submissions);
+      return formState.client.dataHubAction({
         hubId,
         operation,
         entryId,
-        data,
+        data: refs.data,
         where,
         verification
-      }),
+      });
+    },
     generateDocuments: ({
       documentIds: documentSources,
       signers,
