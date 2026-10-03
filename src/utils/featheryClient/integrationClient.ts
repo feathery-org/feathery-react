@@ -42,6 +42,25 @@ import { withLinkRequestHeaders } from '../accessLinkRequest';
 // The SDK forwards these verbatim (action config -> request field).
 export type GenerateDocumentRef = string | { kind: string; [key: string]: any };
 
+export interface ReviewRecipientUpdate {
+  recipient_index: number;
+  name: string;
+  email: string;
+  routing_order: number;
+}
+
+export interface FinalizeEnvelopeReviewOptions {
+  envelopes: {
+    envelopeId: string;
+    signerId?: string;
+    recipients?: ReviewRecipientUpdate[];
+  }[];
+  envelopeAction: 'sign' | 'fill' | 'download' | 'save';
+  draft?: boolean;
+  emailSubject?: string;
+  emailBlurb?: string;
+}
+
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
   'Failed to fetch',
@@ -936,16 +955,10 @@ export default class IntegrationClient {
     {
       envelopes,
       envelopeAction,
-      draft = false
-    }: {
-      // signerId: the filler's own signing token for that envelope, as handed
-      // back by generate. Keeps finalize from emailing them an invite to a
-      // document they open and sign inline.
-      envelopes: { envelopeId: string; signerId?: string }[];
-      envelopeAction: 'sign' | 'fill' | 'download' | 'save';
-      // DocuSign sign only: create the envelope as a draft instead of sending.
-      draft?: boolean;
-    }
+      draft = false,
+      emailSubject,
+      emailBlurb
+    }: FinalizeEnvelopeReviewOptions
   ) {
     if (!envelopes.length) {
       return { status: 'error', message: 'No envelopes to finalize' };
@@ -959,7 +972,8 @@ export default class IntegrationClient {
       envelopes: envelopes.map((envelope) => ({
         envelope_id: envelope.envelopeId,
         // Omitted rather than nulled: the backend rejects an explicit null.
-        ...(envelope.signerId ? { signer_id: envelope.signerId } : {})
+        ...(envelope.signerId ? { signer_id: envelope.signerId } : {}),
+        ...(envelope.recipients ? { recipients: envelope.recipients } : {})
       })),
       envelope_action: envelopeAction,
       merge_docs: action.merge_docs ?? false,
@@ -971,8 +985,10 @@ export default class IntegrationClient {
     if (action.sign_method) payload.sign_method = action.sign_method;
     // Carried to finalize too: an open_in_editor flow does not build the
     // DocuSign envelope until the filler presses Sign.
-    if (action.email_subject) payload.email_subject = action.email_subject;
-    if (action.email_blurb) payload.email_blurb = action.email_blurb;
+    if (emailSubject !== undefined || action.email_subject)
+      payload.email_subject = emailSubject ?? action.email_subject;
+    if (emailBlurb !== undefined || action.email_blurb)
+      payload.email_blurb = emailBlurb ?? action.email_blurb;
 
     const url = `${getApiUrl()}document/form/finalize/`;
     const options = {
