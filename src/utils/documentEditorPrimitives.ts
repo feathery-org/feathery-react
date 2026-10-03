@@ -2605,6 +2605,9 @@ export function writeTableLayout(
     layout.allowAutoFit ? 'FitToContents' : 'FixedColumnWidth'
   );
   const columnWidths = layout.columnWidths ?? [];
+  if (columnWidths.length && editor.selection?.cellFormat)
+    editor.selection.cellFormat.preferredWidthType =
+      layout.columnWidthType ?? 'Auto';
   const table = liveTableWidgetAt(editor, tableAnchor);
   (table?.childWidgets ?? []).forEach((row: any, rowIndex: number) => {
     let logicalColumn = Math.max(0, Number(row?.rowFormat?.gridBefore) || 0);
