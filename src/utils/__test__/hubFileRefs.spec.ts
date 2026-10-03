@@ -67,6 +67,11 @@ describe('buildHubFileRefs', () => {
     expect(some.data).toEqual({
       docs: [{ form_field: 'uploads', indices: [2] }]
     });
+    // A file named twice is still one row, not the whole field.
+    const repeated = buildHubFileRefs({ docs: [fileB, fileB] }, steps);
+    expect(repeated.data).toEqual({
+      docs: [{ form_field: 'uploads', indices: [2] }]
+    });
   });
 
   it('leaves values that are not form files untouched', () => {
