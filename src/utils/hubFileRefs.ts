@@ -52,13 +52,11 @@ function matchFieldFiles(value: any, fileKeys: string[]) {
 function toRefs(matched: Record<string, number[]>): HubFileRef[] {
   return Object.entries(matched).map(([key, indices]) => {
     const all = asList(fieldValues[key]).filter((v) => v !== null && v !== '');
+    const unique = [...new Set(indices)].sort((a, b) => a - b);
     // Every file of the field is just the field; a subset names its rows.
-    return indices.length === all.length
+    return unique.length === all.length
       ? { form_field: key }
-      : {
-          form_field: key,
-          indices: [...new Set(indices)].sort((a, b) => a - b)
-        };
+      : { form_field: key, indices: unique };
   });
 }
 
