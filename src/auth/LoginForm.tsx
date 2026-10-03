@@ -14,14 +14,11 @@ import {
   rerenderAllForms
 } from '../utils/formHelperFunctions';
 import Auth from './internal/AuthIntegrationInterface';
-import { isAuthStytch } from './internal/utils';
-import { clearStytchDomainCookie } from '../integrations/stytch';
 /** TODO: These next 2 should maybe be dynamically imported, but having trouble with that
  * combined 6.9k gzipped, so OK for now
  */
 import { useIdleTimer } from 'react-idle-timer';
 import throttle from 'lodash.throttle';
-import LoginError from './LoginError';
 import { featheryWindow } from '../utils/browser';
 
 const TEN_SECONDS_IN_MILLISECONDS = 1000 * 10;
@@ -34,7 +31,6 @@ export const authState = {
   authId: '',
   authType: '',
   authFormKey: '',
-  _featheryHosted: false,
   // This is a flag so we only redirect to the login start step immediately
   // after auth, not during other form navigation
   redirectAfterLogin: false,
@@ -47,9 +43,7 @@ export const authState = {
     authState.client = newClient;
   },
   onLogin: () => {},
-  onLogout: () => {},
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  showError: (msg?: string) => {}
+  onLogout: () => {}
 };
 
 const LoginForm = ({
@@ -59,7 +53,6 @@ const LoginForm = ({
   onLogin = () => {},
   onLogout = () => {},
   onClientReady = () => {},
-  _featheryHosted = false,
   children
 }: {
   authId?: string;
@@ -68,6 +61,7 @@ const LoginForm = ({
   onLogin?: () => void;
   onLogout?: () => void;
   onClientReady?: (authClient: any) => void;
+  /** @deprecated No-op; kept so existing callers still typecheck. */
   _featheryHosted?: boolean;
   children?: ReactNode;
 }) => {
@@ -82,8 +76,6 @@ const LoginForm = ({
   // Use this render state to force re-evaluation of authId, since authState isn't reactive as-is
   const [, setRender] = useState({ v: 1 });
   const [showLoader, setShowLoader] = useState(false);
-  const [loginError, setLoginError] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('Your magic link expired.');
 
   useEffect(() => {
     if (
@@ -107,12 +99,6 @@ const LoginForm = ({
       history.replaceState(null, '', loginPath + location.search);
     }
 
-    authState._featheryHosted = _featheryHosted;
-
-    authState.showError = (msg?: string) => {
-      if (msg) setErrorMessage(msg);
-      setLoginError(true);
-    };
     // Register onLogin cb so it can be called by Client.submitAuthInfo
     authState.onLogin = async () => {
       await onLogin();
@@ -123,8 +109,6 @@ const LoginForm = ({
       if (newId === '') {
         authState.redirectAfterLogin = false;
         setShowLoader(false);
-        if (isAuthStytch() && authState._featheryHosted)
-          clearStytchDomainCookie();
       }
 
       authState.authId = newId;
@@ -191,15 +175,11 @@ const LoginForm = ({
     return (
       // Since we want to auth gate we should make the login form take up the entire page
       <div style={{ height: '100vh', width: '100vw' }}>
-        {loginError ? (
-          <LoginError message={errorMessage} />
-        ) : (
-          <JSForm
-            {...formProps}
-            _internalId={_internalId}
-            _isAuthLoading={showLoader}
-          />
-        )}
+        <JSForm
+          {...formProps}
+          _internalId={_internalId}
+          _isAuthLoading={showLoader}
+        />
       </div>
     );
   } else {
