@@ -33,17 +33,27 @@ function fileServarSteps(steps: Record<string, any>) {
 const asList = (value: any) => (Array.isArray(value) ? value : [value]);
 const isFile = (value: any) =>
   value instanceof Promise || value instanceof Blob;
+const isStored = (value: any) => value !== null && value !== '';
 
 // Which file fields hold each element of `value`, by identity: a rule passes
 // `field.value` or some of its entries, which are the stored promises/files.
-function matchFieldFiles(value: any, fileKeys: string[]) {
+function matchFieldFiles(
+  value: any,
+  servarSteps: Record<string, FileServarStep>
+) {
   const items = asList(value);
   if (!items.length || !items.every(isFile)) return null;
+  const fileKeys = Object.keys(servarSteps);
   const matched: Record<string, number[]> = {};
   for (const item of items) {
     const key = fileKeys.find((k) => asList(fieldValues[k]).includes(item));
     if (!key) return null;
-    const index = asList(fieldValues[key]).indexOf(item);
+    // A repeated field's index is its repeat row; a flat multi-file field is
+    // stored without its empty entries, so it counts only the stored files.
+    const values = asList(fieldValues[key]);
+    const index = (
+      servarSteps[key].servar.repeated ? values : values.filter(isStored)
+    ).indexOf(item);
     (matched[key] = matched[key] ?? []).push(index);
   }
   return matched;
@@ -51,7 +61,7 @@ function matchFieldFiles(value: any, fileKeys: string[]) {
 
 function toRefs(matched: Record<string, number[]>): HubFileRef[] {
   return Object.entries(matched).map(([key, indices]) => {
-    const all = asList(fieldValues[key]).filter((v) => v !== null && v !== '');
+    const all = asList(fieldValues[key]).filter(isStored);
     const unique = [...new Set(indices)].sort((a, b) => a - b);
     // Every file of the field is just the field; a subset names its rows.
     return unique.length === all.length
@@ -71,7 +81,6 @@ export function buildHubFileRefs(
 ): { data: typeof data; submissions: FileSubmission[] } {
   if (!data || Array.isArray(data)) return { data, submissions: [] };
   const servarSteps = fileServarSteps(steps);
-  const fileKeys = Object.keys(servarSteps);
   const referenced = new Set<string>();
 
   const converted: Record<string, any> = {};
@@ -80,7 +89,7 @@ export function buildHubFileRefs(
     if (value instanceof Field) {
       if (servarSteps[value.id]) refs = [{ form_field: value.id }];
     } else {
-      const matched = matchFieldFiles(value, fileKeys);
+      const matched = matchFieldFiles(value, servarSteps);
       if (matched) refs = toRefs(matched);
     }
     if (!refs) {

@@ -7,6 +7,7 @@ const steps = {
     key: 'docs_step',
     servar_fields: [
       { servar: { key: 'uploads', type: 'file_upload', repeated: true } },
+      { servar: { key: 'attachments', type: 'file_upload' } },
       { servar: { key: 'name', type: 'text_field' } }
     ]
   },
@@ -19,10 +20,13 @@ const steps = {
 const fileA = Promise.resolve(new File(['a'], 'a.pdf'));
 const fileB = Promise.resolve(new File(['b'], 'b.pdf'));
 const sig = Promise.resolve(new File(['s'], 'sig.png'));
+const fileC = Promise.resolve(new File(['c'], 'c.pdf'));
+const fileD = Promise.resolve(new File(['d'], 'd.pdf'));
 
 beforeEach(() => {
   Object.assign(fieldValues, {
     uploads: [fileA, null, fileB],
+    attachments: [fileC, '', fileD],
     sig,
     name: 'Ann'
   });
@@ -71,6 +75,11 @@ describe('buildHubFileRefs', () => {
     const repeated = buildHubFileRefs({ docs: [fileB, fileB] }, steps);
     expect(repeated.data).toEqual({
       docs: [{ form_field: 'uploads', indices: [2] }]
+    });
+    // A flat multi-file field's empty entries aren't stored, so don't count.
+    const flat = buildHubFileRefs({ docs: [fileD] }, steps);
+    expect(flat.data).toEqual({
+      docs: [{ form_field: 'attachments', indices: [1] }]
     });
   });
 
