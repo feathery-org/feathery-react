@@ -133,6 +133,12 @@ describe('type helpers', () => {
     expect(defaultValue(field(PERCENT, '8%'))).toBe('0.08');
   });
 
+  it('starts an undeclared boolean at false, which parses and saves', () => {
+    expect(defaultValue(field(BOOLEAN))).toBe('false');
+    expect(parseDisplay(BOOLEAN, defaultValue(field(BOOLEAN)))).toBe('false');
+    expect(defaultValue(field(BOOLEAN, 'yes'))).toBe('true');
+  });
+
   it('starts an undeclared date at today, and takes the clock injected', () => {
     expect(defaultValue(field(DATE), '2026-08-12')).toBe('2026-08-12');
     // An explicit default still wins over today.

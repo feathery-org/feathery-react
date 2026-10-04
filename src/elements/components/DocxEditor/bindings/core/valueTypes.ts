@@ -174,5 +174,7 @@ export function defaultValue(
   }
   if (isNumericType(def.fieldType)) return '0';
   if (def.fieldType.kind === 'date') return today;
+  // '' is not a valid boolean, so a blank new row would block save.
+  if (def.fieldType.kind === 'boolean') return 'false';
   return '';
 }

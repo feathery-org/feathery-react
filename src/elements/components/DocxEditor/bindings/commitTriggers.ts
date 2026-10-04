@@ -33,6 +33,7 @@
 // Framework-free on purpose: React wiring belongs to the hook that calls this.
 
 import { ReconciliationController } from './controller';
+import { isRunningRowCommand } from './rowCommandWatch';
 import { ContentControlLike, SyncfusionEditorLike } from './editorAdapter';
 
 export interface CommitTriggerOptions {
@@ -66,6 +67,8 @@ export interface CommitTriggers {
   onKeyDown(key: string | undefined): void;
   /** Call when the editor added or removed a table row on its own. */
   onRowsChanged(): void;
+  /** Commit an edit deferred by a native row command after its row is attributed. */
+  onRowCommandComplete(): boolean;
   /** Clear the pending-edit flag, e.g. after the controller commits. */
   clearPendingEdit(): void;
   /** True when an edit is waiting for a commit trigger. */
@@ -86,6 +89,7 @@ export function createCommitTriggers(
   }: CommitTriggerOptions = {}
 ): CommitTriggers {
   let pendingEdit = false;
+  let deferredCommit = false;
   let editedControl: ContentControlLike | null = null;
   let editedBlockPath: string | null = null;
   let selfHealTimer: unknown = null;
@@ -107,6 +111,13 @@ export function createCommitTriggers(
   };
 
   const commit = (): void => {
+    // insertRow moves selection before returning. The row watcher must record
+    // its attribution hint before any reconcile can adopt the copied controls.
+    if (isRunningRowCommand(editor)) {
+      deferredCommit = pendingEdit;
+      return;
+    }
+    deferredCommit = false;
     pendingEdit = false;
     controller.flush();
   };
@@ -116,6 +127,7 @@ export function createCommitTriggers(
       const history = editor.editorHistoryModule;
       if (history && (history.isUndoing || history.isRedoing)) {
         pendingEdit = false;
+        deferredCommit = false;
         clearTimeoutFn(selfHealTimer);
         selfHealTimer = setTimeoutFn(
           () => controller.flush({ mode: 'self-heal', adoptRows: false }),
@@ -164,8 +176,15 @@ export function createCommitTriggers(
       );
     },
 
+    onRowCommandComplete(): boolean {
+      if (!deferredCommit || !pendingEdit) return false;
+      commit();
+      return true;
+    },
+
     clearPendingEdit(): void {
       pendingEdit = false;
+      deferredCommit = false;
     },
 
     hasPendingEdit(): boolean {
@@ -177,6 +196,7 @@ export function createCommitTriggers(
       clearTimeoutFn(enterTimer);
       clearTimeoutFn(adoptTimer);
       pendingEdit = false;
+      deferredCommit = false;
       editedControl = null;
       editedBlockPath = null;
     }
