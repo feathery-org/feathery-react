@@ -24,6 +24,8 @@ import {
   getQuikAccountForms as apiGetQuikAccountForms,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
+  HubAssociation,
+  hubAssociationPayload,
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError,
@@ -777,7 +779,8 @@ export default class IntegrationClient {
         envelopeAction,
         signMethod: action.sign_method,
         emailSubject: action.email_subject,
-        emailBlurb: action.email_blurb
+        emailBlurb: action.email_blurb,
+        hubAssociation: action.hub_association
       });
     }
 
@@ -792,6 +795,7 @@ export default class IntegrationClient {
       repeatable,
       runAsync,
       envelopeAction,
+      hubAssociation: action.hub_association,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
       maxTime: this.ENVELOPE_MAX_TIME
     });
@@ -907,7 +911,8 @@ export default class IntegrationClient {
     envelopeAction,
     signMethod,
     emailSubject,
-    emailBlurb
+    emailBlurb,
+    hubAssociation
   }: {
     documentIds: GenerateDocumentRef[];
     signers: Record<string, any>[];
@@ -923,6 +928,7 @@ export default class IntegrationClient {
     // DocuSign sign only: subject and body of the envelope's signing email.
     emailSubject?: string;
     emailBlurb?: string;
+    hubAssociation?: HubAssociation;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
@@ -947,6 +953,8 @@ export default class IntegrationClient {
     if (emailBlurb) payload.email_blurb = emailBlurb;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
+    if (hubAssociation)
+      payload.hub_association = hubAssociationPayload(hubAssociation);
 
     const url = `${getApiUrl()}document/form/generate/`;
     const options = {
