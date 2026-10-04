@@ -254,7 +254,16 @@ export const getFormContext = (formUuid: string) => {
       const refs =
         operation === 'create' || operation === 'update'
           ? buildHubFileRefs(data, formState.steps)
-          : { data, submissions: [] };
+          : { data, submissions: [], fields: [] };
+      // Drafts and no-save forms keep no files server-side to file from.
+      const { client } = formState;
+      if (refs.fields.length && (client.draft || client.getNoSave())) {
+        const names = refs.fields.join(', ');
+        throw new Error(
+          `Form file fields (${names}) can't be filed into a data hub from ` +
+            "a preview, draft or a form that doesn't save data"
+        );
+      }
       if (refs.submissions.length)
         await formState.client.submitFiles(refs.submissions);
       return formState.client.dataHubAction({

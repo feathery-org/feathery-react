@@ -89,12 +89,14 @@ describe('buildHubFileRefs', () => {
     const rows = [{ docs: new Field('uploads', 'form') }];
     expect(buildHubFileRefs({ docs: [stray], other: items }, steps)).toEqual({
       data: { docs: [stray], other: items },
-      submissions: []
+      submissions: [],
+      fields: []
     });
     // Batch rows are staged imports, never form uploads.
     expect(buildHubFileRefs(rows, steps)).toEqual({
       data: rows,
-      submissions: []
+      submissions: [],
+      fields: []
     });
   });
 });

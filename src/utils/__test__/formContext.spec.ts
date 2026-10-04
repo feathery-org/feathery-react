@@ -357,7 +357,9 @@ describe('feathery.dataHubAction form file references', () => {
     fieldValues.uploads = upload;
     client = {
       submitFiles: jest.fn().mockResolvedValue(undefined),
-      dataHubAction: jest.fn().mockResolvedValue({})
+      dataHubAction: jest.fn().mockResolvedValue({}),
+      draft: false,
+      getNoSave: () => false
     };
     setFormInternalState(uuid, { fields: {}, client, steps } as any);
   });
@@ -383,5 +385,23 @@ describe('feathery.dataHubAction form file references', () => {
     expect(client.dataHubAction.mock.calls[1][0].data).toEqual({
       docs: upload
     });
+  });
+
+  it('refuses to send references the server has no files for', async () => {
+    const context = getFormContext(uuid);
+    const action = {
+      hubId: 'hub-1',
+      operation: 'create' as const,
+      data: { docs: upload }
+    };
+    client.draft = true;
+    await expect(context.dataHubAction(action)).rejects.toThrow(/uploads/);
+    client.draft = false;
+    client.getNoSave = () => true;
+    await expect(context.dataHubAction(action)).rejects.toThrow(/save data/);
+    expect(client.dataHubAction).not.toHaveBeenCalled();
+    // Plain values still go through.
+    await context.dataHubAction({ ...action, data: { name: 'Ann' } });
+    expect(client.dataHubAction).toHaveBeenCalledTimes(1);
   });
 });
