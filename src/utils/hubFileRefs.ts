@@ -78,8 +78,9 @@ function toRefs(matched: Record<string, number[]>): HubFileRef[] {
 export function buildHubFileRefs(
   data: Record<string, any> | Record<string, any>[] | undefined,
   steps: Record<string, any>
-): { data: typeof data; submissions: FileSubmission[] } {
-  if (!data || Array.isArray(data)) return { data, submissions: [] };
+): { data: typeof data; submissions: FileSubmission[]; fields: string[] } {
+  if (!data || Array.isArray(data))
+    return { data, submissions: [], fields: [] };
   const servarSteps = fileServarSteps(steps);
   const referenced = new Set<string>();
 
@@ -113,5 +114,5 @@ export function buildHubFileRefs(
         stepKey
       };
     });
-  return { data: converted, submissions };
+  return { data: converted, submissions, fields: [...referenced] };
 }
