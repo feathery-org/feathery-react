@@ -1502,7 +1502,7 @@ export default class FeatheryClient extends IntegrationClient {
       options.operation === 'create' && options.idFieldId && !options.idValue
         ? { ...options, idValue: userId }
         : options;
-    return apiDataHubAction(sdkKey, resolved, this.formKey);
+    return apiDataHubAction(sdkKey, resolved, this.formKey, userId);
   }
 
   // `hubKeys` resolves hubs by key as well as id, for a table whose hub is
