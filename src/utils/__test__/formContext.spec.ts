@@ -1,4 +1,5 @@
 import { getFormContext } from '../formContext';
+import { fieldValues } from '../init';
 import { setFormInternalState } from '../internalState';
 import Field from '../entities/Field';
 
@@ -338,5 +339,49 @@ describe('feathery.runComputerAgent return shape', () => {
     await expect(
       getFormContext(uuid).runComputerAgent('agent_1')
     ).resolves.toEqual({ status: 'error', message: 'nope' });
+  });
+});
+
+describe('feathery.dataHubAction form file references', () => {
+  const uuid = 'formContext-hub-files';
+  const upload = Promise.resolve(new File(['a'], 'a.pdf'));
+  const steps = {
+    docs: {
+      key: 'docs',
+      servar_fields: [{ servar: { key: 'uploads', type: 'file_upload' } }]
+    }
+  };
+  let client: any;
+
+  beforeEach(() => {
+    fieldValues.uploads = upload;
+    client = {
+      submitFiles: jest.fn().mockResolvedValue(undefined),
+      dataHubAction: jest.fn().mockResolvedValue({})
+    };
+    setFormInternalState(uuid, { fields: {}, client, steps } as any);
+  });
+
+  it('files form fields on create/update only', async () => {
+    const context = getFormContext(uuid);
+    await context.dataHubAction({
+      hubId: 'hub-1',
+      operation: 'update',
+      data: { docs: upload }
+    });
+    expect(client.submitFiles).toHaveBeenCalledTimes(1);
+    expect(client.dataHubAction.mock.calls[0][0].data).toEqual({
+      docs: [{ form_field: 'uploads' }]
+    });
+
+    await context.dataHubAction({
+      hubId: 'hub-1',
+      operation: 'get',
+      data: { docs: upload }
+    });
+    expect(client.submitFiles).toHaveBeenCalledTimes(1);
+    expect(client.dataHubAction.mock.calls[1][0].data).toEqual({
+      docs: upload
+    });
   });
 });

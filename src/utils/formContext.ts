@@ -249,9 +249,12 @@ export const getFormContext = (formUuid: string) => {
       where,
       verification
     }: HubActionOptions) => {
-      // A form file field in `data` is filed from the server's copy, so it
-      // only has to be uploaded if this form hasn't submitted it yet.
-      const refs = buildHubFileRefs(data, formState.steps);
+      // Create/update file a form file field from the server's copy, uploading
+      // it first if unsubmitted. Other operations never file, so pass `data`.
+      const refs =
+        operation === 'create' || operation === 'update'
+          ? buildHubFileRefs(data, formState.steps)
+          : { data, submissions: [] };
       if (refs.submissions.length)
         await formState.client.submitFiles(refs.submissions);
       return formState.client.dataHubAction({
