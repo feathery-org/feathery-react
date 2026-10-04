@@ -371,14 +371,19 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
   });
 
   it('routes a bare sign envelope action through the flow', async () => {
+    const hubAssociation = { hubId: 'hub-1', entryId: 'entry-1' };
     await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
-      envelopeAction: 'sign'
+      envelopeAction: 'sign',
+      hubAssociation
     });
 
     expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
     expect(flow).toHaveBeenCalledTimes(1);
-    expect(flow.mock.calls[0][0]).toMatchObject({ envelope_action: 'sign' });
+    expect(flow.mock.calls[0][0]).toMatchObject({
+      envelope_action: 'sign',
+      hub_association: hubAssociation
+    });
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
@@ -529,7 +534,8 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       merge: true,
       mergedFileName: 'out',
       download: true,
-      zipName: 'bundle'
+      zipName: 'bundle',
+      hubAssociation: { hubId: 'hub-1', entryId: 'entry-1', field: 'docs' }
     });
 
     expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
@@ -538,7 +544,8 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       download: true,
       merge: true,
       mergedFileName: 'out',
-      zipName: 'bundle'
+      zipName: 'bundle',
+      hubAssociation: { hubId: 'hub-1', entryId: 'entry-1', field: 'docs' }
     });
     expect(flow).not.toHaveBeenCalled();
   });

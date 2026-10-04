@@ -29,6 +29,8 @@ import {
   getQuikAccountForms as apiGetQuikAccountForms,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
+  HubAssociation,
+  hubAssociationPayload,
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError,
@@ -888,7 +890,8 @@ export default class IntegrationClient {
         emailBlurb: action.email_blurb,
         notification: action.notification,
         ccRecipients: action.cc_recipients,
-        customFields: action.custom_fields
+        customFields: action.custom_fields,
+        hubAssociation: action.hub_association
       });
     }
 
@@ -908,6 +911,7 @@ export default class IntegrationClient {
       repeatable,
       runAsync,
       envelopeAction,
+      hubAssociation: action.hub_association,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
       maxTime: this.ENVELOPE_MAX_TIME
     });
@@ -1197,7 +1201,8 @@ export default class IntegrationClient {
     emailBlurb,
     notification,
     ccRecipients,
-    customFields
+    customFields,
+    hubAssociation
   }: {
     documentIds: GenerateDocumentRef[];
     signers: Record<string, any>[];
@@ -1225,6 +1230,7 @@ export default class IntegrationClient {
       string,
       string | { listItems: string[]; value?: string }
     >;
+    hubAssociation?: HubAssociation;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
@@ -1266,6 +1272,8 @@ export default class IntegrationClient {
     if (customFields !== undefined) payload.custom_fields = customFields;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
+    if (hubAssociation)
+      payload.hub_association = hubAssociationPayload(hubAssociation);
 
     const url = `${getApiUrl()}document/form/generate/`;
     const options = {
