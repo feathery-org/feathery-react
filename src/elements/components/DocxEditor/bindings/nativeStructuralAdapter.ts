@@ -209,7 +209,12 @@ function applyRowAdoptions(
             plan.properties.lockContentControl;
         }
       }
-      restyleAsDataRow(editor, prefix, mutation.rowIndex);
+      restyleAsDataRow(
+        editor,
+        prefix,
+        mutation.rowIndex,
+        mutation.styleSourceRowIndex
+      );
     }
     refreshContentControlCollection(editor);
   } finally {
@@ -222,11 +227,13 @@ function applyRowAdoptions(
 // Syncfusion copies the ADJACENT row's formatting into a newly inserted row, so
 // a row inserted above the first data row is styled like the header, and one
 // inserted above a totals row is styled like the totals row. Copy formatting
-// from the CLOSEST non-header sibling, preferring the one above on a tie.
+// from the data row selected by adoption. If that row is no longer present,
+// fall back to the closest non-header sibling.
 function restyleAsDataRow(
   editor: SyncfusionEditorLike,
   prefix: string,
-  rowIndex: number
+  rowIndex: number,
+  styleSourceRowIndex?: number
 ): void {
   try {
     const selection = editor.selection as any;
@@ -240,7 +247,10 @@ function restyleAsDataRow(
     const myIndex = rows.indexOf(insertedRow);
     if (myIndex < 0) return;
     const isHeader = (row: any): boolean => !!row?.rowFormat?.isHeader;
-    let source: any;
+    let source: any =
+      styleSourceRowIndex !== undefined && styleSourceRowIndex !== myIndex
+        ? rows[styleSourceRowIndex]
+        : undefined;
     for (
       let d = 1;
       !source && (myIndex - d >= 0 || myIndex + d < rows.length);

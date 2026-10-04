@@ -967,6 +967,8 @@ export interface AdoptedRowMutation {
   tableId: string;
   tablePath: SfdtPath;
   rowIndex: number;
+  /** Existing data row selected as the template, when it is still in the table. */
+  styleSourceRowIndex?: number;
   rowId: string;
   row: SfdtRow;
 }
@@ -1536,6 +1538,11 @@ export function adoptUnboundRows(
       tableId,
       tablePath: [...table.tablePath],
       rowIndex: r,
+      styleSourceRowIndex:
+        lastBoundRow?.path &&
+        Number(lastBoundRow.path[lastBoundRow.path.length - 1]) !== r
+          ? Number(lastBoundRow.path[lastBoundRow.path.length - 1])
+          : undefined,
       rowId,
       row: deepClone(newRow)
     });

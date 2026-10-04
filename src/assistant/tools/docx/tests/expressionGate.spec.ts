@@ -49,4 +49,36 @@ describe('assertExpressionYieldsValue', () => {
   it('stays silent on parse failures (the caller surfaces those)', () => {
     expect(() => assertExpressionYieldsValue('not a formula ;;', index)).not.toThrow();
   });
+
+  it('rejects unqualified cells and ranges for a body formula', () => {
+    const bodyFormula = index.formulas.get('combined_total')![0];
+    expect(() =>
+      assertExpressionYieldsValue('sum(B2:end)', index, bodyFormula)
+    ).toThrow(/outside a table/);
+    expect(() => assertExpressionYieldsValue('B3', index, bodyFormula)).toThrow(
+      /outside a table/
+    );
+  });
+
+  it('allows qualified ranges outside tables and local ranges inside tables', () => {
+    const bodyFormula = index.formulas.get('combined_total')![0];
+    const tableFormula = index.formulas.get('grand_total')![0];
+    expect(() =>
+      assertExpressionYieldsValue('sum(costs!B2:end)', index, bodyFormula)
+    ).not.toThrow();
+    expect(() =>
+      assertExpressionYieldsValue('sum(B2:end)', index, tableFormula)
+    ).not.toThrow();
+  });
+
+  it('keeps an existing cell-shaped binding name valid outside tables', () => {
+    const bodyFormula = index.formulas.get('combined_total')![0];
+    const withNamedField = {
+      ...index,
+      fields: new Map(index.fields).set('B3', index.fields.get('tax_rate')!)
+    };
+    expect(() =>
+      assertExpressionYieldsValue('sum(B3)', withNamedField, bodyFormula)
+    ).not.toThrow();
+  });
 });
