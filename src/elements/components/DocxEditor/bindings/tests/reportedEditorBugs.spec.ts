@@ -235,7 +235,7 @@ describe('row adoption stays inside the data block', () => {
     const result = adoptUnboundRows(doc, 'costs');
 
     expect(result.adopted).toHaveLength(1);
-    // Defaults from the template's own tags.
+    // A new row uses authored defaults, not the current row's edited values.
     expect(rowTexts(result.sfdt)[1]).toEqual([
       'Design work',
       '12',

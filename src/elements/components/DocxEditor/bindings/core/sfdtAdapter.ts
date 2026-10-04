@@ -218,7 +218,7 @@ function deepClone<T>(node: T): T {
 
 /* ---------------- scanning ---------------- */
 
-function revisionIdsOfType(
+export function revisionIdsOfType(
   sfdt: SfdtDocument,
   type: 'Insertion' | 'Deletion'
 ): Set<string> {
@@ -232,7 +232,7 @@ function revisionIdsOfType(
   return ids;
 }
 
-function hasOnlyRevisionIds(node: any, ids: Set<string>): boolean {
+export function hasOnlyRevisionIds(node: any, ids: Set<string>): boolean {
   const revisionIds = node?.revisionIds;
   return (
     Array.isArray(revisionIds) &&
@@ -241,7 +241,7 @@ function hasOnlyRevisionIds(node: any, ids: Set<string>): boolean {
   );
 }
 
-function hasRevisionId(node: any, ids: Set<string>): boolean {
+export function hasRevisionId(node: any, ids: Set<string>): boolean {
   return (
     Array.isArray(node?.revisionIds) &&
     node.revisionIds.some((id: unknown) => ids.has(String(id)))
@@ -740,8 +740,16 @@ export const freshRowId = createRowIdGenerator();
 
 /* ---------------- row operations ---------------- */
 
+/**
+ * A value belongs to this occurrence. An authored default describes new rows
+ * and must remain on the cloned definition.
+ */
+function stripRowValue(options: TagOptions): void {
+  delete options.value;
+}
+
 // Cloning never changes a binding's KIND: a field stays a field (reset to its
-// default), a formula (row-local or mirror) stays the same formula.
+// authored default), a formula (row-local or mirror) stays the same formula.
 export function rewriteRowClone(node: any, newRowId: string): void {
   if (Array.isArray(node)) {
     node.forEach((entry) => rewriteRowClone(entry, newRowId));
@@ -752,6 +760,7 @@ export function rewriteRowClone(node: any, newRowId: string): void {
     const def = rowScopedDef(node.contentControlProperties.tag);
     if (def) {
       def.options.row = newRowId;
+      stripRowValue(def.options);
       node.contentControlProperties = {
         ...node.contentControlProperties,
         tag: formatTag(def)
@@ -1070,8 +1079,8 @@ function mirrorColumnField(
   def: FormulaDefinition,
   rowId: string
 ): FieldDefinition {
+  // No `default`: it is the template row's data, so a new row starts at zero.
   const options: TagOptions = { row: rowId };
-  if (def.options.default !== undefined) options.default = def.options.default;
   if (def.options.label !== undefined) options.label = def.options.label;
   return {
     version: def.version,
@@ -1179,8 +1188,12 @@ function syntheticColumnTemplate(
   }
   if (!consumed.size) return undefined;
   const tableNode = getAt(sfdt, table.tablePath) as { rows?: SfdtRow[] };
+  const deletedRevisionIds = revisionIdsOfType(sfdt, 'Deletion');
   const mold = (tableNode.rows || []).find(
-    (row) => row && !(row.rowFormat && row.rowFormat.isHeader)
+    (row) =>
+      row &&
+      !row.rowFormat?.isHeader &&
+      !hasRevisionId(row.rowFormat, deletedRevisionIds)
   );
   if (!mold || !mold.cells || !mold.cells.length) return undefined;
   // Span-aware: which CELL of the mold covers each consumed grid column.
@@ -1323,6 +1336,7 @@ export function adoptUnboundRows(
   // the totals, both of which are ordinary ways to add a line item, and it broke
   // inserting rows entirely.
   const allRows = tableNode.rows || [];
+  const deletedRevisionIds = revisionIdsOfType(sfdt, 'Deletion');
   const templateCells = templateRow.cells || [];
   const columnNames = templateColumnNames(templateCells);
 
@@ -1375,6 +1389,7 @@ export function adoptUnboundRows(
   const copyIndices = new Set<number>();
   const indicesById = new Map<string, number[]>();
   allRows.forEach((row, r) => {
+    if (hasRevisionId(row?.rowFormat, deletedRevisionIds)) return;
     const id = row ? rowBindingId(row) : null;
     if (row && id !== null && rowHasControls(row))
       indicesById.set(id, [...(indicesById.get(id) || []), r]);
@@ -1383,9 +1398,7 @@ export function adoptUnboundRows(
     if (indices.length < 2) continue;
     // A valid hint leaves at least one original; one covering every occurrence
     // (or none) is stale and position decides instead.
-    const hinted = hintedRows
-      ? indices.filter((i) => hintedRows.has(i))
-      : [];
+    const hinted = hintedRows ? indices.filter((i) => hintedRows.has(i)) : [];
     const copies =
       hinted.length && hinted.length < indices.length
         ? hinted
@@ -1395,7 +1408,7 @@ export function adoptUnboundRows(
 
   for (let r = 0; r < allRows.length; r++) {
     const row = allRows[r];
-    if (!row) continue;
+    if (!row || hasRevisionId(row.rowFormat, deletedRevisionIds)) continue;
     if (row.rowFormat && row.rowFormat.isHeader) continue;
     const hasControls = rowHasControls(row);
     if (hasControls && !copyIndices.has(r)) {
@@ -1451,7 +1464,11 @@ export function adoptUnboundRows(
     // included): keep it plain, counted as 0 by ranges, instead of minting a
     // field that blocks save. A row where some cells parse is a data row with
     // a typo: adopt it and let validation flag the bad cell.
-    if (blockingReason === null && fieldParseFailure !== null && !parsedFieldCells)
+    if (
+      blockingReason === null &&
+      fieldParseFailure !== null &&
+      !parsedFieldCells
+    )
       blockingReason = fieldParseFailure;
     if (blockingReason !== null) {
       if (Number.isInteger(firstBoundRowIndex) && r < firstBoundRowIndex)
@@ -1499,9 +1516,7 @@ export function adoptUnboundRows(
         return;
       }
       def.options.row = rowId;
-      // `value` describes the row it was authored on; a new row starts from
-      // `default` instead, so carrying it over would clone stale data.
-      delete def.options.value;
+      stripRowValue(def.options);
       control.contentControlProperties = {
         ...control.contentControlProperties,
         tag: formatTag(def)

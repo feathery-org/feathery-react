@@ -4,6 +4,9 @@
 import {
   BindingIndex,
   getAt,
+  hasOnlyRevisionIds,
+  hasRevisionId,
+  revisionIdsOfType,
   inlineText,
   isPathPrefix,
   Occurrence
@@ -81,23 +84,9 @@ export function createPositionalGrid(
   const { sfdt, index, nodeId, getFormulaResult, getFieldValue } = options;
   const posKey = (row: number, col: number): string => `${row}:${col}`;
 
-  const deletionRevisionIds = new Set<string>();
-  for (const revision of Array.isArray(sfdt.revisions) ? sfdt.revisions : []) {
-    if (revision && String((revision as any).revisionType) === 'Deletion') {
-      const revId =
-        (revision as any).revisionId ?? (revision as any).revisionID;
-      if (revId != null) deletionRevisionIds.add(String(revId));
-    }
-  }
-  function isDeletedInline(inline: any): boolean {
-    return (
-      Array.isArray(inline?.revisionIds) &&
-      inline.revisionIds.length > 0 &&
-      inline.revisionIds.every((id: unknown) =>
-        deletionRevisionIds.has(String(id))
-      )
-    );
-  }
+  const deletionRevisionIds = revisionIdsOfType(sfdt, 'Deletion');
+  const isDeletedInline = (inline: any): boolean =>
+    hasOnlyRevisionIds(inline, deletionRevisionIds);
 
   /** Physical position of an occurrence in a table (span-aware column). */
   function positionIn(
@@ -140,6 +129,12 @@ export function createPositionalGrid(
     const rows: Array<Array<GridCell | undefined>> = [];
     tableRows.forEach((row: any, r: number) => {
       const line: Array<GridCell | undefined> = [];
+      // Preserve physical row numbering without letting deleted rows supply
+      // stale text or dependencies to positional formulas.
+      if (hasRevisionId(row.rowFormat, deletionRevisionIds)) {
+        rows.push(line);
+        return;
+      }
       let col = 0;
       for (const cell of row.cells || []) {
         const span = Number(cell?.cellFormat?.columnSpan) || 1;

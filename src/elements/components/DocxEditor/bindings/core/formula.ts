@@ -13,7 +13,8 @@
 // Only a range (`:`) or a `table!`-qualified ref is positional at parse time; a
 // BARE cell-shaped token (B3) stays a ref, and the engine reads it as a cell
 // only when nothing binds that name. So a binding named Q1 or FY2024 is never
-// stolen. `end` is the last physical row and is valid only as a range bound.
+// stolen. `end` means the last physical row only in a range bound; elsewhere
+// it can still name an existing binding.
 
 export class FormulaError extends Error {
   constructor(message?: string) {
@@ -233,10 +234,6 @@ export function parseExpression(src: string): Ast {
       i--; // hand the start cell back to the positional parser
       return positional(null);
     }
-    if (token.v === 'end')
-      throw new FormulaError(
-        `"end" is only valid as a range bound: ${JSON.stringify(src)}`
-      );
     return { ref: token.v as string };
   }
 

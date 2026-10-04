@@ -53,7 +53,9 @@ describe('formula', () => {
     expect(parseExpression('sum(B2:B9)')).toEqual({
       op: 'sum',
       args: [
-        { range: { table: null, startCol: 1, startRow: 2, endCol: 1, endRow: 9 } }
+        {
+          range: { table: null, startCol: 1, startRow: 2, endCol: 1, endRow: 9 }
+        }
       ]
     });
     expect(parseExpression('sum(B2:end)')).toEqual({
@@ -85,12 +87,22 @@ describe('formula', () => {
       ]
     });
     // Bounds normalize: B9:B2 is the same range as B2:B9.
-    expect(parseExpression('sum(B9:B2)')).toEqual(parseExpression('sum(B2:B9)'));
+    expect(parseExpression('sum(B9:B2)')).toEqual(
+      parseExpression('sum(B2:B9)')
+    );
     // A range's bounds are always positional (a range of names is meaningless).
     expect(parseExpression('sum(Q1:Q4)')).toEqual({
       op: 'sum',
       args: [
-        { range: { table: null, startCol: 16, startRow: 1, endCol: 16, endRow: 4 } }
+        {
+          range: {
+            table: null,
+            startCol: 16,
+            startRow: 1,
+            endCol: 16,
+            endRow: 4
+          }
+        }
       ]
     });
     expect(parseExpression('b2')).toEqual({ ref: 'b2' });
@@ -98,7 +110,6 @@ describe('formula', () => {
 
   it('rejects malformed positional refs', () => {
     const bad = [
-      'end', // only valid as a range bound
       'sum(end:B2)',
       'sum(B2:)',
       'sum(B2:foo)',
@@ -126,5 +137,13 @@ describe('formula', () => {
     for (const src of bad) {
       expect(() => parseExpression(src)).toThrow(FormulaError);
     }
+  });
+});
+
+it('preserves end as a binding name outside a range bound', () => {
+  expect(parseExpression('end')).toEqual({ ref: 'end' });
+  expect(parseExpression('sum(end)')).toEqual({
+    op: 'sum',
+    args: [{ ref: 'end' }]
   });
 });

@@ -1,3 +1,6 @@
+import { createCommitTriggers } from '../commitTriggers';
+import { watchRowCommands } from '../rowCommandWatch';
+import { SyncfusionEditorLike } from '../editorAdapter';
 // Ported from the POC's test/controller.test.js. The FakeEditor is the point of
 // this suite: it fires contentChange on every write exactly as Syncfusion does,
 // so the loop-prevention, sequence-guard and patch-versus-reload decisions are
@@ -471,5 +474,63 @@ describe('failure handling', () => {
     editor.userEdit(isQuantityRow1, '13');
     controller.flush();
     expect(costsRow(editor, 'line_total')).toBe('$1,950.00');
+  });
+});
+
+describe('native insert event ordering', () => {
+  it('preserves original when insertRow moves selection before returning', () => {
+    const { editor, controller } = setup(null);
+    controller.loadInitial(buildCostsFixture(), 1);
+    const tablePath = scanBindings(editor.doc as SfdtDocument).tables.get(
+      'costs'
+    )!.tablePath!;
+    const prefix = `${tablePath[1]};${tablePath[3]}`;
+    const live: any = {
+      serialize: () => editor.serialize(),
+      selection: {
+        startOffset: `${prefix};2;1;0;0`,
+        endOffset: `${prefix};2;1;0;0`
+      },
+      documentHelper: { contentControlCollection: [{}] },
+      editorModule: {}
+    };
+    const triggers = createCommitTriggers(
+      live as SyncfusionEditorLike,
+      controller
+    );
+    live.editorModule.insertRow = () => {
+      const rows = (getAt(editor.doc, tablePath) as { rows: SfdtRow[] }).rows;
+      rows.splice(2, 0, JSON.parse(JSON.stringify(rows[2])));
+      live.selection.startOffset = `${prefix};2;0;0;0`;
+      live.selection.endOffset = `${prefix};2;0;0;0`;
+      triggers.onSelectionChange();
+    };
+    watchRowCommands(live, (hint) => {
+      controller.noteInsertedRows(hint ?? null);
+      if (!triggers.onRowCommandComplete())
+        controller.flush({ mode: 'self-heal' });
+    });
+    editor.userEdit(
+      (occurrence) =>
+        occurrence.def.name === 'quantity' && occurrence.rowId === 'r-2',
+      '31'
+    );
+    editor.userEdit(
+      (occurrence) =>
+        occurrence.def.name === 'unit_cost' && occurrence.rowId === 'r-2',
+      '201'
+    );
+    triggers.onContentChange(); // pending edit before native row insert
+    live.editorModule.insertRow(true);
+    const tableRows = scanBindings(editor.doc as SfdtDocument).tables.get(
+      'costs'
+    )!.rows;
+    expect(tableRows[2].rowId).toBe('r-2');
+    expect(tableRows[2].bindings.get('quantity')!.text).toBe('31');
+    expect(tableRows[2].bindings.get('unit_cost')!.text).toBe('$201.00');
+    expect(grandTotals(editor)).toEqual(['$8,031.00', '$8,031.00']);
+    expect(tableRows[1].bindings.get('quantity')!.text).toBe('0');
+    expect(triggers.hasPendingEdit()).toBe(false);
+    triggers.dispose();
   });
 });

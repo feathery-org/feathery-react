@@ -33,6 +33,13 @@ import { isApplyingNativeStructuralMutations } from './nativeStructuralAdapter';
 
 type RowCommand = (...args: unknown[]) => unknown;
 
+const activeRowCommands = new WeakSet<SyncfusionEditorLike>();
+
+/** Native selection events must wait until the inserted rows are attributed. */
+export function isRunningRowCommand(editor: SyncfusionEditorLike): boolean {
+  return activeRowCommands.has(editor);
+}
+
 /** A top-level table cell's hierarchical offset: s;b;row;cell;para;offset. */
 const CELL_OFFSET_PARTS = 6;
 
@@ -57,7 +64,11 @@ function captureInsertSite(editor: SyncfusionEditorLike): InsertSite | null {
     const offsets = [
       anyEditor.selection?.startOffset,
       anyEditor.selection?.endOffset
-    ].map((offset) => String(offset ?? '').split(';').map(Number));
+    ].map((offset) =>
+      String(offset ?? '')
+        .split(';')
+        .map(Number)
+    );
     for (const parts of offsets) {
       if (
         parts.length !== CELL_OFFSET_PARTS ||
@@ -161,9 +172,15 @@ export function watchRowCommands(
         // the row, so redo needs attribution as much as the first insert did.
         // Recording positions is side-effect-free; the caller gates flushing.
         const site = name === 'insertRow' ? captureInsertSite(editor) : null;
-        const result = allowRowCommandDuringReplay(editor, () =>
-          original.apply(this, args)
-        );
+        let result: unknown;
+        activeRowCommands.add(editor);
+        try {
+          result = allowRowCommandDuringReplay(editor, () =>
+            original.apply(this, args)
+          );
+        } finally {
+          activeRowCommands.delete(editor);
+        }
         pruneDetachedContentControls(editor);
         try {
           onRowChange(

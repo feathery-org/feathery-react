@@ -2,6 +2,7 @@
 // columns positionally (sum(B2:end)): the consumed column mints a fresh
 // row-scoped input field. Name-based sums never trigger it.
 import { applyRules } from '../engine';
+import { getAt } from '../sfdtAdapter';
 import { formatTag, FieldType } from '../tagDsl';
 import { SfdtDocument, SfdtInline, SfdtRow } from '../sfdtTypes';
 
@@ -171,9 +172,9 @@ describe('synthetic column template from positional consumption', () => {
       {}
     );
     // Labels stay plain text: a warning each, never a save-blocking error.
-    expect(
-      result.diagnostics.filter((d) => d.severity === 'error')
-    ).toEqual([]);
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual(
+      []
+    );
     expect(
       result.diagnostics.filter((d) => d.code === 'row-not-adopted')
     ).toHaveLength(2);
@@ -197,9 +198,9 @@ describe('synthetic column template from positional consumption', () => {
     );
     // Second pass: the adopted Widget row is now the normal template.
     const second = applyRules(first.sfdt, {});
-    expect(
-      second.diagnostics.filter((d) => d.severity === 'error')
-    ).toEqual([]);
+    expect(second.diagnostics.filter((d) => d.severity === 'error')).toEqual(
+      []
+    );
     expect(second.index.tables.get('summary')!.rows).toHaveLength(1);
   });
 
@@ -218,4 +219,55 @@ describe('synthetic column template from positional consumption', () => {
     const adoptedRow = result.index.tables.get('summary')!.rows[0];
     expect(adoptedRow.bindings.has('colB')).toBe(true);
   });
+});
+
+it.each([true, false])(
+  'excludes deleted rows without changing physical positions or revision markers (adoptRows: %s)',
+  (adoptRows) => {
+    const deleted = row(['Deleted', '$50.00']);
+    deleted.rowFormat = {
+      ...deleted.rowFormat,
+      revisionIds: ['inserted-row', 'deleted-row']
+    };
+    const sfdt = doc([
+      positionalTable([
+        row(['Kept', '$10.00']),
+        deleted,
+        row(['After', '$20.00'])
+      ]),
+      { inlines: [cc(formulaTag('after', 'summary!B4'), 'After', true, '…')] }
+    ]);
+    sfdt.revisions = [
+      { revisionId: 'deleted-row', revisionType: 'Deletion' },
+      { revisionId: 'inserted-row', revisionType: 'Insertion' }
+    ];
+    const result = applyRules(sfdt, {}, { adoptRows });
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual(
+      []
+    );
+    expect(result.index.formulas.get('total')?.[0].text).toBe('$30.00');
+    expect(result.index.formulas.get('after')?.[0].text).toBe('$20.00');
+    const table = result.index.tables.get('summary')!;
+    expect(getAt(result.sfdt, [...table.tablePath!, 'rows', 2])).toEqual(
+      deleted
+    );
+    // A second pass uses the newly bound template; it must still skip deletion.
+    const again = applyRules(result.sfdt, {}, { adoptRows });
+    expect(again.index.formulas.get('total')?.[0].text).toBe('$30.00');
+    expect(getAt(again.sfdt, [...table.tablePath!, 'rows', 2])).toEqual(
+      deleted
+    );
+  }
+);
+
+it('preserves existing references to a field named end', () => {
+  const result = applyRules(
+    doc([
+      { inlines: [cc(fieldTag('end'), 'end', false, '$10.00')] },
+      { inlines: [cc(formulaTag('total', 'sum(end)'), 'Total', true, '…')] }
+    ]),
+    {}
+  );
+  expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+  expect((result.index.formulas.get('total') as any[])[0].text).toBe('$10.00');
 });

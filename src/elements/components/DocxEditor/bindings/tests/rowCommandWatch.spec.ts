@@ -8,7 +8,7 @@
 import { createCommitTriggers } from '../commitTriggers';
 import { ReconciliationController } from '../controller';
 import { SyncfusionEditorLike } from '../editorAdapter';
-import { watchRowCommands } from '../rowCommandWatch';
+import { isRunningRowCommand, watchRowCommands } from '../rowCommandWatch';
 
 /** Records flush calls; everything else the triggers touch is unused here. */
 function fakeController() {
@@ -296,7 +296,10 @@ describe('onRowsChanged', () => {
     const triggers = createCommitTriggers(
       fakeEditor(),
       controller as unknown as ReconciliationController,
-      { setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn }
+      {
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn
+      }
     );
 
     triggers.onRowsChanged();
@@ -312,7 +315,10 @@ describe('onRowsChanged', () => {
     const triggers = createCommitTriggers(
       fakeEditor(),
       controller as unknown as ReconciliationController,
-      { setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn }
+      {
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn
+      }
     );
 
     triggers.onRowsChanged();
@@ -328,7 +334,10 @@ describe('onRowsChanged', () => {
     const triggers = createCommitTriggers(
       fakeEditor(),
       controller as unknown as ReconciliationController,
-      { setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn }
+      {
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn
+      }
     );
 
     triggers.onContentChange();
@@ -346,12 +355,53 @@ describe('onRowsChanged', () => {
     const triggers = createCommitTriggers(
       fakeEditor(),
       controller as unknown as ReconciliationController,
-      { setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn }
+      {
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn
+      }
     );
 
     triggers.onRowsChanged();
     triggers.dispose();
     timers.runAll();
     expect(flushes).toEqual([]);
+  });
+});
+
+describe('native row command commit guard', () => {
+  it('defers blur commits until attribution and stays scoped to the editor', () => {
+    const { controller, flushes } = fakeController();
+    const other = fakeEditor();
+    const editor = fakeEditor(() => {
+      expect(isRunningRowCommand(editor)).toBe(true);
+      expect(isRunningRowCommand(other)).toBe(false);
+      triggers.onEditorBlur();
+      expect(flushes).toEqual([]);
+      expect(triggers.hasPendingEdit()).toBe(true);
+    });
+    const triggers = createCommitTriggers(
+      editor,
+      controller as unknown as ReconciliationController
+    );
+    watchRowCommands(editor, () => {
+      expect(isRunningRowCommand(editor)).toBe(false);
+      triggers.onEditorBlur();
+    });
+    triggers.onContentChange();
+    (editor.editorModule as any).insertRow(true);
+    expect(flushes).toHaveLength(1);
+    expect(triggers.hasPendingEdit()).toBe(false);
+    triggers.dispose();
+  });
+
+  it('releases the guard when the native command throws', () => {
+    const editor = fakeEditor(() => {
+      throw new Error('insert failed');
+    });
+    watchRowCommands(editor, () => undefined);
+    expect(() => (editor.editorModule as any).insertRow(true)).toThrow(
+      'insert failed'
+    );
+    expect(isRunningRowCommand(editor)).toBe(false);
   });
 });

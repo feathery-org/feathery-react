@@ -298,6 +298,27 @@ describe('mirrors + positional range totals', () => {
     expect(totalText(result.index)).toBe('$7,800.00');
   });
 
+  it('starts a new mirror-only row at zero even when mirrors carry a default', () => {
+    const doc = JSON.parse(
+      JSON.stringify(withNativeRow('', '')).replace(
+        formulaTag('amount', 'sum(beta)', 'm-2'),
+        formulaTag('amount', 'sum(beta)', 'm-2').replace(
+          '|row=',
+          '|default=6000|row='
+        )
+      )
+    );
+    const result = applyRules(doc, {});
+    expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    const adopted = result.index.tables
+      .get('summary')!
+      .rows.find((entry) => entry.rowId !== 'm-1' && entry.rowId !== 'm-2')!;
+    const amount = adopted.bindings.get('amount')!;
+    expect(amount.text).toBe('$0.00');
+    expect(amount.def.options.default).toBeUndefined();
+    expect(totalText(result.index)).toBe('$7,800.00');
+  });
+
   it('leaves an unflagged header row alone (text does not parse as currency)', () => {
     const doc = buildMirrorFixture();
     const tablePath = scanBindings(doc).tables.get('summary')!.tablePath!;

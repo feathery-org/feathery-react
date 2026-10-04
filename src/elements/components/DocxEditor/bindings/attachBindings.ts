@@ -221,7 +221,8 @@ export function attachBindings(
     if (controller.phase !== 'idle') return;
     const history = editor.editorHistoryModule;
     if (history?.isUndoing || history?.isRedoing) return;
-    controller.flush({ mode: 'self-heal' });
+    if (!triggers.onRowCommandComplete())
+      controller.flush({ mode: 'self-heal' });
   });
 
   const eventful = editor as EventfulEditor;
