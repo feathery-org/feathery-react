@@ -14089,16 +14089,23 @@ function plannedPlainTablePromotions(
   }
   // A column never spans tables, so an input name bound in two places of one
   // change set is one shared value, not a row field of each table.
-  const placesByName = new Map<string, Set<string>>();
+  // A name bound in two or more cells of one table is a column there and is
+  // never shared.
+  const placesByName = new Map<string, Map<string, number>>();
   for (const op of edits) {
     if (op?.op !== 'create_binding' || op.kind !== 'input') continue;
     const name = canonicalBindingName(String(op.name ?? '').trim());
     const place = editTableRoot(op, creators) ?? `outside:${String(op.anchor)}`;
-    placesByName.set(name, (placesByName.get(name) ?? new Set()).add(place));
+    const places = placesByName.get(name) ?? new Map<string, number>();
+    places.set(place, (places.get(place) ?? 0) + 1);
+    placesByName.set(name, places);
   }
   const sharedNames = new Set(
     [...placesByName]
-      .filter(([, places]) => places.size > 1)
+      .filter(
+        ([, places]) =>
+          places.size > 1 && [...places.values()].every((cells) => cells === 1)
+      )
       .map(([name]) => name)
   );
   const used = new Set(index.tables.keys());
@@ -16776,6 +16783,25 @@ export function assertExpressionYieldsValue(
  * again (as a batch that links several places at once does) is satisfied, not
  * refused or duplicated.
  */
+type SfdtPathLike = Array<string | number>;
+
+/** Whether the block already holds a binding with this name, of any kind. */
+function blockHoldsBindingName(block: FlatBlock, requested: string): boolean {
+  const name = canonicalBindingName(requested.trim());
+  return [
+    block.boundTag,
+    ...(block.bindingRanges ?? []).map((range) => range.tag)
+  ].some((tag) => {
+    if (!tag) return false;
+    try {
+      const def = parseTag(tag);
+      return !!def && def.kind !== 'table' && def.name === name;
+    } catch {
+      return false;
+    }
+  });
+}
+
 function restatedBinding(
   block: FlatBlock,
   name: string,
@@ -16809,13 +16835,19 @@ function joinedDocumentBinding(
   index: BindingIndex,
   name: string,
   kind: 'input' | 'formula',
-  fieldType: FieldType
+  fieldType: FieldType,
+  targetPaths: SfdtPathLike[] = []
 ): Occurrence | null {
   // index.fields/formulas hold document-level occurrences only (scanBindings).
+  // An occurrence in the target cell is the value being updated, not one
+  // elsewhere.
   const shared = [
     ...(index.fields.get(name) ?? []),
     ...(index.formulas.get(name) ?? [])
-  ];
+  ].filter(
+    (occurrence) =>
+      !targetPaths.some((path) => isPathPrefix(path, occurrence.path))
+  );
   if (!shared.length) return null;
   const existing = shared[0];
   if (
@@ -16874,7 +16906,24 @@ function createBindingInCell(
     (entry) =>
       entry.path && Number(entry.path[entry.path.length - 1]) === rowIndex
   );
-  const joined = joinedDocumentBinding(state.index, name, kind, fieldType);
+  // The cell being written, read as a physical cell (inventory anchors) and
+  // as a logical column; whatever it already holds is updated, not joined.
+  const targetRow = table.tablePath
+    ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
+    : undefined;
+  const targetPaths = table.tablePath
+    ? [columnIndex, physicalCellIndexAt(targetRow, columnIndex)]
+        .filter((cell): cell is number => cell != null)
+        .map((cell) => [...table.tablePath!, 'rows', rowIndex, 'cells', cell])
+    : [];
+  const joined = joinedDocumentBinding(
+    state.index,
+    name,
+    kind,
+    fieldType,
+    targetPaths
+  );
+
   const rowId = joined ? null : row?.rowId ?? promotedRowId ?? null;
   if (op.global === true && rowId)
     throw new OpError(
@@ -24053,9 +24102,17 @@ function applyDocumentEditsMeasured(
               level: -1
             } as FlatBlock)
           : undefined);
+      // A field the target cell already holds is updated or re-stated where
+      // it lives, even when another op in this batch promotes its table.
+      const updatesHeldField =
+        op.op === 'create_binding' &&
+        !!target &&
+        !isLiveStoryTarget(target) &&
+        blockHoldsBindingName(target, String(op.name ?? ''));
       const routed =
         promotion &&
         promotionTarget &&
+        !updatesHeldField &&
         !isLiveStoryTarget(promotionTarget) &&
         (['create_binding', 'insert_column', 'delete_column'].includes(op.op) ||
           (op.op === 'insert_row' && op.shape === 'blank'))

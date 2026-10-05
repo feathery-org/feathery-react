@@ -222,4 +222,58 @@ describe('a row inserted into a banded table above its total', () => {
     expect(result.revisions).toBe(0);
     expect(await session.call<string>('serialize')).toBe(before);
   }, 120000);
+
+  it('widens the total and adds a bound line in one marker-less batch', async () => {
+    await session.call('open', premiumSummary(), 1, true);
+    const table = await session.call<string>(
+      'tableAnchorContaining',
+      'Coverage'
+    );
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g01-add-line',
+          anchor: `${table};3;1;0`,
+          kind: 'formula',
+          name: 'TotalPremium',
+          valueType: 'currency:USD:2',
+          expression: 'sum(HomePremium,AutoPremium,BoatPremium)'
+        },
+        {
+          op: 'insert_row',
+          group: 'g01-add-line',
+          anchor: `${table};2;0;0`,
+          shape: 'blank',
+          resultRef: '@added'
+        },
+        {
+          op: 'set_cell_text',
+          group: 'g01-add-line',
+          anchor: '@added;0;0',
+          text: 'Boat'
+        },
+        {
+          op: 'create_binding',
+          group: 'g01-add-line',
+          anchor: '@added;2;0',
+          kind: 'input',
+          name: 'BoatPremium',
+          valueType: 'currency:USD:2',
+          initial: '$150.00',
+          literal: true
+        }
+      ],
+      'add-line'
+    );
+
+    expect(result.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
+    await session.call('resolveGroups', true);
+    expect(
+      await session.call<Record<string, string>>('formulaValues')
+    ).toMatchObject({
+      TotalPremium: '$8,533.00'
+    });
+  }, 120000);
 });

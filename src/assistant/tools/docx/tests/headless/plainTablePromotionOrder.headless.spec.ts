@@ -87,4 +87,30 @@ describe('promoting several plain tables in one change set', () => {
     expect(tags).toHaveLength(2);
     expect(tags.some((tag) => tag.includes('row='))).toBe(false);
   }, 120000);
+
+  it('keeps a same-named column per table when two tables each bind it on several rows', async () => {
+    const sfdt = JSON.parse(twoPlainTables());
+    for (const block of [1, 3]) {
+      const table = sfdt.sections[0].blocks[block];
+      const extra = JSON.parse(JSON.stringify(table.rows[1]));
+      extra.cells[1].blocks = [{ inlines: [{ text: '$20.00' }] }];
+      table.rows[1].cells[1].blocks = [{ inlines: [{ text: '$10.00' }] }];
+      table.rows.push(extra);
+    }
+    await session.call('open', JSON.stringify(sfdt));
+    const result = await session.call<any>(
+      'applyEdits',
+      ['0;1;1;1;0', '0;1;2;1;0', '0;3;1;1;0', '0;3;2;1;0'].map((anchor) => ({
+        op: 'create_binding',
+        group: 'g01-price-column',
+        anchor,
+        kind: 'input',
+        name: 'price',
+        valueType: 'currency:USD:2'
+      })),
+      'price-columns'
+    );
+
+    expect(result.outcomes).toEqual(['ok', 'ok', 'ok', 'ok']);
+  }, 120000);
 });
