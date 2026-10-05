@@ -31,6 +31,7 @@ import {
   BindingIndex,
   formulaOccurrences,
   getAt,
+  InsertedRowsHint,
   NativeStructuralMutation,
   removeLineItem,
   scanBindings,
@@ -205,6 +206,8 @@ export class ReconciliationController {
 
   private pendingFlush = false;
 
+  private insertedRowsHint: InsertedRowsHint | null = null;
+
   constructor({
     editor,
     persistence = null,
@@ -230,6 +233,16 @@ export class ReconciliationController {
     this.persistedRevision = revision;
   }
 
+  /**
+   * Record which rows a native insert just created (from the insertRow wrap),
+   * so the next adopting reconcile re-adopts exactly those instead of guessing
+   * by position. Held until consumed; null clears it - any later row command
+   * that shifts indices passes null rather than leaving a stale hint.
+   */
+  noteInsertedRows(hint: InsertedRowsHint | null): void {
+    this.insertedRowsHint = hint;
+  }
+
   /** Wire this to the editor's contentChange event. */
   notifyContentChange(): void {
     if (this.phase === 'loading') return; // Our own write echoing back.
@@ -251,7 +264,10 @@ export class ReconciliationController {
   flush({
     mode = 'commit',
     adoptRows
-  }: { mode?: ReconcileMode; adoptRows?: boolean } = {}): void {
+  }: {
+    mode?: ReconcileMode;
+    adoptRows?: boolean;
+  } = {}): void {
     this.clearTimeoutFn(this.debounceTimer);
     if (this.phase !== 'idle') {
       this.pendingFlush = true;
@@ -273,6 +289,12 @@ export class ReconciliationController {
     }
 
     this.phase = 'reconciling';
+    // Consume the hint only when adoption can act on it. The post-replay
+    // self-heal runs with adoptRows false (a redone insert-above records a
+    // hint mid-replay), so it must leave the hint for the next adopting
+    // reconcile instead of eating it.
+    const insertedRows = adoptRows === false ? null : this.insertedRowsHint;
+    if (adoptRows !== false) this.insertedRowsHint = null;
     let result: ApplyRulesResult;
     try {
       const started = Date.now();
@@ -280,7 +302,8 @@ export class ReconciliationController {
         prevValues: this.values,
         mode,
         rowTemplates: this.rowTemplates,
-        ...(adoptRows === false ? { adoptRows: false } : {})
+        ...(adoptRows === false ? { adoptRows: false } : {}),
+        ...(insertedRows ? { insertedRows } : {})
       });
       this.timings.reconcileMs = Date.now() - started;
     } catch (thrown) {

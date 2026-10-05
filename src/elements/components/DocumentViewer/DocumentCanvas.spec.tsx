@@ -17,6 +17,109 @@ const baseProps = {
   registerPageRef: jest.fn()
 };
 
+it('edits text occurrences independently by default without extra controls', async () => {
+  // Model pdf.js's document-global sibling lookup, including reused object ids
+  // in different PDFs. This is the cross-document regression, not just naming.
+  const suffix = (n: string) => `__feathery_occurrence_${n.repeat(32)}`;
+  const getAnnotations = async () => [
+    {
+      id: '1R',
+      fieldName: `1own_FullName${suffix('1')}`,
+      fieldType: 'Tx',
+      fieldValue: 'Owner'
+    },
+    {
+      id: '2R',
+      fieldName: `1own_FullName${suffix('2')}`,
+      fieldType: 'Tx',
+      fieldValue: 'Owner'
+    }
+  ];
+  const proxies: any[] = [];
+  loadPdfjs.mockResolvedValue({
+    getDocument: () => {
+      const values: Record<string, any> = {};
+      const proxy = {
+        numPages: 1,
+        annotationStorage: {
+          getValue: (id: string, fallback: any) => values[id] || fallback,
+          setValue: (id: string, value: any) => {
+            values[id] = value;
+          }
+        },
+        getPage: async () => ({
+          getViewport: () => ({ width: 600, height: 800, clone: () => ({}) }),
+          getAnnotations,
+          render: () => ({ promise: Promise.resolve(), cancel: jest.fn() })
+        })
+      };
+      proxies.push(proxy);
+      return { promise: Promise.resolve(proxy) };
+    },
+    AnnotationMode: { ENABLE_FORMS: 2 },
+    AnnotationLayer: class {
+      config: any;
+      constructor(config: any) {
+        this.config = config;
+      }
+
+      async render({ annotations }: any) {
+        const { div, annotationStorage: storage } = this.config;
+        annotations.forEach((a: any) => {
+          const input = div.ownerDocument.createElement('input');
+          input.id = `pdfjs-${a.id}`;
+          input.name = a.fieldName;
+          input.setAttribute('data-element-id', a.id);
+          input.value = storage.getValue(a.id, { value: a.fieldValue }).value;
+          input.addEventListener('input', () => {
+            div.ownerDocument
+              .getElementsByName(input.name)
+              .forEach((el: HTMLElement) => {
+                (el as HTMLInputElement).value = input.value;
+                storage.setValue(el.getAttribute('data-element-id'), {
+                  value: input.value
+                });
+              });
+          });
+          div.append(input);
+        });
+      }
+    }
+  });
+  render(
+    <DocumentCanvas
+      {...baseProps}
+      documents={[doc, { ...doc, pdf_url: 'http://x/b.pdf' }]}
+    />
+  );
+  await waitFor(() => expect(screen.getAllByRole('textbox')).toHaveLength(4));
+  const inputs = screen.getAllByRole('textbox') as HTMLInputElement[];
+  fireEvent.input(inputs[0], { target: { value: 'Updated owner' } });
+  expect(inputs.map((i) => i.value)).toEqual([
+    'Updated owner',
+    'Owner',
+    'Owner',
+    'Owner'
+  ]);
+  expect(proxies[1].annotationStorage.getValue('1R', {})).toEqual({});
+
+  fireEvent.focus(inputs[1]);
+  expect(
+    screen.queryByRole('button', { name: /occurrence/i })
+  ).not.toBeInTheDocument();
+  expect(inputs[0].name).not.toBe(inputs[1].name);
+  fireEvent.input(inputs[1], { target: { value: 'Guardian' } });
+  expect(inputs.map((i) => i.value)).toEqual([
+    'Updated owner',
+    'Guardian',
+    'Owner',
+    'Owner'
+  ]);
+  expect(proxies[0].annotationStorage.getValue('2R', {})).toEqual({
+    value: 'Guardian'
+  });
+});
+
 it('shows a skeleton while a document loads', () => {
   loadPdfjs.mockReturnValue(new Promise(() => {}));
   render(<DocumentCanvas {...baseProps} />);

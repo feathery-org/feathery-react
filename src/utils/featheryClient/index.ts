@@ -822,11 +822,7 @@ export default class FeatheryClient extends IntegrationClient {
     return response.json();
   }
 
-  async submitAuthInfo({
-    authId,
-    authData = {},
-    isStytchTemplateKey = false
-  }: any) {
+  async submitAuthInfo({ authId, authData = {} }: any) {
     const { userId } = initInfo();
     await authState.onLogin();
 
@@ -834,7 +830,6 @@ export default class FeatheryClient extends IntegrationClient {
       auth_id: authId,
       auth_data: authData,
       auth_form_key: authState.authFormKey,
-      is_stytch_template_key: isStytchTemplateKey,
       // This response also feeds updateSessionValues, so it needs the same
       // hole signal the session fetch sends.
       repeat_holes: true,
@@ -1470,8 +1465,11 @@ export default class FeatheryClient extends IntegrationClient {
     return apiDataHubAction(sdkKey, resolved, this.formKey);
   }
 
-  async getHubSchemas(hubIds: string[]) {
+  // `hubKeys` resolves hubs by key as well as id, for a table whose hub is
+  // named at runtime by a hidden field's value.
+  async getHubSchemas(hubIds: string[], hubKeys: string[] = []) {
     const params = new URLSearchParams({ hub_ids: hubIds.join(',') });
+    if (hubKeys.length) params.set('hub_keys', hubKeys.join(','));
     if (this.formKey) params.set('form_key', this.formKey);
     const url = `${API_URL}hub/schema/?${params.toString()}`;
     const res = await this._fetch(

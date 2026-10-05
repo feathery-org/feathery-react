@@ -8,7 +8,8 @@ import { dynamicImport } from '../../../integrations/utils';
 import {
   configureTrackedChangeReview,
   resizeDocxEditor,
-  useDocxEditor
+  useDocxEditor,
+  washFor
 } from './useDocxEditor';
 
 jest.mock('../../../utils/documentEditorPrimitives', () => ({
@@ -23,6 +24,37 @@ jest.mock('../../../utils/documentEditorPrimitives', () => ({
 jest.mock('../../../integrations/utils', () => ({
   dynamicImport: jest.fn()
 }));
+
+describe('washFor (selected edit keeps the base wash, others mute)', () => {
+  const a = { id: 'a' };
+  const b = { id: 'b' };
+
+  it('uses the plain base wash at full opacity when nothing is selected', () => {
+    const add = washFor(null, 'add', a);
+    expect(add.alpha).toBe(1);
+    expect(add.fillStyle).toBe('rgba(219, 235, 228, 0.6)');
+    expect(washFor(new Set(), 'del', a).alpha).toBe(1);
+    expect(washFor(undefined, 'add', a).alpha).toBe(1);
+  });
+
+  it('gives the selected edit the SAME base wash a group selection shows', () => {
+    const sel = washFor(new Set([a]), 'add', a);
+    expect(sel.alpha).toBe(1);
+    expect(sel.fillStyle).toBe('rgba(219, 235, 228, 0.6)');
+    expect(washFor(new Set([a]), 'del', a).fillStyle).toBe(
+      'rgba(176, 48, 43, 0.15)'
+    );
+  });
+
+  it('counts a replace counterpart as part of the selection', () => {
+    // Either half of a replace passed in stays at full opacity.
+    expect(washFor(new Set([a]), 'add', null, a).alpha).toBe(1);
+  });
+
+  it('hides edits that are not the selection (alpha 0 = not painted)', () => {
+    expect(washFor(new Set([a]), 'add', b).alpha).toBe(0);
+  });
+});
 
 describe('configureTrackedChangeReview', () => {
   beforeEach(() => jest.clearAllMocks());

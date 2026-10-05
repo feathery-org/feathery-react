@@ -8,7 +8,7 @@
 import { createCommitTriggers } from '../commitTriggers';
 import { ReconciliationController } from '../controller';
 import { SyncfusionEditorLike } from '../editorAdapter';
-import { watchRowCommands } from '../rowCommandWatch';
+import { isRunningRowCommand, watchRowCommands } from '../rowCommandWatch';
 
 /** Records flush calls; everything else the triggers touch is unused here. */
 function fakeController() {
@@ -103,16 +103,18 @@ describe('watchRowCommands', () => {
     ]);
   });
 
-  it('does not reconcile while undo or redo is replaying the command', () => {
-    let changes = 0;
+  it('still reports during replay - the CALLER gates flushing, not the wrap', () => {
     const original = jest.fn(() => 'deleted');
     const editor = fakeEditor(undefined);
     (editor as any).editorModule = { deleteRow: original };
     (editor as any).editorHistoryModule = { isRedoing: true };
-    watchRowCommands(editor, () => (changes += 1));
+    const hints: unknown[] = [];
+    watchRowCommands(editor, (hint) => hints.push(hint));
 
     expect((editor as any).editorModule.deleteRow()).toBe('deleted');
-    expect(changes).toBe(0);
+    // Reported (clearing any stale hint downstream); attachBindings skips the
+    // flush while history is replaying.
+    expect(hints).toEqual([undefined]);
   });
 
   it('never lets a failing watcher break the insert', () => {
@@ -146,6 +148,133 @@ describe('watchRowCommands', () => {
     expect(order).toEqual(['command', 'adopt']);
   });
 
+  describe('inserted-row attribution', () => {
+    /**
+     * Editor over a one-table doc whose row count lives in `state`, so the
+     * mocked native command can "insert" by bumping it; caret on row 2.
+     */
+    function editorWithTable(original: jest.Mock, rowsBefore: number) {
+      const state = { rows: rowsBefore };
+      const editor = fakeEditor(original);
+      (editor as any).serialize = () =>
+        JSON.stringify({
+          sections: [
+            {
+              blocks: [
+                {
+                  rows: Array.from({ length: state.rows }, () => ({
+                    cells: []
+                  }))
+                }
+              ]
+            }
+          ]
+        });
+      (editor as any).selection = {
+        startOffset: '0;0;2;0;0;0',
+        endOffset: '0;0;2;0;0;0'
+      };
+      (editor as any).documentHelper = {
+        contentControlCollection: [{ contentControlProperties: {} }]
+      };
+      return { editor, state };
+    }
+
+    it('reports the inserted row for insert-above', () => {
+      const original = jest.fn();
+      const { editor, state } = editorWithTable(original, 4);
+      original.mockImplementation(() => {
+        state.rows += 1;
+        return 'ok';
+      });
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      expect((editor as any).editorModule.insertRow(true, 1)).toBe('ok');
+      expect(hints).toEqual([
+        { sectionIndex: 0, blockIndex: 0, rowIndices: [2] }
+      ]);
+    });
+
+    it('reports the row below for insert-below', () => {
+      const original = jest.fn();
+      const { editor, state } = editorWithTable(original, 4);
+      original.mockImplementation(() => {
+        state.rows += 1;
+        return 'ok';
+      });
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      (editor as any).editorModule.insertRow(false, 1);
+      expect(hints).toEqual([
+        { sectionIndex: 0, blockIndex: 0, rowIndices: [3] }
+      ]);
+    });
+
+    it('reports every row of a multi-row insert, measured not assumed', () => {
+      const original = jest.fn();
+      const { editor, state } = editorWithTable(original, 4);
+      original.mockImplementation(() => {
+        state.rows += 3;
+        return 'ok';
+      });
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      (editor as any).editorModule.insertRow(true, 3);
+      expect(hints).toEqual([
+        { sectionIndex: 0, blockIndex: 0, rowIndices: [2, 3, 4] }
+      ]);
+    });
+
+    it('records the hint for a redone insert-above too', () => {
+      const original = jest.fn();
+      const { editor, state } = editorWithTable(original, 4);
+      original.mockImplementation(() => {
+        state.rows += 1;
+        return 'ok';
+      });
+      (editor as any).editorHistoryModule = { isRedoing: true };
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      (editor as any).editorModule.insertRow(true, 1);
+      expect(hints).toEqual([
+        { sectionIndex: 0, blockIndex: 0, rowIndices: [2] }
+      ]);
+    });
+
+    it('reports no hint when the command inserted nothing', () => {
+      const original = jest.fn(() => undefined); // refused by Syncfusion
+      const { editor } = editorWithTable(original, 4);
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      (editor as any).editorModule.insertRow(true, 1);
+      expect(hints).toEqual([undefined]);
+    });
+
+    it('reports no hint for a delete, which clears a stale one downstream', () => {
+      const original = jest.fn(() => 'deleted');
+      const { editor } = editorWithTable(jest.fn(), 4);
+      (editor as any).editorModule = { deleteRow: original };
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      (editor as any).editorModule.deleteRow();
+      expect(hints).toEqual([undefined]);
+    });
+
+    it('reports no hint when the selection is not a top-level table cell', () => {
+      const original = jest.fn();
+      const { editor, state } = editorWithTable(original, 4);
+      original.mockImplementation(() => {
+        state.rows += 1;
+        return 'ok';
+      });
+      (editor as any).selection = { startOffset: '0;0;0', endOffset: '0;0;0' };
+      const hints: unknown[] = [];
+      watchRowCommands(editor, (hint) => hints.push(hint));
+      expect((editor as any).editorModule.insertRow(true, 1)).toBe('ok');
+      expect(hints).toEqual([undefined]);
+    });
+  });
+
   it('does not re-enter when follow-up work itself inserts a row', () => {
     const original = jest.fn(() => 'ok');
     const editor = fakeEditor(original);
@@ -167,7 +296,10 @@ describe('onRowsChanged', () => {
     const triggers = createCommitTriggers(
       fakeEditor(),
       controller as unknown as ReconciliationController,
-      { setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn }
+      {
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn
+      }
     );
 
     triggers.onRowsChanged();
@@ -183,7 +315,10 @@ describe('onRowsChanged', () => {
     const triggers = createCommitTriggers(
       fakeEditor(),
       controller as unknown as ReconciliationController,
-      { setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn }
+      {
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn
+      }
     );
 
     triggers.onRowsChanged();
@@ -199,7 +334,10 @@ describe('onRowsChanged', () => {
     const triggers = createCommitTriggers(
       fakeEditor(),
       controller as unknown as ReconciliationController,
-      { setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn }
+      {
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn
+      }
     );
 
     triggers.onContentChange();
@@ -217,12 +355,53 @@ describe('onRowsChanged', () => {
     const triggers = createCommitTriggers(
       fakeEditor(),
       controller as unknown as ReconciliationController,
-      { setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn }
+      {
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn
+      }
     );
 
     triggers.onRowsChanged();
     triggers.dispose();
     timers.runAll();
     expect(flushes).toEqual([]);
+  });
+});
+
+describe('native row command commit guard', () => {
+  it('defers blur commits until attribution and stays scoped to the editor', () => {
+    const { controller, flushes } = fakeController();
+    const other = fakeEditor();
+    const editor = fakeEditor(() => {
+      expect(isRunningRowCommand(editor)).toBe(true);
+      expect(isRunningRowCommand(other)).toBe(false);
+      triggers.onEditorBlur();
+      expect(flushes).toEqual([]);
+      expect(triggers.hasPendingEdit()).toBe(true);
+    });
+    const triggers = createCommitTriggers(
+      editor,
+      controller as unknown as ReconciliationController
+    );
+    watchRowCommands(editor, () => {
+      expect(isRunningRowCommand(editor)).toBe(false);
+      triggers.onEditorBlur();
+    });
+    triggers.onContentChange();
+    (editor.editorModule as any).insertRow(true);
+    expect(flushes).toHaveLength(1);
+    expect(triggers.hasPendingEdit()).toBe(false);
+    triggers.dispose();
+  });
+
+  it('releases the guard when the native command throws', () => {
+    const editor = fakeEditor(() => {
+      throw new Error('insert failed');
+    });
+    watchRowCommands(editor, () => undefined);
+    expect(() => (editor.editorModule as any).insertRow(true)).toThrow(
+      'insert failed'
+    );
+    expect(isRunningRowCommand(editor)).toBe(false);
   });
 });

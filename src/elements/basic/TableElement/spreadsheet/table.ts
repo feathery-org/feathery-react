@@ -1,5 +1,6 @@
 import {
   cellSelectionFeature,
+  columnPinningFeature,
   columnResizingFeature,
   columnSizingFeature,
   metaHelper,
@@ -39,6 +40,11 @@ export type SpreadsheetColumnMeta = {
  */
 export const spreadsheetFeatures = tableFeatures({
   cellSelectionFeature,
+  // Column pinning is the user's, from the header menu: pinned columns stick
+  // to the left edge, session-local. Row pinning is NOT TanStack's: its row
+  // display order (which cell selection is keyed on) ignores pinned rows, so
+  // the table element reorders the data instead — see `SpreadsheetTable`.
+  columnPinningFeature,
   columnResizingFeature,
   columnSizingFeature,
   columnMeta: metaHelper<SpreadsheetColumnMeta>()
@@ -48,7 +54,7 @@ export type SpreadsheetFeatures = typeof spreadsheetFeatures;
 
 export type SpreadsheetTableState = Pick<
   TableState<SpreadsheetFeatures>,
-  'columnResizing' | 'columnSizing'
+  'columnPinning' | 'columnResizing' | 'columnSizing'
 >;
 
 export type SpreadsheetTable = ReactTable<

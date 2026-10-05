@@ -17,7 +17,7 @@ import { getNextEditableCell } from './utils';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
-import { useHubTableSource } from './useHubTableSource';
+import { entryIdsShifted, useHubTableSource } from './useHubTableSource';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
 import {
@@ -71,6 +71,24 @@ function applyTableStyles(responsiveStyles: any) {
   return responsiveStyles;
 }
 
+// The table renders inside the form's <form>, where Enter in a text input
+// submits implicitly — clicking the step's submit button, or with no button
+// submitting the whole form. No input in the table means that: the cell
+// editor, the search and find boxes and the filter popover handle Enter
+// themselves. React events bubble through portals, so this covers the
+// table's popovers wherever they mount. An Enter that confirms an IME
+// composition is left alone: it submits nothing, and is the IME's to handle.
+function preventEnterSubmit(event: React.KeyboardEvent<HTMLElement>) {
+  const target = event.target as HTMLElement;
+  if (
+    event.key === 'Enter' &&
+    !event.nativeEvent.isComposing &&
+    target.tagName === 'INPUT'
+  ) {
+    event.preventDefault();
+  }
+}
+
 // Warns before a step transition, a browser back/forward, or a page exit
 // throws buffered spreadsheet edits away.
 const UNSAVED_TABLE_MESSAGE =
@@ -100,7 +118,9 @@ function TableElement({
   // the builder keeps rendering example data).
   const isHub =
     element.properties?.data_source === 'hub' &&
-    !!element.properties?.hub_id &&
+    (element.properties?.hub_dynamic
+      ? !!element.properties?.hub_id_field_key
+      : !!element.properties?.hub_id) &&
     !editMode;
 
   const wantsSpreadsheet = element.properties?.display_mode === 'spreadsheet';
@@ -308,6 +328,15 @@ function TableElement({
     () => setRowIdentityVersion((version) => version + 1),
     []
   );
+  // A Hub resync renumbers rows too: entries the grid has not seen (another
+  // user's new rows) land at the top, and one deleted elsewhere closes its gap.
+  // Bumped in the same render the rows move in, not in an effect after it, so
+  // nothing keyed to the old indices shows against the new rows for a frame.
+  const [seenEntryIds, setSeenEntryIds] = useState(hub.entryIds);
+  if (seenEntryIds !== hub.entryIds) {
+    setSeenEntryIds(hub.entryIds);
+    if (entryIdsShifted(seenEntryIds, hub.entryIds)) bumpRowIdentity();
+  }
 
   const wrappedHandleAddRow = useCallback(() => {
     setDeleteRowIndex(null);
@@ -746,6 +775,7 @@ function TableElement({
           : {}),
         ...styles.getTarget('container')
       }}
+      onKeyDown={preventEnterSubmit}
     >
       {showToolbar && (
         <div className={TABLE_CLASS.toolbar} css={toolbarStyle}>

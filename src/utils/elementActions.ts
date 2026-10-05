@@ -57,6 +57,8 @@ export function hasFlowActions(actions: any[]) {
 
 export const stepEvents = ['submit', 'load'];
 export const elementEvents = ['view', 'change', 'action'];
+// Fired after a toolbar action on the Generate Documents review screen.
+export const DOCUMENT_REVIEW_EVENT = 'document_review';
 
 export function isRunnableStepEventRule(rule: any, curStepId: string) {
   return (
@@ -77,6 +79,13 @@ export function canRunAction(
   altMatchId: string | undefined
 ) {
   const event = logicRule.trigger_event;
+  if (event === DOCUMENT_REVIEW_EVENT) {
+    // Scoped by toolbar action rather than by element: a button or
+    // feathery.generateDocuments opens the same review screen. An empty
+    // filter means every action.
+    const allowed: string[] = logicRule.metadata?.review_actions ?? [];
+    return allowed.length === 0 || allowed.includes(props.trigger?.action);
+  }
   if (![...stepEvents, ...elementEvents].includes(event)) return true;
 
   const runAfterEvent = logicRule.metadata?.after_click;
@@ -117,6 +126,26 @@ export function canRunAction(
       (props as ContextOnChange | ContextOnAction).trigger.id
     ) ||
       logicRule.elements.includes(altMatchId ?? ''))
+  );
+}
+
+// Whether any 'action' logic rule runs when this element is clicked. Mirrors
+// the element matching in canRunAction: the element's id or its link_id, or
+// for containers, the container's key or its id.
+export function elementHasClickLogic(
+  logicRules: any[] | undefined,
+  element: any,
+  isContainer = false
+) {
+  const ids = (
+    isContainer
+      ? [element?.key, element?.id]
+      : [element?.id, element?.properties?.link_id]
+  ).filter(Boolean);
+  return (logicRules ?? []).some(
+    (rule) =>
+      rule.trigger_event === 'action' &&
+      ids.some((id) => rule.elements?.includes(id))
   );
 }
 
