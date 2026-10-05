@@ -18,6 +18,8 @@ import { OPCPackage } from '../opc/package';
 import { trackObjectUrl } from '../opc/objectUrls';
 import { featheryDoc } from '../../../../../utils/browser';
 import { themeFonts, resolveFont, type ThemeFonts } from '../model/theme';
+import { ensureDeckFontsLoaded, splitFontWeight } from './fonts';
+import { readSlide } from '../model/import';
 import { resolveListProps } from '../model/resolve';
 import {
   tableCellAlign,
@@ -317,7 +319,10 @@ function geometryEl(
       e = mk('rect');
       e.setAttribute('width', String(w));
       e.setAttribute('height', String(h));
-      e.setAttribute('rx', String(Math.min(w, h) * 0.1667));
+      // Corner radius is the adj (1/100000 of the smaller side); 16.667% is the
+      // preset default, but a deck can set 0 for square corners.
+      const adj = shape.geomAdj ?? 16667;
+      e.setAttribute('rx', String((Math.min(w, h) * adj) / 100000));
       break;
     }
     case 'triangle': {
@@ -739,15 +744,17 @@ interface ParaDefault {
 // A run's own props win; otherwise fall back to the paragraph's inherited default
 // (from the placeholder list style), then the built-in default.
 function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
+  const { family, weight } = splitFontWeight(
+    resolveFont(r.font ?? def?.font, svgThemeFonts)
+  );
   const parts = [
     `font-size:${ptToCssPx(r.sizePt ?? def?.sizePt ?? 18) * fontScale}px`,
     `color:#${(r.color ?? def?.color ?? '000000').replace('#', '')}`,
-    `font-family:'${resolveFont(
-      r.font ?? def?.font,
-      svgThemeFonts
-    )}',Helvetica,Arial,sans-serif`
+    `font-family:'${family}',Helvetica,Arial,sans-serif`
   ];
+  // Bold wins; otherwise the typeface name's own weight (e.g. "… Medium").
   if (r.bold ?? def?.bold) parts.push('font-weight:700');
+  else if (weight !== 400) parts.push(`font-weight:${weight}`);
   if (r.italic ?? def?.italic) parts.push('font-style:italic');
   const decorations = [
     r.underline ? 'underline' : '',
@@ -1255,10 +1262,10 @@ function chartText(
   text.setAttribute('y', '0');
   const resolvedSize = style?.sizePt ? style.sizePt * 12700 : size;
   text.setAttribute('font-size', String(resolvedSize / EMU_PER_PX));
-  text.setAttribute(
-    'font-family',
-    `${resolveFont(style?.font, svgThemeFonts)},Arial,sans-serif`
-  );
+  const chartFont = splitFontWeight(resolveFont(style?.font, svgThemeFonts));
+  text.setAttribute('font-family', `${chartFont.family},Arial,sans-serif`);
+  if (chartFont.weight !== 400)
+    text.setAttribute('font-weight', String(chartFont.weight));
   text.setAttribute(
     'fill',
     resolveChartColor(style?.color, curDeck?.pkg) || '#44546a'
@@ -2735,9 +2742,49 @@ function themeFillStyle(
   return childrenOf(child(fmt, 'a:fillStyleLst') || {})[idx - 1];
 }
 
+// ---- inherited layout/master decoration ----
+const chromeCache = new WeakMap<OPCPackage, Map<string, Shape[]>>();
+
+function showsMaster(pkg: OPCPackage, part: string): boolean {
+  if (!pkg.hasPart(part)) return true;
+  return getAttr(xmlRoot(pkg.tree(part)), 'showMasterSp') !== '0';
+}
+
+/** Decorative (non-placeholder) shapes from the slide's master + layout, drawn
+ *  beneath the slide's own shapes so layout design elements - colored panels,
+ *  logos, rules - appear. Placeholders are skipped: they are content templates,
+ *  not standalone decoration. */
+function inheritedChromeShapes(deck: Deck, slide: Slide): Shape[] {
+  const pkg = deck.pkg;
+  const layout = pkg.layoutFor(slide.path);
+  if (!layout) return [];
+  const master = pkg.masterFor(layout);
+  const key = `${master || ''}|${layout}`;
+  const inner = pkgCache(chromeCache, pkg);
+  const hit = inner.get(key);
+  if (hit) return hit;
+
+  const result: Shape[] = [];
+  const collect = (part: string | undefined, tag: string) => {
+    if (!part || !pkg.hasPart(part)) return;
+    let n = 0;
+    for (const s of readSlide(pkg, part).shapes) {
+      if (!s.xfrm || descendant(s.node, 'p:ph')) continue;
+      s.id = `chrome-${tag}-${n++}`; // never collide with a slide shape id
+      result.push(s);
+    }
+  };
+  if (showsMaster(pkg, slide.path) && showsMaster(pkg, layout))
+    collect(master, 'm');
+  collect(layout, 'l');
+  inner.set(key, result);
+  return result;
+}
+
 /** Render a whole slide to an <svg> element sized to the slide's EMU box. */
 export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
   setRenderContext(deck, slide);
+  ensureDeckFontsLoaded(deck);
   try {
     const svg = featheryDoc().createElementNS(SVGNS, 'svg') as SVGSVGElement;
     svg.dataset.svgUid = `p${svgSeq++}-`;
@@ -2753,6 +2800,17 @@ export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
     if (bg) {
       bg.setAttribute('data-slide-background', '');
       svg.appendChild(bg);
+    }
+    const chrome = inheritedChromeShapes(deck, slide);
+    if (chrome.length) {
+      const chromeG = featheryDoc().createElementNS(SVGNS, 'g') as SVGGElement;
+      chromeG.setAttribute('data-slide-chrome', '');
+      chromeG.style.pointerEvents = 'none';
+      chrome.forEach((shape, i) => {
+        const g = shapeGroup(shape, deck.pkg, defs, `chrome-${i}`);
+        if (g) chromeG.appendChild(g);
+      });
+      if (chromeG.childNodes.length) svg.appendChild(chromeG);
     }
     slide.shapes.forEach((shape, i) => {
       const g = shapeGroup(shape, deck.pkg, defs, i);

@@ -36,6 +36,19 @@ export function solidFillHex(container: ONode | undefined): string | undefined {
   return srgb ? getAttr(srgb, 'val') : undefined;
 }
 
+// First preset adjustment (prefers the one named "adj"), e.g. a roundRect's
+// corner radius as 1/100000. undefined = no explicit avLst, so use the preset
+// default; 0 means the deck set it square.
+function readGeomAdj(geomNode: ONode | undefined): number | undefined {
+  const avLst = geomNode && child(geomNode, 'a:avLst');
+  if (!avLst) return undefined;
+  const gds = childrenOf(avLst).filter((n) => Object.keys(n)[0] === 'a:gd');
+  const gd = gds.find((n) => getAttr(n, 'name') === 'adj') || gds[0];
+  const fmla = gd && getAttr(gd, 'fmla');
+  const match = fmla && /val\s+(-?\d+)/.exec(fmla);
+  return match ? Number(match[1]) : undefined;
+}
+
 function readRun(rNode: ONode): Run {
   const rPr = child(rNode, 'a:rPr');
   const tNode = child(rNode, 'a:t');
@@ -195,6 +208,7 @@ export function readShapeNode(
     chartPart: chartRelId ? opts.relatedPart?.(chartRelId) : undefined,
     fillColor: solidFillHex(spPr),
     geom: geomNode ? getAttr(geomNode, 'prst') : undefined,
+    geomAdj: readGeomAdj(geomNode),
     node,
     spPr
   };
