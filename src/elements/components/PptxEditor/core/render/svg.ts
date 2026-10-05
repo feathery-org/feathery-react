@@ -737,10 +737,31 @@ const ptToCssPx = (pt: number) => (pt * 96) / 72;
 interface ParaDefault {
   sizePt?: number;
   color?: string;
+  colorScheme?: string;
   font?: string;
   bold?: boolean;
   italic?: boolean;
 }
+
+// Text color (hex, no '#'): run's own fill - srgb or a theme color on its rPr -
+// then the inherited placeholder default (srgb or theme color), then black.
+// schemeClr/sysClr are resolved through the current slide's theme + clrMap.
+function resolveTextColor(r: Run, def?: ParaDefault): string {
+  if (r.color) return r.color.replace('#', '');
+  const pkg = curDeck?.pkg;
+  if (pkg && r.rPr) {
+    const solid = child(r.rPr, 'a:solidFill');
+    const resolved = solid && resolveColor(solid, pkg);
+    if (resolved) return resolved.replace('#', '');
+  }
+  if (def?.color) return def.color.replace('#', '');
+  if (def?.colorScheme && pkg) {
+    const hex = schemeColorHex(def.colorScheme, pkg);
+    if (hex) return hex.replace('#', '');
+  }
+  return '000000';
+}
+
 // A run's own props win; otherwise fall back to the paragraph's inherited default
 // (from the placeholder list style), then the built-in default.
 function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
@@ -749,7 +770,7 @@ function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
   );
   const parts = [
     `font-size:${ptToCssPx(r.sizePt ?? def?.sizePt ?? 18) * fontScale}px`,
-    `color:#${(r.color ?? def?.color ?? '000000').replace('#', '')}`,
+    `color:#${resolveTextColor(r, def)}`,
     `font-family:'${family}',Helvetica,Arial,sans-serif`
   ];
   // Bold wins; otherwise the typeface name's own weight (e.g. "… Medium").
@@ -1149,10 +1170,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     // bullet marker (explicit char / auto-number), styled from the first run
     const first = p.runs[0];
     const markerSize = (first?.sizePt ?? paraDef?.sizePt ?? 18) * fontScale;
-    const markerColor = (first?.color ?? paraDef?.color ?? '000000').replace(
-      '#',
-      ''
-    );
+    const markerColor = resolveTextColor(first ?? ({} as Run), paraDef);
     const markerStyle = `font-size:${ptToCssPx(
       markerSize
     )}px;color:#${markerColor};position:absolute;left:${marL + indent}px;${

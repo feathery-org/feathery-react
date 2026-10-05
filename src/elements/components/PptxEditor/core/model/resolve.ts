@@ -29,6 +29,7 @@ export interface ResolvedListProps {
   defRPr?: {
     sizePt?: number;
     color?: string;
+    colorScheme?: string; // schemeClr val when the default color is a theme color
     font?: string;
     bold?: boolean;
     italic?: boolean;
@@ -73,10 +74,12 @@ function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
     const latin = child(defRPr, 'a:latin');
     const solid = child(defRPr, 'a:solidFill');
     const srgb = solid && child(solid, 'a:srgbClr');
+    const scheme = solid && child(solid, 'a:schemeClr');
     out.defRPr = {
       sizePt: sz ? szToPt(Number(sz)) : undefined,
       font: latin ? getAttr(latin, 'typeface') : undefined,
       color: srgb ? getAttr(srgb, 'val') : undefined,
+      colorScheme: scheme ? getAttr(scheme, 'val') : undefined,
       bold: getAttr(defRPr, 'b') === '1' || undefined,
       italic: getAttr(defRPr, 'i') === '1' || undefined
     };
