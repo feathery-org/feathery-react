@@ -68,6 +68,34 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
+  it('captures independent Quik copies before flushing saved fields', async () => {
+    const source = {
+      kind: 'quik' as const,
+      forms: [
+        { id: 44249, fields: { '1own.FName': 'First' } },
+        { id: 44249, fields: { '1own.FName': 'Second' } }
+      ]
+    };
+    let finishSave!: () => void;
+    client.flushCustomFields.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishSave = resolve;
+      })
+    );
+    const pending = getFormContext(uuid).generateDocuments({
+      documentIds: [source],
+      envelopeAction: 'open_in_editor',
+      toolbarActions: ['download', 'draft']
+    });
+    source.forms[0].fields['1own.FName'] = 'Changed later';
+    finishSave();
+    await pending;
+    expect(flow.mock.calls[0][0].documents[0].forms).toEqual([
+      { id: 44249, fields: { '1own.FName': 'First' } },
+      { id: 44249, fields: { '1own.FName': 'Second' } }
+    ]);
+  });
+
   it('routes a bare sign envelope action through the flow', async () => {
     await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
