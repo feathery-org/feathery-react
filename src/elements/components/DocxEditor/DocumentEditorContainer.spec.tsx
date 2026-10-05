@@ -110,6 +110,18 @@ jest.mock('./index', () => {
   };
 });
 
+// Stands in for the pdf.js-backed signed-PDF view so these tests don't load
+// pdf.js; exposes its props for assertion.
+jest.mock('./SignedEnvelopeView', () => {
+  const React = jest.requireActual('react');
+  return function MockSignedEnvelopeView({ pdfUrl, signed }: any) {
+    return React.createElement('div', {
+      'data-testid': `signed-view:${pdfUrl}`,
+      'data-signed': String(!!signed)
+    });
+  };
+});
+
 const mockFinalizeEnvelope = jest.fn();
 const mockFinalizeEnvelopeReview = jest.fn();
 jest.mock('../../../utils/featheryClient', () => ({
@@ -754,6 +766,36 @@ describe('DocumentEditorContainer signing outcomes', () => {
       expect(showEnvelopeOutcome).toHaveBeenCalledWith('Sent for Signature', [
         `document-${CONTAINER}`
       ])
+    );
+  });
+
+  it('swaps the docx editor for the signed PDF view after a Feathery sign', async () => {
+    const url = `https://example.com/${CONTAINER}.docx`;
+    // Finalize converts the docx to a PDF envelope and discards the editable
+    // copy; the container must render that PDF, not reopen the gone docx.
+    mockFinalizeEnvelope.mockResolvedValue({
+      id: `envelope-${CONTAINER}`,
+      file: 'https://x/signed.pdf',
+      editor_file: null,
+      type: 'pdf',
+      signed: false,
+      signer_id: null,
+      invited: true
+    });
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId, queryByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId(`editor:${url}`)).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    await waitFor(() =>
+      expect(getByTestId('signed-view:https://x/signed.pdf')).toBeTruthy()
+    );
+    // The editor is gone, so it can't re-fetch the deleted docx and fail.
+    expect(queryByTestId(`editor:${url}`)).toBeNull();
+    expect(getByTestId('signed-view:https://x/signed.pdf')).toHaveAttribute(
+      'data-signed',
+      'false'
     );
   });
 
