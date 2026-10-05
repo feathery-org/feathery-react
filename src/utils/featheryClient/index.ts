@@ -822,11 +822,7 @@ export default class FeatheryClient extends IntegrationClient {
     return response.json();
   }
 
-  async submitAuthInfo({
-    authId,
-    authData = {},
-    isStytchTemplateKey = false
-  }: any) {
+  async submitAuthInfo({ authId, authData = {} }: any) {
     const { userId } = initInfo();
     await authState.onLogin();
 
@@ -834,7 +830,6 @@ export default class FeatheryClient extends IntegrationClient {
       auth_id: authId,
       auth_data: authData,
       auth_form_key: authState.authFormKey,
-      is_stytch_template_key: isStytchTemplateKey,
       // This response also feeds updateSessionValues, so it needs the same
       // hole signal the session fetch sends.
       repeat_holes: true,

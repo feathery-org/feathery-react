@@ -10,7 +10,7 @@
 
 import { applyRules, ApplyRulesResult } from './engine';
 import { parseTag } from './tagDsl';
-import { SfdtBlock, SfdtDocument } from './sfdtTypes';
+import { SfdtBlock, SfdtDocument, SfdtRow } from './sfdtTypes';
 
 export interface OrphanedFormula {
   name: string;
@@ -24,6 +24,25 @@ export interface TableDeleteImpact {
   /** Bound table id when the block is a tagged wrapper, else null. */
   tableId: string | null;
   orphans: OrphanedFormula[];
+}
+
+/** Rows of the table at (section, block): a bare table or a cc-wrapped one. */
+export function tableRowsAt(
+  doc: SfdtDocument,
+  sectionIndex: number,
+  blockIndex: number
+): SfdtRow[] | null {
+  const block = tableBlockAt(doc, sectionIndex, blockIndex);
+  const rows = !block
+    ? undefined
+    : Array.isArray(block.rows)
+    ? block.rows
+    : (
+        block.blocks?.find((child) =>
+          Array.isArray((child as SfdtBlock).rows)
+        ) as SfdtBlock
+      )?.rows;
+  return Array.isArray(rows) ? (rows as SfdtRow[]) : null;
 }
 
 /** The block when it is a table or a block content control wrapping one. */
