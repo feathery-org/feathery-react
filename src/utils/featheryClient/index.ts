@@ -1112,11 +1112,17 @@ export default class FeatheryClient extends IntegrationClient {
     // stepper reflects which steps are completed vs merely skipped over.
     if (eventData.event === 'complete') markStepCompleted(eventData.step_key);
 
+    // Stamp now so queued or replayed events keep when they actually happened
+    const timedEvent = {
+      ...eventData,
+      timestamp: eventData.timestamp ?? new Date().toISOString()
+    };
+
     if (!isInteractionDetected() || this.userEventQueue.isReplayingEvents()) {
-      return this.userEventQueue.enqueue(eventData);
+      return this.userEventQueue.enqueue(timedEvent);
     }
 
-    return this._registerEventInternal(eventData);
+    return this._registerEventInternal(timedEvent);
   }
 
   private async _registerEventInternal(eventData: any) {
@@ -1130,7 +1136,7 @@ export default class FeatheryClient extends IntegrationClient {
       ...eventData,
       ...(userId ? { fuser_key: userId } : {}),
       event_id: uuidv4(),
-      timestamp: new Date().toISOString()
+      timestamp: eventData.timestamp ?? new Date().toISOString()
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
     if (this.version) data.__feathery_version = this.version;
@@ -1172,7 +1178,8 @@ export default class FeatheryClient extends IntegrationClient {
       eventPromise = prom.then(() => triggerEvent());
     else eventPromise = Promise.all([prom, triggerEvent()]);
 
-    this.eventQueue = this.eventQueue.then(() => eventPromise);
+    // Callers still see the rejection; the shared chain must not stay rejected
+    this.eventQueue = this.eventQueue.then(() => eventPromise.catch(() => {}));
     return eventPromise;
   }
 

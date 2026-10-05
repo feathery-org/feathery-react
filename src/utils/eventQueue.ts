@@ -17,7 +17,7 @@ export class EventQueue {
     return new Promise((resolve, reject) => {
       this.queue.push({
         eventData,
-        timestamp: Date.now(), // TODO: pass UTC timestamp to BE
+        timestamp: Date.now(),
         resolve,
         reject
       });
