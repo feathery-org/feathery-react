@@ -6,6 +6,7 @@ import React, {
   useState
 } from 'react';
 import DocxEditor from './index';
+import SignedEnvelopeView from './SignedEnvelopeView';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { documentRefTemplateId } from '../../../utils/featheryClient/integrationClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
@@ -419,6 +420,22 @@ export default function DocumentEditorContainer({
           targetAction?.sign_method
         );
         setFinalizedId(envelope.id);
+        // Finalize converted the docx to a signable PDF and discarded the
+        // editable copy. Adopt the returned PDF envelope (envelope_data: file,
+        // type='pdf', editor_file=null) so the container renders it read-only
+        // (SignedEnvelopeView) instead of reopening the now-gone docx source,
+        // which fails with "no file to load".
+        setEnvelope((current) =>
+          current && finalized && current.id === envelope.id
+            ? {
+                ...current,
+                file: finalized.file ?? current.file,
+                editor_file: finalized.editor_file ?? null,
+                type: finalized.type ?? current.type,
+                signed: finalized.signed ?? current.signed
+              }
+            : current
+        );
       }
 
       // Nothing here navigates away, so the outcome is only visible if it's
@@ -587,6 +604,14 @@ export default function DocumentEditorContainer({
       <div css={placeholder}>
         No document yet — generate it to start editing.
       </div>
+    );
+  }
+  // A finalized/signed envelope is a PDF with no editable docx left. Show the
+  // signed PDF read-only rather than the docx editor (which has nothing to
+  // open) or the "unsupported type" placeholder below.
+  if (envelope.type === 'pdf') {
+    return box(
+      <SignedEnvelopeView pdfUrl={envelope.file} signed={envelope.signed} />
     );
   }
   if (envelope.type !== 'docx') {
