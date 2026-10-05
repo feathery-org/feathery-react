@@ -4,6 +4,7 @@ import { authState } from '../LoginForm';
 import { getUrlHash, setUrlStepHash } from '../../utils/stepHelperFunctions';
 import { getAuthIntegrationMetadata, hasAuthGatedSteps } from './utils';
 import { initState } from '../../utils/init';
+import { STEP_EVENT_SUBMIT } from '../../utils/stepEvents';
 
 const useFormAuth = ({
   initialStep,
@@ -42,7 +43,7 @@ const useFormAuth = ({
         // This is only guaranteed to happen for OAuth - both magic link & SMS have potential to set completed via goToNewStep
         client.registerEvent({
           step_key: initialStep,
-          event: 'complete'
+          event: STEP_EVENT_SUBMIT
         });
         const redirect = initState.redirectCallbacks[_internalId];
         if (redirect) redirect();

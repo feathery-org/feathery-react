@@ -25,6 +25,7 @@ import internalState, {
   setFormInternalState
 } from './internalState';
 import { validateElements } from './validation';
+import { STEP_EVENT_SKIP } from './stepEvents';
 import {
   FillQuikParams,
   ForwardInboxEmailOptions,
@@ -66,7 +67,7 @@ export const getFormContext = (formUuid: string) => {
       return client.registerEvent({
         step_key: currentStep.key,
         next_step_key: '',
-        event: 'skip',
+        event: STEP_EVENT_SKIP,
         completed: true
       });
     },
