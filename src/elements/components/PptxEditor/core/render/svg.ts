@@ -69,77 +69,153 @@ function clearRenderContext(): void {
 const SVGNS = 'http://www.w3.org/2000/svg';
 const XHTML = 'http://www.w3.org/1999/xhtml';
 
-// ---- theme colors (cached per package) ----
-const themeCache = new WeakMap<OPCPackage, Record<string, string>>();
-function themeColors(pkg: OPCPackage): Record<string, string> {
-  let map = themeCache.get(pkg);
-  if (map) return map;
-  map = {
-    tx1: '000000',
-    bg1: 'FFFFFF',
-    tx2: '44546A',
-    bg2: 'E7E6E6',
-    accent1: '4472C4',
-    accent2: 'ED7D31',
-    accent3: 'A5A5A5',
-    accent4: 'FFC000',
-    accent5: '5B9BD5',
-    accent6: '70AD47',
-    hlink: '0563C1',
-    folHlink: '954F72'
-  };
+// ---- theme + color-map resolution ----
+// Scheme colors resolve against the theme of the CURRENT slide's master, not a
+// fixed theme1: a deck can carry several masters, each with its own theme.
+// Placeholder names (bg1/bg2/tx1/tx2) map to real theme slots through that
+// master's <p:clrMap>, which is not always the standard mapping.
+const DEFAULT_THEME_COLORS: Record<string, string> = {
+  dk1: '000000',
+  lt1: 'FFFFFF',
+  dk2: '44546A',
+  lt2: 'E7E6E6',
+  accent1: '4472C4',
+  accent2: 'ED7D31',
+  accent3: 'A5A5A5',
+  accent4: 'FFC000',
+  accent5: '5B9BD5',
+  accent6: '70AD47',
+  hlink: '0563C1',
+  folHlink: '954F72'
+};
+const STANDARD_CLR_MAP: Record<string, string> = {
+  bg1: 'lt1',
+  tx1: 'dk1',
+  bg2: 'lt2',
+  tx2: 'dk2'
+};
+const THEME_SLOT_TAGS: Array<[string, string]> = [
+  ['a:dk1', 'dk1'],
+  ['a:lt1', 'lt1'],
+  ['a:dk2', 'dk2'],
+  ['a:lt2', 'lt2'],
+  ['a:accent1', 'accent1'],
+  ['a:accent2', 'accent2'],
+  ['a:accent3', 'accent3'],
+  ['a:accent4', 'accent4'],
+  ['a:accent5', 'accent5'],
+  ['a:accent6', 'accent6'],
+  ['a:hlink', 'hlink'],
+  ['a:folHlink', 'folHlink']
+];
+
+// Per-package caches: a theme part / slide path means a different thing in a
+// different deck, so never key these globally.
+const themeCache = new WeakMap<
+  OPCPackage,
+  Map<string, Record<string, string>>
+>();
+const themePartCache = new WeakMap<OPCPackage, Map<string, string>>();
+const clrMapCache = new WeakMap<
+  OPCPackage,
+  Map<string, Record<string, string>>
+>();
+function pkgCache<V>(m: WeakMap<OPCPackage, Map<string, V>>, pkg: OPCPackage) {
+  let inner = m.get(pkg);
+  if (!inner) {
+    inner = new Map<string, V>();
+    m.set(pkg, inner);
+  }
+  return inner;
+}
+
+/** Theme colors keyed by real slot (dk1/lt1/dk2/lt2/accentN/hlink/folHlink). */
+function themeColors(
+  pkg: OPCPackage,
+  themePart = 'ppt/theme/theme1.xml'
+): Record<string, string> {
+  const inner = pkgCache(themeCache, pkg);
+  const cached = inner.get(themePart);
+  if (cached) return cached;
+  const map = { ...DEFAULT_THEME_COLORS };
   try {
-    if (!pkg.hasPart('ppt/theme/theme1.xml')) {
-      themeCache.set(pkg, map);
-      return map;
-    }
-    const root = pkg
-      .tree('ppt/theme/theme1.xml')
-      .find((n) => Object.keys(n).some((k) => k.endsWith('theme')));
-    const scheme = root && descendant(root, 'a:clrScheme');
-    if (scheme) {
-      const pick = (tag: string, key: string) => {
-        const n = child(scheme, tag);
-        if (!n) return;
-        const srgb = child(n, 'a:srgbClr');
-        const sys = child(n, 'a:sysClr');
-        // sysClr @val is a system-color NAME (e.g. "window"); the resolved hex is @lastClr
-        const val = srgb
-          ? getAttr(srgb, 'val')
-          : sys
-          ? getAttr(sys, 'lastClr') || getAttr(sys, 'val')
-          : undefined;
-        if (val) map![key] = val.toUpperCase();
-      };
-      pick('a:dk1', 'tx1');
-      pick('a:lt1', 'bg1');
-      pick('a:dk2', 'tx2');
-      pick('a:lt2', 'bg2');
-      pick('a:accent1', 'accent1');
-      pick('a:accent2', 'accent2');
-      pick('a:accent3', 'accent3');
-      pick('a:accent4', 'accent4');
-      pick('a:accent5', 'accent5');
-      pick('a:accent6', 'accent6');
+    if (pkg.hasPart(themePart)) {
+      const root = pkg
+        .tree(themePart)
+        .find((n) => Object.keys(n).some((k) => k.endsWith('theme')));
+      const scheme = root && descendant(root, 'a:clrScheme');
+      if (scheme) {
+        for (const [tag, slot] of THEME_SLOT_TAGS) {
+          const n = child(scheme, tag);
+          if (!n) continue;
+          const srgb = child(n, 'a:srgbClr');
+          const sys = child(n, 'a:sysClr');
+          // sysClr @val is a system-color NAME (e.g. "window"); hex is @lastClr
+          const val = srgb
+            ? getAttr(srgb, 'val')
+            : sys
+            ? getAttr(sys, 'lastClr') || getAttr(sys, 'val')
+            : undefined;
+          if (val) map[slot] = val.toUpperCase();
+        }
+      }
     }
   } catch {
     /* keep defaults */
   }
-  themeCache.set(pkg, map);
+  inner.set(themePart, map);
   return map;
 }
 
-const SCHEME_ALIAS: Record<string, string> = {
-  tx1: 'tx1',
-  dk1: 'tx1',
-  bg1: 'bg1',
-  lt1: 'bg1',
-  tx2: 'tx2',
-  dk2: 'tx2',
-  bg2: 'bg2',
-  lt2: 'bg2',
-  phClr: 'accent1'
-};
+/** Theme part feeding the current slide's master (falls back to theme1). */
+function currentThemePart(pkg: OPCPackage): string {
+  const slide = curSlide;
+  if (!slide) return 'ppt/theme/theme1.xml';
+  const inner = pkgCache(themePartCache, pkg);
+  const cached = inner.get(slide.path);
+  if (cached) return cached;
+  const layout = pkg.layoutFor(slide.path);
+  const master = layout && pkg.masterFor(layout);
+  const theme =
+    (master && pkg.relTargetByType(master, 'theme')) || 'ppt/theme/theme1.xml';
+  inner.set(slide.path, theme);
+  return theme;
+}
+
+/** Current slide master's <p:clrMap> (bg1/bg2/tx1/tx2 -> real theme slot). */
+function currentClrMap(pkg: OPCPackage): Record<string, string> {
+  const slide = curSlide;
+  if (!slide) return STANDARD_CLR_MAP;
+  const inner = pkgCache(clrMapCache, pkg);
+  const cached = inner.get(slide.path);
+  if (cached) return cached;
+  let map = STANDARD_CLR_MAP;
+  const layout = pkg.layoutFor(slide.path);
+  const master = layout && pkg.masterFor(layout);
+  if (master && pkg.hasPart(master)) {
+    const clrMap = child(xmlRoot(pkg.tree(master)), 'p:clrMap');
+    if (clrMap) {
+      map = {
+        bg1: getAttr(clrMap, 'bg1') || 'lt1',
+        tx1: getAttr(clrMap, 'tx1') || 'dk1',
+        bg2: getAttr(clrMap, 'bg2') || 'lt2',
+        tx2: getAttr(clrMap, 'tx2') || 'dk2'
+      };
+    }
+  }
+  inner.set(slide.path, map);
+  return map;
+}
+
+/** Hex (no '#') for a schemeClr val, honoring the slide's clrMap + theme. */
+function schemeColorHex(name: string, pkg: OPCPackage): string | undefined {
+  // bg1/bg2/tx1/tx2 are placeholders mapped via clrMap; everything else
+  // (dk1/lt1/dk2/lt2/accentN/hlink) names a theme slot directly.
+  const slot = STANDARD_CLR_MAP[name]
+    ? currentClrMap(pkg)[name] || STANDARD_CLR_MAP[name]
+    : name;
+  return themeColors(pkg, currentThemePart(pkg))[slot];
+}
 
 /** Resolve an a:solidFill / color container to a hex string, applying lumMod/lumOff/shade/tint.
  *  phClr (a theme placeholder color) is substituted when a schemeClr val="phClr" is hit. */
@@ -162,7 +238,7 @@ function resolveColor(
     hex =
       name === 'phClr' && phClr
         ? phClr.replace('#', '')
-        : themeColors(pkg)[SCHEME_ALIAS[name] || name];
+        : schemeColorHex(name, pkg);
     node = scheme;
   } else if (sys) {
     hex = getAttr(sys, 'lastClr') || getAttr(sys, 'val');
@@ -1210,7 +1286,7 @@ function resolveChartColor(
   if (!pkg) return undefined;
   const name = value.slice('scheme:'.length);
   return `#${
-    themeColors(pkg)[SCHEME_ALIAS[name] || name] || themeColors(pkg).accent1
+    schemeColorHex(name, pkg) || themeColors(pkg, currentThemePart(pkg)).accent1
   }`;
 }
 
@@ -1268,7 +1344,7 @@ function renderChartMarks(
     'accent4',
     'accent5',
     'accent6'
-  ].map((name) => `#${themeColors(pkg)[name]}`);
+  ].map((name) => `#${themeColors(pkg, currentThemePart(pkg))[name]}`);
   const fontSize = Math.max(65000, Math.min(125000, Math.min(w, h) / 22));
   const titleSpace = chart.title ? fontSize * 2.3 : fontSize * 0.6;
   const legendPosition = chart.legendPosition || 'r';

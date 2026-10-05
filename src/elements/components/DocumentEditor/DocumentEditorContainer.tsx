@@ -141,14 +141,28 @@ const placeholder = {
   fontSize: 14
 };
 
-const wrap = {
+type WrapStyle = {
+  width: string;
+  height: string;
+  minWidth: number;
+  minHeight: number | string;
+  overflow: string;
+  position: 'relative';
+};
+
+const wrap: WrapStyle = {
   width: '100%',
   height: '100%',
   minWidth: 0,
   minHeight: 0,
   overflow: 'hidden',
-  position: 'relative' as const
+  position: 'relative'
 };
+
+// The pptx editor fills its container absolutely, so it contributes no
+// intrinsic height; a `fit`-height host container would collapse it to 0.
+// A floor keeps it usable even when it shares a step. It scrolls internally.
+const editorWrap: WrapStyle = { ...wrap, minHeight: 'min(640px, 80vh)' };
 
 // A container whose content is a document editor bound to a Document template.
 // At runtime it loads the submission's current envelope for that document and
@@ -525,7 +539,9 @@ export default function DocumentEditorContainer({
     [containerId, formId]
   );
 
-  const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
+  const box = (child: React.ReactNode, style: WrapStyle = wrap) => (
+    <div css={style}>{child}</div>
+  );
 
   if (editMode) return box(<div css={placeholder}>Document editor</div>);
   if (!activeDocumentId && !envelope) {
@@ -579,7 +595,8 @@ export default function DocumentEditorContainer({
             }
           />
         </div>
-      </React.Suspense>
+      </React.Suspense>,
+      editorWrap
     );
   }
   if (envelope.type !== 'docx') {
