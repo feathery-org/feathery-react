@@ -2569,6 +2569,14 @@ function Form({
     await callbackRef.current.all();
     const prevStepKey = getPrevStepKey(activeStep, backNavMap);
     if (prevStepKey) {
+      // Analytics only; a failed request must never block back navigation
+      client
+        .registerEvent({
+          step_key: activeStep.key,
+          next_step_key: prevStepKey,
+          event: 'back'
+        })
+        .catch(() => {});
       if (internalState[_internalId])
         internalState[_internalId].latestStepName = prevStepKey;
       pendingScrollRef.current = false;

@@ -163,7 +163,7 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   getInitialStep: ({ initialStepId }: any) => initialStepId || 'step-1',
   getNewStepUrl: (k: string) => `/#${k}`,
   getOrigin: () => ({ key: 'origin' }),
-  getPrevStepKey: () => '',
+  getPrevStepKey: jest.fn(() => ''),
   getUrlHash: () => '',
   isStepTerminal: () => false,
   isValidFieldIdentifier: () => true,
@@ -363,6 +363,7 @@ jest.mock('../../utils/featheryClient', () => {
     .fn()
     .mockResolvedValue({ ok: true, payload: { collaborators: [] } });
   const redeemLinkSpy = jest.fn();
+  const registerEventSpy = jest.fn().mockResolvedValue(undefined);
   // Lets a test answer the session fetch with something other than a loadable
   // step (e.g. the access link flags that carry no form data), turn the form
   // off, or fail the session outright.
@@ -415,7 +416,7 @@ jest.mock('../../utils/featheryClient', () => {
     };
 
     submitStep = jest.fn();
-    registerEvent = jest.fn().mockResolvedValue(undefined);
+    registerEvent = registerEventSpy;
     runAIExtraction = jest.fn();
     forwardInboxEmail = jest.fn();
     flushCustomFields = jest.fn();
@@ -433,6 +434,7 @@ jest.mock('../../utils/featheryClient', () => {
     _spies: {
       inviteCollaborator: inviteCollaboratorSpy,
       redeemLink: redeemLinkSpy,
+      registerEvent: registerEventSpy,
       state
     }
   };
@@ -557,4 +559,10 @@ export const ClientMod: any = jest.requireMock('../../utils/featheryClient');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const PollFuserDataMod: any = jest.requireMock(
   '../../hooks/usePollFuserData'
+);
+
+// Lets tests control the step Back navigates to.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const StepHelperMod: any = jest.requireMock(
+  '../../utils/stepHelperFunctions'
 );
