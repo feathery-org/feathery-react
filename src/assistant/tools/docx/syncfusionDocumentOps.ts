@@ -2462,6 +2462,8 @@ interface TableContainerRef {
 interface PlainTablePromotion {
   anchor: string;
   tableId: string;
+  /** Input names this change set binds in more than one place: one value. */
+  sharedNames?: Set<string>;
 }
 
 function liveTableMarkerProperties(tableId: string): Record<string, unknown> {
@@ -14085,6 +14087,20 @@ function plannedPlainTablePromotions(
     )
       roots.add(anchor);
   }
+  // A column never spans tables, so an input name bound in two places of one
+  // change set is one shared value, not a row field of each table.
+  const placesByName = new Map<string, Set<string>>();
+  for (const op of edits) {
+    if (op?.op !== 'create_binding' || op.kind !== 'input') continue;
+    const name = canonicalBindingName(String(op.name ?? '').trim());
+    const place = editTableRoot(op, creators) ?? `outside:${String(op.anchor)}`;
+    placesByName.set(name, (placesByName.get(name) ?? new Set()).add(place));
+  }
+  const sharedNames = new Set(
+    [...placesByName]
+      .filter(([, places]) => places.size > 1)
+      .map(([name]) => name)
+  );
   const used = new Set(index.tables.keys());
   const promotions = new Map<string, PlainTablePromotion>();
   // Bottom-up: each tracked replacement keeps the source table as a pending
@@ -14101,7 +14117,7 @@ function plannedPlainTablePromotions(
     let suffix = 2;
     while (used.has(tableId)) tableId = `${base}_${suffix++}`;
     used.add(tableId);
-    promotions.set(anchor, { anchor, tableId });
+    promotions.set(anchor, { anchor, tableId, sharedNames });
   }
   return promotions;
 }
@@ -17177,8 +17193,13 @@ function promotedPlainTablePlan(
             )
           );
         })();
+      const sharedInput =
+        op.kind === 'input' &&
+        !!promotion.sharedNames?.has(
+          canonicalBindingName(String(op.name ?? '').trim())
+        );
       const rowId =
-        op.global === true || aggregate || documentOnly
+        op.global === true || aggregate || documentOnly || sharedInput
           ? null
           : `${promotion.tableId}_r${rowIndex}`;
       const liveTableAnchor = boundTableAnchor(promoted.sfdt, table);

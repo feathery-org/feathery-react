@@ -62,4 +62,29 @@ describe('promoting several plain tables in one change set', () => {
       tags.filter((tag) => tag.includes('name=collectible_premium'))
     ).toHaveLength(2);
   }, 120000);
+
+  it('shares one value when a new name is bound in two tables at once', async () => {
+    await session.call('open', twoPlainTables());
+    const result = await session.call<any>(
+      'applyEdits',
+      ['0;1;1;1;0', '0;3;1;1;0'].map((anchor) => ({
+        op: 'create_binding',
+        group: 'g01-link-premium',
+        anchor,
+        expect: '$700',
+        kind: 'input',
+        name: 'collectible_premium',
+        valueType: 'currency:USD:2'
+      })),
+      'link-premium-shared'
+    );
+
+    expect(result.outcomes).toEqual(['ok', 'ok']);
+    await session.call('resolveGroups', true);
+    const tags = (await session.call<string[]>('serializedTags')).filter(
+      (tag) => tag.includes('name=collectible_premium')
+    );
+    expect(tags).toHaveLength(2);
+    expect(tags.some((tag) => tag.includes('row='))).toBe(false);
+  }, 120000);
 });
