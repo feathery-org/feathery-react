@@ -94,8 +94,3 @@ export {
 
 export type { OPERATOR_CODE, FormContext, DocxEditorProps };
 export type { StyledContainerProps } from './Form/grid/StyledContainer';
-
-export type {
-  GenerateDocumentRef,
-  QuikDocumentSource
-} from './utils/featheryClient/integrationClient';
