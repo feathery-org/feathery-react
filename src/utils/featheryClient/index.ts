@@ -82,6 +82,7 @@ import {
   setInteractionDetected
 } from '../interactionState';
 import { EventQueue } from '../eventQueue';
+import { STEP_EVENT_LOAD, STEP_EVENT_SUBMIT } from '../stepEvents';
 
 setEnvironment('production');
 try {
@@ -1108,9 +1109,10 @@ export default class FeatheryClient extends IntegrationClient {
   async registerEvent(eventData: any) {
     if (this.draft) return;
 
-    // A 'complete' event means the step was submitted — record it so the
+    // A submit event means the step was submitted — record it so the
     // stepper reflects which steps are completed vs merely skipped over.
-    if (eventData.event === 'complete') markStepCompleted(eventData.step_key);
+    if (eventData.event === STEP_EVENT_SUBMIT)
+      markStepCompleted(eventData.step_key);
 
     // Stamp now so queued or replayed events keep when they actually happened
     const timedEvent = { ...eventData, timestamp: new Date().toISOString() };
@@ -1144,7 +1146,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     let prom = null;
     let stepKey = '';
-    if (eventData.event === 'load') {
+    if (eventData.event === STEP_EVENT_LOAD) {
       stepKey = eventData.previous_step_key;
     } else {
       stepKey = eventData.step_key;
