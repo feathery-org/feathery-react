@@ -165,4 +165,61 @@ describe('a row inserted into a banded table above its total', () => {
       )
     ).toEqual([NAVY, GREY, WHITE, GREY, TOTAL]);
   }, 120000);
+
+  it('updates the total formula at its own cell in a marker-less summary', async () => {
+    await session.call('open', premiumSummary(), 1, true);
+    const table = await session.call<string>(
+      'tableAnchorContaining',
+      'Coverage'
+    );
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g01-widen-total',
+          anchor: `${table};3;1;0`,
+          kind: 'formula',
+          name: 'TotalPremium',
+          valueType: 'currency:USD:2',
+          expression: 'sum(HomePremium,AutoPremium)'
+        }
+      ],
+      'widen-total'
+    );
+
+    expect(result.outcomes).toEqual(['ok']);
+    await session.call('resolveGroups', true);
+    const tags = (await session.call<string[]>('serializedTags')).filter(
+      (tag) => tag.includes('name=TotalPremium')
+    );
+    expect(tags).toHaveLength(1);
+  }, 120000);
+
+  it('re-stating a value in a marker-less table changes nothing', async () => {
+    await session.call('open', premiumSummary(), 1, true);
+    const before = await session.call<string>('serialize');
+    const table = await session.call<string>(
+      'tableAnchorContaining',
+      'Coverage'
+    );
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g01-restate',
+          anchor: `${table};1;2;0`,
+          kind: 'input',
+          name: 'HomePremium',
+          valueType: 'currency:USD:2'
+        }
+      ],
+      'restate-home'
+    );
+
+    expect(result.outcomes).toEqual(['ok']);
+    expect(result.revisions).toBe(0);
+    expect(await session.call<string>('serialize')).toBe(before);
+  }, 120000);
 });

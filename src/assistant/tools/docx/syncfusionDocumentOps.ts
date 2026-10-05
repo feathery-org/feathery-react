@@ -14040,9 +14040,36 @@ function plannedPlainTablePromotions(
     const anchor = boundTableAnchor(sfdt, table);
     if (anchor) boundAnchors.add(anchor);
   }
+  // A request naming a field the target cell already holds updates or
+  // re-states that field; it is not a reason to make the table live.
+  const targetHoldsName = (op: EditOp): boolean => {
+    const parts = String(op.anchor ?? '')
+      .split(';')
+      .map(Number);
+    if (parts.length < 4 || parts.some((part) => !Number.isInteger(part)))
+      return false;
+    const [section, block, row, column] = parts;
+    const rowPath = ['sections', section, 'blocks', block, 'rows', row];
+    // A wrapped table's anchor does not walk to rows; such a table is
+    // already live, so it is never a promotion root anyway.
+    const rowNode = rowPath.reduce<any>((node, key) => node?.[key], sfdt);
+    if (!rowNode) return false;
+    // Inventory anchors count physical cells; accept the logical reading too.
+    const cells = new Set([column, physicalCellIndexAt(rowNode, column)]);
+    const name = canonicalBindingName(String(op.name ?? '').trim());
+    return [...cells].some(
+      (cell) =>
+        cell != null &&
+        index.occurrences.some(
+          (occurrence) =>
+            occurrence.name === name &&
+            isPathPrefix([...rowPath, 'cells', cell], occurrence.path)
+        )
+    );
+  };
   const roots = new Set<string>();
   for (const op of edits) {
-    if (op?.op !== 'create_binding') continue;
+    if (op?.op !== 'create_binding' || targetHoldsName(op)) continue;
     const anchor = editTableRoot(op, creators);
     const createdEarlier = anchor
       ? edits.some(
