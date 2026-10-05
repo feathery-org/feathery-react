@@ -1191,12 +1191,16 @@ export default class IntegrationClient {
     });
   }
 
-  getDocusignEnvelope({ envelopeId }: GetDocusignEnvelopeParams) {
+  getDocusignEnvelope({
+    envelopeId,
+    includeDocuments = true
+  }: GetDocusignEnvelopeParams) {
     const { userId } = initInfo();
     const params = encodeGetParams({
       fuser_key: userId,
       form_key: this.formKey,
-      docusign_envelope_id: envelopeId
+      docusign_envelope_id: envelopeId,
+      include_documents: includeDocuments ? 'true' : 'false'
     });
     const url = `${API_URL}docusign/envelope/?${params}`;
     return this._fetch(url, {}, false).then(async (response) => {
