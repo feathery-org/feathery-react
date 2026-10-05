@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import DocumentCanvas from '../DocumentViewer/DocumentCanvas';
 import type { ViewerDocument } from '../DocumentViewer';
-import { color, fontSize } from '../DocumentViewer/tokens';
+import { color, fontSize, radius } from '../DocumentViewer/tokens';
+import { secondaryButtonCss } from '../DocumentViewer/buttonStyles';
 
 // Caps page width on wide containers; narrower containers size down to fit.
 const MAX_PDF_WIDTH = 900;
@@ -52,29 +53,38 @@ export default function SignedEnvelopeView({
     >
       <div
         css={{
+          // Height/padding at parity with the PDF overlay's toolbar (Toolbar.tsx).
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 12,
-          padding: '8px 12px',
+          height: 56,
+          flexShrink: 0,
+          padding: '0 16px',
           borderBottom: `1px solid ${color.border}`,
-          background: color.surface,
-          fontSize: fontSize.base,
-          fontWeight: 600,
-          color: signed ? color.successText : color.textMuted
+          background: color.surface
         }}
       >
-        <span>{signed ? 'Signed' : 'Awaiting signature'}</span>
+        <span
+          css={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '5px 12px',
+            borderRadius: radius.pill,
+            fontSize: fontSize.sm,
+            fontWeight: 600,
+            color: 'white',
+            backgroundColor: signed ? color.successText : color.primary
+          }}
+        >
+          {signed ? 'Signed' : 'Awaiting signature'}
+        </span>
         <a
           href={pdfUrl}
           target='_blank'
           rel='noopener noreferrer'
-          css={{
-            fontSize: fontSize.sm,
-            fontWeight: 500,
-            color: color.accent,
-            textDecoration: 'none'
-          }}
+          // Matches the overlay toolbar's Download (secondary button).
+          css={{ ...secondaryButtonCss, textDecoration: 'none' }}
         >
           Download
         </a>
