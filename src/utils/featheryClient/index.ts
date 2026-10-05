@@ -1113,10 +1113,7 @@ export default class FeatheryClient extends IntegrationClient {
     if (eventData.event === 'complete') markStepCompleted(eventData.step_key);
 
     // Stamp now so queued or replayed events keep when they actually happened
-    const timedEvent = {
-      ...eventData,
-      timestamp: eventData.timestamp ?? new Date().toISOString()
-    };
+    const timedEvent = { ...eventData, timestamp: new Date().toISOString() };
 
     if (!isInteractionDetected() || this.userEventQueue.isReplayingEvents()) {
       return this.userEventQueue.enqueue(timedEvent);
@@ -1135,8 +1132,7 @@ export default class FeatheryClient extends IntegrationClient {
       form_key: this.formKey,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {}),
-      event_id: uuidv4(),
-      timestamp: eventData.timestamp ?? new Date().toISOString()
+      event_id: uuidv4()
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
     if (this.version) data.__feathery_version = this.version;
