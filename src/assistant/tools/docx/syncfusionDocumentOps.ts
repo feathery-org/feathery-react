@@ -9058,51 +9058,35 @@ export const ANCHORED_OP_HANDLERS: {
     };
     const sfdt = serializeSfdt(editor);
     const bindingIndex = scanBindings(sfdt);
-    const sameName = [
-      ...(bindingIndex.fields.get(name) ?? []),
-      ...(bindingIndex.formulas.get(name) ?? [])
-    ];
-    if (sameName.length && op.global !== true)
-      throw new OpError(
-        'binding_name_conflict',
-        `Binding "${name}" already exists. Reuse that global identity explicitly or choose a unique name. Nothing was written.`
-      );
-    if (
-      sameName.some(
-        (occurrence) =>
-          !occurrence.def.isGlobal ||
-          occurrence.def.kind !== 'field' ||
-          JSON.stringify(occurrence.def.fieldType) !== JSON.stringify(fieldType)
-      )
-    )
-      throw new OpError(
-        'global_binding_identity_conflict',
-        `Binding "${name}" does not consistently use the requested global input type. Nothing was written.`
-      );
-    if (sameName.length)
-      definition = sameName[0].def as Extract<Definition, { kind: 'field' }>;
+    // Same law as createBindingInCell: a document-level name is one value.
+    const joined = joinedDocumentBinding(
+      bindingIndex,
+      name,
+      'input',
+      fieldType
+    );
+    if (joined)
+      definition = joined.def as Extract<Definition, { kind: 'field' }>;
 
     const requestedPhrase =
       typeof op.find === 'string' && op.find ? String(op.find) : '';
     // The cell's text as an accept would leave it, never tracked-deleted text.
-    let canonical =
-      sameName.length > 0
-        ? parseDisplay(sameName[0].def.fieldType, sameName[0].text)
-        : op.initial !== undefined
-        ? parseDisplay(fieldType, String(op.initial))
-        : requestedPhrase || block.text.trim()
-        ? adoptedCellValue(fieldType, requestedPhrase || block.text.trim(), op)
+    const shown = requestedPhrase || block.text.trim();
+    const canonical =
+      op.initial !== undefined
+        ? parseDisplay(definition.fieldType, String(op.initial))
+        : shown
+        ? adoptedCellValue(definition.fieldType, shown, op)
+        : joined
+        ? parseDisplay(joined.def.fieldType, joined.text)
         : defaultValue(definition);
-    if (sameName.length && op.initial !== undefined) {
-      const requested = parseDisplay(fieldType, String(op.initial));
-      if (requested !== canonical)
-        throw new OpError(
-          'global_binding_initial_conflict',
-          `Global binding "${name}" already has a different value. Change the existing binding value or omit initial. Nothing was written.`
-        );
-      canonical = requested;
-    }
-    const value = renderDisplay(fieldType, canonical);
+    if (joined)
+      assertJoinedValue(
+        joined,
+        canonical,
+        op.initial !== undefined ? String(op.initial) : shown
+      );
+    const value = renderDisplay(definition.fieldType, canonical);
     const liveEditor = editor as any;
     const layoutWasOn = editor.enableLayout === true;
     if (!layoutWasOn) liveEditor.setProperties?.({ enableLayout: true }, true);
@@ -9148,7 +9132,7 @@ export const ANCHORED_OP_HANDLERS: {
       ).find((cc: any) => cc?.contentControlProperties?.tag === tag);
       if (
         control &&
-        !sameName.length &&
+        !joined &&
         liveEditor.selection?.selectContentControlInternal
       ) {
         liveEditor.selection.selectContentControlInternal(control);
@@ -9178,7 +9162,9 @@ export const ANCHORED_OP_HANDLERS: {
         ...(displayName && displayName !== name
           ? [`binding label: ${displayName}`]
           : []),
-        `scope: ${definition.isGlobal ? 'global' : 'independent'}`
+        `scope: ${
+          joined ? 'shared' : definition.isGlobal ? 'global' : 'independent'
+        }`
       ]
     };
   },
@@ -16726,6 +16712,54 @@ export function assertExpressionYieldsValue(
     );
 }
 
+/**
+ * A document-level name is one value wherever it appears (the engine fans it
+ * out by name). A create_binding that reuses such a name joins it, inheriting
+ * its definition, instead of minting a row variable that only shares the name.
+ * Joining is refused when the request contradicts the value it would join.
+ */
+function joinedDocumentBinding(
+  index: BindingIndex,
+  name: string,
+  kind: 'input' | 'formula',
+  fieldType: FieldType
+): Occurrence | null {
+  // index.fields/formulas hold document-level occurrences only (scanBindings).
+  const shared = [
+    ...(index.fields.get(name) ?? []),
+    ...(index.formulas.get(name) ?? [])
+  ];
+  if (!shared.length) return null;
+  const existing = shared[0];
+  if (
+    kind !== 'input' ||
+    existing.def.kind !== 'field' ||
+    existing.def.fieldType.kind !== fieldType.kind
+  )
+    throw new OpError(
+      'binding_identity_type_conflict',
+      `"${name}" already names a ${existing.def.kind} of type ${existing.def.fieldType.kind} elsewhere in the document. Reuse it as that kind and type to show the same value, or choose a different name. Nothing was written.`
+    );
+  return existing;
+}
+
+/** Refuse joining a value the cell (or `initial`) contradicts. */
+function assertJoinedValue(
+  joined: Occurrence,
+  canonical: string,
+  shown: string
+): void {
+  const existing = parseDisplay(joined.def.fieldType, joined.text);
+  if (canonical !== existing)
+    throw new OpError(
+      'binding_value_conflict',
+      `"${joined.name}" already holds ${renderDisplay(
+        joined.def.fieldType,
+        existing
+      )} elsewhere in the document, but this cell shows ${shown}. Use a different name for a different value, or correct the cell first. Nothing was written.`
+    );
+}
+
 function createBindingInCell(
   state: EngineMutationState,
   op: EditOp,
@@ -16751,7 +16785,8 @@ function createBindingInCell(
     (entry) =>
       entry.path && Number(entry.path[entry.path.length - 1]) === rowIndex
   );
-  const rowId = row?.rowId ?? promotedRowId ?? null;
+  const joined = joinedDocumentBinding(state.index, name, kind, fieldType);
+  const rowId = joined ? null : row?.rowId ?? promotedRowId ?? null;
   if (op.global === true && rowId)
     throw new OpError(
       'global_row_binding_invalid',
@@ -16770,7 +16805,7 @@ function createBindingInCell(
     parseExpression(expression);
     assertExpressionYieldsValue(expression, state.index);
   }
-  const definition: Definition =
+  const requested: Definition =
     kind === 'formula'
       ? {
           version: 2,
@@ -16793,15 +16828,20 @@ function createBindingInCell(
           isGlobal: op.global === true,
           options: rowId ? { row: rowId } : {}
         };
+  const definition = joined ? joined.def : requested;
   const templateOccurrence = row
     ? [...row.bindings.values()][0]
     : [...table.rows.flatMap((entry) => [...entry.bindings.values()])][0];
   const template = templateOccurrence
     ? getAt(state.sfdt, templateOccurrence.path)?.contentControlProperties
     : undefined;
-  let canonical = defaultValue(definition);
-  if (kind === 'input' && op.initial !== undefined)
-    canonical = parseDisplay(fieldType, String(op.initial));
+  let canonical = joined
+    ? parseDisplay(joined.def.fieldType, joined.text)
+    : defaultValue(definition);
+  if (kind === 'input' && op.initial !== undefined) {
+    canonical = parseDisplay(definition.fieldType, String(op.initial));
+    if (joined) assertJoinedValue(joined, canonical, String(op.initial));
+  }
   const rowNode = table.tablePath
     ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
     : undefined;
@@ -16829,8 +16869,11 @@ function createBindingInCell(
           deletedRevisionIds(state.sfdt)
         ).trim()
       : '';
-  if (existing) canonical = adoptedCellValue(fieldType, existing, op);
-  const text = renderDisplay(fieldType, canonical);
+  if (existing) {
+    canonical = adoptedCellValue(definition.fieldType, existing, op);
+    if (joined) assertJoinedValue(joined, canonical, existing);
+  }
+  const text = renderDisplay(definition.fieldType, canonical);
   return setCellContent(
     state.sfdt,
     table,
