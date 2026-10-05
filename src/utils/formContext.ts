@@ -259,7 +259,8 @@ export const getFormContext = (formUuid: string) => {
       redirect
     }: {
       // A plain template UUID string, or a source object such as the Quik item
-      // `{ kind: 'quik' }` — mirroring the action config's `documents` array.
+      // `{ kind: 'quik' }` or a file upload field
+      // `{ kind: 'file_upload', field_id }` — mirroring the action config.
       documentIds: GenerateDocumentRef[];
       // Per-document, per-role signer emails; a document with no entry here
       // gets no signer. `roleId` targets one of the document's signer roles,
@@ -307,9 +308,7 @@ export const getFormContext = (formUuid: string) => {
         !!envelopeAction ||
         !!toolbarActions?.length ||
         !!repeatable ||
-        documentIds.some(
-          (doc) => typeof doc === 'object' && doc.kind === 'quik'
-        );
+        documentIds.some((doc) => typeof doc !== 'string');
       // Capture explicit Quik inputs before awaiting saves or opening review.
       // Caller edits to the original object must not change this request.
       documentIds = documentIds.map((doc) =>
@@ -330,7 +329,7 @@ export const getFormContext = (formUuid: string) => {
           formState.client.flushCustomFields(),
           defaultClient.flushCustomFields()
         ]);
-      // Quik sources, DocuSign, signers, the editor, and the sign/save
+      // Source objects, DocuSign, signers, the editor, and the sign/save
       // envelope actions all need the same endpoint + editor flow the Generate
       // Documents action uses, so route through the <Form />-registered flow
       // when any are requested. Otherwise keep the simple, backward-compatible

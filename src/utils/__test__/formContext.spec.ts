@@ -159,15 +159,17 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     ]);
   });
 
-  it('routes a quik-only document list through the flow even with no other options', async () => {
-    await getFormContext(uuid).generateDocuments({
-      documentIds: [{ kind: 'quik' }]
-    });
+  it('routes a source-object-only document list through the flow even with no other options', async () => {
+    for (const source of [
+      { kind: 'quik' as const },
+      { kind: 'file_upload' as const, field_id: 'f1' }
+    ]) {
+      flow.mockClear();
+      await getFormContext(uuid).generateDocuments({ documentIds: [source] });
 
-    expect(flow).toHaveBeenCalledTimes(1);
-    expect(flow.mock.calls[0][0]).toMatchObject({
-      documents: [{ kind: 'quik' }]
-    });
+      expect(flow).toHaveBeenCalledTimes(1);
+      expect(flow.mock.calls[0][0]).toMatchObject({ documents: [source] });
+    }
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
