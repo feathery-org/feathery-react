@@ -1200,7 +1200,7 @@ export default class IntegrationClient {
       fuser_key: userId,
       form_key: this.formKey,
       docusign_envelope_id: envelopeId,
-      include_documents: includeDocuments ? 'true' : 'false'
+      include_documents: includeDocuments
     });
     const url = `${API_URL}docusign/envelope/?${params}`;
     return this._fetch(url, {}, false).then(async (response) => {
