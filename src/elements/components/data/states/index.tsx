@@ -66,6 +66,15 @@ export const stateMap: Record<string, { name: string; code: string }[]> = {
   za
 };
 
+function stateValue(
+  { name, code }: { name: string; code: string },
+  shortcode: boolean,
+  asciiOnly: boolean
+) {
+  if (shortcode) return code;
+  return asciiOnly ? toAscii(name) : name;
+}
+
 export function hasState(
   country: string,
   state: string,
@@ -74,8 +83,8 @@ export function hasState(
   asciiOnly = false
 ) {
   if (coerce && !(country in stateMap)) return true;
-  const stateVals = (stateMap[country] ?? []).map(({ name, code }: any) =>
-    shortcode ? code : asciiOnly ? toAscii(name) : name
+  const stateVals = (stateMap[country] ?? []).map((state: any) =>
+    stateValue(state, shortcode, asciiOnly)
   );
   return stateVals.includes(state);
 }
@@ -88,12 +97,9 @@ export function getStateOptions(
 ) {
   let stateOptions = stateMap[country] ?? [];
   if (country === 'us' && !territories) stateOptions = onlyStates;
-  return stateOptions.map(({ name, code }) => (
-    <option
-      key={code}
-      value={shortcode ? code : asciiOnly ? toAscii(name) : name}
-    >
-      {name}
+  return stateOptions.map((state) => (
+    <option key={state.code} value={stateValue(state, shortcode, asciiOnly)}>
+      {state.name}
     </option>
   ));
 }

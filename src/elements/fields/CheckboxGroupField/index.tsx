@@ -24,7 +24,7 @@ function CheckboxGroupField({
   otherVal = '',
   repeatIndex = null,
   editMode,
-  asciiOnly = false,
+  formSettings,
   onChange = () => {},
   onSelectAllChange = () => {},
   onOtherChange = () => {},
@@ -33,6 +33,7 @@ function CheckboxGroupField({
   disabled = false,
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar, editMode, asciiOnly);

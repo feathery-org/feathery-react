@@ -65,6 +65,42 @@ describe('ASCII field options', () => {
     expect(element.servar.metadata.options).toEqual(['São Paulo', 'Pará']);
   });
 
+  it('leaves options that are already ASCII in their original shape', () => {
+    const result = asciiElement(
+      {
+        servar: {
+          type: 'dropdown',
+          metadata: { options: ['Rio'], repeat_options: [['Rio', 'Ceará']] }
+        }
+      },
+      true
+    );
+    expect(result.servar.metadata.repeat_options).toEqual([
+      ['Rio', { value: 'Ceara', label: 'Ceará' }]
+    ]);
+  });
+
+  it('falls back to a display string for object options without labels', () => {
+    const result = asciiElement(
+      {
+        servar: {
+          type: 'dropdown',
+          metadata: {
+            options: [
+              { value: 'Pará', label: 'Para state' },
+              { value: 'Ceará' }
+            ]
+          }
+        }
+      },
+      true
+    );
+    expect(result.servar.metadata.option_labels).toEqual([
+      'Para state',
+      'Ceará'
+    ]);
+  });
+
   it('keeps existing behavior when disabled and leaves file metadata alone', () => {
     expect(asciiElement(element, false)).toBe(element);
     const file = { servar: { ...element.servar, type: 'file_upload' } };

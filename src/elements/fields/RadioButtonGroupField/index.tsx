@@ -26,13 +26,14 @@ function RadioButtonGroupField({
   otherVal = '',
   repeatIndex = null,
   editMode,
-  asciiOnly = false,
+  formSettings,
   onChange = () => {},
   onOtherChange = () => {},
   onEnter = () => {},
   elementProps = {},
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const servar = element.servar;
   const containerRef = useRef(null);
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =

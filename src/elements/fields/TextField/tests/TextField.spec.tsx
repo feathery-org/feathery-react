@@ -70,7 +70,7 @@ describe('TextField - Base Functionality', () => {
       render(
         <TextField
           {...createTextFieldProps(element)}
-          asciiOnly
+          formSettings={{ asciiOnly: true }}
           onAccept={createStatefulAcceptHandler()}
         />
       );

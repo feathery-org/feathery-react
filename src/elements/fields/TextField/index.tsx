@@ -144,7 +144,7 @@ function TextField({
   required = false,
   disabled = false,
   autoComplete,
-  asciiOnly = false,
+  formSettings,
   editMode,
   onAccept = () => {},
   onEnter = () => {},
@@ -153,6 +153,7 @@ function TextField({
   repeatIndex = null,
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   // Hide SSNs by default
   const [showPassword, setShowPassword] = useState(false);

@@ -31,7 +31,7 @@ describe('DropdownField - Base Functionality', () => {
 
   it('keeps Brazilian state selections after their values are converted to ASCII', () => {
     const props = createDropdownProps(createDropdownElement('gmap_state'), {
-      asciiOnly: true,
+      formSettings: { asciiOnly: true },
       countryCode: 'BR'
     });
     const { rerender } = render(<DropdownField {...props} />);

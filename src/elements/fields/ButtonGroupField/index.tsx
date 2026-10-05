@@ -15,12 +15,13 @@ function ButtonGroupField({
   fieldVal = null,
   repeatIndex = null,
   editMode,
-  asciiOnly = false,
+  formSettings,
   onClick = () => {},
   elementProps = {},
   disabled = false,
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const containerRef = useRef(null);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =

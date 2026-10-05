@@ -25,7 +25,7 @@ export default function DropdownField({
   fieldVal = '',
   repeatIndex = null,
   countryCode = '',
-  asciiOnly = false,
+  formSettings,
   editMode,
   rightToLeft,
   onChange = () => {},
@@ -33,6 +33,7 @@ export default function DropdownField({
   elementProps = {},
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError,

@@ -39,7 +39,7 @@ import {
   getControllingCountryCode,
   stateFieldHasNoOptions
 } from '../../../utils/addressState';
-import { asciiElement } from '../../../utils/asciiOptions';
+import { asciiElement, optionValue } from '../../../utils/asciiOptions';
 
 const Element = ({ node, form }: any) => {
   const el = useMemo(
@@ -93,8 +93,7 @@ const Element = ({ node, form }: any) => {
     elementProps: elementProps[el.id],
     inlineError: getInlineError(el, inlineErrors),
     featheryContext,
-    formSettings,
-    asciiOnly: formSettings.asciiOnly
+    formSettings
   };
   const fieldId = el.servar?.key ?? el.id;
   const linkId = el.properties?.link_id;
@@ -216,7 +215,7 @@ const Element = ({ node, form }: any) => {
     const isOtherVal = (curVal: string) => {
       if (hasRepeatOptions) {
         return !servar.metadata.repeat_options[index].some(
-          (option: any) => (option.value ?? option) === curVal
+          (option: any) => optionValue(option) === curVal
         );
       }
       return !servar.metadata.options.includes(curVal);

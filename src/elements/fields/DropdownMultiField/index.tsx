@@ -38,12 +38,13 @@ export default function DropdownMultiField({
   fieldVal = [],
   repeatIndex = null,
   editMode,
-  asciiOnly = false,
+  formSettings,
   onChange = () => {},
   elementProps = {},
   rightToLeft,
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError,
