@@ -21,7 +21,7 @@ const cell = (text: string, fill: string, span = 1) => ({
 
 // A premium summary: two striped premium rows above a total row with its own
 // fill, the premiums and the total written as binding tokens.
-function premiumSummary(): string {
+function premiumSummary(withBoat = false): string {
   const premium = (
     coverage: string,
     name: string,
@@ -52,12 +52,15 @@ function premiumSummary(): string {
               },
               premium('Homeowners', 'HomePremium', 966, WHITE),
               premium('Automobile', 'AutoPremium', 7417, GREY),
+              ...(withBoat ? [premium('Boat', 'BoatPremium', 150, WHITE)] : []),
               {
                 rowFormat: { isHeader: false },
                 cells: [
                   cell('TOTAL ANNUAL PREMIUM:', TOTAL, 2),
                   cell(
-                    '[[name=TotalPremium|type=currency|expr=sum(HomePremium,AutoPremium)]]',
+                    `[[name=TotalPremium|type=currency|expr=sum(HomePremium,AutoPremium${
+                      withBoat ? ',BoatPremium' : ''
+                    })]]`,
                     TOTAL
                   )
                 ]
@@ -119,5 +122,47 @@ describe('a row inserted into a banded table above its total', () => {
         await session.call<string>('tableAnchorContaining', 'Coverage')
       )
     ).toEqual([NAVY, WHITE, GREY, WHITE, TOTAL]);
+  }, 120000);
+
+  it('reads the stripe from the item rows while a row deletion is pending', async () => {
+    await session.call('open', premiumSummary(true), 1, true);
+    const table = await session.call<string>(
+      'tableAnchorContaining',
+      'Coverage'
+    );
+    const removed = await session.call<any>(
+      'applyEdits',
+      [{ op: 'delete_row', group: 'g01-remove', anchor: `${table};1;0;0` }],
+      'remove-home'
+    );
+    expect(removed.outcomes).toEqual(['ok']);
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'insert_row',
+          group: 'g01-add-row',
+          anchor: `${table};3;0;0`,
+          shape: 'blank',
+          resultRef: '@added'
+        },
+        {
+          op: 'set_cell_text',
+          group: 'g01-add-row',
+          anchor: '@added;0;0',
+          text: 'Collectibles'
+        }
+      ],
+      'add-banded-row'
+    );
+
+    expect(result.outcomes).toEqual(['ok', 'ok']);
+    await session.call('resolveGroups', true);
+    expect(
+      await session.call<Array<string | null>>(
+        'rowShadingAt',
+        await session.call<string>('tableAnchorContaining', 'Coverage')
+      )
+    ).toEqual([NAVY, GREY, WHITE, GREY, TOTAL]);
   }, 120000);
 });

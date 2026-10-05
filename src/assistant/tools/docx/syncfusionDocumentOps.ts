@@ -13888,30 +13888,52 @@ function bandingForAcceptedTableProjection(
       : [];
   let items = roles.length;
   while (items > headerRows && roles[items - 1]?.role === 'aggregate') items--;
-  const itemRows = (appearance: TableAppearance): TableAppearance =>
-    items < appearance.rows.length
-      ? { ...appearance, rows: appearance.rows.slice(0, items) }
+  // Roles are read on the physical table; the projection drops rows pending
+  // deletion, so trim it by the trailing totals rows that survive an accept.
+  const deleted = deletedRevisionIds(sfdt);
+  const physicalRows = getRows(tableBlock) ?? [];
+  const survivingTotals = physicalRows
+    .slice(items)
+    .filter(
+      (row: any) => !anyRevisionIdIn(rowRevisionIds(row), deleted)
+    ).length;
+  const itemRows = (
+    appearance: TableAppearance,
+    trailingTotals: number
+  ): TableAppearance =>
+    trailingTotals > 0 && trailingTotals < appearance.rows.length
+      ? {
+          ...appearance,
+          rows: appearance.rows.slice(
+            0,
+            appearance.rows.length - trailingTotals
+          )
+        }
       : appearance;
   const physicalBanding = physicalAppearance
     ? detectTableBanding(physicalAppearance) ??
-      shortInsertBanding(itemRows(physicalAppearance))
+      shortInsertBanding(
+        itemRows(physicalAppearance, physicalRows.length - items)
+      )
     : null;
   const projectedBody = projectedAppearance
     ? rowShadings(projectedAppearance).slice(headerRows)
     : [];
+  const withTail = (read: TableBanding): TableBanding => ({
+    ...read,
+    tailInBand:
+      projectedBody.length > 0 &&
+      projectedBody[projectedBody.length - 1] ===
+        read.cycle[(projectedBody.length - 1) % read.period]
+  });
+  const projectedItemBanding = projectedAppearance
+    ? shortInsertBanding(itemRows(projectedAppearance, survivingTotals))
+    : null;
   const banding = physicalBanding
-    ? {
-        ...physicalBanding,
-        tailInBand:
-          projectedBody.length > 0 &&
-          projectedBody[projectedBody.length - 1] ===
-            physicalBanding.cycle[
-              (projectedBody.length - 1) % physicalBanding.period
-            ]
-      }
+    ? withTail(physicalBanding)
     : projectedAppearance
     ? detectTableBanding(projectedAppearance) ??
-      shortInsertBanding(itemRows(projectedAppearance)) ??
+      (projectedItemBanding ? withTail(projectedItemBanding) : null) ??
       documentInsertBanding(sfdt, tableAnchor, projectedAppearance) ??
       undefined
     : undefined;
@@ -14036,7 +14058,15 @@ function plannedPlainTablePromotions(
   }
   const used = new Set(index.tables.keys());
   const promotions = new Map<string, PlainTablePromotion>();
-  for (const anchor of roots) {
+  // Bottom-up: each tracked replacement keeps the source table as a pending
+  // deletion beside its successor, shifting every later block by one, so a
+  // promotion must never run above one still waiting at its planned anchor.
+  // Roots are always "section;block" (normalizeTableAnchor).
+  const below = (a: string, b: string): number => {
+    const [[sa, ba], [sb, bb]] = [a, b].map((x) => x.split(';').map(Number));
+    return sb - sa || bb - ba;
+  };
+  for (const anchor of [...roots].sort(below)) {
     const base = `table_${anchor.replace(/[^A-Za-z0-9_]/g, '_')}`;
     let tableId = base;
     let suffix = 2;
