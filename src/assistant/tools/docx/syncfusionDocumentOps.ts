@@ -9046,6 +9046,19 @@ export const ANCHORED_OP_HANDLERS: {
       String(op.valueType ?? 'text'),
       `create_binding:${name}`
     );
+    const restated =
+      op.initial === undefined && !op.find
+        ? restatedBinding(block, name, 'input')
+        : null;
+    if (
+      restated &&
+      restated.kind === 'field' &&
+      (op.valueType === undefined || restated.fieldType.kind === fieldType.kind)
+    )
+      return {
+        postWriteSfdt: serializeSfdt(editor),
+        details: [`binding: ${name}`, 'already bound here; nothing changed']
+      };
     let definition: Extract<Definition, { kind: 'field' }> = {
       version: 2,
       kind: 'field',
@@ -16713,6 +16726,34 @@ export function assertExpressionYieldsValue(
 }
 
 /**
+ * The binding of this name and kind the block already holds. Asking for it
+ * again (as a batch that links several places at once does) is satisfied, not
+ * refused or duplicated.
+ */
+function restatedBinding(
+  block: FlatBlock,
+  name: string,
+  kind: 'input' | 'formula'
+): Definition | null {
+  const tags = [
+    block.boundTag,
+    ...(block.bindingRanges ?? []).map((range) => range.tag)
+  ];
+  for (const tag of tags) {
+    if (!tag) continue;
+    let def: Definition | null = null;
+    try {
+      def = parseTag(tag) ?? null;
+    } catch {
+      continue;
+    }
+    const wanted = kind === 'input' ? 'field' : 'formula';
+    if (def && def.kind === wanted && def.name === name) return def;
+  }
+  return null;
+}
+
+/**
  * A document-level name is one value wherever it appears (the engine fans it
  * out by name). A create_binding that reuses such a name joins it, inheriting
  * its definition, instead of minting a row variable that only shares the name.
@@ -16738,7 +16779,9 @@ function joinedDocumentBinding(
   )
     throw new OpError(
       'binding_identity_type_conflict',
-      `"${name}" already names a ${existing.def.kind} of type ${existing.def.fieldType.kind} elsewhere in the document. Reuse it as that kind and type to show the same value, or choose a different name. Nothing was written.`
+      existing.def.kind === 'formula'
+        ? `"${name}" already names a formula elsewhere in the document, and a formula cannot be placed twice. To show its value here, create a formula with a different name whose expression references "${name}". Nothing was written.`
+        : `"${name}" already names a ${existing.def.fieldType.kind} input elsewhere in the document. Reuse it as a ${existing.def.fieldType.kind} input to show the same value, or choose a different name. Nothing was written.`
     );
   return existing;
 }
@@ -16906,6 +16949,29 @@ function redefineBoundFormulaPlan(
   occurrence: Occurrence
 ): EngineMutationPlan {
   const requestedName = canonicalBindingName(String(op.name ?? ''));
+  if (
+    op.kind === 'input' &&
+    op.initial === undefined &&
+    occurrence.def.kind === 'field' &&
+    requestedName === occurrence.name &&
+    (op.valueType === undefined ||
+      parseType(String(op.valueType), `create_binding:${requestedName}`)
+        .kind === occurrence.def.fieldType.kind)
+  )
+    return {
+      route: 'engine',
+      index,
+      op,
+      anchor: block.anchor,
+      execute: (state) => ({
+        sfdt: state.sfdt,
+        anchor: block.anchor,
+        details: [
+          `binding: ${occurrence.name}`,
+          'already bound here; nothing changed'
+        ]
+      })
+    };
   if (op.kind !== 'formula' || occurrence.def.kind !== 'formula')
     throw new OpError(
       'binding_redefinition_kind_mismatch',
@@ -17061,8 +17127,28 @@ function promotedPlainTablePlan(
           new RegExp(
             `\\b${promotion.tableId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.`
           ).test(expression));
+      // A formula that reads no cells of its own table (only document values
+      // or literals) has no row to belong to. Scoping it to one would let
+      // reconcile adopt the table's other rows from it and fill them with
+      // values nobody asked for. Row-local and positional formulas keep row
+      // scope; adoption of genuine line items is unchanged.
+      const documentOnly =
+        op.kind === 'formula' &&
+        (() => {
+          const ast = parseExpression(expression);
+          const positional = collectPositional(ast);
+          return (
+            !positional.cells.length &&
+            !positional.ranges.length &&
+            collectRefs(ast).every(
+              (ref) =>
+                promoted.index.fields.has(ref) ||
+                promoted.index.formulas.has(ref)
+            )
+          );
+        })();
       const rowId =
-        op.global === true || aggregate
+        op.global === true || aggregate || documentOnly
           ? null
           : `${promotion.tableId}_r${rowIndex}`;
       const liveTableAnchor = boundTableAnchor(promoted.sfdt, table);

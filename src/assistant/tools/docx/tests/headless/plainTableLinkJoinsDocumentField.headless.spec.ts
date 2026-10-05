@@ -1,3 +1,4 @@
+import { buildCostsFixture } from '../../../../../elements/components/DocxEditor/bindings/core/tests/fixtures/costsFixture';
 import { HeadlessSession, startHeadless } from './headlessSession';
 
 const cell = (text: string) => ({
@@ -216,5 +217,141 @@ describe('linking a plain cell to an existing document value', () => {
     );
     expect(tags).toHaveLength(2);
     expect(tags.every((tag) => tag.includes('global=true'))).toBe(true);
+  }, 120000);
+
+  it('links several cells in one change set that also re-states the existing one', async () => {
+    await session.call('open', policyAndSummary('$700'), 1, true);
+    const summaryCell = `${await session.call<string>(
+      'tableAnchorContaining',
+      'Coverage'
+    )};1;1;0`;
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        { ...link('$700.00'), anchor: summaryCell, global: true },
+        { ...link('$700'), global: true }
+      ],
+      'link-restated'
+    );
+
+    expect(result.outcomes).toEqual(['ok', 'ok']);
+    await session.call('resolveGroups', true);
+    const tags = (await session.call<string[]>('serializedTags')).filter(
+      (tag) => tag.includes('name=collectible_premium')
+    );
+    expect(tags).toHaveLength(2);
+    expect(tags.some((tag) => tag.includes('row='))).toBe(false);
+  }, 120000);
+
+  it('never invents values in rows a new live field did not address', async () => {
+    await session.call('open', policyAndSummary('$700'), 1, true);
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g01-mirror',
+          anchor: '0;1;1;1;0',
+          expect: '$700',
+          kind: 'formula',
+          name: 'policy_premium_mirror',
+          valueType: 'currency:USD:2',
+          expression: 'sum(collectible_premium)'
+        }
+      ],
+      'mirror-premium'
+    );
+
+    expect(result.outcomes).toEqual(['ok']);
+    await session.call('resolveGroups', true);
+    expect(
+      await session.call<string[]>(
+        'tableRowTextsAt',
+        await session.call<string>('tableAnchorContaining', 'Fees')
+      )
+    ).toEqual(['ItemPremium', 'Total Policy Premium$700.00', 'Fees']);
+  }, 120000);
+
+  it('re-stating a value a live table already holds changes nothing', async () => {
+    await session.call('open', JSON.stringify(buildCostsFixture()));
+    const before = await session.call<string>('serialize');
+    const taxCell = (await session.call<any[]>('inventory')).find((entry) =>
+      /tax/i.test(entry.text)
+    );
+    const tag = (await session.call<string[]>('serializedTags')).find((entry) =>
+      entry.includes('name=tax_rate')
+    );
+    expect(taxCell && tag).toBeTruthy();
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g01-restate',
+          anchor: taxCell.anchor,
+          kind: 'input',
+          name: 'tax_rate',
+          valueType: /type=([^|\]]+)/.exec(String(tag))?.[1] ?? 'decimal'
+        }
+      ],
+      'restate-tax'
+    );
+
+    expect(result.outcomes).toEqual(['ok']);
+    expect(await session.call<string>('serialize')).toBe(before);
+  }, 120000);
+
+  it('keeps a literal-only formula off the table rows', async () => {
+    await session.call('open', policyAndSummary('$700'), 1, true);
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g01-fee',
+          anchor: '0;1;1;1;0',
+          expect: '$700',
+          kind: 'formula',
+          name: 'flat_fee',
+          valueType: 'currency:USD:2',
+          expression: 'sum(350,350)'
+        }
+      ],
+      'flat-fee'
+    );
+
+    expect(result.outcomes).toEqual(['ok']);
+    await session.call('resolveGroups', true);
+    expect(
+      await session.call<string[]>(
+        'tableRowTextsAt',
+        await session.call<string>('tableAnchorContaining', 'Fees')
+      )
+    ).toEqual(['ItemPremium', 'Total Policy Premium$700.00', 'Fees']);
+  }, 120000);
+
+  it('does not treat a type change as a re-statement', async () => {
+    await session.call('open', JSON.stringify(buildCostsFixture()));
+    const before = await session.call<string>('serialize');
+    const taxCell = (await session.call<any[]>('inventory')).find((entry) =>
+      /tax/i.test(entry.text)
+    );
+    const result = await session.call<any>(
+      'applyEdits',
+      [
+        {
+          op: 'create_binding',
+          group: 'g01-retype',
+          anchor: taxCell.anchor,
+          kind: 'input',
+          name: 'tax_rate',
+          valueType: 'text'
+        }
+      ],
+      'retype-tax'
+    );
+
+    expect(result.outcomes).not.toEqual(['ok']);
+    expect(await session.call<string>('serialize')).toBe(before);
   }, 120000);
 });
