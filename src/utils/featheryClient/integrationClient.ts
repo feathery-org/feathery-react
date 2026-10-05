@@ -38,9 +38,19 @@ import {
 import { withLinkRequestHeaders } from '../accessLinkRequest';
 
 // A configured Generate Documents entry in the ordered `documents` array: a
-// template UUID string, or the single polymorphic `{kind:'quik'}` source dict.
+// template UUID string, an explicit template, or one Quik source.
 // The SDK forwards these verbatim (action config -> request field).
-export type GenerateDocumentRef = string | { kind: string; [key: string]: any };
+export type QuikDocumentSource = {
+  kind: 'quik';
+  // Omit to use the configured Quik integration's forms and mappings.
+  // When supplied, each entry is one PDF, including repeated form IDs.
+  // Values use Quik field names and never fall back to saved form answers.
+  forms?: { id: string | number; fields: Record<string, string> }[];
+};
+export type GenerateDocumentRef =
+  | string
+  | QuikDocumentSource
+  | { kind: 'template'; document_id: string };
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -1181,12 +1191,16 @@ export default class IntegrationClient {
     });
   }
 
-  getDocusignEnvelope({ envelopeId }: GetDocusignEnvelopeParams) {
+  getDocusignEnvelope({
+    envelopeId,
+    includeDocuments = true
+  }: GetDocusignEnvelopeParams) {
     const { userId } = initInfo();
     const params = encodeGetParams({
       fuser_key: userId,
       form_key: this.formKey,
-      docusign_envelope_id: envelopeId
+      docusign_envelope_id: envelopeId,
+      include_documents: includeDocuments
     });
     const url = `${API_URL}docusign/envelope/?${params}`;
     return this._fetch(url, {}, false).then(async (response) => {

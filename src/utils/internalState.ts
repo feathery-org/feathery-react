@@ -146,6 +146,8 @@ export type SendDocusignParams = {
 };
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
+  // false returns status + timestamps only (no document downloads)
+  includeDocuments?: boolean;
 };
 export type EgnyteFile = {
   name: string;

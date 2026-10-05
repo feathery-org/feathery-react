@@ -82,6 +82,7 @@ import {
   setInteractionDetected
 } from '../interactionState';
 import { EventQueue } from '../eventQueue';
+import { STEP_EVENT_LOAD, STEP_EVENT_SUBMIT } from '../stepEvents';
 
 setEnvironment('production');
 try {
@@ -1108,15 +1109,19 @@ export default class FeatheryClient extends IntegrationClient {
   async registerEvent(eventData: any) {
     if (this.draft) return;
 
-    // A 'complete' event means the step was submitted — record it so the
+    // A submit event means the step was submitted — record it so the
     // stepper reflects which steps are completed vs merely skipped over.
-    if (eventData.event === 'complete') markStepCompleted(eventData.step_key);
+    if (eventData.event === STEP_EVENT_SUBMIT)
+      markStepCompleted(eventData.step_key);
+
+    // Stamp now so queued or replayed events keep when they actually happened
+    const timedEvent = { ...eventData, timestamp: new Date().toISOString() };
 
     if (!isInteractionDetected() || this.userEventQueue.isReplayingEvents()) {
-      return this.userEventQueue.enqueue(eventData);
+      return this.userEventQueue.enqueue(timedEvent);
     }
 
-    return this._registerEventInternal(eventData);
+    return this._registerEventInternal(timedEvent);
   }
 
   private async _registerEventInternal(eventData: any) {
@@ -1129,8 +1134,7 @@ export default class FeatheryClient extends IntegrationClient {
       form_key: this.formKey,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {}),
-      event_id: uuidv4(),
-      timestamp: new Date().toISOString()
+      event_id: uuidv4()
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
     if (this.version) data.__feathery_version = this.version;
@@ -1142,7 +1146,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     let prom = null;
     let stepKey = '';
-    if (eventData.event === 'load') {
+    if (eventData.event === STEP_EVENT_LOAD) {
       stepKey = eventData.previous_step_key;
     } else {
       stepKey = eventData.step_key;
@@ -1172,7 +1176,8 @@ export default class FeatheryClient extends IntegrationClient {
       eventPromise = prom.then(() => triggerEvent());
     else eventPromise = Promise.all([prom, triggerEvent()]);
 
-    this.eventQueue = this.eventQueue.then(() => eventPromise);
+    // Callers still see the rejection; the shared chain must not stay rejected
+    this.eventQueue = this.eventQueue.then(() => eventPromise.catch(() => {}));
     return eventPromise;
   }
 
