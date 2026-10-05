@@ -112,7 +112,10 @@ import {
   renderDisplay
 } from '../../../elements/components/DocxEditor/bindings/core/valueTypes';
 import {
+  bareCellRef,
+  collectPositional,
   collectRefs,
+  isFormulaError,
   parseExpression
 } from '../../../elements/components/DocxEditor/bindings/core/formula';
 import { applyRules } from '../../../elements/components/DocxEditor/bindings/core/engine';
@@ -120,9 +123,11 @@ import type { Diagnostic } from '../../../elements/components/DocxEditor/binding
 import { analyzeBindingOrphans } from '../../../elements/components/DocxEditor/bindings/core/tableDeleteImpact';
 import {
   addLineItem,
+  expressionResolvesToColumn,
   formulaOccurrences,
   formulaScopeKey,
   getAt,
+  isPathPrefix,
   removeLineItem,
   rewriteRowClone,
   scanBindings,
@@ -16471,6 +16476,55 @@ function setCellContent(
   return setAt(sfdt, cellPath, { ...cell, blocks });
 }
 
+// Op-layer wrapper: translate the core's column-expression verdict into an
+// OpError so create_binding rejects a permanently-erroring binding at creation.
+export function assertExpressionYieldsValue(
+  expression: string,
+  bindingIndex: BindingIndex,
+  target?: Occurrence
+): void {
+  const kind = expressionResolvesToColumn(bindingIndex, expression);
+  if (kind) {
+    const what =
+      kind === 'range' ? 'is a whole range' : 'names a whole table column';
+    throw new OpError(
+      'binding_expression_whole_column',
+      `Expression ${JSON.stringify(
+        expression
+      )} ${what}. Wrap it in sum(...) to produce a value. Nothing was written.`
+    );
+  }
+  if (!target) return; // New bindings on this route already have a table cell.
+  const hasOwningTable = [...bindingIndex.tables.values()].some(
+    (table) => table.tablePath && isPathPrefix(table.tablePath, target.path)
+  );
+  if (hasOwningTable) return;
+  let ast;
+  try {
+    ast = parseExpression(expression);
+  } catch (thrown) {
+    if (!isFormulaError(thrown)) throw thrown;
+    return; // The caller reports syntax errors separately.
+  }
+  const positional = collectPositional(ast);
+  const hasUnqualified =
+    positional.cells.some((cell) => cell.table === null) ||
+    positional.ranges.some((range) => range.table === null) ||
+    collectRefs(ast).some(
+      (ref) =>
+        bareCellRef(ref) !== null &&
+        !bindingIndex.fields.has(ref) &&
+        !bindingIndex.formulas.has(ref)
+    );
+  if (hasUnqualified)
+    throw new OpError(
+      'binding_expression_outside_table',
+      `Expression ${JSON.stringify(
+        expression
+      )} uses an unqualified cell or range outside a table. Qualify it with a table ID. Nothing was written.`
+    );
+}
+
 function createBindingInCell(
   state: EngineMutationState,
   op: EditOp,
@@ -16513,6 +16567,7 @@ function createBindingInCell(
         'A formula binding requires an expression. Nothing was written.'
       );
     parseExpression(expression);
+    assertExpressionYieldsValue(expression, state.index);
   }
   const definition: Definition =
     kind === 'formula'
@@ -16643,6 +16698,8 @@ function redefineBoundFormulaPlan(
           `Formula "${occurrence.name}" resolved to ${targets.length} matching controls. Nothing was written.`,
           targets.map((candidate) => `candidate: ${candidate.path.join('/')}`)
         );
+      for (const target of targets)
+        assertExpressionYieldsValue(expression, state.index, target);
       let sfdt = state.sfdt;
       let toTag = '';
       for (const target of targets) {

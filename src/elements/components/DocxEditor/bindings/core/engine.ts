@@ -13,13 +13,24 @@ import {
   adoptUnboundRows,
   BindingIndex,
   getAt,
+  InsertedRowsHint,
   NativeStructuralMutation,
   Occurrence,
   scanBindings,
   setCalculatedValue,
   setOccurrenceText
 } from './sfdtAdapter';
-import { Ast, FormulaError, isFormulaError, parseExpression } from './formula';
+import { createPositionalGrid } from './positionalGrid';
+import {
+  Ast,
+  bareCellRef,
+  CellRef,
+  collectPositional,
+  FormulaError,
+  isFormulaError,
+  parseExpression,
+  RangeRef
+} from './formula';
 import {
   isNumericType,
   isValueError,
@@ -81,6 +92,8 @@ export interface ApplyRulesOptions {
    * original bindings.
    */
   adoptRows?: boolean;
+  /** Rows a just-executed native insert created, from the insertRow wrap. */
+  insertedRows?: InsertedRowsHint | null;
 }
 
 export interface ApplyRulesResult {
@@ -251,7 +264,8 @@ export function applyRules(
     prevValues = null,
     mode = 'commit',
     rowTemplates = null,
-    adoptRows = true
+    adoptRows = true,
+    insertedRows = null
   }: ApplyRulesOptions = {}
 ): ApplyRulesResult {
   const diagnostics: Diagnostic[] = [];
@@ -276,7 +290,8 @@ export function applyRules(
       tableId,
       index,
       undefined,
-      nextTemplates.get(tableId)
+      nextTemplates.get(tableId),
+      insertedRows
     );
     for (const skipped of result.skipped) {
       diag(
@@ -470,6 +485,16 @@ export function applyRules(
     nodes.set(id, { occ: occurrence, ast, deps: new Set() });
   }
 
+  /* ---- 2b. positional grids: see positionalGrid.ts ---- */
+  const results = new Map<string, string>();
+  const posGrid = createPositionalGrid({
+    sfdt: next,
+    index,
+    nodeId,
+    getFormulaResult: (id) => results.get(id),
+    getFieldValue: (key) => values.get(key)
+  });
+
   /**
    * Resolve a reference. Precedence: (1) the formula's own row, so bare column
    * names always mean "current row"; (2) document fields/formulas by full -
@@ -523,11 +548,28 @@ export function applyRules(
           if (item.kind === 'formula') node.deps.add(item.id);
         }
       }
+      // A cell-shaped ref that names nothing is a positional cell.
+      if (!target) {
+        const cell = bareCellRef(ast.ref);
+        if (cell)
+          for (const id of posGrid.positionalDepIds([cell], [], node.occ))
+            node.deps.add(id);
+      }
       return;
     }
     if ('args' in ast) for (const arg of ast.args) collectDeps(arg, node);
   }
-  for (const node of nodes.values()) collectDeps(node.ast, node);
+  for (const node of nodes.values()) {
+    collectDeps(node.ast, node);
+    const positional = collectPositional(node.ast);
+    if (positional.cells.length || positional.ranges.length)
+      for (const id of posGrid.positionalDepIds(
+        positional.cells,
+        positional.ranges,
+        node.occ
+      ))
+        node.deps.add(id);
+  }
 
   /* ---- 3. topological order with cycle reporting ---- */
   const order: string[] = [];
@@ -556,12 +598,19 @@ export function applyRules(
   for (const id of nodes.keys()) visit(id, []);
 
   /* ---- 4. evaluate in order ---- */
-  const results = new Map<string, string>();
   function evalAst(ast: Ast, node: FormulaNode): string | string[] {
     if ('lit' in ast) return ast.lit;
+    if ('cell' in ast) return posGrid.positionalCellValue(ast.cell, node.occ);
+    if ('range' in ast)
+      return posGrid.positionalRangeValues(ast.range, node.occ);
     if ('ref' in ast) {
       const target = refTargets(ast.ref, node.occ);
-      if (!target) throw new FormulaError(`unresolved reference "${ast.ref}"`);
+      if (!target) {
+        // A cell-shaped ref that names nothing reads a positional cell.
+        const cell = bareCellRef(ast.ref);
+        if (cell) return posGrid.positionalCellValue(cell, node.occ);
+        throw new FormulaError(`unresolved reference "${ast.ref}"`);
+      }
       if (target.kind === 'field') {
         const occurrences = (
           index.fields.get(target.name) as Occurrence[]

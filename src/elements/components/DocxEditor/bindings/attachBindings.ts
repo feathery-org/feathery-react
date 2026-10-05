@@ -212,11 +212,17 @@ export function attachBindings(
   // the interceptor adopts and recomputes in the same turn. Replay during
   // undo/redo must not flush: that inserts content controls mid-history and
   // leaves redo unable to delete the row.
-  const unwatchRowCommands = watchRowCommands(editor, () => {
+  const unwatchRowCommands = watchRowCommands(editor, (insertedRows) => {
+    // An insert says which rows it created, so adoption re-adopts exactly
+    // those; any other row command clears the hint before indices go stale.
+    // Fires during undo/redo replay too (a redone insert needs its hint);
+    // the replay check below is what keeps flushes out of the history stream.
+    controller.noteInsertedRows(insertedRows ?? null);
     if (controller.phase !== 'idle') return;
     const history = editor.editorHistoryModule;
     if (history?.isUndoing || history?.isRedoing) return;
-    controller.flush({ mode: 'self-heal' });
+    if (!triggers.onRowCommandComplete())
+      controller.flush({ mode: 'self-heal' });
   });
 
   const eventful = editor as EventfulEditor;

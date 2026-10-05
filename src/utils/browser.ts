@@ -72,10 +72,6 @@ export function deleteCookie(key: string) {
   featheryDoc().cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
 }
 
-export function getStytchJwt() {
-  return getCookie('stytch_session_jwt');
-}
-
 export const openTab = (url: any) =>
   featheryWindow().open(url, '_blank', 'noopener');
 

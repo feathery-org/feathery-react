@@ -3,9 +3,18 @@
 //   mul(quantity, unit_cost)     multiply, 2+ args
 //   sum(costs.line_total)        sum; a dotted ref aggregates a table column
 //   sub(subtotal, discount)      subtract, exactly 2 args
+//   A                            bare reference; mirrors another value as-is
+//   sum(B2:B9)  sum(B2:end)      positional range over the formula's own table
+//   summary!B3, sum(summary!B2:end)   positional refs into a named table
 //
-// Args are references (bare column/field names or table.column), numeric
-// literals, or nested calls. Anything else is a parse error.
+// Args are references, positional cells/ranges, literals, or nested calls. A
+// whole expression may be a single reference, never a single literal.
+//
+// Only a range (`:`) or a `table!`-qualified ref is positional at parse time; a
+// BARE cell-shaped token (B3) stays a ref, and the engine reads it as a cell
+// only when nothing binds that name. So a binding named Q1 or FY2024 is never
+// stolen. `end` means the last physical row only in a range bound; elsewhere
+// it can still name an existing binding.
 
 export class FormulaError extends Error {
   constructor(message?: string) {
@@ -35,10 +44,47 @@ export function isFormulaError(error: unknown): error is FormulaError {
 
 export type FormulaOperator = 'multiply' | 'sum' | 'subtract';
 
+/** A positional cell: col/row are 0-based col index, 1-based physical row. */
+export interface CellRef {
+  /** Table id from a `table!` qualifier, or null = the formula's own table. */
+  table: string | null;
+  col: number;
+  row: number;
+}
+
+/** A rectangular range; endRow 'end' = the table's last physical row. */
+export interface RangeRef {
+  table: string | null;
+  startCol: number;
+  startRow: number;
+  endCol: number;
+  endRow: number | 'end';
+}
+
 export type Ast =
   | { lit: string }
   | { ref: string }
+  | { cell: CellRef }
+  | { range: RangeRef }
   | { op: FormulaOperator; args: Ast[] };
+
+const CELL_RE = /^[A-Z]{1,2}([1-9][0-9]*)$/;
+
+/** 'A' -> 0, 'Z' -> 25, 'AA' -> 26, ... */
+function colIndex(letters: string): number {
+  let out = 0;
+  for (const ch of letters) out = out * 26 + (ch.charCodeAt(0) - 64);
+  return out - 1;
+}
+
+function parseCellToken(value: string): { col: number; row: number } | null {
+  const match = CELL_RE.exec(value);
+  if (!match) return null;
+  return {
+    col: colIndex(value.slice(0, value.length - match[1].length)),
+    row: Number(match[1])
+  };
+}
 
 // Null prototypes so names like "constructor" cannot reach Object.prototype.
 const FUNCTIONS: Record<string, FormulaOperator> = Object.assign(
@@ -55,7 +101,7 @@ const ARITY: Record<FormulaOperator, [number, number]> = Object.assign(
 );
 
 interface Token {
-  t: 'name' | 'num' | '(' | ')' | ',';
+  t: 'name' | 'num' | '(' | ')' | ',' | ':' | '!';
   v?: string;
 }
 
@@ -65,7 +111,7 @@ function tokenize(src: string): Token[] {
   // rejects the flag on a literal while the compile target is es5, so the same
   // regex is built through the constructor instead.
   const re = new RegExp(
-    '\\s*(?:([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)|(-?\\d+(?:\\.\\d+)?)|([(),]))',
+    '\\s*(?:([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)|(-?\\d+(?:\\.\\d+)?)|([(),:!]))',
     'y'
   );
   let pos = 0;
@@ -96,6 +142,48 @@ export function parseExpression(src: string): Ast {
     return tokens[i++];
   };
 
+  /** Cell or range starting at the current name token. */
+  function positional(table: string | null): Ast {
+    const start = eat('name');
+    const startCell = parseCellToken(start.v as string);
+    if (!startCell)
+      throw new FormulaError(
+        `expected a cell like B2, got ${JSON.stringify(
+          start.v
+        )} in ${JSON.stringify(src)}`
+      );
+    if (peek()?.t !== ':') return { cell: { table, ...startCell } };
+    eat(':');
+    const bound = eat('name');
+    if (bound.v === 'end') {
+      return {
+        range: {
+          table,
+          startCol: startCell.col,
+          startRow: startCell.row,
+          endCol: startCell.col,
+          endRow: 'end'
+        }
+      };
+    }
+    const boundCell = parseCellToken(bound.v as string);
+    if (!boundCell)
+      throw new FormulaError(
+        `range bound must be a cell like B9 or "end", got ${JSON.stringify(
+          bound.v
+        )} in ${JSON.stringify(src)}`
+      );
+    return {
+      range: {
+        table,
+        startCol: Math.min(startCell.col, boundCell.col),
+        startRow: Math.min(startCell.row, boundCell.row),
+        endCol: Math.max(startCell.col, boundCell.col),
+        endRow: Math.max(startCell.row, boundCell.row)
+      }
+    };
+  }
+
   function term(): Ast {
     const token = peek();
     if (!token)
@@ -107,6 +195,14 @@ export function parseExpression(src: string): Ast {
     if (token.t !== 'name')
       throw new FormulaError(`unexpected token in ${JSON.stringify(src)}`);
     i++;
+    if (peek()?.t === '!') {
+      eat('!');
+      if ((token.v as string).includes('.'))
+        throw new FormulaError(
+          `bad table name before "!" in ${JSON.stringify(src)}`
+        );
+      return positional(token.v as string);
+    }
     if (peek()?.t === '(') {
       const op = FUNCTIONS[token.v as string];
       if (!op)
@@ -130,22 +226,47 @@ export function parseExpression(src: string): Ast {
       }
       return { op, args };
     }
+    // A bare token stays a reference; the engine decides at eval whether it
+    // names a binding or (only when it is cell-shaped AND unbound) a positional
+    // cell. This keeps a binding named Q1 or FY2024 from being stolen by cell
+    // parsing. A range (`:`) or a `table!`-qualified ref is unambiguous here.
+    if (peek()?.t === ':') {
+      i--; // hand the start cell back to the positional parser
+      return positional(null);
+    }
     return { ref: token.v as string };
   }
 
   const ast = term();
   if (i !== tokens.length)
     throw new FormulaError(`trailing input in ${JSON.stringify(src)}`);
-  if (!('op' in ast))
+  if ('lit' in ast)
     throw new FormulaError(
       `expression must reference a value: ${JSON.stringify(src)}`
     );
   return ast;
 }
 
+/** A cell-shaped bare token (B3, AA12) as a CellRef in the own table, else null. */
+export function bareCellRef(name: string): CellRef | null {
+  const cell = parseCellToken(name);
+  return cell ? { table: null, col: cell.col, row: cell.row } : null;
+}
+
 /** Every reference mentioned anywhere in the AST. */
 export function collectRefs(ast: Ast, out: string[] = []): string[] {
   if ('ref' in ast) out.push(ast.ref);
   if ('args' in ast) for (const arg of ast.args) collectRefs(arg, out);
+  return out;
+}
+
+/** Every positional cell and range mentioned anywhere in the AST. */
+export function collectPositional(
+  ast: Ast,
+  out: { cells: CellRef[]; ranges: RangeRef[] } = { cells: [], ranges: [] }
+): { cells: CellRef[]; ranges: RangeRef[] } {
+  if ('cell' in ast) out.cells.push(ast.cell);
+  if ('range' in ast) out.ranges.push(ast.range);
+  if ('args' in ast) for (const arg of ast.args) collectPositional(arg, out);
   return out;
 }
