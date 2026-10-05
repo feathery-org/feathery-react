@@ -9129,6 +9129,14 @@ export const ANCHORED_OP_HANDLERS: {
         editor.selection?.characterFormat,
         CHARACTER_FORMAT_KEYS
       );
+      // A joined value shares its tag with controls that already exist, so
+      // the new control is the one that was not there before the insert.
+      const tag = formatTag(definition);
+      const controlsWithTag = (): any[] =>
+        (liveEditor.documentHelper?.contentControlCollection ?? []).filter(
+          (cc: any) => cc?.contentControlProperties?.tag === tag
+        );
+      const existingControls = new Set(controlsWithTag());
       editor.editor.delete();
       inserted = liveEditor.editorModule?.insertContentControl?.({
         type: 'Text',
@@ -9139,15 +9147,10 @@ export const ANCHORED_OP_HANDLERS: {
         canEdit: definition.isEditable
       });
 
-      const tag = formatTag(definition);
-      const control = (
-        liveEditor.documentHelper?.contentControlCollection ?? []
-      ).find((cc: any) => cc?.contentControlProperties?.tag === tag);
-      if (
-        control &&
-        !joined &&
-        liveEditor.selection?.selectContentControlInternal
-      ) {
+      const control = controlsWithTag().find(
+        (cc: any) => !existingControls.has(cc)
+      );
+      if (control && liveEditor.selection?.selectContentControlInternal) {
         liveEditor.selection.selectContentControlInternal(control);
         for (const [key, wanted] of Object.entries(look))
           if (isMeaningfulInheritedFormatValue(key, wanted))
