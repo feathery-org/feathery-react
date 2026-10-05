@@ -1,5 +1,6 @@
 import { featheryDoc } from '../../../../../utils/browser';
 import { themeFonts } from '../model/theme';
+import { resolveListProps } from '../model/resolve';
 import type { Deck } from '../model/types';
 
 // A trailing weight word is a style, not part of the family name: Google serves
@@ -77,6 +78,10 @@ function collectFamilyWeights(deck: Deck): Map<string, Set<number>> {
     add(tf.major);
     add(tf.minor);
     for (const shape of slide.shapes) {
+      // A placeholder's font often lives only in the layout/master style, not on
+      // the runs, so collect the inherited default too (cheap no-op otherwise).
+      if (shape.text?.paragraphs?.length)
+        add(resolveListProps(deck, slide, shape, 0).defRPr?.font);
       for (const p of shape.text?.paragraphs ?? []) {
         for (const r of p.runs ?? []) add(r.font);
       }

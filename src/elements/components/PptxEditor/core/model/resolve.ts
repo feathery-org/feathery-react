@@ -148,6 +148,9 @@ export function resolveListProps(
   const masterPart = layoutPart ? pkg.masterFor(layoutPart) : undefined;
 
   const merged: ResolvedListProps = {};
+  // Field-level cascade: the first (most specific) level to supply each field
+  // wins, so a layout level that sets only size/color doesn't block the font
+  // the master placeholder supplies. color + colorScheme move as one unit.
   const mergeIn = (r: ResolvedListProps | null) => {
     if (!r) return;
     if (merged.bullet === undefined && r.bullet) merged.bullet = r.bullet;
@@ -155,26 +158,46 @@ export function resolveListProps(
       merged.marLEmu = r.marLEmu;
     if (merged.indentEmu === undefined && r.indentEmu !== undefined)
       merged.indentEmu = r.indentEmu;
-    if (!merged.defRPr && r.defRPr) merged.defRPr = r.defRPr;
+    if (r.defRPr) {
+      const d = (merged.defRPr ??= {});
+      const s = r.defRPr;
+      if (d.sizePt === undefined && s.sizePt !== undefined) d.sizePt = s.sizePt;
+      if (d.font === undefined && s.font !== undefined) d.font = s.font;
+      if (
+        d.color === undefined &&
+        d.colorScheme === undefined &&
+        (s.color !== undefined || s.colorScheme !== undefined)
+      ) {
+        d.color = s.color;
+        d.colorScheme = s.colorScheme;
+      }
+      if (d.bold === undefined && s.bold !== undefined) d.bold = s.bold;
+      if (d.italic === undefined && s.italic !== undefined) d.italic = s.italic;
+    }
+  };
+
+  const lvlOf = (host: ONode | undefined) => {
+    const lst = host && descendant(host, 'a:lstStyle');
+    return readLvlPr(lst ? child(lst, lvlTag) : undefined);
   };
 
   // 1. layout placeholder lstStyle
   if (layoutPart && pkg.hasPart(layoutPart)) {
-    const lp = findPlaceholder(xmlRoot(pkg.tree(layoutPart)), ph.type, ph.idx);
-    const lst = lp && descendant(lp, 'a:lstStyle');
-    mergeIn(readLvlPr(lst ? child(lst, lvlTag) : undefined));
+    mergeIn(
+      lvlOf(findPlaceholder(xmlRoot(pkg.tree(layoutPart)), ph.type, ph.idx))
+    );
   }
-  // 2. master txStyles for the placeholder type + 3. master placeholder lstStyle
+  // 2. master placeholder lstStyle, then 3. master txStyles for the ph type.
+  // The placeholder's own style is more specific than the generic {title}Style,
+  // so it is consulted first (e.g. its latin font wins over the txStyles font).
   if (masterPart && pkg.hasPart(masterPart)) {
     const mRoot = xmlRoot(pkg.tree(masterPart));
+    mergeIn(lvlOf(findPlaceholder(mRoot, ph.type, ph.idx)));
     const txStyles = child(mRoot, 'p:txStyles');
     const styleEl = txStyles
       ? child(txStyles, TXSTYLE_FOR_PH[ph.type] || 'p:otherStyle')
       : undefined;
     mergeIn(readLvlPr(styleEl ? child(styleEl, lvlTag) : undefined));
-    const mp = findPlaceholder(mRoot, ph.type, ph.idx);
-    const lst = mp && descendant(mp, 'a:lstStyle');
-    mergeIn(readLvlPr(lst ? child(lst, lvlTag) : undefined));
   }
   return merged;
 }
