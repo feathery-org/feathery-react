@@ -1,5 +1,6 @@
 import { getFormContext } from '../formContext';
 import { setFormInternalState } from '../internalState';
+import Field from '../entities/Field';
 
 describe('feathery.generateDocuments logic-rule method routing', () => {
   const uuid = 'formContext-test';
@@ -188,13 +189,20 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       }
     } as any);
 
-    await getFormContext(uuid).generateDocuments({
-      documentIds: ['tpl-1', { kind: 'file_upload', field_key: 'IdUpload' }]
-    });
-    expect(flow.mock.calls[0][0].documents).toEqual([
-      'tpl-1',
-      { kind: 'file_upload', field_id: 'id-up' }
-    ]);
+    // By key, or by passing the field itself as a logic rule sees it.
+    for (const source of [
+      { kind: 'file_upload' as const, field_key: 'IdUpload' },
+      new Field('IdUpload', uuid)
+    ]) {
+      flow.mockClear();
+      await getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1', source]
+      });
+      expect(flow.mock.calls[0][0].documents).toEqual([
+        'tpl-1',
+        { kind: 'file_upload', field_id: 'id-up' }
+      ]);
+    }
 
     // Unknown keys and non-upload fields fail before anything is generated.
     flow.mockClear();

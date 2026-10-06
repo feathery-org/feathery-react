@@ -1,4 +1,5 @@
 import type { GenerateDocumentRef } from './featheryClient/integrationClient';
+import Field from './entities/Field';
 import { featheryWindow } from './browser';
 import { getAllElements } from './formHelperFunctions';
 import { changeStep } from './stepHelperFunctions';
@@ -254,7 +255,7 @@ export const getFormContext = (formUuid: string) => {
         verification
       }),
     generateDocuments: ({
-      documentIds,
+      documentIds: documentSources,
       signers,
       envelopeAction,
       signMethod,
@@ -269,10 +270,10 @@ export const getFormContext = (formUuid: string) => {
       saveDocumentFieldKey,
       redirect
     }: {
-      // A plain template UUID string, or a source object such as the Quik item
-      // `{ kind: 'quik' }` or a file upload field
-      // `{ kind: 'file_upload', field_key }` — mirroring the action config.
-      documentIds: GenerateDocumentRef[];
+      // A plain template UUID string, a file upload field itself (e.g.
+      // `FileUpload1`), or a source object such as the Quik item
+      // `{ kind: 'quik' }` — mirroring the action config.
+      documentIds: (GenerateDocumentRef | Field)[];
       // Per-document, per-role signer emails; a document with no entry here
       // gets no signer. `roleId` targets one of the document's signer roles,
       // or is left off to cover every role of that document. `filler` marks
@@ -313,6 +314,10 @@ export const getFormContext = (formUuid: string) => {
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
     }) => {
+      // A field passed as-is is named by key, resolved to its id below.
+      let documentIds: GenerateDocumentRef[] = documentSources.map((doc) =>
+        doc instanceof Field ? { kind: 'file_upload', field_key: doc.id } : doc
+      );
       const usesRichOptions =
         !!signMethod ||
         !!signers?.length ||
