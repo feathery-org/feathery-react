@@ -92,9 +92,9 @@ it('carries DrawingML autofit, paragraph spacing, tabs, and field identity into 
   // 18pt * 0.8 font scale = 19.2px; line spacing 120% - 10% reduction = 1.1.
   const fontPx = ((18 * 96) / 72) * 0.8;
   const lineHeightPx = fontPx * 1.1;
-  const halfLeading = (lineHeightPx - fontPx) / 2;
-  // Line-height is emitted in px, and the top half-leading is moved below the
-  // baseline (so the top margin = spaceBefore(12pt=16px) - halfLeading).
+  // Extra leading only exists beyond the ~1.2x natural line box; 1.1 < 1.2, so
+  // halfLeading is 0 here and the top margin stays at spaceBefore (12pt = 16px).
+  const halfLeading = Math.max(0, (lineHeightPx - fontPx * 1.2) / 2);
   expect(Number.parseFloat(firstPara.style.lineHeight)).toBeCloseTo(lineHeightPx);
   expect(Number.parseFloat(firstPara.style.marginTop)).toBeCloseTo(
     (12 * 96) / 72 - halfLeading

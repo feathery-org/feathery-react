@@ -1193,8 +1193,13 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     // half above / half below, which drifts text off fixed decorations (rules,
     // dividers). Shift the top half to the bottom so baselines sit where the
     // deck expects; inter-line spacing is preserved (taken off the top margin,
-    // added to the bottom).
-    const halfLeading = Math.max(0, (lineHeightPx - baseFontPx) / 2);
+    // added to the bottom). The glyph's own line box is ~1.2x the font size, so
+    // only spacing beyond that is extra leading - default/tight spacing shifts 0.
+    const NATURAL_LINE = 1.2;
+    const halfLeading = Math.max(
+      0,
+      (lineHeightPx - baseFontPx * NATURAL_LINE) / 2
+    );
     const numPx = (v: string | undefined) => (v ? parseFloat(v) : 0);
     const marginTopPx =
       numPx(spacingCss(paraProps.spaceBefore, baseFontPx)) - halfLeading;
