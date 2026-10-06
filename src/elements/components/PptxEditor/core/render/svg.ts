@@ -1211,9 +1211,19 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       (bullet?.sizePts ??
         (bullet?.sizePct ? baseSize * bullet.sizePct : baseSize)) * fontScale;
     const markerColor = resolveTextColor(first ?? ({} as Run), paraDef);
+    // Render the glyph in the bullet's own font (e.g. DM Sans) so its size
+    // matches PowerPoint; a fallback font's "●" is noticeably chunkier. Symbol
+    // fonts are excluded since the glyph was already mapped to a safe Unicode char.
+    const symbolBulletFont = /wingding|webding|symbol/i.test(
+      bullet?.font || ''
+    );
+    const markerFamily = splitFontWeight(
+      (bullet?.font && !symbolBulletFont ? bullet.font : undefined) ??
+        resolveFont(first?.font ?? paraDef?.font, svgThemeFonts)
+    ).family;
     const markerStyle = `font-size:${ptToCssPx(
       markerSize
-    )}px;line-height:${lineHeightPx}px;color:#${markerColor};position:absolute;left:${
+    )}px;line-height:${lineHeightPx}px;font-family:'${markerFamily}',Helvetica,Arial,sans-serif;color:#${markerColor};position:absolute;left:${
       marL + indent
     }px;${indent ? '' : 'transform:translateX(-100%);'}`;
     // PowerPoint shows no bullet on an empty line (no text runs), so neither do
