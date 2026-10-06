@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MODAL_Z_INDEX } from '../../../utils/styles';
 import { featheryDoc } from '../../../utils/browser';
-import { initInfo } from '../../../utils/init';
 import {
+  autoMapColumns,
   buildUnverifiedRows,
+  columnLabel,
+  columnRefAt,
+  resolveColumnIndex,
   ColumnRef,
   FieldMapping,
   isSpreadsheetFile,
@@ -35,7 +38,8 @@ interface HubImportState {
   mapping: FieldMapping;
 }
 
-const enc = (sheet: string, header: string) => JSON.stringify([sheet, header]);
+const enc = (ref: ColumnRef) =>
+  JSON.stringify([ref.sheet, ref.header, ref.columnIndex]);
 
 const deriveSheets = (
   rawSheets: { name: string; rows: string[][] }[],
@@ -54,32 +58,6 @@ interface MappingDraft {
 }
 const draftCache = new Map<string, MappingDraft>();
 const draftKey = (hubIds: string[]) => hubIds.join(',');
-
-function autoMap(
-  fields: HubFieldSchema[],
-  sheets: NormalizedSheet[],
-  preferSheet?: string
-): FieldMapping {
-  const ordered = preferSheet
-    ? [
-        ...sheets.filter((s) => s.name === preferSheet),
-        ...sheets.filter((s) => s.name !== preferSheet)
-      ]
-    : sheets;
-  const mapping: FieldMapping = {};
-  fields.forEach((field) => {
-    for (const sheet of ordered) {
-      const header = sheet.headers.find(
-        (h) => h.toLowerCase() === field.key.toLowerCase()
-      );
-      if (header) {
-        mapping[field.key] = { sheet: sheet.name, header };
-        break;
-      }
-    }
-  });
-  return mapping;
-}
 
 // Field help icon; the shared HoverTooltip portals to document.body, so it
 // escapes the modal's scrolling panes and flips when out of room.
@@ -204,17 +182,12 @@ function DataMappingModal({
   onClose
 }: DataMappingModalProps) {
   // Draft restore is synchronous so reopening the modal is instant; only the
-  // hub schemas/counts load over the network.
+  // hub schemas load over the network.
   const initialDraft = draftCache.get(draftKey(hubs.map((h) => h.hub_id)));
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [schemas, setSchemas] = useState<HubSchema[]>([]);
-  const [view, setView] = useState<'resume' | 'import'>('import');
   const [activeStep, setActiveStep] = useState(0);
-
-  const [unverifiedCounts, setUnverifiedCounts] = useState<
-    Record<string, number>
-  >({});
 
   // Header row is NOT assumed to be line 1; `sheets` slices at the chosen one.
   const [rawSheets, setRawSheets] = useState<
@@ -233,10 +206,6 @@ function DataMappingModal({
   const [perHub, setPerHub] = useState<Record<string, HubImportState>>(
     () => initialDraft?.perHub ?? {}
   );
-  // Once the user drops a file, a late-arriving count must not yank them to
-  // the resume screen.
-  const interactedRef = useRef(false);
-
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
 
@@ -272,49 +241,7 @@ function DataMappingModal({
     );
   };
 
-  const refreshUnverifiedCounts = async (hubList: HubSchema[]) => {
-    const results = await Promise.all(
-      hubList.map((hub) => {
-        // Scope to this user's import batch when the action configures an ID
-        // field. `where` conditions use field keys, so translate the id.
-        const idFieldId = idFieldByHub[hub.id];
-        const idFieldKey = idFieldId
-          ? (hub.fields || []).find((f) => f.id === idFieldId)?.key
-          : undefined;
-        // Configured batch field no longer exists on the hub: fail closed
-        // (report nothing) instead of silently counting every user's rows.
-        if (idFieldId && !idFieldKey)
-          return Promise.resolve({ hubId: hub.id, count: 0 });
-        return client
-          .dataHubAction({
-            hubId: hub.id,
-            operation: 'get',
-            verification: 'unverified',
-            where: idFieldKey
-              ? [{ fieldId: idFieldKey, value: initInfo().userId }]
-              : undefined
-          })
-          .then((r: any) => ({
-            hubId: hub.id,
-            // Rows a form user sent back for review are staged too, but an
-            // upload doesn't replace them, so they aren't "your previous
-            // upload".
-            count: (Array.isArray(r) ? r : []).filter(
-              (entry: any) => !entry?.user_unverified
-            ).length
-          }));
-      })
-    );
-    const counts: Record<string, number> = {};
-    results.forEach((r) => {
-      counts[r.hubId] = r.count;
-    });
-    setUnverifiedCounts(counts);
-    return counts;
-  };
-
-  // Entry screen: in-memory draft -> mapping step, else leftover unverified rows ->
-  // resume, else dropzone.
+  // Open the upload view regardless of existing unverified entries.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -325,13 +252,9 @@ function DataMappingModal({
           .map((id) => schemaResp.hubs.find((h) => h.id === id))
           .filter(Boolean) as HubSchema[];
 
-        const counts = await refreshUnverifiedCounts(orderedSchemas);
         if (cancelled) return;
 
-        const hasUnverified = Object.values(counts).some((n) => n > 0);
         setSchemas(orderedSchemas);
-        if (!initialDraft && !interactedRef.current && hasUnverified)
-          setView('resume');
         setLoading(false);
       } catch {
         if (!cancelled) {
@@ -380,10 +303,6 @@ function DataMappingModal({
 
   const isLastStep = activeStep >= schemas.length - 1;
 
-  const totalUnverified = Object.values(unverifiedCounts).reduce(
-    (n, c) => n + c,
-    0
-  );
   // Memoized: buildUnverifiedRows walks every row of every mapped column.
   const totalMappedRows = useMemo(
     () =>
@@ -398,16 +317,33 @@ function DataMappingModal({
     [sheets, schemas, perHub]
   );
 
+  const resolvedRef = (ref: ColumnRef | undefined) => {
+    const sheet = sheets.find((s) => s.name === ref?.sheet);
+    const index = sheet && ref ? resolveColumnIndex(sheet, ref) : -1;
+    return sheet && index >= 0 ? columnRefAt(sheet, index) : undefined;
+  };
+  const invalidMappings = schemas.flatMap((hub) =>
+    fieldsForHub(hub.id)
+      .filter((f) => {
+        const ref = perHub[hub.id]?.mapping[f.key];
+        return ref && !resolvedRef(ref);
+      })
+      .map((f) => (schemas.length > 1 ? `${hub.key}: ${f.key}` : f.key))
+  );
+
   const missingRequired =
     sheets.length === 0
       ? []
       : schemas.flatMap((hub) => {
           const st = perHub[hub.id];
           return fieldsForHub(hub.id)
-            .filter((f) => f.required && !st?.mapping[f.key])
+            .filter((f) => f.required && !resolvedRef(st?.mapping[f.key]))
             .map((f) => (schemas.length > 1 ? `${hub.key}: ${f.key}` : f.key));
         });
-  const allRequiredMapped = sheets.length > 0 && missingRequired.length === 0;
+  const canImport =
+    sheets.length > 0 &&
+    missingRequired.length === 0 &&
+    invalidMappings.length === 0;
 
   // If the file was parsed before the hub schemas arrived, auto-map each hub
   // as soon as they do.
@@ -420,7 +356,7 @@ function DataMappingModal({
       missing.forEach((hub) => {
         next[hub.id] = {
           selectedSheet: 0,
-          mapping: autoMap(fieldsForHub(hub.id), sheets, sheets[0]?.name)
+          mapping: autoMapColumns(fieldsForHub(hub.id), sheets, sheets[0]?.name)
         };
       });
       return next;
@@ -432,7 +368,6 @@ function DataMappingModal({
       setFileError('Unsupported file type. Upload a CSV or Excel file.');
       return;
     }
-    interactedRef.current = true;
     setFileError('');
     setParsingFile(file.name);
     const parseStart = Date.now();
@@ -455,7 +390,11 @@ function DataMappingModal({
       schemas.forEach((hub) => {
         nextPerHub[hub.id] = {
           selectedSheet: 0,
-          mapping: autoMap(fieldsForHub(hub.id), derived, derived[0]?.name)
+          mapping: autoMapColumns(
+            fieldsForHub(hub.id),
+            derived,
+            derived[0]?.name
+          )
         };
       });
       setRawSheets(raw);
@@ -494,20 +433,17 @@ function DataMappingModal({
       schemas.forEach((hub) => {
         const sel = prev[hub.id]?.selectedSheet ?? 0;
         const prevMapping = prev[hub.id]?.mapping ?? {};
-        const auto = autoMap(fieldsForHub(hub.id), derived, derived[sel]?.name);
-        // Keep manual selections that still resolve on the new headers; only
-        // broken or unmapped fields fall back to auto-mapping.
+        const auto = autoMapColumns(
+          fieldsForHub(hub.id),
+          derived,
+          derived[sel]?.name
+        );
+        // Preserve manual selections by position. Invalid selections stay visible
+        // for explicit reselection; only unmapped fields are auto-mapped.
         const mapping: FieldMapping = {};
         fieldsForHub(hub.id).forEach((field) => {
           const existing = prevMapping[field.key];
-          const stillValid =
-            existing &&
-            derived.some(
-              (sheet) =>
-                sheet.name === existing.sheet &&
-                sheet.headers.includes(existing.header)
-            );
-          if (stillValid) mapping[field.key] = existing;
+          if (existing) mapping[field.key] = existing;
           else if (auto[field.key]) mapping[field.key] = auto[field.key];
         });
         next[hub.id] = { selectedSheet: sel, mapping };
@@ -528,9 +464,9 @@ function DataMappingModal({
 
   // Rows are left unverified on purpose: unverified rows are exempt from the hub's field
   // requirements, so an import never fails validation. Nothing calls `verify`.
-  // Uploading clears this batch's existing unverified rows first, so this
-  // replaces them.
+  // Each upload appends rows; existing entries are preserved.
   const handleConfirm = async () => {
+    if (!canImport) return;
     setBusy(true);
     setActionError('');
     setConfirmingSave(false);
@@ -557,7 +493,6 @@ function DataMappingModal({
       }
     } catch (e: any) {
       setActionError(e?.message || 'Failed to save the mapped rows.');
-      await refreshUnverifiedCounts(schemas).catch(() => ({}));
       setBusy(false);
       return;
     }
@@ -734,52 +669,7 @@ function DataMappingModal({
     </div>
   );
 
-  // ---- Resume: rows from a previous import are still in the hub ----
-  if (view === 'resume') {
-    const resumeBody = (
-      <div css={{ color: '#3f3f46', lineHeight: 1.5 }}>
-        <div css={{ fontWeight: 600, marginBottom: '6px' }}>
-          {totalUnverified} row{totalUnverified === 1 ? '' : 's'} already
-          imported
-        </div>
-        <div css={{ color: '#71717a' }}>
-          A previous upload put{' '}
-          {totalUnverified === 1 ? 'this row' : 'these rows'} into{' '}
-          {schemas.length > 1 ? 'these data hubs' : 'this data hub'}. Uploading
-          a new file replaces {totalUnverified === 1 ? 'it' : 'them'}.
-        </div>
-      </div>
-    );
-    const resumeFooter = (
-      <>
-        <button
-          type='button'
-          disabled={busy}
-          onClick={onClose}
-          css={btn(false, busy)}
-        >
-          Done
-        </button>
-        <button
-          type='button'
-          disabled={busy}
-          // Uploading clears the old unverified rows, so no delete call is needed.
-          onClick={() => {
-            setActionError('');
-            setView('import');
-          }}
-          css={btn(true, busy)}
-        >
-          Upload a new file
-        </button>
-      </>
-    );
-    return shell(resumeBody, resumeFooter, true);
-  }
-
-  // ---- Import: upload + map ----
-  // Resume needs counts; the mapping step needs schemas. Only block once the
-  // user is past the dropzone and the background load hasn't finished.
+  // Mapping needs schemas; the dropzone can appear while they load.
   if (loading && sheets.length > 0) {
     return shell(
       <div css={{ color: '#71717a' }}>Loading…</div>,
@@ -835,6 +725,9 @@ function DataMappingModal({
   }
 
   const headers = activeSheet?.headers || [];
+  const columns = activeSheet
+    ? headers.map((_header, i) => columnRefAt(activeSheet, i))
+    : [];
   const previewRows = (activeSheet?.rows || []).slice(0, MAX_PREVIEW_ROWS);
   const mapping = activeState?.mapping || {};
   const mappedCount = activeFields.filter((f) => !!mapping[f.key]).length;
@@ -988,12 +881,17 @@ function DataMappingModal({
               </div>
             </div>
             {activeFields.map((field) => {
-              const cur = mapping[field.key];
-              const value = cur ? enc(cur.sheet, cur.header) : '';
+              const cur = resolvedRef(mapping[field.key]);
+              const value = cur
+                ? enc(cur)
+                : mapping[field.key]
+                ? 'unresolved'
+                : '';
               const curOnSheet =
                 cur &&
                 cur.sheet === (activeSheet?.name ?? '') &&
-                headers.includes(cur.header);
+                activeSheet &&
+                resolveColumnIndex(activeSheet, cur) >= 0;
               return (
                 <div
                   key={field.id}
@@ -1030,15 +928,15 @@ function DataMappingModal({
                   </div>
                   <span css={{ color: '#a1a1aa' }}>=</span>
                   <select
+                    aria-label={`${field.key} source column`}
                     value={value}
                     onChange={(e) => {
                       if (!e.target.value)
                         return setFieldColumn(field.key, null);
-                      const [sheet, header] = JSON.parse(e.target.value) as [
-                        string,
-                        string
-                      ];
-                      setFieldColumn(field.key, { sheet, header });
+                      const [sheet, header, columnIndex] = JSON.parse(
+                        e.target.value
+                      ) as [string, string, number];
+                      setFieldColumn(field.key, { sheet, header, columnIndex });
                     }}
                     css={{
                       flexShrink: 0,
@@ -1052,20 +950,22 @@ function DataMappingModal({
                     }}
                   >
                     <option value=''>Select column...</option>
-                    {/* Keep a selection made on another sheet visible. */}
-                    {cur && !curOnSheet && (
-                      <option value={enc(cur.sheet, cur.header)}>
-                        {sheets.length > 1
-                          ? `${cur.sheet}: ${cur.header}`
-                          : cur.header}
+                    {value === 'unresolved' && (
+                      <option value='unresolved' disabled>
+                        Reselect source column...
                       </option>
                     )}
-                    {headers.map((header, i) => (
-                      <option
-                        key={i}
-                        value={enc(activeSheet?.name ?? '', header)}
-                      >
-                        {header}
+                    {/* Keep a selection made on another sheet visible. */}
+                    {cur && !curOnSheet && (
+                      <option value={enc(cur)}>
+                        {sheets.length > 1
+                          ? `${cur.sheet}: ${columnLabel(cur)}`
+                          : columnLabel(cur)}
+                      </option>
+                    )}
+                    {columns.map((column, i) => (
+                      <option key={i} value={enc(column)}>
+                        {columnLabel(column)}
                       </option>
                     ))}
                   </select>
@@ -1099,7 +999,7 @@ function DataMappingModal({
             <table css={{ borderCollapse: 'collapse', width: '100%' }}>
               <thead>
                 <tr>
-                  {headers.map((header, i) => (
+                  {columns.map((column, i) => (
                     <th
                       key={i}
                       css={{
@@ -1113,7 +1013,7 @@ function DataMappingModal({
                         top: 0
                       }}
                     >
-                      {header}
+                      {columnLabel(column)}
                     </th>
                   ))}
                 </tr>
@@ -1160,10 +1060,6 @@ function DataMappingModal({
       <span css={{ color: '#3f3f46', fontSize: '13px', marginRight: '4px' }}>
         Save {totalMappedRows} row{totalMappedRows === 1 ? '' : 's'} into{' '}
         {schemas.length > 1 ? 'the data hubs' : 'the data hub'}?
-        {totalUnverified > 0 &&
-          ` This replaces the ${totalUnverified} row${
-            totalUnverified === 1 ? '' : 's'
-          } from your previous upload.`}
       </span>
       <button
         type='button'
@@ -1216,18 +1112,24 @@ function DataMappingModal({
         >
           <button
             type='button'
-            disabled={busy || !allRequiredMapped}
+            disabled={busy || !canImport}
             onClick={() => {
               setActionError('');
               setConfirmingSave(true);
             }}
             css={{
-              ...btn(true, busy || !allRequiredMapped),
-              pointerEvents: busy || !allRequiredMapped ? 'none' : 'auto'
+              ...btn(true, busy || !canImport),
+              pointerEvents: busy || !canImport ? 'none' : 'auto'
             }}
           >
             Confirm
           </button>
+          {invalidMappings.length > 0 && (
+            <div role='alert' css={{ color: '#ef4444', marginTop: '8px' }}>
+              Reselect ambiguous or unavailable columns for:{' '}
+              {invalidMappings.join(', ')}
+            </div>
+          )}
           {missingRequired.length > 0 && (
             <div
               className='dm-req-tip'

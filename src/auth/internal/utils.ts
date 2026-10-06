@@ -2,18 +2,10 @@ import { LINK_TOKEN_PARAM } from '../../utils/accessLink';
 import { featheryWindow } from '../../utils/browser';
 import { authState } from '../LoginForm';
 
-export function isAuthStytch() {
-  if (authState.client) {
-    return Object.getOwnPropertySymbols(authState.client)
-      .map((symbol) => symbol.toString())
-      .includes('Symbol(stytch__internal_b2c)');
-  }
-}
-
 export function getAuthIntegrationMetadata(
   integrations: null | Record<string, any>
 ): undefined | any {
-  return integrations?.stytch?.metadata ?? integrations?.firebase?.metadata;
+  return integrations?.firebase?.metadata;
 }
 
 /**

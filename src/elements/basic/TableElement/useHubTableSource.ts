@@ -12,7 +12,8 @@ import {
   ConstraintIdentity,
   constraintIdentity
 } from './spreadsheet/constraints';
-import { CellWrite, Column } from './types';
+import { CellWrite, Column, TableRowDefault } from './types';
+import { hubRowDefaults } from './rowDefaults';
 import {
   STATUS_COLUMN_NAME,
   STATUS_HUB_FIELD_ID,
@@ -104,6 +105,7 @@ type UseHubTableSourceProps = {
       // Verifies a staged row as soon as a save leaves it passing every hub
       // rule. Off keeps rows staged until someone verifies them.
       hub_auto_verify?: boolean;
+      row_defaults?: TableRowDefault[];
     };
   };
   client:
@@ -237,6 +239,7 @@ export function useHubTableSource({
   // `fieldValues` is mutated outside React state, so the conditions are rebuilt
   // every render and keyed by content: the rows reload only when one changes.
   const hubFilters = element.properties?.hub_filters;
+  const rowDefaults = element.properties?.row_defaults;
   const whereKey = JSON.stringify(
     hubFilterWhere(hubFilters, schemaFields, fieldValues)
   );
@@ -814,9 +817,18 @@ export function useHubTableSource({
 
   const handleInsertRow = useCallback(
     (atIndex: number) => {
-      const data = Object.fromEntries(
-        Object.values(syntheticToHubKey).map((hubFieldKey) => [hubFieldKey, ''])
-      );
+      // Defaults run after the blanks so they can also set a hidden column,
+      // which has no grid column of its own. Field values are read now, so a
+      // row keeps what the form said when it was added.
+      const data = {
+        ...Object.fromEntries(
+          Object.values(syntheticToHubKey).map((hubFieldKey) => [
+            hubFieldKey,
+            ''
+          ])
+        ),
+        ...hubRowDefaults(rowDefaults, schemaFields, fieldValues)
+      };
       const rows = rowsRef.current;
       const at = Math.max(0, Math.min(atIndex, rows.length));
       commitRows([
@@ -833,7 +845,7 @@ export function useHubTableSource({
       ]);
       setErrors([]);
     },
-    [syntheticToHubKey, commitRows, verification]
+    [syntheticToHubKey, commitRows, verification, rowDefaults, schemaFields]
   );
 
   const handleAddRow = useCallback(() => handleInsertRow(0), [handleInsertRow]);
@@ -978,6 +990,22 @@ export function orderLikeGrid(
     .filter((entry) => !seen.has(entry.id))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return [...fresh, ...kept];
+}
+
+/**
+ * Whether a row index that held a saved entry now holds a different row,
+ * which leaves anything keyed by row index pointing at the wrong one. A
+ * provisional row gaining its id on save, or rows dropped off the end, move
+ * nothing.
+ */
+export function entryIdsShifted(
+  previous: Array<string | null>,
+  next: Array<string | null>
+): boolean {
+  return previous.some(
+    (entryId, index) =>
+      entryId != null && index < next.length && next[index] !== entryId
+  );
 }
 
 /**

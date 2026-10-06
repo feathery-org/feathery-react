@@ -17,7 +17,7 @@ import { getNextEditableCell } from './utils';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
-import { useHubTableSource } from './useHubTableSource';
+import { entryIdsShifted, useHubTableSource } from './useHubTableSource';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
 import {
@@ -70,6 +70,24 @@ function applyTableStyles(responsiveStyles: any) {
       unit === 'px' && height ? { height: `${height}px` } : {}
   );
   return responsiveStyles;
+}
+
+// The table renders inside the form's <form>, where Enter in a text input
+// submits implicitly — clicking the step's submit button, or with no button
+// submitting the whole form. No input in the table means that: the cell
+// editor, the search and find boxes and the filter popover handle Enter
+// themselves. React events bubble through portals, so this covers the
+// table's popovers wherever they mount. An Enter that confirms an IME
+// composition is left alone: it submits nothing, and is the IME's to handle.
+function preventEnterSubmit(event: React.KeyboardEvent<HTMLElement>) {
+  const target = event.target as HTMLElement;
+  if (
+    event.key === 'Enter' &&
+    !event.nativeEvent.isComposing &&
+    target.tagName === 'INPUT'
+  ) {
+    event.preventDefault();
+  }
 }
 
 // Warns before a step transition, a browser back/forward, or a page exit
@@ -198,6 +216,7 @@ function TableElement({
 
   const fieldMutations = useTableMutations({
     columns: baseColumns,
+    rowDefaults: element.properties?.row_defaults,
     updateFieldValues,
     submitCustom,
     editMode,
@@ -270,16 +289,21 @@ function TableElement({
 
   const wrappedHandleCellEdit = useCallback(
     (fieldKey: string, rowIndex: number, newValue: any) => {
-      if (pendingAddRowsRef.current.has(rowIndex)) {
-        setPendingAddRows((prev) => {
-          const next = new Set(prev);
-          next.delete(rowIndex);
-          return next;
-        });
+      if (!pendingAddRowsRef.current.has(rowIndex)) {
+        handleCellEdit(fieldKey, rowIndex, newValue);
+        return;
       }
-      handleCellEdit(fieldKey, rowIndex, newValue);
+      setPendingAddRows((prev) => {
+        const next = new Set(prev);
+        next.delete(rowIndex);
+        return next;
+      });
+      // The first edit commits the provisional row, default cells included.
+      handleCellsEdit([{ fieldKey, rowIndex, value: newValue }], {
+        submitAllColumns: true
+      });
     },
-    [handleCellEdit]
+    [handleCellEdit, handleCellsEdit]
   );
 
   const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
@@ -326,6 +350,15 @@ function TableElement({
     () => setRowIdentityVersion((version) => version + 1),
     []
   );
+  // A Hub resync renumbers rows too: entries the grid has not seen (another
+  // user's new rows) land at the top, and one deleted elsewhere closes its gap.
+  // Bumped in the same render the rows move in, not in an effect after it, so
+  // nothing keyed to the old indices shows against the new rows for a frame.
+  const [seenEntryIds, setSeenEntryIds] = useState(hub.entryIds);
+  if (seenEntryIds !== hub.entryIds) {
+    setSeenEntryIds(hub.entryIds);
+    if (entryIdsShifted(seenEntryIds, hub.entryIds)) bumpRowIdentity();
+  }
 
   const wrappedHandleAddRow = useCallback(() => {
     setDeleteRowIndex(null);
@@ -424,16 +457,17 @@ function TableElement({
         return;
       }
       const touched = new Set(writes.map((write) => write.rowIndex));
-      if (
-        [...touched].some((rowIndex) => pendingAddRowsRef.current.has(rowIndex))
-      ) {
+      const commitsProvisional = [...touched].some((rowIndex) =>
+        pendingAddRowsRef.current.has(rowIndex)
+      );
+      if (commitsProvisional) {
         setPendingAddRows((prev) => {
           const next = new Set(prev);
           touched.forEach((rowIndex) => next.delete(rowIndex));
           return next;
         });
       }
-      handleCellsEdit(writes);
+      handleCellsEdit(writes, { submitAllColumns: commitsProvisional });
     },
     [handleCellsEdit, buffersEdits, pendingEdits]
   );
@@ -629,14 +663,19 @@ function TableElement({
     const { writes, deletedRows } = pendingEdits;
     if (!writes.length && !deletedRows.length) return;
     pendingEdits.clear();
-    if (writes.length) handleCellsEdit(writes);
+    // With rows added since the last save, the edits go up with every column
+    // in full so those rows' default and blank cells are saved too. A row
+    // deletion already submits every column.
+    if (writes.length)
+      handleCellsEdit(writes, {
+        submitAllColumns: pendingAddRowsRef.current.size > 0
+      });
     if (deletedRows.length) {
       bumpRowIdentity();
       deletedRows.forEach((rowIndex) => handleDeleteRow(rowIndex));
     }
-    // Saving submits every column in full, blank rows included, so nothing
-    // is provisional any more (a Hub row still without an entry is tracked by
-    // the Hub source itself).
+    // Nothing is provisional any more (a Hub row still without an entry is
+    // tracked by the Hub source itself).
     setPendingAddRows(new Set());
   }, [pendingEdits, handleCellsEdit, handleDeleteRow, bumpRowIdentity]);
 
@@ -764,6 +803,7 @@ function TableElement({
           : {}),
         ...styles.getTarget('container')
       }}
+      onKeyDown={preventEnterSubmit}
     >
       {showToolbar && (
         <div className={TABLE_CLASS.toolbar} css={toolbarStyle}>

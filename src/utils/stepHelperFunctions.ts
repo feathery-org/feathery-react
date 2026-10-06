@@ -1,5 +1,6 @@
 import { ACTION_NEXT, ACTION_URL } from './elementActions';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
+import { STEP_EVENT_SUBMIT } from './stepEvents';
 
 export function changeStep(
   newKey: string,
@@ -16,7 +17,7 @@ export function changeStep(
       client.registerEvent({
         step_key: oldKey,
         next_step_key: newKey,
-        event: 'complete'
+        event: STEP_EVENT_SUBMIT
       });
       if (trackHashes)
         navigate(location.pathname + location.search + `#${newKey}`, {
@@ -98,17 +99,26 @@ export function getInitialStep({
   initialStepId,
   steps,
   sessionCurrentStep,
+  collaboratorStartStep,
   formId
 }: {
   initialStepId: string;
   steps: any;
   sessionCurrentStep?: string;
+  collaboratorStartStep?: string;
   formId?: string;
 }) {
+  // Only use a configured collaborator start step if the step still exists;
+  // sessionCurrentStep (the saved/resume step) wins over it.
+  const validStartStep =
+    collaboratorStartStep && steps[collaboratorStartStep]
+      ? collaboratorStartStep
+      : '';
   return (
     (formId && getSavedStepKey(formId)) || // saved step from remounting
     initialStepId ||
     sessionCurrentStep ||
+    validStartStep ||
     (getOrigin as any)(steps).key
   );
 }

@@ -446,9 +446,12 @@ describe('row insertion and deletion', () => {
     fireEvent.keyDown(newInput, { key: 'Tab' });
     save();
 
+    // The appended row is saved for the first time, so every column goes up.
     await waitFor(() =>
       expect(updateFieldValues).toHaveBeenLastCalledWith({
-        name_key: ['Alice', 'Bob', 'Caroline', 'Dana']
+        name_key: ['Alice', 'Bob', 'Caroline', 'Dana'],
+        age_key: [30, 40, 50, ''],
+        city_key: ['Denver', 'Austin', 'Reno', '']
       })
     );
   });
@@ -613,10 +616,14 @@ describe('row insertion and deletion', () => {
     }
   );
 
-  test('no row menu or add strip when adding and deleting are off', () => {
+  test('only pinning in the row menu, and no add strip, when adding and deleting are off', () => {
     renderTable({ add_delete_rows: false });
     openRowMenu(2);
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(
+      within(screen.getByRole('menu'))
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+    ).toEqual(['Pin row']);
     expect(screen.queryByRole('button', { name: '+ Add row' })).toBeNull();
   });
 
@@ -629,7 +636,12 @@ describe('row insertion and deletion', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((item) => item.textContent)
-    ).toEqual(['Insert row above', 'Insert row below', 'Delete row 2']);
+    ).toEqual([
+      'Pin row',
+      'Insert row above',
+      'Insert row below',
+      'Delete row 2'
+    ]);
   });
 
   test('insert above adds a blank row at that index', async () => {
