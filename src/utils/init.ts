@@ -133,6 +133,8 @@ let filePathMap: Record<string, null | string | (string | null)[]> = {};
 export const fileDeduplicationCount: Record<string, string> = {};
 // Tracks last submission result (true=success, false=failed, undefined=never tried)
 export const fileRetryStatus: Record<string, boolean> = {};
+// File fields whose values were restored from the server, not uploaded here
+export const restoredFileKeys = new Set<string>();
 
 function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (!sdkKey || typeof sdkKey !== 'string') {

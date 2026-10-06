@@ -12,6 +12,7 @@ import {
   fileRetryStatus,
   initInfo,
   initState,
+  restoredFileKeys,
   setFieldValues
 } from './init';
 import throttle from 'lodash.throttle';
@@ -356,6 +357,7 @@ export function processFileValues(fileValues: Record<string, any>) {
 
   Object.assign(fieldValues, filePromises);
   Object.assign(filePathMap, newFilePathMap);
+  Object.keys(fileValues).forEach((key) => restoredFileKeys.add(key));
 }
 
 // Drop one repeat row's entry so the remaining paths stay aligned with their

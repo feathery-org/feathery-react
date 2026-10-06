@@ -16,6 +16,7 @@ jest.mock('../init', () => ({
   filePathMap: {},
   fileDeduplicationCount: {},
   fileRetryStatus: {},
+  restoredFileKeys: new Set(),
   setFieldValues: () => {},
   markStepCompleted: () => {},
   registerKnownFieldKeys: () => {},
@@ -117,10 +118,18 @@ describe('repeatable file upload wire format', () => {
     await client._submitFileData({ ...servar, file_upload: [] }, 'step', true);
     expect(client._fetch).not.toHaveBeenCalled();
 
-    // Restored, then removed: the key stays with a null path.
+    // Picked and removed in this tab leaves a filePathMap entry too, which
+    // doesn't make it restored.
     filePathMap.f = null;
     await client._submitFileData({ ...servar, file_upload: [] }, 'step', true);
+    expect(client._fetch).not.toHaveBeenCalled();
+
+    // Restored, then removed.
+    const { restoredFileKeys } = jest.requireMock('../init');
+    restoredFileKeys.add('f');
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step', true);
     expect(bodyOf(client).getAll('f')).toEqual(['']);
+    restoredFileKeys.clear();
   });
 
   it('sends no indices for a non-repeated multi-file field', async () => {

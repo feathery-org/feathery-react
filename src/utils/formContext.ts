@@ -391,7 +391,8 @@ export const getFormContext = (formUuid: string) => {
               (download &&
               !signMethod &&
               !signers?.length &&
-              !toolbarActions?.length
+              !toolbarActions?.length &&
+              !redirect
                 ? 'download'
                 : undefined),
             sign_method: signMethod,

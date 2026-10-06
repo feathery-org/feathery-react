@@ -182,13 +182,18 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(flow.mock.calls[0][0].envelope_action).toBe('download');
 
     // A call that signs keeps signing.
-    flow.mockClear();
-    await getFormContext(uuid).generateDocuments({
-      documentIds: [{ kind: 'quik' }],
-      signMethod: 'docusign',
-      download: true
-    });
-    expect(flow.mock.calls[0][0].envelope_action).toBeUndefined();
+    for (const signing of [
+      { signMethod: 'docusign' as const },
+      { redirect: 'https://done.example.com' }
+    ]) {
+      flow.mockClear();
+      await getFormContext(uuid).generateDocuments({
+        documentIds: [{ kind: 'quik' }],
+        download: true,
+        ...signing
+      });
+      expect(flow.mock.calls[0][0].envelope_action).toBeUndefined();
+    }
 
     // A file upload source must name its field.
     flow.mockClear();

@@ -10,6 +10,7 @@ import {
   markStepCompleted,
   registerKnownFieldKeys,
   registerTextVariableFields,
+  restoredFileKeys,
   setFieldValues
 } from '../init';
 import { dataURLToFile, isBase64Image } from '../image';
@@ -367,9 +368,9 @@ export default class FeatheryClient extends IntegrationClient {
       const hasPreviousSuccess = fileRetryStatus[servar.key] !== undefined;
 
       // Only skip request for optional fields that were never submitted
-      // Restored keys stay in filePathMap after removal. Others may hold a file
-      // this client never saw (another tab, an integration), so aren't cleared.
-      const restored = forceClear && servar.key in filePathMap;
+      // Only a field restored from the server; any other may hold a file this
+      // client never saw (another tab, an integration), so isn't cleared.
+      const restored = forceClear && restoredFileKeys.has(servar.key);
       if (
         !restored &&
         fileDeduplicationCount[servar.key] === undefined &&
