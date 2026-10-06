@@ -39,7 +39,7 @@ import { withLinkRequestHeaders } from '../accessLinkRequest';
 
 // A configured Generate Documents entry in the ordered `documents` array: a
 // template UUID string, an explicit template, one Quik source, or a file
-// upload field. The SDK forwards these verbatim (action config -> request field).
+// upload field (a logic rule's `field_key` is resolved to its `field_id`).
 export type QuikDocumentSource = {
   kind: 'quik';
   // Omit to use the configured Quik integration's forms and mappings.
@@ -59,7 +59,9 @@ export type GenerateDocumentRef =
   | { kind: 'template'; document_id: string };
 
 // The template id a document entry names, or null for a non-template source.
-export const documentRefTemplateId = (doc: GenerateDocumentRef) => {
+export const documentRefTemplateId = (
+  doc: GenerateDocumentRef
+): string | null => {
   if (typeof doc === 'string') return doc;
   // A kind-less object is a template, as on the backend.
   const ref = doc as Record<string, any>;
@@ -711,7 +713,9 @@ export default class IntegrationClient {
     // Only templates have signer roles; other sources have no document id.
     const templateIds = documentIds
       .map(documentRefTemplateId)
-      .filter((documentId: string | null) => documentId);
+      .filter(
+        (documentId: string | null): documentId is string => !!documentId
+      );
     const signers = [
       ...roleSigners,
       ...templateIds
@@ -746,8 +750,8 @@ export default class IntegrationClient {
       (doc: GenerateDocumentRef) => typeof doc !== 'string'
     );
 
-    const containerTemplateIds = documentIds.map(documentRefTemplateId);
-    if (editorContainerId(action) && containerTemplateIds.includes(null)) {
+    const templateIdOrNull = documentIds.map(documentRefTemplateId);
+    if (editorContainerId(action) && templateIdOrNull.includes(null)) {
       return {
         status: 'error',
         message:
@@ -782,7 +786,7 @@ export default class IntegrationClient {
     return await apiGenerateFormDocuments({
       sdkKey,
       formId: this.formKey,
-      documentIds: containerTemplateIds as string[],
+      documentIds: templateIdOrNull as string[],
       userId,
       signers,
       repeatable,

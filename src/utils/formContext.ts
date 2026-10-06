@@ -342,6 +342,8 @@ export const getFormContext = (formUuid: string) => {
       let missingUploadField = false;
       documentIds = documentIds.map((doc) => {
         if (typeof doc === 'string' || doc.kind !== 'file_upload') return doc;
+        // Headless forms have no steps; the mounted-<Form /> error below applies.
+        if (!formState.generateEnvelopeFlow) return doc;
         if (doc.field_id) return doc;
         if (!doc.field_key) {
           missingUploadField = true;

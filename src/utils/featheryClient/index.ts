@@ -367,9 +367,8 @@ export default class FeatheryClient extends IntegrationClient {
     if (numFiles === 0) {
       const hasPreviousSuccess = fileRetryStatus[servar.key] !== undefined;
 
-      // Only skip request for optional fields that were never submitted
-      // Only a field restored from the server; any other may hold a file this
-      // client never saw (another tab, an integration), so isn't cleared.
+      // Skip fields never submitted, unless forced for one restored from the
+      // server (others may hold a file this client never saw, e.g. another tab).
       const restored = forceClear && restoredFileKeys.has(servar.key);
       if (
         !restored &&

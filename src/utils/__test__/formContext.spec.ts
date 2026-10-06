@@ -194,15 +194,6 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       });
       expect(flow.mock.calls[0][0].envelope_action).toBeUndefined();
     }
-
-    // A file upload source must name its field.
-    flow.mockClear();
-    await expect(
-      getFormContext(uuid).generateDocuments({
-        documentIds: [{ kind: 'file_upload' } as any]
-      })
-    ).rejects.toThrow('a file upload source needs its field');
-    expect(flow).not.toHaveBeenCalled();
   });
 
   it('resolves a file upload field key to its field id', async () => {
@@ -234,6 +225,15 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
         { kind: 'file_upload', field_id: 'id-up' }
       ]);
     }
+
+    // A file upload source must name its field.
+    flow.mockClear();
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: [{ kind: 'file_upload' } as any]
+      })
+    ).rejects.toThrow('a file upload source needs its field');
+    expect(flow).not.toHaveBeenCalled();
 
     // Unknown keys and non-upload fields fail before anything is generated.
     flow.mockClear();
