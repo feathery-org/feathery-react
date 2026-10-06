@@ -445,13 +445,22 @@ describe('writes queued around a flip name the set the Hub holds the row in', ()
 });
 
 describe('spreadsheet row menu unvalidate item', () => {
-  const target = { rowIndex: 2, displayNumber: 3, rowIndexes: [2], x: 0, y: 0 };
+  const target = {
+    rowId: 'row-2',
+    rowIndex: 2,
+    displayNumber: 3,
+    rowIndexes: [2],
+    x: 0,
+    y: 0
+  };
   const renderMenu = (props: Partial<Parameters<typeof RowMenu>[0]>) =>
     render(
       <RowMenu
         target={target}
         canInsert={false}
         canDelete
+        pinned={false}
+        onTogglePin={jest.fn()}
         onInsertAbove={jest.fn()}
         onInsertBelow={jest.fn()}
         onDelete={jest.fn()}
@@ -470,15 +479,6 @@ describe('spreadsheet row menu unvalidate item', () => {
   test('counts the rows for a selection-wide action', () => {
     renderMenu({ unverifyNumbers: [1, 2, 4, 5], onUnverify: jest.fn() });
     expect(screen.getByText('Mark as unvalidated (4 rows)')).toBeTruthy();
-  });
-
-  test('renders nothing when there is no action to offer', () => {
-    const { container } = renderMenu({
-      canDelete: false,
-      unverifyNumbers: [],
-      onUnverify: jest.fn()
-    });
-    expect(container.firstChild).toBeNull();
   });
 
   test('is absent when no target row can be unvalidated', () => {

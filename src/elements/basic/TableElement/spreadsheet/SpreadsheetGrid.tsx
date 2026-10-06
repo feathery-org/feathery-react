@@ -394,11 +394,9 @@ export const SpreadsheetGrid = React.forwardRef<
    * Opens the row menu. A menu opened on a row inside the current selection
    * takes the whole selection as its bulk target, the way a spreadsheet's
    * row actions apply to every selected row; elsewhere it is just that row.
-   * Returns whether it opened: a row with no action left for it (a read-only
-   * table's already-unvalidated row) keeps the browser's own menu.
    */
   const openRowMenu = React.useCallback(
-    (target: Omit<RowMenuTarget, 'rowIndexes'>): boolean => {
+    (target: Omit<RowMenuTarget, 'rowIndexes'>) => {
       const displayRows = table.getRowsInDisplayOrder();
       const bounds = table.getCellSelectionBounds();
       const clickedDisplayIndex = displayRows.findIndex(
@@ -419,30 +417,14 @@ export const SpreadsheetGrid = React.forwardRef<
           }
         });
       }
-      const hasItems =
-        onInsertRow ||
-        onDeleteRow ||
-        (onUnverifyRows &&
-          canUnverifyRow &&
-          [...rowIndexes].some(canUnverifyRow));
-      if (!hasItems) return false;
       setRowMenu({ ...target, rowIndexes: [...rowIndexes] });
-      return true;
     },
-    [
-      table,
-      rowIndexById,
-      onInsertRow,
-      onDeleteRow,
-      onUnverifyRows,
-      canUnverifyRow
-    ]
+    [table, rowIndexById]
   );
   const [headerMenu, setHeaderMenu] = React.useState<HeaderMenuTarget | null>(
     null
   );
   const closeHeaderMenu = React.useCallback(() => setHeaderMenu(null), []);
-  const hasRowMenu = Boolean(onInsertRow || onDeleteRow || onUnverifyRows);
   const unverifyTargets =
     rowMenu && onUnverifyRows && canUnverifyRow
       ? rowMenu.rowIndexes.filter(canUnverifyRow)
@@ -460,13 +442,6 @@ export const SpreadsheetGrid = React.forwardRef<
       unverifyNumbers.push(displayNumbers.get(rowIndex) ?? rowIndex + 1)
     );
   }
-  // A menu whose last action went away while open (a refetch or load landing)
-  // closes rather than lingering unmounted and reappearing later on its own.
-  const rowMenuEmpty =
-    !!rowMenu && !onInsertRow && !onDeleteRow && !unverifyTargets.length;
-  React.useEffect(() => {
-    if (rowMenuEmpty) setRowMenu(null);
-  }, [rowMenuEmpty]);
   const [filterMenu, setFilterMenu] = React.useState<HeaderMenuTarget | null>(
     null
   );
@@ -756,7 +731,7 @@ export const SpreadsheetGrid = React.forwardRef<
     fillPreview,
     onStartHeaderSelection: startHeaderSelection,
     onExtendHeaderSelection: extendHeaderSelection,
-    onOpenRowMenu: hasRowMenu ? openRowMenu : undefined,
+    onOpenRowMenu: openRowMenu,
     onStartFill: startFillDrag
   };
 
@@ -1229,7 +1204,7 @@ type SubscribedRowProps = {
     fullySelected: boolean
   ) => void;
   onExtendHeaderSelection: (axis: 'row', id: string) => void;
-  onOpenRowMenu?: (target: Omit<RowMenuTarget, 'rowIndexes'>) => boolean;
+  onOpenRowMenu?: (target: Omit<RowMenuTarget, 'rowIndexes'>) => void;
   onStartFill: (event: React.MouseEvent, source: GridBounds) => void;
 };
 
@@ -1368,14 +1343,14 @@ function SpreadsheetRowView({
         onMouseEnter={() => onExtendHeaderSelection('row', row.id)}
         onContextMenu={(event) => {
           if (!onOpenRowMenu) return;
-          const opened = onOpenRowMenu({
+          event.preventDefault();
+          onOpenRowMenu({
             rowId: row.id,
             rowIndex: rowIndexById.get(row.id) ?? rowIndex,
             displayNumber: rowNumber,
             x: event.clientX,
             y: event.clientY
           });
-          if (opened) event.preventDefault();
         }}
       >
         {rowNumber}

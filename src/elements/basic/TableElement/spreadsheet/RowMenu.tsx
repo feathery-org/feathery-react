@@ -70,10 +70,6 @@ export function RowMenu({
   if (canDelete) {
     items.push({ label: `Delete row ${target.displayNumber}`, run: onDelete });
   }
-  // The grid only opens the menu when there is something in it; this covers
-  // the moment between a row losing its last action and the grid closing it.
-  if (!items.length) return null;
-
   return (
     <ContextMenu
       x={target.x}
