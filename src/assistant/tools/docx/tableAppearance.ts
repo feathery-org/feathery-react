@@ -177,6 +177,11 @@ export interface AppearanceWriteReport {
    * table-format facts and reported for observability.
    */
   sourceStyleName?: string;
+  /**
+   * Inherited appearance that did not read back as the source. Appearance is a
+   * preference, not integrity: the content stays and these are reported.
+   */
+  unresolved?: string[];
 }
 
 export interface AppearanceWriteOutcome {

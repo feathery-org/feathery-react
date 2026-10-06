@@ -1050,7 +1050,12 @@ describe('every content-creating op consults the creation resolver', () => {
   // here rather than shipping a path that writes the editor's defaults.
   const recipes: Record<
     string,
-    (editor: DocumentEditor) => { edits: any[]; created: () => string[] }
+    (editor: DocumentEditor) => {
+      edits: any[];
+      created: () => string[];
+      // Body text a recipe creates wears the family's body look, not a heading's.
+      lookOf?: string;
+    }
   > = {
     insert_section: (editor) => ({
       edits: [
@@ -1079,7 +1084,8 @@ describe('every content-creating op consults the creation resolver', () => {
           styleName: 'Normal'
         }
       ],
-      created: () => ['Hand Rolled Unit']
+      created: () => ['Hand Rolled Unit'],
+      lookOf: prose('Beta Motor Interests').inlines[0].text as string
     }),
     insert_table: (editor) => ({
       edits: [
@@ -1138,8 +1144,11 @@ describe('every content-creating op consults the creation resolver', () => {
         }
         // Any heading this op created wears the family's heading format, not
         // whatever the editor or the caller would have defaulted to.
+        const look = recipe.lookOf
+          ? formatOf(editor, recipe.lookOf).format
+          : family.format;
         for (const text of recipe.created())
-          expect(formatOf(editor, text).format).toEqual(family.format);
+          expect(formatOf(editor, text).format).toEqual(look);
         // Any table row this op created carries the document's row look.
         const tables = tableShadings(editor);
         for (const table of tables)
