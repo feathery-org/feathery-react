@@ -62,7 +62,9 @@ export function splitFontWeight(name: string): {
 // family (lowercased) -> set of weights the deck uses.
 function collectFamilyWeights(deck: Deck): Map<string, Set<number>> {
   const out = new Map<string, Set<number>>();
-  const add = (name: string | undefined) => {
+  // bold runs ask CSS for weight 700, so load that real face too (otherwise the
+  // browser fakes bold from the 400 weight, which looks lighter than PowerPoint).
+  const add = (name: string | undefined, bold = false) => {
     if (!name || name.startsWith('+')) return;
     const { family, weight } = splitFontWeight(name);
     if (!family || SYSTEM_FONTS.has(family.toLowerCase())) return;
@@ -71,7 +73,7 @@ function collectFamilyWeights(deck: Deck): Map<string, Set<number>> {
       set = new Set();
       out.set(family, set);
     }
-    set.add(weight);
+    set.add(bold ? Math.max(weight, 700) : weight);
   };
   for (const slide of deck.slides) {
     const tf = themeFonts(deck, slide.path);
@@ -80,10 +82,12 @@ function collectFamilyWeights(deck: Deck): Map<string, Set<number>> {
     for (const shape of slide.shapes) {
       // A placeholder's font often lives only in the layout/master style, not on
       // the runs, so collect the inherited default too (cheap no-op otherwise).
-      if (shape.text?.paragraphs?.length)
-        add(resolveListProps(deck, slide, shape, 0).defRPr?.font);
+      if (shape.text?.paragraphs?.length) {
+        const def = resolveListProps(deck, slide, shape, 0).defRPr;
+        add(def?.font, def?.bold);
+      }
       for (const p of shape.text?.paragraphs ?? []) {
-        for (const r of p.runs ?? []) add(r.font);
+        for (const r of p.runs ?? []) add(r.font, r.bold);
       }
     }
   }
