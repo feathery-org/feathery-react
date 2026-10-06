@@ -173,6 +173,44 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
+  it('resolves a file upload field key to its field id', async () => {
+    setFormInternalState(uuid, {
+      fields: {},
+      client,
+      generateEnvelopeFlow: flow,
+      steps: {
+        s1: {
+          servar_fields: [
+            { servar: { id: 'id-name', key: 'Name', type: 'text_field' } },
+            { servar: { id: 'id-up', key: 'IdUpload', type: 'file_upload' } }
+          ]
+        }
+      }
+    } as any);
+
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1', { kind: 'file_upload', field_key: 'IdUpload' }]
+    });
+    expect(flow.mock.calls[0][0].documents).toEqual([
+      'tpl-1',
+      { kind: 'file_upload', field_id: 'id-up' }
+    ]);
+
+    // Unknown keys and non-upload fields fail before anything is generated.
+    flow.mockClear();
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: [
+          { kind: 'file_upload', field_key: 'Missing' },
+          { kind: 'file_upload', field_key: 'Name' }
+        ]
+      })
+    ).rejects.toThrow(
+      'generateDocuments: no file upload field with key Missing, Name'
+    );
+    expect(flow).not.toHaveBeenCalled();
+  });
+
   it('keeps the simple client path for plain template fill/merge (no rich options)', async () => {
     await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],

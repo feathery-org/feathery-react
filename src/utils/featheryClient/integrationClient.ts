@@ -48,9 +48,11 @@ export type QuikDocumentSource = {
   forms?: { id: string | number; fields: Record<string, string> }[];
 };
 // Every file uploaded to the field becomes a document, converted to PDF.
+// Logic rules name the field by `field_key`, resolved to `field_id` before sending.
 export type FileUploadDocumentSource = {
   kind: 'file_upload';
-  field_id: string;
+  field_id?: string;
+  field_key?: string;
 };
 export type GenerateDocumentRef =
   | string

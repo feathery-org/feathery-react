@@ -35,6 +35,17 @@ import {
   PageSelectionInput
 } from '@feathery/client-utils';
 
+const uploadFieldIdByKey = (steps: any, fieldKey: string): string | null => {
+  for (const step of Object.values(steps ?? {}) as any[]) {
+    const match = (step?.servar_fields ?? []).find(
+      ({ servar }: any) =>
+        servar.key === fieldKey && servar.type === 'file_upload'
+    );
+    if (match) return match.servar.id;
+  }
+  return null;
+};
+
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
  * methods
@@ -260,7 +271,7 @@ export const getFormContext = (formUuid: string) => {
     }: {
       // A plain template UUID string, or a source object such as the Quik item
       // `{ kind: 'quik' }` or a file upload field
-      // `{ kind: 'file_upload', field_id }` — mirroring the action config.
+      // `{ kind: 'file_upload', field_key }` — mirroring the action config.
       documentIds: GenerateDocumentRef[];
       // Per-document, per-role signer emails; a document with no entry here
       // gets no signer. `roleId` targets one of the document's signer roles,
@@ -322,6 +333,22 @@ export const getFormContext = (formUuid: string) => {
             }
           : doc
       );
+      const unknownUploadKeys: string[] = [];
+      documentIds = documentIds.map((doc) => {
+        if (typeof doc === 'string' || doc.kind !== 'file_upload') return doc;
+        if (!doc.field_key) return doc;
+        const fieldId = uploadFieldIdByKey(formState.steps, doc.field_key);
+        if (!fieldId) unknownUploadKeys.push(doc.field_key);
+        return { kind: 'file_upload', field_id: fieldId ?? '' };
+      });
+      if (unknownUploadKeys.length) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: no file upload field with key ' +
+              unknownUploadKeys.join(', ')
+          )
+        );
+      }
       // Document generation reads whatever the fuser has on file, so pending
       // field edits have to land before it runs or it fills/signs stale data.
       const flushFields = () =>
