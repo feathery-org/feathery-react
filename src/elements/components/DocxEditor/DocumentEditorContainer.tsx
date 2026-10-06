@@ -9,7 +9,8 @@ import DocxEditor from './index';
 import SignedEnvelopeView from './SignedEnvelopeView';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { documentRefTemplateId } from '../../../utils/featheryClient/integrationClient';
-import { featheryDoc, featheryWindow, openTab } from '../../../utils/browser';
+import { featheryWindow, openTab } from '../../../utils/browser';
+import useRefreshOnFocus from '../../../utils/useRefreshOnFocus';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import internalState from '../../../utils/internalState';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
@@ -286,29 +287,10 @@ export default function DocumentEditorContainer({
 
   // Re-pull the envelope when the filler returns from the hosted sign tab, so
   // its status + signed PDF update. Scoped to the awaiting-signature window.
-  const refreshingOnFocus = useRef(false);
-  useEffect(() => {
-    const awaitingSignature = envelope?.type === 'pdf' && !envelope.signed;
-    if (editMode || !documentId || !awaitingSignature) return undefined;
-    const refresh = () => {
-      if (refreshingOnFocus.current) return;
-      refreshingOnFocus.current = true;
-      loadEnvelope().finally(() => {
-        refreshingOnFocus.current = false;
-      });
-    };
-    const onVisibility = () => {
-      if (featheryDoc().visibilityState === 'visible') refresh();
-    };
-    const win = featheryWindow();
-    const doc = featheryDoc();
-    win.addEventListener('focus', refresh);
-    doc.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      win.removeEventListener('focus', refresh);
-      doc.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [editMode, documentId, envelope?.type, envelope?.signed, loadEnvelope]);
+  useRefreshOnFocus(
+    loadEnvelope,
+    !editMode && !!documentId && envelope?.type === 'pdf' && !envelope.signed
+  );
 
   // Stable source unless a different envelope loads or a regenerate is
   // signalled (reloadKey) — a plain save leaves both unchanged, so it doesn't
