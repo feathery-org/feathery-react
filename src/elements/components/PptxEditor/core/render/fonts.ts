@@ -90,21 +90,27 @@ function collectFamilyWeights(deck: Deck): Map<string, Set<number>> {
   return out;
 }
 
-function googleFontHref(family: string, weights: number[]): string {
+function googleFontHref(
+  family: string,
+  weights: number[],
+  italic: boolean
+): string {
   const sorted = [...new Set(weights)].sort((a, b) => a - b);
   const fam = family.trim().replace(/\s+/g, '+');
-  return (
-    'https://fonts.googleapis.com/css2?family=' +
-    `${fam}:wght@${sorted.join(';')}&display=swap`
-  );
+  // Italic is requested on its own link: a font with no italic axis fails only
+  // that request (its normal weights still load, italic falls back to synthesis),
+  // while fonts that do have one (Newsreader, DM Sans) get their true italics.
+  const axis = italic
+    ? `ital,wght@${sorted.map((w) => `1,${w}`).join(';')}`
+    : `wght@${sorted.join(';')}`;
+  return `https://fonts.googleapis.com/css2?family=${fam}:${axis}&display=swap`;
 }
 
 const injected = new Set<string>();
 
-// Inject a Google Fonts <link> per family the deck uses. A family that isn't on
-// Google Fonts simply fails its stylesheet load and falls back to the system
-// stack, so this never blocks rendering. Italic is left to synthesis to avoid a
-// whole-family request failing on fonts without an italic axis.
+// Inject Google Fonts <link>s (normal + italic) per family the deck uses. A
+// family that isn't on Google Fonts simply fails its stylesheet load and falls
+// back to the system stack, so this never blocks rendering.
 export function ensureDeckFontsLoaded(deck: Deck): void {
   let doc: Document;
   try {
@@ -117,10 +123,12 @@ export function ensureDeckFontsLoaded(deck: Deck): void {
     if (injected.has(family)) continue;
     injected.add(family);
     if (doc.querySelector(`link[data-pptx-font="${family}"]`)) continue;
-    const link = doc.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = googleFontHref(family, [...weights]);
-    link.dataset.pptxFont = family;
-    doc.head.appendChild(link);
+    for (const italic of [false, true]) {
+      const link = doc.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = googleFontHref(family, [...weights], italic);
+      link.dataset.pptxFont = family;
+      doc.head.appendChild(link);
+    }
   }
 }
