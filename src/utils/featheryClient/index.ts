@@ -330,8 +330,8 @@ export default class FeatheryClient extends IntegrationClient {
     }
   }
 
-  // `forceClear` sends the clear for an empty field even with no upload this
-  // session, e.g. a file restored from an earlier session and then removed.
+  // `forceClear` sends the clear for an empty field restored from an earlier
+  // session, which has no upload this session to mark it as submitted.
   async _submitFileData(servar: any, stepKey: string, forceClear = false) {
     const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userId}/`;
@@ -367,8 +367,11 @@ export default class FeatheryClient extends IntegrationClient {
       const hasPreviousSuccess = fileRetryStatus[servar.key] !== undefined;
 
       // Only skip request for optional fields that were never submitted
+      // Restored keys stay in filePathMap after removal. Others may hold a file
+      // this client never saw (another tab, an integration), so aren't cleared.
+      const restored = forceClear && servar.key in filePathMap;
       if (
-        !forceClear &&
+        !restored &&
         fileDeduplicationCount[servar.key] === undefined &&
         !hasPreviousSuccess
       ) {

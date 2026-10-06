@@ -384,9 +384,16 @@ export const getFormContext = (formUuid: string) => {
           formState.generateEnvelopeFlow!({
             type: 'open_fuser_envelopes',
             documents: documentIds,
-            // The flow has no separate download flag; it's an envelope action.
+            // The flow has no separate download flag; it's an envelope action,
+            // unless the call already asks to sign.
             envelope_action:
-              envelopeAction ?? (download ? 'download' : undefined),
+              envelopeAction ??
+              (download &&
+              !signMethod &&
+              !signers?.length &&
+              !toolbarActions?.length
+                ? 'download'
+                : undefined),
             sign_method: signMethod,
             // Omitted rather than nulled: the backend's role_id rejects an
             // explicit null, and leaving it off spreads the email across

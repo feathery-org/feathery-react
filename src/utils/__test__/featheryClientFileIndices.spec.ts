@@ -108,13 +108,17 @@ describe('repeatable file upload wire format', () => {
     expect(indicesOf(body)).toBeNull();
   });
 
-  it('only clears a never-submitted empty field when forced', async () => {
+  it('force-clears an empty field only when it was restored', async () => {
     // A file restored from an earlier session has no upload this session.
     delete jest.requireMock('../init').fileRetryStatus.f;
     const client = newClient();
     await client._submitFileData({ ...servar, file_upload: [] }, 'step');
+    // Not restored, so the server may hold a file this client never saw.
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step', true);
     expect(client._fetch).not.toHaveBeenCalled();
 
+    // Restored, then removed: the key stays with a null path.
+    filePathMap.f = null;
     await client._submitFileData({ ...servar, file_upload: [] }, 'step', true);
     expect(bodyOf(client).getAll('f')).toEqual(['']);
   });
