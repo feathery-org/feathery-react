@@ -22,6 +22,115 @@ afterEach(() => {
 });
 
 describe('DocumentViewer — generic Generate Documents review mode', () => {
+  it('preserves native email defaults and restores the viewer when the modal closes', async () => {
+    const onFinalize = jest.fn().mockResolvedValue({ status: 'sent' });
+    const setShow = jest.fn();
+    render(
+      <DocumentViewer
+        payload={{
+          ...basePayload,
+          documents: [
+            {
+              ...basePayload.documents[0],
+              recipients: [
+                {
+                  recipient_index: 0,
+                  name: 'Alex',
+                  email: 'alex@example.com',
+                  routing_order: 1,
+                  role_labels: ['Owner']
+                }
+              ]
+            }
+          ]
+        }}
+        action={{ editor_toolbar_actions: ['sign'] }}
+        setShow={setShow}
+        onComplete={jest.fn()}
+        onFinalize={onFinalize}
+      />
+    );
+    const viewer = screen.getByRole('dialog', { name: 'Review Your Forms' });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+    expect(viewer).toHaveAttribute('inert');
+    fireEvent.keyDown(
+      screen.getByRole('dialog', { name: 'Configure signers' }),
+      { key: 'Escape' }
+    );
+    expect(viewer).not.toHaveAttribute('inert');
+    expect(setShow).not.toHaveBeenCalled();
+    expect(onFinalize).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+    expect(onFinalize.mock.calls[0][0]).not.toHaveProperty('emailSubject');
+    expect(onFinalize.mock.calls[0][0]).not.toHaveProperty('emailBlurb');
+  });
+
+  it('configures signers and email before finalizing a review', async () => {
+    const onFinalize = jest.fn().mockResolvedValue({ status: 'sent' });
+    const recipient = {
+      recipient_index: 0,
+      name: 'Alex',
+      email: 'alex@example.com',
+      routing_order: 1,
+      role_labels: ['Owner']
+    };
+    render(
+      <DocumentViewer
+        payload={{
+          ...basePayload,
+          documents: [{ ...basePayload.documents[0], recipients: [recipient] }]
+        }}
+        action={{
+          editor_toolbar_actions: ['sign'],
+          email_subject: 'Please sign',
+          email_blurb: 'Thanks'
+        }}
+        setShow={jest.fn()}
+        onComplete={jest.fn()}
+        onFinalize={onFinalize}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+    expect(onFinalize).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('alex@example.com')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('spinbutton'), {
+      target: { value: '2' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.change(screen.getByLabelText('Subject'), {
+      target: { value: 'Custom subject' }
+    });
+    fireEvent.change(screen.getByLabelText('Message'), {
+      target: { value: 'Custom message' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() =>
+      expect(onFinalize).toHaveBeenCalledWith({
+        envelopes: [
+          {
+            envelopeId: 'env-1',
+            signerId: undefined,
+            recipients: [
+              {
+                recipient_index: 0,
+                name: 'Alex',
+                email: 'alex@example.com',
+                routing_order: 2
+              }
+            ]
+          }
+        ],
+        envelopeAction: 'sign',
+        draft: false,
+        emailSubject: 'Custom subject',
+        emailBlurb: 'Custom message'
+      })
+    );
+  });
+
   it('renders a single primary action labeled per envelope_action', () => {
     render(
       <DocumentViewer
