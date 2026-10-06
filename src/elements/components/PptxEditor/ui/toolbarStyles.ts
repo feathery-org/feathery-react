@@ -16,7 +16,21 @@ export const FONTS = [
 ];
 
 // Bullet-character library, mirroring PowerPoint's default bullet picker.
-export const BULLET_CHARS = ['•', '○', '■', '▪', '◆', '➢', '✓', '–'];
+// Includes the arrow glyphs decks commonly use (→ and ➢) so they round-trip.
+export const BULLET_CHARS = [
+  '•',
+  '○',
+  '◦',
+  '■',
+  '□',
+  '▪',
+  '◆',
+  '➢',
+  '→',
+  '✓',
+  '–',
+  '»'
+];
 
 // Numbering schemes (OOXML buAutoNum types) shown with a sample of their glyphs.
 export const NUMBER_SCHEMES: { scheme: string; sample: string; label: string }[] =
