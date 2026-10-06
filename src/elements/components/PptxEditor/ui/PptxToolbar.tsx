@@ -5,6 +5,7 @@ import {
   usePptxEditorStore
 } from '../state/PptxEditorContext';
 import { readPictureCrop, type TextStyle } from '../core/model/edit';
+import { resolveListProps } from '../core/model/resolve';
 import {
   tableCell,
   tableCellAlign,
@@ -146,6 +147,15 @@ export function Toolbar({
     : undefined;
   const run =
     runAtRange || sh?.text?.paragraphs.flatMap((p) => p.runs)[0] || tableRun;
+  // The toolbar should show the font/size the text actually renders with, which
+  // for a placeholder run often comes from the inherited layout/master style
+  // rather than the run itself.
+  const inheritedDef =
+    deck && slide && sh && sh.type !== 'table' && sh.text
+      ? resolveListProps(deck, slide, sh, selectedParagraph?.level ?? 0).defRPr
+      : undefined;
+  const effectiveFont = run?.font || inheritedDef?.font || 'Arial';
+  const effectiveSize = Math.round(run?.sizePt || inheritedDef?.sizePt || 18);
   const align0 = selectedCell
     ? tableCellAlign(selectedCell)
     : selectedParagraph?.align || sh?.text?.paragraphs[0]?.align || 'l';
@@ -961,12 +971,17 @@ export function Toolbar({
             <>
               <select
                 disabled={!isText}
-                value={run?.font || 'Arial'}
+                value={effectiveFont}
                 onChange={(e) => applyText({ font: e.target.value })}
                 css={styles.select}
                 title='Font'
                 aria-label='Font'
               >
+                {/* Show the actual font even when it isn't one of the preset
+                    options (e.g. a deck's embedded/Google font). */}
+                {!FONTS.includes(effectiveFont) && (
+                  <option value={effectiveFont}>{effectiveFont}</option>
+                )}
                 {FONTS.map((f) => (
                   <option key={f} value={f}>
                     {f}
@@ -978,7 +993,7 @@ export function Toolbar({
                 type='number'
                 min={6}
                 max={200}
-                value={Math.round(run?.sizePt || 18)}
+                value={effectiveSize}
                 onChange={(e) => applyText({ sizePt: Number(e.target.value) })}
                 css={styles.num()}
                 title='Size'
