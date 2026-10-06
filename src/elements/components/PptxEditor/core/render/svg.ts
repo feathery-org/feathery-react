@@ -1169,7 +1169,11 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
 
     // bullet marker (explicit char / auto-number), styled from the first run
     const first = p.runs[0];
-    const markerSize = (first?.sizePt ?? paraDef?.sizePt ?? 18) * fontScale;
+    const baseSize = first?.sizePt ?? paraDef?.sizePt ?? 18;
+    // buSzPts is an absolute size; buSzPct scales the text size; else match text.
+    const markerSize =
+      (bullet?.sizePts ??
+        (bullet?.sizePct ? baseSize * bullet.sizePct : baseSize)) * fontScale;
     const markerColor = resolveTextColor(first ?? ({} as Run), paraDef);
     const markerStyle = `font-size:${ptToCssPx(
       markerSize

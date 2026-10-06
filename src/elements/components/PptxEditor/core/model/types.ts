@@ -48,6 +48,8 @@ export interface Bullet {
   font?: string; // a:buFont typeface (e.g. "Wingdings", "Arial") — needed to interpret char
   scheme?: string; // for kind 'autoNum' (e.g. "arabicPeriod")
   startAt?: number;
+  sizePct?: number; // a:buSzPct as a fraction of the text size (e.g. 0.7)
+  sizePts?: number; // a:buSzPts, an absolute bullet size in points
 }
 
 export interface Paragraph {

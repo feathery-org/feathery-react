@@ -85,6 +85,19 @@ function readRun(rNode: ONode): Run {
   };
 }
 
+// a:buSzPct (1/1000 of a %) / a:buSzPts (1/100 pt) scale the bullet marker
+// independently of the text size.
+function readBulletSize(pPr: ONode): { sizePct?: number; sizePts?: number } {
+  const pct = child(pPr, 'a:buSzPct');
+  const pts = child(pPr, 'a:buSzPts');
+  const pctVal = pct && Number(getAttr(pct, 'val'));
+  const ptsVal = pts && Number(getAttr(pts, 'val'));
+  return {
+    sizePct: pctVal ? pctVal / 100000 : undefined,
+    sizePts: ptsVal ? ptsVal / 100 : undefined
+  };
+}
+
 function readBullet(pPr: ONode | undefined): Paragraph['bullet'] {
   if (!pPr) return undefined;
   if (child(pPr, 'a:buNone')) return { kind: 'none' };
@@ -100,14 +113,15 @@ function readBullet(pPr: ONode | undefined): Paragraph['bullet'] {
       .replace(/&#([0-9]+);/g, (_, value) =>
         String.fromCodePoint(parseInt(value, 10))
       );
-    return { kind: 'char', char, font: buFont };
+    return { kind: 'char', char, font: buFont, ...readBulletSize(pPr) };
   }
   const buAutoNum = child(pPr, 'a:buAutoNum');
   if (buAutoNum)
     return {
       kind: 'autoNum',
       scheme: getAttr(buAutoNum, 'type') || 'arabicPeriod',
-      startAt: Number(getAttr(buAutoNum, 'startAt')) || undefined
+      startAt: Number(getAttr(buAutoNum, 'startAt')) || undefined,
+      ...readBulletSize(pPr)
     };
   return undefined;
 }

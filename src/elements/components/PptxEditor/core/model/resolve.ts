@@ -47,6 +47,14 @@ function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
   if (!pPr) return null;
   const out: ResolvedListProps = {};
   const buFont = child(pPr, 'a:buFont');
+  const szPctEl = child(pPr, 'a:buSzPct');
+  const szPtsEl = child(pPr, 'a:buSzPts');
+  const szPct = szPctEl && Number(getAttr(szPctEl, 'val'));
+  const szPts = szPtsEl && Number(getAttr(szPtsEl, 'val'));
+  const buSize = {
+    sizePct: szPct ? szPct / 100000 : undefined,
+    sizePts: szPts ? szPts / 100 : undefined
+  };
   if (child(pPr, 'a:buNone')) out.bullet = { kind: 'none' };
   else {
     const buChar = child(pPr, 'a:buChar');
@@ -55,13 +63,15 @@ function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
       out.bullet = {
         kind: 'char',
         char: getAttr(buChar, 'char') || '•',
-        font: buFont ? getAttr(buFont, 'typeface') : undefined
+        font: buFont ? getAttr(buFont, 'typeface') : undefined,
+        ...buSize
       };
     else if (buAutoNum)
       out.bullet = {
         kind: 'autoNum',
         scheme: getAttr(buAutoNum, 'type') || 'arabicPeriod',
-        startAt: Number(getAttr(buAutoNum, 'startAt')) || undefined
+        startAt: Number(getAttr(buAutoNum, 'startAt')) || undefined,
+        ...buSize
       };
   }
   const marL = getAttr(pPr, 'marL');
@@ -87,7 +97,10 @@ function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
   return Object.keys(out).length ? out : null;
 }
 
-/** Find the placeholder shape in a part's spTree that matches this ph type/idx. */
+/** Find the placeholder shape in a part's spTree that matches this ph type/idx.
+ *  idx identifies one specific placeholder while a type is shared by many (a
+ *  layout can have a dozen subTitle cells), so an idx match must win over type -
+ *  otherwise every cell inherits the first one's size/color/font. */
 function findPlaceholder(
   partRoot: ONode,
   phType: string,
@@ -95,12 +108,16 @@ function findPlaceholder(
 ): ONode | undefined {
   const spTree = descendant(partRoot, 'p:spTree');
   if (!spTree) return undefined;
-  for (const sp of children(spTree, 'p:sp')) {
+  const sps = [...children(spTree, 'p:sp')];
+  if (phIdx !== '') {
+    for (const sp of sps) {
+      const ph = descendant(sp, 'p:ph');
+      if (ph && (getAttr(ph, 'idx') || '') === phIdx) return sp;
+    }
+  }
+  for (const sp of sps) {
     const ph = descendant(sp, 'p:ph');
-    if (!ph) continue;
-    const t = getAttr(ph, 'type') || 'body';
-    const i = getAttr(ph, 'idx') || '';
-    if (t === phType || (phIdx !== '' && i === phIdx)) return sp;
+    if (ph && (getAttr(ph, 'type') || 'body') === phType) return sp;
   }
   return undefined;
 }
