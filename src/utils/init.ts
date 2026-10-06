@@ -287,6 +287,7 @@ function handleNewUserSearchParams(newUserId: string) {
 function resetSubmissionState(): void {
   fieldValues = {};
   filePathMap = {};
+  restoredFileKeys.clear();
   initState.formSessions = {};
   initState.fieldValuesInitialized = false;
 }
