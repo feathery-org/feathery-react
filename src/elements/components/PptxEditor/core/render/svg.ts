@@ -286,6 +286,63 @@ function resolveColor(
   );
 }
 
+// Build an SVG path from a DrawingML <a:custGeom> (custom shape). Points live
+// in the path's own w×h guide space, so scale them to the shape's cx×cy box.
+// Handles moveTo/lnTo/cubicBezTo/quadBezTo/arcTo/close (covers Google Slides
+// exports, whose rounded shapes are custom geometry, not presets).
+function customGeomPath(custGeom: ONode, w: number, h: number): string {
+  const pathLst = child(custGeom, 'a:pathLst');
+  if (!pathLst) return '';
+  const DEG = Math.PI / 180;
+  let d = '';
+  for (const path of children(pathLst, 'a:path')) {
+    const pw = Number(getAttr(path, 'w')) || w;
+    const ph = Number(getAttr(path, 'h')) || h;
+    const sx = pw ? w / pw : 1;
+    const sy = ph ? h / ph : 1;
+    const pts = (node: ONode) =>
+      [...children(node, 'a:pt')].map(
+        (p) =>
+          [Number(getAttr(p, 'x')) * sx, Number(getAttr(p, 'y')) * sy] as const
+      );
+    let cx = 0;
+    let cy = 0;
+    for (const cmd of childrenOf(path)) {
+      const tag = tagOf(cmd);
+      if (tag === 'a:moveTo' || tag === 'a:lnTo') {
+        const [[x, y]] = pts(cmd);
+        d += `${tag === 'a:moveTo' ? 'M' : 'L'} ${x} ${y} `;
+        [cx, cy] = [x, y];
+      } else if (tag === 'a:cubicBezTo') {
+        const p = pts(cmd);
+        d += `C ${p[0][0]} ${p[0][1]} ${p[1][0]} ${p[1][1]} ${p[2][0]} ${p[2][1]} `;
+        [cx, cy] = p[2];
+      } else if (tag === 'a:quadBezTo') {
+        const p = pts(cmd);
+        d += `Q ${p[0][0]} ${p[0][1]} ${p[1][0]} ${p[1][1]} `;
+        [cx, cy] = p[1];
+      } else if (tag === 'a:arcTo') {
+        const wR = Number(getAttr(cmd, 'wR')) * sx;
+        const hR = Number(getAttr(cmd, 'hR')) * sy;
+        const st = (Number(getAttr(cmd, 'stAng')) / 60000) * DEG;
+        const swDeg = Number(getAttr(cmd, 'swAng')) / 60000;
+        const end = st + swDeg * DEG;
+        const ccx = cx - wR * Math.cos(st);
+        const ccy = cy - hR * Math.sin(st);
+        const ex = ccx + wR * Math.cos(end);
+        const ey = ccy + hR * Math.sin(end);
+        const large = Math.abs(swDeg) > 180 ? 1 : 0;
+        const sweep = swDeg > 0 ? 1 : 0;
+        d += `A ${wR} ${hR} 0 ${large} ${sweep} ${ex} ${ey} `;
+        [cx, cy] = [ex, ey];
+      } else if (tag === 'a:close') {
+        d += 'Z ';
+      }
+    }
+  }
+  return d.trim();
+}
+
 // ---- geometry ----
 function geometryEl(
   shape: Shape,
@@ -457,9 +514,18 @@ function geometryEl(
       return e;
     }
     default: {
-      e = mk('rect');
-      e.setAttribute('width', String(w));
-      e.setAttribute('height', String(h));
+      // A custom shape (Google Slides rounded tabs, blobs, …) carries its path
+      // in a custGeom rather than a preset; render that instead of a plain box.
+      const custom = shape.spPr && descendant(shape.spPr, 'a:custGeom');
+      const d = custom ? customGeomPath(custom, w, h) : '';
+      if (d) {
+        e = mk('path');
+        e.setAttribute('d', d);
+      } else {
+        e = mk('rect');
+        e.setAttribute('width', String(w));
+        e.setAttribute('height', String(h));
+      }
     }
   }
   setStroke(e);
@@ -2672,7 +2738,22 @@ function shapeGroup(
       g.appendChild(geometry);
     }
     const fo = textForeign(shape, cx, cy);
-    if (fo) g.appendChild(fo);
+    if (fo) {
+      // PowerPoint mirrors a flipped shape's geometry but keeps its text
+      // upright. Re-apply the same flip to the text; a reflection applied twice
+      // cancels, so the text lands back upright in the same box (rotation,
+      // applied on the group, still carries through).
+      if (flipH || flipV) {
+        const flip = `translate(${flipH ? cx : 0} ${flipV ? cy : 0}) scale(${
+          flipH ? -1 : 1
+        } ${flipV ? -1 : 1})`;
+        fo.setAttribute(
+          'transform',
+          `${flip} ${fo.getAttribute('transform') || ''}`.trim()
+        );
+      }
+      g.appendChild(fo);
+    }
   } else if (shape.type === 'group') {
     const groupXfrm = shape.spPr && child(shape.spPr, 'a:xfrm');
     const chOff = groupXfrm && child(groupXfrm, 'a:chOff');
