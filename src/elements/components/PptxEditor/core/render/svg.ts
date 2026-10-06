@@ -1216,14 +1216,17 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     )}px;line-height:${lineHeightPx}px;color:#${markerColor};position:absolute;left:${
       marL + indent
     }px;${indent ? '' : 'transform:translateX(-100%);'}`;
-    if (bullet?.kind === 'char') {
+    // PowerPoint shows no bullet on an empty line (no text runs), so neither do
+    // we - otherwise prompt/spacer paragraphs sprout stray markers.
+    const paraHasText = p.runs.some((r) => (r.text ?? '').trim().length > 0);
+    if (paraHasText && bullet?.kind === 'char') {
       const m = featheryDoc().createElementNS(XHTML, 'span') as HTMLSpanElement;
       m.setAttribute('style', markerStyle);
       m.dataset.bullet = '';
       m.setAttribute('contenteditable', 'false');
       m.textContent = `${bulletGlyph(bullet.char, bullet.font)} `;
       pDiv.appendChild(m);
-    } else if (bullet?.kind === 'autoNum') {
+    } else if (paraHasText && bullet?.kind === 'autoNum') {
       const scheme = bullet.scheme || 'arabicPeriod';
       const key = `${p.level ?? 0}:${scheme}`;
       const autoNum = autoNumbers.has(key)
