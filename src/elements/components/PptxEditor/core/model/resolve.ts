@@ -162,6 +162,14 @@ const TXSTYLE_FOR_PH: Record<string, string> = {
   obj: 'p:bodyStyle'
 };
 
+// A slide/layout placeholder inherits from the master's placeholder of its
+// family: titles from the master title, every other type from the master body
+// (the master has no subTitle/obj/etc. of its own). Masters key placeholders by
+// type, not the slide's idx, so the master lookup matches by this type.
+function masterPhType(type: string): string {
+  return type === 'title' || type === 'ctrTitle' ? 'title' : 'body';
+}
+
 /** Resolve the list/bullet/default-run props a placeholder paragraph inherits at a level. */
 export function resolveListProps(
   deck: Deck,
@@ -221,7 +229,7 @@ export function resolveListProps(
   // so it is consulted first (e.g. its latin font wins over the txStyles font).
   if (masterPart && pkg.hasPart(masterPart)) {
     const mRoot = xmlRoot(pkg.tree(masterPart));
-    mergeIn(lvlOf(findPlaceholder(mRoot, ph.type, ph.idx)));
+    mergeIn(lvlOf(findPlaceholder(mRoot, masterPhType(ph.type), '')));
     const txStyles = child(mRoot, 'p:txStyles');
     const styleEl = txStyles
       ? child(txStyles, TXSTYLE_FOR_PH[ph.type] || 'p:otherStyle')
