@@ -109,17 +109,29 @@ function findPlaceholder(
   const spTree = descendant(partRoot, 'p:spTree');
   if (!spTree) return undefined;
   const sps = [...children(spTree, 'p:sp')];
-  if (phIdx !== '') {
+  // 4294967295 (0xFFFFFFFF) is a "no index" sentinel some exporters emit; treat
+  // it as unset so it matches by type instead of a bogus idx.
+  if (phIdx !== '' && phIdx !== '4294967295') {
     for (const sp of sps) {
       const ph = descendant(sp, 'p:ph');
       if (ph && (getAttr(ph, 'idx') || '') === phIdx) return sp;
     }
   }
-  for (const sp of sps) {
+  // Fall back to type. Prefer a placeholder that actually defines a run style
+  // over an empty one, so a style-less duplicate doesn't inherit the generic
+  // (often black) txStyles default when styled siblings of the type exist.
+  const typeMatches = sps.filter((sp) => {
     const ph = descendant(sp, 'p:ph');
-    if (ph && (getAttr(ph, 'type') || 'body') === phType) return sp;
-  }
-  return undefined;
+    return !!ph && (getAttr(ph, 'type') || 'body') === phType;
+  });
+  const styled = typeMatches.find((sp) => {
+    const lst = descendant(sp, 'a:lstStyle');
+    const dr = lst && descendant(lst, 'a:defRPr');
+    return (
+      !!dr && (!!descendant(dr, 'a:solidFill') || !!descendant(dr, 'a:latin'))
+    );
+  });
+  return styled || typeMatches[0];
 }
 
 /** Resolve a placeholder's inherited geometry from the layout, then master. */
