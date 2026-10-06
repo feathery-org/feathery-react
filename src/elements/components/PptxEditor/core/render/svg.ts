@@ -2897,7 +2897,28 @@ export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
       });
       if (chromeG.childNodes.length) svg.appendChild(chromeG);
     }
+    // Google exports sometimes duplicate a placeholder with the 0xFFFFFFFF "no
+    // index" sentinel; PowerPoint drops that orphan when a real placeholder sits
+    // in the same spot (but keeps unique sentinel placeholders). Match that.
+    const phAt = slide.shapes.map((s) => {
+      const ph = descendant(s.node, 'p:ph');
+      return ph
+        ? { idx: getAttr(ph, 'idx') || '', x: s.xfrm?.x, y: s.xfrm?.y }
+        : null;
+    });
+    const skip = new Set<number>();
+    phAt.forEach((p, i) => {
+      if (p?.idx !== '4294967295' || p.x === undefined) return;
+      if (
+        phAt.some(
+          (o, j) =>
+            j !== i && o && o.idx !== '4294967295' && o.x === p.x && o.y === p.y
+        )
+      )
+        skip.add(i);
+    });
     slide.shapes.forEach((shape, i) => {
+      if (skip.has(i)) return;
       const g = shapeGroup(shape, deck.pkg, defs, i);
       if (g) svg.appendChild(g);
     });
