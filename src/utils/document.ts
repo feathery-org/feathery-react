@@ -42,9 +42,6 @@ export function getSignUrl(token: string, redirect?: boolean | string) {
   return `https://${regionPart}document.feathery.io/to/${token}${query}`;
 }
 
-/** The Document Editor container this action targets, or '' when it doesn't
- * target one. `editor_mode` is the single source of truth for how the editor is
- * presented: '' (none), 'overlay', or a container id. */
 // The file upload fields a Generate Documents action includes, with the step
 // each is on. Empty fields stay in, so a removed upload is cleared server-side.
 export function documentSourceUploadFields(
@@ -68,6 +65,9 @@ export function documentSourceUploadFields(
   return fields;
 }
 
+/** The Document Editor container this action targets, or '' when it doesn't
+ * target one. `editor_mode` is the single source of truth for how the editor is
+ * presented: '' (none), 'overlay', or a container id. */
 export function editorContainerId(action: Record<string, any>): string {
   const mode = action?.editor_mode;
   return mode && mode !== 'overlay' ? mode : '';

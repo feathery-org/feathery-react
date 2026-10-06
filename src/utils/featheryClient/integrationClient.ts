@@ -746,7 +746,8 @@ export default class IntegrationClient {
       (doc: GenerateDocumentRef) => typeof doc !== 'string'
     );
 
-    if (editorContainerId(action) && hasPolymorphicDocument) {
+    const containerTemplateIds = documentIds.map(documentRefTemplateId);
+    if (editorContainerId(action) && containerTemplateIds.includes(null)) {
       return {
         status: 'error',
         message:
@@ -776,10 +777,12 @@ export default class IntegrationClient {
       });
     }
 
+    // client-utils interpolates ids into its poll URL, so template objects
+    // are sent as their plain ids.
     return await apiGenerateFormDocuments({
       sdkKey,
       formId: this.formKey,
-      documentIds,
+      documentIds: containerTemplateIds as string[],
       userId,
       signers,
       repeatable,

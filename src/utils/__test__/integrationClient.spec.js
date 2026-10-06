@@ -778,6 +778,23 @@ describe('IntegrationClient', () => {
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
+    it('sends template objects to a document editor container as plain ids', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: [] })
+      });
+
+      await integrationClient.generateEnvelopes({
+        editor_mode: 'container-abc',
+        run_async: false,
+        documents: ['doc1', { kind: 'template', document_id: 'doc2' }]
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.documents).toEqual(['doc1', 'doc2']);
+    });
+
     it('only gives template documents the shared signer field', async () => {
       const integrationClient = new IntegrationClient('test_form_key');
       const action = {
