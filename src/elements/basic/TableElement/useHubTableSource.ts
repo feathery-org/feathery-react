@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { featheryWindow } from '../../../utils/browser';
+import useRefreshOnFocus from '../../../utils/useRefreshOnFocus';
 import { fieldValues } from '../../../utils/init';
 import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
 import {
@@ -508,13 +508,13 @@ export function useHubTableSource({
     loadEntries().catch(() => {});
   }, [loadEntries]);
 
+  // Initial sync on mount (and whenever the source changes); focus/visibility
+  // resyncs are delegated to the shared hook. refetch's own guards keep the
+  // extra visibility fire from clobbering in-flight writes or unsaved edits.
   useEffect(() => {
-    if (!enabled) return;
-    refetch();
-    const onFocus = () => refetch();
-    featheryWindow().addEventListener('focus', onFocus);
-    return () => featheryWindow().removeEventListener('focus', onFocus);
+    if (enabled) refetch();
   }, [enabled, refetch]);
+  useRefreshOnFocus(refetch, enabled);
 
   // A filter or hub change the guard turned away is applied once the write
   // queue drains and the edits are saved or discarded; unchanged ones cost
