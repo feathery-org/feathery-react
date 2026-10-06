@@ -1173,29 +1173,41 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       css += `position:relative;padding-left:${marL}px;text-indent:0px;`;
     } else if (marL || indent)
       css += `padding-left:${marL}px;text-indent:${indent}px;`;
+    // An empty paragraph still occupies a line sized by endParaRPr, not a run;
+    // match PowerPoint so spacer lines keep their height instead of collapsing.
+    const paraHasText = p.runs.some((r) => (r.text ?? '').trim().length > 0);
+    const endParaRPr = child(p.node, 'a:endParaRPr');
+    const endParaSzPt =
+      !paraHasText && endParaRPr && getAttr(endParaRPr, 'sz')
+        ? Number(getAttr(endParaRPr, 'sz')) / 100
+        : undefined;
     const baseFontPx =
-      ptToCssPx(p.runs[0]?.sizePt ?? paraDef?.sizePt ?? 18) * fontScale;
+      ptToCssPx(p.runs[0]?.sizePt ?? endParaSzPt ?? paraDef?.sizePt ?? 18) *
+      fontScale;
     const lineSpaceReduction =
       body.autofit?.type === 'normal'
         ? body.autofit.lineSpaceReductionPct ?? 0
         : 0;
+    // PowerPoint percent/single spacing multiplies the font's line box (~1.2x
+    // the size), not the bare em, so 150% = 1.5 x 1.2 x size (rules expect this).
+    const NATURAL_LINE = 1.2;
     const lineHeightPx =
       paraProps.lineSpacing?.kind === 'points'
         ? ptToCssPx(paraProps.lineSpacing.valPt)
         : paraProps.lineSpacing?.kind === 'percent'
         ? baseFontPx *
+          NATURAL_LINE *
           Math.max(
             0.1,
             (paraProps.lineSpacing.valPct - lineSpaceReduction) / 100
           )
-        : baseFontPx * 1.2;
+        : baseFontPx * NATURAL_LINE;
     // PowerPoint puts line-spacing leading below the baseline; CSS splits it
     // half above / half below, which drifts text off fixed decorations (rules,
     // dividers). Shift the top half to the bottom so baselines sit where the
     // deck expects; inter-line spacing is preserved (taken off the top margin,
     // added to the bottom). The glyph's own line box is ~1.2x the font size, so
     // only spacing beyond that is extra leading - default/tight spacing shifts 0.
-    const NATURAL_LINE = 1.2;
     const halfLeading = Math.max(
       0,
       (lineHeightPx - baseFontPx * NATURAL_LINE) / 2
@@ -1233,7 +1245,6 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     }px;${indent ? '' : 'transform:translateX(-100%);'}`;
     // PowerPoint shows no bullet on an empty line (no text runs), so neither do
     // we - otherwise prompt/spacer paragraphs sprout stray markers.
-    const paraHasText = p.runs.some((r) => (r.text ?? '').trim().length > 0);
     if (paraHasText && bullet?.kind === 'char') {
       const m = featheryDoc().createElementNS(XHTML, 'span') as HTMLSpanElement;
       m.setAttribute('style', markerStyle);
@@ -1256,7 +1267,10 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       pDiv.appendChild(m);
     }
 
-    if (!p.runs.length)
+    // An empty paragraph (no runs, or runs with no visible text) still needs a
+    // line box; an empty <span> collapses to zero height, so force a line break.
+    const hasSoftBreak = p.runs.some((r) => tagOf(r.node) === 'a:br');
+    if (!paraHasText && !hasSoftBreak)
       pDiv.appendChild(featheryDoc().createElementNS(XHTML, 'br'));
     for (const [runIndex, r] of p.runs.entries()) {
       if (tagOf(r.node) === 'a:br') {

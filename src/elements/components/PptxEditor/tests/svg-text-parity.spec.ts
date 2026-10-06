@@ -90,10 +90,11 @@ it('carries DrawingML autofit, paragraph spacing, tabs, and field identity into 
   ) as HTMLElement;
   expect(content.style.justifyContent).toBe('flex-end');
   // 18pt * 0.8 font scale = 19.2px; line spacing 120% - 10% reduction = 1.1.
+  // Percent spacing multiplies the ~1.2x natural line box, so 1.1 -> 1.2 * 1.1.
   const fontPx = ((18 * 96) / 72) * 0.8;
-  const lineHeightPx = fontPx * 1.1;
-  // Extra leading only exists beyond the ~1.2x natural line box; 1.1 < 1.2, so
-  // halfLeading is 0 here and the top margin stays at spaceBefore (12pt = 16px).
+  const lineHeightPx = fontPx * 1.2 * 1.1;
+  // Extra leading is whatever exceeds the 1.2x natural line box, split and
+  // moved below the baseline (top margin = spaceBefore 12pt=16px minus it).
   const halfLeading = Math.max(0, (lineHeightPx - fontPx * 1.2) / 2);
   expect(Number.parseFloat(firstPara.style.lineHeight)).toBeCloseTo(lineHeightPx);
   expect(Number.parseFloat(firstPara.style.marginTop)).toBeCloseTo(
