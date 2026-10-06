@@ -123,6 +123,7 @@ jest.mock('./SignedEnvelopeView', () => {
 });
 
 const mockFinalizeEnvelope = jest.fn();
+const mockGetCurrentEnvelope = jest.fn().mockResolvedValue({});
 const mockFinalizeEnvelopeReview = jest.fn();
 jest.mock('../../../utils/featheryClient', () => ({
   __esModule: true,
@@ -132,7 +133,8 @@ jest.mock('../../../utils/featheryClient', () => ({
     this.finalizeEnvelope = (...args: any[]) => mockFinalizeEnvelope(...args);
     this.finalizeEnvelopeReview = (...args: any[]) =>
       mockFinalizeEnvelopeReview(...args);
-    this.getCurrentEnvelope = jest.fn().mockResolvedValue({});
+    this.getCurrentEnvelope = (...args: any[]) =>
+      mockGetCurrentEnvelope(...args);
     this.saveEnvelopeFile = jest.fn().mockResolvedValue({});
     this.downloadEnvelopePdf = jest.fn().mockResolvedValue(new Blob());
   })
@@ -596,6 +598,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
   beforeEach(() => {
     _clearDocxEditors();
     mockFinalizeEnvelope.mockReset().mockResolvedValue({});
+    mockGetCurrentEnvelope.mockReset().mockResolvedValue({});
     mockFinalizeEnvelopeReview
       .mockReset()
       .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' });
@@ -796,6 +799,52 @@ describe('DocumentEditorContainer signing outcomes', () => {
     expect(getByTestId('signed-view:https://x/signed.pdf')).toHaveAttribute(
       'data-signed',
       'false'
+    );
+  });
+
+  it('re-fetches on focus and flips the signed PDF view to Signed', async () => {
+    const url = `https://example.com/${CONTAINER}.docx`;
+    mockFinalizeEnvelope.mockResolvedValue({
+      id: `envelope-${CONTAINER}`,
+      file: 'https://x/signable.pdf',
+      editor_file: null,
+      type: 'pdf',
+      signed: false,
+      signer_id: null,
+      invited: true
+    });
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId(`editor:${url}`)).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    // Finalized but not yet signed → awaiting-signature PDF view.
+    await waitFor(() =>
+      expect(getByTestId('signed-view:https://x/signable.pdf')).toHaveAttribute(
+        'data-signed',
+        'false'
+      )
+    );
+
+    // The filler signs on the hosted page and returns; the next load reports a
+    // fully-signed envelope with the signed PDF.
+    mockGetCurrentEnvelope.mockResolvedValue({
+      id: `envelope-${CONTAINER}`,
+      file: 'https://x/signed.pdf',
+      editor_file: null,
+      type: 'pdf',
+      signed: true
+    });
+    await act(async () => {
+      featheryWindow().dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() =>
+      expect(getByTestId('signed-view:https://x/signed.pdf')).toHaveAttribute(
+        'data-signed',
+        'true'
+      )
     );
   });
 
