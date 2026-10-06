@@ -89,8 +89,19 @@ it('carries DrawingML autofit, paragraph spacing, tabs, and field identity into 
     '[data-source-run="0"]'
   ) as HTMLElement;
   expect(content.style.justifyContent).toBe('flex-end');
-  expect(firstPara.style.lineHeight).toBe('1.1');
-  expect(firstPara.style.marginTop).toBe('16px');
+  // 18pt * 0.8 font scale = 19.2px; line spacing 120% - 10% reduction = 1.1.
+  const fontPx = ((18 * 96) / 72) * 0.8;
+  const lineHeightPx = fontPx * 1.1;
+  const halfLeading = (lineHeightPx - fontPx) / 2;
+  // Line-height is emitted in px, and the top half-leading is moved below the
+  // baseline (so the top margin = spaceBefore(12pt=16px) - halfLeading).
+  expect(Number.parseFloat(firstPara.style.lineHeight)).toBeCloseTo(lineHeightPx);
+  expect(Number.parseFloat(firstPara.style.marginTop)).toBeCloseTo(
+    (12 * 96) / 72 - halfLeading
+  );
+  expect(Number.parseFloat(firstPara.style.marginBottom)).toBeCloseTo(
+    halfLeading
+  );
   expect(Number.parseFloat(firstRun.style.fontSize)).toBeCloseTo(
     (((shape.text!.paragraphs[0].runs[0].sizePt ?? 18) * 96) / 72) * 0.8
   );

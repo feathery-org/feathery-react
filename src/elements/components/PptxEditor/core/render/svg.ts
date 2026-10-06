@@ -1175,22 +1175,32 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       css += `padding-left:${marL}px;text-indent:${indent}px;`;
     const baseFontPx =
       ptToCssPx(p.runs[0]?.sizePt ?? paraDef?.sizePt ?? 18) * fontScale;
-    const before = spacingCss(paraProps.spaceBefore, baseFontPx);
-    const after = spacingCss(paraProps.spaceAfter, baseFontPx);
-    if (before) css += `margin-top:${before};`;
-    if (after) css += `margin-bottom:${after};`;
-    if (paraProps.lineSpacing?.kind === 'points')
-      css += `line-height:${ptToCssPx(paraProps.lineSpacing.valPt)}px;`;
-    else if (paraProps.lineSpacing?.kind === 'percent') {
-      const reduction =
-        body.autofit?.type === 'normal'
-          ? body.autofit.lineSpaceReductionPct ?? 0
-          : 0;
-      css += `line-height:${Math.max(
-        0.1,
-        (paraProps.lineSpacing.valPct - reduction) / 100
-      )};`;
-    }
+    const lineSpaceReduction =
+      body.autofit?.type === 'normal'
+        ? body.autofit.lineSpaceReductionPct ?? 0
+        : 0;
+    const lineHeightPx =
+      paraProps.lineSpacing?.kind === 'points'
+        ? ptToCssPx(paraProps.lineSpacing.valPt)
+        : paraProps.lineSpacing?.kind === 'percent'
+        ? baseFontPx *
+          Math.max(
+            0.1,
+            (paraProps.lineSpacing.valPct - lineSpaceReduction) / 100
+          )
+        : baseFontPx * 1.2;
+    // PowerPoint puts line-spacing leading below the baseline; CSS splits it
+    // half above / half below, which drifts text off fixed decorations (rules,
+    // dividers). Shift the top half to the bottom so baselines sit where the
+    // deck expects; inter-line spacing is preserved (taken off the top margin,
+    // added to the bottom).
+    const halfLeading = Math.max(0, (lineHeightPx - baseFontPx) / 2);
+    const numPx = (v: string | undefined) => (v ? parseFloat(v) : 0);
+    const marginTopPx =
+      numPx(spacingCss(paraProps.spaceBefore, baseFontPx)) - halfLeading;
+    const marginBottomPx =
+      numPx(spacingCss(paraProps.spaceAfter, baseFontPx)) + halfLeading;
+    css += `margin-top:${marginTopPx}px;margin-bottom:${marginBottomPx}px;line-height:${lineHeightPx}px;`;
     pDiv.setAttribute('style', css);
 
     // bullet marker (explicit char / auto-number), styled from the first run
@@ -1201,22 +1211,6 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       (bullet?.sizePts ??
         (bullet?.sizePct ? baseSize * bullet.sizePct : baseSize)) * fontScale;
     const markerColor = resolveTextColor(first ?? ({} as Run), paraDef);
-    // Give the marker the first text line's box height so its baseline lands on
-    // the text's, instead of a smaller glyph floating at the top of the line.
-    const lineHeightPx =
-      paraProps.lineSpacing?.kind === 'points'
-        ? ptToCssPx(paraProps.lineSpacing.valPt)
-        : paraProps.lineSpacing?.kind === 'percent'
-        ? baseFontPx *
-          Math.max(
-            0.1,
-            (paraProps.lineSpacing.valPct -
-              (body.autofit?.type === 'normal'
-                ? body.autofit.lineSpaceReductionPct ?? 0
-                : 0)) /
-              100
-          )
-        : baseFontPx * 1.2;
     const markerStyle = `font-size:${ptToCssPx(
       markerSize
     )}px;line-height:${lineHeightPx}px;color:#${markerColor};position:absolute;left:${
