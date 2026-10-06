@@ -77,7 +77,7 @@ export interface Shape {
   chartPart?: string; // related ppt/charts/chartN.xml part for a chart graphic frame
   fillColor?: string; // solid fill hex, if any
   geom?: string; // prstGeom preset (rect, ellipse, ...)
-  geomAdj?: number; // first avLst adjustment (e.g. roundRect corner radius, 1/100000)
+  geomAdj?: Record<string, number>; // avLst adjustments by name (roundRect "adj"; pie "adj1"/"adj2")
   extKey?: string; // future binding anchor from extLst (parsed, preserved)
   node: ONode; // the raw p:sp / p:pic / p:graphicFrame / ... node
   spPr?: ONode; // the p:spPr node (geometry/fill), when applicable

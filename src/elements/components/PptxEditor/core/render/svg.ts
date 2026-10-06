@@ -321,8 +321,34 @@ function geometryEl(
       e.setAttribute('height', String(h));
       // Corner radius is the adj (1/100000 of the smaller side); 16.667% is the
       // preset default, but a deck can set 0 for square corners.
-      const adj = shape.geomAdj ?? 16667;
+      const adj = shape.geomAdj?.adj ?? 16667;
       e.setAttribute('rx', String((Math.min(w, h) * adj) / 100000));
+      break;
+    }
+    case 'pie':
+    case 'arc': {
+      // A pie slice / arc of the bounding ellipse between two angles (adj1/adj2
+      // in 1/60000 degree, clockwise from 3 o'clock). Rendered as an SVG arc.
+      e = mk('path');
+      const rx = w / 2;
+      const ry = h / 2;
+      const deg = Math.PI / 180;
+      const a1v = shape.geomAdj?.adj1 ?? 0;
+      const a2v = shape.geomAdj?.adj2 ?? 270 * 60000;
+      const a1 = (a1v / 60000) * deg;
+      const a2 = (a2v / 60000) * deg;
+      const sweepDeg = ((((a2v - a1v) / 60000) % 360) + 360) % 360;
+      const large = sweepDeg > 180 ? 1 : 0;
+      const sx = rx + rx * Math.cos(a1);
+      const sy = ry + ry * Math.sin(a1);
+      const ex = rx + rx * Math.cos(a2);
+      const ey = ry + ry * Math.sin(a2);
+      // pie closes through the center; arc is just the open curve.
+      const d =
+        prst === 'pie'
+          ? `M ${rx} ${ry} L ${sx} ${sy} A ${rx} ${ry} 0 ${large} 1 ${ex} ${ey} Z`
+          : `M ${sx} ${sy} A ${rx} ${ry} 0 ${large} 1 ${ex} ${ey}`;
+      e.setAttribute('d', d);
       break;
     }
     case 'triangle': {
@@ -1175,11 +1201,27 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       (bullet?.sizePts ??
         (bullet?.sizePct ? baseSize * bullet.sizePct : baseSize)) * fontScale;
     const markerColor = resolveTextColor(first ?? ({} as Run), paraDef);
+    // Give the marker the first text line's box height so its baseline lands on
+    // the text's, instead of a smaller glyph floating at the top of the line.
+    const lineHeightPx =
+      paraProps.lineSpacing?.kind === 'points'
+        ? ptToCssPx(paraProps.lineSpacing.valPt)
+        : paraProps.lineSpacing?.kind === 'percent'
+        ? baseFontPx *
+          Math.max(
+            0.1,
+            (paraProps.lineSpacing.valPct -
+              (body.autofit?.type === 'normal'
+                ? body.autofit.lineSpaceReductionPct ?? 0
+                : 0)) /
+              100
+          )
+        : baseFontPx * 1.2;
     const markerStyle = `font-size:${ptToCssPx(
       markerSize
-    )}px;color:#${markerColor};position:absolute;left:${marL + indent}px;${
-      indent ? '' : 'transform:translateX(-100%);'
-    }`;
+    )}px;line-height:${lineHeightPx}px;color:#${markerColor};position:absolute;left:${
+      marL + indent
+    }px;${indent ? '' : 'transform:translateX(-100%);'}`;
     if (bullet?.kind === 'char') {
       const m = featheryDoc().createElementNS(XHTML, 'span') as HTMLSpanElement;
       m.setAttribute('style', markerStyle);
@@ -1220,9 +1262,18 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       span.setAttribute('style', runStyle(r, paraDef, fontScale));
       span.dataset.sourceParagraph = String(paragraphIndex);
       span.dataset.sourceRun = String(runIndex);
-      if (tagOf(r.node) === 'a:fld')
+      if (tagOf(r.node) === 'a:fld') {
         span.setAttribute('contenteditable', 'false');
-      span.textContent = r.text;
+        // Fields are computed, not literal: show the real slide number rather
+        // than the stored placeholder glyph (e.g. "‹#›").
+        const slideNum =
+          getAttr(r.node, 'type') === 'slidenum' && curDeck && curSlide
+            ? curDeck.slides.indexOf(curSlide) + 1
+            : 0;
+        span.textContent = slideNum > 0 ? String(slideNum) : r.text;
+      } else {
+        span.textContent = r.text;
+      }
       const hyperlink = r.rPr && child(r.rPr, 'a:hlinkClick');
       const relationshipId = hyperlink && getAttr(hyperlink, 'r:id');
       const relationship =
