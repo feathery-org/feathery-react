@@ -619,11 +619,15 @@ function Form({
 
   // Force-submit the file upload fields a Generate Documents action includes,
   // regardless of the button's submit toggle, so the backend has the files.
-  const submitDocumentSourceFiles = async (documents: any[] = []) => {
-    const fileEntries = documentSourceUploadFields(documents, steps).map(
+  const submitDocumentSourceFiles = async (action: Record<string, any>) => {
+    // A container rejects upload sources, so there's nothing to send.
+    if (editorContainerId(action)) return;
+    const fileEntries = documentSourceUploadFields(action.documents, steps).map(
       ({ servar, step }) => fileSubmitEntry(servar, step)
     );
-    if (fileEntries.length) await client.submitFiles(fileEntries);
+    // Forced, so a file restored from an earlier session and removed is cleared.
+    if (fileEntries.length)
+      await client.submitFiles(fileEntries, { forceClear: true });
   };
 
   // Collects file/signature fields that are still waiting to upload.
@@ -1577,7 +1581,7 @@ function Form({
                 );
             }
           };
-          await submitDocumentSourceFiles(action.documents);
+          await submitDocumentSourceFiles(action);
           const data = await client.generateEnvelopes(action);
           if (!data) throw new Error('Document generation failed');
           if (data.status === 'error') throw new Error(data.message);
@@ -3584,7 +3588,7 @@ function Form({
           }
         };
         try {
-          await submitDocumentSourceFiles(action.documents);
+          await submitDocumentSourceFiles(action);
           const data = await client.generateEnvelopes(action);
           // A missing response is a failure, not a success: _fetch resolves
           // undefined on a network blip / 403 / 409, and reading .status off it

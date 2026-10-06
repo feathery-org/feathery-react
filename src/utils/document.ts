@@ -43,7 +43,7 @@ export function getSignUrl(token: string, redirect?: boolean | string) {
 }
 
 // The file upload fields a Generate Documents action includes, with the step
-// each is on. Empty fields stay in, so a removed upload is cleared server-side.
+// each is on. Empty fields stay in so a removed upload can be cleared.
 export function documentSourceUploadFields(
   documents: any[] = [],
   steps: Record<string, any> = {}

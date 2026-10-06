@@ -339,13 +339,26 @@ export const getFormContext = (formUuid: string) => {
           : doc
       );
       const unknownUploadKeys: string[] = [];
+      let missingUploadField = false;
       documentIds = documentIds.map((doc) => {
         if (typeof doc === 'string' || doc.kind !== 'file_upload') return doc;
-        if (!doc.field_key) return doc;
+        if (doc.field_id) return doc;
+        if (!doc.field_key) {
+          missingUploadField = true;
+          return doc;
+        }
         const fieldId = uploadFieldIdByKey(formState.steps, doc.field_key);
         if (!fieldId) unknownUploadKeys.push(doc.field_key);
         return { kind: 'file_upload', field_id: fieldId ?? '' };
       });
+      if (missingUploadField) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: a file upload source needs its field, e.g. ' +
+              'documentIds: [templateId, FileUpload1]'
+          )
+        );
+      }
       if (unknownUploadKeys.length) {
         return Promise.reject(
           new Error(
@@ -371,7 +384,9 @@ export const getFormContext = (formUuid: string) => {
           formState.generateEnvelopeFlow!({
             type: 'open_fuser_envelopes',
             documents: documentIds,
-            envelope_action: envelopeAction,
+            // The flow has no separate download flag; it's an envelope action.
+            envelope_action:
+              envelopeAction ?? (download ? 'download' : undefined),
             sign_method: signMethod,
             // Omitted rather than nulled: the backend's role_id rejects an
             // explicit null, and leaving it off spreads the email across

@@ -108,6 +108,17 @@ describe('repeatable file upload wire format', () => {
     expect(indicesOf(body)).toBeNull();
   });
 
+  it('only clears a never-submitted empty field when forced', async () => {
+    // A file restored from an earlier session has no upload this session.
+    delete jest.requireMock('../init').fileRetryStatus.f;
+    const client = newClient();
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step');
+    expect(client._fetch).not.toHaveBeenCalled();
+
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step', true);
+    expect(bodyOf(client).getAll('f')).toEqual(['']);
+  });
+
   it('sends no indices for a non-repeated multi-file field', async () => {
     // Its entries are a flat list, not repeat rows. Indexing it would move the
     // field off the legacy dense representation on almost every submission.

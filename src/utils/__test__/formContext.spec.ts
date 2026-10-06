@@ -174,6 +174,23 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
+  it('treats download as the envelope action for source objects', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: [{ kind: 'quik' }],
+      download: true
+    });
+    expect(flow.mock.calls[0][0].envelope_action).toBe('download');
+
+    // A file upload source must name its field.
+    flow.mockClear();
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: [{ kind: 'file_upload' } as any]
+      })
+    ).rejects.toThrow('a file upload source needs its field');
+    expect(flow).not.toHaveBeenCalled();
+  });
+
   it('resolves a file upload field key to its field id', async () => {
     setFormInternalState(uuid, {
       fields: {},

@@ -49,11 +49,9 @@ export type QuikDocumentSource = {
 };
 // Every file uploaded to the field becomes a document, converted to PDF.
 // Logic rules name the field by `field_key`, resolved to `field_id` before sending.
-export type FileUploadDocumentSource = {
-  kind: 'file_upload';
-  field_id?: string;
-  field_key?: string;
-};
+export type FileUploadDocumentSource =
+  | { kind: 'file_upload'; field_id: string; field_key?: never }
+  | { kind: 'file_upload'; field_key: string; field_id?: never };
 export type GenerateDocumentRef =
   | string
   | QuikDocumentSource
@@ -61,12 +59,14 @@ export type GenerateDocumentRef =
   | { kind: 'template'; document_id: string };
 
 // The template id a document entry names, or null for a non-template source.
-export const documentRefTemplateId = (doc: GenerateDocumentRef) =>
-  typeof doc === 'string'
-    ? doc
-    : doc.kind === 'template'
-    ? (doc as { document_id: string }).document_id
+export const documentRefTemplateId = (doc: GenerateDocumentRef) => {
+  if (typeof doc === 'string') return doc;
+  // A kind-less object is a template, as on the backend.
+  const ref = doc as Record<string, any>;
+  return (ref.kind ?? 'template') === 'template'
+    ? ref.document_id ?? null
     : null;
+};
 
 // Must match the backend's document_cache_keys, which key the generate poll.
 const documentRefCacheKey = (doc: GenerateDocumentRef) => {

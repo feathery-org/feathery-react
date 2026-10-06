@@ -803,7 +803,9 @@ describe('IntegrationClient', () => {
           'doc1',
           { kind: 'quik' },
           { kind: 'file_upload', field_id: 'f1' },
-          { kind: 'template', document_id: 'doc2' }
+          { kind: 'template', document_id: 'doc2' },
+          // Kind-less, as the backend accepts it, is a template too.
+          { document_id: 'doc3' }
         ],
         run_async: false
       };
@@ -819,7 +821,8 @@ describe('IntegrationClient', () => {
       expect(body.documents).toEqual(action.documents);
       expect(body.signers).toEqual([
         { document_id: 'doc1', email: 'test@example.com', filler: true },
-        { document_id: 'doc2', email: 'test@example.com', filler: true }
+        { document_id: 'doc2', email: 'test@example.com', filler: true },
+        { document_id: 'doc3', email: 'test@example.com', filler: true }
       ]);
     });
 

@@ -330,7 +330,9 @@ export default class FeatheryClient extends IntegrationClient {
     }
   }
 
-  async _submitFileData(servar: any, stepKey: string) {
+  // `forceClear` sends the clear for an empty field even with no upload this
+  // session, e.g. a file restored from an earlier session and then removed.
+  async _submitFileData(servar: any, stepKey: string, forceClear = false) {
     const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
@@ -366,6 +368,7 @@ export default class FeatheryClient extends IntegrationClient {
 
       // Only skip request for optional fields that were never submitted
       if (
+        !forceClear &&
         fileDeduplicationCount[servar.key] === undefined &&
         !hasPreviousSuccess
       ) {
@@ -1091,7 +1094,10 @@ export default class FeatheryClient extends IntegrationClient {
   // an already-submitted file is a safe no-op (deduped client-side by field and
   // server-side by S3 path).
   // fileEntries = [{servar: {key, <type>: <value>}, stepKey}]
-  async submitFiles(fileEntries: { servar: any; stepKey: string }[]) {
+  async submitFiles(
+    fileEntries: { servar: any; stepKey: string }[],
+    { forceClear = false } = {}
+  ) {
     if (this.draft || this.getNoSave()) return;
     if (!fileEntries.length) return;
 
@@ -1099,7 +1105,7 @@ export default class FeatheryClient extends IntegrationClient {
     const submission = Promise.all([
       this.submitQueue.catch(() => undefined),
       ...fileEntries.map(({ servar, stepKey }) =>
-        this._submitFileData(servar, stepKey)
+        this._submitFileData(servar, stepKey, forceClear)
       )
     ]);
     this.submitQueue = submission;
