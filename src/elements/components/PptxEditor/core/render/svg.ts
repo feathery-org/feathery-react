@@ -1283,7 +1283,13 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       numPx(spacingCss(paraProps.spaceBefore, baseFontPx)) - halfLeading;
     const marginBottomPx =
       numPx(spacingCss(paraProps.spaceAfter, baseFontPx)) + halfLeading;
-    css += `margin-top:${marginTopPx}px;margin-bottom:${marginBottomPx}px;line-height:${lineHeightPx}px;`;
+    // A pixel line-height is inflated by some web fonts' tall metrics (Urbanist
+    // renders ~18% looser than the ratio implies), while 'normal' uses the
+    // font's own line height - which is what PowerPoint single spacing does. So
+    // default/single spacing uses 'normal'; explicit percent/points keep the
+    // pixel value, which aligns multi-line text with fixed rules/dividers.
+    const cssLineHeight = paraProps.lineSpacing ? `${lineHeightPx}px` : 'normal';
+    css += `margin-top:${marginTopPx}px;margin-bottom:${marginBottomPx}px;line-height:${cssLineHeight};`;
     pDiv.setAttribute('style', css);
 
     // bullet marker (explicit char / auto-number), styled from the first run
@@ -1306,7 +1312,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     ).family;
     const markerStyle = `font-size:${ptToCssPx(
       markerSize
-    )}px;line-height:${lineHeightPx}px;font-family:'${markerFamily}',Helvetica,Arial,sans-serif;color:#${markerColor};position:absolute;left:${
+    )}px;line-height:${cssLineHeight};font-family:'${markerFamily}',Helvetica,Arial,sans-serif;color:#${markerColor};position:absolute;left:${
       marL + indent
     }px;${indent ? '' : 'transform:translateX(-100%);'}`;
     // PowerPoint shows no bullet on an empty line (no text runs), so neither do
