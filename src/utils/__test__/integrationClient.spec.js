@@ -767,6 +767,17 @@ describe('IntegrationClient', () => {
       );
     });
 
+    it('rejects source objects on a document editor container', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      const result = await integrationClient.generateEnvelopes({
+        editor_mode: 'container-abc',
+        documents: ['doc1', { kind: 'file_upload', field_id: 'f1' }]
+      });
+
+      expect(result.status).toBe('error');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     it('only gives template documents the shared signer field', async () => {
       const integrationClient = new IntegrationClient('test_form_key');
       const action = {

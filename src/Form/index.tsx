@@ -256,6 +256,7 @@ import {
 } from '../integrations/connectAccount/oauthPopup';
 import { isNum } from '../utils/primitives';
 import {
+  documentSourceUploadFields,
   editorContainerId,
   getSignUrl,
   isDocusignSignAction,
@@ -619,21 +620,9 @@ function Form({
   // Force-submit the file upload fields a Generate Documents action includes,
   // regardless of the button's submit toggle, so the backend has the files.
   const submitDocumentSourceFiles = async (documents: any[] = []) => {
-    const fieldIds = new Set(
-      documents
-        .filter((doc) => doc?.kind === 'file_upload')
-        .map((doc) => doc.field_id)
+    const fileEntries = documentSourceUploadFields(documents, steps).map(
+      ({ servar, step }) => fileSubmitEntry(servar, step)
     );
-    if (!fieldIds.size) return;
-    const fileEntries: { servar: any; stepKey: string }[] = [];
-    for (const step of Object.values(steps) as any[]) {
-      for (const { servar } of step?.servar_fields ?? []) {
-        if (!fieldIds.has(servar.id)) continue;
-        fieldIds.delete(servar.id);
-        if (isFieldValueEmpty(fieldValues[servar.key], servar)) continue;
-        fileEntries.push(fileSubmitEntry(servar, step));
-      }
-    }
     if (fileEntries.length) await client.submitFiles(fileEntries);
   };
 

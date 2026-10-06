@@ -746,6 +746,15 @@ export default class IntegrationClient {
       (doc: GenerateDocumentRef) => typeof doc !== 'string'
     );
 
+    if (editorContainerId(action) && hasPolymorphicDocument) {
+      return {
+        status: 'error',
+        message:
+          'A document editor container can only open template documents. ' +
+          'Remove the Quik or file upload sources from this action.'
+      };
+    }
+
     if (
       (openInEditor ||
         isDocusignSignAction(action) ||

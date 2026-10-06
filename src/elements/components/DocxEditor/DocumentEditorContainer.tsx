@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
+import { documentRefTemplateId } from '../../../utils/featheryClient/integrationClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import internalState from '../../../utils/internalState';
@@ -174,8 +175,13 @@ export default function DocumentEditorContainer({
   // Document is owned by the button that targets this container.
   const documentId = useMemo(
     () =>
-      (targetAction?.documents ?? [])[0] ??
-      pendingDraft?.documents?.[0] ??
+      // Only a template can open here; other sources are rejected at generate.
+      (targetAction?.documents ?? [])
+        .map(documentRefTemplateId)
+        .find(Boolean) ??
+      (pendingDraft?.documents ?? [])
+        .map(documentRefTemplateId)
+        .find(Boolean) ??
       pendingDraft?.envelopes?.[0]?.document,
     [targetAction, pendingDraft]
   );
