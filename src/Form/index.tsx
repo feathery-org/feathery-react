@@ -3773,6 +3773,32 @@ function Form({
     clearButtonActionState();
   };
 
+  const runFieldChangeLogic = ({
+    fieldKey,
+    servarId,
+    elementRepeatIndex = 0,
+    triggerType = 'field',
+    integrationData = {},
+    relatedServarIds = [],
+    valueRepeatIndex = null
+  }: any) => {
+    if (!eventHasUserLogic('change')) return;
+    const logic = runUserLogic('change', () => ({
+      trigger: {
+        id: fieldKey,
+        _servarId: servarId,
+        _relatedServarIds: relatedServarIds,
+        repeatIndex: elementRepeatIndex,
+        type: triggerType
+      },
+      integrationData,
+      valueRepeatIndex
+    }));
+    callbackRef.current.addCallback(logic);
+    setShouldScrollToTop(false);
+    return logic;
+  };
+
   const fieldOnChange =
     ({ fieldID, fieldKey, servarId, elementRepeatIndex = 0 }: any) =>
     ({
@@ -3785,22 +3811,15 @@ function Form({
       // Multi-file upload is not a repeated row but a repeated field
       valueRepeatIndex = null
     } = {}) => {
-      if (eventHasUserLogic('change')) {
-        callbackRef.current.addCallback(
-          runUserLogic('change', () => ({
-            trigger: {
-              id: fieldKey,
-              _servarId: servarId,
-              _relatedServarIds: relatedServarIds,
-              repeatIndex: elementRepeatIndex,
-              type: triggerType
-            },
-            integrationData,
-            valueRepeatIndex
-          }))
-        );
-        setShouldScrollToTop(false);
-      }
+      runFieldChangeLogic({
+        fieldKey,
+        servarId,
+        elementRepeatIndex,
+        triggerType,
+        integrationData,
+        relatedServarIds,
+        valueRepeatIndex
+      });
 
       let triggered = false;
       if (submitData) {
@@ -3852,8 +3871,15 @@ function Form({
       buttonOnClick,
       runElementActions,
       tableOnClick,
-      changeValue
+      changeValue,
+      runFieldChangeLogic: (field: any, index: number | null) =>
+        runFieldChangeLogic({
+          fieldKey: field.servar.key,
+          servarId: field.servar.id,
+          elementRepeatIndex: index ?? 0
+        })
     };
+    internalState[_internalId].formActions = callbacks;
     if (assistantClientRef.current) {
       assistantClientRef.current.updateCallbacks(callbacks);
     } else {
