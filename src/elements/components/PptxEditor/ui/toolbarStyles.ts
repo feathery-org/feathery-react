@@ -15,6 +15,20 @@ export const FONTS = [
   'Tahoma'
 ];
 
+// Bullet-character library, mirroring PowerPoint's default bullet picker.
+export const BULLET_CHARS = ['•', '○', '■', '▪', '◆', '➢', '✓', '–'];
+
+// Numbering schemes (OOXML buAutoNum types) shown with a sample of their glyphs.
+export const NUMBER_SCHEMES: { scheme: string; sample: string; label: string }[] =
+  [
+    { scheme: 'arabicPeriod', sample: '1.', label: '1. 2. 3.' },
+    { scheme: 'arabicParenR', sample: '1)', label: '1) 2) 3)' },
+    { scheme: 'alphaUcPeriod', sample: 'A.', label: 'A. B. C.' },
+    { scheme: 'alphaLcParenR', sample: 'a)', label: 'a) b) c)' },
+    { scheme: 'romanUcPeriod', sample: 'I.', label: 'I. II. III.' },
+    { scheme: 'romanLcPeriod', sample: 'i.', label: 'i. ii. iii.' }
+  ];
+
 export const SHAPE_PRESETS = [
   {
     geometry: 'rect',
@@ -120,6 +134,55 @@ export const styles = {
     height: 1,
     background: ZINC[200],
     margin: '6px 0'
+  },
+  menuHeading: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: ZINC[500],
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+    padding: '2px 2px 6px'
+  },
+  bulletGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: 4
+  },
+  bulletCell: (on = false) => ({
+    height: 34,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: `1px solid ${on ? ZINC[400] : ZINC[200]}`,
+    borderRadius: 6,
+    background: on ? ZINC[100] : '#fff',
+    color: ZINC[700],
+    fontSize: 16,
+    lineHeight: 1,
+    cursor: 'pointer',
+    '&:hover': { background: ZINC[100], borderColor: ZINC[400] }
+  }),
+  numItem: (on = false) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+    padding: '6px 8px',
+    border: 'none',
+    borderRadius: 6,
+    background: on ? ZINC[100] : 'transparent',
+    color: ZINC[700],
+    fontSize: 12.5,
+    textAlign: 'left' as const,
+    cursor: 'pointer',
+    '&:hover': { background: ZINC[100], color: ZINC[900] }
+  }),
+  numPreview: {
+    fontSize: 12.5,
+    fontWeight: 600,
+    color: ZINC[700],
+    minWidth: 42,
+    whiteSpace: 'pre' as const
   },
   btn: (on = false, disabled = false) => ({
     height: 30,

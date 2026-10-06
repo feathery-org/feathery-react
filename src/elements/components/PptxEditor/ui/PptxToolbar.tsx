@@ -36,7 +36,13 @@ import {
 } from '../../DocxEditor/icons';
 import type { ShapeInsertion, TableEditOperation } from '../engine';
 
-import { FONTS, SHAPE_PRESETS, styles } from './toolbarStyles';
+import {
+  BULLET_CHARS,
+  FONTS,
+  NUMBER_SCHEMES,
+  SHAPE_PRESETS,
+  styles
+} from './toolbarStyles';
 import { B, ColorControl, CommitColorInput } from './toolbarControls';
 import { MenuButton, SubMenu } from './toolbarMenus';
 
@@ -1208,6 +1214,47 @@ export function Toolbar({
               >
                 <BulletListIcon width={16} height={16} />
               </B>
+              <MenuButton
+                title='Bullet style'
+                label=''
+                disabled={!sh?.text}
+                width={176}
+              >
+                {(close) => (
+                  <>
+                    <div css={styles.menuHeading}>Bullets</div>
+                    <div css={styles.bulletGrid}>
+                      {BULLET_CHARS.map((c) => (
+                        <button
+                          key={c}
+                          type='button'
+                          title={`Bullet ${c}`}
+                          css={styles.bulletCell(bulletValue === `char:${c}`)}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            applyBullet(`char:${c}`);
+                            close();
+                          }}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                    <div css={styles.menuDivider} />
+                    <button
+                      type='button'
+                      css={styles.menuItem}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        applyBullet('none');
+                        close();
+                      }}
+                    >
+                      No bullet
+                    </button>
+                  </>
+                )}
+              </MenuButton>
               <B
                 disabled={!sh?.text}
                 on={bulletValue.startsWith('auto:')}
@@ -1222,6 +1269,48 @@ export function Toolbar({
               >
                 <NumberListIcon width={16} height={16} />
               </B>
+              <MenuButton
+                title='Numbering style'
+                label=''
+                disabled={!sh?.text}
+                width={200}
+              >
+                {(close) => (
+                  <>
+                    <div css={styles.menuHeading}>Numbering</div>
+                    {NUMBER_SCHEMES.map((n) => (
+                      <button
+                        key={n.scheme}
+                        type='button'
+                        title={n.label}
+                        css={styles.numItem(
+                          bulletValue === `auto:${n.scheme}`
+                        )}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          applyBullet(`auto:${n.scheme}`);
+                          close();
+                        }}
+                      >
+                        <span css={styles.numPreview}>{n.sample}</span>
+                        <span>{n.label}</span>
+                      </button>
+                    ))}
+                    <div css={styles.menuDivider} />
+                    <button
+                      type='button'
+                      css={styles.menuItem}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        applyBullet('none');
+                        close();
+                      }}
+                    >
+                      No numbering
+                    </button>
+                  </>
+                )}
+              </MenuButton>
               <span css={styles.sep} />
               <ColorControl
                 disabled={!canFillShape}
