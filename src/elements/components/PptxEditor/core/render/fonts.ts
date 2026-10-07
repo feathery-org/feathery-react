@@ -45,39 +45,6 @@ const SYSTEM_FONTS = new Set(
   ].map((f) => f.toLowerCase())
 );
 
-// Per (family|weight) ratio, as a fraction of the em, of the web font's ascent
-// that sits ABOVE the cap height beyond a small typographic gap. PowerPoint
-// positions the first line by its typographic ascent (~cap height + a little),
-// but a web font's line box reserves more space above the caps, so top-anchored
-// text renders lower than PowerPoint. Trimming this ratio off the first line's
-// top margin lifts it to match. Measured once per font via Canvas; 0 when
-// Canvas has no real metrics (jsdom) so SSR/tests are unaffected.
-const topLeadingCache = new Map<string, number>();
-
-export function excessTopLeadingRatio(family: string, weight: number): number {
-  const key = `${family}|${weight}`;
-  const cached = topLeadingCache.get(key);
-  if (cached !== undefined) return cached;
-  let ratio = 0;
-  try {
-    const ctx = featheryDoc().createElement('canvas').getContext('2d');
-    if (ctx) {
-      const EM = 100;
-      ctx.font = `${weight} ${EM}px '${family}', sans-serif`;
-      const ascent = ctx.measureText('Hg').fontBoundingBoxAscent;
-      const cap = ctx.measureText('H').actualBoundingBoxAscent;
-      // GAP is PowerPoint's small space above the caps (~0.1em); keep it so text
-      // doesn't hug the very top. Trim only what the web font adds beyond that.
-      const GAP = 0.1 * EM;
-      if (ascent && cap) ratio = Math.max(0, (ascent - cap - GAP) / EM);
-    }
-  } catch {
-    /* no canvas (jsdom) -> no trim */
-  }
-  topLeadingCache.set(key, ratio);
-  return ratio;
-}
-
 export function splitFontWeight(name: string): {
   family: string;
   weight: number;
