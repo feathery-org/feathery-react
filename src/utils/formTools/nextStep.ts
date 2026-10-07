@@ -166,13 +166,15 @@ export async function nextStepTool(
       await waitForNextCommit(formUuid, captureRenderTick(formUuid));
       snapshot = getStepTool(formUuid);
     }
-    return {
-      status: 'advanced',
-      fromStep,
-      toStep,
-      saved: button.properties?.submit === true,
-      snapshot
-    };
+    // The form navigates without waiting for its save, so `saved` reports
+    // whether that save actually landed
+    const saved =
+      button.properties?.submit === true &&
+      (await afterState.client.submitQueue.then(
+        () => true,
+        () => false
+      ));
+    return { status: 'advanced', fromStep, toStep, saved, snapshot };
   }
 
   const newErrors = diffInlineErrorSnapshots(

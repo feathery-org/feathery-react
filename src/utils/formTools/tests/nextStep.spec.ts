@@ -27,7 +27,10 @@ const nextButton = (
 let buttonOnClickMock: jest.Mock;
 let getNextStepKeyMock: jest.Mock;
 
-const seed = (buttons: any[], opts: { visiblePositions?: any } = {}) => {
+const seed = (
+  buttons: any[],
+  opts: { visiblePositions?: any; submitQueue?: Promise<any> } = {}
+) => {
   const currentStep = {
     id: 'step-1',
     key: 'step-1',
@@ -57,6 +60,7 @@ const seed = (buttons: any[], opts: { visiblePositions?: any } = {}) => {
     logicRules: [],
     formSettings: {},
     formToolsRenderTick: 0,
+    client: { submitQueue: opts.submitQueue ?? Promise.resolve() },
     formToolsCallbacks: {
       changeValue: jest.fn(),
       fieldOnChange: jest.fn(),
@@ -103,6 +107,17 @@ describe('nextStepTool', () => {
     expect(buttonOnClickMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'btn-1' })
     );
+  });
+
+  it('reports saved: false when the step save the click started fails', async () => {
+    const failedSave = Promise.reject(new Error('deadlock detected'));
+    failedSave.catch(() => undefined);
+    seed([nextButton('btn-1')], { submitQueue: failedSave });
+    buttonOnClickMock.mockImplementation(async () => advanceToStep2());
+
+    const result = await nextStepTool(FORM, {});
+
+    expect(result).toMatchObject({ status: 'advanced', saved: false });
   });
 
   it('presses a Next button that only navigates and reports it saved nothing', async () => {
