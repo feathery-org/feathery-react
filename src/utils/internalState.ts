@@ -173,11 +173,9 @@ export type UpdateDocusignEnvelopeParams = {
 };
 
 // Runtime changes a host embedding the form may react to
-export type FormRuntimeEvent = {
-  type: 'step';
-  stepId: string;
-  stepKey: string;
-};
+export type FormRuntimeEvent =
+  | { type: 'step'; stepId: string; stepKey: string }
+  | { type: 'identity' };
 
 export interface FormInternalState {
   language: string | undefined;

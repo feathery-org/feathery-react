@@ -1,5 +1,5 @@
 import { getFormContext } from '../formContext';
-import { initState } from '../init';
+import { defaultClient, initState } from '../init';
 import { setFormInternalState } from '../internalState';
 
 describe('feathery.generateDocuments logic-rule method routing', () => {
@@ -251,5 +251,46 @@ describe('requestIdentity', () => {
     expect(getFormContext(uuid).requestIdentity().headers).toEqual({
       'X-Feathery-Collaborator': 'collab-1'
     });
+  });
+});
+
+describe('subscribe', () => {
+  const uuid = 'formContext-subscribe-test';
+  let originalUserId: string | undefined;
+
+  beforeEach(() => {
+    setFormInternalState(uuid, { fields: {} } as any);
+    originalUserId = initState.userId;
+    jest
+      .spyOn(defaultClient, 'updateUserId')
+      .mockResolvedValue(undefined as any);
+  });
+
+  afterEach(() => {
+    initState.userId = originalUserId;
+    jest.restoreAllMocks();
+  });
+
+  it('delivers runtime events until the host unsubscribes', async () => {
+    const context = getFormContext(uuid);
+    const listener = jest.fn();
+    const unsubscribe = context.subscribe(listener);
+
+    await context.updateUserId('merged-fuser', true);
+    unsubscribe();
+    await context.updateUserId('second-fuser', true);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the host when a merge swaps the submission in place', async () => {
+    const context = getFormContext(uuid);
+    const listener = jest.fn();
+    context.subscribe(listener);
+
+    await context.updateUserId('merged-fuser', true);
+
+    expect(listener).toHaveBeenCalledWith({ type: 'identity' });
+    expect(context.requestIdentity().fuserKey).toBe('merged-fuser');
   });
 });
