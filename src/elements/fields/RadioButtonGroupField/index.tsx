@@ -26,16 +26,18 @@ function RadioButtonGroupField({
   otherVal = '',
   repeatIndex = null,
   editMode,
+  formSettings,
   onChange = () => {},
   onOtherChange = () => {},
   onEnter = () => {},
   elementProps = {},
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const servar = element.servar;
   const containerRef = useRef(null);
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly);
 
   const [otherSelect, setOtherSelect] = useState({});
   const otherChecked =

@@ -15,15 +15,17 @@ function ButtonGroupField({
   fieldVal = null,
   repeatIndex = null,
   editMode,
+  formSettings,
   onClick = () => {},
   elementProps = {},
   disabled = false,
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const containerRef = useRef(null);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly);
 
   const selectedOptMap = useMemo(
     () =>
