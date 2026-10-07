@@ -1283,12 +1283,13 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       numPx(spacingCss(paraProps.spaceBefore, baseFontPx)) - halfLeading;
     const marginBottomPx =
       numPx(spacingCss(paraProps.spaceAfter, baseFontPx)) + halfLeading;
-    // A pixel line-height is inflated by some web fonts' tall metrics (Urbanist
-    // renders ~18% looser than the ratio implies), while 'normal' uses the
-    // font's own line height - which is what PowerPoint single spacing does. So
-    // default/single spacing uses 'normal'; explicit percent/points keep the
-    // pixel value, which aligns multi-line text with fixed rules/dividers.
-    const cssLineHeight = paraProps.lineSpacing ? `${lineHeightPx}px` : 'normal';
+    // PowerPoint single spacing is the font's content line (its typographic
+    // metrics), which is tighter than CSS 'normal' (web fonts like Urbanist
+    // carry extra win-metric leading, rendering ~20% too loose). Unitless 1 asks
+    // for 1x the em; the browser still expands to the font's content box for
+    // taller fonts, so nothing clips. Explicit percent/points keep the pixel
+    // value, which aligns multi-line text with fixed rules/dividers.
+    const cssLineHeight = paraProps.lineSpacing ? `${lineHeightPx}px` : '1';
     css += `margin-top:${marginTopPx}px;margin-bottom:${marginBottomPx}px;line-height:${cssLineHeight};`;
     pDiv.setAttribute('style', css);
 
