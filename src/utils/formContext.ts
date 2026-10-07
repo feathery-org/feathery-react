@@ -1,4 +1,5 @@
 import type { GenerateDocumentRef } from './featheryClient/integrationClient';
+import Field from './entities/Field';
 import { featheryWindow } from './browser';
 import { getAllElements } from './formHelperFunctions';
 import { changeStep } from './stepHelperFunctions';
@@ -34,6 +35,17 @@ import {
   IntegrationActionOptions,
   PageSelectionInput
 } from '@feathery/client-utils';
+
+const uploadFieldIdByKey = (steps: any, fieldKey: string): string | null => {
+  for (const step of Object.values(steps ?? {}) as any[]) {
+    const match = (step?.servar_fields ?? []).find(
+      ({ servar }: any) =>
+        servar.key === fieldKey && servar.type === 'file_upload'
+    );
+    if (match) return match.servar.id;
+  }
+  return null;
+};
 
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
@@ -243,7 +255,7 @@ export const getFormContext = (formUuid: string) => {
         verification
       }),
     generateDocuments: ({
-      documentIds,
+      documentIds: documentSources,
       signers,
       envelopeAction,
       signMethod,
@@ -258,9 +270,10 @@ export const getFormContext = (formUuid: string) => {
       saveDocumentFieldKey,
       redirect
     }: {
-      // A plain template UUID string, or a source object such as the Quik item
-      // `{ kind: 'quik' }` — mirroring the action config's `documents` array.
-      documentIds: GenerateDocumentRef[];
+      // A plain template UUID string, a file upload field itself (e.g.
+      // `FileUpload1`), or a source object such as the Quik item
+      // `{ kind: 'quik' }` — mirroring the action config.
+      documentIds: (GenerateDocumentRef | Field)[];
       // Per-document, per-role signer emails; a document with no entry here
       // gets no signer. `roleId` targets one of the document's signer roles,
       // or is left off to cover every role of that document. `filler` marks
@@ -301,15 +314,17 @@ export const getFormContext = (formUuid: string) => {
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
     }) => {
+      // A field passed as-is is named by key, resolved to its id below.
+      let documentIds: GenerateDocumentRef[] = documentSources.map((doc) =>
+        doc instanceof Field ? { kind: 'file_upload', field_key: doc.id } : doc
+      );
       const usesRichOptions =
         !!signMethod ||
         !!signers?.length ||
         !!envelopeAction ||
         !!toolbarActions?.length ||
         !!repeatable ||
-        documentIds.some(
-          (doc) => typeof doc === 'object' && doc.kind === 'quik'
-        );
+        documentIds.some((doc) => typeof doc !== 'string');
       // Capture explicit Quik inputs before awaiting saves or opening review.
       // Caller edits to the original object must not change this request.
       documentIds = documentIds.map((doc) =>
@@ -323,6 +338,37 @@ export const getFormContext = (formUuid: string) => {
             }
           : doc
       );
+      const unknownUploadKeys: string[] = [];
+      let missingUploadField = false;
+      documentIds = documentIds.map((doc) => {
+        if (typeof doc === 'string' || doc.kind !== 'file_upload') return doc;
+        // Headless forms have no steps; the mounted-<Form /> error below applies.
+        if (!formState.generateEnvelopeFlow) return doc;
+        if (doc.field_id) return doc;
+        if (!doc.field_key) {
+          missingUploadField = true;
+          return doc;
+        }
+        const fieldId = uploadFieldIdByKey(formState.steps, doc.field_key);
+        if (!fieldId) unknownUploadKeys.push(doc.field_key);
+        return { kind: 'file_upload', field_id: fieldId ?? '' };
+      });
+      if (missingUploadField) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: a file upload source needs its field, e.g. ' +
+              'documentIds: [templateId, FileUpload1]'
+          )
+        );
+      }
+      if (unknownUploadKeys.length) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: no file upload field with key ' +
+              unknownUploadKeys.join(', ')
+          )
+        );
+      }
       // Document generation reads whatever the fuser has on file, so pending
       // field edits have to land before it runs or it fills/signs stale data.
       const flushFields = () =>
@@ -330,7 +376,7 @@ export const getFormContext = (formUuid: string) => {
           formState.client.flushCustomFields(),
           defaultClient.flushCustomFields()
         ]);
-      // Quik sources, DocuSign, signers, the editor, and the sign/save
+      // Source objects, DocuSign, signers, the editor, and the sign/save
       // envelope actions all need the same endpoint + editor flow the Generate
       // Documents action uses, so route through the <Form />-registered flow
       // when any are requested. Otherwise keep the simple, backward-compatible
@@ -340,7 +386,17 @@ export const getFormContext = (formUuid: string) => {
           formState.generateEnvelopeFlow!({
             type: 'open_fuser_envelopes',
             documents: documentIds,
-            envelope_action: envelopeAction,
+            // The flow has no separate download flag; it's an envelope action,
+            // unless the call already asks to sign.
+            envelope_action:
+              envelopeAction ??
+              (download &&
+              !signMethod &&
+              !signers?.length &&
+              !toolbarActions?.length &&
+              !redirect
+                ? 'download'
+                : undefined),
             sign_method: signMethod,
             // Omitted rather than nulled: the backend's role_id rejects an
             // explicit null, and leaving it off spreads the email across

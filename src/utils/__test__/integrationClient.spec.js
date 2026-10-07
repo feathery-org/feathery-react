@@ -727,13 +727,18 @@ describe('IntegrationClient', () => {
       expect(result).toEqual(completePayload);
     });
 
-    it('polls with canonical cache keys for a mixed template/quik array', async () => {
+    it('polls with canonical cache keys for a mixed template/quik/upload array', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
       integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
       integrationClient.ENVELOPE_MAX_TIME = 20;
       const action = {
-        documents: ['doc1', { kind: 'quik' }, 'doc2'],
+        documents: [
+          'doc1',
+          { kind: 'quik' },
+          { kind: 'file_upload', field_id: 'f1' },
+          'doc2'
+        ],
         run_async: true,
         envelope_action: 'open_in_editor'
       };
@@ -756,11 +761,69 @@ describe('IntegrationClient', () => {
 
       await integrationClient.generateEnvelopes(action);
 
-      // Must mirror the backend document_cache_keys: quik -> "quik", not
-      // "[object Object]".
+      // Must mirror the backend document_cache_keys, not "[object Object]".
       expect(global.fetch.mock.calls[1][0]).toBe(
-        `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=doc1,quik,doc2`
+        `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=doc1,quik,file_upload:f1,doc2`
       );
+    });
+
+    it('rejects source objects on a document editor container', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      const result = await integrationClient.generateEnvelopes({
+        editor_mode: 'container-abc',
+        documents: ['doc1', { kind: 'file_upload', field_id: 'f1' }]
+      });
+
+      expect(result.status).toBe('error');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('sends template objects to a document editor container as plain ids', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: [] })
+      });
+
+      await integrationClient.generateEnvelopes({
+        editor_mode: 'container-abc',
+        run_async: false,
+        documents: ['doc1', { kind: 'template', document_id: 'doc2' }]
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.documents).toEqual(['doc1', 'doc2']);
+    });
+
+    it('only gives template documents the shared signer field', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      const action = {
+        envelope_signer_field_key: 'signer_field',
+        documents: [
+          'doc1',
+          { kind: 'quik' },
+          { kind: 'file_upload', field_id: 'f1' },
+          { kind: 'template', document_id: 'doc2' },
+          // Kind-less, as the backend accepts it, is a template too.
+          { document_id: 'doc3' }
+        ],
+        run_async: false
+      };
+      Object.assign(fieldValues, { signer_field: 'test@example.com' });
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: [] })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.documents).toEqual(action.documents);
+      expect(body.signers).toEqual([
+        { document_id: 'doc1', email: 'test@example.com', filler: true },
+        { document_id: 'doc2', email: 'test@example.com', filler: true },
+        { document_id: 'doc3', email: 'test@example.com', filler: true }
+      ]);
     });
 
     it('surfaces an error response from the review generate endpoint', async () => {

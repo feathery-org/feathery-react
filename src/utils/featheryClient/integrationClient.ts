@@ -38,8 +38,8 @@ import {
 import { withLinkRequestHeaders } from '../accessLinkRequest';
 
 // A configured Generate Documents entry in the ordered `documents` array: a
-// template UUID string, an explicit template, or one Quik source.
-// The SDK forwards these verbatim (action config -> request field).
+// template UUID string, an explicit template, one Quik source, or a file
+// upload field (a logic rule's `field_key` is resolved to its `field_id`).
 export type QuikDocumentSource = {
   kind: 'quik';
   // Omit to use the configured Quik integration's forms and mappings.
@@ -47,10 +47,36 @@ export type QuikDocumentSource = {
   // Values use Quik field names and never fall back to saved form answers.
   forms?: { id: string | number; fields: Record<string, string> }[];
 };
+// Every file uploaded to the field becomes a document, converted to PDF.
+// Logic rules name the field by `field_key`, resolved to `field_id` before sending.
+export type FileUploadDocumentSource =
+  | { kind: 'file_upload'; field_id: string; field_key?: never }
+  | { kind: 'file_upload'; field_key: string; field_id?: never };
 export type GenerateDocumentRef =
   | string
   | QuikDocumentSource
+  | FileUploadDocumentSource
   | { kind: 'template'; document_id: string };
+
+// The template id a document entry names, or null for a non-template source.
+export const documentRefTemplateId = (
+  doc: GenerateDocumentRef
+): string | null => {
+  if (typeof doc === 'string') return doc;
+  // A kind-less object is a template, as on the backend.
+  const ref = doc as Record<string, any>;
+  return (ref.kind ?? 'template') === 'template'
+    ? ref.document_id ?? null
+    : null;
+};
+
+// Must match the backend's document_cache_keys, which key the generate poll.
+const documentRefCacheKey = (doc: GenerateDocumentRef) => {
+  if (typeof doc === 'string') return doc;
+  if (doc.kind === 'quik') return 'quik';
+  if (doc.kind === 'file_upload') return `file_upload:${doc.field_id}`;
+  return String(doc.document_id);
+};
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -684,9 +710,16 @@ export default class IntegrationClient {
     const roleDocumentIds = new Set(
       roleSigners.map((entry: any) => entry.document_id)
     );
+    // Only templates have signer roles; other sources have no document id.
+    const templateIdOrNull: (string | null)[] = documentIds.map(
+      documentRefTemplateId
+    );
+    const templateIds = templateIdOrNull.filter(
+      (documentId): documentId is string => !!documentId
+    );
     const signers = [
       ...roleSigners,
-      ...documentIds
+      ...templateIds
         .filter((documentId: any) => !roleDocumentIds.has(documentId))
         .map((documentId: any) => ({
           document_id: documentId,
@@ -710,13 +743,22 @@ export default class IntegrationClient {
     // viewer. Targeting a container therefore keeps the plain generate flow.
     // A polymorphic entry has to take the direct call too. client-utils'
     // generateFormDocuments interpolates `documentIds` straight into its poll
-    // URL, so a {kind:'quik'} entry stringifies to "[object Object]" and never
-    // matches the backend's document_cache_keys ("quik" for that item). The
+    // URL, so an object entry stringifies to "[object Object]" and never
+    // matches the backend's document_cache_keys (e.g. "quik"). The
     // documents generate fine and then the first poll 400s "No document
     // generation". generateEnvelopesForEditor maps the keys correctly.
     const hasPolymorphicDocument = documentIds.some(
       (doc: GenerateDocumentRef) => typeof doc !== 'string'
     );
+
+    if (editorContainerId(action) && templateIdOrNull.includes(null)) {
+      return {
+        status: 'error',
+        message:
+          'A document editor container can only open template documents. ' +
+          'Remove the Quik or file upload sources from this action.'
+      };
+    }
 
     if (
       (openInEditor ||
@@ -739,10 +781,12 @@ export default class IntegrationClient {
       });
     }
 
+    // client-utils interpolates ids into its poll URL, so template objects
+    // are sent as their plain ids.
     return await apiGenerateFormDocuments({
       sdkKey,
       formId: this.formKey,
-      documentIds,
+      documentIds: templateIdOrNull as string[],
       userId,
       signers,
       repeatable,
@@ -916,19 +960,9 @@ export default class IntegrationClient {
     if (!response.ok) return { status: 'error', message: parseAPIError(data) };
     if (!runAsync || data.documents) return data;
 
-    // Poll `dids` must match the backend's document_cache_keys: a template's
-    // UUID string, or the literal "quik" for the quik item. Interpolating the
-    // raw array would stringify a {kind:'quik'} entry to "[object Object]" and
-    // never match the cache.
-    const dids = documentIds
-      .map((doc) =>
-        typeof doc === 'string'
-          ? doc
-          : doc.kind === 'quik'
-          ? 'quik'
-          : String(doc.document_id)
-      )
-      .join(',');
+    // Interpolating the raw array would stringify an object entry to
+    // "[object Object]" and never match the backend's cache keys.
+    const dids = documentIds.map(documentRefCacheKey).join(',');
     const pollUrl = `${getApiUrl()}document/form/generate/poll/?fid=${userId}&dids=${dids}`;
     return await this.pollUntilComplete(
       pollUrl,

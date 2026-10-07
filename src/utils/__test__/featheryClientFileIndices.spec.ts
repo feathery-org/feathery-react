@@ -16,6 +16,7 @@ jest.mock('../init', () => ({
   filePathMap: {},
   fileDeduplicationCount: {},
   fileRetryStatus: {},
+  restoredFileKeys: new Set(),
   setFieldValues: () => {},
   markStepCompleted: () => {},
   registerKnownFieldKeys: () => {},
@@ -106,6 +107,29 @@ describe('repeatable file upload wire format', () => {
     const body = bodyOf(client);
     expect(body.getAll('f')).toEqual(['']);
     expect(indicesOf(body)).toBeNull();
+  });
+
+  it('force-clears an empty field only when it was restored', async () => {
+    // A file restored from an earlier session has no upload this session.
+    delete jest.requireMock('../init').fileRetryStatus.f;
+    const client = newClient();
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step');
+    // Not restored, so the server may hold a file this client never saw.
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step', true);
+    expect(client._fetch).not.toHaveBeenCalled();
+
+    // Picked and removed in this tab leaves a filePathMap entry too, which
+    // doesn't make it restored.
+    filePathMap.f = null;
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step', true);
+    expect(client._fetch).not.toHaveBeenCalled();
+
+    // Restored, then removed.
+    const { restoredFileKeys } = jest.requireMock('../init');
+    restoredFileKeys.add('f');
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step', true);
+    expect(bodyOf(client).getAll('f')).toEqual(['']);
+    restoredFileKeys.clear();
   });
 
   it('sends no indices for a non-repeated multi-file field', async () => {

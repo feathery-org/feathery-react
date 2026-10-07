@@ -1,4 +1,12 @@
-import { init, initInfo, initState, registerTextVariableFields } from '../init';
+import {
+  init,
+  initInfo,
+  initState,
+  registerTextVariableFields,
+  restoredFileKeys,
+  updateUserId
+} from '../init';
+import { processFileValues } from '../formHelperFunctions';
 import { clearOptionLabels, getOptionLabel } from '../optionLabels';
 
 describe('init', () => {
@@ -250,5 +258,19 @@ describe('init', () => {
       expect(() => registerTextVariableFields(input)).not.toThrow();
       expect(initState.textVariableFormats).toEqual({});
     });
+  });
+});
+
+describe('restoredFileKeys', () => {
+  it('holds restored file fields until the submission changes', async () => {
+    init('sdkKey', { userId: 'old-submission' });
+    global.fetch = jest.fn().mockResolvedValue({
+      blob: () => Promise.resolve(new Blob(['x']))
+    }) as any;
+    processFileValues({ f: { url: 'https://x/a.pdf', path: 'a.pdf' } });
+    expect(restoredFileKeys.has('f')).toBe(true);
+
+    await updateUserId('new-submission');
+    expect(restoredFileKeys.has('f')).toBe(false);
   });
 });
