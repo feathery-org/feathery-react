@@ -711,11 +711,12 @@ export default class IntegrationClient {
       roleSigners.map((entry: any) => entry.document_id)
     );
     // Only templates have signer roles; other sources have no document id.
-    const templateIds = documentIds
-      .map(documentRefTemplateId)
-      .filter(
-        (documentId: string | null): documentId is string => !!documentId
-      );
+    const templateIdOrNull: (string | null)[] = documentIds.map(
+      documentRefTemplateId
+    );
+    const templateIds = templateIdOrNull.filter(
+      (documentId): documentId is string => !!documentId
+    );
     const signers = [
       ...roleSigners,
       ...templateIds
@@ -750,7 +751,6 @@ export default class IntegrationClient {
       (doc: GenerateDocumentRef) => typeof doc !== 'string'
     );
 
-    const templateIdOrNull = documentIds.map(documentRefTemplateId);
     if (editorContainerId(action) && templateIdOrNull.includes(null)) {
       return {
         status: 'error',
