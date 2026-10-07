@@ -17,6 +17,7 @@ import {
   type LinkRedemption
 } from './accessLink';
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
+import internalState from './internalState';
 import { parseUserVal } from './entities/Field';
 import { authState } from '../auth/LoginForm';
 // mask.ts imports nothing, so this stays free of the import cycles the rest of
@@ -304,6 +305,13 @@ async function updateUserId(newUserId?: string, merge = false): Promise<void> {
     // for by rerenderAllForms
     if (authState.authId) location.reload();
     else remountAllForms();
+  } else {
+    // A merge keeps the forms mounted, so hosts are told the submission identity changed
+    Object.values(internalState).forEach((formState) =>
+      formState?.runtimeListeners?.forEach((listener) =>
+        listener({ type: 'identity' })
+      )
+    );
   }
 }
 

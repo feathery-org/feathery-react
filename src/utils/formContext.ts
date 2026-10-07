@@ -92,7 +92,7 @@ export const getFormContext = (formUuid: string) => {
       if (changed) formState.latestStepName = stepKey;
     },
     isTestForm: () => initState.isTestEnv,
-    // What the person sees right now: current step, its fields and elements, entered values
+    // What the person sees right now: current step, every field's value, hidden fields
     snapshot: () => getPanelRuntimeSnapshot(formUuid),
     // What a host sends with its own backend requests to act as this submission, read when the request is made
     requestIdentity: (): {

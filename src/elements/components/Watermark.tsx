@@ -36,7 +36,8 @@ export default function Watermark({
       style={{
         position: 'fixed',
         zIndex: MODAL_Z_INDEX + 1,
-        transition: 'right 220ms cubic-bezier(0.2, 0.75, 0.2, 1)',
+        transition:
+          'right var(--feathery-fixed-inset-duration, 220ms) cubic-bezier(0.2, 0.75, 0.2, 1)',
         ...horizontalAlignment,
         ...verticalAlignment
       }}
