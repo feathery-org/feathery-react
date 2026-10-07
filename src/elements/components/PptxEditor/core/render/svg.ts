@@ -1154,7 +1154,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
   if (!shape.text || !shape.text.paragraphs.length) return null;
   const body = readBodyProps(shape.text.node);
   const anchor = body.anchor || 't';
-  const justify =
+  let justify =
     anchor === 'ctr'
       ? 'center'
       : anchor === 'b'
@@ -1184,6 +1184,18 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
   };
   const [insT, insB] = clampInsets(insetT, insetB, px(h));
   const [insL, insR] = clampInsets(insetL, insetR, px(w));
+  // A box shorter than a single line can't honor top/bottom anchoring - the one
+  // line overflows it. PowerPoint centers such a label on its box (common for
+  // small pill labels sized to the text); top-anchoring would spill it below.
+  const firstPara = shape.text.paragraphs[0];
+  const firstSizePt =
+    firstPara?.runs?.[0]?.sizePt ??
+    (curDeck && curSlide
+      ? resolveListProps(curDeck, curSlide, shape, firstPara?.level ?? 0).defRPr
+          ?.sizePt
+      : undefined) ??
+    18;
+  if (px(h) < ptToCssPx(firstSizePt) * fontScale * 1.2) justify = 'center';
 
   const g = featheryDoc().createElementNS(SVGNS, 'g') as SVGGElement;
   g.setAttribute('transform', `scale(${EMU_PER_PX})`);
