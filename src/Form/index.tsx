@@ -3,6 +3,7 @@ import React, {
   ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -153,6 +154,7 @@ import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
+import { FormWebMCPTools, hasWebMCPRuntime } from '../utils/formTools/webmcp';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
@@ -341,6 +343,10 @@ export interface Props {
   _draft?: boolean;
   readOnly?: boolean;
   hashNavigation?: boolean;
+  // Registers feathery_get_step/fill_step/next_step on document.modelContext
+  // when it's also present (the host page's WebMCP polyfill, or native
+  // support). Off by default: every other hosted form stays untouched.
+  enableFormTools?: boolean;
 }
 
 interface InternalProps {
@@ -448,7 +454,8 @@ function Form({
   className = '',
   children,
   readOnly = false,
-  hashNavigation
+  hashNavigation,
+  enableFormTools = false
 }: InternalProps & Props) {
   const [formName, setFormName] = useState('');
   const [formId, setFormId] = useState(formIdProp);
@@ -1891,6 +1898,20 @@ function Form({
       internalState[_internalId].visiblePositions = visiblePositions;
     }
   }
+
+  // formTools (src/utils/formTools) writes a field the same way a user
+  // change would, then needs to know once this component has actually
+  // re-rendered with the result: visiblePositions and inlineErrors only land
+  // in internalState above, which only runs when this function body runs
+  // again, and that can trail a write by a debounce (hideIf rerenders,
+  // Field.ts's rule-triggered rerender) rather than happening immediately.
+  // Bumping a tick on every commit, with no deps, gives fillStep.ts a signal
+  // to poll for instead of guessing how long any of that takes.
+  useLayoutEffect(() => {
+    if (!internalState[_internalId]) return;
+    internalState[_internalId].formToolsRenderTick =
+      (internalState[_internalId].formToolsRenderTick ?? 0) + 1;
+  });
 
   useEffect(() => {
     if (clientRef.current) return;
@@ -3860,6 +3881,15 @@ function Form({
       assistantClientRef.current = new AssistantClient(callbacks);
       internalState[_internalId].assistantClient = assistantClientRef.current;
     }
+    // Sibling callback set for formTools (src/utils/formTools): needs
+    // fieldOnChange and getNextStepKey too, which AssistantClient doesn't take
+    internalState[_internalId].formToolsCallbacks = {
+      changeValue,
+      fieldOnChange,
+      getNextStepKey,
+      buttonOnClick,
+      awaitChangeRules: () => callbackRef.current.all()
+    };
   }
 
   const form = {
@@ -4052,6 +4082,9 @@ function Form({
         )}
         {flinksFrame}
         <Grid step={activeStep} form={form} viewport={viewport} />
+        {enableFormTools && hasWebMCPRuntime() && (
+          <FormWebMCPTools formUuid={_internalId} />
+        )}
         {popupOptions && (
           <CloseIcon
             fill='white'

@@ -409,3 +409,73 @@ describe('useCheckButtonAction behavior', () => {
     expect(api.isButtonActionRunning()).toBe(false);
   });
 });
+
+describe('enableFormTools', () => {
+  const registerTool = jest.fn(() => Promise.resolve());
+
+  afterEach(() => {
+    registerTool.mockClear();
+    delete (document as any).modelContext;
+  });
+
+  it('registers the form tools when enableFormTools is on and a WebMCP runtime exists', async () => {
+    (document as any).modelContext = { registerTool };
+
+    render(<JSForm formId='f1' _internalId='iid-tools-on' enableFormTools />);
+    await screen.findByTestId('btn');
+
+    expect(registerTool.mock.calls.map(([tool]: any) => tool.name)).toEqual([
+      'feathery_get_step',
+      'feathery_fill_step',
+      'feathery_next_step'
+    ]);
+  });
+
+  it('does not register tools when enableFormTools is left off', async () => {
+    (document as any).modelContext = { registerTool };
+
+    render(<JSForm formId='f1' _internalId='iid-tools-off' />);
+    await screen.findByTestId('btn');
+
+    expect(registerTool).not.toHaveBeenCalled();
+  });
+
+  it('does not register tools without a document.modelContext runtime', async () => {
+    render(
+      <JSForm formId='f1' _internalId='iid-tools-no-runtime' enableFormTools />
+    );
+    await screen.findByTestId('btn');
+
+    expect(registerTool).not.toHaveBeenCalled();
+  });
+
+  it('exposes formToolsCallbacks.buttonOnClick, which drives the same click handling a real click would', async () => {
+    (internalState as any)['iid-tools-click'] = {};
+
+    render(
+      <JSForm formId='f1' _internalId='iid-tools-click' enableFormTools />
+    );
+    await screen.findByTestId('btn');
+
+    const callbacks = (internalState as any)['iid-tools-click']
+      .formToolsCallbacks;
+    expect(typeof callbacks?.buttonOnClick).toBe('function');
+
+    await act(async () => {
+      await callbacks.buttonOnClick({ id: 'b1', properties: { actions: [] } });
+    });
+
+    // The same tracked-button-state side effect a real DOM click on this
+    // button produces (see 'JSForm flow: tracks button state...' above) -
+    // proving this is the identical buttonOnClick, not a stand-in.
+    expect(
+      CheckButtonActionMod._spies.updateButtonActionState
+    ).toHaveBeenCalledWith(
+      'button',
+      expect.objectContaining({ id: 'b1' }),
+      undefined
+    );
+
+    delete (internalState as any)['iid-tools-click'];
+  });
+});
