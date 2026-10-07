@@ -42,22 +42,37 @@ export default class CallbackQueue {
       });
 
       this.queue.push(promise);
+      // A promise that settles - rejected or not - would otherwise sit in
+      // this.queue forever, since nothing here ever removed one. A rejected
+      // one left behind re-rejects every later Promise.all(this.queue) on the
+      // SAME old failure, even once nothing is actually still failing. Drop
+      // it once it settles so only promises still in flight can fail a later
+      // all().
+      const forget = () => {
+        const idx = this.queue.indexOf(promise);
+        if (idx !== -1) this.queue.splice(idx, 1);
+      };
+      promise.then(forget, forget);
 
       if (!this.awaiting) {
         this.awaiting = true;
-        this._clearQueueLoader(this.queue.length).then(
-          () => (this.awaiting = false)
-        );
+        this._clearQueueLoader().finally(() => (this.awaiting = false));
       }
     }
   }
 
-  _clearQueueLoader(oldLen: any) {
-    return this.all().then(async () => {
-      const newLen = this.queue.length;
-      if (newLen > oldLen) await this._clearQueueLoader(newLen);
-      else this.setLoaders({});
-    });
+  // Removing a settled promise above means this.queue no longer only grows,
+  // so this can't compare lengths before/after to detect a late addition the
+  // way it used to. Instead it just waits until the queue is actually empty,
+  // tolerating a rejection along the way (addCallback still reports it to
+  // the caller; this loop only owns the loading indicator).
+  _clearQueueLoader(): Promise<void> {
+    return this.all()
+      .catch(() => undefined)
+      .then(() => {
+        if (this.queue.length > 0) return this._clearQueueLoader();
+        this.setLoaders({});
+      });
   }
 
   all() {
