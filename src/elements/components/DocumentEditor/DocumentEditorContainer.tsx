@@ -148,6 +148,7 @@ type WrapStyle = {
   minHeight: number | string;
   overflow: string;
   position: 'relative';
+  aspectRatio?: string;
 };
 
 const wrap: WrapStyle = {
@@ -159,10 +160,13 @@ const wrap: WrapStyle = {
   position: 'relative'
 };
 
-// The pptx editor fills its container absolutely, so it contributes no
-// intrinsic height; a `fit`-height host container would collapse it to 0.
-// A floor keeps it usable even when it shares a step. It scrolls internally.
-const editorWrap: WrapStyle = { ...wrap, minHeight: 'min(640px, 80vh)' };
+// The pptx editor fills its container absolutely, so it contributes no intrinsic
+// height. When the host container has a height the editor fills it exactly (like
+// docx); when the host is content-sized (`fit`), `height:100%` is indefinite, so
+// aspect-ratio gives the editor a sensible height instead of collapsing to 0.
+// This keeps the editor within the container's bounds rather than forcing a fixed
+// floor that overflows smaller containers. It scrolls internally.
+const editorWrap: WrapStyle = { ...wrap, aspectRatio: '16 / 10' };
 
 // A container whose content is a document editor bound to a Document template.
 // At runtime it loads the submission's current envelope for that document and
