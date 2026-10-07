@@ -15,6 +15,7 @@ import {
 import { maskFieldValue } from './mask';
 import { clearFilePathMapEntry } from '../formHelperFunctions';
 import { captureRenderTick, waitForNextCommit } from './renderTick';
+import { getStepTool } from './getStep';
 import { FillFieldResult, FillStepResult } from './types';
 
 const MULTI_VALUE_TYPES = new Set([
@@ -339,6 +340,7 @@ export async function fillStepTool(
     step: finalSnapshot.activeStepKey,
     fields,
     newlyShown,
-    errors
+    errors,
+    snapshot: getStepTool(formUuid)
   };
 }

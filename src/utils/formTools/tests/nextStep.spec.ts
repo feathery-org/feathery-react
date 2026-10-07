@@ -1,6 +1,7 @@
 import internalState from '../../internalState';
 import { _clearUnsavedWorkRegistry, setUnsavedWork } from '../../unsavedWork';
 import { nextStepTool } from '../nextStep';
+import { getStepTool } from '../getStep';
 
 const FORM = 'next-step-form';
 
@@ -55,6 +56,7 @@ const seed = (buttons: any[], opts: { visiblePositions?: any } = {}) => {
     inlineErrors: {},
     logicRules: [],
     formSettings: {},
+    formToolsRenderTick: 0,
     formToolsCallbacks: {
       changeValue: jest.fn(),
       fieldOnChange: jest.fn(),
@@ -66,6 +68,17 @@ const seed = (buttons: any[], opts: { visiblePositions?: any } = {}) => {
   return currentStep;
 };
 
+// Simulates <Form/>'s useLayoutEffect (bumped once per real commit) plus the
+// currentStep/latestStepName write a real navigation makes together -
+// without it, waitForNextCommit (nextStep.ts) would poll forever here, since
+// nothing in these tests ever mounts a real <Form/>.
+const advanceToStep2 = () => {
+  const state = (internalState as any)[FORM];
+  state.currentStep = state.steps['step-2'];
+  state.latestStepName = 'step-2';
+  state.formToolsRenderTick = (state.formToolsRenderTick ?? 0) + 1;
+};
+
 afterEach(() => {
   delete (internalState as any)[FORM];
   _clearUnsavedWorkRegistry();
@@ -75,9 +88,7 @@ afterEach(() => {
 describe('nextStepTool', () => {
   it("advances via the step's own submit+next button", async () => {
     seed([nextButton('btn-1')]);
-    buttonOnClickMock.mockImplementation(async () => {
-      (internalState as any)[FORM].latestStepName = 'step-2';
-    });
+    buttonOnClickMock.mockImplementation(async () => advanceToStep2());
 
     const result = await nextStepTool(FORM, {});
 
@@ -85,8 +96,10 @@ describe('nextStepTool', () => {
       status: 'advanced',
       fromStep: 'step-1',
       toStep: 'step-2',
-      saved: true
+      saved: true,
+      snapshot: getStepTool(FORM)
     });
+    expect(result.snapshot.step).toEqual({ id: 'step-2', key: 'step-2' });
     expect(buttonOnClickMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'btn-1' })
     );
@@ -94,9 +107,7 @@ describe('nextStepTool', () => {
 
   it('presses a Next button that only navigates and reports it saved nothing', async () => {
     seed([nextButton('btn-1', { submit: false })]);
-    buttonOnClickMock.mockImplementation(async () => {
-      (internalState as any)[FORM].latestStepName = 'step-2';
-    });
+    buttonOnClickMock.mockImplementation(async () => advanceToStep2());
 
     const result = await nextStepTool(FORM, {});
 
@@ -104,7 +115,8 @@ describe('nextStepTool', () => {
       status: 'advanced',
       fromStep: 'step-1',
       toStep: 'step-2',
-      saved: false
+      saved: false,
+      snapshot: getStepTool(FORM)
     });
   });
 
@@ -117,9 +129,7 @@ describe('nextStepTool', () => {
       '0': [true],
       '1': [true]
     };
-    buttonOnClickMock.mockImplementation(async () => {
-      (internalState as any)[FORM].latestStepName = 'step-2';
-    });
+    buttonOnClickMock.mockImplementation(async () => advanceToStep2());
 
     await nextStepTool(FORM, {});
 

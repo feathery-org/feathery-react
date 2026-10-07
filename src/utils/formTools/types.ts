@@ -68,6 +68,7 @@ export type FillStepResult = {
   fields: Record<string, FillFieldResult>;
   newlyShown: string[];
   errors: Record<string, string>;
+  snapshot: GetStepResult;
 };
 
 export type FileInput = { name: string; mimeType: string; dataBase64: string };
@@ -82,4 +83,6 @@ export type NextStepResult = {
   saved?: boolean;
   errors?: Record<string, string>;
   reason?: string;
+  // The new step, present only when status is 'advanced'
+  snapshot?: GetStepResult;
 };

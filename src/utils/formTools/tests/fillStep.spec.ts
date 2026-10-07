@@ -12,6 +12,7 @@ jest.mock('../../validation', () => ({
 
 import internalState from '../../internalState';
 import { fillStepTool } from '../fillStep';
+import { getStepTool } from '../getStep';
 
 const FORM = 'fill-step-form';
 
@@ -490,5 +491,24 @@ describe('fillStepTool', () => {
     });
 
     expect(result.newlyShown).toEqual(['reveal_field']);
+  });
+
+  it("returns a post-fill snapshot matching get_step's own labels and masking", async () => {
+    seed([
+      field({
+        servar: { key: 'ssn', type: 'ssn', name: 'Social Security Number' }
+      })
+    ]);
+
+    const result = await fillStepTool(FORM, { values: { ssn: '123456789' } });
+
+    expect(result.snapshot).toEqual(getStepTool(FORM));
+    expect(result.snapshot.fields).toEqual([
+      expect.objectContaining({
+        key: 'ssn',
+        label: 'Social Security Number',
+        value: '••••6789'
+      })
+    ]);
   });
 });

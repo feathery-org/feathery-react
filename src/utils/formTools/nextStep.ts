@@ -11,6 +11,8 @@ import {
   getLiveStepKey,
   snapshotInlineErrors
 } from '../../assistant/tools/utils';
+import { captureRenderTick, waitForNextCommit } from './renderTick';
+import { getStepTool } from './getStep';
 import { NextStepResult } from './types';
 
 // Grouped by the categories the contract names (identity / bank / payment /
@@ -156,13 +158,22 @@ export async function nextStepTool(
 
   const afterState = internalState[formUuid];
   const toStep = getLiveStepKey(afterState) ?? afterState?.currentStep?.key;
-  if (toStep && toStep !== fromStep)
+  if (toStep && toStep !== fromStep) {
+    // The click's own re-renders can commit before the new step does, so
+    // wait for a commit that actually shows it
+    let snapshot = getStepTool(formUuid);
+    while (snapshot.step.key !== toStep) {
+      await waitForNextCommit(formUuid, captureRenderTick(formUuid));
+      snapshot = getStepTool(formUuid);
+    }
     return {
       status: 'advanced',
       fromStep,
       toStep,
-      saved: button.properties?.submit === true
+      saved: button.properties?.submit === true,
+      snapshot
     };
+  }
 
   const newErrors = diffInlineErrorSnapshots(
     errorsBefore,

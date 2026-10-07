@@ -141,6 +141,7 @@ const TestFormHost = () => {
     changeValue,
     fieldOnChange,
     getNextStepKey: () => undefined,
+    buttonOnClick: async () => undefined,
     awaitChangeRules: () => queueRef.current!.all()
   };
 
