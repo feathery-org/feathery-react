@@ -18,7 +18,11 @@ import { OPCPackage } from '../opc/package';
 import { trackObjectUrl } from '../opc/objectUrls';
 import { featheryDoc } from '../../../../../utils/browser';
 import { themeFonts, resolveFont, type ThemeFonts } from '../model/theme';
-import { ensureDeckFontsLoaded, splitFontWeight } from './fonts';
+import {
+  ensureDeckFontsLoaded,
+  excessTopLeadingRatio,
+  splitFontWeight
+} from './fonts';
 import { readSlide } from '../model/import';
 import { resolveListProps } from '../model/resolve';
 import {
@@ -1184,18 +1188,12 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
   };
   const [insT, insB] = clampInsets(insetT, insetB, px(h));
   const [insL, insR] = clampInsets(insetL, insetR, px(w));
-  // A box shorter than a single line can't honor top/bottom anchoring - the one
-  // line overflows it. PowerPoint centers such a label on its box (common for
-  // small pill labels sized to the text); top-anchoring would spill it below.
-  const firstPara = shape.text.paragraphs[0];
-  const firstSizePt =
-    firstPara?.runs?.[0]?.sizePt ??
-    (curDeck && curSlide
-      ? resolveListProps(curDeck, curSlide, shape, firstPara?.level ?? 0).defRPr
-          ?.sizePt
-      : undefined) ??
-    18;
-  if (px(h) < ptToCssPx(firstSizePt) * fontScale * 1.2) justify = 'center';
+  // PowerPoint positions the first line by the font's typographic ascent, which
+  // is close to the cap height; a web font's line box is taller (extra ascent
+  // leading), so top/centered text sits lower than PowerPoint. For top-anchored
+  // text, trim that excess above the first line so it sits where PowerPoint puts
+  // it. (Centered/bottom text keeps the full box - its anchor already balances.)
+  const topAnchored = justify === 'flex-start';
 
   const g = featheryDoc().createElementNS(SVGNS, 'g') as SVGGElement;
   g.setAttribute('transform', `scale(${EMU_PER_PX})`);
@@ -1302,10 +1300,19 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       (lineHeightPx - baseFontPx * NATURAL_LINE) / 2
     );
     const numPx = (v: string | undefined) => (v ? parseFloat(v) : 0);
-    const marginTopPx =
+    let marginTopPx =
       numPx(spacingCss(paraProps.spaceBefore, baseFontPx)) - halfLeading;
     const marginBottomPx =
       numPx(spacingCss(paraProps.spaceAfter, baseFontPx)) + halfLeading;
+    // Lift the first line of a top-anchored box by the web font's excess ascent
+    // leading so it sits where PowerPoint (typographic ascent) does.
+    if (paragraphIndex === 0 && topAnchored) {
+      const fw = splitFontWeight(
+        resolveFont(p.runs[0]?.font ?? paraDef?.font, svgThemeFonts)
+      );
+      const wt = (p.runs[0]?.bold ?? paraDef?.bold) ? 700 : fw.weight;
+      marginTopPx -= excessTopLeadingRatio(fw.family, wt) * baseFontPx;
+    }
     // PowerPoint single spacing is the font's content line (its typographic
     // metrics), which is tighter than CSS 'normal' (web fonts like Urbanist
     // carry extra win-metric leading, rendering ~20% too loose). Unitless 1 asks
