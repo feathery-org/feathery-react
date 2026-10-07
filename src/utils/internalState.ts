@@ -179,6 +179,33 @@ export type FormRuntimeEvent = {
   stepKey: string;
 };
 
+// Closures formTools (src/utils/formTools) needs to write a field exactly like
+// a user change and wait for the rules that write queued. A sibling of
+// AssistantClient's callback set so the existing assistant stays untouched.
+export type FormToolsCallbacks = {
+  changeValue: (value: any, field: any, index?: number | null) => any;
+  fieldOnChange: (args: {
+    fieldID: string;
+    fieldKey: string;
+    servarId: string;
+    elementRepeatIndex?: number;
+  }) => (opts?: Record<string, any>) => void;
+  getNextStepKey: (metadata: {
+    elementType: string;
+    elementIDs: string[];
+  }) => string | null | undefined;
+  // Presses a button exactly as a real click would (Form/index.tsx's own
+  // buttonOnClick), for feathery_next_step (src/utils/formTools/nextStep.ts).
+  buttonOnClick: (button: {
+    id: string;
+    properties: Record<string, any>;
+    repeat?: any;
+  }) => Promise<void>;
+  // Resolves once the change-rule callbacks queued by the last fieldOnChange
+  // call have finished (CallbackQueue.all()).
+  awaitChangeRules: () => Promise<any>;
+};
+
 export interface FormInternalState {
   language: string | undefined;
   currentStep: any;
@@ -188,6 +215,12 @@ export interface FormInternalState {
   visiblePositions: any;
   logicRules?: LogicRule[];
   assistantClient?: AssistantClient;
+  formToolsCallbacks?: FormToolsCallbacks;
+  // Bumped once per commit by <Form/>'s useLayoutEffect (no deps). Lets
+  // formTools/fillStep.ts wait for a specific commit to land instead of
+  // guessing a delay. Undefined when no <Form/> is mounted for this id (e.g.
+  // a unit test driving the tools straight against internalState).
+  formToolsRenderTick?: number;
   runtimeListeners?: Set<(event: FormRuntimeEvent) => void>;
   client: FeatheryClient;
   formName: string;

@@ -175,7 +175,7 @@ function validateSetFieldValue(
   return { ok: true, field: found, servar, value };
 }
 
-function resolveOptions(
+export function resolveOptions(
   servar: any,
   repeatIndex: number | undefined
 ): Array<{ value: string; label: string }> {
@@ -202,7 +202,7 @@ function resolveOptions(
   }));
 }
 
-function checkValueAgainstField(
+export function checkValueAgainstField(
   servar: any,
   value: unknown,
   repeatIndex: number | undefined
@@ -294,7 +294,7 @@ function checkValueAgainstField(
   return null;
 }
 
-function normalizeGmapState(value: unknown, servar: any): unknown {
+export function normalizeGmapState(value: unknown, servar: any): unknown {
   if (typeof value !== 'string' || !value) return value;
 
   const wantShort = !!servar.metadata?.store_abbreviation;
@@ -311,7 +311,7 @@ function normalizeGmapState(value: unknown, servar: any): unknown {
   return wantShort ? match.code : match.name;
 }
 
-async function normalizePhone(
+export async function normalizePhone(
   value: unknown,
   servar: any,
   state: any,
