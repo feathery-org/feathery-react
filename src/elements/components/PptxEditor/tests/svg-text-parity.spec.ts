@@ -239,3 +239,33 @@ it('stacks and loads metric clones for Microsoft fonts', () => {
   expect(plain.style.fontFamily).toContain('Futura');
   expect(plain.style.fontFamily).not.toContain('Carlito');
 });
+
+it("sizes the paragraph strut from the paragraph's own lead run", () => {
+  const deck = importDeck(
+    new Uint8Array(readFileSync(resolve(__dirname, 'fixtures/sample.pptx')))
+  );
+  const slide = deck.slides.find((candidate) =>
+    candidate.shapes.some((shape) =>
+      shape.text?.paragraphs.some((paragraph) => paragraph.runs.length)
+    )
+  )!;
+  const shape = slide.shapes.find((candidate) =>
+    candidate.text?.paragraphs.some((paragraph) => paragraph.runs.length)
+  )!;
+  const run = shape.text!.paragraphs.find((paragraph) => paragraph.runs.length)!
+    .runs[0];
+  const rPr = run.rPr || el('a:rPr');
+  if (!run.rPr) childrenOf(run.node).unshift(rPr);
+  setAttr(rPr, 'sz', '800'); // 8pt chip text, well under the 16px app default
+  childrenOf(rPr).push(el('a:latin', { typeface: 'Urbanist' }));
+  refreshShapeText(shape);
+
+  const para = renderSlideSvg(deck, slide).querySelector(
+    `[data-shape-id="${shape.id}"] [data-textbody] div[data-source-paragraph]`
+  ) as HTMLElement;
+  // Without an explicit font, line-height:1 would size the line box's strut
+  // from the inherited host font (16px), sinking sub-16px text below where
+  // PowerPoint draws it.
+  expect(Number.parseFloat(para.style.fontSize)).toBeCloseTo((8 * 96) / 72);
+  expect(para.style.fontFamily).toContain('Urbanist');
+});

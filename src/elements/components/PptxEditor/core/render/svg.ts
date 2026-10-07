@@ -1305,14 +1305,14 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       numPx(spacingCss(paraProps.spaceBefore, baseFontPx)) - halfLeading;
     const marginBottomPx =
       numPx(spacingCss(paraProps.spaceAfter, baseFontPx)) + halfLeading;
+    const leadFont = splitFontWeight(
+      resolveFont(p.runs[0]?.font ?? paraDef?.font, svgThemeFonts)
+    );
     // Lift the first line of a top-anchored box by the web font's excess ascent
     // leading so it sits where PowerPoint (typographic ascent) does.
     if (paragraphIndex === 0 && topAnchored) {
-      const fw = splitFontWeight(
-        resolveFont(p.runs[0]?.font ?? paraDef?.font, svgThemeFonts)
-      );
-      const wt = p.runs[0]?.bold ?? paraDef?.bold ? 700 : fw.weight;
-      marginTopPx -= excessTopLeadingRatio(fw.family, wt) * baseFontPx;
+      const wt = p.runs[0]?.bold ?? paraDef?.bold ? 700 : leadFont.weight;
+      marginTopPx -= excessTopLeadingRatio(leadFont.family, wt) * baseFontPx;
     }
     // PowerPoint single spacing is the font's content line (its typographic
     // metrics), which is tighter than CSS 'normal' (web fonts like Urbanist
@@ -1321,6 +1321,13 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     // taller fonts, so nothing clips. Explicit percent/points keep the pixel
     // value, which aligns multi-line text with fixed rules/dividers.
     const cssLineHeight = paraProps.lineSpacing ? `${lineHeightPx}px` : '1';
+    // The line box's strut is sized by the PARAGRAPH's font, which otherwise
+    // inherits the host app's 16px default: sub-16px text then gets a 16px
+    // line box with a depressed baseline (chips/captions sat visibly low and
+    // loose vs PowerPoint). Size the strut from the paragraph's lead run.
+    css += `font-size:${baseFontPx}px;font-family:${cssFamilyList(
+      leadFont.family
+    )};`;
     css += `margin-top:${marginTopPx}px;margin-bottom:${marginBottomPx}px;line-height:${cssLineHeight};`;
     pDiv.setAttribute('style', css);
 
