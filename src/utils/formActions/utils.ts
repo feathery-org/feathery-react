@@ -7,6 +7,7 @@ export type FormActionHandlers = {
     element: any;
     elementType: 'button' | 'text' | 'container' | 'progress_bar' | 'tab';
     submit?: boolean;
+    triggerPayload?: Record<string, any>;
   }) => Promise<any>;
   changeValue: (value: any, field: any, index?: number | null) => boolean;
   runFieldChangeLogic: (

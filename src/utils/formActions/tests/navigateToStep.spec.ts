@@ -58,6 +58,19 @@ describe('navigateToStep inline error reporting', () => {
     ]);
   });
 
+  it('passes the chosen entry like a person clicking the tab', async () => {
+    const state = makeState(() => {});
+    state.currentStep.tabs[0].properties.entries[0].label = 'Two';
+
+    await navigateToStep(formUuid, 'step-2');
+
+    expect(state.formActions.runElementActions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerPayload: { entryIndex: 0, text: 'Two' }
+      })
+    );
+  });
+
   it('reports no field errors when nothing was published', async () => {
     makeState(() => {});
 

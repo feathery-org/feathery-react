@@ -113,6 +113,19 @@ describe('fillFields', () => {
     });
   });
 
+  it('does not write to a step the person has left', async () => {
+    const state = makeState(jest.fn());
+
+    const pending = fillFields(formUuid, [{ key: 'name', value: 'Ada' }]);
+    state.currentStep = { key: 'step-2', servar_fields: [] };
+    const result: any = await pending;
+
+    expect(state.formActions.changeValue).not.toHaveBeenCalled();
+    expect(result.rejected).toEqual([
+      expect.objectContaining({ key: 'name', reason: 'not_on_step' })
+    ]);
+  });
+
   it('rejects a write the form throws on without dropping the rest', async () => {
     const state = makeState(jest.fn());
     state.formActions.changeValue.mockImplementation(() => {
@@ -243,6 +256,38 @@ describe('fillFields value checks', () => {
       ''
     ]);
     expect(result.applied.map((f: any) => f.value)).toEqual([[], '']);
+  });
+
+  it('keeps an always checked checkbox checked', async () => {
+    makeState(
+      [{ key: 'terms', type: 'checkbox', metadata: { always_checked: true } }],
+      { terms: true }
+    );
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'terms', value: false },
+      { key: 'terms', value: null }
+    ]);
+
+    expect(result.rejected).toEqual([
+      expect.objectContaining({ key: 'terms', reason: 'invalid_value' })
+    ]);
+    expect(result.applied.map((f: any) => f.value)).toEqual([true]);
+  });
+
+  it('requires a time for a date with a time', async () => {
+    makeState(
+      [{ key: 'meeting', type: 'date_selector', metadata: { choose_time: true } }],
+      { meeting: '' }
+    );
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'meeting', value: '2026-10-06' }
+    ]);
+
+    expect(result.rejected).toEqual([
+      expect.objectContaining({ key: 'meeting', reason: 'invalid_value' })
+    ]);
   });
 
   it('stores a date with a time in the form date-time format', async () => {

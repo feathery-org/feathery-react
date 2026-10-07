@@ -90,3 +90,41 @@ describe('clickElement repeated button error contract', () => {
     ]);
   });
 });
+
+describe('clickElement text links', () => {
+  const formUuid = 'form-click-text-test';
+
+  afterEach(() => {
+    delete (internalState as any)[formUuid];
+  });
+
+  it('refuses text whose words link to different steps', async () => {
+    const runElementActions = jest.fn();
+    (internalState as any)[formUuid] = {
+      currentStep: {
+        buttons: [],
+        texts: [
+          { id: 'txt', position: [0], properties: { actions: [{ type: 'next' }] } }
+        ],
+        subgrids: [],
+        servar_fields: [],
+        next_conditions: [
+          {
+            element_type: 'text',
+            element_id: 'txt',
+            metadata: { start: 0, end: 4 }
+          }
+        ]
+      },
+      visiblePositions: { '0': [true] },
+      formSettings: {},
+      inlineErrors: {},
+      formActions: { runElementActions }
+    };
+
+    const result: any = await clickElement(formUuid, 'txt');
+
+    expect(result).toMatchObject({ ok: false, reason: 'unsupported' });
+    expect(runElementActions).not.toHaveBeenCalled();
+  });
+});

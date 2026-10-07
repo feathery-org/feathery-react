@@ -54,6 +54,10 @@ export async function navigateToStep(
     };
   }
 
+  const entries = target.element.properties?.entries ?? [];
+  const entryIndex = entries.findIndex(
+    (entry: any) => entry?.step_key === stepKey
+  );
   const fromStepKey = getLiveStepKey(state) ?? '';
   const errorsBefore = snapshotInlineErrors(state);
   try {
@@ -61,6 +65,7 @@ export async function navigateToStep(
       actions: [{ type: ACTION_NEXT, next_step_key: stepKey }],
       element: target.element,
       elementType: target.elementType,
+      triggerPayload: { entryIndex, text: entries[entryIndex]?.label },
       // A tab carries its own submit behavior, mirror the live tab click
       ...(target.elementType === 'tab'
         ? { submit: !!target.element.properties?.submit }

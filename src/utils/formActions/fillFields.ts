@@ -54,7 +54,7 @@ const isEmptyValue = (value: unknown) =>
 function emptyValueFor(servar: any): unknown {
   if (MULTI_CHOICE_TYPES.has(servar.type)) return [];
   if (servar.type === 'select') return null;
-  if (servar.type === 'checkbox') return false;
+  if (servar.type === 'checkbox') return !!servar.metadata?.always_checked;
   if (servar.type === 'rating') return 0;
   if (servar.type === 'slider') return servar.min_length ?? 0;
   return '';
@@ -245,9 +245,11 @@ function checkValueAgainstField(
 
   // Boolean field
   if (type === 'checkbox') {
-    return typeof value === 'boolean'
-      ? null
-      : `Field '${key}' (checkbox) expects a boolean.`;
+    if (typeof value !== 'boolean')
+      return `Field '${key}' (checkbox) expects a boolean.`;
+    return meta.always_checked && !value
+      ? `Field '${key}' is always checked and cannot be unchecked.`
+      : null;
   }
 
   // Numeric fields with min/max bounds
@@ -270,7 +272,7 @@ function checkValueAgainstField(
       return `Field '${key}' (date_selector) expects a string.`;
     }
     if (meta.choose_time) {
-      return Number.isNaN(Date.parse(value))
+      return !/T\d{2}:\d{2}/.test(value) || Number.isNaN(Date.parse(value))
         ? `Field '${key}' expects an ISO date-time like '2026-10-06T14:30:00Z'.`
         : null;
     }
@@ -401,6 +403,7 @@ export async function fillFields(
     return { ok: false, reason: 'not_loaded', message: NOT_LOADED_MESSAGE };
   }
 
+  const stepKey = state.currentStep.key;
   const requestedKeys = new Set(fields.map((f) => f.key));
   const priorValues = new Map<string, unknown>(
     ((state.currentStep.servar_fields ?? []) as any[])
@@ -451,6 +454,12 @@ export async function fillFields(
     })
   );
 
+  // The person can move on while values are prepared, so writes use the form as it is now
+  const liveHandlers = state.formActions;
+  if (!liveHandlers) {
+    return { ok: false, reason: 'not_loaded', message: NOT_LOADED_MESSAGE };
+  }
+  const stepChanged = state.currentStep?.key !== stepKey;
   const applied: AppliedField[] = [];
   const rejected: RejectedField[] = [];
   const errorsBefore = snapshotInlineErrors(state);
@@ -460,17 +469,26 @@ export async function fillFields(
       rejected.push(write);
       continue;
     }
+    if (stepChanged) {
+      rejected.push({
+        key: write.key,
+        repeatIndex: write.repeatIndex,
+        reason: 'not_on_step',
+        message: `The person moved to another step before '${write.key}' could be entered.`
+      });
+      continue;
+    }
     const index = write.repeatIndex ?? null;
     const fieldForChange =
       index === null ? write.field : { ...write.field, repeat: index };
     try {
-      const changed = handlers.changeValue(
+      const changed = liveHandlers.changeValue(
         write.normalized,
         fieldForChange,
         index
       );
       const changeLogic =
-        changed && handlers.runFieldChangeLogic(fieldForChange, index);
+        changed && liveHandlers.runFieldChangeLogic(fieldForChange, index);
       if (changeLogic) changeLogicRuns.push(changeLogic);
     } catch (err) {
       rejected.push({

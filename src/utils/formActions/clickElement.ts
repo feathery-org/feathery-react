@@ -30,6 +30,7 @@ export type ClickElementResult =
         | 'hidden'
         | 'disabled'
         | 'invalid_row'
+        | 'unsupported'
         | 'action_failed';
       message: string;
     };
@@ -87,6 +88,20 @@ export async function clickElement(
       ok: false,
       reason: 'not_on_step',
       message: `Element '${elementId}' is not on the current step.`
+    };
+  }
+  // A click can't say which linked words it means, and an unmatched link finishes the form
+  const hasWordLinks = (state.currentStep.next_conditions ?? []).some(
+    (cond: any) =>
+      cond.element_type === 'text' &&
+      cond.element_id === elementId &&
+      cond.metadata?.start != null
+  );
+  if (found.elementType === 'text' && hasWordLinks) {
+    return {
+      ok: false,
+      reason: 'unsupported',
+      message: `Text '${elementId}' links to different steps from specific words, the person has to click the link they want.`
     };
   }
   const visiblePositions = state.visiblePositions ?? {};

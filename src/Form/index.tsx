@@ -851,6 +851,8 @@ function Form({
     return () => {
       delete initState.renderCallbacks[_internalId];
       delete initState.redirectCallbacks[_internalId];
+      if (internalState[_internalId])
+        delete internalState[_internalId].formActions;
     };
   }, []);
 
