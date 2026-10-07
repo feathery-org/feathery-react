@@ -19,6 +19,7 @@ import { trackObjectUrl } from '../opc/objectUrls';
 import { featheryDoc } from '../../../../../utils/browser';
 import { themeFonts, resolveFont, type ThemeFonts } from '../model/theme';
 import {
+  cssFamilyList,
   ensureDeckFontsLoaded,
   excessTopLeadingRatio,
   splitFontWeight
@@ -867,7 +868,7 @@ function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
   const parts = [
     `font-size:${ptToCssPx(r.sizePt ?? def?.sizePt ?? 18) * fontScale}px`,
     `color:#${resolveTextColor(r, def)}`,
-    `font-family:'${family}',Helvetica,Arial,sans-serif`
+    `font-family:${cssFamilyList(family)}`
   ];
   // Bold wins; otherwise the typeface name's own weight (e.g. "… Medium").
   if (r.bold ?? def?.bold) parts.push('font-weight:700');
@@ -1158,7 +1159,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
   if (!shape.text || !shape.text.paragraphs.length) return null;
   const body = readBodyProps(shape.text.node);
   const anchor = body.anchor || 't';
-  let justify =
+  const justify =
     anchor === 'ctr'
       ? 'center'
       : anchor === 'b'
@@ -1310,7 +1311,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       const fw = splitFontWeight(
         resolveFont(p.runs[0]?.font ?? paraDef?.font, svgThemeFonts)
       );
-      const wt = (p.runs[0]?.bold ?? paraDef?.bold) ? 700 : fw.weight;
+      const wt = p.runs[0]?.bold ?? paraDef?.bold ? 700 : fw.weight;
       marginTopPx -= excessTopLeadingRatio(fw.family, wt) * baseFontPx;
     }
     // PowerPoint single spacing is the font's content line (its typographic
@@ -1353,9 +1354,11 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     ).family;
     const markerStyle = `font-size:${ptToCssPx(
       markerSize
-    )}px;line-height:${cssLineHeight};font-family:'${markerFamily}',Helvetica,Arial,sans-serif;color:#${markerColor};position:absolute;left:${
-      marL + indent
-    }px;${indent ? '' : 'transform:translateX(-100%);'}`;
+    )}px;line-height:${cssLineHeight};font-family:${cssFamilyList(
+      markerFamily
+    )};color:#${markerColor};position:absolute;left:${marL + indent}px;${
+      indent ? '' : 'transform:translateX(-100%);'
+    }`;
     // PowerPoint shows no bullet on an empty line (no text runs), so neither do
     // we - otherwise prompt/spacer paragraphs sprout stray markers.
     if (paraHasText && bullet?.kind === 'char') {
@@ -1475,7 +1478,7 @@ function chartText(
   const resolvedSize = style?.sizePt ? style.sizePt * 12700 : size;
   text.setAttribute('font-size', String(resolvedSize / EMU_PER_PX));
   const chartFont = splitFontWeight(resolveFont(style?.font, svgThemeFonts));
-  text.setAttribute('font-family', `${chartFont.family},Arial,sans-serif`);
+  text.setAttribute('font-family', cssFamilyList(chartFont.family));
   if (chartFont.weight !== 400)
     text.setAttribute('font-weight', String(chartFont.weight));
   text.setAttribute(

@@ -196,3 +196,46 @@ it('renders DrawingML hyperlinks as clickable anchors in SVG text', () => {
   expect(link.getAttribute('title')).toBe('Open documentation');
   expect(link.textContent).toContain(run.text);
 });
+
+it('stacks and loads metric clones for Microsoft fonts', () => {
+  const deck = importDeck(
+    new Uint8Array(readFileSync(resolve(__dirname, 'fixtures/sample.pptx')))
+  );
+  const slide = deck.slides.find((candidate) =>
+    candidate.shapes.some((shape) =>
+      shape.text?.paragraphs.some((paragraph) => paragraph.runs.length)
+    )
+  )!;
+  const shape = slide.shapes.find((candidate) =>
+    candidate.text?.paragraphs.some((paragraph) => paragraph.runs.length)
+  )!;
+  const run = shape.text!.paragraphs.find((paragraph) => paragraph.runs.length)!
+    .runs[0];
+  const rPr = run.rPr || el('a:rPr');
+  if (!run.rPr) childrenOf(run.node).unshift(rPr);
+  childrenOf(rPr).push(el('a:latin', { typeface: 'Calibri' }));
+  refreshShapeText(shape);
+
+  const span = renderSlideSvg(deck, slide).querySelector(
+    `[data-shape-id="${shape.id}"] [data-textbody] [data-source-run="0"]`
+  ) as HTMLElement;
+  // The real face stays first so an installed Calibri still wins.
+  expect(span.style.fontFamily).toContain('Calibri');
+  expect(span.style.fontFamily).toContain('Carlito');
+  // The clone is what gets requested from Google Fonts, never "Calibri".
+  const links = Array.from(
+    document.querySelectorAll('link[data-pptx-font]')
+  ).map((l) => l.getAttribute('data-pptx-font'));
+  expect(links).toContain('Carlito');
+  expect(links).not.toContain('Calibri');
+
+  // A font without a clone keeps the plain fallback stack.
+  const latin = child(rPr, 'a:latin')!;
+  setAttr(latin, 'typeface', 'Futura');
+  refreshShapeText(shape);
+  const plain = renderSlideSvg(deck, slide).querySelector(
+    `[data-shape-id="${shape.id}"] [data-textbody] [data-source-run="0"]`
+  ) as HTMLElement;
+  expect(plain.style.fontFamily).toContain('Futura');
+  expect(plain.style.fontFamily).not.toContain('Carlito');
+});

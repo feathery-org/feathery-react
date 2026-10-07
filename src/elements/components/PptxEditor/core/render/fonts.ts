@@ -45,6 +45,25 @@ const SYSTEM_FONTS = new Set(
   ].map((f) => f.toLowerCase())
 );
 
+// Google-hosted metric clones for Microsoft fonts browsers usually lack
+// (Office keeps them inside its app bundles, so decks fall back to Helvetica,
+// whose smaller ascent sits lines visibly higher than PowerPoint). Stacked
+// after the real name, so an installed original still wins.
+const FONT_SUBSTITUTES: Record<string, string> = {
+  calibri: 'Carlito',
+  cambria: 'Caladea'
+};
+
+export const substituteFamily = (family: string): string | undefined =>
+  FONT_SUBSTITUTES[family.trim().toLowerCase()];
+
+/** CSS family list for a resolved PowerPoint face: the face itself, its metric
+ * clone when one exists, then the generic fallbacks. */
+export function cssFamilyList(family: string): string {
+  const sub = substituteFamily(family);
+  return `'${family}',${sub ? `'${sub}',` : ''}Helvetica,Arial,sans-serif`;
+}
+
 // Per (family|weight) ratio, as a fraction of the em, of the web font's ascent
 // that sits ABOVE the cap height beyond a small typographic gap. PowerPoint
 // positions the first line by its typographic ascent (~cap height + a little),
@@ -63,13 +82,23 @@ export function excessTopLeadingRatio(family: string, weight: number): number {
     const ctx = featheryDoc().createElement('canvas').getContext('2d');
     if (ctx) {
       const EM = 100;
-      ctx.font = `${weight} ${EM}px '${family}', sans-serif`;
-      const ascent = ctx.measureText('Hg').fontBoundingBoxAscent;
+      // Measure through the same stack the text renders with, so a metric
+      // clone (Carlito for Calibri) is what gets measured once it loads.
+      ctx.font = `${weight} ${EM}px ${cssFamilyList(family)}`;
+      const metrics = ctx.measureText('Hg');
+      const ascent = metrics.fontBoundingBoxAscent;
+      const descent = metrics.fontBoundingBoxDescent;
       const cap = ctx.measureText('H').actualBoundingBoxAscent;
       // GAP is PowerPoint's small space above the caps (~0.1em); keep it so text
       // doesn't hug the very top. Trim only what the web font adds beyond that.
       const GAP = 0.1 * EM;
-      if (ascent && cap) ratio = Math.max(0, (ascent - cap - GAP) / EM);
+      // Unitless line-height 1 centers the font's (ascent+descent) content box
+      // in a 1em line box, so a tall-metric font (Arial, Carlito) already draws
+      // its first baseline higher by the negative half-leading; fold that in or
+      // the trim over-lifts and pushes text past the box top.
+      const halfLeading = (EM - (ascent + descent)) / 2;
+      if (ascent && cap)
+        ratio = Math.max(0, (ascent - cap - GAP + halfLeading) / EM);
     }
   } catch {
     /* no canvas (jsdom) -> no trim */
@@ -99,14 +128,23 @@ function collectFamilyWeights(deck: Deck): Map<string, Set<number>> {
   // browser fakes bold from the 400 weight, which looks lighter than PowerPoint).
   const add = (name: string | undefined, bold = false) => {
     if (!name || name.startsWith('+')) return;
-    const { family, weight } = splitFontWeight(name);
-    if (!family || SYSTEM_FONTS.has(family.toLowerCase())) return;
+    const split = splitFontWeight(name);
+    let family = split.family;
+    let weight = bold ? Math.max(split.weight, 700) : split.weight;
+    if (!family) return;
+    const sub = substituteFamily(family);
+    if (sub) {
+      // Load the metric clone in the Microsoft face's place. The clones only
+      // ship 400/700, so snap to the nearest real face.
+      family = sub;
+      weight = weight >= 600 ? 700 : 400;
+    } else if (SYSTEM_FONTS.has(family.toLowerCase())) return;
     let set = out.get(family);
     if (!set) {
       set = new Set();
       out.set(family, set);
     }
-    set.add(bold ? Math.max(weight, 700) : weight);
+    set.add(weight);
   };
   for (const slide of deck.slides) {
     const tf = themeFonts(deck, slide.path);
