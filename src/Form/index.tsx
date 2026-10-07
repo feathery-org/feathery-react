@@ -627,9 +627,7 @@ function Form({
     const fileEntries = documentSourceUploadFields(action.documents, steps).map(
       ({ servar, step }) => fileSubmitEntry(servar, step)
     );
-    // Forced, so a file restored from an earlier session and removed is cleared.
-    if (fileEntries.length)
-      await client.submitFiles(fileEntries, { forceClear: true });
+    if (fileEntries.length) await client.submitFiles(fileEntries);
   };
 
   // Collects file/signature fields that are still waiting to upload.

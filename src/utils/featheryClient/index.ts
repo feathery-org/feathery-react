@@ -345,9 +345,7 @@ export default class FeatheryClient extends IntegrationClient {
     }
   }
 
-  // `forceClear` sends the clear for an empty field restored from an earlier
-  // session, which has no upload this session to mark it as submitted.
-  async _submitFileData(servar: any, stepKey: string, forceClear = false) {
+  async _submitFileData(servar: any, stepKey: string) {
     const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
@@ -381,11 +379,10 @@ export default class FeatheryClient extends IntegrationClient {
     if (numFiles === 0) {
       const hasPreviousSuccess = fileRetryStatus[servar.key] !== undefined;
 
-      // Skip fields never submitted, unless forced for one restored from the
-      // server (others may hold a file this client never saw, e.g. another tab).
-      const restored = forceClear && restoredFileKeys.has(servar.key);
+      // Skip fields never submitted. A file restored from the server counts as
+      // submitted, so removing it clears the server copy.
       if (
-        !restored &&
+        !restoredFileKeys.has(servar.key) &&
         fileDeduplicationCount[servar.key] === undefined &&
         !hasPreviousSuccess
       ) {
@@ -1125,10 +1122,7 @@ export default class FeatheryClient extends IntegrationClient {
   // an already-submitted file is a safe no-op (deduped client-side by field and
   // server-side by S3 path).
   // fileEntries = [{servar: {key, <type>: <value>}, stepKey}]
-  async submitFiles(
-    fileEntries: { servar: any; stepKey: string }[],
-    { forceClear = false } = {}
-  ) {
+  async submitFiles(fileEntries: { servar: any; stepKey: string }[]) {
     if (this.draft || this.getNoSave()) return;
     if (!fileEntries.length) return;
 
@@ -1136,7 +1130,7 @@ export default class FeatheryClient extends IntegrationClient {
     const submission = Promise.all([
       this.submitQueue.catch(() => undefined),
       ...fileEntries.map(({ servar, stepKey }) =>
-        this._submitFileData(servar, stepKey, forceClear)
+        this._submitFileData(servar, stepKey)
       )
     ]);
     this.submitQueue = submission;
