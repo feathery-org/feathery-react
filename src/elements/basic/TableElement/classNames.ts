@@ -25,6 +25,7 @@ export const TABLE_CLASS = {
   actionMenu: 'feathery-table-action-menu',
   actionMenuItem: 'feathery-table-action-menu-item',
   deleteButton: 'feathery-table-delete-button',
+  unverifyButton: 'feathery-table-unverify-button',
   deleteConfirm: 'feathery-table-delete-confirm',
   pagination: 'feathery-table-pagination',
   pageButton: 'feathery-table-page-button',

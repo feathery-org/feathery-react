@@ -530,22 +530,65 @@ describe('writes aimed at a bound cell', () => {
     expect(failure.message).toMatch(/unit_cost/);
   });
 
-  it('refuses an unbound cell inside a bound table, rather than writing it wrong', () => {
-    // Measured, not assumed: SyncFusion counts a content control's boundary
-    // markers as offset positions while the walker counts characters, so this
-    // write selected three of the header's four characters and produced
-    // "Line itemm". Reading these cells is exact; addressing them for a write is
-    // not, until the offset model accounts for markers.
-    const before = editor.serialize();
+  it('rewrites the cell that hosts the table marker exactly, past the marker', () => {
+    // Measured: SyncFusion counts the table control's START marker as an offset
+    // position in front of the first cell's text, so an unshifted whole-cell
+    // write selected the marker plus three of the header's four characters and
+    // produced "Line itemm". Only that one paragraph hosts the marker; the
+    // whole-cell rewrite shifts past it and lands exactly.
+    const controlsBefore = tagsIn(editor);
     const result = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [{ op: 'set_cell_text', anchor: LABEL_CELL, text: 'Line item' }]
     });
 
+    expect(result.results[0]).toMatchObject({ ok: true, op: 'set_cell_text' });
+    expect(textAt(editor, LABEL_CELL)).toBe('Line item');
+    expect(tagsIn(editor)).toEqual(controlsBefore);
+  });
+
+  it('refuses a ranged write in the marker cell and names the exact route', () => {
+    // A ranged offset there still cannot be addressed exactly, so it is refused
+    // untouched - but the refusal says which write does work.
+    const before = editor.serialize();
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: LABEL_CELL,
+          find: 'Item',
+          replace: 'Line item'
+        }
+      ]
+    });
+
     expect(result.results[0].error).toBe('unaddressable_in_bound_document');
     expect(result.results[0].route).toBe('engine');
-    expect(result.results[0].retry).toBeUndefined();
-    // Refused means untouched, not half-written.
     expect(editor.serialize()).toBe(before);
+  });
+
+  it('writes an unbound cell elsewhere in a bound table like any other cell', () => {
+    // Every other unbound cell of a live table carries no marker, so its
+    // offsets are the walker's own (measured across rows, columns, and the
+    // last cell beside the end marker).
+    const controlsBefore = tagsIn(editor);
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        { op: 'set_cell_text', anchor: '0;2;0;1;0', text: 'Units' },
+        { op: 'set_cell_text', anchor: '0;2;3;0;0', text: 'Net' },
+        // The Total label sits in the last row, beside the end marker.
+        { op: 'set_cell_text', anchor: '0;2;5;0;0', text: 'Grand total' }
+      ]
+    });
+
+    expect(result.results.map((entry) => entry.ok)).toEqual([
+      true,
+      true,
+      true
+    ]);
+    expect(textAt(editor, '0;2;0;1;0')).toBe('Units');
+    expect(textAt(editor, '0;2;3;0;0')).toBe('Net');
+    expect(textAt(editor, '0;2;5;0;0')).toBe('Grand total');
+    expect(tagsIn(editor)).toEqual(controlsBefore);
   });
 
   it('still writes freely where no binding is involved', () => {

@@ -10,7 +10,7 @@ import { stringifyWithNull } from '../../../utils/primitives';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
 import { Pagination } from './Pagination';
-import { ActionButtons } from './Actions';
+import { ActionButtons, UnverifyIcon } from './Actions';
 import { EmptyState } from './EmptyState';
 import { EditableCell } from './EditableCell';
 import { getNextEditableCell } from './utils';
@@ -35,7 +35,7 @@ import {
 } from './spreadsheet/validation';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
-import { STATUS_HUB_FIELD_ID } from './hubStatus';
+import { STATUS_HUB_FIELD_ID, UNVERIFY_ACTION_LABEL } from './hubStatus';
 import { TrashIcon } from '../../components/icons';
 import { clearUnsavedWork, setUnsavedWork } from '../../../utils/unsavedWork';
 import {
@@ -53,7 +53,8 @@ import {
   addRowButtonStyle,
   errorBannerStyle,
   deleteColumnStyle,
-  deleteIconStyle
+  deleteIconStyle,
+  unverifyIconStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
 
@@ -215,6 +216,7 @@ function TableElement({
 
   const fieldMutations = useTableMutations({
     columns: baseColumns,
+    rowDefaults: element.properties?.row_defaults,
     updateFieldValues,
     submitCustom,
     editMode,
@@ -263,6 +265,21 @@ function TableElement({
   const canDeleteRows = canEdit && enableAddDeleteRows;
   const hasOverflowMenu = actions.length > 1;
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
+  // Sending a Hub row back for review lives where delete does: in the
+  // overflow menu, or in its own icon column when there is no menu. Only a
+  // validated row with an entry qualifies, so the check is per row. Like
+  // delete it waits out a load (a landing refetch would overwrite the flip)
+  // and a flipped table, whose rows are fields rather than entries.
+  const canUnverifyRows =
+    isHub && hub.canUnverify && !isTransposed && !hub.loading;
+  const canUnverifyRow = useCallback(
+    (rowIndex: number) =>
+      canUnverifyRows &&
+      hub.rowVerified[rowIndex] === true &&
+      hub.entryIds[rowIndex] != null,
+    [canUnverifyRows, hub.rowVerified, hub.entryIds]
+  );
+  const showStandaloneUnverifyColumn = canUnverifyRows && !hasOverflowMenu;
 
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
   // Findings the assistant has placed on this table (see `setIssues` below).
@@ -272,16 +289,21 @@ function TableElement({
 
   const wrappedHandleCellEdit = useCallback(
     (fieldKey: string, rowIndex: number, newValue: any) => {
-      if (pendingAddRowsRef.current.has(rowIndex)) {
-        setPendingAddRows((prev) => {
-          const next = new Set(prev);
-          next.delete(rowIndex);
-          return next;
-        });
+      if (!pendingAddRowsRef.current.has(rowIndex)) {
+        handleCellEdit(fieldKey, rowIndex, newValue);
+        return;
       }
-      handleCellEdit(fieldKey, rowIndex, newValue);
+      setPendingAddRows((prev) => {
+        const next = new Set(prev);
+        next.delete(rowIndex);
+        return next;
+      });
+      // The first edit commits the provisional row, default cells included.
+      handleCellsEdit([{ fieldKey, rowIndex, value: newValue }], {
+        submitAllColumns: true
+      });
     },
-    [handleCellEdit]
+    [handleCellEdit, handleCellsEdit]
   );
 
   const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
@@ -435,16 +457,17 @@ function TableElement({
         return;
       }
       const touched = new Set(writes.map((write) => write.rowIndex));
-      if (
-        [...touched].some((rowIndex) => pendingAddRowsRef.current.has(rowIndex))
-      ) {
+      const commitsProvisional = [...touched].some((rowIndex) =>
+        pendingAddRowsRef.current.has(rowIndex)
+      );
+      if (commitsProvisional) {
         setPendingAddRows((prev) => {
           const next = new Set(prev);
           touched.forEach((rowIndex) => next.delete(rowIndex));
           return next;
         });
       }
-      handleCellsEdit(writes);
+      handleCellsEdit(writes, { submitAllColumns: commitsProvisional });
     },
     [handleCellsEdit, buffersEdits, pendingEdits]
   );
@@ -640,14 +663,19 @@ function TableElement({
     const { writes, deletedRows } = pendingEdits;
     if (!writes.length && !deletedRows.length) return;
     pendingEdits.clear();
-    if (writes.length) handleCellsEdit(writes);
+    // With rows added since the last save, the edits go up with every column
+    // in full so those rows' default and blank cells are saved too. A row
+    // deletion already submits every column.
+    if (writes.length)
+      handleCellsEdit(writes, {
+        submitAllColumns: pendingAddRowsRef.current.size > 0
+      });
     if (deletedRows.length) {
       bumpRowIdentity();
       deletedRows.forEach((rowIndex) => handleDeleteRow(rowIndex));
     }
-    // Saving submits every column in full, blank rows included, so nothing
-    // is provisional any more (a Hub row still without an entry is tracked by
-    // the Hub source itself).
+    // Nothing is provisional any more (a Hub row still without an entry is
+    // tracked by the Hub source itself).
     setPendingAddRows(new Set());
   }, [pendingEdits, handleCellsEdit, handleDeleteRow, bumpRowIdentity]);
 
@@ -818,6 +846,8 @@ function TableElement({
           onAddColumn={handleAddColumn}
           onInsertRow={canAddRows ? spreadsheetInsertRow : undefined}
           onDeleteRow={canDeleteRows ? spreadsheetDeleteRow : undefined}
+          onUnverifyRows={canUnverifyRows ? hub.handleUnverifyRows : undefined}
+          canUnverifyRow={canUnverifyRow}
           getCellShading={getCellShading}
           cellRules={cellRules}
           rowIdentityVersion={rowIdentityVersion}
@@ -854,6 +884,9 @@ function TableElement({
                   <col key={col.field_key} />
                 ))}
                 {actions.length > 0 && <col css={utilityColStyle('80px')} />}
+                {showStandaloneUnverifyColumn && (
+                  <col css={utilityColStyle('40px')} />
+                )}
                 {showStandaloneDeleteColumn && (
                   <col css={utilityColStyle('40px')} />
                 )}
@@ -882,6 +915,17 @@ function TableElement({
                     >
                       {/* Empty header for actions column */}
                     </th>
+                  )}
+                  {showStandaloneUnverifyColumn && (
+                    <th
+                      scope='col'
+                      className={TABLE_CLASS.headerCell}
+                      css={{
+                        ...thStyle,
+                        ...deleteColumnStyle,
+                        ...styles.getTarget('th')
+                      }}
+                    />
                   )}
                   {showStandaloneDeleteColumn && (
                     <th
@@ -1094,6 +1138,10 @@ function TableElement({
                           buttonLoaders={buttonLoaders}
                           canDeleteRows={canDeleteRows && hasOverflowMenu}
                           onDeleteRow={(ri) => setDeleteRowIndex(ri)}
+                          canUnverifyRow={
+                            hasOverflowMenu && canUnverifyRow(rowIndex)
+                          }
+                          onUnverifyRow={(ri) => hub.handleUnverifyRows([ri])}
                         />
                         {hasOverflowMenu &&
                           canDeleteRows &&
@@ -1106,6 +1154,31 @@ function TableElement({
                               onCancel={handleCancelDelete}
                             />
                           )}
+                      </td>
+                    )}
+                    {showStandaloneUnverifyColumn && (
+                      <td
+                        className={TABLE_CLASS.cell}
+                        css={{
+                          ...deleteColumnStyle,
+                          ...styles.getTarget('td')
+                        }}
+                      >
+                        {canUnverifyRow(rowIndex) && (
+                          <button
+                            type='button'
+                            className={TABLE_CLASS.unverifyButton}
+                            css={unverifyIconStyle}
+                            title={UNVERIFY_ACTION_LABEL}
+                            aria-label={UNVERIFY_ACTION_LABEL}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              hub.handleUnverifyRows([rowIndex]);
+                            }}
+                          >
+                            <UnverifyIcon />
+                          </button>
+                        )}
                       </td>
                     )}
                     {showStandaloneDeleteColumn && (

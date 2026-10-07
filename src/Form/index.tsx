@@ -10,6 +10,7 @@ import React, {
 } from 'react';
 
 import debounce from 'lodash.debounce';
+import { normalizeAsciiFieldValues } from '../utils/ascii';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import { FeatheryCacheProvider } from '../utils/emotionCache';
@@ -512,6 +513,7 @@ function Form({
     saveUrlParams: false,
     saveHideIfFields: false,
     clearHideIfFields: false,
+    asciiOnly: false,
     showFileUploadProgress: true,
     showDocumentProgress: true,
     completionBehavior: '',
@@ -1079,7 +1081,7 @@ function Form({
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
         ...val,
-        getDefaultFieldValue(field)
+        getDefaultFieldValue(field, formSettings.asciiOnly)
       ];
     };
     updateRepeatValues(repeatContainer, getNewVal);
@@ -1124,7 +1126,9 @@ function Form({
         removeFilePathMapEntry(field.servar.key, curIndex);
 
       const newRepeatedValues = justRemove(vals, curIndex);
-      const defaultValue = [getDefaultFieldValue(field)];
+      const defaultValue = [
+        getDefaultFieldValue(field, formSettings.asciiOnly)
+      ];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
     updateRepeatValues(curRepeatContainer, getNewVal);
@@ -1244,6 +1248,11 @@ function Form({
     { rerender = true, clearErrors = true, triggerErrors = true } = {}
   ) => {
     if (clearErrors) clearBrowserErrors(formRef);
+    newFieldValues = normalizeAsciiFieldValues(
+      newFieldValues,
+      servarByKey,
+      formSettings.asciiOnly
+    );
     const entries = Object.entries(newFieldValues);
     if (entries.every(([key, val]) => fieldValues[key] === val)) return false;
 
@@ -1945,7 +1954,7 @@ function Form({
         if (isRepeated) {
           const currentVal = fieldValues[sf.servar.key];
           if (!Array.isArray(currentVal)) return;
-          const defaultVal = getDefaultFieldValue(sf);
+          const defaultVal = getDefaultFieldValue(sf, formSettings.asciiOnly);
           const defaultJson = JSON.stringify(defaultVal);
           let changed = false;
           const newArray = currentVal.map((val: any, i: number) => {
@@ -1961,7 +1970,7 @@ function Form({
           });
           if (changed) newFieldVals[sf.servar.key] = newArray;
         } else if (!flags[0]) {
-          const newVal = getDefaultFormFieldValue(sf);
+          const newVal = getDefaultFormFieldValue(sf, formSettings.asciiOnly);
           if (
             JSON.stringify(newVal) !== JSON.stringify(getFieldValue(sf).value)
           ) {
@@ -2196,7 +2205,7 @@ function Form({
     const servar = field.servar;
     let repeatContainer: Subgrid | undefined;
     if (servar.repeat_trigger === 'set_value') {
-      const defaultValue = getDefaultFieldValue(field);
+      const defaultValue = getDefaultFieldValue(field, formSettings.asciiOnly);
       const { value: previousValue, valueList } = getFieldValue(field);
 
       // Auto-add row when user fills the last field from empty state.
@@ -3754,7 +3763,9 @@ function Form({
           action.toggle && JSON.stringify(destVal) === JSON.stringify(val);
         if (setToDefaultValue) {
           // could be a hidden field
-          val = servar ? getDefaultFieldValue({ servar }) : '';
+          val = servar
+            ? getDefaultFieldValue({ servar }, formSettings.asciiOnly)
+            : '';
         }
 
         if (servar?.repeated) {
@@ -3763,7 +3774,10 @@ function Form({
           // Repeat index already set via click if retain_click_value
           if (!action.retain_click_value) destVal[curIndex] = val;
           if (action.repeat_single) {
-            const defaultVal = getDefaultFieldValue({ servar });
+            const defaultVal = getDefaultFieldValue(
+              { servar },
+              formSettings.asciiOnly
+            );
             for (let i = 0; i < destVal.length; i++) {
               if (i !== curIndex) destVal[i] = defaultVal;
             }

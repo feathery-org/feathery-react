@@ -1,3 +1,4 @@
+import { asciiElement } from './asciiOptions';
 import countryData from '../elements/components/data/countries';
 import { stringifyWithNull } from './primitives';
 
@@ -16,6 +17,7 @@ const OPTION_FIELD_TYPES = new Set([
 type LabelMap = Map<string, string>;
 
 type OptionLabelEntry = {
+  asciiOnly: boolean;
   // Option value -> label for the field's default option list.
   byValue: LabelMap;
   // Repeating fields can override their options per repeat index; each slot
@@ -103,9 +105,15 @@ function buildCountryLabelMap(servar: any, properties: any) {
  * every call rebuilds that key from the servar it was handed, so a schema
  * reload in another language or a dynamic option update lands here intact.
  */
-export function registerOptionLabels(servar: any, properties?: any) {
+export function registerOptionLabels(
+  servar: any,
+  properties?: any,
+  asciiOnly?: boolean
+) {
   if (!servar?.key) return;
-  const meta = servar.metadata ?? {};
+  // Dynamic option updates inherit the form setting registered with the schema.
+  const enabled = asciiOnly ?? optionLabels[servar.key]?.asciiOnly ?? false;
+  const meta = asciiElement({ servar }, enabled).servar.metadata ?? {};
 
   let byValue: LabelMap;
   if (servar.type === 'gmap_country')
@@ -125,11 +133,15 @@ export function registerOptionLabels(servar: any, properties?: any) {
         )
       : undefined;
 
-  // Drop rather than skip when nothing carries a label, so clearing labels in
-  // the builder releases a key an earlier schema load registered.
-  if (!byValue.size && !byRepeatIndex?.some((map: any) => map?.size))
+  // Keep the ASCII setting even without labels, for later dynamic options.
+  if (
+    !enabled &&
+    !byValue.size &&
+    !byRepeatIndex?.some((map: any) => map?.size)
+  )
     delete optionLabels[servar.key];
-  else optionLabels[servar.key] = { byValue, byRepeatIndex };
+  else
+    optionLabels[servar.key] = { byValue, byRepeatIndex, asciiOnly: enabled };
 }
 
 /**

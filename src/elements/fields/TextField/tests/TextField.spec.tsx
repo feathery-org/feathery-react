@@ -63,6 +63,22 @@ describe('TextField - Base Functionality', () => {
       expect(input().value).toBe('Hello World');
     });
 
+    it('converts accented input before applying a letters-only mask', () => {
+      const element = createTextFieldElement('text_field', {
+        allowed_characters: 'letters'
+      });
+      render(
+        <TextField
+          {...createTextFieldProps(element)}
+          formSettings={{ asciiOnly: true }}
+          onAccept={createStatefulAcceptHandler()}
+        />
+      );
+      fireEvent.input(input(), { target: { value: 'Sãoİstanbul' } });
+      expect(getMockFieldValue()).toBe('SaoIstanbul');
+      expect(input().value).toBe('SaoIstanbul');
+    });
+
     it('handles constrained text input - letters only', () => {
       const mockOnAccept = createStatefulAcceptHandler();
       const element = createTextFieldElement('text_field', {

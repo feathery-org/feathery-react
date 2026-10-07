@@ -13,7 +13,8 @@ import {
   initInfo,
   initState,
   restoredFileKeys,
-  setFieldValues
+  setFieldValues,
+  normalizeKnownAsciiValues
 } from './init';
 import throttle from 'lodash.throttle';
 import { ACTION_EXECUTION_ORDER, ACTION_STORE_FIELD } from './elementActions';
@@ -150,7 +151,7 @@ export const lookUpTrigger = (
 };
 
 /** Update the fieldValues cache with a backend session */
-export function updateSessionValues(session: any) {
+export function updateSessionValues(session: any, formKey?: string) {
   processFileValues(session.file_values);
 
   const replaceNullInServarArrays = (
@@ -176,7 +177,10 @@ export function updateSessionValues(session: any) {
     (key) => delete transformedFieldValues[key]
   );
 
-  Object.assign(fieldValues, transformedFieldValues);
+  Object.assign(
+    fieldValues,
+    normalizeKnownAsciiValues(transformedFieldValues, formKey)
+  );
 }
 
 /**
@@ -432,6 +436,7 @@ export function prioritizeActions(actions: any[]) {
 
 export function mapFormSettingsResponse(res: any) {
   return {
+    asciiOnly: res.ascii_only ?? false,
     authSensitiveActionsOnly: res.auth_sensitive_actions_only ?? false,
     errorType: res.error_type,
     autocomplete: res.autocomplete ? 'on' : 'off',

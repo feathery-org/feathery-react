@@ -142,7 +142,11 @@ function inventoryEntryHolding(find: string) {
 }
 
 const api = {
-  async open(sfdt: string, headerRowsHint = 1): Promise<void> {
+  async open(
+    sfdt: string,
+    headerRowsHint = 1,
+    convertTokensOnOpen = false
+  ): Promise<void> {
     void headerRowsHint;
     api.close();
     (globalThis as any).__featheryDocumentEditTraceLog = [];
@@ -171,7 +175,7 @@ const api = {
     await frame();
     await frame();
     attached = attachBindings(instance as unknown as SyncfusionEditorLike, {
-      convertTokensOnOpen: false
+      convertTokensOnOpen
     });
     await frame();
   },
@@ -296,6 +300,29 @@ const api = {
       `${entry.anchor};${entry.text.length}`
     );
     return String((instance.selection as any).characterFormat?.fontColor ?? '');
+  },
+
+  resolvedRunLook(find: string): {
+    fontFamily?: string;
+    bold?: boolean;
+    fontSize?: number;
+  } {
+    const entry = api.inventory().find((candidate) => candidate.text === find);
+    if (!entry)
+      throw new Error(`no inventory entry reads ${JSON.stringify(find)}`);
+    // Interior characters only, so a content control's boundary markers at
+    // either end never make the selection read as mixed formatting.
+    const instance = live();
+    instance.selection.select(
+      `${entry.anchor};1`,
+      `${entry.anchor};${Math.max(1, entry.text.length - 1)}`
+    );
+    const format: any = (instance.selection as any).characterFormat;
+    return {
+      fontFamily: format?.fontFamily,
+      bold: format?.bold,
+      fontSize: format?.fontSize
+    };
   },
 
   serialize: (): string => live().serialize(),

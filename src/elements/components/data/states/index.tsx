@@ -1,3 +1,4 @@
+import { toAscii } from '../../../../utils/ascii';
 import ae from './ae';
 import au from './au';
 import br from './br';
@@ -65,15 +66,25 @@ export const stateMap: Record<string, { name: string; code: string }[]> = {
   za
 };
 
+function stateValue(
+  { name, code }: { name: string; code: string },
+  shortcode: boolean,
+  asciiOnly: boolean
+) {
+  if (shortcode) return code;
+  return asciiOnly ? toAscii(name) : name;
+}
+
 export function hasState(
   country: string,
   state: string,
   shortcode: boolean,
-  coerce = false
+  coerce = false,
+  asciiOnly = false
 ) {
   if (coerce && !(country in stateMap)) return true;
-  const stateVals = (stateMap[country] ?? []).map(({ name, code }: any) =>
-    shortcode ? code : name
+  const stateVals = (stateMap[country] ?? []).map((state: any) =>
+    stateValue(state, shortcode, asciiOnly)
   );
   return stateVals.includes(state);
 }
@@ -81,13 +92,14 @@ export function hasState(
 export function getStateOptions(
   country: string,
   shortcode: boolean,
-  territories: boolean
+  territories: boolean,
+  asciiOnly = false
 ) {
   let stateOptions = stateMap[country] ?? [];
   if (country === 'us' && !territories) stateOptions = onlyStates;
-  return stateOptions.map(({ name, code }) => (
-    <option key={code} value={shortcode ? code : name}>
-      {name}
+  return stateOptions.map((state) => (
+    <option key={state.code} value={stateValue(state, shortcode, asciiOnly)}>
+      {state.name}
     </option>
   ));
 }
