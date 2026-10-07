@@ -1173,6 +1173,17 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
   const insetT = px(body.insetsEMU?.t ?? 45720);
   const insetR = px(body.insetsEMU?.r ?? 91440);
   const insetB = px(body.insetsEMU?.b ?? 45720);
+  // A pair of insets can exceed a short box (small Logo/Date pills); PowerPoint
+  // never lets them push past the box, so clamp each pair to the box size. Left
+  // unclamped, a top inset taller than half the box shoves center-anchored text
+  // below the box center (Logo/Date appear to sink toward the bottom).
+  const clampInsets = (a: number, b: number, max: number): [number, number] => {
+    if (max <= 0) return [0, 0];
+    const sum = a + b;
+    return sum > max ? [(a * max) / sum, (b * max) / sum] : [a, b];
+  };
+  const [insT, insB] = clampInsets(insetT, insetB, px(h));
+  const [insL, insR] = clampInsets(insetL, insetR, px(w));
 
   const g = featheryDoc().createElementNS(SVGNS, 'g') as SVGGElement;
   g.setAttribute('transform', `scale(${EMU_PER_PX})`);
@@ -1194,7 +1205,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     `width:${px(w)}px;height:${px(
       h
     )}px;display:flex;flex-direction:column;justify-content:${justify};` +
-    `box-sizing:border-box;padding:${insetT}px ${insetR}px ${insetB}px ${insetL}px;overflow:${
+    `box-sizing:border-box;padding:${insT}px ${insR}px ${insB}px ${insL}px;overflow:${
       allowOverflow ? 'visible' : 'hidden'
     };line-height:1.2;outline:none;`;
 
