@@ -267,7 +267,8 @@ describe('attaching bindings to a tokenized template', () => {
     setCaretControl(true);
     expect(() => (editor as any).trigger('contentControl')).not.toThrow();
 
-    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
+    if (restore)
+      Object.defineProperty(module, 'canEditContentControl', restore);
     else delete module.canEditContentControl;
     setCaretControl(null);
   });
@@ -311,9 +312,7 @@ describe('attaching bindings to a tokenized template', () => {
     expect(onLockedEdit).toHaveBeenCalledTimes(1);
 
     // Blurring the editable div drops the hint even while still on the cell.
-    (editor as any).documentHelper.editableDiv.dispatchEvent(
-      new Event('blur')
-    );
+    (editor as any).documentHelper.editableDiv.dispatchEvent(new Event('blur'));
     expect(onLockedEditResolved).toHaveBeenCalledTimes(1);
 
     setCaretControl(null);
@@ -343,7 +342,11 @@ describe('save gating', () => {
   });
 
   it('refuses a save while a bound cell holds invalid input', () => {
-    writeIntoControl(editor, '[[name=quantity|type=integer|row=r-1]]', 'twelve');
+    writeIntoControl(
+      editor,
+      '[[name=quantity|type=integer|row=r-1]]',
+      'twelve'
+    );
 
     expect(attached.commitForSave()).toBe(false);
     expect(
@@ -386,10 +389,9 @@ describe('content-change suppression', () => {
   it('brackets the initial reconcile so it is not read as a user edit', () => {
     const editor = makeEditor(buildTemplateTokenDocument());
     const calls: boolean[] = [];
-    const attached = attachBindings(
-      editor as unknown as SyncfusionEditorLike,
-      { onSuppressContentChange: (suppressed) => calls.push(suppressed) }
-    );
+    const attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onSuppressContentChange: (suppressed) => calls.push(suppressed)
+    });
     try {
       // Computing a template's formulas is the editor doing its job, not the
       // user dirtying the document.
@@ -454,9 +456,7 @@ describe('surviving the editor being torn down mid-event', () => {
     try {
       expect(() => handlers.selectionChange()).not.toThrow();
       expect(() => handlers.contentChange()).not.toThrow();
-      expect(() =>
-        handlers.keyDown({ event: { key: 'Enter' } })
-      ).not.toThrow();
+      expect(() => handlers.keyDown({ event: { key: 'Enter' } })).not.toThrow();
     } finally {
       // Heal before afterEach so destroy() can read selection normally.
       healSelection();
@@ -508,6 +508,11 @@ describe('surviving the editor being torn down mid-event', () => {
     // time; reattaching against the destroyed instance is not possible, so make
     // both safe no-ops.
     attached = { dispose() {} } as AttachedBindings;
-    editor = { destroy() {}, get element() { return null; } } as unknown as DocumentEditor;
+    editor = {
+      destroy() {},
+      get element() {
+        return null;
+      }
+    } as unknown as DocumentEditor;
   });
 });

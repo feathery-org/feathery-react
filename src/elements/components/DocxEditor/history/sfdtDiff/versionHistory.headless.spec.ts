@@ -54,9 +54,7 @@ describe('version history in the pinned real Chrome engine', () => {
           const button = Array.from(
             globalThis.document.querySelectorAll('button')
           ).find((button) =>
-            new RegExp(`^${action} \\d+$`).test(
-              button.textContent?.trim() ?? ''
-            )
+            new RegExp(`^${action}$`).test(button.textContent?.trim() ?? '')
           );
           if (!button) throw new Error(`${action} button not found`);
           button.click();
@@ -64,7 +62,14 @@ describe('version history in the pinned real Chrome engine', () => {
         const after = await session.call('historyReviewState');
         expect(after.revisions).toBe(0);
         expect(JSON.parse(after.sfdt).revisions ?? []).toHaveLength(0);
-        expect(after.text).not.toMatch(/Accept \d+/);
+        const groupButtons = await session.page.evaluate(
+          () =>
+            Array.from(globalThis.document.querySelectorAll('button')).filter(
+              (button) =>
+                /^(Accept|Reject)$/.test(button.textContent?.trim() ?? '')
+            ).length
+        );
+        expect(groupButtons).toBe(0);
         expect(after.sfdt.includes('Expense added')).toBe(action === 'Accept');
         expect(after.artifacts.some((changes: any) => changes.confirmed)).toBe(
           action === 'Accept'
@@ -116,9 +121,7 @@ describe('version history in the pinned real Chrome engine', () => {
       await session.page.evaluate(() => {
         const button = Array.from(
           globalThis.document.querySelectorAll('button')
-        ).find((button) =>
-          /^Accept \d+$/.test(button.textContent?.trim() ?? '')
-        );
+        ).find((button) => /^Accept$/.test(button.textContent?.trim() ?? ''));
         if (!button) throw new Error('Accept button not found');
         button.click();
       });
@@ -154,9 +157,7 @@ describe('version history in the pinned real Chrome engine', () => {
       await session.page.evaluate(() => {
         const button = Array.from(
           globalThis.document.querySelectorAll('button')
-        ).find((button) =>
-          /^Accept \d+$/.test(button.textContent?.trim() ?? '')
-        );
+        ).find((button) => /^Accept$/.test(button.textContent?.trim() ?? ''));
         if (!button) throw new Error('Accept button not found');
         button.click();
       });
