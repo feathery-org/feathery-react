@@ -17,3 +17,6 @@ export const STATUS_LABEL_UNVERIFIED = 'Unvalidated';
 
 export const statusLabel = (verified: boolean) =>
   verified ? STATUS_LABEL_VERIFIED : STATUS_LABEL_UNVERIFIED;
+
+// The row action that sends a validated row back for review.
+export const UNVERIFY_ACTION_LABEL = 'Mark as unvalidated';

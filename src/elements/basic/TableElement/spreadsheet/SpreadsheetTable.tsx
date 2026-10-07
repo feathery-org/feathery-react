@@ -71,6 +71,9 @@ export type SpreadsheetTableProps = {
   onInsertRow?: (atIndex: number) => void;
   /** Supplied when the table allows deleting rows. */
   onDeleteRow?: (rowIndex: number) => void;
+  /** Supplied when rows can be sent back to a Data Hub's staged set. */
+  onUnverifyRows?: (rowIndexes: number[]) => void;
+  canUnverifyRow?: (rowIndex: number) => boolean;
   getCellShading?: GetCellShading;
   /** Column rules, so each cell's editor matches what its column accepts. */
   cellRules?: CellRules;
@@ -113,6 +116,8 @@ export function SpreadsheetTable({
   onAddColumn,
   onInsertRow,
   onDeleteRow,
+  onUnverifyRows,
+  canUnverifyRow,
   getCellShading,
   cellRules,
   rowIdentityVersion = 0,
@@ -529,6 +534,8 @@ export function SpreadsheetTable({
         onAddColumn={onAddColumn}
         onInsertRow={insertRow}
         onDeleteRow={onDeleteRow}
+        onUnverifyRows={onUnverifyRows}
+        canUnverifyRow={canUnverifyRow}
         onOpenSearch={search.openSearch}
         sort={sort}
         filters={filters}
