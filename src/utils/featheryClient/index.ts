@@ -1,4 +1,5 @@
 import IntegrationClient from './integrationClient';
+import { isAsciiTextField } from '../ascii';
 import {
   fieldValues,
   fileDeduplicationCount,
@@ -10,7 +11,8 @@ import {
   markStepCompleted,
   registerKnownFieldKeys,
   registerTextVariableFields,
-  setFieldValues
+  setFieldValues,
+  normalizeKnownAsciiValues
 } from '../init';
 import { dataURLToFile, isBase64Image } from '../image';
 import { encodeGetParams } from '../primitives';
@@ -82,6 +84,7 @@ import {
   setInteractionDetected
 } from '../interactionState';
 import { EventQueue } from '../eventQueue';
+import { STEP_EVENT_LOAD, STEP_EVENT_SUBMIT } from '../stepEvents';
 
 setEnvironment('production');
 try {
@@ -227,7 +230,19 @@ export default class FeatheryClient extends IntegrationClient {
     const data: Record<string, any> = {
       fuser_key: userId,
       step_key: stepKey,
-      servars,
+      servars: servars.map((servar: any) =>
+        Object.fromEntries(
+          Object.entries(servar).map(([type, value]) => [
+            type,
+            isAsciiTextField(type)
+              ? normalizeKnownAsciiValues(
+                  { [servar.key]: value },
+                  this.formKey
+                )[servar.key]
+              : value
+          ])
+        )
+      ),
       panel_key: this.formKey,
       __feathery_version: this.version,
       no_complete: noComplete
@@ -507,11 +522,17 @@ export default class FeatheryClient extends IntegrationClient {
       });
     });
     registerKnownFieldKeys({ servars: Object.keys(values) });
-    Object.assign(fieldValues, {
-      ...values,
-      ...additionalValues,
-      ...fieldValues
-    });
+    Object.assign(
+      fieldValues,
+      normalizeKnownAsciiValues(
+        {
+          ...values,
+          ...additionalValues,
+          ...fieldValues
+        },
+        this.formKey
+      )
+    );
   }
 
   _loadFormPackages(res: any) {
@@ -783,7 +804,7 @@ export default class FeatheryClient extends IntegrationClient {
     // Registered even when the session carries no data, since the field keys are
     // returned regardless and text variables need them to resolve empty fields
     registerKnownFieldKeys(trueSession);
-    if (!noData) updateSessionValues(trueSession);
+    if (!noData) updateSessionValues(trueSession, this.formKey);
 
     // submitAuthInfo can set formCompleted before the session is set, so we don't want to override completed flags
     if (initState.formSessions[this.formKey]?.form_completed)
@@ -792,6 +813,10 @@ export default class FeatheryClient extends IntegrationClient {
     initState._internalUserId = trueSession.internal_id;
 
     const formData = await (formPromise ?? Promise.resolve());
+    Object.assign(
+      fieldValues,
+      normalizeKnownAsciiValues(fieldValues, this.formKey)
+    );
     return [trueSession, formData];
   }
 
@@ -822,11 +847,7 @@ export default class FeatheryClient extends IntegrationClient {
     return response.json();
   }
 
-  async submitAuthInfo({
-    authId,
-    authData = {},
-    isStytchTemplateKey = false
-  }: any) {
+  async submitAuthInfo({ authId, authData = {} }: any) {
     const { userId } = initInfo();
     await authState.onLogin();
 
@@ -834,7 +855,6 @@ export default class FeatheryClient extends IntegrationClient {
       auth_id: authId,
       auth_data: authData,
       auth_form_key: authState.authFormKey,
-      is_stytch_template_key: isStytchTemplateKey,
       // This response also feeds updateSessionValues, so it needs the same
       // hole signal the session fetch sends.
       repeat_holes: true,
@@ -1033,7 +1053,11 @@ export default class FeatheryClient extends IntegrationClient {
     if (this.draft || this.getNoSave()) return;
     if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
     // If there are values passed, aggregate them in the pending queue
-    Object.entries(customKeyValues).forEach(([key, value]) => {
+    Object.entries(
+      this.formKey
+        ? normalizeKnownAsciiValues(customKeyValues, this.formKey)
+        : customKeyValues
+    ).forEach(([key, value]) => {
       if (value !== undefined) this.pendingCustomFieldUpdates[key] = value;
     });
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
@@ -1113,15 +1137,19 @@ export default class FeatheryClient extends IntegrationClient {
   async registerEvent(eventData: any) {
     if (this.draft) return;
 
-    // A 'complete' event means the step was submitted — record it so the
+    // A submit event means the step was submitted — record it so the
     // stepper reflects which steps are completed vs merely skipped over.
-    if (eventData.event === 'complete') markStepCompleted(eventData.step_key);
+    if (eventData.event === STEP_EVENT_SUBMIT)
+      markStepCompleted(eventData.step_key);
+
+    // Stamp now so queued or replayed events keep when they actually happened
+    const timedEvent = { ...eventData, timestamp: new Date().toISOString() };
 
     if (!isInteractionDetected() || this.userEventQueue.isReplayingEvents()) {
-      return this.userEventQueue.enqueue(eventData);
+      return this.userEventQueue.enqueue(timedEvent);
     }
 
-    return this._registerEventInternal(eventData);
+    return this._registerEventInternal(timedEvent);
   }
 
   private async _registerEventInternal(eventData: any) {
@@ -1134,8 +1162,7 @@ export default class FeatheryClient extends IntegrationClient {
       form_key: this.formKey,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {}),
-      event_id: uuidv4(),
-      timestamp: new Date().toISOString()
+      event_id: uuidv4()
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
     if (this.version) data.__feathery_version = this.version;
@@ -1147,7 +1174,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     let prom = null;
     let stepKey = '';
-    if (eventData.event === 'load') {
+    if (eventData.event === STEP_EVENT_LOAD) {
       stepKey = eventData.previous_step_key;
     } else {
       stepKey = eventData.step_key;
@@ -1177,7 +1204,8 @@ export default class FeatheryClient extends IntegrationClient {
       eventPromise = prom.then(() => triggerEvent());
     else eventPromise = Promise.all([prom, triggerEvent()]);
 
-    this.eventQueue = this.eventQueue.then(() => eventPromise);
+    // Callers still see the rejection; the shared chain must not stay rejected
+    this.eventQueue = this.eventQueue.then(() => eventPromise.catch(() => {}));
     return eventPromise;
   }
 

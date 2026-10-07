@@ -38,11 +38,13 @@ export default function DropdownMultiField({
   fieldVal = [],
   repeatIndex = null,
   editMode,
+  formSettings,
   onChange = () => {},
   elementProps = {},
   rightToLeft,
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError,
@@ -54,7 +56,7 @@ export default function DropdownMultiField({
   const servar = element.servar;
   const fieldKey = servar.key;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly);
 
   const properties = element.properties || {};
   const translation = properties.translate || {};

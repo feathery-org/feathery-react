@@ -24,6 +24,7 @@ import { authState } from '../auth/LoginForm';
 // the elements tree would introduce here.
 import { showsFormatInText } from '../elements/fields/TextField/mask';
 import { registerOptionLabels } from './optionLabels';
+import { normalizeAsciiFieldValues } from './ascii';
 
 export type FeatheryFieldTypes =
   | null
@@ -344,11 +345,27 @@ async function updateTheme(newTheme = '') {
   await remountAllForms(true);
 }
 
-/**
- * If customers provide files through setFieldValues
- * we need to explicitly convert any files to file Promises
- * since they may not have done so
- */
+export function normalizeKnownAsciiValues<T extends Record<string, any>>(
+  values: T,
+  formKey?: string
+): T {
+  const fields = new Map<string, { type: string }>();
+  Object.entries(initState.formSchemas).forEach(([key, schema]) => {
+    if (
+      !schema.ascii_only ||
+      (formKey && key !== formKey && schema.new_form_id !== formKey)
+    )
+      return;
+    Object.values(schema.steps ?? {}).forEach((step: any) => {
+      (step.servar_fields ?? []).forEach(({ servar }: any) =>
+        fields.set(servar.key, servar)
+      );
+    });
+  });
+  return normalizeAsciiFieldValues(values, fields, fields.size > 0);
+}
+
+/** Convert user-provided files to the promises expected by file fields. */
 function setFieldValues(
   userVals: FieldValues,
   rerender = true,
@@ -401,7 +418,11 @@ function registerTextVariableFields(schema: any) {
     (step?.servar_fields ?? []).forEach((field: any) => {
       const servar = field?.servar;
       if (!servar?.key) return;
-      registerOptionLabels(servar, field.properties);
+      registerOptionLabels(
+        servar,
+        field.properties,
+        schema.ascii_only === true
+      );
       if (servar.type !== 'integer_field') return;
       // Drop rather than skip, so turning the option off releases a key that an
       // earlier load registered.

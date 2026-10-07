@@ -112,7 +112,10 @@ import {
   renderDisplay
 } from '../../../elements/components/DocxEditor/bindings/core/valueTypes';
 import {
+  bareCellRef,
+  collectPositional,
   collectRefs,
+  isFormulaError,
   parseExpression
 } from '../../../elements/components/DocxEditor/bindings/core/formula';
 import { applyRules } from '../../../elements/components/DocxEditor/bindings/core/engine';
@@ -120,9 +123,11 @@ import type { Diagnostic } from '../../../elements/components/DocxEditor/binding
 import { analyzeBindingOrphans } from '../../../elements/components/DocxEditor/bindings/core/tableDeleteImpact';
 import {
   addLineItem,
+  expressionResolvesToColumn,
   formulaOccurrences,
   formulaScopeKey,
   getAt,
+  isPathPrefix,
   removeLineItem,
   rewriteRowClone,
   scanBindings,
@@ -1163,16 +1168,19 @@ interface FlatBlock {
   bindingRanges?: Array<{ tag: string; start: number; end: number }>;
   /**
    * Set when this block shares a paragraph with a BINDING content control, or
-   * sits inside one. SyncFusion's live offsets count a control's boundary markers
-   * as positions while this walker counts only characters, so an anchored write
-   * here lands off by however many markers precede it. Ops refuse rather than
-   * write into a range they cannot address exactly.
+   * hosts the start marker of a binding wrapper (see `leadingMarkers`).
+   * SyncFusion's live offsets count a control's boundary markers as positions
+   * while this walker counts only characters, so a ranged write here lands off
+   * by however many markers precede it. Ops refuse rather than write into a
+   * range they cannot address exactly.
    *
    * Only tags in the binding grammar count. A document carrying ordinary Word
    * structured document tags is not a bound document and keeps the write
    * behaviour it had before bindings existed.
    */
   offsetsUntrusted?: true;
+  /** Binding start markers SyncFusion counts before this block's first character. */
+  leadingMarkers?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1702,11 +1710,14 @@ function bindingDefinitionOf(node: any): Definition | null {
 // marker, its own selection offsets still report the table as block 2, not the
 // wrapper. Leaving the wrapper opaque made every configured table flatten to an
 // empty paragraph, i.e. invisible.
+// `leadingMarkers`: binding start markers SyncFusion places before a block's
+// first character; only a wrapper's first block hosts them (measured).
 function expandBlockContentControls(
   blocks: any[],
-  insideControl = false
-): Array<{ block: any; insideControl: boolean }> {
-  const out: Array<{ block: any; insideControl: boolean }> = [];
+  leadingMarkers = 0
+): Array<{ block: any; leadingMarkers: number }> {
+  const out: Array<{ block: any; leadingMarkers: number }> = [];
+  let pending = leadingMarkers;
   for (const block of blocks) {
     const isWrapper =
       block &&
@@ -1714,17 +1725,20 @@ function expandBlockContentControls(
       Array.isArray(pick(block, 'blocks', 'b')) &&
       !getRows(block) &&
       !pick(block, 'inlines', 'i');
-    if (isWrapper)
-      out.push(
-        ...expandBlockContentControls(
-          getBlocks(block),
-          // A foreign wrapper is transparent for ADDRESSING but says nothing
-          // about offsets: only a binding marker makes the content inside it
-          // unaddressable.
-          insideControl || bindingDefinitionOf(block) !== null
-        )
+    if (isWrapper) {
+      const inner = expandBlockContentControls(
+        getBlocks(block),
+        // A foreign wrapper is transparent for ADDRESSING but says nothing
+        // about offsets: only a binding marker is counted.
+        pending + (bindingDefinitionOf(block) !== null ? 1 : 0)
       );
-    else out.push({ block, insideControl });
+      out.push(...inner);
+      if (inner.length) pending = 0;
+      else pending += bindingDefinitionOf(block) !== null ? 1 : 0;
+    } else {
+      out.push({ block, leadingMarkers: pending });
+      pending = 0;
+    }
   }
   return out;
 }
@@ -2261,7 +2275,7 @@ export function flattenSfdt(
 
   sections.forEach((section, si) => {
     expandBlockContentControls(getBlocks(section)).forEach((entry, bi) => {
-      const { block, insideControl } = entry;
+      const { block } = entry;
       const rows = getRows(block);
       if (rows) {
         // Table: descend into each cell's blocks.
@@ -2278,9 +2292,13 @@ export function flattenSfdt(
                   getInlines(cb),
                   deletedIds
                 );
+                const cellLeadingMarkers =
+                  cellEntry.leadingMarkers +
+                  (ri === 0 && ci === 0 && cbi === 0
+                    ? entry.leadingMarkers
+                    : 0);
                 const cellOffsetsUntrusted =
-                  insideControl ||
-                  cellEntry.insideControl ||
+                  cellLeadingMarkers > 0 ||
                   hasBindingContentControl(getInlines(cb));
                 const cellAnchor = `${si};${bi};${ri};${ci};${cbi}`;
                 out.push({
@@ -2296,7 +2314,10 @@ export function flattenSfdt(
                   ...(cellBindingRanges.length
                     ? { bindingRanges: cellBindingRanges }
                     : {}),
-                  ...(cellOffsetsUntrusted ? { offsetsUntrusted: true } : {})
+                  ...(cellOffsetsUntrusted ? { offsetsUntrusted: true } : {}),
+                  ...(cellLeadingMarkers
+                    ? { leadingMarkers: cellLeadingMarkers }
+                    : {})
                 });
                 out.push(...textFrameBlocksOf(cb, cellAnchor, deletedIds));
                 paragraphs.push({
@@ -2324,7 +2345,8 @@ export function flattenSfdt(
           deletedIds
         );
         const blockOffsetsUntrusted =
-          insideControl || hasBindingContentControl(getInlines(block));
+          entry.leadingMarkers > 0 ||
+          hasBindingContentControl(getInlines(block));
         const flat: FlatBlock = {
           anchor: `${si};${bi}`,
           kind: 'paragraph',
@@ -2440,6 +2462,8 @@ interface TableContainerRef {
 interface PlainTablePromotion {
   anchor: string;
   tableId: string;
+  /** Input names this change set binds in more than one place: one value. */
+  sharedNames?: Set<string>;
 }
 
 function liveTableMarkerProperties(tableId: string): Record<string, unknown> {
@@ -4847,10 +4871,25 @@ function staleAnchorDetails(expected: unknown, live: string): string[] {
 }
 
 // Selects the whole block described by a FlatBlock and returns the live text.
+/**
+ * The block's whole live text, tracked deletions included: its own length
+ * excludes them and would leave part of the old text behind.
+ */
+function selectWholeLiveText(
+  editor: LiveEditor,
+  block: FlatBlock,
+  sfdt: any = serializeSfdt(editor)
+): void {
+  const lead = block.leadingMarkers ?? 0;
+  const live = inlineText(getInlines(resolveAnchoredNode(sfdt, block.anchor)));
+  selectRange(editor, block.anchor, lead, lead + live.length);
+}
+
 function selectBlock(editor: LiveEditor, block: FlatBlock): string {
+  const lead = block.leadingMarkers ?? 0;
   editor.selection.select(
-    `${block.anchor};0`,
-    `${block.anchor};${block.length}`
+    `${block.anchor};${lead}`,
+    `${block.anchor};${lead + block.length}`
   );
   return editor.selection.text ?? '';
 }
@@ -7317,13 +7356,16 @@ function bindingTagForOp(op: EditOp, block: FlatBlock): string | undefined {
 }
 
 function refuseBoundWrite(op: EditOp, block: FlatBlock): void {
-  if (block.offsetsUntrusted && !block.boundTag) {
-    // Not a binding itself, but sharing a paragraph or a container with one.
-    // SyncFusion counts a control's boundary markers as offset positions while
-    // this walker counts characters, so the range this op would select is off by
-    // however many markers precede it - measured: a write to a header cell of a
-    // bound table replaced three of its four characters. Refuse until the offset
-    // model accounts for markers exactly; reading these blocks is unaffected.
+  if (
+    block.offsetsUntrusted &&
+    !block.boundTag &&
+    !isExactWholeCellRewrite(op, block)
+  ) {
+    // Not a binding itself, but sharing a paragraph with one or hosting a
+    // wrapper's start marker. SyncFusion counts boundary markers as offset
+    // positions while this walker counts characters, so a ranged write is off by
+    // the markers before it (measured: "Item" became "Line itemm"). A whole-cell
+    // rewrite shifts past the marker and is exempt; reading is unaffected.
     throw new OpError(
       'unaddressable_in_bound_document',
       `${op.op} cannot write ${block.anchor}: it sits alongside a document binding, and this engine cannot yet address that text exactly. Reading it is reliable; writing it is not. Re-read the nearby bound fields and target an editable binding value instead, or ask for a plain-text rewrite outside the bound container.`,
@@ -8989,7 +9031,7 @@ export const ANCHORED_OP_HANDLERS: {
     replacePlainTableColumn(editor, op, block, byAnchor),
   delete_column: ({ editor, op, block, byAnchor }) =>
     replacePlainTableColumn(editor, op, block, byAnchor),
-  create_binding: ({ editor, op, block, liveText }) => {
+  create_binding: ({ editor, op, block }) => {
     if (op.kind !== 'input')
       throw new OpError(
         'formula_binding_requires_engine_target',
@@ -9006,6 +9048,19 @@ export const ANCHORED_OP_HANDLERS: {
       String(op.valueType ?? 'text'),
       `create_binding:${name}`
     );
+    const restated =
+      op.initial === undefined && !op.find
+        ? restatedBinding(block, name, 'input')
+        : null;
+    if (
+      restated &&
+      restated.kind === 'field' &&
+      (op.valueType === undefined || restated.fieldType.kind === fieldType.kind)
+    )
+      return {
+        postWriteSfdt: serializeSfdt(editor),
+        details: [`binding: ${name}`, 'already bound here; nothing changed']
+      };
     let definition: Extract<Definition, { kind: 'field' }> = {
       version: 2,
       kind: 'field',
@@ -9018,49 +9073,35 @@ export const ANCHORED_OP_HANDLERS: {
     };
     const sfdt = serializeSfdt(editor);
     const bindingIndex = scanBindings(sfdt);
-    const sameName = [
-      ...(bindingIndex.fields.get(name) ?? []),
-      ...(bindingIndex.formulas.get(name) ?? [])
-    ];
-    if (sameName.length && op.global !== true)
-      throw new OpError(
-        'binding_name_conflict',
-        `Binding "${name}" already exists. Reuse that global identity explicitly or choose a unique name. Nothing was written.`
-      );
-    if (
-      sameName.some(
-        (occurrence) =>
-          !occurrence.def.isGlobal ||
-          occurrence.def.kind !== 'field' ||
-          JSON.stringify(occurrence.def.fieldType) !== JSON.stringify(fieldType)
-      )
-    )
-      throw new OpError(
-        'global_binding_identity_conflict',
-        `Binding "${name}" does not consistently use the requested global input type. Nothing was written.`
-      );
-    if (sameName.length)
-      definition = sameName[0].def as Extract<Definition, { kind: 'field' }>;
+    // Same law as createBindingInCell: a document-level name is one value.
+    const joined = joinedDocumentBinding(
+      bindingIndex,
+      name,
+      'input',
+      fieldType
+    );
+    if (joined)
+      definition = joined.def as Extract<Definition, { kind: 'field' }>;
 
     const requestedPhrase =
       typeof op.find === 'string' && op.find ? String(op.find) : '';
-    let canonical =
-      sameName.length > 0
-        ? parseDisplay(sameName[0].def.fieldType, sameName[0].text)
-        : parseDisplay(
-            fieldType,
-            String(op.initial ?? (requestedPhrase || liveText))
-          );
-    if (sameName.length && op.initial !== undefined) {
-      const requested = parseDisplay(fieldType, String(op.initial));
-      if (requested !== canonical)
-        throw new OpError(
-          'global_binding_initial_conflict',
-          `Global binding "${name}" already has a different value. Change the existing binding value or omit initial. Nothing was written.`
-        );
-      canonical = requested;
-    }
-    const value = renderDisplay(fieldType, canonical);
+    // The cell's text as an accept would leave it, never tracked-deleted text.
+    const shown = requestedPhrase || block.text.trim();
+    const canonical =
+      op.initial !== undefined
+        ? parseDisplay(definition.fieldType, String(op.initial))
+        : shown
+        ? adoptedCellValue(definition.fieldType, shown, op)
+        : joined
+        ? parseDisplay(joined.def.fieldType, joined.text)
+        : defaultValue(definition);
+    if (joined)
+      assertJoinedValue(
+        joined,
+        canonical,
+        op.initial !== undefined ? String(op.initial) : shown
+      );
+    const value = renderDisplay(definition.fieldType, canonical);
     const liveEditor = editor as any;
     const layoutWasOn = editor.enableLayout === true;
     if (!layoutWasOn) liveEditor.setProperties?.({ enableLayout: true }, true);
@@ -9082,8 +9123,22 @@ export const ANCHORED_OP_HANDLERS: {
         selectExactMatch(editor, block, requestedPhrase, index, op);
       } else {
         assertNoForeignPendingRevisions(editor, block, op);
-        selectBlock(editor, block);
+        selectWholeLiveText(editor, block, sfdt);
       }
+      // insertContentControl drops the replaced text's resolved font
+      // (measured: Calibri beside Arial siblings); the value gets it back.
+      const look = readSelectionFormat(
+        editor.selection?.characterFormat,
+        CHARACTER_FORMAT_KEYS
+      );
+      // A joined value shares its tag with controls that already exist, so
+      // the new control is the one that was not there before the insert.
+      const tag = formatTag(definition);
+      const controlsWithTag = (): any[] =>
+        (liveEditor.documentHelper?.contentControlCollection ?? []).filter(
+          (cc: any) => cc?.contentControlProperties?.tag === tag
+        );
+      const existingControls = new Set(controlsWithTag());
       editor.editor.delete();
       inserted = liveEditor.editorModule?.insertContentControl?.({
         type: 'Text',
@@ -9093,6 +9148,20 @@ export const ANCHORED_OP_HANDLERS: {
         canDelete: definition.isDeletable,
         canEdit: definition.isEditable
       });
+
+      const control = controlsWithTag().find(
+        (cc: any) => !existingControls.has(cc)
+      );
+      if (control && liveEditor.selection?.selectContentControlInternal) {
+        liveEditor.selection.selectContentControlInternal(control);
+        for (const [key, wanted] of Object.entries(look))
+          if (isMeaningfulInheritedFormatValue(key, wanted))
+            writeFormatPropIfDifferent(
+              editor.selection.characterFormat,
+              key,
+              normalizeInheritedCharValue(key, wanted)
+            );
+      }
       liveEditor.documentHelper?.layout?.layoutWholeDocument?.();
     } finally {
       if (!layoutWasOn)
@@ -9111,7 +9180,9 @@ export const ANCHORED_OP_HANDLERS: {
         ...(displayName && displayName !== name
           ? [`binding label: ${displayName}`]
           : []),
-        `scope: ${definition.isGlobal ? 'global' : 'independent'}`
+        `scope: ${
+          joined ? 'shared' : definition.isGlobal ? 'global' : 'independent'
+        }`
       ]
     };
   },
@@ -9568,8 +9639,8 @@ export const ANCHORED_OP_HANDLERS: {
   },
   set_cell_text: ({ editor, op, block }) => {
     assertNoForeignPendingRevisions(editor, block, op);
-    // Overwrite the (cell) block's content.
-    selectBlock(editor, block);
+    // Overwrite the cell's whole live text, tracked deletions included.
+    selectWholeLiveText(editor, block);
     const replacement = String(op.text ?? '');
     replaceSelectedText(editor, replacement);
     return {
@@ -10632,10 +10703,15 @@ function applyResolvedInheritedFormat(
 
   selectParagraph(editor, target);
   const pf = editor.selection.paragraphFormat;
+  const paragraph = (editor as any).selection?.start?.paragraph;
   for (const [prop, value] of Object.entries(inherited.paragraphFormat ?? {})) {
     if (!isMeaningfulInheritedFormatValue(prop, value)) continue;
     if (prop === 'styleName') continue;
-    writeFormatPropIfDifferent(pf, prop, value);
+    // SyncFusion's selection setter drops keepWithNext (measured), so write it
+    // on the paragraph itself.
+    if (prop === 'keepWithNext' && paragraph?.paragraphFormat)
+      writeFormatPropIfDifferent(paragraph.paragraphFormat, prop, value);
+    else writeFormatPropIfDifferent(pf, prop, value);
   }
 
   verifyInheritedFormat(editor, source, target, inherited);
@@ -11318,6 +11394,29 @@ function writeAppearance(
       ...(border.color ? { borderColor: border.color } : {})
     });
     selectForAppearance(editor, cellAnchor, extent);
+  }
+}
+
+/**
+ * SyncFusion's `NoBorder` on a cell also clears its neighbours' touching sides,
+ * so apply every clear first and every drawn side after (measured).
+ */
+function writeCellAppearances(
+  editor: LiveEditor,
+  writes: Array<{ cellAnchor: string; write: AppearanceWrite }>
+): void {
+  const isClear = (border: BorderWrite) => border.type === 'NoBorder';
+  for (const { cellAnchor, write } of writes)
+    writeAppearance(
+      editor,
+      cellAnchor,
+      { ...write, borders: write.borders?.filter(isClear) },
+      'cell'
+    );
+  for (const { cellAnchor, write } of writes) {
+    const sides = write.borders?.filter((border) => !isClear(border));
+    if (sides?.length)
+      writeAppearance(editor, cellAnchor, { borders: sides }, 'cell');
   }
 }
 
@@ -12297,6 +12396,8 @@ function applyCopiedTableAppearance(
     return Object.keys(rest).length ? rest : undefined;
   };
   const transaction = runAppearanceTransaction(editor, (record) => {
+    const cellWrites: Array<{ cellAnchor: string; write: AppearanceWrite }> =
+      [];
     if (copyProperties) {
       record({
         cellAnchor: cellAnchorOf(targetAnchor, 0, 0),
@@ -12371,12 +12472,13 @@ function applyCopiedTableAppearance(
           borders: !uniformAllBorder
         });
         record(appearanceRestoreFor(editor, cellAnchor, before, write));
-        writeAppearance(editor, cellAnchor, write, 'cell');
+        cellWrites.push({ cellAnchor, write });
         report.cellsWritten++;
         rowTouched = true;
       }
       if (rowTouched) report.rowsWritten++;
     });
+    writeCellAppearances(editor, cellWrites);
     if (normalizeTableBorders && uniformAllBorder) {
       writeTableBorders(editor, targetAnchor, [
         {
@@ -12503,12 +12605,7 @@ function applyCopiedTableAppearance(
           );
       }
     });
-    if (mismatches.length)
-      throw new OpError(
-        'inherited_appearance_mismatch',
-        `Table appearance from ${sourceAnchor} did not resolve at ${targetAnchor}.`,
-        mismatches
-      );
+    if (mismatches.length) report.unresolved = mismatches;
     return postWriteSfdt;
   });
   return {
@@ -13777,26 +13874,70 @@ function bandingForAcceptedTableProjection(
         source: projectedAppearance
       })
     : 0;
+  // A trailing totals row is not a band: read the stripe from the item rows.
+  const index = tableBlock ? scanBindings(sfdt) : undefined;
+  const tableId = index
+    ? [...index.tables.values()].find(
+        (table) => boundTableAnchor(sfdt, table) === tableAnchor
+      )?.tableId ?? null
+    : null;
+  const roles =
+    tableBlock && index
+      ? deriveTableStructure({
+          tableBlock,
+          headerRows,
+          tableId,
+          documentFormulas: documentFormulaMap(index)
+        }).rows
+      : [];
+  let items = roles.length;
+  while (items > headerRows && roles[items - 1]?.role === 'aggregate') items--;
+  // Roles are read on the physical table; the projection drops rows pending
+  // deletion, so trim it by the trailing totals rows that survive an accept.
+  const deleted = deletedRevisionIds(sfdt);
+  const physicalRows = getRows(tableBlock) ?? [];
+  const survivingTotals = physicalRows
+    .slice(items)
+    .filter(
+      (row: any) => !anyRevisionIdIn(rowRevisionIds(row), deleted)
+    ).length;
+  const itemRows = (
+    appearance: TableAppearance,
+    trailingTotals: number
+  ): TableAppearance =>
+    trailingTotals > 0 && trailingTotals < appearance.rows.length
+      ? {
+          ...appearance,
+          rows: appearance.rows.slice(
+            0,
+            appearance.rows.length - trailingTotals
+          )
+        }
+      : appearance;
   const physicalBanding = physicalAppearance
     ? detectTableBanding(physicalAppearance) ??
-      shortInsertBanding(physicalAppearance)
+      shortInsertBanding(
+        itemRows(physicalAppearance, physicalRows.length - items)
+      )
     : null;
   const projectedBody = projectedAppearance
     ? rowShadings(projectedAppearance).slice(headerRows)
     : [];
+  const withTail = (read: TableBanding): TableBanding => ({
+    ...read,
+    tailInBand:
+      projectedBody.length > 0 &&
+      projectedBody[projectedBody.length - 1] ===
+        read.cycle[(projectedBody.length - 1) % read.period]
+  });
+  const projectedItemBanding = projectedAppearance
+    ? shortInsertBanding(itemRows(projectedAppearance, survivingTotals))
+    : null;
   const banding = physicalBanding
-    ? {
-        ...physicalBanding,
-        tailInBand:
-          projectedBody.length > 0 &&
-          projectedBody[projectedBody.length - 1] ===
-            physicalBanding.cycle[
-              (projectedBody.length - 1) % physicalBanding.period
-            ]
-      }
+    ? withTail(physicalBanding)
     : projectedAppearance
     ? detectTableBanding(projectedAppearance) ??
-      shortInsertBanding(projectedAppearance) ??
+      (projectedItemBanding ? withTail(projectedItemBanding) : null) ??
       documentInsertBanding(sfdt, tableAnchor, projectedAppearance) ??
       undefined
     : undefined;
@@ -13901,9 +14042,36 @@ function plannedPlainTablePromotions(
     const anchor = boundTableAnchor(sfdt, table);
     if (anchor) boundAnchors.add(anchor);
   }
+  // A request naming a field the target cell already holds updates or
+  // re-states that field; it is not a reason to make the table live.
+  const targetHoldsName = (op: EditOp): boolean => {
+    const parts = String(op.anchor ?? '')
+      .split(';')
+      .map(Number);
+    if (parts.length < 4 || parts.some((part) => !Number.isInteger(part)))
+      return false;
+    const [section, block, row, column] = parts;
+    const rowPath = ['sections', section, 'blocks', block, 'rows', row];
+    // A wrapped table's anchor does not walk to rows; such a table is
+    // already live, so it is never a promotion root anyway.
+    const rowNode = rowPath.reduce<any>((node, key) => node?.[key], sfdt);
+    if (!rowNode) return false;
+    // Inventory anchors count physical cells; accept the logical reading too.
+    const cells = new Set([column, physicalCellIndexAt(rowNode, column)]);
+    const name = canonicalBindingName(String(op.name ?? '').trim());
+    return [...cells].some(
+      (cell) =>
+        cell != null &&
+        index.occurrences.some(
+          (occurrence) =>
+            occurrence.name === name &&
+            isPathPrefix([...rowPath, 'cells', cell], occurrence.path)
+        )
+    );
+  };
   const roots = new Set<string>();
   for (const op of edits) {
-    if (op?.op !== 'create_binding') continue;
+    if (op?.op !== 'create_binding' || targetHoldsName(op)) continue;
     const anchor = editTableRoot(op, creators);
     const createdEarlier = anchor
       ? edits.some(
@@ -13919,15 +14087,44 @@ function plannedPlainTablePromotions(
     )
       roots.add(anchor);
   }
+  // A column never spans tables, so an input name bound in two places of one
+  // change set is one shared value, not a row field of each table.
+  // A name bound in two or more cells of one table is a column there and is
+  // never shared.
+  const placesByName = new Map<string, Map<string, number>>();
+  for (const op of edits) {
+    if (op?.op !== 'create_binding' || op.kind !== 'input') continue;
+    const name = canonicalBindingName(String(op.name ?? '').trim());
+    const place = editTableRoot(op, creators) ?? `outside:${String(op.anchor)}`;
+    const places = placesByName.get(name) ?? new Map<string, number>();
+    places.set(place, (places.get(place) ?? 0) + 1);
+    placesByName.set(name, places);
+  }
+  const sharedNames = new Set(
+    [...placesByName]
+      .filter(
+        ([, places]) =>
+          places.size > 1 && [...places.values()].every((cells) => cells === 1)
+      )
+      .map(([name]) => name)
+  );
   const used = new Set(index.tables.keys());
   const promotions = new Map<string, PlainTablePromotion>();
-  for (const anchor of roots) {
+  // Bottom-up: each tracked replacement keeps the source table as a pending
+  // deletion beside its successor, shifting every later block by one, so a
+  // promotion must never run above one still waiting at its planned anchor.
+  // Roots are always "section;block" (normalizeTableAnchor).
+  const below = (a: string, b: string): number => {
+    const [[sa, ba], [sb, bb]] = [a, b].map((x) => x.split(';').map(Number));
+    return sb - sa || bb - ba;
+  };
+  for (const anchor of [...roots].sort(below)) {
     const base = `table_${anchor.replace(/[^A-Za-z0-9_]/g, '_')}`;
     let tableId = base;
     let suffix = 2;
     while (used.has(tableId)) tableId = `${base}_${suffix++}`;
     used.add(tableId);
-    promotions.set(anchor, { anchor, tableId });
+    promotions.set(anchor, { anchor, tableId, sharedNames });
   }
   return promotions;
 }
@@ -14047,6 +14244,13 @@ function formulaRedirect(op: EditOp, occurrence: Occurrence): OpError {
     'never'
   );
 }
+
+/** selectBlock shifts past a leading marker, so a whole-cell rewrite is exact. */
+const isExactWholeCellRewrite = (op: EditOp, block: FlatBlock): boolean =>
+  op.op === 'set_cell_text' &&
+  !!block.leadingMarkers &&
+  !block.boundTag &&
+  !block.bindingRanges?.length;
 
 function retryableBoundNeighborRefusal(op: EditOp, block: FlatBlock): OpError {
   return new OpError(
@@ -16471,6 +16675,212 @@ function setCellContent(
   return setAt(sfdt, cellPath, { ...cell, blocks });
 }
 
+const CURRENCY_SYMBOLS: Record<string, string[]> = {
+  $: ['USD', 'CAD', 'AUD', 'NZD', 'SGD', 'HKD', 'MXN'],
+  '€': ['EUR'],
+  '£': ['GBP'],
+  '¥': ['JPY', 'CNY'],
+  '₹': ['INR']
+};
+
+/**
+ * Whether adopting `text` as `canonical` keeps what the cell says: no other
+ * currency's symbol or code, and no digit lost to rounding.
+ */
+function adoptsCellTextExactly(
+  fieldType: FieldType,
+  text: string,
+  canonical: string
+): boolean {
+  if (fieldType.kind === 'currency') {
+    const code = fieldType.currency.toUpperCase();
+    for (const [symbol, codes] of Object.entries(CURRENCY_SYMBOLS))
+      if (text.includes(symbol) && !codes.includes(code)) return false;
+    const named = /\b([A-Z]{3})\b/.exec(text)?.[1];
+    if (named && named !== code) return false;
+  }
+  if (!['integer', 'decimal', 'currency'].includes(fieldType.kind)) return true;
+  // Magnitudes: the sign may be written as "-" or as accounting parentheses.
+  const written = text.replace(/[^\d.]/g, '');
+  return Number(written) === Math.abs(Number(canonical));
+}
+
+/** The cell's own text as the new input's value, or an actionable refusal. */
+function adoptedCellValue(
+  fieldType: FieldType,
+  text: string,
+  op: EditOp
+): string {
+  let canonical = '';
+  try {
+    canonical = parseDisplay(fieldType, text);
+  } catch (err) {
+    if (!isValueError(err)) throw err;
+  }
+  if (!canonical || !adoptsCellTextExactly(fieldType, text, canonical))
+    throw new OpError(
+      'binding_cell_text_unparsed',
+      `create_binding cannot read the cell's current text ${JSON.stringify(
+        text
+      )} as ${String(
+        op.valueType ?? 'text'
+      )} without changing it. Pass \`initial\`, or fix the cell text first. Nothing was written.`
+    );
+  return canonical;
+}
+
+// Op-layer wrapper: translate the core's column-expression verdict into an
+// OpError so create_binding rejects a permanently-erroring binding at creation.
+export function assertExpressionYieldsValue(
+  expression: string,
+  bindingIndex: BindingIndex,
+  target?: Occurrence
+): void {
+  const kind = expressionResolvesToColumn(bindingIndex, expression);
+  if (kind) {
+    const what =
+      kind === 'range' ? 'is a whole range' : 'names a whole table column';
+    throw new OpError(
+      'binding_expression_whole_column',
+      `Expression ${JSON.stringify(
+        expression
+      )} ${what}. Wrap it in sum(...) to produce a value. Nothing was written.`
+    );
+  }
+  if (!target) return; // New bindings on this route already have a table cell.
+  const hasOwningTable = [...bindingIndex.tables.values()].some(
+    (table) => table.tablePath && isPathPrefix(table.tablePath, target.path)
+  );
+  if (hasOwningTable) return;
+  let ast;
+  try {
+    ast = parseExpression(expression);
+  } catch (thrown) {
+    if (!isFormulaError(thrown)) throw thrown;
+    return; // The caller reports syntax errors separately.
+  }
+  const positional = collectPositional(ast);
+  const hasUnqualified =
+    positional.cells.some((cell) => cell.table === null) ||
+    positional.ranges.some((range) => range.table === null) ||
+    collectRefs(ast).some(
+      (ref) =>
+        bareCellRef(ref) !== null &&
+        !bindingIndex.fields.has(ref) &&
+        !bindingIndex.formulas.has(ref)
+    );
+  if (hasUnqualified)
+    throw new OpError(
+      'binding_expression_outside_table',
+      `Expression ${JSON.stringify(
+        expression
+      )} uses an unqualified cell or range outside a table. Qualify it with a table ID. Nothing was written.`
+    );
+}
+
+/**
+ * The binding of this name and kind the block already holds. Asking for it
+ * again (as a batch that links several places at once does) is satisfied, not
+ * refused or duplicated.
+ */
+type SfdtPathLike = Array<string | number>;
+
+/** Whether the block already holds a binding with this name, of any kind. */
+function blockHoldsBindingName(block: FlatBlock, requested: string): boolean {
+  const name = canonicalBindingName(requested.trim());
+  return [
+    block.boundTag,
+    ...(block.bindingRanges ?? []).map((range) => range.tag)
+  ].some((tag) => {
+    if (!tag) return false;
+    try {
+      const def = parseTag(tag);
+      return !!def && def.kind !== 'table' && def.name === name;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function restatedBinding(
+  block: FlatBlock,
+  name: string,
+  kind: 'input' | 'formula'
+): Definition | null {
+  const tags = [
+    block.boundTag,
+    ...(block.bindingRanges ?? []).map((range) => range.tag)
+  ];
+  for (const tag of tags) {
+    if (!tag) continue;
+    let def: Definition | null = null;
+    try {
+      def = parseTag(tag) ?? null;
+    } catch {
+      continue;
+    }
+    const wanted = kind === 'input' ? 'field' : 'formula';
+    if (def && def.kind === wanted && def.name === name) return def;
+  }
+  return null;
+}
+
+/**
+ * A document-level name is one value wherever it appears (the engine fans it
+ * out by name). A create_binding that reuses such a name joins it, inheriting
+ * its definition, instead of minting a row variable that only shares the name.
+ * Joining is refused when the request contradicts the value it would join.
+ */
+function joinedDocumentBinding(
+  index: BindingIndex,
+  name: string,
+  kind: 'input' | 'formula',
+  fieldType: FieldType,
+  targetPaths: SfdtPathLike[] = []
+): Occurrence | null {
+  // index.fields/formulas hold document-level occurrences only (scanBindings).
+  // An occurrence in the target cell is the value being updated, not one
+  // elsewhere.
+  const shared = [
+    ...(index.fields.get(name) ?? []),
+    ...(index.formulas.get(name) ?? [])
+  ].filter(
+    (occurrence) =>
+      !targetPaths.some((path) => isPathPrefix(path, occurrence.path))
+  );
+  if (!shared.length) return null;
+  const existing = shared[0];
+  if (
+    kind !== 'input' ||
+    existing.def.kind !== 'field' ||
+    existing.def.fieldType.kind !== fieldType.kind
+  )
+    throw new OpError(
+      'binding_identity_type_conflict',
+      existing.def.kind === 'formula'
+        ? `"${name}" already names a formula elsewhere in the document, and a formula cannot be placed twice. To show its value here, create a formula with a different name whose expression references "${name}". Nothing was written.`
+        : `"${name}" already names a ${existing.def.fieldType.kind} input elsewhere in the document. Reuse it as a ${existing.def.fieldType.kind} input to show the same value, or choose a different name. Nothing was written.`
+    );
+  return existing;
+}
+
+/** Refuse joining a value the cell (or `initial`) contradicts. */
+function assertJoinedValue(
+  joined: Occurrence,
+  canonical: string,
+  shown: string
+): void {
+  const existing = parseDisplay(joined.def.fieldType, joined.text);
+  if (canonical !== existing)
+    throw new OpError(
+      'binding_value_conflict',
+      `"${joined.name}" already holds ${renderDisplay(
+        joined.def.fieldType,
+        existing
+      )} elsewhere in the document, but this cell shows ${shown}. Use a different name for a different value, or correct the cell first. Nothing was written.`
+    );
+}
+
 function createBindingInCell(
   state: EngineMutationState,
   op: EditOp,
@@ -16496,7 +16906,25 @@ function createBindingInCell(
     (entry) =>
       entry.path && Number(entry.path[entry.path.length - 1]) === rowIndex
   );
-  const rowId = row?.rowId ?? promotedRowId ?? null;
+  // The cell being written, read as a physical cell (inventory anchors) and
+  // as a logical column; whatever it already holds is updated, not joined.
+  const targetRow = table.tablePath
+    ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
+    : undefined;
+  const targetPaths = table.tablePath
+    ? [columnIndex, physicalCellIndexAt(targetRow, columnIndex)]
+        .filter((cell): cell is number => cell != null)
+        .map((cell) => [...table.tablePath!, 'rows', rowIndex, 'cells', cell])
+    : [];
+  const joined = joinedDocumentBinding(
+    state.index,
+    name,
+    kind,
+    fieldType,
+    targetPaths
+  );
+
+  const rowId = joined ? null : row?.rowId ?? promotedRowId ?? null;
   if (op.global === true && rowId)
     throw new OpError(
       'global_row_binding_invalid',
@@ -16513,8 +16941,9 @@ function createBindingInCell(
         'A formula binding requires an expression. Nothing was written.'
       );
     parseExpression(expression);
+    assertExpressionYieldsValue(expression, state.index);
   }
-  const definition: Definition =
+  const requested: Definition =
     kind === 'formula'
       ? {
           version: 2,
@@ -16537,16 +16966,20 @@ function createBindingInCell(
           isGlobal: op.global === true,
           options: rowId ? { row: rowId } : {}
         };
+  const definition = joined ? joined.def : requested;
   const templateOccurrence = row
     ? [...row.bindings.values()][0]
     : [...table.rows.flatMap((entry) => [...entry.bindings.values()])][0];
   const template = templateOccurrence
     ? getAt(state.sfdt, templateOccurrence.path)?.contentControlProperties
     : undefined;
-  let canonical = defaultValue(definition);
-  if (kind === 'input' && op.initial !== undefined)
-    canonical = parseDisplay(fieldType, String(op.initial));
-  const text = renderDisplay(fieldType, canonical);
+  let canonical = joined
+    ? parseDisplay(joined.def.fieldType, joined.text)
+    : defaultValue(definition);
+  if (kind === 'input' && op.initial !== undefined) {
+    canonical = parseDisplay(definition.fieldType, String(op.initial));
+    if (joined) assertJoinedValue(joined, canonical, String(op.initial));
+  }
   const rowNode = table.tablePath
     ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
     : undefined;
@@ -16564,6 +16997,21 @@ function createBindingInCell(
   const characterFormat = firstTextRun(
     Array.isArray(cell?.blocks) ? cell.blocks[paragraphIndex] : undefined
   )?.characterFormat;
+  // An input over text the cell already shows takes that text as its value;
+  // defaulting would silently replace it (a written "$700" became "$0.00").
+  // Read as an accept would leave it, the same projection flattenSfdt reads.
+  const existing =
+    kind === 'input' && op.initial === undefined
+      ? inlineText(
+          getInlines(cell?.blocks?.[paragraphIndex]),
+          deletedRevisionIds(state.sfdt)
+        ).trim()
+      : '';
+  if (existing) {
+    canonical = adoptedCellValue(definition.fieldType, existing, op);
+    if (joined) assertJoinedValue(joined, canonical, existing);
+  }
+  const text = renderDisplay(definition.fieldType, canonical);
   return setCellContent(
     state.sfdt,
     table,
@@ -16596,6 +17044,29 @@ function redefineBoundFormulaPlan(
   occurrence: Occurrence
 ): EngineMutationPlan {
   const requestedName = canonicalBindingName(String(op.name ?? ''));
+  if (
+    op.kind === 'input' &&
+    op.initial === undefined &&
+    occurrence.def.kind === 'field' &&
+    requestedName === occurrence.name &&
+    (op.valueType === undefined ||
+      parseType(String(op.valueType), `create_binding:${requestedName}`)
+        .kind === occurrence.def.fieldType.kind)
+  )
+    return {
+      route: 'engine',
+      index,
+      op,
+      anchor: block.anchor,
+      execute: (state) => ({
+        sfdt: state.sfdt,
+        anchor: block.anchor,
+        details: [
+          `binding: ${occurrence.name}`,
+          'already bound here; nothing changed'
+        ]
+      })
+    };
   if (op.kind !== 'formula' || occurrence.def.kind !== 'formula')
     throw new OpError(
       'binding_redefinition_kind_mismatch',
@@ -16643,6 +17114,8 @@ function redefineBoundFormulaPlan(
           `Formula "${occurrence.name}" resolved to ${targets.length} matching controls. Nothing was written.`,
           targets.map((candidate) => `candidate: ${candidate.path.join('/')}`)
         );
+      for (const target of targets)
+        assertExpressionYieldsValue(expression, state.index, target);
       let sfdt = state.sfdt;
       let toTag = '';
       for (const target of targets) {
@@ -16749,24 +17222,42 @@ function promotedPlainTablePlan(
           new RegExp(
             `\\b${promotion.tableId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.`
           ).test(expression));
+      // A formula that reads no cells of its own table (only document values
+      // or literals) has no row to belong to. Scoping it to one would let
+      // reconcile adopt the table's other rows from it and fill them with
+      // values nobody asked for. Row-local and positional formulas keep row
+      // scope; adoption of genuine line items is unchanged.
+      const documentOnly =
+        op.kind === 'formula' &&
+        (() => {
+          const ast = parseExpression(expression);
+          const positional = collectPositional(ast);
+          return (
+            !positional.cells.length &&
+            !positional.ranges.length &&
+            collectRefs(ast).every(
+              (ref) =>
+                promoted.index.fields.has(ref) ||
+                promoted.index.formulas.has(ref)
+            )
+          );
+        })();
+      const sharedInput =
+        op.kind === 'input' &&
+        !!promotion.sharedNames?.has(
+          canonicalBindingName(String(op.name ?? '').trim())
+        );
       const rowId =
-        op.global === true || aggregate
+        op.global === true || aggregate || documentOnly || sharedInput
           ? null
           : `${promotion.tableId}_r${rowIndex}`;
       const liveTableAnchor = boundTableAnchor(promoted.sfdt, table);
       const liveCellAnchor = liveTableAnchor
         ? `${liveTableAnchor};${rowIndex};${columnIndex};${paragraphIndex}`
         : block.anchor;
-      const current = flattenSfdt(promoted.sfdt).find(
-        (candidate) => candidate.anchor === liveCellAnchor
-      );
-      const bindingOp =
-        op.kind === 'input' && op.initial === undefined
-          ? { ...op, initial: current?.text ?? block.text }
-          : op;
       const next = createBindingInCell(
         promoted,
-        bindingOp,
+        op,
         table,
         rowIndex,
         columnIndex,
@@ -17266,7 +17757,12 @@ function planBindingRoutedOp(
     if (op.op === 'delete_column')
       return boundDeleteColumnPlan(index, op, target, tableRoute);
   }
-  if (target.offsetsUntrusted && !target.boundTag && BOUND_WRITE_OPS.has(op.op))
+  if (
+    target.offsetsUntrusted &&
+    !target.boundTag &&
+    BOUND_WRITE_OPS.has(op.op) &&
+    !isExactWholeCellRewrite(op, target)
+  )
     throw retryableBoundNeighborRefusal(op, target);
   if (!target.boundTag) return null;
   const runtime =
@@ -18297,13 +18793,23 @@ function creationAppearance(
         };
       // Widen to the document: a family of one that has never carried this
       // role yet still sits in a document that shows it elsewhere.
-      searched.push('every heading in the document at that level');
+      // Body text widens to the document's body paragraphs, never a heading.
+      const bodyRole =
+        role === 'intro_paragraph' || role === 'subsection_paragraph';
+      searched.push(
+        bodyRole
+          ? 'every body paragraph in the document'
+          : 'every heading in the document at that level'
+      );
       const level = options.level ?? family?.level;
       const wider = blocks.filter(
         (block) =>
-          block.isHeading &&
           !!block.text.replace(/\f/g, '').trim() &&
-          (level === undefined || block.level === level)
+          (bodyRole
+            ? block.kind === 'paragraph' &&
+              !block.boundTag &&
+              !isHeadingLikeBlock(block)
+            : block.isHeading && (level === undefined || block.level === level))
       );
       const chosen = modal(wider.map(roleFormat));
       const key = chosen ? JSON.stringify(chosen.value) : undefined;
@@ -18628,7 +19134,9 @@ function planTableInsertInheritance(
   sfdt: any,
   explicitSource?: FlatBlock
 ): PlannedInsertInheritance[] | undefined {
-  const targetTableAnchor = resultingInsertedTableAnchor(op);
+  // Formatting runs as soon as the table lands, so read it where it lands now;
+  // `after` composes in reverse, so that is not yet its final address.
+  const targetTableAnchor = immediateInsertedTableAnchor(op);
   if (!targetTableAnchor) return undefined;
   // The family at the insertion point, derived here rather than handed down,
   // so a table inserted by the composer and one inserted by a model driving
@@ -18804,11 +19312,11 @@ function rebasePlannedInsertInheritance(
   if (!planned || requestedOp.anchor === writtenOp.anchor) return planned;
   const oldTableAnchor =
     requestedOp.op === 'insert_table'
-      ? resultingInsertedTableAnchor(requestedOp)
+      ? immediateInsertedTableAnchor(requestedOp)
       : tableAnchorFromCellAnchor(requestedOp.anchor);
   const newTableAnchor =
     writtenOp.op === 'insert_table'
-      ? resultingInsertedTableAnchor(writtenOp)
+      ? immediateInsertedTableAnchor(writtenOp)
       : tableAnchorFromCellAnchor(writtenOp.anchor);
   if (!oldTableAnchor || !newTableAnchor || oldTableAnchor === newTableAnchor)
     return planned;
@@ -19028,10 +19536,14 @@ function planInsertInheritance(
   const planned: PlannedInsertInheritance[] = boundary
     ? [{ anchor: target.anchor, sectionBoundary: boundary }]
     : [];
+  // A blank paragraph split off a heading must not stay a heading: it takes
+  // the style the document's own separator paragraphs wear.
+  const separatorStyle =
+    blocks.find((block) => !isHeadingLikeBlock(block) && boundaryElement(block))
+      ?.format?.styleName || 'Normal';
   segments.forEach((segment, index) => {
     // The current-text projection drops tab inlines, so compare without them.
     const expectedText = segment.replace(/\t/g, '');
-    if (!expectedText.trim()) return;
     // Only paragraphs consisting solely of inserted content are formatted; a
     // paragraph that merges with existing text keeps that text's format.
     const hasLeadingExistingText =
@@ -19039,6 +19551,15 @@ function planInsertInheritance(
     const hasTrailingExistingText =
       index === lastIndex && offset < target.length;
     if (hasLeadingExistingText || hasTrailingExistingText) return;
+    if (!expectedText.trim()) {
+      if (isHeadingLikeBlock(target) && isBodyTarget && !explicit)
+        planned.push({
+          anchor: [...anchorParts, blockIndexBase + index].join(';'),
+          expectedText,
+          fallbackStyleName: separatorStyle
+        });
+      return;
+    }
     const anchor = [...anchorParts, blockIndexBase + index].join(';');
 
     if (explicit) {
@@ -19258,19 +19779,29 @@ function applyInsertInheritance(
             readEffectiveSourceFormat(editor, paragraph.source)
         );
       } else if (paragraph.fallbackStyleName) {
-        selectParagraph(editor, target);
-        callEditor(editor, 'applyStyle', paragraph.fallbackStyleName);
-        selectParagraph(editor, target);
-        const resolved = comparableFormatValue(
-          editor.selection?.paragraphFormat?.styleName
-        );
-        if (resolved !== paragraph.fallbackStyleName)
+        const applyFallback = (styleName: string) => {
+          selectParagraph(editor, target);
+          callEditor(editor, 'applyStyle', styleName);
+          selectParagraph(editor, target);
+          return comparableFormatValue(
+            editor.selection?.paragraphFormat?.styleName
+          );
+        };
+        let wanted = paragraph.fallbackStyleName;
+        let resolved = applyFallback(wanted);
+        // A borrowed separator style that does not resolve falls back to the
+        // document default rather than failing the insert.
+        if (resolved !== wanted && wanted !== 'Normal') {
+          wanted = 'Normal';
+          resolved = applyFallback(wanted);
+        }
+        if (resolved !== wanted)
           throw new OpError(
             'inherited_format_mismatch',
             `The document-default fallback style did not resolve at ${paragraph.anchor}.`,
             [
               `paragraphFormat.styleName: expected ${JSON.stringify(
-                paragraph.fallbackStyleName
+                wanted
               )}, got ${JSON.stringify(resolved)}`
             ]
           );
@@ -19299,6 +19830,11 @@ function applyInsertInheritance(
           ? { sourceStyleName: outcome.report.sourceStyleName }
           : combined.sourceStyleName
           ? { sourceStyleName: combined.sourceStyleName }
+          : {}),
+        ...(outcome.report.unresolved
+          ? { unresolved: outcome.report.unresolved }
+          : combined.unresolved
+          ? { unresolved: combined.unresolved }
           : {})
       }),
       emptyAppearanceReport()
@@ -19881,7 +20417,7 @@ function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
       )
         return;
     }
-    const resultingAnchor = resultingInsertedTableAnchor(op);
+    const resultingAnchor = immediateInsertedTableAnchor(op);
     const followingCellWriteAnchors = cellWriteTableAnchorsFollowingInsert(
       edits,
       index
@@ -20714,25 +21250,20 @@ function missingSectionSuffix(
   return desired.slice(0, desired.length - shared);
 }
 
-function adjacentSectionSeparators(
+/** The separator paragraphs running from `index` (inclusive) in `direction`. */
+function sectionSeparatorRun(
   blocks: FlatBlock[],
-  target: FlatBlock,
+  index: number,
   direction: -1 | 1
 ): SectionBoundaryElement[] {
-  const start = blocks.findIndex((block) => block.anchor === target.anchor);
-  const separators: SectionBoundaryElement[] = [];
-  if (start < 0) return separators;
-  for (
-    let index = start + direction;
-    index >= 0 && index < blocks.length;
-    index += direction
-  ) {
-    const element = boundaryElement(blocks[index]);
+  const run: SectionBoundaryElement[] = [];
+  for (let at = index; at >= 0 && at < blocks.length; at += direction) {
+    const element = boundaryElement(blocks[at]);
     if (!element) break;
-    if (direction < 0) separators.unshift(element);
-    else separators.push(element);
+    if (direction < 0) run.unshift(element);
+    else run.push(element);
   }
-  return separators;
+  return run;
 }
 
 /** Text which inserts exactly these paragraph-level separators at a boundary. */
@@ -21759,13 +22290,31 @@ function compileSectionComposer(
     familyBoundary.confidence.level !== 'low'
       ? familyBoundary.value
       : [];
-  const beforeExisting = adjacentSectionSeparators(blocks, resolvedTarget, -1);
-  const afterExisting = adjacentSectionSeparators(blocks, resolvedTarget, 1);
+  // The separators already on each side of the insertion GAP, which for
+  // `before` lies ahead of the target and for `after` behind it.
+  const targetIndex = blocks.findIndex(
+    (block) => block.anchor === resolvedTarget.anchor
+  );
+  const gapLeft =
+    boundary.position === 'before' ? targetIndex - 1 : targetIndex;
+  const beforeExisting =
+    targetIndex < 0 ? [] : sectionSeparatorRun(blocks, gapLeft, -1);
+  const afterExisting =
+    targetIndex < 0 ? [] : sectionSeparatorRun(blocks, gapLeft + 1, 1);
   // Separators are decorations around the insertion point, never mutation
   // anchors. Mirror only the missing part of the sibling convention on each
   // side; an existing page boundary may be longer than that convention.
-  const leadingBoundary = missingSectionSuffix(desiredBoundary, beforeExisting);
-  let trailingBoundary = missingSectionPrefix(desiredBoundary, afterExisting);
+  // Without a confident sibling convention, the separator already standing on
+  // one side of the gap IS the convention: bracket the new section with it.
+  const bracket = desiredBoundary.length
+    ? desiredBoundary
+    : !afterExisting.length
+    ? beforeExisting
+    : !beforeExisting.length
+    ? afterExisting
+    : [];
+  const leadingBoundary = missingSectionSuffix(bracket, beforeExisting);
+  let trailingBoundary = missingSectionPrefix(bracket, afterExisting);
   if (
     needsSeedAnchor &&
     trailingBoundary[trailingBoundary.length - 1] === 'empty_paragraph'
@@ -23553,9 +24102,17 @@ function applyDocumentEditsMeasured(
               level: -1
             } as FlatBlock)
           : undefined);
+      // A field the target cell already holds is updated or re-stated where
+      // it lives, even when another op in this batch promotes its table.
+      const updatesHeldField =
+        op.op === 'create_binding' &&
+        !!target &&
+        !isLiveStoryTarget(target) &&
+        blockHoldsBindingName(target, String(op.name ?? ''));
       const routed =
         promotion &&
         promotionTarget &&
+        !updatesHeldField &&
         !isLiveStoryTarget(promotionTarget) &&
         (['create_binding', 'insert_column', 'delete_column'].includes(op.op) ||
           (op.op === 'insert_row' && op.shape === 'blank'))
@@ -23620,7 +24177,11 @@ function applyDocumentEditsMeasured(
     // Refuse a meaningless reference before anything writes: an empty
     // paragraph accepted as a source restyles real content down to document
     // defaults (verified live: a heading silently became Normal/Calibri 11).
-    if (source && !source.text.trim()) {
+    // A table cell named by insert_table stands for its table, so an empty
+    // cell (a blank corner header) is still a valid appearance donor.
+    const namesTable =
+      op.op === 'insert_table' && source?.kind === 'table_cell';
+    if (source && !source.text.trim() && !namesTable) {
       results[index] = {
         ok: false,
         op: name,
@@ -23633,9 +24194,17 @@ function applyDocumentEditsMeasured(
       return;
     }
     try {
-      const inherited = source
+      const read = source
         ? readEffectiveSourceFormat(editor, source)
         : undefined;
+      // A heading the section composer creates keeps with the block it heads.
+      const inherited =
+        read && source?.isHeading && op.__sectionCreatorId
+          ? {
+              ...read,
+              paragraphFormat: { ...read.paragraphFormat, keepWithNext: true }
+            }
+          : read;
       const insertInheritance =
         target &&
         !isLiveStoryTarget(target) &&
@@ -23770,6 +24339,7 @@ function applyDocumentEditsMeasured(
         const revisionsBeforeOp = snapshotRevisions(editor);
         const topLevelSequenceBeforeOp = topLevelSequence(liveSfdt);
         const topLevelTopologyBeforeOp = topLevelTopologyKey(liveSfdt);
+        const anchorsBeforeOp = blocks.map((block) => block.anchor).join('|');
         let writtenOp = op;
         let appliedRelocation = plan.relocated;
         let priorRejectStream: string | undefined;
@@ -23994,7 +24564,16 @@ function applyDocumentEditsMeasured(
               );
             else invalidateTopLevelShiftLedger();
           }
-          if (mayShiftAnchors(op)) {
+          // A binding wraps text in place: when it left every block where it
+          // was, it shifted nothing (a reorder elsewhere can keep the same
+          // anchor list while moving content, so only bindings are exempt).
+          if (
+            mayShiftAnchors(op) &&
+            !(
+              op.op === 'create_binding' &&
+              blocks.map((block) => block.anchor).join('|') === anchorsBeforeOp
+            )
+          ) {
             const liveRowOpTable =
               op.op === 'insert_row' || op.op === 'delete_row'
                 ? String(writtenOp.anchor ?? '')
@@ -24860,6 +25439,14 @@ function applyDocumentEditsMeasured(
       };
     }
   );
+  // Appearance is a preference, not integrity: report it, keep the content.
+  for (const result of materializedResults)
+    if (result.ok && result.appearance?.unresolved)
+      warnings.push(
+        `appearance_not_fully_inherited: ${result.op} at ${
+          result.anchor
+        }; ${result.appearance.unresolved.join('; ')}`
+      );
   const hasFailure =
     materializedResults.some((result) => !result.ok) ||
     grouping.unresolvable > 0;

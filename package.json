@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.102.0",
+  "version": "2.105.0",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -129,7 +129,6 @@
     "@segment/analytics-next": "^1.84.0",
     "@stripe/react-stripe-js": "3.7.0",
     "@stripe/stripe-js": "7.3.0",
-    "@stytch/vanilla-js": "5.23.1",
     "@tanstack/react-hotkeys": "0.10.0",
     "@tanstack/react-table": "9.2.4",
     "@tanstack/react-virtual": "3.14.10",

@@ -14,6 +14,27 @@ import {
 import { TABLE_CLASS } from './classNames';
 import { Action, Column } from './types';
 import { featheryDoc } from '../../../utils/browser';
+import { UNVERIFY_ACTION_LABEL } from './hubStatus';
+
+/** A counter-clockwise arrow: the row goes back for review. */
+export function UnverifyIcon() {
+  return (
+    <svg
+      width='16'
+      height='16'
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      aria-hidden='true'
+    >
+      <path d='M3 12a9 9 0 1 0 3-6.7' />
+      <polyline points='3 3 3 9 9 9' />
+    </svg>
+  );
+}
 
 function MenuIcon() {
   return (
@@ -36,6 +57,9 @@ type ActionButtonsProps = {
   buttonLoaders?: Record<string, any>;
   canDeleteRows?: boolean;
   onDeleteRow?: (rowIndex: number) => void;
+  /** Whether THIS row can be sent back to a Data Hub's staged set. */
+  canUnverifyRow?: boolean;
+  onUnverifyRow?: (rowIndex: number) => void;
 };
 
 export function ActionButtons({
@@ -48,7 +72,9 @@ export function ActionButtons({
   tableId = '',
   buttonLoaders = {},
   canDeleteRows = false,
-  onDeleteRow
+  onDeleteRow,
+  canUnverifyRow = false,
+  onUnverifyRow
 }: ActionButtonsProps) {
   if (actions.length === 0) return null;
 
@@ -189,6 +215,23 @@ export function ActionButtons({
                     </button>
                   );
                 })}
+                {canUnverifyRow && onUnverifyRow && (
+                  <>
+                    <div css={actionMenuSeparatorStyle} />
+                    <button
+                      type='button'
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsMenuOpen(false);
+                        onUnverifyRow(rowIndex);
+                      }}
+                      className={TABLE_CLASS.actionMenuItem}
+                      css={actionMenuItemStyle}
+                    >
+                      {UNVERIFY_ACTION_LABEL}
+                    </button>
+                  </>
+                )}
                 {canDeleteRows && onDeleteRow && (
                   <>
                     <div css={actionMenuSeparatorStyle} />

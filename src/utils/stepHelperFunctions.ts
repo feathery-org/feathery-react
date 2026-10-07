@@ -1,5 +1,6 @@
 import { ACTION_NEXT, ACTION_URL } from './elementActions';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
+import { STEP_EVENT_SUBMIT } from './stepEvents';
 
 export function changeStep(
   newKey: string,
@@ -16,7 +17,7 @@ export function changeStep(
       client.registerEvent({
         step_key: oldKey,
         next_step_key: newKey,
-        event: 'complete'
+        event: STEP_EVENT_SUBMIT
       });
       if (trackHashes)
         navigate(location.pathname + location.search + `#${newKey}`, {

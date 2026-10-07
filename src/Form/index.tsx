@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 
 import debounce from 'lodash.debounce';
+import { normalizeAsciiFieldValues } from '../utils/ascii';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import { FeatheryCacheProvider } from '../utils/emotionCache';
@@ -282,6 +283,12 @@ import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 import type { AssistantStepSettings } from '../assistant/AssistantChat';
 import AssistantClient from '../assistant/AssistantClient';
 import { confirmLeavingUnsavedWork } from '../utils/unsavedWork';
+import {
+  STEP_EVENT_BACK,
+  STEP_EVENT_LOAD,
+  STEP_EVENT_SKIP,
+  STEP_EVENT_SUBMIT
+} from '../utils/stepEvents';
 
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
@@ -492,6 +499,7 @@ function Form({
     saveUrlParams: false,
     saveHideIfFields: false,
     clearHideIfFields: false,
+    asciiOnly: false,
     showFileUploadProgress: true,
     showDocumentProgress: true,
     completionBehavior: '',
@@ -1002,7 +1010,7 @@ function Form({
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
         ...val,
-        getDefaultFieldValue(field)
+        getDefaultFieldValue(field, formSettings.asciiOnly)
       ];
     };
     updateRepeatValues(repeatContainer, getNewVal);
@@ -1047,7 +1055,9 @@ function Form({
         removeFilePathMapEntry(field.servar.key, curIndex);
 
       const newRepeatedValues = justRemove(vals, curIndex);
-      const defaultValue = [getDefaultFieldValue(field)];
+      const defaultValue = [
+        getDefaultFieldValue(field, formSettings.asciiOnly)
+      ];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
     updateRepeatValues(curRepeatContainer, getNewVal);
@@ -1151,6 +1161,11 @@ function Form({
     { rerender = true, clearErrors = true, triggerErrors = true } = {}
   ) => {
     if (clearErrors) clearBrowserErrors(formRef);
+    newFieldValues = normalizeAsciiFieldValues(
+      newFieldValues,
+      servarByKey,
+      formSettings.asciiOnly
+    );
     const entries = Object.entries(newFieldValues);
     if (entries.every(([key, val]) => fieldValues[key] === val)) return false;
 
@@ -1827,7 +1842,7 @@ function Form({
     client
       .registerEvent({
         step_key: newStep.key,
-        event: 'load',
+        event: STEP_EVENT_LOAD,
         previous_step_key: oldKey
       })
       .catch(() => {});
@@ -1851,7 +1866,7 @@ function Form({
         if (isRepeated) {
           const currentVal = fieldValues[sf.servar.key];
           if (!Array.isArray(currentVal)) return;
-          const defaultVal = getDefaultFieldValue(sf);
+          const defaultVal = getDefaultFieldValue(sf, formSettings.asciiOnly);
           const defaultJson = JSON.stringify(defaultVal);
           let changed = false;
           const newArray = currentVal.map((val: any, i: number) => {
@@ -1867,7 +1882,7 @@ function Form({
           });
           if (changed) newFieldVals[sf.servar.key] = newArray;
         } else if (!flags[0]) {
-          const newVal = getDefaultFormFieldValue(sf);
+          const newVal = getDefaultFormFieldValue(sf, formSettings.asciiOnly);
           if (
             JSON.stringify(newVal) !== JSON.stringify(getFieldValue(sf).value)
           ) {
@@ -2102,7 +2117,7 @@ function Form({
     const servar = field.servar;
     let repeatContainer: Subgrid | undefined;
     if (servar.repeat_trigger === 'set_value') {
-      const defaultValue = getDefaultFieldValue(field);
+      const defaultValue = getDefaultFieldValue(field, formSettings.asciiOnly);
       const { value: previousValue, valueList } = getFieldValue(field);
 
       // Auto-add row when user fills the last field from empty state.
@@ -2394,7 +2409,7 @@ function Form({
   }: any) {
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
-      event: submitData ? 'complete' : 'skip'
+      event: submitData ? STEP_EVENT_SUBMIT : STEP_EVENT_SKIP
     };
 
     eventData = { ...eventData, next_step_key: redirectKey };
@@ -2498,6 +2513,14 @@ function Form({
     await callbackRef.current.all();
     const prevStepKey = getPrevStepKey(activeStep, backNavMap);
     if (prevStepKey) {
+      // Analytics only; a failed request must never block back navigation
+      client
+        .registerEvent({
+          step_key: activeStep.key,
+          next_step_key: prevStepKey,
+          event: STEP_EVENT_BACK
+        })
+        .catch(() => {});
       if (internalState[_internalId])
         internalState[_internalId].latestStepName = prevStepKey;
       pendingScrollRef.current = false;
@@ -3151,7 +3174,7 @@ function Form({
           const eventData: Record<string, any> = {
             step_key: activeStep.key,
             next_step_key: '',
-            event: submit ? 'complete' : 'skip',
+            event: submit ? STEP_EVENT_SUBMIT : STEP_EVENT_SKIP,
             completed: true
           };
           await client.registerEvent(eventData);
@@ -3465,7 +3488,7 @@ function Form({
               const eventData: Record<string, any> = {
                 step_key: activeStep.key,
                 next_step_key: '',
-                event: submit ? 'complete' : 'skip',
+                event: submit ? STEP_EVENT_SUBMIT : STEP_EVENT_SKIP,
                 completed: true
               };
               await client.registerEvent(eventData);
@@ -3651,7 +3674,9 @@ function Form({
           action.toggle && JSON.stringify(destVal) === JSON.stringify(val);
         if (setToDefaultValue) {
           // could be a hidden field
-          val = servar ? getDefaultFieldValue({ servar }) : '';
+          val = servar
+            ? getDefaultFieldValue({ servar }, formSettings.asciiOnly)
+            : '';
         }
 
         if (servar?.repeated) {
@@ -3660,7 +3685,10 @@ function Form({
           // Repeat index already set via click if retain_click_value
           if (!action.retain_click_value) destVal[curIndex] = val;
           if (action.repeat_single) {
-            const defaultVal = getDefaultFieldValue({ servar });
+            const defaultVal = getDefaultFieldValue(
+              { servar },
+              formSettings.asciiOnly
+            );
             for (let i = 0; i < destVal.length; i++) {
               if (i !== curIndex) destVal[i] = defaultVal;
             }
