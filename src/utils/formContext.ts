@@ -27,6 +27,9 @@ import type { FormRuntimeEvent } from './internalState';
 import { validateElements } from './validation';
 import { getPanelRuntimeSnapshot } from './panelRuntime';
 import { linkRequestHeaders } from './accessLink';
+import { fillFields, FillFieldInput } from './formActions/fillFields';
+import { navigateToStep } from './formActions/navigateToStep';
+import { clickElement } from './formActions/clickElement';
 import {
   FillQuikParams,
   ForwardInboxEmailOptions,
@@ -114,6 +117,12 @@ export const getFormContext = (formUuid: string) => {
         listeners.delete(listener);
       };
     },
+    // Acting for the person on the current step, with the same checks as their own edits and clicks
+    fillFields: (fields: FillFieldInput[]) => fillFields(formUuid, fields),
+    // Moves through the step's own navigation like the person's click, unlike goToStep
+    navigateToStep: (stepKey: string) => navigateToStep(formUuid, stepKey),
+    clickElement: (elementId: string, repeatIndex?: number) =>
+      clickElement(formUuid, elementId, repeatIndex),
     isLastStep: () => {
       const step = formState.currentStep;
       return step.next_conditions.length === 0;

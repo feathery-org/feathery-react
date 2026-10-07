@@ -11,6 +11,7 @@ import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
 import { LogicRule } from '../types/Form';
 import AssistantClient from '../assistant/AssistantClient';
+import type { FormActionHandlers } from './formActions/utils';
 import {
   ExtractionActionOptions,
   FillQuikParams,
@@ -186,6 +187,7 @@ export interface FormInternalState {
   visiblePositions: any;
   logicRules?: LogicRule[];
   assistantClient?: AssistantClient;
+  formActions?: FormActionHandlers;
   runtimeListeners?: Set<(event: FormRuntimeEvent) => void>;
   client: FeatheryClient;
   formName: string;
