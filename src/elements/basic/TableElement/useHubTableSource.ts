@@ -380,6 +380,9 @@ export function useHubTableSource({
 
   const loadEntries = useCallback(async () => {
     if (!enabled || !client?.dataHubAction) return;
+    // Captured after the guard so the readEntries closure below doesn't need a
+    // non-null assertion.
+    const dataHubAction = client.dataHubAction;
     const seq = ++loadSeq.current;
     const isStale = () => seq !== loadSeq.current;
     loadedKey.current = loadKey;
@@ -417,7 +420,7 @@ export function useHubTableSource({
         ...(where.length ? { where } : {})
       };
       const readEntries = (hubId: string) =>
-        client.dataHubAction!({ hubId, ...getOptions }).then(
+        dataHubAction({ hubId, ...getOptions }).then(
           (list) => ({ list }),
           (error) => ({ error })
         );
@@ -426,7 +429,12 @@ export function useHubTableSource({
         // The reference may be a hub key or id; the schema endpoint accepts
         // both and answers with the id every other call needs, so the entries
         // can only be fetched once it has.
-        schemas = await client.getHubSchemas!([hubRef], [hubRef]);
+        // Guarded in the hubDynamic pre-flight above; captured here so the
+        // call doesn't need a non-null assertion (the finally clears loading
+        // on the unreachable early return).
+        const getHubSchemas = client.getHubSchemas;
+        if (!getHubSchemas) return;
+        schemas = await getHubSchemas([hubRef], [hubRef]);
         if (isStale()) return;
         const match =
           schemas?.hubs?.find((h) => h.id === hubRef) ??
