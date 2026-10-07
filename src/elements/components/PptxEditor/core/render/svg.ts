@@ -1323,7 +1323,17 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     const markerSize =
       (bullet?.sizePts ??
         (bullet?.sizePct ? baseSize * bullet.sizePct : baseSize)) * fontScale;
-    const markerColor = resolveTextColor(first ?? ({} as Run), paraDef);
+    // A bullet can carry its own color (a:buClr) distinct from the text - often
+    // an accent. Prefer it (from the bullet or the inherited list style); only
+    // fall back to the text color when no buClr is defined.
+    const buColorHex = bullet?.color ?? inherited.bullet?.color;
+    const buColorScheme = bullet?.colorScheme ?? inherited.bullet?.colorScheme;
+    let markerColor = resolveTextColor(first ?? ({} as Run), paraDef);
+    if (buColorHex) markerColor = buColorHex.replace('#', '');
+    else if (buColorScheme && curDeck) {
+      const hex = schemeColorHex(buColorScheme, curDeck.pkg);
+      if (hex) markerColor = hex.replace('#', '');
+    }
     // Render the glyph in the bullet's own font (e.g. DM Sans) so its size
     // matches PowerPoint; a fallback font's "●" is noticeably chunkier. Symbol
     // fonts are excluded since the glyph was already mapped to a safe Unicode char.

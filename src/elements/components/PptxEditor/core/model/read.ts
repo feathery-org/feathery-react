@@ -94,14 +94,24 @@ function readRun(rNode: ONode): Run {
 
 // a:buSzPct (1/1000 of a %) / a:buSzPts (1/100 pt) scale the bullet marker
 // independently of the text size.
-function readBulletSize(pPr: ONode): { sizePct?: number; sizePts?: number } {
+function readBulletSize(pPr: ONode): {
+  sizePct?: number;
+  sizePts?: number;
+  color?: string;
+  colorScheme?: string;
+} {
   const pct = child(pPr, 'a:buSzPct');
   const pts = child(pPr, 'a:buSzPts');
   const pctVal = pct && Number(getAttr(pct, 'val'));
   const ptsVal = pts && Number(getAttr(pts, 'val'));
+  const buClr = child(pPr, 'a:buClr');
+  const srgb = buClr && child(buClr, 'a:srgbClr');
+  const scheme = buClr && child(buClr, 'a:schemeClr');
   return {
     sizePct: pctVal ? pctVal / 100000 : undefined,
-    sizePts: ptsVal ? ptsVal / 100 : undefined
+    sizePts: ptsVal ? ptsVal / 100 : undefined,
+    color: srgb ? getAttr(srgb, 'val') : undefined,
+    colorScheme: scheme ? getAttr(scheme, 'val') : undefined
   };
 }
 

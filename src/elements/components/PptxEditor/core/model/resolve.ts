@@ -51,9 +51,14 @@ function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
   const szPtsEl = child(pPr, 'a:buSzPts');
   const szPct = szPctEl && Number(getAttr(szPctEl, 'val'));
   const szPts = szPtsEl && Number(getAttr(szPtsEl, 'val'));
+  const buClr = child(pPr, 'a:buClr');
+  const buSrgb = buClr && child(buClr, 'a:srgbClr');
+  const buScheme = buClr && child(buClr, 'a:schemeClr');
   const buSize = {
     sizePct: szPct ? szPct / 100000 : undefined,
-    sizePts: szPts ? szPts / 100 : undefined
+    sizePts: szPts ? szPts / 100 : undefined,
+    color: buSrgb ? getAttr(buSrgb, 'val') : undefined,
+    colorScheme: buScheme ? getAttr(buScheme, 'val') : undefined
   };
   if (child(pPr, 'a:buNone')) out.bullet = { kind: 'none' };
   else {

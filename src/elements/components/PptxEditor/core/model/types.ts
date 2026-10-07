@@ -50,6 +50,8 @@ export interface Bullet {
   startAt?: number;
   sizePct?: number; // a:buSzPct as a fraction of the text size (e.g. 0.7)
   sizePts?: number; // a:buSzPts, an absolute bullet size in points
+  color?: string; // a:buClr srgb hex — explicit bullet color, distinct from text
+  colorScheme?: string; // a:buClr schemeClr val (e.g. "accent1") to resolve via theme
 }
 
 export interface Paragraph {
