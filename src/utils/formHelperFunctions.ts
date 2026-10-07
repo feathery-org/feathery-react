@@ -368,7 +368,7 @@ export function removeFilePathMapEntry(key: any, index: number) {
 
 // Update the map we maintain to track files that have already been uploaded to S3
 // This means nulling the existing mapping because the user uploaded a new file
-export function clearFilePathMapEntry(key: any, index = null) {
+export function clearFilePathMapEntry(key: any, index: number | null = null) {
   if (index !== null) {
     if (!filePathMap[key]) filePathMap[key] = [];
     // @ts-ignore

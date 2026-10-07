@@ -74,11 +74,16 @@ describe('getStepTool', () => {
           { value: 'a', label: 'A' },
           { value: 'b', label: 'B' }
         ],
-        error: ''
+        error: '',
+        repeated: false,
+        repeatContainerId: null,
+        rowCount: null,
+        errorRows: null
       }
     ]);
     expect(result.buttons).toHaveLength(1);
     expect(result.buttons[0]).toMatchObject({ id: 'btn-1', saves: true });
+    expect(result.repeatGroups).toEqual([]);
   });
 
   it('falls back to the placeholder, then the key, when a field has no label', () => {
@@ -194,6 +199,36 @@ describe('getStepTool', () => {
     expect(byKey.pin).toBe('••••4242');
   });
 
+  it('masks a repeated ssn field row by row, not the serialized whole array', () => {
+    const currentStep = {
+      id: 'step-1',
+      key: 'secure',
+      servar_fields: [
+        {
+          id: 'ssn-el',
+          position: [0, 0],
+          properties: {},
+          servar: {
+            id: 'ssn-sv',
+            key: 'ssn',
+            type: 'ssn',
+            name: 'SSN',
+            repeated: true,
+            metadata: {}
+          }
+        }
+      ],
+      subgrids: [{ id: 'grp-1', position: [0], repeated: true }],
+      buttons: [],
+      ...emptyStepArrays
+    };
+    seed(currentStep, { ssn: { value: ['123456789', '987654321'] } });
+
+    const result = getStepTool(FORM);
+
+    expect(result.fields[0].value).toEqual(['••••6789', '••••4321']);
+  });
+
   it('does not mask ordinary text field values', () => {
     const currentStep = {
       id: 'step-1',
@@ -218,5 +253,134 @@ describe('getStepTool', () => {
     const result = getStepTool(FORM);
 
     expect(result.fields[0].value).toBe('Ada Lovelace');
+  });
+
+  it('reports a repeated field as repeated with its container, rowCount and errorRows', () => {
+    const currentStep = {
+      id: 'step-1',
+      key: 'autos',
+      servar_fields: [
+        {
+          id: 'vin-el',
+          position: [0, 0],
+          properties: {},
+          servar: {
+            id: 'vin-sv',
+            key: 'vehicle_vin',
+            type: 'text_field',
+            name: 'VIN',
+            repeated: true,
+            metadata: {}
+          }
+        }
+      ],
+      subgrids: [{ id: 'grp-1', position: [0], repeated: true }],
+      buttons: [
+        {
+          id: 'add-btn',
+          position: [],
+          properties: {
+            actions: [
+              {
+                type: 'add_repeated_row',
+                repeat_container: 'grp-1',
+                max_repeats: 3
+              }
+            ]
+          }
+        }
+      ],
+      ...Object.fromEntries(
+        [
+          'texts',
+          'images',
+          'tables',
+          'tabs',
+          'progress_bars',
+          'next_conditions'
+        ].map((k) => [k, []])
+      )
+    };
+    (internalState as any)[FORM] = {
+      currentStep,
+      steps: { autos: currentStep },
+      fields: { vehicle_vin: { value: ['1FA', '2FB'] } },
+      visiblePositions: { '0': [true, true], '0,0': [true, true] },
+      inlineErrors: {
+        vehicle_vin: { byIndex: { 1: { message: 'Invalid VIN' } } }
+      },
+      logicRules: []
+    };
+
+    const result = getStepTool(FORM);
+    const field = result.fields.find((f) => f.key === 'vehicle_vin')!;
+
+    expect(field.repeated).toBe(true);
+    expect(field.repeatContainerId).toBe('grp-1');
+    expect(field.rowCount).toBe(2);
+    expect(field.errorRows).toEqual({ '1': 'Invalid VIN' });
+    expect(result.repeatGroups).toEqual([
+      {
+        containerId: 'grp-1',
+        fieldKeys: ['vehicle_vin'],
+        rowCount: 2,
+        canAddRow: true,
+        maxRows: 3
+      }
+    ]);
+  });
+
+  it('reports canAddRow false and maxRows null when the step has no add_repeated_row button', () => {
+    const currentStep = {
+      id: 'step-1',
+      key: 'autos',
+      servar_fields: [
+        {
+          id: 'vin-el',
+          position: [0, 0],
+          properties: {},
+          servar: {
+            id: 'vin-sv',
+            key: 'vehicle_vin',
+            type: 'text_field',
+            name: 'VIN',
+            repeated: true,
+            metadata: {}
+          }
+        }
+      ],
+      subgrids: [{ id: 'grp-1', position: [0], repeated: true }],
+      buttons: [],
+      ...Object.fromEntries(
+        [
+          'texts',
+          'images',
+          'tables',
+          'tabs',
+          'progress_bars',
+          'next_conditions'
+        ].map((k) => [k, []])
+      )
+    };
+    (internalState as any)[FORM] = {
+      currentStep,
+      steps: { autos: currentStep },
+      fields: { vehicle_vin: { value: ['1FA'] } },
+      visiblePositions: { '0': [true], '0,0': [true] },
+      inlineErrors: {},
+      logicRules: []
+    };
+
+    const result = getStepTool(FORM);
+
+    expect(result.repeatGroups).toEqual([
+      {
+        containerId: 'grp-1',
+        fieldKeys: ['vehicle_vin'],
+        rowCount: 1,
+        canAddRow: false,
+        maxRows: null
+      }
+    ]);
   });
 });

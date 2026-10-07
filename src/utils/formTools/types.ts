@@ -29,6 +29,10 @@ export type GetStepField = {
   value: unknown;
   options: Array<{ value: string; label: string }>;
   error: string;
+  repeated: boolean;
+  repeatContainerId: string | null;
+  rowCount: number | null;
+  errorRows: Record<string, string> | null;
 };
 
 export type GetStepButton = {
@@ -38,10 +42,19 @@ export type GetStepButton = {
   saves: boolean;
 };
 
+export type RepeatGroup = {
+  containerId: string;
+  fieldKeys: string[];
+  rowCount: number;
+  canAddRow: boolean;
+  maxRows: number | null;
+};
+
 export type GetStepResult = {
   step: { id: string; key: string };
   fields: GetStepField[];
   buttons: GetStepButton[];
+  repeatGroups: RepeatGroup[];
 };
 
 export type FillFieldStatus =
@@ -53,11 +66,18 @@ export type FillFieldStatus =
   | 'unsupported'
   | 'left_for_user';
 
-export type FillFieldResult = {
-  status: FillFieldStatus;
-  value?: unknown;
-  message?: string;
-};
+export type RowResult =
+  | { status: 'filled' | 'changed'; value?: unknown }
+  | {
+      status: 'rejected' | 'hidden' | 'max_repeats_exceeded';
+      message?: string;
+    }
+  // The input gave this row null, so it was left as it is
+  | { status: 'skipped' };
+
+export type FillFieldResult =
+  | { status: FillFieldStatus; value?: unknown; message?: string }
+  | { status: 'repeated'; rows: RowResult[] };
 
 export type FillStepInput = {
   values: Record<string, unknown>;

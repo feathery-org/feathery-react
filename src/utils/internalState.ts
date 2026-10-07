@@ -9,7 +9,7 @@ import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
-import { LogicRule } from '../types/Form';
+import { LogicRule, Subgrid } from '../types/Form';
 import AssistantClient from '../assistant/AssistantClient';
 import {
   ExtractionActionOptions,
@@ -204,6 +204,18 @@ export type FormToolsCallbacks = {
   // Resolves once the change-rule callbacks queued by the last fieldOnChange
   // call have finished (CallbackQueue.all()).
   awaitChangeRules: () => Promise<any>;
+  // Adds one row to a repeat container exactly like clicking its "Add
+  // another" button (Form/index.tsx's own addRepeatedRow); limit is the
+  // button action's max_repeats, enforced the same way a real click is.
+  addRepeatedRow: (
+    container: Subgrid | undefined,
+    limit?: number | null
+  ) => void;
+  // Force-submits specific file/signature servars without submitting the
+  // rest of the step - the same call submitExtractionFiles already uses.
+  submitFiles: (
+    fileEntries: { servar: any; stepKey: string }[]
+  ) => Promise<any>;
 };
 
 export interface FormInternalState {

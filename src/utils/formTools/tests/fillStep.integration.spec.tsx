@@ -142,7 +142,9 @@ const TestFormHost = () => {
     fieldOnChange,
     getNextStepKey: () => undefined,
     buttonOnClick: async () => undefined,
-    awaitChangeRules: () => queueRef.current!.all()
+    awaitChangeRules: () => queueRef.current!.all(),
+    addRepeatedRow: () => undefined,
+    submitFiles: async () => undefined
   };
 
   // <Form/>'s own commit signal (src/Form/index.tsx): bumped once per

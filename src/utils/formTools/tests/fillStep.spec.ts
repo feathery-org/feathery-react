@@ -224,18 +224,31 @@ describe('fillStepTool', () => {
     });
   });
 
-  it('marks a repeated field as unsupported and does not write it', async () => {
-    seed([
-      field({
-        servar: { key: 'dependent_name', type: 'text_field', repeated: true }
-      })
-    ]);
+  it('marks a nested-repeat field as unsupported and does not write it', async () => {
+    const currentStep = {
+      id: 'step-1',
+      key: 'step-1',
+      servar_fields: [
+        field({
+          position: [0, 0, 0],
+          servar: { key: 'part_name', type: 'text_field', repeated: true }
+        })
+      ],
+      ...emptyStepArrays,
+      subgrids: [
+        { id: 'outer', position: [0], repeated: true },
+        { id: 'inner', position: [0, 0], repeated: true }
+      ]
+    };
+    seed(currentStep.servar_fields);
+    (internalState as any)[FORM].currentStep = currentStep;
+    (internalState as any)[FORM].steps = { 'step-1': currentStep };
 
     const result = await fillStepTool(FORM, {
-      values: { dependent_name: 'Jane' }
+      values: { part_name: ['Widget'] }
     });
 
-    expect(result.fields.dependent_name).toEqual({
+    expect(result.fields.part_name).toEqual({
       status: 'unsupported',
       message: expect.any(String)
     });

@@ -1000,7 +1000,10 @@ function Form({
     });
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
+  function addRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    limit: number | null = null
+  ) {
     const getNewVal = (field: any) => {
       const val = fieldValues[field.servar.key];
       if (limit && val && Array.isArray(val) && val.length >= limit) return val;
@@ -3888,7 +3891,9 @@ function Form({
       fieldOnChange,
       getNextStepKey,
       buttonOnClick,
-      awaitChangeRules: () => callbackRef.current.all()
+      awaitChangeRules: () => callbackRef.current.all(),
+      addRepeatedRow,
+      submitFiles: (fileEntries) => client.submitFiles(fileEntries)
     };
   }
 

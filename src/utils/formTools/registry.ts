@@ -11,7 +11,7 @@ export const getFormTools = (formUuid: string): FormTool[] => [
     name: 'feathery_get_step',
     title: 'Get current step',
     description:
-      'Read the fields, values, and buttons on the current step of this form.',
+      'Read the fields, values, and buttons on the current step of this form. A repeated field reports repeated: true, its repeatContainerId, and rowCount; repeatGroups lists each container with canAddRow/maxRows.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -26,13 +26,14 @@ export const getFormTools = (formUuid: string): FormTool[] => [
     name: 'feathery_fill_step',
     title: 'Fill current step',
     description:
-      'Fill one or more fields on the current step of this form, exactly as a user typing/selecting would.',
+      "Fill one or more fields on the current step of this form, exactly as a user typing/selecting would. For a repeated field (get_step reports it with repeated: true), pass an array instead - one entry per row, row 0 first; rows beyond the current row count are added automatically, up to the step's repeatGroups.maxRows. A null entry leaves that row as it is; a repeated file_upload field's array holds one FileInput or null per row.",
     inputSchema: {
       type: 'object',
       properties: {
         values: {
           type: 'object',
-          description: 'Map of field key to the value to write.',
+          description:
+            'Map of field key to the value to write - an array, one entry per row, for a repeated field.',
           additionalProperties: true
         }
       },

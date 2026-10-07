@@ -153,9 +153,13 @@ export const validateAndNormalizeForFill = (
 // Decodes feathery_fill_step's FileInput[] into real File objects and runs
 // the same type/size/count checks FileUploadField runs on a real drop, so a
 // tool-driven upload can't bypass limits a user-driven one would hit.
+// `singleRow` is set for one row of a repeated file field - a row is one
+// file max regardless of metadata.multiple, which describes the field as a
+// whole, not any one row of it.
 export const decodeAndValidateFiles = (
   servar: any,
-  rawValue: unknown
+  rawValue: unknown,
+  singleRow = false
 ): { ok: true; files: File[] } | { ok: false; error: string } => {
   if (!Array.isArray(rawValue) || rawValue.length === 0)
     return {
@@ -163,9 +167,14 @@ export const decodeAndValidateFiles = (
       error: `Field '${servar.key}' (file_upload) expects a non-empty array of files.`
     };
 
-  const isMultiple = !!servar.metadata?.multiple;
+  const isMultiple = !singleRow && !!servar.metadata?.multiple;
   if (!isMultiple && rawValue.length > 1)
-    return { ok: false, error: `Field '${servar.key}' accepts only one file.` };
+    return {
+      ok: false,
+      error: singleRow
+        ? `Field '${servar.key}' accepts only one file per row.`
+        : `Field '${servar.key}' accepts only one file.`
+    };
   if (rawValue.length > NUM_FILES_LIMIT)
     return {
       ok: false,

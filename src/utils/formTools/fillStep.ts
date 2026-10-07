@@ -15,8 +15,14 @@ import {
 import { maskFieldValue } from './mask';
 import { clearFilePathMapEntry } from '../formHelperFunctions';
 import { captureRenderTick, waitForNextCommit } from './renderTick';
+import { getPositionKey } from '../hideAndRepeats';
+import {
+  findAddRowButtonAction,
+  getContainerById,
+  isNestedRepeat
+} from '../repeat';
 import { getStepTool } from './getStep';
-import { FillFieldResult, FillStepResult } from './types';
+import { FillFieldResult, FillStepResult, RowResult } from './types';
 
 const MULTI_VALUE_TYPES = new Set([
   'dropdown_multi',
@@ -127,16 +133,26 @@ export async function fillStepTool(
       const rawField = findServarField(state.currentStep, fieldKey);
       const servar = rawField.servar;
 
-      // Repeated/array-backed fields have no row to target in this contract;
-      // writing through changeValue's index===null path would stomp the
-      // whole stored array with a single scalar, so refuse rather than
-      // corrupt data.
-      if (servar.repeated) {
+      // A field whose position matches more than one repeat container has no
+      // single container to add/address rows against - stays unsupported.
+      if (servar.repeated && isNestedRepeat(state.currentStep, rawField)) {
         resolved[fieldKey] = {
           status: 'unsupported',
-          message:
-            'Repeated fields are not supported by feathery_fill_step yet.'
+          message: 'Nested repeated sections are not supported.'
         };
+        continue;
+      }
+
+      if (servar.repeated) {
+        resolved[fieldKey] = await fillRepeatedField(
+          formUuid,
+          state,
+          callbacks,
+          rawField,
+          fieldKey,
+          entry,
+          values[fieldKey]
+        );
         continue;
       }
 
@@ -183,6 +199,26 @@ export async function fillStepTool(
           continue;
         }
         await waitForNextCommit(formUuid, tickBefore);
+
+        try {
+          await callbacks.submitFiles([
+            {
+              servar: {
+                key: servar.key,
+                [servar.type]:
+                  internalState[formUuid]?.fields?.[fieldKey]?.value,
+                repeated: Boolean(servar.repeated)
+              },
+              stepKey: state.currentStep.key
+            }
+          ]);
+        } catch (e: any) {
+          resolved[fieldKey] = {
+            status: 'rejected',
+            message: e?.message ?? 'Failed to save the uploaded file.'
+          };
+          continue;
+        }
 
         // The stored value is an in-flight upload (Promise<File>), not
         // JSON-serializable - report what was written instead of re-reading
@@ -343,4 +379,223 @@ export async function fillStepTool(
     errors,
     snapshot: getStepTool(formUuid)
   };
+}
+
+const isAbsent = (value: unknown) => value === null || value === undefined;
+
+// values[key] for a repeated field is an array, one entry per row. Rows
+// beyond the current row count are added via the container's own
+// add_repeated_row path (same as a person clicking "Add another"), then every
+// requested row is written row by row - changeValue/fieldOnChange/
+// awaitChangeRules/render-tick wait, mirroring the scalar sequence above,
+// just once per row. A row's own outcome never affects its siblings.
+async function fillRepeatedField(
+  formUuid: string,
+  state: any,
+  callbacks: any,
+  rawField: any,
+  fieldKey: string,
+  entry: PanelRuntimeFieldEntry,
+  rawValue: unknown
+): Promise<FillFieldResult> {
+  if (!Array.isArray(rawValue))
+    return {
+      status: 'rejected',
+      message: `Field '${fieldKey}' (repeated) expects an array, one entry per row.`
+    };
+
+  const servar = rawField.servar;
+  const containerId = entry.repeatContainerId as string;
+  const requested = rawValue as unknown[];
+  let rowCount = entry.rowCount ?? 0;
+  // A null entry leaves its row as it is, so trailing nulls add no rows
+  const neededRows = requested.reduce<number>(
+    (needed, value, row) => (isAbsent(value) ? needed : row + 1),
+    0
+  );
+
+  if (neededRows > rowCount) {
+    const container = getContainerById(state.currentStep, containerId);
+    const addAction = findAddRowButtonAction(state.currentStep, containerId);
+    const maxRepeats = addAction?.max_repeats ?? null;
+    // addRepeatedRow writes fieldValues synchronously (changeValue's own
+    // store write), so growth is checked by that raw array length - not by
+    // waiting for a commit, which never comes once max_repeats stops it (the
+    // write becomes a same-reference no-op, so nothing re-renders).
+    const rawRowLength = () => {
+      const v = internalState[formUuid]?.fields?.[fieldKey]?.value;
+      return Array.isArray(v) ? v.length : 0;
+    };
+    const tick = captureRenderTick(formUuid);
+    let addedAny = false;
+    while (rowCount < neededRows) {
+      const before = rawRowLength();
+      callbacks.addRepeatedRow(container, maxRepeats);
+      if (rawRowLength() <= before) break; // max_repeats reached
+      rowCount++;
+      addedAny = true;
+    }
+    // Added rows only show up in visiblePositions (needed for the per-row
+    // hidden check below) once <Form/> actually re-renders with them.
+    if (addedAny) await waitForNextCommit(formUuid, tick);
+  }
+
+  const positionKey = getPositionKey(rawField);
+  const rows: RowResult[] = [];
+  const writtenRows: number[] = [];
+  const writtenFileRows: number[] = [];
+  const intendedValues: Record<number, unknown> = {};
+
+  for (let row = 0; row < requested.length; row++) {
+    if (isAbsent(requested[row])) {
+      rows[row] = { status: 'skipped' };
+      continue;
+    }
+    if (row >= rowCount) {
+      rows[row] = {
+        status: 'max_repeats_exceeded',
+        message: `Row ${row} is past this container's row limit.`
+      };
+      continue;
+    }
+
+    const flags = state.visiblePositions?.[positionKey];
+    if (Array.isArray(flags) && !flags[row]) {
+      rows[row] = { status: 'hidden' };
+      continue;
+    }
+
+    const rowValue = requested[row];
+
+    if (servar.type === 'file_upload') {
+      // A row is one FileInput by contract, but singleRow still rejects an
+      // array here explicitly (metadata.multiple is a per-field flag, not a
+      // per-row one) rather than silently keeping just [0].
+      const decoded = decodeAndValidateFiles(
+        servar,
+        Array.isArray(rowValue) ? rowValue : [rowValue],
+        true
+      );
+      if (!decoded.ok) {
+        rows[row] = { status: 'rejected', message: decoded.error };
+        continue;
+      }
+      const files = decoded.files;
+
+      clearFilePathMapEntry(servar.key, row);
+      callbacks.changeValue(
+        files.map((file) => Promise.resolve(file)),
+        rawField,
+        row
+      );
+      callbacks.fieldOnChange({
+        fieldID: rawField.id,
+        fieldKey,
+        servarId: servar.id,
+        elementRepeatIndex: row
+      })({ valueRepeatIndex: 0 });
+
+      const tick = captureRenderTick(formUuid);
+      try {
+        await callbacks.awaitChangeRules();
+      } catch (e: any) {
+        rows[row] = {
+          status: 'rejected',
+          message: e?.message ?? 'A change rule failed for this row.'
+        };
+        continue;
+      }
+      await waitForNextCommit(formUuid, tick);
+
+      writtenFileRows.push(row);
+      rows[row] = {
+        status: 'filled',
+        value: { name: files[0].name, mimeType: files[0].type }
+      };
+      continue;
+    }
+
+    const validated = validateAndNormalizeForFill(servar, rowValue);
+    if (!validated.ok) {
+      rows[row] = { status: 'rejected', message: validated.error };
+      continue;
+    }
+
+    callbacks.changeValue(validated.value, rawField, row);
+    callbacks.fieldOnChange({
+      fieldID: rawField.id,
+      fieldKey,
+      servarId: servar.id,
+      elementRepeatIndex: row
+    })({});
+
+    const tick = captureRenderTick(formUuid);
+    try {
+      await callbacks.awaitChangeRules();
+    } catch (e: any) {
+      rows[row] = {
+        status: 'rejected',
+        message: e?.message ?? 'A change rule failed for this row.'
+      };
+      continue;
+    }
+    await waitForNextCommit(formUuid, tick);
+
+    writtenRows.push(row);
+    intendedValues[row] = validated.value;
+  }
+
+  // One submitFiles call for the whole field, after every row write lands -
+  // not one per row. The entry always carries the field's entire current
+  // array, so calling it per row would resend every earlier row's bytes
+  // again each time (they stay in-memory Promise<File>s, not S3 paths, for
+  // the rest of this session).
+  if (writtenFileRows.length > 0) {
+    try {
+      await callbacks.submitFiles([
+        {
+          servar: {
+            key: servar.key,
+            [servar.type]: internalState[formUuid]?.fields?.[fieldKey]?.value,
+            repeated: true
+          },
+          stepKey: state.currentStep.key
+        }
+      ]);
+    } catch (e: any) {
+      const message = e?.message ?? 'Failed to save the uploaded file.';
+      for (const row of writtenFileRows)
+        rows[row] = { status: 'rejected', message };
+    }
+  }
+
+  // Classify every written row from one final snapshot, after the last
+  // commit above has landed - a later row's change rule rewriting an
+  // earlier row's value shows up as 'changed', mirroring the field-level
+  // reclassification fillStepTool does for non-repeated fields.
+  if (writtenRows.length > 0) {
+    const finalEntry = getPanelRuntimeSnapshot(
+      formUuid
+    )!.currentStepFields.find((f) => f.key === fieldKey)!;
+    const finalValues = Array.isArray(finalEntry.value) ? finalEntry.value : [];
+    for (const row of writtenRows) {
+      const rowError = finalEntry.errorRows?.[String(row)];
+      const storedValue = finalValues[row];
+      const maskedValue = maskFieldValue(servar.type, storedValue);
+      if (rowError) {
+        rows[row] = { status: 'rejected', message: rowError };
+      } else if (valuesEqual(servar.type, storedValue, intendedValues[row])) {
+        rows[row] = { status: 'filled', value: maskedValue };
+      } else if (isEmptyValue(storedValue, servar.type)) {
+        rows[row] = { status: 'rejected', message: 'Value was rejected.' };
+      } else {
+        // Unlike the field-level result, a row carries no message here - the
+        // row/col position already tells the caller which row a sibling rule
+        // rewrote.
+        rows[row] = { status: 'changed', value: maskedValue };
+      }
+    }
+  }
+
+  return { status: 'repeated', rows };
 }
