@@ -346,12 +346,12 @@ function normalizeGmapState(value: unknown, servar: any): unknown {
   return wantShort ? match.code : match.name;
 }
 
-async function normalizePhone(
+function normalizePhone(
   value: unknown,
   servar: any,
   state: any,
   fieldKey: string
-): Promise<unknown> {
+): unknown {
   // Coerce to string, libphonenumber-js handles formatting and a leading '+'
   const incoming =
     typeof value === 'number'
@@ -359,12 +359,7 @@ async function normalizePhone(
       : typeof value === 'string'
       ? value
       : '';
-  if (!incoming.replace(/\D/g, '')) return value;
-
-  // Load the phone library lazily
-  if (!phoneLib) loadPhoneValidator();
-  await phoneLibPromise;
-  if (!phoneLib) return value;
+  if (!incoming.replace(/\D/g, '') || !phoneLib) return value;
 
   // Parse against the resolved country
   const country = resolveCountry(state, fieldKey, servar);
@@ -397,14 +392,25 @@ export async function fillFields(
   formUuid: string,
   fields: FillFieldInput[]
 ): Promise<FillFieldsResult> {
+  const requestedKeys = new Set(fields.map((f) => f.key));
+  const requestsPhone = (
+    internalState[formUuid]?.currentStep?.servar_fields ?? []
+  ).some(
+    (f: any) =>
+      f?.servar?.type === 'phone_number' && requestedKeys.has(f.servar.key)
+  );
+  // Load the phone library first so the checks and writes below run with nothing in between
+  if (requestsPhone) {
+    if (!phoneLib) loadPhoneValidator();
+    await phoneLibPromise;
+  }
+
   const state = internalState[formUuid];
   const handlers = state?.formActions;
   if (!state?.currentStep || !handlers) {
     return { ok: false, reason: 'not_loaded', message: NOT_LOADED_MESSAGE };
   }
 
-  const stepKey = state.currentStep.key;
-  const requestedKeys = new Set(fields.map((f) => f.key));
   const priorValues = new Map<string, unknown>(
     ((state.currentStep.servar_fields ?? []) as any[])
       .filter((f: any) => requestedKeys.has(f?.servar?.key))
@@ -423,8 +429,8 @@ export async function fillFields(
   };
 
   // Resolve every value first so the writes below land in a single render
-  const prepared: Array<PreparedWrite | RejectedField> = await Promise.all(
-    fields.map(async ({ key, value, repeatIndex }) => {
+  const prepared: Array<PreparedWrite | RejectedField> = fields.map(
+    ({ key, value, repeatIndex }) => {
       const validation = validateFill(state, key, value, repeatIndex);
       if (!validation.ok) {
         return {
@@ -441,7 +447,7 @@ export async function fillFields(
       if (servar.type === 'gmap_state') {
         normalized = normalizeGmapState(normalized, servar);
       } else if (servar.type === 'phone_number') {
-        normalized = await normalizePhone(normalized, servar, state, key);
+        normalized = normalizePhone(normalized, servar, state, key);
       } else if (
         servar.type === 'date_selector' &&
         servar.metadata?.choose_time &&
@@ -451,15 +457,9 @@ export async function fillFields(
         normalized = formatDateString(new Date(normalized), servar.metadata);
       }
       return { key, repeatIndex, field, normalized };
-    })
+    }
   );
 
-  // The person can move on while values are prepared, so writes use the form as it is now
-  const liveHandlers = state.formActions;
-  if (!liveHandlers) {
-    return { ok: false, reason: 'not_loaded', message: NOT_LOADED_MESSAGE };
-  }
-  const stepChanged = state.currentStep?.key !== stepKey;
   const applied: AppliedField[] = [];
   const rejected: RejectedField[] = [];
   const errorsBefore = snapshotInlineErrors(state);
@@ -469,26 +469,17 @@ export async function fillFields(
       rejected.push(write);
       continue;
     }
-    if (stepChanged) {
-      rejected.push({
-        key: write.key,
-        repeatIndex: write.repeatIndex,
-        reason: 'not_on_step',
-        message: `The person moved to another step before '${write.key}' could be entered.`
-      });
-      continue;
-    }
     const index = write.repeatIndex ?? null;
     const fieldForChange =
       index === null ? write.field : { ...write.field, repeat: index };
     try {
-      const changed = liveHandlers.changeValue(
+      const changed = handlers.changeValue(
         write.normalized,
         fieldForChange,
         index
       );
       const changeLogic =
-        changed && liveHandlers.runFieldChangeLogic(fieldForChange, index);
+        changed && handlers.runFieldChangeLogic(fieldForChange, index);
       if (changeLogic) changeLogicRuns.push(changeLogic);
     } catch (err) {
       rejected.push({

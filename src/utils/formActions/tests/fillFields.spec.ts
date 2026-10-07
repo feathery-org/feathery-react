@@ -113,16 +113,22 @@ describe('fillFields', () => {
     });
   });
 
-  it('does not write to a step the person has left', async () => {
+  it('checks a phone fill against the form as it is once the phone library loads', async () => {
     const state = makeState(jest.fn());
+    state.currentStep.servar_fields[0].servar = {
+      key: 'name',
+      type: 'phone_number'
+    };
 
-    const pending = fillFields(formUuid, [{ key: 'name', value: 'Ada' }]);
-    state.currentStep = { key: 'step-2', servar_fields: [] };
+    const pending = fillFields(formUuid, [
+      { key: 'name', value: '904-209-2333' }
+    ]);
+    state.visiblePositions = { '0': [false] };
     const result: any = await pending;
 
     expect(state.formActions.changeValue).not.toHaveBeenCalled();
     expect(result.rejected).toEqual([
-      expect.objectContaining({ key: 'name', reason: 'not_on_step' })
+      expect.objectContaining({ key: 'name', reason: 'hidden' })
     ]);
   });
 
