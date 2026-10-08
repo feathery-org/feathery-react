@@ -8,6 +8,7 @@
 import type { Finalizer } from '../../../pack';
 import type { NfNode, NormalForm } from '../../../tree';
 import { KIND } from '../adapter/keys';
+import { arr } from '../util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -58,13 +59,13 @@ export const rowIdentityFinalizer: Finalizer = {
   run(after, { before }) {
     const used = new Set<string>();
     for (const t of tables(after))
-      for (const r of (t.rows as NfNode[]) ?? [])
+      for (const r of arr<NfNode>(t.rows))
         for (const c of rowControls(r))
           used.add(String((c.binding as Obj).row));
     const ids: string[] = [];
     for (const table of tables(after)) {
       const seen = new Set<string>();
-      const rows = (table.rows as NfNode[]) ?? [];
+      const rows = arr<NfNode>(table.rows);
       // rows the document had keep their key first, then the rest in order
       const order = [
         ...rows.filter(

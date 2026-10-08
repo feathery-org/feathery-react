@@ -21,6 +21,7 @@ import type {
 } from '../../pack';
 import type { FormatEntry, NfNode } from '../../tree';
 import { KIND } from './adapter/keys';
+import { arr } from './util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -477,7 +478,7 @@ function rewrite(
 const runsOf = (node: NfNode): NfNode[] => {
   const out: NfNode[] = [];
   const rec = (n: NfNode) => {
-    for (const inline of (n.inlines as NfNode[] | undefined) ?? []) {
+    for (const inline of arr<NfNode>(n.inlines)) {
       if (inline.kind === KIND.run) out.push(inline);
       if (Array.isArray(inline.inlines)) rec(inline);
     }
@@ -494,7 +495,7 @@ export function setOverride(
   formats: FormatTable
 ): void {
   const group = groupOf(node.kind, name);
-  const placement = group && GROUP_FORMAT.get(group);
+  const placement = group ? GROUP_FORMAT.get(group) : undefined;
   if (!placement) throw new Error(`${node.kind} has no property ${name}`);
   rewrite(node, placement.nfKey(node.kind), name, value, formats);
   // a character property on a paragraph also reaches every run in it
@@ -548,7 +549,7 @@ export function effective(
   view: DocumentView
 ): Record<string, EffectiveProperty> {
   const out: Record<string, EffectiveProperty> = {};
-  for (const group of GROUPS_BY_KIND[node.kind] ?? []) {
+  for (const group of arr<readonly PropertySpec[]>(GROUPS_BY_KIND[node.kind])) {
     const placement = GROUP_FORMAT.get(group);
     if (!placement) continue;
     const ref = node[placement.nfKey(node.kind)];
@@ -600,14 +601,11 @@ export function setOnSpan(
     return `only character properties apply to a span (not ${other.join(
       ', '
     )}); set those on the paragraph`;
-  const inlines = (node.inlines as NfNode[] | undefined) ?? [];
+  const inlines = arr<NfNode>(node.inlines);
   const textLength = (n: NfNode): number =>
     n.kind === KIND.run
       ? String(n.text ?? '').length
-      : ((n.inlines as NfNode[] | undefined) ?? []).reduce(
-          (s, c) => s + textLength(c),
-          0
-        );
+      : arr<NfNode>(n.inlines).reduce((s, c) => s + textLength(c), 0);
   const out: NfNode[] = [];
   let at = 0;
   for (const inline of inlines) {
@@ -628,7 +626,7 @@ export function setOnSpan(
       ) {
         // a control wholly inside the span: its runs take the properties
         const rec = (n: NfNode) => {
-          for (const c of (n.inlines as NfNode[] | undefined) ?? []) {
+          for (const c of arr<NfNode>(n.inlines)) {
             if (c.kind === KIND.run)
               for (const [k, v] of Object.entries(props))
                 setOverride(c, k, v, formats);

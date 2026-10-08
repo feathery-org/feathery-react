@@ -10,6 +10,7 @@ import type { NfNode } from '../../tree';
 import { HEADER_FOOTER, KIND } from './adapter/keys';
 import { bindingMarks } from './features/formula';
 import { sectionMarkerMark } from './features/sectionMarker';
+import { arr } from './util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -25,7 +26,7 @@ export function ownText(node: NfNode): string | null {
   if (node.kind !== KIND.paragraph) return null;
   let out = '';
   const rec = (inlines: unknown) => {
-    for (const i of (inlines as NfNode[] | undefined) ?? []) {
+    for (const i of arr<NfNode>(inlines)) {
       if (i.kind === KIND.run && typeof i.text === 'string') out += i.text;
       if (Array.isArray(i.inlines)) rec(i.inlines);
     }
@@ -35,7 +36,7 @@ export function ownText(node: NfNode): string | null {
 }
 
 const cellText = (cell: NfNode): string =>
-  ((cell.blocks as NfNode[] | undefined) ?? [])
+  arr<NfNode>(cell.blocks)
     .map((b) => (b.kind === KIND.table ? '[table]' : ownText(b) ?? ''))
     .join(' ');
 
@@ -79,7 +80,7 @@ function inlineFlags(p: NfNode): string[] {
   const marks: string[] = [];
   let fields = 0;
   let images = 0;
-  for (const i of (p.inlines as NfNode[] | undefined) ?? []) {
+  for (const i of arr<NfNode>(p.inlines)) {
     if (i.kind === KIND.bookmark && !String(i.name ?? '').startsWith('_'))
       marks.push(`${i.bookmarkType === 0 ? 'start' : 'end'} ${i.name}`);
     if (i.kind === KIND.field && i.fieldType === 0) fields += 1;
@@ -103,9 +104,9 @@ export function detail(node: NfNode, view: DocumentView): string {
   const usedBy = used?.length ? ` usedBy[${used.join(',')}]` : '';
   switch (node.kind) {
     case KIND.section: {
-      const index = (
-        (view.nf.root.sections as NfNode[] | undefined) ?? []
-      ).findIndex((s) => s.id === node.id);
+      const index = arr<NfNode>(view.nf.root.sections).findIndex(
+        (s) => s.id === node.id
+      );
       const brk =
         typeof node.style === 'string'
           ? formats[node.style]?.breakCode
@@ -126,17 +127,15 @@ export function detail(node: NfNode, view: DocumentView): string {
       }${pendingTag(node)}${bs.length ? `  {${bs.join('; ')}}` : ''}`;
     }
     case KIND.table: {
-      const rows = (node.rows as NfNode[] | undefined) ?? [];
+      const rows = arr<NfNode>(node.rows);
       const cols = Math.max(
         0,
-        ...rows.map((r) => ((r.cells as unknown[] | undefined) ?? []).length)
+        ...rows.map((r) => arr<unknown>(r.cells).length)
       );
       return `${rows.length} rows x ${cols} cells${pendingTag(node)}`;
     }
     case KIND.row: {
-      const cells = ((node.cells as NfNode[] | undefined) ?? []).map((c) =>
-        clip(cellText(c), 40)
-      );
+      const cells = arr<NfNode>(node.cells).map((c) => clip(cellText(c), 40));
       const bs = bindingsIn(node, view);
       let key: string | null = null;
       const rec = (n: unknown) => {

@@ -7,13 +7,14 @@ import type { DocumentView, Invariant } from '../../../pack';
 import type { NfNode } from '../../../tree';
 import { KIND } from '../adapter/keys';
 import { refusal } from './common';
+import { arr } from '../util';
 
 function covers(view: DocumentView, table: NfNode): number[] {
   const f = (ref: unknown) =>
     typeof ref === 'string' ? view.nf.formats[ref] ?? {} : {};
-  return ((table.rows as NfNode[] | undefined) ?? []).map((row) => {
+  return arr<NfNode>(table.rows).map((row) => {
     const rf = f(row.style);
-    const spans = ((row.cells as NfNode[] | undefined) ?? []).reduce(
+    const spans = arr<NfNode>(row.cells).reduce(
       (n, c) => n + Number(f(c.style).columnSpan ?? 1),
       0
     );
@@ -32,12 +33,10 @@ export const tableGeometry: Invariant = {
       if (table.kind !== KIND.table) continue;
       const inside =
         touched.has(table.id) ||
-        ((table.rows as NfNode[] | undefined) ?? []).some(
+        arr<NfNode>(table.rows).some(
           (r) =>
             touched.has(r.id) ||
-            ((r.cells as NfNode[] | undefined) ?? []).some((c) =>
-              touched.has(c.id)
-            )
+            arr<NfNode>(r.cells).some((c) => touched.has(c.id))
         );
       if (!inside) continue;
       const now = covers(after, table);

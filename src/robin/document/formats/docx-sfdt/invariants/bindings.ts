@@ -10,6 +10,7 @@ import type { NfNode } from '../../../tree';
 import { KIND } from '../adapter/keys';
 import { bindingState } from '../features/binding';
 import { refusal } from './common';
+import { arr } from '../util';
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -62,9 +63,7 @@ export const bindingConsistency: Invariant = {
       )
       .filter(
         (n) =>
-          ((n.blocks as NfNode[] | undefined) ?? []).filter(
-            (b) => b.kind === KIND.table
-          ).length > 1
+          arr<NfNode>(n.blocks).filter((b) => b.kind === KIND.table).length > 1
       );
     if (crowded.length)
       problems.push(

@@ -15,6 +15,7 @@ import {
   detectTableBanding
 } from '../tableAppearance';
 import { deriveTableStructure } from '../tableStructure';
+import { arr } from '../util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -116,10 +117,12 @@ export const restripeFinalizer: Finalizer = {
     for (const table of tables) {
       const old = before.get(table.id);
       if (!old) continue;
-      const rowsNow = ((table.rows as NfNode[]) ?? [])
+      const rowsNow = arr<NfNode>(table.rows)
         .map((r) => r.id)
         .join(',');
-      const rowsWas = ((old.rows as NfNode[]) ?? []).map((r) => r.id).join(',');
+      const rowsWas = arr<NfNode>(old.rows)
+        .map((r) => r.id)
+        .join(',');
       if (rowsNow === rowsWas) continue;
       const appearance = collectTableAppearance(
         nativeAt(beforeNative, pathOf(before, old.id))
@@ -133,13 +136,13 @@ export const restripeFinalizer: Finalizer = {
         headerRows: banding.headerRows,
         tableId: null
       }).rows;
-      ((table.rows as NfNode[]) ?? []).forEach((row, i) => {
+      arr<NfNode>(table.rows).forEach((row, i) => {
         const role = roles[i]?.role;
         if (i < banding.headerRows || role === 'aggregate' || role === 'header')
           return;
         const want = bandedShadingForRow(banding, i);
         if (want === undefined) return;
-        for (const cell of (row.cells as NfNode[]) ?? [])
+        for (const cell of arr<NfNode>(row.cells))
           if (setShading(cell, want, formats)) ids.push(cell.id);
       });
     }

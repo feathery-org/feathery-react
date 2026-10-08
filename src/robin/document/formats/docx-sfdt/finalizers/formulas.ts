@@ -9,15 +9,14 @@ import type { Finalizer } from '../../../pack';
 import type { NfNode } from '../../../tree';
 import { KIND } from '../adapter/keys';
 import { computeBindingState } from '../features/binding';
+import { arr } from '../util';
 
 function setControlText(control: NfNode, text: string): string[] {
   const host = Array.isArray(control.inlines)
     ? control
-    : ((control.blocks as NfNode[] | undefined) ?? []).find(
-        (b) => b.kind === KIND.paragraph
-      );
+    : arr<NfNode>(control.blocks).find((b) => b.kind === KIND.paragraph);
   if (!host) return [];
-  const inlines = (host.inlines as NfNode[] | undefined) ?? [];
+  const inlines = arr<NfNode>(host.inlines);
   const first = inlines.find((i) => i.kind === KIND.run);
   if (
     first &&

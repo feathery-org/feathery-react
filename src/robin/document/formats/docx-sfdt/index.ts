@@ -98,3 +98,4 @@ export const docxPack: Pack = {
 };
 
 export { createHost } from './host';
+export type { LiveEditor } from './host';

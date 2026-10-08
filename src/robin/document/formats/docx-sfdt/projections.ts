@@ -30,6 +30,7 @@ import type { FormatEntry, NfNode, NormalForm } from '../../tree';
 import { HEADER_FOOTER, KIND } from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
 import { docxTree } from './tree';
+import { arr } from './util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -50,7 +51,7 @@ const runsUnder = (node: NfNode): NfNode[] => {
   const rec = (n: NfNode) => {
     for (const key of docxTree.childLists(n)) {
       if (n.kind === KIND.table) continue;
-      for (const c of (listOf(n, key) as NfNode[]) ?? []) {
+      for (const c of arr<NfNode>(listOf(n, key))) {
         if (c.kind === KIND.run) out.push(c);
         rec(c);
       }
@@ -71,7 +72,7 @@ function listOf(node: Obj, key: string): unknown[] | undefined {
 function removedBy(node: NfNode, kind: string): boolean {
   if (allOf(node.pending, kind)) return true;
   if (node.kind === KIND.table) {
-    const rows = (node.rows as NfNode[] | undefined) ?? [];
+    const rows = arr<NfNode>(node.rows);
     return rows.length > 0 && rows.every((r) => allOf(r.pending, kind));
   }
   if (node.kind === KIND.paragraph) {
@@ -82,7 +83,7 @@ function removedBy(node: NfNode, kind: string): boolean {
   if (node.kind === KIND.control) {
     const runs = runsUnder(node);
     if (runs.length && runs.every((r) => allOf(r.pending, kind))) return true;
-    const tables = ((node.blocks as NfNode[] | undefined) ?? []).filter(
+    const tables = arr<NfNode>(node.blocks).filter(
       (b) => b.kind === KIND.table
     );
     return tables.length > 0 && tables.every((t) => removedBy(t, kind));
@@ -123,7 +124,7 @@ function eachNode(
   const rec = (n: NfNode, inStory: boolean) => {
     edit(n, inStory, out);
     for (const key of docxTree.childLists(n))
-      for (const c of (listOf(n, key) as NfNode[]) ?? [])
+      for (const c of arr<NfNode>(listOf(n, key)))
         rec(c, inStory || key.startsWith(`${HEADER_FOOTER}/`));
   };
   rec(out.root, false);
@@ -305,7 +306,7 @@ export function expectedRejection(
   const index = (n: NfNode) => {
     later.set(n.id, n);
     for (const key of docxTree.childLists(n))
-      for (const c of (listOf(n, key) as NfNode[]) ?? []) index(c);
+      for (const c of arr<NfNode>(listOf(n, key))) index(c);
   };
   index(intended.root);
   Object.assign(out.formats, clone(intended.formats));
@@ -323,7 +324,7 @@ export function expectedRejection(
       for (const [k, v] of Object.entries(m)) if (!skip(k)) n[k] = clone(v);
     }
     for (const key of docxTree.childLists(n))
-      for (const c of (listOf(n, key) as NfNode[]) ?? []) rec(c);
+      for (const c of arr<NfNode>(listOf(n, key))) rec(c);
   };
   rec(out.root);
   return out;
@@ -364,8 +365,6 @@ export function conservedResidue(entry: unknown): unknown {
       .map((h) => ({ k: h.k, v: h.v }));
     if (kept.length) hiddenIn[k] = kept;
   }
-  const keys = ((entry.keys as string[]) ?? []).filter(
-    (k) => k !== 'revisionIds'
-  );
+  const keys = arr<string>(entry.keys).filter((k) => k !== 'revisionIds');
   return { hidden, hiddenIn, keys };
 }

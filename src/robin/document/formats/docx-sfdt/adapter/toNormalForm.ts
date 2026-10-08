@@ -28,6 +28,7 @@ import {
 } from './keys';
 import type { DocxResidue, NodeRecord } from './residue';
 import { NativeRevision, pendingOf } from './revisions';
+import { arr } from '../util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -41,7 +42,7 @@ export function toNormalForm(native: string): {
   const formats = new FormatInterner();
   const residue: DocxResidue = {};
   const revisions = new Map<string, NativeRevision>();
-  for (const r of (doc.revisions as NativeRevision[] | undefined) ?? [])
+  for (const r of arr<NativeRevision>(doc.revisions))
     if (r?.revisionId) revisions.set(r.revisionId, r);
   let counter = 0;
 

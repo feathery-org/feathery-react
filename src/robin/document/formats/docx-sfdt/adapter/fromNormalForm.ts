@@ -27,6 +27,7 @@ import {
 } from './keys';
 import type { DocxResidue, HiddenSub, NodeRecord } from './residue';
 import { NativeRevision, RevisionMinter, revisionsIn } from './revisions';
+import { arr } from '../util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -167,7 +168,7 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
 
   const rootRecord = residue[nf.root.id] as NodeRecord | undefined;
   const minter = new RevisionMinter(
-    (rootRecord?.hidden.revisions as NativeRevision[] | undefined) ?? [],
+    arr<NativeRevision>(rootRecord?.hidden.revisions),
     new Date().toISOString()
   );
   /** Revision ids for a node whose `pending` the engine (re)authored: its own and its mark's. */
@@ -308,9 +309,9 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
       return;
     table.grid = derivedGrid(table);
     table.columnCount = derivedColumnCount(table);
-    for (const row of (table.rows as Obj[] | undefined) ?? []) {
+    for (const row of arr<Obj>(table.rows)) {
       const indices = columnIndices(row);
-      ((row.cells as Obj[] | undefined) ?? []).forEach((cell, i) => {
+      arr<Obj>(row.cells).forEach((cell, i) => {
         cell.columnIndex = indices[i];
         const cf = cell.cellFormat as Obj | undefined;
         const rec = cellRecords.get(cell);
@@ -327,7 +328,7 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
   const rootValue = (key: string, v: unknown) =>
     HOIST.has(key) && typeof v === 'string' ? formatOf(v) : value(v);
   const out: Obj = {};
-  for (const key of record?.keys ?? []) {
+  for (const key of arr<string>(record?.keys)) {
     if (record && key in record.hidden) out[key] = clone(record.hidden[key]);
     else if (root[toNfKey(key)] !== undefined)
       out[key] = rootValue(key, root[toNfKey(key)]);
@@ -338,9 +339,6 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
       out[key] = rootValue(key, root[nfKey]);
   }
   if (minter.minted.length)
-    out.revisions = [
-      ...((out.revisions as NativeRevision[] | undefined) ?? []),
-      ...minter.minted
-    ];
+    out.revisions = [...arr<NativeRevision>(out.revisions), ...minter.minted];
   return JSON.stringify(out);
 }

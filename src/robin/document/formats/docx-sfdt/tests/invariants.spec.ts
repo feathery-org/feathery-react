@@ -10,6 +10,7 @@ import { NfNode, baseOf, shapeOf } from '../../../tree';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
 import { docxTree } from '../tree';
+import { arr } from '../util';
 
 const flagship = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4b.sfdt.json'), 'utf8');
 const state = () => {
@@ -47,7 +48,7 @@ describe('pack invariants', () => {
   it('control: a block control written inside a paragraph is refused; an inline control is not', () => {
     const inline = copy(node('n10'));
     delete (inline as Partial<NfNode>).id;
-    for (const c of (inline.inlines as NfNode[]) ?? []) delete (c as Partial<NfNode>).id;
+    for (const c of arr<NfNode>(inline.inlines)) delete (c as Partial<NfNode>).id;
     const block = { kind: 'control', contentControlProperties: inline.contentControlProperties, blocks: [{ kind: 'paragraph', inlines: [] }] };
     expect(invariants(run({ scope: { ids: ['n9'] }, changes: [{ kind: 'insert_after', anchor: 'n9', container: sh('n8'), node: block }] }))).toContain('control');
     const plain = { kind: 'control', contentControlProperties: inline.contentControlProperties, inlines: [{ kind: 'run', text: 'x' }] };
