@@ -252,11 +252,27 @@ export interface Projections {
    */
   authoredBy(pending: unknown, turnId: string): boolean;
   /**
+   * A pending annotation less this turn's own revisions, or null when nothing else is left: the
+   * part of an anchor the proof holds to what the document had. Without it, an anchor that mixes
+   * this turn's revision with another's (Robin deleting text the user inserted) counts whole.
+   */
+  othersOf?(pending: unknown, turnId: string): unknown;
+  /**
    * The part of one node's residue a commit must leave unchanged, for the proof; the whole entry
    * when absent. A pack leaves out what its seams legitimately rewrite (revision anchors, say) and
    * what is derived from the normal form and checked there.
    */
   conservedResidue?(entry: unknown): unknown;
+  /**
+   * One change set's card accepted or rejected, every other pending change kept: what the engine
+   * applies when it resolves a card itself.
+   */
+  resolveGroup?(nf: NormalForm, group: string, accept: boolean): NormalForm;
+  /**
+   * Whether the editor's own accept or reject cannot settle this card (a replacement it would
+   * leave half resolved, a story its reject does not restore), so the engine must.
+   */
+  ownsResolution?(nf: NormalForm, group: string): boolean;
 }
 
 // ---------------------------------------------------------------------------------------------

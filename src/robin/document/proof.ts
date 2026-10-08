@@ -214,11 +214,19 @@ function pendingMultiset(
 /** Pending changes not authored by this turn: exactly those the document had before. */
 function authorshipKept(pack: Pack, input: ProofInput): string[] {
   const before = pendingMultiset(pack, input.before, () => true);
-  const after = pendingMultiset(
-    pack,
-    input.live,
-    (p) => !pack.projections.authoredBy(p, input.turnId)
-  );
+  const { othersOf, authoredBy } = pack.projections;
+  const after = othersOf
+    ? (() => {
+        const out: string[] = [];
+        walk(input.live.root, pack.tree, ({ node }) => {
+          if (node.pending === undefined) return;
+          const rest = othersOf(node.pending, input.turnId);
+          if (rest !== null && rest !== undefined)
+            out.push(canonicalJson(rest));
+        });
+        return out.sort();
+      })()
+    : pendingMultiset(pack, input.live, (p) => !authoredBy(p, input.turnId));
   if (canonicalJson(before) === canonicalJson(after)) return [];
   const count = (list: string[]) =>
     list.reduce(

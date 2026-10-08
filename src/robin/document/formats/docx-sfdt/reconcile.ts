@@ -165,6 +165,8 @@ export function composeTracked(
         if (kid.kind === KIND.run && kid.text !== old.text) {
           const gone = clone(old);
           markSubtree(gone, del);
+          // the new text is this change's alone, whatever revision the old text carried
+          delete kid.pending;
           markSubtree(kid, ins);
           result.push(gone, kid);
           continue;

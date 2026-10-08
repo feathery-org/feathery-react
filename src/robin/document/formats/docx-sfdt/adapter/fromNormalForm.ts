@@ -357,5 +357,35 @@ export function fromNormalForm(
   }
   if (minter.minted.length)
     out.revisions = [...arr<NativeRevision>(out.revisions), ...minter.minted];
+  // A revision whose every anchor is gone (a card the engine resolved) leaves the table with it,
+  // or the editor shows it as an empty card; one the document carried unanchored stays as it was.
+  if (Array.isArray(out.revisions)) {
+    const anchoredNow = new Set<string>();
+    const anchoredBefore = new Set<string>();
+    const collect = (v: unknown, into: Set<string>) => {
+      if (Array.isArray(v)) v.forEach((x) => collect(x, into));
+      else if (isObject(v))
+        for (const [k, x] of Object.entries(v)) {
+          if (k === 'revisions') continue;
+          if (k === 'revisionIds' && Array.isArray(x))
+            x.forEach((id) => into.add(String(id)));
+          else collect(x, into);
+        }
+    };
+    collect(out, anchoredNow);
+    for (const record of Object.values(residue)) {
+      collect((record as NodeRecord).hidden, anchoredBefore);
+      for (const subs of Object.values((record as NodeRecord).hiddenIn ?? {}))
+        for (const sub of subs)
+          if (sub.k === 'revisionIds' && Array.isArray(sub.v))
+            sub.v.forEach((id) => anchoredBefore.add(String(id)));
+    }
+    const kept = (out.revisions as NativeRevision[]).filter((r) => {
+      const id = String(r.revisionId ?? '');
+      return anchoredNow.has(id) || !anchoredBefore.has(id);
+    });
+    if (kept.length !== (out.revisions as NativeRevision[]).length)
+      out.revisions = kept;
+  }
   return JSON.stringify(out);
 }

@@ -11,7 +11,10 @@ import {
 import { setFormInternalState } from '../../../utils/internalState';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
-import { liveDocumentAccessor } from '../../../robin/document/mounts';
+import {
+  cardResolverFor,
+  liveDocumentAccessor
+} from '../../../robin/document/mounts';
 import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors
@@ -837,6 +840,18 @@ describe("DocumentEditorContainer: Robin's document session", () => {
     expect(liveDocumentAccessor('other-form').descriptor()).toBeNull();
     view.unmount();
     expect(liveDocumentAccessor('form-robin').descriptor()).toBeNull();
+  });
+
+  it("registers the session as the rail's card resolver for that editor, and removes it on unmount", async () => {
+    const view = mount();
+    await waitFor(() =>
+      expect(liveDocumentAccessor('form-robin').descriptor()).not.toBeNull()
+    );
+    const editor = getDocxEditor('form-robin');
+    expect(cardResolverFor(editor)).toBeDefined();
+    expect(cardResolverFor(editor)?.owns('no-such-card')).toBe(false);
+    view.unmount();
+    expect(cardResolverFor(editor)).toBeUndefined();
   });
 
   it('dispatches an outline through the accessor to the mounted editor', async () => {

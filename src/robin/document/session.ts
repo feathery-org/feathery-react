@@ -95,6 +95,9 @@ export class DocumentSession {
 
   private turn: string | null = null;
 
+  /** Cards this session committed by replacing the document: the engine resolves them. */
+  private readonly structural = new Set<string>();
+
   private readonly onTurnChange?: (turnId: string | null) => void;
 
   constructor(options: SessionOptions) {
@@ -364,6 +367,8 @@ export class DocumentSession {
     }
 
     this.install(outcome.live.native, outcome.live);
+    if (outcome.plan.history === 'engine' && outcome.plan.landed === 'card')
+      this.structural.add(turnId);
     trace.committed('committed', outcome.seams, prepared.touched.length);
     trace.proof({
       outcome: 'passed',
@@ -385,6 +390,62 @@ export class DocumentSession {
     };
     this.journal.record(turnId, write, result);
     return result;
+  }
+
+  /**
+   * Whether the engine resolves this card itself: one it committed by replacing the document this
+   * session, or one the pack says the editor's own accept or reject cannot settle.
+   */
+  ownsCard(changeSetId: string): boolean {
+    if (!this.pack.projections.resolveGroup) return false;
+    if (this.structural.has(changeSetId)) return true;
+    return !!this.pack.projections.ownsResolution?.(
+      this.state.view.nf,
+      changeSetId
+    );
+  }
+
+  /**
+   * Accept or reject one card through the engine: a reject of the last change set, with the
+   * document still as it left it, restores the snapshot byte for byte; otherwise the pack's group
+   * projection of the live document is opened. The resolution is one engine history entry, so
+   * Ctrl+Z brings the card back. False, and the document as it was, when it cannot be done.
+   */
+  resolveCard(changeSetId: string, accept: boolean): boolean {
+    const resolveGroup = this.pack.projections.resolveGroup;
+    if (!resolveGroup) return false;
+    const state = this.state;
+    const before = this.native;
+    const snapshot = accept
+      ? undefined
+      : this.history.restorable(changeSetId, before);
+    let target: string;
+    try {
+      target = snapshot
+        ? snapshot.before
+        : this.pack.adapter.fromNormalForm(
+            resolveGroup(state.view.nf, changeSetId, accept),
+            state.residue
+          );
+      this.host.open(target);
+    } catch {
+      try {
+        this.host.open(before);
+      } catch {
+        // the editor is gone; nothing left to restore
+      }
+      this.refresh();
+      return false;
+    }
+    this.history.push({
+      turnId: changeSetId,
+      kind: 'resolution',
+      before,
+      after: this.host.serialize()
+    });
+    this.structural.delete(changeSetId);
+    this.refresh();
+    return true;
   }
 
   /** The editing turn in flight: set by its first write, cleared by `finishTurn`. */

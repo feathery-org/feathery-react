@@ -101,4 +101,22 @@ describe('formula finalizer: writing a control text', () => {
     // already right: nothing written
     expect(setControlText(control, '$12.00')).toEqual([]);
   });
+
+  it('leaves a pending deletion inside the control where it is: it belongs to another card', () => {
+    const control = {
+      id: 'c1',
+      kind: 'control',
+      inlines: [
+        { id: 'r0', kind: 'run', text: '$5.00', pending: { kind: 'Deletion', author: 'Robin', group: 'turn-1' } },
+        { id: 'r1', kind: 'run', text: '$6.00', pending: { kind: 'Insertion', author: 'Robin', group: 'turn-1' } }
+      ]
+    } as unknown as NfNode;
+    setControlText(control, '$7.00');
+    expect((control.inlines as NfNode[]).map((i) => [i.id, i.text])).toEqual([
+      ['r0', '$5.00'],
+      ['r1', '$7.00']
+    ]);
+    // the live text already reads right: nothing to write
+    expect(setControlText(control, '$7.00')).toEqual([]);
+  });
 });

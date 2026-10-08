@@ -51,6 +51,20 @@ export class EngineHistory {
     this.redoStack = [];
   }
 
+  /**
+   * The change set's own entry when the document is still exactly what it left (under the pack's
+   * normalizations): rejecting its card can then restore the snapshot, byte for byte.
+   */
+  restorable(turnId: string, now: string): EngineEntry | undefined {
+    const top = this.undoStack[this.undoStack.length - 1];
+    return top &&
+      top.turnId === turnId &&
+      top.kind === 'change-set' &&
+      this.same(now, top.after)
+      ? top
+      : undefined;
+  }
+
   get depth(): { undo: number; redo: number } {
     return { undo: this.undoStack.length, redo: this.redoStack.length };
   }

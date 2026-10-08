@@ -1,7 +1,10 @@
 // Robin's document engine for a mounted editor: the docx pack registered once, and one session per
 // opened document, mounted under the form instance so the form's `liveDocument` accessor reaches it.
 import { setAssistantSessionActive } from '../../../assistant/tools/docx/syncfusionDocumentOps';
-import { mountDocument } from '../../../robin/document/mounts';
+import {
+  mountDocument,
+  registerCardResolver
+} from '../../../robin/document/mounts';
 import { getPack, registerPack } from '../../../robin/document/pack';
 import { DocumentSession } from '../../../robin/document/session';
 import {
@@ -54,7 +57,13 @@ export function mountRobinDocument({
     return null;
   }
   const unmount = mountDocument(formKey, slot, session);
+  // the rail asks the engine first for the cards it must resolve itself
+  const unregister = registerCardResolver(editor, {
+    owns: (changeSetId) => session.ownsCard(changeSetId),
+    resolve: (changeSetId, accept) => session.resolveCard(changeSetId, accept)
+  });
   return () => {
+    unregister();
     unmount();
     session.finishTurn();
   };

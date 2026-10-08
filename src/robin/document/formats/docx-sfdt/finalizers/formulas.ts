@@ -9,6 +9,7 @@ import type { Finalizer } from '../../../pack';
 import type { NfNode } from '../../../tree';
 import { KIND } from '../adapter/keys';
 import { bindingState, computeBindingState } from '../features/binding';
+import { revisionsIn } from '../adapter/revisions';
 import { arr } from '../util';
 
 /**
@@ -22,7 +23,10 @@ export function setControlText(control: NfNode, text: string): string[] {
     : arr<NfNode>(control.blocks).find((b) => b.kind === KIND.paragraph);
   if (!host) return [];
   const inlines = arr<NfNode>(host.inlines);
-  const runs = inlines.filter((i) => i.kind === KIND.run);
+  // a run pending deletion is another card's: it stays where it is and is not the control's text
+  const deleted = (i: NfNode) =>
+    revisionsIn(i.pending).some((r) => r.kind === 'Deletion');
+  const runs = inlines.filter((i) => i.kind === KIND.run && !deleted(i));
   const first = runs[0];
   if (first && first.text === text && runs.length === 1) return [];
   const run: NfNode = first
@@ -31,7 +35,7 @@ export function setControlText(control: NfNode, text: string): string[] {
   const out: NfNode[] = [];
   let placed = false;
   for (const inline of inlines) {
-    if (inline.kind !== KIND.run) out.push(inline);
+    if (inline.kind !== KIND.run || deleted(inline)) out.push(inline);
     else if (!placed) {
       out.push(run);
       placed = true;

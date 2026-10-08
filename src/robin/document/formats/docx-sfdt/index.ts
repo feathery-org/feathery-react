@@ -29,7 +29,10 @@ import {
   authoredBy,
   conservedResidue,
   expectedRejection,
-  reject
+  ownsResolution,
+  reject,
+  resolveGroup,
+  withoutGroup
 } from './projections';
 import { plan } from './reconcile';
 import {
@@ -94,7 +97,10 @@ export const docxPack: Pack = {
     undoNormalizations: UNDO_NORMALIZATIONS,
     expectedRejection,
     authoredBy,
-    conservedResidue
+    conservedResidue,
+    resolveGroup,
+    ownsResolution,
+    othersOf: withoutGroup
   },
   reconcile: { plan },
   seams: { text: textSeam, format: formatSeam, splice: spliceSeam },

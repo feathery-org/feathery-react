@@ -93,12 +93,13 @@ describe('accept and reject projections', () => {
     expect(all(reject(kept)).some((n) => n.id === section.id)).toBe(true);
   });
 
-  it('reads mixed revisions on one anchor: removed only when every one is of the kind applied', () => {
+  it('reads mixed revisions on one anchor as the editor does: inserted then deleted is gone either way', () => {
+    // measured in the headless lane: the editor's accept-all and reject-all both remove such a run
     const nf = fresh();
     const run = all(nf).find((n) => n.kind === 'run') as NfNode;
     run.pending = { ...ins('u'), revisions: [ins('u'), del('t')] };
-    expect(all(accept(nf)).some((n) => n.id === run.id)).toBe(true);
-    expect(all(reject(nf)).some((n) => n.id === run.id)).toBe(true);
+    expect(all(accept(nf)).some((n) => n.id === run.id)).toBe(false);
+    expect(all(reject(nf)).some((n) => n.id === run.id)).toBe(false);
   });
 });
 

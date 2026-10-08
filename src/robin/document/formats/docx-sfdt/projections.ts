@@ -44,12 +44,33 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
 // ------------------------------------------------------------------ projections
 
+/** The change set being resolved; undefined resolves every pending change. */
+let scope: string | undefined;
 const kindsOf = (pending: unknown): string[] =>
-  revisionsIn(pending).map((r) => r.kind);
-const allOf = (pending: unknown, kind: string) => {
-  const kinds = kindsOf(pending);
-  return kinds.length > 0 && kinds.every((k) => k === kind);
-};
+  revisionsIn(pending)
+    .filter((r) => scope === undefined || r.group === scope)
+    .map((r) => r.kind);
+/**
+ * Whether a pending view carries a change of `kind`: applying it removes the anchor. A run inserted
+ * by one change and deleted by another is gone whichever way the document is resolved (measured:
+ * the editor's accept-all and reject-all both remove it).
+ */
+const allOf = (pending: unknown, kind: string) =>
+  kindsOf(pending).includes(kind);
+
+/** A pending view less the revisions of change set `group` (its mark's too); null when empty. */
+export function withoutGroup(pending: unknown, group: string): Obj | null {
+  if (!isObject(pending)) return null;
+  const view = (revisions: ReturnType<typeof revisionsIn>): Obj | null => {
+    const kept = revisions.filter((r) => r.group !== group);
+    if (!kept.length) return null;
+    return kept.length > 1 ? { ...kept[0], revisions: kept } : { ...kept[0] };
+  };
+  const own = view(revisionsIn(pending));
+  const mark = view(revisionsIn(pending.mark));
+  if (!own && !mark) return null;
+  return { ...(own ?? {}), ...(mark ? { mark } : {}) };
+}
 
 const runsUnder = (node: NfNode): NfNode[] => {
   const out: NfNode[] = [];
@@ -102,15 +123,27 @@ function removedBy(node: NfNode, kind: string): boolean {
   return false;
 }
 
-function project(nf: NormalForm, drop: string): NormalForm {
+function project(nf: NormalForm, drop: string, group?: string): NormalForm {
   const out = clone(nf);
   const rec = (n: NfNode) => {
-    delete n.pending;
+    if (group === undefined) delete n.pending;
+    else {
+      const rest = withoutGroup(n.pending, group);
+      if (rest) n.pending = rest;
+      else delete n.pending;
+    }
     for (const key of docxTree.childLists(n)) {
       const list = listOf(n, key) as NfNode[] | undefined;
       if (!list) continue;
       for (let i = list.length - 1; i >= 0; i -= 1) {
-        if (removedBy(list[i], drop)) list.splice(i, 1);
+        let removed: boolean;
+        scope = group;
+        try {
+          removed = removedBy(list[i], drop);
+        } finally {
+          scope = undefined;
+        }
+        if (removed) list.splice(i, 1);
         else rec(list[i]);
       }
     }
@@ -123,6 +156,16 @@ function project(nf: NormalForm, drop: string): NormalForm {
 export const accept = (nf: NormalForm): NormalForm => project(nf, 'Deletion');
 /** All pending changes rejected. */
 export const reject = (nf: NormalForm): NormalForm => project(nf, 'Insertion');
+/**
+ * One change set's card resolved, every other pending change left as it is: what the engine
+ * applies when it owns a card's accept or reject (a structural card, or a feature replacement the
+ * editor's own resolution would leave as an empty control).
+ */
+export const resolveGroup = (
+  nf: NormalForm,
+  group: string,
+  acceptIt: boolean
+): NormalForm => project(nf, acceptIt ? 'Deletion' : 'Insertion', group);
 
 // ------------------------------------------------------------------ normalizations
 
@@ -453,4 +496,46 @@ export function conservedResidue(entry: unknown): unknown {
   }
   const keys = arr<string>(entry.keys).filter((k) => k !== 'revisionIds');
   return { hidden, hiddenIn, keys };
+}
+
+/**
+ * Whether the editor's own accept or reject cannot settle change set `group`, so the engine
+ * resolves its card: a node it carries twice (a feature replacement keeps the old control beside
+ * the new one, and the editor keeps no revision on a control's own markers, so its resolution
+ * leaves an empty control), or a revision in a header or footer, whose native reject does not
+ * restore the story (architecture 7.5, probe P1b).
+ */
+export function ownsResolution(nf: NormalForm, group: string): boolean {
+  const seen = new Map<string, number>();
+  let story = false;
+  const ours = (n: NfNode) =>
+    isObject(n.pending) &&
+    [...revisionsIn(n.pending), ...revisionsIn(n.pending.mark)].some(
+      (r) => r.group === group
+    );
+  const marked = new Set<string>();
+  const rec = (n: NfNode, inStory: boolean) => {
+    seen.set(n.id, (seen.get(n.id) ?? 0) + 1);
+    if (ours(n)) {
+      marked.add(n.id);
+      if (inStory) story = true;
+    }
+    for (const key of docxTree.childLists(n))
+      for (const c of arr<NfNode>(listOf(n, key)))
+        rec(c, inStory || key.startsWith(`${HEADER_FOOTER}/`));
+  };
+  rec(nf.root, false);
+  if (story) return true;
+  // a twice-carried node whose copies hold this card's revisions somewhere inside
+  const twice = new Set([...seen].filter(([, n]) => n > 1).map(([id]) => id));
+  if (!twice.size) return false;
+  let owned = false;
+  const inside = (n: NfNode, under: boolean) => {
+    const here = under || twice.has(n.id);
+    if (here && marked.has(n.id)) owned = true;
+    for (const key of docxTree.childLists(n))
+      for (const c of arr<NfNode>(listOf(n, key))) inside(c, here);
+  };
+  inside(nf.root, false);
+  return owned;
 }

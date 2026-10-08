@@ -95,3 +95,33 @@ export function liveDocumentAccessor(formKey: string): LiveDocumentAccessor {
     }
   };
 }
+
+/**
+ * A review card the engine resolves itself (a structural card, or one the editor's own accept or
+ * reject cannot settle), looked up by the editor the rail renders for: the rail asks first and
+ * resolves natively only when the engine does not own the card.
+ */
+export interface CardResolver {
+  owns(changeSetId: string): boolean;
+  /** Accept or reject the card; true when it was resolved. */
+  resolve(changeSetId: string, accept: boolean): boolean;
+}
+
+const resolvers = new WeakMap<object, CardResolver>();
+
+/** Register the resolver for an editor; returns the unregister, which removes only this one. */
+export function registerCardResolver(
+  editor: object,
+  resolver: CardResolver
+): () => void {
+  resolvers.set(editor, resolver);
+  return () => {
+    if (resolvers.get(editor) === resolver) resolvers.delete(editor);
+  };
+}
+
+export function cardResolverFor(editor: unknown): CardResolver | undefined {
+  return editor && typeof editor === 'object'
+    ? resolvers.get(editor)
+    : undefined;
+}
