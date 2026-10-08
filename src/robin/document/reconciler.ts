@@ -34,6 +34,8 @@ export interface ReconcileInput {
   history: EngineHistory;
   turnId: string;
   intent: string;
+  /** The card title the engine composed for this change set. */
+  title?: string;
   before: { view: DocumentView; residue: Residue; native: string };
   intended: { view: DocumentView; residue: Residue };
   /**
@@ -87,7 +89,10 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
       intended: intended.view,
       beforeResidue: before.residue,
       intendedResidue: intended.residue,
-      beforeNative: before.native
+      beforeNative: before.native,
+      ...(input.title
+        ? { card: { title: input.title, intent: input.intent } }
+        : {})
     });
     for (const step of plan.steps) {
       const seam = pack.seams[step.seam];
@@ -100,7 +105,8 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
       seams.push(step.seam);
       seam.apply(host, step.payload, {
         turnId: input.turnId,
-        intent: input.intent
+        intent: input.intent,
+        ...(input.title ? { title: input.title } : {})
       });
     }
   } catch (e) {

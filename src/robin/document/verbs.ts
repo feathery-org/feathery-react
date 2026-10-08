@@ -7,6 +7,7 @@
  * conflict, or a refusal. Nothing here touches the editor: committing and proving a prepared write
  * is the reconciler's and the proof's job.
  */
+import { cardTitle } from './card';
 import {
   Change,
   ConflictResult,
@@ -166,6 +167,8 @@ export type PreparedWrite =
       warnings: Warning[];
       checks: CheckRecord[];
       diff: TreeDiff;
+      /** The review card's title (`card.ts`). */
+      title: string;
     };
 
 /** The engine's format table over a working document: lookups, and interning by content. */
@@ -734,7 +737,8 @@ export function prepareWrite(
     facts,
     warnings,
     checks: runner.checks,
-    diff
+    diff,
+    title: cardTitle({ pack, before: view, after, diff, derived: finalizerIds })
   };
 }
 

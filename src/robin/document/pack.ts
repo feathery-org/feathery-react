@@ -280,6 +280,8 @@ export interface SeamContext {
   turnId: string;
   /** One or two sentences from the write, for the card's detail text. */
   intent: string;
+  /** The card's title, composed by the engine from the change (`card.ts`). */
+  title?: string;
 }
 
 export interface Seam {
@@ -313,6 +315,8 @@ export interface PlanContext {
   beforeResidue: Residue;
   intendedResidue: Residue;
   beforeNative: string;
+  /** What the card says: the engine's title and the write's intent, for the group tag. */
+  card?: { title: string; intent: string };
 }
 
 export interface Reconcile {
@@ -344,6 +348,11 @@ export interface Pack {
   projections: Projections;
   reconcile: Reconcile;
   seams: Readonly<Record<string, Seam>>;
+  /**
+   * The node kinds a person counts on a review card, singular and plural ("row", "rows"). A kind
+   * not named here rolls up to its nearest named ancestor in the card title.
+   */
+  cardNouns?: Readonly<Record<string, readonly [string, string]>>;
 }
 
 const REQUIRED_FUNCTIONS: Array<[string, (p: Pack) => unknown]> = [

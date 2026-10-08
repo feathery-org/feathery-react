@@ -593,10 +593,11 @@ export function plan(ctx: PlanContext): CommitPlan {
     ctx.intended.nf,
     ctx.turnId
   );
-  const payload = fromNormalForm(tracked, {
-    ...ctx.beforeResidue,
-    ...ctx.intendedResidue
-  } as never);
+  const payload = fromNormalForm(
+    tracked,
+    { ...ctx.beforeResidue, ...ctx.intendedResidue } as never,
+    ctx.card ? { cards: { [ctx.turnId]: ctx.card } } : {}
+  );
   // truthful about the card: a splice that composed no revision (properties only) lands immediately
   const card = revisionsAuthored(tracked.root, ctx.turnId);
   return {

@@ -11,20 +11,26 @@ export const textSeam: Seam = {
   apply(host, payload, ctx) {
     const { editor } = host as DocxHost;
     const ops = payload as TextOp[];
-    inGroup(editor, ctx.turnId, true, () => {
-      const module = editor.editorModule as Record<string, any>;
-      const selection = editor.selection as Record<string, any>;
-      for (const op of [...ops].reverse()) {
-        if (op.oldMid.length) {
-          place(editor, op.hi, op.a, op.b, op.oldMid, op.at ?? op.a);
-          if (op.newMid.length) module.insertText(op.newMid);
-          else module.delete();
-        } else {
-          const at = op.at ?? op.a;
-          selection.select(`${op.hi};${at}`, `${op.hi};${at}`);
-          module.insertText(op.newMid);
+    inGroup(
+      editor,
+      ctx.turnId,
+      true,
+      () => {
+        const module = editor.editorModule as Record<string, any>;
+        const selection = editor.selection as Record<string, any>;
+        for (const op of [...ops].reverse()) {
+          if (op.oldMid.length) {
+            place(editor, op.hi, op.a, op.b, op.oldMid, op.at ?? op.a);
+            if (op.newMid.length) module.insertText(op.newMid);
+            else module.delete();
+          } else {
+            const at = op.at ?? op.a;
+            selection.select(`${op.hi};${at}`, `${op.hi};${at}`);
+            module.insertText(op.newMid);
+          }
         }
-      }
-    });
+      },
+      { title: ctx.title, intent: ctx.intent }
+    );
   }
 };

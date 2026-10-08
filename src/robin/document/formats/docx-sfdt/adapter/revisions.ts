@@ -43,8 +43,21 @@ export function groupOf(customData: unknown): string | undefined {
 }
 
 /** The editor's group tag for a change set (the product's revision group tag, version 1). */
-export function groupTag(changeSetId: string, label = 'robin'): string {
-  return JSON.stringify({ v: 1, source: 'robin', changeSetId, group: label });
+/** What a card says, carried in its group tag so it survives a save and reload. */
+export interface CardText {
+  title?: string;
+  intent?: string;
+}
+
+export function groupTag(changeSetId: string, card: CardText = {}): string {
+  return JSON.stringify({
+    v: 1,
+    source: 'robin',
+    changeSetId,
+    group: 'robin',
+    ...(card.title ? { title: card.title } : {}),
+    ...(card.intent ? { intent: card.intent } : {})
+  });
 }
 
 export function viewOf(r: NativeRevision | undefined): PendingRevision {
@@ -97,9 +110,16 @@ export class RevisionMinter {
 
   private readonly existingById = new Map<string, string>();
 
-  constructor(existing: NativeRevision[], date: string) {
+  private readonly cards: Readonly<Record<string, CardText>>;
+
+  constructor(
+    existing: NativeRevision[],
+    date: string,
+    cards: Readonly<Record<string, CardText>> = {}
+  ) {
     this.existing = existing;
     this.date = date;
+    this.cards = cards;
     // the document's own revisions are indexed first, so a change joined on a new anchor (Robin
     // deleting text the user inserted) keeps the user's revision instead of splitting it
     for (const rev of existing) {
@@ -138,7 +158,7 @@ export class RevisionMinter {
       date: this.date,
       revisionType: r.kind,
       revisionId: id,
-      ...(r.group ? { customData: groupTag(r.group) } : {})
+      ...(r.group ? { customData: groupTag(r.group, this.cards[r.group]) } : {})
     });
     this.byKey.set(key, id);
     return id;

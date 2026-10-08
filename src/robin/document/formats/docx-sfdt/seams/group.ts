@@ -6,14 +6,15 @@
  */
 import type { LiveEditor } from '../host';
 import { historyOf } from '../host';
-import { groupTag } from '../adapter/revisions';
+import { CardText, groupTag } from '../adapter/revisions';
 import { AUTHOR } from '../reconcile';
 
 export function inGroup<T>(
   editor: LiveEditor,
   turnId: string,
   tracked: boolean,
-  work: () => T
+  work: () => T,
+  card: CardText = {}
 ): T {
   const settings = editor.documentEditorSettings?.revisionSettings;
   const prior = {
@@ -23,7 +24,7 @@ export function inGroup<T>(
   };
   editor.enableTrackChanges = tracked;
   editor.currentUser = AUTHOR;
-  if (settings) settings.customData = groupTag(turnId);
+  if (settings) settings.customData = groupTag(turnId, card);
   let complex = false;
   const module = editor.editorModule as Record<string, any> | undefined;
   if (

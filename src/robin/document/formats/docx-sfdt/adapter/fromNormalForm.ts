@@ -26,7 +26,12 @@ import {
   toNfKey
 } from './keys';
 import type { DocxResidue, HiddenSub, NodeRecord } from './residue';
-import { NativeRevision, RevisionMinter, revisionsIn } from './revisions';
+import {
+  CardText,
+  NativeRevision,
+  RevisionMinter,
+  revisionsIn
+} from './revisions';
 import { arr } from '../util';
 
 type Obj = Record<string, unknown>;
@@ -90,7 +95,11 @@ function structuralFormat(kind: string): string {
 const isNode = (v: unknown): v is NfNode =>
   isObject(v) && typeof v.id === 'string' && typeof v.kind === 'string';
 
-export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
+export function fromNormalForm(
+  nf: NormalForm,
+  residue: DocxResidue,
+  options: { cards?: Readonly<Record<string, CardText>> } = {}
+): string {
   const formatOf = (ref: unknown): Obj => {
     if (typeof ref !== 'string') return {};
     const entry = nf.formats[ref];
@@ -169,7 +178,8 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
   const rootRecord = residue[nf.root.id] as NodeRecord | undefined;
   const minter = new RevisionMinter(
     arr<NativeRevision>(rootRecord?.hidden.revisions),
-    new Date().toISOString()
+    new Date().toISOString(),
+    options.cards
   );
   /** Revision ids for a node whose `pending` the engine (re)authored: its own and its mark's. */
   const revisionAnchors = (n: NfNode) => {

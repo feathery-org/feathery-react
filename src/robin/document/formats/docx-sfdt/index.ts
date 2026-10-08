@@ -97,7 +97,17 @@ export const docxPack: Pack = {
     conservedResidue
   },
   reconcile: { plan },
-  seams: { text: textSeam, format: formatSeam, splice: spliceSeam }
+  seams: { text: textSeam, format: formatSeam, splice: spliceSeam },
+  cardNouns: {
+    section: ['section', 'sections'],
+    paragraph: ['paragraph', 'paragraphs'],
+    table: ['table', 'tables'],
+    row: ['row', 'rows'],
+    cell: ['cell', 'cells'],
+    control: ['field', 'fields'],
+    image: ['image', 'images'],
+    shape: ['text box', 'text boxes']
+  }
 };
 
 export { createHost } from './host';

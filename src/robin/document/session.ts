@@ -302,6 +302,7 @@ export class DocumentSession {
       history: this.history,
       turnId,
       intent: write.intent,
+      title: prepared.title,
       before: {
         view: before.view,
         residue: before.residue,
