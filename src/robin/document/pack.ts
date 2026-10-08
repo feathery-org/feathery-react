@@ -229,6 +229,11 @@ export interface Projections {
   /** The enumerated differences the proof admits; anything else fails it. */
   normalizations: readonly Normalization[];
   /**
+   * Further differences admitted only where an undo or a reopen is compared with the document it
+   * should restore (rollback and engine history), never by the proof.
+   */
+  undoNormalizations?: readonly Normalization[];
+  /**
    * What rejecting every pending change should restore after this commit. Defaults to the
    * document before the write; a pack whose plan applies some changes untracked returns the
    * before document with those changes applied.

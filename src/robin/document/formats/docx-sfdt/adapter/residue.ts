@@ -33,6 +33,8 @@ export interface NodeRecord {
   geometry?: string;
   /** A cell's preferred width when read, which decides whether its laid-out width is kept. */
   preferredWidth?: unknown;
+  /** The node's `pending` view when read; a different one means the engine re-authored it. */
+  pending?: string;
 }
 
 export type DocxResidue = Record<string, NodeRecord>;

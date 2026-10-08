@@ -239,7 +239,11 @@ export function equivalentNative(pack: Pack, a: string, b: string): boolean {
   if (a === b) return true;
   const normalized = (native: string) => {
     let nf = pack.adapter.toNormalForm(native).nf;
-    for (const n of pack.projections.normalizations) nf = n.apply(nf);
+    for (const n of [
+      ...pack.projections.normalizations,
+      ...(pack.projections.undoNormalizations ?? [])
+    ])
+      nf = n.apply(nf);
     return canonicalJson(comparable(pack, nf));
   };
   return normalized(a) === normalized(b);

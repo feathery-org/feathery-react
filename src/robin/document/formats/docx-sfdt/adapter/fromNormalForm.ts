@@ -26,6 +26,7 @@ import {
   toNfKey
 } from './keys';
 import type { DocxResidue, HiddenSub, NodeRecord } from './residue';
+import { NativeRevision, RevisionMinter, revisionsIn } from './revisions';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -166,6 +167,20 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
     return materialize(visible, hidden);
   };
 
+  const rootRecord = residue[nf.root.id] as NodeRecord | undefined;
+  const minter = new RevisionMinter(
+    (rootRecord?.hidden.revisions as NativeRevision[] | undefined) ?? [],
+    new Date().toISOString()
+  );
+  /** Revision ids for a node whose `pending` the engine (re)authored: its own and its mark's. */
+  const revisionAnchors = (n: NfNode) => {
+    const p = isObject(n.pending) ? n.pending : undefined;
+    return {
+      node: revisionsIn(p).map((r) => minter.idFor(r)),
+      mark: revisionsIn(p?.mark).map((r) => minter.idFor(r))
+    };
+  };
+
   function node(n: NfNode): Obj {
     const record = residue[n.id] as NodeRecord | undefined;
     const { kind } = n;
@@ -186,8 +201,31 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
       (kind === KIND.control || kind === KIND.blockControl);
     const out: Obj = {};
 
+    // Revision anchors: kept from the residue while `pending` is as read; re-authored otherwise.
+    const pendingChanged =
+      JSON.stringify(n.pending ?? null) !== (record?.pending ?? 'null');
+    const anchors = pendingChanged ? revisionAnchors(n) : null;
+    /** Hidden sub-keys of a format with its revision ids replaced by the re-authored ones. */
+    const withRevisionIds = (
+      key: string,
+      ids: string[] | undefined
+    ): HiddenSub[] | undefined => {
+      const hidden = record?.hiddenIn[key];
+      if (!anchors) return hidden;
+      const kept = (hidden ?? []).filter((h) => h.k !== 'revisionIds');
+      if (!ids?.length) return kept;
+      const at =
+        (hidden ?? []).find((h) => h.k === 'revisionIds')?.at ??
+        Number.MAX_SAFE_INTEGER;
+      return [...kept, { at, k: 'revisionIds', v: ids }];
+    };
+
     const emit = (key: string) => {
       if (key in out) return;
+      if (key === 'revisionIds' && anchors) {
+        if (anchors.node.length) out.revisionIds = anchors.node;
+        return;
+      }
       if (record && key in record.hidden) {
         out[key] = clone(record.hidden[key]);
         return;
@@ -201,9 +239,15 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
         const ref = nfKey ? n[nfKey] : undefined;
         // a created node carries every format its kind has, as the editor writes them
         if (ref === undefined && !record && !canonical.includes(key)) return;
+        const hidden =
+          key === 'characterFormat' && kind === KIND.paragraph
+            ? withRevisionIds(key, anchors?.mark)
+            : key === 'rowFormat' && kind === KIND.row
+            ? withRevisionIds(key, anchors?.node)
+            : record?.hiddenIn[key];
         out[key] = materialize(
           typeof ref === 'string' ? formatOf(ref) : {},
-          record?.hiddenIn[key]
+          hidden
         );
         return;
       }
@@ -242,6 +286,14 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
       emit(toNativeKey(nfKey));
     }
     if (wantsControl) emit('contentControlProperties');
+    // an inline the engine marked as a tracked change carries its own anchor
+    if (
+      anchors?.node.length &&
+      kind !== KIND.row &&
+      kind !== KIND.paragraph &&
+      !('revisionIds' in out)
+    )
+      out.revisionIds = anchors.node;
 
     if (kind === KIND.cell) cellRecords.set(out, record);
     if (kind === KIND.table) tableGeometry(out, record);
@@ -272,7 +324,7 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
   }
 
   const root = nf.root;
-  const record = residue[root.id] as NodeRecord | undefined;
+  const record = rootRecord;
   const rootValue = (key: string, v: unknown) =>
     HOIST.has(key) && typeof v === 'string' ? formatOf(v) : value(v);
   const out: Obj = {};
@@ -286,5 +338,10 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
     if (nfKey !== 'id' && nfKey !== 'kind' && !(key in out))
       out[key] = rootValue(key, root[nfKey]);
   }
+  if (minter.minted.length)
+    out.revisions = [
+      ...((out.revisions as NativeRevision[] | undefined) ?? []),
+      ...minter.minted
+    ];
   return JSON.stringify(out);
 }

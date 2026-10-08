@@ -27,16 +27,11 @@ import {
   toNfKey
 } from './keys';
 import type { DocxResidue, NodeRecord } from './residue';
+import { NativeRevision, pendingOf } from './revisions';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
-
-interface Revision {
-  revisionId?: string;
-  revisionType?: string;
-  author?: string;
-}
 
 export function toNormalForm(native: string): {
   nf: NormalForm;
@@ -45,19 +40,10 @@ export function toNormalForm(native: string): {
   const doc = JSON.parse(native) as Obj;
   const formats = new FormatInterner();
   const residue: DocxResidue = {};
-  const revisions = new Map<string, Revision>();
-  for (const r of (doc.revisions as Revision[] | undefined) ?? [])
+  const revisions = new Map<string, NativeRevision>();
+  for (const r of (doc.revisions as NativeRevision[] | undefined) ?? [])
     if (r?.revisionId) revisions.set(r.revisionId, r);
   let counter = 0;
-
-  const pendingOf = (ids: unknown) => {
-    if (!Array.isArray(ids) || !ids.length) return null;
-    const first = revisions.get(String(ids[0]));
-    return {
-      kind: first?.revisionType ?? 'Unknown',
-      author: first?.author ?? null
-    };
-  };
 
   /** A value that is not a node: formats hoisted in place, engine-key names renamed. */
   const plain = (value: unknown): unknown => {
@@ -102,16 +88,16 @@ export function toNormalForm(native: string): {
       }
       if (key === 'revisionIds') {
         record.hidden[key] = value;
-        pending = pendingOf(value) ?? pending;
+        pending = pendingOf(value, revisions) ?? pending;
         continue;
       }
       if (HOIST.has(key) && isObject(value)) {
         const { visible, hidden } = split(value, HIDDEN_IN_FORMAT[key] ?? []);
         if (hidden.length) record.hiddenIn[key] = hidden;
         if (key === 'characterFormat')
-          markPending = pendingOf(value.revisionIds);
+          markPending = pendingOf(value.revisionIds, revisions);
         if (key === 'rowFormat')
-          pending = pendingOf(value.revisionIds) ?? pending;
+          pending = pendingOf(value.revisionIds, revisions) ?? pending;
         if (!Object.keys(visible).length) continue; // `keys` remembers it was there
         // a paragraph's own character format is its mark's: always `markStyle`, so `style` on a
         // paragraph always means its paragraph format
@@ -155,11 +141,13 @@ export function toNormalForm(native: string): {
       record.preferredWidth = (
         raw.cellFormat as Obj | undefined
       )?.preferredWidth;
-    if (pending || markPending)
+    if (pending || markPending) {
       out.pending = {
         ...(pending ?? {}),
         ...(markPending ? { mark: markPending } : {})
       };
+      record.pending = JSON.stringify(out.pending);
+    }
     return out;
   };
 

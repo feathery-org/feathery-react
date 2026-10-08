@@ -68,3 +68,32 @@ describe('adapter round trip', () => {
     expect(added.inlines).toEqual([{ characterFormat: {}, text: 'Added' }]);
   });
 });
+
+describe('pending changes both ways', () => {
+  it('mints revisions for pending the engine authored, grouped by change set, and reads them back', () => {
+    const native = fs.readFileSync(files[0], 'utf8');
+    const { nf, residue } = toNormalForm(native);
+    const runs: Array<Record<string, unknown>> = [];
+    walk(nf.root, docxTree, ({ node }) => {
+      if (node.kind === 'run' && runs.length < 2) runs.push(node);
+    });
+    runs[0].pending = { kind: 'Deletion', author: 'Robin', group: 'turn-7' };
+    runs[1].pending = { kind: 'Insertion', author: 'Robin', group: 'turn-7' };
+    const out = fromNormalForm(nf, residue);
+    const doc = JSON.parse(out);
+    expect(doc.revisions).toEqual([
+      expect.objectContaining({ revisionType: 'Deletion', author: 'Robin', customData: expect.stringContaining('"changeSetId":"turn-7"') }),
+      expect.objectContaining({ revisionType: 'Insertion', author: 'Robin' })
+    ]);
+    const again = toNormalForm(out);
+    const back: Array<Record<string, unknown>> = [];
+    walk(again.nf.root, docxTree, ({ node }) => {
+      if (node.kind === 'run' && back.length < 2) back.push(node);
+    });
+    expect(back.map((r) => r.pending)).toEqual([
+      { kind: 'Deletion', author: 'Robin', group: 'turn-7' },
+      { kind: 'Insertion', author: 'Robin', group: 'turn-7' }
+    ]);
+    expect(fromNormalForm(again.nf, again.residue)).toBe(out);
+  });
+});
