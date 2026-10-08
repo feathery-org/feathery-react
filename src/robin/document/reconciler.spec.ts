@@ -246,4 +246,64 @@ describe('reconciler', () => {
     expect(host.undoStack).toHaveLength(3);
     expect(host.opens).toBe(0);
   });
+
+  it('a document replacement whose changes the editor cannot reject one by one still commits: the card reverts it from the snapshot', () => {
+    const host = new ToyHost(doc);
+    const s = stateOf(doc);
+    const parsed = parseVerbInput(
+      'write',
+      addItem(
+        (id) => baseOf(s.view.get(id)),
+        (id) => shapeOf(s.view.get(id) as NfNode, s.pack.tree)
+      )
+    );
+    if (!parsed.ok) throw new Error('bad input');
+    const prepared = prepareWrite(s, parsed.value as WriteInput);
+    if (prepared.outcome !== 'verified') throw new Error(prepared.outcome);
+    // a plan that lands the change with no tracked revisions: rejecting in the editor cannot undo it
+    const untracked = (history: 'engine' | 'editor') => ({
+      ...s.pack,
+      reconcile: {
+        plan: () => ({
+          steps: [
+            {
+              seam: 'splice',
+              payload: s.pack.adapter.fromNormalForm(
+                prepared.intended,
+                prepared.intendedResidue
+              )
+            }
+          ],
+          landed: 'card' as const,
+          history
+        })
+      }
+    });
+    const run = (history: 'engine' | 'editor', h: ToyHost) =>
+      reconcile({
+        pack: untracked(history),
+        host: h,
+        history: new EngineHistory(),
+        turnId: 'turn-1',
+        intent: 'x',
+        before: { view: s.view, residue: s.residue, native: doc },
+        intended: {
+          view: makeView(prepared.intended, s.pack),
+          residue: prepared.intendedResidue
+        },
+        adopt: (fresh) =>
+          s.ids.adopt(fresh, s.pack.tree, s.pack.formatRefKeys, [
+            prepared.intended,
+            s.view.nf
+          ])
+      });
+    const engine = run('engine', host);
+    expect(engine.outcome).toBe('committed');
+    if (engine.outcome === 'committed') {
+      expect(engine.proof.reversible).toBe(true);
+      expect(engine.warnings.map((w) => w.code)).toContain('reject-by-card');
+    }
+    const editor = run('editor', new ToyHost(doc));
+    expect(editor.outcome).toBe('proof-failed');
+  });
 });

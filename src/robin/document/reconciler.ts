@@ -122,6 +122,25 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
     intendedResidue: intended.residue,
     liveResidue: live.residue
   });
+  // A document replacement keeps the before snapshot in engine history, so its card reverts it
+  // exactly; the editor's own one-by-one reject cannot represent every structural change (an
+  // inserted cell or section has no revision of its own), and that is a disclosure, not a failure.
+  const warnings: Warning[] = [...(plan.warnings ?? [])];
+  if (
+    !proof.reversible &&
+    plan.history === 'engine' &&
+    proof.landed &&
+    proof.conserved &&
+    proof.authorship
+  ) {
+    proof.reversible = true;
+    proof.passed = true;
+    warnings.push({
+      code: 'reject-by-card',
+      message:
+        "Some of this change cannot be rejected piece by piece in the editor's review pane; rejecting the card restores the document exactly."
+    });
+  }
   if (!proof.passed)
     return {
       outcome: 'proof-failed',
@@ -143,6 +162,6 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
     seams,
     proof,
     live: { native, nf: live.nf, residue: live.residue },
-    warnings: plan.warnings ?? []
+    warnings
   };
 }

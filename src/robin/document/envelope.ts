@@ -853,7 +853,8 @@ export type CoreFactKind = typeof CORE_FACT_KINDS[number];
 export const CORE_WARNING_CODES = [
   'undo-history-cleared',
   'immediate-not-tracked',
-  'stripped-read-only'
+  'stripped-read-only',
+  'reject-by-card'
 ] as const;
 export type CoreWarningCode = typeof CORE_WARNING_CODES[number];
 
