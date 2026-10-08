@@ -568,9 +568,7 @@ export default function DocumentEditorContainer({
   }
   if (envelope.type === 'pptx') {
     return box(
-      <React.Suspense
-        fallback={<div css={placeholder}>Loading presentation editor…</div>}
-      >
+      <React.Suspense fallback={<div css={placeholder}>Loading document…</div>}>
         {/* Absolute fill inside the container's relative box: the editor is
             bounded by the container's dimensions and scrolls internally,
             never growing the hosting page. */}

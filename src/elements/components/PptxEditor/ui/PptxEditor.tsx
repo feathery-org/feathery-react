@@ -13,14 +13,9 @@ import PptxPanelRail, { type PptxPanelKind } from './PptxPanelRail';
 import PptxRightPanel from './PptxRightPanel';
 import PptxChangesPanel from './PptxChangesPanel';
 import {
-  INK,
-  INK_3,
   LINE,
   PANEL_2,
-  PAPER,
-  LINE_STRONG,
-  INK_2,
-  PANEL_3
+  PAPER
 } from '../../DocxEditor/TrackedChangeGroups/styles';
 import { featheryDoc } from '../../../../utils/browser';
 import { useOutsideClose } from './useOutsideClose';
@@ -229,6 +224,9 @@ function PptxEditorInner({
   const dirty = state.rev >= 0 ? store.engine.isDirty() : false;
   const historyEnabled = !!historyHost;
 
+  // Match DocumentEditorContainer's placeholder exactly: the host shows
+  // "Loading document…" until this mounts, so an identical box and copy make
+  // the host → editor-loading handoff invisible instead of a visible swap.
   const placeholder = (content: React.ReactNode, error = false) => (
     <div
       css={{
@@ -238,11 +236,12 @@ function PptxEditorInner({
         width: '100%',
         height: '100%',
         minHeight: 160,
-        border: `1px dashed ${LINE_STRONG}`,
+        padding: 16,
+        textAlign: 'center',
+        border: '1px dashed #d4d4d8',
         borderRadius: 8,
-        color: error ? '#dc2626' : INK_3,
-        fontSize: 14,
-        background: PANEL_2
+        color: error ? '#dc2626' : '#71717a',
+        fontSize: 14
       }}
     >
       {content}
@@ -251,7 +250,7 @@ function PptxEditorInner({
 
   if (!source) return placeholder('No presentation to edit yet.');
   if (loadError) return placeholder(loadError, true);
-  if (loading || !state.deck) return placeholder('Loading presentation…');
+  if (loading || !state.deck) return placeholder('Loading document…');
 
   return (
     <div
