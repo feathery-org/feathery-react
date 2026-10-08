@@ -36,7 +36,12 @@ function setup(
       intended: {
         view: makeView(prepared.intended, state.pack),
         residue: prepared.intendedResidue
-      }
+      },
+      adopt: (fresh) =>
+        state.ids.adopt(fresh, state.pack.tree, state.pack.formatRefKeys, [
+          prepared.intended,
+          state.view.nf
+        ])
     });
   return { host, history, run };
 }
@@ -92,8 +97,8 @@ describe('reconciler', () => {
     expect(host.undoStack).toHaveLength(1);
     expect(history.depth.undo).toBe(0);
     expect(JSON.parse(host.serialize()).body.slice(0, 2)).toEqual([
-      { t: 'p', text: 'Title', bold: true, rev: 'del' },
-      { t: 'p', text: 'New title', bold: true, rev: 'ins' }
+      { t: 'p', text: 'Title', bold: true, rev: 'del', by: 'turn-1' },
+      { t: 'p', text: 'New title', bold: true, rev: 'ins', by: 'turn-1' }
     ]);
   });
 
@@ -109,7 +114,8 @@ describe('reconciler', () => {
     expect(JSON.parse(host.serialize()).body[1].items[2]).toEqual({
       t: 'p',
       text: 'three',
-      rev: 'ins'
+      rev: 'ins',
+      by: 'turn-1'
     });
     expect(JSON.parse(host.serialize()).body[1].items[1].x).toBe('n');
   });
@@ -178,7 +184,8 @@ describe('reconciler', () => {
       turnId: 't',
       intent: 'x',
       before: { view: s.view, residue: s.residue, native: doc },
-      intended: { view: s.view, residue: s.residue }
+      intended: { view: s.view, residue: s.residue },
+      adopt: (fresh) => fresh
     });
     expect(out.outcome).toBe('apply-failed');
     if (out.outcome === 'apply-failed') expect(out.error).toContain('teleport');

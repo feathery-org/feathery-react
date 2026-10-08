@@ -30,6 +30,14 @@ export interface ReconcileInput {
   intent: string;
   before: { view: DocumentView; residue: Residue; native: string };
   intended: { view: DocumentView; residue: Residue };
+  /**
+   * Give the adapter's fresh read-back engine ids, continuing the intended document's: the proof
+   * compares node by node, residue included.
+   */
+  adopt(fresh: { nf: NormalForm; residue: Residue }): {
+    nf: NormalForm;
+    residue: Residue;
+  };
 }
 
 export type ReconcileOutcome =
@@ -62,6 +70,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
   const seams: string[] = [];
   try {
     plan = pack.reconcile.plan({
+      turnId: input.turnId,
       before: before.view,
       intended: intended.view,
       beforeResidue: before.residue,
@@ -92,11 +101,14 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
     };
   }
   const native = host.serialize();
-  const fresh = pack.adapter.toNormalForm(native);
+  const live = input.adopt(pack.adapter.toNormalForm(native));
   const proof = prove(pack, {
     before: before.view.nf,
     intended: intended.view.nf,
-    live: fresh.nf
+    live: live.nf,
+    turnId: input.turnId,
+    intendedResidue: intended.residue,
+    liveResidue: live.residue
   });
   if (!proof.passed)
     return {
@@ -118,7 +130,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
     plan,
     seams,
     proof,
-    live: { native, nf: fresh.nf, residue: fresh.residue },
+    live: { native, nf: live.nf, residue: live.residue },
     warnings: plan.warnings ?? []
   };
 }

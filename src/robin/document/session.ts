@@ -30,7 +30,7 @@ import { EngineHistory, HistoryOutcome } from './history';
 import { IdTable } from './ids';
 import { WriteJournal } from './loop';
 import { renderOutline } from './outline';
-import type { EditorHost, Pack } from './pack';
+import type { EditorHost, Pack, Residue } from './pack';
 import { reconcile } from './reconciler';
 import { Clock, defaultClock, TraceBuilder } from './trace';
 import type { NormalForm } from './tree';
@@ -112,12 +112,23 @@ export class DocumentSession {
 
   private adopt(native: string, previous: NormalForm[]): void {
     const { pack } = this;
-    const adopted = this.ids.adopt(
-      pack.adapter.toNormalForm(native),
-      pack.tree,
-      pack.formatRefKeys,
-      previous
+    this.install(
+      native,
+      this.ids.adopt(
+        pack.adapter.toNormalForm(native),
+        pack.tree,
+        pack.formatRefKeys,
+        previous
+      )
     );
+  }
+
+  /** Make an adopted read of the editor the current state. */
+  private install(
+    native: string,
+    adopted: { nf: NormalForm; residue: Residue }
+  ): void {
+    const { pack } = this;
     const view = makeView(adopted.nf, pack);
     this.native = native;
     this.current = {
@@ -283,7 +294,12 @@ export class DocumentSession {
       intended: {
         view: makeView(prepared.intended, this.pack),
         residue: prepared.intendedResidue
-      }
+      },
+      adopt: (fresh) =>
+        this.ids.adopt(fresh, this.pack.tree, this.pack.formatRefKeys, [
+          prepared.intended,
+          before.view.nf
+        ])
     });
     if (outcome.outcome !== 'committed') {
       const rolledBack = outcome.rollback.byteEqual;
@@ -309,7 +325,9 @@ export class DocumentSession {
               {
                 detail: {
                   landed: outcome.proof.landedDiff,
-                  reversible: outcome.proof.reversibleDiff
+                  reversible: outcome.proof.reversibleDiff,
+                  conserved: outcome.proof.conservedDiff,
+                  authorship: outcome.proof.authorshipDiff
                 },
                 retry: rolledBack ? 'modified_input' : 'do_not_retry'
               }
@@ -324,7 +342,7 @@ export class DocumentSession {
       return refusedResult(makeRefusal([refusal]), trace.build());
     }
 
-    this.adopt(outcome.live.native, [prepared.intended, before.view.nf]);
+    this.install(outcome.live.native, outcome.live);
     trace.committed('committed', outcome.seams, prepared.touched.length);
     trace.proof({
       outcome: 'passed',

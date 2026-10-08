@@ -48,12 +48,15 @@ interface NativePara {
   formula?: string;
   x?: string;
   rev?: Rev;
+  /** The change set that authored `rev`: a turn id, or another author's mark. */
+  by?: string;
 }
 interface NativeBox {
   t: 'box';
   name?: string;
   items: NativePara[];
   rev?: Rev;
+  by?: string;
 }
 type NativeBlock = NativePara | NativeBox;
 interface NativeDoc {
@@ -62,8 +65,8 @@ interface NativeDoc {
 
 // ------------------------------------------------------------------ native text, canonical order
 
-const PARA_KEYS = ['t', 'text', 'bold', 'size', 'align', 'formula', 'x', 'rev'];
-const BOX_KEYS = ['t', 'name', 'items', 'rev'];
+const PARA_KEYS = ['t', 'text', 'bold', 'size', 'align', 'formula', 'x', 'rev', 'by'];
+const BOX_KEYS = ['t', 'name', 'items', 'rev', 'by'];
 
 function writeBlock(b: NativeBlock): Record<string, unknown> {
   const keys = b.t === 'p' ? PARA_KEYS : BOX_KEYS;
@@ -121,7 +124,7 @@ function toNormalForm(native: string): { nf: NormalForm; residue: Residue } {
     const node: NfNode = { id, kind: 'para', text: p.text, style: intern(entry) };
     if (p.align !== undefined) node.align = p.align;
     if (p.formula !== undefined) node.formula = p.formula;
-    if (p.rev) node.pending = { kind: PENDING[p.rev] };
+    if (p.rev) node.pending = { kind: PENDING[p.rev], ...(p.by ? { by: p.by } : {}) };
     if (p.x !== undefined) residue[id] = { x: p.x };
     return node;
   };
@@ -130,7 +133,7 @@ function toNormalForm(native: string): { nf: NormalForm; residue: Residue } {
     const node: NfNode = { id: `t${next++}`, kind: 'box' };
     if (b.name !== undefined) node.name = b.name;
     node.items = b.items.map(toPara);
-    if (b.rev) node.pending = { kind: PENDING[b.rev] };
+    if (b.rev) node.pending = { kind: PENDING[b.rev], ...(b.by ? { by: b.by } : {}) };
     return node;
   };
   const root: NfNode = { id: 'r', kind: 'doc', blocks: doc.body.map(toBlock) };
@@ -140,6 +143,8 @@ function toNormalForm(native: string): { nf: NormalForm; residue: Residue } {
 function fromNormalForm(nf: NormalForm, residue: Residue): string {
   const revOf = (n: NfNode): Rev | undefined =>
     isPlainObject(n.pending) ? REV[String(n.pending.kind)] : undefined;
+  const byOf = (n: NfNode): string | undefined =>
+    isPlainObject(n.pending) && typeof n.pending.by === 'string' ? n.pending.by : undefined;
   const toPara = (n: NfNode): NativePara => {
     const entry = nf.formats[String(n.style)] ?? {};
     const r = residue[n.id] as { x?: string } | undefined;
@@ -151,7 +156,8 @@ function fromNormalForm(nf: NormalForm, residue: Residue): string {
       align: n.align as string | undefined,
       formula: n.formula as string | undefined,
       x: r?.x,
-      rev: revOf(n)
+      rev: revOf(n),
+      by: byOf(n)
     };
   };
   const toBlock = (n: NfNode): NativeBlock =>
@@ -161,7 +167,8 @@ function fromNormalForm(nf: NormalForm, residue: Residue): string {
           t: 'box',
           name: n.name as string | undefined,
           items: (n.items as NfNode[]).map(toPara),
-          rev: revOf(n)
+          rev: revOf(n),
+          by: byOf(n)
         };
   return writeNative({ body: (nf.root.blocks as NfNode[]).map(toBlock) });
 }
@@ -292,7 +299,7 @@ const listIds = (n: NfNode | undefined) =>
     .map((c) => c.id);
 
 /** Compose the tracked document: deleted nodes kept as deletions, new and changed as insertions. */
-function composeTracked(before: DocumentView, intended: DocumentView): NormalForm {
+function composeTracked(before: DocumentView, intended: DocumentView, turnId: string): NormalForm {
   const out = clone(intended.nf);
   const formatOnly = (a: NfNode, b: NfNode) =>
     a.text === b.text && a.formula === b.formula && a.kind === b.kind;
@@ -307,19 +314,19 @@ function composeTracked(before: DocumentView, intended: DocumentView): NormalFor
       for (const kid of kids) {
         // removed originals that preceded this kid stay in place as deletions
         while (bi < before_.length && !keep.has(before_[bi].id)) {
-          result.push({ ...clone(before_[bi]), pending: { kind: 'deletion' } });
+          result.push({ ...clone(before_[bi]), pending: { kind: 'deletion', by: turnId } });
           bi += 1;
         }
         const old = before.get(kid.id);
         if (!old) {
-          result.push({ ...kid, pending: { kind: 'insertion' } });
+          result.push({ ...kid, pending: { kind: 'insertion', by: turnId } });
           continue;
         }
         if (before_[bi]?.id === kid.id) bi += 1;
         if (kid.kind === 'para' && !formatOnly(old, kid) && !kid.pending) {
           // both halves keep the id, so both find the node's residue on the way back
-          result.push({ ...clone(old), pending: { kind: 'deletion' } });
-          result.push({ ...kid, pending: { kind: 'insertion' } });
+          result.push({ ...clone(old), pending: { kind: 'deletion', by: turnId } });
+          result.push({ ...kid, pending: { kind: 'insertion', by: turnId } });
           continue;
         }
         rec(kid, old);
@@ -327,7 +334,7 @@ function composeTracked(before: DocumentView, intended: DocumentView): NormalFor
       }
       while (bi < before_.length) {
         if (!keep.has(before_[bi].id))
-          result.push({ ...clone(before_[bi]), pending: { kind: 'deletion' } });
+          result.push({ ...clone(before_[bi]), pending: { kind: 'deletion', by: turnId } });
         bi += 1;
       }
       node[key] = result;
@@ -382,7 +389,7 @@ function plan(ctx: PlanContext): CommitPlan {
         }
       ]
     };
-  const tracked = composeTracked(before, intended);
+  const tracked = composeTracked(before, intended, ctx.turnId);
   return {
     steps: [
       {
@@ -446,6 +453,11 @@ export class ToyHost implements EditorHost {
   failNextSeam: string | null = null;
   /** Fault injection: the next seam lands something other than what it was asked. */
   corruptNextSeam = false;
+  /**
+   * Fault injection on the next seam: drop native-only data, re-author other changes under this
+   * turn, or leave this turn's change out of its group.
+   */
+  seamFault: 'drop-residue' | 'reauthor-foreign' | 'omit-group' | null = null;
   opens = 0;
 
   constructor(native: string) {
@@ -490,7 +502,7 @@ export class ToyHost implements EditorHost {
     this.native = writeNative(doc);
   }
   /** A seam edit: one grouped undo step, with the injected faults. */
-  seamEdit(name: string, mutate: (doc: NativeDoc) => void): void {
+  seamEdit(name: string, mutate: (doc: NativeDoc) => void, turnId = ''): void {
     const doc = JSON.parse(this.native) as NativeDoc;
     const before = this.native;
     mutate(doc);
@@ -501,12 +513,28 @@ export class ToyHost implements EditorHost {
       this.failNextSeam = null;
       throw new Error(`${name}: placement failed`);
     }
+    this.applyFaults(turnId);
+  }
+
+  /** The injected faults, applied after a seam did its work. */
+  applyFaults(turnId: string): void {
     if (this.corruptNextSeam) {
       this.corruptNextSeam = false;
       const d = JSON.parse(this.native) as NativeDoc;
       d.body.push({ t: 'p', text: 'stray' });
       this.native = writeNative(d);
     }
+    const fault = this.seamFault;
+    if (!fault) return;
+    this.seamFault = null;
+    const d = JSON.parse(this.native) as NativeDoc;
+    const blocks = d.body.flatMap((b): Array<NativePara | NativeBox> => (b.t === 'box' ? [b, ...b.items] : [b]));
+    for (const b of blocks) {
+      if (fault === 'drop-residue' && b.t === 'p') delete b.x;
+      if (fault === 'reauthor-foreign' && b.rev && b.by !== turnId) b.by = turnId;
+      if (fault === 'omit-group' && b.by === turnId) delete b.by;
+    }
+    this.native = writeNative(d);
   }
 }
 
@@ -679,24 +707,34 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
       accept: (nf) => project(nf, 'deletion'),
       reject: (nf) => project(nf, 'insertion'),
       normalizations: [{ name: 'T1', apply: trimText }],
-      expectedRejection
+      expectedRejection,
+      authoredBy: (pending, turnId) => isPlainObject(pending) && pending.by === turnId
     },
     reconcile: { plan },
     seams: {
       text: {
-        apply: (host, payload) =>
-          (host as ToyHost).seamEdit('text', (doc) => {
-            const edits = payload as Array<{ path: number[]; text: string }>;
-            for (const e of [...edits].reverse()) {
-              const { list, i } = at(doc, e.path);
-              const old = list[i] as NativePara;
-              // the toy editor drops trailing whitespace from typed text (normalization T1)
-              list.splice(i, 1, { ...old, rev: 'del' }, { ...old, text: e.text.replace(/\s+$/, ''), rev: 'ins' });
-            }
-          })
+        apply: (host, payload, ctx) =>
+          (host as ToyHost).seamEdit(
+            'text',
+            (doc) => {
+              const edits = payload as Array<{ path: number[]; text: string }>;
+              for (const e of [...edits].reverse()) {
+                const { list, i } = at(doc, e.path);
+                const old = list[i] as NativePara;
+                // the toy editor drops trailing whitespace from typed text (normalization T1)
+                list.splice(
+                  i,
+                  1,
+                  { ...old, rev: 'del', by: ctx.turnId },
+                  { ...old, text: e.text.replace(/\s+$/, ''), rev: 'ins', by: ctx.turnId }
+                );
+              }
+            },
+            ctx.turnId
+          )
       },
       format: {
-        apply: (host, payload) =>
+        apply: (host, payload, ctx) =>
           (host as ToyHost).seamEdit('format', (doc) => {
             for (const e of payload as Array<{ path: number[]; set: Record<string, unknown> }>) {
               const { list, i } = at(doc, e.path);
@@ -706,22 +744,17 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
                 else p[k] = v;
               }
             }
-          })
+          }, ctx.turnId)
       },
       splice: {
-        apply: (host, payload) => {
+        apply: (host, payload, ctx) => {
           const toy = host as ToyHost;
           if (toy.failNextSeam === 'splice') {
             toy.failNextSeam = null;
             throw new Error('splice: open failed');
           }
           host.open(String(payload));
-          if (toy.corruptNextSeam) {
-            toy.corruptNextSeam = false;
-            const d = JSON.parse(toy.native) as NativeDoc;
-            d.body.push({ t: 'p', text: 'stray' });
-            toy.native = writeNative(d);
-          }
+          toy.applyFaults(ctx.turnId);
         }
       }
     },

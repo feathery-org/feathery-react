@@ -78,7 +78,16 @@ export interface PackTree extends TreeShape {
   identity?(node: NfNode): string | null;
 }
 
-/** Per-node native data the normal form omits, keyed by node id. Opaque to the core. */
+/**
+ * Per-node native data the normal form omits, keyed by node id. Opaque to the core.
+ *
+ * The residue must be identity-free: nothing in it may be the only carrier of an identity (a
+ * binding's name or row key, a bookmark's name, an image's key). A copied node takes a copy of the
+ * original's residue, and finalizers re-mint identity only in the normal form, so an identity held
+ * only in the residue would be duplicated by every copy. Identity lives in the normal form, where
+ * the verifier sees it and finalizers mint it; residue holds only bytes that follow from it or
+ * carry none.
+ */
 export type Residue = Record<string, unknown>;
 
 export interface Adapter {
@@ -220,6 +229,18 @@ export interface Projections {
    * before document with those changes applied.
    */
   expectedRejection?(before: NormalForm, intended: NormalForm): NormalForm;
+  /**
+   * Whether a pending annotation was authored by the change set `turnId`. The proof requires the
+   * pending changes not authored by this turn to be exactly those the document had before, so a
+   * seam that re-authors someone else's change, or leaves its own change out of its group, fails.
+   */
+  authoredBy(pending: unknown, turnId: string): boolean;
+  /**
+   * The part of one node's residue a commit must leave unchanged, for the proof; the whole entry
+   * when absent. A pack leaves out what its seams legitimately rewrite (revision anchors, say) and
+   * what is derived from the normal form and checked there.
+   */
+  conservedResidue?(entry: unknown): unknown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -269,6 +290,8 @@ export interface CommitPlan {
 }
 
 export interface PlanContext {
+  /** The change set id, which every change the plan authors is grouped under. */
+  turnId: string;
   before: DocumentView;
   intended: DocumentView;
   beforeResidue: Residue;
@@ -323,6 +346,7 @@ const REQUIRED_FUNCTIONS: Array<[string, (p: Pack) => unknown]> = [
   ['properties.setOnFormat', (p) => p.properties?.setOnFormat],
   ['projections.accept', (p) => p.projections?.accept],
   ['projections.reject', (p) => p.projections?.reject],
+  ['projections.authoredBy', (p) => p.projections?.authoredBy],
   ['reconcile.plan', (p) => p.reconcile?.plan]
 ];
 

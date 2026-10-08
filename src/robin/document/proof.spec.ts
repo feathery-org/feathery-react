@@ -4,6 +4,7 @@ import { ToyHost, makeToyPack, para, toyNative } from './tests/toyPack';
 
 const pack = makeToyPack();
 const nf = (native: string) => pack.adapter.toNormalForm(native).nf;
+const nothingElse = { turnId: 't', intendedResidue: {}, liveResidue: {} };
 
 describe('proof', () => {
   const before = nf(toyNative(para('a'), para('b')));
@@ -12,28 +13,38 @@ describe('proof', () => {
 
   it('passes a tracked change that landed exactly and rejects back to before (true negative)', () => {
     const live = nf(
-      toyNative(para('a'), para('b', { rev: 'del' }), para('B', { rev: 'ins' }))
+      toyNative(
+        para('a'),
+        para('b', { rev: 'del', by: 't' }),
+        para('B', { rev: 'ins', by: 't' })
+      )
     );
-    expect(prove(pack, { before, intended, live })).toEqual({
+    expect(prove(pack, { before, intended, live, ...nothingElse })).toEqual({
       passed: true,
       landed: true,
       reversible: true,
+      conserved: true,
+      authorship: true,
       normalizations: [],
       landedDiff: [],
-      reversibleDiff: []
+      reversibleDiff: [],
+      conservedDiff: [],
+      authorshipDiff: []
     });
   });
 
   it('fails when the change landed beside the target (true positive for landed)', () => {
-    const live = nf(toyNative(para('a'), para('b'), para('B', { rev: 'ins' })));
-    const p = prove(pack, { before, intended, live });
+    const live = nf(
+      toyNative(para('a'), para('b'), para('B', { rev: 'ins', by: 't' }))
+    );
+    const p = prove(pack, { before, intended, live, ...nothingElse });
     expect([p.passed, p.landed, p.reversible]).toEqual([false, false, true]);
     expect(p.landedDiff[0]).toContain('3 items, expected 2');
   });
 
   it('fails when rejecting would not restore the document (true positive for reversible)', () => {
     const live = nf(toyNative(para('a'), para('B')));
-    const p = prove(pack, { before, intended, live });
+    const p = prove(pack, { before, intended, live, ...nothingElse });
     expect([p.passed, p.landed, p.reversible]).toEqual([false, true, false]);
     expect(p.reversibleDiff).toEqual([
       '/blocks/1/text: "B" where "b" was intended'
@@ -44,15 +55,84 @@ describe('proof', () => {
     const spaced: NormalForm = JSON.parse(JSON.stringify(intended));
     (spaced.root.blocks as NfNode[])[1].text = 'B  ';
     const live = nf(
-      toyNative(para('a'), para('b', { rev: 'del' }), para('B', { rev: 'ins' }))
+      toyNative(
+        para('a'),
+        para('b', { rev: 'del', by: 't' }),
+        para('B', { rev: 'ins', by: 't' })
+      )
     );
-    const p = prove(pack, { before, intended: spaced, live });
+    const p = prove(pack, { before, intended: spaced, live, ...nothingElse });
     expect([p.passed, p.normalizations]).toEqual([true, ['T1']]);
     const strict = makeToyPack({
       projections: { ...pack.projections, normalizations: [] }
     });
-    expect(prove(strict, { before, intended: spaced, live }).passed).toBe(
-      false
+    expect(
+      prove(strict, { before, intended: spaced, live, ...nothingElse }).passed
+    ).toBe(false);
+  });
+
+  it('fails when native data the normal form does not show was lost (true positive for conserved)', () => {
+    const live = nf(
+      toyNative(
+        para('a'),
+        para('b', { rev: 'del', by: 't' }),
+        para('B', { rev: 'ins', by: 't' })
+      )
+    );
+    const ok = prove(pack, {
+      before,
+      intended,
+      live,
+      turnId: 't',
+      intendedResidue: { t0: { x: 'k' } },
+      liveResidue: { t0: { x: 'k' } }
+    });
+    expect(ok.conserved).toBe(true);
+    const lost = prove(pack, {
+      before,
+      intended,
+      live,
+      turnId: 't',
+      intendedResidue: { t0: { x: 'k' } },
+      liveResidue: {}
+    });
+    expect([lost.passed, lost.conserved, lost.conservedDiff.length]).toEqual([
+      false,
+      false,
+      1
+    ]);
+  });
+
+  it('fails when a pending change not authored by this turn was re-authored or left ungrouped (true positive for authorship)', () => {
+    const userBefore = nf(
+      toyNative(para('a', { rev: 'ins', by: 'user' }), para('b'))
+    );
+    const userIntended: NormalForm = JSON.parse(JSON.stringify(userBefore));
+    (userIntended.root.blocks as NfNode[])[1].text = 'B';
+    const live = (a: Record<string, string>, b: Record<string, string>) =>
+      nf(
+        toyNative(
+          para('a', { rev: 'ins', ...a }),
+          para('b', { rev: 'del', ...b }),
+          para('B', { rev: 'ins', ...b })
+        )
+      );
+    const run = (l: NormalForm) =>
+      prove(pack, {
+        before: userBefore,
+        intended: userIntended,
+        live: l,
+        ...nothingElse
+      });
+    expect(run(live({ by: 'user' }, { by: 't' })).authorship).toBe(true);
+    const reauthored = run(live({ by: 't' }, { by: 't' }));
+    expect([reauthored.passed, reauthored.authorship]).toEqual([false, false]);
+    expect(reauthored.authorshipDiff[0]).toContain('lost or re-authored');
+    const ungrouped = run(live({ by: 'user' }, {}));
+    expect(ungrouped.authorshipDiff).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('not grouped under this change')
+      ])
     );
   });
 

@@ -15,14 +15,16 @@
  * bytes equal the bytes before the write.
  */
 import { renameFormatRefs } from './ids';
-import type { EditorHost, Pack } from './pack';
+import type { EditorHost, Pack, Residue } from './pack';
 import {
   NormalForm,
   canonicalJson,
   clone,
   contentOf,
   hash64,
-  isPlainObject
+  indexTree,
+  isPlainObject,
+  walk
 } from './tree';
 
 /** A document as the proof compares it: no ids, format references replaced by entry content. */
@@ -110,21 +112,89 @@ function compareWithNormalizations(
 
 export interface ProofOutcome {
   passed: boolean;
+  /** accept(live) equals accept(intended). */
   landed: boolean;
+  /** reject(live) equals reject(what rejecting should restore). */
   reversible: boolean;
+  /** Every surviving node's conserved residue is what the write intended. */
+  conserved: boolean;
+  /** The pending changes not authored by this turn are exactly those the document had before. */
+  authorship: boolean;
   normalizations: string[];
   landedDiff: string[];
   reversibleDiff: string[];
+  conservedDiff: string[];
+  authorshipDiff: string[];
 }
 
-export function prove(
+export interface ProofInput {
+  before: NormalForm;
+  intended: NormalForm;
+  /** The live document read back, with engine ids continued from the intended one. */
+  live: NormalForm;
+  turnId: string;
+  intendedResidue: Residue;
+  liveResidue: Residue;
+}
+
+/** Residue the commit must not have changed, for every node the intended document keeps. */
+function residueConserved(pack: Pack, input: ProofInput): string[] {
+  const view = pack.projections.conservedResidue ?? ((entry: unknown) => entry);
+  const live = indexTree(input.live.root, pack.tree);
+  const out: string[] = [];
+  for (const [id, entry] of Object.entries(input.intendedResidue)) {
+    if (id !== input.live.root.id && !live.has(id)) continue;
+    const want = canonicalJson(view(entry));
+    const got = canonicalJson(view(input.liveResidue[id]));
+    if (want !== got)
+      out.push(
+        `${id}: native data the normal form does not show changed or was lost`
+      );
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
+/** Pending annotations as a sorted multiset of canonical texts. */
+function pendingMultiset(
   pack: Pack,
-  {
-    before,
-    intended,
-    live
-  }: { before: NormalForm; intended: NormalForm; live: NormalForm }
-): ProofOutcome {
+  nf: NormalForm,
+  keep: (p: unknown) => boolean
+): string[] {
+  const out: string[] = [];
+  walk(nf.root, pack.tree, ({ node }) => {
+    if (node.pending !== undefined && keep(node.pending))
+      out.push(canonicalJson(node.pending));
+  });
+  return out.sort();
+}
+
+/** Pending changes not authored by this turn: exactly those the document had before. */
+function authorshipKept(pack: Pack, input: ProofInput): string[] {
+  const before = pendingMultiset(pack, input.before, () => true);
+  const after = pendingMultiset(
+    pack,
+    input.live,
+    (p) => !pack.projections.authoredBy(p, input.turnId)
+  );
+  if (canonicalJson(before) === canonicalJson(after)) return [];
+  const count = (list: string[]) =>
+    list.reduce(
+      (m, x) => m.set(x, (m.get(x) ?? 0) + 1),
+      new Map<string, number>()
+    );
+  const a = count(before);
+  const b = count(after);
+  const out: string[] = [];
+  for (const [k, n] of a)
+    if ((b.get(k) ?? 0) < n) out.push(`lost or re-authored: ${k}`);
+  for (const [k, n] of b)
+    if ((a.get(k) ?? 0) < n) out.push(`not grouped under this change: ${k}`);
+  return out.slice(0, 6);
+}
+
+export function prove(pack: Pack, input: ProofInput): ProofOutcome {
+  const { before, intended, live } = input;
   const { accept, reject, expectedRejection } = pack.projections;
   const landed = compareWithNormalizations(
     pack,
@@ -139,15 +209,25 @@ export function prove(
     reject(live),
     reject(restores)
   );
+  const conservedDiff = residueConserved(pack, input);
+  const authorshipDiff = authorshipKept(pack, input);
   return {
-    passed: landed.equal && reversible.equal,
+    passed:
+      landed.equal &&
+      reversible.equal &&
+      !conservedDiff.length &&
+      !authorshipDiff.length,
     landed: landed.equal,
     reversible: reversible.equal,
+    conserved: !conservedDiff.length,
+    authorship: !authorshipDiff.length,
     normalizations: [
       ...new Set([...landed.normalizations, ...reversible.normalizations])
     ],
     landedDiff: landed.diff,
-    reversibleDiff: reversible.diff
+    reversibleDiff: reversible.diff,
+    conservedDiff,
+    authorshipDiff
   };
 }
 

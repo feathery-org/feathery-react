@@ -146,8 +146,8 @@ describe('document session: the four verbs end to end', () => {
     ]);
     // the editor holds a tracked change: one native undo group
     expect(JSON.parse(host.serialize()).body[1].items.slice(0, 2)).toEqual([
-      { t: 'p', text: 'Motor', rev: 'del' },
-      { t: 'p', text: 'Motor fleet', rev: 'ins' }
+      { t: 'p', text: 'Motor', rev: 'del', by: 'turn-0' },
+      { t: 'p', text: 'Motor fleet', rev: 'ins', by: 'turn-0' }
     ]);
     expect(host.undoStack).toHaveLength(1);
     // the id the model wrote to is the id it reads back
@@ -155,7 +155,7 @@ describe('document session: the four verbs end to end', () => {
     expect(nodeOf(after, 'n3')).toEqual(
       expect.objectContaining({
         text: 'Motor fleet',
-        pending: { kind: 'insertion' }
+        pending: { kind: 'insertion', by: 'turn-0' }
       })
     );
   });
@@ -191,7 +191,7 @@ describe('document session: the four verbs end to end', () => {
     expect(nodeOf(read, 'n6')).toEqual(
       expect.objectContaining({
         text: 'Liability',
-        pending: { kind: 'insertion' }
+        pending: { kind: 'insertion', by: 'turn-0' }
       })
     );
     expect(session.history.depth.undo).toBe(1);
@@ -421,6 +421,86 @@ describe('document session: the four verbs end to end', () => {
         outcome: 'failed',
         landed: false,
         rollback: { byteEqual: true }
+      })
+    );
+    expect(host.serialize()).toBe(doc);
+  });
+
+  it('a seam that drops native-only data fails the proof and rolls back (residue is proved too)', () => {
+    const { host, call } = mount();
+    const n3 = nodeOf(call('read', { ids: ['n3'] }), 'n3');
+    (host as unknown as { seamFault: string }).seamFault = 'drop-residue';
+    const result = call('write', {
+      intent: 'Rename Motor.',
+      scope: { ids: ['n3'] },
+      changes: [
+        {
+          kind: 'replace',
+          id: 'n3',
+          base: n3.base,
+          node: { text: 'Auto', style: n3.style }
+        }
+      ]
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        refusal: expect.objectContaining({ invariant: 'proof-failed' })
+      })
+    );
+    expect(host.serialize()).toBe(doc);
+  });
+
+  it("a seam that re-authors the user's pending change under this turn fails the proof", () => {
+    const userDoc = toyNative(
+      para('Title'),
+      para('User typed this', { rev: 'ins', by: 'user' }),
+      para('Other')
+    );
+    const { host, call } = mount(userDoc);
+    const n3 = nodeOf(call('read', { ids: ['n3'] }), 'n3');
+    (host as unknown as { seamFault: string }).seamFault = 'reauthor-foreign';
+    const result = call('write', {
+      intent: 'Rename Other.',
+      scope: { ids: ['n3'] },
+      changes: [
+        {
+          kind: 'replace',
+          id: 'n3',
+          base: n3.base,
+          node: { text: 'Another', style: n3.style }
+        }
+      ]
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        refusal: expect.objectContaining({ invariant: 'proof-failed' })
+      })
+    );
+    expect(host.serialize()).toBe(userDoc);
+  });
+
+  it("a seam that leaves its change outside this turn's group fails the proof", () => {
+    const { host, call } = mount();
+    const n3 = nodeOf(call('read', { ids: ['n3'] }), 'n3');
+    (host as unknown as { seamFault: string }).seamFault = 'omit-group';
+    const result = call('write', {
+      intent: 'Rename Motor.',
+      scope: { ids: ['n3'] },
+      changes: [
+        {
+          kind: 'replace',
+          id: 'n3',
+          base: n3.base,
+          node: { text: 'Auto', style: n3.style }
+        }
+      ]
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        refusal: expect.objectContaining({ invariant: 'proof-failed' })
       })
     );
     expect(host.serialize()).toBe(doc);
