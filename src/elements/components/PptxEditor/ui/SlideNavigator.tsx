@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { featheryDoc } from '../../../../utils/browser';
 import { renderSlideSvg } from '../core/render/svg';
 import { useOutsideClose } from './useOutsideClose';
 import {
@@ -78,12 +79,25 @@ export function SlideNavigator({ readOnly = false }: { readOnly?: boolean }) {
     (t) => !!menuRef.current?.contains(t)
   );
 
+  // Keep focus and the viewport on the active thumbnail while arrowing through
+  // the deck, so repeated Up/Down keeps walking from the newly active slide.
+  const navRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav || !nav.contains(featheryDoc().activeElement)) return;
+    const active = nav.querySelector<HTMLButtonElement>(
+      'button[aria-current="true"]'
+    );
+    active?.focus({ preventScroll: true });
+    active?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeSlide]);
+
   if (!deck) return <div css={navStyle} />;
 
   const canDelete = deck.slides.length > 1;
 
   return (
-    <div css={navStyle}>
+    <div ref={navRef} css={navStyle}>
       {!readOnly && (
         <button
           type='button'
@@ -160,6 +174,14 @@ export function SlideNavigator({ readOnly = false }: { readOnly?: boolean }) {
                   }
             }
             onKeyDown={(e) => {
+              // Up/Down walk the deck like PowerPoint's thumbnail pane.
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const next = i + (e.key === 'ArrowDown' ? 1 : -1);
+                if (next >= 0 && next < deck.slides.length)
+                  store.setActiveSlide(next);
+                return;
+              }
               if (readOnly) return;
               if ((e.key === 'Delete' || e.key === 'Backspace') && canDelete) {
                 e.preventDefault();

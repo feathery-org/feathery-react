@@ -53,6 +53,33 @@ it('supports the well-known editor shortcuts on the stage', async () => {
   expect(store.getState().selectedIds).toEqual([]);
 });
 
+it('walks slides with Up/Down when nothing is selected', async () => {
+  mounted = await mountEditor(<SvgSlide />);
+  const { host, store } = mounted;
+  await act(async () => store.loadFile(sampleBytes(), 'sample.pptx'));
+  if (store.getState().deck!.slides.length < 2)
+    await act(async () => store.addSlide(1));
+  const stage = stageHost(host);
+
+  expect(store.getState().activeSlide).toBe(0);
+  // Top of the deck: ArrowUp stays put instead of wrapping.
+  await act(async () => press(stage, 'ArrowUp'));
+  expect(store.getState().activeSlide).toBe(0);
+  await act(async () => press(stage, 'ArrowDown'));
+  expect(store.getState().activeSlide).toBe(1);
+  await act(async () => press(stage, 'ArrowUp'));
+  expect(store.getState().activeSlide).toBe(0);
+
+  // With a shape selected, ArrowDown nudges the shape, not the slide.
+  const slide = store.getState().deck!.slides[0];
+  const shape = slide.shapes.find((sh) => sh.xfrm)!;
+  await act(async () => store.select(shape.id));
+  const { y } = shape.xfrm!;
+  await act(async () => press(stage, 'ArrowDown'));
+  expect(store.getState().activeSlide).toBe(0);
+  expect(shape.xfrm!.y).toBe(y + 9525);
+});
+
 it('tooltips carry the platform shortcut hints', async () => {
   mounted = await mountEditor(
     <>

@@ -2107,6 +2107,19 @@ export function SvgSlide({
           }
         }
       }
+      // With no shape selected, Up/Down step between slides like PowerPoint.
+      if (
+        !meta &&
+        deck &&
+        !selectedIds.length &&
+        (e.key === 'ArrowDown' || e.key === 'ArrowUp')
+      ) {
+        e.preventDefault();
+        const next =
+          store.getState().activeSlide + (e.key === 'ArrowDown' ? 1 : -1);
+        if (next >= 0 && next < deck.slides.length) store.setActiveSlide(next);
+        return;
+      }
       // Arrow keys nudge the selection (Shift = larger step), like PowerPoint.
       if (
         !meta &&

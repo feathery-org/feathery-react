@@ -32,6 +32,23 @@ it('adds a slide from the New slide button after the active slide', async () => 
   expect(store.getState().activeSlide).toBe(1);
 });
 
+it('walks slides with Up/Down from a focused thumbnail, even read-only', async () => {
+  const { host, store } = await mountNav(true);
+  if (slideCount(mounted!) < 2) await act(async () => store.addSlide(1));
+  await act(async () => store.setActiveSlide(0));
+
+  const thumb = host.querySelector(
+    'button[aria-label="Slide 1"]'
+  ) as HTMLButtonElement;
+  const press = (key: string) =>
+    thumb.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+
+  await act(async () => press('ArrowUp'));
+  expect(store.getState().activeSlide).toBe(0); // clamped at the top
+  await act(async () => press('ArrowDown'));
+  expect(store.getState().activeSlide).toBe(1);
+});
+
 it('duplicates and deletes via the thumbnail right-click menu (undoable)', async () => {
   const { host, store } = await mountNav();
   const before = slideCount(mounted!);
