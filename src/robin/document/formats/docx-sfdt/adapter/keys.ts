@@ -42,6 +42,12 @@ export const NF_FORMAT_KEY: Record<string, string> = {
 };
 
 /** Every key whose string value references a format entry. */
+/**
+ * Feature attributes: what a node means to the binding engine (its name, type, formula), not how it
+ * looks. A change to one is content, tracked as the node replaced; formatting stays untracked (D3).
+ */
+export const FEATURE_KEYS = ['binding'];
+
 export const FORMAT_REF_KEYS = ['style', 'markStyle', 'listStyle', ...HOIST];
 
 /** Sub-keys taken out of a format object before it is hoisted; engine-owned. */

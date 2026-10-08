@@ -10,6 +10,7 @@ import { NfNode, NormalForm, baseOf, shapeOf, walk } from '../../../tree';
 import { makeView } from '../../../view';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
+import { accept, expectedRejection, reject } from '../projections';
 import { composeTracked, hierOf, plan } from '../reconcile';
 import { docxTree } from '../tree';
 import { arr } from '../util';
@@ -111,4 +112,32 @@ describe('plan: a set on a shared format entry', () => {
     for (const op of ops) expect(op.props).toEqual(expect.objectContaining({ italic }));
     expect(p.landed).toBe('immediate');
   });
+});
+
+describe('composeTracked: feature attributes are content, not formatting', () => {
+  const find = (nf: NormalForm, id: string) => occurrences(nf, id);
+  const cases: Array<[string, (b: Record<string, unknown>) => unknown]> = [
+    ['a rewritten formula', (b) => ({ ...b, expr: '0' })],
+    ['an unbound control (binding removed)', () => undefined]
+  ];
+  for (const [name, change] of cases)
+    it(`${name} on a kept control is a tracked replacement that reject undoes`, () => {
+      const s = state();
+      const control = s.view.nodes().find((n) => n.kind === 'control' && typeof (n.binding as { expr?: unknown } | undefined)?.expr === 'string') as NfNode;
+      expect(control).toBeDefined();
+      const intended = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
+      const target = find(intended, control.id)[0];
+      const next = change(target.binding as Record<string, unknown>);
+      if (next === undefined) delete target.binding;
+      else target.binding = next;
+      const { tracked, untracked } = composeTracked(s.view, intended, 't');
+      expect(untracked).not.toContain(control.id);
+      const copies = find(tracked, control.id);
+      expect(copies.map(trackedAs).sort()).toEqual(['Deletion', 'Insertion']);
+      const bindingIn = (nf: NormalForm) => find(nf, control.id).map((n) => JSON.stringify(n.binding ?? null));
+      expect(bindingIn(reject(tracked))).toEqual([JSON.stringify(control.binding)]);
+      expect(bindingIn(accept(tracked))).toEqual([JSON.stringify(next ?? null)]);
+      // what rejecting should restore keeps the feature as it was (formatting would stay applied)
+      expect(bindingIn(expectedRejection(s.view.nf, intended))).toEqual([JSON.stringify(control.binding)]);
+    });
 });

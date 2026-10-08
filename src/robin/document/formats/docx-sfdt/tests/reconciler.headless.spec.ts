@@ -265,6 +265,26 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(row).toEqual(expect.objectContaining(SPLICE));
   });
 
+  it('D11 rewrite a formula on a kept control: splice, a tracked replacement (resolved by the engine, not natively)', async () => {
+    const pre = await fresh();
+    const hits = (await dispatch('find', { feature: { name: 'formula' } })).hits as Array<{ id: string }>;
+    const nodes = await read(hits.map((h) => h.id));
+    // a formula with one occurrence: rewriting one of several would make them disagree
+    const formulas = Object.values(nodes).filter((n: any) => n.kind === 'control' && typeof n.binding?.expr === 'string') as any[];
+    const control = formulas.find((n) => formulas.filter((m) => m.binding.name === n.binding.name).length === 1);
+    expect(control).toBeDefined();
+    const row = await commitAndUndo('D11', pre, {
+      intent: 'Write the formula out in full.',
+      scope: { ids: [control.id] },
+      changes: [{ kind: 'replace', id: control.id, base: control.base, node: { ...strip(control), binding: { ...control.binding, expr: `mul(${control.binding.expr},1)` } } }]
+    });
+    expect(row).toEqual(expect.objectContaining(SPLICE));
+    // The editor keeps no revision on a control's own markers, so its accept-all and reject-all
+    // each leave the other control as an empty shell: this card resolves through the engine's
+    // projections, never natively (the rail spec drives it).
+    expect(row.native).toMatch(/^accept differs .* reject differs /);
+  });
+
   afterAll(() => {
     // eslint-disable-next-line no-console
     console.log(

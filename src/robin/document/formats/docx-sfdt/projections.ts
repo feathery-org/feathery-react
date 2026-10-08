@@ -27,7 +27,7 @@
  */
 import type { Normalization } from '../../pack';
 import type { FormatEntry, NfNode, NormalForm } from '../../tree';
-import { HEADER_FOOTER, KIND } from './adapter/keys';
+import { FEATURE_KEYS, HEADER_FOOTER, KIND } from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
 import { docxTree } from './tree';
 import { arr } from './util';
@@ -318,10 +318,11 @@ export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7];
 // ------------------------------------------------------------------ what rejecting restores
 
 /**
- * Only text and structure are tracked (the native format has revisions for nothing else):
- * formatting (decision D3), bindings, widths and every other property land untracked. So
- * rejecting should restore the document before, with each kept node's own properties as the
- * intended document has them; its text and children come back from the revisions.
+ * Text, structure and feature attributes are tracked (a changed binding or formula is the node
+ * replaced); formatting (decision D3), widths and every other property land untracked, since the
+ * native format has no revision for them. So rejecting should restore the document before, with
+ * each kept node's own properties, less its feature attributes, as the intended document has
+ * them; its text, children and features come back from the revisions.
  */
 export function expectedRejection(
   before: NormalForm,
@@ -345,7 +346,8 @@ export function expectedRejection(
         )
       );
       const skip = (k: string) =>
-        lists.has(k) || ['id', 'kind', 'text', 'pending'].includes(k);
+        lists.has(k) ||
+        ['id', 'kind', 'text', 'pending', ...FEATURE_KEYS].includes(k);
       for (const k of Object.keys(n)) if (!skip(k) && !(k in m)) delete n[k];
       for (const [k, v] of Object.entries(m)) if (!skip(k)) n[k] = clone(v);
     }

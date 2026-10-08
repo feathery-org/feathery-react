@@ -23,7 +23,12 @@
 import type { Warning } from '../../envelope';
 import type { CommitPlan, DocumentView, PlanContext } from '../../pack';
 import { NfNode, NormalForm, canonicalJson, clone } from '../../tree';
-import { FORMAT_REF_KEYS, HEADER_FOOTER, KIND } from './adapter/keys';
+import {
+  FEATURE_KEYS,
+  FORMAT_REF_KEYS,
+  HEADER_FOOTER,
+  KIND
+} from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
 import { fromNormalForm } from './adapter/fromNormalForm';
 import { ownText } from './outline';
@@ -160,6 +165,26 @@ export function composeTracked(
           const gone = clone(old);
           markSubtree(gone, del);
           markSubtree(kid, ins);
+          result.push(gone, kid);
+          continue;
+        }
+        if (
+          FEATURE_KEYS.some(
+            (k) =>
+              canonicalJson(kid[k] ?? null) !== canonicalJson(old[k] ?? null)
+          )
+        ) {
+          // a feature attribute changed (a rewritten formula, a binding removed): content, so the
+          // old node stays as a Deletion beside the new one as an Insertion, and reject restores it;
+          // like a move, the bookmarks it holds stay with the new copy. The editor keeps no
+          // revision on a control's own markers through open(), so its piecewise accept or reject
+          // leaves the other control as an empty shell: such a card resolves through the engine's
+          // projections (`featureReplacements` names it), never natively
+          const gone = clone(old);
+          markSubtree(gone, del);
+          markSubtree(kid, ins);
+          removedCopies.push(gone);
+          moved.add(kid.id);
           result.push(gone, kid);
           continue;
         }
