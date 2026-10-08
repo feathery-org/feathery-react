@@ -183,6 +183,24 @@ export class PptxEditorStore {
     return { renderRev, structureRev: structureRev + 1 };
   }
 
+  /** Re-render the active slide from the unchanged model (e.g. after webfonts
+   *  settle). Skipped during an in-place text edit to not clobber the caret. */
+  refreshRender = (): void => {
+    if (this.commitSvgTextEdit) return;
+    const { deck, activeSlide } = this.state;
+    const slide = deck?.slides[activeSlide];
+    if (deck && slide && this.svgRoot) {
+      reconcileSlideSvg(deck, slide, this.svgRoot, {
+        fullContent: true,
+        background: true,
+        structure: true,
+        slideSize: true
+      });
+    }
+    // rev drives thumbnail caches, so they re-render with fresh metrics too.
+    this.set({ rev: this.state.rev + 1 });
+  };
+
   // ---- engine actions ----
 
   loadFile = (bytes: Uint8Array, name: string): void => {

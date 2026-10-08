@@ -39,6 +39,7 @@ import {
 } from '../../DocxEditor/icons';
 import type { PptxEditorProps } from '../types';
 import { withShortcut } from './shortcuts';
+import { onFontMetricsSettled } from '../core/render/fonts';
 
 // Tracked edits and version history are built but not user-ready; keep the
 // right rail and panels hidden until their flows are approved.
@@ -133,6 +134,9 @@ function PptxEditorInner({
       }
     });
   }, [store, onChange]);
+
+  // Webfonts settling changes measured line metrics; re-render on fresh ones.
+  useEffect(() => onFontMetricsSettled(() => store.refreshRender()), [store]);
 
   // ---- save / download ----
   const handleSave = useCallback(async () => {

@@ -73,6 +73,28 @@ export function cssFamilyList(family: string): string {
 // Canvas has no real metrics (jsdom) so SSR/tests are unaffected.
 const topLeadingCache = new Map<string, number>();
 
+// First-render measurements run before injected webfonts finish loading, so
+// they capture fallback metrics; flush them (and re-render) once fonts settle.
+const fontSettleListeners = new Set<() => void>();
+let fontSettleArmed = false;
+function armFontSettle(): void {
+  if (fontSettleArmed) return;
+  const fonts = featheryDoc().fonts as FontFaceSet | undefined;
+  if (!fonts?.addEventListener) return;
+  fontSettleArmed = true;
+  fonts.addEventListener('loadingdone', () => {
+    topLeadingCache.clear();
+    fontSettleListeners.forEach((listener) => listener());
+  });
+}
+
+/** Notify when webfonts finish loading (stale metric caches are already flushed). */
+export function onFontMetricsSettled(listener: () => void): () => void {
+  armFontSettle();
+  fontSettleListeners.add(listener);
+  return () => fontSettleListeners.delete(listener);
+}
+
 export function excessTopLeadingRatio(family: string, weight: number): number {
   const key = `${family}|${weight}`;
   const cached = topLeadingCache.get(key);
@@ -193,6 +215,7 @@ export function ensureDeckFontsLoaded(deck: Deck): void {
   } catch {
     return;
   }
+  armFontSettle();
   if (!doc?.head) return;
   for (const [family, weights] of collectFamilyWeights(deck)) {
     if (injected.has(family)) continue;

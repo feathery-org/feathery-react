@@ -4,6 +4,7 @@ import { importDeck } from '../core/model/import';
 import { deckToJSON } from '../core/model/json';
 import { refreshShapeText } from '../core/model/read';
 import { renderSlideSvg } from '../core/render/svg';
+import { onFontMetricsSettled } from '../core/render/fonts';
 import { child, childrenOf, el, setAttr, tagOf } from '../core/opc/xml';
 
 it('carries DrawingML autofit, paragraph spacing, tabs, and field identity into JSON and SVG text', () => {
@@ -268,4 +269,21 @@ it("sizes the paragraph strut from the paragraph's own lead run", () => {
   // PowerPoint draws it.
   expect(Number.parseFloat(para.style.fontSize)).toBeCloseTo((8 * 96) / 72);
   expect(para.style.fontFamily).toContain('Urbanist');
+});
+
+it('notifies subscribers when webfonts finish loading', () => {
+  const listeners: Record<string, () => void> = {};
+  (document as any).fonts = {
+    addEventListener: (type: string, cb: () => void) => {
+      listeners[type] = cb;
+    }
+  };
+  const seen: number[] = [];
+  const off = onFontMetricsSettled(() => seen.push(1));
+  listeners.loadingdone?.();
+  expect(seen).toHaveLength(1);
+  off();
+  listeners.loadingdone?.();
+  expect(seen).toHaveLength(1);
+  delete (document as any).fonts;
 });
