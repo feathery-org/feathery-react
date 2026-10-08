@@ -1,4 +1,4 @@
-import { baseOf } from '../tree';
+import { baseOf, shapeOf } from '../tree';
 import { makeView } from '../view';
 import { stateOf } from '../tests/fixtures';
 import { box, para, toyNative } from '../tests/toyPack';
@@ -53,6 +53,7 @@ describe('check runner', () => {
 describe('base hashes (compare-and-swap)', () => {
   const s = stateOf(doc);
   const base = (id: string) => baseOf(s.view.get(id));
+  const shape = (id: string) => shapeOf(s.view.get(id) as NfNode, s.pack.tree);
 
   it('passes when every carried hash matches the live document (true negative)', () => {
     expect(
@@ -65,7 +66,7 @@ describe('base hashes (compare-and-swap)', () => {
             {
               kind: 'insert_after',
               anchor: 'n4',
-              container: base('n2'),
+              container: shape('n2'),
               node: { text: 'x' }
             },
             {
@@ -120,19 +121,32 @@ describe('base hashes (compare-and-swap)', () => {
       }),
       'h'
     );
-    expect(c?.stale.map((e) => e.id)).toEqual(['n3', 'n2']);
+    expect(c?.stale.map((e) => [e.id, e.base, e.shape])).toEqual([
+      ['n3', 'old', undefined],
+      ['n2', undefined, 'old']
+    ]);
     expect(c?.stale[0].live).toEqual(
       expect.objectContaining({
         id: 'n3',
         kind: 'para',
         text: 'one',
-        base: base('n3')
+        base: base('n3'),
+        shape: shape('n3')
       })
     );
     expect(c?.bulk).toEqual([
       { find: { kind: 'para', limit: 1 }, total: 3, live: 4 }
     ]);
-    expect(c?.formats).toEqual([{ id: 'f1', referrers: 5, live: 2 }]);
+    expect(c?.formats).toEqual([
+      {
+        id: 'f1',
+        base: baseOf(s.view.nf.formats.f1),
+        referrers: 5,
+        live: 2,
+        liveBase: baseOf(s.view.nf.formats.f1),
+        liveEntry: { base: baseOf(s.view.nf.formats.f1), bold: true }
+      }
+    ]);
     expect(c?.outlineHash).toBe('h');
     expect(conflictMessage(c as NonNullable<typeof c>)).toBe(
       '2 node(s) changed since they were read; a bulk target now matches 4 node(s), not 3; format f1 now has 2 referrer(s), not 5.'
@@ -158,8 +172,23 @@ describe('base hashes (compare-and-swap)', () => {
       expect.objectContaining({
         id: 'f1',
         base: 'old',
-        liveEntry: { bold: true, base: baseOf({ bold: true }) }
+        liveBase: baseOf({ bold: true }),
+        liveEntry: { base: baseOf({ bold: true }), bold: true }
       })
+    );
+  });
+
+  it('a change inside a child moves the parent base but not its shape; a new child moves both', () => {
+    const edited = stateOf(doc.replace('"text":"one"', '"text":"uno"'));
+    expect(baseOf(edited.view.get('n2'))).not.toBe(base('n2'));
+    expect(shapeOf(edited.view.get('n2') as NfNode, edited.pack.tree)).toBe(
+      shape('n2')
+    );
+    const grown = stateOf(
+      doc.replace('"items":[', '"items":[{"t":"p","text":"zero"},')
+    );
+    expect(shapeOf(grown.view.get('n2') as NfNode, grown.pack.tree)).not.toBe(
+      shape('n2')
     );
   });
 

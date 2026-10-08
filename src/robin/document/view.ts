@@ -17,6 +17,7 @@ import {
   indexTree,
   isPlainObject,
   listAt,
+  shapeOf,
   withoutLists
 } from './tree';
 
@@ -58,6 +59,7 @@ export function emitNode(
     const out: Record<string, unknown> = {
       id: n.id,
       base: baseOf(n),
+      shape: shapeOf(n, pack.tree),
       kind: n.kind
     };
     if (stub) return out as EmittedNode;

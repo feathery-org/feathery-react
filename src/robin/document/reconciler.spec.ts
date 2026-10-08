@@ -3,7 +3,7 @@ import { prepareWrite } from './verbs';
 import { reconcile } from './reconciler';
 import { makeView } from './view';
 import { WriteInput, parseVerbInput } from './envelope';
-import { baseOf } from './tree';
+import { baseOf, NfNode, shapeOf } from './tree';
 import { stateOf } from './tests/fixtures';
 import { ToyHost, box, para, toyNative } from './tests/toyPack';
 
@@ -12,11 +12,15 @@ const doc = toyNative(
   box([para('one'), para('two', { x: 'n' })], { name: 'alpha' })
 );
 
-function setup(build: (b: (id: string) => string) => unknown) {
+function setup(
+  build: (b: (id: string) => string, sh: (id: string) => string) => unknown
+) {
   const host = new ToyHost(doc);
   const state = stateOf(host.serialize());
   const b = (id: string) => baseOf(state.view.get(id));
-  const parsed = parseVerbInput('write', build(b));
+  const sh = (id: string) =>
+    shapeOf(state.view.get(id) as NfNode, state.pack.tree);
+  const parsed = parseVerbInput('write', build(b, sh));
   if (!parsed.ok) throw new Error(JSON.stringify(parsed.refusal));
   const prepared = prepareWrite(state, parsed.value as WriteInput);
   if (prepared.outcome !== 'verified') throw new Error(prepared.outcome);
@@ -49,25 +53,25 @@ const retitle = (b: (id: string) => string) => ({
     }
   ]
 });
-const addItem = (b: (id: string) => string) => ({
+const addItem = (b: (id: string) => string, sh: (id: string) => string) => ({
   intent: 'Add an item.',
   scope: { ids: [] },
   changes: [
     {
       kind: 'insert_after',
       anchor: 'n4',
-      container: b('n2'),
+      container: sh('n2'),
       node: { text: 'three', style: 'f2' }
     }
   ]
 });
-const bold = (b: (id: string) => string) => ({
+const bold = (b: (id: string) => string, sh: (id: string) => string) => ({
   intent: 'Bold one.',
   scope: { ids: ['n3'] },
   changes: [
     {
       kind: 'set',
-      target: { ids: ['n3'], base: { n3: b('n3') } },
+      target: { ids: ['n3'], shape: { n3: sh('n3') } },
       props: { bold: true }
     }
   ]

@@ -136,7 +136,7 @@ const write = (overrides: Record<string, unknown>) => ({
   changes: [
     {
       kind: 'set',
-      target: { ids: ['n204'], base: { n204: '7c' } },
+      target: { ids: ['n204'], shape: { n204: '7c' } },
       props: { bold: true }
     }
   ],
@@ -278,14 +278,14 @@ describe('section 6 write envelope', () => {
       changes: [
         {
           kind: 'set',
-          target: { ids: ['n66', 'n84'], base: { n66: '1f', n84: '2a' } },
+          target: { ids: ['n66', 'n84'], shape: { n66: '1f', n84: '2a' } },
           props: { bold: true, fontColor: '#1F3864' }
         },
         {
           kind: 'set',
           target: {
             id: 'n204',
-            base: '7c',
+            shape: '7c',
             match: { text: 'Motor premium', span: { start: 0, end: 13 } }
           },
           props: { bold: true }
@@ -327,14 +327,14 @@ describe('section 6 write envelope', () => {
           {
             kind: 'move',
             id: 'n14',
-            base: 'c',
+            shape: 'c',
             anchor: 'n20',
             position: 'before',
             container: 'd'
           },
           {
             kind: 'set',
-            target: { ids: ['n20'], base: { n20: 'e' } },
+            target: { ids: ['n20'], shape: { n20: 'e' } },
             props: { shading: null }
           }
         ]
@@ -364,7 +364,7 @@ describe('section 6 write envelope', () => {
           },
           {
             kind: 'set',
-            target: { ids: ['tmp:copy'], base: {} },
+            target: { ids: ['tmp:copy'], shape: {} },
             props: { bold: true }
           }
         ]
@@ -447,7 +447,7 @@ describe('section 6 write envelope', () => {
         changes: [
           {
             kind: 'set',
-            target: { ids: ['n1', 'n2'], base: { n1: 'a' } },
+            target: { ids: ['n1', 'n2'], shape: { n1: 'a' } },
             props: { bold: true }
           }
         ]
@@ -459,7 +459,7 @@ describe('section 6 write envelope', () => {
         changes: [
           {
             kind: 'set',
-            target: { ids: ['n1'], base: { n1: 'a', n2: 'b' } },
+            target: { ids: ['n1'], shape: { n1: 'a', n2: 'b' } },
             props: { bold: true }
           }
         ]
@@ -514,7 +514,7 @@ describe('section 6 write envelope', () => {
             {
               kind: 'move',
               id: 'n1',
-              base: 'a',
+              shape: 'a',
               anchor: 'n2',
               container: 'b',
               position: 'firstChild'
@@ -549,7 +549,7 @@ describe('section 6 write envelope', () => {
           changes: [
             {
               kind: 'set',
-              target: { ids: ['n1'], base: { n1: 'a' } },
+              target: { ids: ['n1'], shape: { n1: 'a' } },
               props: {}
             }
           ]
@@ -619,7 +619,7 @@ describe('section 6 write envelope', () => {
         changes: [
           {
             kind: 'set',
-            target: { ids: ['n1'], base: { n1: 'a' } },
+            target: { ids: ['n1'], shape: { n1: 'a' } },
             props: { format: 'tmp:fmt' }
           }
         ]
@@ -691,6 +691,7 @@ describe('results validate against the result contract', () => {
           {
             id: 'n60',
             base: '9a3c',
+            shape: 'd41e',
             kind: 'table',
             rows: [],
             properties: { width: { value: 400, source: 'override' } }
@@ -708,6 +709,7 @@ describe('results validate against the result contract', () => {
           {
             id: 'n60',
             base: '9a3c',
+            shape: 'd41e',
             kind: 'table',
             properties: { width: { value: 1, source: 'guess' } }
           }
@@ -825,17 +827,45 @@ describe('results validate against the result contract', () => {
             {
               id: 'n204',
               base: '7c',
-              live: { id: 'n204', base: 'e1', kind: 'paragraph' }
+              live: { id: 'n204', base: 'e1', shape: '90', kind: 'paragraph' }
+            },
+            {
+              id: 'n61',
+              shape: '3b',
+              live: { id: 'n61', base: '77', shape: 'c8', kind: 'row' }
             }
           ],
           bulk: [
             { find: { kind: 'paragraph', format: 'f7' }, total: 23, live: 25 }
           ],
-          formats: [{ id: 'f31', referrers: 18, live: 19 }],
+          formats: [
+            {
+              id: 'f31',
+              base: '0b',
+              referrers: 18,
+              live: 19,
+              liveBase: '4d',
+              liveEntry: { base: '4d', bold: true }
+            }
+          ],
           outlineHash: 'a91e'
         }
       })
     ).toEqual({ ok: true });
+  });
+
+  it('a stale entry repeats exactly one carried hash', () => {
+    const conflict = (entry: Record<string, unknown>) =>
+      validateVerbResult('write', {
+        ok: false,
+        error: { code: 'document.conflict', message: '' },
+        retry: 'modified_input',
+        conflict: { stale: [entry], bulk: [], formats: [], outlineHash: 'h' }
+      }).ok;
+    const live = { id: 'n1', base: 'b', shape: 's', kind: 'paragraph' };
+    expect(conflict({ id: 'n1', shape: 'x', live })).toBe(true);
+    expect(conflict({ id: 'n1', base: 'x', shape: 'y', live })).toBe(false);
+    expect(conflict({ id: 'n1', live })).toBe(false);
   });
 
   it('section 7.3 and 7.4 failures', () => {

@@ -170,7 +170,7 @@ describe('document session: the four verbs end to end', () => {
         {
           kind: 'insert_after',
           anchor: 'n4',
-          container: n2.base,
+          container: n2.shape,
           node: { id: 'tmp:liability', text: 'Liability', style: 'f2' }
         }
       ]
@@ -208,7 +208,7 @@ describe('document session: the four verbs end to end', () => {
       changes: [
         {
           kind: 'set',
-          target: { ids: ['n1'], base: { n1: n1.base } },
+          target: { ids: ['n1'], shape: { n1: n1.shape } },
           props: { size: 24 }
         }
       ]
@@ -240,7 +240,7 @@ describe('document session: the four verbs end to end', () => {
         {
           kind: 'insert_after',
           anchor: 'n4',
-          container: n2.base,
+          container: n2.shape,
           node: { text: 'Cyber', style: 'f2' }
         }
       ]
@@ -265,7 +265,7 @@ describe('document session: the four verbs end to end', () => {
       changes: [
         {
           kind: 'set',
-          target: { ids: ['n4'], base: { n4: n4.base } },
+          target: { ids: ['n4'], shape: { n4: n4.shape } },
           props: { bold: true }
         }
       ]
@@ -294,7 +294,7 @@ describe('document session: the four verbs end to end', () => {
       changes: [
         {
           kind: 'set',
-          target: { ids: ['n4'], base: { n4: live.base } },
+          target: { ids: ['n4'], shape: { n4: live.shape } },
           props: { bold: true }
         }
       ]
@@ -302,6 +302,61 @@ describe('document session: the four verbs end to end', () => {
     expect(retry).toEqual(
       expect.objectContaining({ ok: true, committed: true })
     );
+  });
+
+  it('a user keystroke inside a sibling does not conflict an insert into the same list (container is the parent shape)', () => {
+    const { host, call } = mount();
+    const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2') as { shape: string };
+    host.userEdit((d) => {
+      (d.body[1] as { items: Array<{ text: string }> }).items[0].text =
+        'Motor and fleet';
+    });
+    const result = call('write', {
+      intent: 'Add a Liability line.',
+      scope: { ids: [] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: 'n4',
+          container: n2.shape,
+          node: { text: 'Liability', style: 'f2' }
+        }
+      ]
+    });
+    expect(result).toEqual(
+      expect.objectContaining({ ok: true, committed: true })
+    );
+  });
+
+  it('a user insert into the same list does conflict, reporting the carried shape and the live hashes', () => {
+    const { host, call } = mount();
+    const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2') as { shape: string };
+    host.userEdit((d) => {
+      (d.body[1] as { items: unknown[] }).items.push(para('Typed by the user'));
+    });
+    const result = call('write', {
+      intent: 'Add a Liability line.',
+      scope: { ids: [] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: 'n4',
+          container: n2.shape,
+          node: { text: 'Liability', style: 'f2' }
+        }
+      ]
+    }) as { conflict: { stale: Array<Record<string, unknown>> } };
+    expect(result.conflict.stale).toEqual([
+      {
+        id: 'n2',
+        shape: n2.shape,
+        live: expect.objectContaining({
+          id: 'n2',
+          base: expect.any(String),
+          shape: expect.any(String)
+        })
+      }
+    ]);
   });
 
   it('one write per message: a resend replays, a different second write is refused', () => {
@@ -347,7 +402,7 @@ describe('document session: the four verbs end to end', () => {
         {
           kind: 'insert_after',
           anchor: 'n4',
-          container: n2.base,
+          container: n2.shape,
           node: { text: 'Cyber', style: 'f2' }
         }
       ]

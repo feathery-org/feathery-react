@@ -15,7 +15,7 @@ import type {
 } from '../envelope';
 import { isNodeId } from '../envelope';
 import type { DocumentView, Pack } from '../pack';
-import { baseOf, isPlainObject, NfNode, withoutLists } from '../tree';
+import { baseOf, NfNode, shapeOf, withoutLists } from '../tree';
 import { emitNode, matchQuery, referencedFormats } from '../view';
 
 export type Conflict = ConflictResult['conflict'];
@@ -53,42 +53,48 @@ export function checkBases(
   const bulk: Conflict['bulk'] = [];
   const formats: Conflict['formats'] = [];
   const live = (node: NfNode) => emitNode(view, pack, node);
-  const compare = (id: string, carried: string | undefined) => {
+  /** Compare a carried `base` (whole subtree) or `shape` (own fields and child ids). */
+  const compare = (
+    id: string,
+    axis: 'base' | 'shape',
+    carried: string | undefined
+  ) => {
     if (!isNodeId(id) || carried === undefined || stale.has(id)) return;
     const node = view.get(id);
     if (!node) return; // an unknown id is a refusal, decided before this check
-    if (baseOf(node) !== carried)
-      stale.set(id, { id, base: carried, live: live(node) });
+    const now = axis === 'base' ? baseOf(node) : shapeOf(node, pack.tree);
+    if (now !== carried)
+      stale.set(id, {
+        id,
+        [axis]: carried,
+        live: live(node)
+      } as Conflict['stale'][number]);
   };
+  /** `container` is the shape of the node that owns the anchor's list. */
   const compareContainer = (anchor: string, carried: string | undefined) => {
-    if (!isNodeId(anchor) || carried === undefined) return;
+    if (!isNodeId(anchor)) return;
     const parent = view.placement(anchor)?.parent;
-    if (!parent || stale.has(parent.id)) return;
-    if (baseOf(parent) !== carried)
-      stale.set(parent.id, {
-        id: parent.id,
-        base: carried,
-        live: live(parent)
-      });
+    if (parent) compare(parent.id, 'shape', carried);
   };
   const check = (change: Change) => {
     switch (change.kind) {
       case 'replace':
       case 'delete':
-        compare(change.id, change.base);
+        compare(change.id, 'base', change.base);
         return;
       case 'insert_before':
       case 'insert_after':
         compareContainer(change.anchor, change.container);
         return;
       case 'move':
-        compare(change.id, change.base);
+        compare(change.id, 'shape', change.shape);
         compareContainer(change.anchor, change.container);
         return;
       case 'set': {
         const t = change.target;
-        if ('ids' in t) for (const id of t.ids) compare(id, t.base[id]);
-        else if ('match' in t) compare(t.id, t.base);
+        if ('ids' in t)
+          for (const id of t.ids) compare(id, 'shape', t.shape[id]);
+        else if ('match' in t) compare(t.id, 'shape', t.shape);
         else if ('find' in t) {
           const count = matchQuery(view, pack, bulkQuery(t.find)).length;
           if (count !== t.total)
@@ -101,11 +107,11 @@ export function checkBases(
           if (count !== t.referrers || liveBase !== t.base)
             formats.push({
               id: t.formatId,
+              base: t.base,
               referrers: t.referrers,
               live: count,
-              ...(liveBase !== t.base
-                ? { base: t.base, liveEntry: { ...entry, base: liveBase } }
-                : {})
+              liveBase,
+              liveEntry: { base: liveBase, ...entry }
             });
         }
       }
@@ -129,15 +135,11 @@ export function conflictMessage(conflict: Conflict): string {
         )
         .join('; ')
     );
-  if (conflict.formats.length)
+  for (const f of conflict.formats)
     parts.push(
-      conflict.formats
-        .map((f) =>
-          isPlainObject(f) && 'liveEntry' in f
-            ? `format ${f.id} changed since it was read`
-            : `format ${f.id} now has ${f.live} referrer(s), not ${f.referrers}`
-        )
-        .join('; ')
+      f.liveBase !== f.base
+        ? `format ${f.id} changed since it was read`
+        : `format ${f.id} now has ${f.live} referrer(s), not ${f.referrers}`
     );
   return `${parts.join('; ')}.`;
 }

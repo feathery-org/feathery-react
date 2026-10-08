@@ -1,5 +1,5 @@
 import { WriteInput, parseVerbInput, validateVerbResult } from './envelope';
-import { baseOf, NfNode } from './tree';
+import { baseOf, NfNode, shapeOf } from './tree';
 import { findVerb, outlineVerb, prepareWrite, readVerb } from './verbs';
 import { stateOf } from './tests/fixtures';
 import { box, para, toyNative } from './tests/toyPack';
@@ -15,6 +15,11 @@ const doc = toyNative(
 
 const fresh = () => stateOf(doc);
 const b = (s: ReturnType<typeof fresh>, id: string) => baseOf(s.view.get(id));
+const sh = (s: ReturnType<typeof fresh>, id: string) =>
+  shapeOf(
+    (id === 'root' ? s.view.nf.root : s.view.get(id)) as NfNode,
+    s.pack.tree
+  );
 const write = (input: WriteInput) => {
   const parsed = parseVerbInput('write', input);
   if (!parsed.ok) throw new Error(JSON.stringify(parsed.refusal));
@@ -29,12 +34,18 @@ describe('read', () => {
     expect(r.missing).toEqual(['n99']);
     expect(r.nodes).toHaveLength(1);
     const [n2] = r.nodes;
-    expect(Object.keys(n2).slice(0, 3)).toEqual(['id', 'base', 'kind']);
+    expect(Object.keys(n2).slice(0, 4)).toEqual([
+      'id',
+      'base',
+      'shape',
+      'kind'
+    ]);
     expect(n2.base).toBe(b(s, 'n2'));
     expect(n2.usedBy).toEqual(['n5']);
     expect((n2.items as NfNode[])[1]).toEqual({
       id: 'n4',
       base: b(s, 'n4'),
+      shape: sh(s, 'n4'),
       kind: 'para',
       text: 'two',
       style: 'f1'
@@ -65,10 +76,12 @@ describe('read', () => {
     expect(r.nodes[0]).toEqual({
       id: 'root',
       base: baseOf(s.view.nf.root),
+      shape: sh(s, 'root'),
       kind: 'doc',
       blocks: ['n1', 'n2', 'n5'].map((id) => ({
         id,
         base: b(s, id),
+        shape: sh(s, id),
         kind: s.view.get(id)?.kind
       }))
     });
@@ -141,12 +154,12 @@ describe('write: verified changes', () => {
           {
             kind: 'insert_after',
             anchor: 'n4',
-            container: b(s, 'n2'),
+            container: sh(s, 'n2'),
             node: { id: 'tmp:three', text: 'three', style: 'f2' }
           },
           {
             kind: 'set',
-            target: { ids: ['tmp:three'], base: {} },
+            target: { ids: ['tmp:three'], shape: {} },
             props: { bold: true }
           }
         ]
@@ -204,7 +217,7 @@ describe('write: verified changes', () => {
           {
             kind: 'insert_before',
             anchor: 'n1',
-            container: b(s, 'root'),
+            container: sh(s, 'root'),
             node: { id: 'n4', kind: 'para', text: 'two', style: 'f1' }
           }
         ]
@@ -237,10 +250,10 @@ describe('write: verified changes', () => {
           {
             kind: 'move',
             id: 'n1',
-            base: b(s, 'n1'),
+            shape: sh(s, 'n1'),
             anchor: 'n4',
             position: 'after',
-            container: b(s, 'n2')
+            container: sh(s, 'n2')
           },
           { kind: 'delete', id: 'n3', base: b(s, 'n3') }
         ]
@@ -273,7 +286,7 @@ describe('write: verified changes', () => {
             kind: 'set',
             target: {
               id: 'n3',
-              base: b(s, 'n3'),
+              shape: sh(s, 'n3'),
               match: { text: 'ONE', span: { start: 0, end: 3 } }
             },
             props: { align: 'center' }
@@ -414,7 +427,7 @@ describe('write: refusals (each a true positive; the verified cases above are th
           {
             kind: 'insert_after',
             anchor: 'n1',
-            container: b(s, 'root'),
+            container: sh(s, 'root'),
             node: { text: 'a', style: 'tmp:f' }
           }
         ]
@@ -430,7 +443,7 @@ describe('write: refusals (each a true positive; the verified cases above are th
         {
           kind: 'insert_after',
           anchor: 'n1',
-          container: b(s, 'root'),
+          container: sh(s, 'root'),
           node: { id: 'n2', kind: 'para', text: 'a', style: 'f1' }
         }
       ]
@@ -450,7 +463,7 @@ describe('write: refusals (each a true positive; the verified cases above are th
           {
             kind: 'insert_after',
             anchor: 'n3',
-            container: b(s, 'n2'),
+            container: sh(s, 'n2'),
             node: { items: [] }
           }
         ]
@@ -464,7 +477,7 @@ describe('write: refusals (each a true positive; the verified cases above are th
           {
             kind: 'insert_after',
             anchor: 'n1',
-            container: b(s, 'root'),
+            container: sh(s, 'root'),
             node: { colour: 'red' }
           }
         ]
@@ -479,7 +492,7 @@ describe('write: refusals (each a true positive; the verified cases above are th
             kind: 'set',
             target: {
               id: 'n3',
-              base: b(s, 'n3'),
+              shape: sh(s, 'n3'),
               match: { text: 'two', span: { start: 0, end: 3 } }
             },
             props: { bold: true }
@@ -495,10 +508,10 @@ describe('write: refusals (each a true positive; the verified cases above are th
           {
             kind: 'move',
             id: 'n2',
-            base: b(s, 'n2'),
+            shape: sh(s, 'n2'),
             anchor: 'n3',
             position: 'after',
-            container: b(s, 'n2')
+            container: sh(s, 'n2')
           }
         ]
       }).destroyed
@@ -523,7 +536,7 @@ describe('write: refusals (each a true positive; the verified cases above are th
         changes: [
           {
             kind: 'set',
-            target: { ids: ['n1'], base: { n1: b(s, 'n1') } },
+            target: { ids: ['n1'], shape: { n1: sh(s, 'n1') } },
             props: { length: 2 }
           }
         ]
@@ -565,13 +578,13 @@ describe('write: refusals (each a true positive; the verified cases above are th
       changes: [
         {
           kind: 'set',
-          target: { ids: ['n1'], base: { n1: b(s, 'n1') } },
+          target: { ids: ['n1'], shape: { n1: sh(s, 'n1') } },
           props: { size: 1 }
         },
         {
           kind: 'insert_after',
           anchor: 'n3',
-          container: b(s, 'n2'),
+          container: sh(s, 'n2'),
           node: { items: [] }
         }
       ]

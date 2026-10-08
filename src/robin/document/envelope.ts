@@ -109,21 +109,30 @@ const readIdSchema = z
   });
 
 // ---------------------------------------------------------------------------------------------
-// Section 2.2. The base hash
+// Section 2.2. The base and shape hashes
 // ---------------------------------------------------------------------------------------------
 
-/** Opaque content hash; equality is the only operation defined on it. */
+/** Opaque content hashes; equality is the only operation defined on them. */
 const baseSchema = z
   .string()
   .min(1, { message: 'must be the base string copied from the read result' })
+  .max(128);
+const shapeSchema = z
+  .string()
+  .min(1, { message: 'must be the shape string copied from the read result' })
   .max(128);
 
 // ---------------------------------------------------------------------------------------------
 // Section 2.3. Node shape, the core part
 // ---------------------------------------------------------------------------------------------
 
-/** Keys the engine emits and the model never writes; a written one is stripped with a warning. */
+/**
+ * Keys the engine emits and the model never writes; a written one is stripped with a warning
+ * (sections 2.3 and 6.2).
+ */
 export const READ_ONLY_NODE_KEYS = [
+  'base',
+  'shape',
   'pending',
   'usedBy',
   'derived',
@@ -151,6 +160,7 @@ const effectivePropertySchema = z.looseObject({
 export const emittedNodeSchema = z.looseObject({
   id: nodeIdSchema.or(z.literal(ROOT_ID)),
   base: baseSchema,
+  shape: shapeSchema,
   kind: z.string().min(1),
   pending: jsonObjectSchema.optional(),
   usedBy: z.array(nodeIdSchema).optional(),
@@ -332,11 +342,11 @@ export type FindResult = z.output<typeof findResultSchema>;
 
 const idsTargetSchema = z.strictObject({
   ids: z.array(nodeOrTempIdSchema).min(1).max(1000),
-  base: z.record(nodeIdSchema, baseSchema)
+  shape: z.record(nodeIdSchema, shapeSchema)
 });
 const matchTargetSchema = z.strictObject({
   id: nodeOrTempIdSchema,
-  base: baseSchema.optional(),
+  shape: shapeSchema.optional(),
   match: z.strictObject({
     text: z.string().min(1).max(500),
     span: spanSchema
@@ -374,7 +384,7 @@ export function setTargetForm(target: SetTarget): SetTargetForm {
 }
 
 const SET_TARGET_FORMS =
-  'target must be exactly one of {ids, base}, {id, base, match: {text, span}}, {find, total} or {formatId, base, referrers}';
+  'target must be exactly one of {ids, shape}, {id, shape, match: {text, span}}, {find, total} or {formatId, base, referrers}';
 
 /** Property values are JSON; `null` clears an override. Names and types are the pack schema's. */
 const propsSchema = z
@@ -399,8 +409,11 @@ export type ChangeKind = typeof CHANGE_KINDS[number];
 
 export const MOVE_POSITIONS = ['before', 'after'] as const;
 
-// `base` and `container` are optional in shape and required by the write-level check below
-// whenever the id or anchor they belong to is an engine id; a temporary node has no base yet.
+// `base`, `shape` and `container` are optional in the schema and required by the write-level
+// check below whenever the id or anchor they belong to is an engine id; a node created earlier in
+// the same write has no hash yet. Which hash a change carries follows what it depends on (2.2):
+// replace and delete the subtree's `base`; insert the parent's `shape` as `container`; move the
+// node's `shape` and the destination parent's `shape` as `container`.
 const replaceChangeSchema = z.strictObject({
   kind: z.literal('replace'),
   id: nodeOrTempIdSchema,
@@ -410,13 +423,13 @@ const replaceChangeSchema = z.strictObject({
 const insertBeforeChangeSchema = z.strictObject({
   kind: z.literal('insert_before'),
   anchor: nodeOrTempIdSchema,
-  container: baseSchema.optional(),
+  container: shapeSchema.optional(),
   node: writtenNodeSchema
 });
 const insertAfterChangeSchema = z.strictObject({
   kind: z.literal('insert_after'),
   anchor: nodeOrTempIdSchema,
-  container: baseSchema.optional(),
+  container: shapeSchema.optional(),
   node: writtenNodeSchema
 });
 const deleteChangeSchema = z.strictObject({
@@ -427,10 +440,10 @@ const deleteChangeSchema = z.strictObject({
 const moveChangeSchema = z.strictObject({
   kind: z.literal('move'),
   id: nodeOrTempIdSchema,
-  base: baseSchema.optional(),
+  shape: shapeSchema.optional(),
   anchor: nodeOrTempIdSchema,
   position: z.enum(MOVE_POSITIONS),
-  container: baseSchema.optional()
+  container: shapeSchema.optional()
 });
 const setChangeSchema = z.strictObject({
   kind: z.literal('set'),
@@ -526,9 +539,9 @@ export function addressedIds(change: Change): string[] {
 
 /**
  * The write-level rules the shapes alone cannot state:
- * - a change naming an engine id carries that id's `base`, and one placing a node next to an engine
- *   anchor carries `container` (sections 2.2, 6.2);
- * - an ids-form `set` carries a `base` for every engine id it names and for nothing else;
+ * - replace and delete of an engine id carry its `base`, move and the match-span `set` carry its
+ *   `shape`, and a change placing a node next to an engine anchor carries `container` (2.2, 6.2);
+ * - an ids-form `set` carries a `shape` for every engine id it names and for nothing else;
  * - a temporary id is declared once, on a node or as a `formats` key, and is used as an id, anchor or
  *   target only after the change that declares it (sections 2.1, 6.2).
  */
@@ -553,15 +566,23 @@ const writeInputSchema = writeShapeSchema.superRefine((write, ctx) => {
       }
     }
     if (
-      (change.kind === 'replace' ||
-        change.kind === 'delete' ||
-        change.kind === 'move') &&
+      (change.kind === 'replace' || change.kind === 'delete') &&
       isNodeId(change.id) &&
       change.base === undefined
     ) {
       issue(
         [...at, 'base'],
         `${change.kind} of ${change.id} must carry the base read for it`
+      );
+    }
+    if (
+      change.kind === 'move' &&
+      isNodeId(change.id) &&
+      change.shape === undefined
+    ) {
+      issue(
+        [...at, 'shape'],
+        `move of ${change.id} must carry the shape read for it`
       );
     }
     if (
@@ -573,29 +594,29 @@ const writeInputSchema = writeShapeSchema.superRefine((write, ctx) => {
     ) {
       issue(
         [...at, 'container'],
-        `${change.kind} next to ${change.anchor} must carry container, the base of the node that owns the list ${change.anchor} is in`
+        `${change.kind} next to ${change.anchor} must carry container, the shape of the node that owns the list ${change.anchor} is in`
       );
     }
     if (change.kind === 'set') {
       const t = change.target;
       if ('ids' in t) {
         for (const id of t.ids) {
-          if (isNodeId(id) && !(id in t.base)) {
-            issue([...at, 'target', 'base'], `base has no entry for ${id}`);
+          if (isNodeId(id) && !(id in t.shape)) {
+            issue([...at, 'target', 'shape'], `shape has no entry for ${id}`);
           }
         }
-        for (const id of Object.keys(t.base)) {
+        for (const id of Object.keys(t.shape)) {
           if (!t.ids.includes(id)) {
             issue(
-              [...at, 'target', 'base'],
-              `base names ${id}, which is not in ids`
+              [...at, 'target', 'shape'],
+              `shape names ${id}, which is not in ids`
             );
           }
         }
-      } else if ('match' in t && isNodeId(t.id) && t.base === undefined) {
+      } else if ('match' in t && isNodeId(t.id) && t.shape === undefined) {
         issue(
-          [...at, 'target', 'base'],
-          `set on ${t.id} must carry the base read for it`
+          [...at, 'target', 'shape'],
+          `set on ${t.id} must carry the shape read for it`
         );
       }
     }
@@ -727,11 +748,17 @@ export type RefusedResult = {
 };
 
 // Section 7.2. Conflict
-const staleEntrySchema = z.looseObject({
-  id: nodeIdSchema.or(z.literal(ROOT_ID)),
-  base: z.string(),
-  live: emittedNodeSchema.nullable()
-});
+/** The carried hash is repeated under its own name, `base` or `shape`; `live` carries both. */
+const staleEntrySchema = z
+  .looseObject({
+    id: nodeIdSchema.or(z.literal(ROOT_ID)),
+    base: z.string().optional(),
+    shape: z.string().optional(),
+    live: emittedNodeSchema.nullable()
+  })
+  .refine((e) => (e.base === undefined) !== (e.shape === undefined), {
+    message: 'a stale entry repeats exactly one carried hash, base or shape'
+  });
 const bulkConflictSchema = z.looseObject({
   find: z.unknown(),
   total: z.int().min(0),
@@ -739,8 +766,11 @@ const bulkConflictSchema = z.looseObject({
 });
 const formatConflictSchema = z.looseObject({
   id: formatIdSchema,
+  base: z.string(),
   referrers: z.int().min(0),
-  live: z.int().min(0)
+  live: z.int().min(0),
+  liveBase: z.string(),
+  liveEntry: emittedFormatSchema
 });
 
 export const conflictResultSchema = z.looseObject({

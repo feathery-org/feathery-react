@@ -231,6 +231,11 @@ export function childIdLists(
   return out;
 }
 
+/** Contract section 2.2: the `shape` of a node, its own content plus each child list's ids. */
+export function shapeOf(node: NfNode, shape: TreeShape): string {
+  return ownContentKey(node, shape);
+}
+
 /**
  * A node's own content: everything except its child lists (which are reduced to child ids).
  * Two versions of a node with equal own content differ only below their children.
