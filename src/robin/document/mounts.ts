@@ -52,6 +52,13 @@ export interface LiveDocumentAccessor {
   dispatch(payload: unknown): DispatchOutcome;
   /** The form's Robin turn settled: every mounted document ends its editing turn. */
   finishTurn(): void;
+  /**
+   * The business document type the mounted document's template declares, for the request context
+   * beside the descriptor. Always null today: nothing the SDK loads carries it yet. It will come
+   * from the document template's metadata (a declared type on the template the Generate Documents
+   * action names), read here once the form schema delivers it.
+   */
+  documentType(): string | null;
 }
 
 export function liveDocumentAccessor(formKey: string): LiveDocumentAccessor {
@@ -82,6 +89,9 @@ export function liveDocumentAccessor(formKey: string): LiveDocumentAccessor {
     },
     finishTurn() {
       for (const session of mountedDocuments(formKey)) session.finishTurn();
+    },
+    documentType() {
+      return null;
     }
   };
 }

@@ -46,6 +46,7 @@ describe('mounted documents and the form accessor', () => {
   it('has no descriptor until a document mounts, and none after it unmounts', () => {
     const doc1 = liveDocumentAccessor('form-a');
     expect(doc1.descriptor()).toBeNull();
+    expect(doc1.documentType()).toBeNull();
     const unmount = mountDocument('form-a', 'c1', session('ed-a'));
     const d = doc1.descriptor();
     expect(descriptorSchema.safeParse(d).success).toBe(true);
