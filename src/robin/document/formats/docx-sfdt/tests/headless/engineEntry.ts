@@ -26,6 +26,7 @@ import TrackedChangeGroups from '../../../../../../elements/components/DocxEdito
 import HistoryGroup from '../../../../../../elements/components/DocxEditor/DocxToolbar/groups/HistoryGroup';
 import { installHistoryRouting } from '../../../../../../elements/components/DocxEditor/historyRouting';
 import { registerCardResolver, registerHistoryRoute } from '../../../../mounts';
+import { setAssistantSessionActive } from '../../../../../../assistant/tools/docx/syncfusionDocumentOps';
 
 declare const __SYNCFUSION_LICENSE_KEY__: string;
 if (__SYNCFUSION_LICENSE_KEY__) registerLicense(__SYNCFUSION_LICENSE_KEY__);
@@ -43,12 +44,17 @@ const errors: string[] = [];
  * cost splits into the editor's own work and the engine's.
  */
 let editorMs = 0;
+let timedDepth = 0;
 function timedCall<A extends unknown[], R>(f: (...a: A) => R): (...a: A) => R {
   return (...a: A): R => {
+    // a host call inside a timed seam (the splice's open) is counted once, by the outer call
+    if (timedDepth) return f(...a);
+    timedDepth += 1;
     const t0 = performance.now();
     try {
       return f(...a);
     } finally {
+      timedDepth -= 1;
       editorMs += performance.now() - t0;
     }
   };
@@ -163,7 +169,9 @@ const api = {
       pack: timedPack,
       host: timedHost(createHost(editor as unknown as LiveEditor)),
       target: { type: 'envelope', id: 'env' },
-      editorId: 'ed'
+      editorId: 'ed',
+      // the flag the rail reads for "Robin is editing", as robinDocument.ts sets it
+      onTurnChange: (turnId) => setAssistantSessionActive(editor as never, turnId !== null)
     });
     // as the product mounts it (robinDocument.ts): the rail's resolver, the undo route, the keys
     const live = session;
@@ -244,7 +252,8 @@ const api = {
 
   /** The review rail as a person sees it: each card's title, count line and per-edit buttons. */
   async rail(): Promise<Array<{ title: string; perEditButtons: number }>> {
-    await frame();
+    // past the rail's own refresh debounce (150 ms), as a person looking at it would be
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await frame();
     const host = document.getElementById('fm-review');
     if (!host) return [];
@@ -296,6 +305,11 @@ const api = {
     return Array.isArray(stack) ? stack.length : -1;
   },
   canUndo: () => !!history()?.canUndo?.(),
+  /** The form's Robin turn settled (the hosted handler calls liveDocument.finishTurn()). */
+  finishTurn() {
+    session?.finishTurn();
+  },
+
   sessionUndo() {
     if (!session) throw new Error('no session');
     return session.undo();
