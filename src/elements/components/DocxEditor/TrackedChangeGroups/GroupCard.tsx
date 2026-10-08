@@ -90,7 +90,12 @@ export default function GroupCard({
         <div css={{ minWidth: 0, flex: 1 }}>
           {/* Line 1: chevron (left of the title), aligned to the title row. */}
           <div
-            css={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}
+            css={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 6,
+              minWidth: 0
+            }}
           >
             <button
               type='button'
@@ -101,6 +106,8 @@ export default function GroupCard({
                 flex: 'none',
                 width: 14,
                 height: 14,
+                // on the first line of a title that wraps
+                marginTop: 2,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -133,9 +140,13 @@ export default function GroupCard({
                 fontWeight: 600,
                 lineHeight: 1.3,
                 cursor: 'pointer',
+                // engine titles are short phrases with a parenthetical: wrap to two lines rather
+                // than cut "Edited a paragraph" to "Edited a para..." beside the buttons
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflowWrap: 'anywhere',
                 '&:hover': { textDecoration: 'underline' }
               }}
             >
