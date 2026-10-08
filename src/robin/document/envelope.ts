@@ -1176,7 +1176,8 @@ export type BridgeResponse = {
 export type DispatchFailure =
   | { reason: 'payload-invalid'; message: string }
   | { reason: 'protocol-unsupported'; message: string }
-  | { reason: 'wrong-editor'; message: string };
+  | { reason: 'wrong-editor'; message: string }
+  | { reason: 'handler-exception'; message: string };
 
 export function parseBridgePayload(
   raw: unknown
