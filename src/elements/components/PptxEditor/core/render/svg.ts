@@ -88,9 +88,8 @@ function clearRenderContext(): void {
 const SVGNS = 'http://www.w3.org/2000/svg';
 const XHTML = 'http://www.w3.org/1999/xhtml';
 
-// ---- theme + color-map resolution (core/render/color.ts) ----
-// Thin wrappers bind the extracted resolvers to the module render context
-// (curSlide), so call sites stay ambient like the rest of this renderer.
+// ---- theme + color resolution (core/render/color.ts) ----
+// Thin wrappers bind the extracted resolvers to this render context (curSlide).
 function currentThemePart(pkg: OPCPackage): string {
   return themePartForSlide(pkg, curSlide?.path);
 }
@@ -105,10 +104,8 @@ function resolveColor(
   return resolveColorAt(colorParent, pkg, curSlide?.path, phClr);
 }
 
-// Build an SVG path from a DrawingML <a:custGeom> (custom shape). Points live
-// in the path's own w×h guide space, so scale them to the shape's cx×cy box.
-// Handles moveTo/lnTo/cubicBezTo/quadBezTo/arcTo/close (covers Google Slides
-// exports, whose rounded shapes are custom geometry, not presets).
+// SVG path from a DrawingML <a:custGeom>: points live in the path's own w×h
+// guide space, scaled to the shape's cx×cy box.
 function customGeomPath(custGeom: ONode, w: number, h: number): string {
   const pathLst = child(custGeom, 'a:pathLst');
   if (!pathLst) return '';
@@ -855,9 +852,8 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
   return g;
 }
 
-// Bullets are often authored in a symbol font (Wingdings/Symbol) where the char
-// is a bullet only IN THAT FONT; rendered in a normal/emoji font the codepoint
-// becomes a wrong glyph (a calendar, etc.). Map those to a clean Unicode bullet.
+// Symbol-font bullet chars (Wingdings etc.) render as wrong glyphs in normal
+// fonts; map those to a clean Unicode bullet.
 const SAFE_BULLETS = new Set([
   '•',
   '◦',
@@ -986,10 +982,8 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
   const insetT = px(body.insetsEMU?.t ?? 45720);
   const insetR = px(body.insetsEMU?.r ?? 91440);
   const insetB = px(body.insetsEMU?.b ?? 45720);
-  // A pair of insets can exceed a short box (small Logo/Date pills); PowerPoint
-  // never lets them push past the box, so clamp each pair to the box size. Left
-  // unclamped, a top inset taller than half the box shoves center-anchored text
-  // below the box center (Logo/Date appear to sink toward the bottom).
+  // PowerPoint never lets an inset pair push past the box, so clamp each pair
+  // to the box size (else short pill boxes sink their centered text).
   const clampInsets = (a: number, b: number, max: number): [number, number] => {
     if (max <= 0) return [0, 0];
     const sum = a + b;
@@ -997,11 +991,8 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
   };
   const [insT, insB] = clampInsets(insetT, insetB, px(h));
   const [insL, insR] = clampInsets(insetL, insetR, px(w));
-  // PowerPoint positions the first line by the font's typographic ascent, which
-  // is close to the cap height; a web font's line box is taller (extra ascent
-  // leading), so top/centered text sits lower than PowerPoint. For top-anchored
-  // text, trim that excess above the first line so it sits where PowerPoint puts
-  // it. (Centered/bottom text keeps the full box - its anchor already balances.)
+  // Top-anchored text trims the web font's excess ascent leading above the
+  // first line to sit at PowerPoint's typographic-ascent position.
   const topAnchored = justify === 'flex-start';
 
   const g = featheryDoc().createElementNS(SVGNS, 'g') as SVGGElement;
@@ -1099,11 +1090,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
           )
         : baseFontPx * NATURAL_LINE;
     // PowerPoint puts line-spacing leading below the baseline; CSS splits it
-    // half above / half below, which drifts text off fixed decorations (rules,
-    // dividers). Shift the top half to the bottom so baselines sit where the
-    // deck expects; inter-line spacing is preserved (taken off the top margin,
-    // added to the bottom). The glyph's own line box is ~1.2x the font size, so
-    // only spacing beyond that is extra leading - default/tight spacing shifts 0.
+    // half/half, so shift the top half below (pitch preserved via margins).
     const halfLeading = Math.max(
       0,
       (lineHeightPx - baseFontPx * NATURAL_LINE) / 2
@@ -1122,17 +1109,11 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       const wt = p.runs[0]?.bold ?? paraDef?.bold ? 700 : leadFont.weight;
       marginTopPx -= excessTopLeadingRatio(leadFont.family, wt) * baseFontPx;
     }
-    // PowerPoint single spacing is the font's content line (its typographic
-    // metrics), which is tighter than CSS 'normal' (web fonts like Urbanist
-    // carry extra win-metric leading, rendering ~20% too loose). Unitless 1 asks
-    // for 1x the em; the browser still expands to the font's content box for
-    // taller fonts, so nothing clips. Explicit percent/points keep the pixel
-    // value, which aligns multi-line text with fixed rules/dividers.
+    // Unitless 1 matches PowerPoint's single spacing (the font's content line),
+    // tighter than CSS 'normal'; explicit percent/points keep the px value.
     const cssLineHeight = paraProps.lineSpacing ? `${lineHeightPx}px` : '1';
-    // The line box's strut is sized by the PARAGRAPH's font, which otherwise
-    // inherits the host app's 16px default: sub-16px text then gets a 16px
-    // line box with a depressed baseline (chips/captions sat visibly low and
-    // loose vs PowerPoint). Size the strut from the paragraph's lead run.
+    // Size the line-box strut from the lead run; otherwise it inherits the
+    // host's 16px font and sinks/loosens any text smaller than that.
     css += `font-size:${baseFontPx}px;font-family:${cssFamilyList(
       leadFont.family
     )};`;
@@ -1146,9 +1127,8 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     const markerSize =
       (bullet?.sizePts ??
         (bullet?.sizePct ? baseSize * bullet.sizePct : baseSize)) * fontScale;
-    // A bullet can carry its own color (a:buClr) distinct from the text - often
-    // an accent. Prefer it (from the bullet or the inherited list style); only
-    // fall back to the text color when no buClr is defined.
+    // Prefer the bullet's own color (a:buClr, own or inherited); fall back to
+    // the text color only when none is defined.
     const buColorHex = bullet?.color ?? inherited.bullet?.color;
     const buColorScheme = bullet?.colorScheme ?? inherited.bullet?.colorScheme;
     let markerColor = resolveTextColor(first ?? ({} as Run), paraDef);
@@ -1157,9 +1137,8 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       const hex = schemeColorHex(buColorScheme, curDeck.pkg);
       if (hex) markerColor = hex.replace('#', '');
     }
-    // Render the glyph in the bullet's own font (e.g. DM Sans) so its size
-    // matches PowerPoint; a fallback font's "●" is noticeably chunkier. Symbol
-    // fonts are excluded since the glyph was already mapped to a safe Unicode char.
+    // Render the marker in the bullet's own font (fallback "●" is chunkier);
+    // symbol fonts were already mapped to safe Unicode chars.
     const symbolBulletFont = /wingding|webding|symbol/i.test(
       bullet?.font || ''
     );
@@ -2604,10 +2583,8 @@ function shapeGroup(
     }
     const fo = textForeign(shape, cx, cy);
     if (fo) {
-      // PowerPoint mirrors a flipped shape's geometry but keeps its text
-      // upright. Re-apply the same flip to the text; a reflection applied twice
-      // cancels, so the text lands back upright in the same box (rotation,
-      // applied on the group, still carries through).
+      // PowerPoint keeps a flipped shape's text upright: re-applying the flip
+      // to the text cancels the group's reflection.
       if (flipH || flipV) {
         const flip = `translate(${flipH ? cx : 0} ${flipV ? cy : 0}) scale(${
           flipH ? -1 : 1
@@ -2795,10 +2772,8 @@ function showsMaster(pkg: OPCPackage, part: string): boolean {
   return getAttr(xmlRoot(pkg.tree(part)), 'showMasterSp') !== '0';
 }
 
-/** Decorative (non-placeholder) shapes from the slide's master + layout, drawn
- *  beneath the slide's own shapes so layout design elements - colored panels,
- *  logos, rules - appear. Placeholders are skipped: they are content templates,
- *  not standalone decoration. */
+/** Decorative master/layout shapes drawn beneath the slide's own; placeholders
+ *  are skipped (content templates, not decoration). */
 function inheritedChromeShapes(deck: Deck, slide: Slide): Shape[] {
   const pkg = deck.pkg;
   const layout = pkg.layoutFor(slide.path);
@@ -2857,9 +2832,8 @@ export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
       });
       if (chromeG.childNodes.length) svg.appendChild(chromeG);
     }
-    // Google exports sometimes duplicate a placeholder with the 0xFFFFFFFF "no
-    // index" sentinel; PowerPoint drops that orphan when a real placeholder sits
-    // in the same spot (but keeps unique sentinel placeholders). Match that.
+    // PowerPoint drops a PH_NO_IDX duplicate when a real placeholder sits at
+    // the same spot (Google exports emit these); keep unique sentinels.
     const phAt = slide.shapes.map((s) => {
       const ph = descendant(s.node, 'p:ph');
       return ph

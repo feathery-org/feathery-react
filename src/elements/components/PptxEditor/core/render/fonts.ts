@@ -45,10 +45,8 @@ const SYSTEM_FONTS = new Set(
   ].map((f) => f.toLowerCase())
 );
 
-// Google-hosted metric clones for Microsoft fonts browsers usually lack
-// (Office keeps them inside its app bundles, so decks fall back to Helvetica,
-// whose smaller ascent sits lines visibly higher than PowerPoint). Stacked
-// after the real name, so an installed original still wins.
+// Google-hosted metric clones for Microsoft fonts browsers usually lack,
+// stacked after the real name so an installed original still wins.
 const FONT_SUBSTITUTES: Record<string, string> = {
   calibri: 'Carlito',
   cambria: 'Caladea'
@@ -64,13 +62,8 @@ export function cssFamilyList(family: string): string {
   return `'${family}',${sub ? `'${sub}',` : ''}Helvetica,Arial,sans-serif`;
 }
 
-// Per (family|weight) ratio, as a fraction of the em, of the web font's ascent
-// that sits ABOVE the cap height beyond a small typographic gap. PowerPoint
-// positions the first line by its typographic ascent (~cap height + a little),
-// but a web font's line box reserves more space above the caps, so top-anchored
-// text renders lower than PowerPoint. Trimming this ratio off the first line's
-// top margin lifts it to match. Measured once per font via Canvas; 0 when
-// Canvas has no real metrics (jsdom) so SSR/tests are unaffected.
+// Em ratio of the web font's ascent above cap height beyond PowerPoint's
+// typographic gap; trimmed off the first line's top margin (0 in jsdom).
 const topLeadingCache = new Map<string, number>();
 
 // First-render measurements run before injected webfonts finish loading, so
@@ -114,10 +107,8 @@ export function excessTopLeadingRatio(family: string, weight: number): number {
       // GAP is PowerPoint's small space above the caps (~0.1em); keep it so text
       // doesn't hug the very top. Trim only what the web font adds beyond that.
       const GAP = 0.1 * EM;
-      // Unitless line-height 1 centers the font's (ascent+descent) content box
-      // in a 1em line box, so a tall-metric font (Arial, Carlito) already draws
-      // its first baseline higher by the negative half-leading; fold that in or
-      // the trim over-lifts and pushes text past the box top.
+      // Fold in line-height 1's half-leading, or tall-metric fonts (whose
+      // baseline already sits higher) get over-lifted past the box top.
       const halfLeading = (EM - (ascent + descent)) / 2;
       if (ascent && cap)
         ratio = Math.max(0, (ascent - cap - GAP + halfLeading) / EM);
@@ -194,9 +185,8 @@ function googleFontHref(
 ): string {
   const sorted = [...new Set(weights)].sort((a, b) => a - b);
   const fam = family.trim().replace(/\s+/g, '+');
-  // Italic is requested on its own link: a font with no italic axis fails only
-  // that request (its normal weights still load, italic falls back to synthesis),
-  // while fonts that do have one (Newsreader, DM Sans) get their true italics.
+  // Italic gets its own link: a font without an italic axis fails only that
+  // request, keeping its normal weights (italic then synthesizes).
   const axis = italic
     ? `ital,wght@${sorted.map((w) => `1,${w}`).join(';')}`
     : `wght@${sorted.join(';')}`;
@@ -205,9 +195,8 @@ function googleFontHref(
 
 const injected = new Set<string>();
 
-// Inject Google Fonts <link>s (normal + italic) per family the deck uses. A
-// family that isn't on Google Fonts simply fails its stylesheet load and falls
-// back to the system stack, so this never blocks rendering.
+// Inject Google Fonts <link>s per family the deck uses; an unknown family
+// just fails its stylesheet load, so this never blocks rendering.
 export function ensureDeckFontsLoaded(deck: Deck): void {
   let doc: Document;
   try {

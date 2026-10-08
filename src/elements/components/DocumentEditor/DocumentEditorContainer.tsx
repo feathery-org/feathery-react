@@ -152,12 +152,8 @@ const wrap: WrapStyle = {
   position: 'relative'
 };
 
-// The pptx editor fills its container absolutely, so it contributes no intrinsic
-// height. When the host container has a height the editor fills it exactly (like
-// docx); when the host is content-sized (`fit`), `height:100%` is indefinite, so
-// aspect-ratio gives the editor a sensible height instead of collapsing to 0.
-// This keeps the editor within the container's bounds rather than forcing a fixed
-// floor that overflows smaller containers. It scrolls internally.
+// The pptx editor fills its container absolutely (no intrinsic height); the
+// aspect-ratio keeps a content-sized host from collapsing it to 0.
 const editorWrap: WrapStyle = { ...wrap, aspectRatio: '16 / 10' };
 
 // A container whose content is a document editor bound to a Document template.

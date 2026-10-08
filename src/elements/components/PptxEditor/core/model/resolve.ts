@@ -96,10 +96,8 @@ function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
   return Object.keys(out).length ? out : null;
 }
 
-/** Find the placeholder shape in a part's spTree that matches this ph type/idx.
- *  idx identifies one specific placeholder while a type is shared by many (a
- *  layout can have a dozen subTitle cells), so an idx match must win over type -
- *  otherwise every cell inherits the first one's size/color/font. */
+/** Find the part's placeholder matching this ph: idx names ONE placeholder
+ *  while a type is shared by many, so an idx match wins over type. */
 function findPlaceholder(
   partRoot: ONode,
   phType: string,
@@ -115,9 +113,8 @@ function findPlaceholder(
       if (ph && (getAttr(ph, 'idx') || '') === phIdx) return sp;
     }
   }
-  // Fall back to type. Prefer a placeholder that actually defines a run style
-  // over an empty one, so a style-less duplicate doesn't inherit the generic
-  // (often black) txStyles default when styled siblings of the type exist.
+  // Fall back to type, preferring a placeholder that defines a run style so
+  // style-less duplicates don't inherit the generic txStyles default.
   const typeMatches = sps.filter((sp) => {
     const ph = descendant(sp, 'p:ph');
     return !!ph && (getAttr(ph, 'type') || 'body') === phType;
@@ -160,10 +157,8 @@ const TXSTYLE_FOR_PH: Record<string, string> = {
   obj: 'p:bodyStyle'
 };
 
-// A slide/layout placeholder inherits from the master's placeholder of its
-// family: titles from the master title, every other type from the master body
-// (the master has no subTitle/obj/etc. of its own). Masters key placeholders by
-// type, not the slide's idx, so the master lookup matches by this type.
+// Masters only have title/body placeholders, keyed by type: titles inherit
+// from the master title, every other type from the master body.
 function masterPhType(type: string): string {
   return type === 'title' || type === 'ctrTitle' ? 'title' : 'body';
 }
@@ -183,9 +178,8 @@ export function resolveListProps(
   const masterPart = layoutPart ? pkg.masterFor(layoutPart) : undefined;
 
   const merged: ResolvedListProps = {};
-  // Field-level cascade: the first (most specific) level to supply each field
-  // wins, so a layout level that sets only size/color doesn't block the font
-  // the master placeholder supplies. color + colorScheme move as one unit.
+  // Field-level cascade: the most specific level to supply each field wins;
+  // color + colorScheme move as one unit.
   const mergeIn = (r: ResolvedListProps | null) => {
     if (!r) return;
     if (merged.bullet === undefined && r.bullet) merged.bullet = r.bullet;
@@ -222,9 +216,8 @@ export function resolveListProps(
       lvlOf(findPlaceholder(xmlRoot(pkg.tree(layoutPart)), ph.type, ph.idx))
     );
   }
-  // 2. master placeholder lstStyle, then 3. master txStyles for the ph type.
-  // The placeholder's own style is more specific than the generic {title}Style,
-  // so it is consulted first (e.g. its latin font wins over the txStyles font).
+  // 2. master placeholder lstStyle (more specific), then 3. master txStyles
+  // for the placeholder's type.
   if (masterPart && pkg.hasPart(masterPart)) {
     const mRoot = xmlRoot(pkg.tree(masterPart));
     mergeIn(lvlOf(findPlaceholder(mRoot, masterPhType(ph.type), '')));
