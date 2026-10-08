@@ -5,6 +5,7 @@
  */
 import type { SyncfusionEditorLike } from '../../../../elements/components/DocxEditor/bindings/editorAdapter';
 import type { EditorHost } from '../../pack';
+import { bindingCommandSurfaceFor } from '../../../../elements/components/DocxEditor/bindings/reconcileRegistry';
 
 type Obj = Record<string, any>;
 
@@ -35,6 +36,8 @@ export function createHost(editor: LiveEditor): DocxHost {
       const tracking = editor.enableTrackChanges;
       editor.open(native);
       editor.enableTrackChanges = tracking;
+      // the bindings re-read the replaced document as their baseline (no dispose and re-attach)
+      bindingCommandSurfaceFor(editor)?.reopened?.();
     },
     canUndo: () => !!historyOf(editor)?.canUndo?.(),
     undo: () => historyOf(editor)?.undo?.(),

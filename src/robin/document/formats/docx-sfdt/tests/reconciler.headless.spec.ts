@@ -197,12 +197,24 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(row).toEqual(expect.objectContaining(SPLICE));
   });
 
-  it('D6 bound row delete: splice, formulas recomputed', async () => {
-    const pre = await fresh();
+  it('D6 bound row delete: splice, formulas recomputed, the bindings re-read without a re-attach', async () => {
+    await fresh();
     const tid = await at(['sections', 3, 'blocks', 10, 'blocks', 0]);
     const t = (await read([tid]))[tid];
     const item = t.rows[2];
-    const row = await commitAndUndo('D6', pre, { intent: 'Remove a line.', scope: { ids: [item.id] }, changes: [{ kind: 'delete', id: item.id, base: item.base }] });
+    const cid = await at(['sections', 3, 'blocks', 10]);
+    const control = (await read([cid]))[cid];
+    const tableId = control?.binding?.table;
+    expect(typeof tableId).toBe('string');
+    const rowsBefore = await lane.call<number>('bindingRows', tableId);
+    const result = await dispatch('write', { intent: 'Remove a line.', scope: { ids: [item.id] }, changes: [{ kind: 'delete', id: item.id, base: item.base }] });
+    expect(result.ok).toBe(true);
+    // the bindings re-read the spliced document without a re-attach: the deleted row is out of their index
+    expect(await lane.call<number>('bindingRows', tableId)).toBe(rowsBefore - 1);
+    await lane.call('sessionUndo');
+    const pre2 = await fresh();
+    const t2 = (await read([tid]))[tid];
+    const row = await commitAndUndo('D6', pre2, { intent: 'Remove a line.', scope: { ids: [t2.rows[2].id] }, changes: [{ kind: 'delete', id: t2.rows[2].id, base: t2.rows[2].base }] });
     expect(row).toEqual(expect.objectContaining(SPLICE));
   });
 

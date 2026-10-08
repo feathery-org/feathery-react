@@ -198,6 +198,11 @@ const api = {
     return String(selection.text ?? '');
   },
 
+  /** Rows the bindings' controller indexes for a bound table, and how many times it was attached. */
+  bindingRows(tableId: string): number {
+    return attached?.controller.index?.tables.get(tableId)?.rows.length ?? -1;
+  },
+
   undoDepth(): number {
     const h = history();
     const stack = h?.undoStackIn ?? h?.undoStack;
