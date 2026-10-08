@@ -31,7 +31,7 @@
 import type {
   AppearanceRestore,
   TableLayoutFacts
-} from '../../../utils/documentEditorPrimitives';
+} from '../../../../utils/documentEditorPrimitives';
 
 const OPTIMIZED_LINE_STYLES = [
   'Single',

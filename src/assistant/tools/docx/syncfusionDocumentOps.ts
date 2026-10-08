@@ -66,7 +66,7 @@ import {
   resolveRenderFormat,
   SkippedCell,
   upgradeNegativeStyle
-} from './numericCells';
+} from '../../../robin/document/formats/docx-sfdt/numericCells';
 import {
   collectFormulaAggregates,
   evaluateFormula,
@@ -77,14 +77,14 @@ import {
   renderFormulaResult,
   ROUNDING_MODES,
   RoundingMode
-} from './cellFormula';
+} from '../../../robin/document/formats/docx-sfdt/cellFormula';
 import {
   buildNoOpWriteReport,
   describeTextChange,
   NoOpWriteReport,
   writeIsNoOp
 } from './writeNoOp';
-import { deriveTableStructure } from './tableStructure';
+import { deriveTableStructure } from '../../../robin/document/formats/docx-sfdt/tableStructure';
 import type {
   BindingInstanceChoice,
   BindingWireIdentity,
@@ -172,7 +172,7 @@ import {
   tableIsUnstyled,
   uniformDataRowShading,
   UNSTATED_TABLE_LAYOUT
-} from './tableAppearance';
+} from '../../../robin/document/formats/docx-sfdt/tableAppearance';
 import {
   clearCellShading,
   createdRevisions,

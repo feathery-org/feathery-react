@@ -38,7 +38,7 @@ import {
   detectTableBanding,
   inferHeaderRows,
   rowShadings
-} from '../tableAppearance';
+} from '../../../../robin/document/formats/docx-sfdt/tableAppearance';
 import {
   listRevisionGroups,
   resolveLiveRevisionGroupsAsOneUndo,

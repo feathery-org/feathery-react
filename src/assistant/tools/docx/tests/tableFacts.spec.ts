@@ -20,7 +20,7 @@ import {
   TableFacts,
   TABLE_FACTS_CELL_TEXT_CHARS
 } from '../syncfusionDocumentOps';
-import { runFormula } from './formulaHarness';
+import { runFormula } from '../../../../robin/document/formats/docx-sfdt/tests/formulaHarness';
 
 const cell = (
   text: string,
