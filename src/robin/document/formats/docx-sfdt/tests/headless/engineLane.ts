@@ -68,6 +68,8 @@ const CHROME = [
 export interface EngineLane {
   call<T = any>(method: string, ...args: any[]): Promise<T>;
   pageErrors: string[];
+  /** A CPU profile of the page while `run` executes (for per-verb cost work). */
+  profile<T>(run: () => Promise<T>): Promise<{ result: T; profile: unknown }>;
   close(): Promise<void>;
 }
 
@@ -87,8 +89,19 @@ export async function startEngineLane(): Promise<EngineLane> {
   tab.on('pageerror', (error: Error) => pageErrors.push(String(error)));
   await tab.goto(`file://${page}`, { waitUntil: 'load' });
   await tab.waitForFunction(() => (window as any).fmEngineReady === true, { timeout: 60000 });
+  const profile = async <T>(run: () => Promise<T>) => {
+    const cdp = await tab.target().createCDPSession();
+    await cdp.send('Profiler.enable');
+    await cdp.send('Profiler.setSamplingInterval', { interval: 100 });
+    await cdp.send('Profiler.start');
+    const result = await run();
+    const { profile: out } = await cdp.send('Profiler.stop');
+    await cdp.detach();
+    return { result, profile: out as unknown };
+  };
   return {
     pageErrors,
+    profile,
     call: <T>(method: string, ...args: any[]) =>
       tab.evaluate(
         function (name: string, a: any[]) {

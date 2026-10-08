@@ -272,3 +272,67 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     );
   });
 });
+
+/**
+ * Per-verb cost on the flagship, timed in the page (no bridge). Every verb first reads the editor
+ * (serialize, and the adapter when the bytes changed); a write also verifies, commits and proves.
+ * A verb above 50 ms is a finding to optimize; the numbers go in the PR's numbers table.
+ */
+describe('per-verb time on the flagship', () => {
+  const RUNS = 5;
+  const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const timed = async (verb: string, input: unknown): Promise<{ ms: number; editorMs: number; result: any }> => {
+    const out = await lane.call<{ ms: number; editorMs: number; result: any }>('timedDispatch', { protocolVersion: 1, turnId: `turn-${turn}`, editorId: 'ed', target: { type: 'envelope', id: 'env' }, verb, input });
+    expect(out.result.status).toBe('ok');
+    return { ms: out.ms, editorMs: out.editorMs, result: out.result.response.result };
+  };
+
+  it('measures outline, read, find and the three write paths', async () => {
+    const rows: Array<[string, number, number]> = [];
+    const record = (name: string, xs: number[]) => rows.push([name, median(xs), Math.max(...xs)]);
+    const costs: Array<Record<string, number>> = [];
+    const verbs: Record<string, number[]> = { 'outline (cold, after open)': [], outline: [], 'read (a 30-row bound table)': [], 'find (text)': [], 'find (feature)': [] };
+    const writes: Record<string, number[]> = { 'write: text (native)': [], 'write: format (native)': [], 'write: row copy (splice)': [] };
+    // each write split into the editor's own work (seams, serialize, open) and the engine's
+    const phases: Record<string, number[]> = {};
+    const timedWrite = async (name: string, input: unknown) => {
+      const { ms, editorMs, result } = await timed('write', input);
+      expect(result.ok).toBe(true);
+      writes[name].push(ms);
+      const short = name.replace('write: ', '');
+      (phases[`  ${short}: editor`] ??= []).push(editorMs);
+      (phases[`  ${short}: engine`] ??= []).push(ms - editorMs);
+      (phases[`  ${short}: engine verify`] ??= []).push(result.trace.verified.ms);
+    };
+    for (let k = 0; k < RUNS; k += 1) {
+      await fresh();
+      verbs['outline (cold, after open)'].push((await timed('outline', {})).ms);
+      verbs.outline.push((await timed('outline', {})).ms);
+      const tid = await at(['sections', 1, 'blocks', 10, 'blocks', 0]);
+      verbs['read (a 30-row bound table)'].push((await timed('read', { ids: [tid] })).ms);
+      verbs['find (text)'].push((await timed('find', { text: 'premium' })).ms);
+      verbs['find (feature)'].push((await timed('find', { feature: { name: 'binding' } })).ms);
+      costs.push(await lane.call<Record<string, number>>('costs'));
+      // the three commit paths, each on a fresh document
+      const pid = await at(['sections', 3, 'blocks', 16]);
+      const run = (await read([pid]))[pid].inlines.find((i: any) => i.kind === 'run');
+      await timedWrite('write: text (native)', { intent: 'Replace the clause.', scope: { ids: [run.id] }, changes: [{ kind: 'replace', id: run.id, base: run.base, node: { ...strip(run), text: 'Replaced.' } }] });
+      await fresh();
+      const run2 = (await read([pid]))[pid].inlines.find((i: any) => i.kind === 'run');
+      await timedWrite('write: format (native)', { intent: 'Bold the clause.', scope: { ids: [run2.id] }, changes: [{ kind: 'set', target: { ids: [run2.id], shape: { [run2.id]: run2.shape } }, props: { bold: true } }] });
+      await fresh();
+      const t = (await read([tid]))[tid];
+      await timedWrite('write: row copy (splice)', { intent: 'Add a line.', scope: { ids: [t.rows[2].id] }, changes: [{ kind: 'insert_after', anchor: t.rows[2].id, container: t.shape, node: strip(t.rows[2]) }] });
+    }
+    for (const [name, xs] of Object.entries(verbs)) record(name, xs);
+    for (const [name, xs] of Object.entries(writes)) record(name, xs);
+    for (const [name, xs] of Object.entries(phases)) record(name, xs);
+    for (const key of ['serialize', 'toNormalForm', 'fromNormalForm'])
+      record(`adapter alone: ${key}`, costs.map((c) => c[key]));
+    // eslint-disable-next-line no-console
+    console.log(
+      [`flagship v4b, ${costs[0].bytes} bytes, ${RUNS} runs`, 'verb                                median ms   max ms', ...rows.map(([n, m, x]) => `${n.padEnd(36)}${m.toFixed(1).padStart(9)}${x.toFixed(1).padStart(9)}`)].join('\n')
+    );
+    expect(rows.length).toBeGreaterThan(0);
+  }, 600000);
+});

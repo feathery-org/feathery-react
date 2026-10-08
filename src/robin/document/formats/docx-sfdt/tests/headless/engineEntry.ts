@@ -31,6 +31,37 @@ let scratch: DocumentEditor | null = null;
 let attached: AttachedBindings | null = null;
 let session: DocumentSession | null = null;
 const errors: string[] = [];
+
+/**
+ * Time spent inside the editor (host calls and seam applications) during a dispatch, so per-verb
+ * cost splits into the editor's own work and the engine's.
+ */
+let editorMs = 0;
+function timedCall<A extends unknown[], R>(f: (...a: A) => R): (...a: A) => R {
+  return (...a: A): R => {
+    const t0 = performance.now();
+    try {
+      return f(...a);
+    } finally {
+      editorMs += performance.now() - t0;
+    }
+  };
+}
+const timedPack: typeof docxPack = {
+  ...docxPack,
+  seams: Object.fromEntries(
+    Object.entries(docxPack.seams).map(([name, seam]) => [name, { ...seam, apply: timedCall(seam.apply) }])
+  )
+};
+function timedHost(h: ReturnType<typeof createHost>): ReturnType<typeof createHost> {
+  return {
+    ...h,
+    serialize: timedCall(h.serialize),
+    open: timedCall(h.open),
+    undo: timedCall(h.undo),
+    redo: timedCall(h.redo)
+  };
+}
 window.addEventListener('error', (e) => errors.push(String(e.message)));
 
 const frame = (): Promise<void> =>
@@ -99,8 +130,8 @@ const api = {
     attached = attachBindings(editor as unknown as SyncfusionEditorLike, { convertTokensOnOpen: false });
     await frame();
     session = new DocumentSession({
-      pack: docxPack,
-      host: createHost(editor as unknown as LiveEditor),
+      pack: timedPack,
+      host: timedHost(createHost(editor as unknown as LiveEditor)),
       target: { type: 'envelope', id: 'env' },
       editorId: 'ed'
     });
@@ -132,6 +163,32 @@ const api = {
   dispatch(payload: unknown) {
     if (!session) throw new Error('no session');
     return session.dispatch(payload);
+  },
+
+  /** One dispatch timed in the page, in milliseconds (per-verb cost, measured without the bridge). */
+  timedDispatch(payload: unknown): { ms: number; editorMs: number; result: unknown } {
+    if (!session) throw new Error('no session');
+    editorMs = 0;
+    const t0 = performance.now();
+    const result = session.dispatch(payload);
+    return { ms: performance.now() - t0, editorMs, result };
+  },
+
+  /** The pieces every verb pays on the live document, timed in the page, in milliseconds. */
+  costs(): Record<string, number> {
+    const time = (f: () => unknown) => {
+      const t0 = performance.now();
+      f();
+      return performance.now() - t0;
+    };
+    const native = live().serialize();
+    const read = docxPack.adapter.toNormalForm(native);
+    return {
+      serialize: time(() => live().serialize()),
+      toNormalForm: time(() => docxPack.adapter.toNormalForm(native)),
+      fromNormalForm: time(() => docxPack.adapter.fromNormalForm(read.nf, read.residue)),
+      bytes: native.length
+    };
   },
 
   undoDepth(): number {
