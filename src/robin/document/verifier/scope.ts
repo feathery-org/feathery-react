@@ -19,9 +19,8 @@ import type { DocumentView, Pack } from '../pack';
 import {
   canonicalJson,
   childIdLists,
-  hash64,
   NfNode,
-  ownContentKey,
+  ownContentText,
   withoutLists
 } from '../tree';
 import { bulkQuery } from './base';
@@ -37,8 +36,8 @@ export interface TreeDiff {
   membershipOnly: Set<string>;
 }
 
-function ownFieldsKey(node: NfNode, pack: Pack): string {
-  return hash64(canonicalJson(withoutLists(node, pack.tree)));
+function ownFieldsText(node: NfNode, pack: Pack): string {
+  return canonicalJson(withoutLists(node, pack.tree));
 }
 
 /** Longest common subsequence membership of `a` within `b` (ids common to both, in order). */
@@ -94,9 +93,10 @@ export function diffTrees(
       diff.moved.add(node.id);
       diff.changed.add(node.id);
     }
-    if (ownContentKey(old, pack.tree) !== ownContentKey(node, pack.tree)) {
+    // compared as canonical text, not hashed: only equality matters here
+    if (ownContentText(old, pack.tree) !== ownContentText(node, pack.tree)) {
       diff.changed.add(node.id);
-      if (ownFieldsKey(old, pack) === ownFieldsKey(node, pack))
+      if (ownFieldsText(old, pack) === ownFieldsText(node, pack))
         diff.membershipOnly.add(node.id);
     }
     // children that stayed under this node but changed order

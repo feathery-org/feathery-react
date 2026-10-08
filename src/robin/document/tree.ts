@@ -241,8 +241,13 @@ export function shapeOf(node: NfNode, shape: TreeShape): string {
  * Two versions of a node with equal own content differ only below their children.
  */
 export function ownContentKey(node: NfNode, shape: TreeShape): string {
+  return hash64(ownContentText(node, shape));
+}
+
+/** What `ownContentKey` hashes; compared directly where only equality matters. */
+export function ownContentText(node: NfNode, shape: TreeShape): string {
   const own = withoutLists(node, shape, (list) =>
     list.filter(isPlainObject).map((c) => String(c.id))
   );
-  return hash64(canonicalJson(contentOf(own, { keepPending: true })));
+  return canonicalJson(contentOf(own, { keepPending: true }));
 }
