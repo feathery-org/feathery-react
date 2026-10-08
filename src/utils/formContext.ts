@@ -29,6 +29,7 @@ import { validateElements } from './validation';
 import { getPanelRuntimeSnapshot } from './panelRuntime';
 import { linkRequestHeaders } from './accessLink';
 import { fillFields, FillFieldInput } from './formActions/fillFields';
+import { liveDocumentAccessor } from '../robin/document/mounts';
 import { navigateToStep } from './formActions/navigateToStep';
 import { clickElement } from './formActions/clickElement';
 import { runLogicRule, RunLogicRuleParams } from './formActions/runLogicRule';
@@ -122,6 +123,9 @@ export const getFormContext = (formUuid: string) => {
     },
     // Acting for the person on the current step, with the same checks as their own edits and clicks
     fillFields: (fields: FillFieldInput[]) => fillFields(formUuid, fields),
+    // Robin's document editing: the mounted document's descriptor for the request context, one bridge
+    // payload in and its response out, and the end of the editing turn when Robin's turn settles
+    liveDocument: liveDocumentAccessor(formUuid),
     // Moves through the step's own navigation like the person's click, unlike goToStep
     navigateToStep: (stepKey: string) => navigateToStep(formUuid, stepKey),
     clickElement: (elementId: string, repeatIndex?: number) =>
