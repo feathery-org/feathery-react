@@ -489,16 +489,15 @@ describe('section 6 write envelope', () => {
     if (!none.ok) expect(none.refusal.invariant).toBe('placeholder-call');
   });
 
-  it('refuses an empty change list and a placeholder intent as placeholder-call', () => {
+  it('refuses an empty change list as placeholder-call', () => {
     const empty = parseVerbInput('write', write({ changes: [] }));
     expect(empty.ok).toBe(false);
     if (!empty.ok) expect(empty.refusal.invariant).toBe('placeholder-call');
+  });
 
-    for (const intent of ['TODO', '...', 'n/a', ' placeholder. ']) {
-      const r = parseVerbInput('write', write({ intent }));
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.refusal.invariant).toBe('placeholder-call');
-    }
+  it('never judges the wording of the intent: real changes under any intent are accepted', () => {
+    for (const intent of ['TODO', '...', 'n/a', ' placeholder. '])
+      expect(parseVerbInput('write', write({ intent })).ok).toBe(true);
   });
 
   it('refuses unknown fields, unknown change kinds, bad positions and malformed nested ids', () => {

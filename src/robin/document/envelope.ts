@@ -975,9 +975,6 @@ export function validateVerbResult(
 // Input parsing: a schema failure becomes a section 7.1 refusal
 // ---------------------------------------------------------------------------------------------
 
-const PLACEHOLDER_INTENT =
-  /^\s*(placeholder|todo|tbd|n\/?a|\.\.\.|…)?\s*\.?\s*$/i;
-
 function formatPath(path: PropertyKey[]): string {
   let out = '';
   for (const part of path) {
@@ -1091,13 +1088,6 @@ export function parseVerbInput<V extends Verb>(
       list.push(describeIssue(issue));
       byInvariant.set(invariant, list);
     }
-  } else if (
-    verb === 'write' &&
-    PLACEHOLDER_INTENT.test((parsed.data as WriteInput).intent)
-  ) {
-    byInvariant.set('placeholder-call', [
-      'intent: says nothing about the change; state in one or two sentences what this write does'
-    ]);
   }
   if (!byInvariant.size && parsed.success)
     return { ok: true, value: parsed.data };
