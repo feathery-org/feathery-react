@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { installHistoryRouting } from './historyRouting';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
 import {
@@ -879,6 +880,8 @@ export function useDocxEditor({
           // Engine-level fixes to the editing surface itself, not review
           // customizations: every host gets them, gated or not.
           installTableRowResizeFix(ed);
+          // Ctrl+Z / Ctrl+Y through Robin's undo routing where a document session is mounted
+          installHistoryRouting(ed);
           installTrackedContentControlDeletion(ed);
           // Status bar (bottom right): hide the Web-layout toggle — it flips
           // the document into continuous view, which breaks the paginated

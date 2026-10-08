@@ -3,7 +3,8 @@
 import { setAssistantSessionActive } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import {
   mountDocument,
-  registerCardResolver
+  registerCardResolver,
+  registerHistoryRoute
 } from '../../../robin/document/mounts';
 import { getPack, registerPack } from '../../../robin/document/pack';
 import { DocumentSession } from '../../../robin/document/session';
@@ -62,7 +63,13 @@ export function mountRobinDocument({
     owns: (changeSetId) => session.ownsCard(changeSetId),
     resolve: (changeSetId, accept) => session.resolveCard(changeSetId, accept)
   });
+  // undo and redo go to the editor when it has an entry, else to the engine (decision D4)
+  const unroute = registerHistoryRoute(editor, {
+    undo: () => session.undo(),
+    redo: () => session.redo()
+  });
   return () => {
+    unroute();
     unregister();
     unmount();
     session.finishTurn();

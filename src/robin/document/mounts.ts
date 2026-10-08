@@ -125,3 +125,29 @@ export function cardResolverFor(editor: unknown): CardResolver | undefined {
     ? resolvers.get(editor)
     : undefined;
 }
+
+/**
+ * Undo and redo for an editor with a document session (decision D4): the editor's own entry when
+ * it has one, else the engine's. The toolbar and Ctrl+Z / Ctrl+Y go through this when an editor
+ * has one, and straight to the editor's history otherwise.
+ */
+export interface HistoryRoute {
+  undo(): void;
+  redo(): void;
+}
+
+const routes = new WeakMap<object, HistoryRoute>();
+
+export function registerHistoryRoute(
+  editor: object,
+  route: HistoryRoute
+): () => void {
+  routes.set(editor, route);
+  return () => {
+    if (routes.get(editor) === route) routes.delete(editor);
+  };
+}
+
+export function historyRouteFor(editor: unknown): HistoryRoute | undefined {
+  return editor && typeof editor === 'object' ? routes.get(editor) : undefined;
+}

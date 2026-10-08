@@ -13,6 +13,7 @@ import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
 import {
   cardResolverFor,
+  historyRouteFor,
   liveDocumentAccessor
 } from '../../../robin/document/mounts';
 import {
@@ -842,7 +843,7 @@ describe("DocumentEditorContainer: Robin's document session", () => {
     expect(liveDocumentAccessor('form-robin').descriptor()).toBeNull();
   });
 
-  it("registers the session as the rail's card resolver for that editor, and removes it on unmount", async () => {
+  it("registers the session as the rail's card resolver and the undo route for that editor, and removes both on unmount", async () => {
     const view = mount();
     await waitFor(() =>
       expect(liveDocumentAccessor('form-robin').descriptor()).not.toBeNull()
@@ -850,8 +851,10 @@ describe("DocumentEditorContainer: Robin's document session", () => {
     const editor = getDocxEditor('form-robin');
     expect(cardResolverFor(editor)).toBeDefined();
     expect(cardResolverFor(editor)?.owns('no-such-card')).toBe(false);
+    expect(historyRouteFor(editor)).toBeDefined();
     view.unmount();
     expect(cardResolverFor(editor)).toBeUndefined();
+    expect(historyRouteFor(editor)).toBeUndefined();
   });
 
   it('dispatches an outline through the accessor to the mounted editor', async () => {

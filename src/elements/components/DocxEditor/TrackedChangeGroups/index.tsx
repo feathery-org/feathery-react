@@ -14,6 +14,7 @@ import {
 import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
 import { featheryWindow } from '../../../../utils/browser';
 import { cardResolverFor } from '../../../../robin/document/mounts';
+import { redoDocument, undoDocument } from '../historyRouting';
 import { isOpeningDocument, setActiveInlineRevisions } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
@@ -563,9 +564,9 @@ function TrackedChangeGroups({
       if (key === 'z' || key === 'y') {
         event.preventDefault();
         event.stopPropagation();
-        const history = editor?.editorHistory ?? editor?.editorHistoryModule;
-        if (key === 'y' || event.shiftKey) history?.redo?.();
-        else history?.undo?.();
+        // the same routing as the document and the toolbar (decision D4)
+        if (key === 'y' || event.shiftKey) redoDocument(editor);
+        else undoDocument(editor);
       }
       return;
     }
