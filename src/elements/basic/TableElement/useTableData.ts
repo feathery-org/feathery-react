@@ -140,6 +140,7 @@ type UseTableDataReturn = {
   activeFieldValues: Record<string, any>;
   baseColumns: Column[];
   baseFieldValues: Record<string, any>;
+  baseNumRows: number;
 
   // Handlers
   handleSort: (columnName: string) => void;
@@ -551,6 +552,7 @@ export function useTableData({
     hasData,
     activeFieldValues,
     baseColumns,
-    baseFieldValues
+    baseFieldValues,
+    baseNumRows
   };
 }

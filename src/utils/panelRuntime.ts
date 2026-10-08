@@ -94,15 +94,21 @@ export type PanelRuntimeNavigationSurface = {
   }>;
 };
 
+// Field-backed rows ride in every snapshot, so only the first few do
+export const SNAPSHOT_TABLE_ROWS = 10;
+
 export type PanelRuntimeTableEntry = {
   id: string;
   hubId?: string;
-  columns: Array<{ name: string; fieldKey: string }>;
+  columns: Array<{ name: string; fieldKey: string; readOnly?: boolean }>;
+  rowCount: number;
   rows?: unknown[][];
+  rowsOmitted?: number;
   actions?: Array<{ label: string }>;
   canAddRows?: boolean;
   canDeleteRows?: boolean;
   canEditCells?: boolean;
+  pending?: { edits: number; deletions: number };
   hasLogicRules?: boolean;
   visible: boolean;
 };
@@ -634,63 +640,77 @@ export const getPanelRuntimeSnapshot = (
     });
   });
 
-  // Collect tables with their column headers and row data
+  // Tables as the mounted grid reports them, from stored props until one mounts
   const currentStepTables: PanelRuntimeTableEntry[] = [];
   (step.tables ?? []).forEach((el: any) => {
-    // Hub rows live in the Data Hub, not in form fields, so the entry names the hub instead
-    const hubId =
-      el?.properties?.data_source === 'hub' ? el.properties.hub_id : undefined;
-    // A mounted Hub table renders columns resolved from the live Hub schema, so
-    // the ones stored on the element only stand in until it mounts
-    const renderedColumns = hubId
-      ? state.assistantClient?.getTableColumns(el.id ?? '')
-      : null;
-    const cols = (renderedColumns ?? el?.properties?.columns ?? []) as Array<{
+    const props = el?.properties ?? {};
+    const live = state.tables?.get(el.id ?? '');
+    const isHub = props.data_source === 'hub';
+    const storedColumns = (props.columns ?? []) as Array<{
       name?: string;
       field_key?: string;
       hub_field_key?: string;
     }>;
-    if (cols.length === 0) return;
-    const fieldKeyFor = (col: { field_key?: string; hub_field_key?: string }) =>
-      (hubId ? col.hub_field_key : col.field_key) ?? '';
-    const numRows = cols.reduce((max, col) => {
-      const v = col.field_key ? fieldsMap[col.field_key]?.value : undefined;
-      return Array.isArray(v) ? Math.max(max, v.length) : max;
-    }, 0);
-    const rows: unknown[][] = Array.from({ length: numRows }, (_, i) =>
-      cols.map((col) => {
-        const v = col.field_key ? fieldsMap[col.field_key]?.value : null;
-        return Array.isArray(v) ? v[i] ?? null : v ?? null;
-      })
-    );
-    const rawActions = Array.isArray(el?.properties?.actions)
-      ? el.properties.actions
-      : [];
+    const liveState = live?.getLiveState();
+    const columns =
+      liveState?.columns ??
+      storedColumns.map((c) => ({
+        name: c.name ?? c.field_key ?? '',
+        fieldKey: (isHub ? c.hub_field_key : c.field_key) ?? ''
+      }));
+    if (columns.length === 0) return;
+    const hubId = liveState?.hubId ?? (isHub ? props.hub_id : undefined);
+    const rawActions = Array.isArray(props.actions) ? props.actions : [];
     const actions = rawActions
       .map((a: any) => ({ label: typeof a?.label === 'string' ? a.label : '' }))
       .filter((a: { label: string }) => a.label.trim().length > 0);
-    const { canEditCells, canAddRows, canDeleteRows } = getTableCapabilities(
-      el,
-      numRows
-    );
     const hasLogicRules = elementHasLogicRules(
       logicRules,
       'action',
       step.id,
       el.id ?? ''
     );
+
+    // Hub rows stay out of the snapshot, the host reads them on demand
+    let rowCount = 0;
+    let rows: unknown[][] | undefined;
+    if (live && liveState) {
+      rowCount = liveState.rowCount;
+      if (!isHub) {
+        const read = live.getRows({ offset: 0, limit: SNAPSHOT_TABLE_ROWS });
+        rows = read.rows.map((row) =>
+          columns.map((column) => row.values[column.fieldKey] ?? null)
+        );
+      }
+    } else if (!isHub) {
+      rowCount = storedColumns.reduce((max, col) => {
+        const v = col.field_key ? fieldsMap[col.field_key]?.value : undefined;
+        return Array.isArray(v) ? Math.max(max, v.length) : max;
+      }, 0);
+      rows = Array.from(
+        { length: Math.min(rowCount, SNAPSHOT_TABLE_ROWS) },
+        (_, i) =>
+          storedColumns.map((col) => {
+            const v = col.field_key ? fieldsMap[col.field_key]?.value : null;
+            return Array.isArray(v) ? v[i] ?? null : v ?? null;
+          })
+      );
+    }
+    const rowsOmitted = rows ? rowCount - rows.length : 0;
     currentStepTables.push({
       id: el.id ?? '',
       ...(hubId ? { hubId } : {}),
-      columns: cols.map((c) => ({
-        name: c.name ?? c.field_key ?? '',
-        fieldKey: fieldKeyFor(c)
-      })),
-      ...(hubId ? {} : { rows }),
-      ...(actions.length > 0 ? { actions } : {}),
-      ...(canAddRows ? { canAddRows: true } : {}),
-      ...(canDeleteRows ? { canDeleteRows: true } : {}),
-      ...(canEditCells ? { canEditCells: true } : {}),
+      columns,
+      rowCount,
+      ...(rows ? { rows } : {}),
+      ...(rowsOmitted > 0 ? { rowsOmitted } : {}),
+      ...(actions.length > 0 && (liveState?.showsActions ?? true)
+        ? { actions }
+        : {}),
+      ...(liveState?.canAddRows ? { canAddRows: true } : {}),
+      ...(liveState?.canDeleteRows ? { canDeleteRows: true } : {}),
+      ...(liveState?.canEditCells ? { canEditCells: true } : {}),
+      ...(liveState?.pending ? { pending: liveState.pending } : {}),
       ...(hasLogicRules ? { hasLogicRules: true } : {}),
       visible: visibilityFor(el)
     });
