@@ -9,6 +9,7 @@ import { toNormalForm } from './adapter/toNormalForm';
 import { bindingAnnotations } from './features/binding';
 import { formulasFinalizer } from './finalizers/formulas';
 import { restripeFinalizer } from './finalizers/appearance';
+import { tableGeometryReport } from './finalizers/geometry';
 import {
   copiedBookmarksFinalizer,
   rowIdentityFinalizer
@@ -17,7 +18,6 @@ import { bindingConsistency } from './invariants/bindings';
 import { bookmarkPairs } from './invariants/bookmarks';
 import { fieldTriplets } from './invariants/fields';
 import { orphanedDependents } from './invariants/formulas';
-import { tableGeometry } from './invariants/geometry';
 import { controlShape } from './invariants/identity';
 import { styleReferences } from './invariants/references';
 import { detail, features, listLabel, ownText } from './outline';
@@ -74,15 +74,16 @@ export const docxPack: Pack = {
     controlShape,
     bookmarkPairs,
     fieldTriplets,
-    tableGeometry,
     styleReferences
   ],
-  // identity first (bookmarks, rows): formulas read the rows; restripe last, over the settled rows
+  // identity first (bookmarks, rows): formulas read the rows; restripe over the settled rows; the
+  // geometry report last, over everything
   finalizers: [
     copiedBookmarksFinalizer,
     rowIdentityFinalizer,
     formulasFinalizer,
-    restripeFinalizer
+    restripeFinalizer,
+    tableGeometryReport
   ],
   projections: {
     accept,

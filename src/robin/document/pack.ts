@@ -207,6 +207,8 @@ export interface FinalizerResult {
   /** Every node id the finalizer changed: its declared scope. */
   ids: string[];
   facts?: Fact[];
+  /** Things the model should know that are legal, not refusals (a ragged table, say). */
+  warnings?: Warning[];
 }
 
 export interface Finalizer {

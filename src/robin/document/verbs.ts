@@ -688,6 +688,7 @@ export function prepareWrite(
     finalizerScope.push({ name: finalizer.name, ids: [...result.ids] });
     result.ids.forEach((id) => finalizerIds.add(id));
     finalizerFacts.push(...(result.facts ?? []));
+    warnings.push(...(result.warnings ?? []));
   }
   mintWritten(working.root, pack.tree, ids, () => null);
 

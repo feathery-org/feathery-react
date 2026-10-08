@@ -33,11 +33,18 @@ describe('pack invariants', () => {
     expect(invariants(run({ scope: { ids: ['n27'] }, changes: [{ kind: 'delete', id: 'n27', base: b('n27') }] }))).toEqual(['verified']);
   });
 
-  it('table-geometry: a row left a cell short is refused; a row removed whole is not', () => {
+  it('table-geometry is reported, not refused: a ragged row is legal (ruling 5)', () => {
     const row = copy(node('n58'));
     (row.cells as NfNode[]).pop();
-    expect(invariants(run({ scope: { ids: ['n58'] }, changes: [{ kind: 'replace', id: 'n58', base: b('n58'), node: row }] }))).toEqual(['table-geometry']);
-    expect(invariants(run({ scope: { ids: ['n58'] }, changes: [{ kind: 'delete', id: 'n58', base: b('n58') }] }))).toEqual(['verified']);
+    const r = run({ scope: { ids: ['n58'] }, changes: [{ kind: 'replace', id: 'n58', base: b('n58'), node: row }] });
+    expect(r.outcome).toBe('verified');
+    if (r.outcome !== 'verified') return;
+    expect(r.facts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'finalizer', name: 'table-geometry' })]));
+    expect(r.warnings.map((w) => w.code)).toContain('table-ragged');
+    // a row removed whole leaves the table even: no report
+    const whole = run({ scope: { ids: ['n58'] }, changes: [{ kind: 'delete', id: 'n58', base: b('n58') }] });
+    expect(whole.outcome).toBe('verified');
+    if (whole.outcome === 'verified') expect(whole.warnings.map((w) => w.code)).not.toContain('table-ragged');
   });
 
   it('unknown-style: a style the document lacks is refused; one it has is not', () => {
