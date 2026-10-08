@@ -27,7 +27,8 @@ import {
   FEATURE_KEYS,
   FORMAT_REF_KEYS,
   HEADER_FOOTER,
-  KIND
+  KIND,
+  NATIVE_SETTERS
 } from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
 import { fromNormalForm } from './adapter/fromNormalForm';
@@ -247,8 +248,13 @@ export interface TextOp {
 }
 
 export interface FormatOp {
+  /**
+   * What the op formats: a run's span or a paragraph mark (character), or the paragraph, table,
+   * row or cell holding the paragraph at `hi` (its first paragraph for a table, row or cell).
+   */
+  target: 'character' | 'paragraph' | 'table' | 'row' | 'cell';
   hi: string;
-  /** Whole paragraph mark, or a run's span. */
+  /** Whole paragraph mark, or a run's span (character ops). */
   whole: boolean;
   a: number;
   b: number;
@@ -266,6 +272,50 @@ function cfDelta(before: Obj, after: Obj): Obj {
     out[k] = after[k] === undefined ? null : after[k];
   }
   return out;
+}
+
+/**
+ * The native setter values that take a format entry from `was` to `is`, or null when some change
+ * has no native setter (or removes a value, which no setter does). A cell's shading whose only
+ * change is its background colour is the cell format's `background`.
+ */
+function nativeProps(target: string, was: Obj, is: Obj): Obj | null {
+  const out: Obj = {};
+  for (const [k, v] of Object.entries(cfDelta(was, is))) {
+    if (k === 'shading' && target === 'cell') {
+      const sd = cfDelta(
+        isObject(was.shading) ? was.shading : {},
+        isObject(v) ? v : {}
+      );
+      const keys = Object.keys(sd);
+      if (
+        keys.length === 1 &&
+        keys[0] === 'backgroundColor' &&
+        typeof sd.backgroundColor === 'string'
+      ) {
+        out.background = sd.backgroundColor;
+        continue;
+      }
+      return null;
+    }
+    if (v === null || !NATIVE_SETTERS[target]?.includes(k)) return null;
+    out[k] = v;
+  }
+  return out;
+}
+
+/** The paragraph the editor's selection goes to for a table, row or cell: its first one. */
+function firstParagraphHi(view: DocumentView, node: NfNode): string | null {
+  let cur: NfNode | undefined = node;
+  while (cur && cur.kind !== KIND.paragraph) {
+    if (cur.kind === KIND.table) cur = (cur.rows as NfNode[] | undefined)?.[0];
+    else if (cur.kind === KIND.row)
+      cur = (cur.cells as NfNode[] | undefined)?.[0];
+    else if (cur.kind === KIND.cell)
+      cur = (cur.blocks as NfNode[] | undefined)?.[0];
+    else return null;
+  }
+  return cur ? hierOf(view, cur.id) : null;
 }
 
 const childIds = (n: NfNode) =>
@@ -310,6 +360,7 @@ function nativePlan(
         if (!hi) return null;
         const { start, text: runText } = runOffset(before, para.id, old.id);
         format.push({
+          target: 'character',
           hi,
           whole: false,
           a: start,
@@ -325,24 +376,73 @@ function nativePlan(
         return null;
       continue;
     }
-    if (
-      old.kind === KIND.paragraph &&
-      canonicalJson(charFormat(before, old.markStyle)) !==
-        canonicalJson(charFormat(intended, now.markStyle)) &&
-      ownContent(was, old, ['markStyle']) === ownContent(is, now, ['markStyle'])
-    ) {
+    if (old.kind === KIND.paragraph) {
+      if (
+        ownContent(was, old, ['style', 'markStyle']) !==
+        ownContent(is, now, ['style', 'markStyle'])
+      )
+        return null;
       const hi = hierOf(before, old.id);
-      if (!hi) return null;
+      const markChanged =
+        canonicalJson(charFormat(before, old.markStyle)) !==
+        canonicalJson(charFormat(intended, now.markStyle));
+      const paraChanged =
+        canonicalJson(charFormat(before, old.style)) !==
+        canonicalJson(charFormat(intended, now.style));
+      if ((markChanged || paraChanged) && !hi) return null;
+      if (markChanged)
+        format.push({
+          target: 'character',
+          hi: hi as string,
+          whole: true,
+          a: 0,
+          b: 0,
+          expect: ownText(before.get(old.id) as NfNode) ?? '',
+          props: cfDelta(
+            charFormat(before, old.markStyle),
+            charFormat(intended, now.markStyle)
+          )
+        });
+      if (paraChanged) {
+        const props = nativeProps(
+          'paragraph',
+          charFormat(before, old.style),
+          charFormat(intended, now.style)
+        );
+        if (!props) return null;
+        format.push({
+          target: 'paragraph',
+          hi: hi as string,
+          whole: false,
+          a: 0,
+          b: 0,
+          expect: '',
+          props
+        });
+      }
+      continue;
+    }
+    if (
+      old.kind === KIND.table ||
+      old.kind === KIND.row ||
+      old.kind === KIND.cell
+    ) {
+      if (ownContent(was, old, ['style']) !== ownContent(is, now, ['style']))
+        return null;
+      const wasF = charFormat(before, old.style);
+      const isF = charFormat(intended, now.style);
+      if (canonicalJson(wasF) === canonicalJson(isF)) continue;
+      const props = nativeProps(old.kind, wasF, isF);
+      const hi = firstParagraphHi(before, old);
+      if (!props || !hi) return null;
       format.push({
+        target: old.kind as FormatOp['target'],
         hi,
-        whole: true,
+        whole: false,
         a: 0,
         b: 0,
-        expect: ownText(before.get(old.id) as NfNode) ?? '',
-        props: cfDelta(
-          charFormat(before, old.markStyle),
-          charFormat(intended, now.markStyle)
-        )
+        expect: '',
+        props
       });
       continue;
     }
@@ -453,12 +553,31 @@ export function plan(ctx: PlanContext): CommitPlan {
     ...ctx.beforeResidue,
     ...ctx.intendedResidue
   } as never);
+  // truthful about the card: a splice that composed no revision (properties only) lands immediately
+  const card = revisionsAuthored(tracked.root, ctx.turnId);
   return {
     steps: [{ seam: 'splice', payload }],
-    landed: 'card',
+    landed: card ? 'card' : 'immediate',
     history: 'engine',
     warnings: [UNDO_CLEARED, ...(untracked.length ? [IMMEDIATE] : [])]
   };
+}
+
+/** Whether anything under `node` carries a revision of change set `turnId`. */
+function revisionsAuthored(node: unknown, turnId: string): boolean {
+  if (Array.isArray(node))
+    return node.some((n) => revisionsAuthored(n, turnId));
+  if (!isObject(node)) return false;
+  if (
+    isObject(node.pending) &&
+    [...revisionsIn(node.pending), ...revisionsIn(node.pending.mark)].some(
+      (r) => r.group === turnId
+    )
+  )
+    return true;
+  return Object.entries(node).some(
+    ([k, v]) => k !== 'pending' && revisionsAuthored(v, turnId)
+  );
 }
 
 export const STORY_PREFIX = `${HEADER_FOOTER}/`;

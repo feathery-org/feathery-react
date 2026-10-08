@@ -285,6 +285,51 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(row.native).toMatch(/^accept differs .* reject differs /);
   });
 
+  const setOn = (n: any, props: Record<string, unknown>, intent: string) => ({
+    intent,
+    scope: { ids: [n.id] },
+    changes: [{ kind: 'set', target: { ids: [n.id], shape: { [n.id]: n.shape } }, props }]
+  });
+  const NATIVE_FORMAT = { seam: 'format', landed: 'immediate', proof: 'passed', userUndoKept: true };
+
+  it('D12 paragraph property: native format, immediate, one undo step', async () => {
+    const pre = await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const p = (await read([pid]))[pid];
+    const row = await commitAndUndo('D12', pre, setOn(p, { textAlignment: 'Center', afterSpacing: 18 }, 'Center the clause.'));
+    expect(row).toEqual(expect.objectContaining(NATIVE_FORMAT));
+    expect(row.undo).toMatch(/^editor \(\+1\): (byte-equal|equivalent)$/);
+  });
+
+  it('D13 cell properties: native format, immediate, one undo step', async () => {
+    const pre = await fresh();
+    const tid = await at(['sections', 1, 'blocks', 4]);
+    const cell = (await read([tid]))[tid].rows[1].cells[1];
+    // an object value merges: only the background colour changes
+    const row = await commitAndUndo('D13', pre, setOn(cell, { verticalAlignment: 'Bottom', shading: { backgroundColor: '#FFF2CC' } }, 'Shade the cell.'));
+    expect(row).toEqual(expect.objectContaining(NATIVE_FORMAT));
+  });
+
+  it('D14 row and table properties: native format, immediate', async () => {
+    const pre = await fresh();
+    const tid = await at(['sections', 1, 'blocks', 4]);
+    const t = (await read([tid]))[tid];
+    const row = await commitAndUndo('D14', pre, setOn(t.rows[1], { height: 30 }, 'Make the row taller.'));
+    expect(row).toEqual(expect.objectContaining(NATIVE_FORMAT));
+    const pre2 = await fresh();
+    const t2 = (await read([tid]))[tid];
+    const row2 = await commitAndUndo('D14B', pre2, setOn(t2, { tableAlignment: 'Center' }, 'Center the table.'));
+    expect(row2).toEqual(expect.objectContaining(NATIVE_FORMAT));
+  });
+
+  it('D15 a property with no native setter (cell borders): splice, immediate, no card', async () => {
+    const pre = await fresh();
+    const tid = await at(['sections', 1, 'blocks', 4]);
+    const cell = (await read([tid]))[tid].rows[1].cells[1];
+    const row = await commitAndUndo('D15', pre, setOn(cell, { borders: { top: { lineStyle: 'Single', lineWidth: 1.5, color: '#000000FF' } } }, 'Rule the cell.'));
+    expect(row).toEqual(expect.objectContaining({ seam: 'splice', landed: 'immediate', proof: 'passed' }));
+  });
+
   afterAll(() => {
     // eslint-disable-next-line no-console
     console.log(

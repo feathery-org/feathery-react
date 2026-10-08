@@ -163,3 +163,35 @@ export function inlineKind(i: Record<string, unknown>): string {
   if (isObject(i.textFrame)) return KIND.shape;
   return KIND.inline;
 }
+
+/**
+ * The editor's native setters for paragraph, table, row and cell properties (the selection's
+ * paragraphFormat, tableFormat, rowFormat and cellFormat, 34.1.31), by the property's name in the
+ * format entry. A property not here (borders, styles, spans, lists, tabs) has no native setter and
+ * the change goes by splice.
+ */
+export const NATIVE_SETTERS: Record<string, readonly string[]> = {
+  paragraph: [
+    'leftIndent',
+    'rightIndent',
+    'firstLineIndent',
+    'beforeSpacing',
+    'afterSpacing',
+    'lineSpacing',
+    'lineSpacingType',
+    'textAlignment',
+    'keepWithNext',
+    'keepLinesTogether',
+    'widowControl',
+    'contextualSpacing'
+  ],
+  table: ['tableAlignment', 'leftIndent', 'cellSpacing'],
+  row: ['height', 'heightType', 'isHeader', 'allowBreakAcrossPages'],
+  cell: [
+    'verticalAlignment',
+    'leftMargin',
+    'rightMargin',
+    'topMargin',
+    'bottomMargin'
+  ]
+};

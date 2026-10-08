@@ -13,6 +13,8 @@ import {
   N5,
   N6,
   N7,
+  N9,
+  UNDO_NORMALIZATIONS,
   accept,
   authoredBy,
   conservedResidue,
@@ -208,6 +210,25 @@ describe('normalizations (each a true positive and a true negative)', () => {
     (all(undone).find((n) => n.id === row.id) as NfNode).style = 'withGrid';
     const fmt = (d: NormalForm) => d.formats[String((all(d).find((n) => n.id === row.id) as NfNode).style)];
     expect(fmt(N7.apply(undone))).toEqual(fmt(N7.apply(nf)));
+  });
+
+  it('N9 a paragraph property an undo writes back explicitly as the value it inherits, only in undo comparisons', () => {
+    const nf = fresh();
+    const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string' && nf.formats[String(n.style)]?.styleName === 'Normal') as NfNode;
+    const fmt = (d: NormalForm) => d.formats[String((all(d).find((n) => n.id === para.id) as NfNode).style)];
+    const withValue = (value: unknown) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.explicit = { ...d.formats[String(para.style)], textAlignment: value };
+      (all(d).find((n) => n.id === para.id) as NfNode).style = 'explicit';
+      return d;
+    };
+    // the document default is Left: an explicit Left is the same paragraph (true negative)
+    expect(fmt(N9.apply(withValue('Left')))).toEqual(fmt(N9.apply(nf)));
+    // an explicit Center is a real difference (true positive)
+    expect(fmt(N9.apply(withValue('Center')))).not.toEqual(fmt(N9.apply(nf)));
+    const once = N9.apply(nf);
+    expect(N9.apply(once)).toBe(once);
+    expect(UNDO_NORMALIZATIONS.map((n) => n.name)).toEqual(['N7', 'N9']);
   });
 });
 

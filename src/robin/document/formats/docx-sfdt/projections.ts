@@ -27,7 +27,12 @@
  */
 import type { Normalization } from '../../pack';
 import type { FormatEntry, NfNode, NormalForm } from '../../tree';
-import { FEATURE_KEYS, HEADER_FOOTER, KIND } from './adapter/keys';
+import {
+  FEATURE_KEYS,
+  HEADER_FOOTER,
+  KIND,
+  NATIVE_SETTERS
+} from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
 import { docxTree } from './tree';
 import { arr } from './util';
@@ -305,6 +310,59 @@ export const N7: Normalization = {
     })
 };
 
+/** A format entry read whole: a hoisted reference resolved, an inline object as it is. */
+const entryOf = (nf: NormalForm, ref: unknown): Obj | null =>
+  typeof ref === 'string'
+    ? (nf.formats[ref] as Obj | undefined) ?? null
+    : isObject(ref)
+    ? ref
+    : null;
+
+/**
+ * N9 (undo only, measured in the headless lane): undoing a native paragraph property writes the
+ * previous value back explicitly, where before it was inherited (an explicit `textAlignment: Left`
+ * where the paragraph had none). A paragraph property the editor sets natively, explicit with the
+ * value its named style (through `basedOn`) or the document default gives it, is the same as absent.
+ */
+export const N9: Normalization = {
+  name: 'N9',
+  apply: (nf) => {
+    const styles = new Map(
+      arr<Obj>(nf.root.styles).map((s) => [String(s.name), s] as const)
+    );
+    const documentDefault = entryOf(nf, nf.root.paragraphFormat) ?? {};
+    const inherited = (styleName: unknown, key: string): unknown => {
+      const seen = new Set<string>();
+      let style = styles.get(String(styleName ?? 'Normal'));
+      while (style && !seen.has(String(style.name))) {
+        seen.add(String(style.name));
+        const pf = entryOf(nf, style.paragraphFormat);
+        if (pf && key in pf) return pf[key];
+        style = styles.get(String(style.basedOn));
+      }
+      return documentDefault[key];
+    };
+    return eachNode(nf, (n, _s, out) => {
+      if (n.kind !== KIND.paragraph || typeof n.style !== 'string')
+        return false;
+      const entry = out.formats[n.style];
+      if (!entry) return false;
+      const drop = NATIVE_SETTERS.paragraph.filter(
+        (k) =>
+          k in entry &&
+          inherited(entry.styleName, k) !== undefined &&
+          JSON.stringify(entry[k]) ===
+            JSON.stringify(inherited(entry.styleName, k))
+      );
+      if (!drop.length) return false;
+      return rewriteRef(out, n, 'style', (e) => {
+        for (const k of drop) delete e[k];
+        return e;
+      });
+    });
+  }
+};
+
 export const NORMALIZATIONS: readonly Normalization[] = [
   N1,
   N2,
@@ -313,7 +371,7 @@ export const NORMALIZATIONS: readonly Normalization[] = [
   N5,
   N6
 ];
-export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7];
+export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7, N9];
 
 // ------------------------------------------------------------------ what rejecting restores
 

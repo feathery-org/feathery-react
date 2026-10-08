@@ -141,3 +141,49 @@ describe('composeTracked: feature attributes are content, not formatting', () =>
       expect(bindingIn(expectedRejection(s.view.nf, intended))).toEqual([JSON.stringify(control.binding)]);
     });
 });
+
+describe('plan: paragraph, table, row and cell properties', () => {
+  const s = state();
+  const nodes = s.view.nodes();
+  // a plain table the editor addresses natively (not inside a block control)
+  const table = nodes.find((n) => n.kind === 'table' && hierOf(s.view, arr<NfNode>(arr<NfNode>(arr<NfNode>(n.rows)[0].cells)[0].blocks)[0].id) !== null) as NfNode;
+  const row = arr<NfNode>(table.rows)[1];
+  const cell = arr<NfNode>(row.cells)[1];
+  const paragraph = nodes.find((n) => n.kind === 'paragraph' && hierOf(s.view, n.id) !== null && typeof n.style === 'string') as NfNode;
+  const planFor = (id: string, props: Record<string, unknown>) => {
+    const node = s.view.get(id) as NfNode;
+    const r = prepareWrite(state(), { intent: 'x', scope: { ids: [id] }, changes: [{ kind: 'set', target: { ids: [id], shape: { [id]: shapeOf(node, docxTree) } }, props }] } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+    return plan({ turnId: 't', before: s.view, intended: makeView(r.intended, docxPack), beforeResidue: s.residue, intendedResidue: r.intendedResidue, beforeNative: flagship });
+  };
+  const ops = (p: ReturnType<typeof plan>) => p.steps[0].payload as Array<{ target: string; props: Record<string, unknown> }>;
+
+  it('a paragraph property goes through the native format seam and lands immediately', () => {
+    const p = planFor(paragraph.id, { textAlignment: 'Center' });
+    expect(p.steps.map((x) => x.seam)).toEqual(['format']);
+    expect(p.landed).toBe('immediate');
+    expect(p.history).toBe('editor');
+    expect(ops(p)).toEqual([expect.objectContaining({ target: 'paragraph', props: { textAlignment: 'Center' } })]);
+  });
+
+  it('cell, row and table properties go through the native format seam', () => {
+    const c = planFor(cell.id, { verticalAlignment: 'Bottom' });
+    expect(c.steps.map((x) => x.seam)).toEqual(['format']);
+    expect(ops(c)).toEqual([expect.objectContaining({ target: 'cell', props: { verticalAlignment: 'Bottom' } })]);
+    const current = (s.view.nf.formats[String(cell.style)]?.shading ?? {}) as Record<string, unknown>;
+    const shade = planFor(cell.id, { shading: { ...current, backgroundColor: '#FFEE00' } });
+    expect(ops(shade)).toEqual([expect.objectContaining({ target: 'cell', props: { background: '#FFEE00' } })]);
+    const r = planFor(row.id, { height: 30, heightType: 'AtLeast' });
+    expect(ops(r)).toEqual([expect.objectContaining({ target: 'row', props: expect.objectContaining({ height: 30 }) })]);
+    const t = planFor(table.id, { tableAlignment: 'Center' });
+    expect(ops(t)).toEqual([expect.objectContaining({ target: 'table', props: { tableAlignment: 'Center' } })]);
+  });
+
+  it('a property with no native setter falls back to splice, and lands immediately because nothing is tracked', () => {
+    const borders = { top: { lineStyle: 'Single', lineWidth: 1.5, color: '#000000' } };
+    const p = planFor(cell.id, { borders });
+    expect(p.steps.map((x) => x.seam)).toEqual(['splice']);
+    expect(p.landed).toBe('immediate');
+    expect(p.history).toBe('engine');
+  });
+});
