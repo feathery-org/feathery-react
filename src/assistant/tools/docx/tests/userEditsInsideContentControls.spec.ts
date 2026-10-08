@@ -224,7 +224,7 @@ describe('user edits inside content controls stay untracked', () => {
     }
   });
 
-  it('updateContentControl leaves tracking off so the next keystroke stays plain', () => {
+  it("updateContentControl writes untracked and leaves the user's track-changes setting as it was", () => {
     const ed = makeRealDocumentEditor(
       docWith(para(taggedInline(PREMIUM_TAG, '12')))
     );
@@ -235,10 +235,17 @@ describe('user edits inside content controls stay untracked', () => {
         { tag: PREMIUM_TAG, text: '99', kind: 'field' }
       ]);
 
-      expect(ed.enableTrackChanges).toBe(false);
+      // the binding write itself is untracked, and the user's tracking survives it
+      expect(ed.enableTrackChanges).toBe(true);
       expect(interiorText(openingControl(ed, PREMIUM_TAG))).toBe('99');
       expect(ed.revisions.length).toBe(0);
 
+      // a user with tracking off keeps it off
+      ed.enableTrackChanges = false;
+      adapter.updateValues!([
+        { tag: PREMIUM_TAG, text: '98', kind: 'field' }
+      ]);
+      expect(ed.enableTrackChanges).toBe(false);
       caretInside(ed, openingControl(ed, PREMIUM_TAG), 'end');
       (ed as any).editorModule.insertText('XY');
       for (const text of revisionTexts(ed)) expect(text).not.toContain('XY');
