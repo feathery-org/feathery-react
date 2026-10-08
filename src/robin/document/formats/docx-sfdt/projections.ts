@@ -406,13 +406,56 @@ export const N9: Normalization = {
   }
 };
 
+/**
+ * The content control properties the editor fills in on a control written without them, measured
+ * on the rig (WP3 T3, a new bound column) and in the headless lane (D17). The model never has to
+ * write them: the proof reads them as absent.
+ */
+export const CONTROL_PROPERTY_DEFAULTS: Readonly<Record<string, unknown>> = {
+  lockContentControl: false,
+  lockContents: false,
+  type: 'RichText',
+  hasPlaceHolderText: false,
+  multiline: false,
+  isTemporary: false,
+  characterFormat: {},
+  contentControlListItems: []
+};
+
+/**
+ * N10: a content control property equal to the editor's default for it is the same as absent, so
+ * a write that leaves the properties out matches what the editor reads back; a property the write
+ * set to anything else still counts.
+ */
+export const N10: Normalization = {
+  name: 'N10',
+  apply: (nf) =>
+    eachNode(nf, (n) => {
+      if (n.kind !== KIND.control || !isObject(n.contentControlProperties))
+        return false;
+      const props = n.contentControlProperties as Obj;
+      const kept: Obj = {};
+      for (const [k, v] of Object.entries(props))
+        if (
+          !(k in CONTROL_PROPERTY_DEFAULTS) ||
+          JSON.stringify(v) !== JSON.stringify(CONTROL_PROPERTY_DEFAULTS[k])
+        )
+          kept[k] = v;
+      if (Object.keys(kept).length === Object.keys(props).length) return false;
+      if (Object.keys(kept).length) n.contentControlProperties = kept;
+      else delete n.contentControlProperties;
+      return true;
+    })
+};
+
 export const NORMALIZATIONS: readonly Normalization[] = [
   N1,
   N2,
   N3,
   N4,
   N5,
-  N6
+  N6,
+  N10
 ];
 export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7, N9];
 

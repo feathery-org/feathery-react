@@ -355,6 +355,29 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(row).toEqual(expect.objectContaining(NATIVE_TEXT));
   });
 
+  it('D17 the WP3 T3 run on the rig, replayed: a new bound column written without control properties lands', async () => {
+    // the model's own writes from the first browser run: retitle (accepted from the rail), set the
+    // column widths, then add the Premium tax column, whose new controls carry no properties
+    const run = JSON.parse(fs.readFileSync(path.join(__dirname, 'runs', 'wp3-t3-run.json'), 'utf8')) as { writes: Array<{ step: string; input: any }> };
+    turn += 1;
+    await lane.call('open', flagship);
+    await dispatch('outline', {});
+    const [title, widths, column] = run.writes;
+    const step = async (input: unknown) => {
+      turn += 1; // each of the model's writes was its own message
+      const r = await dispatch('write', input);
+      if (!r.ok) throw new Error(JSON.stringify(r.refusal ?? r.conflict ?? r.error).slice(0, 600));
+    };
+    await step(title.input);
+    await lane.call('acceptAllLive');
+    await step(widths.input);
+    expect(JSON.stringify(column.input)).not.toContain('contentControlProperties');
+    const pre = await lane.call<string>('settled');
+    turn += 1;
+    const row = await commitAndUndo('D17', pre, column.input);
+    expect(row).toEqual(expect.objectContaining(SPLICE));
+  });
+
   afterAll(() => {
     // eslint-disable-next-line no-console
     console.log(

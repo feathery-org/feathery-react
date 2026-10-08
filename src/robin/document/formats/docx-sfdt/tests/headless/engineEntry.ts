@@ -305,6 +305,12 @@ const api = {
     return Array.isArray(stack) ? stack.length : -1;
   },
   canUndo: () => !!history()?.canUndo?.(),
+  /** Accept every pending change in the live editor, as Accept all in the rail does. */
+  async acceptAllLive(): Promise<void> {
+    (live() as any).revisions.acceptAll();
+    await frame();
+  },
+
   /** The form's Robin turn settled (the hosted handler calls liveDocument.finishTurn()). */
   finishTurn() {
     session?.finishTurn();

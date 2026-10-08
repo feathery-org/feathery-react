@@ -14,6 +14,8 @@ import {
   N6,
   N7,
   N9,
+  N10,
+  NORMALIZATIONS,
   UNDO_NORMALIZATIONS,
   accept,
   authoredBy,
@@ -211,6 +213,28 @@ describe('normalizations (each a true positive and a true negative)', () => {
     (all(undone).find((n) => n.id === row.id) as NfNode).style = 'withGrid';
     const fmt = (d: NormalForm) => d.formats[String((all(d).find((n) => n.id === row.id) as NfNode).style)];
     expect(fmt(N7.apply(undone))).toEqual(fmt(N7.apply(nf)));
+  });
+
+  it('N10 the content control properties the editor fills in on a new control, and nothing else', () => {
+    // measured on the rig (WP3 T3) and in the headless lane (D17): a control written without
+    // properties reads back with exactly these
+    const editorDefaults = { lockContentControl: false, lockContents: false, type: 'RichText', hasPlaceHolderText: false, multiline: false, isTemporary: false, characterFormat: {}, contentControlListItems: [] };
+    const nf = fresh();
+    const control = all(nf).find((n) => n.kind === 'control') as NfNode;
+    const withProps = (props: unknown) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      const c = all(d).find((n) => n.id === control.id) as NfNode;
+      if (props === undefined) delete c.contentControlProperties;
+      else c.contentControlProperties = props;
+      return d;
+    };
+    const props = (d: NormalForm) => (all(N10.apply(d)).find((n) => n.id === control.id) as NfNode).contentControlProperties;
+    // true negative: the editor's defaults are the same as none
+    expect(props(withProps(editorDefaults))).toEqual(props(withProps(undefined)));
+    // true positive: a property the write set is kept, whatever the editor filled in beside it
+    expect(props(withProps({ ...editorDefaults, lockContents: true }))).toEqual({ lockContents: true });
+    expect(props(withProps({ ...editorDefaults, type: 'Text' }))).toEqual({ type: 'Text' });
+    expect(NORMALIZATIONS.map((n) => n.name)).toContain('N10');
   });
 
   it('N9 a paragraph property an undo writes back explicitly as the value it inherits, only in undo comparisons', () => {
