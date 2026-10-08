@@ -117,6 +117,20 @@ describe('the format pack', () => {
     expect(outline).toMatch(/row=property-r4/);
   });
 
+  it('carries an edited field to its other occurrences', () => {
+    const { host, call } = mount();
+    const control = nodeOf(call('read', { ids: ['n15'] }), 'n15');
+    const run = (control.inlines as Array<{ id: string; text: string }>)[0];
+    const r = call('write', {
+      intent: 'Rename the client.',
+      scope: { ids: [run.id] },
+      changes: [{ kind: 'replace', id: run.id, base: (run as unknown as { base: string }).base, node: { ...JSON.parse(JSON.stringify(run)), base: undefined, shape: undefined, text: 'Contoso Foods' } }]
+    }) as { ok: boolean; facts: Array<{ name?: string; ids: string[] }>; refusal?: unknown };
+    expect(r.refusal).toBeUndefined();
+    expect(r.facts.find((f) => f.name === 'formulas')?.ids.length).toBeGreaterThan(1);
+    expect((host.doc.match(/Contoso Foods/g) ?? []).length).toBeGreaterThan(2);
+  });
+
   it('refuses separating a bookmark start from its end', () => {
     const { call } = mount();
     const start = nodeOf(call('read', { ids: ['n172'] }), 'n172');
@@ -189,6 +203,11 @@ describe('the commit plan', () => {
       (find(nf.root, 'n39') as NfNode).style = 'fBold';
     });
     expect([p.steps.map((s) => s.seam), p.landed]).toEqual([['format'], 'immediate']);
+  });
+
+  it('a write that changes nothing lands nothing', () => {
+    const p = planFor(() => undefined);
+    expect([p.steps, p.landed]).toEqual([[], 'immediate']);
   });
 
   it('table structure and header text are spliced', () => {

@@ -144,11 +144,15 @@ export function bindingState(nf: NormalForm): BindingState {
 }
 
 /** The binding engine's view of a normal form as it is now, not cached. */
-export function computeBindingState(nf: NormalForm): BindingState {
+export function computeBindingState(
+  nf: NormalForm,
+  prevValues: Map<string, string> | null = null
+): BindingState {
   // the residue is not needed: tags are formatted from the binding views, geometry derived
   const native = JSON.parse(fromNormalForm(nf, {})) as SfdtDocument;
   const result = applyRules(JSON.parse(JSON.stringify(native)), {
-    adoptRows: false
+    adoptRows: false,
+    prevValues
   });
   const nodeAt = (path: ReadonlyArray<string | number>): NfNode | null => {
     let cur: unknown = nf.root;

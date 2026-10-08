@@ -366,6 +366,9 @@ const IMMEDIATE: Warning = {
 
 export function plan(ctx: PlanContext): CommitPlan {
   const native = nativePlan(ctx.before, ctx.intended);
+  // a write that changes nothing the document holds lands nothing
+  if (native && !native.text.length && !native.format.length)
+    return { steps: [], landed: 'immediate', history: 'editor' };
   if (native && native.text.length)
     return {
       steps: [{ seam: 'text', payload: native.text }],

@@ -1,6 +1,8 @@
 /**
- * Formula recompute: after the changes, the product's binding engine (`applyRules`) computes every
- * formula, and each formula control whose text differs takes the computed text: its first run
+ * Formula recompute and field fan-out: after the changes, the product's binding engine
+ * (`applyRules`, given the values before the change so it can tell what was edited) computes every
+ * formula, carries an edited field's value to its other occurrences, and re-renders field values in
+ * their type's display; each control whose text differs takes the engine's text: its first run
  * keeps its id and look, any other run goes, as the editor's own write does.
  */
 import type { Finalizer } from '../../../pack';
@@ -36,12 +38,14 @@ function setControlText(control: NfNode, text: string): string[] {
 
 export const formulasFinalizer: Finalizer = {
   name: 'formulas',
-  run(after) {
-    const state = computeBindingState(after);
+  run(after, { before }) {
+    const state = computeBindingState(
+      after,
+      computeBindingState(before.nf).result.values
+    );
     const ids = new Set<string>();
     let recomputed = 0;
     for (const write of state.result.writes) {
-      if (write.kind !== 'formula') continue;
       for (const occurrence of state.result.index.occurrences.filter(
         (o) => o.tag === write.tag
       )) {
@@ -61,7 +65,7 @@ export const formulasFinalizer: Finalizer = {
               kind: 'finalizer',
               name: 'formulas',
               ids: list,
-              summary: `${recomputed} formula value(s) recomputed`
+              summary: `${recomputed} bound value(s) recomputed or carried to their other occurrences`
             }
           ]
         : []
