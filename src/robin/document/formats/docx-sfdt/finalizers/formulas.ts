@@ -11,23 +11,34 @@ import { KIND } from '../adapter/keys';
 import { bindingState, computeBindingState } from '../features/binding';
 import { arr } from '../util';
 
-function setControlText(control: NfNode, text: string): string[] {
+/**
+ * Write a bound control's text as the editor's own write does: its first run keeps its id and look
+ * and takes the text, the other runs go, and every other inline (a bookmark end, a field) stays
+ * where it was. Returns the ids changed, empty when the control already reads `text`.
+ */
+export function setControlText(control: NfNode, text: string): string[] {
   const host = Array.isArray(control.inlines)
     ? control
     : arr<NfNode>(control.blocks).find((b) => b.kind === KIND.paragraph);
   if (!host) return [];
   const inlines = arr<NfNode>(host.inlines);
-  const first = inlines.find((i) => i.kind === KIND.run);
-  if (
-    first &&
-    first.text === text &&
-    inlines.filter((i) => i.kind === KIND.run).length === 1
-  )
-    return [];
+  const runs = inlines.filter((i) => i.kind === KIND.run);
+  const first = runs[0];
+  if (first && first.text === text && runs.length === 1) return [];
   const run: NfNode = first
     ? { ...first, text }
     : ({ kind: KIND.run, text } as unknown as NfNode);
-  host.inlines = [run];
+  const out: NfNode[] = [];
+  let placed = false;
+  for (const inline of inlines) {
+    if (inline.kind !== KIND.run) out.push(inline);
+    else if (!placed) {
+      out.push(run);
+      placed = true;
+    }
+  }
+  if (!placed) out.push(run);
+  host.inlines = out;
   return [
     control.id,
     ...(host !== control ? [host.id] : []),

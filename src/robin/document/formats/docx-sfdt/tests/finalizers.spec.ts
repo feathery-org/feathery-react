@@ -10,6 +10,7 @@ import { NfNode, baseOf, shapeOf } from '../../../tree';
 import { docxTree } from '../tree';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
+import { setControlText } from '../finalizers/formulas';
 import { arr } from '../util';
 
 const flagship = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4b.sfdt.json'), 'utf8');
@@ -75,5 +76,29 @@ describe('table identity finalizer', () => {
     expect(ids[1]).not.toBe(original);
     expect(typeof ids[1]).toBe('string');
     expect(r.facts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'finalizer', name: 'tables' })]));
+  });
+});
+
+describe('formula finalizer: writing a control text', () => {
+  it('replaces the runs and keeps every other inline (a bookmark end, a field) where it was', () => {
+    const control = {
+      id: 'c1',
+      kind: 'control',
+      inlines: [
+        { id: 'b1', kind: 'bookmark', name: 'total', type: 0 },
+        { id: 'r1', kind: 'run', text: '$1', style: 'f1' },
+        { id: 'r2', kind: 'run', text: '0.00' },
+        { id: 'b2', kind: 'bookmark', name: 'total', type: 1 }
+      ]
+    } as unknown as NfNode;
+    const changed = setControlText(control, '$12.00');
+    expect((control.inlines as NfNode[]).map((i) => [i.id, i.kind, i.text])).toEqual([
+      ['b1', 'bookmark', undefined],
+      ['r1', 'run', '$12.00'],
+      ['b2', 'bookmark', undefined]
+    ]);
+    expect(changed).toEqual(expect.arrayContaining(['c1', 'r1']));
+    // already right: nothing written
+    expect(setControlText(control, '$12.00')).toEqual([]);
   });
 });
