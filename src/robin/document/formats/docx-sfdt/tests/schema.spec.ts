@@ -79,6 +79,27 @@ describe('overrides and effective values', () => {
     if (before) expect(JSON.stringify(nf.formats[before])).toBe(sharedBefore);
   });
 
+  it('an object-valued property merges into the current value; a null member removes it', () => {
+    const nf = JSON.parse(JSON.stringify(adopted.nf));
+    const table = makeFormatTable(nf.formats, new IdTable());
+    const cells: NfNode[] = [];
+    walk(nf.root as NfNode, docxTree, ({ node }) => {
+      if (node.kind === KIND.cell && typeof node.style === 'string' && nf.formats[node.style]?.shading && nf.formats[node.style]?.borders) cells.push(node);
+    });
+    const cell = cells[0];
+    const was = JSON.parse(JSON.stringify(nf.formats[String(cell.style)]));
+    setOverride(cell, 'shading', { backgroundColor: '#FFF2CC' }, table);
+    const now = nf.formats[String(cell.style)];
+    expect(now.shading).toEqual({ ...was.shading, backgroundColor: '#FFF2CC' });
+    setOverride(cell, 'borders', { top: { lineWidth: 1.5 } }, table);
+    expect(nf.formats[String(cell.style)].borders).toEqual({ ...was.borders, top: { ...was.borders.top, lineWidth: 1.5 } });
+    setOverride(cell, 'shading', { backgroundColor: null }, table);
+    expect(nf.formats[String(cell.style)].shading).not.toHaveProperty('backgroundColor');
+    // a scalar still replaces
+    setOverride(cell, 'verticalAlignment', 'Bottom', table);
+    expect(nf.formats[String(cell.style)].verticalAlignment).toBe('Bottom');
+  });
+
   it('a character property on a paragraph reaches its mark and every run', () => {
     const nf = JSON.parse(JSON.stringify(adopted.nf));
     const table = makeFormatTable(nf.formats, new IdTable());

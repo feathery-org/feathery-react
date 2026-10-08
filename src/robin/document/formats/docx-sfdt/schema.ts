@@ -169,6 +169,7 @@ const anyOf =
 const border: Check = (v) => {
   if (!isObject(v)) return 'must be an object';
   for (const [k, x] of Object.entries(v)) {
+    if (x === null) continue; // a null member removes it (object values merge)
     const why =
       k === 'lineStyle'
         ? oneOf(ENUMS.LineStyle)(x)
@@ -198,6 +199,7 @@ const borders: Check = (v) => {
   for (const [side, b] of Object.entries(v)) {
     if (!BORDER_SIDES.includes(side))
       return `unknown side ${side}; sides are ${BORDER_SIDES.join(', ')}`;
+    if (b === null) continue;
     const why = border(b);
     if (why) return `${side}: ${why}`;
   }
@@ -206,6 +208,7 @@ const borders: Check = (v) => {
 const shading: Check = (v) => {
   if (!isObject(v)) return 'must be an object';
   for (const [k, x] of Object.entries(v)) {
+    if (x === null) continue;
     const why =
       k === 'backgroundColor' || k === 'foregroundColor'
         ? x === 'empty'
@@ -457,6 +460,21 @@ function groupOf(
 // ------------------------------------------------------------------ writing overrides
 
 /** Copy-on-write: the node's entry under `nfKey` with `name` set (or cleared by null). */
+/**
+ * A property's new value over its current one: an object value (borders, shading) merges into the
+ * current object member by member, recursively, and a null member removes that member; anything
+ * else replaces. So `shading: {backgroundColor}` changes the colour and keeps the texture.
+ */
+export function mergedValue(current: unknown, value: unknown): unknown {
+  if (!isObject(value) || !isObject(current)) return value;
+  const out: Obj = { ...current };
+  for (const [k, v] of Object.entries(value)) {
+    if (v === null) delete out[k];
+    else out[k] = mergedValue(current[k], v);
+  }
+  return out;
+}
+
 function rewrite(
   node: NfNode,
   nfKey: string,
@@ -470,7 +488,7 @@ function rewrite(
       : undefined;
   const entry: FormatEntry = { ...(current ?? {}) };
   if (value === null) delete entry[name];
-  else entry[name] = value;
+  else entry[name] = mergedValue(entry[name], value);
   if (!Object.keys(entry).length) delete node[nfKey];
   else node[nfKey] = formats.intern(entry);
 }
@@ -509,7 +527,7 @@ export function setOnFormat(
   value: unknown
 ): void {
   if (value === null) delete entry[name];
-  else entry[name] = value;
+  else entry[name] = mergedValue(entry[name], value);
 }
 
 // ------------------------------------------------------------------ effective values
