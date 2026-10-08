@@ -1468,13 +1468,15 @@ export default class ResponsiveStyles {
         if (!line) return {};
 
         const legacy = legacyPaddingY(type);
-        const top = paddingSide(t, legacy);
+        const top = Math.max(
+          paddingSide(t, legacy),
+          this.pinnedTopFloor(type, height, heightUnit, t, align, b)
+        );
         const bottom = paddingSide(b, legacy);
 
-        // A floating label is a fixed overlay taking no room in the content
-        // box, so it never adds to this floor. Only a padding raised above what
-        // the field already rendered with needs more room -- a lowered one fits
-        // in the box it already has.
+        // Match the effective padding used by inputBoxVertical, including the
+        // floating-label reserve when top padding is unset. Only a raised
+        // authored padding needs a larger box; otherwise keep the existing floor.
         if (!raisedPaddingY(type, t, b)) {
           // A multiselect's floor is applyMultiselectLayout's, whose apply
           // covers these same keys and so reaches the breakpoint on its own.

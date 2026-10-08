@@ -1105,6 +1105,71 @@ describe('multiselect content alignment', () => {
 });
 
 describe('input box minimum height', () => {
+  it.each(['center', 'flex-start', 'flex-end'])(
+    'fits a floating-label reserve and raised bottom padding when aligned %s',
+    (align) => {
+      const styles = targets(
+        'text_field',
+        shrinkUntouched(60, {
+          inner_padding_bottom: 40,
+          content_vertical_align: align
+        }),
+        { placeholder: 'Name' }
+      );
+      const field = styles.getTarget('field', true);
+      const box = styles.getTarget('sub-fc', true);
+
+      expect(parseFloat(field.paddingTop)).toBeCloseTo(20);
+      expect(parseFloat(field.paddingBottom)).toBeCloseTo(40);
+      expect(parseFloat(box.minHeight)).toBeCloseTo(79.2);
+      expect(
+        parseFloat(box.minHeight) -
+          parseFloat(field.paddingTop) -
+          parseFloat(field.paddingBottom)
+      ).toBeCloseTo(19.2);
+    }
+  );
+
+  it.each([0, 8])(
+    'respects an explicit floating-label top padding of %spx',
+    (top) => {
+      const styles = targets(
+        'text_field',
+        shrinkUntouched(60, {
+          inner_padding_top: top,
+          inner_padding_bottom: 40,
+          content_vertical_align: 'center'
+        }),
+        { placeholder: 'Name' }
+      );
+
+      expect(styles.getTarget('field', true).paddingTop).toBe(`${top}px`);
+      expect(
+        parseFloat(styles.getTarget('sub-fc', true).minHeight)
+      ).toBeCloseTo(top + 40 + 19.2);
+    }
+  );
+
+  it('recomputes the floating-label floor for a mobile height override', () => {
+    const styles = targets(
+      'text_field',
+      shrinkUntouched(60, {
+        inner_padding_bottom: 40,
+        content_vertical_align: 'center'
+      }),
+      { placeholder: 'Name' },
+      { height: 90 }
+    );
+
+    const mobileKey = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
+    expect(
+      parseFloat(styles.getTarget('field')[mobileKey].paddingTop)
+    ).toBeCloseTo(30);
+    expect(
+      parseFloat(styles.getTarget('sub-fc')[mobileKey].minHeight)
+    ).toBeCloseTo(89.2);
+  });
+
   it('grows the box to fit its padding and a line of text', () => {
     expect(
       boxTarget('text_field', {
