@@ -12,6 +12,7 @@ import FeatheryClient from './featheryClient';
 import { LogicRule } from '../types/Form';
 import AssistantClient from '../assistant/AssistantClient';
 import type { FormActionHandlers } from './formActions/utils';
+import type { TableHandlers } from './formActions/tables';
 import {
   ExtractionActionOptions,
   FillQuikParams,
@@ -190,6 +191,7 @@ export interface FormInternalState {
   logicRules?: LogicRule[];
   assistantClient?: AssistantClient;
   formActions?: FormActionHandlers;
+  tables?: Map<string, TableHandlers>;
   runtimeListeners?: Set<(event: FormRuntimeEvent) => void>;
   client: FeatheryClient;
   formName: string;

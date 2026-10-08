@@ -7,6 +7,14 @@ import React, {
 } from 'react';
 import { nameProps } from '../../../utils/domName';
 import { stringifyWithNull } from '../../../utils/primitives';
+import internalState from '../../../utils/internalState';
+import type {
+  TableCellOutcome,
+  TableCellWrite,
+  TableHandlers,
+  TableLiveState,
+  TableRowRead
+} from '../../../utils/formActions/tables';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
 import { Pagination } from './Pagination';
@@ -20,6 +28,7 @@ import { useTableMutations } from './useTableMutations';
 import { entryIdsShifted, useHubTableSource } from './useHubTableSource';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
+import { editorKindFor, parseCellInput } from './spreadsheet/fieldEditors';
 import {
   buildCellIssues,
   CellIssues,
@@ -201,7 +210,8 @@ function TableElement({
     hasSearchResults,
     activeFieldValues,
     baseColumns,
-    baseFieldValues
+    baseFieldValues,
+    baseNumRows
   } = useTableData({
     element: elementForData,
     editMode,
@@ -723,6 +733,251 @@ function TableElement({
     () => () => clearUnsavedWork(formId, unsavedWorkId),
     [formId, unsavedWorkId]
   );
+
+  // The form's host names a hub column by its hub field key, the grid stores it under a synthetic key
+  const publishedFieldKey = useCallback(
+    (column: any): string =>
+      (isHub && column.hub_field_key) || column.field_key || '',
+    [isHub]
+  );
+  const storageKeyFor = useMemo(() => {
+    const byPublishedKey = new Map<string, string>(
+      baseColumns.map((column) => [publishedFieldKey(column), column.field_key])
+    );
+    return (fieldKey: string) => byPublishedKey.get(fieldKey);
+  }, [baseColumns, publishedFieldKey]);
+  const isColumnReadOnly = useCallback(
+    (storageKey: string) =>
+      (isHub && hub.readOnlyKeys.has(storageKey)) ||
+      editorKindFor(cellRules[storageKey]) === 'readonly',
+    [isHub, hub.readOnlyKeys, cellRules]
+  );
+
+  // A transposed table shows records as columns, the host still reads them as rows
+  const cellValue = useCallback(
+    (rowIndex: number, storageKey: string) => {
+      const value = (isTransposed ? baseFieldValues : spreadsheetFieldValues)[
+        storageKey
+      ];
+      return Array.isArray(value) ? value[rowIndex] ?? null : value ?? null;
+    },
+    [isTransposed, baseFieldValues, spreadsheetFieldValues]
+  );
+  const isRowDeleted = useCallback(
+    (rowIndex: number) => buffersEdits && pendingEdits.isRowDeleted(rowIndex),
+    [buffersEdits, pendingEdits]
+  );
+  const getRow = useCallback(
+    (rowIndex: number) =>
+      rowIndex < 0 || rowIndex >= baseNumRows || isRowDeleted(rowIndex)
+        ? null
+        : Object.fromEntries(
+            baseColumns.map((column) => [
+              publishedFieldKey(column),
+              cellValue(rowIndex, column.field_key)
+            ])
+          ),
+    [baseColumns, baseNumRows, isRowDeleted, publishedFieldKey, cellValue]
+  );
+  const getRows = useCallback(
+    ({
+      offset,
+      limit,
+      search
+    }: {
+      offset: number;
+      limit: number;
+      search?: string;
+    }) => {
+      const needle = search?.toLowerCase();
+      const shown: TableRowRead[] = [];
+      for (let rowIndex = 0; rowIndex < baseNumRows; rowIndex++) {
+        const values = getRow(rowIndex);
+        if (!values) continue;
+        if (
+          needle &&
+          !Object.values(values).some((value) =>
+            (stringifyWithNull(value) ?? '').toLowerCase().includes(needle)
+          )
+        )
+          continue;
+        const hasPendingEdit =
+          buffersEdits &&
+          pendingEdits.writes.some((write) => write.rowIndex === rowIndex);
+        shown.push({
+          rowIndex,
+          ...(isHub ? { entryId: hub.entryIds[rowIndex] ?? null } : {}),
+          values,
+          ...(hasPendingEdit ? { pending: true } : {})
+        });
+      }
+      return {
+        rowCount: shown.length,
+        rows: shown.slice(offset, offset + limit)
+      };
+    },
+    [
+      baseNumRows,
+      getRow,
+      isHub,
+      hub.entryIds,
+      buffersEdits,
+      pendingEdits.writes
+    ]
+  );
+
+  const getLiveState = useCallback(
+    (): TableLiveState => ({
+      ...(isHub && hub.hubId ? { hubId: hub.hubId } : {}),
+      columns: baseColumns.map((column) => ({
+        name: column.name,
+        fieldKey: publishedFieldKey(column),
+        ...(isColumnReadOnly(column.field_key) ? { readOnly: true } : {})
+      })),
+      rowCount: baseNumRows,
+      canEditCells: canEdit,
+      canAddRows,
+      canDeleteRows,
+      showsActions: !isSpreadsheet && actions.length > 0,
+      allowsRowClick: !isSpreadsheet && !isTransposed && !canEdit,
+      buffersEdits,
+      ...(isHub ? { entryIds: hub.entryIds } : {}),
+      ...(buffersEdits
+        ? {
+            pending: {
+              edits: pendingEdits.writes.length,
+              deletions: pendingEdits.deletedRows.length
+            }
+          }
+        : {})
+    }),
+    [
+      isHub,
+      hub.hubId,
+      hub.entryIds,
+      baseColumns,
+      publishedFieldKey,
+      isColumnReadOnly,
+      baseNumRows,
+      canEdit,
+      canAddRows,
+      canDeleteRows,
+      isSpreadsheet,
+      actions.length,
+      isTransposed,
+      buffersEdits,
+      pendingEdits.writes,
+      pendingEdits.deletedRows
+    ]
+  );
+
+  // A host write takes the same column, read-only and typing rules as the person's own
+  const editCells = useCallback(
+    (writes: TableCellWrite[]): TableCellOutcome[] => {
+      const accepted: CellWrite[] = [];
+      const outcomes = writes.map(
+        ({ rowIndex, fieldKey, value }): TableCellOutcome => {
+          if (isRowDeleted(rowIndex)) {
+            return {
+              ok: false,
+              reason: 'row_deleted',
+              message: `Row ${rowIndex} was removed and is waiting on the table's save.`
+            };
+          }
+          const storageKey = storageKeyFor(fieldKey);
+          if (!storageKey) {
+            return {
+              ok: false,
+              reason: 'unknown_column',
+              message: `This table has no column with fieldKey '${fieldKey}'.`
+            };
+          }
+          if (isColumnReadOnly(storageKey)) {
+            return {
+              ok: false,
+              reason: 'read_only',
+              message: `Column '${fieldKey}' cannot be edited.`
+            };
+          }
+          const parsed = parseCellInput(
+            value == null ? '' : String(value),
+            cellRules[storageKey],
+            cellValue(rowIndex, storageKey)
+          );
+          accepted.push({ fieldKey: storageKey, rowIndex, value: parsed });
+          return { ok: true, value: parsed };
+        }
+      );
+      if (accepted.length) spreadsheetCellsEdit(accepted);
+      return outcomes;
+    },
+    [
+      isRowDeleted,
+      storageKeyFor,
+      isColumnReadOnly,
+      cellRules,
+      cellValue,
+      spreadsheetCellsEdit
+    ]
+  );
+  // The row lands where the person's own add-row control puts one
+  const addRow = useCallback(() => {
+    if (isSpreadsheet) {
+      spreadsheetInsertRow(baseNumRows);
+      return baseNumRows;
+    }
+    wrappedHandleAddRow();
+    return 0;
+  }, [isSpreadsheet, spreadsheetInsertRow, baseNumRows, wrappedHandleAddRow]);
+  // The same payload a click on the row's action button sends
+  const runAction = useCallback(
+    async (rowIndex: number, actionLabel?: string) => {
+      const rowData: Record<string, any> = {};
+      baseColumns.forEach((column) => {
+        const fieldValue = baseFieldValues[column.field_key];
+        rowData[column.name] = Array.isArray(fieldValue)
+          ? fieldValue[rowIndex]
+          : fieldValue;
+      });
+      await onClick(
+        actionLabel
+          ? { action: actionLabel, rowIndex, rowData }
+          : { rowIndex, rowData }
+      );
+    },
+    [baseColumns, baseFieldValues, onClick]
+  );
+
+  // Lets the form's host act on this table through the handlers the person's own edits use
+  useEffect(() => {
+    const state = editMode ? undefined : internalState[formId];
+    if (!state || !tableId) return;
+    const tables = (state.tables ??= new Map<string, TableHandlers>());
+    const handlers: TableHandlers = {
+      getLiveState,
+      getRow,
+      getRows,
+      editCells,
+      addRow,
+      deleteRow: spreadsheetDeleteRow,
+      runAction
+    };
+    tables.set(tableId, handlers);
+    return () => {
+      if (tables.get(tableId) === handlers) tables.delete(tableId);
+    };
+  }, [
+    editMode,
+    formId,
+    tableId,
+    getLiveState,
+    getRow,
+    getRows,
+    editCells,
+    addRow,
+    spreadsheetDeleteRow,
+    runAction
+  ]);
 
   // Lets the assistant invoke this table's mutations through the same handlers the user UI calls
   useEffect(() => {
