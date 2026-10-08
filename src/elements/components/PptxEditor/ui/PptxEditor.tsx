@@ -13,6 +13,10 @@ import PptxPanelRail, { type PptxPanelKind } from './PptxPanelRail';
 import PptxRightPanel from './PptxRightPanel';
 import PptxChangesPanel from './PptxChangesPanel';
 import {
+  EDITOR_PLACEHOLDER_ERROR_COLOR,
+  EDITOR_PLACEHOLDER_STYLE
+} from '../../DocumentEditor/placeholderStyle';
+import {
   LINE,
   PANEL_2,
   PAPER
@@ -224,24 +228,14 @@ function PptxEditorInner({
   const dirty = state.rev >= 0 ? store.engine.isDirty() : false;
   const historyEnabled = !!historyHost;
 
-  // Match DocumentEditorContainer's placeholder exactly: the host shows
-  // "Loading document…" until this mounts, so an identical box and copy make
-  // the host → editor-loading handoff invisible instead of a visible swap.
+  // Identical to the host's placeholder so the loading handoff is invisible.
   const placeholder = (content: React.ReactNode, error = false) => (
     <div
       css={{
+        ...EDITOR_PLACEHOLDER_STYLE,
         display: visible ? 'flex' : 'none',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '100%',
-        height: '100%',
         minHeight: 160,
-        padding: 16,
-        textAlign: 'center',
-        border: '1px dashed #d4d4d8',
-        borderRadius: 8,
-        color: error ? '#dc2626' : '#71717a',
-        fontSize: 14
+        ...(error ? { color: EDITOR_PLACEHOLDER_ERROR_COLOR } : {})
       }}
     >
       {content}

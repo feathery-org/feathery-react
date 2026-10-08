@@ -2115,9 +2115,7 @@ export function SvgSlide({
         (e.key === 'ArrowDown' || e.key === 'ArrowUp')
       ) {
         e.preventDefault();
-        const next =
-          store.getState().activeSlide + (e.key === 'ArrowDown' ? 1 : -1);
-        if (next >= 0 && next < deck.slides.length) store.setActiveSlide(next);
+        store.stepSlide(e.key === 'ArrowDown' ? 1 : -1);
         return;
       }
       // Arrow keys nudge the selection (Shift = larger step), like PowerPoint.

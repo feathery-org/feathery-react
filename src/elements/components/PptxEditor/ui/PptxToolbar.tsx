@@ -1283,9 +1283,7 @@ export function Toolbar({
                         key={n.scheme}
                         type='button'
                         title={n.label}
-                        css={styles.numItem(
-                          bulletValue === `auto:${n.scheme}`
-                        )}
+                        css={styles.numItem(bulletValue === `auto:${n.scheme}`)}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
                           applyBullet(`auto:${n.scheme}`);

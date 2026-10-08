@@ -6,6 +6,10 @@ import React, {
   useState
 } from 'react';
 import DocxEditor from '../DocxEditor';
+import {
+  EDITOR_PLACEHOLDER_ERROR_COLOR,
+  EDITOR_PLACEHOLDER_STYLE
+} from './placeholderStyle';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
@@ -127,19 +131,7 @@ function getGeneratedEnvelope(
   );
 }
 
-const placeholder = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '100%',
-  height: '100%',
-  padding: 16,
-  textAlign: 'center' as const,
-  border: '1px dashed #d4d4d8',
-  borderRadius: 8,
-  color: '#71717a',
-  fontSize: 14
-};
+const placeholder = EDITOR_PLACEHOLDER_STYLE;
 
 type WrapStyle = {
   width: string;
@@ -557,7 +549,11 @@ export default function DocumentEditorContainer({
   }
   if (loading) return box(<div css={placeholder}>Loading document…</div>);
   if (error) {
-    return box(<div css={{ ...placeholder, color: '#dc2626' }}>{error}</div>);
+    return box(
+      <div css={{ ...placeholder, color: EDITOR_PLACEHOLDER_ERROR_COLOR }}>
+        {error}
+      </div>
+    );
   }
   if (!envelope || !envelope.file) {
     return box(

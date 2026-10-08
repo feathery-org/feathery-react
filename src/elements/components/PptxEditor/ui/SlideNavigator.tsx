@@ -177,9 +177,7 @@ export function SlideNavigator({ readOnly = false }: { readOnly?: boolean }) {
               // Up/Down walk the deck like PowerPoint's thumbnail pane.
               if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
-                const next = i + (e.key === 'ArrowDown' ? 1 : -1);
-                if (next >= 0 && next < deck.slides.length)
-                  store.setActiveSlide(next);
+                store.stepSlide(e.key === 'ArrowDown' ? 1 : -1, i);
                 return;
               }
               if (readOnly) return;

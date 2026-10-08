@@ -94,7 +94,7 @@ function readRun(rNode: ONode): Run {
 
 // a:buSzPct (1/1000 of a %) / a:buSzPts (1/100 pt) scale the bullet marker
 // independently of the text size.
-function readBulletSize(pPr: ONode): {
+export function readBulletSize(pPr: ONode): {
   sizePct?: number;
   sizePts?: number;
   color?: string;

@@ -33,15 +33,18 @@ export const BULLET_CHARS = [
 ];
 
 // Numbering schemes (OOXML buAutoNum types) shown with a sample of their glyphs.
-export const NUMBER_SCHEMES: { scheme: string; sample: string; label: string }[] =
-  [
-    { scheme: 'arabicPeriod', sample: '1.', label: '1. 2. 3.' },
-    { scheme: 'arabicParenR', sample: '1)', label: '1) 2) 3)' },
-    { scheme: 'alphaUcPeriod', sample: 'A.', label: 'A. B. C.' },
-    { scheme: 'alphaLcParenR', sample: 'a)', label: 'a) b) c)' },
-    { scheme: 'romanUcPeriod', sample: 'I.', label: 'I. II. III.' },
-    { scheme: 'romanLcPeriod', sample: 'i.', label: 'i. ii. iii.' }
-  ];
+export const NUMBER_SCHEMES: {
+  scheme: string;
+  sample: string;
+  label: string;
+}[] = [
+  { scheme: 'arabicPeriod', sample: '1.', label: '1. 2. 3.' },
+  { scheme: 'arabicParenR', sample: '1)', label: '1) 2) 3)' },
+  { scheme: 'alphaUcPeriod', sample: 'A.', label: 'A. B. C.' },
+  { scheme: 'alphaLcParenR', sample: 'a)', label: 'a) b) c)' },
+  { scheme: 'romanUcPeriod', sample: 'I.', label: 'I. II. III.' },
+  { scheme: 'romanLcPeriod', sample: 'i.', label: 'i. ii. iii.' }
+];
 
 export const SHAPE_PRESETS = [
   {

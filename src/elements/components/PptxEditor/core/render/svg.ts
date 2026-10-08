@@ -33,7 +33,11 @@ import {
   splitFontWeight
 } from './fonts';
 import { readSlide } from '../model/import';
-import { resolveListProps } from '../model/resolve';
+import {
+  PH_NO_IDX,
+  resolveListProps,
+  type ResolvedRunDefaults
+} from '../model/resolve';
 import {
   tableCellAlign,
   tableCellBorderEdge,
@@ -641,30 +645,24 @@ function applyOuterShadow(
 const EMU_PER_PX = 9525;
 const ptToCssPx = (pt: number) => (pt * 96) / 72;
 
-interface ParaDefault {
-  sizePt?: number;
-  color?: string;
-  colorScheme?: string;
-  font?: string;
-  bold?: boolean;
-  italic?: boolean;
-}
+type ParaDefault = ResolvedRunDefaults;
 
 // Text color (hex, no '#'): run's own fill - srgb or a theme color on its rPr -
 // then the inherited placeholder default (srgb or theme color), then black.
 // schemeClr/sysClr are resolved through the current slide's theme + clrMap.
 function resolveTextColor(r: Run, def?: ParaDefault): string {
-  if (r.color) return r.color.replace('#', '');
+  const bare = (v: string) => v.replace('#', '');
+  if (r.color) return bare(r.color);
   const pkg = curDeck?.pkg;
   if (pkg && r.rPr) {
     const solid = child(r.rPr, 'a:solidFill');
     const resolved = solid && resolveColor(solid, pkg);
-    if (resolved) return resolved.replace('#', '');
+    if (resolved) return bare(resolved);
   }
-  if (def?.color) return def.color.replace('#', '');
+  if (def?.color) return bare(def.color);
   if (def?.colorScheme && pkg) {
     const hex = schemeColorHex(def.colorScheme, pkg);
-    if (hex) return hex.replace('#', '');
+    if (hex) return bare(hex);
   }
   return '000000';
 }
@@ -2870,11 +2868,11 @@ export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
     });
     const skip = new Set<number>();
     phAt.forEach((p, i) => {
-      if (p?.idx !== '4294967295' || p.x === undefined) return;
+      if (p?.idx !== PH_NO_IDX || p.x === undefined) return;
       if (
         phAt.some(
           (o, j) =>
-            j !== i && o && o.idx !== '4294967295' && o.x === p.x && o.y === p.y
+            j !== i && o && o.idx !== PH_NO_IDX && o.x === p.x && o.y === p.y
         )
       )
         skip.add(i);

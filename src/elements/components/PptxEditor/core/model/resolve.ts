@@ -19,21 +19,27 @@ import {
   type ONode
 } from '../opc/xml';
 import { szToPt } from './units';
-import { readXfrm } from './read';
+import { readBulletSize, readXfrm } from './read';
 import type { Deck, Slide, Shape, Bullet, Xfrm } from './types';
+
+/** "No index" sentinel some exporters emit on <p:ph idx>; treat as unset. */
+export const PH_NO_IDX = '4294967295';
+
+/** Run defaults inherited from a placeholder list style (layout/master). */
+export interface ResolvedRunDefaults {
+  sizePt?: number;
+  color?: string;
+  colorScheme?: string; // schemeClr val when the default color is a theme color
+  font?: string;
+  bold?: boolean;
+  italic?: boolean;
+}
 
 export interface ResolvedListProps {
   bullet?: Bullet;
   marLEmu?: number;
   indentEmu?: number;
-  defRPr?: {
-    sizePt?: number;
-    color?: string;
-    colorScheme?: string; // schemeClr val when the default color is a theme color
-    font?: string;
-    bold?: boolean;
-    italic?: boolean;
-  };
+  defRPr?: ResolvedRunDefaults;
 }
 
 function placeholderOf(shape: Shape): { type: string; idx: string } | null {
@@ -47,19 +53,7 @@ function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
   if (!pPr) return null;
   const out: ResolvedListProps = {};
   const buFont = child(pPr, 'a:buFont');
-  const szPctEl = child(pPr, 'a:buSzPct');
-  const szPtsEl = child(pPr, 'a:buSzPts');
-  const szPct = szPctEl && Number(getAttr(szPctEl, 'val'));
-  const szPts = szPtsEl && Number(getAttr(szPtsEl, 'val'));
-  const buClr = child(pPr, 'a:buClr');
-  const buSrgb = buClr && child(buClr, 'a:srgbClr');
-  const buScheme = buClr && child(buClr, 'a:schemeClr');
-  const buSize = {
-    sizePct: szPct ? szPct / 100000 : undefined,
-    sizePts: szPts ? szPts / 100 : undefined,
-    color: buSrgb ? getAttr(buSrgb, 'val') : undefined,
-    colorScheme: buScheme ? getAttr(buScheme, 'val') : undefined
-  };
+  const buSize = readBulletSize(pPr);
   if (child(pPr, 'a:buNone')) out.bullet = { kind: 'none' };
   else {
     const buChar = child(pPr, 'a:buChar');
@@ -114,9 +108,8 @@ function findPlaceholder(
   const spTree = descendant(partRoot, 'p:spTree');
   if (!spTree) return undefined;
   const sps = [...children(spTree, 'p:sp')];
-  // 4294967295 (0xFFFFFFFF) is a "no index" sentinel some exporters emit; treat
-  // it as unset so it matches by type instead of a bogus idx.
-  if (phIdx !== '' && phIdx !== '4294967295') {
+  // PH_NO_IDX matches by type instead of a bogus idx.
+  if (phIdx !== '' && phIdx !== PH_NO_IDX) {
     for (const sp of sps) {
       const ph = descendant(sp, 'p:ph');
       if (ph && (getAttr(ph, 'idx') || '') === phIdx) return sp;

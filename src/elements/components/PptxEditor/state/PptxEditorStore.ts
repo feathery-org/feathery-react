@@ -328,6 +328,13 @@ export class PptxEditorStore {
     this.commitSvgTextEdit = commit;
   };
 
+  /** Step to the slide adjacent to `from` (default: active), clamped at the ends. */
+  stepSlide = (delta: number, from = this.state.activeSlide): void => {
+    const count = this.state.deck?.slides.length ?? 0;
+    const next = from + delta;
+    if (next >= 0 && next < count) this.setActiveSlide(next);
+  };
+
   setActiveSlide = (index: number): void =>
     this.set({
       activeSlide: index,
