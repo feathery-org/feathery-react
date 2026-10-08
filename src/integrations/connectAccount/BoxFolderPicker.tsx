@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { ProviderConfigProps } from './providers';
-import { featheryDoc, featheryWindow } from '../../utils/browser';
+import useRefreshOnFocus from '../../utils/useRefreshOnFocus';
 
 interface BoxFolder {
   id: string;
@@ -55,7 +55,6 @@ function BoxFolderPicker({
   const folderCache = useRef(new Map<string, BrowsePage>());
   const folderRequests = useRef(new Map<string, Promise<BrowsePage>>());
   const activeFolderId = useRef('');
-  const refreshingOnFocus = useRef(false);
   // True once "Load more" has appended pages: a background refresh must not
   // collapse the list back to page one.
   const paginated = useRef(false);
@@ -172,42 +171,24 @@ function BoxFolderPicker({
     loadFolder(ROOT_FOLDER_ID);
   }, [loadFolder]);
 
-  useEffect(() => {
-    const refreshActiveFolder = () => {
-      const folderId = activeFolderId.current;
-      if (
-        !folderId ||
-        refreshingOnFocus.current ||
-        folderRequests.current.has(requestKeyFor(folderId))
-      )
-        return;
-      refreshingOnFocus.current = true;
-      // A silent refresh: it neither clears an error on screen nor resets a
-      // list the user has paged through - it only swaps in fresh contents
-      // when they are still looking at page one of the same folder.
-      requestFolder(folderId, {}, true)
-        .then((page) => {
-          if (activeFolderId.current === folderId && !paginated.current)
-            applyPage(page);
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          refreshingOnFocus.current = false;
-        });
-    };
-    const handleVisibilityChange = () => {
-      if (featheryDoc().visibilityState === 'visible') refreshActiveFolder();
-    };
-    featheryWindow().addEventListener('focus', refreshActiveFolder);
-    featheryDoc().addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      featheryWindow().removeEventListener('focus', refreshActiveFolder);
-      featheryDoc().removeEventListener(
-        'visibilitychange',
-        handleVisibilityChange
-      );
-    };
-  }, [applyPage, requestFolder]);
+  // The in-flight guard lives in useRefreshOnFocus now; returning the promise
+  // lets it skip overlapping focus/visibility fires. The folderRequests guard
+  // still skips a folder that normal navigation is already loading.
+  const refreshActiveFolder = () => {
+    const folderId = activeFolderId.current;
+    if (!folderId || folderRequests.current.has(requestKeyFor(folderId)))
+      return undefined;
+    // A silent refresh: it neither clears an error on screen nor resets a
+    // list the user has paged through - it only swaps in fresh contents
+    // when they are still looking at page one of the same folder.
+    return requestFolder(folderId, {}, true)
+      .then((page) => {
+        if (activeFolderId.current === folderId && !paginated.current)
+          applyPage(page);
+      })
+      .catch(() => undefined);
+  };
+  useRefreshOnFocus(refreshActiveFolder);
 
   const handleCreateFolder = async () => {
     onClearError?.();
