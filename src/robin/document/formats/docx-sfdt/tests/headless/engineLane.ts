@@ -3,10 +3,9 @@
  * the editor's own headless lane does), opens it in system Chrome, and calls the in-page API.
  */
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import type { Browser, Page } from 'puppeteer-core';
-import puppeteer from 'puppeteer-core';
+import { launchLaneChrome } from '../../../../../../assistant/tools/docx/tests/headless/laneChrome';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const webpack = require('webpack');
@@ -55,16 +54,6 @@ export async function buildEngineBundle(): Promise<string> {
   return HOST_PAGE;
 }
 
-const CHROME = [
-  process.env.CHROME_PATH,
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  '/usr/bin/google-chrome',
-  '/usr/bin/google-chrome-stable',
-  '/usr/bin/chromium',
-  '/usr/bin/chromium-browser'
-].filter(Boolean) as string[];
-
 export interface EngineLane {
   call<T = any>(method: string, ...args: any[]): Promise<T>;
   pageErrors: string[];
@@ -75,14 +64,8 @@ export interface EngineLane {
 
 export async function startEngineLane(): Promise<EngineLane> {
   const page = await buildEngineBundle();
-  const executablePath = CHROME.find((c) => fs.existsSync(c));
-  if (!executablePath) throw new Error('no system Chrome found; set CHROME_PATH');
-  const browser: Browser = await puppeteer.launch({
-    executablePath,
-    headless: true,
-    userDataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'robin-engine-')),
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--allow-file-access-from-files', '--hide-scrollbars', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding']
-  });
+  // the lane's Chrome launcher: its profile and process never outlive the run
+  const browser: Browser = await launchLaneChrome();
   const tab: Page = await browser.newPage();
   await tab.setViewport({ width: 1200, height: 1000 });
   const pageErrors: string[] = [];
