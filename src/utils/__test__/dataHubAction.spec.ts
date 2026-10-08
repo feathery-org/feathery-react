@@ -36,7 +36,9 @@ describe('FeatheryClient.dataHubAction', () => {
         // The current user's key is the batch value.
         idValue: userId
       }),
-      'formKey'
+      'formKey',
+      // Names the form user for form file references
+      userId
     );
   });
 

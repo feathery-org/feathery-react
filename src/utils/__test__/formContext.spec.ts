@@ -1,4 +1,5 @@
 import { getFormContext } from '../formContext';
+import { fieldValues } from '../init';
 import { setFormInternalState } from '../internalState';
 import Field from '../entities/Field';
 
@@ -98,14 +99,19 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
   });
 
   it('routes a bare sign envelope action through the flow', async () => {
+    const hubAssociation = { hubId: 'hub-1', entryId: 'entry-1' };
     await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
-      envelopeAction: 'sign'
+      envelopeAction: 'sign',
+      hubAssociation
     });
 
     expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
     expect(flow).toHaveBeenCalledTimes(1);
-    expect(flow.mock.calls[0][0]).toMatchObject({ envelope_action: 'sign' });
+    expect(flow.mock.calls[0][0]).toMatchObject({
+      envelope_action: 'sign',
+      hub_association: hubAssociation
+    });
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
@@ -256,7 +262,8 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       merge: true,
       mergedFileName: 'out',
       download: true,
-      zipName: 'bundle'
+      zipName: 'bundle',
+      hubAssociation: { hubId: 'hub-1', entryId: 'entry-1', field: 'docs' }
     });
 
     expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
@@ -265,7 +272,8 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       download: true,
       merge: true,
       mergedFileName: 'out',
-      zipName: 'bundle'
+      zipName: 'bundle',
+      hubAssociation: { hubId: 'hub-1', entryId: 'entry-1', field: 'docs' }
     });
     expect(flow).not.toHaveBeenCalled();
   });
@@ -331,5 +339,69 @@ describe('feathery.runComputerAgent return shape', () => {
     await expect(
       getFormContext(uuid).runComputerAgent('agent_1')
     ).resolves.toEqual({ status: 'error', message: 'nope' });
+  });
+});
+
+describe('feathery.dataHubAction form file references', () => {
+  const uuid = 'formContext-hub-files';
+  const upload = Promise.resolve(new File(['a'], 'a.pdf'));
+  const steps = {
+    docs: {
+      key: 'docs',
+      servar_fields: [{ servar: { key: 'uploads', type: 'file_upload' } }]
+    }
+  };
+  let client: any;
+
+  beforeEach(() => {
+    fieldValues.uploads = upload;
+    client = {
+      submitFiles: jest.fn().mockResolvedValue(undefined),
+      dataHubAction: jest.fn().mockResolvedValue({}),
+      draft: false,
+      getNoSave: () => false
+    };
+    setFormInternalState(uuid, { fields: {}, client, steps } as any);
+  });
+
+  it('files form fields on create/update only', async () => {
+    const context = getFormContext(uuid);
+    await context.dataHubAction({
+      hubId: 'hub-1',
+      operation: 'update',
+      data: { docs: upload }
+    });
+    expect(client.submitFiles).toHaveBeenCalledTimes(1);
+    expect(client.dataHubAction.mock.calls[0][0].data).toEqual({
+      docs: [{ form_field: 'uploads' }]
+    });
+
+    await context.dataHubAction({
+      hubId: 'hub-1',
+      operation: 'get',
+      data: { docs: upload }
+    });
+    expect(client.submitFiles).toHaveBeenCalledTimes(1);
+    expect(client.dataHubAction.mock.calls[1][0].data).toEqual({
+      docs: upload
+    });
+  });
+
+  it('refuses to send references the server has no files for', async () => {
+    const context = getFormContext(uuid);
+    const action = {
+      hubId: 'hub-1',
+      operation: 'create' as const,
+      data: { docs: upload }
+    };
+    client.draft = true;
+    await expect(context.dataHubAction(action)).rejects.toThrow(/uploads/);
+    client.draft = false;
+    client.getNoSave = () => true;
+    await expect(context.dataHubAction(action)).rejects.toThrow(/save data/);
+    expect(client.dataHubAction).not.toHaveBeenCalled();
+    // Plain values still go through.
+    await context.dataHubAction({ ...action, data: { name: 'Ann' } });
+    expect(client.dataHubAction).toHaveBeenCalledTimes(1);
   });
 });

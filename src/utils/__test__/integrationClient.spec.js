@@ -1162,6 +1162,41 @@ describe('IntegrationClient', () => {
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.documents).toEqual(mixedDocuments);
     });
+
+    it('forwards a hub association on both generate paths, omitting it when unset', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: [], documents: [] })
+      });
+      const hubAssociation = {
+        hubId: 'hub-1',
+        entryId: 'entry-1',
+        label: 'NDA'
+      };
+      const actions = [
+        { documents: ['doc1'], run_async: false },
+        {
+          documents: ['doc1'],
+          run_async: false,
+          envelope_action: 'open_in_editor'
+        }
+      ];
+
+      for (const [call, action] of actions.entries()) {
+        await integrationClient.generateEnvelopes(action);
+        expect(requestBody(call * 2)).not.toHaveProperty('hub_association');
+        await integrationClient.generateEnvelopes({
+          ...action,
+          hub_association: hubAssociation
+        });
+        expect(requestBody(call * 2 + 1).hub_association).toEqual({
+          hub_id: 'hub-1',
+          entry_id: 'entry-1',
+          label: 'NDA'
+        });
+      }
+    });
   });
 
   describe('finalizeEnvelopeReview', () => {

@@ -27,10 +27,13 @@ import internalState, {
 } from './internalState';
 import { validateElements } from './validation';
 import { STEP_EVENT_SKIP } from './stepEvents';
+import { buildHubFileRefs } from './hubFileRefs';
 import {
+  ExtractionActionOptions,
   FillQuikParams,
   ForwardInboxEmailOptions,
   HubActionOptions,
+  HubAssociation,
   IntegrationActionIds,
   IntegrationActionOptions,
   PageSelectionInput
@@ -210,7 +213,7 @@ export const getFormContext = (formUuid: string) => {
     },
     runAIExtraction: async (
       extractionId: string,
-      options = { waitForCompletion: false },
+      options: ExtractionActionOptions | boolean = { waitForCompletion: false },
       pages?: PageSelectionInput
     ) => formState.runAIExtraction(extractionId, options, pages),
     forwardInboxEmail: (options: ForwardInboxEmailOptions) =>
@@ -238,22 +241,40 @@ export const getFormContext = (formUuid: string) => {
       formState.client.setCollaboratorAsCompleted(templateId),
     setTaskStatus: (templateId: string, taskStatusId: string) =>
       formState.client.setTaskStatus(templateId, taskStatusId),
-    dataHubAction: ({
+    dataHubAction: async ({
       hubId,
       operation,
       entryId,
       data,
       where,
       verification
-    }: HubActionOptions) =>
-      formState.client.dataHubAction({
+    }: HubActionOptions) => {
+      // Create/update file a form file field from the server's copy, uploading
+      // it first if unsubmitted. Other operations never file, so pass `data`.
+      const refs =
+        operation === 'create' || operation === 'update'
+          ? buildHubFileRefs(data, formState.steps)
+          : { data, submissions: [], fields: [] };
+      // Drafts and no-save forms keep no files server-side to file from.
+      const { client } = formState;
+      if (refs.fields.length && (client.draft || client.getNoSave())) {
+        const names = refs.fields.join(', ');
+        throw new Error(
+          `Form file fields (${names}) can't be filed into a data hub from ` +
+            "a preview, draft or a form that doesn't save data"
+        );
+      }
+      if (refs.submissions.length)
+        await formState.client.submitFiles(refs.submissions);
+      return formState.client.dataHubAction({
         hubId,
         operation,
         entryId,
-        data,
+        data: refs.data,
         where,
         verification
-      }),
+      });
+    },
     generateDocuments: ({
       documentIds: documentSources,
       signers,
@@ -268,7 +289,8 @@ export const getFormContext = (formUuid: string) => {
       mergedFileName,
       zipName,
       saveDocumentFieldKey,
-      redirect
+      redirect,
+      hubAssociation
     }: {
       // A plain template UUID string, a file upload field itself (e.g.
       // `FileUpload1`), or a source object such as the Quik item
@@ -313,6 +335,8 @@ export const getFormContext = (formUuid: string) => {
       saveDocumentFieldKey?: string;
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
+      // The data hub entry the generated files are filed in.
+      hubAssociation?: HubAssociation;
     }) => {
       // A field passed as-is is named by key, resolved to its id below.
       let documentIds: GenerateDocumentRef[] = documentSources.map((doc) =>
@@ -432,6 +456,7 @@ export const getFormContext = (formUuid: string) => {
             envelope_zip_name: zipName,
             save_document_field_key: saveDocumentFieldKey,
             redirect,
+            hub_association: hubAssociation,
             run_async: true
           })
         );
@@ -464,7 +489,8 @@ export const getFormContext = (formUuid: string) => {
           merge,
           repeatable,
           mergedFileName,
-          zipName
+          zipName,
+          hubAssociation
         })
       );
     },
