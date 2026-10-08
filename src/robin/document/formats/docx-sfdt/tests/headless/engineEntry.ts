@@ -20,6 +20,12 @@ import { comparable, differences, equivalentNative } from '../../../../proof';
 import { DocumentSession } from '../../../../session';
 import { canonicalJson, NfNode, NormalForm } from '../../../../tree';
 import { createHost, docxPack, LiveEditor } from '../../index';
+import React from 'react';
+import { createRoot, Root } from 'react-dom/client';
+import TrackedChangeGroups from '../../../../../../elements/components/DocxEditor/TrackedChangeGroups';
+import HistoryGroup from '../../../../../../elements/components/DocxEditor/DocxToolbar/groups/HistoryGroup';
+import { installHistoryRouting } from '../../../../../../elements/components/DocxEditor/historyRouting';
+import { registerCardResolver, registerHistoryRoute } from '../../../../mounts';
 
 declare const __SYNCFUSION_LICENSE_KEY__: string;
 if (__SYNCFUSION_LICENSE_KEY__) registerLicense(__SYNCFUSION_LICENSE_KEY__);
@@ -114,6 +120,30 @@ async function settled(max = 40): Promise<string> {
   return prev;
 }
 
+// The product's review rail and toolbar history buttons, rendered over the live editor.
+let uiRoot: Root | null = null;
+function renderReviewUi(): void {
+  let host = document.getElementById('fm-review');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'fm-review';
+    host.style.cssText = 'position:fixed;right:0;top:0;width:360px;height:900px;';
+    document.body.appendChild(host);
+  }
+  uiRoot ??= createRoot(host);
+  uiRoot.render(
+    React.createElement(
+      'div',
+      { style: { display: 'flex', flexDirection: 'column', height: '100%' } },
+      React.createElement('div', { id: 'fm-history' }, React.createElement(HistoryGroup, { editor })),
+      React.createElement('div', { style: { position: 'relative', flex: 1, display: 'flex' } }, React.createElement(TrackedChangeGroups, { editor, key: Math.random() }))
+    )
+  );
+}
+
+const byText = (root: Element, selector: string, text: string): HTMLElement | null =>
+  ([...root.querySelectorAll(selector)] as HTMLElement[]).find((el) => (el.textContent ?? '').trim() === text || el.getAttribute('aria-label') === text || el.getAttribute('title') === text) ?? null;
+
 const api = {
   async open(text: string): Promise<number> {
     try {
@@ -135,6 +165,15 @@ const api = {
       target: { type: 'envelope', id: 'env' },
       editorId: 'ed'
     });
+    // as the product mounts it (robinDocument.ts): the rail's resolver, the undo route, the keys
+    const live = session;
+    registerCardResolver(editor, {
+      owns: (id) => live.ownsCard(id),
+      resolve: (id, accept) => live.resolveCard(id, accept)
+    });
+    registerHistoryRoute(editor, { undo: () => live.undo(), redo: () => live.redo() });
+    installHistoryRouting(editor);
+    renderReviewUi();
     return (await settled()).length;
   },
 
@@ -201,6 +240,54 @@ const api = {
   /** Rows the bindings' controller indexes for a bound table, and how many times it was attached. */
   bindingRows(tableId: string): number {
     return attached?.controller.index?.tables.get(tableId)?.rows.length ?? -1;
+  },
+
+  /** The review rail as a person sees it: each card's title, count line and per-edit buttons. */
+  async rail(): Promise<Array<{ title: string; perEditButtons: number }>> {
+    await frame();
+    await frame();
+    const host = document.getElementById('fm-review');
+    if (!host) return [];
+    const cards = [...host.querySelectorAll('button[aria-label^="Go to "]')] as HTMLElement[];
+    return cards.map((title) => {
+      const card = title.closest('div[css], div') as HTMLElement;
+      let box: HTMLElement | null = title;
+      while (box && !(box.querySelector('button') && [...box.querySelectorAll('button')].some((b) => b.textContent === 'Accept'))) box = box.parentElement;
+      return {
+        title: (title.textContent ?? '').trim(),
+        perEditButtons: box ? box.querySelectorAll('button[aria-label="Accept this edit"]').length : -1
+      };
+    });
+  },
+
+  /** Expand card `index` and click Accept or Reject on it, as a person does. */
+  async clickCard(index: number, action: 'Accept' | 'Reject'): Promise<void> {
+    const host = document.getElementById('fm-review') as HTMLElement;
+    const titles = [...host.querySelectorAll('button[aria-label^="Go to "]')] as HTMLElement[];
+    let box: HTMLElement | null = titles[index];
+    while (box && !byText(box, 'button', action)) box = box.parentElement;
+    const button = box && byText(box, 'button', action);
+    if (!button) throw new Error(`no ${action} button on card ${index}`);
+    button.click();
+    await frame();
+    await frame();
+  },
+
+  /** Click the toolbar's Undo or Redo button. */
+  async clickToolbar(which: 'Undo' | 'Redo'): Promise<void> {
+    const button = byText(document.getElementById('fm-history') as HTMLElement, 'button', which);
+    if (!button) throw new Error(`no ${which} button`);
+    button.click();
+    await frame();
+    await frame();
+  },
+
+  /** Press Ctrl+Z or Ctrl+Y in the document, as the keyboard does. */
+  async pressInDocument(key: 'z' | 'y'): Promise<void> {
+    const div = (live() as any).documentHelper?.editableDiv as HTMLElement;
+    div.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true, cancelable: true }));
+    await frame();
+    await frame();
   },
 
   undoDepth(): number {
