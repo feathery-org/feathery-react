@@ -42,6 +42,7 @@ jest.mock('./index', () => {
     reviewChanges,
     terminalAction,
     onTerminalAction,
+    onTerminalActionStart,
     onTerminalActionDraft,
     onSaved,
     onDownloaded
@@ -74,7 +75,7 @@ jest.mock('./index', () => {
         React.createElement('button', {
           key: 'terminal',
           'data-testid': `terminal:${terminalAction}`,
-          onClick: () => onTerminalAction()
+          onClick: () => onTerminalAction(undefined, onTerminalActionStart?.())
         }),
       onTerminalActionDraft &&
         React.createElement('button', {
@@ -770,6 +771,61 @@ describe('DocumentEditorContainer signing outcomes', () => {
         `document-${CONTAINER}`
       ])
     );
+  });
+
+  it('reserves the Feathery signing tab on click and navigates it after finalization', async () => {
+    let finishFinalization!: (value: Record<string, any>) => void;
+    mockFinalizeEnvelope.mockReturnValue(
+      new Promise((resolve) => {
+        finishFinalization = resolve;
+      })
+    );
+    const tab = {
+      opener: featheryWindow(),
+      closed: false,
+      close: jest.fn(),
+      location: { href: '' }
+    };
+    const open = jest
+      .spyOn(featheryWindow(), 'open')
+      .mockReturnValue(tab as any);
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    expect(open).toHaveBeenCalledWith('', '_blank');
+    expect(tab.opener).toBeNull();
+    expect(tab.location.href).toBe('');
+    await waitFor(() => expect(mockFinalizeEnvelope).toHaveBeenCalled());
+
+    await act(async () => {
+      finishFinalization({
+        id: `envelope-${CONTAINER}`,
+        file: 'https://x/signable.pdf',
+        type: 'pdf',
+        signed: false,
+        signer_id: 'signer-token'
+      });
+    });
+    expect(tab.location.href).toBe(
+      'https://document.feathery.io/to/signer-token'
+    );
+    expect(tab.close).not.toHaveBeenCalled();
+  });
+
+  it('closes the reserved tab when finalization has no inline signer', async () => {
+    const tab = { opener: null, close: jest.fn() };
+    jest.spyOn(featheryWindow(), 'open').mockReturnValue(tab as any);
+    mockFinalizeEnvelope.mockResolvedValue({ invited: true });
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    await waitFor(() => expect(tab.close).toHaveBeenCalledTimes(1));
   });
 
   it('swaps the docx editor for the signed PDF view after a Feathery sign', async () => {

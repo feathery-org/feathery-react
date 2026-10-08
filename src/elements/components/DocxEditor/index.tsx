@@ -58,7 +58,13 @@ export interface DocxEditorProps {
    *  Current edits are saved via `onSave` before this is called. */
   onExportPdf?: () => Promise<Blob>;
   terminalAction?: 'download' | 'sign' | 'draft';
-  onTerminalAction?: (saveResult?: unknown) => void | Promise<void>;
+  onTerminalAction?: (
+    saveResult?: unknown,
+    openedTab?: Window | null
+  ) => void | Promise<void>;
+  /** Reserve a signing tab during the click, before export/save can expire
+   *  the browser's popup permission. Only used for inline Feathery eSign. */
+  onTerminalActionStart?: () => Window | null;
   /** Draft variant of the 'sign' terminal action (DocuSign only). When
    *  provided, Sign becomes a Send / Save as Draft menu. Same save-first flow. */
   onTerminalActionDraft?: (saveResult?: unknown) => void | Promise<void>;
@@ -142,6 +148,7 @@ function DocxEditor({
   onExportPdf,
   terminalAction,
   onTerminalAction,
+  onTerminalActionStart,
   onTerminalActionDraft,
   terminalActionDisabled,
   terminalActionLoading,
@@ -517,10 +524,15 @@ function DocxEditor({
   // Every terminal action saves the current edits first, then runs its own
   // outcome against the just-saved document.
   const saveThenRun = async (
-    run: (blob: Blob, saveResult?: unknown) => void | Promise<void>,
+    run: (
+      blob: Blob,
+      saveResult?: unknown,
+      openedTab?: Window | null
+    ) => void | Promise<void>,
     // Only the download outcome may bypass the gate (via "Download Anyway");
     // sign/send stay hard-gated. The flush still runs so typed edits commit.
-    bypassGate = false
+    bypassGate = false,
+    prepareTab?: () => Window | null
   ) => {
     if (terminalRunning) return;
     if (bypassGate) bindingsState.commitForSave();
@@ -528,6 +540,7 @@ function DocxEditor({
     // terminal action goes through, so a document the binding engine considers
     // invalid cannot be signed, sent or downloaded from any of them.
     else if (!readyToExport()) return;
+    const openedTab = prepareTab?.();
     setTerminalRunning(true);
     try {
       const blob = await exportDoc();
@@ -535,8 +548,9 @@ function DocxEditor({
         onSave && dirtyRef.current
           ? await saveCurrentDocument(blob)
           : undefined;
-      await run(blob, saveResult);
+      await run(blob, saveResult, openedTab);
     } catch (err) {
+      openedTab?.close();
       onError?.((err as Error).message || String(err));
     } finally {
       setTerminalRunning(false);
@@ -552,18 +566,22 @@ function DocxEditor({
       !gateDownload(() => handleTerminalAction(true))
     )
       return;
-    return saveThenRun(async (blob, saveResult) => {
-      if (terminalAction === 'download') {
-        // Serve the public copy, same as the toolbar Download — the editor
-        // bytes carry content controls that must not leave the platform.
-        const url =
-          (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
-        if (url) triggerDownload(await fetchDownloadBlob(url));
-        else triggerDownload(blob);
-      } else {
-        await onTerminalAction?.(saveResult);
-      }
-    }, force && terminalAction === 'download');
+    return saveThenRun(
+      async (blob, saveResult, openedTab) => {
+        if (terminalAction === 'download') {
+          // Serve the public copy, same as the toolbar Download — the editor
+          // bytes carry content controls that must not leave the platform.
+          const url =
+            (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
+          if (url) triggerDownload(await fetchDownloadBlob(url));
+          else triggerDownload(blob);
+        } else {
+          await onTerminalAction?.(saveResult, openedTab);
+        }
+      },
+      force && terminalAction === 'download',
+      onTerminalActionStart
+    );
   };
 
   // Draft variant of the 'sign' terminal action: identical save-first flow, and
