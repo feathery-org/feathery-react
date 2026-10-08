@@ -138,7 +138,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
     warnings.push({
       code: 'reject-by-card',
       message:
-        "Some of this change cannot be rejected piece by piece in the editor's review pane; rejecting the card restores the document exactly."
+        "Some of this change cannot be rejected piece by piece in the editor's review pane; rejecting the card restores the document exactly. That way back does not survive a reload: after one, rejecting piece by piece may not restore everything (a moved bookmark can lose its pair)."
     });
   }
   if (!proof.passed)
