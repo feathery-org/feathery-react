@@ -21,6 +21,7 @@ import {
   LiveEditor
 } from '../../../utils/documentEditorPrimitives';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
+import { registerCardResolver } from '../../../robin/document/mounts';
 
 DocumentEditor.Inject(
   Editor,
@@ -267,6 +268,77 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('2 changes')).toBeInTheDocument();
     expect(screen.getByText('1 change')).toBeInTheDocument();
     expect(screen.getByText('3 pending')).toBeInTheDocument();
+  });
+
+  it("shows the engine's title, and the full intent only when the card is expanded", () => {
+    const engineTag = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'turn-4',
+      group: 'robin',
+      title: 'Added a row (removes a paragraph)',
+      intent: 'Add a motor line and drop the old note.'
+    });
+    const editor = makeEditor([makeRevision({ customData: engineTag })]);
+    render(<TrackedChangeGroups editor={editor} />);
+    expect(
+      screen.getByText('Added a row (removes a paragraph)')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Add a motor line and drop the old note.')
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Expand Added a row (removes a paragraph)'
+      })
+    );
+    expect(
+      screen.getByText('Add a motor line and drop the old note.')
+    ).toBeInTheDocument();
+  });
+
+  it('a card the engine owns resolves through the engine, never natively, and leaves the rail', () => {
+    const engineTag = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'turn-5',
+      group: 'robin',
+      title: 'Moved a table'
+    });
+    const revisions = [
+      makeRevision({ customData: engineTag }),
+      makeRevision({ customData: engineTag, revisionType: 'Deletion' })
+    ];
+    const editor = makeEditor(revisions);
+    const resolve = jest.fn((changeSetId: string) => {
+      expect(changeSetId).toBe('turn-5');
+      revisions.splice(0, revisions.length);
+      return true;
+    });
+    const off = registerCardResolver(editor, {
+      owns: (id) => id === 'turn-5',
+      resolve
+    });
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    expect(resolve).toHaveBeenCalledWith('turn-5', false);
+    for (const r of [makeRevision()]) expect(r.reject).not.toHaveBeenCalled();
+    expect(container).toBeEmptyDOMElement();
+    off();
+  });
+
+  it('a card the engine does not own resolves natively as before', () => {
+    const deletion = makeRevision({ revisionType: 'Deletion' });
+    const revisions = [deletion];
+    deletion.accept.mockImplementation(() => revisions.splice(0, 1));
+    const editor = makeEditor(revisions);
+    const resolve = jest.fn(() => true);
+    const off = registerCardResolver(editor, { owns: () => false, resolve });
+    render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    expect(resolve).not.toHaveBeenCalled();
+    expect(deletion.accept).toHaveBeenCalledTimes(1);
+    off();
   });
 
   it('renders one card per message, including dependent table messages', () => {

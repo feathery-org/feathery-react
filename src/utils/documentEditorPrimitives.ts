@@ -343,6 +343,9 @@ interface PersistedBookmarkClamp {
 interface RevisionGroupTag {
   changeSetId: string;
   group: string;
+  /** The card title the document engine composed, and the write's intent. */
+  title?: string;
+  intent?: string;
   appearanceRestores?: AppearanceRestore[];
   paragraphStyles?: ParagraphStyleRestore[];
   bookmarkClamps?: PersistedBookmarkClamp[];
@@ -754,6 +757,12 @@ export function parseRevisionGroupTag(
       return {
         changeSetId: parsed.changeSetId,
         group: parsed.group,
+        ...(typeof parsed.title === 'string' && parsed.title
+          ? { title: parsed.title }
+          : {}),
+        ...(typeof parsed.intent === 'string' && parsed.intent
+          ? { intent: parsed.intent }
+          : {}),
         ...(appearanceRestores ? { appearanceRestores } : {}),
         ...(paragraphStyles ? { paragraphStyles } : {}),
         ...(bookmarkClamps ? { bookmarkClamps } : {}),
@@ -2343,6 +2352,8 @@ const revisionParagraph = (revision: LiveRevision): unknown => {
 interface RevisionGroupView {
   changeSetId: string;
   group: string;
+  title?: string;
+  intent?: string;
   untagged?: boolean;
   derivedChanges?: DerivedValueChange[];
   items: RevisionGroupItem[];
@@ -2450,6 +2461,8 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
         ? {
             changeSetId: tag.changeSetId,
             group: tag.group,
+            ...(tag.title ? { title: tag.title } : {}),
+            ...(tag.intent ? { intent: tag.intent } : {}),
             items: []
           }
         : { changeSetId: '', group: author, untagged: true, items: [] };

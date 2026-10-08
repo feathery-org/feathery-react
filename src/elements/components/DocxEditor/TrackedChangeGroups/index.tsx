@@ -13,6 +13,7 @@ import {
 } from '../../../../utils/documentEditorPrimitives';
 import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
 import { featheryWindow } from '../../../../utils/browser';
+import { cardResolverFor } from '../../../../robin/document/mounts';
 import { isOpeningDocument, setActiveInlineRevisions } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
@@ -228,8 +229,14 @@ function TrackedChangeGroups({
         key: groupKeyOf(view.changeSetId, view.group),
         changeSetId: view.changeSetId,
         group: view.group,
-        // A human view's "group" IS the author name; keep it verbatim.
-        title: view.untagged ? view.group : humanizeGroupId(view.group),
+        // A human view's "group" IS the author name; keep it verbatim. An engine card carries
+        // its own title in the tag.
+        title: view.untagged
+          ? view.group
+          : view.title ?? humanizeGroupId(view.group),
+        ...(view.intent ? { intent: view.intent } : {}),
+        engineOwned:
+          !view.untagged && !!cardResolverFor(editor)?.owns(view.changeSetId),
         untagged: view.untagged,
         // Shown once in the group header instead of on every chip. Untagged
         // groups already show it as the title, so leave theirs unset.
@@ -433,12 +440,29 @@ function TrackedChangeGroups({
     else editor?.focusIn?.();
   };
 
+  // A card the document engine owns (structural, or one the editor's own accept or reject cannot
+  // settle) is resolved by the engine as a whole; every other card natively, as before.
   const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
-    const outcome = suppressingSelectionEcho(() =>
-      resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept)
+    const resolver = cardResolverFor(editor);
+    const owned = groupViews.filter(
+      (g) => !g.untagged && resolver?.owns(g.changeSetId)
     );
+    const native = groupViews.filter((g) => !owned.includes(g));
+    let unresolvedOwned = 0;
+    for (const g of owned)
+      if (
+        !suppressingSelectionEcho(() =>
+          resolver?.resolve(g.changeSetId, isAccept)
+        )
+      )
+        unresolvedOwned += g.chips.length;
+    const outcome = native.length
+      ? suppressingSelectionEcho(() =>
+          resolveLiveRevisionGroupsAsOneUndo(editor, native, isAccept)
+        )
+      : null;
     reportStall(
-      outcome?.unresolved?.length ?? 0,
+      (outcome?.unresolved?.length ?? 0) + unresolvedOwned,
       outcome?.length ?? 0,
       isAccept
     );
@@ -579,7 +603,10 @@ function TrackedChangeGroups({
     if (!focused) return;
     event.preventDefault();
     event.stopPropagation();
-    resolveChips([focused], key === 'a');
+    // an engine card has no per-edit resolution: A or R settles the card
+    const owner = groups.find((g) => g.chips.includes(focused));
+    if (owner?.engineOwned) resolveGroups([owner], key === 'a');
+    else resolveChips([focused], key === 'a');
   };
 
   if (!groups.length) return null;

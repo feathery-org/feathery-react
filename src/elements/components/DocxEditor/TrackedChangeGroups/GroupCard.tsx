@@ -118,6 +118,7 @@ export default function GroupCard({
             <button
               type='button'
               aria-label={`Go to ${group.title}`}
+              title={group.title}
               onClick={onNavigateFirst}
               css={{
                 flex: 1,
@@ -191,6 +192,20 @@ export default function GroupCard({
             padding: '0 12px 10px'
           }}
         >
+          {group.intent && (
+            <div
+              css={{
+                padding: '0 2px 8px',
+                paddingLeft: TITLE_INDENT,
+                fontSize: 12,
+                lineHeight: 1.45,
+                color: INK_2,
+                whiteSpace: 'pre-wrap'
+              }}
+            >
+              {group.intent}
+            </div>
+          )}
           {group.chips.map((chip, index) => (
             <ChangeChip
               key={index}
@@ -201,7 +216,11 @@ export default function GroupCard({
               }
               rowRef={chipRef(chip)}
               onFocus={() => onFocusChip(chip)}
-              onResolve={(isAccept) => onResolveChips([chip], isAccept)}
+              onResolve={
+                group.engineOwned
+                  ? undefined
+                  : (isAccept) => onResolveChips([chip], isAccept)
+              }
             />
           ))}
           {calculated.length > 0 && (
