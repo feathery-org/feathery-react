@@ -88,6 +88,12 @@ function removedBy(node: NfNode, kind: string): boolean {
     );
     return tables.length > 0 && tables.every((t) => removedBy(t, kind));
   }
+  // a cell or a section whose every block goes goes with them (the editor's own reject removes an
+  // inserted column's cells and an inserted section; WP1, measured in the headless lane)
+  if (node.kind === KIND.cell || node.kind === KIND.section) {
+    const blocks = arr<NfNode>(node.blocks);
+    return blocks.length > 0 && blocks.every((b) => removedBy(b, kind));
+  }
   return false;
 }
 

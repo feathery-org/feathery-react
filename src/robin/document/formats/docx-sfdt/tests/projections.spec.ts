@@ -17,6 +17,7 @@ import {
   expectedRejection,
   reject
 } from '../projections';
+import { markSubtree } from '../reconcile';
 
 const native = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4b.sfdt.json'), 'utf8');
 const fresh = () => toNormalForm(native).nf;
@@ -68,6 +69,24 @@ describe('accept and reject projections', () => {
     for (const r of table.rows as NfNode[]) r.pending = del();
     expect(all(accept(nf)).some((n) => n.id === table.id)).toBe(false);
     expect(all(reject(nf)).some((n) => n.id === table.id)).toBe(true);
+  });
+
+  it('a cell or section whose every block is inserted goes on reject; an untouched one stays', () => {
+    const nf = fresh();
+    const table = all(nf).find((n) => n.kind === 'table') as NfNode;
+    const cell = (table.rows as NfNode[])[0].cells as NfNode[];
+    const insertAll = (n: NfNode) => (n.blocks as NfNode[]).forEach((b) => markSubtree(b, ins()));
+    insertAll(cell[0]);
+    expect(all(reject(nf)).some((n) => n.id === cell[0].id)).toBe(false);
+    expect(all(accept(nf)).some((n) => n.id === cell[0].id)).toBe(true);
+    const section = (nf.root.sections as NfNode[]).find((x) => (x.blocks as NfNode[]).every((b) => b.kind === 'paragraph')) as NfNode;
+    const kept = fresh();
+    expect(section).toBeDefined();
+    insertAll(section);
+    expect(all(reject(nf)).some((n) => n.id === section.id)).toBe(false);
+    // the untouched cell and section stay
+    expect(all(reject(kept)).some((n) => n.id === cell[0].id)).toBe(true);
+    expect(all(reject(kept)).some((n) => n.id === section.id)).toBe(true);
   });
 
   it('reads mixed revisions on one anchor: removed only when every one is of the kind applied', () => {
