@@ -50,23 +50,44 @@ function pathOf(
   return out;
 }
 
+/**
+ * A fill's key: the colour upper-cased, or `NONE` for no fill. The editor spells no fill two ways,
+ * an absent colour and the literal `empty`, and they are the same fill.
+ */
+function fillKey(shading: unknown): string {
+  const raw =
+    isObject(shading) && typeof shading.backgroundColor === 'string'
+      ? shading.backgroundColor.trim()
+      : '';
+  return !raw || raw.toLowerCase() === 'empty' ? 'NONE' : raw.toUpperCase();
+}
+
+/**
+ * Give a cell the fill of its band. The shading object is copied whole from a cell of the same
+ * table that already has that fill, so the cell carries exactly what the editor writes for it
+ * (colour spelling, texture, foreground); only without an exemplar is the colour set alone.
+ */
 function setShading(
   cell: NfNode,
-  colour: string | null,
+  want: string | null,
+  exemplars: Map<string, unknown>,
   formats: FormatTable
 ): boolean {
   const ref = typeof cell.style === 'string' ? cell.style : undefined;
   const entry = { ...(ref ? formats.get(ref) ?? {} : {}) };
-  const shading = isObject(entry.shading) ? { ...entry.shading } : {};
-  const now =
-    typeof shading.backgroundColor === 'string'
-      ? shading.backgroundColor.toUpperCase()
-      : null;
-  if (now === (colour ? colour.toUpperCase() : null)) return false;
-  if (colour) shading.backgroundColor = colour;
-  else delete shading.backgroundColor;
-  if (Object.keys(shading).length) entry.shading = shading;
-  else delete entry.shading;
+  const key = fillKey({ backgroundColor: want ?? '' });
+  if (fillKey(entry.shading) === key) return false;
+  const exemplar = exemplars.get(key);
+  if (exemplars.has(key)) {
+    if (exemplar === undefined) delete entry.shading;
+    else entry.shading = JSON.parse(JSON.stringify(exemplar));
+  } else {
+    const shading = isObject(entry.shading) ? { ...entry.shading } : {};
+    if (want) shading.backgroundColor = want;
+    else delete shading.backgroundColor;
+    if (Object.keys(shading).length) entry.shading = shading;
+    else delete entry.shading;
+  }
   cell.style = formats.intern(entry);
   return true;
 }
@@ -131,6 +152,17 @@ export const restripeFinalizer: Finalizer = {
       if (!banding) continue;
       const block = nativeAt(afterNative, pathOf(working, table.id));
       if (!block) continue;
+      // each fill as this table writes it, from a cell that has it
+      const exemplars = new Map<string, unknown>();
+      for (const r of arr<NfNode>(old.rows))
+        for (const c of arr<NfNode>(r.cells)) {
+          const shading =
+            typeof c.style === 'string'
+              ? before.nf.formats[c.style]?.shading
+              : undefined;
+          const colour = fillKey(shading);
+          if (!exemplars.has(colour)) exemplars.set(colour, shading);
+        }
       const roles = deriveTableStructure({
         tableBlock: block,
         headerRows: banding.headerRows,
@@ -143,7 +175,7 @@ export const restripeFinalizer: Finalizer = {
         const want = bandedShadingForRow(banding, i);
         if (want === undefined) return;
         for (const cell of arr<NfNode>(row.cells))
-          if (setShading(cell, want, formats)) ids.push(cell.id);
+          if (setShading(cell, want, exemplars, formats)) ids.push(cell.id);
       });
     }
     return {
