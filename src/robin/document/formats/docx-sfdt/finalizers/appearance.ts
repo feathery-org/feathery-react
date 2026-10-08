@@ -8,7 +8,7 @@
 import type { Finalizer, FormatTable } from '../../../pack';
 import type { NfNode } from '../../../tree';
 import { KIND } from '../adapter/keys';
-import { computeBindingState } from '../features/binding';
+import { bindingState, computeBindingState } from '../features/binding';
 import {
   bandedShadingForRow,
   collectTableAppearance,
@@ -95,18 +95,30 @@ function setShading(
 export const restripeFinalizer: Finalizer = {
   name: 'restripe',
   run(after, { before, formats }) {
-    const beforeNative = computeBindingState(before.nf).native;
-    const afterNative = computeBindingState(after).native;
     const ids: string[] = [];
+    const rowIds = (t: NfNode) =>
+      arr<NfNode>(t.rows)
+        .map((r) => r.id)
+        .join(',');
+    // only tables whose rows were added, removed or reordered restripe
     const tables: NfNode[] = [];
     const rec = (n: unknown) => {
       if (Array.isArray(n)) return n.forEach(rec);
       if (!isObject(n)) return;
-      if (n.kind === KIND.table) tables.push(n as NfNode);
+      if (n.kind === KIND.table) {
+        const old = before.get(n.id as string);
+        if (old && rowIds(old) !== rowIds(n as NfNode))
+          tables.push(n as NfNode);
+      }
       for (const [k, v] of Object.entries(n))
         if (k !== 'binding' && k !== 'pending') rec(v);
     };
     rec(after.root);
+    if (!tables.length) return { ids, facts: [] };
+    // the document before is a settled view, its binding state cached; the working copy is read
+    // once, before any cell is restriped
+    const beforeNative = bindingState(before.nf).native;
+    const afterNative = computeBindingState(after).native;
     // positions in the working document, for the native block of each table
     const index = new Map<
       string,
@@ -136,15 +148,7 @@ export const restripeFinalizer: Finalizer = {
     walk(after.root, null, null, 0);
     const working = { placement: (id: string) => index.get(id) };
     for (const table of tables) {
-      const old = before.get(table.id);
-      if (!old) continue;
-      const rowsNow = arr<NfNode>(table.rows)
-        .map((r) => r.id)
-        .join(',');
-      const rowsWas = arr<NfNode>(old.rows)
-        .map((r) => r.id)
-        .join(',');
-      if (rowsNow === rowsWas) continue;
+      const old = before.get(table.id) as NfNode;
       const appearance = collectTableAppearance(
         nativeAt(beforeNative, pathOf(before, old.id))
       );

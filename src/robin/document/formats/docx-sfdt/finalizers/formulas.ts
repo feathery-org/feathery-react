@@ -8,7 +8,7 @@
 import type { Finalizer } from '../../../pack';
 import type { NfNode } from '../../../tree';
 import { KIND } from '../adapter/keys';
-import { computeBindingState } from '../features/binding';
+import { bindingState, computeBindingState } from '../features/binding';
 import { arr } from '../util';
 
 function setControlText(control: NfNode, text: string): string[] {
@@ -40,7 +40,8 @@ export const formulasFinalizer: Finalizer = {
   run(after, { before }) {
     const state = computeBindingState(
       after,
-      computeBindingState(before.nf).result.values
+      // the document before is a settled view: its state is cached
+      bindingState(before.nf).result.values
     );
     const ids = new Set<string>();
     let recomputed = 0;
