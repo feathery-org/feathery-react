@@ -11,6 +11,7 @@ import {
 import { setFormInternalState } from '../../../utils/internalState';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
+import { liveDocumentAccessor } from '../../../robin/document/mounts';
 import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors
@@ -25,7 +26,7 @@ jest.mock('../../../utils/documentEditorPrimitives', () => ({
 // only after openAsync resolves — and again on every openNonce reload. The mock
 // reflects that by exposing the document's revisions only once it has opened, so
 // a rebind at create time observes an empty document and is detectably wrong.
-const OPEN_STATE = { opened: false };
+const OPEN_STATE: { opened: boolean; native?: string } = { opened: false };
 
 // Exposes the terminal handlers as buttons so the container's outcome routing
 // can be driven the way the real toolbar drives it.
@@ -49,6 +50,11 @@ jest.mock('./index', () => {
     const editor = React.useMemo(
       () => ({
         sourceUrl: source?.url,
+        // The opened document's bytes, when a test gives it some; Robin's session reads them.
+        serialize: () => {
+          if (!OPEN_STATE.native) throw new Error('no document bytes');
+          return OPEN_STATE.native;
+        },
         // Stands in for the persisted revisions a saved file carries: absent
         // until the source document has actually been opened.
         get revisions() {
@@ -780,5 +786,148 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const trigger = runDocumentReviewLogic.mock.calls[0][0];
     expect(trigger.action).toBe('sign');
     expect(trigger.files).toEqual(['https://x/signable.pdf']);
+  });
+});
+
+describe("DocumentEditorContainer: Robin's document session", () => {
+  const native = JSON.stringify({
+    sections: [{ blocks: [{ inlines: [{ text: 'Proposal' }] }] }]
+  });
+  beforeEach(() => {
+    _clearDocxEditors();
+    OPEN_STATE.native = native;
+    initState.formSchemas = {
+      'form-key': schemaFor(['document-container-a', 'document-container-b'])
+    };
+    (featheryWindow() as any)[PENDING_DRAFTS_KEY] = {
+      'document-container-a': draftFor('document-container-a'),
+      'document-container-b': draftFor('document-container-b')
+    };
+  });
+  afterEach(() => {
+    _clearDocxEditors();
+    delete OPEN_STATE.native;
+    initState.formSchemas = {};
+    delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
+  });
+
+  const mount = (props: Record<string, unknown> = {}) =>
+    render(
+      <DocumentEditorContainer
+        containerId='document-container-a'
+        formId='form-robin'
+        stepId='step-1'
+        assistantEnabled
+        {...props}
+      />
+    );
+
+  it('mounts a session for the opened document under the form instance, and removes it on unmount', async () => {
+    const view = mount();
+    await waitFor(() =>
+      expect(liveDocumentAccessor('form-robin').descriptor()).toEqual(
+        expect.objectContaining({
+          protocolVersion: 1,
+          format: 'docx-sfdt',
+          readOnly: false,
+          target: { type: 'envelope', id: 'envelope-document-container-a' }
+        })
+      )
+    );
+    expect(liveDocumentAccessor('other-form').descriptor()).toBeNull();
+    view.unmount();
+    expect(liveDocumentAccessor('form-robin').descriptor()).toBeNull();
+  });
+
+  it('dispatches an outline through the accessor to the mounted editor', async () => {
+    const view = mount();
+    await waitFor(() =>
+      expect(liveDocumentAccessor('form-robin').descriptor()).not.toBeNull()
+    );
+    const d = liveDocumentAccessor('form-robin').descriptor();
+    if (!d) throw new Error('no descriptor');
+    const out = liveDocumentAccessor('form-robin').dispatch({
+      protocolVersion: 1,
+      turnId: 'turn-1',
+      editorId: d.editorId,
+      target: d.target,
+      verb: 'outline',
+      input: {}
+    });
+    expect(out.status).toBe('ok');
+    if (out.status === 'ok') {
+      expect(out.response.result.ok).toBe(true);
+      expect(out.response.outlineHash).toBe(d.outlineHash);
+    }
+    view.unmount();
+  });
+
+  it('a regenerate opens a new session with a new editor id and the new envelope', async () => {
+    const view = mount();
+    await waitFor(() =>
+      expect(liveDocumentAccessor('form-robin').descriptor()).not.toBeNull()
+    );
+    const first = liveDocumentAccessor('form-robin').descriptor();
+    if (!first) throw new Error('no descriptor');
+    await act(async () => {
+      featheryWindow().dispatchEvent(
+        new CustomEvent('feathery-docx-editor-refresh', {
+          detail: {
+            containerId: 'document-container-a',
+            documents: ['document-document-container-a'],
+            envelopes: [
+              {
+                id: 'envelope-regenerated',
+                document: 'document-document-container-a',
+                file: 'https://example.com/regenerated.docx',
+                type: 'docx',
+                signed: false
+              }
+            ]
+          }
+        })
+      );
+    });
+    await waitFor(() =>
+      expect(liveDocumentAccessor('form-robin').descriptor()?.target).toEqual({
+        type: 'envelope',
+        id: 'envelope-regenerated'
+      })
+    );
+    expect(liveDocumentAccessor('form-robin').descriptor()?.editorId).not.toBe(
+      first.editorId
+    );
+    view.unmount();
+  });
+
+  it('describes the editor in the first container when a step mounts two', async () => {
+    const b = mount({ containerId: 'document-container-b' });
+    const a = mount();
+    await waitFor(() =>
+      expect(liveDocumentAccessor('form-robin').descriptor()?.target.id).toBe(
+        'envelope-document-container-a'
+      )
+    );
+    a.unmount();
+    await waitFor(() =>
+      expect(liveDocumentAccessor('form-robin').descriptor()?.target.id).toBe(
+        'envelope-document-container-b'
+      )
+    );
+    b.unmount();
+  });
+
+  it('creates no session where Robin is off, or when the editor cannot be read', async () => {
+    const off = mount({ assistantEnabled: false });
+    await waitFor(() => expect(getDocxEditor('form-robin')).toBeDefined());
+    expect(liveDocumentAccessor('form-robin').descriptor()).toBeNull();
+    off.unmount();
+    delete OPEN_STATE.native;
+    const debug = jest.spyOn(console, 'debug').mockImplementation(() => {});
+    const unreadable = mount();
+    await waitFor(() => expect(debug).toHaveBeenCalled());
+    expect(liveDocumentAccessor('form-robin').descriptor()).toBeNull();
+    unreadable.unmount();
+    debug.mockRestore();
   });
 });

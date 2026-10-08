@@ -55,6 +55,11 @@ export interface SessionOptions {
   editorId?: string;
   clock?: Clock;
   history?: EngineHistory;
+  /**
+   * Called when an editing turn starts (the turn's first write) and when the form finishes it,
+   * with null. The host uses it to tell Robin's selection moves from the user's while a turn runs.
+   */
+  onTurnChange?: (turnId: string | null) => void;
 }
 
 export type DispatchOutcome =
@@ -88,12 +93,17 @@ export class DocumentSession {
 
   private current: DocumentState | null = null;
 
+  private turn: string | null = null;
+
+  private readonly onTurnChange?: (turnId: string | null) => void;
+
   constructor(options: SessionOptions) {
     this.pack = options.pack;
     this.host = options.host;
     this.target = { ...options.target };
     this.editorId = options.editorId ?? newEditorId();
     this.clock = options.clock ?? defaultClock;
+    this.onTurnChange = options.onTurnChange;
     this.history =
       options.history ??
       new EngineHistory(ENGINE_HISTORY_LIMIT, (a, b) =>
@@ -174,6 +184,7 @@ export class DocumentSession {
               'The request named a different editor or target than the one mounted.'
           }
         };
+      if (payload.verb === 'write') this.setTurn(payload.turnId);
       const result = this.execute(payload.verb, payload.input, payload.turnId);
       return {
         status: 'ok',
@@ -373,6 +384,26 @@ export class DocumentSession {
     };
     this.journal.record(turnId, write, result);
     return result;
+  }
+
+  /** The editing turn in flight: set by its first write, cleared by `finishTurn`. */
+  get activeTurn(): string | null {
+    return this.turn;
+  }
+
+  /** The form's turn settled: Robin is no longer editing this document. */
+  finishTurn(): void {
+    this.setTurn(null);
+  }
+
+  private setTurn(turnId: string | null): void {
+    if (this.turn === turnId) return;
+    this.turn = turnId;
+    try {
+      this.onTurnChange?.(turnId);
+    } catch {
+      // A host listener must never change what the verb does.
+    }
   }
 
   /** Ctrl+Z: the editor when it has an entry, else the engine (decision D4). */
