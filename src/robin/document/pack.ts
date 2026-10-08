@@ -19,6 +19,35 @@
  *   projections  accept and reject views of a document, and the enumerated normalization list
  *   reconcile, seams   how a verified change set is written into the live editor
  *   vocabulary   words that name this format or its SDK; the core must never contain them
+ *   optional     cardNouns and featureKeys (card titles), resolveGroup and ownsResolution (cards
+ *                the engine resolves itself), othersOf (mixed anchors in the proof),
+ *                undoNormalizations, expectedRejection, conservedResidue
+ *
+ * How to add a format
+ *
+ * 1. Make `formats/<name>/` with an `index.ts` exporting the `Pack`, and a `vocabulary.json`: a
+ *    non-empty array of the words that name the format and its SDK. The format-names test
+ *    (`formatNames.spec.ts`) forbids the folder name, its dash-separated parts and those words
+ *    anywhere in the core, in code, strings, comments and paths; it fails on a folder without the
+ *    file. Import only from the core and from the editor modules the format builds on.
+ * 2. Declare every slot above. The adapter is the foundation: native bytes to a normal form and
+ *    back byte-exact, engine-owned values kept in the residue (identity-free, see `Residue`).
+ * 3. Give the pack a fixture corpus and pass `conformanceProblems` over it: every required slot,
+ *    a byte-exact round trip, unique node ids, every format reference resolving, and accept and
+ *    reject leaving a document with no pending changes as it is. `registerPack` refuses a pack
+ *    with a missing slot.
+ * 4. Test each invariant with a true positive and a true negative, each with a non-empty `cards`;
+ *    measure each normalization against the real editor and test it both ways; reproduce the
+ *    pack's commit paths in a headless editor before trusting them.
+ *
+ * What the core guarantees a pack: inputs validated against the envelope contract before the
+ * pack sees them; ids minted and re-anchored across user edits; read-before-write by content
+ * hash; declared scope checked against a diff of the two documents; finalizers and invariants run
+ * on a virtual copy, never the live document; one write per message; after every commit the proof
+ * (accept equals intended, reject equals what rejecting should restore, residue conserved, other
+ * changes untouched), a rollback that undoes only the commit's own steps, and the engine's undo
+ * history beside the editor's; card titles from the diff; and the bridge, descriptor and form
+ * accessor (`mounts.ts`) without the pack naming any of them.
  */
 import type {
   Fact,
