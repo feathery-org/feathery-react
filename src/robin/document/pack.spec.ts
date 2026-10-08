@@ -96,4 +96,18 @@ describe('pack interface', () => {
     ).toThrow(/incomplete: outline.detail, outline.defaultDepth/);
     expect(getPack('other')).toBeUndefined();
   });
+
+  it('every pack invariant names at least one card, and its refusals always carry one in read', () => {
+    expect(
+      packProblems(
+        makeToyPack({
+          invariants: [
+            { name: 'x', cards: [] as unknown as [string], check: () => [] }
+          ]
+        })
+      )
+    ).toEqual(['invariants.x.cards']);
+    for (const invariant of makeToyPack().invariants)
+      expect(invariant.cards.length).toBeGreaterThan(0);
+  });
 });

@@ -684,8 +684,8 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
       }
     },
     invariants: [
-      { name: 'orphaned-dependents', check: orphanedDependents },
-      { name: 'box-name-unique', check: uniqueBoxNames }
+      { name: 'orphaned-dependents', cards: ['formula'], check: orphanedDependents },
+      { name: 'box-name-unique', cards: ['box'], check: uniqueBoxNames }
     ],
     finalizers: [
       {

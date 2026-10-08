@@ -2,7 +2,7 @@ import { baseOf, shapeOf } from '../tree';
 import { makeView } from '../view';
 import { stateOf } from '../tests/fixtures';
 import { box, para, toyNative } from '../tests/toyPack';
-import { CheckRunner, problem } from './index';
+import { CheckRunner, problem, runInvariants } from './index';
 import { checkBases, conflictMessage, referrersOf } from './base';
 import {
   formatPropertyProblems,
@@ -47,6 +47,31 @@ describe('check runner', () => {
       retry: 'modified_input',
       read: []
     });
+  });
+});
+
+describe('pack invariants', () => {
+  it("a refusal an invariant returns without read cards gets the invariant's cards", () => {
+    const s = stateOf(doc);
+    const runner = new CheckRunner();
+    const pack = {
+      ...s.pack,
+      invariants: [
+        {
+          name: 'quiet',
+          cards: ['quiet-card'] as [string],
+          check: () => [problem('quiet', 'broke')]
+        }
+      ]
+    };
+    runInvariants(runner, pack, {
+      before: s.view,
+      after: s.view,
+      changed: new Set(),
+      removed: new Set(),
+      created: new Set()
+    });
+    expect(runner.problems.map((p) => p.read)).toEqual([['quiet-card']]);
   });
 });
 

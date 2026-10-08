@@ -41,7 +41,11 @@ export function runInvariants(
   ctx: InvariantContext
 ): void {
   for (const invariant of pack.invariants)
-    runner.run(invariant.name, () => invariant.check(ctx));
+    runner.run(invariant.name, () =>
+      invariant
+        .check(ctx)
+        .map((p) => (p.read.length ? p : { ...p, read: [...invariant.cards] }))
+    );
 }
 
 /** A refusal problem in the core's shape. */

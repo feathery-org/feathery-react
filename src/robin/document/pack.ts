@@ -189,6 +189,11 @@ export interface InvariantContext {
 export interface Invariant {
   /** The invariant name, equal to the knowledge card that teaches it (contract 7.1). */
   name: string;
+  /**
+   * The knowledge cards a model reads before retrying after this invariant refuses; at least one.
+   * A refusal the invariant returns without `read` carries these.
+   */
+  cards: readonly [string, ...string[]];
   /** Problems found; empty when the invariant holds. */
   check(ctx: InvariantContext): RefusalProblem[];
 }
@@ -367,6 +372,10 @@ export function packProblems(pack: Pack): string[] {
   if (!Array.isArray(pack?.properties?.formatSchema))
     problems.push('properties.formatSchema[]');
   if (!Array.isArray(pack?.invariants)) problems.push('invariants[]');
+  else
+    for (const invariant of pack.invariants)
+      if (!Array.isArray(invariant?.cards) || !invariant.cards.length)
+        problems.push(`invariants.${invariant?.name}.cards`);
   if (!Array.isArray(pack?.finalizers)) problems.push('finalizers[]');
   if (!Array.isArray(pack?.projections?.normalizations))
     problems.push('projections.normalizations[]');
