@@ -113,8 +113,10 @@ export function toNormalForm(native: string): {
         if (key === 'rowFormat')
           pending = pendingOf(value.revisionIds) ?? pending;
         if (!Object.keys(visible).length) continue; // `keys` remembers it was there
+        // a paragraph's own character format is its mark's: always `markStyle`, so `style` on a
+        // paragraph always means its paragraph format
         const nfKey =
-          key === 'characterFormat' && structural
+          key === 'characterFormat' && (structural || kind === KIND.paragraph)
             ? 'markStyle'
             : NF_FORMAT_KEY[key];
         record.fmt[nfKey] = key;
