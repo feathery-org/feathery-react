@@ -95,14 +95,39 @@ export class RevisionMinter {
 
   private readonly date: string;
 
+  private readonly existingById = new Map<string, string>();
+
   constructor(existing: NativeRevision[], date: string) {
     this.existing = existing;
     this.date = date;
+    // the document's own revisions are indexed first, so a change joined on a new anchor (Robin
+    // deleting text the user inserted) keeps the user's revision instead of splitting it
+    for (const rev of existing) {
+      const id = String(rev.revisionId ?? '');
+      if (!id) continue;
+      const key = RevisionMinter.keyOf({
+        kind: String(rev.revisionType),
+        author: (rev.author as string | null) ?? null,
+        group: groupOf(rev.customData)
+      });
+      this.existingById.set(id, key);
+      if (!this.byKey.has(key)) this.byKey.set(key, id);
+    }
   }
 
-  idFor(r: PendingRevision): string {
-    // an existing revision with the same identity is reused (an anchor kept as it was)
-    const key = JSON.stringify([r.kind, r.author, r.group ?? null]);
+  private static keyOf(r: PendingRevision): string {
+    return JSON.stringify([r.kind, r.author, r.group ?? null]);
+  }
+
+  /**
+   * The revision id for one revision of a re-authored anchor: the anchor's own earlier id with the
+   * same identity first (`prior`), then any revision of the document with that identity, then a new
+   * one, minted once per identity.
+   */
+  idFor(r: PendingRevision, prior: readonly unknown[] = []): string {
+    const key = RevisionMinter.keyOf(r);
+    for (const id of prior)
+      if (this.existingById.get(String(id)) === key) return String(id);
     const known = this.byKey.get(key);
     if (known) return known;
     const id = `rb${this.existing.length + this.minted.length}${Math.abs(

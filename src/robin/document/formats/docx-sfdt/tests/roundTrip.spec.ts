@@ -96,4 +96,26 @@ describe('pending changes both ways', () => {
     ]);
     expect(fromNormalForm(again.nf, again.residue)).toBe(out);
   });
+
+  it("joins a foreign change without splitting it: the user's revision keeps its id on every anchor", () => {
+    const native = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'Alpha ', revisionIds: ['u1'] }, { text: 'beta', revisionIds: ['u1'] }] }] }],
+      revisions: [{ author: 'User', date: '2026-10-01T00:00:00Z', revisionType: 'Insertion', revisionId: 'u1' }]
+    });
+    const { nf, residue } = toNormalForm(native);
+    const runs: Array<Record<string, unknown>> = [];
+    walk(nf.root, docxTree, ({ node }) => {
+      if (node.kind === 'run') runs.push(node);
+    });
+    expect(runs[1].pending).toEqual({ kind: 'Insertion', author: 'User' });
+    // Robin deletes the user's inserted word: the anchor now carries both revisions
+    runs[1].pending = { kind: 'Insertion', author: 'User', revisions: [{ kind: 'Insertion', author: 'User' }, { kind: 'Deletion', author: 'Robin', group: 'turn-9' }] };
+    const doc = JSON.parse(fromNormalForm(nf, residue));
+    const users = (doc.revisions as Array<Record<string, unknown>>).filter((r) => r.author === 'User');
+    expect(users.map((r) => r.revisionId)).toEqual(['u1']);
+    const inlines = doc.sections[0].blocks[0].inlines as Array<{ revisionIds?: string[] }>;
+    expect(inlines[0].revisionIds).toEqual(['u1']);
+    expect(inlines[1].revisionIds?.[0]).toBe('u1');
+    expect(inlines[1].revisionIds).toHaveLength(2);
+  });
 });

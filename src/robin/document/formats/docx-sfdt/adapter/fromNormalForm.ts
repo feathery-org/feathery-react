@@ -174,9 +174,16 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
   /** Revision ids for a node whose `pending` the engine (re)authored: its own and its mark's. */
   const revisionAnchors = (n: NfNode) => {
     const p = isObject(n.pending) ? n.pending : undefined;
+    const record = residue[n.id] as NodeRecord | undefined;
+    const priorNode = arr<unknown>(record?.hidden.revisionIds);
+    const priorMark = arr<unknown>(
+      (record?.hiddenIn.characterFormat ?? []).find(
+        (h) => h.k === 'revisionIds'
+      )?.v
+    );
     return {
-      node: revisionsIn(p).map((r) => minter.idFor(r)),
-      mark: revisionsIn(p?.mark).map((r) => minter.idFor(r))
+      node: revisionsIn(p).map((r) => minter.idFor(r, priorNode)),
+      mark: revisionsIn(p?.mark).map((r) => minter.idFor(r, priorMark))
     };
   };
 
