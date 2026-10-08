@@ -80,3 +80,16 @@ describe('engine-owned card resolution', () => {
     expect(ownsResolution(composeTracked(s.view, rowGone, 'turn-8').tracked, 'turn-8')).toBe(false);
   });
 });
+
+describe('asking whether the engine owns a card', () => {
+  it('never re-reads the editor (the rail asks from inside its change events)', () => {
+    let doc = flagship;
+    let reads = 0;
+    const host = { serialize: () => { reads += 1; return doc; }, open: (s: string) => { doc = s; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const session = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' }, editorId: 'ed' });
+    const before = reads;
+    doc = doc.replace('Commercial Combined', 'Commercial combined');
+    expect(session.ownsCard('turn-1')).toBe(false);
+    expect(reads).toBe(before);
+  });
+});

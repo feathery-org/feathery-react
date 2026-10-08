@@ -399,10 +399,11 @@ export class DocumentSession {
   ownsCard(changeSetId: string): boolean {
     if (!this.pack.projections.resolveGroup) return false;
     if (this.structural.has(changeSetId)) return true;
-    return !!this.pack.projections.ownsResolution?.(
-      this.state.view.nf,
-      changeSetId
-    );
+    // read from the last installed state, never by re-reading the editor: the rail asks this from
+    // inside the editor's change events, mid-commit, where a re-read would adopt a half-written
+    // document (and cost a full read per keystroke)
+    const nf = this.current?.view.nf;
+    return !!nf && !!this.pack.projections.ownsResolution?.(nf, changeSetId);
   }
 
   /**
