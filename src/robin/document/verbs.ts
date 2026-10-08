@@ -46,7 +46,12 @@ import {
   walk
 } from './tree';
 import { CheckRecord, CheckRunner, problem, runInvariants } from './verifier';
-import { bulkQuery, checkBases, referrersOf } from './verifier/base';
+import {
+  bulkQuery,
+  checkBases,
+  misplacedHashes,
+  referrersOf
+} from './verifier/base';
 import {
   formatPropertyProblems,
   newFormatProblems,
@@ -230,7 +235,7 @@ export function prepareWrite(
   const { pack, view, ids } = state;
   const runner = new CheckRunner();
   const warnings: Warning[] = [];
-  runner.record('envelope', true);
+  runner.run('envelope', () => misplacedHashes(view, pack, write));
 
   // Section 6.2: read-only keys on written nodes are stripped with a warning.
   const strippedKeys = new Set<string>();

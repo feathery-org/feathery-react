@@ -9,6 +9,7 @@
  */
 import type {
   Change,
+  RefusalProblem,
   ConflictResult,
   FindInput,
   WriteInput
@@ -17,6 +18,7 @@ import { isNodeId } from '../envelope';
 import type { DocumentView, Pack } from '../pack';
 import { baseOf, NfNode, shapeOf, withoutLists } from '../tree';
 import { emitNode, matchQuery, referencedFormats } from '../view';
+import { problem } from './index';
 
 export type Conflict = ConflictResult['conflict'];
 
@@ -142,4 +144,115 @@ export function conflictMessage(conflict: Conflict): string {
         : `format ${f.id} now has ${f.live} referrer(s), not ${f.referrers}`
     );
   return `${parts.join('; ')}.`;
+}
+
+/**
+ * A hash in the wrong field: a change that carries a node's `base` where its `shape` is asked for,
+ * or the reverse. It is the model's slip, not the user's edit, so it is an envelope refusal that
+ * names the right field rather than a conflict. Nodes whose two hashes coincide (no children) are
+ * never misplaced.
+ */
+export function misplacedHashes(
+  view: DocumentView,
+  pack: Pack,
+  write: WriteInput
+): RefusalProblem[] {
+  const problems: RefusalProblem[] = [];
+  const check = (
+    at: string,
+    id: string | undefined,
+    wanted: 'base' | 'shape',
+    carried: string | undefined,
+    role: string
+  ) => {
+    if (!id || !isNodeId(id) || carried === undefined) return;
+    const node = view.get(id);
+    if (!node) return;
+    const base = baseOf(node);
+    const shape = shapeOf(node, pack.tree);
+    if (base === shape) return;
+    const other = wanted === 'base' ? shape : base;
+    const right = wanted === 'base' ? base : shape;
+    if (carried !== other || carried === right) return;
+    problems.push(
+      problem(
+        'envelope',
+        `Nothing was applied: ${at} carries the ${
+          wanted === 'base' ? 'shape' : 'base'
+        } of ${id}; ${role}.`,
+        {
+          detail: [{ at, id, wanted }],
+          hint: `Copy \`${wanted}\` from the read of ${id} into ${at
+            .split('.')
+            .pop()}: a change that rewrites or removes a whole subtree carries its base; one that places, moves or sets on a node carries the shape (the parent's shape as container).`
+        }
+      )
+    );
+  };
+  const parentOf = (anchor: string) =>
+    isNodeId(anchor) ? view.placement(anchor)?.parent?.id : undefined;
+  write.changes.forEach((change, i) => {
+    const at = `changes[${i}]`;
+    switch (change.kind) {
+      case 'replace':
+      case 'delete':
+        check(
+          `${at}.base`,
+          change.id,
+          'base',
+          change.base,
+          `${change.kind} carries the base of the node it ${
+            change.kind === 'delete' ? 'removes' : 'rewrites'
+          }`
+        );
+        return;
+      case 'insert_before':
+      case 'insert_after':
+        check(
+          `${at}.container`,
+          parentOf(change.anchor),
+          'shape',
+          change.container,
+          "container is the shape of the node that owns the anchor's list"
+        );
+        return;
+      case 'move':
+        check(
+          `${at}.shape`,
+          change.id,
+          'shape',
+          change.shape,
+          'a move carries the shape of the node it moves'
+        );
+        check(
+          `${at}.container`,
+          parentOf(change.anchor),
+          'shape',
+          change.container,
+          "container is the shape of the node that owns the anchor's list"
+        );
+        return;
+      case 'set': {
+        const t = change.target;
+        if ('ids' in t)
+          for (const id of t.ids)
+            check(
+              `${at}.target.shape.${id}`,
+              id,
+              'shape',
+              t.shape[id],
+              'a set carries the shape of each node it sets on'
+            );
+        else if ('match' in t)
+          check(
+            `${at}.target.shape`,
+            t.id,
+            'shape',
+            t.shape,
+            'a set carries the shape of the node it sets on'
+          );
+      }
+    }
+  });
+  return problems;
 }

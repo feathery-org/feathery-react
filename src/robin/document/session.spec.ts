@@ -359,6 +359,34 @@ describe('document session: the four verbs end to end', () => {
     ]);
   });
 
+  it('a hash sent in the wrong field is an envelope refusal naming the right field, not a conflict', () => {
+    const { call } = mount();
+    const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2') as {
+      base: string;
+      shape: string;
+    };
+    expect(n2.base).not.toBe(n2.shape);
+    const result = call('write', {
+      intent: 'Add a Liability line.',
+      scope: { ids: [] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: 'n4',
+          container: n2.base,
+          node: { text: 'Liability', style: 'f2' }
+        }
+      ]
+    }) as {
+      ok: boolean;
+      refusal: { invariant: string; hint: string; destroyed: string };
+    };
+    expect(result.ok).toBe(false);
+    expect(result.refusal.invariant).toBe('envelope');
+    expect(result.refusal.destroyed).toContain('changes[0].container');
+    expect(result.refusal.hint).toContain('shape');
+  });
+
   it('one write per message: a resend replays, a different second write is refused', () => {
     const { call } = mount();
     const n1 = nodeOf(call('read', { ids: ['n1'] }), 'n1');
