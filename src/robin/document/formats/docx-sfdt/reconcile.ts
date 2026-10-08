@@ -23,7 +23,7 @@
 import type { Warning } from '../../envelope';
 import type { CommitPlan, DocumentView, PlanContext } from '../../pack';
 import { NfNode, NormalForm, canonicalJson, clone } from '../../tree';
-import { HEADER_FOOTER, KIND } from './adapter/keys';
+import { FORMAT_REF_KEYS, HEADER_FOOTER, KIND } from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
 import { fromNormalForm } from './adapter/fromNormalForm';
 import { ownText } from './outline';
@@ -91,6 +91,23 @@ const ownFields = (n: NfNode): string => {
 };
 
 /**
+ * A node's own fields with every format reference read as the entry it names, less `except`: a
+ * set on a shared format entry changes what its referrers look like without changing their ids.
+ */
+function ownContent(
+  formats: Record<string, unknown>,
+  n: NfNode,
+  except: string[] = []
+): string {
+  const copy: Obj = { ...n };
+  for (const k of except) delete copy[k];
+  for (const k of FORMAT_REF_KEYS)
+    if (typeof copy[k] === 'string')
+      copy[k] = { format: formats[copy[k] as string] ?? null };
+  return ownFields(copy as NfNode);
+}
+
+/**
  * The tracked document: `intended` with what it removed kept in place as Deletion and what it
  * added marked Insertion, all under change set `turnId`. Also reports whether any property change
  * lands untracked.
@@ -108,7 +125,11 @@ export function composeTracked(
   const removedCopies: NfNode[] = [];
 
   const merge = (node: NfNode, original: NfNode) => {
-    if (ownFields(node) !== ownFields(original)) untracked.push(node.id);
+    if (
+      ownContent(intended.formats, node) !==
+      ownContent(before.nf.formats, original)
+    )
+      untracked.push(node.id);
     for (const key of docxTree.childLists(node)) {
       const kids = listOf(node, key) ?? [];
       const was = listOf(original, key) ?? [];
@@ -246,9 +267,14 @@ function nativePlan(
         return null;
     }
     if (childIds(old) !== childIds(now)) return null;
-    const ownSame = ownFields(old) === ownFields(now);
+    const was = before.nf.formats;
+    const is = intended.nf.formats;
+    const ownSame = ownContent(was, old) === ownContent(is, now);
     if (old.kind === KIND.run) {
-      const styleChanged = old.style !== now.style;
+      // by what the format says, not its id: a set on a shared entry keeps every referrer's id
+      const styleChanged =
+        canonicalJson(charFormat(before, old.style)) !==
+        canonicalJson(charFormat(intended, now.style));
       const textChanged = old.text !== now.text;
       if (!textChanged && !styleChanged && ownSame) continue;
       const para = enclosingParagraph(intended, now.id);
@@ -270,13 +296,15 @@ function nativePlan(
           )
         });
       }
-      if (!ownSameExcept(old, now, ['style'])) return null;
+      if (ownContent(was, old, ['style']) !== ownContent(is, now, ['style']))
+        return null;
       continue;
     }
     if (
       old.kind === KIND.paragraph &&
-      old.markStyle !== now.markStyle &&
-      ownSameExcept(old, now, ['markStyle'])
+      canonicalJson(charFormat(before, old.markStyle)) !==
+        canonicalJson(charFormat(intended, now.markStyle)) &&
+      ownContent(was, old, ['markStyle']) === ownContent(is, now, ['markStyle'])
     ) {
       const hi = hierOf(before, old.id);
       if (!hi) return null;
@@ -328,15 +356,6 @@ function nativePlan(
   }
   if (text.length && format.length) return null; // the lab's rule: one native seam per change set
   return { text, format };
-}
-
-function ownSameExcept(a: NfNode, b: NfNode, keys: string[]): boolean {
-  const strip = (n: NfNode) => {
-    const c: Obj = { ...n };
-    for (const k of keys) delete c[k];
-    return ownFields(c as NfNode);
-  };
-  return strip(a) === strip(b);
 }
 
 function enclosingParagraph(view: DocumentView, id: string): NfNode | null {

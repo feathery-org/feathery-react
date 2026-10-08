@@ -6,10 +6,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WriteInput } from '../../../envelope';
 import { DocumentSession } from '../../../session';
-import { NfNode, NormalForm, shapeOf, walk } from '../../../tree';
+import { NfNode, NormalForm, baseOf, shapeOf, walk } from '../../../tree';
+import { makeView } from '../../../view';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
-import { composeTracked } from '../reconcile';
+import { composeTracked, hierOf, plan } from '../reconcile';
 import { docxTree } from '../tree';
 import { arr } from '../util';
 
@@ -75,5 +76,39 @@ describe('composeTracked', () => {
     const [deleted] = occurrences(tracked, control.id);
     expect(trackedAs(deleted)).toBe('Deletion');
     expect(bookmarks(deleted)).toBe(bookmarks(control));
+  });
+});
+
+describe('plan: a set on a shared format entry', () => {
+  it('lands on every referrer through the format seam (the first formatId target driven through plan)', () => {
+    // two body paragraphs whose runs share one character format
+    let doc = JSON.stringify({
+      sections: [
+        { blocks: [{ inlines: [{ text: 'Alpha', characterFormat: { bold: true } }] }, { inlines: [{ text: 'Beta', characterFormat: { bold: true } }] }] }
+      ]
+    });
+    const host = { serialize: () => doc, open: (x: string) => { doc = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+    const nodes = s.view.nodes();
+    const referrersOf = (id: string) => nodes.filter((n) => Object.values(n).includes(id));
+    const formatId = String(nodes.find((n) => n.kind === 'run')?.style);
+    const referrers = referrersOf(formatId);
+    const italic = s.view.nf.formats[formatId]?.italic !== true;
+    const entryBefore = JSON.stringify(s.view.nf.formats[formatId]);
+    const r = prepareWrite(s, {
+      intent: 'Make the runs of this format bold.',
+      scope: { ids: [], formats: [{ id: formatId, referrers: referrers.length }] },
+      changes: [{ kind: 'set', target: { formatId, base: baseOf(s.view.nf.formats[formatId]), referrers: referrers.length }, props: { italic } }]
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 900));
+    expect(r.intended.formats[formatId]).toEqual(expect.objectContaining({ italic }));
+    // the document before the write is not changed by it
+    expect(JSON.stringify(s.view.nf.formats[formatId])).toBe(entryBefore);
+    const p = plan({ turnId: 't', before: s.view, intended: makeView(r.intended, docxPack), beforeResidue: s.residue, intendedResidue: r.intendedResidue, beforeNative: doc });
+    expect(p.steps.map((x) => x.seam)).toEqual(['format']);
+    const ops = p.steps[0].payload as Array<{ props: Record<string, unknown> }>;
+    expect(ops).toHaveLength(referrers.length);
+    for (const op of ops) expect(op.props).toEqual(expect.objectContaining({ italic }));
+    expect(p.landed).toBe('immediate');
   });
 });
