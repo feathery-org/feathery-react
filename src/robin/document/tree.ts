@@ -163,7 +163,7 @@ export function indexTree(
 /** Ancestor ids of a placement, nearest first. */
 export function ancestorsOf(
   id: string,
-  index: Map<string, Placement>
+  index: { get(id: string): Placement | undefined }
 ): string[] {
   const out: string[] = [];
   let cur = index.get(id)?.parent ?? null;
