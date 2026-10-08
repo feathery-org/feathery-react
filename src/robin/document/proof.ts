@@ -14,6 +14,7 @@
  * ones that were needed are reported by name. A failed proof is rolled back until the editor's
  * bytes equal the bytes before the write.
  */
+import { READ_ONLY_NODE_KEYS } from './envelope';
 import { renameFormatRefs } from './ids';
 import type { EditorHost, Pack, Residue } from './pack';
 import {
@@ -38,6 +39,51 @@ export function comparable(pack: Pack, nf: NormalForm): unknown {
   );
   renameFormatRefs(root, pack.formatRefKeys, byContent);
   return contentOf(root, { keepPending: true });
+}
+
+const READ_ONLY_BUT_PENDING = new Set<string>(
+  READ_ONLY_NODE_KEYS.filter((k) => k !== 'pending')
+);
+
+/**
+ * `canonicalJson(comparable(pack, nf))` in one pass, without the two intermediate copies: the
+ * text the proof compares documents by.
+ */
+export function comparableText(pack: Pack, nf: NormalForm): string {
+  const byContent = new Map(
+    Object.entries(nf.formats).map(([id, entry]) => [
+      id,
+      `format:${hash64(canonicalJson(entry))}`
+    ])
+  );
+  const refKeys = new Set(pack.formatRefKeys);
+  const rec = (value: unknown): string => {
+    if (value === undefined) return 'null';
+    if (value === null || typeof value !== 'object')
+      return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map(rec).join(',')}]`;
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj)
+      .filter(
+        (k) =>
+          obj[k] !== undefined &&
+          k !== 'id' &&
+          k !== 'base' &&
+          !READ_ONLY_BUT_PENDING.has(k)
+      )
+      .sort();
+    return `{${keys
+      .map((k) => {
+        const child = obj[k];
+        const named =
+          refKeys.has(k) && typeof child === 'string' && byContent.has(child)
+            ? byContent.get(child)
+            : child;
+        return `${JSON.stringify(k)}:${rec(named)}`;
+      })
+      .join(',')}}`;
+  };
+  return rec(nf.root);
 }
 
 /** Up to `limit` paths where two JSON values differ, for refusal detail. */
@@ -75,15 +121,18 @@ interface Comparison {
   diff: string[];
 }
 
-/** Strict equality, then equality with the pack's normalizations; names the ones that mattered. */
+/**
+ * Strict equality, then equality with the pack's normalizations applied to both sides; names the
+ * ones that changed either side (a normalization returns its input when it changes nothing, so
+ * this costs no extra reads of the documents).
+ */
 function compareWithNormalizations(
   pack: Pack,
   live: NormalForm,
   intended: NormalForm
 ): Comparison {
-  const a = comparable(pack, live);
-  const b = comparable(pack, intended);
-  if (canonicalJson(a) === canonicalJson(b))
+  const canon = (nf: NormalForm) => comparableText(pack, nf);
+  if (canon(live) === canon(intended))
     return { equal: true, normalizations: [], diff: [] };
   let l = live;
   let i = intended;
@@ -91,22 +140,15 @@ function compareWithNormalizations(
   for (const n of pack.projections.normalizations) {
     const nl = n.apply(l);
     const ni = n.apply(i);
-    if (
-      canonicalJson(comparable(pack, nl)) !==
-        canonicalJson(comparable(pack, l)) ||
-      canonicalJson(comparable(pack, ni)) !== canonicalJson(comparable(pack, i))
-    )
-      used.push(n.name);
+    if (nl !== l || ni !== i) used.push(n.name);
     l = nl;
     i = ni;
   }
-  const ca = comparable(pack, l);
-  const cb = comparable(pack, i);
-  const equal = canonicalJson(ca) === canonicalJson(cb);
+  const equal = canon(l) === canon(i);
   return {
     equal,
     normalizations: equal ? used : [],
-    diff: equal ? [] : differences(ca, cb)
+    diff: equal ? [] : differences(comparable(pack, l), comparable(pack, i))
   };
 }
 
@@ -244,7 +286,7 @@ export function equivalentNative(pack: Pack, a: string, b: string): boolean {
       ...(pack.projections.undoNormalizations ?? [])
     ])
       nf = n.apply(nf);
-    return canonicalJson(comparable(pack, nf));
+    return comparableText(pack, nf);
   };
   return normalized(a) === normalized(b);
 }

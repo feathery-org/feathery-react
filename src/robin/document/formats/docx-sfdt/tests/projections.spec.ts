@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { NfNode, NormalForm, walk } from '../../../tree';
+import { comparable, comparableText } from '../../../proof';
+import { NfNode, NormalForm, canonicalJson, walk } from '../../../tree';
+import { docxPack } from '../index';
 import { toNormalForm } from '../adapter/toNormalForm';
 import { docxTree } from '../tree';
 import {
@@ -110,6 +112,33 @@ describe('normalizations (each a true positive and a true negative)', () => {
     const changed = JSON.parse(JSON.stringify(nf));
     (all(changed).find((n) => n.id === body.id) as NfNode).text = 'Different';
     expect(JSON.stringify(N1.apply(nf))).not.toBe(JSON.stringify(N1.apply(changed)));
+  });
+
+  it('each normalization returns its input when it has nothing left to change, a new document otherwise', () => {
+    let nf = fresh();
+    for (const n of [N1, N2, N3, N4, N5, N6, N7]) {
+      const once = n.apply(nf);
+      expect(n.apply(once)).toBe(once);
+      nf = once;
+    }
+    // N4 on a document with the flag returns a copy and leaves the input as it was
+    const flagged = fresh();
+    flagged.root.trackChanges = true;
+    const out = N4.apply(flagged);
+    expect(out).not.toBe(flagged);
+    expect(flagged.root.trackChanges).toBe(true);
+  });
+
+  it('the proof text of every corpus document, pending changes included, equals canonical comparable', () => {
+    const dir = path.join(__dirname, 'corpus');
+    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.json'))) {
+      const doc = toNormalForm(fs.readFileSync(path.join(dir, file), 'utf8')).nf;
+      expect(comparableText(docxPack, doc)).toBe(canonicalJson(comparable(docxPack, doc)));
+    }
+    const marked = fresh();
+    const run = all(marked).find((n) => n.kind === 'run') as NfNode;
+    run.pending = ins();
+    expect(comparableText(docxPack, marked)).toBe(canonicalJson(comparable(docxPack, marked)));
   });
 
   it('N3 bidi:false on a run format, and nothing else', () => {

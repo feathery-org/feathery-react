@@ -122,19 +122,24 @@ export const reject = (nf: NormalForm): NormalForm => project(nf, 'Insertion');
 // ------------------------------------------------------------------ normalizations
 
 /** Apply `edit` to every node; format entries are rewritten copy-on-write. */
+/**
+ * Apply `edit` to every node of a copy; `edit` returns true when it changed something. When
+ * nothing changed the input itself is returned, so the proof can skip re-reading it.
+ */
 function eachNode(
   nf: NormalForm,
-  edit: (node: NfNode, inStory: boolean, out: NormalForm) => void
+  edit: (node: NfNode, inStory: boolean, out: NormalForm) => boolean | void
 ): NormalForm {
   const out = clone(nf);
+  let changed = false;
   const rec = (n: NfNode, inStory: boolean) => {
-    edit(n, inStory, out);
+    if (edit(n, inStory, out)) changed = true;
     for (const key of docxTree.childLists(n))
       for (const c of arr<NfNode>(listOf(n, key)))
         rec(c, inStory || key.startsWith(`${HEADER_FOOTER}/`));
   };
   rec(out.root, false);
-  return out;
+  return changed ? out : nf;
 }
 
 const REF_KEYS = ['style', 'markStyle', 'listStyle'];
@@ -145,17 +150,18 @@ function rewriteRef(
   n: NfNode,
   key: string,
   change: (e: FormatEntry) => FormatEntry
-) {
+): boolean {
   const ref = n[key];
-  if (typeof ref !== 'string' || !out.formats[ref]) return;
+  if (typeof ref !== 'string' || !out.formats[ref]) return false;
   const next = change({ ...out.formats[ref] });
   if (!Object.keys(next).length) {
     delete n[key];
-    return;
+    return true;
   }
   const id = `${ref}~n`;
   out.formats[id] = next;
   n[key] = id;
+  return true;
 }
 
 const textOf = (n: NfNode): string =>
@@ -171,9 +177,13 @@ export const N1: Normalization = {
         inStory &&
         n.kind === KIND.run &&
         typeof n.text === 'string' &&
-        /^\d+$/.test(n.text)
-      )
+        /^\d+$/.test(n.text) &&
+        n.text !== '#'
+      ) {
         n.text = '#';
+        return true;
+      }
+      return false;
     })
 };
 
@@ -181,13 +191,17 @@ export const N2: Normalization = {
   name: 'N2',
   apply: (nf) =>
     eachNode(nf, (n, _s, out) => {
+      let changed = false;
       for (const key of REF_KEYS)
         if (
           typeof n[key] === 'string' &&
           out.formats[n[key] as string] &&
           !Object.keys(out.formats[n[key] as string]).length
-        )
+        ) {
           delete n[key];
+          changed = true;
+        }
+      return changed;
     })
 };
 
@@ -201,19 +215,21 @@ export const N3: Normalization = {
           : n.kind === KIND.run
           ? 'style'
           : null;
-      if (!key) return;
+      if (!key) return false;
       const ref = n[key];
       if (typeof ref === 'string' && out.formats[ref]?.bidi === false)
-        rewriteRef(out, n, key, (e) => {
+        return rewriteRef(out, n, key, (e) => {
           delete e.bidi;
           return e;
         });
+      return false;
     })
 };
 
 export const N4: Normalization = {
   name: 'N4',
   apply: (nf) => {
+    if (!('trackChanges' in nf.root)) return nf;
     const out = clone(nf);
     delete out.root.trackChanges;
     return out;
@@ -224,13 +240,14 @@ export const N5: Normalization = {
   name: 'N5',
   apply: (nf) =>
     eachNode(nf, (n, _s, out) => {
-      if (n.kind !== KIND.paragraph || textOf(n).length) return;
+      if (n.kind !== KIND.paragraph || textOf(n).length) return false;
       const ref = n.style;
       if (typeof ref === 'string' && out.formats[ref]?.styleName === 'Normal')
-        rewriteRef(out, n, 'style', (e) => {
+        return rewriteRef(out, n, 'style', (e) => {
           delete e.styleName;
           return e;
         });
+      return false;
     })
 };
 
@@ -238,7 +255,8 @@ export const N6: Normalization = {
   name: 'N6',
   apply: (nf) =>
     eachNode(nf, (n) => {
-      if (!Array.isArray(n.inlines)) return;
+      if (!Array.isArray(n.inlines)) return false;
+      const before = (n.inlines as NfNode[]).length;
       const merged: NfNode[] = [];
       for (const inline of n.inlines as NfNode[]) {
         const prev = merged[merged.length - 1];
@@ -257,6 +275,7 @@ export const N6: Normalization = {
         merged.push(inline);
       }
       n.inlines = merged;
+      return merged.length !== before;
     })
 };
 
@@ -272,16 +291,17 @@ export const N7: Normalization = {
   name: 'N7',
   apply: (nf) =>
     eachNode(nf, (n, _s, out) => {
-      if (n.kind !== KIND.row) return;
+      if (n.kind !== KIND.row) return false;
       const ref = n.style;
       if (
         typeof ref === 'string' &&
         ROW_UNDO_DEFAULTS.some((k) => k in (out.formats[ref] ?? {}))
       )
-        rewriteRef(out, n, 'style', (e) => {
+        return rewriteRef(out, n, 'style', (e) => {
           for (const k of ROW_UNDO_DEFAULTS) delete e[k];
           return e;
         });
+      return false;
     })
 };
 

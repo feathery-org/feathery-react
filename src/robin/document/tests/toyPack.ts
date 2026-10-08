@@ -271,13 +271,18 @@ function project(nf: NormalForm, drop: string): NormalForm {
 
 const trimText = (nf: NormalForm): NormalForm => {
   const out = clone(nf);
+  let changed = false;
   const rec = (n: NfNode) => {
-    if (typeof n.text === 'string') n.text = n.text.replace(/\s+$/, '');
+    if (typeof n.text === 'string' && /\s$/.test(n.text)) {
+      n.text = n.text.replace(/\s+$/, '');
+      changed = true;
+    }
     for (const key of ['blocks', 'items'])
       if (Array.isArray(n[key])) (n[key] as NfNode[]).forEach(rec);
   };
   rec(out.root);
-  return out;
+  // the normalization contract: the input itself when nothing changed
+  return changed ? out : nf;
 };
 
 // ------------------------------------------------------------------ reconcile

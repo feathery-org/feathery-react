@@ -218,6 +218,10 @@ export interface Finalizer {
 export interface Normalization {
   /** A measured normalization's name, reported in the proof trace when it was needed. */
   name: string;
+  /**
+   * The normalized document, never mutating the input. Returns the input itself when it changes
+   * nothing, which lets the proof skip re-reading it; returning a copy is still correct, only slower.
+   */
   apply(nf: NormalForm): NormalForm;
 }
 

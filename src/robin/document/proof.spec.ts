@@ -1,5 +1,11 @@
-import { comparable, differences, prove, rollback } from './proof';
-import { NfNode, NormalForm } from './tree';
+import {
+  comparable,
+  comparableText,
+  differences,
+  prove,
+  rollback
+} from './proof';
+import { canonicalJson, NfNode, NormalForm } from './tree';
 import { ToyHost, makeToyPack, para, toyNative } from './tests/toyPack';
 
 const pack = makeToyPack();
@@ -10,6 +16,20 @@ describe('proof', () => {
   const before = nf(toyNative(para('a'), para('b')));
   const intended: NormalForm = JSON.parse(JSON.stringify(before));
   (intended.root.blocks as NfNode[])[1].text = 'B';
+
+  it('compares documents by the canonical text of comparable, computed in one pass', () => {
+    const live = nf(
+      toyNative(
+        para('a'),
+        para('b', { rev: 'del', by: 't' }),
+        para('B', { rev: 'ins', by: 't' })
+      )
+    );
+    for (const doc of [before, intended, live])
+      expect(comparableText(pack, doc)).toBe(
+        canonicalJson(comparable(pack, doc))
+      );
+  });
 
   it('passes a tracked change that landed exactly and rejects back to before (true negative)', () => {
     const live = nf(
@@ -63,6 +83,20 @@ describe('proof', () => {
     );
     const p = prove(pack, { before, intended: spaced, live, ...nothingElse });
     expect([p.passed, p.normalizations]).toEqual([true, ['T1']]);
+    // a normalization that changes neither side is not named
+    const idle = makeToyPack({
+      projections: {
+        ...pack.projections,
+        normalizations: [
+          { name: 'T0', apply: (x: NormalForm) => x },
+          ...pack.projections.normalizations
+        ]
+      }
+    });
+    expect(
+      prove(idle, { before, intended: spaced, live, ...nothingElse })
+        .normalizations
+    ).toEqual(['T1']);
     const strict = makeToyPack({
       projections: { ...pack.projections, normalizations: [] }
     });
