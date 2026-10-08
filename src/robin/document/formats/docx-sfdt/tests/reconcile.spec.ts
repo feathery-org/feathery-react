@@ -11,7 +11,8 @@ import { makeView } from '../../../view';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
 import { accept, expectedRejection, reject } from '../projections';
-import { composeTracked, hierOf, plan } from '../reconcile';
+import { ownText } from '../outline';
+import { composeTracked, editorOffset, hierOf, plan } from '../reconcile';
 import { docxTree } from '../tree';
 import { arr } from '../util';
 
@@ -185,5 +186,28 @@ describe('plan: paragraph, table, row and cell properties', () => {
     expect(p.steps.map((x) => x.seam)).toEqual(['splice']);
     expect(p.landed).toBe('immediate');
     expect(p.history).toBe('engine');
+  });
+});
+
+describe('editor offsets from the normal form', () => {
+  it('counts each inline control boundary as the editor does (measured: one position each)', () => {
+    const s = state();
+    const para = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[2];
+    const text = String(ownText(para));
+    // "Insurance premium tax is charged at |8.5%| percent." with a control around 8.5%
+    expect(editorOffset(s.view, para.id, text.indexOf('Insurance'))).toBe(0);
+    expect(editorOffset(s.view, para.id, text.indexOf('8.5%'))).toBe(text.indexOf('8.5%') + 1);
+    expect(editorOffset(s.view, para.id, text.indexOf('percent'))).toBe(text.indexOf('percent') + 2);
+  });
+
+  it('a text op after a control carries the exact editor offsets', () => {
+    const s = state();
+    const para = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[2];
+    const last = arr<NfNode>(para.inlines).filter((i) => i.kind === 'run').pop() as NfNode;
+    const r = prepareWrite(s, { intent: 'x', scope: { ids: [last.id] }, changes: [{ kind: 'replace', id: last.id, base: baseOf(last), node: { kind: 'run', ...(last.style ? { style: last.style } : {}), text: String(last.text).replace('percent', 'per cent') } }] } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 500));
+    const p = plan({ turnId: 't', before: s.view, intended: makeView(r.intended, docxPack), beforeResidue: s.residue, intendedResidue: r.intendedResidue, beforeNative: flagship });
+    const [op] = p.steps[0].payload as Array<{ a: number; at: number }>;
+    expect(op.at).toBe(op.a + 2);
   });
 });

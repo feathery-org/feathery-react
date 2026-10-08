@@ -16,11 +16,12 @@ export const textSeam: Seam = {
       const selection = editor.selection as Record<string, any>;
       for (const op of [...ops].reverse()) {
         if (op.oldMid.length) {
-          place(editor, op.hi, op.a, op.b, op.oldMid);
+          place(editor, op.hi, op.a, op.b, op.oldMid, op.at ?? op.a);
           if (op.newMid.length) module.insertText(op.newMid);
           else module.delete();
         } else {
-          selection.select(`${op.hi};${op.a}`, `${op.hi};${op.a}`);
+          const at = op.at ?? op.a;
+          selection.select(`${op.hi};${at}`, `${op.hi};${at}`);
           module.insertText(op.newMid);
         }
       }

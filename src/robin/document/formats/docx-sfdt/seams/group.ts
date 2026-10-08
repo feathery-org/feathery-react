@@ -47,8 +47,9 @@ export function inGroup<T>(
 }
 
 /**
- * Select [a, b) of the paragraph at `hi` and check it reads `expect`. The editor counts
- * content-control boundaries in offsets, so a few small shifts are tried; the selection is
+ * Select [a, b) of the paragraph at `hi` and check it reads `expect`. `at` is `a` as the editor
+ * counts it, computed from the normal form, and is tried first; small shifts around the text
+ * offset remain only as a fallback for markers the normal form does not count. The selection is
  * verified, never assumed.
  */
 export function place(
@@ -56,12 +57,16 @@ export function place(
   hi: string,
   a: number,
   b: number,
-  expect: string
+  expect: string,
+  at: number = a
 ): void {
   const selection = editor.selection as Record<string, any>;
-  for (const d of [0, 1, -1, 2, 3, 4, 5, 6]) {
+  const starts = [at, ...[0, 1, -1, 2, 3, 4, 5, 6].map((d) => a + d)].filter(
+    (x, k, all) => all.indexOf(x) === k
+  );
+  for (const start of starts) {
     try {
-      selection.select(`${hi};${a + d}`, `${hi};${b + d}`);
+      selection.select(`${hi};${start}`, `${hi};${start + (b - a)}`);
     } catch {
       continue;
     }

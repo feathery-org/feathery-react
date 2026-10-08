@@ -30,7 +30,7 @@ export const formatSeam: Seam = {
         else if (op.whole) {
           selection.select(`${op.hi};0`, `${op.hi};0`);
           selection.extendToParagraphEnd();
-        } else place(editor, op.hi, op.a, op.b, op.expect);
+        } else place(editor, op.hi, op.a, op.b, op.expect, op.at ?? op.a);
         const format = selection[FORMAT_OF[target]];
         if (!format)
           throw new Error(`no ${FORMAT_OF[target]} on the selection`);

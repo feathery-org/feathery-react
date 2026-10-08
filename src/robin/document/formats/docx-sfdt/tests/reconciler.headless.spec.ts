@@ -330,6 +330,19 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(row).toEqual(expect.objectContaining({ seam: 'splice', landed: 'immediate', proof: 'passed' }));
   });
 
+  it('D16 text after an inline control: native text at the exact editor offset', async () => {
+    const pre = await fresh();
+    const pid = await at(['sections', 0, 'blocks', 3]);
+    const p = (await read([pid]))[pid];
+    const run = p.inlines.filter((i: any) => i.kind === 'run').find((i: any) => /valid from/.test(i.text));
+    const row = await commitAndUndo('D16', pre, {
+      intent: 'Change from to starting.',
+      scope: { ids: [run.id] },
+      changes: [{ kind: 'replace', id: run.id, base: run.base, node: { ...strip(run), text: run.text.replace('valid from', 'valid starting') } }]
+    });
+    expect(row).toEqual(expect.objectContaining(NATIVE_TEXT));
+  });
+
   afterAll(() => {
     // eslint-disable-next-line no-console
     console.log(

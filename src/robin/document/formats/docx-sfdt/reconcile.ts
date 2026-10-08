@@ -243,6 +243,8 @@ export interface TextOp {
   hi: string;
   a: number;
   b: number;
+  /** `a` as the editor counts it (inline control boundaries take a position each). */
+  at: number;
   oldMid: string;
   newMid: string;
 }
@@ -258,6 +260,8 @@ export interface FormatOp {
   whole: boolean;
   a: number;
   b: number;
+  /** `a` as the editor counts it, for a span. */
+  at: number;
   expect: string;
   props: Record<string, unknown>;
 }
@@ -363,6 +367,7 @@ function nativePlan(
           target: 'character',
           hi,
           whole: false,
+          at: editorOffset(before, para.id, start),
           a: start,
           b: start + runText.length,
           expect: runText,
@@ -395,6 +400,7 @@ function nativePlan(
           target: 'character',
           hi: hi as string,
           whole: true,
+          at: 0,
           a: 0,
           b: 0,
           expect: ownText(before.get(old.id) as NfNode) ?? '',
@@ -414,6 +420,7 @@ function nativePlan(
           target: 'paragraph',
           hi: hi as string,
           whole: false,
+          at: 0,
           a: 0,
           b: 0,
           expect: '',
@@ -439,6 +446,7 @@ function nativePlan(
         target: old.kind as FormatOp['target'],
         hi,
         whole: false,
+        at: 0,
         a: 0,
         b: 0,
         expect: '',
@@ -474,6 +482,7 @@ function nativePlan(
     text.push({
       hi,
       a,
+      at: editorOffset(before, id, a),
       b: oldText.length - z,
       oldMid: oldText.slice(a, oldText.length - z),
       newMid: newText.slice(a, newText.length - z)
@@ -490,6 +499,41 @@ function enclosingParagraph(view: DocumentView, id: string): NfNode | null {
     p = view.placement(p.parent.id);
   }
   return null;
+}
+
+/**
+ * A text offset in a paragraph's own text as the editor counts it: each inline content control's
+ * start and end take one position (measured in the headless lane), so an offset after a control is
+ * two further on, and one inside it one further. Offsets come from the normal form, never searched.
+ */
+export function editorOffset(
+  view: DocumentView,
+  paragraphId: string,
+  offset: number
+): number {
+  let t = 0;
+  let markers = 0;
+  let done = false;
+  const rec = (inlines: NfNode[] | undefined) => {
+    for (const i of inlines ?? []) {
+      if (done) return;
+      if (i.kind === KIND.run) {
+        const len = String(i.text ?? '').length;
+        if (t + len > offset || (t === offset && len > 0)) {
+          done = true;
+          return;
+        }
+        t += len;
+      } else if (i.kind === KIND.control && Array.isArray(i.inlines)) {
+        markers += 1;
+        rec(i.inlines as NfNode[]);
+        if (done) return;
+        markers += 1;
+      } else if (Array.isArray(i.inlines)) rec(i.inlines as NfNode[]);
+    }
+  };
+  rec(view.get(paragraphId)?.inlines as NfNode[] | undefined);
+  return offset + markers;
 }
 
 /** A run's character offset in its paragraph's own text. */

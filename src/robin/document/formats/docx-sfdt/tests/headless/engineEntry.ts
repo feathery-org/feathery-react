@@ -191,6 +191,13 @@ const api = {
     };
   },
 
+  /** Test support: the text the editor selects between two hierarchical offsets. */
+  selectText(start: string, end: string): string {
+    const selection = (live() as any).selection;
+    selection.select(start, end);
+    return String(selection.text ?? '');
+  },
+
   undoDepth(): number {
     const h = history();
     const stack = h?.undoStackIn ?? h?.undoStack;
