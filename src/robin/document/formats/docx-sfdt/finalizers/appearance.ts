@@ -8,7 +8,8 @@
 import type { Finalizer, FormatTable } from '../../../pack';
 import type { NfNode } from '../../../tree';
 import { KIND } from '../adapter/keys';
-import { bindingState, computeBindingState } from '../features/binding';
+import { fromNormalForm } from '../adapter/fromNormalForm';
+import { bindingState } from '../features/binding';
 import {
   bandedShadingForRow,
   collectTableAppearance,
@@ -118,7 +119,8 @@ export const restripeFinalizer: Finalizer = {
     // the document before is a settled view, its binding state cached; the working copy is read
     // once, before any cell is restriped
     const beforeNative = bindingState(before.nf).native;
-    const afterNative = computeBindingState(after).native;
+    // the working copy's native blocks only, for row roles: no binding engine pass needed
+    const afterNative = JSON.parse(fromNormalForm(after, {}));
     // positions in the working document, for the native block of each table
     const index = new Map<
       string,
