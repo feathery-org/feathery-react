@@ -4,7 +4,7 @@
  */
 import type { Pack } from '../../pack';
 import { fromNormalForm } from './adapter/fromNormalForm';
-import { FORMAT_REF_KEYS } from './adapter/keys';
+import { FEATURE_KEYS, FORMAT_REF_KEYS } from './adapter/keys';
 import { toNormalForm } from './adapter/toNormalForm';
 import { bindingAnnotations } from './features/binding';
 import { formulasFinalizer } from './finalizers/formulas';
@@ -104,6 +104,7 @@ export const docxPack: Pack = {
   },
   reconcile: { plan },
   seams: { text: textSeam, format: formatSeam, splice: spliceSeam },
+  featureKeys: FEATURE_KEYS,
   cardNouns: {
     section: ['section', 'sections'],
     paragraph: ['paragraph', 'paragraphs'],

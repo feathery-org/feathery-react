@@ -57,6 +57,13 @@ describe('card titles', () => {
     expect(titleOf({ scope: { ids: [clause.id] }, changes: [{ kind: 'set', target: { ids: [clause.id], shape: { [clause.id]: shapeOf(clause, docxTree) } }, props: { textAlignment: 'Center' } }] })).toBe('Formatted a paragraph');
   });
 
+  it('a rewritten formula is an edited field, not formatting', () => {
+    const control = s.view.nodes().find((n) => n.kind === 'control' && n.binding && typeof (n.binding as { expr?: unknown }).expr === 'string' && s.view.nodes().filter((m) => m.kind === 'control' && (m.binding as { name?: unknown } | undefined)?.name === (n.binding as { name?: unknown }).name).length === 1) as NfNode;
+    const node = strip(control) as Record<string, unknown>;
+    node.binding = { ...(control.binding as object), expr: `mul(${(control.binding as { expr: string }).expr},1)` };
+    expect(titleOf({ scope: { ids: [control.id] }, changes: [{ kind: 'replace', id: control.id, base: baseOf(control), node }] })).toBe('Edited a field');
+  });
+
   it('a moved table is a moved table', () => {
     const anchor = arr<NfNode>(sections[1].blocks)[0];
     expect(titleOf({ scope: { ids: [plain.id] }, changes: [{ kind: 'move', id: plain.id, shape: shapeOf(plain, docxTree), anchor: anchor.id, position: 'before', container: shapeOf(sections[1], docxTree) }] })).toBe('Moved a table');

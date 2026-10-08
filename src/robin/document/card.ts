@@ -98,10 +98,18 @@ export function cardTitle({
     const now = named(after, id);
     const was = now ? before.get(now.id) : undefined;
     if (!now || !was) continue;
-    // text compared at the level counted: a run's edit is its paragraph's text changing
+    // text compared at the level counted: a run's edit is its paragraph's text changing; a
+    // feature attribute (a formula, a binding) is content too
     const textChanged =
       JSON.stringify(pack.text(was)) !== JSON.stringify(pack.text(now));
-    add(textChanged ? 'Edited' : 'Formatted', now);
+    const original = before.get(id);
+    const changedNode = after.get(id);
+    const featureChanged = (pack.featureKeys ?? []).some(
+      (k) =>
+        JSON.stringify(original?.[k] ?? null) !==
+        JSON.stringify(changedNode?.[k] ?? null)
+    );
+    add(textChanged || featureChanged ? 'Edited' : 'Formatted', now);
   }
   const total = (verb: Verb) =>
     [...(buckets.get(verb)?.values() ?? [])].reduce((n, s) => n + s.size, 0);

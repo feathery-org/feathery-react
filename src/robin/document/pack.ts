@@ -369,6 +369,8 @@ export interface Pack {
    * not named here rolls up to its nearest named ancestor in the card title.
    */
   cardNouns?: Readonly<Record<string, readonly [string, string]>>;
+  /** Own fields that are content rather than formatting (a binding): a change to one is an edit. */
+  featureKeys?: readonly string[];
 }
 
 const REQUIRED_FUNCTIONS: Array<[string, (p: Pack) => unknown]> = [
