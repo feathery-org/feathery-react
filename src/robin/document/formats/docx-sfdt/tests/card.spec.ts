@@ -53,6 +53,33 @@ describe('card titles', () => {
     expect(titleOf({ scope: { ids: [row.id] }, changes: [{ kind: 'delete', id: row.id, base: baseOf(row) }] })).toBe('Removed a row');
   });
 
+  it('a new cell in every row of a table is an added column; the last cell of every row removed is a removed column', () => {
+    const rows = arr<NfNode>(plain.rows);
+    const added = rows.map((r) => {
+      const last = arr<NfNode>(r.cells)[arr<NfNode>(r.cells).length - 1];
+      return { kind: 'insert_after', anchor: last.id, container: shapeOf(r, docxTree), node: { kind: 'cell', blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: 'New' }] }] } };
+    });
+    expect(titleOf({ scope: { ids: rows.map((r) => r.id) }, changes: added })).toBe('Added a column');
+    const twice = rows.flatMap((r) => {
+      const last = arr<NfNode>(r.cells)[arr<NfNode>(r.cells).length - 1];
+      const cell = { kind: 'cell', blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: 'New' }] }] };
+      return [{ kind: 'insert_after', anchor: last.id, container: shapeOf(r, docxTree), node: cell }, { kind: 'insert_after', anchor: last.id, container: shapeOf(r, docxTree), node: cell }];
+    });
+    expect(titleOf({ scope: { ids: rows.map((r) => r.id) }, changes: twice })).toBe('Added 2 columns');
+    const removed = rows.map((r) => {
+      const last = arr<NfNode>(r.cells)[arr<NfNode>(r.cells).length - 1];
+      return { kind: 'delete', id: last.id, base: baseOf(last) };
+    });
+    expect(titleOf({ scope: { ids: rows.map((r) => r.id) }, changes: removed })).toBe('Removed a column');
+  });
+
+  it('cells that do not form a column are counted as cells', () => {
+    const r = arr<NfNode>(plain.rows)[1];
+    const last = arr<NfNode>(r.cells)[arr<NfNode>(r.cells).length - 1];
+    const cell = { kind: 'cell', blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: 'New' }] }] };
+    expect(titleOf({ scope: { ids: [r.id] }, changes: [{ kind: 'insert_after', anchor: last.id, container: shapeOf(r, docxTree), node: cell }, { kind: 'insert_after', anchor: last.id, container: shapeOf(r, docxTree), node: cell }] })).toBe('Added 2 cells');
+  });
+
   it('a property change is formatting', () => {
     expect(titleOf({ scope: { ids: [clause.id] }, changes: [{ kind: 'set', target: { ids: [clause.id], shape: { [clause.id]: shapeOf(clause, docxTree) } }, props: { textAlignment: 'Center' } }] })).toBe('Formatted a paragraph');
   });

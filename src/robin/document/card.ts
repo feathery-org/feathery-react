@@ -111,14 +111,31 @@ export function cardTitle({
     );
     add(textChanged || featureChanged ? 'Edited' : 'Formatted', now);
   }
+  // what a person counts: collections the pack recognises (a column), the rest by kind
+  const counts = new Map<Verb, Map<string, number>>();
+  const allNouns: Record<string, readonly [string, string]> = { ...nouns };
+  for (const [verb, byKind] of buckets) {
+    const m = new Map<string, number>();
+    const view = verb === 'Removed' ? before : after;
+    for (const [kind, ids] of byKind) {
+      const rest = new Set(ids);
+      for (const group of pack.cardCollections?.(kind, [...ids], view) ?? []) {
+        m.set(group.key, (m.get(group.key) ?? 0) + group.count);
+        allNouns[group.key] = group.noun;
+        group.ids.forEach((id) => rest.delete(id));
+      }
+      if (rest.size) m.set(kind, (m.get(kind) ?? 0) + rest.size);
+    }
+    counts.set(verb, m);
+  }
   const total = (verb: Verb) =>
-    [...(buckets.get(verb)?.values() ?? [])].reduce((n, s) => n + s.size, 0);
+    [...(counts.get(verb)?.values() ?? [])].reduce((n, c) => n + c, 0);
   const describe = (verb: Verb) => {
-    const byKind = [...(buckets.get(verb) ?? new Map()).entries()].sort(
-      (a, b) => b[1].size - a[1].size
+    const byKind = [...(counts.get(verb) ?? new Map<string, number>())].sort(
+      (a, b) => b[1] - a[1]
     );
     if (byKind.length === 1)
-      return phrase(nouns, byKind[0][0], byKind[0][1].size);
+      return phrase(allNouns, byKind[0][0], byKind[0][1]);
     // several kinds under one verb: count them as items
     return `${total(verb)} items`;
   };

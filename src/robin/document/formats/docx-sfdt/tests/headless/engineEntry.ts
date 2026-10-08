@@ -322,17 +322,17 @@ const api = {
   },
   equivalent: (a: string, b: string) => equivalentNative(docxPack, a, b),
 
-  /** The live document's revisions, by type and group. */
-  revisions(): Array<{ type: string; author: string; group: string | null }> {
+  /** The live document's revisions, by type, group and the card title their tag carries. */
+  revisions(): Array<{ type: string; author: string; group: string | null; title: string | null }> {
     const doc = JSON.parse(live().serialize());
     return (doc.revisions ?? []).map((r: any) => {
-      let group: string | null = null;
+      let tag: any = null;
       try {
-        group = JSON.parse(r.customData ?? 'null')?.changeSetId ?? null;
+        tag = JSON.parse(r.customData ?? 'null');
       } catch {
-        group = null;
+        tag = null;
       }
-      return { type: r.revisionType, author: r.author, group };
+      return { type: r.revisionType, author: r.author, group: tag?.changeSetId ?? null, title: tag?.title ?? null };
     });
   },
 

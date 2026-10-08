@@ -398,6 +398,21 @@ export interface Pack {
    * not named here rolls up to its nearest named ancestor in the card title.
    */
   cardNouns?: Readonly<Record<string, readonly [string, string]>>;
+  /**
+   * Nodes a person counts as one thing on a card although the tree holds them apart (a cell in
+   * every row of a table is a column): given the ids of one kind under one verb, the collections
+   * they form, each with its noun and count. Ids in no collection are counted as their kind.
+   */
+  cardCollections?(
+    kind: string,
+    ids: readonly string[],
+    view: DocumentView
+  ): Array<{
+    key: string;
+    noun: readonly [string, string];
+    count: number;
+    ids: string[];
+  }>;
   /** Own fields that are content rather than formatting (a binding): a change to one is an edit. */
   featureKeys?: readonly string[];
 }

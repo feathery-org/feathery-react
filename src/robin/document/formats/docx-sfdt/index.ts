@@ -10,6 +10,7 @@ import { bindingAnnotations } from './features/binding';
 import { formulasFinalizer } from './finalizers/formulas';
 import { restripeFinalizer } from './finalizers/appearance';
 import { tableGeometryReport } from './finalizers/geometry';
+import { cardCollections } from './card';
 import {
   copiedBookmarksFinalizer,
   rowIdentityFinalizer,
@@ -105,6 +106,7 @@ export const docxPack: Pack = {
   reconcile: { plan },
   seams: { text: textSeam, format: formatSeam, splice: spliceSeam },
   featureKeys: FEATURE_KEYS,
+  cardCollections,
   cardNouns: {
     section: ['section', 'sections'],
     paragraph: ['paragraph', 'paragraphs'],

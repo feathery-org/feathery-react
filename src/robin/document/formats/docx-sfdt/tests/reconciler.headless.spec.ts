@@ -54,6 +54,8 @@ interface Row {
   native: string;
   undo: string;
   warnings?: string;
+  /** The card's title as the group tag carries it. */
+  title?: string;
   userUndoKept: boolean;
 }
 const table: Row[] = [];
@@ -63,11 +65,13 @@ async function commitAndUndo(delta: string, pre: string, write: unknown): Promis
   const result = await dispatch('write', write);
   if (!result.ok) throw new Error(`${delta}: ${JSON.stringify(result.refusal ?? result.error ?? result.conflict).slice(0, 800)}`);
   const seam: string[] = result.trace.committed.seams;
+  let title: string | undefined;
   if (result.landed === 'card') {
-    const revisions = await lane.call<Array<{ group: string | null; author: string }>>('revisions');
+    const revisions = await lane.call<Array<{ group: string | null; author: string; title: string | null }>>('revisions');
     const ours = revisions.filter((r) => r.group === `turn-${turn}`);
     expect(ours.length).toBeGreaterThan(0);
     expect(ours.every((r) => r.author === 'Robin')).toBe(true);
+    title = ours[0].title ?? undefined;
   }
   const check = await lane.call<{ accept: boolean; reject: boolean; acceptDiff: string[]; rejectDiff: string[] }>('crossCheck');
   const added = (await lane.call<number>('undoDepth')) - depth;
@@ -83,7 +87,8 @@ async function commitAndUndo(delta: string, pre: string, write: unknown): Promis
     native: `accept ${check.accept ? 'agrees' : `differs ${check.acceptDiff.slice(0, 2).join(' | ')}`}, reject ${check.reject ? 'agrees' : `differs ${check.rejectDiff.slice(0, 2).join(' | ')}`}`,
     undo: `${undone.via}${seam.includes('splice') ? '' : ` (+${added})`}: ${restored}`,
     userUndoKept: seam.includes('splice') ? true : native,
-    warnings: ((result.warnings ?? []) as Array<{ code: string }>).map((w) => w.code).join(',') || '-'
+    warnings: ((result.warnings ?? []) as Array<{ code: string }>).map((w) => w.code).join(',') || '-',
+    ...(title ? { title } : {})
   };
   table.push(row);
   return row;
@@ -182,6 +187,7 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     });
     const row = await commitAndUndo('D4', pre, { intent: 'Add a column.', scope: { ids: t.rows.map((r: any) => r.cells[r.cells.length - 1].id) }, changes });
     expect(row).toEqual(expect.objectContaining(SPLICE));
+    expect(row.title).toBe('Added a column');
   });
 
   it('D5 bound row insert (copy of a row): splice, identity minted, formulas recomputed', async () => {
@@ -376,6 +382,18 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     turn += 1;
     const row = await commitAndUndo('D17', pre, column.input);
     expect(row).toEqual(expect.objectContaining(SPLICE));
+    // a cell in every row of the table: the card says what a person sees
+    expect(row.title).toBe('Added a column');
+  });
+
+  it('D18 delete a column (the last cell of every row): splice, the card says a column', async () => {
+    const pre = await fresh();
+    const tid = await at(['sections', 1, 'blocks', 4]);
+    const t = (await read([tid]))[tid];
+    const lasts = t.rows.map((r: any) => r.cells[r.cells.length - 1]);
+    const row = await commitAndUndo('D18', pre, { intent: 'Remove the last column.', scope: { ids: lasts.map((c: any) => c.id) }, changes: lasts.map((c: any) => ({ kind: 'delete', id: c.id, base: c.base })) });
+    expect(row).toEqual(expect.objectContaining(SPLICE));
+    expect(row.title).toBe('Removed a column');
   });
 
   afterAll(() => {
