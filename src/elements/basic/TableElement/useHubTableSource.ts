@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import useRefreshOnFocus from '../../../utils/useRefreshOnFocus';
+import { featheryWindow } from '../../../utils/browser';
 import { fieldValues } from '../../../utils/init';
 import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
 import {
@@ -380,9 +380,6 @@ export function useHubTableSource({
 
   const loadEntries = useCallback(async () => {
     if (!enabled || !client?.dataHubAction) return;
-    // Captured after the guard so the readEntries closure below doesn't need a
-    // non-null assertion.
-    const dataHubAction = client.dataHubAction;
     const seq = ++loadSeq.current;
     const isStale = () => seq !== loadSeq.current;
     loadedKey.current = loadKey;
@@ -420,7 +417,7 @@ export function useHubTableSource({
         ...(where.length ? { where } : {})
       };
       const readEntries = (hubId: string) =>
-        dataHubAction({ hubId, ...getOptions }).then(
+        client.dataHubAction!({ hubId, ...getOptions }).then(
           (list) => ({ list }),
           (error) => ({ error })
         );
@@ -429,12 +426,7 @@ export function useHubTableSource({
         // The reference may be a hub key or id; the schema endpoint accepts
         // both and answers with the id every other call needs, so the entries
         // can only be fetched once it has.
-        // Guarded in the hubDynamic pre-flight above; captured here so the
-        // call doesn't need a non-null assertion (the finally clears loading
-        // on the unreachable early return).
-        const getHubSchemas = client.getHubSchemas;
-        if (!getHubSchemas) return;
-        schemas = await getHubSchemas([hubRef], [hubRef]);
+        schemas = await client.getHubSchemas!([hubRef], [hubRef]);
         if (isStale()) return;
         const match =
           schemas?.hubs?.find((h) => h.id === hubRef) ??
@@ -516,13 +508,13 @@ export function useHubTableSource({
     loadEntries().catch(() => {});
   }, [loadEntries]);
 
-  // Initial sync on mount (and whenever the source changes); focus/visibility
-  // resyncs are delegated to the shared hook. refetch's own guards keep the
-  // extra visibility fire from clobbering in-flight writes or unsaved edits.
   useEffect(() => {
-    if (enabled) refetch();
+    if (!enabled) return;
+    refetch();
+    const onFocus = () => refetch();
+    featheryWindow().addEventListener('focus', onFocus);
+    return () => featheryWindow().removeEventListener('focus', onFocus);
   }, [enabled, refetch]);
-  useRefreshOnFocus(refetch, enabled);
 
   // A filter or hub change the guard turned away is applied once the write
   // queue drains and the edits are saved or discarded; unchanged ones cost
