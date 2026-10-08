@@ -576,3 +576,95 @@ export function effective(
   }
   return out;
 }
+
+// ------------------------------------------------------------------ spans
+
+/**
+ * Character properties on a span of a paragraph's text (contract 6.3 match target): the runs the
+ * span crosses are split at its edges, each piece keeping the original run's look, and the pieces
+ * inside take the properties. The first piece of a split run keeps its id; the others are new.
+ * Returns why the span cannot carry them, or null.
+ */
+export function setOnSpan(
+  node: NfNode,
+  span: { start: number; end: number },
+  _text: string,
+  props: Record<string, unknown>,
+  formats: FormatTable
+): string | null {
+  if (node.kind !== KIND.paragraph)
+    return 'a span is set on a paragraph: copy the id and span from a find hit on it';
+  const characterNames = new Set(CHARACTER.map((s) => s.name));
+  const other = Object.keys(props).filter((k) => !characterNames.has(k));
+  if (other.length)
+    return `only character properties apply to a span (not ${other.join(
+      ', '
+    )}); set those on the paragraph`;
+  const inlines = (node.inlines as NfNode[] | undefined) ?? [];
+  const textLength = (n: NfNode): number =>
+    n.kind === KIND.run
+      ? String(n.text ?? '').length
+      : ((n.inlines as NfNode[] | undefined) ?? []).reduce(
+          (s, c) => s + textLength(c),
+          0
+        );
+  const out: NfNode[] = [];
+  let at = 0;
+  for (const inline of inlines) {
+    const length = textLength(inline);
+    const start = at;
+    const end = at + length;
+    at = end;
+    const overlap = Math.min(end, span.end) - Math.max(start, span.start);
+    if (overlap <= 0 || !length) {
+      out.push(inline);
+      continue;
+    }
+    if (inline.kind !== KIND.run) {
+      if (
+        span.start <= start &&
+        span.end >= end &&
+        inline.kind === KIND.control
+      ) {
+        // a control wholly inside the span: its runs take the properties
+        const rec = (n: NfNode) => {
+          for (const c of (n.inlines as NfNode[] | undefined) ?? []) {
+            if (c.kind === KIND.run)
+              for (const [k, v] of Object.entries(props))
+                setOverride(c, k, v, formats);
+            rec(c);
+          }
+        };
+        rec(inline);
+        out.push(inline);
+        continue;
+      }
+      return `the span crosses part of ${inline.kind} ${inline.id}; set the properties on its runs by id instead`;
+    }
+    if (inline.pending !== undefined)
+      return `run ${inline.id} carries a tracked change; leave it or accept it first`;
+    const text = String(inline.text ?? '');
+    const cuts = [
+      0,
+      Math.max(0, span.start - start),
+      Math.min(length, span.end - start),
+      length
+    ];
+    const pieces: NfNode[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      if (cuts[i + 1] <= cuts[i]) continue;
+      const piece = {
+        ...inline,
+        text: text.slice(cuts[i], cuts[i + 1])
+      } as NfNode;
+      if (pieces.length) delete (piece as Partial<NfNode>).id;
+      if (i === 1)
+        for (const [k, v] of Object.entries(props))
+          setOverride(piece, k, v, formats);
+      pieces.push(piece);
+    }
+    out.push(...pieces);
+  }
+  node.inlines = out;
+  return null;
+}

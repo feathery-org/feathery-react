@@ -1,0 +1,399 @@
+/**
+ * The commit plan by delta class (architecture 4.3a, measured in WP1; classification ported from
+ * the lab's live commit, `wp4/live.mjs`):
+ *
+ *   text     text-shaped deltas inside existing paragraphs of the body and table cells: tracked
+ *            `insertText` and `delete` in one grouped undo step, tagged with the change set; the
+ *            card and the user's undo stack survive (WP1 P1 and P2 pass for these)
+ *   format   character formatting only: the native format API on the selected span in one undo
+ *            group; the editor authors no revision for formatting, so it lands immediately with
+ *            no card (decision D3)
+ *   splice   everything else (table structure, paragraphs added, removed or moved, headers and
+ *            footers, controls holding blocks, mixed text and formatting): the engine composes the
+ *            tracked document itself and replaces the editor's document with it (WP1 P3, the only
+ *            path that passes for table structure); the editor's undo history is cleared and the
+ *            engine keeps the way back
+ *
+ * Composition is by id, recursively, at the granularity of what changed (ported from the lab's
+ * `wp3/track.mjs`): a kept child is merged; a dropped child stays in place marked Deletion; a
+ * child that matches nothing is marked Insertion; a run whose text changed becomes the old run
+ * (Deletion) beside the new (Insertion) inside the same paragraph and control. Property changes
+ * have no revision in the native format and land untracked.
+ */
+import type { Warning } from '../../envelope';
+import type { CommitPlan, DocumentView, PlanContext } from '../../pack';
+import { NfNode, NormalForm, canonicalJson, clone } from '../../tree';
+import { HEADER_FOOTER, KIND } from './adapter/keys';
+import { revisionsIn } from './adapter/revisions';
+import { fromNormalForm } from './adapter/fromNormalForm';
+import { ownText } from './outline';
+import { docxTree } from './tree';
+
+type Obj = Record<string, unknown>;
+const isObject = (v: unknown): v is Obj =>
+  v !== null && typeof v === 'object' && !Array.isArray(v);
+
+export const AUTHOR = 'Robin';
+
+// ------------------------------------------------------------------ composing tracked changes
+
+function listOf(node: Obj, key: string): NfNode[] | undefined {
+  let cur: unknown = node;
+  for (const part of key.split('/'))
+    cur = isObject(cur) ? cur[part] : undefined;
+  return Array.isArray(cur) ? (cur as NfNode[]) : undefined;
+}
+function setList(node: Obj, key: string, list: NfNode[]): void {
+  const parts = key.split('/');
+  let cur: Obj = node;
+  for (const part of parts.slice(0, -1)) cur = cur[part] as Obj;
+  cur[parts[parts.length - 1]] = list;
+}
+
+type Pending = { kind: string; author: string; group: string };
+
+/** Add a revision to a pending view (keeping any revision already there). */
+function withRevision(existing: unknown, p: Pending): Obj {
+  const prior = revisionsIn(existing);
+  if (!prior.length) return { ...(isObject(existing) ? existing : {}), ...p };
+  const all = [...prior, p];
+  const mark = isObject(existing) ? existing.mark : undefined;
+  return { ...all[0], revisions: all, ...(mark ? { mark } : {}) };
+}
+
+/** Mark every revision anchor inside a node: runs and other text inlines, paragraph marks, rows. */
+export function markSubtree(node: NfNode, p: Pending): void {
+  if (node.kind === KIND.run) node.pending = withRevision(node.pending, p);
+  if (node.kind === KIND.paragraph) {
+    const mark = isObject(node.pending) ? node.pending.mark : undefined;
+    node.pending = {
+      ...(isObject(node.pending) ? node.pending : {}),
+      mark: withRevision(mark, p)
+    };
+  }
+  if (node.kind === KIND.row) {
+    const mark = isObject(node.pending) ? node.pending.mark : undefined;
+    node.pending = {
+      ...withRevision(node.pending, p),
+      ...(mark ? { mark } : {})
+    };
+  }
+  for (const key of docxTree.childLists(node))
+    for (const child of listOf(node, key) ?? []) markSubtree(child, p);
+}
+
+const ownFields = (n: NfNode): string => {
+  const out: Obj = {};
+  const lists = new Set(docxTree.childLists(n).map((k) => k.split('/')[0]));
+  for (const [k, v] of Object.entries(n))
+    if (!lists.has(k) && k !== 'pending' && k !== 'text') out[k] = v;
+  return canonicalJson(out);
+};
+
+/**
+ * The tracked document: `intended` with what it removed kept in place as Deletion and what it
+ * added marked Insertion, all under change set `turnId`. Also reports whether any property change
+ * lands untracked.
+ */
+export function composeTracked(
+  before: DocumentView,
+  intended: NormalForm,
+  turnId: string
+): { tracked: NormalForm; untracked: string[] } {
+  const ins: Pending = { kind: 'Insertion', author: AUTHOR, group: turnId };
+  const del: Pending = { kind: 'Deletion', author: AUTHOR, group: turnId };
+  const tracked = clone(intended);
+  const untracked: string[] = [];
+
+  const merge = (node: NfNode, original: NfNode) => {
+    if (ownFields(node) !== ownFields(original)) untracked.push(node.id);
+    for (const key of docxTree.childLists(node)) {
+      const kids = listOf(node, key) ?? [];
+      const was = listOf(original, key) ?? [];
+      const keep = new Set(kids.map((k) => k.id));
+      const result: NfNode[] = [];
+      let w = 0;
+      const flushRemovedBefore = (stopId: string | null) => {
+        while (w < was.length && was[w].id !== stopId && !keep.has(was[w].id)) {
+          const gone = clone(was[w]);
+          markSubtree(gone, del);
+          result.push(gone);
+          w += 1;
+        }
+      };
+      for (const kid of kids) {
+        flushRemovedBefore(kid.id);
+        const old = was.find((x) => x.id === kid.id);
+        if (old && was[w]?.id === kid.id) w += 1;
+        if (!old) {
+          // new here, or moved here from elsewhere: an insertion in this list
+          markSubtree(kid, ins);
+          result.push(kid);
+          continue;
+        }
+        if (kid.kind === KIND.run && kid.text !== old.text) {
+          const gone = clone(old);
+          markSubtree(gone, del);
+          markSubtree(kid, ins);
+          result.push(gone, kid);
+          continue;
+        }
+        merge(kid, old);
+        result.push(kid);
+      }
+      flushRemovedBefore(null);
+      while (w < was.length) {
+        if (!keep.has(was[w].id)) {
+          const gone = clone(was[w]);
+          markSubtree(gone, del);
+          result.push(gone);
+        }
+        w += 1;
+      }
+      setList(node, key, result);
+    }
+  };
+  merge(tracked.root, before.nf.root);
+  return { tracked, untracked };
+}
+
+// ------------------------------------------------------------------ classifying the delta
+
+/** The editor's hierarchical paragraph index (`section;block;row;cell;block...`), or null. */
+export function hierOf(view: DocumentView, id: string): string | null {
+  const out: Array<string | number> = [];
+  let p = view.placement(id);
+  while (p && p.parent) {
+    const key = p.key as string;
+    if (!['sections', 'blocks', 'rows', 'cells'].includes(key)) return null;
+    // a paragraph inside a block-level control is not addressable natively (lab: not wired)
+    if (key === 'blocks' && p.parent.kind === KIND.control) return null;
+    out.unshift(p.index);
+    p = view.placement(p.parent.id);
+  }
+  return out.length ? out.join(';') : null;
+}
+
+export interface TextOp {
+  hi: string;
+  a: number;
+  b: number;
+  oldMid: string;
+  newMid: string;
+}
+
+export interface FormatOp {
+  hi: string;
+  /** Whole paragraph mark, or a run's span. */
+  whole: boolean;
+  a: number;
+  b: number;
+  expect: string;
+  props: Record<string, unknown>;
+}
+
+const charFormat = (view: DocumentView, ref: unknown): Obj =>
+  typeof ref === 'string' ? (view.nf.formats[ref] as Obj) ?? {} : {};
+
+function cfDelta(before: Obj, after: Obj): Obj {
+  const out: Obj = {};
+  for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (canonicalJson(before[k]) === canonicalJson(after[k])) continue;
+    out[k] = after[k] === undefined ? null : after[k];
+  }
+  return out;
+}
+
+const childIds = (n: NfNode) =>
+  canonicalJson(
+    docxTree.childLists(n).map((k) => (listOf(n, k) ?? []).map((c) => c.id))
+  );
+
+/** A native plan for the delta, or null when it needs the document replaced. */
+function nativePlan(
+  before: DocumentView,
+  intended: DocumentView
+): { text: TextOp[]; format: FormatOp[] } | null {
+  const text: TextOp[] = [];
+  const format: FormatOp[] = [];
+  const beforeNodes = before.nodes();
+  if (beforeNodes.length !== intended.nodes().length) return null;
+  const textParagraphs = new Set<string>();
+  for (const old of beforeNodes) {
+    const now = intended.get(old.id);
+    if (!now || now.kind !== old.kind) return null;
+    if (isObject(old.pending)) {
+      // a node with someone's pending change is left to the composed path
+      if (canonicalJson(old.pending) !== canonicalJson(now.pending))
+        return null;
+    }
+    if (childIds(old) !== childIds(now)) return null;
+    const ownSame = ownFields(old) === ownFields(now);
+    if (old.kind === KIND.run) {
+      const styleChanged = old.style !== now.style;
+      const textChanged = old.text !== now.text;
+      if (!textChanged && !styleChanged && ownSame) continue;
+      const para = enclosingParagraph(intended, now.id);
+      if (!para) return null;
+      if (textChanged) textParagraphs.add(para.id);
+      if (styleChanged) {
+        const hi = hierOf(before, para.id);
+        if (!hi) return null;
+        const { start, text: runText } = runOffset(before, para.id, old.id);
+        format.push({
+          hi,
+          whole: false,
+          a: start,
+          b: start + runText.length,
+          expect: runText,
+          props: cfDelta(
+            charFormat(before, old.style),
+            charFormat(intended, now.style)
+          )
+        });
+      }
+      if (!ownSameExcept(old, now, ['style'])) return null;
+      continue;
+    }
+    if (
+      old.kind === KIND.paragraph &&
+      old.markStyle !== now.markStyle &&
+      ownSameExcept(old, now, ['markStyle'])
+    ) {
+      const hi = hierOf(before, old.id);
+      if (!hi) return null;
+      format.push({
+        hi,
+        whole: true,
+        a: 0,
+        b: 0,
+        expect: ownText(before.get(old.id) as NfNode) ?? '',
+        props: cfDelta(
+          charFormat(before, old.markStyle),
+          charFormat(intended, now.markStyle)
+        )
+      });
+      continue;
+    }
+    if (!ownSame) return null;
+  }
+  for (const id of textParagraphs) {
+    const hi = hierOf(before, id);
+    if (!hi) return null;
+    const oldText = ownText(before.get(id) as NfNode) ?? '';
+    const newText = ownText(intended.get(id) as NfNode) ?? '';
+    let a = 0;
+    while (
+      a < oldText.length &&
+      a < newText.length &&
+      oldText[a] === newText[a]
+    )
+      a += 1;
+    let z = 0;
+    while (
+      z < oldText.length - a &&
+      z < newText.length - a &&
+      oldText[oldText.length - 1 - z] === newText[newText.length - 1 - z]
+    )
+      z += 1;
+    // whole words: a tracked change reads as words replaced, not letters inside a word
+    const ws = (c: string | undefined) => c === undefined || /\s/.test(c);
+    while (a > 0 && !ws(oldText[a - 1])) a -= 1;
+    while (z > 0 && !ws(oldText[oldText.length - z])) z -= 1;
+    text.push({
+      hi,
+      a,
+      b: oldText.length - z,
+      oldMid: oldText.slice(a, oldText.length - z),
+      newMid: newText.slice(a, newText.length - z)
+    });
+  }
+  if (text.length && format.length) return null; // the lab's rule: one native seam per change set
+  return { text, format };
+}
+
+function ownSameExcept(a: NfNode, b: NfNode, keys: string[]): boolean {
+  const strip = (n: NfNode) => {
+    const c: Obj = { ...n };
+    for (const k of keys) delete c[k];
+    return ownFields(c as NfNode);
+  };
+  return strip(a) === strip(b);
+}
+
+function enclosingParagraph(view: DocumentView, id: string): NfNode | null {
+  let p = view.placement(id);
+  while (p && p.parent) {
+    if (p.parent.kind === KIND.paragraph) return p.parent;
+    p = view.placement(p.parent.id);
+  }
+  return null;
+}
+
+/** A run's character offset in its paragraph's own text. */
+function runOffset(
+  view: DocumentView,
+  paragraphId: string,
+  runId: string
+): { start: number; text: string } {
+  let at = 0;
+  let found = { start: 0, text: '' };
+  const rec = (inlines: NfNode[] | undefined) => {
+    for (const i of inlines ?? []) {
+      if (i.kind === KIND.run) {
+        if (i.id === runId) found = { start: at, text: String(i.text ?? '') };
+        at += String(i.text ?? '').length;
+      }
+      if (Array.isArray(i.inlines)) rec(i.inlines as NfNode[]);
+    }
+  };
+  rec(view.get(paragraphId)?.inlines as NfNode[] | undefined);
+  return found;
+}
+
+// ------------------------------------------------------------------ the plan
+
+const UNDO_CLEARED: Warning = {
+  code: 'undo-history-cleared',
+  message:
+    "The editor's undo history before this change is no longer available; the card is the way back."
+};
+const IMMEDIATE: Warning = {
+  code: 'immediate-not-tracked',
+  message:
+    'Formatting and property changes are applied immediately and are not part of the review card; undo reverts them.'
+};
+
+export function plan(ctx: PlanContext): CommitPlan {
+  const native = nativePlan(ctx.before, ctx.intended);
+  if (native && native.text.length)
+    return {
+      steps: [{ seam: 'text', payload: native.text }],
+      landed: 'card',
+      history: 'editor'
+    };
+  if (native && native.format.length)
+    return {
+      steps: [{ seam: 'format', payload: native.format }],
+      landed: 'immediate',
+      history: 'editor',
+      warnings: [IMMEDIATE]
+    };
+  const { tracked, untracked } = composeTracked(
+    ctx.before,
+    ctx.intended.nf,
+    ctx.turnId
+  );
+  const payload = fromNormalForm(tracked, {
+    ...ctx.beforeResidue,
+    ...ctx.intendedResidue
+  } as never);
+  return {
+    steps: [{ seam: 'splice', payload }],
+    landed: 'card',
+    history: 'engine',
+    warnings: [UNDO_CLEARED, ...(untracked.length ? [IMMEDIATE] : [])]
+  };
+}
+
+export const STORY_PREFIX = `${HEADER_FOOTER}/`;

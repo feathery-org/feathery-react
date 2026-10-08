@@ -291,9 +291,10 @@ export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7];
 // ------------------------------------------------------------------ what rejecting restores
 
 /**
- * Formatting lands untracked (decision D3): rejecting restores text and structure but keeps the
- * new look. So rejecting should restore the document before, with each kept node's format
- * references taken from the intended document.
+ * Only text and structure are tracked (the native format has revisions for nothing else):
+ * formatting (decision D3), bindings, widths and every other property land untracked. So
+ * rejecting should restore the document before, with each kept node's own properties as the
+ * intended document has them; its text and children come back from the revisions.
  */
 export function expectedRejection(
   before: NormalForm,
@@ -310,11 +311,17 @@ export function expectedRejection(
   Object.assign(out.formats, clone(intended.formats));
   const rec = (n: NfNode) => {
     const m = later.get(n.id);
-    if (m)
-      for (const key of REF_KEYS) {
-        if (m[key] === undefined) delete n[key];
-        else n[key] = m[key];
-      }
+    if (m && m.kind === n.kind) {
+      const lists = new Set(
+        [...docxTree.childLists(n), ...docxTree.childLists(m)].map(
+          (k) => k.split('/')[0]
+        )
+      );
+      const skip = (k: string) =>
+        lists.has(k) || ['id', 'kind', 'text', 'pending'].includes(k);
+      for (const k of Object.keys(n)) if (!skip(k) && !(k in m)) delete n[k];
+      for (const [k, v] of Object.entries(m)) if (!skip(k)) n[k] = clone(v);
+    }
     for (const key of docxTree.childLists(n))
       for (const c of (listOf(n, key) as NfNode[]) ?? []) rec(c);
   };
