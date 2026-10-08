@@ -459,6 +459,9 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         return false;
 
       adapterWriteDepth += 1;
+      // The user's track-changes setting, put back afterwards: the engine's own writes are
+      // untracked, but forcing the setting off killed the user's tracking at their first keystroke.
+      const previousTracking = editor.enableTrackChanges;
       try {
         // Mechanical reconciliation is untracked; authored scopes own tracking.
         if (!authoredDepth) editor.enableTrackChanges = false;
@@ -526,7 +529,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         adapterWriteDepth -= 1;
         if (complex) history?.updateComplexHistory?.();
         editor.enableEditorHistory = previousHistory;
-        if (!authoredDepth) editor.enableTrackChanges = false;
+        if (!authoredDepth) editor.enableTrackChanges = previousTracking;
         try {
           // Prefer the anchored position. Normalizing "0012" to "12" shrinks the
           // control's interior by two offsets, so the saved absolute offset -
