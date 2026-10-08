@@ -48,7 +48,6 @@ const CANONICAL_KEYS: Record<string, string[]> = {
   ],
   [KIND.row]: ['cells', 'rowFormat'],
   [KIND.cell]: ['blocks', 'cellFormat', 'columnIndex'],
-  [KIND.blockControl]: ['blocks', 'contentControlProperties'],
   [KIND.control]: ['inlines', 'contentControlProperties'],
   [KIND.run]: ['characterFormat', 'text'],
   [KIND.bookmark]: ['characterFormat', 'bookmarkType', 'name'],
@@ -81,7 +80,6 @@ function structuralFormat(kind: string): string {
       return 'cellFormat';
     case KIND.paragraph:
     case KIND.block:
-    case KIND.blockControl:
       return 'paragraphFormat';
     default:
       return 'characterFormat';
@@ -194,11 +192,12 @@ export function fromNormalForm(nf: NormalForm, residue: DocxResidue): string {
     for (const [nfKey, nativeKey] of Object.entries(fmt))
       published[nativeKey] = nfKey;
 
-    const canonical = CANONICAL_KEYS[kind] ?? [];
+    const canonical =
+      kind === KIND.control && Array.isArray(n.blocks)
+        ? ['blocks', 'contentControlProperties']
+        : CANONICAL_KEYS[kind] ?? [];
     const order = record ? record.keys : canonical;
-    const wantsControl =
-      isObject(n.binding) &&
-      (kind === KIND.control || kind === KIND.blockControl);
+    const wantsControl = isObject(n.binding) && kind === KIND.control;
     const out: Obj = {};
 
     // Revision anchors: kept from the residue while `pending` is as read; re-authored otherwise.

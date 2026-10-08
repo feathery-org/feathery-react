@@ -79,7 +79,7 @@ function removedBy(node: NfNode, kind: string): boolean {
     const runs = runsUnder(node);
     return allOf(mark, kind) && runs.every((r) => allOf(r.pending, kind));
   }
-  if (node.kind === KIND.control || node.kind === KIND.blockControl) {
+  if (node.kind === KIND.control) {
     const runs = runsUnder(node);
     if (runs.length && runs.every((r) => allOf(r.pending, kind))) return true;
     const tables = ((node.blocks as NfNode[] | undefined) ?? []).filter(

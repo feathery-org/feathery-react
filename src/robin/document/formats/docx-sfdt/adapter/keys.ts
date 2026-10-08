@@ -92,7 +92,10 @@ export const toNativeKey = (key: string): string => RESTORED.get(key) ?? key;
 export const HEADER_FOOTER = 'headersFooters';
 export const TEXT_FRAME = 'textFrame';
 
-/** Node kinds. Each equals the knowledge card that teaches it. */
+/**
+ * Node kinds. Each equals the knowledge card that teaches it; `control` is both the inline and
+ * the block-level content control, told apart by whether it holds `inlines` or `blocks`.
+ */
 export const KIND = {
   document: 'document',
   section: 'section',
@@ -100,7 +103,6 @@ export const KIND = {
   table: 'table',
   row: 'row',
   cell: 'cell',
-  blockControl: 'blockControl',
   block: 'block',
   run: 'run',
   control: 'control',
@@ -114,7 +116,7 @@ export const KIND = {
 export const BLOCK_KINDS = new Set<string>([
   KIND.paragraph,
   KIND.table,
-  KIND.blockControl,
+  KIND.control,
   KIND.block
 ]);
 export const INLINE_KINDS = new Set<string>([
@@ -134,7 +136,7 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 export function blockKind(b: Record<string, unknown>): string {
   if (Array.isArray(b.rows)) return KIND.table;
   if (isObject(b.contentControlProperties) && Array.isArray(b.blocks))
-    return KIND.blockControl;
+    return KIND.control;
   if (
     Array.isArray(b.inlines) ||
     'paragraphFormat' in b ||

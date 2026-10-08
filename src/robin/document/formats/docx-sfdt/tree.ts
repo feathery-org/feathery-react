@@ -60,7 +60,7 @@ function inferKind(
   if (blockLists(listKey)) {
     if (has(node, 'rows')) return KIND.table;
     if (isObject(node.contentControlProperties) || isObject(node.binding))
-      return has(node, 'blocks') ? KIND.blockControl : null;
+      return has(node, 'blocks') ? KIND.control : null;
     if (has(node, 'inlines') || 'style' in node || 'markStyle' in node)
       return KIND.paragraph;
     return null;
