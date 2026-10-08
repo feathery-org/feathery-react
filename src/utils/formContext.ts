@@ -31,6 +31,7 @@ import { linkRequestHeaders } from './accessLink';
 import { fillFields, FillFieldInput } from './formActions/fillFields';
 import { navigateToStep } from './formActions/navigateToStep';
 import { clickElement } from './formActions/clickElement';
+import { runLogicRule, RunLogicRuleParams } from './formActions/runLogicRule';
 import { STEP_EVENT_SKIP } from './stepEvents';
 import {
   FillQuikParams,
@@ -125,6 +126,9 @@ export const getFormContext = (formUuid: string) => {
     navigateToStep: (stepKey: string) => navigateToStep(formUuid, stepKey),
     clickElement: (elementId: string, repeatIndex?: number) =>
       clickElement(formUuid, elementId, repeatIndex),
+    // Runs one of the designer's tool rules for the person and reports what it changed
+    runLogicRule: (ruleId: string, params?: RunLogicRuleParams) =>
+      runLogicRule(formUuid, ruleId, params),
     isLastStep: () => {
       const step = formState.currentStep;
       return step.next_conditions.length === 0;
