@@ -104,6 +104,8 @@ export function composeTracked(
   const del: Pending = { kind: 'Deletion', author: AUTHOR, group: turnId };
   const tracked = clone(intended);
   const untracked: string[] = [];
+  const moved = new Set<string>();
+  const removedCopies: NfNode[] = [];
 
   const merge = (node: NfNode, original: NfNode) => {
     if (ownFields(node) !== ownFields(original)) untracked.push(node.id);
@@ -117,6 +119,7 @@ export function composeTracked(
         while (w < was.length && was[w].id !== stopId && !keep.has(was[w].id)) {
           const gone = clone(was[w]);
           markSubtree(gone, del);
+          removedCopies.push(gone);
           result.push(gone);
           w += 1;
         }
@@ -129,6 +132,7 @@ export function composeTracked(
           // new here, or moved here from elsewhere: an insertion in this list
           markSubtree(kid, ins);
           result.push(kid);
+          if (before.get(kid.id)) moved.add(kid.id);
           continue;
         }
         if (kid.kind === KIND.run && kid.text !== old.text) {
@@ -146,6 +150,7 @@ export function composeTracked(
         if (!keep.has(was[w].id)) {
           const gone = clone(was[w]);
           markSubtree(gone, del);
+          removedCopies.push(gone);
           result.push(gone);
         }
         w += 1;
@@ -154,6 +159,19 @@ export function composeTracked(
     }
   };
   merge(tracked.root, before.nf.root);
+  // A moved node is a Deletion where it was and an Insertion where it goes. A bookmark name is
+  // unique, and with both copies pending the editor's accept drops the moved copy's bookmark
+  // (WP1 F8, measured again in the headless lane), so the bookmarks stay with the moved copy only.
+  const stripBookmarks = (n: NfNode) => {
+    if (Array.isArray(n.inlines))
+      n.inlines = (n.inlines as NfNode[]).filter(
+        (i) => i.kind !== KIND.bookmark
+      );
+    for (const key of docxTree.childLists(n))
+      for (const c of listOf(n, key) ?? []) stripBookmarks(c);
+  };
+  for (const copy of removedCopies)
+    if (moved.has(copy.id)) stripBookmarks(copy);
   return { tracked, untracked };
 }
 
