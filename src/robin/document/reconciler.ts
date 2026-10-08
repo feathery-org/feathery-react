@@ -19,7 +19,13 @@ import type {
   Pack,
   Residue
 } from './pack';
-import { ProofOutcome, RollbackOutcome, prove, rollback } from './proof';
+import {
+  ProofOutcome,
+  RollbackOutcome,
+  equivalentNative,
+  prove,
+  rollback
+} from './proof';
 import type { NormalForm } from './tree';
 
 export interface ReconcileInput {
@@ -66,6 +72,12 @@ export type ReconcileOutcome =
 
 export function reconcile(input: ReconcileInput): ReconcileOutcome {
   const { pack, host, history, before, intended } = input;
+  /** Undo only the groups this commit added; a document replacement is undone by its snapshot. */
+  const restore = (planned: CommitPlan | null, seamsRun: number) =>
+    rollback(host, before.native, {
+      undoLimit: planned?.history === 'editor' ? seamsRun : 0,
+      equivalent: (now) => equivalentNative(pack, now, before.native)
+    });
   let plan: CommitPlan | null = null;
   const seams: string[] = [];
   try {
@@ -97,7 +109,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
       plan,
       seams,
       error: e instanceof Error ? e.message : String(e),
-      rollback: rollback(host, before.native)
+      rollback: restore(plan, seams.length)
     };
   }
   const native = host.serialize();
@@ -116,7 +128,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
       plan,
       seams,
       proof,
-      rollback: rollback(host, before.native)
+      rollback: restore(plan, seams.length)
     };
   if (plan.history === 'engine')
     history.push({

@@ -302,7 +302,8 @@ export class DocumentSession {
         ])
     });
     if (outcome.outcome !== 'committed') {
-      const rolledBack = outcome.rollback.byteEqual;
+      const rolledBack =
+        outcome.rollback.byteEqual || outcome.rollback.equivalent;
       trace.committed('rolled-back', outcome.seams, 0);
       trace.proof({
         outcome: outcome.outcome === 'proof-failed' ? 'failed' : 'skipped',
@@ -311,7 +312,10 @@ export class DocumentSession {
         reversible:
           outcome.outcome === 'proof-failed' ? outcome.proof.reversible : false,
         normalizations: [],
-        rollback: { byteEqual: rolledBack }
+        rollback: {
+          byteEqual: outcome.rollback.byteEqual,
+          equivalent: outcome.rollback.equivalent
+        }
       });
       this.refresh();
       const restored = rolledBack

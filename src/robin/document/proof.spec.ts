@@ -158,8 +158,9 @@ describe('rollback', () => {
   const A = toyNative(para('a'));
 
   it('does nothing when the bytes are already equal', () => {
-    expect(rollback(new ToyHost(A), A)).toEqual({
+    expect(rollback(new ToyHost(A), A, { undoLimit: 1 })).toEqual({
       byteEqual: true,
+      equivalent: true,
       via: 'nothing',
       undoSteps: 0
     });
@@ -168,8 +169,9 @@ describe('rollback', () => {
   it('undoes a native group back to the exact bytes', () => {
     const host = new ToyHost(A);
     host.seamEdit('text', (d) => d.body.push(para('x')));
-    expect(rollback(host, A)).toEqual({
+    expect(rollback(host, A, { undoLimit: 1 })).toEqual({
       byteEqual: true,
+      equivalent: true,
       via: 'editor-undo',
       undoSteps: 1
     });
@@ -179,8 +181,9 @@ describe('rollback', () => {
   it('reopens the snapshot when undo cannot get back', () => {
     const host = new ToyHost(A);
     host.open(toyNative(para('replaced')));
-    expect(rollback(host, A)).toEqual({
+    expect(rollback(host, A, { undoLimit: 1 })).toEqual({
       byteEqual: true,
+      equivalent: true,
       via: 'snapshot',
       undoSteps: 0
     });

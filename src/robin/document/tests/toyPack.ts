@@ -458,6 +458,11 @@ export class ToyHost implements EditorHost {
    * turn, or leave this turn's change out of its group.
    */
   seamFault: 'drop-residue' | 'reauthor-foreign' | 'omit-group' | null = null;
+  /**
+   * Fault injection: the next seam's undo step restores the document with a trailing space on the
+   * first paragraph, equivalent under normalization T1 but not byte-exact.
+   */
+  undoDrift = false;
   opens = 0;
 
   constructor(native: string) {
@@ -506,7 +511,15 @@ export class ToyHost implements EditorHost {
     const doc = JSON.parse(this.native) as NativeDoc;
     const before = this.native;
     mutate(doc);
-    this.undoStack.push(before);
+    let undoTo = before;
+    if (this.undoDrift) {
+      this.undoDrift = false;
+      const drifted = JSON.parse(before) as NativeDoc;
+      const first = drifted.body[0];
+      if (first?.t === 'p') first.text = `${first.text} `;
+      undoTo = writeNative(drifted);
+    }
+    this.undoStack.push(undoTo);
     this.redoStack = [];
     this.native = writeNative(doc);
     if (this.failNextSeam === name) {

@@ -107,7 +107,7 @@ export class TraceBuilder {
     landed: boolean;
     reversible: boolean;
     normalizations: string[];
-    rollback: { byteEqual: boolean } | null;
+    rollback: { byteEqual: boolean; equivalent?: boolean } | null;
   }): this {
     this.trace.proof = {
       ...proof,

@@ -145,6 +145,7 @@ describe('reconciler', () => {
     expect(r.error).toBe('text: placement failed');
     expect(r.rollback).toEqual({
       byteEqual: true,
+      equivalent: true,
       via: 'editor-undo',
       undoSteps: 1
     });
@@ -190,5 +191,59 @@ describe('reconciler', () => {
     expect(out.outcome).toBe('apply-failed');
     if (out.outcome === 'apply-failed') expect(out.error).toContain('teleport');
     expect(host.serialize()).toBe(doc);
+  });
+
+  it("rollback never undoes the user's own edits: it stops once the document is back, byte-exact or equivalent", () => {
+    const host = new ToyHost(doc);
+    host.userEdit((d) => d.body.push(para('u1')));
+    host.userEdit((d) => d.body.push(para('u2')));
+    host.userEdit((d) => d.body.push(para('u3')));
+    const before = host.serialize();
+    const state = stateOf(before);
+    const n1 = state.view.get('n1') as NfNode;
+    const parsed = parseVerbInput('write', {
+      intent: 'Retitle.',
+      scope: { ids: ['n1'] },
+      changes: [
+        {
+          kind: 'replace',
+          id: 'n1',
+          base: baseOf(n1),
+          node: { text: 'New title', style: n1.style }
+        }
+      ]
+    });
+    if (!parsed.ok) throw new Error('bad input');
+    const prepared = prepareWrite(state, parsed.value as WriteInput);
+    if (prepared.outcome !== 'verified') throw new Error(prepared.outcome);
+    host.corruptNextSeam = true;
+    host.undoDrift = true; // undoing the seam's group restores the text with a trailing space (T1)
+    const r = reconcile({
+      pack: state.pack,
+      host,
+      history: new EngineHistory(),
+      turnId: 'turn-1',
+      intent: 'Retitle.',
+      before: { view: state.view, residue: state.residue, native: before },
+      intended: {
+        view: makeView(prepared.intended, state.pack),
+        residue: prepared.intendedResidue
+      },
+      adopt: (fresh) =>
+        state.ids.adopt(fresh, state.pack.tree, state.pack.formatRefKeys, [
+          prepared.intended,
+          state.view.nf
+        ])
+    });
+    expect(r.outcome).toBe('proof-failed');
+    if (r.outcome !== 'proof-failed') return;
+    expect(r.rollback).toEqual({
+      byteEqual: false,
+      equivalent: true,
+      via: 'editor-undo',
+      undoSteps: 1
+    });
+    expect(host.undoStack).toHaveLength(3);
+    expect(host.opens).toBe(0);
   });
 });

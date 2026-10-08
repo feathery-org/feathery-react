@@ -231,35 +231,70 @@ export function prove(pack: Pack, input: ProofInput): ProofOutcome {
   };
 }
 
+/**
+ * Whether two native documents are the same document under the pack's enumerated normalizations:
+ * what a native undo or a reopen restores when it is not byte-stable.
+ */
+export function equivalentNative(pack: Pack, a: string, b: string): boolean {
+  if (a === b) return true;
+  const normalized = (native: string) => {
+    let nf = pack.adapter.toNormalForm(native).nf;
+    for (const n of pack.projections.normalizations) nf = n.apply(nf);
+    return canonicalJson(comparable(pack, nf));
+  };
+  return normalized(a) === normalized(b);
+}
+
 export interface RollbackOutcome {
   byteEqual: boolean;
+  /** Back to the same document under the pack's normalizations, though not byte-exact. */
+  equivalent: boolean;
   via: 'nothing' | 'editor-undo' | 'snapshot';
   undoSteps: number;
 }
 
-/** Native undo steps tried before falling back to reopening the snapshot. */
-export const ROLLBACK_UNDO_LIMIT = 8;
-
 /**
- * Put the editor back to the bytes before the write: the editor's own undo while it brings the
- * document closer (a native commit is one grouped step), else the snapshot reopened.
+ * Put the editor back to the document before the write. Native undo is tried at most `undoLimit`
+ * times, the number of undo groups the commit itself added, and stops as soon as the document is
+ * back, byte-exact or equivalent under `equivalent`; so a native group that does not undo
+ * byte-exact never takes the user's own edits with it. Only when undo cannot get back is the
+ * snapshot reopened, which clears the editor's history.
  */
 export function rollback(
   host: EditorHost,
-  beforeNative: string
+  beforeNative: string,
+  {
+    undoLimit,
+    equivalent = () => false
+  }: { undoLimit: number; equivalent?: (native: string) => boolean }
 ): RollbackOutcome {
   if (host.serialize() === beforeNative)
-    return { byteEqual: true, via: 'nothing', undoSteps: 0 };
+    return { byteEqual: true, equivalent: true, via: 'nothing', undoSteps: 0 };
   let steps = 0;
-  while (steps < ROLLBACK_UNDO_LIMIT && host.canUndo()) {
+  while (steps < undoLimit && host.canUndo()) {
     host.undo();
     steps += 1;
-    if (host.serialize() === beforeNative)
-      return { byteEqual: true, via: 'editor-undo', undoSteps: steps };
+    const now = host.serialize();
+    if (now === beforeNative)
+      return {
+        byteEqual: true,
+        equivalent: true,
+        via: 'editor-undo',
+        undoSteps: steps
+      };
+    if (equivalent(now))
+      return {
+        byteEqual: false,
+        equivalent: true,
+        via: 'editor-undo',
+        undoSteps: steps
+      };
   }
   host.open(beforeNative);
+  const byteEqual = host.serialize() === beforeNative;
   return {
-    byteEqual: host.serialize() === beforeNative,
+    byteEqual,
+    equivalent: byteEqual,
     via: 'snapshot',
     undoSteps: steps
   };
