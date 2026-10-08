@@ -5,10 +5,11 @@
  * (which clears the editor's history) and a card resolution. Ctrl+Z goes to the editor when it has
  * an entry, else to the engine; Ctrl+Y the same way.
  *
- * An engine entry applies only to the document it left: undo needs the document to be byte-equal to
- * the entry's `after`, redo to its `before`. Otherwise the user changed the document since, with
- * no way back through the editor, and restoring the snapshot would silently discard that work, so
- * the entry is dropped instead.
+ * An engine entry applies only to the document it left: undo needs the document to be the entry's
+ * `after`, redo its `before`, compared under the pack's normalizations because a native undo or a
+ * reopen is not byte-stable. Otherwise the user changed the document since, with no way back through
+ * the editor, and restoring the snapshot would silently discard that work, so that one entry is
+ * dropped and the rest of the stack is kept.
  */
 import type { EditorHost } from './pack';
 
@@ -34,8 +35,14 @@ export class EngineHistory {
 
   private readonly limit: number;
 
-  constructor(limit: number = ENGINE_HISTORY_LIMIT) {
+  private readonly same: (a: string, b: string) => boolean;
+
+  constructor(
+    limit: number = ENGINE_HISTORY_LIMIT,
+    same: (a: string, b: string) => boolean = (a, b) => a === b
+  ) {
     this.limit = limit;
+    this.same = same;
   }
 
   push(entry: EngineEntry): void {
@@ -63,10 +70,8 @@ export class EngineHistory {
     }
     const entry = this.undoStack.pop();
     if (!entry) return { via: 'none' };
-    if (host.serialize() !== entry.after) {
-      this.undoStack = [];
+    if (!this.same(host.serialize(), entry.after))
       return { via: 'none', stale: entry };
-    }
     host.open(entry.before);
     this.redoStack.push(entry);
     return { via: 'engine', entry };
@@ -79,10 +84,8 @@ export class EngineHistory {
     }
     const entry = this.redoStack.pop();
     if (!entry) return { via: 'none' };
-    if (host.serialize() !== entry.before) {
-      this.redoStack = [];
+    if (!this.same(host.serialize(), entry.before))
       return { via: 'none', stale: entry };
-    }
     host.open(entry.after);
     this.undoStack.push(entry);
     return { via: 'engine', entry };

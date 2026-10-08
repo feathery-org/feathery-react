@@ -26,11 +26,12 @@ import {
   refusedResult,
   sameEditor
 } from './envelope';
-import { EngineHistory, HistoryOutcome } from './history';
+import { ENGINE_HISTORY_LIMIT, EngineHistory, HistoryOutcome } from './history';
 import { IdTable } from './ids';
 import { WriteJournal } from './loop';
 import { renderOutline } from './outline';
 import type { EditorHost, Pack, Residue } from './pack';
+import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
 import { Clock, defaultClock, TraceBuilder } from './trace';
 import type { NormalForm } from './tree';
@@ -93,7 +94,11 @@ export class DocumentSession {
     this.target = { ...options.target };
     this.editorId = options.editorId ?? newEditorId();
     this.clock = options.clock ?? defaultClock;
-    this.history = options.history ?? new EngineHistory();
+    this.history =
+      options.history ??
+      new EngineHistory(ENGINE_HISTORY_LIMIT, (a, b) =>
+        equivalentNative(this.pack, a, b)
+      );
     this.adopt(this.host.serialize(), []);
   }
 

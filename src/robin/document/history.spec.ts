@@ -1,5 +1,6 @@
 import { EngineHistory } from './history';
-import { ToyHost, para, toyNative } from './tests/toyPack';
+import { equivalentNative } from './proof';
+import { ToyHost, makeToyPack, para, toyNative } from './tests/toyPack';
 
 const A = toyNative(para('a'));
 const B = toyNative(para('b'));
@@ -64,5 +65,34 @@ describe('undo routing (D4)', () => {
     expect(history.depth).toEqual({ undo: 1, redo: 1 });
     history.push({ turnId: 't4', kind: 'resolution', before: A, after: A });
     expect(history.depth).toEqual({ undo: 2, redo: 0 });
+  });
+
+  it('applies an engine entry to a document equivalent to the one it left, not only a byte-equal one', () => {
+    const pack = makeToyPack();
+    const host = new ToyHost(A);
+    const history = new EngineHistory(10, (x, y) =>
+      equivalentNative(pack, x, y)
+    );
+    host.open(B);
+    history.push({ turnId: 't1', kind: 'change-set', before: A, after: B });
+    // a user edit and its native undo leave the document equivalent under T1 but not byte-exact
+    host.native = toyNative(para('b '));
+    expect(history.undo(host)).toEqual(
+      expect.objectContaining({ via: 'engine' })
+    );
+    expect(host.serialize()).toBe(A);
+  });
+
+  it('drops only the stale entry, not the whole stack', () => {
+    const host = new ToyHost(A);
+    const history = new EngineHistory();
+    history.push({ turnId: 't1', kind: 'change-set', before: A, after: B });
+    history.push({ turnId: 't2', kind: 'change-set', before: B, after: C });
+    host.open(toyNative(para('elsewhere')));
+    expect(history.undo(host)).toEqual({
+      via: 'none',
+      stale: expect.objectContaining({ turnId: 't2' })
+    });
+    expect(history.depth).toEqual({ undo: 1, redo: 0 });
   });
 });
