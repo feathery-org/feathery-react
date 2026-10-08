@@ -15,7 +15,9 @@ import {
   baseOf,
   clone,
   indexTree,
-  isPlainObject
+  isPlainObject,
+  listAt,
+  withoutLists
 } from './tree';
 
 export function makeView(nf: NormalForm, pack: Pack): DocumentView {
@@ -53,22 +55,27 @@ export function emitNode(
   }: { properties?: boolean; stubChildren?: boolean } = {}
 ): EmittedNode {
   const emit = (n: NfNode, stub: boolean): EmittedNode => {
-    const lists = new Set(pack.tree.childLists(n));
     const out: Record<string, unknown> = {
       id: n.id,
       base: baseOf(n),
       kind: n.kind
     };
     if (stub) return out as EmittedNode;
-    for (const [key, value] of Object.entries(n)) {
-      if (key === 'id' || key === 'kind') continue;
-      if (lists.has(key) && Array.isArray(value)) {
-        out[key] = value.map((child) =>
-          isPlainObject(child)
-            ? emit(child as NfNode, stubChildren)
-            : clone(child)
-        );
-      } else out[key] = clone(value);
+    // the node's own fields, then each child list replaced by its emitted children
+    const own = clone(
+      withoutLists(n, pack.tree, (list) => list.map(() => null))
+    ) as Record<string, unknown>;
+    for (const [key, value] of Object.entries(own))
+      if (key !== 'id' && key !== 'kind') out[key] = value;
+    for (const key of pack.tree.childLists(n)) {
+      const list = listAt(n, key);
+      const target = listAt(out, key);
+      if (!list || !target) continue;
+      list.forEach((child, i) => {
+        target[i] = isPlainObject(child)
+          ? emit(child as NfNode, stubChildren)
+          : clone(child);
+      });
     }
     const a = view.annotation(n.id);
     if (a?.usedBy?.length) out.usedBy = [...a.usedBy];
@@ -83,14 +90,6 @@ export function emitNode(
 /** Format ids referenced by a node's own content and every node below it. */
 export function referencedFormats(pack: Pack, node: unknown): Set<string> {
   return formatRefsIn(node, pack.formatRefKeys);
-}
-
-/** A node's own fields without its child lists. */
-function ownFields(pack: Pack, node: NfNode): Record<string, unknown> {
-  const lists = new Set(pack.tree.childLists(node));
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(node)) if (!lists.has(k)) out[k] = v;
-  return out;
 }
 
 const clip = (text: string, start: number, end: number): string => {
@@ -133,7 +132,7 @@ export function matchQuery(
       continue;
     if (
       query.format !== undefined &&
-      !referencedFormats(pack, ownFields(pack, node)).has(query.format)
+      !referencedFormats(pack, withoutLists(node, pack.tree)).has(query.format)
     )
       continue;
     const text = pack.text(node);

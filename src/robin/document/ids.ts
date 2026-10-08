@@ -24,6 +24,7 @@ import {
   clone,
   contentKey,
   isPlainObject,
+  listAt,
   walk
 } from './tree';
 
@@ -105,14 +106,14 @@ export class IdTable {
     renamed: Map<string, string>
   ): void {
     for (const key of shape.childLists(node)) {
-      const list = node[key];
-      if (!Array.isArray(list)) continue;
+      const list = listAt(node, key);
+      if (!list) continue;
       const kids = list.filter(isPlainObject) as NfNode[];
       const candidates: NfNode[] = [];
       const seen = new Set<string>();
       for (const p of previous) {
-        const plist = p[key];
-        if (!Array.isArray(plist)) continue;
+        const plist = listAt(p, key);
+        if (!plist) continue;
         for (const c of plist as NfNode[])
           if (isPlainObject(c) && !seen.has(c.id)) {
             seen.add(c.id);
@@ -142,8 +143,8 @@ function findChild(
   id: string
 ): NfNode | undefined {
   for (const key of shape.childLists(parent)) {
-    const list = parent[key];
-    if (!Array.isArray(list)) continue;
+    const list = listAt(parent, key);
+    if (!list) continue;
     const hit = (list as NfNode[]).find((c) => isPlainObject(c) && c.id === id);
     if (hit) return hit;
   }

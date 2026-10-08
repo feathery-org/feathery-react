@@ -42,6 +42,7 @@ import {
   clone,
   indexTree,
   isPlainObject,
+  listAt,
   walk
 } from './tree';
 import { CheckRecord, CheckRunner, problem, runInvariants } from './verifier';
@@ -387,8 +388,8 @@ export function prepareWrite(
     }
     node.kind = kind;
     for (const listKey of pack.tree.childLists(node as NfNode)) {
-      const list = node[listKey];
-      if (!Array.isArray(list)) continue;
+      const list = listAt(node, listKey);
+      if (!list) continue;
       list.forEach((child, i) => {
         if (!isPlainObject(child)) {
           fail('apply-failed', `${at}.${listKey}[${i}] is not a node`);
@@ -409,7 +410,8 @@ export function prepareWrite(
       );
     return placement;
   };
-  const listOf = (parent: NfNode, key: string) => parent[key] as unknown[];
+  const listOf = (parent: NfNode, key: string) =>
+    listAt(parent, key) as unknown[];
   const insideOf = (id: string, ancestor: string) => {
     let p = index.get(id)?.parent ?? null;
     while (p) {

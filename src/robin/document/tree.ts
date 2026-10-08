@@ -31,13 +31,57 @@ export interface NormalForm {
   formats: Record<string, FormatEntry>;
 }
 
-/** How the core finds children without knowing a format: the pack names a node's child lists. */
+/**
+ * How the core finds children without knowing a format: the pack names a node's child lists.
+ * A list key is a path of property names joined by `/`, so a list may sit inside a plain object
+ * the node carries (`a/b/items` is `node.a.b.items`).
+ */
 export interface TreeShape {
   childLists(node: NfNode): readonly string[];
 }
 
 export const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/** The array at a child-list key (a `/`-joined path), or undefined. */
+export function listAt(node: unknown, key: string): unknown[] | undefined {
+  let cur: unknown = node;
+  for (const part of key.split('/')) {
+    if (!isPlainObject(cur)) return undefined;
+    cur = cur[part];
+  }
+  return Array.isArray(cur) ? cur : undefined;
+}
+
+/**
+ * A copy of a node without its child lists: each list is replaced by `replace(list)`, or removed
+ * when `replace` is omitted. Only the objects along list paths are copied; the rest is shared.
+ */
+export function withoutLists(
+  node: NfNode,
+  shape: TreeShape,
+  replace?: (list: unknown[]) => unknown
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...node };
+  for (const key of shape.childLists(node)) {
+    const parts = key.split('/');
+    let cur: Record<string, unknown> = out;
+    let ok = true;
+    for (const part of parts.slice(0, -1)) {
+      if (!isPlainObject(cur[part])) {
+        ok = false;
+        break;
+      }
+      cur[part] = { ...(cur[part] as Record<string, unknown>) };
+      cur = cur[part] as Record<string, unknown>;
+    }
+    const last = parts[parts.length - 1];
+    if (!ok || !Array.isArray(cur[last])) continue;
+    if (replace) cur[last] = replace(cur[last] as unknown[]);
+    else delete cur[last];
+  }
+  return out;
+}
 
 /** A deep copy of JSON data. */
 export function clone<T>(value: T): T {
@@ -131,8 +175,8 @@ export function walk(
     if (visit(placement) === false) return;
     const { node, depth } = placement;
     for (const key of shape.childLists(node)) {
-      const list = node[key];
-      if (!Array.isArray(list)) continue;
+      const list = listAt(node, key);
+      if (!list) continue;
       list.forEach((child, index) => {
         if (isPlainObject(child))
           rec({
@@ -181,9 +225,8 @@ export function childIdLists(
 ): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const key of shape.childLists(node)) {
-    const list = node[key];
-    if (Array.isArray(list))
-      out[key] = list.filter(isPlainObject).map((c) => String(c.id));
+    const list = listAt(node, key);
+    if (list) out[key] = list.filter(isPlainObject).map((c) => String(c.id));
   }
   return out;
 }
@@ -193,12 +236,8 @@ export function childIdLists(
  * Two versions of a node with equal own content differ only below their children.
  */
 export function ownContentKey(node: NfNode, shape: TreeShape): string {
-  const lists = new Set(shape.childLists(node));
-  const own: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(node)) {
-    if (lists.has(key) && Array.isArray(value)) {
-      own[key] = value.filter(isPlainObject).map((c) => String(c.id));
-    } else own[key] = value;
-  }
+  const own = withoutLists(node, shape, (list) =>
+    list.filter(isPlainObject).map((c) => String(c.id))
+  );
   return hash64(canonicalJson(contentOf(own, { keepPending: true })));
 }

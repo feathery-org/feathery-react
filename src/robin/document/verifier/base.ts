@@ -15,7 +15,7 @@ import type {
 } from '../envelope';
 import { isNodeId } from '../envelope';
 import type { DocumentView, Pack } from '../pack';
-import { baseOf, isPlainObject, NfNode } from '../tree';
+import { baseOf, isPlainObject, NfNode, withoutLists } from '../tree';
 import { emitNode, matchQuery, referencedFormats } from '../view';
 
 export type Conflict = ConflictResult['conflict'];
@@ -29,10 +29,9 @@ export function referrersOf(
   return view
     .nodes()
     .filter((node) => {
-      const lists = new Set(pack.tree.childLists(node));
-      const own: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(node)) if (!lists.has(k)) own[k] = v;
-      return referencedFormats(pack, own).has(formatId);
+      return referencedFormats(pack, withoutLists(node, pack.tree)).has(
+        formatId
+      );
     })
     .map((n) => n.id);
 }

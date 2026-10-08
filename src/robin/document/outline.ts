@@ -8,7 +8,7 @@
  */
 import { OutlineResult } from './envelope';
 import type { DocumentView, Pack } from './pack';
-import { hash64, isPlainObject, NfNode } from './tree';
+import { hash64, isPlainObject, listAt, NfNode } from './tree';
 
 export const OUTLINE_DEPTH_MIN = 1;
 export const OUTLINE_DEPTH_MAX = 6;
@@ -33,9 +33,7 @@ export function renderOutline(
   const childrenOf = (node: NfNode) =>
     pack.tree.childLists(node).map((key) => ({
       key,
-      kids: (Array.isArray(node[key]) ? (node[key] as unknown[]) : []).filter(
-        isPlainObject
-      ) as NfNode[]
+      kids: (listAt(node, key) ?? []).filter(isPlainObject) as NfNode[]
     }));
   const count = (node: NfNode): number =>
     childrenOf(node).reduce(

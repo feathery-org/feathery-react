@@ -21,7 +21,8 @@ import {
   childIdLists,
   hash64,
   NfNode,
-  ownContentKey
+  ownContentKey,
+  withoutLists
 } from '../tree';
 import { bulkQuery } from './base';
 import { problem } from './index';
@@ -37,10 +38,7 @@ export interface TreeDiff {
 }
 
 function ownFieldsKey(node: NfNode, pack: Pack): string {
-  const lists = new Set(pack.tree.childLists(node));
-  const own: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(node)) if (!lists.has(k)) own[k] = v;
-  return hash64(canonicalJson(own));
+  return hash64(canonicalJson(withoutLists(node, pack.tree)));
 }
 
 /** Longest common subsequence membership of `a` within `b` (ids common to both, in order). */

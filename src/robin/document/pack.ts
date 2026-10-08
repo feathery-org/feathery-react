@@ -35,7 +35,8 @@ import {
   TreeShape,
   canonicalJson,
   isPlainObject,
-  walk
+  walk,
+  withoutLists
 } from './tree';
 
 // ---------------------------------------------------------------------------------------------
@@ -392,10 +393,10 @@ export function conformanceProblems(
             problems.push(
               `${name}: node ${node.id} references unknown format ${child}`
             );
-          if (!pack.tree.childLists(node).includes(key)) refs(child);
+          refs(child);
         }
       };
-      refs(node);
+      refs(withoutLists(node, pack.tree));
     });
     if (!pending) {
       const same = canonicalJson(nf);

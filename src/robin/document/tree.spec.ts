@@ -6,8 +6,10 @@ import {
   contentKey,
   hash64,
   indexTree,
+  listAt,
   ownContentKey,
-  walk
+  walk,
+  withoutLists
 } from './tree';
 
 const shape = {
@@ -102,5 +104,37 @@ describe('tree mechanics', () => {
     expect(ownContentKey(n1[0], shape)).not.toBe(
       ownContentKey({ ...n1[0], text: 'x' }, shape)
     );
+  });
+
+  it('follows child lists nested in plain objects by path', () => {
+    const nested = {
+      childLists: (n: NfNode) =>
+        n.kind === 'doc' ? ['kids', 'side/a/kids'] : []
+    };
+    const t: NfNode = {
+      id: 'root',
+      kind: 'doc',
+      kids: [{ id: 'n1', kind: 'x' }],
+      side: { label: 'L', a: { kids: [{ id: 'n2', kind: 'x' }] } }
+    };
+    expect(listAt(t, 'side/a/kids')).toHaveLength(1);
+    expect(listAt(t, 'side/b/kids')).toBeUndefined();
+    const seen: string[] = [];
+    walk(t, nested, (p) => {
+      seen.push(`${p.node.id}:${p.key}`);
+    });
+    expect(seen).toEqual(['root:null', 'n1:kids', 'n2:side/a/kids']);
+    expect(withoutLists(t, nested)).toEqual({
+      id: 'root',
+      kind: 'doc',
+      side: { label: 'L', a: {} }
+    });
+    expect(withoutLists(t, nested, (l) => l.length)).toEqual({
+      id: 'root',
+      kind: 'doc',
+      kids: 1,
+      side: { label: 'L', a: { kids: 1 } }
+    });
+    expect((t.side as { a: { kids: unknown[] } }).a.kids).toHaveLength(1);
   });
 });
