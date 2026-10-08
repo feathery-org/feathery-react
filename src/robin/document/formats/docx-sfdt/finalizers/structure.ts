@@ -165,3 +165,72 @@ export const copiedBookmarksFinalizer: Finalizer = {
     };
   }
 };
+
+/**
+ * Table identity (the lab's F1): a bound table's id is the engine's, like a row key. When a change
+ * set leaves two bound tables with one id (a copied table), the one the document had keeps it and
+ * every other gets a fresh id, unique in the document, so the copy is its own table and not a
+ * second claim on the first one's name.
+ */
+export const tableIdentityFinalizer: Finalizer = {
+  name: 'tables',
+  run(after, { before }) {
+    const controls: NfNode[] = [];
+    const rec = (n: unknown) => {
+      if (Array.isArray(n)) return n.forEach(rec);
+      if (!isObject(n)) return;
+      if (
+        n.kind === KIND.control &&
+        isObject(n.binding) &&
+        typeof n.binding.table === 'string'
+      )
+        controls.push(n as NfNode);
+      for (const [k, v] of Object.entries(n))
+        if (k !== 'binding' && k !== 'pending') rec(v);
+    };
+    rec(after.root);
+    const tableOf = (n: NfNode | undefined) =>
+      n && isObject(n.binding) && typeof n.binding.table === 'string'
+        ? n.binding.table
+        : null;
+    const used = new Set(controls.map((c) => tableOf(c) as string));
+    const byTable = new Map<string, NfNode[]>();
+    for (const c of controls)
+      byTable.set(tableOf(c) as string, [
+        ...(byTable.get(tableOf(c) as string) ?? []),
+        c
+      ]);
+    const ids: string[] = [];
+    const renamed: string[] = [];
+    for (const [table, group] of byTable) {
+      if (group.length < 2) continue;
+      const keeper =
+        group.find((c) => tableOf(before.get(c.id)) === table) ?? group[0];
+      for (const c of group) {
+        if (c === keeper) continue;
+        let k = 2;
+        while (used.has(`${table}_${k}`)) k += 1;
+        const fresh = `${table}_${k}`;
+        used.add(fresh);
+        c.binding = { ...(c.binding as Obj), table: fresh };
+        ids.push(c.id);
+        renamed.push(`${table} -> ${fresh}`);
+      }
+    }
+    return {
+      ids,
+      facts: renamed.length
+        ? [
+            {
+              kind: 'finalizer',
+              name: 'tables',
+              ids,
+              summary: `copied bound table(s) given their own table id: ${renamed.join(
+                ', '
+              )}`
+            }
+          ]
+        : []
+    };
+  }
+};

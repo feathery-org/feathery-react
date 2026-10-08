@@ -6,7 +6,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WriteInput } from '../../../envelope';
 import { DocumentSession } from '../../../session';
-import { NfNode, baseOf } from '../../../tree';
+import { NfNode, baseOf, shapeOf } from '../../../tree';
+import { docxTree } from '../tree';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
 import { arr } from '../util';
@@ -50,5 +51,29 @@ describe('restripe finalizer', () => {
     for (const x of after.slice(0, 2))
       for (const cell of arr<NfNode>(x.cells)) expect(restriped.has(cell.id)).toBe(false);
     expect(restriped.size).toBeGreaterThan(0);
+  });
+});
+
+describe('table identity finalizer', () => {
+  it('a copied bound table gets its own table id; the original keeps its own', () => {
+    const s = state();
+    const sections = arr<NfNode>(s.view.nf.root.sections);
+    const control = arr<NfNode>(sections[1].blocks)[10];
+    const original = (control.binding as { table?: string }).table;
+    expect(typeof original).toBe('string');
+    const strip = (v: unknown): unknown =>
+      Array.isArray(v) ? v.map(strip) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([k]) => !['id', 'base', 'shape', 'pending'].includes(k)).map(([k, x]) => [k, strip(x)])) : v;
+    const r = prepareWrite(s, {
+      intent: 'Repeat the property premium table.',
+      scope: { ids: [control.id] },
+      changes: [{ kind: 'insert_after', anchor: control.id, container: shapeOf(sections[1], docxTree), node: strip(control) }]
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 700));
+    const blocks = arr<NfNode>(arr<NfNode>(r.intended.root.sections)[1].blocks);
+    const ids = [blocks[10], blocks[11]].map((b) => (b.binding as { table?: string }).table);
+    expect(ids[0]).toBe(original);
+    expect(ids[1]).not.toBe(original);
+    expect(typeof ids[1]).toBe('string');
+    expect(r.facts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'finalizer', name: 'tables' })]));
   });
 });

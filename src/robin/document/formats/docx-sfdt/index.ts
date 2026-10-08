@@ -12,7 +12,8 @@ import { restripeFinalizer } from './finalizers/appearance';
 import { tableGeometryReport } from './finalizers/geometry';
 import {
   copiedBookmarksFinalizer,
-  rowIdentityFinalizer
+  rowIdentityFinalizer,
+  tableIdentityFinalizer
 } from './finalizers/structure';
 import { bindingConsistency } from './invariants/bindings';
 import { bookmarkPairs } from './invariants/bookmarks';
@@ -76,10 +77,11 @@ export const docxPack: Pack = {
     fieldTriplets,
     styleReferences
   ],
-  // identity first (bookmarks, rows): formulas read the rows; restripe over the settled rows; the
+  // identity first (bookmarks, tables, rows): formulas read the rows; restripe over the settled rows; the
   // geometry report last, over everything
   finalizers: [
     copiedBookmarksFinalizer,
+    tableIdentityFinalizer,
     rowIdentityFinalizer,
     formulasFinalizer,
     restripeFinalizer,
