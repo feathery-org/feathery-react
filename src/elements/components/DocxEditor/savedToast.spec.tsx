@@ -17,11 +17,15 @@ const mockExportDoc = jest.fn(async () => new Blob(['docx'], { type: 'docx' }));
 // test lives in index.tsx, not in the toolbar's editor-formatting internals.
 jest.mock('./DocxToolbar', () => ({
   __esModule: true,
-  default: ({ onSave }: any) => {
+  default: ({ onSave, onTerminalAction }: any) => {
     const R = jest.requireActual('react');
-    return onSave
-      ? R.createElement('button', { onClick: onSave }, 'Save')
-      : null;
+    return R.createElement(
+      R.Fragment,
+      null,
+      onSave && R.createElement('button', { onClick: onSave }, 'Save'),
+      onTerminalAction &&
+        R.createElement('button', { onClick: onTerminalAction }, 'Sign')
+    );
   }
 }));
 
@@ -78,5 +82,34 @@ describe('DocxEditor save confirmation toast', () => {
       await screen.findByText('Could not save document')
     ).toBeInTheDocument();
     expect(screen.queryByText('Document saved')).not.toBeInTheDocument();
+  });
+
+  it('reserves the signing tab before the DOCX export completes', async () => {
+    let finishExport!: (blob: Blob) => void;
+    mockExportDoc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishExport = resolve;
+        })
+    );
+    const tab = {} as Window;
+    const onTerminalActionStart = jest.fn(() => tab);
+    const onTerminalAction = jest.fn();
+    render(
+      <DocxEditor
+        terminalAction='sign'
+        onTerminalActionStart={onTerminalActionStart}
+        onTerminalAction={onTerminalAction}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Sign'));
+    expect(onTerminalActionStart).toHaveBeenCalledTimes(1);
+    expect(onTerminalAction).not.toHaveBeenCalled();
+
+    await act(async () => finishExport(new Blob(['docx'])));
+    await waitFor(() =>
+      expect(onTerminalAction).toHaveBeenCalledWith(undefined, tab)
+    );
   });
 });
