@@ -4,6 +4,7 @@ import { importDeck } from '../core/model/import';
 import { deckToJSON } from '../core/model/json';
 import { refreshShapeText } from '../core/model/read';
 import { renderSlideSvg } from '../core/render/svg';
+import { onFontMetricsSettled } from '../core/render/fonts';
 import { child, childrenOf, el, setAttr, tagOf } from '../core/opc/xml';
 
 it('carries DrawingML autofit, paragraph spacing, tabs, and field identity into JSON and SVG text', () => {
@@ -89,8 +90,20 @@ it('carries DrawingML autofit, paragraph spacing, tabs, and field identity into 
     '[data-source-run="0"]'
   ) as HTMLElement;
   expect(content.style.justifyContent).toBe('flex-end');
-  expect(firstPara.style.lineHeight).toBe('1.1');
-  expect(firstPara.style.marginTop).toBe('16px');
+  // 18pt * 0.8 font scale = 19.2px; line spacing 120% - 10% reduction = 1.1.
+  // Percent spacing multiplies the ~1.2x natural line box, so 1.1 -> 1.2 * 1.1.
+  const fontPx = ((18 * 96) / 72) * 0.8;
+  const lineHeightPx = fontPx * 1.2 * 1.1;
+  // Extra leading is whatever exceeds the 1.2x natural line box, split and
+  // moved below the baseline (top margin = spaceBefore 12pt=16px minus it).
+  const halfLeading = Math.max(0, (lineHeightPx - fontPx * 1.2) / 2);
+  expect(Number.parseFloat(firstPara.style.lineHeight)).toBeCloseTo(lineHeightPx);
+  expect(Number.parseFloat(firstPara.style.marginTop)).toBeCloseTo(
+    (12 * 96) / 72 - halfLeading
+  );
+  expect(Number.parseFloat(firstPara.style.marginBottom)).toBeCloseTo(
+    halfLeading
+  );
   expect(Number.parseFloat(firstRun.style.fontSize)).toBeCloseTo(
     (((shape.text!.paragraphs[0].runs[0].sizePt ?? 18) * 96) / 72) * 0.8
   );
@@ -183,4 +196,94 @@ it('renders DrawingML hyperlinks as clickable anchors in SVG text', () => {
   expect(link.getAttribute('target')).toBe('_blank');
   expect(link.getAttribute('title')).toBe('Open documentation');
   expect(link.textContent).toContain(run.text);
+});
+
+it('stacks and loads metric clones for Microsoft fonts', () => {
+  const deck = importDeck(
+    new Uint8Array(readFileSync(resolve(__dirname, 'fixtures/sample.pptx')))
+  );
+  const slide = deck.slides.find((candidate) =>
+    candidate.shapes.some((shape) =>
+      shape.text?.paragraphs.some((paragraph) => paragraph.runs.length)
+    )
+  )!;
+  const shape = slide.shapes.find((candidate) =>
+    candidate.text?.paragraphs.some((paragraph) => paragraph.runs.length)
+  )!;
+  const run = shape.text!.paragraphs.find((paragraph) => paragraph.runs.length)!
+    .runs[0];
+  const rPr = run.rPr || el('a:rPr');
+  if (!run.rPr) childrenOf(run.node).unshift(rPr);
+  childrenOf(rPr).push(el('a:latin', { typeface: 'Calibri' }));
+  refreshShapeText(shape);
+
+  const span = renderSlideSvg(deck, slide).querySelector(
+    `[data-shape-id="${shape.id}"] [data-textbody] [data-source-run="0"]`
+  ) as HTMLElement;
+  // The real face stays first so an installed Calibri still wins.
+  expect(span.style.fontFamily).toContain('Calibri');
+  expect(span.style.fontFamily).toContain('Carlito');
+  // The clone is what gets requested from Google Fonts, never "Calibri".
+  const links = Array.from(
+    document.querySelectorAll('link[data-pptx-font]')
+  ).map((l) => l.getAttribute('data-pptx-font'));
+  expect(links).toContain('Carlito');
+  expect(links).not.toContain('Calibri');
+
+  // A font without a clone keeps the plain fallback stack.
+  const latin = child(rPr, 'a:latin')!;
+  setAttr(latin, 'typeface', 'Futura');
+  refreshShapeText(shape);
+  const plain = renderSlideSvg(deck, slide).querySelector(
+    `[data-shape-id="${shape.id}"] [data-textbody] [data-source-run="0"]`
+  ) as HTMLElement;
+  expect(plain.style.fontFamily).toContain('Futura');
+  expect(plain.style.fontFamily).not.toContain('Carlito');
+});
+
+it("sizes the paragraph strut from the paragraph's own lead run", () => {
+  const deck = importDeck(
+    new Uint8Array(readFileSync(resolve(__dirname, 'fixtures/sample.pptx')))
+  );
+  const slide = deck.slides.find((candidate) =>
+    candidate.shapes.some((shape) =>
+      shape.text?.paragraphs.some((paragraph) => paragraph.runs.length)
+    )
+  )!;
+  const shape = slide.shapes.find((candidate) =>
+    candidate.text?.paragraphs.some((paragraph) => paragraph.runs.length)
+  )!;
+  const run = shape.text!.paragraphs.find((paragraph) => paragraph.runs.length)!
+    .runs[0];
+  const rPr = run.rPr || el('a:rPr');
+  if (!run.rPr) childrenOf(run.node).unshift(rPr);
+  setAttr(rPr, 'sz', '800'); // 8pt chip text, well under the 16px app default
+  childrenOf(rPr).push(el('a:latin', { typeface: 'Urbanist' }));
+  refreshShapeText(shape);
+
+  const para = renderSlideSvg(deck, slide).querySelector(
+    `[data-shape-id="${shape.id}"] [data-textbody] div[data-source-paragraph]`
+  ) as HTMLElement;
+  // Without an explicit font, line-height:1 would size the line box's strut
+  // from the inherited host font (16px), sinking sub-16px text below where
+  // PowerPoint draws it.
+  expect(Number.parseFloat(para.style.fontSize)).toBeCloseTo((8 * 96) / 72);
+  expect(para.style.fontFamily).toContain('Urbanist');
+});
+
+it('notifies subscribers when webfonts finish loading', () => {
+  const listeners: Record<string, () => void> = {};
+  (document as any).fonts = {
+    addEventListener: (type: string, cb: () => void) => {
+      listeners[type] = cb;
+    }
+  };
+  const seen: number[] = [];
+  const off = onFontMetricsSettled(() => seen.push(1));
+  listeners.loadingdone?.();
+  expect(seen).toHaveLength(1);
+  off();
+  listeners.loadingdone?.();
+  expect(seen).toHaveLength(1);
+  delete (document as any).fonts;
 });

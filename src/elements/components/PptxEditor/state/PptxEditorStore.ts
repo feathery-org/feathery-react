@@ -183,6 +183,24 @@ export class PptxEditorStore {
     return { renderRev, structureRev: structureRev + 1 };
   }
 
+  /** Re-render the active slide from the unchanged model (e.g. after webfonts
+   *  settle). Skipped during an in-place text edit to not clobber the caret. */
+  refreshRender = (): void => {
+    if (this.commitSvgTextEdit) return;
+    const { deck, activeSlide } = this.state;
+    const slide = deck?.slides[activeSlide];
+    if (deck && slide && this.svgRoot) {
+      reconcileSlideSvg(deck, slide, this.svgRoot, {
+        fullContent: true,
+        background: true,
+        structure: true,
+        slideSize: true
+      });
+    }
+    // rev drives thumbnail caches, so they re-render with fresh metrics too.
+    this.set({ rev: this.state.rev + 1 });
+  };
+
   // ---- engine actions ----
 
   loadFile = (bytes: Uint8Array, name: string): void => {
@@ -260,12 +278,19 @@ export class PptxEditorStore {
 
   private afterHistoryRestore(result: CommandResult): void {
     const rendering = this.refreshEngineView(result);
-    const slide = this.state.deck?.slides[this.state.activeSlide];
+    // Undo/redo of a slide add/delete can leave activeSlide out of range.
+    const count = this.state.deck?.slides.length ?? 0;
+    const activeSlide = Math.min(
+      this.state.activeSlide,
+      Math.max(0, count - 1)
+    );
+    const slide = this.state.deck?.slides[activeSlide];
     const selectedIds = this.state.selectedIds.filter((id) =>
       slide?.shapes.some((shape) => shape.id === id)
     );
     this.set({
       ...historyFields(result.snapshot),
+      activeSlide,
       selectedIds,
       selectedId: selectedIds[0] ?? null,
       textSelection: null,
@@ -321,6 +346,13 @@ export class PptxEditorStore {
     this.commitSvgTextEdit = commit;
   };
 
+  /** Step to the slide adjacent to `from` (default: active), clamped at the ends. */
+  stepSlide = (delta: number, from = this.state.activeSlide): void => {
+    const count = this.state.deck?.slides.length ?? 0;
+    const next = from + delta;
+    if (next >= 0 && next < count) this.setActiveSlide(next);
+  };
+
   setActiveSlide = (index: number): void =>
     this.set({
       activeSlide: index,
@@ -330,6 +362,52 @@ export class PptxEditorStore {
       tableSelection: null,
       pictureCropModeId: null
     });
+
+  /** Insert a slide at `atIndex` (blank, or a clone of `duplicateOf`). */
+  addSlide = (atIndex: number, duplicateOf?: string): void => {
+    if (!this.state.deck) return;
+    const result = this.executeCommand(
+      { type: 'add-slide', atIndex, duplicateOf },
+      duplicateOf ? 'Duplicate slide' : 'Add slide'
+    );
+    if (!result?.changed) return;
+    const count = this.state.deck?.slides.length ?? 1;
+    this.setActiveSlide(Math.min(Math.max(atIndex, 0), count - 1));
+  };
+
+  /** Reorder: move the slide at fromIndex to toIndex; active follows it. */
+  moveSlide = (fromIndex: number, toIndex: number): void => {
+    const deck = this.state.deck;
+    if (!deck) return;
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      fromIndex >= deck.slides.length
+    )
+      return;
+    const result = this.executeCommand(
+      { type: 'move-slide', fromIndex, toIndex },
+      'Move slide'
+    );
+    if (!result?.changed) return;
+    const count = this.state.deck?.slides.length ?? 1;
+    this.setActiveSlide(Math.max(0, Math.min(toIndex, count - 1)));
+  };
+
+  /** Delete a slide by path; never removes the deck's last slide. */
+  deleteSlide = (slideId: string): void => {
+    const deck = this.state.deck;
+    if (!deck || deck.slides.length <= 1) return;
+    const index = deck.slides.findIndex((slide) => slide.path === slideId);
+    if (index < 0) return;
+    const result = this.executeCommand(
+      { type: 'delete-slide', slideId },
+      'Delete slide'
+    );
+    if (!result?.changed) return;
+    const count = this.state.deck?.slides.length ?? 1;
+    this.setActiveSlide(Math.min(index, count - 1));
+  };
 
   select = (id: string | null): void =>
     this.set({

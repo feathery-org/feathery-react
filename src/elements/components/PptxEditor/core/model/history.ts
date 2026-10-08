@@ -1,9 +1,22 @@
 import { applySlideJSON } from './applyJson';
 import { deckToJSON, slideToJSON, type DeckJSON, type SlideJSON } from './json';
-import { refreshSlideModel } from './import';
+import { refreshSlideModel, rebuildSlides } from './import';
 import type { Deck } from './types';
 import type { OTree } from '../opc/xml';
 import { deepClone } from '../opc/deepClone';
+
+const PRES = 'ppt/presentation.xml';
+const CONTENT_TYPES = '[Content_Types].xml';
+
+// The parts that define which slides exist and their order (presentation.xml,
+// its rels, content-type Overrides, each slide's rels). Captured so undo/redo
+// can reconstruct an added/deleted slide, not just per-slide content.
+export interface PptxSlideManifest {
+  presentation: OTree;
+  presentationRels: OTree;
+  contentTypes: OTree;
+  slideRels: Record<string, OTree>;
+}
 
 /**
  * A history state is JSON-first: `document` is the public editable projection.
@@ -19,6 +32,11 @@ export interface PptxHistorySnapshot {
    * so a commit's cost scales with the changed slides, not the deck.
    */
   slideSeqs: Record<string, number>;
+  /** The slide manifest (see PptxSlideManifest). */
+  manifest: PptxSlideManifest;
+  // Combined mutationSeq of every manifest part; when unchanged between
+  // snapshots the manifest is reused by reference (no re-clone).
+  manifestSeq: number;
 }
 
 export interface PptxHistoryEntry {
@@ -40,10 +58,71 @@ export interface HistorySlideChange {
 
 export interface HistoryRestoreResult {
   slides: HistorySlideChange[];
+  /** The slide set/order changed (add/delete/duplicate); redraw the deck. */
+  deck?: boolean;
 }
 
 const clone = <T>(value: T): T => deepClone(value);
 const serialized = (value: unknown): string => JSON.stringify(value);
+
+function manifestSeqOf(deck: Deck): number {
+  const pkg = deck.pkg;
+  let sum =
+    pkg.mutationSeq(PRES) +
+    pkg.mutationSeq(pkg.relsPath(PRES)) +
+    pkg.mutationSeq(CONTENT_TYPES);
+  // mutationSeqs are monotonic, so an equal sum means no manifest part changed.
+  for (const slide of deck.slides)
+    sum += pkg.mutationSeq(pkg.relsPath(slide.path));
+  return sum;
+}
+
+function captureManifest(deck: Deck): PptxSlideManifest {
+  const pkg = deck.pkg;
+  const slideRels: Record<string, OTree> = {};
+  for (const slide of deck.slides) {
+    const relsPath = pkg.relsPath(slide.path);
+    if (pkg.hasPart(relsPath))
+      slideRels[slide.path] = clone(pkg.tree(relsPath));
+  }
+  const presRels = pkg.relsPath(PRES);
+  return {
+    presentation: clone(pkg.tree(PRES)),
+    presentationRels: pkg.hasPart(presRels) ? clone(pkg.tree(presRels)) : [],
+    contentTypes: clone(pkg.tree(CONTENT_TYPES)),
+    slideRels
+  };
+}
+
+// Reconcile the package's slide set to `target` before content restore:
+// restore manifest parts, re-add missing/drop extra slide parts, rebuild slides.
+function reconcileManifest(deck: Deck, target: PptxHistorySnapshot): void {
+  const pkg = deck.pkg;
+  const m = target.manifest;
+  pkg.setXmlPart(PRES, clone(m.presentation));
+  if (m.presentationRels.length)
+    pkg.setXmlPart(pkg.relsPath(PRES), clone(m.presentationRels));
+  pkg.setXmlPart(CONTENT_TYPES, clone(m.contentTypes));
+
+  const targetPaths = target.document.slides.map((slide) => slide.path);
+  const targetSet = new Set(targetPaths);
+  for (const path of targetPaths) {
+    if (!pkg.hasPart(path)) {
+      const raw = target.sourceSlides[path];
+      if (!raw) throw new Error(`History has no body for slide ${path}`);
+      pkg.setXmlPart(path, clone(raw));
+    }
+    const rels = m.slideRels[path];
+    if (rels) pkg.setXmlPart(pkg.relsPath(path), clone(rels));
+  }
+  for (const slide of deck.slides) {
+    if (!targetSet.has(slide.path)) {
+      pkg.removePart(pkg.relsPath(slide.path));
+      pkg.removePart(slide.path);
+    }
+  }
+  rebuildSlides(deck);
+}
 
 export function captureHistorySnapshot(
   deck: Deck,
@@ -78,6 +157,11 @@ export function captureHistorySnapshot(
       JSON.parse(JSON.stringify(slideToJSON(deck, slide, i))) as SlideJSON
     );
   });
+  const manifestSeq = manifestSeqOf(deck);
+  const manifest =
+    previous && previous.manifestSeq === manifestSeq
+      ? previous.manifest
+      : captureManifest(deck);
   return {
     document: {
       sizeEMU: { cx: deck.size.cx, cy: deck.size.cy },
@@ -89,7 +173,9 @@ export function captureHistorySnapshot(
       slides
     },
     sourceSlides,
-    slideSeqs
+    slideSeqs,
+    manifest,
+    manifestSeq
   };
 }
 
@@ -161,9 +247,12 @@ export function restoreHistorySnapshot(
   deck: Deck,
   target: PptxHistorySnapshot
 ): HistoryRestoreResult {
-  if (deck.slides.length !== target.document.slides.length) {
-    throw new Error('Undo cannot restore a different slide count yet');
-  }
+  const structural =
+    deck.slides.length !== target.document.slides.length ||
+    deck.slides.some(
+      (slide, i) => slide.path !== target.document.slides[i]?.path
+    );
+  if (structural) reconcileManifest(deck, target);
   const current = deckToJSON(deck);
   const changes: HistorySlideChange[] = [];
   for (const slide of deck.slides) {
@@ -192,5 +281,5 @@ export function restoreHistorySnapshot(
     }
     changes.push(change);
   }
-  return { slides: changes };
+  return { slides: changes, deck: structural };
 }

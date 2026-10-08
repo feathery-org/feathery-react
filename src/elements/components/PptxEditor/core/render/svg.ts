@@ -18,7 +18,26 @@ import { OPCPackage } from '../opc/package';
 import { trackObjectUrl } from '../opc/objectUrls';
 import { featheryDoc } from '../../../../../utils/browser';
 import { themeFonts, resolveFont, type ThemeFonts } from '../model/theme';
-import { resolveListProps } from '../model/resolve';
+import {
+  DEFAULT_THEME_PART,
+  resolveColorAt,
+  pkgCache,
+  schemeColorHexAt,
+  themeColors,
+  themePartForSlide
+} from './color';
+import {
+  cssFamilyList,
+  ensureDeckFontsLoaded,
+  excessTopLeadingRatio,
+  splitFontWeight
+} from './fonts';
+import { readSlide } from '../model/import';
+import {
+  PH_NO_IDX,
+  resolveListProps,
+  type ResolvedRunDefaults
+} from '../model/resolve';
 import {
   tableCellAlign,
   tableCellBorderEdge,
@@ -69,143 +88,75 @@ function clearRenderContext(): void {
 const SVGNS = 'http://www.w3.org/2000/svg';
 const XHTML = 'http://www.w3.org/1999/xhtml';
 
-// ---- theme colors (cached per package) ----
-const themeCache = new WeakMap<OPCPackage, Record<string, string>>();
-function themeColors(pkg: OPCPackage): Record<string, string> {
-  let map = themeCache.get(pkg);
-  if (map) return map;
-  map = {
-    tx1: '000000',
-    bg1: 'FFFFFF',
-    tx2: '44546A',
-    bg2: 'E7E6E6',
-    accent1: '4472C4',
-    accent2: 'ED7D31',
-    accent3: 'A5A5A5',
-    accent4: 'FFC000',
-    accent5: '5B9BD5',
-    accent6: '70AD47',
-    hlink: '0563C1',
-    folHlink: '954F72'
-  };
-  try {
-    if (!pkg.hasPart('ppt/theme/theme1.xml')) {
-      themeCache.set(pkg, map);
-      return map;
-    }
-    const root = pkg
-      .tree('ppt/theme/theme1.xml')
-      .find((n) => Object.keys(n).some((k) => k.endsWith('theme')));
-    const scheme = root && descendant(root, 'a:clrScheme');
-    if (scheme) {
-      const pick = (tag: string, key: string) => {
-        const n = child(scheme, tag);
-        if (!n) return;
-        const srgb = child(n, 'a:srgbClr');
-        const sys = child(n, 'a:sysClr');
-        // sysClr @val is a system-color NAME (e.g. "window"); the resolved hex is @lastClr
-        const val = srgb
-          ? getAttr(srgb, 'val')
-          : sys
-          ? getAttr(sys, 'lastClr') || getAttr(sys, 'val')
-          : undefined;
-        if (val) map![key] = val.toUpperCase();
-      };
-      pick('a:dk1', 'tx1');
-      pick('a:lt1', 'bg1');
-      pick('a:dk2', 'tx2');
-      pick('a:lt2', 'bg2');
-      pick('a:accent1', 'accent1');
-      pick('a:accent2', 'accent2');
-      pick('a:accent3', 'accent3');
-      pick('a:accent4', 'accent4');
-      pick('a:accent5', 'accent5');
-      pick('a:accent6', 'accent6');
-    }
-  } catch {
-    /* keep defaults */
-  }
-  themeCache.set(pkg, map);
-  return map;
+// ---- theme + color resolution (core/render/color.ts) ----
+// Thin wrappers bind the extracted resolvers to this render context (curSlide).
+function currentThemePart(pkg: OPCPackage): string {
+  return themePartForSlide(pkg, curSlide?.path);
 }
-
-const SCHEME_ALIAS: Record<string, string> = {
-  tx1: 'tx1',
-  dk1: 'tx1',
-  bg1: 'bg1',
-  lt1: 'bg1',
-  tx2: 'tx2',
-  dk2: 'tx2',
-  bg2: 'bg2',
-  lt2: 'bg2',
-  phClr: 'accent1'
-};
-
-/** Resolve an a:solidFill / color container to a hex string, applying lumMod/lumOff/shade/tint.
- *  phClr (a theme placeholder color) is substituted when a schemeClr val="phClr" is hit. */
+function schemeColorHex(name: string, pkg: OPCPackage): string | undefined {
+  return schemeColorHexAt(name, pkg, curSlide?.path);
+}
 function resolveColor(
   colorParent: ONode | undefined,
   pkg: OPCPackage,
   phClr?: string
 ): string | undefined {
-  if (!colorParent) return undefined;
-  const srgb = child(colorParent, 'a:srgbClr');
-  const scheme = child(colorParent, 'a:schemeClr');
-  const sys = child(colorParent, 'a:sysClr');
-  let hex: string | undefined;
-  let node: ONode | undefined;
-  if (srgb) {
-    hex = getAttr(srgb, 'val');
-    node = srgb;
-  } else if (scheme) {
-    const name = getAttr(scheme, 'val') || 'tx1';
-    hex =
-      name === 'phClr' && phClr
-        ? phClr.replace('#', '')
-        : themeColors(pkg)[SCHEME_ALIAS[name] || name];
-    node = scheme;
-  } else if (sys) {
-    hex = getAttr(sys, 'lastClr') || getAttr(sys, 'val');
-    node = sys;
+  return resolveColorAt(colorParent, pkg, curSlide?.path, phClr);
+}
+
+// SVG path from a DrawingML <a:custGeom>: points live in the path's own w×h
+// guide space, scaled to the shape's cx×cy box.
+function customGeomPath(custGeom: ONode, w: number, h: number): string {
+  const pathLst = child(custGeom, 'a:pathLst');
+  if (!pathLst) return '';
+  const DEG = Math.PI / 180;
+  let d = '';
+  for (const path of children(pathLst, 'a:path')) {
+    const pw = Number(getAttr(path, 'w')) || w;
+    const ph = Number(getAttr(path, 'h')) || h;
+    const sx = pw ? w / pw : 1;
+    const sy = ph ? h / ph : 1;
+    const pts = (node: ONode) =>
+      [...children(node, 'a:pt')].map(
+        (p) =>
+          [Number(getAttr(p, 'x')) * sx, Number(getAttr(p, 'y')) * sy] as const
+      );
+    let cx = 0;
+    let cy = 0;
+    for (const cmd of childrenOf(path)) {
+      const tag = tagOf(cmd);
+      if (tag === 'a:moveTo' || tag === 'a:lnTo') {
+        const [[x, y]] = pts(cmd);
+        d += `${tag === 'a:moveTo' ? 'M' : 'L'} ${x} ${y} `;
+        [cx, cy] = [x, y];
+      } else if (tag === 'a:cubicBezTo') {
+        const p = pts(cmd);
+        d += `C ${p[0][0]} ${p[0][1]} ${p[1][0]} ${p[1][1]} ${p[2][0]} ${p[2][1]} `;
+        [cx, cy] = p[2];
+      } else if (tag === 'a:quadBezTo') {
+        const p = pts(cmd);
+        d += `Q ${p[0][0]} ${p[0][1]} ${p[1][0]} ${p[1][1]} `;
+        [cx, cy] = p[1];
+      } else if (tag === 'a:arcTo') {
+        const wR = Number(getAttr(cmd, 'wR')) * sx;
+        const hR = Number(getAttr(cmd, 'hR')) * sy;
+        const st = (Number(getAttr(cmd, 'stAng')) / 60000) * DEG;
+        const swDeg = Number(getAttr(cmd, 'swAng')) / 60000;
+        const end = st + swDeg * DEG;
+        const ccx = cx - wR * Math.cos(st);
+        const ccy = cy - hR * Math.sin(st);
+        const ex = ccx + wR * Math.cos(end);
+        const ey = ccy + hR * Math.sin(end);
+        const large = Math.abs(swDeg) > 180 ? 1 : 0;
+        const sweep = swDeg > 0 ? 1 : 0;
+        d += `A ${wR} ${hR} 0 ${large} ${sweep} ${ex} ${ey} `;
+        [cx, cy] = [ex, ey];
+      } else if (tag === 'a:close') {
+        d += 'Z ';
+      }
+    }
   }
-  if (!hex) return undefined;
-  hex = hex.replace('#', '');
-  // luminance modulation
-  const mod = node && child(node, 'a:lumMod');
-  const off = node && child(node, 'a:lumOff');
-  const shade = node && child(node, 'a:shade');
-  const tint = node && child(node, 'a:tint');
-  const pct = (n: ONode | undefined) =>
-    n ? Number(getAttr(n, 'val')) / 100000 : undefined;
-  let [r, g, b] = [0, 2, 4].map((i) => parseInt(hex!.slice(i, i + 2), 16));
-  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
-  const lm = pct(mod);
-  const lo = pct(off);
-  const sh = pct(shade);
-  const tn = pct(tint);
-  if (lm !== undefined) {
-    r *= lm;
-    g *= lm;
-    b *= lm;
-  }
-  if (lo !== undefined) {
-    r += 255 * lo;
-    g += 255 * lo;
-    b += 255 * lo;
-  }
-  if (sh !== undefined) {
-    r *= sh;
-    g *= sh;
-    b *= sh;
-  }
-  if (tn !== undefined) {
-    r = r * tn + 255 * (1 - tn);
-    g = g * tn + 255 * (1 - tn);
-    b = b * tn + 255 * (1 - tn);
-  }
-  return (
-    '#' + [r, g, b].map((v) => clamp(v).toString(16).padStart(2, '0')).join('')
-  );
+  return d.trim();
 }
 
 // ---- geometry ----
@@ -241,7 +192,36 @@ function geometryEl(
       e = mk('rect');
       e.setAttribute('width', String(w));
       e.setAttribute('height', String(h));
-      e.setAttribute('rx', String(Math.min(w, h) * 0.1667));
+      // Corner radius is the adj (1/100000 of the smaller side); 16.667% is the
+      // preset default, but a deck can set 0 for square corners.
+      const adj = shape.geomAdj?.adj ?? 16667;
+      e.setAttribute('rx', String((Math.min(w, h) * adj) / 100000));
+      break;
+    }
+    case 'pie':
+    case 'arc': {
+      // A pie slice / arc of the bounding ellipse between two angles (adj1/adj2
+      // in 1/60000 degree, clockwise from 3 o'clock). Rendered as an SVG arc.
+      e = mk('path');
+      const rx = w / 2;
+      const ry = h / 2;
+      const deg = Math.PI / 180;
+      const a1v = shape.geomAdj?.adj1 ?? 0;
+      const a2v = shape.geomAdj?.adj2 ?? 270 * 60000;
+      const a1 = (a1v / 60000) * deg;
+      const a2 = (a2v / 60000) * deg;
+      const sweepDeg = ((((a2v - a1v) / 60000) % 360) + 360) % 360;
+      const large = sweepDeg > 180 ? 1 : 0;
+      const sx = rx + rx * Math.cos(a1);
+      const sy = ry + ry * Math.sin(a1);
+      const ex = rx + rx * Math.cos(a2);
+      const ey = ry + ry * Math.sin(a2);
+      // pie closes through the center; arc is just the open curve.
+      const d =
+        prst === 'pie'
+          ? `M ${rx} ${ry} L ${sx} ${sy} A ${rx} ${ry} 0 ${large} 1 ${ex} ${ey} Z`
+          : `M ${sx} ${sy} A ${rx} ${ry} 0 ${large} 1 ${ex} ${ey}`;
+      e.setAttribute('d', d);
       break;
     }
     case 'triangle': {
@@ -350,9 +330,18 @@ function geometryEl(
       return e;
     }
     default: {
-      e = mk('rect');
-      e.setAttribute('width', String(w));
-      e.setAttribute('height', String(h));
+      // A custom shape (Google Slides rounded tabs, blobs, …) carries its path
+      // in a custGeom rather than a preset; render that instead of a plain box.
+      const custom = shape.spPr && descendant(shape.spPr, 'a:custGeom');
+      const d = custom ? customGeomPath(custom, w, h) : '';
+      if (d) {
+        e = mk('path');
+        e.setAttribute('d', d);
+      } else {
+        e = mk('rect');
+        e.setAttribute('width', String(w));
+        e.setAttribute('height', String(h));
+      }
     }
   }
   setStroke(e);
@@ -653,25 +642,42 @@ function applyOuterShadow(
 const EMU_PER_PX = 9525;
 const ptToCssPx = (pt: number) => (pt * 96) / 72;
 
-interface ParaDefault {
-  sizePt?: number;
-  color?: string;
-  font?: string;
-  bold?: boolean;
-  italic?: boolean;
+type ParaDefault = ResolvedRunDefaults;
+
+// Text color (hex, no '#'): run's own fill - srgb or a theme color on its rPr -
+// then the inherited placeholder default (srgb or theme color), then black.
+// schemeClr/sysClr are resolved through the current slide's theme + clrMap.
+function resolveTextColor(r: Run, def?: ParaDefault): string {
+  const bare = (v: string) => v.replace('#', '');
+  if (r.color) return bare(r.color);
+  const pkg = curDeck?.pkg;
+  if (pkg && r.rPr) {
+    const solid = child(r.rPr, 'a:solidFill');
+    const resolved = solid && resolveColor(solid, pkg);
+    if (resolved) return bare(resolved);
+  }
+  if (def?.color) return bare(def.color);
+  if (def?.colorScheme && pkg) {
+    const hex = schemeColorHex(def.colorScheme, pkg);
+    if (hex) return bare(hex);
+  }
+  return '000000';
 }
+
 // A run's own props win; otherwise fall back to the paragraph's inherited default
 // (from the placeholder list style), then the built-in default.
 function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
+  const { family, weight } = splitFontWeight(
+    resolveFont(r.font ?? def?.font, svgThemeFonts)
+  );
   const parts = [
     `font-size:${ptToCssPx(r.sizePt ?? def?.sizePt ?? 18) * fontScale}px`,
-    `color:#${(r.color ?? def?.color ?? '000000').replace('#', '')}`,
-    `font-family:'${resolveFont(
-      r.font ?? def?.font,
-      svgThemeFonts
-    )}',Helvetica,Arial,sans-serif`
+    `color:#${resolveTextColor(r, def)}`,
+    `font-family:${cssFamilyList(family)}`
   ];
+  // Bold wins; otherwise the typeface name's own weight (e.g. "… Medium").
   if (r.bold ?? def?.bold) parts.push('font-weight:700');
+  else if (weight !== 400) parts.push(`font-weight:${weight}`);
   if (r.italic ?? def?.italic) parts.push('font-style:italic');
   const decorations = [
     r.underline ? 'underline' : '',
@@ -718,6 +724,7 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
     columnWidths.slice(0, index).reduce((sum, width) => sum + width, 0)
   );
   let y = 0;
+  const borderLines: SVGLineElement[] = [];
   rows.forEach((row, rowIndex) => {
     const rowHeight = rowHeights[rowIndex];
     let x = 0;
@@ -775,7 +782,9 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
               ? `${border.widthEMU} ${border.widthEMU * 2}`
               : `${border.widthEMU * 4} ${border.widthEMU * 3}`
           );
-        g.appendChild(line);
+        // Deferred: a border along a shared edge must paint ABOVE the next
+        // cell's opaque background rect, or half its stroke disappears.
+        borderLines.push(line);
       }
 
       const textG = featheryDoc().createElementNS(SVGNS, 'g');
@@ -839,12 +848,12 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
     });
     y += rowHeight;
   });
+  for (const line of borderLines) g.appendChild(line);
   return g;
 }
 
-// Bullets are often authored in a symbol font (Wingdings/Symbol) where the char
-// is a bullet only IN THAT FONT; rendered in a normal/emoji font the codepoint
-// becomes a wrong glyph (a calendar, etc.). Map those to a clean Unicode bullet.
+// Symbol-font bullet chars (Wingdings etc.) render as wrong glyphs in normal
+// fonts; map those to a clean Unicode bullet.
 const SAFE_BULLETS = new Set([
   '•',
   '◦',
@@ -973,6 +982,18 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
   const insetT = px(body.insetsEMU?.t ?? 45720);
   const insetR = px(body.insetsEMU?.r ?? 91440);
   const insetB = px(body.insetsEMU?.b ?? 45720);
+  // PowerPoint never lets an inset pair push past the box, so clamp each pair
+  // to the box size (else short pill boxes sink their centered text).
+  const clampInsets = (a: number, b: number, max: number): [number, number] => {
+    if (max <= 0) return [0, 0];
+    const sum = a + b;
+    return sum > max ? [(a * max) / sum, (b * max) / sum] : [a, b];
+  };
+  const [insT, insB] = clampInsets(insetT, insetB, px(h));
+  const [insL, insR] = clampInsets(insetL, insetR, px(w));
+  // Top-anchored text trims the web font's excess ascent leading above the
+  // first line to sit at PowerPoint's typographic-ascent position.
+  const topAnchored = justify === 'flex-start';
 
   const g = featheryDoc().createElementNS(SVGNS, 'g') as SVGGElement;
   g.setAttribute('transform', `scale(${EMU_PER_PX})`);
@@ -994,7 +1015,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     `width:${px(w)}px;height:${px(
       h
     )}px;display:flex;flex-direction:column;justify-content:${justify};` +
-    `box-sizing:border-box;padding:${insetT}px ${insetR}px ${insetB}px ${insetL}px;overflow:${
+    `box-sizing:border-box;padding:${insT}px ${insR}px ${insB}px ${insL}px;overflow:${
       allowOverflow ? 'visible' : 'hidden'
     };line-height:1.2;outline:none;`;
 
@@ -1039,46 +1060,109 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       css += `position:relative;padding-left:${marL}px;text-indent:0px;`;
     } else if (marL || indent)
       css += `padding-left:${marL}px;text-indent:${indent}px;`;
+    // An empty paragraph still occupies a line sized by endParaRPr, not a run;
+    // match PowerPoint so spacer lines keep their height instead of collapsing.
+    const paraHasText = p.runs.some((r) => (r.text ?? '').trim().length > 0);
+    const endParaRPr = child(p.node, 'a:endParaRPr');
+    const endParaSzPt =
+      !paraHasText && endParaRPr && getAttr(endParaRPr, 'sz')
+        ? Number(getAttr(endParaRPr, 'sz')) / 100
+        : undefined;
     const baseFontPx =
-      ptToCssPx(p.runs[0]?.sizePt ?? paraDef?.sizePt ?? 18) * fontScale;
-    const before = spacingCss(paraProps.spaceBefore, baseFontPx);
-    const after = spacingCss(paraProps.spaceAfter, baseFontPx);
-    if (before) css += `margin-top:${before};`;
-    if (after) css += `margin-bottom:${after};`;
-    if (paraProps.lineSpacing?.kind === 'points')
-      css += `line-height:${ptToCssPx(paraProps.lineSpacing.valPt)}px;`;
-    else if (paraProps.lineSpacing?.kind === 'percent') {
-      const reduction =
-        body.autofit?.type === 'normal'
-          ? body.autofit.lineSpaceReductionPct ?? 0
-          : 0;
-      css += `line-height:${Math.max(
-        0.1,
-        (paraProps.lineSpacing.valPct - reduction) / 100
-      )};`;
+      ptToCssPx(p.runs[0]?.sizePt ?? endParaSzPt ?? paraDef?.sizePt ?? 18) *
+      fontScale;
+    const lineSpaceReduction =
+      body.autofit?.type === 'normal'
+        ? body.autofit.lineSpaceReductionPct ?? 0
+        : 0;
+    // PowerPoint percent/single spacing multiplies the font's line box (~1.2x
+    // the size), not the bare em, so 150% = 1.5 x 1.2 x size (rules expect this).
+    const NATURAL_LINE = 1.2;
+    const lineHeightPx =
+      paraProps.lineSpacing?.kind === 'points'
+        ? ptToCssPx(paraProps.lineSpacing.valPt)
+        : paraProps.lineSpacing?.kind === 'percent'
+        ? baseFontPx *
+          NATURAL_LINE *
+          Math.max(
+            0.1,
+            (paraProps.lineSpacing.valPct - lineSpaceReduction) / 100
+          )
+        : baseFontPx * NATURAL_LINE;
+    // PowerPoint puts line-spacing leading below the baseline; CSS splits it
+    // half/half, so shift the top half below (pitch preserved via margins).
+    const halfLeading = Math.max(
+      0,
+      (lineHeightPx - baseFontPx * NATURAL_LINE) / 2
+    );
+    const numPx = (v: string | undefined) => (v ? parseFloat(v) : 0);
+    let marginTopPx =
+      numPx(spacingCss(paraProps.spaceBefore, baseFontPx)) - halfLeading;
+    const marginBottomPx =
+      numPx(spacingCss(paraProps.spaceAfter, baseFontPx)) + halfLeading;
+    const leadFont = splitFontWeight(
+      resolveFont(p.runs[0]?.font ?? paraDef?.font, svgThemeFonts)
+    );
+    // Lift the first line of a top-anchored box by the web font's excess ascent
+    // leading so it sits where PowerPoint (typographic ascent) does.
+    if (paragraphIndex === 0 && topAnchored) {
+      const wt = p.runs[0]?.bold ?? paraDef?.bold ? 700 : leadFont.weight;
+      marginTopPx -= excessTopLeadingRatio(leadFont.family, wt) * baseFontPx;
     }
+    // Unitless 1 matches PowerPoint's single spacing (the font's content line),
+    // tighter than CSS 'normal'; explicit percent/points keep the px value.
+    const cssLineHeight = paraProps.lineSpacing ? `${lineHeightPx}px` : '1';
+    // Size the line-box strut from the lead run; otherwise it inherits the
+    // host's 16px font and sinks/loosens any text smaller than that.
+    css += `font-size:${baseFontPx}px;font-family:${cssFamilyList(
+      leadFont.family
+    )};`;
+    css += `margin-top:${marginTopPx}px;margin-bottom:${marginBottomPx}px;line-height:${cssLineHeight};`;
     pDiv.setAttribute('style', css);
 
     // bullet marker (explicit char / auto-number), styled from the first run
     const first = p.runs[0];
-    const markerSize = (first?.sizePt ?? paraDef?.sizePt ?? 18) * fontScale;
-    const markerColor = (first?.color ?? paraDef?.color ?? '000000').replace(
-      '#',
-      ''
+    const baseSize = first?.sizePt ?? paraDef?.sizePt ?? 18;
+    // buSzPts is an absolute size; buSzPct scales the text size; else match text.
+    const markerSize =
+      (bullet?.sizePts ??
+        (bullet?.sizePct ? baseSize * bullet.sizePct : baseSize)) * fontScale;
+    // Prefer the bullet's own color (a:buClr, own or inherited); fall back to
+    // the text color only when none is defined.
+    const buColorHex = bullet?.color ?? inherited.bullet?.color;
+    const buColorScheme = bullet?.colorScheme ?? inherited.bullet?.colorScheme;
+    let markerColor = resolveTextColor(first ?? ({} as Run), paraDef);
+    if (buColorHex) markerColor = buColorHex.replace('#', '');
+    else if (buColorScheme && curDeck) {
+      const hex = schemeColorHex(buColorScheme, curDeck.pkg);
+      if (hex) markerColor = hex.replace('#', '');
+    }
+    // Render the marker in the bullet's own font (fallback "●" is chunkier);
+    // symbol fonts were already mapped to safe Unicode chars.
+    const symbolBulletFont = /wingding|webding|symbol/i.test(
+      bullet?.font || ''
     );
+    const markerFamily = splitFontWeight(
+      (bullet?.font && !symbolBulletFont ? bullet.font : undefined) ??
+        resolveFont(first?.font ?? paraDef?.font, svgThemeFonts)
+    ).family;
     const markerStyle = `font-size:${ptToCssPx(
       markerSize
-    )}px;color:#${markerColor};position:absolute;left:${marL + indent}px;${
+    )}px;line-height:${cssLineHeight};font-family:${cssFamilyList(
+      markerFamily
+    )};color:#${markerColor};position:absolute;left:${marL + indent}px;${
       indent ? '' : 'transform:translateX(-100%);'
     }`;
-    if (bullet?.kind === 'char') {
+    // PowerPoint shows no bullet on an empty line (no text runs), so neither do
+    // we - otherwise prompt/spacer paragraphs sprout stray markers.
+    if (paraHasText && bullet?.kind === 'char') {
       const m = featheryDoc().createElementNS(XHTML, 'span') as HTMLSpanElement;
       m.setAttribute('style', markerStyle);
       m.dataset.bullet = '';
       m.setAttribute('contenteditable', 'false');
       m.textContent = `${bulletGlyph(bullet.char, bullet.font)} `;
       pDiv.appendChild(m);
-    } else if (bullet?.kind === 'autoNum') {
+    } else if (paraHasText && bullet?.kind === 'autoNum') {
       const scheme = bullet.scheme || 'arabicPeriod';
       const key = `${p.level ?? 0}:${scheme}`;
       const autoNum = autoNumbers.has(key)
@@ -1093,7 +1177,10 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       pDiv.appendChild(m);
     }
 
-    if (!p.runs.length)
+    // An empty paragraph (no runs, or runs with no visible text) still needs a
+    // line box; an empty <span> collapses to zero height, so force a line break.
+    const hasSoftBreak = p.runs.some((r) => tagOf(r.node) === 'a:br');
+    if (!paraHasText && !hasSoftBreak)
       pDiv.appendChild(featheryDoc().createElementNS(XHTML, 'br'));
     for (const [runIndex, r] of p.runs.entries()) {
       if (tagOf(r.node) === 'a:br') {
@@ -1111,9 +1198,18 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       span.setAttribute('style', runStyle(r, paraDef, fontScale));
       span.dataset.sourceParagraph = String(paragraphIndex);
       span.dataset.sourceRun = String(runIndex);
-      if (tagOf(r.node) === 'a:fld')
+      if (tagOf(r.node) === 'a:fld') {
         span.setAttribute('contenteditable', 'false');
-      span.textContent = r.text;
+        // Fields are computed, not literal: show the real slide number rather
+        // than the stored placeholder glyph (e.g. "‹#›").
+        const slideNum =
+          getAttr(r.node, 'type') === 'slidenum' && curDeck && curSlide
+            ? curDeck.slides.indexOf(curSlide) + 1
+            : 0;
+        span.textContent = slideNum > 0 ? String(slideNum) : r.text;
+      } else {
+        span.textContent = r.text;
+      }
       const hyperlink = r.rPr && child(r.rPr, 'a:hlinkClick');
       const relationshipId = hyperlink && getAttr(hyperlink, 'r:id');
       const relationship =
@@ -1175,10 +1271,10 @@ function chartText(
   text.setAttribute('y', '0');
   const resolvedSize = style?.sizePt ? style.sizePt * 12700 : size;
   text.setAttribute('font-size', String(resolvedSize / EMU_PER_PX));
-  text.setAttribute(
-    'font-family',
-    `${resolveFont(style?.font, svgThemeFonts)},Arial,sans-serif`
-  );
+  const chartFont = splitFontWeight(resolveFont(style?.font, svgThemeFonts));
+  text.setAttribute('font-family', cssFamilyList(chartFont.family));
+  if (chartFont.weight !== 400)
+    text.setAttribute('font-weight', String(chartFont.weight));
   text.setAttribute(
     'fill',
     resolveChartColor(style?.color, curDeck?.pkg) || '#44546a'
@@ -1206,7 +1302,7 @@ function resolveChartColor(
   if (!pkg) return undefined;
   const name = value.slice('scheme:'.length);
   return `#${
-    themeColors(pkg)[SCHEME_ALIAS[name] || name] || themeColors(pkg).accent1
+    schemeColorHex(name, pkg) || themeColors(pkg, currentThemePart(pkg)).accent1
   }`;
 }
 
@@ -1264,7 +1360,7 @@ function renderChartMarks(
     'accent4',
     'accent5',
     'accent6'
-  ].map((name) => `#${themeColors(pkg)[name]}`);
+  ].map((name) => `#${themeColors(pkg, currentThemePart(pkg))[name]}`);
   const fontSize = Math.max(65000, Math.min(125000, Math.min(w, h) / 22));
   const titleSpace = chart.title ? fontSize * 2.3 : fontSize * 0.6;
   const legendPosition = chart.legendPosition || 'r';
@@ -2486,7 +2582,20 @@ function shapeGroup(
       g.appendChild(geometry);
     }
     const fo = textForeign(shape, cx, cy);
-    if (fo) g.appendChild(fo);
+    if (fo) {
+      // PowerPoint keeps a flipped shape's text upright: re-applying the flip
+      // to the text cancels the group's reflection.
+      if (flipH || flipV) {
+        const flip = `translate(${flipH ? cx : 0} ${flipV ? cy : 0}) scale(${
+          flipH ? -1 : 1
+        } ${flipV ? -1 : 1})`;
+        fo.setAttribute(
+          'transform',
+          `${flip} ${fo.getAttribute('transform') || ''}`.trim()
+        );
+      }
+      g.appendChild(fo);
+    }
   } else if (shape.type === 'group') {
     const groupXfrm = shape.spPr && child(shape.spPr, 'a:xfrm');
     const chOff = groupXfrm && child(groupXfrm, 'a:chOff');
@@ -2646,7 +2755,7 @@ function themeFillStyle(
 ): ONode | undefined {
   if (!idx) return undefined;
   const themePart =
-    pkg.relTargetByType(ownerPart, 'theme') || 'ppt/theme/theme1.xml';
+    pkg.relTargetByType(ownerPart, 'theme') || DEFAULT_THEME_PART;
   if (!pkg.hasPart(themePart)) return undefined;
   const fmt = descendant(xmlRoot(pkg.tree(themePart)), 'a:fmtScheme');
   if (!fmt) return undefined;
@@ -2655,9 +2764,47 @@ function themeFillStyle(
   return childrenOf(child(fmt, 'a:fillStyleLst') || {})[idx - 1];
 }
 
+// ---- inherited layout/master decoration ----
+const chromeCache = new WeakMap<OPCPackage, Map<string, Shape[]>>();
+
+function showsMaster(pkg: OPCPackage, part: string): boolean {
+  if (!pkg.hasPart(part)) return true;
+  return getAttr(xmlRoot(pkg.tree(part)), 'showMasterSp') !== '0';
+}
+
+/** Decorative master/layout shapes drawn beneath the slide's own; placeholders
+ *  are skipped (content templates, not decoration). */
+function inheritedChromeShapes(deck: Deck, slide: Slide): Shape[] {
+  const pkg = deck.pkg;
+  const layout = pkg.layoutFor(slide.path);
+  if (!layout) return [];
+  const master = pkg.masterFor(layout);
+  const key = `${master || ''}|${layout}`;
+  const inner = pkgCache(chromeCache, pkg);
+  const hit = inner.get(key);
+  if (hit) return hit;
+
+  const result: Shape[] = [];
+  const collect = (part: string | undefined, tag: string) => {
+    if (!part || !pkg.hasPart(part)) return;
+    let n = 0;
+    for (const s of readSlide(pkg, part).shapes) {
+      if (!s.xfrm || descendant(s.node, 'p:ph')) continue;
+      s.id = `chrome-${tag}-${n++}`; // never collide with a slide shape id
+      result.push(s);
+    }
+  };
+  if (showsMaster(pkg, slide.path) && showsMaster(pkg, layout))
+    collect(master, 'm');
+  collect(layout, 'l');
+  inner.set(key, result);
+  return result;
+}
+
 /** Render a whole slide to an <svg> element sized to the slide's EMU box. */
 export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
   setRenderContext(deck, slide);
+  ensureDeckFontsLoaded(deck);
   try {
     const svg = featheryDoc().createElementNS(SVGNS, 'svg') as SVGSVGElement;
     svg.dataset.svgUid = `p${svgSeq++}-`;
@@ -2674,7 +2821,38 @@ export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
       bg.setAttribute('data-slide-background', '');
       svg.appendChild(bg);
     }
+    const chrome = inheritedChromeShapes(deck, slide);
+    if (chrome.length) {
+      const chromeG = featheryDoc().createElementNS(SVGNS, 'g') as SVGGElement;
+      chromeG.setAttribute('data-slide-chrome', '');
+      chromeG.style.pointerEvents = 'none';
+      chrome.forEach((shape, i) => {
+        const g = shapeGroup(shape, deck.pkg, defs, `chrome-${i}`);
+        if (g) chromeG.appendChild(g);
+      });
+      if (chromeG.childNodes.length) svg.appendChild(chromeG);
+    }
+    // PowerPoint drops a PH_NO_IDX duplicate when a real placeholder sits at
+    // the same spot (Google exports emit these); keep unique sentinels.
+    const phAt = slide.shapes.map((s) => {
+      const ph = descendant(s.node, 'p:ph');
+      return ph
+        ? { idx: getAttr(ph, 'idx') || '', x: s.xfrm?.x, y: s.xfrm?.y }
+        : null;
+    });
+    const skip = new Set<number>();
+    phAt.forEach((p, i) => {
+      if (p?.idx !== PH_NO_IDX || p.x === undefined) return;
+      if (
+        phAt.some(
+          (o, j) =>
+            j !== i && o && o.idx !== PH_NO_IDX && o.x === p.x && o.y === p.y
+        )
+      )
+        skip.add(i);
+    });
     slide.shapes.forEach((shape, i) => {
+      if (skip.has(i)) return;
       const g = shapeGroup(shape, deck.pkg, defs, i);
       if (g) svg.appendChild(g);
     });

@@ -36,6 +36,26 @@ export function solidFillHex(container: ONode | undefined): string | undefined {
   return srgb ? getAttr(srgb, 'val') : undefined;
 }
 
+// Preset geometry adjustments keyed by name (e.g. roundRect's "adj" as 1/100000
+// of the side; pie's "adj1"/"adj2" as start/end angle in 1/60000 degree).
+// undefined = no explicit avLst, so use the preset defaults.
+function readGeomAdjs(
+  geomNode: ONode | undefined
+): Record<string, number> | undefined {
+  const avLst = geomNode && child(geomNode, 'a:avLst');
+  if (!avLst) return undefined;
+  const out: Record<string, number> = {};
+  for (const gd of childrenOf(avLst).filter(
+    (n) => Object.keys(n)[0] === 'a:gd'
+  )) {
+    const name = getAttr(gd, 'name') || 'adj';
+    const fmla = getAttr(gd, 'fmla');
+    const match = fmla && /val\s+(-?\d+)/.exec(fmla);
+    if (match) out[name] = Number(match[1]);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function readRun(rNode: ONode): Run {
   const rPr = child(rNode, 'a:rPr');
   const tNode = child(rNode, 'a:t');
@@ -72,6 +92,29 @@ function readRun(rNode: ONode): Run {
   };
 }
 
+// a:buSzPct (1/1000 of a %) / a:buSzPts (1/100 pt) scale the bullet marker
+// independently of the text size.
+export function readBulletSize(pPr: ONode): {
+  sizePct?: number;
+  sizePts?: number;
+  color?: string;
+  colorScheme?: string;
+} {
+  const pct = child(pPr, 'a:buSzPct');
+  const pts = child(pPr, 'a:buSzPts');
+  const pctVal = pct && Number(getAttr(pct, 'val'));
+  const ptsVal = pts && Number(getAttr(pts, 'val'));
+  const buClr = child(pPr, 'a:buClr');
+  const srgb = buClr && child(buClr, 'a:srgbClr');
+  const scheme = buClr && child(buClr, 'a:schemeClr');
+  return {
+    sizePct: pctVal ? pctVal / 100000 : undefined,
+    sizePts: ptsVal ? ptsVal / 100 : undefined,
+    color: srgb ? getAttr(srgb, 'val') : undefined,
+    colorScheme: scheme ? getAttr(scheme, 'val') : undefined
+  };
+}
+
 function readBullet(pPr: ONode | undefined): Paragraph['bullet'] {
   if (!pPr) return undefined;
   if (child(pPr, 'a:buNone')) return { kind: 'none' };
@@ -87,14 +130,15 @@ function readBullet(pPr: ONode | undefined): Paragraph['bullet'] {
       .replace(/&#([0-9]+);/g, (_, value) =>
         String.fromCodePoint(parseInt(value, 10))
       );
-    return { kind: 'char', char, font: buFont };
+    return { kind: 'char', char, font: buFont, ...readBulletSize(pPr) };
   }
   const buAutoNum = child(pPr, 'a:buAutoNum');
   if (buAutoNum)
     return {
       kind: 'autoNum',
       scheme: getAttr(buAutoNum, 'type') || 'arabicPeriod',
-      startAt: Number(getAttr(buAutoNum, 'startAt')) || undefined
+      startAt: Number(getAttr(buAutoNum, 'startAt')) || undefined,
+      ...readBulletSize(pPr)
     };
   return undefined;
 }
@@ -195,6 +239,7 @@ export function readShapeNode(
     chartPart: chartRelId ? opts.relatedPart?.(chartRelId) : undefined,
     fillColor: solidFillHex(spPr),
     geom: geomNode ? getAttr(geomNode, 'prst') : undefined,
+    geomAdj: readGeomAdjs(geomNode),
     node,
     spPr
   };

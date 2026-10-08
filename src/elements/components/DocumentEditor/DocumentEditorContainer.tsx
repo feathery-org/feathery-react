@@ -6,6 +6,10 @@ import React, {
   useState
 } from 'react';
 import DocxEditor from '../DocxEditor';
+import {
+  EDITOR_PLACEHOLDER_ERROR_COLOR,
+  EDITOR_PLACEHOLDER_STYLE
+} from './placeholderStyle';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
@@ -127,28 +131,30 @@ function getGeneratedEnvelope(
   );
 }
 
-const placeholder = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '100%',
-  height: '100%',
-  padding: 16,
-  textAlign: 'center' as const,
-  border: '1px dashed #d4d4d8',
-  borderRadius: 8,
-  color: '#71717a',
-  fontSize: 14
+const placeholder = EDITOR_PLACEHOLDER_STYLE;
+
+type WrapStyle = {
+  width: string;
+  height: string;
+  minWidth: number;
+  minHeight: number | string;
+  overflow: string;
+  position: 'relative';
+  aspectRatio?: string;
 };
 
-const wrap = {
+const wrap: WrapStyle = {
   width: '100%',
   height: '100%',
   minWidth: 0,
   minHeight: 0,
   overflow: 'hidden',
-  position: 'relative' as const
+  position: 'relative'
 };
+
+// The pptx editor fills its container absolutely (no intrinsic height); the
+// aspect-ratio keeps a content-sized host from collapsing it to 0.
+const editorWrap: WrapStyle = { ...wrap, aspectRatio: '16 / 10' };
 
 // A container whose content is a document editor bound to a Document template.
 // At runtime it loads the submission's current envelope for that document and
@@ -525,7 +531,9 @@ export default function DocumentEditorContainer({
     [containerId, formId]
   );
 
-  const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
+  const box = (child: React.ReactNode, style: WrapStyle = wrap) => (
+    <div css={style}>{child}</div>
+  );
 
   if (editMode) return box(<div css={placeholder}>Document editor</div>);
   if (!activeDocumentId && !envelope) {
@@ -537,7 +545,11 @@ export default function DocumentEditorContainer({
   }
   if (loading) return box(<div css={placeholder}>Loading document…</div>);
   if (error) {
-    return box(<div css={{ ...placeholder, color: '#dc2626' }}>{error}</div>);
+    return box(
+      <div css={{ ...placeholder, color: EDITOR_PLACEHOLDER_ERROR_COLOR }}>
+        {error}
+      </div>
+    );
   }
   if (!envelope || !envelope.file) {
     return box(
@@ -548,28 +560,37 @@ export default function DocumentEditorContainer({
   }
   if (envelope.type === 'pptx') {
     return box(
-      <React.Suspense
-        fallback={<div css={placeholder}>Loading presentation editor…</div>}
-      >
-        <PptxEditor
-          source={source}
-          readOnly={readOnly}
-          reviewChanges={reviewChanges}
-          openNonce={reloadKey}
-          fileName='document.pptx'
-          // Signing and PDF conversion stay docx-only until the backend
-          // defines the PPTX flow; the terminal-action props are not passed.
-          hideDownload={savesToField || !offersDownload}
-          onError={setError}
-          onSave={saveEnvelope}
-          onChange={
-            !readOnly && containerId
-              ? (dirty: boolean) =>
-                  setDocxEditorDirty(formId, containerId, dirty)
-              : undefined
-          }
-        />
-      </React.Suspense>
+      <React.Suspense fallback={<div css={placeholder}>Loading document…</div>}>
+        {/* Absolute fill inside the container's relative box: the editor is
+            bounded by the container's dimensions and scrolls internally,
+            never growing the hosting page. */}
+        <div css={{ position: 'absolute', inset: 0 }}>
+          <PptxEditor
+            source={source}
+            readOnly={readOnly}
+            reviewChanges={reviewChanges}
+            openNonce={reloadKey}
+            fileName='document.pptx'
+            // Signing stays docx-only (no pptx signature flow); PDF export is
+            // supported server-side via the shared conversion endpoint.
+            hideDownload={savesToField || !offersDownload}
+            onExportPdf={
+              envelope.id
+                ? () => client.downloadEnvelopePdf(envelope.id)
+                : undefined
+            }
+            onError={setError}
+            onSave={saveEnvelope}
+            onChange={
+              !readOnly && containerId
+                ? (dirty: boolean) =>
+                    setDocxEditorDirty(formId, containerId, dirty)
+                : undefined
+            }
+          />
+        </div>
+      </React.Suspense>,
+      editorWrap
     );
   }
   if (envelope.type !== 'docx') {

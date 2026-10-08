@@ -48,6 +48,10 @@ export interface Bullet {
   font?: string; // a:buFont typeface (e.g. "Wingdings", "Arial") — needed to interpret char
   scheme?: string; // for kind 'autoNum' (e.g. "arabicPeriod")
   startAt?: number;
+  sizePct?: number; // a:buSzPct as a fraction of the text size (e.g. 0.7)
+  sizePts?: number; // a:buSzPts, an absolute bullet size in points
+  color?: string; // a:buClr srgb hex — explicit bullet color, distinct from text
+  colorScheme?: string; // a:buClr schemeClr val (e.g. "accent1") to resolve via theme
 }
 
 export interface Paragraph {
@@ -75,6 +79,7 @@ export interface Shape {
   chartPart?: string; // related ppt/charts/chartN.xml part for a chart graphic frame
   fillColor?: string; // solid fill hex, if any
   geom?: string; // prstGeom preset (rect, ellipse, ...)
+  geomAdj?: Record<string, number>; // avLst adjustments by name (roundRect "adj"; pie "adj1"/"adj2")
   extKey?: string; // future binding anchor from extLst (parsed, preserved)
   node: ONode; // the raw p:sp / p:pic / p:graphicFrame / ... node
   spPr?: ONode; // the p:spPr node (geometry/fill), when applicable
