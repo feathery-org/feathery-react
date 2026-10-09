@@ -518,6 +518,64 @@ describe('IntegrationClient', () => {
   });
 
   describe('generateEnvelopes', () => {
+    it.each([
+      ['download', false],
+      ['download', true],
+      ['open_in_editor', false],
+      ['open_in_editor', true],
+      ['sign', true]
+    ])(
+      'preserves PDF mapping warnings for %s (async=%s)',
+      async (envelopeAction, runAsync) => {
+        const client = new IntegrationClient('test_form_key');
+        client.ENVELOPE_CHECK_INTERVAL = 1;
+        client.ENVELOPE_MAX_TIME = 20;
+        const warnings = [
+          {
+            code: 'pdf_option_unmatched',
+            document_name: 'IAA',
+            field_name: 'Investment experience',
+            page: 1,
+            supplied_values: ['Extensive'],
+            allowed_options: ['Moderate'],
+            message:
+              '“Extensive” is not a PDF option. Allowed options: Moderate.'
+          }
+        ];
+        const payload = {
+          status: 'complete',
+          ...(envelopeAction === 'open_in_editor'
+            ? {
+                documents: [
+                  { envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }
+                ]
+              }
+            : { files: ['https://x/1.pdf'] }),
+          warnings
+        };
+        if (runAsync)
+          global.fetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: 'incomplete' })
+          });
+        global.fetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => payload
+        });
+        await expect(
+          client.generateEnvelopes({
+            documents: ['doc1'],
+            envelope_action: envelopeAction,
+            ...(envelopeAction === 'sign' ? { sign_method: 'docusign' } : {}),
+            run_async: runAsync
+          })
+        ).resolves.toEqual(payload);
+        expect(global.fetch).toHaveBeenCalledTimes(runAsync ? 2 : 1);
+      }
+    );
+
     it('forwards copy-specific signers, SMS and all-copy defaults to the API', async () => {
       const client = new IntegrationClient('test_form_key');
       const signers = [

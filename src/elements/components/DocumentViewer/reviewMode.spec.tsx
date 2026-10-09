@@ -22,6 +22,42 @@ afterEach(() => {
 });
 
 describe('DocumentViewer — generic Generate Documents review mode', () => {
+  it('shows mapping warnings within the review dialog without disabling download', () => {
+    render(
+      <DocumentViewer
+        payload={{
+          ...basePayload,
+          warnings: [
+            {
+              code: 'pdf_option_unmatched',
+              document_name: 'IAA',
+              field_name: 'Experience',
+              page: 1,
+              supplied_values: ['Extensive'],
+              allowed_options: ['Moderate'],
+              message:
+                'Extensive is not a PDF option. Allowed options: Moderate.'
+            }
+          ]
+        }}
+        action={{
+          envelope_action: 'open_in_editor',
+          editor_toolbar_actions: ['download']
+        }}
+        setShow={jest.fn()}
+        onComplete={jest.fn()}
+      />
+    );
+    const warning = screen.getByRole('status', {
+      name: 'PDF mapping warnings'
+    });
+    expect(screen.getByRole('dialog')).toContainElement(warning);
+    expect(warning).toHaveTextContent(
+      'Extensive is not a PDF option. Allowed options: Moderate.'
+    );
+    expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled();
+  });
+
   it('renders a single primary action labeled per envelope_action', () => {
     render(
       <DocumentViewer

@@ -1,4 +1,5 @@
 import IntegrationClient from './integrationClient';
+import { withDocumentWarnings } from '../documentGenerationWarnings';
 import { isAsciiTextField } from '../ascii';
 import {
   fieldValues,
@@ -1467,7 +1468,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     const files = payload?.files;
     if (download) await downloadAllFileUrls(files, zipName);
-    return { files };
+    return withDocumentWarnings({ files }, payload.warnings);
   }
 
   async resetPendingFileUploads(fieldKeys: string[]) {
