@@ -31,6 +31,7 @@ import { IdTable } from './ids';
 import { WriteJournal } from './loop';
 import { renderOutline } from './outline';
 import type { EditorHost, Pack, Residue } from './pack';
+import { logDebug, logError, logWarn, truncatedDetail } from './log';
 import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
 import { Clock, defaultClock, TraceBuilder } from './trace';
@@ -174,10 +175,15 @@ export class DocumentSession {
 
   /** Section 10: one bridge request in, one bridge response or dispatch failure out. */
   dispatch(raw: unknown): DispatchOutcome {
+    const started = this.clock();
+    let turnId: string | undefined;
+    let verb: string | undefined;
     try {
       const parsed = parseBridgePayload(raw);
       if (!parsed.ok) return { status: 'error', failure: parsed.failure };
       const payload = parsed.value;
+      turnId = payload.turnId;
+      verb = payload.verb;
       if (!sameEditor(payload, this))
         return {
           status: 'error',
@@ -189,6 +195,8 @@ export class DocumentSession {
         };
       if (payload.verb === 'write') this.setTurn(payload.turnId);
       const result = this.execute(payload.verb, payload.input, payload.turnId);
+      if (payload.verb === 'write')
+        logWriteOutcome(payload.turnId, result, this.clock() - started);
       return {
         status: 'ok',
         response: {
@@ -199,6 +207,12 @@ export class DocumentSession {
         }
       };
     } catch (e) {
+      logError({
+        turnId,
+        verb,
+        message: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined
+      });
       return {
         status: 'error',
         failure: {
@@ -482,4 +496,39 @@ export class DocumentSession {
     this.refresh();
     return out;
   }
+}
+
+/** A write's outcome in the console: a warning when it did not commit, a debug line when it did. */
+function logWriteOutcome(turnId: string, result: VerbResult, ms: number): void {
+  const r = result as unknown as Record<string, any>;
+  if (r.ok && r.committed) {
+    logDebug({
+      turnId,
+      verb: 'write',
+      landed: r.landed,
+      cardId: r.cardId,
+      warnings: (r.warnings ?? []).map((w: { code: string }) => w.code),
+      ms: Math.round(ms * 10) / 10
+    });
+    return;
+  }
+  if (r.ok) return; // a dry run
+  const refusal = r.refusal as Record<string, any> | undefined;
+  const proof = r.trace?.proof as Record<string, any> | undefined;
+  const rollback = proof?.rollback as
+    | { byteEqual: boolean; equivalent?: boolean }
+    | null
+    | undefined;
+  logWarn({
+    turnId,
+    verb: 'write',
+    code: r.error?.code,
+    invariant: refusal?.invariant,
+    cards: refusal?.read,
+    proofOutcome: proof?.outcome,
+    rollback: rollback
+      ? { byteEqual: rollback.byteEqual, equivalent: rollback.equivalent }
+      : undefined,
+    detail: truncatedDetail(refusal?.detail ?? r.conflict ?? r.error?.message)
+  });
 }
