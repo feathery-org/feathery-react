@@ -1208,9 +1208,10 @@ describe('input box minimum height', () => {
       const field = styles.getTarget('field', true);
       const box = styles.getTarget('sub-fc', true);
 
-      expect(parseFloat(field.paddingTop)).toBeCloseTo(20);
+      // The label's own footprint: min(16, 10) / 2 + 16.
+      expect(parseFloat(field.paddingTop)).toBeCloseTo(21);
       expect(parseFloat(field.paddingBottom)).toBeCloseTo(40);
-      expect(parseFloat(box.minHeight)).toBeCloseTo(79.2);
+      expect(parseFloat(box.minHeight)).toBeCloseTo(80.2);
       expect(
         parseFloat(box.minHeight) -
           parseFloat(field.paddingTop) -
@@ -1239,7 +1240,7 @@ describe('input box minimum height', () => {
     }
   );
 
-  it('recomputes the floating-label floor for a mobile height override', () => {
+  it('carries the floating-label floor into a mobile height override', () => {
     const styles = targets(
       'text_field',
       shrinkUntouched(60, {
@@ -1253,10 +1254,10 @@ describe('input box minimum height', () => {
     const mobileKey = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
     expect(
       parseFloat(styles.getTarget('field')[mobileKey].paddingTop)
-    ).toBeCloseTo(30);
+    ).toBeCloseTo(21);
     expect(
       parseFloat(styles.getTarget('sub-fc')[mobileKey].minHeight)
-    ).toBeCloseTo(89.2);
+    ).toBeCloseTo(80.2);
   });
 
   it('grows the box to fit its padding and a line of text', () => {
