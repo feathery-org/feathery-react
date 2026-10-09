@@ -1798,6 +1798,13 @@ export default class ResponsiveStyles {
           pinned.insetInlineStart = RESET_INLINE_PADDING_CSS;
         return pinned;
       });
+      // Resting mobile placement must not override the pinned desktop anchor
+      // when the breakpoint has no font override of its own.
+      if (this.handleMobile)
+        this.mobileTargets.placeholderFocus = {
+          ...this.targets.placeholderFocus,
+          ...this.mobileTargets.placeholderFocus
+        };
       // A pinned label is a fixed overlay taking no room in the content box, so
       // the value needs a reserve behind it. Unset, that reserve is what the
       // label occupies, so the value starts just under it at any box height.

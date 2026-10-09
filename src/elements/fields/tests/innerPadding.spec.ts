@@ -2342,3 +2342,28 @@ describe('merging the placeholder targets for a pinned label', () => {
     expect(merged[MOBILE_KEY].marginTop).toBe('5px');
   });
 });
+
+describe('pinned labels across mobile placement overrides', () => {
+  it.each([
+    { content_vertical_align: 'center' },
+    { inner_padding_top: 30 },
+    { inner_padding_left: 36 },
+    { font_size: 28, inner_padding_top: 40 }
+  ])('keeps the filled label pinned with %j', (mobileStyles) => {
+    const responsive = targets(
+      'email',
+      shrinkUntouched(60),
+      { placeholder: 'Email' },
+      mobileStyles
+    );
+    const merged: any = responsive.getTargets(
+      'placeholder',
+      'placeholderFocus'
+    );
+    const mobile = { ...merged, ...merged[responsive.mobileBreakpointKey] };
+    expect(mobile.top).toBe(0);
+    expect(mobile.insetInlineStart).toBe('0.75rem');
+    expect(mobile.marginTop).toBe('5px');
+    expect(mobile.lineHeight).toBe(`${mobileStyles.font_size ?? 16}px`);
+  });
+});
