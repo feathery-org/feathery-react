@@ -539,6 +539,48 @@ jest.mock('../init', () => ({
 }));
 
 describe('FeatheryClient - using api helpers', () => {
+  describe('generateDocuments warning compatibility', () => {
+    it.each([false, true])(
+      'returns files with optional warnings (warnings=%s)',
+      async (hasWarnings) => {
+        (initInfo as jest.Mock).mockReturnValue({
+          sdkKey: 'sdkKey',
+          userId: 'u1'
+        });
+        const warnings = [
+          {
+            code: 'pdf_option_unmatched',
+            document_name: 'IAA',
+            field_name: 'Experience',
+            page: 1,
+            supplied_values: ['Extensive'],
+            allowed_options: ['Moderate'],
+            message: 'Extensive is not a PDF option. Allowed options: Moderate.'
+          }
+        ];
+        const payload = {
+          files: ['https://x/1.pdf'],
+          ...(hasWarnings ? { warnings } : {})
+        };
+        const originalFetch = global.fetch;
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => payload
+        } as Response);
+        try {
+          await expect(
+            new FeatheryClient('formKey').generateDocuments({
+              documentIds: ['doc1']
+            })
+          ).resolves.toEqual(payload);
+        } finally {
+          global.fetch = originalFetch;
+        }
+      }
+    );
+  });
+
   describe('runComputerAgent', () => {
     const userId = 'userId';
     let featheryClient: FeatheryClient;

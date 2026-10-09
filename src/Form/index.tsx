@@ -277,6 +277,8 @@ import {
 } from './logic';
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
+import { useDocumentWarnings } from './components/DocumentWarnings';
+import { withDocumentWarnings } from '../utils/documentGenerationWarnings';
 import FileUploadToast from './components/FileUploadToast';
 import {
   getUploadToastHeight,
@@ -845,6 +847,13 @@ function Form({
     updateEnvelopeGeneration,
     showEnvelopeOutcome
   } = useEnvelopeGenerationToast();
+  const {
+    warnings,
+    showWarnings,
+    dismissWarnings,
+    continueSigning,
+    acknowledgeSigningWarnings
+  } = useDocumentWarnings();
 
   // Track ActionToast height for positioning WorkflowChat above it
   const [actionToastHeight, setActionToastHeight] = useState(0);
@@ -865,10 +874,10 @@ function Form({
   );
 
   useEffect(() => {
-    if (actionToastData.length === 0) {
+    if (actionToastData.length === 0 && warnings.length === 0) {
       setActionToastHeight(0);
     }
-  }, [actionToastData.length]);
+  }, [actionToastData.length, warnings.length]);
 
   const setActionToastRef = useCallback((node: HTMLDivElement | null) => {
     if (actionToastObserverRef.current) {
@@ -1592,6 +1601,7 @@ function Form({
           const data = await client.generateEnvelopes(action);
           if (!data) throw new Error('Document generation failed');
           if (data.status === 'error') throw new Error(data.message);
+          showWarnings(data.warnings);
           if (action.envelope_action === 'open_in_editor') {
             return await new Promise((resolve, reject) => {
               // What finalize returned, so the method resolves with the real
@@ -1606,7 +1616,7 @@ function Form({
                   envelopeAction,
                   draft
                 }: any) => {
-                  const result = await client.finalizeEnvelopeReview(action, {
+                  let result = await client.finalizeEnvelopeReview(action, {
                     envelopes,
                     envelopeAction,
                     draft
@@ -1615,6 +1625,12 @@ function Form({
                     return { status: 'error', message: 'Finalize failed' };
                   }
                   if (result.status === 'error') return result;
+                  result = withDocumentWarnings(
+                    result,
+                    data.warnings,
+                    result.warnings
+                  );
+                  showWarnings(result.warnings);
                   await runEnvelopeAction(result, envelopeAction, draft);
                   await runDocumentReviewLogic(
                     buildDocumentReviewTrigger({
@@ -3571,6 +3587,8 @@ function Form({
             // Sign files
             const url = getSignUrl(matchedSigner.signer_id, action.redirect);
             if (action.redirect) {
+              if (!actingAction && data.warnings?.length)
+                await acknowledgeSigningWarnings();
               const eventData: Record<string, any> = {
                 step_key: activeStep.key,
                 next_step_key: '',
@@ -3610,7 +3628,13 @@ function Form({
             setElementError(data.message);
             break;
           }
-          updateEnvelopeGeneration(envelopeId, { status: 'complete' });
+          showWarnings(data.warnings);
+          updateEnvelopeGeneration(envelopeId, {
+            status: 'complete',
+            ...(data.warnings?.length
+              ? { label: 'Generated with warnings' }
+              : {})
+          });
 
           const containerId = editorContainerId(action);
           if (containerId) {
@@ -3651,7 +3675,7 @@ function Form({
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
                 draft: boolean;
               }) => {
-                const result = await client.finalizeEnvelopeReview(action, {
+                let result = await client.finalizeEnvelopeReview(action, {
                   envelopes,
                   envelopeAction,
                   draft
@@ -3667,6 +3691,12 @@ function Form({
                     message: 'Failed to finalize documents. Please try again.'
                   };
                 if (result.status === 'error') return result;
+                result = withDocumentWarnings(
+                  result,
+                  data.warnings,
+                  result.warnings
+                );
+                showWarnings(result.warnings);
                 await runEnvelopeAction(result, envelopeAction, draft);
                 await runDocumentReviewLogic(
                   buildDocumentReviewTrigger({
@@ -4209,6 +4239,9 @@ function Form({
           ref={setActionToastRef}
           data={actionToastData}
           bottom={bottomRightBase}
+          warnings={reviewViewerPayload ? undefined : warnings}
+          onDismissWarnings={dismissWarnings}
+          onContinueSigning={continueSigning ?? undefined}
         />
         <FileUploadToast
           instanceId={_internalId}

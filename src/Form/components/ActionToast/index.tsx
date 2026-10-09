@@ -2,6 +2,8 @@ import { forwardRef, useState } from 'react';
 import { ChevronDown, ChevronUp, CloseIcon } from './icons';
 import ToastItem from './ToastItem';
 import { DataItem } from './useAIExtractionToast';
+import DocumentWarnings from '../DocumentWarnings';
+import { DocumentGenerationWarning } from '../../../utils/documentGenerationWarnings';
 
 type ActionToastProps = {
   data: DataItem[];
@@ -10,6 +12,9 @@ type ActionToastProps = {
   // When supplied, renders a dismiss control. Toasts that clear themselves
   // leave this off and stay uncloseable, as before.
   onDismiss?: () => void;
+  warnings?: DocumentGenerationWarning[];
+  onDismissWarnings?: () => void;
+  onContinueSigning?: () => void;
 };
 
 const getTitle = (data: DataItem[]): string => {
@@ -32,10 +37,21 @@ const getTitle = (data: DataItem[]): string => {
 };
 
 const ActionToast = forwardRef<HTMLDivElement, ActionToastProps>(
-  ({ data, bottom = 20, title, onDismiss }, ref) => {
+  (
+    {
+      data,
+      bottom = 20,
+      title,
+      onDismiss,
+      warnings,
+      onDismissWarnings,
+      onContinueSigning
+    },
+    ref
+  ) => {
     const [isToastExpanded, setIsToastExpanded] = useState(true);
 
-    if (data.length === 0) return null;
+    if (data.length === 0 && !warnings?.length) return null;
 
     return (
       <div
@@ -77,7 +93,10 @@ const ActionToast = forwardRef<HTMLDivElement, ActionToastProps>(
               fontSize: '16px'
             }}
           >
-            {title ?? getTitle(data)}
+            {title ??
+              (warnings?.length
+                ? 'Review Generated Documents'
+                : getTitle(data))}
           </h3>
           <div css={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {isToastExpanded ? <ChevronUp /> : <ChevronDown />}
@@ -103,6 +122,11 @@ const ActionToast = forwardRef<HTMLDivElement, ActionToastProps>(
           </div>
         </div>
 
+        <DocumentWarnings
+          warnings={warnings}
+          onDismiss={onDismissWarnings}
+          onContinueSigning={onContinueSigning}
+        />
         {isToastExpanded && (
           <div
             css={{

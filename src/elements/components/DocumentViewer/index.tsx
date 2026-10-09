@@ -12,6 +12,8 @@ import { useActivePage, pageKey } from './useActivePage';
 import { useIsNarrowViewport } from './useIsNarrowViewport';
 import ViewerSidebar from './sidebar';
 import AlertBanner from './AlertBanner';
+import DocumentWarnings from '../../../Form/components/DocumentWarnings';
+import { DocumentGenerationWarning } from '../../../utils/documentGenerationWarnings';
 import {
   featheryDoc,
   featheryWindow,
@@ -96,6 +98,7 @@ export interface ViewerDocument {
 export interface DocumentViewerPayload {
   documents: ViewerDocument[];
   expires_at: string;
+  warnings?: DocumentGenerationWarning[];
 }
 
 interface DocumentViewerProps {
@@ -448,6 +451,7 @@ export default function DocumentViewer({
         <AlertBanner message='This session has expired. Please close and reopen the viewer.' />
       )}
       {error && <AlertBanner message={error} onDismiss={() => setError('')} />}
+      <DocumentWarnings warnings={payload.warnings} />
       <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <ViewerSidebar
           documents={payload.documents}
