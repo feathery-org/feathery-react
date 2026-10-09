@@ -848,6 +848,52 @@ describe('IntegrationClient', () => {
       });
     });
 
+    it.each([true, false, undefined])(
+      'forwards draft=%s and preserves the DocuSign result',
+      async (draft) => {
+        const integrationClient = new IntegrationClient('test_form_key');
+        const response = {
+          docusign_envelope_id: 'ds-1',
+          status: draft ? 'created' : 'sent'
+        };
+        global.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue(response)
+        });
+        const result = await integrationClient.generateEnvelopes({
+          documents: ['doc1'],
+          sign_method: 'docusign',
+          envelope_action: 'sign',
+          draft,
+          run_async: false,
+          envelope_signers: [
+            {
+              document_id: 'doc1',
+              role_id: 'owner',
+              email: 'owner@example.com'
+            }
+          ]
+        });
+        const [url, options] = global.fetch.mock.calls[0];
+        expect(url).toBe(`${API_URL}document/form/generate/`);
+        const body = JSON.parse(options.body);
+        expect(body.draft).toBe(draft);
+        expect(body.sign_method).toBe('docusign');
+        expect(body.envelope_action).toBe('sign');
+        expect(body.editor_toolbar_actions).toBeUndefined();
+        expect(body.signers).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              document_id: 'doc1',
+              role_id: 'owner',
+              email: 'owner@example.com'
+            })
+          ])
+        );
+        expect(result).toEqual(response);
+      }
+    );
+
     it('sends sign_method to the generate endpoint directly for a plain docusign sign', async () => {
       // client-utils' generateFormDocuments can't forward sign_method any
       // more than it can the editor action, so a docusign sign action must

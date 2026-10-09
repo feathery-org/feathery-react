@@ -20,6 +20,98 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     } as any);
   });
 
+  it.each([undefined, 'sign'] as const)(
+    'creates a DocuSign draft with envelopeAction %s and preserves signer roles',
+    async (envelopeAction) => {
+      flow.mockResolvedValue({
+        docusign_envelope_id: 'ds-1',
+        status: 'created'
+      });
+      const result = await getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        signMethod: 'docusign',
+        draft: true,
+        envelopeAction,
+        signers: [{ documentId: 'tpl-1', roleId: 'owner', email: 'a@x.com' }]
+      });
+      expect(flow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          envelope_action: 'sign',
+          sign_method: 'docusign',
+          draft: true,
+          envelope_signers: [
+            {
+              document_id: 'tpl-1',
+              role_id: 'owner',
+              email: 'a@x.com',
+              filler: false
+            }
+          ]
+        })
+      );
+      expect(result).toEqual({
+        docusign_envelope_id: 'ds-1',
+        status: 'created'
+      });
+      expect(client.generateDocuments).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    { signMethod: undefined },
+    { signMethod: 'feathery' },
+    { envelopeAction: 'fill' },
+    { envelopeAction: 'download' },
+    { envelopeAction: 'save' },
+    { envelopeAction: 'open_in_editor' },
+    { download: true },
+    { toolbarActions: ['draft'] }
+  ])(
+    'rejects incompatible draft options before saving or generating: %j',
+    async (options) => {
+      await expect(
+        getFormContext(uuid).generateDocuments({
+          documentIds: ['tpl-1'],
+          signMethod: 'docusign',
+          draft: true,
+          ...options
+        } as any)
+      ).rejects.toThrow('draft requires');
+      expect(client.flushCustomFields).not.toHaveBeenCalled();
+      expect(flow).not.toHaveBeenCalled();
+      expect(client.generateDocuments).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects headless drafts instead of silently dropping the draft option', async () => {
+    const headlessUuid = 'formContext-headless-draft';
+    setFormInternalState(headlessUuid, { fields: {}, client } as any);
+    await expect(
+      getFormContext(headlessUuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        signMethod: 'docusign',
+        draft: true
+      })
+    ).rejects.toThrow('draft requires a mounted <Form />');
+    expect(client.flushCustomFields).not.toHaveBeenCalled();
+    expect(client.generateDocuments).not.toHaveBeenCalled();
+  });
+
+  it('keeps editor generation available when draft is explicitly false', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      signMethod: 'docusign',
+      envelopeAction: 'open_in_editor',
+      draft: false
+    });
+    expect(flow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        envelope_action: 'open_in_editor',
+        draft: false
+      })
+    );
+  });
+
   it('routes the editor + signer options through the form flow with a built action', async () => {
     await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
