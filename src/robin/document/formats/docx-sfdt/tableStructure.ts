@@ -1,11 +1,11 @@
 // Row roles come only from document evidence. The caller owns header detection;
 // row-scoped tags identify items and table-dependent formulas identify totals.
 
-import { parseTag } from '../../../elements/components/DocxEditor/bindings/core/tagDsl';
+import { parseTag } from '../../../../elements/components/DocxEditor/bindings/core/tagDsl';
 import {
   collectRefs,
   parseExpression
-} from '../../../elements/components/DocxEditor/bindings/core/formula';
+} from '../../../../elements/components/DocxEditor/bindings/core/formula';
 
 type TableRole = 'header' | 'item' | 'aggregate' | 'static';
 

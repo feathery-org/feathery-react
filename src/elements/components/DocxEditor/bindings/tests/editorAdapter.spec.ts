@@ -220,11 +220,16 @@ describe('controller over a real DocumentEditor', () => {
     expect(costsCell(editor, 'line_total')).toBe('$2,000.00');
   });
 
-  it('leaves track-changes off after a reconcile, even if it was on', () => {
-    // Restoring a leftover true re-arms tracking for the next keystroke inside
-    // the control the user just edited.
+  it("restores the user's track-changes setting after a reconcile: on stays on, off stays off", () => {
+    // The engine's own writes are untracked, but the setting is the user's: forcing
+    // it off on every reconcile turned the user's track changes off at the first
+    // keystroke in a bound field.
     (editor as any).enableTrackChanges = true;
     writeIntoControl(editor, QUANTITY_R1, '13');
+    controller.flush();
+    expect((editor as any).enableTrackChanges).toBe(true);
+    (editor as any).enableTrackChanges = false;
+    writeIntoControl(editor, QUANTITY_R1, '14');
     controller.flush();
     expect((editor as any).enableTrackChanges).toBe(false);
   });

@@ -210,6 +210,31 @@ describe('loading', () => {
   });
 });
 
+describe('a document replaced from outside (the engine splice)', () => {
+  it('re-reads the opened document as its baseline, without writing to the editor or marking dirty', () => {
+    const { editor, clock, controller, events } = setup(null);
+    controller.loadInitial(buildCostsFixture());
+    clock.fire();
+    // the engine opens a document with the costs table's second row removed
+    const next = JSON.parse(JSON.stringify(editor.doc)) as SfdtDocument;
+    const table = scanBindings(next).tables.get('costs')!;
+    const rowsPath = [...(table.tablePath as Array<string | number>), 'rows'];
+    const rows = [...(getAt(next, rowsPath) as SfdtRow[])];
+    rows.splice(1, 1);
+    const replaced = setAt(next, rowsPath, rows);
+    editor.doc = replaced;
+    const opens = editor.opens;
+    const patches = editor.patches;
+    controller.notifyReopened();
+    expect(editor.opens).toBe(opens);
+    expect(editor.patches).toBe(patches);
+    expect(controller.dirty).toBe(false);
+    expect(controller.index?.tables.get('costs')?.rows).toHaveLength(1);
+    expect(events[events.length - 1]).toBe('reopen');
+    expect(controller.workingSfdt).toEqual(editor.doc);
+  });
+});
+
 describe('reconciling a user edit', () => {
   it('patches engine output in place, leaving native history intact', () => {
     const { editor, clock, controller } = setup();

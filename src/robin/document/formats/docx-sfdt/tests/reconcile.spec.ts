@@ -1,0 +1,213 @@
+/**
+ * The tracked composition behind the splice seam: a moved node is a Deletion where it was and an
+ * Insertion where it goes, and the bookmarks it holds stay with the moved copy only.
+ */
+import * as fs from 'fs';
+import * as path from 'path';
+import { WriteInput } from '../../../envelope';
+import { DocumentSession } from '../../../session';
+import { NfNode, NormalForm, baseOf, shapeOf, walk } from '../../../tree';
+import { makeView } from '../../../view';
+import { prepareWrite } from '../../../verbs';
+import { docxPack } from '../index';
+import { accept, expectedRejection, reject } from '../projections';
+import { ownText } from '../outline';
+import { composeTracked, editorOffset, hierOf, plan } from '../reconcile';
+import { docxTree } from '../tree';
+import { arr } from '../util';
+
+const flagship = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4b.sfdt.json'), 'utf8');
+const state = () => {
+  let doc = flagship;
+  const host = { serialize: () => doc, open: (s: string) => { doc = s; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+  return new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+};
+const occurrences = (nf: NormalForm, id: string) => {
+  const out: NfNode[] = [];
+  walk(nf.root, docxTree, ({ node }) => {
+    if (node.id === id) out.push(node);
+  });
+  return out;
+};
+const bookmarks = (n: NfNode) => {
+  let count = 0;
+  walk(n, docxTree, ({ node }) => {
+    if (node.kind === 'bookmark') count += 1;
+  });
+  return count;
+};
+
+/** How a copy is tracked: the revision kind its content carries (pending sits on runs, marks and rows). */
+const trackedAs = (n: NfNode) => {
+  const text = JSON.stringify(n);
+  return text.includes('"Deletion"') && !text.includes('"Insertion"') ? 'Deletion' : text.includes('"Insertion"') && !text.includes('"Deletion"') ? 'Insertion' : 'mixed';
+};
+
+describe('composeTracked', () => {
+  const s = state();
+  const sections = arr<NfNode>(s.view.nf.root.sections);
+  const control = arr<NfNode>(sections[1].blocks)[10];
+  const anchor = arr<NfNode>(sections[0].blocks)[3];
+
+  it('the flagship control holds bookmarks (the precondition for both cases)', () => {
+    expect(bookmarks(control)).toBeGreaterThan(0);
+  });
+
+  it('a moved node keeps its bookmarks on the inserted copy only', () => {
+    const r = prepareWrite(state(), {
+      intent: 'test',
+      scope: { ids: [control.id] },
+      changes: [{ kind: 'move', id: control.id, shape: shapeOf(control, docxTree), anchor: anchor.id, position: 'after', container: shapeOf(sections[0], docxTree) }]
+    } as WriteInput);
+    expect(r.outcome).toBe('verified');
+    if (r.outcome !== 'verified') return;
+    const { tracked } = composeTracked(s.view, r.intended, 't');
+    const copies = occurrences(tracked, control.id);
+    expect(copies).toHaveLength(2);
+    const inserted = copies.find((c) => trackedAs(c) === 'Insertion') as NfNode;
+    const deleted = copies.find((c) => trackedAs(c) === 'Deletion') as NfNode;
+    expect(bookmarks(inserted)).toBe(bookmarks(control));
+    expect(bookmarks(deleted)).toBe(0);
+  });
+
+  it('a deleted node that is not moved keeps its bookmarks', () => {
+    const intended = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
+    const blocks = arr<NfNode>(arr<NfNode>(intended.root.sections)[1].blocks);
+    blocks.splice(10, 1);
+    const { tracked } = composeTracked(s.view, intended, 't');
+    const [deleted] = occurrences(tracked, control.id);
+    expect(trackedAs(deleted)).toBe('Deletion');
+    expect(bookmarks(deleted)).toBe(bookmarks(control));
+  });
+});
+
+describe('plan: a set on a shared format entry', () => {
+  it('lands on every referrer through the format seam (the first formatId target driven through plan)', () => {
+    // two body paragraphs whose runs share one character format
+    let doc = JSON.stringify({
+      sections: [
+        { blocks: [{ inlines: [{ text: 'Alpha', characterFormat: { bold: true } }] }, { inlines: [{ text: 'Beta', characterFormat: { bold: true } }] }] }
+      ]
+    });
+    const host = { serialize: () => doc, open: (x: string) => { doc = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+    const nodes = s.view.nodes();
+    const referrersOf = (id: string) => nodes.filter((n) => Object.values(n).includes(id));
+    const formatId = String(nodes.find((n) => n.kind === 'run')?.style);
+    const referrers = referrersOf(formatId);
+    const italic = s.view.nf.formats[formatId]?.italic !== true;
+    const entryBefore = JSON.stringify(s.view.nf.formats[formatId]);
+    const r = prepareWrite(s, {
+      intent: 'Make the runs of this format bold.',
+      scope: { ids: [], formats: [{ id: formatId, referrers: referrers.length }] },
+      changes: [{ kind: 'set', target: { formatId, base: baseOf(s.view.nf.formats[formatId]), referrers: referrers.length }, props: { italic } }]
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 900));
+    expect(r.intended.formats[formatId]).toEqual(expect.objectContaining({ italic }));
+    // the document before the write is not changed by it
+    expect(JSON.stringify(s.view.nf.formats[formatId])).toBe(entryBefore);
+    const p = plan({ turnId: 't', before: s.view, intended: makeView(r.intended, docxPack), beforeResidue: s.residue, intendedResidue: r.intendedResidue, beforeNative: doc });
+    expect(p.steps.map((x) => x.seam)).toEqual(['format']);
+    const ops = p.steps[0].payload as Array<{ props: Record<string, unknown> }>;
+    expect(ops).toHaveLength(referrers.length);
+    for (const op of ops) expect(op.props).toEqual(expect.objectContaining({ italic }));
+    expect(p.landed).toBe('immediate');
+  });
+});
+
+describe('composeTracked: feature attributes are content, not formatting', () => {
+  const find = (nf: NormalForm, id: string) => occurrences(nf, id);
+  const cases: Array<[string, (b: Record<string, unknown>) => unknown]> = [
+    ['a rewritten formula', (b) => ({ ...b, expr: '0' })],
+    ['an unbound control (binding removed)', () => undefined]
+  ];
+  for (const [name, change] of cases)
+    it(`${name} on a kept control is a tracked replacement that reject undoes`, () => {
+      const s = state();
+      const control = s.view.nodes().find((n) => n.kind === 'control' && typeof (n.binding as { expr?: unknown } | undefined)?.expr === 'string') as NfNode;
+      expect(control).toBeDefined();
+      const intended = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
+      const target = find(intended, control.id)[0];
+      const next = change(target.binding as Record<string, unknown>);
+      if (next === undefined) delete target.binding;
+      else target.binding = next;
+      const { tracked, untracked } = composeTracked(s.view, intended, 't');
+      expect(untracked).not.toContain(control.id);
+      const copies = find(tracked, control.id);
+      expect(copies.map(trackedAs).sort()).toEqual(['Deletion', 'Insertion']);
+      const bindingIn = (nf: NormalForm) => find(nf, control.id).map((n) => JSON.stringify(n.binding ?? null));
+      expect(bindingIn(reject(tracked))).toEqual([JSON.stringify(control.binding)]);
+      expect(bindingIn(accept(tracked))).toEqual([JSON.stringify(next ?? null)]);
+      // what rejecting should restore keeps the feature as it was (formatting would stay applied)
+      expect(bindingIn(expectedRejection(s.view.nf, intended))).toEqual([JSON.stringify(control.binding)]);
+    });
+});
+
+describe('plan: paragraph, table, row and cell properties', () => {
+  const s = state();
+  const nodes = s.view.nodes();
+  // a plain table the editor addresses natively (not inside a block control)
+  const table = nodes.find((n) => n.kind === 'table' && hierOf(s.view, arr<NfNode>(arr<NfNode>(arr<NfNode>(n.rows)[0].cells)[0].blocks)[0].id) !== null) as NfNode;
+  const row = arr<NfNode>(table.rows)[1];
+  const cell = arr<NfNode>(row.cells)[1];
+  const paragraph = nodes.find((n) => n.kind === 'paragraph' && hierOf(s.view, n.id) !== null && typeof n.style === 'string') as NfNode;
+  const planFor = (id: string, props: Record<string, unknown>) => {
+    const node = s.view.get(id) as NfNode;
+    const r = prepareWrite(state(), { intent: 'x', scope: { ids: [id] }, changes: [{ kind: 'set', target: { ids: [id], shape: { [id]: shapeOf(node, docxTree) } }, props }] } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+    return plan({ turnId: 't', before: s.view, intended: makeView(r.intended, docxPack), beforeResidue: s.residue, intendedResidue: r.intendedResidue, beforeNative: flagship });
+  };
+  const ops = (p: ReturnType<typeof plan>) => p.steps[0].payload as Array<{ target: string; props: Record<string, unknown> }>;
+
+  it('a paragraph property goes through the native format seam and lands immediately', () => {
+    const p = planFor(paragraph.id, { textAlignment: 'Center' });
+    expect(p.steps.map((x) => x.seam)).toEqual(['format']);
+    expect(p.landed).toBe('immediate');
+    expect(p.history).toBe('editor');
+    expect(ops(p)).toEqual([expect.objectContaining({ target: 'paragraph', props: { textAlignment: 'Center' } })]);
+  });
+
+  it('cell, row and table properties go through the native format seam', () => {
+    const c = planFor(cell.id, { verticalAlignment: 'Bottom' });
+    expect(c.steps.map((x) => x.seam)).toEqual(['format']);
+    expect(ops(c)).toEqual([expect.objectContaining({ target: 'cell', props: { verticalAlignment: 'Bottom' } })]);
+    const current = (s.view.nf.formats[String(cell.style)]?.shading ?? {}) as Record<string, unknown>;
+    const shade = planFor(cell.id, { shading: { ...current, backgroundColor: '#FFEE00' } });
+    expect(ops(shade)).toEqual([expect.objectContaining({ target: 'cell', props: { background: '#FFEE00' } })]);
+    const r = planFor(row.id, { height: 30, heightType: 'AtLeast' });
+    expect(ops(r)).toEqual([expect.objectContaining({ target: 'row', props: expect.objectContaining({ height: 30 }) })]);
+    const t = planFor(table.id, { tableAlignment: 'Center' });
+    expect(ops(t)).toEqual([expect.objectContaining({ target: 'table', props: { tableAlignment: 'Center' } })]);
+  });
+
+  it('a property with no native setter falls back to splice, and lands immediately because nothing is tracked', () => {
+    const borders = { top: { lineStyle: 'Single', lineWidth: 1.5, color: '#000000' } };
+    const p = planFor(cell.id, { borders });
+    expect(p.steps.map((x) => x.seam)).toEqual(['splice']);
+    expect(p.landed).toBe('immediate');
+    expect(p.history).toBe('engine');
+  });
+});
+
+describe('editor offsets from the normal form', () => {
+  it('counts each inline control boundary as the editor does (measured: one position each)', () => {
+    const s = state();
+    const para = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[2];
+    const text = String(ownText(para));
+    // "Insurance premium tax is charged at |8.5%| percent." with a control around 8.5%
+    expect(editorOffset(s.view, para.id, text.indexOf('Insurance'))).toBe(0);
+    expect(editorOffset(s.view, para.id, text.indexOf('8.5%'))).toBe(text.indexOf('8.5%') + 1);
+    expect(editorOffset(s.view, para.id, text.indexOf('percent'))).toBe(text.indexOf('percent') + 2);
+  });
+
+  it('a text op after a control carries the exact editor offsets', () => {
+    const s = state();
+    const para = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[2];
+    const last = arr<NfNode>(para.inlines).filter((i) => i.kind === 'run').pop() as NfNode;
+    const r = prepareWrite(s, { intent: 'x', scope: { ids: [last.id] }, changes: [{ kind: 'replace', id: last.id, base: baseOf(last), node: { kind: 'run', ...(last.style ? { style: last.style } : {}), text: String(last.text).replace('percent', 'per cent') } }] } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 500));
+    const p = plan({ turnId: 't', before: s.view, intended: makeView(r.intended, docxPack), beforeResidue: s.residue, intendedResidue: r.intendedResidue, beforeNative: flagship });
+    const [op] = p.steps[0].payload as Array<{ a: number; at: number }>;
+    expect(op.at).toBe(op.a + 2);
+  });
+});

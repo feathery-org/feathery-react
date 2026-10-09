@@ -43,7 +43,7 @@ import {
   EditOp,
   LiveEditor
 } from '../syncfusionDocumentOps';
-import { collectTableAppearance, inferHeaderRows } from '../tableAppearance';
+import { collectTableAppearance, inferHeaderRows } from '../../../../robin/document/formats/docx-sfdt/tableAppearance';
 import {
   listRevisionGroups,
   resolveLiveRevisionGroupsAsOneUndo

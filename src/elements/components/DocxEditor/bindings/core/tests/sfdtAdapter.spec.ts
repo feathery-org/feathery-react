@@ -51,6 +51,41 @@ describe('scanBindings', () => {
   });
 });
 
+describe('scanBindings: tracked deletions', () => {
+  const doc = (deleted: boolean) => ({
+    revisions: [{ revisionId: 'r-del', revisionType: 'Deletion', author: 'Robin' }],
+    sections: [
+      {
+        blocks: [
+          {
+            inlines: [
+              {
+                contentControlProperties: { tag: '[[name=total|type=currency|expr=sum(1,2)]]' },
+                inlines: [{ text: '$3.00', ...(deleted ? { revisionIds: ['r-del'] } : {}) }]
+              },
+              {
+                contentControlProperties: { tag: '[[name=total|type=currency|expr=mul(sum(1,2),1)]]' },
+                inlines: [{ text: '$3.00' }]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  });
+
+  it('skips a control whose whole content is a pending deletion, as it skips a deleted row', () => {
+    const index = scanBindings(doc(true) as any);
+    expect(index.formulas.get('total')).toHaveLength(1);
+    expect(index.occurrences).toHaveLength(1);
+    expect(index.occurrences[0].path).toEqual(['sections', 0, 'blocks', 0, 'inlines', 1]);
+  });
+
+  it('keeps a control whose content is live', () => {
+    expect(scanBindings(doc(false) as any).formulas.get('total')).toHaveLength(2);
+  });
+});
+
 describe('reading', () => {
   it('returns canonical values from tags and line items', () => {
     const doc = buildCostsFixture();

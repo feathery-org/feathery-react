@@ -1,5 +1,5 @@
 import { deriveTableStructure } from '../tableStructure';
-import { formatTag } from '../../../../elements/components/DocxEditor/bindings/core/tagDsl';
+import { formatTag } from '../../../../../elements/components/DocxEditor/bindings/core/tagDsl';
 
 const CURRENCY = { kind: 'currency' as const, currency: 'USD', scale: 2 };
 const bound = (tag: string) => ({

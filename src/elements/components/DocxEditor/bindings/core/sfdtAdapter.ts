@@ -248,6 +248,34 @@ export function hasRevisionId(node: any, ids: Set<string>): boolean {
   );
 }
 
+/**
+ * True when a content control's text is all pending deletion: the control is on its way out (a
+ * tracked replacement keeps the old control beside the new one until the card is resolved), so,
+ * like a deleted row, it is not an occurrence. A control with no text at all is not deleted.
+ */
+export function wholeContentDeleted(
+  node: any,
+  deletedRevisionIds: Set<string>
+): boolean {
+  let text = 0;
+  let live = 0;
+  const visit = (inlines: any[] | undefined) => {
+    for (const inline of inlines || []) {
+      if (!inline) continue;
+      if (typeof inline.text === 'string' && !inline.contentControlProperties) {
+        text += 1;
+        if (!hasOnlyRevisionIds(inline, deletedRevisionIds)) live += 1;
+      }
+      if (Array.isArray(inline.inlines)) visit(inline.inlines);
+    }
+  };
+  visit(
+    node.inlines ||
+      (node.blocks || []).flatMap((block: any) => block?.inlines || [])
+  );
+  return text > 0 && live === 0;
+}
+
 function ccText(node: any, deletedRevisionIds: Set<string>): string {
   let out = '';
   const inlines =
@@ -389,6 +417,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
       // in, so recurse with a fresh context.
       walkTextFrames(inline, path);
       if (!inline.contentControlProperties) return;
+      if (wholeContentDeleted(inline, deletedRevisionIds)) return;
       const rawTag = String(inline.contentControlProperties.tag || '');
       const def = parseTagOrDiagnose(rawTag, path);
       if (def && (def.kind === 'field' || def.kind === 'formula')) {
@@ -511,7 +540,10 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
           if (hasRevisionId(row.rowFormat, deletedRevisionIds)) return;
           const currentRowPath = [...path, 'rows', r];
           (row.cells || []).forEach((cell, c) => {
-            if ((cell as any).contentControlProperties) {
+            if (
+              (cell as any).contentControlProperties &&
+              !wholeContentDeleted(cell, deletedRevisionIds)
+            ) {
               const cellPath = [...currentRowPath, 'cells', c];
               const rawTag = String(
                 (cell as any).contentControlProperties.tag || ''

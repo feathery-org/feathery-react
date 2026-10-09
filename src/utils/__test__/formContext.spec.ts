@@ -1,6 +1,14 @@
 import { getFormContext } from '../formContext';
 import { defaultClient, initState } from '../init';
 import { setFormInternalState } from '../internalState';
+import { mountDocument } from '../../robin/document/mounts';
+import { DocumentSession } from '../../robin/document/session';
+import {
+  ToyHost,
+  makeToyPack,
+  para,
+  toyNative
+} from '../../robin/document/tests/toyPack';
 
 describe('feathery.generateDocuments logic-rule method routing', () => {
   const uuid = 'formContext-test';
@@ -320,5 +328,50 @@ describe('subscribe', () => {
 
     expect(listener).toHaveBeenCalledWith({ type: 'identity' });
     expect(context.requestIdentity().fuserKey).toBe('merged-fuser');
+  });
+});
+
+describe('liveDocument', () => {
+  const uuid = 'formContext-live-document';
+  const session = () =>
+    new DocumentSession({
+      pack: makeToyPack(),
+      host: new ToyHost(toyNative(para('Motor'))),
+      target: { type: 'envelope', id: 'env-1' },
+      editorId: 'ed-1'
+    });
+
+  it('describes nothing until a document mounts in this form', () => {
+    expect(getFormContext(uuid).liveDocument.descriptor()).toBeNull();
+  });
+
+  it('describes, dispatches to and finishes the turn of the document mounted in this form', () => {
+    const s = session();
+    const unmount = mountDocument(uuid, 'container-1', s);
+    const doc = getFormContext(uuid).liveDocument;
+    const d = doc.descriptor();
+    expect(d).toEqual(
+      expect.objectContaining({
+        protocolVersion: 1,
+        editorId: 'ed-1',
+        target: { type: 'envelope', id: 'env-1' },
+        readOnly: false
+      })
+    );
+    expect(typeof d?.outlineHash).toBe('string');
+    const out = doc.dispatch({
+      protocolVersion: 1,
+      turnId: 'turn-1',
+      editorId: 'ed-1',
+      target: { type: 'envelope', id: 'env-1' },
+      verb: 'write',
+      input: { intent: 'Nothing.', scope: { ids: [] }, changes: [] }
+    });
+    expect(out.status).toBe('ok');
+    expect(s.activeTurn).toBe('turn-1');
+    doc.finishTurn();
+    expect(s.activeTurn).toBeNull();
+    expect(getFormContext('another-form').liveDocument.descriptor()).toBeNull();
+    unmount();
   });
 });
