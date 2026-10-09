@@ -1648,7 +1648,7 @@ function Form({
               });
             });
           }
-          await runEnvelopeAction(data);
+          await runEnvelopeAction(data, undefined, action.draft === true);
           return data;
         },
         // Lets a document-editor container, which runs its own signing action

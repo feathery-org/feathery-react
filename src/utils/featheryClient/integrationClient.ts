@@ -776,6 +776,7 @@ export default class IntegrationClient {
         openInEditor,
         envelopeAction,
         signMethod: action.sign_method,
+        draft: action.draft,
         emailSubject: action.email_subject,
         emailBlurb: action.email_blurb
       });
@@ -906,6 +907,7 @@ export default class IntegrationClient {
     openInEditor,
     envelopeAction,
     signMethod,
+    draft,
     emailSubject,
     emailBlurb
   }: {
@@ -920,6 +922,7 @@ export default class IntegrationClient {
     openInEditor: boolean;
     envelopeAction: 'sign' | 'fill';
     signMethod?: string;
+    draft?: boolean;
     // DocuSign sign only: subject and body of the envelope's signing email.
     emailSubject?: string;
     emailBlurb?: string;
@@ -942,6 +945,7 @@ export default class IntegrationClient {
       // are baked in; the pressed action is sent to finalize separately.
       payload.editor_toolbar_actions = toolbarActions;
     }
+    if (draft !== undefined) payload.draft = draft;
     if (signMethod) payload.sign_method = signMethod;
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;

@@ -259,6 +259,7 @@ export const getFormContext = (formUuid: string) => {
       signers,
       envelopeAction,
       signMethod,
+      draft,
       toolbarActions,
       emailSubject,
       emailBlurb,
@@ -297,6 +298,9 @@ export const getFormContext = (formUuid: string) => {
       }[];
       envelopeAction?: 'sign' | 'fill' | 'download' | 'save' | 'open_in_editor';
       signMethod?: 'feathery' | 'docusign';
+      // Create a DocuSign draft without opening the editor or emailing signers.
+      // Requires signMethod 'docusign'; envelopeAction defaults to 'sign'.
+      draft?: boolean;
       // Only for envelopeAction 'open_in_editor': which buttons the editor
       // toolbar offers. 'draft' is DocuSign-only (it finalizes as a sign with
       // draft=true).
@@ -314,6 +318,27 @@ export const getFormContext = (formUuid: string) => {
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
     }) => {
+      if (draft) {
+        if (
+          signMethod !== 'docusign' ||
+          (envelopeAction && envelopeAction !== 'sign') ||
+          download ||
+          toolbarActions?.length
+        ) {
+          return Promise.reject(
+            new Error(
+              "generateDocuments: draft requires signMethod 'docusign' and " +
+                "envelopeAction 'sign' (or omitted), without download or toolbarActions"
+            )
+          );
+        }
+        if (!formState.generateEnvelopeFlow) {
+          return Promise.reject(
+            new Error('generateDocuments: draft requires a mounted <Form />')
+          );
+        }
+        envelopeAction = 'sign';
+      }
       // A field passed as-is is named by key, resolved to its id below.
       let documentIds: GenerateDocumentRef[] = documentSources.map((doc) =>
         doc instanceof Field ? { kind: 'file_upload', field_key: doc.id } : doc
@@ -398,6 +423,7 @@ export const getFormContext = (formUuid: string) => {
                 ? 'download'
                 : undefined),
             sign_method: signMethod,
+            ...(draft !== undefined ? { draft } : {}),
             // Omitted rather than nulled: the backend's role_id rejects an
             // explicit null, and leaving it off spreads the email across
             // every role of that document. A phone is omitted the same way,
