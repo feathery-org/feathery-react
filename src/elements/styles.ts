@@ -1560,9 +1560,19 @@ export default class ResponsiveStyles {
         if (!line) return {};
 
         const legacy = legacyPaddingY(type);
-        const top = Math.max(
-          paddingSide(t, legacy),
-          this.pinnedTopFloor(type, height, heightUnit, t, align, b)
+        const top = flooredTopPadding(
+          type,
+          t,
+          this.pinnedTopFloor(
+            type,
+            height,
+            heightUnit,
+            t,
+            align,
+            b,
+            fontSize,
+            lineHeight
+          )
         );
         const bottom = paddingSide(b, legacy);
 
