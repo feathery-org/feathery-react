@@ -61,8 +61,6 @@ type DocusignSignerAuthentication = {
   workflowId?: string;
 };
 type DocusignSigner = {
-  // Stable person identity across documents, independent of email or role.
-  signerId?: string;
   // Required for esign signers; omit for paper signers (not a DocuSign recipient)
   email?: string;
   name: string;
@@ -94,7 +92,7 @@ type DocusignDocument =
 type DocusignLibraryDocuments = {
   library: 'quik';
   groups: {
-    forms: { id: string; signerIds?: Record<string, string> }[];
+    forms: { id: string }[];
     rolePrefixes: string[];
     index: number;
   }[];

@@ -1179,27 +1179,13 @@ export default class IntegrationClient {
                 repeat_index: doc.repeatIndex
               }
         ),
-        library_documents: libraryDocuments
-          ? {
-              ...libraryDocuments,
-              groups: libraryDocuments.groups.map((group) => ({
-                ...group,
-                forms: group.forms.map(({ signerIds, ...form }) => ({
-                  ...form,
-                  ...(signerIds !== undefined ? { signer_ids: signerIds } : {})
-                }))
-              }))
-            }
-          : libraryDocuments,
+        library_documents: libraryDocuments,
         fill_data: fillData,
         email_subject: emailSubject,
         email_blurb: emailBlurb,
         signers: signers?.map((signer) => ({
           email: signer.email,
           name: signer.name,
-          ...(signer.signerId !== undefined
-            ? { signer_id: signer.signerId }
-            : {}),
           sign_method: signer.signMethod,
           routing_order: signer.routingOrder,
           excluded_documents: signer.excludedDocuments,
