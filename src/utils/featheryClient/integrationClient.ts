@@ -45,7 +45,12 @@ export type QuikDocumentSource = {
   // Omit to use the configured Quik integration's forms and mappings.
   // When supplied, each entry is one PDF, including repeated form IDs.
   // Values use Quik field names and never fall back to saved form answers.
-  forms?: { id: string | number; fields: Record<string, string> }[];
+  forms?: {
+    id: string | number;
+    fields: Record<string, string>;
+    // Quik role prefix -> stable person ID, e.g. { '1own': 'client-123' }.
+    signerIds?: Record<string, string>;
+  }[];
 };
 // Every file uploaded to the field becomes a document, converted to PDF.
 // Logic rules name the field by `field_key`, resolved to `field_id` before sending.
@@ -696,6 +701,10 @@ export default class IntegrationClient {
             ? { repeat_index: entry.repeat_index }
             : {}),
           email,
+          ...(entry.signer_id !== undefined
+            ? { signer_id: entry.signer_id }
+            : {}),
+          ...(entry.name ? { name: entry.name } : {}),
           // Omitted rather than blanked: a present phone is the request to
           // challenge that recipient by SMS, so an empty one must not read as
           // one.
@@ -931,7 +940,19 @@ export default class IntegrationClient {
     const payload: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
-      documents: documentIds,
+      documents: documentIds.map((document) =>
+        typeof document !== 'string' &&
+        document.kind === 'quik' &&
+        document.forms
+          ? {
+              ...document,
+              forms: document.forms.map(({ signerIds, ...form }) => ({
+                ...form,
+                ...(signerIds !== undefined ? { signer_ids: signerIds } : {})
+              }))
+            }
+          : document
+      ),
       run_async: runAsync,
       envelope_action: openInEditor ? 'open_in_editor' : envelopeAction,
       // Forwarded even though neither path merges at generate time: it lets the
@@ -1158,13 +1179,27 @@ export default class IntegrationClient {
                 repeat_index: doc.repeatIndex
               }
         ),
-        library_documents: libraryDocuments,
+        library_documents: libraryDocuments
+          ? {
+              ...libraryDocuments,
+              groups: libraryDocuments.groups.map((group) => ({
+                ...group,
+                forms: group.forms.map(({ signerIds, ...form }) => ({
+                  ...form,
+                  ...(signerIds !== undefined ? { signer_ids: signerIds } : {})
+                }))
+              }))
+            }
+          : libraryDocuments,
         fill_data: fillData,
         email_subject: emailSubject,
         email_blurb: emailBlurb,
         signers: signers?.map((signer) => ({
           email: signer.email,
           name: signer.name,
+          ...(signer.signerId !== undefined
+            ? { signer_id: signer.signerId }
+            : {}),
           sign_method: signer.signMethod,
           routing_order: signer.routingOrder,
           excluded_documents: signer.excludedDocuments,
