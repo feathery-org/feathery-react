@@ -291,6 +291,8 @@ export const getFormContext = (formUuid: string) => {
         documentId: string;
         roleId?: string;
         repeatIndex?: number;
+        // Stable person identity across documents; omit for legacy email grouping.
+        signerId?: string;
         email: string;
         name?: string;
         phone?: string;
@@ -433,6 +435,7 @@ export const getFormContext = (formUuid: string) => {
                 documentId,
                 roleId,
                 repeatIndex,
+                signerId,
                 email,
                 name,
                 phone,
@@ -444,6 +447,7 @@ export const getFormContext = (formUuid: string) => {
                   ? { repeat_index: repeatIndex }
                   : {}),
                 email,
+                ...(signerId !== undefined ? { signer_id: signerId } : {}),
                 ...(name ? { name } : {}),
                 ...(phone ? { phone } : {}),
                 filler: !!filler

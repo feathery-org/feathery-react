@@ -525,7 +525,9 @@ describe('IntegrationClient', () => {
           document_id: 'aaf',
           role_id: 'owner',
           repeat_index: 0,
-          email: 'john@example.com',
+          email: 'shared@example.com',
+          name: 'John',
+          signer_id: 'client-john',
           phone: '+15551234567',
           filler: false
         },
@@ -533,7 +535,9 @@ describe('IntegrationClient', () => {
           document_id: 'aaf',
           role_id: 'owner',
           repeat_index: 1,
-          email: 'mary@example.com',
+          email: 'shared@example.com',
+          name: 'Mary',
+          signer_id: 'client-mary',
           filler: false
         },
         {
@@ -549,7 +553,15 @@ describe('IntegrationClient', () => {
           json: jest.fn().mockResolvedValue({ files: [] })
         });
         await client.generateEnvelopes({
-          documents: [{ kind: 'quik' }, 'aaf'],
+          documents: [
+            {
+              kind: 'quik',
+              forms: [
+                { id: 44249, fields: {}, signerIds: { '1own': 'client-john' } }
+              ]
+            },
+            'aaf'
+          ],
           repeatable: true,
           sign_method: 'docusign',
           envelope_action: envelopeAction,
@@ -562,7 +574,15 @@ describe('IntegrationClient', () => {
         expect(body.signers).toEqual(signers);
         expect(body.repeatable).toBe(true);
         expect(body.sign_method).toBe('docusign');
-        expect(body.documents).toEqual([{ kind: 'quik' }, 'aaf']);
+        expect(body.documents).toEqual([
+          {
+            kind: 'quik',
+            forms: [
+              { id: 44249, fields: {}, signer_ids: { '1own': 'client-john' } }
+            ]
+          },
+          'aaf'
+        ]);
       }
     });
 
