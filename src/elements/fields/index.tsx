@@ -711,7 +711,7 @@ Object.entries(Fields).map(([key, Field]: any) => {
         <label
           // Doesn't work for repeats currently since repeating field IDs aren't unique
           htmlFor={servar.repeated || labelEditable ? undefined : servar.key}
-          style={{
+          css={{
             marginBottom: `${getLabelGapDefault(servar.type)}px`,
             display: 'inline-block',
             whiteSpace: 'pre-wrap',
