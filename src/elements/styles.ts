@@ -330,8 +330,8 @@ type VerticalPlacement = {
 // A single-line input centers its text in its content box and ignores any
 // alignment on its parent, so top/bottom alignment has to be synthesized by
 // padding one side out. Returns null whenever the field should keep the
-// centered default. A shrink_top label is a fixed overlay the value ignores, so
-// the value aligns behind the raw padding whether one floats or not.
+// centered default. Stored padding is authoritative; an unset top can use the
+// pinned label's floor so alignment leaves room for the label.
 const inputBoxVertical = (
   type: string,
   align: any,
@@ -400,7 +400,8 @@ const valueLineY = (
   padBottom: any,
   lineHeight: any,
   fontSize: any,
-  topFloor: number | null = null
+  topFloor: number | null = null,
+  controlTop = 0
 ): string | null => {
   const line = inputLineHeight(lineHeight, fontSize);
   if (!line) return null;
@@ -411,7 +412,7 @@ const valueLineY = (
   if (type === MULTISELECT_FIELD) {
     // Its chips are placed by flexbox, so the line follows the alignment
     // directly at any height.
-    if (align === 'flex-start') return `${top + line / 2}px`;
+    if (align === 'flex-start') return `${controlTop + top + line / 2}px`;
     if (align === 'flex-end') return `calc(100% - ${bottom + line / 2}px)`;
     // Centred means the middle of the padded area, not of the box -- the two
     // are the same distance apart as the paddings are uneven.
@@ -434,7 +435,8 @@ const valueLineY = (
       : `${placement.height - placement.bottom - placement.line / 2}px`;
 
   // Centred between the paddings, the same shift the placeholder takes.
-  const delta = (top - bottom) / 2;
+  const delta =
+    (top - bottom + (type === MULTISELECT_FIELD ? controlTop : 0)) / 2;
   return delta
     ? `calc(50% ${delta > 0 ? '+' : '-'} ${Math.abs(delta)}px)`
     : null;
@@ -1310,6 +1312,28 @@ export default class ResponsiveStyles {
     });
   }
 
+  // Multiselect padding is split between the control's pinned-label reserve
+  // and the value container's author padding. Companions measure both.
+  multiselectControlTop(
+    type: string,
+    height: any,
+    heightUnit: any,
+    padTop: any,
+    fontSize: any,
+    lineHeight: any
+  ) {
+    if (
+      type !== MULTISELECT_FIELD ||
+      this.element.styles.placeholder_transition !== 'shrink_top' ||
+      !rendersPlaceholderStyles(type, this.element.properties)
+    )
+      return 0;
+    return Math.max(
+      paddingSide(padTop, 0),
+      shrinkLabelReservePx(type, height, heightUnit, fontSize, lineHeight)
+    );
+  }
+
   // A dropdown's chevron is painted on the box, so without this it floats at
   // the box's midline while the value sits wherever the padding put it. Only
   // the vertical half is emitted here: which inline edge it hangs off depends
@@ -1362,6 +1386,14 @@ export default class ResponsiveStyles {
             padTop,
             align,
             padBottom,
+            fontSize,
+            lineHeight
+          ),
+          this.multiselectControlTop(
+            type,
+            height,
+            heightUnit,
+            padTop,
             fontSize,
             lineHeight
           )
@@ -1678,23 +1710,42 @@ export default class ResponsiveStyles {
           'placeholder',
           [
             CONTENT_VERTICAL_ALIGN,
+            'height',
+            'height_unit',
             INNER_PADDING_TOP,
             INNER_PADDING_BOTTOM,
             'line_height',
             'font_size'
           ],
-          (align: any, t: any, b: any, lineHeight: any, fontSize: any) => {
+          (
+            align: any,
+            height: any,
+            heightUnit: any,
+            t: any,
+            b: any,
+            lineHeight: any,
+            fontSize: any
+          ) => {
             if (!verticalPlacementAsked(align, t, b)) return {};
             // Same placement the chevron takes, so the two can't disagree.
             const y = valueLineY(
               MULTISELECT_FIELD,
               align,
-              null,
-              null,
+              height,
+              heightUnit,
               t,
               b,
               lineHeight,
-              fontSize
+              fontSize,
+              null,
+              this.multiselectControlTop(
+                type,
+                height,
+                heightUnit,
+                t,
+                fontSize,
+                lineHeight
+              )
             );
             // '50%' is the neutral Placeholder declares inline for an input.
             return { top: y ?? '50%' };
