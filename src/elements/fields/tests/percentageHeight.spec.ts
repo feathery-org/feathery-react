@@ -40,7 +40,11 @@ describe('a percentage-height input box', () => {
     const t = targets('text_field', PCT);
     // 'fc' distributes its own height...
     expect(t.getTarget('fc', true)).toEqual(
-      expect.objectContaining({ display: 'flex', flexDirection: 'column' })
+      expect.objectContaining({
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start'
+      })
     );
     // ...and the box shrinks out of the label's way, from a basis of
     // applyHeight's own `height: 100%` rather than from zero. Not a basis of 0:
@@ -66,13 +70,20 @@ describe('what a percentage height must not disturb', () => {
   it.each([
     ['pixel', PX],
     ['fit', FIT]
-  ])('emits the neutral, never the flex path, for a %s height', (_l, styles) => {
-    const t = targets('text_field', styles);
-    expect(t.getTarget('sub-fc', true).flex).toBe('0 1 auto');
-    expect(t.getTarget('fc', true)).toEqual(
-      expect.objectContaining({ display: 'block', flexDirection: 'row' })
-    );
-  });
+  ])(
+    'emits the neutral, never the flex path, for a %s height',
+    (_l, styles) => {
+      const t = targets('text_field', styles);
+      expect(t.getTarget('sub-fc', true).flex).toBe('0 1 auto');
+      expect(t.getTarget('fc', true)).toEqual(
+        expect.objectContaining({
+          display: 'block',
+          flexDirection: 'row',
+          alignItems: 'normal'
+        })
+      );
+    }
+  );
 
   it('emits nothing at all when no height unit is stored', () => {
     const t = targets('text_field', {});
@@ -103,7 +114,11 @@ describe('across the mobile breakpoint', () => {
     const key = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
     expect((t.getTarget('sub-fc') as any)[key].flex).toBe('0 1 auto');
     expect((t.getTarget('fc') as any)[key]).toEqual(
-      expect.objectContaining({ display: 'block', flexDirection: 'row' })
+      expect.objectContaining({
+        display: 'block',
+        flexDirection: 'row',
+        alignItems: 'normal'
+      })
     );
   });
 
