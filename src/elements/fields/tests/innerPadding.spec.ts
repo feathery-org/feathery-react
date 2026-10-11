@@ -2190,20 +2190,56 @@ describe('which fields count as carrying a pinned label', () => {
     expect(centred.paddingTop).toBe(untouched.paddingTop);
   });
 
-  // A multiselect places its chips with flexbox through applyMultiselectLayout,
-  // which knows nothing of the reserve. Handing the floor to its chevron alone
-  // would drop the glyph off the line its chips sit on.
-  it('leaves a multiselect chevron on the line its chips sit on', () => {
-    const centred = targets(
+  it.each([
+    ['center', undefined, 'calc(50% + 10.5px)'],
+    ['flex-start', undefined, '38.6px'],
+    ['flex-end', undefined, 'calc(100% - 17.6px)'],
+    ['center', 0, 'calc(50% + 6.5px)'],
+    ['center', 30, 'calc(50% + 26px)']
+  ])(
+    'includes the control reserve for %s alignment and top padding %s',
+    (align, top, y) => {
+      const result = targets(
+        MULTISELECT_FIELD,
+        {
+          ...SIZED,
+          placeholder_transition: 'shrink_top',
+          content_vertical_align: align,
+          ...(top === undefined ? {} : { inner_padding_top: top })
+        },
+        { placeholder: 'Pick' }
+      );
+      expect(result.getTarget('field', true).backgroundPositionY).toBe(y);
+      expect(result.getTarget('placeholderFocus', true).top).toBe(0);
+    }
+  );
+
+  it('uses the mobile reserve when typography changes', () => {
+    const result = targets(
       MULTISELECT_FIELD,
       {
         ...SIZED,
+        height: 200,
         placeholder_transition: 'shrink_top',
         content_vertical_align: 'center'
       },
-      { placeholder: 'Pick' }
-    ).getTarget('field', true);
-    expect(centred.backgroundPositionY).toBe('center');
+      { placeholder: 'Pick' },
+      { font_size: 28 }
+    );
+    const mobile = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
+    expect(result.getTarget('field')[mobile].backgroundPositionY).toBe(
+      'calc(50% + 16.5px)'
+    );
+    expect(result.getTarget('placeholderFocus')[mobile].top).toBe(0);
+  });
+
+  it('keeps the existing chevron placement without a pinned placeholder', () => {
+    const result = fieldTarget(MULTISELECT_FIELD, {
+      ...SIZED,
+      placeholder_transition: 'shrink_top',
+      content_vertical_align: 'center'
+    });
+    expect(result.backgroundPositionY).toBe('center');
   });
 });
 
