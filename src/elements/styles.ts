@@ -1427,8 +1427,8 @@ export default class ResponsiveStyles {
     this.apply('fc', 'height_unit', (unit: any) => {
       if (!isSet(unit)) return {};
       return unit === '%'
-        ? { display: 'flex', flexDirection: 'column' }
-        : { display: 'block', flexDirection: 'row' };
+        ? { display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }
+        : { display: 'block', flexDirection: 'row', alignItems: 'normal' };
     });
     this.apply('sub-fc', 'height_unit', (unit: any) => {
       if (!isSet(unit)) return {};
