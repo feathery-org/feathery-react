@@ -334,11 +334,16 @@ export default function DocumentEditorContainer({
       !envelope.signed &&
       sentVia[envelope.id] === 'feathery'
   );
-  // Signed storage presigns a new URL on every fetch; keep the viewer on the
-  // URL it loaded until the stored file itself changes.
-  const pdfViewUrlRef = useRef<string | null>(null);
-  if (storedFile(pdfViewUrlRef.current) !== storedFile(envelope?.file))
-    pdfViewUrlRef.current = envelope?.file ?? null;
+  // Envelope files are presigned anew on every fetch; keep the viewer on the
+  // URL it loaded until the file or its signed state changes. Signing
+  // overwrites the same stored file, so the path alone can't tell.
+  const pdfView = useRef<{ key: string; url: string | null }>({
+    key: '',
+    url: null
+  });
+  const pdfViewKey = `${storedFile(envelope?.file)}|${!!envelope?.signed}`;
+  if (pdfView.current.key !== pdfViewKey)
+    pdfView.current = { key: pdfViewKey, url: envelope?.file ?? null };
 
   // Stable source unless a different envelope loads or a regenerate is
   // signalled (reloadKey) — a plain save leaves both unchanged, so it doesn't
@@ -761,7 +766,7 @@ export default function DocumentEditorContainer({
       <>
         {operationAlert}
         <SignedEnvelopeView
-          pdfUrl={pdfViewUrlRef.current ?? envelope.file}
+          pdfUrl={pdfView.current.url ?? envelope.file}
           downloadUrl={envelope.file}
           status={
             envelope.signed
