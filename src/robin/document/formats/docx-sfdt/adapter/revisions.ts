@@ -3,8 +3,9 @@
  * `revisions` table plus `revisionIds` at four anchors (an inline, a run's or a mark's character
  * format, a row's format). The normal form shows them as `pending` on the node:
  *
- *   { kind, author, group? }          one revision; `group` is the change set (the bridge turn id)
- *                                     when the revision carries the editor's group tag
+ *   { kind, author, group?, move? }   one revision; `group` is the change set (the bridge turn id)
+ *                                     when the revision carries the editor's group tag, and `move`
+ *                                     names the move it belongs to (its two copies share it)
  *   { ..., revisions: [ ... ] }       when the anchor holds more than one, all of them in order
  *   { mark: { ... } }                 the paragraph mark's own, beside the paragraph's
  *
@@ -25,21 +26,33 @@ export interface PendingRevision {
   kind: string;
   author: string | null;
   group?: string;
+  /** The move this revision belongs to: a moved node's deleted and inserted copies share it. */
+  move?: string;
+}
+
+/** The change set (and move) a revision belongs to, from the editor's group tag. */
+function tagOf(customData: unknown): { group?: string; move?: string } {
+  if (typeof customData !== 'string' || !customData.trim()) return {};
+  try {
+    const parsed = JSON.parse(customData);
+    if (
+      !parsed ||
+      parsed.source !== 'robin' ||
+      typeof parsed.changeSetId !== 'string'
+    )
+      return {};
+    return {
+      group: parsed.changeSetId,
+      ...(typeof parsed.move === 'string' ? { move: parsed.move } : {})
+    };
+  } catch {
+    return {};
+  }
 }
 
 /** The change set a revision belongs to, from the editor's group tag, or undefined. */
 export function groupOf(customData: unknown): string | undefined {
-  if (typeof customData !== 'string' || !customData.trim()) return undefined;
-  try {
-    const parsed = JSON.parse(customData);
-    return parsed &&
-      parsed.source === 'robin' &&
-      typeof parsed.changeSetId === 'string'
-      ? parsed.changeSetId
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  return tagOf(customData).group;
 }
 
 /** The editor's group tag for a change set (the product's revision group tag, version 1). */
@@ -49,23 +62,29 @@ export interface CardText {
   intent?: string;
 }
 
-export function groupTag(changeSetId: string, card: CardText = {}): string {
+export function groupTag(
+  changeSetId: string,
+  card: CardText = {},
+  move?: string
+): string {
   return JSON.stringify({
     v: 1,
     source: 'robin',
     changeSetId,
     group: 'robin',
     ...(card.title ? { title: card.title } : {}),
-    ...(card.intent ? { intent: card.intent } : {})
+    ...(card.intent ? { intent: card.intent } : {}),
+    ...(move ? { move } : {})
   });
 }
 
 export function viewOf(r: NativeRevision | undefined): PendingRevision {
-  const group = groupOf(r?.customData);
+  const { group, move } = tagOf(r?.customData);
   return {
     kind: r?.revisionType ?? 'Unknown',
     author: r?.author ?? null,
-    ...(group ? { group } : {})
+    ...(group ? { group } : {}),
+    ...(group && move ? { move } : {})
   };
 }
 
@@ -89,7 +108,8 @@ export function revisionsIn(pending: unknown): PendingRevision[] {
         {
           kind: p.kind,
           author: (p.author as string | null) ?? null,
-          ...(typeof p.group === 'string' ? { group: p.group } : {})
+          ...(typeof p.group === 'string' ? { group: p.group } : {}),
+          ...(typeof p.move === 'string' ? { move: p.move } : {})
         }
       ]
     : [];
@@ -128,7 +148,7 @@ export class RevisionMinter {
       const key = RevisionMinter.keyOf({
         kind: String(rev.revisionType),
         author: (rev.author as string | null) ?? null,
-        group: groupOf(rev.customData)
+        ...tagOf(rev.customData)
       });
       this.existingById.set(id, key);
       if (!this.byKey.has(key)) this.byKey.set(key, id);
@@ -136,7 +156,7 @@ export class RevisionMinter {
   }
 
   private static keyOf(r: PendingRevision): string {
-    return JSON.stringify([r.kind, r.author, r.group ?? null]);
+    return JSON.stringify([r.kind, r.author, r.group ?? null, r.move ?? null]);
   }
 
   /**
@@ -158,7 +178,9 @@ export class RevisionMinter {
       date: this.date,
       revisionType: r.kind,
       revisionId: id,
-      ...(r.group ? { customData: groupTag(r.group, this.cards[r.group]) } : {})
+      ...(r.group
+        ? { customData: groupTag(r.group, this.cards[r.group], r.move) }
+        : {})
     });
     this.byKey.set(key, id);
     return id;

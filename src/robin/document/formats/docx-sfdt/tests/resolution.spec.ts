@@ -8,7 +8,7 @@ import * as path from 'path';
 import { DocumentSession } from '../../../session';
 import { NfNode, NormalForm, baseOf, shapeOf } from '../../../tree';
 import { docxPack } from '../index';
-import { ownsResolution } from '../projections';
+import { ownsResolution, resolveGroup } from '../projections';
 import { composeTracked } from '../reconcile';
 import { arr } from '../util';
 
@@ -109,6 +109,49 @@ describe('a bookmarked move rejected after a reload (review item 3)', () => {
     expect(reloaded.resolveCard('turn-m', false)).toBe(true);
     expect(bookmarks(doc)).toEqual(bookmarks(flagship));
     expect(JSON.stringify(JSON.parse(doc).revisions ?? [])).not.toContain('turn-m');
+  });
+});
+
+describe('move pairs are the moves a change set recorded, never equal content (review regression)', () => {
+  const para = (name: string, text = 'Same') => ({ inlines: [{ bookmarkType: 0, name }, { text }, { bookmarkType: 1, name }] });
+  const mountDoc = (blocks: unknown[]) => {
+    let d = JSON.stringify({ sections: [{ blocks }] });
+    const host = { serialize: () => d, open: (x: string) => { d = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    return new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' }, editorId: 'ed' }).state;
+  };
+  const marks = (nf: NormalForm) => {
+    const out: string[] = [];
+    const walk = (n: any) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!n || typeof n !== 'object') return;
+      if (n.kind === 'paragraph') out.push(arr<NfNode>(n.inlines).filter((i) => i.kind === 'bookmark').map((i) => `${i.bookmarkType}:${i.name}`).join(' ') + ` "${arr<NfNode>(n.inlines).filter((i) => i.kind === 'run').map((i) => i.text).join('')}"`);
+      Object.values(n).forEach(walk);
+    };
+    walk(nf.root);
+    return out;
+  };
+
+  it('a paragraph deleted and an equal one inserted with other bookmarks is not a move: Reject restores the old bookmarks', () => {
+    const s = mountDoc([para('old'), { inlines: [{ text: 'End' }] }]);
+    const intended = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
+    const blocks = arr<NfNode>(arr<NfNode>(intended.root.sections)[0].blocks);
+    const fresh = JSON.parse(JSON.stringify(blocks[0]).replace(/"old"/g, '"new"').replace(/"id":"n(\d+)"/g, '"id":"x$1"'));
+    blocks.splice(0, 1, fresh);
+    const { tracked } = composeTracked(s.view, intended, 'turn-r');
+    expect(ownsResolution(tracked, 'turn-r')).toBe(false);
+    expect(marks(resolveGroup(tracked, 'turn-r', false))[0]).toBe('0:old 1:old "Same"');
+  });
+
+  it('two equal bookmarked paragraphs moved in reverse order keep their own bookmarks on Reject', () => {
+    // three plain paragraphs stay put, so both bookmarked paragraphs are the moves
+    const s = mountDoc([para('first'), para('second'), { inlines: [{ text: 'X' }] }, { inlines: [{ text: 'Y' }] }, { inlines: [{ text: 'Z' }] }]);
+    const before = marks(s.view.nf);
+    const intended = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
+    const [a, b2, x, y, z] = arr<NfNode>(arr<NfNode>(intended.root.sections)[0].blocks);
+    // both after Z, in reverse order
+    arr<NfNode>(intended.root.sections)[0].blocks = [x, y, z, b2, a] as never;
+    const { tracked } = composeTracked(s.view, intended, 'turn-v');
+    expect(marks(resolveGroup(tracked, 'turn-v', false))).toEqual(before);
   });
 });
 

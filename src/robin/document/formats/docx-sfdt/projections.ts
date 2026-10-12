@@ -157,20 +157,25 @@ function project(nf: NormalForm, drop: string, group?: string): NormalForm {
 export const accept = (nf: NormalForm): NormalForm => project(nf, 'Deletion');
 /** All pending changes rejected. */
 export const reject = (nf: NormalForm): NormalForm => project(nf, 'Insertion');
-/** A node's content less ids, pending changes and bookmarks: what a move leaves the same. */
-function moveKey(n: unknown): string {
-  const strip = (v: unknown): unknown => {
-    if (Array.isArray(v))
-      return v
-        .filter((x) => !(isObject(x) && x.kind === KIND.bookmark))
-        .map(strip);
-    if (!isObject(v)) return v;
-    const out: Obj = {};
-    for (const [k, x] of Object.entries(v))
-      if (k !== 'id' && k !== 'pending') out[k] = strip(x);
-    return out;
+/**
+ * The move a copy belongs to: the marker every revision of change set `group` under it carries,
+ * when they all carry the same one; undefined otherwise (a plain deletion or insertion).
+ */
+function moveOf(node: NfNode, group: string): string | undefined {
+  const seen = new Set<string | undefined>();
+  const rec = (n: NfNode) => {
+    if (isObject(n.pending))
+      for (const r of [
+        ...revisionsIn(n.pending),
+        ...revisionsIn(n.pending.mark)
+      ])
+        if (r.group === group) seen.add(r.move);
+    for (const key of docxTree.childLists(n))
+      for (const c of arr<NfNode>(listOf(n, key))) rec(c);
   };
-  return canonicalJson(strip(n));
+  rec(node);
+  const [only] = [...seen];
+  return seen.size === 1 ? only : undefined;
 }
 
 const hasBookmarks = (n: unknown): boolean => {
@@ -182,43 +187,41 @@ const hasBookmarks = (n: unknown): boolean => {
 
 /**
  * The moves of change set `group`: each a copy the change set deletes where the node was and a
- * copy it inserts where the node goes, the same content but for the bookmarks, which stay with the
- * inserted copy (so accepting keeps the pair). Found by content, so they survive a reload.
+ * copy it inserts where the node goes, paired by the move marker the change set recorded on both
+ * (it travels in the group tag, so it survives a reload). A deletion and an insertion of equal
+ * content are not a move, and a marker that does not name exactly one copy of each is no pair.
  */
 function movesOf(
   nf: NormalForm,
   group: string
 ): Array<{ removed: NfNode; placed: NfNode }> {
-  const gone: NfNode[] = [];
-  const placed: NfNode[] = [];
+  const gone = new Map<string, NfNode[]>();
+  const placed = new Map<string, NfNode[]>();
   const rec = (n: NfNode) => {
     for (const key of docxTree.childLists(n))
       for (const c of arr<NfNode>(listOf(n, key))) {
         scope = group;
-        let deleted: boolean;
         let inserted: boolean;
+        let deleted: boolean;
         try {
-          deleted = removedBy(c, 'Insertion')
-            ? false
-            : removedBy(c, 'Deletion');
-          inserted = !deleted && removedBy(c, 'Insertion');
+          inserted = removedBy(c, 'Insertion');
+          deleted = !inserted && removedBy(c, 'Deletion');
         } finally {
           scope = undefined;
         }
-        if (deleted) gone.push(c);
-        else if (inserted) placed.push(c);
-        else rec(c);
+        const move = inserted || deleted ? moveOf(c, group) : undefined;
+        if (move) {
+          const into = inserted ? placed : gone;
+          into.set(move, [...(into.get(move) ?? []), c]);
+        } else rec(c);
       }
   };
   rec(nf.root);
   const out: Array<{ removed: NfNode; placed: NfNode }> = [];
-  const free = [...placed];
-  for (const removed of gone) {
-    const key = moveKey(removed);
-    const i = free.findIndex((p) => moveKey(p) === key);
-    if (i < 0) continue;
-    out.push({ removed, placed: free[i] });
-    free.splice(i, 1);
+  for (const [move, removed] of gone) {
+    const to = placed.get(move) ?? [];
+    if (removed.length === 1 && to.length === 1)
+      out.push({ removed: removed[0], placed: to[0] });
   }
   return out;
 }

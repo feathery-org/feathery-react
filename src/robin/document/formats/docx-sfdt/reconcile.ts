@@ -67,6 +67,25 @@ function withRevision(existing: unknown, p: Pending): Obj {
   return { ...all[0], revisions: all, ...(mark ? { mark } : {}) };
 }
 
+/** Give this change set's revisions under `node` the marker of move `move`. */
+function tagMove(node: NfNode, turnId: string, move: string): void {
+  // revision objects may be shared between anchors: replace them, never mutate
+  const tag = (pending: unknown): unknown => {
+    if (!isObject(pending)) return pending;
+    const out: Obj = { ...pending };
+    if (out.group === turnId) out.move = move;
+    if (Array.isArray(out.revisions))
+      out.revisions = (out.revisions as Obj[]).map((r) =>
+        isObject(r) && r.group === turnId ? { ...r, move } : r
+      );
+    if (isObject(out.mark)) out.mark = tag(out.mark);
+    return out;
+  };
+  if (isObject(node.pending)) node.pending = tag(node.pending) as Obj;
+  for (const key of docxTree.childLists(node))
+    for (const child of listOf(node, key) ?? []) tagMove(child, turnId, move);
+}
+
 /** Mark every revision anchor inside a node: runs and other text inlines, paragraph marks, rows. */
 export function markSubtree(node: NfNode, p: Pending): void {
   if (node.kind === KIND.run) node.pending = withRevision(node.pending, p);
@@ -174,6 +193,7 @@ export function composeTracked(
   const untracked: string[] = [];
   const moved = new Set<string>();
   const removedCopies: NfNode[] = [];
+  const placedCopies: NfNode[] = [];
 
   const merge = (node: NfNode, original: NfNode) => {
     if (
@@ -215,7 +235,10 @@ export function composeTracked(
           // new here, or moved here from elsewhere: an insertion in this list
           markSubtree(kid, ins);
           result.push(kid);
-          if (before.get(kid.id)) moved.add(kid.id);
+          if (before.get(kid.id)) {
+            moved.add(kid.id);
+            placedCopies.push(kid);
+          }
           continue;
         }
         if (kid.kind === KIND.run && kid.text !== old.text) {
@@ -244,6 +267,7 @@ export function composeTracked(
           markSubtree(kid, ins);
           removedCopies.push(gone);
           moved.add(kid.id);
+          placedCopies.push(kid);
           result.push(gone, kid);
           continue;
         }
@@ -277,6 +301,10 @@ export function composeTracked(
   };
   for (const copy of removedCopies)
     if (moved.has(copy.id)) stripBookmarks(copy);
+  // each move's two copies carry its marker in their revisions (the group tag keeps it across a
+  // reload), so a reject can pair exactly the copies this change set moved, never equal content
+  for (const copy of [...removedCopies, ...placedCopies])
+    if (moved.has(copy.id)) tagMove(copy, turnId, copy.id);
   return { tracked, untracked };
 }
 
