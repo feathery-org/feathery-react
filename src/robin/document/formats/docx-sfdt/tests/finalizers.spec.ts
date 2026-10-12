@@ -186,3 +186,63 @@ describe('width units finalizer', () => {
     expect(r.facts.some((f) => f.kind === 'finalizer' && f.name === 'width-units')).toBe(false);
   });
 });
+
+describe('column fit finalizer', () => {
+  // a letter page, one inch margins: 468 points between them
+  const cell = (text: string, width: number) => ({ cellFormat: { preferredWidth: width, preferredWidthType: 'Point', cellWidth: width, columnSpan: 1, rowSpan: 1 }, blocks: [{ inlines: [{ text }] }] });
+  const sfdtOf = (widths: number[]) =>
+    JSON.stringify({
+      sections: [
+        {
+          sectionFormat: { pageWidth: 612, pageHeight: 792, leftMargin: 72, rightMargin: 72 },
+          blocks: [
+            {
+              tableFormat: {},
+              grid: widths,
+              columnCount: widths.length,
+              rows: [
+                { rowFormat: {}, cells: widths.map((w, i) => cell(`Head ${i}`, w)) },
+                { rowFormat: {}, cells: widths.map((w, i) => cell(`Body ${i}`, w)) }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+  const addColumn = (widths: number[]) => {
+    let d = sfdtOf(widths);
+    const host = { serialize: () => d, open: (x: string) => { d = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+    const table = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[0];
+    const rows = arr<NfNode>(table.rows);
+    const lasts = rows.map((r) => arr<NfNode>(r.cells)[arr<NfNode>(r.cells).length - 1]);
+    const r = prepareWrite(s, {
+      intent: 'Add a column.',
+      scope: { ids: lasts.map((c) => c.id) },
+      changes: lasts.map((c, i) => ({
+        kind: 'insert_after',
+        anchor: c.id,
+        container: shapeOf(rows[i], docxTree),
+        node: { kind: 'cell', style: c.style, blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: 'New' }] }] }
+      }))
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+    const out = arr<NfNode>(arr<NfNode>(arr<NfNode>(r.intended.root.sections)[0].blocks)[0].rows).map((row) =>
+      arr<NfNode>(row.cells).map((c) => r.intended.formats[String(c.style)]?.preferredWidth)
+    );
+    return { widths: out, facts: r.facts };
+  };
+
+  it('a column added to a table that fit the page narrows the other columns in proportion, so it still fits', () => {
+    const { widths, facts } = addColumn([156, 312]);
+    // the new column keeps its width; the others share the rest of the 468 points, 1:2 as before
+    // (the new cell copies the last one's format: 312 points)
+    expect(widths).toEqual([[52, 104, 312], [52, 104, 312]]);
+    expect(facts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'finalizer', name: 'column-fit' })]));
+  });
+
+  it('leaves a table that still fits, and one that did not fit before, as written', () => {
+    expect(addColumn([100, 100]).widths).toEqual([[100, 100, 100], [100, 100, 100]]);
+    expect(addColumn([300, 300]).facts.some((f) => f.name === 'column-fit')).toBe(false);
+  });
+});

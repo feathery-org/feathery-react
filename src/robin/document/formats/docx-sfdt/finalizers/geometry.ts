@@ -175,3 +175,116 @@ export const widthUnitsFinalizer: Finalizer = {
     };
   }
 };
+
+/** The width a section's text runs between its margins, in points, or null when not set. */
+function contentWidth(view: DocumentView, id: string): number | null {
+  let p = view.placement(id);
+  while (p?.parent) {
+    // a table nested in a cell fits its cell, not the page: left as written
+    if (p.parent.kind === KIND.cell) return null;
+    if (p.parent.kind === KIND.section) {
+      const f =
+        typeof p.parent.style === 'string'
+          ? view.nf.formats[p.parent.style] ?? {}
+          : {};
+      const width =
+        Number(f.pageWidth) - Number(f.leftMargin) - Number(f.rightMargin);
+      return Number.isFinite(width) && width > 0 ? width : null;
+    }
+    p = view.placement(p.parent.id);
+  }
+  return null;
+}
+
+/**
+ * Column fit (QA-1): a column added to a table that fit between the margins would push it past
+ * them, since every new cell brings its own width. The other columns narrow in proportion so each
+ * row fits again, the new column keeping the width it was written with; each keeps its own unit
+ * (an Auto cell takes the new column's). A reported fact; a table that did not fit before, or one
+ * inside a cell, is left as written.
+ */
+export const columnFitFinalizer: Finalizer = {
+  name: 'column-fit',
+  run(after, { before, formats, residue }) {
+    const ids: string[] = [];
+    const tables: string[] = [];
+    const now = after.formats as Formats;
+    for (const table of tablesOf(after.root)) {
+      const old = before.get(table.id);
+      if (!old) continue;
+      const grid = (
+        residue[table.id] as { hidden?: { grid?: unknown } } | undefined
+      )?.hidden?.grid;
+      const total = Array.isArray(grid)
+        ? grid.reduce((n: number, w) => n + (Number(w) || 0), 0)
+        : 0;
+      const room = contentWidth(before, table.id);
+      if (!(total > 0) || room === null || total > room + 0.5) continue;
+      const rows = arr<NfNode>(table.rows).filter((r) => before.get(r.id));
+      const added = (row: NfNode) => {
+        const had = new Set(
+          arr<NfNode>(before.get(row.id)?.cells).map((c) => c.id)
+        );
+        return arr<NfNode>(row.cells).filter((c) => !had.has(c.id));
+      };
+      // a column: a new cell in every row the table kept
+      if (!rows.length || rows.some((r) => !added(r).length)) continue;
+      const points = (cell: NfNode): number => {
+        const w = widthOf(now, cell);
+        if (w.type === 'Percent') return (Number(w.width) / 100) * total;
+        if (w.type === 'Point') return Number(w.width);
+        return Number(hiddenIn(residue, cell.id, 'cellFormat', 'cellWidth'));
+      };
+      let changed = false;
+      for (const row of rows) {
+        const fresh = added(row);
+        const freshIds = new Set(fresh.map((c) => c.id));
+        const kept = arr<NfNode>(row.cells).filter((c) => !freshIds.has(c.id));
+        const freshWidth = fresh.reduce((n, c) => n + points(c), 0);
+        const keptWidth = kept.reduce((n, c) => n + points(c), 0);
+        if (!Number.isFinite(freshWidth + keptWidth)) continue;
+        if (freshWidth + keptWidth <= room + 0.5) continue;
+        const factor = (room - freshWidth) / keptWidth;
+        if (!(factor > 0)) continue;
+        const freshUnit = widthOf(now, fresh[0]).type;
+        for (const cell of kept) {
+          const own = widthOf(now, cell).type;
+          const unit =
+            own !== 'Auto' ? own : freshUnit !== 'Auto' ? freshUnit : 'Point';
+          const pts = points(cell) * factor;
+          const width =
+            unit === 'Percent'
+              ? Math.round((pts / total) * 100 * 100) / 100
+              : Math.round(pts * 100) / 100;
+          cell.style = formats.intern({
+            ...(typeof cell.style === 'string'
+              ? formats.get(cell.style) ?? {}
+              : {}),
+            preferredWidth: width,
+            preferredWidthType: unit
+          });
+          ids.push(cell.id);
+        }
+        changed = true;
+      }
+      if (changed) tables.push(table.id);
+    }
+    return {
+      ids,
+      facts: tables.length
+        ? [
+            {
+              kind: 'finalizer',
+              name: 'column-fit',
+              ids,
+              summary: `the other columns of ${tables
+                .map((t) => `table ${t}`)
+                .join(
+                  ', '
+                )} narrowed in proportion so the new column fits between the margins`
+            }
+          ]
+        : []
+    };
+  }
+};

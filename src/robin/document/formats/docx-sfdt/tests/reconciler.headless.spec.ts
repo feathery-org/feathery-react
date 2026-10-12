@@ -54,13 +54,14 @@ interface Row {
   native: string;
   undo: string;
   warnings?: string;
+  facts: string[];
   /** The card's title as the group tag carries it. */
   title?: string;
   userUndoKept: boolean;
 }
 const table: Row[] = [];
 
-async function commitAndUndo(delta: string, pre: string, write: unknown): Promise<Row> {
+async function commitAndUndo(delta: string, pre: string, write: unknown, inspect?: () => Promise<void>): Promise<Row> {
   const depth = await lane.call<number>('undoDepth');
   const result = await dispatch('write', write);
   if (!result.ok) throw new Error(`${delta}: ${JSON.stringify(result.refusal ?? result.error ?? result.conflict).slice(0, 800)}`);
@@ -73,6 +74,7 @@ async function commitAndUndo(delta: string, pre: string, write: unknown): Promis
     expect(ours.every((r) => r.author === 'Robin')).toBe(true);
     title = ours[0].title ?? undefined;
   }
+  if (inspect) await inspect();
   const check = await lane.call<{ accept: boolean; reject: boolean; acceptDiff: string[]; rejectDiff: string[] }>('crossCheck');
   const added = (await lane.call<number>('undoDepth')) - depth;
   const undone = await lane.call<{ via: string }>('sessionUndo');
@@ -88,6 +90,7 @@ async function commitAndUndo(delta: string, pre: string, write: unknown): Promis
     undo: `${undone.via}${seam.includes('splice') ? '' : ` (+${added})`}: ${restored}`,
     userUndoKept: seam.includes('splice') ? true : native,
     warnings: ((result.warnings ?? []) as Array<{ code: string }>).map((w) => w.code).join(',') || '-',
+    facts: ((result.facts ?? []) as Array<{ name?: string; kind: string }>).map((f) => f.name ?? f.kind),
     ...(title ? { title } : {})
   };
   table.push(row);
@@ -397,8 +400,24 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(JSON.stringify(column.input)).not.toContain('contentControlProperties');
     const pre = await lane.call<string>('settled');
     turn += 1;
-    const row = await commitAndUndo('D17', pre, column.input);
+    // the column fits between the margins: the editor lays the table out no wider than the page's text
+    const roomOf = (native: string) => {
+      const f = JSON.parse(native).sections[1].sectionFormat;
+      return f.pageWidth - f.leftMargin - f.rightMargin;
+    };
+    const gridOf = (native: string) => {
+      const d = JSON.parse(native);
+      const control = d.sections[1].blocks[10];
+      return (control.blocks[0].grid as number[]).reduce((a, b) => a + b, 0);
+    };
+    expect(gridOf(pre)).toBeLessThanOrEqual(roomOf(pre));
+    let widthAfter = 0;
+    const row = await commitAndUndo('D17', pre, column.input, async () => {
+      widthAfter = gridOf(await lane.call<string>('settled'));
+    });
     expect(row).toEqual(expect.objectContaining(SPLICE));
+    expect(row.facts).toContain('column-fit');
+    expect(widthAfter).toBeLessThanOrEqual(roomOf(pre) + 1);
     // a cell in every row of the table: the card says what a person sees
     expect(row.title).toBe('Added a column');
   });

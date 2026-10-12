@@ -10,6 +10,7 @@ import { bindingAnnotations } from './features/binding';
 import { formulasFinalizer } from './finalizers/formulas';
 import { restripeFinalizer } from './finalizers/appearance';
 import {
+  columnFitFinalizer,
   tableGeometryReport,
   widthUnitsFinalizer
 } from './finalizers/geometry';
@@ -84,14 +85,16 @@ export const docxPack: Pack = {
     fieldTriplets,
     styleReferences
   ],
-  // identity first (bookmarks, tables, rows): formulas read the rows; restripe over the settled rows; the
-  // geometry report last, over everything
+  // identity first (bookmarks, tables, rows): formulas read the rows; restripe over the settled rows;
+  // column fit before width units, so a narrowed row still keeps one unit; the geometry report last,
+  // over everything
   finalizers: [
     copiedBookmarksFinalizer,
     tableIdentityFinalizer,
     rowIdentityFinalizer,
     formulasFinalizer,
     restripeFinalizer,
+    columnFitFinalizer,
     widthUnitsFinalizer,
     tableGeometryReport
   ],
