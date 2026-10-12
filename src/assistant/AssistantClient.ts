@@ -68,11 +68,6 @@ export default class AssistantClient {
     this._tables.set(tableId, handlers);
   }
 
-  /** Columns a mounted table is rendering, null when it isn't mounted */
-  getTableColumns(tableId: string): Column[] | null {
-    return this._tables.get(tableId)?.columns ?? null;
-  }
-
   unregisterTable(tableId: string): void {
     this._tables.delete(tableId);
   }

@@ -32,6 +32,15 @@ import { fillFields, FillFieldInput } from './formActions/fillFields';
 import { navigateToStep } from './formActions/navigateToStep';
 import { clickElement } from './formActions/clickElement';
 import { runLogicRule, RunLogicRuleParams } from './formActions/runLogicRule';
+import {
+  addTableRow,
+  deleteTableRow,
+  getTableRows,
+  setTableCells,
+  SetTableCellsInput,
+  TableRowTarget,
+  triggerTableAction
+} from './formActions/tables';
 import { STEP_EVENT_SKIP } from './stepEvents';
 import {
   FillQuikParams,
@@ -129,6 +138,21 @@ export const getFormContext = (formUuid: string) => {
     // Runs one of the designer's tool rules for the person and reports what it changed
     runLogicRule: (ruleId: string, params?: RunLogicRuleParams) =>
       runLogicRule(formUuid, ruleId, params),
+    // Reads and edits a table on the current step through its own grid, where the person's edits land
+    getTableRows: (
+      tableId: string,
+      query?: { offset?: number; limit?: number; search?: string }
+    ) => getTableRows(formUuid, tableId, query),
+    setTableCells: (tableId: string, cells: SetTableCellsInput[]) =>
+      setTableCells(formUuid, tableId, cells),
+    addTableRow: (tableId: string) => addTableRow(formUuid, tableId),
+    deleteTableRow: (tableId: string, target: TableRowTarget) =>
+      deleteTableRow(formUuid, tableId, target),
+    triggerTableAction: (
+      tableId: string,
+      target: TableRowTarget,
+      actionLabel?: string
+    ) => triggerTableAction(formUuid, tableId, target, actionLabel),
     isLastStep: () => {
       const step = formState.currentStep;
       return step.next_conditions.length === 0;
