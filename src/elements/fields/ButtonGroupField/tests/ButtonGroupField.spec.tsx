@@ -22,6 +22,8 @@ import {
 } from './test-utils';
 import { render, fireEvent } from '@testing-library/react';
 import ButtonGroupField from '../index';
+import ResponsiveStyles from '../../../styles';
+import { applyFieldStyles } from '../../index';
 
 describe('ButtonGroupField', () => {
   beforeEach(() => {
@@ -219,6 +221,41 @@ describe('ButtonGroupField', () => {
   });
 
   describe('Options with Images', () => {
+    it('renders mixed stored icons and uploads with image state styling', () => {
+      const element = createImageButtonGroupElement(
+        ['Yes', 'No'],
+        ['', 'no.png']
+      );
+      element.servar.metadata.option_icons = [
+        {
+          icon: 'IconHeart',
+          glyph: { variant: 'outline', nodes: [['path', { d: 'M12 5v14' }]] }
+        },
+        null
+      ];
+      element.styles.icon_color = 'F5A62380';
+      element.styles.flex_direction = 'row';
+      element.styles.hover_image_color = 'white';
+      const responsiveStyles = applyFieldStyles(
+        element,
+        new ResponsiveStyles(element, [], false)
+      );
+      const { container } = render(
+        <ButtonGroupField
+          {...createButtonGroupProps(element, { responsiveStyles })}
+        />
+      );
+      expect(
+        container.querySelector('[data-feathery-option-icon] svg')
+      ).toHaveAttribute('stroke', 'currentColor');
+      expectButtonToHaveImage(1, 'no.png');
+      expect(responsiveStyles.getTarget('img').color).toBe('#F5A62380');
+      expect(
+        responsiveStyles.getTarget('hover')['img, [data-feathery-option-icon]']
+          .filter
+      ).toBe('brightness(100%)');
+    });
+
     it('renders buttons with images when option_images provided', () => {
       const element = createImageButtonGroupElement(
         ['Option 1', 'Option 2'],

@@ -8,6 +8,11 @@ export interface IconGlyphData {
   nodes: [string, Record<string, string | number>][];
 }
 
+export interface IconEmbedData {
+  icon: string;
+  glyph: IconGlyphData;
+}
+
 const VIEWBOX = '0 0 24 24';
 const OUTLINE_STROKE_WIDTH = 2;
 
@@ -59,6 +64,31 @@ function safeNodes(glyph?: IconGlyphData | null) {
 
 export function hasIconGlyph(glyph?: IconGlyphData | null): boolean {
   return safeNodes(glyph).length > 0;
+}
+
+export function iconGlyphDataUrl(glyph?: IconGlyphData | null, color = '') {
+  const nodes = safeNodes(glyph);
+  if (!nodes.length) return '';
+  const iconColor = /^[\da-f]{6}(?:[\da-f]{2})?$/i.test(color)
+    ? `#${color}`
+    : '#000000';
+  const escapeAttribute = (value: string | number) =>
+    String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const paths = nodes
+    .map(
+      ([tag, attrs]) =>
+        `<${tag} ${Object.entries(attrs)
+          .map(([name, value]) => `${name}="${escapeAttribute(value)}"`)
+          .join(' ')} />`
+    )
+    .join('');
+  const filled = glyph?.variant === 'filled';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${VIEWBOX}" width="24" height="24" color="${iconColor}" fill="${
+    filled ? 'currentColor' : 'none'
+  }" stroke="${
+    filled ? 'none' : 'currentColor'
+  }" stroke-width="${OUTLINE_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
 interface IconGlyphProps {

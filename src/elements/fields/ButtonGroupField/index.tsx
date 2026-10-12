@@ -6,6 +6,7 @@ import InlineTooltip from '../../components/InlineTooltip';
 import ErrorInput from '../../components/ErrorInput';
 import HiddenValueInput from '../../components/HiddenValueInput';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
+import { hasIconGlyph, IconGlyph } from '../../components/icons/iconGlyph';
 
 function ButtonGroupField({
   element,
@@ -95,6 +96,11 @@ function ButtonGroupField({
           const imageUrl = option.image
             ? option.image
             : servar.metadata.option_images[index];
+          const icon =
+            option.icon ??
+            (!shouldSalesforceSync && !option.image
+              ? servar.metadata.option_icons?.[index]
+              : undefined);
           const tooltip = option.tooltip ?? '';
 
           return (
@@ -132,15 +138,33 @@ function ButtonGroupField({
               }}
             >
               {customBorder}
-              {imageUrl && (
-                <img
-                  src={imageUrl}
+              {hasIconGlyph(icon?.glyph) ? (
+                <span
+                  data-feathery-option-icon={icon.icon}
                   css={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
                     ...imgMaxSizeStyles,
                     ...responsiveStyles.getTargets('img'),
                     pointerEvents: 'none'
                   }}
-                />
+                >
+                  <IconGlyph
+                    glyph={icon.glyph}
+                    size={element.styles.image_width ? '100%' : '1em'}
+                  />
+                </span>
+              ) : (
+                imageUrl && (
+                  <img
+                    src={imageUrl}
+                    css={{
+                      ...imgMaxSizeStyles,
+                      ...responsiveStyles.getTargets('img'),
+                      pointerEvents: 'none'
+                    }}
+                  />
+                )
               )}
               {label && (
                 <div

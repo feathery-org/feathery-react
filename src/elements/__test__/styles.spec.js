@@ -324,3 +324,62 @@ describe('responsiveStyles', () => {
     });
   });
 });
+
+describe('stored background icons', () => {
+  const icon = {
+    icon: 'IconHeart',
+    glyph: { variant: 'outline', nodes: [['path', { d: 'M12 5v14' }]] }
+  };
+
+  it('applies desktop and mobile icon colors without losing background layout', () => {
+    const styles = new ResponsiveStyles(
+      {
+        styles: {
+          background_icon: icon,
+          background_icon_color: 'FF0000FF',
+          background_image_display: 'tile',
+          background_image_size: 25
+        },
+        mobile_styles: { background_icon_color: '0000FFFF' }
+      },
+      ['cell'],
+      true
+    );
+    styles.applyBackgroundImageStyles('cell');
+    const result = styles.getTarget('cell');
+    expect(decodeURIComponent(result.backgroundImage)).toContain(
+      'color="#FF0000FF"'
+    );
+    expect(result.backgroundSize).toBe('25%');
+    expect(
+      decodeURIComponent(
+        result[`@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`]
+          .backgroundImage
+      )
+    ).toContain('color="#0000FFFF"');
+  });
+
+  it('clears a desktop icon when the mobile background is removed', () => {
+    const ordinary = new ResponsiveStyles(
+      { styles: { background_icon: null } },
+      ['cell'],
+      true
+    );
+    ordinary.applyBackgroundImageStyles('cell');
+    expect(ordinary.getTarget('cell').backgroundImage).toBeUndefined();
+    const styles = new ResponsiveStyles(
+      {
+        styles: { background_icon: icon },
+        mobile_styles: { background_icon: null, background_image_url: '' }
+      },
+      ['cell'],
+      true
+    );
+    styles.applyBackgroundImageStyles('cell');
+    expect(
+      styles.getTarget('cell')[
+        `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`
+      ].backgroundImage
+    ).toBe('none');
+  });
+});

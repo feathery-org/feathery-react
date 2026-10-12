@@ -1,3 +1,4 @@
+import { iconGlyphDataUrl } from './components/icons/iconGlyph';
 import { DEFAULT_MIN_SIZE } from '../Form/grid/StyledContainer/styles';
 import { featheryWindow } from '../utils/browser';
 import {
@@ -1640,7 +1641,9 @@ export default class ResponsiveStyles {
       'background_image_size',
       'background_image_size_x',
       'background_image_size_y',
-      'background_image_repeat'
+      'background_image_repeat',
+      'background_icon',
+      'background_icon_color'
     ];
 
     this.apply(target, targetStyles, (...styles: any[]) => {
@@ -1652,7 +1655,9 @@ export default class ResponsiveStyles {
         imageSize,
         imageSizeX,
         imageSizeY,
-        imageRepeat
+        imageRepeat,
+        icon,
+        iconColor
       ] = styles;
 
       const formattedStyles: Record<string, string> = {
@@ -1660,7 +1665,11 @@ export default class ResponsiveStyles {
         backgroundPositionX: imageLayout,
         backgroundPositionY: imageVerticalLayout
       };
-      if (imageUrl) formattedStyles.backgroundImage = `url(${imageUrl})`;
+      const iconUrl = iconGlyphDataUrl(icon?.glyph, iconColor);
+      if (iconUrl) formattedStyles.backgroundImage = `url("${iconUrl}")`;
+      else if (imageUrl) formattedStyles.backgroundImage = `url(${imageUrl})`;
+      else if (this.styles.background_icon)
+        formattedStyles.backgroundImage = 'none';
 
       switch (imageDisplay) {
         case 'fill':
