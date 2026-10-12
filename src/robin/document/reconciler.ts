@@ -36,6 +36,8 @@ export interface ReconcileInput {
   intent: string;
   /** The card title the engine composed for this change set. */
   title?: string;
+  /** The nodes a finalizer changed (see PlanContext.derived). */
+  derived?: readonly string[];
   before: { view: DocumentView; residue: Residue; native: string };
   intended: { view: DocumentView; residue: Residue };
   /**
@@ -92,7 +94,8 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
       beforeNative: before.native,
       ...(input.title
         ? { card: { title: input.title, intent: input.intent } }
-        : {})
+        : {}),
+      ...(input.derived ? { derived: input.derived } : {})
     });
     for (const step of plan.steps) {
       const seam = pack.seams[step.seam];
@@ -132,9 +135,11 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
   // exactly; the editor's own one-by-one reject cannot represent every structural change (an
   // inserted cell or section has no revision of its own), and that is a disclosure, not a failure.
   const warnings: Warning[] = [...(plan.warnings ?? [])];
+  // only a card has a reject; a change that landed immediately must be reversible as it stands
   if (
     !proof.reversible &&
     plan.history === 'engine' &&
+    plan.landed === 'card' &&
     proof.landed &&
     proof.conserved &&
     proof.authorship

@@ -364,6 +364,11 @@ export interface PlanContext {
   beforeNative: string;
   /** What the card says: the engine's title and the write's intent, for the group tag. */
   card?: { title: string; intent: string };
+  /**
+   * The nodes a finalizer changed (its facts name them): consequences of the write, reported as
+   * facts, never the write's own changes, so a warning about the write does not count them.
+   */
+  derived?: readonly string[];
 }
 
 export interface Reconcile {

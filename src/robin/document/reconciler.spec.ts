@@ -261,7 +261,10 @@ describe('reconciler', () => {
     const prepared = prepareWrite(s, parsed.value as WriteInput);
     if (prepared.outcome !== 'verified') throw new Error(prepared.outcome);
     // a plan that lands the change with no tracked revisions: rejecting in the editor cannot undo it
-    const untracked = (history: 'engine' | 'editor') => ({
+    const untracked = (
+      history: 'engine' | 'editor',
+      landed: 'card' | 'immediate' = 'card'
+    ) => ({
       ...s.pack,
       reconcile: {
         plan: () => ({
@@ -274,14 +277,18 @@ describe('reconciler', () => {
               )
             }
           ],
-          landed: 'card' as const,
+          landed,
           history
         })
       }
     });
-    const run = (history: 'engine' | 'editor', h: ToyHost) =>
+    const run = (
+      history: 'engine' | 'editor',
+      h: ToyHost,
+      landed: 'card' | 'immediate' = 'card'
+    ) =>
       reconcile({
-        pack: untracked(history),
+        pack: untracked(history, landed),
         host: h,
         history: new EngineHistory(),
         turnId: 'turn-1',
@@ -309,5 +316,9 @@ describe('reconciler', () => {
     }
     const editor = run('editor', new ToyHost(doc));
     expect(editor.outcome).toBe('proof-failed');
+    // nothing tracked has no card to reject by: a change that landed immediately must be
+    // reversible as it stands, never passed on the strength of a card it does not have
+    const immediate = run('engine', new ToyHost(doc), 'immediate');
+    expect(immediate.outcome).toBe('proof-failed');
   });
 });

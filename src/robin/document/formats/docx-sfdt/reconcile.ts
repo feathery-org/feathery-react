@@ -114,6 +114,51 @@ function ownContent(
 }
 
 /**
+ * The ids that keep their relative order from `was` to `now`: the longest common subsequence, so
+ * the fewest nodes count as moved; between equally long ones the heavier stays, so when a small
+ * node and a large one swap places it is the small one that moved. The rest of the ids both lists
+ * hold were reordered, which is a move within the list.
+ */
+export function inOrder(
+  was: string[],
+  now: string[],
+  size: (id: string) => number = () => 0
+): Set<string> {
+  const inWas = new Set(was);
+  const common = now.filter((id) => inWas.has(id));
+  const inNow = new Set(common);
+  const a = was.filter((id) => inNow.has(id));
+  if (a.every((id, i) => id === common[i])) return new Set(common);
+  const n = a.length;
+  const m = common.length;
+  // one node always outweighs any difference in size
+  const sizes = new Map(a.map((id) => [id, Math.max(0, size(id))]));
+  const all = [...sizes.values()].reduce((x, y) => x + y, 0) + 1;
+  const weight = (id: string) => 1 + (sizes.get(id) ?? 0) / all;
+  const t: number[][] = Array.from({ length: n + 1 }, () =>
+    new Array<number>(m + 1).fill(0)
+  );
+  for (let i = n - 1; i >= 0; i -= 1)
+    for (let j = m - 1; j >= 0; j -= 1)
+      t[i][j] =
+        a[i] === common[j]
+          ? t[i + 1][j + 1] + weight(a[i])
+          : Math.max(t[i + 1][j], t[i][j + 1]);
+  const out = new Set<string>();
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === common[j]) {
+      out.add(a[i]);
+      i += 1;
+      j += 1;
+    } else if (t[i + 1][j] >= t[i][j + 1]) i += 1;
+    else j += 1;
+  }
+  return out;
+}
+
+/**
  * The tracked document: `intended` with what it removed kept in place as Deletion and what it
  * added marked Insertion, all under change set `turnId`. Also reports whether any property change
  * lands untracked.
@@ -139,7 +184,16 @@ export function composeTracked(
     for (const key of docxTree.childLists(node)) {
       const kids = listOf(node, key) ?? [];
       const was = listOf(original, key) ?? [];
-      const keep = new Set(kids.map((k) => k.id));
+      // a node reordered within this list moves like one from another list
+      const stay = inOrder(
+        was.map((x) => x.id),
+        kids.map((k) => k.id),
+        (id) => JSON.stringify(was.find((x) => x.id === id) ?? '').length
+      );
+      const wasIds = new Set(was.map((x) => x.id));
+      const keep = new Set(
+        kids.map((k) => k.id).filter((id) => !wasIds.has(id) || stay.has(id))
+      );
       const result: NfNode[] = [];
       let w = 0;
       const flushRemovedBefore = (stopId: string | null) => {
@@ -153,7 +207,9 @@ export function composeTracked(
       };
       for (const kid of kids) {
         flushRemovedBefore(kid.id);
-        const old = was.find((x) => x.id === kid.id);
+        const old = stay.has(kid.id)
+          ? was.find((x) => x.id === kid.id)
+          : undefined;
         if (old && was[w]?.id === kid.id) w += 1;
         if (!old) {
           // new here, or moved here from elsewhere: an insertion in this list
@@ -561,10 +617,17 @@ function runOffset(
 
 // ------------------------------------------------------------------ the plan
 
-const UNDO_CLEARED: Warning = {
-  code: 'undo-history-cleared',
-  message:
-    "The editor's undo history before this change is no longer available; the card is the way back."
+const UNDO_CLEARED: Record<'card' | 'immediate', Warning> = {
+  card: {
+    code: 'undo-history-cleared',
+    message:
+      "The editor's undo history before this change is no longer available; the card is the way back."
+  },
+  immediate: {
+    code: 'undo-history-cleared',
+    message:
+      "The editor's undo history before this change is no longer available; undo reverts this change."
+  }
 };
 const IMMEDIATE: Warning = {
   code: 'immediate-not-tracked',
@@ -601,12 +664,17 @@ export function plan(ctx: PlanContext): CommitPlan {
     ctx.card ? { cards: { [ctx.turnId]: ctx.card } } : {}
   );
   // truthful about the card: a splice that composed no revision (properties only) lands immediately
-  const card = revisionsAuthored(tracked.root, ctx.turnId);
+  const landed = revisionsAuthored(tracked.root, ctx.turnId)
+    ? 'card'
+    : 'immediate';
+  // the write's own property changes; what a finalizer derived is reported as its fact
+  const derived = new Set(ctx.derived ?? []);
+  const own = untracked.filter((id) => !derived.has(id));
   return {
     steps: [{ seam: 'splice', payload }],
-    landed: card ? 'card' : 'immediate',
+    landed,
     history: 'engine',
-    warnings: [UNDO_CLEARED, ...(untracked.length ? [IMMEDIATE] : [])]
+    warnings: [UNDO_CLEARED[landed], ...(own.length ? [IMMEDIATE] : [])]
   };
 }
 

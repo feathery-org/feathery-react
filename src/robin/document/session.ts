@@ -320,6 +320,9 @@ export class DocumentSession {
       turnId,
       intent: write.intent,
       title: prepared.title,
+      derived: prepared.facts
+        .filter((f) => f.kind === 'finalizer')
+        .flatMap((f) => f.ids),
       before: {
         view: before.view,
         residue: before.residue,

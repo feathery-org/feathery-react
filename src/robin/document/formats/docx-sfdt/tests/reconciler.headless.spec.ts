@@ -252,6 +252,23 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(row).toEqual(expect.objectContaining(SPLICE));
   });
 
+  it('D7C move a paragraph within its own section: a tracked move (a card), never an untracked reorder', async () => {
+    const pre = await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const aid = await at(['sections', 3, 'blocks', 2]);
+    const sid = await at(['sections', 3]);
+    const n = await read([pid, sid]);
+    const row = await commitAndUndo('D7C', pre, {
+      intent: 'Move the clause up.',
+      scope: { ids: [pid] },
+      changes: [{ kind: 'move', id: pid, shape: n[pid].shape, anchor: aid, position: 'after', container: n[sid].shape }]
+    });
+    expect(row).toEqual(expect.objectContaining(SPLICE));
+    expect(row.native).toBe('accept agrees, reject agrees');
+    expect(row.warnings).toBe('undo-history-cleared');
+    expect(row.title).toMatch(/^Moved/);
+  });
+
   it('D9 header text replace: splice (headers are not natively addressed)', async () => {
     const pre = await fresh();
     const pid = await at(['sections', 0, 'headersFooters', 'header', 'blocks', 0]);

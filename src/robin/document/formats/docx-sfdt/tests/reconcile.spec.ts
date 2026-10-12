@@ -12,7 +12,7 @@ import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
 import { accept, expectedRejection, reject } from '../projections';
 import { ownText } from '../outline';
-import { composeTracked, editorOffset, hierOf, plan } from '../reconcile';
+import { composeTracked, editorOffset, hierOf, inOrder, plan } from '../reconcile';
 import { docxTree } from '../tree';
 import { arr } from '../util';
 
@@ -70,6 +70,30 @@ describe('composeTracked', () => {
     expect(bookmarks(deleted)).toBe(0);
   });
 
+  it('a move within the same list is tracked: a Deletion where it was, an Insertion where it goes', () => {
+    // the QA move that landed immediate: the order changed, nothing left the list
+    const blocks = arr<NfNode>(sections[1].blocks);
+    const moving = blocks[10];
+    const target = blocks[2];
+    const r = prepareWrite(state(), {
+      intent: 'test',
+      scope: { ids: [moving.id] },
+      changes: [{ kind: 'move', id: moving.id, shape: shapeOf(moving, docxTree), anchor: target.id, position: 'after', container: shapeOf(sections[1], docxTree) }]
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(r.outcome);
+    const { tracked, untracked } = composeTracked(s.view, r.intended, 't');
+    const copies = occurrences(tracked, moving.id);
+    expect(copies.map(trackedAs).sort()).toEqual(['Deletion', 'Insertion']);
+    // the inserted copy sits where the write put it, the deleted one where it was
+    const list = arr<NfNode>(arr<NfNode>(tracked.root.sections)[1].blocks).map((b) => b.id);
+    expect(list.indexOf(moving.id)).toBe(3);
+    expect(list.lastIndexOf(moving.id)).toBe(11);
+    expect(bookmarks(copies.find((c) => trackedAs(c) === 'Deletion') as NfNode)).toBe(0);
+    expect(untracked).toEqual([]);
+    const p = plan({ turnId: 't', before: s.view, intended: makeView(r.intended, docxPack), beforeResidue: s.residue, intendedResidue: r.intendedResidue, beforeNative: flagship });
+    expect(p.landed).toBe('card');
+  });
+
   it('a deleted node that is not moved keeps its bookmarks', () => {
     const intended = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
     const blocks = arr<NfNode>(arr<NfNode>(intended.root.sections)[1].blocks);
@@ -78,6 +102,20 @@ describe('composeTracked', () => {
     const [deleted] = occurrences(tracked, control.id);
     expect(trackedAs(deleted)).toBe('Deletion');
     expect(bookmarks(deleted)).toBe(bookmarks(control));
+  });
+});
+
+describe('inOrder: which ids a reordering moved', () => {
+  const size = (id: string) => (id === 'T' ? 1000 : 1);
+  it('the fewest nodes move: a large node carried past four small ones is the one that moved', () => {
+    expect([...inOrder(['a', 'b', 'c', 'd', 'T'], ['T', 'a', 'b', 'c', 'd'], size)]).toEqual(['a', 'b', 'c', 'd']);
+  });
+  it('between two that swap, the small one moved', () => {
+    expect([...inOrder(['p', 'T'], ['T', 'p'], size)]).toEqual(['T']);
+    expect([...inOrder(['T', 'p'], ['p', 'T'], size)]).toEqual(['T']);
+  });
+  it('an unchanged order, insertions and removals move nothing', () => {
+    expect([...inOrder(['a', 'b', 'c'], ['x', 'a', 'c'])]).toEqual(['a', 'c']);
   });
 });
 
@@ -186,6 +224,25 @@ describe('plan: paragraph, table, row and cell properties', () => {
     expect(p.steps.map((x) => x.seam)).toEqual(['splice']);
     expect(p.landed).toBe('immediate');
     expect(p.history).toBe('engine');
+    // the warnings agree with what landed: no card to name as the way back
+    expect(p.warnings?.map((w) => w.code)).toEqual(['undo-history-cleared', 'immediate-not-tracked']);
+    expect(p.warnings?.find((w) => w.code === 'undo-history-cleared')?.message).not.toMatch(/card/);
+  });
+
+  it('a deletion card does not warn of immediate changes for what a finalizer derived (a restripe)', () => {
+    const st = state();
+    const bound = arr<NfNode>(arr<NfNode>(arr<NfNode>(st.view.nf.root.sections)[1].blocks)[10].blocks)[0];
+    const gone = arr<NfNode>(bound.rows)[2];
+    const r = prepareWrite(st, { intent: 'x', scope: { ids: [gone.id] }, changes: [{ kind: 'delete', id: gone.id, base: gone.base }] } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(r.outcome);
+    const derived = r.facts.filter((f) => f.kind === 'finalizer').flatMap((f) => f.ids);
+    expect(r.facts.some((f) => f.name === 'restripe')).toBe(true);
+    const ctx = { turnId: 't', before: st.view, intended: makeView(r.intended, docxPack), beforeResidue: st.residue, intendedResidue: r.intendedResidue, beforeNative: flagship };
+    const p = plan({ ...ctx, derived });
+    expect(p.landed).toBe('card');
+    expect(p.warnings?.map((w) => w.code)).toEqual(['undo-history-cleared']);
+    // the restriped cells do land untracked: without the finalizer's facts they would be the write's own
+    expect(plan(ctx).warnings?.map((w) => w.code)).toContain('immediate-not-tracked');
   });
 });
 
