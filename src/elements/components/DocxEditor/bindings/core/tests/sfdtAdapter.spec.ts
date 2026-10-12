@@ -53,8 +53,13 @@ describe('scanBindings', () => {
 });
 
 describe('scanBindings: tracked deletions', () => {
+  // the engine's tracked replacement records itself on both controls' revisions (the move marker)
+  const tag = JSON.stringify({ v: 1, source: 'robin', changeSetId: 'turn-1', group: 'robin', move: 'n7' });
   const doc = (deleted: boolean) => ({
-    revisions: [{ revisionId: 'r-del', revisionType: 'Deletion', author: 'Robin' }],
+    revisions: [
+      { revisionId: 'r-del', revisionType: 'Deletion', author: 'Robin', customData: tag },
+      { revisionId: 'r-ins', revisionType: 'Insertion', author: 'Robin', customData: tag }
+    ],
     sections: [
       {
         blocks: [
@@ -66,7 +71,7 @@ describe('scanBindings: tracked deletions', () => {
               },
               {
                 contentControlProperties: { tag: '[[name=total|type=currency|expr=mul(sum(1,2),1)]]' },
-                inlines: [{ text: '$3.00' }]
+                inlines: [{ text: '$3.00', revisionIds: ['r-ins'] }]
               }
             ]
           }
@@ -84,6 +89,26 @@ describe('scanBindings: tracked deletions', () => {
 
   it('keeps a control whose content is live', () => {
     expect(scanBindings(doc(false) as any).formulas.get('total')).toHaveLength(2);
+  });
+
+  // review regression: the same name is no evidence of a replacement; only the replacement's marker is
+  it('keeps both of two adjacent controls binding one name when the user deleted the first one\'s text', () => {
+    const twins = {
+      revisions: [{ revisionId: 'r-del', revisionType: 'Deletion', author: 'User' }],
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { contentControlProperties: { tag: '[[name=rate|type=percent]]' }, inlines: [{ text: '8.5%', revisionIds: ['r-del'] }] },
+                { contentControlProperties: { tag: '[[name=rate|type=percent]]' }, inlines: [{ text: '8.5%' }] }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    expect(scanBindings(twins as any).fields.get('rate')).toHaveLength(2);
   });
 
   // review regression: a following live control with a different binding is a neighbour, not the

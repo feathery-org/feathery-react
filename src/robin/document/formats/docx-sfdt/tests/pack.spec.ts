@@ -11,6 +11,7 @@ import { baseOf, NfNode, shapeOf } from '../../../tree';
 import { makeView } from '../../../view';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
+import { scanBindings } from '../../../../../elements/components/DocxEditor/bindings/core/sfdtAdapter';
 
 const corpus = path.join(__dirname, 'corpus');
 const flagship = fs.readFileSync(path.join(corpus, 'flagship-v4b.sfdt.json'), 'utf8');
@@ -154,6 +155,22 @@ describe('the format pack', () => {
   (fs.existsSync(williams) ? it : it.skip)('finds the client document\'s TotalAnnualPremium formula (private corpus only)', () => {
     const { call } = mount(fs.readFileSync(williams, 'utf8'));
     expect((call('find', { feature: { name: 'formula', value: 'TotalAnnualPremium' } }) as { total: number }).total).toBe(1);
+  });
+
+  it('a rewritten formula pending as a tracked replacement counts once: the old control is paired by its marker', () => {
+    const { host, session, call } = mount();
+    const control = session.state.view.nodes().find((n) => n.kind === 'control' && typeof (n.binding as { expr?: unknown } | undefined)?.expr === 'string' && Array.isArray(n.inlines)) as NfNode;
+    const name = String((control.binding as { name: string }).name);
+    const count = () => scanBindings(JSON.parse(host.doc)).occurrences.filter((o) => o.name === name).length;
+    const before = count();
+    expect(before).toBeGreaterThan(0);
+    const read = nodeOf(call('read', { ids: [control.id] }), control.id) as unknown as Record<string, unknown>;
+    const node = JSON.parse(JSON.stringify(read, (k, v) => (['base', 'shape', 'usedBy', 'derived', 'pending'].includes(k) ? undefined : v)));
+    node.binding = { ...node.binding, expr: `mul(${node.binding.expr},1)` };
+    const r = call('write', { intent: 'Write the formula out.', scope: { ids: [control.id] }, changes: [{ kind: 'replace', id: control.id, base: read.base, node }] }) as { ok: boolean };
+    expect(r.ok).toBe(true);
+    // both controls are in the document until the card is resolved; the bindings count the new one
+    expect(count()).toBe(before);
   });
 
   it('refuses deleting a bound table that formulas read, naming them (WP2 T9)', () => {
