@@ -15,6 +15,7 @@ import {
   validateSfdt
 } from '../sfdtAdapter';
 import { buildCostsFixture } from './fixtures/costsFixture';
+import { applyRules } from '../engine';
 
 describe('scanBindings', () => {
   it('finds fields, formulas, tables and rows', () => {
@@ -83,6 +84,34 @@ describe('scanBindings: tracked deletions', () => {
 
   it('keeps a control whose content is live', () => {
     expect(scanBindings(doc(false) as any).formulas.get('total')).toHaveLength(2);
+  });
+
+  // review item 5: the user deleting a control's text with track changes on deletes the text, not
+  // the control; only a control replaced beside its successor is on its way out
+  it('keeps a control whose text alone the user deleted, tracked', () => {
+    const single = {
+      revisions: [{ revisionId: 'r-del', revisionType: 'Deletion', author: 'User' }],
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { text: 'Total: ' },
+                { contentControlProperties: { tag: '[[name=total|type=currency|expr=sum(1,2)]]' }, inlines: [{ text: '$3.00', revisionIds: ['r-del'] }] },
+                { text: ' due.' }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const index = scanBindings(single as any);
+    expect(index.formulas.get('total')).toHaveLength(1);
+    expect(index.occurrences).toHaveLength(1);
+    // and its deleted text is the user's to keep: the engine writes nothing back into it
+    const result = applyRules(single as any);
+    expect(result.writes).toEqual([]);
+    expect(JSON.stringify(result.sfdt)).toBe(JSON.stringify(single));
   });
 });
 

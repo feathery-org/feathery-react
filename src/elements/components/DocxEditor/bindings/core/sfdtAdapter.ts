@@ -249,9 +249,8 @@ export function hasRevisionId(node: any, ids: Set<string>): boolean {
 }
 
 /**
- * True when a content control's text is all pending deletion: the control is on its way out (a
- * tracked replacement keeps the old control beside the new one until the card is resolved), so,
- * like a deleted row, it is not an occurrence. A control with no text at all is not deleted.
+ * True when a content control's text is all pending deletion. A control with no text at all is
+ * not deleted. Whether the control itself is on its way out is `replacedBeside`'s question.
  */
 export function wholeContentDeleted(
   node: any,
@@ -274,6 +273,25 @@ export function wholeContentDeleted(
       (node.blocks || []).flatMap((block: any) => block?.inlines || [])
   );
   return text > 0 && live === 0;
+}
+
+/**
+ * True when a control is on its way out: its text is all pending deletion and the live control
+ * that replaces it sits right after it (a tracked replacement keeps the old control beside the new
+ * one until the card is resolved). A control whose text alone was deleted, with nothing replacing
+ * it, is still the control, and still an occurrence.
+ */
+export function replacedBeside(
+  list: any[],
+  i: number,
+  deletedRevisionIds: Set<string>
+): boolean {
+  const next = list[i + 1];
+  return (
+    wholeContentDeleted(list[i], deletedRevisionIds) &&
+    !!next?.contentControlProperties &&
+    !wholeContentDeleted(next, deletedRevisionIds)
+  );
 }
 
 function ccText(node: any, deletedRevisionIds: Set<string>): string {
@@ -417,7 +435,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
       // in, so recurse with a fresh context.
       walkTextFrames(inline, path);
       if (!inline.contentControlProperties) return;
-      if (wholeContentDeleted(inline, deletedRevisionIds)) return;
+      if (replacedBeside(inlines || [], i, deletedRevisionIds)) return;
       const rawTag = String(inline.contentControlProperties.tag || '');
       const def = parseTagOrDiagnose(rawTag, path);
       if (def && (def.kind === 'field' || def.kind === 'formula')) {
@@ -542,7 +560,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
           (row.cells || []).forEach((cell, c) => {
             if (
               (cell as any).contentControlProperties &&
-              !wholeContentDeleted(cell, deletedRevisionIds)
+              !replacedBeside(row.cells || [], c, deletedRevisionIds)
             ) {
               const cellPath = [...currentRowPath, 'cells', c];
               const rawTag = String(
