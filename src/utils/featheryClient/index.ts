@@ -216,6 +216,11 @@ export default class FeatheryClient extends IntegrationClient {
     });
   }
 
+  // Resolves once events held for the first interaction have been replayed
+  public whenUserEventsReplayed() {
+    return this.userEventQueue.whenIdle();
+  }
+
   public destroy() {
     featheryWindow().removeEventListener?.(
       FEATHERY_INTERACTION_EVENT,
