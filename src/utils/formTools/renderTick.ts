@@ -1,5 +1,6 @@
 import internalState, { FormToolsCallbacks } from '../internalState';
 import { featheryWindow } from '../browser';
+import { initState } from '../init';
 
 // A write updates Field.value synchronously, but visibility and inline errors
 // only reach internalState when <Form/> re-renders, which a debounced rerender
@@ -8,14 +9,20 @@ import { featheryWindow } from '../browser';
 export const captureRenderTick = (formUuid: string): number =>
   internalState[formUuid]?.formToolsRenderTick ?? 0;
 
-// No cap: a commit that never lands is a real stall to surface, not hide
+// <Form/> registers its render callback on mount and drops it on unmount
+export const isFormMounted = (formUuid: string): boolean =>
+  !!initState.renderCallbacks[formUuid];
+
+// No cap: a commit that never lands is a real stall to surface, not hide.
+// `until` ends the wait early, e.g. when the form unmounts and never commits again.
 export const waitForNextCommit = (
   formUuid: string,
-  sinceTick: number
+  sinceTick: number,
+  until?: () => boolean
 ): Promise<void> =>
   new Promise((resolve) => {
     const check = () => {
-      if (captureRenderTick(formUuid) !== sinceTick) {
+      if (captureRenderTick(formUuid) !== sinceTick || until?.()) {
         resolve();
         return;
       }

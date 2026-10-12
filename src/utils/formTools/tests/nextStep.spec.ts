@@ -248,6 +248,21 @@ describe('nextStepTool', () => {
     expect(buttonOnClickMock).toHaveBeenCalled();
   });
 
+  it('stops instead of waiting forever when the press leaves the form', async () => {
+    seed([nextButton('btn-1')]);
+    buttonOnClickMock.mockImplementation(async () => {
+      (internalState as any)[FORM].latestStepName = 'step-2';
+      delete initState.renderCallbacks[FORM];
+    });
+
+    const result = await nextStepTool(FORM, {});
+
+    expect(result).toMatchObject({
+      status: 'refused',
+      reason: expect.stringContaining('left this form')
+    });
+  });
+
   it('refuses when the form is read-only', async () => {
     seed([nextButton('btn-1')]);
     (internalState as any)[FORM].formSettings = { readOnly: true };

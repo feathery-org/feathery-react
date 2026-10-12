@@ -10,8 +10,12 @@ import {
   diffInlineErrorSnapshots,
   getLiveStepKey,
   snapshotInlineErrors
-} from '../../assistant/tools/utils';
-import { captureRenderTick, waitForNextCommit } from './renderTick';
+} from '../formActions/utils';
+import {
+  captureRenderTick,
+  isFormMounted,
+  waitForNextCommit
+} from './renderTick';
 import { awaitClientQueues } from './clientQueues';
 import { getStepTool } from './getStep';
 import { NextStepResult } from './types';
@@ -128,8 +132,19 @@ export async function nextStepTool(
   if (toStep && toStep !== fromStep) {
     // Wait for the new step to commit, following a load rule that moves on
     let snapshot = getStepTool(formUuid);
+    const leftForm = () =>
+      !isFormMounted(formUuid) ||
+      !toStep ||
+      !internalState[formUuid]?.steps?.[toStep];
     while (snapshot.step.key !== toStep) {
-      await waitForNextCommit(formUuid, captureRenderTick(formUuid));
+      // A press that leaves this form (unmount, form switch) never commits toStep
+      if (leftForm())
+        return {
+          status: 'refused',
+          fromStep,
+          reason: 'The press left this form, so the fill stopped here.'
+        };
+      await waitForNextCommit(formUuid, captureRenderTick(formUuid), leftForm);
       snapshot = getStepTool(formUuid);
       toStep = getLiveStepKey(afterState);
     }

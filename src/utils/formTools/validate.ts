@@ -1,8 +1,10 @@
 import {
   checkValueAgainstField,
   describeOptions,
+  emptyValueFor,
+  isEmptyValue,
   resolveOptions
-} from '../../assistant/tools/setFieldValue';
+} from '../formActions/fillFields';
 import { formatDateString } from '../../elements/fields/DateSelectorField/utils';
 import countryData from '../../elements/components/data/countries';
 import { stateMap } from '../../elements/components/data/states';
@@ -51,6 +53,8 @@ const checkMatrixValue = (servar: any, value: unknown): string | null => {
 
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+const ZONED_DATETIME_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
 // Date rolls impossible days over (2026-02-30 becomes March 2), so check the
 // parts survive a round trip
@@ -77,19 +81,22 @@ const normalizeDateSelector = (
       error: `Field '${servar.key}' (date_selector) expects a string.`
     };
   if (chooseTime) {
+    const invalid = {
+      ok: false as const,
+      error: `Field '${servar.key}' expects 'YYYY-MM-DDTHH:mm' in local time, or an ISO date-time with a timezone.`
+    };
+    // A zoned value is that exact instant; a bare one is the browser's local time, as the picker reads it
+    if (ZONED_DATETIME_RE.test(value)) {
+      const zoned = new Date(value);
+      return Number.isNaN(zoned.getTime())
+        ? invalid
+        : { ok: true, value: formatDateString(zoned, meta) };
+    }
     const m = value.match(DATETIME_RE);
-    if (!m)
-      return {
-        ok: false,
-        error: `Field '${servar.key}' expects 'YYYY-MM-DDTHH:mm'.`
-      };
+    if (!m) return invalid;
     const [, y, mo, d, h, mi] = m;
-    if (+h > 23 || +mi > 59 || !isRealDate(+y, +mo, +d))
-      return {
-        ok: false,
-        error: `Field '${servar.key}' expects 'YYYY-MM-DDTHH:mm'.`
-      };
-    const date = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi));
+    if (+h > 23 || +mi > 59 || !isRealDate(+y, +mo, +d)) return invalid;
+    const date = new Date(+y, +mo - 1, +d, +h, +mi);
     return { ok: true, value: formatDateString(date, meta) };
   }
   const m = value.match(DATE_RE);
@@ -108,6 +115,10 @@ export const validateAndNormalizeForFill = (
   servar: any,
   rawValue: unknown
 ): { ok: true; value: unknown } | { ok: false; error: string } => {
+  // An empty value clears the field, as fillFields does
+  if (servar.type !== 'matrix' && isEmptyValue(rawValue))
+    return { ok: true, value: emptyValueFor(servar) };
+
   if (servar.type === 'date_selector')
     return normalizeDateSelector(servar, rawValue);
 

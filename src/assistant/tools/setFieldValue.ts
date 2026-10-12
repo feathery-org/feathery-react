@@ -175,7 +175,7 @@ function validateSetFieldValue(
   return { ok: true, field: found, servar, value };
 }
 
-export function resolveOptions(
+function resolveOptions(
   servar: any,
   repeatIndex: number | undefined
 ): Array<{ value: string; label: string }> {
@@ -195,23 +195,14 @@ export function resolveOptions(
   }
   const rawOptions = Array.isArray(meta.options) ? meta.options : null;
   if (!rawOptions) return [];
-  const rawLabels = Array.isArray(meta.option_labels) ? meta.option_labels : [];
+  const rawLabels = Array.isArray(meta.labels) ? meta.labels : [];
   return rawOptions.map((value: any, i: number) => ({
     value: String(value ?? ''),
-    label: String(rawLabels[i] || value || '')
+    label: String(rawLabels[i] ?? value ?? '')
   }));
 }
 
-// Values with their labels where they differ, so a caller can both refill and ask the user
-export function describeOptions(
-  options: Array<{ value: string; label: string }>
-): string {
-  return options
-    .map((o) => (o.label === o.value ? o.value : `${o.value} ("${o.label}")`))
-    .join(', ');
-}
-
-export function checkValueAgainstField(
+function checkValueAgainstField(
   servar: any,
   value: unknown,
   repeatIndex: number | undefined
@@ -261,11 +252,9 @@ export function checkValueAgainstField(
     if (typeof value !== 'string') {
       return `Field '${key}' (${type}) expects a single option value (string).`;
     }
-    const options = resolveOptions(servar, repeatIndex);
-    if (options.length > 0 && !options.some((o) => o.value === value)) {
-      return `Value not in allowed options. Allowed: ${describeOptions(
-        options
-      )}.`;
+    const opts = resolveOptions(servar, repeatIndex).map((o) => o.value);
+    if (opts.length > 0 && !opts.includes(value)) {
+      return `Value not in allowed options. Allowed: ${opts.join(', ')}.`;
     }
     return null;
   }
@@ -305,7 +294,7 @@ export function checkValueAgainstField(
   return null;
 }
 
-export function normalizeGmapState(value: unknown, servar: any): unknown {
+function normalizeGmapState(value: unknown, servar: any): unknown {
   if (typeof value !== 'string' || !value) return value;
 
   const wantShort = !!servar.metadata?.store_abbreviation;
@@ -322,7 +311,7 @@ export function normalizeGmapState(value: unknown, servar: any): unknown {
   return wantShort ? match.code : match.name;
 }
 
-export async function normalizePhone(
+async function normalizePhone(
   value: unknown,
   servar: any,
   state: any,

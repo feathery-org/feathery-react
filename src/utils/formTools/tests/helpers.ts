@@ -1,4 +1,5 @@
 import internalState from '../../internalState';
+import { initState } from '../../init';
 
 export const emptyStepArrays = {
   subgrids: [],
@@ -91,6 +92,8 @@ export function seedForm(form: string, opts: SeedOptions = {}) {
     bumpRenderTick();
   });
 
+  // A mounted <Form/> registers a render callback; next_step reads it to tell an unmount
+  initState.renderCallbacks[form] = { form: jest.fn() };
   store[form] = {
     currentStep,
     steps: { [currentStep.key]: currentStep, ...opts.steps },

@@ -4,7 +4,8 @@ import {
   PanelRuntimeFieldEntry,
   PanelRuntimeSnapshot
 } from '../panelRuntime';
-import { normalizePhone } from '../../assistant/tools/setFieldValue';
+import { normalizePhone } from '../formActions/fillFields';
+import { loadPhoneValidator, phoneLib, phoneLibPromise } from '../validation';
 import {
   decodeAndValidateFiles,
   isUnsupportedType,
@@ -158,6 +159,16 @@ export async function fillStepTool(
       )}).`
     );
   }
+  // Load the phone library once up front so phone values normalize synchronously, as fillFields does
+  const requestsPhone = inputKeys.some(
+    (k) =>
+      findServarField(state.currentStep, k)?.servar?.type === 'phone_number'
+  );
+  if (requestsPhone) {
+    if (!phoneLib) loadPhoneValidator();
+    await phoneLibPromise;
+  }
+
   const beforeSnapshot = currentSnapshot(formUuid);
   const visibleBefore = new Set(
     beforeSnapshot.currentStepFields.filter((f) => f.visible).map((f) => f.key)
@@ -301,7 +312,7 @@ export async function fillStepTool(
       }
       let normalized = validated.value;
       if (servar.type === 'phone_number')
-        normalized = await normalizePhone(normalized, servar, state, fieldKey);
+        normalized = normalizePhone(normalized, servar, state, fieldKey);
 
       const beforeValue = internalState[formUuid]?.fields?.[fieldKey]?.value;
       if (sameValue(servar.type, beforeValue, normalized)) {
@@ -542,7 +553,7 @@ async function fillRepeatedField(
     }
     const normalized =
       servar.type === 'phone_number'
-        ? await normalizePhone(validated.value, servar, state, fieldKey)
+        ? normalizePhone(validated.value, servar, state, fieldKey)
         : validated.value;
 
     const beforeFieldValue = internalState[formUuid]?.fields?.[fieldKey]?.value;

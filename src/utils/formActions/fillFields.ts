@@ -48,11 +48,11 @@ const WRITABLE_TYPES = new Set([
   'date_selector'
 ]);
 
-const isEmptyValue = (value: unknown) =>
+export const isEmptyValue = (value: unknown) =>
   value === null || value === '' || (Array.isArray(value) && !value.length);
 
 // What each field holds when nothing is entered, so a clear never stores a value the field can't render
-function emptyValueFor(servar: any): unknown {
+export function emptyValueFor(servar: any): unknown {
   if (MULTI_CHOICE_TYPES.has(servar.type)) return [];
   if (servar.type === 'select') return null;
   if (servar.type === 'checkbox') return !!servar.metadata?.always_checked;
@@ -201,7 +201,7 @@ function validateFill(
   return { ok: true, field: found, servar, value };
 }
 
-function resolveOptions(
+export function resolveOptions(
   servar: any,
   repeatIndex: number | undefined
 ): Array<{ value: string; label: string }> {
@@ -228,7 +228,16 @@ function resolveOptions(
   }));
 }
 
-function checkValueAgainstField(
+// Values with their labels where they differ, so a caller can both refill and ask the person
+export function describeOptions(
+  options: Array<{ value: string; label: string }>
+): string {
+  return options
+    .map((o) => (o.label === o.value ? o.value : `${o.value} ("${o.label}")`))
+    .join(', ');
+}
+
+export function checkValueAgainstField(
   servar: any,
   value: unknown,
   repeatIndex: number | undefined
@@ -288,9 +297,11 @@ function checkValueAgainstField(
     if (typeof value !== 'string') {
       return `Field '${key}' (${type}) expects a single option value (string).`;
     }
-    const opts = resolveOptions(servar, repeatIndex).map((o) => o.value);
-    if (opts.length > 0 && !opts.includes(value)) {
-      return `Value not in allowed options. Allowed: ${opts.join(', ')}.`;
+    const options = resolveOptions(servar, repeatIndex);
+    if (options.length > 0 && !options.some((o) => o.value === value)) {
+      return `Value not in allowed options. Allowed: ${describeOptions(
+        options
+      )}.`;
     }
     return null;
   }
@@ -347,7 +358,7 @@ function normalizeGmapState(value: unknown, servar: any): unknown {
   return wantShort ? match.code : match.name;
 }
 
-function normalizePhone(
+export function normalizePhone(
   value: unknown,
   servar: any,
   state: any,

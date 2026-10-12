@@ -1,7 +1,7 @@
 import { getStepTool } from './getStep';
 import { fillStepTool } from './fillStep';
 import { nextStepTool } from './nextStep';
-import { gateToolInteraction } from './interaction';
+import { markInteraction } from '../formActions/utils';
 import { FormTool } from './types';
 
 // Builds the WebMCP-shaped tool list for one mounted form. Reads form state
@@ -42,7 +42,7 @@ export const getFormTools = (formUuid: string): FormTool[] => [
     },
     annotations: {},
     execute: async (input: any) => {
-      gateToolInteraction();
+      markInteraction();
       return fillStepTool(formUuid, input);
     }
   },
@@ -64,7 +64,7 @@ export const getFormTools = (formUuid: string): FormTool[] => [
     },
     annotations: { consequentialHint: true },
     execute: async (input: any) => {
-      gateToolInteraction();
+      markInteraction();
       return nextStepTool(formUuid, input ?? {});
     }
   }

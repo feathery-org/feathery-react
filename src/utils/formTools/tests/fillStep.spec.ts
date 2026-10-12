@@ -473,26 +473,33 @@ describe('fillStepTool', () => {
     });
   });
 
-  it('normalizes a date_selector-with-time value to the UTC Z-suffixed stored shape', async () => {
-    seed([
-      field({
-        servar: {
-          key: 'meeting_time',
-          type: 'date_selector',
-          metadata: { choose_time: true }
-        }
-      })
-    ]);
+  it.each([
+    // A bare time is local, as the picker reads it, so it reads back as 14:30 local
+    ['2026-03-05T14:30', new Date(2026, 2, 5, 14, 30).toISOString()],
+    // A zoned time is that exact instant
+    ['2026-03-05T14:30-05:00', '2026-03-05T19:30:00.000Z']
+  ])(
+    'stores the date-time %s as the instant it means',
+    async (input, instant) => {
+      seed([
+        field({
+          servar: {
+            key: 'meeting_time',
+            type: 'date_selector',
+            metadata: { choose_time: true }
+          }
+        })
+      ]);
 
-    const result = await fillStepTool(FORM, {
-      values: { meeting_time: '2026-03-05T14:30' }
-    });
+      const result = await fillStepTool(FORM, {
+        values: { meeting_time: input }
+      });
 
-    expect(result.fields.meeting_time).toEqual({
-      status: 'filled',
-      value: '2026-03-05T14:30:00Z'
-    });
-  });
+      expect(result.fields.meeting_time.status).toBe('filled');
+      const stored = (result.fields.meeting_time as { value: string }).value;
+      expect(new Date(stored).toISOString()).toBe(instant);
+    }
+  );
 
   it('reports newlyShown fields that became visible only after filling', async () => {
     seed([
@@ -740,7 +747,8 @@ describe('fillStepTool: date_selector (choose_time)', () => {
 
     expect(result.fields.meeting_time).toEqual({
       status: 'rejected',
-      message: "Field 'meeting_time' expects 'YYYY-MM-DDTHH:mm'."
+      message:
+        "Field 'meeting_time' expects 'YYYY-MM-DDTHH:mm' in local time, or an ISO date-time with a timezone."
     });
     expect(changeValueMock).not.toHaveBeenCalled();
   });

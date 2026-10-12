@@ -1107,7 +1107,7 @@ describe('FeatheryClient.registerEvent - before interaction', () => {
     expect(replayed).toBe(false);
     expect(global.fetch).not.toHaveBeenCalled();
 
-    // Mirrors gateToolInteraction: mark interaction detected and dispatch the
+    // Mirrors markInteraction: mark interaction detected and dispatch the
     // event FeatheryClient listens for, which replays the queued event.
     setInteractionDetected();
     featheryWindow().dispatchEvent(new CustomEvent(FEATHERY_INTERACTION_EVENT));

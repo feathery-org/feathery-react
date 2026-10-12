@@ -188,8 +188,38 @@ describe('validateAndNormalizeForFill: date_selector', () => {
       );
       expect(result).toEqual({
         ok: false,
-        error: "Field 'dob' expects 'YYYY-MM-DDTHH:mm'."
+        error:
+          "Field 'dob' expects 'YYYY-MM-DDTHH:mm' in local time, or an ISO date-time with a timezone."
       });
     }
   );
+});
+
+describe('validateAndNormalizeForFill: clearing and checkboxes', () => {
+  it.each([
+    [{ key: 'name', type: 'text_field' }, '', ''],
+    [{ key: 'tags', type: 'multiselect', metadata: {} }, [], []],
+    [{ key: 'plan', type: 'select', metadata: {} }, null, null],
+    [
+      { key: 'terms', type: 'checkbox', metadata: { always_checked: true } },
+      null,
+      true
+    ]
+  ])(
+    'clears %o with the empty value its field renders',
+    (servar, value, cleared) => {
+      expect(validateAndNormalizeForFill(servar, value)).toEqual({
+        ok: true,
+        value: cleared
+      });
+    }
+  );
+
+  it('rejects unchecking an always-checked checkbox', () => {
+    const result = validateAndNormalizeForFill(
+      { key: 'terms', type: 'checkbox', metadata: { always_checked: true } },
+      false
+    );
+    expect(result.ok).toBe(false);
+  });
 });
