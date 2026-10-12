@@ -17,7 +17,7 @@ import type { ToolDispatchResult } from './assistantToolDispatch';
 
 import { TOOL_TIMEOUT_READ_MS, withToolTimeout } from './assistantToolDispatch';
 
-export type StreamedToolCall = {
+type StreamedToolCall = {
   toolName: string;
   toolCallId: string;
   input?: any;
@@ -42,7 +42,7 @@ export type NativeToolHandlers = {
   setTableCellValue: (tableId: string, cells: any[]) => Promise<any>;
 };
 
-export type AssistantToolCallDeps = {
+type AssistantToolCallDeps = {
   /** Central dispatch (custom handlers, docx bridge, rule tools). */
   dispatch: (toolName: string, input: any) => Promise<ToolDispatchResult>;
   native: NativeToolHandlers;

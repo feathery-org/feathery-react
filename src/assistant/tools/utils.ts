@@ -16,7 +16,7 @@ export interface InlineErrorReport {
 }
 
 // Structured snapshot: field key -> { field-wide message, per-row messages }.
-export type InlineErrorSnapshot = Map<
+type InlineErrorSnapshot = Map<
   string,
   { message?: string; byIndex: Map<number, string> }
 >;
@@ -70,7 +70,7 @@ export const awaitPendingInlineErrors = async (state: any): Promise<void> => {
   if (pending) await pending;
 };
 
-export type RepeatIndexFailure = {
+type RepeatIndexFailure = {
   errorType:
     | 'repeated_index_missing'
     | 'repeated_index_out_of_range'
@@ -116,14 +116,14 @@ export type TableLookupErrorType =
   | 'not_on_step'
   | 'hidden';
 
-export type FoundTable = {
+type FoundTable = {
   state: any;
   table: any;
   columns: Array<{ name: string; field_key?: string }>;
   rowCount: number;
 };
 
-export type TableLookupResult =
+type TableLookupResult =
   | { ok: true; found: FoundTable }
   | { ok: false; errorType: TableLookupErrorType; error: string };
 

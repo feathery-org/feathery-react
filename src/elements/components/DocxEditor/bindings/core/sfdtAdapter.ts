@@ -110,7 +110,7 @@ export function formulaScopeKey(occurrence: Occurrence): string {
   return `document:${occurrence.name}`;
 }
 
-export type ColumnExpressionKind = 'range' | 'table-column' | null;
+type ColumnExpressionKind = 'range' | 'table-column' | null;
 
 /** Does this node BY ITSELF yield a whole column - a bare range or aggregate? */
 /** Facts about a bare reference; each caller applies its own precedence. */
@@ -173,14 +173,14 @@ export function expressionResolvesToColumn(
   return walk(ast);
 }
 
-export interface CellValue {
+interface CellValue {
   text: string;
   canonical: string | null;
   error: string | null;
   kind: BoundDefinition['kind'];
 }
 
-export interface LineItem {
+interface LineItem {
   rowId: string | null;
   values: Record<string, CellValue>;
 }
@@ -973,7 +973,7 @@ export interface AdoptedRowMutation {
   row: SfdtRow;
 }
 
-export interface AdoptionResult {
+interface AdoptionResult {
   sfdt: SfdtDocument;
   adopted: string[];
   mutations: AdoptedRowMutation[];

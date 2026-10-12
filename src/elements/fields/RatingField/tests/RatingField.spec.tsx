@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   createRatingElement,
   createRatingProps,
@@ -8,7 +9,6 @@ import {
   clickRatingIcon,
   expectRatingIconCount
 } from './test-utils';
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import RatingField from '../index';
 

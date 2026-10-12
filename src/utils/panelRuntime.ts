@@ -12,7 +12,7 @@ import { sanitizeTransportValue } from './transportValue';
 import { getImageAltText } from './accessibility';
 import type { TableRowRead } from './formActions/tables';
 
-export type PanelRuntimeFieldEntry = {
+type PanelRuntimeFieldEntry = {
   key: string;
   type: string;
   value: unknown;
@@ -42,7 +42,7 @@ export type PanelRuntimeFieldEntry = {
   stepSize?: number;
 };
 
-export type PanelRuntimeElementEntry =
+type PanelRuntimeElementEntry =
   | {
       type: 'text';
       id?: string;
@@ -82,7 +82,7 @@ export type PanelRuntimeElementEntry =
       repeatContainerId?: string;
     };
 
-export type PanelRuntimeNavigationSurface = {
+type PanelRuntimeNavigationSurface = {
   surface: 'stepper' | 'tab';
   id: string;
   submitsCurrentStep: boolean;
@@ -98,7 +98,7 @@ export type PanelRuntimeNavigationSurface = {
 // Field-backed rows ride in every snapshot, so only the first few do
 export const SNAPSHOT_TABLE_ROWS = 10;
 
-export type PanelRuntimeTableEntry = {
+type PanelRuntimeTableEntry = {
   id: string;
   hubId?: string;
   columns: Array<{ name: string; fieldKey: string; readOnly?: boolean }>;
@@ -114,7 +114,7 @@ export type PanelRuntimeTableEntry = {
   visible: boolean;
 };
 
-export type PanelRuntimeSnapshot = {
+type PanelRuntimeSnapshot = {
   currentStep: { id: string; key: string };
   previousStepName?: string;
   activeStepKey: string;
@@ -227,7 +227,7 @@ export const collectNavigableSteps = (
   return out;
 };
 
-export const collectNavigationSurfaces = (
+const collectNavigationSurfaces = (
   state: any
 ): PanelRuntimeNavigationSurface[] => {
   const step = state?.currentStep;

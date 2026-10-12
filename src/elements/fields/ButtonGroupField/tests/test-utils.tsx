@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   createBaseElement,
   createFieldProps,
@@ -8,7 +9,6 @@ import {
   expectFieldToBeRequired,
   expectFieldToHaveAriaLabel
 } from '../../shared/tests/field-test-utils';
-import React from 'react';
 
 export {
   setMockFieldValue,

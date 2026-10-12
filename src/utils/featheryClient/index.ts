@@ -11,6 +11,7 @@ import {
   markStepCompleted,
   registerKnownFieldKeys,
   registerTextVariableFields,
+  restoredFileKeys,
   setFieldValues,
   normalizeKnownAsciiValues
 } from '../init';
@@ -141,7 +142,7 @@ const getUploadFileNames = (fileValue: any): string[] => {
  * `{"message": ...}` 400 would otherwise be shown to the user as raw JSON.
  * Anything we can't read a message out of falls back to the body as-is.
  */
-export function parseInviteError(body?: string) {
+function parseInviteError(body?: string) {
   if (!body) return 'Failed to invite collaborators';
   try {
     const parsed = JSON.parse(body);
@@ -378,8 +379,10 @@ export default class FeatheryClient extends IntegrationClient {
     if (numFiles === 0) {
       const hasPreviousSuccess = fileRetryStatus[servar.key] !== undefined;
 
-      // Only skip request for optional fields that were never submitted
+      // Skip fields never submitted. A file restored from the server counts as
+      // submitted, so removing it clears the server copy.
       if (
+        !restoredFileKeys.has(servar.key) &&
         fileDeduplicationCount[servar.key] === undefined &&
         !hasPreviousSuccess
       ) {

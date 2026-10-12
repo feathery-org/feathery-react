@@ -2,7 +2,7 @@
  * Event queue for holding events before user interaction
  */
 
-export interface QueuedEvent {
+interface QueuedEvent {
   eventData: any;
   timestamp: number;
   resolve: (value: any) => void;

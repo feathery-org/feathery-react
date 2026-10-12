@@ -8,7 +8,7 @@ type AssistantClientCallbacks = {
   changeValue: (value: any, field: any, index?: number | null) => void;
 };
 
-export type TableHandlers = {
+type TableHandlers = {
   // The columns the grid is actually rendering, which on a Hub table are
   // resolved from the live Hub schema rather than the ones stored on the element
   columns: Column[];

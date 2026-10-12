@@ -42,12 +42,9 @@ import {
 } from './editorAdapter';
 import { isApplyingNativeStructuralMutations } from './nativeStructuralAdapter';
 
-export type {
-  TableDeleteImpact,
-  OrphanedFormula
-} from './core/tableDeleteImpact';
+export type { TableDeleteImpact } from './core/tableDeleteImpact';
 
-export interface TableDeleteGuardOptions {
+interface TableDeleteGuardOptions {
   /**
    * Asked before a deletion that orphans formulas elsewhere. Resolving false
    * cancels; absent means proceed (headless hosts still get consistent
