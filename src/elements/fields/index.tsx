@@ -480,11 +480,12 @@ export function applyFieldStyles(field: any, styles: any) {
       );
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
+      styles.applyColor('img', 'icon_color', 'color');
       styles.apply('hover', 'hover_image_color', (a: string) => {
         if (!a) return {};
         const level = a === 'black' ? 0 : 100;
         return {
-          img: {
+          'img, [data-feathery-option-icon]': {
             webkitFilter: `brightness(${level}%)`,
             filter: `brightness(${level}%)`
           }
@@ -497,7 +498,7 @@ export function applyFieldStyles(field: any, styles: any) {
         if (!a) return {};
         const level = a === 'black' ? 0 : 100;
         return {
-          img: {
+          'img, [data-feathery-option-icon]': {
             webkitFilter: `brightness(${level}%)`,
             filter: `brightness(${level}%)`
           }
