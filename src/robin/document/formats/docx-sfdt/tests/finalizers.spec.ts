@@ -257,6 +257,21 @@ describe('column fit finalizer', () => {
     expect(fact?.summary).toMatch(/200, 400 .*600.*468.*156, 312/);
   });
 
+  it('a table with its own point width fits its cells into that width, not the text width (matrix-2 T2)', () => {
+    let d = sfdtOf([156, 312]).replace('"tableFormat":{}', '"tableFormat":{"preferredWidth":400,"preferredWidthType":"Point"}');
+    const host = { serialize: () => d, open: (x: string) => { d = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+    const table = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[0];
+    const columns = [0, 1].map((k) => arr<NfNode>(table.rows).map((r) => arr<NfNode>(r.cells)[k]));
+    const setWidth = (cells: NfNode[], width: number) => ({ kind: 'set', target: { ids: cells.map((c) => c.id), shape: Object.fromEntries(cells.map((c) => [c.id, shapeOf(c, docxTree)])) }, props: { preferredWidth: width, preferredWidthType: 'Point' } });
+    // 500 asked: under the 468 of text, over the table's own 400
+    const r = prepareWrite(s, { intent: 'Set the widths.', scope: { ids: columns.flat().map((c) => c.id) }, changes: [setWidth(columns[0], 200), setWidth(columns[1], 300)] } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+    const widths = arr<NfNode>(arr<NfNode>(arr<NfNode>(r.intended.root.sections)[0].blocks)[0].rows).map((row) => arr<NfNode>(row.cells).map((c) => r.intended.formats[String(c.style)]?.preferredWidth));
+    expect(widths).toEqual([[160, 240], [160, 240]]);
+    expect(r.facts.find((f) => f.name === 'column-fit')?.summary).toMatch(/200, 300 pt \(500 pt\).*400 pt.*160, 240/);
+  });
+
   it('leaves a table that still fits, and one that did not fit before, as written', () => {
     expect(addColumn([100, 100]).widths).toEqual([[100, 100, 100], [100, 100, 100]]);
     expect(addColumn([300, 300]).facts.some((f) => f.name === 'column-fit')).toBe(false);

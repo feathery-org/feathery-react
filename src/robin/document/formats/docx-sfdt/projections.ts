@@ -27,6 +27,7 @@
  */
 import type { Normalization } from '../../pack';
 import type { FormatEntry, NfNode, NormalForm } from '../../tree';
+import { canonicalJson } from '../../tree';
 import {
   FEATURE_KEYS,
   HEADER_FOOTER,
@@ -332,8 +333,8 @@ const emptyDeep = (v: unknown): boolean =>
   isObject(v) && Object.values(v).every(emptyDeep);
 
 /**
- * N11: a paragraph whose format is only the Normal style, with empty borders and an empty list
- * format beside it, is the same as one with no format: the editor gives a paragraph written
+ * N11: a paragraph whose format is only the Normal style (or nothing), with empty borders and an
+ * empty list format beside it, is the same as one with no format: the editor gives a paragraph written
  * without one exactly that (measured in the headless lane), and Normal is the default style.
  */
 export const N11: Normalization = {
@@ -344,15 +345,66 @@ export const N11: Normalization = {
         return false;
       const entry = out.formats[n.style];
       if (!entry) return false;
+      // nothing but empty members, or only the Normal style beside them (an empty paragraph has
+      // already lost its Normal to N5)
       const rest = Object.entries(entry).filter(([, v]) => !emptyDeep(v));
       if (
-        rest.length !== 1 ||
-        rest[0][0] !== 'styleName' ||
-        rest[0][1] !== 'Normal'
+        rest.length > 1 ||
+        (rest.length === 1 &&
+          (rest[0][0] !== 'styleName' || rest[0][1] !== 'Normal'))
       )
         return false;
       delete n.style;
       return true;
+    })
+};
+
+/** What the editor fills into a table, row or cell format written without it (measured in the lane). */
+const TABLE_PART_DEFAULTS: Readonly<
+  Record<string, Readonly<Record<string, unknown>>>
+> = {
+  [KIND.table]: {
+    topMargin: 0,
+    bottomMargin: 0,
+    leftMargin: 5.4,
+    rightMargin: 5.4
+  },
+  [KIND.row]: { gridBefore: 0, gridAfter: 0 },
+  [KIND.cell]: { columnSpan: 1, rowSpan: 1 }
+};
+
+/**
+ * N12: a table, row or cell format the editor fills in is the same as one written without the
+ * fill: borders with every side empty, an empty shading, a shading's `empty` foreground and
+ * `TextureNone` texture, a cell spanning one column and one row, no grid before or after a row,
+ * and a table's default margins (measured: a table written with only widths and a fill reads back
+ * with exactly these). A value the write set to anything else still counts.
+ */
+export const N12: Normalization = {
+  name: 'N12',
+  apply: (nf) =>
+    eachNode(nf, (n, _s, out) => {
+      const defaults = TABLE_PART_DEFAULTS[n.kind];
+      if (!defaults || typeof n.style !== 'string') return false;
+      const entry = out.formats[n.style];
+      if (!entry) return false;
+      const next: FormatEntry = {};
+      for (const [k, v] of Object.entries(entry)) {
+        if (k in defaults && JSON.stringify(v) === JSON.stringify(defaults[k]))
+          continue;
+        if (k === 'borders' && emptyDeep(v)) continue;
+        if (k === 'shading' && isObject(v)) {
+          const shading = { ...v };
+          if (shading.foregroundColor === 'empty')
+            delete shading.foregroundColor;
+          if (shading.texture === 'TextureNone') delete shading.texture;
+          if (Object.keys(shading).length) next[k] = shading;
+          continue;
+        }
+        next[k] = v;
+      }
+      if (canonicalJson(next) === canonicalJson(entry)) return false;
+      return rewriteRef(out, n, 'style', () => next);
     })
 };
 
@@ -442,7 +494,8 @@ export const NORMALIZATIONS: readonly Normalization[] = [
   N4,
   N5,
   N6,
-  N11
+  N11,
+  N12
 ];
 export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7, N9];
 

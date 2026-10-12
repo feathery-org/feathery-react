@@ -16,6 +16,7 @@ import {
   N7,
   N9,
   N11,
+  N12,
   NORMALIZATIONS,
   UNDO_NORMALIZATIONS,
   accept,
@@ -234,9 +235,37 @@ describe('normalizations (each a true positive and a true negative)', () => {
     // true negative: what the editor gives a paragraph written without a format
     expect(styleOf(withStyle(editorDefault))).toBe(styleOf(withStyle(undefined)));
     // true positive: another style, or a real border, still counts
+    // an empty paragraph, which N5 has left without its Normal
+    expect(styleOf(withStyle({ borders: editorDefault.borders, listFormat: {} }))).toBe(styleOf(withStyle(undefined)));
     expect(styleOf(withStyle({ ...editorDefault, styleName: 'Heading 1' }))).toBe('probe');
     expect(styleOf(withStyle({ ...editorDefault, borders: { top: { lineStyle: 'Single' } } }))).toBe('probe');
     expect(NORMALIZATIONS.map((n) => n.name)).toContain('N11');
+  });
+
+  it('N12 the editor\'s fill of a new table, row or cell format is the same as none (matrix-2 T10)', () => {
+    const nf = fresh();
+    const cell = all(nf).find((n) => n.kind === 'cell' && typeof n.style === 'string') as NfNode;
+    const row = all(nf).find((n) => n.kind === 'row' && typeof n.style === 'string') as NfNode;
+    const table = all(nf).find((n) => n.kind === 'table' && typeof n.style === 'string') as NfNode;
+    const sides = { top: {}, left: {}, right: {}, bottom: {}, diagonalDown: {}, diagonalUp: {}, horizontal: {}, vertical: {} };
+    const entryOf = (d: NormalForm, id: string) => d.formats[String((all(d).find((n) => n.id === id) as NfNode).style)];
+    const withEntry = (id: string, entry: Record<string, unknown>) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.probe = entry;
+      (all(d).find((n) => n.id === id) as NfNode).style = 'probe';
+      return N12.apply(d);
+    };
+    // true negatives: measured in the lane, a format written with only widths and a fill reads back so
+    const written = { preferredWidth: 174, preferredWidthType: 'Point', verticalAlignment: 'Center', shading: { backgroundColor: '#001B49FF' } };
+    const read = { borders: sides, shading: { backgroundColor: '#001B49FF', foregroundColor: 'empty', texture: 'TextureNone' }, preferredWidth: 174, preferredWidthType: 'Point', columnSpan: 1, rowSpan: 1, verticalAlignment: 'Center' };
+    expect(entryOf(withEntry(cell.id, read), cell.id)).toEqual(entryOf(withEntry(cell.id, written), cell.id));
+    expect(entryOf(withEntry(row.id, { isHeader: true, borders: sides, gridBefore: 0, gridAfter: 0 }), row.id)).toEqual({ isHeader: true });
+    expect(entryOf(withEntry(table.id, { borders: sides, shading: {}, topMargin: 0, rightMargin: 5.4, leftMargin: 5.4, bottomMargin: 0, preferredWidth: 100, preferredWidthType: 'Percent' }), table.id)).toEqual({ preferredWidth: 100, preferredWidthType: 'Percent' });
+    // true positives: a real border, a span, a margin still count
+    expect(entryOf(withEntry(cell.id, { ...read, columnSpan: 2 }), cell.id)).toEqual(expect.objectContaining({ columnSpan: 2 }));
+    expect(entryOf(withEntry(cell.id, { ...read, borders: { ...sides, top: { lineStyle: 'Single' } } }), cell.id)).toEqual(expect.objectContaining({ borders: expect.anything() }));
+    expect(entryOf(withEntry(table.id, { leftMargin: 7 }), table.id)).toEqual({ leftMargin: 7 });
+    expect(NORMALIZATIONS.map((n) => n.name)).toContain('N12');
   });
 
   it('N9 a paragraph property an undo writes back explicitly as the value it inherits, only in undo comparisons', () => {

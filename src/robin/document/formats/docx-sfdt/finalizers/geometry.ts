@@ -221,7 +221,20 @@ export const columnFitFinalizer: Finalizer = {
       const total = Array.isArray(grid)
         ? grid.reduce((n: number, w) => n + (Number(w) || 0), 0)
         : 0;
-      const room = contentWidth(before, table.id);
+      // the width the editor lays the table into: the text width, or the table's own preferred
+      // width when it sets one (a point width, or a percent of the text width), whichever is less
+      // (measured, matrix-2 T2: a table of 468 pt in a 522 pt text width lays its cells out in 468)
+      const text = contentWidth(before, table.id);
+      const own = typeof table.style === 'string' ? now[table.style] ?? {} : {};
+      const ownWidth = Number(own.preferredWidth);
+      const room =
+        text === null
+          ? null
+          : own.preferredWidthType === 'Point' && ownWidth > 0
+          ? Math.min(text, ownWidth)
+          : own.preferredWidthType === 'Percent' && ownWidth > 0
+          ? Math.min(text, (text * ownWidth) / 100)
+          : text;
       if (!(total > 0) || room === null) continue;
       const rows = arr<NfNode>(table.rows).filter((r) => before.get(r.id));
       const added = (row: NfNode) => {
@@ -279,7 +292,7 @@ export const columnFitFinalizer: Finalizer = {
                 fixedWidth + otherWidth
               )} pt) is wider than the ${round(
                 room
-              )} pt between the margins, so the columns are ${fixed
+              )} pt the table has, so the columns are ${fixed
                 .map((c) => points(c))
                 .join(', ')} pt, in the same proportions`
             );
