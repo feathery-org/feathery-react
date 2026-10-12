@@ -41,8 +41,8 @@ class ByteHost {
   }
 }
 
-function mount() {
-  const host = new ByteHost(flagship);
+function mount(doc = flagship) {
+  const host = new ByteHost(doc);
   const session = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'env' }, editorId: 'ed' });
   let turn = 0;
   const call = (verb: string, input: unknown): VerbResult => {
@@ -76,6 +76,33 @@ describe('the format pack', () => {
     expect(hits.hits.some((h) => h.kind === 'paragraph')).toBe(true);
     const formulas = call('find', { feature: { name: 'formula' } }) as { total: number };
     expect(formulas.total).toBeGreaterThan(10);
+  });
+
+  it('finds a formula by its feature whatever the control is titled (QA-1: the client titles controls by name)', () => {
+    const control = (tag: string, title: string, text: string) => ({ inlines: [{ text }], contentControlProperties: { lockContents: true, tag, color: '#00000000', title, type: 'Text' } });
+    const doc = JSON.stringify({
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'Auto ' }, control('[[name=AutoPremium|type=currency]]', 'AutoPremium', '$1,000.00')] },
+            { inlines: [{ text: 'Home ' }, control('[[name=HomePremium|type=currency]]', 'HomePremium', '$2,000.00')] },
+            { inlines: [{ text: 'Total ' }, control('[[name=TotalAnnualPremium|expr=sum(AutoPremium,HomePremium)]]', 'TotalAnnualPremium', '$3,000.00')] }
+          ]
+        }
+      ]
+    });
+    const { call } = mount(doc);
+    const all = call('find', { feature: { name: 'formula' } }) as { total: number; hits: Array<{ kind: string }> };
+    expect(all.total).toBe(1);
+    expect(all.hits[0].kind).toBe('control');
+    expect((call('find', { feature: { name: 'formula', value: 'TotalAnnualPremium' } }) as { total: number }).total).toBe(1);
+    expect((call('find', { feature: { name: 'binding' } }) as { total: number }).total).toBe(3);
+  });
+
+  const williams = path.join(process.env.ROBIN_DOCUMENT_PRIVATE_CORPUS ?? '/nonexistent', 'hilb-williams.sfdt.json');
+  (fs.existsSync(williams) ? it : it.skip)('finds the client document\'s TotalAnnualPremium formula (private corpus only)', () => {
+    const { call } = mount(fs.readFileSync(williams, 'utf8'));
+    expect((call('find', { feature: { name: 'formula', value: 'TotalAnnualPremium' } }) as { total: number }).total).toBe(1);
   });
 
   it('refuses deleting a bound table that formulas read, naming them (WP2 T9)', () => {
