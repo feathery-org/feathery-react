@@ -85,13 +85,20 @@ jest.mock('./index', () => {
         React.createElement('button', {
           key: 'terminal',
           'data-testid': `terminal:${terminalAction}`,
-          onClick: () => onTerminalAction()
+          // DocxEditor routes a failed terminal action to onError.
+          onClick: () =>
+            Promise.resolve(onTerminalAction()).catch((e: Error) =>
+              onError?.(e.message)
+            )
         }),
       onTerminalActionDraft &&
         React.createElement('button', {
           key: 'draft',
           'data-testid': 'terminal:draft-menu',
-          onClick: () => onTerminalActionDraft()
+          onClick: () =>
+            Promise.resolve(onTerminalActionDraft()).catch((e: Error) =>
+              onError?.(e.message)
+            )
         }),
       onChange &&
         React.createElement('button', {
@@ -147,10 +154,11 @@ jest.mock('./index', () => {
 // pdf.js; exposes its props for assertion.
 jest.mock('./SignedEnvelopeView', () => {
   const React = jest.requireActual('react');
-  return function MockSignedEnvelopeView({ pdfUrl, signed }: any) {
+  return function MockSignedEnvelopeView({ pdfUrl, downloadUrl, status }: any) {
     return React.createElement('div', {
       'data-testid': `signed-view:${pdfUrl}`,
-      'data-signed': String(!!signed)
+      'data-download': downloadUrl,
+      'data-status': String(status)
     });
   };
 });
@@ -962,8 +970,8 @@ describe('DocumentEditorContainer signing outcomes', () => {
     // The editor is gone, so it can't re-fetch the deleted docx and fail.
     expect(queryByTestId(`editor:${url}`)).toBeNull();
     expect(getByTestId('signed-view:https://x/signed.pdf')).toHaveAttribute(
-      'data-signed',
-      'false'
+      'data-status',
+      'awaiting'
     );
   });
 
@@ -987,8 +995,8 @@ describe('DocumentEditorContainer signing outcomes', () => {
     // Finalized but not yet signed → awaiting-signature PDF view.
     await waitFor(() =>
       expect(getByTestId('signed-view:https://x/signable.pdf')).toHaveAttribute(
-        'data-signed',
-        'false'
+        'data-status',
+        'awaiting'
       )
     );
 
@@ -1007,10 +1015,158 @@ describe('DocumentEditorContainer signing outcomes', () => {
 
     await waitFor(() =>
       expect(getByTestId('signed-view:https://x/signed.pdf')).toHaveAttribute(
-        'data-signed',
-        'true'
+        'data-status',
+        'signed'
       )
     );
+  });
+
+  const finalizedPdf = (file = 'https://x/signable.pdf') => ({
+    id: `envelope-${CONTAINER}`,
+    file,
+    editor_file: null,
+    type: 'pdf',
+    signed: false,
+    signer_id: null,
+    invited: true
+  });
+  const focus = () =>
+    act(async () => {
+      featheryWindow().dispatchEvent(new Event('focus'));
+    });
+
+  it('keeps the editor and shows the error when the DocuSign send fails', async () => {
+    const url = `https://example.com/${CONTAINER}.docx`;
+    mockFinalizeEnvelope.mockResolvedValue(finalizedPdf());
+    mockFinalizeEnvelopeReview.mockResolvedValue({
+      status: 'error',
+      message: 'DocuSign rejected the send'
+    });
+    seed({ sign_method: 'docusign', editor_toolbar_actions: ['sign'] });
+    const { getByTestId, getByRole, queryByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId(`editor:${url}`)).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    await waitFor(() =>
+      expect(getByRole('alert')).toHaveTextContent('DocuSign rejected the send')
+    );
+    expect(getByTestId(`editor:${url}`)).toBeTruthy();
+    expect(queryByTestId('signed-view:https://x/signable.pdf')).toBeNull();
+  });
+
+  it('keeps the editor and its Sign button after Save as Draft', async () => {
+    const url = `https://example.com/${CONTAINER}.docx`;
+    mockFinalizeEnvelope.mockResolvedValue(finalizedPdf());
+    mockFinalizeEnvelopeReview.mockResolvedValue({ status: 'created' });
+    seed({
+      sign_method: 'docusign',
+      editor_toolbar_actions: ['sign', 'draft']
+    });
+    const { getByTestId } = mount();
+
+    await waitFor(() =>
+      expect(getByTestId('terminal:draft-menu')).toBeTruthy()
+    );
+    getByTestId('terminal:draft-menu').click();
+
+    await waitFor(() =>
+      expect(showEnvelopeOutcome).toHaveBeenCalledWith('Saved as Draft', [
+        `document-${CONTAINER}`
+      ])
+    );
+    expect(getByTestId(`editor:${url}`)).toBeTruthy();
+    expect(getByTestId('terminal:sign')).toBeTruthy();
+  });
+
+  it('labels a DocuSign send and does not poll it on focus', async () => {
+    mockFinalizeEnvelope.mockResolvedValue(finalizedPdf());
+    seed({ sign_method: 'docusign', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    await waitFor(() =>
+      expect(getByTestId('signed-view:https://x/signable.pdf')).toHaveAttribute(
+        'data-status',
+        'docusign'
+      )
+    );
+    mockGetCurrentEnvelope.mockClear();
+    await focus();
+    expect(mockGetCurrentEnvelope).not.toHaveBeenCalled();
+  });
+
+  it('keeps the awaiting-signature view when a focus refresh fails or comes back empty', async () => {
+    mockFinalizeEnvelope.mockResolvedValue(finalizedPdf());
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId, queryByRole } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+    await waitFor(() =>
+      expect(getByTestId('signed-view:https://x/signable.pdf')).toBeTruthy()
+    );
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetCurrentEnvelope.mockRejectedValueOnce(new Error('Failed to fetch'));
+    await focus();
+    mockGetCurrentEnvelope.mockResolvedValueOnce(undefined);
+    await focus();
+
+    expect(getByTestId('signed-view:https://x/signable.pdf')).toHaveAttribute(
+      'data-status',
+      'awaiting'
+    );
+    expect(queryByRole('alert')).toBeNull();
+  });
+
+  it('keeps the loaded PDF when only the presigned query changes', async () => {
+    const presigned = (sig: string) =>
+      `https://x/envelopes/e1/signable.pdf?X-Amz-Signature=${sig}`;
+    mockFinalizeEnvelope.mockResolvedValue(finalizedPdf(presigned('first')));
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+    await waitFor(() =>
+      expect(getByTestId(`signed-view:${presigned('first')}`)).toBeTruthy()
+    );
+
+    mockGetCurrentEnvelope.mockResolvedValue({
+      ...finalizedPdf(presigned('second'))
+    });
+    await focus();
+
+    const view = getByTestId(`signed-view:${presigned('first')}`);
+    await waitFor(() =>
+      expect(view).toHaveAttribute('data-download', presigned('second'))
+    );
+  });
+
+  it('shows a PDF it did not send without a status and without polling', async () => {
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
+    mockGetCurrentEnvelope.mockResolvedValue({
+      id: `envelope-${CONTAINER}`,
+      file: 'https://x/reopened.pdf',
+      editor_file: null,
+      type: 'pdf',
+      signed: false
+    });
+    const { getByTestId } = mount();
+
+    await waitFor(() =>
+      expect(getByTestId('signed-view:https://x/reopened.pdf')).toHaveAttribute(
+        'data-status',
+        'null'
+      )
+    );
+    mockGetCurrentEnvelope.mockClear();
+    await focus();
+    expect(mockGetCurrentEnvelope).not.toHaveBeenCalled();
   });
 
   it('carries the signable file on the sign trigger (single file → files list)', async () => {

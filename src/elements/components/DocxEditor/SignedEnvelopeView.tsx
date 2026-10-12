@@ -14,12 +14,22 @@ const SCROLL_PADDING = 24;
 // renders this instead of DocxEditor so the signer sees the resulting PDF
 // rather than a failed attempt to reopen the gone docx. Reuses the pdf.js
 // renderer (DocumentCanvas) without the review overlay's modal/finalize chrome.
+const STATUS_LABELS = {
+  signed: 'Signed',
+  awaiting: 'Awaiting signature',
+  docusign: 'Sent via DocuSign'
+};
+
 export default function SignedEnvelopeView({
   pdfUrl,
-  signed
+  downloadUrl,
+  status
 }: {
   pdfUrl: string;
-  signed: boolean;
+  /** The freshest URL; `pdfUrl` may be an older presign of the same file. */
+  downloadUrl: string;
+  /** Null when nothing says whether this PDF was sent: no pill is shown. */
+  status: keyof typeof STATUS_LABELS | null;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [pageWidth, setPageWidth] = useState(MAX_PDF_WIDTH);
@@ -65,22 +75,27 @@ export default function SignedEnvelopeView({
           background: color.surface
         }}
       >
-        <span
-          css={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            padding: '5px 12px',
-            borderRadius: radius.pill,
-            fontSize: fontSize.sm,
-            fontWeight: 600,
-            color: 'white',
-            backgroundColor: signed ? color.successText : color.primary
-          }}
-        >
-          {signed ? 'Signed' : 'Awaiting signature'}
-        </span>
+        {status ? (
+          <span
+            css={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '5px 12px',
+              borderRadius: radius.pill,
+              fontSize: fontSize.sm,
+              fontWeight: 600,
+              color: 'white',
+              backgroundColor:
+                status === 'signed' ? color.successText : color.primary
+            }}
+          >
+            {STATUS_LABELS[status]}
+          </span>
+        ) : (
+          <span />
+        )}
         <a
-          href={pdfUrl}
+          href={downloadUrl}
           target='_blank'
           rel='noopener noreferrer'
           // Matches the overlay toolbar's Download (secondary button).
