@@ -208,7 +208,10 @@ export const columnFitFinalizer: Finalizer = {
   run(after, { before, formats, residue }) {
     const ids: string[] = [];
     const tables: string[] = [];
+    const fitted: string[] = [];
     const now = after.formats as Formats;
+    const was = before.nf.formats as Formats;
+    const round = (n: number) => Math.round(n * 100) / 100;
     for (const table of tablesOf(after.root)) {
       const old = before.get(table.id);
       if (!old) continue;
@@ -219,7 +222,7 @@ export const columnFitFinalizer: Finalizer = {
         ? grid.reduce((n: number, w) => n + (Number(w) || 0), 0)
         : 0;
       const room = contentWidth(before, table.id);
-      if (!(total > 0) || room === null || total > room + 0.5) continue;
+      if (!(total > 0) || room === null) continue;
       const rows = arr<NfNode>(table.rows).filter((r) => before.get(r.id));
       const added = (row: NfNode) => {
         const had = new Set(
@@ -227,14 +230,64 @@ export const columnFitFinalizer: Finalizer = {
         );
         return arr<NfNode>(row.cells).filter((c) => !had.has(c.id));
       };
-      // a column: a new cell in every row the table kept
-      if (!rows.length || rows.some((r) => !added(r).length)) continue;
       const points = (cell: NfNode): number => {
         const w = widthOf(now, cell);
         if (w.type === 'Percent') return (Number(w.width) / 100) * total;
         if (w.type === 'Point') return Number(w.width);
         return Number(hiddenIn(residue, cell.id, 'cellFormat', 'cellWidth'));
       };
+      // a column: a new cell in every row the table kept
+      if (!rows.length || rows.some((r) => !added(r).length)) {
+        // widths set wider than the text: the editor would lay the row out narrower than asked,
+        // so the row's point widths scale to fit and the fact says the widths that fit
+        let scaled = false;
+        for (const row of rows) {
+          const cells = arr<NfNode>(row.cells);
+          const set = cells.some((c) => {
+            const b = before.get(c.id);
+            return (
+              b &&
+              JSON.stringify(widthOf(was, b)) !==
+                JSON.stringify(widthOf(now, c))
+            );
+          });
+          if (!set) continue;
+          const fixed = cells.filter((c) => widthOf(now, c).type === 'Point');
+          const fixedWidth = fixed.reduce((n, c) => n + points(c), 0);
+          const otherWidth = cells
+            .filter((c) => !fixed.includes(c))
+            .reduce((n, c) => n + points(c), 0);
+          if (!Number.isFinite(fixedWidth + otherWidth) || !fixed.length)
+            continue;
+          if (fixedWidth + otherWidth <= room + 0.5) continue;
+          const factor = (room - otherWidth) / fixedWidth;
+          if (!(factor > 0)) continue;
+          const asked = fixed.map((c) => round(points(c)));
+          for (const cell of fixed) {
+            cell.style = formats.intern({
+              ...(typeof cell.style === 'string'
+                ? formats.get(cell.style) ?? {}
+                : {}),
+              preferredWidth: round(points(cell) * factor),
+              preferredWidthType: 'Point'
+            });
+            ids.push(cell.id);
+          }
+          if (!scaled)
+            fitted.push(
+              `table ${table.id}: asked ${asked.join(', ')} pt (${round(
+                fixedWidth + otherWidth
+              )} pt) is wider than the ${round(
+                room
+              )} pt between the margins, so the columns are ${fixed
+                .map((c) => points(c))
+                .join(', ')} pt, in the same proportions`
+            );
+          scaled = true;
+        }
+        continue;
+      }
+      if (total > room + 0.5) continue;
       let changed = false;
       for (const row of rows) {
         const fresh = added(row);
@@ -269,19 +322,27 @@ export const columnFitFinalizer: Finalizer = {
       }
       if (changed) tables.push(table.id);
     }
+    const summaries = [
+      ...(tables.length
+        ? [
+            `the other columns of ${tables
+              .map((t) => `table ${t}`)
+              .join(
+                ', '
+              )} narrowed in proportion so the new column fits between the margins`
+          ]
+        : []),
+      ...fitted
+    ];
     return {
       ids,
-      facts: tables.length
+      facts: summaries.length
         ? [
             {
               kind: 'finalizer',
               name: 'column-fit',
               ids,
-              summary: `the other columns of ${tables
-                .map((t) => `table ${t}`)
-                .join(
-                  ', '
-                )} narrowed in proportion so the new column fits between the margins`
+              summary: summaries.join('; ')
             }
           ]
         : []

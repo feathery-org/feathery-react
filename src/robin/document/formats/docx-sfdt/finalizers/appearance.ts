@@ -1,8 +1,9 @@
 /**
- * Restripe (architecture 5.1a, conventions as container properties): when a change set adds,
- * removes or reorders rows of a banded table, the body rows take the banding the table had before,
- * by derived row role. Header and total rows keep their own look; a table with no detectable
- * banding is left alone. Banding detection and row roles are the moved `tableAppearance` and
+ * Restripe (architecture 5.1a, conventions as container properties; the end-of-change-set
+ * appearance the engine owns): when a change set adds, removes or reorders rows of a banded table,
+ * or splits one, the body rows take the banding the table had before, by derived row role; when it
+ * only adds cells, each new cell takes its row's look (its band's fill, its neighbour's borders).
+ * Header and total rows keep their own look; a table with no detectable banding is left alone. Banding detection and row roles are the moved `tableAppearance` and
  * `tableStructure` modules, unchanged.
  */
 import type { Finalizer, FormatTable } from '../../../pack';
@@ -93,29 +94,81 @@ function setShading(
   return true;
 }
 
+/** A cell's format entry with `key` taken from `from` (or removed when `from` has none). */
+function takeFrom(
+  cell: NfNode,
+  from: NfNode,
+  key: string,
+  formats: FormatTable
+): boolean {
+  const entry = {
+    ...(typeof cell.style === 'string' ? formats.get(cell.style) ?? {} : {})
+  };
+  const source =
+    typeof from.style === 'string' ? formats.get(from.style) ?? {} : {};
+  if (JSON.stringify(entry[key]) === JSON.stringify(source[key])) return false;
+  if (source[key] === undefined) delete entry[key];
+  else entry[key] = JSON.parse(JSON.stringify(source[key]));
+  cell.style = formats.intern(entry);
+  return true;
+}
+
 export const restripeFinalizer: Finalizer = {
   name: 'restripe',
   run(after, { before, formats }) {
-    const ids: string[] = [];
+    const ids = new Set<string>();
     const rowIds = (t: NfNode) =>
       arr<NfNode>(t.rows)
         .map((r) => r.id)
         .join(',');
-    // only tables whose rows were added, removed or reordered restripe
-    const tables: NfNode[] = [];
+    /** The table a row sat in before, when it sat in one. */
+    const tableOfRow = (rowId: string): NfNode | null => {
+      const parent = before.placement(rowId)?.parent;
+      return parent && parent.kind === KIND.table ? parent : null;
+    };
+    /**
+     * Which tables restripe and from which table's banding: a table whose rows were added, removed
+     * or reordered restripes whole; one that came out of a split (a new table holding rows of a
+     * table before) restripes whole from that table's banding; one that only gained cells gives
+     * each new cell its row's look.
+     */
+    const work: Array<{ table: NfNode; source: NfNode; whole: boolean }> = [];
     const rec = (n: unknown) => {
       if (Array.isArray(n)) return n.forEach(rec);
       if (!isObject(n)) return;
       if (n.kind === KIND.table) {
-        const old = before.get(n.id as string);
-        if (old && rowIds(old) !== rowIds(n as NfNode))
-          tables.push(n as NfNode);
+        const table = n as NfNode;
+        const old = before.get(table.id);
+        if (old) {
+          if (rowIds(old) !== rowIds(table))
+            work.push({ table, source: old, whole: true });
+          else if (
+            arr<NfNode>(table.rows).some(
+              (r) =>
+                arr<NfNode>(r.cells)
+                  .map((c) => c.id)
+                  .join(',') !==
+                arr<NfNode>(before.get(r.id)?.cells)
+                  .map((c) => c.id)
+                  .join(',')
+            )
+          )
+            work.push({ table, source: old, whole: false });
+        } else {
+          const counts = new Map<NfNode, number>();
+          for (const r of arr<NfNode>(table.rows)) {
+            const from = tableOfRow(r.id);
+            if (from) counts.set(from, (counts.get(from) ?? 0) + 1);
+          }
+          const source = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+          if (source) work.push({ table, source: source[0], whole: true });
+        }
       }
       for (const [k, v] of Object.entries(n))
         if (k !== 'binding' && k !== 'pending') rec(v);
     };
     rec(after.root);
-    if (!tables.length) return { ids, facts: [] };
+    if (!work.length) return { ids: [], facts: [] };
     // the document before is a settled view, its binding state cached; the working copy is read
     // once, before any cell is restriped
     const beforeNative = bindingState(before.nf).native;
@@ -149,10 +202,9 @@ export const restripeFinalizer: Finalizer = {
     };
     walk(after.root, null, null, 0);
     const working = { placement: (id: string) => index.get(id) };
-    for (const table of tables) {
-      const old = before.get(table.id) as NfNode;
+    for (const { table, source, whole } of work) {
       const appearance = collectTableAppearance(
-        nativeAt(beforeNative, pathOf(before, old.id))
+        nativeAt(beforeNative, pathOf(before, source.id))
       );
       const banding = appearance ? detectTableBanding(appearance) : null;
       if (!banding) continue;
@@ -160,7 +212,7 @@ export const restripeFinalizer: Finalizer = {
       if (!block) continue;
       // each fill as this table writes it, from a cell that has it
       const exemplars = new Map<string, unknown>();
-      for (const r of arr<NfNode>(old.rows))
+      for (const r of arr<NfNode>(source.rows))
         for (const c of arr<NfNode>(r.cells)) {
           const shading =
             typeof c.style === 'string'
@@ -175,24 +227,43 @@ export const restripeFinalizer: Finalizer = {
         tableId: null
       }).rows;
       arr<NfNode>(table.rows).forEach((row, i) => {
+        const had = new Set(
+          arr<NfNode>(before.get(row.id)?.cells).map((c) => c.id)
+        );
+        const cells = arr<NfNode>(row.cells);
+        const fresh = cells.filter((c) => !had.has(c.id));
+        // a new cell in a row that has others looks like its row: the nearest kept cell's fill
+        // and borders (in a banded body row that fill is the row's band)
+        if (had.size)
+          for (const cell of fresh) {
+            const at = cells.indexOf(cell);
+            const kept =
+              [...cells.slice(0, at)].reverse().find((c) => had.has(c.id)) ??
+              cells.slice(at + 1).find((c) => had.has(c.id));
+            if (!kept) continue;
+            if (takeFrom(cell, kept, 'borders', formats)) ids.add(cell.id);
+            if (takeFrom(cell, kept, 'shading', formats)) ids.add(cell.id);
+          }
+        if (!whole) return;
         const role = roles[i]?.role;
         if (i < banding.headerRows || role === 'aggregate' || role === 'header')
           return;
         const want = bandedShadingForRow(banding, i);
         if (want === undefined) return;
-        for (const cell of arr<NfNode>(row.cells))
-          if (setShading(cell, want, exemplars, formats)) ids.push(cell.id);
+        for (const cell of cells)
+          if (setShading(cell, want, exemplars, formats)) ids.add(cell.id);
       });
     }
+    const changed = [...ids];
     return {
-      ids,
-      facts: ids.length
+      ids: changed,
+      facts: changed.length
         ? [
             {
               kind: 'finalizer',
               name: 'restripe',
-              ids,
-              summary: `${ids.length} cell(s) restriped to the table's banding`
+              ids: changed,
+              summary: `${changed.length} cell(s) restriped to the table's banding`
             }
           ]
         : []

@@ -241,8 +241,70 @@ describe('column fit finalizer', () => {
     expect(facts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'finalizer', name: 'column-fit' })]));
   });
 
+  it('a width set wider than the text scales the row to fit and says the widths it fitted (matrix-1 T2)', () => {
+    let d = sfdtOf([156, 312]);
+    const host = { serialize: () => d, open: (x: string) => { d = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+    const table = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[0];
+    const columns = [0, 1].map((k) => arr<NfNode>(table.rows).map((r) => arr<NfNode>(r.cells)[k]));
+    const setWidth = (cells: NfNode[], width: number) => ({ kind: 'set', target: { ids: cells.map((c) => c.id), shape: Object.fromEntries(cells.map((c) => [c.id, shapeOf(c, docxTree)])) }, props: { preferredWidth: width, preferredWidthType: 'Point' } });
+    const r = prepareWrite(s, { intent: 'Set the widths.', scope: { ids: columns.flat().map((c) => c.id) }, changes: [setWidth(columns[0], 200), setWidth(columns[1], 400)] } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+    const widths = arr<NfNode>(arr<NfNode>(arr<NfNode>(r.intended.root.sections)[0].blocks)[0].rows).map((row) => arr<NfNode>(row.cells).map((c) => r.intended.formats[String(c.style)]?.preferredWidth));
+    // 600 asked on 468 between the margins: 1:2 kept
+    expect(widths).toEqual([[156, 312], [156, 312]]);
+    const fact = r.facts.find((f) => f.name === 'column-fit');
+    expect(fact?.summary).toMatch(/200, 400 .*600.*468.*156, 312/);
+  });
+
   it('leaves a table that still fits, and one that did not fit before, as written', () => {
     expect(addColumn([100, 100]).widths).toEqual([[100, 100, 100], [100, 100, 100]]);
     expect(addColumn([300, 300]).facts.some((f) => f.name === 'column-fit')).toBe(false);
+  });
+});
+
+describe('restripe on cell changes and splits (matrix-1 T3, T4, T11: the model\'s own writes)', () => {
+  const run = JSON.parse(fs.readFileSync(path.join(__dirname, 'runs', 'matrix-1-run.json'), 'utf8')) as { writes: Array<{ task: string; fixture: string; input: WriteInput }> };
+  const replay = (task: string, only?: (input: WriteInput) => WriteInput) => {
+    const found = run.writes.find((x) => x.task === task) as { fixture: string; input: WriteInput };
+    const w = { ...found, input: only ? only(found.input) : found.input };
+    let doc = fs.readFileSync(path.join(__dirname, 'corpus', w.fixture), 'utf8');
+    const host = { serialize: () => doc, open: (s: string) => { doc = s; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+    const r = prepareWrite(s, w.input);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+    return { before: s, r };
+  };
+  const borders = (formats: Record<string, Record<string, unknown>>, cell: NfNode) => JSON.stringify(formats[String(cell.style)]?.borders ?? null);
+  // the property table's body rows before: Buildings, Contents, Stock, Business interruption, Machinery breakdown
+  const BANDS = ['NONE', '#E6E6E6FF', 'NONE', '#E6E6E6FF', 'NONE'];
+
+  it.each(['T3', 'T11'])('%s: a new column\'s cells take their row\'s fill and borders', (task) => {
+    const { before, r } = replay(task);
+    const table = tableAt(r.intended.root, 1, 10);
+    const old = before.view.get(table.id) as NfNode;
+    const rows = arr<NfNode>(table.rows);
+    rows.forEach((row, i) => {
+      const cells = arr<NfNode>(row.cells);
+      const had = new Set(arr<NfNode>(arr<NfNode>(old.rows)[i]?.cells).map((c) => c.id));
+      const kept = cells.filter((c) => had.has(c.id));
+      const fresh = cells.filter((c) => !had.has(c.id));
+      for (const c of fresh) {
+        expect([task, i, fill(r.intended.formats, c)]).toEqual([task, i, fill(r.intended.formats, kept[kept.length - 1])]);
+        expect(borders(r.intended.formats, c)).toBe(borders(r.intended.formats, kept[kept.length - 1]));
+      }
+    });
+    expect(r.facts.some((f) => f.name === 'restripe')).toBe(true);
+  });
+
+  it('T4: both tables that came out of a split carry the banding from their first body row', () => {
+    // the split alone: its two summary rewrites name controls by the ids of the rig's session, whose
+    // fixture the editor had laid out first (ids after the tables run differently there)
+    const { r } = replay('T4', (input) => ({ ...input, scope: { ids: ['n118', 'n187', 'n204', 'n119'] }, changes: input.changes.slice(0, 4) }));
+    const control = arr<NfNode>(arr<NfNode>(r.intended.root.sections)[1].blocks);
+    const tables = control.filter((b) => b.kind === 'control' && arr<NfNode>(b.blocks)[0]?.kind === 'table').map((b) => arr<NfNode>(b.blocks)[0]).slice(0, 2);
+    const bodyFills = (t: NfNode) => arr<NfNode>(t.rows).slice(1).filter((row) => !/subtotal/i.test(JSON.stringify(row))).map((row) => fill(r.intended.formats, arr<NfNode>(row.cells)[0]));
+    expect(bodyFills(tables[0])).toEqual(BANDS.slice(0, 3));
+    expect(bodyFills(tables[1])).toEqual(BANDS.slice(0, 2));
   });
 });
