@@ -277,8 +277,8 @@ export function wholeContentDeleted(
 
 /**
  * True when a control is on its way out: its text is all pending deletion and the live control
- * that replaces it sits right after it (a tracked replacement keeps the old control beside the new
- * one until the card is resolved). A control whose text alone was deleted, with nothing replacing
+ * that replaces it, binding the same name (or table), sits right after it (a tracked replacement
+ * keeps the old control beside the new one until the card is resolved). A control whose text alone was deleted, with nothing replacing
  * it, is still the control, and still an occurrence.
  */
 export function replacedBeside(
@@ -290,8 +290,21 @@ export function replacedBeside(
   return (
     wholeContentDeleted(list[i], deletedRevisionIds) &&
     !!next?.contentControlProperties &&
-    !wholeContentDeleted(next, deletedRevisionIds)
+    !wholeContentDeleted(next, deletedRevisionIds) &&
+    sameBinding(list[i], next)
   );
+}
+
+/** The name or table a control's tag binds, or the raw tag when it binds neither. */
+function bindingIdentity(node: any): string {
+  const tag = String(node?.contentControlProperties?.tag ?? '');
+  const m = /(?:\[\[|\|)\s*(name|table)\s*=\s*([^|\]]+)/.exec(tag);
+  return m ? `${m[1]}=${m[2].trim()}` : tag;
+}
+
+/** Whether two controls bind the same thing: the old and new control of a tracked replacement. */
+function sameBinding(a: any, b: any): boolean {
+  return bindingIdentity(a) === bindingIdentity(b);
 }
 
 function ccText(node: any, deletedRevisionIds: Set<string>): string {

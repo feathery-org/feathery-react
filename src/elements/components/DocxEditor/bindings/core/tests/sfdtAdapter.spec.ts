@@ -86,6 +86,28 @@ describe('scanBindings: tracked deletions', () => {
     expect(scanBindings(doc(false) as any).formulas.get('total')).toHaveLength(2);
   });
 
+  // review regression: a following live control with a different binding is a neighbour, not the
+  // control's replacement
+  it('keeps a control whose text the user deleted when the next control binds something else', () => {
+    const adjacent = {
+      revisions: [{ revisionId: 'r-del', revisionType: 'Deletion', author: 'User' }],
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { contentControlProperties: { tag: '[[name=first|type=text]]' }, inlines: [{ text: 'One', revisionIds: ['r-del'] }] },
+                { contentControlProperties: { tag: '[[name=second|type=text]]' }, inlines: [{ text: 'Two' }] }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const index = scanBindings(adjacent as any);
+    expect(index.occurrences.map((o) => o.name).sort()).toEqual(['first', 'second']);
+  });
+
   // review item 5: the user deleting a control's text with track changes on deletes the text, not
   // the control; only a control replaced beside its successor is on its way out
   it('keeps a control whose text alone the user deleted, tracked', () => {
