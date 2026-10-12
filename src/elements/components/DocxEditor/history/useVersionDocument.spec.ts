@@ -412,6 +412,80 @@ describe('useVersionDocument', () => {
     expect(h.fetchVersionFile).not.toHaveBeenCalled();
   });
 
+  it('shows every folded session, each in its own author', async () => {
+    const text = (t: string) => ({
+      sections: [{ blocks: [{ inlines: [{ text: t }] }] }]
+    });
+    const close = (sessionId: string, from: string, to: string) =>
+      registerLocalVersionArtifacts(sessionId, {
+        finalSfdt: JSON.stringify(text(to)),
+        changes: diffSession(
+          text(from),
+          [{ sfdt: text(to), author: 'you' }],
+          sessionId
+        )
+      });
+    close('fold-a', 'Hello', 'Hello Alice');
+    close('fold-b', 'Hello Alice', 'Hello Alice and Bob');
+    const baseline = version({
+      id: 'v0',
+      session_id: null,
+      seq: 0,
+      is_baseline: true
+    });
+    const alice = version({
+      id: 'va',
+      session_id: 'fold-a',
+      seq: 1,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'alice@x.io'
+    });
+    const bob = version({
+      id: 'vb',
+      session_id: 'fold-b',
+      seq: 2,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'bob@x.io'
+    });
+    const authorsOf = (sfdt?: string) =>
+      Array.from(
+        new Set(JSON.parse(must(sfdt)).revisions.map((r: any) => r.author))
+      ).sort();
+    const h = host();
+
+    const folded = renderHook(() =>
+      useVersionDocument(h, bob, { earlier: [alice], preceding: baseline })
+    );
+    await waitFor(() => expect(folded.result.current.loading).toBe(false));
+    expect(folded.result.current.degraded).toBe(false);
+    expect(authorsOf(folded.result.current.sfdt)).toEqual([
+      'alice@x.io',
+      'bob@x.io'
+    ]);
+
+    const alone = renderHook(() => useVersionDocument(h, bob));
+    await waitFor(() => expect(alone.result.current.loading).toBe(false));
+    expect(authorsOf(alone.result.current.sfdt)).toEqual(['you']);
+    expect(h.fetchVersionFile).not.toHaveBeenCalled();
+    clearLocalVersionArtifacts('fold-a', JSON.stringify(text('Hello Alice')));
+    clearLocalVersionArtifacts(
+      'fold-b',
+      JSON.stringify(text('Hello Alice and Bob'))
+    );
+  });
+
+  it('falls back to the row version when a folded session has no snapshot', async () => {
+    const h = host({ fetchVersionFile: jest.fn() });
+    const lost = version({ id: 'lost', session_id: 'lost', seq: 1 });
+    const own = version({ id: 'own', seq: 2, file: 'own.docx' });
+    const { result } = renderHook(() =>
+      useVersionDocument(h, own, { earlier: [lost], preceding: null })
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe(false);
+    expect(result.current.docxUrl).toBe('own.docx');
+  });
+
   it('moves native tracked-row marks onto cell content in the plain view', async () => {
     // A restored version's SFDT can carry a live tracked table insert. Row-level
     // marks paint a wash across whole rows; the plain view must repaint them as
