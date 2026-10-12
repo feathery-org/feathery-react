@@ -33,6 +33,23 @@ export class IdTable {
 
   private nextFormat = 1;
 
+  /**
+   * Ids whose re-anchoring was a guess: the fresh tree had a different number of equal siblings
+   * than the tree before (the user deleted or added one of two identical paragraphs), so which one
+   * an id now names cannot be told from content. A write naming one is a conflict until the node
+   * has been read again.
+   */
+  private uncertain = new Set<string>();
+
+  isUncertain(id: string): boolean {
+    return this.uncertain.has(id);
+  }
+
+  /** The model has seen these nodes as they are now (a read, or a conflict's live node). */
+  settle(ids: Iterable<string>): void {
+    for (const id of ids) this.uncertain.delete(id);
+  }
+
   mintNode(): string {
     const id = `n${this.nextNode}`;
     this.nextNode += 1;
@@ -103,7 +120,8 @@ export class IdTable {
     previous: NfNode[],
     shape: PackTree,
     used: Set<string>,
-    renamed: Map<string, string>
+    renamed: Map<string, string>,
+    guessed = false
   ): void {
     for (const key of shape.childLists(node)) {
       const list = listAt(node, key);
@@ -120,18 +138,31 @@ export class IdTable {
             candidates.push(c);
           }
       }
-      const match = alignList(kids, candidates, shape, used);
+      // equal siblings counted against the most recent tree (the commit's intended document, or
+      // the document as last read): a different count means the matches among them are guesses
+      const primary = (
+        (previous[0] ? listAt(previous[0], key) : undefined) ?? []
+      ).filter(isPlainObject) as NfNode[];
+      const { match, ambiguous } = alignList(
+        kids,
+        candidates,
+        shape,
+        used,
+        primary
+      );
       kids.forEach((kid, i) => {
         const prev = match[i];
         const id = prev ? prev.id : this.mintNode();
         used.add(id);
         renamed.set(kid.id, id);
+        const unsure = guessed || (!!prev && ambiguous.has(i));
+        if (unsure && prev) this.uncertain.add(id);
         const continued = prev
           ? previous
               .map((p) => findChild(p, shape, prev.id))
               .filter((c): c is NfNode => !!c)
           : [];
-        this.alignChildren(kid, continued, shape, used, renamed);
+        this.alignChildren(kid, continued, shape, used, renamed, unsure);
       });
     }
   }
@@ -159,9 +190,11 @@ function alignList(
   kids: NfNode[],
   candidates: NfNode[],
   shape: PackTree,
-  used: Set<string>
-): Array<NfNode | undefined> {
+  used: Set<string>,
+  primary: NfNode[]
+): { match: Array<NfNode | undefined>; ambiguous: Set<number> } {
   const out: Array<NfNode | undefined> = kids.map(() => undefined);
+  const ambiguous = new Set<number>();
   const taken = new Set<number>();
   const available = (j: number) => !taken.has(j) && !used.has(candidates[j].id);
   const take = (i: number, j: number) => {
@@ -186,8 +219,25 @@ function alignList(
     });
   }
 
-  // 2. equal content, in sequence: the next unused equal candidate after the last match
+  // 2. equal content, in sequence: the next unused equal candidate after the last match. Where
+  // the tree before had a different number of siblings with that content, which of them a fresh
+  // one continues is a guess
   const keys = candidates.map((c) => contentKey(c));
+  const counts = (nodes: NfNode[]) => {
+    const m = new Map<string, number>();
+    for (const n of nodes) {
+      const k = contentKey(n);
+      m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return m;
+  };
+  const fresh = counts(kids);
+  const before = counts(primary);
+  const guess = (key: string) => {
+    const a = fresh.get(key) ?? 0;
+    const b = before.get(key) ?? 0;
+    return a !== b && Math.max(a, b) > 1;
+  };
   let cursor = -1;
   kids.forEach((kid, i) => {
     if (out[i]) {
@@ -202,6 +252,7 @@ function alignList(
     if (j >= 0) {
       take(i, j);
       cursor = j;
+      if (guess(key)) ambiguous.add(i);
     }
   });
 
@@ -226,7 +277,7 @@ function alignList(
         break;
       }
   });
-  return out;
+  return { match: out, ambiguous };
 }
 
 /** Rewrite format references (string values under the pack's reference keys) by `rename`. */

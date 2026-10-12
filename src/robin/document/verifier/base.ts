@@ -61,7 +61,12 @@ export function checkBases(
   view: DocumentView,
   pack: Pack,
   write: WriteInput,
-  outlineHash: string
+  outlineHash: string,
+  /**
+   * Ids whose re-anchoring after the user's edit was a guess: a write naming one is stale
+   * whatever hash it carries, until the node is read again.
+   */
+  uncertain: (id: string) => boolean = () => false
 ): Conflict | null {
   const stale = new Map<string, Conflict['stale'][number]>();
   const bulk: Conflict['bulk'] = [];
@@ -77,7 +82,10 @@ export function checkBases(
     const node = view.get(id);
     if (!node) return; // an unknown id is a refusal, decided before this check
     const now = axis === 'base' ? baseOf(node) : shapeOf(node, pack.tree);
-    if (axis === 'base' ? now !== carried : !shapeMatches(now, carried))
+    if (
+      uncertain(id) ||
+      (axis === 'base' ? now !== carried : !shapeMatches(now, carried))
+    )
       stale.set(id, {
         id,
         [axis]: carried,
@@ -87,6 +95,14 @@ export function checkBases(
   /** `container` is the shape of the node that owns the anchor's list. */
   const compareContainer = (anchor: string, carried: string | undefined) => {
     if (!isNodeId(anchor)) return;
+    // an anchor that may name the other of two equal siblings places the node in the wrong spot
+    const node = view.get(anchor);
+    if (node && uncertain(anchor) && !stale.has(anchor))
+      stale.set(anchor, {
+        id: anchor,
+        shape: shapeOf(node, pack.tree),
+        live: live(node)
+      } as Conflict['stale'][number]);
     const parent = view.placement(anchor)?.parent;
     if (parent) compare(parent.id, 'shape', carried);
   };

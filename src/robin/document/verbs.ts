@@ -86,6 +86,15 @@ export function outlineVerb(
   return renderOutline(state.view, state.pack, input.depth);
 }
 
+/** Every node id in an emitted subtree. */
+function idsUnder(value: unknown): string[] {
+  const out: string[] = [];
+  walkWritten(value, (n) => {
+    if (typeof n.id === 'string') out.push(n.id);
+  });
+  return out;
+}
+
 export function readVerb(state: DocumentState, input: ReadInput): ReadResult {
   const { view, pack } = state;
   const nodes: ReadResult['nodes'] = [];
@@ -109,6 +118,8 @@ export function readVerb(state: DocumentState, input: ReadInput): ReadResult {
       })
     );
   }
+  // what a read returns, the model has now seen as it is
+  state.ids.settle(idsUnder(nodes));
   const mode = input.formats ?? 'referenced';
   const wanted =
     mode === 'all'
@@ -403,11 +414,15 @@ export function prepareWrite(
     view,
     pack,
     { ...write, changes },
-    state.outlineHash
+    state.outlineHash,
+    (id) => ids.isUncertain(id)
   );
   runner.record('base-hashes', !conflict);
-  if (conflict)
+  if (conflict) {
+    // the conflict hands back each stale node as it is now: the model has read them again
+    ids.settle(conflict.stale.flatMap((s) => idsUnder(s.live)));
     return { outcome: 'conflict', conflict, checks: runner.checks, warnings };
+  }
 
   // New format entries and the format references of written nodes.
   const newFormats = write.formats ?? {};

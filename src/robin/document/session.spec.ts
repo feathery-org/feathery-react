@@ -742,6 +742,87 @@ describe('document session: the four verbs end to end', () => {
     });
   });
 
+  it("an id the user's edit made ambiguous is a conflict until it is read again (review: two identical paragraphs)", () => {
+    const twin = toyNative(
+      para('Title'),
+      para('Same'),
+      para('Same'),
+      para('End')
+    );
+    const { host, call, nextTurn } = mount(twin);
+    const read = call('read', { ids: ['n2'] });
+    const first = nodeOf(read, 'n2');
+    // the user deletes the first of the two: which one survives cannot be told from the content
+    host.userEdit((d) => d.body.splice(1, 1));
+    nextTurn();
+    const write = (base: string) =>
+      call('write', {
+        intent: 'x',
+        scope: { ids: ['n2'] },
+        changes: [
+          {
+            kind: 'replace',
+            id: 'n2',
+            base,
+            node: { text: 'Changed', style: first.style }
+          }
+        ]
+      }) as {
+        ok: boolean;
+        conflict?: { stale: Array<{ id: string; live: { base: string } }> };
+      };
+    const r = write(first.base as string);
+    expect(r.ok).toBe(false);
+    expect(r.conflict?.stale.map((s) => s.id)).toEqual(['n2']);
+    // the conflict carries the node as it is now: a write from it lands
+    nextTurn();
+    expect(write(r.conflict?.stale[0].live.base as string).ok).toBe(true);
+    // and a read settles it the same way
+    const again = mount(twin);
+    const seen = nodeOf(again.call('read', { ids: ['n3'] }), 'n3');
+    again.host.userEdit((d) => d.body.splice(1, 1));
+    again.nextTurn();
+    const reread = nodeOf(again.call('read', { ids: ['n2'] }), 'n2');
+    expect(reread.base).toBe(seen.base);
+    again.nextTurn();
+    expect(
+      (
+        again.call('write', {
+          intent: 'x',
+          scope: { ids: ['n2'] },
+          changes: [
+            {
+              kind: 'replace',
+              id: 'n2',
+              base: reread.base,
+              node: { text: 'Changed', style: reread.style }
+            }
+          ]
+        }) as { ok: boolean }
+      ).ok
+    ).toBe(true);
+  });
+
+  it('an unambiguous user edit leaves ids writable without a fresh read', () => {
+    const { host, call, nextTurn } = mount();
+    const first = nodeOf(call('read', { ids: ['n1'] }), 'n1');
+    host.userEdit((d) => d.body.push(para('Appended')));
+    nextTurn();
+    const r = call('write', {
+      intent: 'x',
+      scope: { ids: ['n1'] },
+      changes: [
+        {
+          kind: 'replace',
+          id: 'n1',
+          base: first.base,
+          node: { text: 'Changed', style: first.style }
+        }
+      ]
+    }) as { ok: boolean };
+    expect(r).toEqual(expect.objectContaining({ ok: true }));
+  });
+
   it('ids continue across user edits between turns', () => {
     const { host, call } = mount();
     host.userEdit((d) => d.body.unshift(para('Cover note')));
