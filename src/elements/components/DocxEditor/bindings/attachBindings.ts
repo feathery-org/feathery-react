@@ -371,14 +371,15 @@ export function attachBindings(
       // Set first: removing a listener can itself fire an event, and any stray
       // timer that fires after this point must find the handlers inert.
       disposed = true;
-      // React runs the host's instance.destroy() cleanup BEFORE this one, so by
-      // the time dispose runs the editor is often already torn down. Calling
-      // removeEventListener (and the un-patch helpers) on a destroyed Syncfusion
-      // instance can dereference its null internals and throw "Cannot convert
-      // undefined or null to object". dispose runs inside React's unmount commit,
-      // where a throw is caught by the nearest error boundary and takes the form
-      // down - so every step is isolated and a failure is logged, never thrown.
-      const step = (label: string, fn: () => void): void => {
+      // The host's destroy() often ran first; touching a destroyed editor
+      // throws, so skip those steps. Steps log, never throw (unmount commit).
+      const editorGone = !!(editor as { isDestroyed?: boolean }).isDestroyed;
+      const step = (
+        label: string,
+        fn: () => void,
+        touchesEditor = false
+      ): void => {
+        if (touchesEditor && editorGone) return;
         try {
           fn();
         } catch (error) {
@@ -392,25 +393,34 @@ export function attachBindings(
       step('recomputeHook', () => {
         delete (editor as any).__robinRecomputeAfterResolve;
       });
-      step('contentChange', () =>
-        eventful.removeEventListener?.('contentChange', onContentChange)
+      step(
+        'contentChange',
+        () => eventful.removeEventListener?.('contentChange', onContentChange),
+        true
       );
-      step('selectionChange', () =>
-        eventful.removeEventListener?.('selectionChange', onSelectionChange)
+      step(
+        'selectionChange',
+        () =>
+          eventful.removeEventListener?.('selectionChange', onSelectionChange),
+        true
       );
-      step('keyDown', () =>
-        eventful.removeEventListener?.('keyDown', onKeyDown)
+      step(
+        'keyDown',
+        () => eventful.removeEventListener?.('keyDown', onKeyDown),
+        true
       );
-      step('contentControl', () =>
-        eventful.removeEventListener?.('contentControl', onLockedControl)
+      step(
+        'contentControl',
+        () => eventful.removeEventListener?.('contentControl', onLockedControl),
+        true
       );
       step('lockedHintTimer', () => {
         if (lockedHintTimer !== null) cancelTimeout(lockedHintTimer);
       });
       step('blur', () => editableDiv?.removeEventListener?.('blur', onBlur));
-      step('guard', () => uninstallGuard());
-      step('rowCommands', () => unwatchRowCommands());
-      step('tableDelete', () => uninstallTableDelete());
+      step('guard', () => uninstallGuard(), true);
+      step('rowCommands', () => unwatchRowCommands(), true);
+      step('tableDelete', () => uninstallTableDelete(), true);
       step('triggers', () => triggers.dispose());
       // Cancels the deferred view restore, which would otherwise read
       // editor.selection ~60ms after the editor was destroyed.
