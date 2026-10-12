@@ -974,3 +974,51 @@ describe('section 10 bridge payload', () => {
     ).toBe(false);
   });
 });
+
+// The contract example the server's suite shares (ai-services schema tests): an ids-form set names
+// node ids and keys each shape by one; `root` is no set target and no scope id; a shape is never
+// keyed by a temporary id; at most 1,000 ids in an ids-form target and 10,000 in scope.ids.
+describe('the shared set-target example', () => {
+  const write = (target: unknown, scopeIds: unknown[] = ['n12']) => ({
+    intent: 'Shade the cell.',
+    scope: { ids: scopeIds },
+    changes: [{ kind: 'set', target, props: { bold: true } }]
+  });
+  const shape = '0123456789abcdef';
+  it('accepts an ids-form set on n12 with its shape', () => {
+    expect(
+      parseVerbInput('write', write({ ids: ['n12'], shape: { n12: shape } })).ok
+    ).toBe(true);
+  });
+  it('refuses root as a set target, root in scope.ids, and a shape keyed by a tmp: id', () => {
+    expect(
+      parseVerbInput('write', write({ ids: ['root'], shape: { root: shape } }))
+        .ok
+    ).toBe(false);
+    expect(
+      parseVerbInput(
+        'write',
+        write({ ids: ['n12'], shape: { n12: shape } }, ['root'])
+      ).ok
+    ).toBe(false);
+    expect(
+      parseVerbInput(
+        'write',
+        write({ ids: ['tmp:a'], shape: { 'tmp:a': shape } })
+      ).ok
+    ).toBe(false);
+  });
+  it('caps ids-form targets at 1,000 and scope ids at 10,000', () => {
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => `n${i + 1}`);
+    const target = (n: number) => ({
+      ids: ids(n),
+      shape: Object.fromEntries(ids(n).map((id) => [id, shape]))
+    });
+    expect(parseVerbInput('write', write(target(1000))).ok).toBe(true);
+    expect(parseVerbInput('write', write(target(1001))).ok).toBe(false);
+    expect(parseVerbInput('write', write(target(1), ids(10000))).ok).toBe(true);
+    expect(parseVerbInput('write', write(target(1), ids(10001))).ok).toBe(
+      false
+    );
+  });
+});
