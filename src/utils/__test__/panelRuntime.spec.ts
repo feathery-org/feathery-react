@@ -164,6 +164,7 @@ describe('tables in the snapshot', () => {
       showsActions: false,
       allowsRowClick: false,
       buffersEdits: false,
+      showsGrid: false,
       ...over
     }),
     getRows: ({ limit }: { limit: number }) => {
@@ -262,6 +263,54 @@ describe('tables in the snapshot', () => {
       columns: [{ name: 'Name', fieldKey: 'name', readOnly: true }],
       rowCount: 185,
       canEditCells: true,
+      visible: true
+    });
+  });
+
+  it('carries what the person has in front of them in a rendered spreadsheet', () => {
+    const selection = {
+      rowIndex: 3,
+      entryId: 'entry-3',
+      fieldKey: 'name',
+      columnName: 'Name',
+      value: 'Person 3',
+      error: 'Must be a number',
+      row: { name: 'Person 3' }
+    };
+    (internalState as any)[FORM] = {
+      currentStep: stepWithTables([hubTable]),
+      fields: {},
+      visiblePositions: {},
+      inlineErrors: {},
+      logicRules: [],
+      tables: new Map<string, any>([
+        [
+          'tbl-hub',
+          mountedHandlers({
+            hubId: 'hub-resolved',
+            columns: [{ name: 'Name', fieldKey: 'name' }],
+            rowCount: 185,
+            showsGrid: true,
+            selection,
+            viewport: { visibleRowIndexes: [2, 3, 4] },
+            ruleErrors: { total: 7 },
+            findings: 2
+          })
+        ]
+      ])
+    };
+
+    const [hub] = getPanelRuntimeSnapshot(FORM)!.currentStepTables;
+
+    expect(hub).toEqual({
+      id: 'tbl-hub',
+      hubId: 'hub-resolved',
+      columns: [{ name: 'Name', fieldKey: 'name' }],
+      rowCount: 185,
+      selection,
+      viewport: { visibleRowIndexes: [2, 3, 4] },
+      ruleErrors: { total: 7 },
+      findings: 2,
       visible: true
     });
   });
