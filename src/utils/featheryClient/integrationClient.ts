@@ -202,7 +202,7 @@ export default class IntegrationClient {
   submitQueue: Promise<any>;
   eventQueue: Promise<any>;
   offlineRequestHandler: OfflineRequestHandler;
-  showNetworkErrorAlert: boolean;
+  private shownErrorMessages = new Set<string>();
 
   constructor(
     formKey = '',
@@ -216,18 +216,18 @@ export default class IntegrationClient {
     this.bypassCDN = bypassCDN;
     this.submitQueue = Promise.resolve();
     this.eventQueue = Promise.resolve();
-    this.showNetworkErrorAlert = true;
-    this.offlineRequestHandler = new OfflineRequestHandler(formKey, () =>
-      this.errorCallback()
+    this.offlineRequestHandler = new OfflineRequestHandler(formKey, (message) =>
+      this.errorCallback(message)
     );
   }
 
-  errorCallback() {
-    if (!this.showNetworkErrorAlert) return;
-    this.showNetworkErrorAlert = false;
-    featheryWindow().alert(
-      'There was a network error while submitting the form. Please refresh the page and try again.'
-    );
+  // Alerts a failure the offline queue reports. Each message alerts once per
+  // page so a failing replay cannot stack dialogs, while a different failure
+  // still reaches the user.
+  errorCallback(message: string) {
+    if (this.shownErrorMessages.has(message)) return;
+    this.shownErrorMessages.add(message);
+    featheryWindow().alert(message);
   }
 
   _fetch(

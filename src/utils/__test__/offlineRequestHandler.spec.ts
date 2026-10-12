@@ -13,6 +13,7 @@
 
 import {
   OfflineRequestHandler,
+  SUPERSEDED_WRITE,
   markFileUploadRetrySuccess
 } from '../offlineRequestHandler';
 import {
@@ -25,22 +26,31 @@ import {
   setUploadIndicatorEnabled,
   startUpload
 } from '../fileUploadProgress';
+import { getApiUrl, setEnvironment } from '@feathery/client-utils';
 import {
-  FormConflictError,
-  getApiUrl,
-  setEnvironment
-} from '@feathery/client-utils';
+  handleFormAuthenticationError,
+  handleFormConflict
+} from '../featheryClient/utils';
+import {
+  FakeRequest,
+  fakeResponse,
+  installFakeIndexedDB,
+  waitUntil
+} from './test-utils';
 
 // Mock init module. A replay reads the access link off initState, so the mock
-// carries it too - without it every replay to the API host throws.
+// carries it too - without it every replay to the API host throws. The user is
+// mutable so a test can hand the device to another user.
 jest.mock('../init', () => {
   const fileRetryStatus: Record<string, boolean> = {};
+  const info = { sdkKey: 'test-sdk-key', userId: 'user-1' };
   return {
-    initInfo: () => ({ sdkKey: 'test-sdk-key' }),
+    initInfo: () => info,
     fileRetryStatus,
     initState: { linkToken: '', linkSecret: '' }
   };
 });
+const mockInitInfo = jest.requireMock('../init').initInfo();
 
 // Mocking '../init' keeps featheryClient, which is what normally configures the
 // environment at module load, out of this file. A replay only carries the
@@ -48,15 +58,10 @@ jest.mock('../init', () => {
 // to be explicit rather than whatever BACKEND_ENV happened to be.
 setEnvironment('production');
 
-// Mock checkResponseSuccess
+// The real ones alert and reload the page, or close the form
 jest.mock('../featheryClient/utils', () => ({
-  handleFormConflict: jest.fn(),
-  checkResponseSuccess: jest.fn().mockImplementation(async (response) => {
-    if (!response.ok) {
-      throw new Error('Response not ok');
-    }
-    return response;
-  })
+  handleFormAuthenticationError: jest.fn(),
+  handleFormConflict: jest.fn()
 }));
 
 describe('OfflineRequestHandler - Integration Tests', () => {
@@ -74,28 +79,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       value: { onLine: true }
     });
 
-    // Mock Request constructor
-    (global as any).Request = class MockRequest {
-      url: string;
-      method: string;
-      headers: Map<string, string>;
-      keepalive?: boolean;
-
-      constructor(url: string, options: any) {
-        this.url = url;
-        this.method = options.method || 'GET';
-        this.headers = new Map(Object.entries(options.headers || {}));
-        this.keepalive = options.keepalive;
-      }
-
-      clone() {
-        return this;
-      }
-
-      async blob() {
-        return new Blob();
-      }
-    };
+    (global as any).Request = FakeRequest;
   });
 
   afterAll(() => {
@@ -110,6 +94,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
     Object.keys(mockFileRetryStatus).forEach(
       (key) => delete mockFileRetryStatus[key]
     );
+    mockInitInfo.userId = 'user-1';
     errorCallback = jest.fn();
     handler = new OfflineRequestHandler('test-form', errorCallback);
 
@@ -121,48 +106,32 @@ describe('OfflineRequestHandler - Integration Tests', () => {
     });
   });
 
+  // A handler over a fresh in-memory IndexedDB. The handler detects IndexedDB
+  // when it is constructed, so it is built after the store is installed.
+  let fakeIndexedDB: ReturnType<typeof installFakeIndexedDB> | undefined;
+  const createQueueWithStorage = () => {
+    fakeIndexedDB = installFakeIndexedDB('test-form');
+    return {
+      store: fakeIndexedDB,
+      queue: new OfflineRequestHandler('test-form', errorCallback)
+    };
+  };
+
+  afterEach(() => {
+    fakeIndexedDB?.uninstall();
+    fakeIndexedDB = undefined;
+  });
+
   describe('Request execution behavior', () => {
     describe('storage failure recovery', () => {
-      let originalRequest: any;
       let originalFetch: any;
 
       beforeEach(() => {
-        originalRequest = (global as any).Request;
         originalFetch = (global as any).fetch;
         (handler as any).indexedDBSupported = false;
-        (global as any).Request = class {
-          url: string;
-          method: string;
-          headers: Map<string, string>;
-          body: any;
-          keepalive: boolean;
-          constructor(url: string, options: any) {
-            this.url = url;
-            this.method = options.method;
-            this.headers = new Map(Object.entries(options.headers ?? {}));
-            this.body = options.body;
-            this.keepalive = options.keepalive ?? false;
-          }
-
-          clone() {
-            return new (global as any).Request(this.url, {
-              method: this.method,
-              headers: Object.fromEntries(this.headers),
-              body: this.body,
-              keepalive: this.keepalive
-            });
-          }
-
-          async blob() {
-            return this.body instanceof FormData
-              ? this.body
-              : { text: async () => this.body };
-          }
-        };
       });
 
       afterEach(() => {
-        (global as any).Request = originalRequest;
         (global as any).fetch = originalFetch;
         jest.restoreAllMocks();
       });
@@ -200,7 +169,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
             { method: 'POST', body: file },
             'submit',
             'Insurance',
-            { fieldKey: 'card', preserveStepRequests: true }
+            { fieldKey: 'card' }
           )
         ).rejects.toThrow('Failed to fetch');
         const complete = jest.fn(async () => {
@@ -245,7 +214,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
           { method: 'POST', body: file },
           'submit',
           'Insurance',
-          { fieldKey: 'card', preserveStepRequests: true }
+          { fieldKey: 'card' }
         );
         (global as any).fetch = jest
           .fn()
@@ -273,93 +242,71 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         expect(await handler.dbHasRequest()).toBe(false);
       });
 
-      it('recovers a failed IndexedDB put without losing its captured payload', async () => {
-        (handler as any).indexedDBSupported = true;
-        jest.spyOn(handler as any, 'getDbTransaction').mockResolvedValue({
-          tx: {},
-          store: {
-            add: () => {
-              throw new Error('quota');
-            }
-          }
-        });
+      it('sends an intermediate event instead of dropping it when storage cannot hold it', async () => {
+        (global as any).fetch = jest
+          .fn()
+          .mockRejectedValue(new TypeError('Failed to fetch'));
+        await expect(
+          handler.runOrSaveRequest(
+            async () => {
+              throw new TypeError('Failed to fetch');
+            },
+            '/save/',
+            { method: 'POST', body: 'synthetic answer' },
+            'submit',
+            'Insurance'
+          )
+        ).rejects.toThrow('Failed to fetch');
+        const sendEvent = jest.fn().mockResolvedValue({ status: 200 });
+
+        await handler.runOrSaveRequest(
+          sendEvent,
+          '/event/',
+          { method: 'POST', body: '{}' },
+          'registerEvent',
+          'Insurance'
+        );
+
+        // The memory fallback keeps answers only, so holding the event would lose it
+        expect(sendEvent).toHaveBeenCalledTimes(1);
+        expect(await handler.dbHasRequest('registerEvent')).toBe(false);
+        expect(await handler.dbHasRequest('submit')).toBe(true);
+      });
+
+      it('keeps a write whose IndexedDB commit aborts, with its captured payload', async () => {
+        const { store, queue } = createQueueWithStorage();
+        store.abortCommits(true);
         const options = { method: 'POST', body: 'original answer' };
-        await handler.saveRequest('/save/', options, 'submit', 'Insurance');
+        await queue.saveRequest('/save/', options, 'submit', 'Insurance');
         options.body = 'later mutation';
-        (handler as any).indexedDBSupported = false;
         const accepted: string[] = [];
         (global as any).fetch = jest.fn(async (_url: string, request: any) => {
           accepted.push(await request.body.text());
           return { status: 200 };
         });
-        await handler.replayRequests();
+        await queue.replayRequests();
         expect(accepted).toEqual(['original answer']);
-        expect(await handler.dbHasRequest()).toBe(false);
+        expect(await queue.dbHasRequest()).toBe(false);
       });
 
       it('orders durable and memory writes with tied timestamps and retains a newer in-flight write', async () => {
-        const rows: any[] = [];
-        let nextKey = 1;
-        let failPut = false;
-        const tx: any = {};
-        const store = {
-          add: (row: any) => {
-            if (failPut) throw new Error('quota');
-            rows.push({ ...row, key: nextKey++ });
-            Promise.resolve().then(() => tx.oncomplete());
-          },
-          delete: (key: number) => {
-            rows.splice(
-              0,
-              rows.length,
-              ...rows.filter((row) => row.key !== key)
-            );
-          },
-          openCursor: () => {
-            const request: any = {};
-            const snapshot = [...rows];
-            let index = 0;
-            const advance = () => {
-              const row = snapshot[index];
-              request.onsuccess?.({
-                target: {
-                  result: row
-                    ? {
-                        value: row,
-                        key: row.key,
-                        continue: () => {
-                          index++;
-                          Promise.resolve().then(advance);
-                        }
-                      }
-                    : null
-                }
-              });
-            };
-            Promise.resolve().then(advance);
-            return request;
-          }
-        };
-        (handler as any).indexedDBSupported = true;
-        jest
-          .spyOn(handler as any, 'getDbTransaction')
-          .mockResolvedValue({ tx, store });
+        const { store, queue } = createQueueWithStorage();
         jest.spyOn(Date, 'now').mockReturnValue(100);
-        await handler.saveRequest(
+        await queue.saveRequest(
           '/save/',
           { method: 'POST', body: 'old' },
           'submit',
           'Insurance'
         );
-        failPut = true;
-        await handler.saveRequest(
+        store.abortCommits(true);
+        await queue.saveRequest(
           '/save/',
           { method: 'POST', body: 'middle' },
           'submit',
           'Insurance'
         );
-        failPut = false;
-        await handler.saveRequest(
+        store.abortCommits(false);
+        await queue.saveRequest(
           '/save/',
           { method: 'POST', body: 'new' },
           'submit',
@@ -373,8 +320,8 @@ describe('OfflineRequestHandler - Integration Tests', () => {
               : await request.body.text();
           accepted.push(body);
           if (body === 'old') {
-            failPut = true;
-            await handler.saveRequest(
+            store.abortCommits(true);
+            await queue.saveRequest(
               '/save/',
               { method: 'POST', body: 'later' },
               'submit',
@@ -383,111 +330,814 @@ describe('OfflineRequestHandler - Integration Tests', () => {
           }
           return { status: 200 };
         });
-        await handler.replayRequests();
+        await queue.replayRequests();
         expect(accepted).toEqual(['old', 'middle', 'new']);
-        expect(await handler.dbHasRequest('submit')).toBe(true);
-        await handler.replayRequests();
+        expect(await queue.dbHasRequest('submit')).toBe(true);
+        await queue.replayRequests();
         expect(accepted).toEqual(['old', 'middle', 'new', 'later']);
-        expect(await handler.dbHasRequest()).toBe(false);
+        expect(await queue.dbHasRequest()).toBe(false);
       });
     });
 
-    it('replays a queued step save before sending its completion event', async () => {
-      const queued: { type: string; stepKey?: string; url: string }[] = [];
-      const persisted: string[] = [];
-      (handler as any).indexedDBSupported = true;
-      jest
-        .spyOn(handler, 'dbHasRequest')
-        .mockImplementation(async (type?: string) =>
-          queued.some((request) => !type || request.type === type)
-        );
-      jest
-        .spyOn(handler, 'saveRequest')
-        .mockImplementation(async (url, _options, type, stepKey) => {
-          queued.push({ url, type, stepKey });
+    describe('queued answer writes', () => {
+      const stepUrl = '/panel/step/submit/v3/';
+      let store: ReturnType<typeof installFakeIndexedDB>;
+      let queue: OfflineRequestHandler;
+      let originalFetch: any;
+      // Payloads the replay sent, in order
+      let replayed: string[];
+
+      beforeEach(() => {
+        ({ store, queue } = createQueueWithStorage());
+        originalFetch = (global as any).fetch;
+        replayed = [];
+        // Retries go out at once instead of waiting out the backoff
+        jest.spyOn(queue as any, 'delay').mockResolvedValue(undefined);
+      });
+
+      afterEach(() => {
+        (global as any).fetch = originalFetch;
+        jest.restoreAllMocks();
+      });
+
+      // Answers each replayed payload with the status the server gives it
+      const serveReplay = (statusOf: (body: string) => number = () => 200) => {
+        (global as any).fetch = jest.fn(async (_url: string, options: any) => {
+          replayed.push(options.body);
+          return fakeResponse(statusOf(options.body));
         });
-      jest
-        .spyOn(handler, 'clearFailedRequestsByStep')
-        .mockImplementation(async (stepKey) => {
-          queued.splice(
-            0,
-            queued.length,
-            ...queued.filter((request) => request.stepKey !== stepKey)
+      };
+      const failedRun = async () => {
+        throw new TypeError('Failed to fetch');
+      };
+      const failToSave = (body: string) =>
+        expect(
+          queue.runOrSaveRequest(
+            failedRun,
+            stepUrl,
+            { method: 'POST', body },
+            'submit',
+            'Insurance'
+          )
+        ).rejects.toThrow('Failed to fetch');
+      const sendEvent = (send: jest.Mock, stepKey: string) =>
+        queue.runOrSaveRequest(
+          send,
+          '/event/',
+          { method: 'POST', body: '{}' },
+          'registerEvent',
+          stepKey
+        );
+      const completeForm = (send: jest.Mock) =>
+        queue.runOrSaveRequest(
+          send,
+          '/event/',
+          { method: 'POST', body: '{}' },
+          'registerEvent',
+          'last',
+          { requireAcknowledgement: true }
+        );
+      const queuedBodies = () => store.rows().map((row) => row.body);
+      const queuedAnswer = {
+        type: 'submit',
+        stepKey: 'Insurance',
+        url: stepUrl,
+        userId: 'user-1',
+        body: 'answer'
+      };
+      const queuedEvent = (stepKey: string, body: string) => ({
+        type: 'registerEvent',
+        stepKey,
+        url: '/event/',
+        userId: 'user-1',
+        body
+      });
+
+      it('replays a queued step save before sending its completion event', async () => {
+        await failToSave('step save');
+        serveReplay();
+        const send = jest.fn(async () => {
+          replayed.push('complete event');
+          return { ok: true };
+        });
+
+        await completeForm(send);
+
+        expect(replayed).toEqual(['step save', 'complete event']);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it("holds an intermediate event only behind its own step's queued write", async () => {
+        store.seed(queuedAnswer);
+        // The server cannot take the answer yet
+        serveReplay(() => 503);
+        const sendOtherStepEvent = jest.fn().mockResolvedValue({ ok: true });
+        const sendOwnStepEvent = jest.fn().mockResolvedValue({ ok: true });
+
+        await sendEvent(sendOtherStepEvent, 'Contact');
+        await sendEvent(sendOwnStepEvent, 'Insurance');
+
+        expect(sendOtherStepEvent).toHaveBeenCalledTimes(1);
+        expect(sendOwnStepEvent).not.toHaveBeenCalled();
+        expect(store.rows().map((row) => [row.type, row.stepKey])).toEqual([
+          ['submit', 'Insurance'],
+          ['registerEvent', 'Insurance']
+        ]);
+      });
+
+      // Expectation moved: a connector call is not an answer, so it no longer holds events
+      it('replays a failing connector call in the background, holding nothing and alerting no one', async () => {
+        // One attempt left, so its failure is the one that would alert
+        store.seed({
+          type: 'customRequest',
+          url: '/custom_request/',
+          userId: 'user-1',
+          body: 'connector call',
+          retryAttempts: 3
+        });
+        store.seed(queuedAnswer);
+        let answerConnectorCall!: (response: any) => void;
+        (global as any).fetch = jest.fn((_url: string, options: any) => {
+          replayed.push(options.body);
+          if (options.body !== 'connector call')
+            return Promise.resolve(fakeResponse(200));
+          return new Promise((resolve) => {
+            answerConnectorCall = resolve;
+          });
+        });
+        const sendStepEvent = jest.fn().mockResolvedValue({ ok: true });
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+
+        await sendEvent(sendStepEvent, 'Insurance');
+        await completeForm(sendCompletion);
+
+        // Both went out while the connector call was still in flight
+        expect(sendStepEvent).toHaveBeenCalledTimes(1);
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+        expect(replayed).toEqual(['answer', 'connector call']);
+
+        answerConnectorCall(fakeResponse(503));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(errorCallback).not.toHaveBeenCalled();
+        expect(queuedBodies()).toEqual(['connector call']);
+      });
+
+      it('replays events for settled steps after a stuck write holds back the rest', async () => {
+        store.seed({ ...queuedAnswer, body: 'unsaved answer' });
+        store.seed(queuedEvent('Insurance', 'insurance submitted'));
+        store.seed({
+          ...queuedAnswer,
+          stepKey: 'Contact',
+          body: 'later answer'
+        });
+        store.seed(queuedEvent('Contact', 'contact submitted'));
+        store.seed(queuedEvent('Intro', 'intro submitted'));
+        serveReplay((body) => (body === 'unsaved answer' ? 503 : 200));
+
+        await queue.replayRequests();
+
+        // The later answer stays behind the stuck one, and each step's event behind its answer
+        expect(replayed.filter((body) => body !== 'unsaved answer')).toEqual([
+          'intro submitted'
+        ]);
+        expect(queuedBodies()).toEqual([
+          'unsaved answer',
+          'insurance submitted',
+          'later answer',
+          'contact submitted'
+        ]);
+      });
+
+      it('saves and completes past answers another user left on a shared device, quietly', async () => {
+        store.seed({
+          ...queuedAnswer,
+          userId: 'previous-user',
+          body: 'previous'
+        });
+        // Queued by an SDK build that did not record the user
+        store.seed({
+          ...queuedAnswer,
+          userId: undefined,
+          body: 'unattributed'
+        });
+        store.seed({ ...queuedAnswer, body: 'current' });
+        serveReplay((body) => (body === 'current' ? 200 : 503));
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+
+        await completeForm(sendCompletion);
+
+        expect(replayed).toContain('current');
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+        expect(queuedBodies()).toEqual(['previous', 'unattributed']);
+        expect(errorCallback).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['fails', 503, true],
+        ['succeeds', 200, false]
+      ])(
+        "leaves this user's upload status alone when another user's queued file %s",
+        async (_outcome, status, uploadStatus) => {
+          mockFileRetryStatus.card = uploadStatus;
+          const queuedFile = {
+            ...queuedAnswer,
+            metadata: { fieldKey: 'card' }
+          };
+          store.seed({
+            ...queuedFile,
+            url: '/panel/step/submit/file/previous-user/',
+            userId: 'previous-user'
+          });
+          // Queued by an SDK build that did not record the user
+          store.seed({
+            ...queuedFile,
+            url: '/panel/step/submit/file/unattributed/',
+            userId: undefined
+          });
+          serveReplay(() => status);
+
+          await queue.replayRequests();
+
+          expect(mockFileRetryStatus.card).toBe(uploadStatus);
+          expect(errorCallback).not.toHaveBeenCalled();
+        }
+      );
+
+      it('retries exhausted answers when the form completes without submitting a step', async () => {
+        // Earlier replays used up its budget and no step submission reset it
+        store.seed({ ...queuedAnswer, retryAttempts: 4 });
+        serveReplay();
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+
+        await completeForm(sendCompletion);
+
+        expect(replayed).toEqual(['answer']);
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+        expect(store.rows()).toEqual([]);
+      });
+
+      // Expectation moved: a kept row 409s on every mount replay and reloads the page forever
+      it('drops a conflicted write so the reload does not conflict again', async () => {
+        store.seed({ ...queuedAnswer, body: 'stale version' });
+        serveReplay(() => 409);
+
+        await queue.replayRequests();
+        // The replay on mount after the conflict reload
+        await queue.replayRequests();
+
+        expect(replayed).toEqual(['stale version']);
+        expect(handleFormConflict).toHaveBeenCalledTimes(1);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('drops answers the server rejects, reports them once and saves the rest', async () => {
+        store.seed({ ...queuedAnswer, body: 'invalid answer' });
+        store.seed({
+          type: 'submit',
+          url: '/panel/custom/submit/v3/',
+          userId: 'user-1',
+          body: 'invalid custom answer'
+        });
+        store.seed({
+          ...queuedAnswer,
+          stepKey: 'Contact',
+          body: 'valid answer'
+        });
+        serveReplay((body) => (body.startsWith('invalid') ? 400 : 200));
+
+        await queue.replayRequests();
+
+        expect(replayed).toEqual([
+          'invalid answer',
+          'invalid custom answer',
+          'valid answer'
+        ]);
+        expect(store.rows()).toEqual([]);
+        expect(errorCallback).toHaveBeenCalledTimes(1);
+        expect(errorCallback).toHaveBeenCalledWith(
+          expect.stringContaining('could not be saved')
+        );
+      });
+
+      it.each([408, 429, 503])(
+        'keeps an answer queued for retry when the server answers %i',
+        async (status) => {
+          store.seed(queuedAnswer);
+          serveReplay(() => status);
+
+          await queue.replayRequests();
+
+          expect(queuedBodies()).toEqual(['answer']);
+          expect(errorCallback).not.toHaveBeenCalledWith(
+            expect.stringContaining('could not be saved')
           );
+        }
+      );
+
+      it('keeps a row the link gate refuses queued, without spending retries or alerting', async () => {
+        // The device's link now opens another submission than this row's
+        store.seed({
+          ...queuedAnswer,
+          userId: 'linked-submission',
+          body: 'other submission'
         });
-      jest.spyOn(handler, 'replayRequests').mockImplementation(async () => {
-        queued.forEach((request) => {
-          if (request.type === 'submit') persisted.push('step save');
-        });
-        queued.splice(0, queued.length);
+        store.seed({ ...queuedAnswer, body: 'current' });
+        serveReplay((body) => (body === 'other submission' ? 403 : 200));
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+
+        await completeForm(sendCompletion);
+
+        expect(replayed).toEqual(['other submission', 'current']);
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+        expect(store.rows()).toEqual([
+          expect.objectContaining({
+            body: 'other submission',
+            retryAttempts: 0
+          })
+        ]);
+        expect(errorCallback).not.toHaveBeenCalled();
       });
 
-      await expect(
-        handler.runOrSaveRequest(
-          async () => {
-            throw new TypeError('Failed to fetch');
-          },
-          '/panel/step/submit/v3/',
-          { method: 'POST', body: '{}' },
-          'submit',
-          'Insurance'
-        )
-      ).rejects.toThrow('Failed to fetch');
-
-      await handler.runOrSaveRequest(
-        async () => {
-          persisted.push('complete event');
-        },
-        '/event/',
-        { method: 'POST', body: '{}' },
-        'registerEvent',
-        'Insurance'
-      );
-
-      expect(persisted).toEqual(['step save', 'complete event']);
-    });
-
-    it('keeps completion queued while a step save cannot be replayed', async () => {
-      const queued: { type: string; stepKey?: string; url: string }[] = [];
-      (handler as any).indexedDBSupported = true;
-      jest
-        .spyOn(handler, 'dbHasRequest')
-        .mockImplementation(async (type?: string) =>
-          queued.some((request) => !type || request.type === type)
-        );
-      jest
-        .spyOn(handler, 'saveRequest')
-        .mockImplementation(async (url, _options, type, stepKey) => {
-          queued.push({ url, type, stepKey });
+      it("supersedes only this user's older snapshot of the same step after a successful save", async () => {
+        store.seed({ ...queuedAnswer, body: 'older snapshot' });
+        store.seed({
+          ...queuedAnswer,
+          userId: 'previous-user',
+          body: 'previous user snapshot'
         });
-      jest.spyOn(handler, 'replayRequests').mockResolvedValue();
-      const sendEvent = jest.fn();
+        store.seed({
+          ...queuedAnswer,
+          url: '/panel/step/submit/file/user-1/',
+          metadata: { fieldKey: 'card' },
+          body: 'card upload'
+        });
+        store.seed({ ...queuedAnswer, stepKey: 'Other', body: 'other step' });
+        store.seed({
+          ...queuedAnswer,
+          stepKey: undefined,
+          url: '/panel/custom/submit/v3/',
+          body: 'custom answer'
+        });
+        store.seed(queuedEvent('Insurance', 'insurance submitted'));
+        // The server cannot take the queued rows yet
+        serveReplay(() => 503);
 
-      await expect(
-        handler.runOrSaveRequest(
-          async () => {
-            throw new TypeError('Failed to fetch');
-          },
-          '/panel/step/submit/v3/',
-          { method: 'POST', body: '{}' },
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          stepUrl,
+          { method: 'POST', body: 'newer snapshot' },
           'submit',
           'Insurance'
-        )
-      ).rejects.toThrow('Failed to fetch');
+        );
 
-      await handler.runOrSaveRequest(
-        sendEvent,
-        '/event/',
-        { method: 'POST', body: '{}' },
-        'registerEvent',
-        'Insurance'
-      );
+        expect(queuedBodies()).toEqual([
+          'previous user snapshot',
+          'card upload',
+          'other step',
+          'custom answer',
+          'insurance submitted'
+        ]);
+      });
 
-      expect(sendEvent).not.toHaveBeenCalled();
-      expect(queued.map((request) => request.type)).toEqual([
-        'submit',
-        'registerEvent'
-      ]);
+      it('retains a newer queued snapshot when an older concurrent save succeeds', async () => {
+        let finishOlder!: (response: any) => void;
+        let olderStarted!: () => void;
+        const started = new Promise<void>((resolve) => {
+          olderStarted = resolve;
+        });
+        const older = queue.runOrSaveRequest(
+          () => {
+            olderStarted();
+            return new Promise((resolve) => {
+              finishOlder = resolve;
+            });
+          },
+          stepUrl,
+          { method: 'POST', body: 'older snapshot' },
+          'submit',
+          'Insurance'
+        );
+        await started;
+        await failToSave('newer snapshot');
+        finishOlder({ ok: true });
+        await older;
+        expect(queuedBodies()).toEqual(['newer snapshot']);
+
+        (global as any).fetch = jest
+          .fn()
+          .mockRejectedValue(new TypeError('Failed to fetch'));
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'Some answers are still being saved'
+        );
+        expect(sendCompletion).not.toHaveBeenCalled();
+
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          stepUrl,
+          { method: 'POST', body: 'newest snapshot' },
+          'submit',
+          'Insurance'
+        );
+        expect(store.rows()).toEqual([]);
+        await completeForm(sendCompletion);
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not queue an older save that fails after a newer one for the same step landed', async () => {
+        let failOlder!: () => void;
+        let olderStarted!: () => void;
+        const started = new Promise<void>((resolve) => {
+          olderStarted = resolve;
+        });
+        const older = queue.runOrSaveRequest(
+          () => {
+            olderStarted();
+            return new Promise((resolve, reject) => {
+              failOlder = () => reject(new TypeError('Failed to fetch'));
+            });
+          },
+          stepUrl,
+          { method: 'POST', body: 'older snapshot' },
+          'submit',
+          'Insurance'
+        );
+        await started;
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          stepUrl,
+          { method: 'POST', body: 'newer snapshot' },
+          'submit',
+          'Insurance'
+        );
+
+        failOlder();
+
+        // Resolved rather than thrown, so the caller keeps the newer outcome
+        await expect(older).resolves.toBe(SUPERSEDED_WRITE);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('drops an older save of the step that failed while a newer one was still in flight', async () => {
+        const inFlight = (body: string) => {
+          const settle = { isStarted: false, fail: () => {}, land: () => {} };
+          const request = queue.runOrSaveRequest(
+            () =>
+              new Promise((resolve, reject) => {
+                settle.isStarted = true;
+                settle.fail = () => reject(new TypeError('Failed to fetch'));
+                settle.land = () => resolve({ ok: true });
+              }),
+            stepUrl,
+            { method: 'POST', body },
+            'submit',
+            'Insurance'
+          );
+          return { request, settle };
+        };
+        const older = inFlight('older snapshot');
+        await waitUntil(() => older.settle.isStarted);
+        const newer = inFlight('newer snapshot');
+        await waitUntil(() => newer.settle.isStarted);
+
+        older.settle.fail();
+        await expect(older.request).rejects.toThrow('Failed to fetch');
+        expect(queuedBodies()).toEqual(['older snapshot']);
+        newer.settle.land();
+        await newer.request;
+
+        serveReplay();
+        await queue.replayRequests();
+        expect(replayed).toEqual([]);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it("keeps another tab's newer row of the step when this tab's older write lands", async () => {
+        // An earlier write in this tab, so its next one starts at order 2
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          stepUrl,
+          { method: 'POST', body: 'intro' },
+          'submit',
+          'Intro'
+        );
+        let landOlderWrite!: () => void;
+        const olderWrite = queue.runOrSaveRequest(
+          () =>
+            new Promise((resolve) => {
+              landOlderWrite = () => resolve({ ok: true });
+            }),
+          stepUrl,
+          { method: 'POST', body: 'older snapshot' },
+          'submit',
+          'Insurance'
+        );
+        await waitUntil(() => !!landOlderWrite);
+        // The other tab's write started first on its own count, then failed
+        store.seed({
+          ...queuedAnswer,
+          body: 'other tab snapshot',
+          writeOrder: 1,
+          pageId: 'other-tab'
+        });
+
+        landOlderWrite();
+        await olderWrite;
+
+        expect(queuedBodies()).toEqual(['other tab snapshot']);
+      });
+
+      it('strips the fields a newer custom field write saved from older queued ones', async () => {
+        const customUrl = '/panel/custom/submit/v3/';
+        const customWrite = (values: Record<string, string>) => {
+          const body = new FormData();
+          body.set('custom_key_values', JSON.stringify(values));
+          return { method: 'POST', body };
+        };
+        // The server cannot take the queued writes yet
+        serveReplay(() => 503);
+        for (const values of [
+          { plan: 'basic', referrer: 'ad' },
+          { plan: 'basic' }
+        ]) {
+          await expect(
+            queue.runOrSaveRequest(
+              failedRun,
+              customUrl,
+              customWrite(values),
+              'submit'
+            )
+          ).rejects.toThrow('Failed to fetch');
+        }
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          customUrl,
+          customWrite({ plan: 'premium' }),
+          'submit'
+        );
+
+        // A later manual retry replays what is left of the older writes
+        await queue.resetAnswerWriteRetries();
+        const replayedValues: Record<string, string>[] = [];
+        (global as any).fetch = jest.fn(async (_url: string, options: any) => {
+          replayedValues.push(
+            JSON.parse(options.body.get('custom_key_values'))
+          );
+          return fakeResponse(200);
+        });
+        await queue.replayRequests();
+
+        expect(replayedValues).toEqual([{ referrer: 'ad' }]);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('closes the form and drops a row whose own link the gate now refuses', async () => {
+        store.seed(queuedAnswer);
+        (global as any).fetch = jest.fn(async () =>
+          fakeResponse(403, { message: 'This link has expired' })
+        );
+
+        await queue.replayRequests();
+
+        expect(handleFormAuthenticationError).toHaveBeenCalledWith(
+          'This link has expired'
+        );
+        expect(store.rows()).toEqual([]);
+        expect(errorCallback).not.toHaveBeenCalled();
+      });
+
+      it('retries a row whose 403 comes from something other than the access check', async () => {
+        store.seed(queuedAnswer);
+        serveReplay();
+        (global as any).fetch = jest.fn(async (_url: string, options: any) => {
+          replayed.push(options.body);
+          return fakeResponse(403, '<html>Request blocked</html>');
+        });
+
+        await queue.replayRequests();
+
+        expect(handleFormAuthenticationError).not.toHaveBeenCalled();
+        expect(replayed).toEqual(['answer', 'answer', 'answer', 'answer']);
+        expect(store.rows()).toEqual([
+          expect.objectContaining({ body: 'answer', retryAttempts: 4 })
+        ]);
+      });
+
+      it('refuses completion after one immediate attempt at a row the server keeps failing', async () => {
+        store.seed({
+          ...queuedAnswer,
+          stepKey: undefined,
+          url: '/panel/custom/submit/v3/',
+          body: 'custom answer'
+        });
+        serveReplay(() => 503);
+        // A backoff would never end, so only an attempt without one returns
+        jest
+          .spyOn(queue as any, 'delay')
+          .mockReturnValue(new Promise(() => {}));
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'Some answers are still being saved'
+        );
+
+        expect(replayed).toEqual(['custom answer']);
+        expect(sendCompletion).not.toHaveBeenCalled();
+      });
+
+      describe('custom field writes over older queued ones', () => {
+        const customUrl = '/panel/custom/submit/v3/';
+        const customWrite = (
+          values: Record<string, string>,
+          { override = true } = {}
+        ) => {
+          const body = new FormData();
+          body.set('custom_key_values', JSON.stringify(values));
+          body.set('override', String(override));
+          return { method: 'POST', body };
+        };
+        const queueCustomWrite = (values: Record<string, string>) =>
+          expect(
+            queue.runOrSaveRequest(
+              failedRun,
+              customUrl,
+              customWrite(values),
+              'submit'
+            )
+          ).rejects.toThrow('Failed to fetch');
+        const queuedValues = () =>
+          store
+            .rows()
+            .map((row) => JSON.parse(row.body.custom_key_values ?? 'null'));
+
+        beforeEach(() => {
+          // The server cannot take the queued writes yet
+          serveReplay(() => 503);
+        });
+
+        it('keeps older values a write without override may not have replaced', async () => {
+          await queueCustomWrite({ plan: 'basic' });
+
+          await queue.runOrSaveRequest(
+            async () => ({ ok: true }),
+            customUrl,
+            customWrite({ plan: 'premium' }, { override: false }),
+            'submit'
+          );
+
+          expect(queuedValues()).toEqual([{ plan: 'basic' }]);
+        });
+
+        it('still resolves the saved write when an older queued one cannot be read', async () => {
+          store.seed({
+            type: 'submit',
+            url: customUrl,
+            userId: 'user-1',
+            bodyType: 'formData',
+            body: { custom_key_values: 'not json' }
+          });
+
+          await expect(
+            queue.runOrSaveRequest(
+              async () => ({ ok: true }),
+              customUrl,
+              customWrite({ plan: 'premium' }),
+              'submit'
+            )
+          ).resolves.toEqual({ ok: true });
+
+          expect(store.rows()).toHaveLength(1);
+        });
+      });
+
+      it('holds concurrent live writes until the replay already running has landed the older snapshot', async () => {
+        store.seed({ ...queuedAnswer, body: 'old snapshot' });
+        const wire: string[] = [];
+        let landOldSnapshot!: () => void;
+        (global as any).fetch = jest.fn(
+          (_url: string, options: any) =>
+            new Promise((resolve) => {
+              wire.push(`replay ${options.body}`);
+              landOldSnapshot = () => {
+                wire.push(`landed ${options.body}`);
+                resolve(fakeResponse(200));
+              };
+            })
+        );
+        const liveWrite = (label: string) => async () => {
+          wire.push(label);
+          return { ok: true };
+        };
+
+        // A step submission sends its custom fields and step snapshot together
+        const customWrite = queue.runOrSaveRequest(
+          liveWrite('custom fields'),
+          '/panel/custom/submit/v3/',
+          { method: 'POST', body: 'custom fields' },
+          'submit'
+        );
+        const newSnapshot = queue.runOrSaveRequest(
+          liveWrite('new snapshot'),
+          stepUrl,
+          { method: 'POST', body: 'new snapshot' },
+          'submit',
+          'Insurance'
+        );
+        await waitUntil(() => wire.length > 0);
+        landOldSnapshot();
+        await Promise.all([customWrite, newSnapshot]);
+
+        expect(wire.slice(0, 2)).toEqual([
+          'replay old snapshot',
+          'landed old snapshot'
+        ]);
+        expect(wire.slice(2).sort()).toEqual(['custom fields', 'new snapshot']);
+      });
+
+      it('leaves a queued snapshot alone while a live write to the same step is in flight', async () => {
+        store.seed({ ...queuedAnswer, body: 'old snapshot' });
+        // Connectivity drops while the old snapshot replays, so it stays queued
+        (global as any).fetch = jest.fn(async () => {
+          (global.navigator as any).onLine = false;
+          throw new TypeError('Failed to fetch');
+        });
+        let landNewSnapshot!: () => void;
+        const newSnapshot = queue.runOrSaveRequest(
+          () =>
+            new Promise((resolve) => {
+              landNewSnapshot = () => resolve({ ok: true });
+            }),
+          stepUrl,
+          { method: 'POST', body: 'new snapshot' },
+          'submit',
+          'Insurance'
+        );
+        try {
+          await waitUntil(() => !!landNewSnapshot);
+          (global.navigator as any).onLine = true;
+          serveReplay();
+
+          // Reconnecting replays the queue while the new snapshot is in flight
+          await queue.replayRequests();
+          expect(replayed).toEqual([]);
+
+          landNewSnapshot();
+          await newSnapshot;
+          expect(store.rows()).toEqual([]);
+        } finally {
+          (global.navigator as any).onLine = true;
+        }
+      });
+
+      it('releases replay after connectivity drops so reconnect can save before completion', async () => {
+        store.seed(queuedAnswer);
+        store.seed(queuedEvent('Insurance', 'insurance submitted'));
+        (global as any).fetch = jest.fn().mockImplementation(async () => {
+          (global.navigator as any).onLine = false;
+          throw new TypeError('Failed to fetch');
+        });
+        try {
+          const settled = await Promise.race([
+            queue.replayRequests().then(() => true),
+            new Promise<boolean>((resolve) =>
+              setTimeout(() => resolve(false), 1000)
+            )
+          ]);
+          expect(settled).toBe(true);
+          expect(
+            store.rows().map((row) => [row.type, row.retryAttempts])
+          ).toEqual([
+            ['submit', 1],
+            ['registerEvent', 0]
+          ]);
+          (global.navigator as any).onLine = true;
+          serveReplay();
+          await queue.replayRequests();
+          expect(replayed).toEqual(['answer', 'insurance submitted']);
+          expect(store.rows()).toEqual([]);
+        } finally {
+          (global.navigator as any).onLine = true;
+        }
+      });
+
+      it("replays a step's event only once a manual retry lands both of its queued snapshots in order", async () => {
+        store.seed({ ...queuedAnswer, body: 'old' });
+        store.seed({ ...queuedAnswer, body: 'new' });
+        store.seed(queuedEvent('Insurance', 'insurance submitted'));
+        serveReplay(() => 503);
+
+        await queue.replayRequests();
+        expect(replayed).toEqual(['old', 'old', 'old', 'old']);
+        expect(store.rows()).toHaveLength(3);
+
+        // The next manual step submission gives the exhausted write a fresh budget
+        await queue.resetAnswerWriteRetries();
+        replayed = [];
+        serveReplay();
+        await queue.replayRequests();
+        expect(replayed).toEqual(['old', 'new', 'insurance submitted']);
+        expect(store.rows()).toEqual([]);
+      });
     });
 
     it('does not acknowledge completion when the event request resolves without a response', async () => {
@@ -520,454 +1170,6 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       ).rejects.toThrow('Failed to fetch');
 
       expect(save).not.toHaveBeenCalled();
-    });
-
-    it('holds an event behind a queued partial custom write', async () => {
-      const queued = [{ type: 'customRequest', stepKey: 'Insurance' }];
-      (handler as any).indexedDBSupported = true;
-      jest
-        .spyOn(handler, 'dbHasRequest')
-        .mockImplementation(async (type?: string) =>
-          queued.some((request) => !type || request.type === type)
-        );
-      jest.spyOn(handler, 'replayRequests').mockResolvedValue();
-      jest
-        .spyOn(handler, 'saveRequest')
-        .mockImplementation(async (_url, _options, type, stepKey) => {
-          queued.push({ type, stepKey });
-        });
-      const sendEvent = jest.fn();
-
-      await handler.runOrSaveRequest(
-        sendEvent,
-        '/event/',
-        { method: 'POST', body: '{}' },
-        'registerEvent',
-        'Insurance'
-      );
-
-      expect(sendEvent).not.toHaveBeenCalled();
-      expect(queued.map((request) => request.type)).toEqual([
-        'customRequest',
-        'registerEvent'
-      ]);
-    });
-
-    it('supersedes only an older full step snapshot after a successful retry', async () => {
-      const queued: {
-        type: string;
-        stepKey?: string;
-        url: string;
-        key?: number;
-      }[] = [];
-      const stepUrl = '/panel/step/submit/v3/';
-      (handler as any).indexedDBSupported = true;
-      jest
-        .spyOn(handler, 'dbHasRequest')
-        .mockImplementation(async (type?: string) =>
-          queued.some((request) => !type || request.type === type)
-        );
-      jest
-        .spyOn(handler, 'saveRequest')
-        .mockImplementation(async (url, _options, type, stepKey) => {
-          queued.push({ url, type, stepKey, key: queued.length + 1 });
-        });
-      jest.spyOn(handler, 'replayRequests').mockResolvedValue();
-      jest
-        .spyOn(handler as any, 'getFailedStepRequestKeys')
-        .mockImplementation(async (stepKey: string, url: string) =>
-          queued
-            .filter(
-              (row) =>
-                row.type === 'submit' &&
-                row.stepKey === stepKey &&
-                row.url === url
-            )
-            .map((row) => row.key)
-        );
-      jest
-        .spyOn(handler as any, 'deleteRecordsWhere')
-        .mockImplementation(
-          async (
-            predicate: (request: typeof queued[number], key?: number) => boolean
-          ) => {
-            queued.splice(
-              0,
-              queued.length,
-              ...queued.filter(
-                (row) => !predicate({ ...row, formKey: 'test-form' }, row.key)
-              )
-            );
-          }
-        );
-
-      await expect(
-        handler.runOrSaveRequest(
-          async () => {
-            throw new TypeError('Failed to fetch');
-          },
-          stepUrl,
-          { method: 'POST', body: '{"name":"old"}' },
-          'submit',
-          'Insurance'
-        )
-      ).rejects.toThrow('Failed to fetch');
-      queued.push(
-        {
-          type: 'submit',
-          stepKey: 'Insurance',
-          url: '/panel/step/submit/file/'
-        },
-        { type: 'submit', stepKey: 'Other', url: stepUrl },
-        { type: 'submit', url: '/panel/custom/submit/v3/' },
-        { type: 'registerEvent', stepKey: 'Insurance', url: '/event/' }
-      );
-
-      await handler.runOrSaveRequest(
-        async () => ({ ok: true }),
-        stepUrl,
-        { method: 'POST', body: '{"name":"new"}' },
-        'submit',
-        'Insurance'
-      );
-
-      expect(queued).toEqual([
-        {
-          type: 'submit',
-          stepKey: 'Insurance',
-          url: '/panel/step/submit/file/'
-        },
-        { type: 'submit', stepKey: 'Other', url: stepUrl },
-        { type: 'submit', url: '/panel/custom/submit/v3/' },
-        { type: 'registerEvent', stepKey: 'Insurance', url: '/event/' }
-      ]);
-    });
-
-    it('retains a newer queued snapshot when an older concurrent save succeeds', async () => {
-      const queued: any[] = [];
-      const stepUrl = '/panel/step/submit/v3/';
-      let nextKey = 1;
-      (handler as any).indexedDBSupported = true;
-      jest
-        .spyOn(handler, 'saveRequest')
-        .mockImplementation(async (url, options, type, stepKey) => {
-          queued.push({
-            key: nextKey++,
-            formKey: 'test-form',
-            url,
-            type,
-            stepKey,
-            body: options.body
-          });
-        });
-      jest
-        .spyOn(handler, 'dbHasRequest')
-        .mockImplementation(async (type) =>
-          queued.some((row) => !type || row.type === type)
-        );
-      jest.spyOn(handler, 'replayRequests').mockResolvedValue();
-      jest
-        .spyOn(handler as any, 'getDbTransaction')
-        .mockImplementation(async () => ({
-          store: {
-            openCursor: () => {
-              const request: any = {};
-              const rows = [...queued];
-              let index = 0;
-              const advance = () => {
-                const row = rows[index];
-                request.onsuccess?.({
-                  target: {
-                    result: row
-                      ? {
-                          value: row,
-                          key: row.key,
-                          delete: () => queued.splice(queued.indexOf(row), 1),
-                          continue: () => {
-                            index++;
-                            Promise.resolve().then(advance);
-                          }
-                        }
-                      : null
-                  }
-                });
-              };
-              Promise.resolve().then(advance);
-              return request;
-            }
-          }
-        }));
-      let finishOlder!: (response: any) => void;
-      let olderStarted!: () => void;
-      const started = new Promise<void>((resolve) => {
-        olderStarted = resolve;
-      });
-      const older = handler.runOrSaveRequest(
-        () => {
-          olderStarted();
-          return new Promise((resolve) => {
-            finishOlder = resolve;
-          });
-        },
-        stepUrl,
-        { method: 'POST', body: '{"name":"old"}' },
-        'submit',
-        'Insurance'
-      );
-      await started;
-      await expect(
-        handler.runOrSaveRequest(
-          async () => {
-            throw new TypeError('Failed to fetch');
-          },
-          stepUrl,
-          { method: 'POST', body: '{"name":"new"}' },
-          'submit',
-          'Insurance'
-        )
-      ).rejects.toThrow('Failed to fetch');
-      finishOlder({ ok: true });
-      await older;
-      expect(queued.map((row) => row.body)).toEqual(['{"name":"new"}']);
-      const complete = jest.fn().mockResolvedValue({ ok: true });
-      await expect(
-        handler.runOrSaveRequest(
-          complete,
-          '/event/',
-          { method: 'POST', body: '{}' },
-          'registerEvent',
-          'Insurance',
-          { requireAcknowledgement: true }
-        )
-      ).rejects.toThrow('Some answers are still being saved');
-      expect(complete).not.toHaveBeenCalled();
-      await handler.runOrSaveRequest(
-        async () => ({ ok: true }),
-        stepUrl,
-        { method: 'POST', body: '{"name":"new"}' },
-        'submit',
-        'Insurance'
-      );
-      expect(queued).toEqual([]);
-      await handler.runOrSaveRequest(
-        complete,
-        '/event/',
-        { method: 'POST', body: '{}' },
-        'registerEvent',
-        'Insurance',
-        { requireAcknowledgement: true }
-      );
-      expect(complete).toHaveBeenCalledTimes(1);
-    });
-
-    it('releases replay after connectivity drops so reconnect can save before completion', async () => {
-      const originalFetch = (global as any).fetch;
-      const queued: any[] = [
-        {
-          formKey: 'test-form',
-          key: 1,
-          timestamp: 1,
-          type: 'submit',
-          stepKey: 'Insurance',
-          url: '/step/',
-          method: 'POST',
-          headers: '{}',
-          body: '{}',
-          bodyType: 'text',
-          retryAttempts: 0
-        },
-        {
-          formKey: 'test-form',
-          key: 2,
-          timestamp: 2,
-          type: 'registerEvent',
-          stepKey: 'Insurance',
-          url: '/event/',
-          method: 'POST',
-          headers: '{}',
-          body: '{}',
-          bodyType: 'text',
-          retryAttempts: 0
-        }
-      ];
-      (handler as any).indexedDBSupported = true;
-      jest
-        .spyOn(handler, 'dbHasRequest')
-        .mockImplementation(async (type) =>
-          queued.some((row) => !type || row.type === type)
-        );
-      jest
-        .spyOn(handler as any, 'hasReplayableRequest')
-        .mockResolvedValue(false);
-      jest
-        .spyOn(handler as any, 'getDbTransaction')
-        .mockImplementation(async () => ({
-          store: {
-            openCursor: () => {
-              const request: any = {};
-              const rows = [...queued];
-              let index = 0;
-              const advance = () => {
-                const row = rows[index];
-                request.onsuccess?.({
-                  target: {
-                    result: row
-                      ? {
-                          value: row,
-                          key: row.key,
-                          continue: () => {
-                            index++;
-                            Promise.resolve().then(advance);
-                          }
-                        }
-                      : null
-                  }
-                });
-              };
-              Promise.resolve().then(advance);
-              return request;
-            },
-            get: (key: number) => {
-              const request: any = {};
-              Promise.resolve().then(() => {
-                request.result = queued.find((row) => row.key === key);
-                request.onsuccess?.();
-              });
-              return request;
-            },
-            put: (row: any, key: number) => {
-              queued[queued.findIndex((old) => old.key === key)] = row;
-            },
-            delete: (key: number) => {
-              queued.splice(
-                queued.findIndex((row) => row.key === key),
-                1
-              );
-            }
-          }
-        }));
-      (global as any).fetch = jest.fn().mockImplementation(async () => {
-        (global.navigator as any).onLine = false;
-        throw new TypeError('Failed to fetch');
-      });
-      try {
-        const settled = await Promise.race([
-          handler.replayRequests().then(() => true),
-          new Promise<boolean>((resolve) =>
-            setTimeout(() => resolve(false), 1000)
-          )
-        ]);
-        expect(settled).toBe(true);
-        expect(queued.map((row) => row.type)).toEqual([
-          'submit',
-          'registerEvent'
-        ]);
-        expect(queued[0].retryAttempts).toBe(1);
-        (global.navigator as any).onLine = true;
-        const persisted: string[] = [];
-        (global as any).fetch = jest
-          .fn()
-          .mockImplementation(async (url: string) => {
-            persisted.push(url);
-            return { status: 200 };
-          });
-        await handler.replayRequests();
-        expect(persisted).toEqual(['/step/', '/event/']);
-        expect(queued).toEqual([]);
-      } finally {
-        (global as any).fetch = originalFetch;
-        (global.navigator as any).onLine = true;
-      }
-    });
-
-    it('does not replay queued completion until a failed step save succeeds', async () => {
-      const queued = [
-        {
-          type: 'submit',
-          stepKey: 'Insurance',
-          url: '/step/',
-          timestamp: 1,
-          value: 'old'
-        },
-        {
-          type: 'submit',
-          stepKey: 'Insurance',
-          url: '/step/',
-          timestamp: 2,
-          value: 'new'
-        },
-        {
-          type: 'registerEvent',
-          stepKey: 'Insurance',
-          url: '/event/',
-          timestamp: 3,
-          value: ''
-        }
-      ];
-      const replayed: string[] = [];
-      let saveSucceeds = false;
-      (handler as any).indexedDBSupported = true;
-      jest
-        .spyOn(handler, 'dbHasRequest')
-        .mockImplementation(async (type?: string) =>
-          queued.some((request) => !type || request.type === type)
-        );
-      jest
-        .spyOn(handler as any, 'hasReplayableRequest')
-        .mockResolvedValue(false);
-      jest
-        .spyOn(handler as any, 'getDbTransaction')
-        .mockImplementation(async () => ({
-          store: {
-            openCursor: () => {
-              const request: { onsuccess?: (event: any) => void } = {};
-              let index = 0;
-              const advance = () => {
-                const row = queued[index];
-                request.onsuccess?.({
-                  target: {
-                    result: row
-                      ? {
-                          value: row,
-                          key: index + 1,
-                          continue: () => {
-                            index++;
-                            Promise.resolve().then(advance);
-                          }
-                        }
-                      : null
-                  }
-                });
-              };
-              Promise.resolve().then(advance);
-              return request;
-            }
-          }
-        }));
-      jest
-        .spyOn(handler as any, 'replayRequestsInParallel')
-        .mockImplementation(async (requests: typeof queued) => {
-          let saved = true;
-          requests.forEach((request) => {
-            if (request.value === 'old' && !saveSucceeds) {
-              saved = false;
-              return;
-            }
-            replayed.push(request.value || request.type);
-            const index = queued.indexOf(request);
-            if (index !== -1) queued.splice(index, 1);
-          });
-          return [saved];
-        });
-
-      await handler.replayRequests();
-      expect(replayed).toEqual([]);
-      expect(queued).toHaveLength(3);
-
-      saveSucceeds = true;
-      await handler.replayRequests();
-      expect(replayed).toEqual(['old', 'new', 'registerEvent']);
-      expect(queued).toEqual([]);
     });
 
     it('executes request immediately when online', async () => {
@@ -1407,14 +1609,13 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         body: '',
         bodyType: 'text',
         metadata: { fieldKey: 'FileUpload1' },
+        userId: 'user-1',
         key: 99,
         retryAttempts: 0
       };
 
       jest.useFakeTimers();
-      const replayPromise = (handlerWithSpy as any).replayRequestsInParallel([
-        request
-      ]);
+      const replayPromise = (handlerWithSpy as any).replayRequest(request);
       while (jest.getTimerCount() > 0) {
         jest.runOnlyPendingTimers();
       }
@@ -1427,30 +1628,6 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       expect(mockFileRetryStatus.FileUpload1).toBe(false);
 
       removeSpy.mockRestore();
-      (global as any).fetch = originalFetch;
-    });
-
-    it('keeps a conflicted step save queued and blocks later replay', async () => {
-      const originalFetch = (global as any).fetch;
-      (global as any).fetch = jest
-        .fn()
-        .mockRejectedValue(new FormConflictError());
-      const remove = jest.spyOn(handler as any, 'removeRequest');
-
-      const result = await (handler as any).replayRequestsInParallel([
-        {
-          url: '/panel/step/submit/v3/',
-          method: 'POST',
-          headers: JSON.stringify({}),
-          body: '{}',
-          bodyType: 'text',
-          key: 10,
-          retryAttempts: 0
-        }
-      ]);
-
-      expect(result).toEqual([false]);
-      expect(remove).not.toHaveBeenCalled();
       (global as any).fetch = originalFetch;
     });
 
@@ -1474,14 +1651,13 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         body: '',
         bodyType: 'text',
         metadata: { fieldKey: 'FileUpload1' },
+        userId: 'user-1',
         key: 101,
         retryAttempts: 0
       };
 
       jest.useFakeTimers();
-      const replayPromise = (
-        handlerWithCallback as any
-      ).replayRequestsInParallel([request]);
+      const replayPromise = (handlerWithCallback as any).replayRequest(request);
       while (jest.getTimerCount() > 0) {
         jest.runOnlyPendingTimers();
       }
@@ -1509,17 +1685,15 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       mockInitState.linkToken = 'tok';
       mockInitState.linkSecret = 'secret';
 
-      await (handlerWithLink as any).replayRequestsInParallel([
-        {
-          url: `${getApiUrl()}panel/step/submit/v3/`,
-          method: 'POST',
-          headers: JSON.stringify({ 'Content-Type': 'application/json' }),
-          body: '',
-          bodyType: 'text',
-          key: 103,
-          retryAttempts: 0
-        }
-      ]);
+      await (handlerWithLink as any).replayRequest({
+        url: `${getApiUrl()}panel/step/submit/v3/`,
+        method: 'POST',
+        headers: JSON.stringify({ 'Content-Type': 'application/json' }),
+        body: '',
+        bodyType: 'text',
+        key: 103,
+        retryAttempts: 0
+      });
 
       // The replay went through on the first attempt, so the header is what the
       // server accepted rather than what a retry happened to send.
