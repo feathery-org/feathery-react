@@ -14,7 +14,7 @@ const YOU: VersionAuthor = { kind: 'user', key: 'you', label: 'You' };
 let seq = 0;
 const v = (over: Partial<DocxVersion> = {}): DocxVersion => {
   seq += 1;
-  const iso = over.ended_at ?? '2026-09-02T12:00:00Z';
+  const iso = over.ended_at ?? '2026-09-02T12:00:00';
   return {
     id: `v${seq}`,
     session_id: `s${seq}`,
@@ -83,7 +83,7 @@ describe('HistoryPanel', () => {
         name: '',
         seq: 0,
         is_baseline: true,
-        ended_at: '2026-09-14T20:17:01Z',
+        ended_at: '2026-09-14T20:17:01',
         authors: []
       })
     ]);
@@ -174,6 +174,56 @@ describe('HistoryPanel', () => {
     expect(view.queryByTitle('Robin')).toBeNull();
   });
 
+  it('names each person in a folded row', async () => {
+    const edited = { changes: '/changes.gz', change_count: 1 };
+    const host = makeHost([
+      v({
+        name: 'Recent',
+        seq: 2,
+        ended_at: '2026-09-02T12:00:00',
+        actor_name: 'Bob',
+        ...edited
+      }),
+      v({
+        seq: 1,
+        ended_at: '2026-09-02T11:50:00',
+        actor_name: 'Alice',
+        ...edited
+      })
+    ]);
+    const view = renderPanel(host);
+    await view.findByText('Recent');
+    expect(view.queryByTitle('Bob')).not.toBeNull();
+    expect(view.queryByTitle('Alice')).not.toBeNull();
+  });
+
+  it('keeps folded authors while the live session heads the row', async () => {
+    const host = makeHost([
+      v({
+        name: 'Live session',
+        seq: 2,
+        session_id: 'live',
+        is_current: true,
+        closed_at: null,
+        ended_at: '2026-09-02T12:05:00'
+      }),
+      v({
+        seq: 1,
+        ended_at: '2026-09-02T11:55:00',
+        authors: [{ kind: 'assistant', label: 'Robin' }],
+        changes: '/changes.gz',
+        change_count: 1
+      })
+    ]);
+    const view = renderPanel(host, undefined, undefined, {
+      sessionId: 'live',
+      authors: [YOU]
+    });
+    await view.findByText('Live session');
+    expect(view.queryByTitle('You')).not.toBeNull();
+    expect(view.queryByTitle('Robin')).not.toBeNull();
+  });
+
   it('does not apply live attribution to a different session or a closed version', async () => {
     const host = makeHost([
       v({ name: 'Other session', is_current: true, closed_at: null }),
@@ -224,8 +274,8 @@ describe('HistoryPanel', () => {
   it('lists versions under a month header and tags the newest Current', async () => {
     // Past-year dates so labels are stable ('Month Year') regardless of today.
     const host = makeHost([
-      v({ name: 'Latest', seq: 3, ended_at: '2020-09-05T09:00:00Z' }),
-      v({ name: 'Draft', seq: 2, ended_at: '2020-08-10T09:00:00Z' })
+      v({ name: 'Latest', seq: 3, ended_at: '2020-09-05T09:00:00' }),
+      v({ name: 'Draft', seq: 2, ended_at: '2020-08-10T09:00:00' })
     ]);
     const { findByText, getByText } = renderPanel(host);
 
@@ -238,9 +288,9 @@ describe('HistoryPanel', () => {
 
   // Newest heads the row; two plain sessions 5 and 10 minutes earlier fold.
   const clusterRows = () => [
-    v({ name: 'Recent', seq: 3, ended_at: '2026-09-02T12:00:00Z' }),
-    v({ seq: 2, ended_at: '2026-09-02T11:55:00Z' }),
-    v({ seq: 1, ended_at: '2026-09-02T11:50:00Z' })
+    v({ name: 'Recent', seq: 3, ended_at: '2026-09-02T12:00:00' }),
+    v({ seq: 2, ended_at: '2026-09-02T11:55:00' }),
+    v({ seq: 1, ended_at: '2026-09-02T11:50:00' })
   ];
   const timeOf = (iso: string) =>
     new Date(iso).toLocaleTimeString(undefined, {
@@ -255,7 +305,7 @@ describe('HistoryPanel', () => {
     expect(await findByText('Recent')).toBeTruthy();
     const chevron = getByRole('button', { name: 'Expand 2 earlier versions' });
     expect(chevron.getAttribute('aria-expanded')).toBe('false');
-    expect(queryByText(timeOf('2026-09-02T11:55:00Z'), { exact: false })).toBe(
+    expect(queryByText(timeOf('2026-09-02T11:55:00'), { exact: false })).toBe(
       null
     );
   });
@@ -272,7 +322,7 @@ describe('HistoryPanel', () => {
     });
     expect(collapse.getAttribute('aria-expanded')).toBe('true');
     // Inner rows carry the time only: no avatars or author names.
-    const inner = getAllByText(timeOf('2026-09-02T11:55:00Z'), {
+    const inner = getAllByText(timeOf('2026-09-02T11:55:00'), {
       exact: false
     });
     expect(inner).toHaveLength(1);
@@ -280,7 +330,7 @@ describe('HistoryPanel', () => {
     expect(inner[0].querySelector('[title]')).toBeNull();
 
     fireEvent.click(collapse);
-    expect(queryByText(timeOf('2026-09-02T11:55:00Z'), { exact: false })).toBe(
+    expect(queryByText(timeOf('2026-09-02T11:55:00'), { exact: false })).toBe(
       null
     );
   });
@@ -297,22 +347,20 @@ describe('HistoryPanel', () => {
     // Toggling the chevron does not open the cluster's head version.
     expect(onSelect).not.toHaveBeenCalled();
 
-    fireEvent.click(
-      getByText(timeOf('2026-09-02T11:50:00Z'), { exact: false })
-    );
+    fireEvent.click(getByText(timeOf('2026-09-02T11:50:00'), { exact: false }));
     expect(onSelect).toHaveBeenCalledWith(rows[2]);
   });
 
   it('keeps sessions more than 15 minutes apart as separate rows', async () => {
     const host = makeHost([
-      v({ name: 'Recent', seq: 2, ended_at: '2026-09-02T12:00:00Z' }),
-      v({ seq: 1, ended_at: '2026-09-02T11:40:00Z' })
+      v({ name: 'Recent', seq: 2, ended_at: '2026-09-02T12:00:00' }),
+      v({ seq: 1, ended_at: '2026-09-02T11:40:00' })
     ]);
     const { findByText, queryByRole, getByText } = renderPanel(host);
     await findByText('Recent');
     expect(queryByRole('button', { name: /earlier version/ })).toBeNull();
     expect(
-      getByText(timeOf('2026-09-02T11:40:00Z'), { exact: false })
+      getByText(timeOf('2026-09-02T11:40:00'), { exact: false })
     ).toBeTruthy();
   });
 
@@ -331,7 +379,7 @@ describe('HistoryPanel', () => {
     const older = v({
       name: 'Old name',
       seq: 1,
-      ended_at: '2026-08-10T12:00:00Z'
+      ended_at: '2026-08-10T12:00:00'
     });
     const host = makeHost([v({ name: 'Current one', seq: 2 }), older]);
     const { findByText, queryByLabelText } = renderPanel(host);
