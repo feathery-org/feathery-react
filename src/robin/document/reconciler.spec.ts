@@ -154,6 +154,101 @@ describe('reconciler', () => {
     expect(history.depth.undo).toBe(0);
   });
 
+  // review item 2: once a seam has changed the editor, reading the commit back and proving it are
+  // inside the same rollback boundary: a throw there rolls back, never leaves the edit unproven
+  it.each([
+    ['the read-back of the editor throws', 'serialize'],
+    ['the adapter throws on the live document', 'adapter'],
+    ['adopting the live ids throws', 'adopt'],
+    ['the proof throws', 'proof']
+  ])('rolls back when %s after a seam applied', (_name, stage) => {
+    const host = new ToyHost(doc);
+    const state = stateOf(host.serialize());
+    const b = (id: string) => baseOf(state.view.get(id));
+    const parsed = parseVerbInput(
+      'write',
+      addItem(b, (id) => shapeOf(state.view.get(id) as NfNode, state.pack.tree))
+    );
+    if (!parsed.ok) throw new Error('bad input');
+    const prepared = prepareWrite(state, parsed.value as WriteInput);
+    if (prepared.outcome !== 'verified') throw new Error(prepared.outcome);
+    let applied = false;
+    const pack = {
+      ...state.pack,
+      seams: Object.fromEntries(
+        Object.entries(state.pack.seams).map(([k, seam]) => [
+          k,
+          {
+            ...seam,
+            apply: (...a: Parameters<typeof seam.apply>) => {
+              seam.apply(...a);
+              applied = true;
+            }
+          }
+        ])
+      ),
+      adapter: {
+        ...state.pack.adapter,
+        toNormalForm: (native: string) => {
+          if (applied && stage === 'adapter') {
+            applied = false;
+            throw new Error('adapter broke');
+          }
+          return state.pack.adapter.toNormalForm(native);
+        }
+      },
+      projections: {
+        ...state.pack.projections,
+        accept: (...a: Parameters<typeof state.pack.projections.accept>) => {
+          if (applied && stage === 'proof') {
+            applied = false;
+            throw new Error('proof broke');
+          }
+          return state.pack.projections.accept(...a);
+        }
+      }
+    };
+    const serialize = host.serialize.bind(host);
+    host.serialize = () => {
+      if (applied && stage === 'serialize') {
+        applied = false;
+        throw new Error('serialize broke');
+      }
+      return serialize();
+    };
+    const history = new EngineHistory();
+    const r = reconcile({
+      pack: pack as never,
+      host,
+      history,
+      turnId: 'turn-1',
+      intent: 'test',
+      before: { view: state.view, residue: state.residue, native: doc },
+      intended: {
+        view: makeView(prepared.intended, state.pack),
+        residue: prepared.intendedResidue
+      },
+      adopt: (fresh) => {
+        if (applied && stage === 'adopt') {
+          applied = false;
+          throw new Error('adopt broke');
+        }
+        return state.ids.adopt(
+          fresh,
+          state.pack.tree,
+          state.pack.formatRefKeys,
+          [prepared.intended, state.view.nf]
+        );
+      }
+    });
+    expect(r.outcome).toBe('apply-failed');
+    if (r.outcome !== 'apply-failed') return;
+    expect(r.error).toMatch(/broke/);
+    expect(r.rollback.byteEqual).toBe(true);
+    expect(serialize()).toBe(doc);
+    expect(history.depth.undo).toBe(0);
+  });
+
   it('rolls back byte-equal when the proof fails, and pushes no history', () => {
     const { host, history, run } = setup(addItem);
     host.corruptNextSeam = true;

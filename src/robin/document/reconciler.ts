@@ -77,13 +77,33 @@ export type ReconcileOutcome =
 export function reconcile(input: ReconcileInput): ReconcileOutcome {
   const { pack, host, history, before, intended } = input;
   /** Undo only the groups this commit added; a document replacement is undone by its snapshot. */
-  const restore = (planned: CommitPlan | null, seamsRun: number) =>
-    rollback(host, before.native, {
-      undoLimit: planned?.history === 'editor' ? seamsRun : 0,
-      equivalent: (now) => equivalentNative(pack, now, before.native),
-      layoutOnly: (now) =>
-        pack.adapter.layoutOnly?.(now, before.native) ?? false
-    });
+  const restore = (
+    planned: CommitPlan | null,
+    seamsRun: number
+  ): RollbackOutcome => {
+    try {
+      return rollback(host, before.native, {
+        undoLimit: planned?.history === 'editor' ? seamsRun : 0,
+        equivalent: (now) => equivalentNative(pack, now, before.native),
+        layoutOnly: (now) =>
+          pack.adapter.layoutOnly?.(now, before.native) ?? false
+      });
+    } catch {
+      // the editor could not even be read: reopen the snapshot, and say the rollback is unproven
+      try {
+        host.open(before.native);
+      } catch {
+        // the editor is gone; nothing left to restore
+      }
+      return {
+        byteEqual: false,
+        exact: false,
+        equivalent: false,
+        via: 'snapshot',
+        undoSteps: 0
+      };
+    }
+  };
   let plan: CommitPlan | null = null;
   const seams: string[] = [];
   try {
@@ -123,16 +143,33 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
       rollback: restore(plan, seams.length)
     };
   }
-  const native = host.serialize();
-  const live = input.adopt(pack.adapter.toNormalForm(native));
-  const proof = prove(pack, {
-    before: before.view.nf,
-    intended: intended.view.nf,
-    live: live.nf,
-    turnId: input.turnId,
-    intendedResidue: intended.residue,
-    liveResidue: live.residue
-  });
+  // Reading the commit back and proving it are inside the same rollback boundary as the seams: once
+  // a seam has changed the editor, nothing may leave the edit applied and unproven.
+  let native: string;
+  let live: { nf: NormalForm; residue: Residue };
+  let proof: ReturnType<typeof prove>;
+  try {
+    native = host.serialize();
+    live = input.adopt(pack.adapter.toNormalForm(native));
+    proof = prove(pack, {
+      before: before.view.nf,
+      intended: intended.view.nf,
+      live: live.nf,
+      turnId: input.turnId,
+      intendedResidue: intended.residue,
+      liveResidue: live.residue
+    });
+  } catch (e) {
+    return {
+      outcome: 'apply-failed',
+      plan,
+      seams,
+      error: `reading the change back failed: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+      rollback: restore(plan, seams.length)
+    };
+  }
   // A document replacement keeps the before snapshot in engine history, so its card reverts it
   // exactly; the editor's own one-by-one reject cannot represent every structural change (an
   // inserted cell or section has no revision of its own), and that is a disclosure, not a failure.
