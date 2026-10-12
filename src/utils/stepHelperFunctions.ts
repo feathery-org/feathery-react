@@ -126,7 +126,7 @@ export function getInitialStep({
 // Store current step keys for each form during remount
 const savedStepKeys: Record<string, string> = {};
 
-export function getSavedStepKey(formId: string): string | undefined {
+function getSavedStepKey(formId: string): string | undefined {
   const savedKey = savedStepKeys[formId];
   if (savedKey) {
     delete savedStepKeys[formId];

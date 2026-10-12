@@ -5,7 +5,7 @@ import { AdvertisedDocumentOp, DOCUMENT_EDITOR_CAPABILITIES } from './registry';
  * ai-services owns model-facing tool descriptions and schemas; frontend-authored
  * receipts and refusal messages still return to the model as tool output.
  */
-export interface CapabilitiesDeclaration {
+interface CapabilitiesDeclaration {
   documentProtocolVersion: '2';
   supportedOperations: AdvertisedDocumentOp[];
 }

@@ -508,7 +508,7 @@ function readCellAppearance(cell: any): AppearanceFacts | undefined {
  * incidental facts about the cell. Every comparison goes through here, so no
  * caller can accidentally compare the spelling instead of the border.
  */
-export function borderSides(
+function borderSides(
   borders?: BorderFactsBySide
 ): Record<BorderSide, BorderFacts | undefined> {
   const all = borders?.all;

@@ -319,7 +319,7 @@ export function clearBrowserErrors(formRef: React.MutableRefObject<any>) {
   clearBrowserErrorsDebounced(formRef);
 }
 
-export function objectMap(obj: any, transform: any) {
+function objectMap(obj: any, transform: any) {
   return Object.entries(obj).reduce((newObj, [key, val]) => {
     return { ...newObj, [key]: transform(val) };
   }, {});

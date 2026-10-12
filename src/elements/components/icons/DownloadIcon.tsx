@@ -1,5 +1,4 @@
 import React from 'react';
-
 export default function DownloadIcon({ width = 26, height = 26 }) {
   return (
     <svg

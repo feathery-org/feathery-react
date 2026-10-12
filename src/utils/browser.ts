@@ -19,7 +19,7 @@ export function featheryWindow() {
   return runningInClient() ? window : ({} as any);
 }
 
-export const isHoverDevice = () =>
+const isHoverDevice = () =>
   featheryWindow().matchMedia('(hover: hover)').matches;
 
 export const isTouchDevice = () =>
@@ -38,7 +38,7 @@ export const isIOS = () => {
   return /iPad|iPhone|iPod/.test(userAgentString);
 };
 
-export const isAndroid = () => {
+const isAndroid = () => {
   return /(android)/i.test(navigator.userAgent);
 };
 

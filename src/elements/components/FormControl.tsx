@@ -42,5 +42,3 @@ export function FormControl({
     />
   );
 }
-
-export default { FormControl };

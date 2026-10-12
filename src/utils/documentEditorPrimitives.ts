@@ -1244,7 +1244,7 @@ export const invalidateDocumentLayout = (editor: LiveEditor): void => {
  * A widget the document no longer holds restores nothing - the cell went away
  * with the change the restore was part of, so there is nothing to put back.
  */
-export interface AppearanceTarget {
+interface AppearanceTarget {
   restore: AppearanceRestore;
   /** The first paragraph of the cell the restore names, captured live. */
   paragraph?: unknown;
@@ -2670,7 +2670,7 @@ export const clearCellShading = (
  * Called before the first member of a group resolves, which is the last moment
  * at which that is true.
  */
-export const resolveAppearanceTargets = (
+const resolveAppearanceTargets = (
   editor: LiveEditor,
   restores: AppearanceRestore[]
 ): AppearanceTarget[] =>
@@ -2780,7 +2780,7 @@ const replayAppearanceRestores = (
  * overwrites a style someone set deliberately. A collapsed caret is enough:
  * SyncFusion applies a paragraph style to the paragraph containing the selection.
  */
-export const replayParagraphStyles = (
+const replayParagraphStyles = (
   editor: LiveEditor,
   restores: ParagraphStyleRestore[]
 ) => {

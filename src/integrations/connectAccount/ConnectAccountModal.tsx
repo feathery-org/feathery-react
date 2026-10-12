@@ -66,7 +66,7 @@ export type SavedAccountCredential = {
   preferred?: boolean;
 };
 
-export type ConnectAccountModalProps = {
+type ConnectAccountModalProps = {
   show: boolean;
   provider: string;
   client: any;

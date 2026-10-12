@@ -78,7 +78,7 @@ export interface Rational {
   d: number;
 }
 
-export type FormulaErrorCode =
+type FormulaErrorCode =
   | 'missing_formula'
   | 'formula_syntax'
   | 'bad_reference'
@@ -150,7 +150,7 @@ function makeRational(n: number, d: number): Rational {
   };
 }
 
-export const rationalFromNumeric = (value: NumericValue): Rational => {
+const rationalFromNumeric = (value: NumericValue): Rational => {
   let d = 1;
   for (let i = 0; i < value.scale; i++) d = safe(d * 10, 'a cell value');
   return makeRational(value.units, d);
@@ -204,7 +204,7 @@ export const ROUNDING_MODES: readonly RoundingMode[] = [
   'away_from_zero'
 ];
 
-export interface RationalToScaled {
+interface RationalToScaled {
   value: NumericValue;
   /** True when the exact value did not fit in `decimals` and was rounded. */
   rounded: boolean;
@@ -260,14 +260,8 @@ export function rationalToScaled(
 // Grammar: tokens
 // ---------------------------------------------------------------------------
 
-export const FORMULA_FUNCTIONS = [
-  'sum',
-  'average',
-  'min',
-  'max',
-  'count'
-] as const;
-export type FormulaFunction = typeof FORMULA_FUNCTIONS[number];
+const FORMULA_FUNCTIONS = ['sum', 'average', 'min', 'max', 'count'] as const;
+type FormulaFunction = typeof FORMULA_FUNCTIONS[number];
 
 export interface CellReference {
   kind: 'cell';
@@ -441,7 +435,7 @@ function tokenize(source: string): Token[] {
 // Grammar: AST + recursive-descent parser (never eval)
 // ---------------------------------------------------------------------------
 
-export type FormulaNode =
+type FormulaNode =
   | { kind: 'literal'; value: Rational; text: string }
   | { kind: 'ref'; ref: FormulaReference; text: string }
   | { kind: 'call'; fn: FormulaFunction; ref: RangeReference; text: string }
@@ -599,7 +593,7 @@ function parseFormula(source: string): FormulaNode {
 }
 
 /** One aggregate call as written: the function and the range it spans. */
-export interface FormulaAggregate {
+interface FormulaAggregate {
   fn: FormulaFunction;
   ref: RangeReference;
 }
@@ -638,7 +632,7 @@ export function collectFormulaAggregates(
 }
 
 /** Every reference the AST mentions, in source order. */
-export function collectReferences(node: FormulaNode): FormulaReference[] {
+function collectReferences(node: FormulaNode): FormulaReference[] {
   const out: FormulaReference[] = [];
   const walk = (current: FormulaNode): void => {
     if (current.kind === 'ref') out.push(current.ref);
@@ -1020,7 +1014,7 @@ export interface FormulaRenderSuccess {
   decimals: number;
 }
 
-export interface FormulaRenderFailure {
+interface FormulaRenderFailure {
   ok: false;
   error: 'rounding_required' | 'result_unit_mismatch' | 'magnitude_overflow';
   message: string;

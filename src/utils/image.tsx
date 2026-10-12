@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react';
 
-import { isEmptyArray, toList } from './array';
-
-export const THUMBNAIL_TYPE = {
+const THUMBNAIL_TYPE = {
   PDF: 'pdf',
   IMAGE: 'image',
   UNKNOWN: 'unknown'
 };
 
-export const BASE64_REGEX =
+const BASE64_REGEX =
   /(data:image\/(png|jpg|jpeg);base64,)([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/gm;
 
-export function getThumbnailType(file: File) {
+function getThumbnailType(file: File) {
   let thumbnailType = THUMBNAIL_TYPE.UNKNOWN;
 
   if (file) {
@@ -28,28 +26,10 @@ export function getThumbnailType(file: File) {
 }
 
 /**
- * Utility hook for handling file values in file upload fields.
- * This custom hook maintains a referentially-stable list of files,
- * and will execute a callback every time that list changes.
- */
-export function useFileData(initialFiles: any, onSetFiles = () => {}) {
-  const [files, setFiles] = useState<any[]>(toList(initialFiles));
-
-  useEffect(() => {
-    // Prevent infinite loop of setting a new empty array as the value
-    if (isEmptyArray(files) && isEmptyArray(initialFiles)) return;
-    setFiles(toList(initialFiles));
-    onSetFiles();
-  }, [initialFiles]);
-
-  return [files, setFiles];
-}
-
-/**
  * Given a File (or a Promise<File>), convert the file to a filename and thumbnail.
  * Filename will be a plaintext string and thumbnail will be a base64 encoded image.
  */
-export async function getThumbnailData(filePromise: File | Promise<File>) {
+async function getThumbnailData(filePromise: File | Promise<File>) {
   const file = await (filePromise as any);
   const thumbnailType = getThumbnailType(file);
   if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
