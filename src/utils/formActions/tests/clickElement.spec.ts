@@ -1,5 +1,18 @@
 import internalState from '../../internalState';
 import { clickElement } from '../clickElement';
+import * as formActionUtils from '../utils';
+
+// The real first-interaction release needs a configured client, covered in utils.spec
+let markInteraction: jest.SpyInstance;
+beforeEach(() => {
+  markInteraction = jest
+    .spyOn(formActionUtils, 'markInteraction')
+    .mockImplementation(() => {});
+});
+
+afterEach(() => {
+  markInteraction.mockRestore();
+});
 
 // A repeated button's own error comes back as buttonError for the clicked row, even though it is published late
 describe('clickElement repeated button error contract', () => {

@@ -6,6 +6,7 @@ import {
   diffInlineErrorSnapshots,
   getLiveStepKey,
   InlineErrorReport,
+  markInteraction,
   NOT_LOADED_MESSAGE,
   snapshotInlineErrors
 } from './utils';
@@ -58,6 +59,7 @@ export async function navigateToStep(
   const entryIndex = entries.findIndex(
     (entry: any) => entry?.step_key === stepKey
   );
+  markInteraction();
   const fromStepKey = getLiveStepKey(state) ?? '';
   const errorsBefore = snapshotInlineErrors(state);
   try {

@@ -1,4 +1,10 @@
 import { InlineErrorEntry, InlineErrors } from '../inlineErrors';
+import { featheryWindow } from '../browser';
+import {
+  FEATHERY_INTERACTION_EVENT,
+  isInteractionDetected,
+  setInteractionDetected
+} from '../interactionState';
 
 export type FormActionHandlers = {
   buttonOnClick: (button: any) => Promise<void>;
@@ -20,6 +26,13 @@ export const NOT_LOADED_MESSAGE = 'The form has not loaded yet.';
 
 export const getLiveStepKey = (state: any): string | undefined =>
   state.latestStepName ?? state.currentStep?.key;
+
+// Acting on the person's behalf counts as their first interaction, so held events and saves go out
+export const markInteraction = (): void => {
+  if (isInteractionDetected()) return;
+  setInteractionDetected();
+  featheryWindow().dispatchEvent(new CustomEvent(FEATHERY_INTERACTION_EVENT));
+};
 
 // Key and repeat row stay separate so a literal key like `f[0]` never collides with row 0 of `f`
 export interface InlineErrorReport {

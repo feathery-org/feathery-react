@@ -1,6 +1,19 @@
 import internalState from '../../internalState';
 import { runLogicRuleById } from '../../../Form/logic';
 import { runLogicRule } from '../runLogicRule';
+import * as formActionUtils from '../utils';
+
+// The real first-interaction release needs a configured client, covered in utils.spec
+let markInteraction: jest.SpyInstance;
+beforeEach(() => {
+  markInteraction = jest
+    .spyOn(formActionUtils, 'markInteraction')
+    .mockImplementation(() => {});
+});
+
+afterEach(() => {
+  markInteraction.mockRestore();
+});
 
 jest.mock('../../../Form/logic', () => ({ runLogicRuleById: jest.fn() }));
 

@@ -63,3 +63,27 @@ describe('snapshotInlineErrors / diffInlineErrorSnapshots', () => {
     expect(diffInlineErrorSnapshots(before, after)).toEqual([]);
   });
 });
+
+describe('markInteraction', () => {
+  it('releases what the form held for a first interaction exactly once', () => {
+    jest.isolateModules(() => {
+      const { markInteraction } = require('../utils');
+      const {
+        FEATHERY_INTERACTION_EVENT,
+        isInteractionDetected
+      } = require('../../interactionState');
+      // Keeps the event from the module-load client, which would flush over the network
+      const dispatch = jest
+        .spyOn(window, 'dispatchEvent')
+        .mockImplementation(() => true);
+
+      markInteraction();
+      markInteraction();
+
+      expect(isInteractionDetected()).toBe(true);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(dispatch.mock.calls[0][0].type).toBe(FEATHERY_INTERACTION_EVENT);
+      dispatch.mockRestore();
+    });
+  });
+});
