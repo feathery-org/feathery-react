@@ -29,6 +29,7 @@ const dispatch = async (verb: string, input: unknown): Promise<any> => {
 };
 const read = async (ids: string[]): Promise<Record<string, any>> => {
   const r = await dispatch('read', { ids });
+  if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 400));
   return Object.fromEntries(r.nodes.map((n: any) => [n.id, n]));
 };
 const at = (p: Array<string | number>) => lane.call<string>('idAt', p);
@@ -115,6 +116,89 @@ describe('the review rail and undo routing in the real editor', () => {
     await lane.call('rail');
     await lane.call('clickTitle', 0);
     expect(await lane.call<string>('caretParagraphText')).toContain('A note on its own page.');
+  });
+
+  // matrix-1 T3: the model's own column write, then Reject on its card in the rail. Every control
+  // the card inserted goes, tags included, and the bindings index holds no phantom name.
+  it('Reject on a new bound column removes every control it inserted, from the document and the bindings index', async () => {
+    turn += 1;
+    await lane.call('open', fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4d.sfdt.json'), 'utf8'));
+    const pre = await settled();
+    const before = await lane.call<{ indexed: string[]; tags: string[] }>('bindingNames');
+    const run = JSON.parse(fs.readFileSync(path.join(__dirname, 'runs', 'matrix-1-run.json'), 'utf8')) as { writes: Array<{ task: string; input: any }> };
+    const r = await dispatch('write', (run.writes.find((w) => w.task === 'T3') as { input: any }).input);
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 600));
+    const mid = await lane.call<{ indexed: string[]; tags: string[] }>('bindingNames');
+    expect(mid.tags.filter((t) => /premium_tax/.test(t))).toHaveLength(5);
+    expect(mid.indexed).toContain('premium_tax');
+    expect((await lane.call<Array<{ title: string }>>('rail')).map((c) => c.title)).toEqual(['Added a column']);
+    await lane.call('clickCard', 0, 'Reject');
+    const after = await lane.call<{ indexed: string[]; tags: string[] }>('bindingNames');
+    expect(after.tags.filter((t) => /premium_tax/.test(t))).toEqual([]);
+    expect(after.indexed).not.toContain('premium_tax');
+    expect(after).toEqual(before);
+    expect(await same(await settled(), pre)).toBe(true);
+  });
+
+  it('Reject on a bound column card that is not the last change set (by projection) removes its controls too', async () => {
+    turn += 1;
+    await lane.call('open', fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4d.sfdt.json'), 'utf8'));
+    const before = await lane.call<{ indexed: string[]; tags: string[] }>('bindingNames');
+    const run = JSON.parse(fs.readFileSync(path.join(__dirname, 'runs', 'matrix-1-run.json'), 'utf8')) as { writes: Array<{ task: string; input: any }> };
+    const r = await dispatch('write', (run.writes.find((w) => w.task === 'T3') as { input: any }).input);
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 600));
+    // a later change set elsewhere, so the column card is no longer the last and resolves by projection
+    turn += 1;
+    const sid = await at(['sections', 2]);
+    const sec = (await read([sid]))[sid];
+    const p = sec.blocks.find((b: any) => b.kind === 'paragraph' && b.inlines?.length);
+    const r2 = await dispatch('write', { intent: 'Add a note.', scope: { ids: [] }, changes: [{ kind: 'insert_after', anchor: p.id, container: sec.shape, node: { kind: 'paragraph', style: p.style, inlines: [{ kind: 'run', text: 'A later note.' }] } }] });
+    if (!r2.ok) throw new Error(JSON.stringify(r2).slice(0, 600));
+    const cards = await lane.call<Array<{ title: string }>>('rail');
+    const column = cards.findIndex((c) => c.title === 'Added a column');
+    expect(column).toBeGreaterThanOrEqual(0);
+    await lane.call('clickCard', column, 'Reject');
+    const after = await lane.call<{ indexed: string[]; tags: string[] }>('bindingNames');
+    expect(after.tags.filter((t) => /premium_tax/.test(t))).toEqual([]);
+    expect(after.indexed).not.toContain('premium_tax');
+    expect(after.tags).toEqual(before.tags);
+    expect((await lane.call<Array<{ title: string }>>('rail')).map((c) => c.title)).toEqual(['Added a paragraph']);
+  });
+
+  it('Reject on a new section with its own bindings removes them too (the Umbrella case)', async () => {
+    const pre = await fresh();
+    const before = await lane.call<{ indexed: string[]; tags: string[] }>('bindingNames');
+    const sid = await at(['sections', 1]);
+    const s = (await read([sid]))[sid];
+    const root = (await read(['root'])).root;
+    const fresh_ = (v: any): any => (Array.isArray(v) ? v.map(fresh_) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(strip(v)).filter(([k]) => k !== 'id').map(([k, x]) => [k, fresh_(x)])) : v);
+    const r = await dispatch('write', {
+      intent: 'Add an Umbrella section.',
+      scope: { ids: [] },
+      changes: [{
+        kind: 'insert_after',
+        anchor: sid,
+        container: root.shape,
+        node: {
+          kind: 'section',
+          style: s.style,
+          headersFooters: fresh_(s.headersFooters),
+          blocks: [
+            { kind: 'paragraph', style: s.blocks[0].style, inlines: [{ kind: 'run', text: 'Section 4 - Umbrella' }] },
+            { kind: 'paragraph', style: s.blocks[1].style, inlines: [{ kind: 'run', text: 'Limit of indemnity ' }, { kind: 'control', binding: { name: 'umbrella_limit', type: 'currency' }, inlines: [{ kind: 'run', text: '$5,000,000.00' }] }, { kind: 'run', text: ' any one occurrence.' }] }
+          ]
+        }
+      }]
+    });
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 600));
+    expect((await lane.call<{ tags: string[] }>('bindingNames')).tags.some((t) => /umbrella_limit/.test(t))).toBe(true);
+    expect((await lane.call<Array<{ title: string; perEditButtons: number }>>('rail')).map((c) => c.perEditButtons)).toEqual([0]);
+    await lane.call('clickCard', 0, 'Reject');
+    const after = await lane.call<{ indexed: string[]; tags: string[] }>('bindingNames');
+    expect(after.tags.filter((t) => /umbrella/.test(t))).toEqual([]);
+    expect(after.indexed).not.toContain('umbrella_limit');
+    expect(after).toEqual(before);
+    expect(await settled()).toBe(pre);
   });
 
   it('toolbar Undo after a structural commit goes to the engine: the document before the write', async () => {

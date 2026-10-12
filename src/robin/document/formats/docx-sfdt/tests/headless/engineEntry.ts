@@ -245,6 +245,24 @@ const api = {
     return String(selection.text ?? '');
   },
 
+  /** Binding names the bindings' controller indexes now, and the binding tags the document holds. */
+  bindingNames(): { indexed: string[]; tags: string[] } {
+    const index = attached?.controller.index as any;
+    const indexed = new Set<string>();
+    for (const o of index?.occurrences ?? []) if (o?.def?.name) indexed.add(String(o.def.name));
+    for (const name of index?.fields?.keys?.() ?? []) indexed.add(String(name));
+    const tags: string[] = [];
+    const walk = (n: unknown) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!n || typeof n !== 'object') return;
+      const tag = (n as any).contentControlProperties?.tag;
+      if (typeof tag === 'string') tags.push(tag);
+      Object.values(n).forEach(walk);
+    };
+    walk(JSON.parse(live().serialize()));
+    return { indexed: [...indexed].sort(), tags: tags.sort() };
+  },
+
   /** Rows the bindings' controller indexes for a bound table, and how many times it was attached. */
   bindingRows(tableId: string): number {
     return attached?.controller.index?.tables.get(tableId)?.rows.length ?? -1;
