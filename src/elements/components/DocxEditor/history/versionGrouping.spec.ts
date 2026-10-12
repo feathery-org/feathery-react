@@ -1,5 +1,10 @@
-import { groupVersions } from './versionGrouping';
+import { foldedUnder, groupVersions } from './versionGrouping';
 import { DocxVersion } from './types';
+
+const must = <T>(value: T | null | undefined): T => {
+  if (value == null) throw new Error('Expected a value');
+  return value;
+};
 
 let seq = 0;
 const v = (endedAt: string, over: Partial<DocxVersion> = {}): DocxVersion =>
@@ -217,5 +222,19 @@ describe('groupVersions', () => {
     expect(sections[0].clusters[1].authors).toEqual([
       { kind: 'assistant', label: 'Robin' }
     ]);
+  });
+
+  it('finds what a row folds and the version just before it', () => {
+    const base = '2026-09-02T12:00:00';
+    const versions = [
+      v(base, { seq: 4 }),
+      v(at(base, 5), { seq: 3 }),
+      v(at(base, 9), { seq: 2 }),
+      v(at(base, 60), { seq: 1 })
+    ];
+    const folded = must(foldedUnder(versions, versions[0].id, NOW));
+    expect(folded.earlier.map((x) => x.seq)).toEqual([3, 2]);
+    expect(folded.preceding?.seq).toBe(1);
+    expect(foldedUnder(versions, versions[3].id, NOW)).toBeNull();
   });
 });

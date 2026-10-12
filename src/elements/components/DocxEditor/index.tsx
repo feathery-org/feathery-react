@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { createPortal } from 'react-dom';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
@@ -27,6 +33,7 @@ import {
   VersionDocument
 } from './history/useVersionDocument';
 import VersionViewer from './history/VersionViewer';
+import { foldedUnder } from './history/versionGrouping';
 import VersionBar from './history/VersionBar';
 import {
   DocxHistoryHost,
@@ -294,6 +301,12 @@ function DocxEditor({
   // completed list request is allowed to choose the initial Current version.
   const historyAutoSelectedRef = useRef(false);
   const firstUserKey = firstUserActorKey(historyVersions);
+  // A folded History row opens with every session folded under it.
+  const foldedVersions = useMemo(
+    () =>
+      viewingVersion ? foldedUnder(historyVersions, viewingVersion.id) : null,
+    [historyVersions, viewingVersion]
+  );
   // Highlight-changes toggle (version bar). Toggling remounts the viewer.
   const [highlightsOn, setHighlightsOn] = useState(true);
   const [sharedZoomFactor, setSharedZoomFactor] = useState<number | undefined>(
@@ -1287,6 +1300,7 @@ function DocxEditor({
               // Present only for the in-progress current version: a live-diffed
               // display document to open directly (no stored files exist).
               liveDoc={liveDoc ?? undefined}
+              folded={foldedVersions}
               onMeta={setVersionMeta}
               zoomFactor={sharedZoomFactor}
               onZoomFactorChange={setSharedZoomFactor}

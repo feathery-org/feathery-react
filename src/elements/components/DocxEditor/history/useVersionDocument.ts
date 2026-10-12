@@ -14,6 +14,12 @@ import {
 } from './sfdtDiff/index';
 import { DocxHistoryHost, DocxVersion } from './types';
 import { parseChangeList } from './validation';
+import {
+  diffFoldedSessions,
+  FoldedSession,
+  sessionAuthorKey,
+  sessionStart
+} from './foldedSessions';
 
 export interface VersionDocument {
   loading: boolean;
@@ -344,6 +350,73 @@ async function resolveAndCache(
   return resolve;
 }
 
+/** The sessions folded under a History row, and the version just before them. */
+export interface FoldedVersions {
+  earlier: DocxVersion[];
+  preceding: DocxVersion | null;
+}
+
+async function versionArtifacts(
+  host: DocxHistoryHost,
+  version: DocxVersion
+): Promise<Omit<FoldedSession, 'author'> | null> {
+  const local = localFor(version);
+  if (local)
+    return { finalSfdt: local.finalSfdt, changes: local.changes ?? null };
+  if (!version.final_sfdt) return null;
+  const finalSfdt = await gunzip(
+    await host.fetchVersionFile(version.final_sfdt)
+  );
+  let changes: ChangeList | null = null;
+  if (version.changes && version.change_count != null) {
+    try {
+      changes = parseChangeList(
+        JSON.parse(await gunzip(await host.fetchVersionFile(version.changes)))
+      );
+    } catch {
+      changes = null;
+    }
+  }
+  return { finalSfdt, changes };
+}
+
+// A folded row shows every folded session's edits; anything missing falls
+// back to the row's own version.
+async function resolveFolded(
+  host: DocxHistoryHost,
+  version: DocxVersion,
+  folded: FoldedVersions
+): Promise<ResolvedVersion> {
+  try {
+    const members = [...folded.earlier, version].sort((a, b) => a.seq - b.seq);
+    const artifacts = await Promise.all(
+      members.map((member) => versionArtifacts(host, member))
+    );
+    if (artifacts.every(Boolean)) {
+      const sessions = artifacts.map((artifact, index) => ({
+        ...(artifact as Omit<FoldedSession, 'author'>),
+        author: sessionAuthorKey(members[index])
+      }));
+      const before = folded.preceding
+        ? await versionArtifacts(host, folded.preceding)
+        : null;
+      const start = before
+        ? JSON.parse(before.finalSfdt)
+        : sessionStart(sessions[0]);
+      const changes = start && diffFoldedSessions(start, sessions);
+      if (changes)
+        return buildFromFinal(
+          sessions[sessions.length - 1].finalSfdt,
+          changes,
+          null
+        );
+    }
+  } catch {
+    // Fall through to the single-version view.
+  }
+  return resolveAndCache(host, version);
+}
+
 /** Warm a small set of immutable historical versions after the rail opens. */
 export function prefetchVersionDocuments(
   host: DocxHistoryHost | null | undefined,
@@ -361,7 +434,8 @@ export function prefetchVersionDocuments(
 
 export function useVersionDocument(
   host: DocxHistoryHost | null | undefined,
-  version: DocxVersion | null
+  version: DocxVersion | null,
+  folded?: FoldedVersions | null
 ): VersionDocument {
   const [state, setState] = useState<VersionDocument>({
     loading: true,
@@ -371,7 +445,11 @@ export function useVersionDocument(
   const reqId = useRef(0);
   const latestVersion = useRef(version);
   latestVersion.current = version;
-  const documentKey = version ? versionDocumentKey(version) : '';
+  const latestFolded = useRef(folded);
+  latestFolded.current = folded;
+  const documentKey = version
+    ? [version, ...(folded?.earlier ?? [])].map(versionDocumentKey).join(',')
+    : '';
 
   useEffect(() => {
     const version = latestVersion.current;
@@ -380,10 +458,13 @@ export function useVersionDocument(
       setState({ loading: false, error: false, degraded: true });
       return;
     }
+    const foldedVersions = latestFolded.current?.earlier.length
+      ? latestFolded.current
+      : null;
     // Local artifacts outrank a cached resolution: a prefetch may have cached
     // the degraded docx fallback before the close registered its snapshot.
     const cached =
-      version.is_current || localFor(version)
+      foldedVersions || version.is_current || localFor(version)
         ? undefined
         : cacheGet(cacheKey(host, version));
     if (cached) {
@@ -398,7 +479,10 @@ export function useVersionDocument(
       setState({ loading: false, ...next });
     };
 
-    resolveAndCache(host, version).then(done);
+    (foldedVersions
+      ? resolveFolded(host, version, foldedVersions)
+      : resolveAndCache(host, version)
+    ).then(done);
     return () => {
       reqId.current++;
     };

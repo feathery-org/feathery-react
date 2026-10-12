@@ -139,3 +139,26 @@ export function groupVersions(
 
   return sections;
 }
+
+/** The versions folded under `versionId`'s row and the version just before
+ *  them, or null when that row folds nothing. */
+export function foldedUnder(
+  versions: DocxVersion[],
+  versionId: string,
+  now: Date = new Date()
+): { earlier: DocxVersion[]; preceding: DocxVersion | null } | null {
+  for (const section of groupVersions(versions, now)) {
+    const cluster = section.clusters.find((c) => c.primary.id === versionId);
+    if (!cluster) continue;
+    if (!cluster.earlier.length) return null;
+    const oldest = Math.min(...cluster.earlier.map((v) => v.seq));
+    const preceding = versions
+      .filter((v) => v.seq < oldest)
+      .reduce<DocxVersion | null>(
+        (best, v) => (!best || v.seq > best.seq ? v : best),
+        null
+      );
+    return { earlier: cluster.earlier, preceding };
+  }
+  return null;
+}
