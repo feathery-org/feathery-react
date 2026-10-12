@@ -112,6 +112,10 @@ export const docxPack: Pack = {
   featureKeys: FEATURE_KEYS,
   // the server's card for how to edit a document (what it attached to these refusals on the rig)
   methodCards: ['edit-document'],
+  residueKeys: {
+    contentControlProperties:
+      "A content control's native properties are the editor's and are kept as they are: write `binding` to change what the control holds and `title` to rename it."
+  },
   cardCollections,
   cardNouns: {
     section: ['section', 'sections'],

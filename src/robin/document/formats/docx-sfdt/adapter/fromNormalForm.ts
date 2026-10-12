@@ -123,56 +123,60 @@ export function fromNormalForm(
     return out;
   };
 
+  /**
+   * A control's native properties: the residue's, as read; a new control takes the editor's own
+   * defaults. Only the tag (from the binding) and the title come from the normal form: a title it
+   * shows is written as shown, and one it leaves out is the tag's when the tag decided it.
+   */
   const controlProperties = (
     n: NfNode,
     record: NodeRecord | undefined
   ): Obj => {
-    const present = n.contentControlProperties;
-    const visible = value(
-      present ?? (record ? {} : DEFAULT_CONTROL_PROPERTIES())
-    ) as Obj;
-    let hidden: HiddenSub[] = record?.hiddenIn.contentControlProperties ?? [
-      { at: 0, k: 'color', v: DEFAULT_COLOUR }
-    ];
-    const original = record?.binding ?? null;
-    const has = Object.prototype.hasOwnProperty.call(n, 'binding');
-    const same =
-      original &&
-      isObject(n.binding) &&
-      JSON.stringify(n.binding) === JSON.stringify(original.view);
-    if (has && !same) {
-      hidden = hidden.filter((h) => h.k !== 'tag' && h.k !== 'title');
-      delete visible.tag;
-      delete visible.title;
-      if (isObject(n.binding)) {
-        const tag = formatBinding(n.binding, original?.order ?? []);
-        const title = tag.slice(0, TITLE_CAP);
-        if (original) {
-          hidden = [...(record?.hiddenIn.contentControlProperties ?? [])].map(
-            (h) =>
-              h.k === 'tag'
-                ? { ...h, v: tag }
-                : h.k === 'title'
-                ? { ...h, v: title }
-                : h
-          );
-        } else {
-          // a new control: tag, colour, title in the order the editor's own controls use
-          const locks = Object.keys(visible).filter(
-            (k) => k === 'lockContentControl' || k === 'lockContents'
-          ).length;
-          const colour =
-            hidden.find((h) => h.k === 'color')?.v ?? DEFAULT_COLOUR;
-          hidden = [
-            { at: locks, k: 'tag', v: tag },
-            { at: locks + 1, k: 'color', v: colour },
-            { at: locks + 2, k: 'title', v: title },
-            ...hidden.filter((h) => h.k !== 'color')
-          ];
-        }
+    const entries: Array<[string, unknown]> = record
+      ? Object.entries(
+          materialize({}, record.hiddenIn.contentControlProperties ?? [])
+        )
+      : [
+          ['color', DEFAULT_COLOUR],
+          ...Object.entries(DEFAULT_CONTROL_PROPERTIES())
+        ];
+    const index = (k: string) => entries.findIndex(([x]) => x === k);
+    const drop = (k: string) => {
+      const i = index(k);
+      if (i >= 0) entries.splice(i, 1);
+    };
+    /** Set `k`, or insert it after the first of `after` the control has (else first). */
+    const put = (k: string, v: unknown, after: string[]) => {
+      const i = index(k);
+      if (i >= 0) {
+        entries[i] = [k, v];
+        return;
       }
-    }
-    return materialize(visible, hidden);
+      const anchor = after.map(index).find((j) => j >= 0) ?? -1;
+      entries.splice(anchor + 1, 0, [k, v]);
+    };
+    const original = record?.binding ?? null;
+    let tag: string | undefined;
+    if (isObject(n.binding)) {
+      const same =
+        original && JSON.stringify(n.binding) === JSON.stringify(original.view);
+      tag = same
+        ? original.tag
+        : formatBinding(n.binding, original?.order ?? []);
+      if (!record) drop('color');
+      put('tag', tag, ['lockContents', 'lockContentControl']);
+      if (!record) put('color', DEFAULT_COLOUR, ['tag']);
+    } else if (original) drop('tag');
+    const hadTitle = index('title') >= 0;
+    const title =
+      typeof n.title === 'string'
+        ? n.title
+        : tag !== undefined && (hadTitle || !record)
+        ? tag.slice(0, TITLE_CAP)
+        : undefined;
+    if (title === undefined) drop('title');
+    else put('title', title, ['color', 'tag']);
+    return Object.fromEntries(entries);
   };
 
   const rootRecord = residue[nf.root.id] as NodeRecord | undefined;
@@ -215,7 +219,7 @@ export function fromNormalForm(
         ? ['blocks', 'contentControlProperties']
         : CANONICAL_KEYS[kind] ?? [];
     const order = record ? record.keys : canonical;
-    const wantsControl = isObject(n.binding) && kind === KIND.control;
+    const wantsControl = kind === KIND.control;
     const out: Obj = {};
 
     // Revision anchors: kept from the residue while `pending` is as read; re-authored otherwise.
@@ -297,7 +301,8 @@ export function fromNormalForm(
           'style',
           'markStyle',
           'listStyle'
-        ].includes(nfKey)
+        ].includes(nfKey) ||
+        (wantsControl && nfKey === 'title')
       )
         continue;
       emit(toNativeKey(nfKey));

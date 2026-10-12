@@ -139,3 +139,52 @@ describe('table geometry by width unit', () => {
     expect(out.grid).toEqual([80, 320]);
   });
 });
+
+describe('content control properties live in the residue', () => {
+  // a control as the client's documents hold them: locked, a title that is not the tag, an appearance
+  const control = (tag: string, extra: Record<string, unknown> = {}) => ({
+    inlines: [{ text: '$1,000' }],
+    contentControlProperties: { lockContentControl: true, lockContents: true, tag, color: '#00000000', title: 'Premium', appearance: 'BoundingBox', type: 'Text', ...extra }
+  });
+  const doc = (inline: Record<string, unknown>) => JSON.stringify({ sections: [{ blocks: [{ inlines: [{ text: 'Total: ' }, inline] }] }] });
+  const controlOf = (nf: ReturnType<typeof toNormalForm>['nf']) => {
+    let found: Record<string, unknown> | undefined;
+    walk(nf.root, docxTree, ({ node }) => {
+      if (node.kind === 'control') found = node;
+    });
+    return found as Record<string, unknown>;
+  };
+
+  it('shows a bound control as its binding and its title, nothing native, and round-trips byte-exact', () => {
+    const native = doc(control('[[name=Premium|type=currency]]'));
+    const { nf, residue } = toNormalForm(native);
+    const c = controlOf(nf);
+    expect(c.contentControlProperties).toBeUndefined();
+    expect(c.binding).toEqual(expect.objectContaining({ name: 'Premium' }));
+    expect(c.title).toBe('Premium');
+    expect(JSON.stringify(nf)).not.toContain('[[name=');
+    expect(fromNormalForm(nf, residue)).toBe(native);
+  });
+
+  it('a title the tag decides is not shown; an unbound control shows only its title', () => {
+    const derived = toNormalForm(doc(control('[[name=Premium|type=currency]]', { title: '[[name=Premium|type=currency]]' })));
+    expect(controlOf(derived.nf).title).toBeUndefined();
+    expect(fromNormalForm(derived.nf, derived.residue)).toBe(doc(control('[[name=Premium|type=currency]]', { title: '[[name=Premium|type=currency]]' })));
+    const foreign = toNormalForm(doc(control('vendor-field-17')));
+    const c = controlOf(foreign.nf);
+    expect(c.binding).toBeUndefined();
+    expect(c.contentControlProperties).toBeUndefined();
+    expect(c.title).toBe('Premium');
+    expect(fromNormalForm(foreign.nf, foreign.residue)).toBe(doc(control('vendor-field-17')));
+  });
+
+  it('a retitle or a rebinding changes only the title or the tag; every other property is kept', () => {
+    const { nf, residue } = toNormalForm(doc(control('[[name=Premium|type=currency]]')));
+    const c = controlOf(nf);
+    c.title = 'Annual premium';
+    (c.binding as Record<string, unknown>).name = 'AnnualPremium';
+    const out = JSON.parse(fromNormalForm(nf, residue));
+    const props = out.sections[0].blocks[0].inlines[1].contentControlProperties;
+    expect(props).toEqual({ lockContentControl: true, lockContents: true, tag: expect.stringContaining('name=AnnualPremium'), color: '#00000000', title: 'Annual premium', appearance: 'BoundingBox', type: 'Text' });
+  });
+});

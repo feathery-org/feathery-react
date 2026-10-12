@@ -268,3 +268,22 @@ describe('editor offsets from the normal form', () => {
     expect(op.at).toBe(op.a + 2);
   });
 });
+
+describe('a write that carries a control\'s native properties', () => {
+  it('has them stripped as read-only, with the hint to write the binding or the title', () => {
+    const s = state();
+    const control = s.view.nodes().find((n) => n.kind === 'control' && Array.isArray(n.inlines)) as NfNode;
+    expect(control.contentControlProperties).toBeUndefined();
+    const r = prepareWrite(s, {
+      intent: 'x',
+      scope: { ids: [control.id] },
+      changes: [{ kind: 'replace', id: control.id, base: baseOf(control), node: { ...control, title: 'Tax rate', contentControlProperties: { lockContents: true, tag: 'raw' } } }]
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 500));
+    const warning = r.warnings.find((w) => w.code === 'stripped-read-only');
+    expect(warning?.message).toMatch(/contentControlProperties.*`binding`.*`title`/);
+    const written = r.intended.root && makeView(r.intended, docxPack).get(control.id) as NfNode;
+    expect(written.title).toBe('Tax rate');
+    expect(written.contentControlProperties).toBeUndefined();
+  });
+});

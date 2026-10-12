@@ -242,18 +242,37 @@ export function prepareWrite(
 
   // Section 6.2: read-only keys on written nodes are stripped with a warning.
   const strippedKeys = new Set<string>();
+  const residueKeys = Object.keys(pack.residueKeys ?? {});
   const changes: Change[] = write.changes.map((change) => {
+    if (change.kind === 'set') {
+      // a property the residue holds is not the model's to set either
+      const props = { ...change.props };
+      for (const k of residueKeys)
+        if (k in props) {
+          delete props[k];
+          strippedKeys.add(k);
+        }
+      return { ...clone(change), props };
+    }
     if (!('node' in change)) return clone(change);
-    const { node, stripped } = stripReadOnlyKeys(clone(change.node));
+    const { node, stripped } = stripReadOnlyKeys(
+      clone(change.node),
+      residueKeys
+    );
     stripped.forEach((k) => strippedKeys.add(k));
     return { ...clone(change), node };
   });
   if (strippedKeys.size)
     warnings.push({
       code: 'stripped-read-only',
-      message: `Ignored read-only key(s) on written nodes: ${[
-        ...strippedKeys
-      ].join(', ')}.`
+      message: [
+        `Ignored read-only key(s) on written nodes: ${[...strippedKeys].join(
+          ', '
+        )}.`,
+        ...[...strippedKeys].flatMap((k) =>
+          pack.residueKeys?.[k] ? [pack.residueKeys[k]] : []
+        )
+      ].join(' ')
     });
   const refused = (): PreparedWrite => ({
     outcome: 'refused',

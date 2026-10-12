@@ -110,24 +110,24 @@ export function toNormalForm(native: string): {
         out[nfKey] = formats.intern(visible);
         continue;
       }
+      if (key === 'contentControlProperties' && isObject(value)) {
+        // every native control property is the residue's: the normal form shows the binding the
+        // tag holds and a title the tag does not decide
+        const parsed = bindingView(value.tag);
+        const title = value.title;
+        if (parsed)
+          record.binding = { ...parsed, tag: String(value.tag), title };
+        record.hiddenIn[key] = split(value, Object.keys(value)).hidden;
+        // a copy: an edit to the normal form never reaches the residue's record of what was read
+        if (record.binding) out.binding = { ...record.binding.view };
+        const derived = parsed
+          ? String(value.tag).slice(0, TITLE_CAP)
+          : undefined;
+        if (typeof title === 'string' && title !== derived) out.title = title;
+        continue;
+      }
       if (isObject(value) && HIDDEN_IN_OBJECT[key]) {
-        let hiddenKeys = HIDDEN_IN_OBJECT[key];
-        if (key === 'contentControlProperties') {
-          const parsed = bindingView(value.tag);
-          const title = value.title;
-          if (
-            parsed &&
-            (title === undefined ||
-              title === String(value.tag).slice(0, TITLE_CAP))
-          ) {
-            hiddenKeys = [
-              ...hiddenKeys,
-              'tag',
-              ...(title === undefined ? [] : ['title'])
-            ];
-            record.binding = { ...parsed, tag: String(value.tag), title };
-          }
-        }
+        const hiddenKeys = HIDDEN_IN_OBJECT[key];
         const { visible, hidden } = split(value, hiddenKeys);
         if (hidden.length) record.hiddenIn[key] = hidden;
         out[toNfKey(key)] = plain(visible);

@@ -425,6 +425,11 @@ export interface Pack {
    * commit checks (a failed proof, a change the editor could not place) tells the model to read.
    */
   methodCards?: readonly string[];
+  /**
+   * Native keys the normal form never shows because the residue holds them, each with the hint a
+   * write that carries one is given: such a key is stripped like the engine's own read-only keys.
+   */
+  residueKeys?: Readonly<Record<string, string>>;
   /** Own fields that are content rather than formatting (a binding): a change to one is an edit. */
   featureKeys?: readonly string[];
 }

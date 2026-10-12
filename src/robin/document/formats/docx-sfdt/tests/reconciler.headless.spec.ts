@@ -438,6 +438,11 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     turn += 1;
     await lane.call('open', fs.readFileSync(williamsPath, 'utf8'));
     const pre = await lane.call<string>('settled');
+    const cid = await at(['sections', 5, 'blocks', 41]);
+    const control = (await read([cid]))[cid];
+    // a read shows the binding and the title, never the control's native properties or raw tag
+    expect(JSON.stringify(control)).not.toMatch(/contentControlProperties|\[\[/);
+    expect(control.binding).toBeDefined();
     const tid = await at(['sections', 5, 'blocks', 41, 'blocks', 0]);
     const t = (await read([tid]))[tid];
     const row = await commitAndUndo('D19W', pre, percentFirst(firstColumn(t)));

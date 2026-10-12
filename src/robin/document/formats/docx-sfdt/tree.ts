@@ -59,7 +59,11 @@ function inferKind(
   if (listKey === 'cells') return KIND.cell;
   if (blockLists(listKey)) {
     if (has(node, 'rows')) return KIND.table;
-    if (isObject(node.contentControlProperties) || isObject(node.binding))
+    if (
+      isObject(node.contentControlProperties) ||
+      isObject(node.binding) ||
+      typeof node.title === 'string'
+    )
       return has(node, 'blocks') ? KIND.control : null;
     if (has(node, 'inlines') || 'style' in node || 'markStyle' in node)
       return KIND.paragraph;
@@ -67,7 +71,9 @@ function inferKind(
   }
   if (listKey === 'inlines') {
     if (
-      (isObject(node.contentControlProperties) || 'binding' in node) &&
+      (isObject(node.contentControlProperties) ||
+        'binding' in node ||
+        typeof node.title === 'string') &&
       has(node, 'inlines')
     )
       return KIND.control;

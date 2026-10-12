@@ -210,18 +210,25 @@ export type WrittenNode = z.output<typeof writtenNodeSchema>;
  * Section 6.2: a written node that carries `pending`, `usedBy`, `derived` or `properties` has those
  * keys stripped, at every depth. Returns a stripped copy and whether anything was stripped.
  */
-export function stripReadOnlyKeys<T>(node: T): {
+export function stripReadOnlyKeys<T>(
+  node: T,
+  /** Keys a pack holds in its residue, read-only like the engine's own. */
+  more: readonly string[] = []
+): {
   node: T;
-  stripped: ReadOnlyNodeKey[];
+  stripped: string[];
 } {
-  const stripped = new Set<ReadOnlyNodeKey>();
+  const stripped = new Set<string>();
   const walk = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(walk);
     if (!isPlainObject(value)) return value;
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value)) {
-      if ((READ_ONLY_NODE_KEYS as readonly string[]).includes(key)) {
-        stripped.add(key as ReadOnlyNodeKey);
+      if (
+        (READ_ONLY_NODE_KEYS as readonly string[]).includes(key) ||
+        more.includes(key)
+      ) {
+        stripped.add(key);
         continue;
       }
       out[key] = walk(child);
