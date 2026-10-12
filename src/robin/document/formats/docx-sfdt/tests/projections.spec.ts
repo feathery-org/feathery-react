@@ -17,6 +17,7 @@ import {
   N9,
   N11,
   N12,
+  N13,
   NORMALIZATIONS,
   UNDO_NORMALIZATIONS,
   accept,
@@ -266,6 +267,24 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(entryOf(withEntry(cell.id, { ...read, borders: { ...sides, top: { lineStyle: 'Single' } } }), cell.id)).toEqual(expect.objectContaining({ borders: expect.anything() }));
     expect(entryOf(withEntry(table.id, { leftMargin: 7 }), table.id)).toEqual({ leftMargin: 7 });
     expect(NORMALIZATIONS.map((n) => n.name)).toContain('N12');
+  });
+
+  it('N13 an empty text run is the same as none (troy-1: a moved cell came back without it)', () => {
+    const nf = fresh();
+    const para = all(nf).find((n) => n.kind === 'paragraph' && Array.isArray(n.inlines) && (n.inlines as NfNode[]).some((i) => i.kind === 'run')) as NfNode;
+    const withRuns = (extra: Array<Record<string, unknown>>) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      const p = all(d).find((n) => n.id === para.id) as NfNode;
+      p.inlines = [...(p.inlines as NfNode[]), ...extra] as never;
+      return N13.apply(d);
+    };
+    const inlinesOf = (d: NormalForm) => (all(d).find((n) => n.id === para.id) as NfNode).inlines;
+    // true negative: an empty run, styled or not, is no run
+    expect(inlinesOf(withRuns([{ id: 'e1', kind: 'run', text: '', style: (para.inlines as NfNode[])[0].style }]))).toEqual(inlinesOf(withRuns([])));
+    // true positive: text, or a pending change on it, still counts
+    expect(inlinesOf(withRuns([{ id: 'e2', kind: 'run', text: ' ' }]))).toHaveLength((para.inlines as NfNode[]).length + 1);
+    expect(inlinesOf(withRuns([{ id: 'e3', kind: 'run', text: '', pending: { kind: 'Insertion' } }]))).toHaveLength((para.inlines as NfNode[]).length + 1);
+    expect(NORMALIZATIONS.map((n) => n.name)).toContain('N13');
   });
 
   it('N9 a paragraph property an undo writes back explicitly as the value it inherits, only in undo comparisons', () => {

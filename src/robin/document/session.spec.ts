@@ -450,7 +450,7 @@ describe('document session: the four verbs end to end', () => {
       expect.objectContaining({
         outcome: 'failed',
         landed: false,
-        rollback: { byteEqual: true, equivalent: true }
+        rollback: { byteEqual: true, exact: true, equivalent: true }
       })
     );
     expect(host.serialize()).toBe(doc);

@@ -128,6 +128,12 @@ export interface Adapter {
   toNormalForm(native: string): { nf: NormalForm; residue: Residue };
   /** Normal form plus residue back to native bytes; `fromNormalForm(toNormalForm(x))` is `x`. */
   fromNormalForm(nf: NormalForm, residue: Residue): string;
+  /**
+   * Whether two native documents differ only in values the editor derives from laying the
+   * document out (laid-out widths), which a reopen recomputes: a rollback that differs only there
+   * is exact.
+   */
+  layoutOnly?(a: string, b: string): boolean;
 }
 
 export interface OutlineRenderer {

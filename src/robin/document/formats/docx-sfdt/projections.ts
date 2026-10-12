@@ -408,6 +408,25 @@ export const N12: Normalization = {
     })
 };
 
+/**
+ * N13: a run with no text and no pending change is the same as none: the editor drops it when it
+ * lays the paragraph out again (troy-1: a moved cell came back without its empty runs).
+ */
+export const N13: Normalization = {
+  name: 'N13',
+  apply: (nf) =>
+    eachNode(nf, (n) => {
+      if (!Array.isArray(n.inlines)) return false;
+      const inlines = n.inlines as NfNode[];
+      const kept = inlines.filter(
+        (i) => !(i.kind === KIND.run && i.text === '' && !isObject(i.pending))
+      );
+      if (kept.length === inlines.length) return false;
+      n.inlines = kept;
+      return true;
+    })
+};
+
 const ROW_UNDO_DEFAULTS = [
   'gridBefore',
   'gridAfter',
@@ -495,7 +514,8 @@ export const NORMALIZATIONS: readonly Normalization[] = [
   N5,
   N6,
   N11,
-  N12
+  N12,
+  N13
 ];
 export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7, N9];
 
@@ -565,7 +585,8 @@ export function conservedResidue(entry: unknown): unknown {
     'revisions',
     'grid',
     'columnCount',
-    'columnIndex'
+    'columnIndex',
+    'lastParagraphMarkCopied'
   ])
     delete hidden[k];
   const hiddenIn: Obj = {};
@@ -577,7 +598,9 @@ export function conservedResidue(entry: unknown): unknown {
       .map((h) => ({ k: h.k, v: h.v }));
     if (kept.length) hiddenIn[k] = kept;
   }
-  const keys = arr<string>(entry.keys).filter((k) => k !== 'revisionIds');
+  const keys = arr<string>(entry.keys).filter(
+    (k) => k !== 'revisionIds' && k !== 'lastParagraphMarkCopied'
+  );
   return { hidden, hiddenIn, keys };
 }
 

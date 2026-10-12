@@ -139,7 +139,7 @@ describe('console diagnostics', () => {
       expect.objectContaining({
         invariant: 'proof-failed',
         proofOutcome: 'failed',
-        rollback: { byteEqual: true, equivalent: true },
+        rollback: { byteEqual: true, exact: true, equivalent: true },
         detail: expect.any(String)
       })
     );

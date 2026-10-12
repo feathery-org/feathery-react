@@ -80,7 +80,9 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
   const restore = (planned: CommitPlan | null, seamsRun: number) =>
     rollback(host, before.native, {
       undoLimit: planned?.history === 'editor' ? seamsRun : 0,
-      equivalent: (now) => equivalentNative(pack, now, before.native)
+      equivalent: (now) => equivalentNative(pack, now, before.native),
+      layoutOnly: (now) =>
+        pack.adapter.layoutOnly?.(now, before.native) ?? false
     });
   let plan: CommitPlan | null = null;
   const seams: string[] = [];

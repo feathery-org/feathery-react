@@ -351,6 +351,7 @@ export class DocumentSession {
         normalizations: [],
         rollback: {
           byteEqual: outcome.rollback.byteEqual,
+          exact: outcome.rollback.exact,
           equivalent: outcome.rollback.equivalent
         }
       });
@@ -521,7 +522,7 @@ function logWriteOutcome(turnId: string, result: VerbResult, ms: number): void {
   const refusal = r.refusal as Record<string, any> | undefined;
   const proof = r.trace?.proof as Record<string, any> | undefined;
   const rollback = proof?.rollback as
-    | { byteEqual: boolean; equivalent?: boolean }
+    | { byteEqual: boolean; exact?: boolean; equivalent?: boolean }
     | null
     | undefined;
   logWarn({
@@ -532,7 +533,11 @@ function logWriteOutcome(turnId: string, result: VerbResult, ms: number): void {
     cards: refusal?.read,
     proofOutcome: proof?.outcome,
     rollback: rollback
-      ? { byteEqual: rollback.byteEqual, equivalent: rollback.equivalent }
+      ? {
+          byteEqual: rollback.byteEqual,
+          exact: rollback.exact,
+          equivalent: rollback.equivalent
+        }
       : undefined,
     detail: truncatedDetail(refusal?.detail ?? r.conflict ?? r.error?.message)
   });

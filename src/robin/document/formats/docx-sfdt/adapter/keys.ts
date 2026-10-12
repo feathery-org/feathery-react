@@ -69,7 +69,13 @@ export const HIDDEN_NODE_KEYS: Record<string, string[]> = {
 };
 
 /** Root keys the model never sees: the dialect flag, image payloads, the revision table. */
-export const HIDDEN_ROOT_KEYS = ['optimizeSfdt', 'images', 'revisions'];
+export const HIDDEN_ROOT_KEYS = [
+  'optimizeSfdt',
+  'images',
+  'revisions',
+  // an export flag for pasting a selection; the editor writes it on whole documents after a reopen
+  'lastParagraphMarkCopied'
+];
 
 /**
  * Native keys that collide with the keys the engine owns on a node (contract 2.3) are shown

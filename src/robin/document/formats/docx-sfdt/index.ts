@@ -7,6 +7,7 @@ import { fromNormalForm } from './adapter/fromNormalForm';
 import { FEATURE_KEYS, FORMAT_REF_KEYS } from './adapter/keys';
 import { toNormalForm } from './adapter/toNormalForm';
 import { bindingAnnotations } from './features/binding';
+import { layoutOnly } from './host';
 import { formulasFinalizer } from './finalizers/formulas';
 import { restripeFinalizer } from './finalizers/appearance';
 import {
@@ -63,7 +64,8 @@ export const docxPack: Pack = {
   formatRefKeys: FORMAT_REF_KEYS,
   adapter: {
     toNormalForm,
-    fromNormalForm: (nf, residue) => fromNormalForm(nf, residue as never)
+    fromNormalForm: (nf, residue) => fromNormalForm(nf, residue as never),
+    layoutOnly
   },
   outline: { defaultDepth: 3, belowBlocks, detail, listLabel },
   text: ownText,

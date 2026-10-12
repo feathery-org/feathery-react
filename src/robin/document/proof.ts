@@ -322,6 +322,11 @@ export function equivalentNative(pack: Pack, a: string, b: string): boolean {
 
 export interface RollbackOutcome {
   byteEqual: boolean;
+  /**
+   * Byte-equal, or differing only in what the editor derives from laying the document out again
+   * (the pack's `layoutOnly`): a reopen re-lays out, and no reopen reproduces those values.
+   */
+  exact: boolean;
   /** Back to the same document under the pack's normalizations, though not byte-exact. */
   equivalent: boolean;
   via: 'nothing' | 'editor-undo' | 'snapshot';
@@ -340,11 +345,23 @@ export function rollback(
   beforeNative: string,
   {
     undoLimit,
-    equivalent = () => false
-  }: { undoLimit: number; equivalent?: (native: string) => boolean }
+    equivalent = () => false,
+    layoutOnly = () => false
+  }: {
+    undoLimit: number;
+    equivalent?: (native: string) => boolean;
+    /** Whether a native document differs from the one before only in laid-out values. */
+    layoutOnly?: (native: string) => boolean;
+  }
 ): RollbackOutcome {
   if (host.serialize() === beforeNative)
-    return { byteEqual: true, equivalent: true, via: 'nothing', undoSteps: 0 };
+    return {
+      byteEqual: true,
+      exact: true,
+      equivalent: true,
+      via: 'nothing',
+      undoSteps: 0
+    };
   let steps = 0;
   while (steps < undoLimit && host.canUndo()) {
     host.undo();
@@ -353,6 +370,7 @@ export function rollback(
     if (now === beforeNative)
       return {
         byteEqual: true,
+        exact: true,
         equivalent: true,
         via: 'editor-undo',
         undoSteps: steps
@@ -360,6 +378,7 @@ export function rollback(
     if (equivalent(now))
       return {
         byteEqual: false,
+        exact: layoutOnly(now),
         equivalent: true,
         via: 'editor-undo',
         undoSteps: steps
@@ -372,6 +391,7 @@ export function rollback(
   const byteEqual = now === beforeNative;
   return {
     byteEqual,
+    exact: byteEqual || layoutOnly(now),
     equivalent: byteEqual || equivalent(now),
     via: 'snapshot',
     undoSteps: steps

@@ -145,6 +145,7 @@ describe('reconciler', () => {
     expect(r.error).toBe('text: placement failed');
     expect(r.rollback).toEqual({
       byteEqual: true,
+      exact: true,
       equivalent: true,
       via: 'editor-undo',
       undoSteps: 1
@@ -239,6 +240,7 @@ describe('reconciler', () => {
     if (r.outcome !== 'proof-failed') return;
     expect(r.rollback).toEqual({
       byteEqual: false,
+      exact: false,
       equivalent: true,
       via: 'editor-undo',
       undoSteps: 1
