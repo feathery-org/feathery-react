@@ -121,12 +121,12 @@ describe('tables in the snapshot', () => {
       buffersEdits: false,
       ...over
     }),
-    getRows: ({ limit }: { limit: number }) => ({
-      rowCount: names.length,
-      rows: names
-        .slice(0, limit)
+    getRows: ({ limit }: { limit: number }) => {
+      const shown = names
         .map((name, rowIndex) => ({ rowIndex, values: { name_key: name } }))
-    })
+        .filter((row) => row.rowIndex !== 1);
+      return { rowCount: shown.length, rows: shown.slice(0, limit) };
+    }
   });
 
   it('falls back to stored props for an unmounted table, with nothing allowed and the field rows capped', () => {
@@ -147,7 +147,10 @@ describe('tables in the snapshot', () => {
         { name: 'Age', fieldKey: 'age_key' }
       ],
       rowCount: 12,
-      rows: names.slice(0, 10).map((name, i) => [name, i < 2 ? i + 1 : null]),
+      rows: names.slice(0, 10).map((name, rowIndex) => ({
+        rowIndex,
+        values: { name_key: name, age_key: rowIndex < 2 ? rowIndex + 1 : null }
+      })),
       rowsOmitted: 2,
       actions: [{ label: 'Send' }],
       visible: true
@@ -160,7 +163,7 @@ describe('tables in the snapshot', () => {
     });
   });
 
-  it('takes a mounted table from its grid, with hub rows left out and the resolved hub named', () => {
+  it('takes a mounted table from its grid by source row index, with hub rows left out and the resolved hub named', () => {
     (internalState as any)[FORM] = {
       currentStep: stepWithTables([fieldTable, hubTable]),
       fields: {},
@@ -176,7 +179,7 @@ describe('tables in the snapshot', () => {
             canAddRows: true,
             showsActions: false,
             buffersEdits: true,
-            pending: { edits: 1, deletions: 0 }
+            pending: { edits: 1, deletions: 1 }
           })
         ],
         [
@@ -198,11 +201,14 @@ describe('tables in the snapshot', () => {
       id: 'tbl-field',
       columns: [{ name: 'Name', fieldKey: 'name_key' }],
       rowCount: 12,
-      rows: names.slice(0, 10).map((name) => [name]),
-      rowsOmitted: 2,
+      rows: [0, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rowIndex) => ({
+        rowIndex,
+        values: { name_key: names[rowIndex] }
+      })),
+      rowsOmitted: 1,
       canAddRows: true,
       canEditCells: true,
-      pending: { edits: 1, deletions: 0 },
+      pending: { edits: 1, deletions: 1 },
       visible: true
     });
     expect(hub).toEqual({

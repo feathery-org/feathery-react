@@ -10,6 +10,7 @@ import { getPrevStepKey, nextStepKey } from './stepHelperFunctions';
 import { isStepperStepReachable, isStepperStepVisible } from './stepper';
 import { sanitizeTransportValue } from './transportValue';
 import { getImageAltText } from './accessibility';
+import type { TableRowRead } from './formActions/tables';
 
 export type PanelRuntimeFieldEntry = {
   key: string;
@@ -102,7 +103,7 @@ export type PanelRuntimeTableEntry = {
   hubId?: string;
   columns: Array<{ name: string; fieldKey: string; readOnly?: boolean }>;
   rowCount: number;
-  rows?: unknown[][];
+  rows?: TableRowRead[];
   rowsOmitted?: number;
   actions?: Array<{ label: string }>;
   canAddRows?: boolean;
@@ -673,30 +674,37 @@ export const getPanelRuntimeSnapshot = (
 
     // Hub rows stay out of the snapshot, the host reads them on demand
     let rowCount = 0;
-    let rows: unknown[][] | undefined;
+    let rows: TableRowRead[] | undefined;
+    let rowsOmitted = 0;
     if (live && liveState) {
       rowCount = liveState.rowCount;
       if (!isHub) {
         const read = live.getRows({ offset: 0, limit: SNAPSHOT_TABLE_ROWS });
-        rows = read.rows.map((row) =>
-          columns.map((column) => row.values[column.fieldKey] ?? null)
-        );
+        rows = read.rows;
+        rowsOmitted = read.rowCount - rows.length;
       }
     } else if (!isHub) {
-      rowCount = storedColumns.reduce((max, col) => {
-        const v = col.field_key ? fieldsMap[col.field_key]?.value : undefined;
+      rowCount = columns.reduce((max, col) => {
+        const v = fieldsMap[col.fieldKey]?.value;
         return Array.isArray(v) ? Math.max(max, v.length) : max;
       }, 0);
       rows = Array.from(
         { length: Math.min(rowCount, SNAPSHOT_TABLE_ROWS) },
-        (_, i) =>
-          storedColumns.map((col) => {
-            const v = col.field_key ? fieldsMap[col.field_key]?.value : null;
-            return Array.isArray(v) ? v[i] ?? null : v ?? null;
-          })
+        (_, rowIndex) => ({
+          rowIndex,
+          values: Object.fromEntries(
+            columns.map((col) => {
+              const v = fieldsMap[col.fieldKey]?.value;
+              return [
+                col.fieldKey,
+                Array.isArray(v) ? v[rowIndex] ?? null : v ?? null
+              ];
+            })
+          )
+        })
       );
+      rowsOmitted = rowCount - rows.length;
     }
-    const rowsOmitted = rows ? rowCount - rows.length : 0;
     currentStepTables.push({
       id: el.id ?? '',
       ...(hubId ? { hubId } : {}),

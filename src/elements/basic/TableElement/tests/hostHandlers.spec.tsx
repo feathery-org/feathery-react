@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import TableElement from '../index';
 import internalState from '../../../../utils/internalState';
 import { fieldValues } from '../../../../utils/init';
@@ -147,6 +147,34 @@ describe('a field-backed classic table', () => {
       allowsRowClick: false,
       buffersEdits: false
     });
+    expect(handlers().getRows({ offset: 0, limit: 10, search: 'bob' })).toEqual(
+      {
+        rowCount: 1,
+        rows: [{ rowIndex: 1, values: { name_key: 'Bob', age_key: 40 } }]
+      }
+    );
+  });
+
+  it('reads rows in the order the person sorted them, keeping each source index', () => {
+    renderTable({ sort: true });
+    fireEvent.click(screen.getByText('Name'));
+    fireEvent.click(screen.getByText('Name'));
+
+    expect(handlers().getRows({ offset: 0, limit: 10 })).toEqual({
+      rowCount: 2,
+      rows: [
+        { rowIndex: 1, values: { name_key: 'Bob', age_key: 40 } },
+        { rowIndex: 0, values: { name_key: 'Alice', age_key: 30 } }
+      ]
+    });
+  });
+
+  it('keeps rows the person searched away readable by their source index', () => {
+    renderTable({ search: true });
+    fireEvent.change(screen.getByPlaceholderText('Search'), {
+      target: { value: 'Alice' }
+    });
+
     expect(handlers().getRows({ offset: 0, limit: 10, search: 'bob' })).toEqual(
       {
         rowCount: 1,

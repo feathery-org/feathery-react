@@ -192,6 +192,8 @@ function TableElement({
     enablePagination,
     currentPage,
     setCurrentPage,
+    sortedRowIndices,
+    sortedBaseRowIndices,
     paginatedRowIndices,
     rowsPerPage,
 
@@ -791,7 +793,8 @@ function TableElement({
     }) => {
       const needle = search?.toLowerCase();
       const shown: TableRowRead[] = [];
-      for (let rowIndex = 0; rowIndex < baseNumRows; rowIndex++) {
+      const shownOrder = isTransposed ? sortedBaseRowIndices : sortedRowIndices;
+      for (const rowIndex of shownOrder) {
         const values = getRow(rowIndex);
         if (!values) continue;
         if (
@@ -817,7 +820,9 @@ function TableElement({
       };
     },
     [
-      baseNumRows,
+      isTransposed,
+      sortedBaseRowIndices,
+      sortedRowIndices,
       getRow,
       isHub,
       hub.entryIds,
