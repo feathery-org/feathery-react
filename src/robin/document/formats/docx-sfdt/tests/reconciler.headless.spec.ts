@@ -152,6 +152,25 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     table.push({ delta: 'N1', seam: 'none', landed: result.landed, proof: result.trace.proof.outcome, native: '-', undo: '-', userUndoKept: true });
   });
 
+  it('R4 a native commit that fails its proof while the user has an undo group open rolls back only Robin\'s edit (review item 4)', async () => {
+    const beforeUser = await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    // the user's own edit, still one open undo group when Robin writes
+    const userOpen = await lane.call<string>('openUserGroup', '0;1;0', 'V');
+    const run = (await read([pid]))[pid].inlines.find((i: any) => i.kind === 'run');
+    await lane.call('injectTypo');
+    const result = await dispatch('write', { intent: 'Replace the clause.', scope: { ids: [run.id] }, changes: [{ kind: 'replace', id: run.id, base: run.base, node: { ...strip(run), text: 'Replaced.' } }] });
+    expect(result.ok).toBe(false);
+    expect(result.refusal.invariant).toBe('proof-failed');
+    const after = await lane.call<string>('settled');
+    // the user's edit is still there, and Robin's is gone
+    expect(await lane.call<boolean>('equivalent', after, userOpen)).toBe(true);
+    // and the user's own undo still takes back their edit, as it would have without Robin
+    await lane.call('closeUserGroup');
+    await lane.call('pressInDocument', 'z');
+    expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), beforeUser)).toBe(true);
+  });
+
   it('D2 paragraph replace: splice, engine undo', async () => {
     const pre = await fresh();
     const pid = await at(['sections', 3, 'blocks', 16]);

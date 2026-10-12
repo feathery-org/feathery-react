@@ -212,6 +212,32 @@ const api = {
     injectFailure = true;
   },
 
+  /** Make the next text the editor inserts carry a stray letter, so a native commit fails its proof. */
+  injectTypo(): void {
+    const module = (live() as any).editorModule;
+    const insert = module.insertText.bind(module);
+    module.insertText = (text: string, ...rest: unknown[]) => {
+      module.insertText = insert;
+      return insert(`${text}X`, ...rest);
+    };
+  },
+
+  /** The user starts an edit of their own that is still one open undo group when Robin writes. */
+  async openUserGroup(at: string, text: string): Promise<string> {
+    const e = live() as any;
+    e.enableTrackChanges = false;
+    e.currentUser = 'User';
+    e.selection.select(at, at);
+    e.editorModule.initComplexHistory('Grouping');
+    e.editorModule.insertText(text);
+    return settled();
+  },
+
+  /** The user's open undo group, closed as the editor closes it. */
+  closeUserGroup(): void {
+    ((live() as any).editorHistory ?? (live() as any).editorHistoryModule)?.updateComplexHistory?.();
+  },
+
   /** The user's own untracked edit, so their undo stack is not empty when Robin commits. */
   async userEdit(at: string, text: string): Promise<string> {
     const e = live() as any;
