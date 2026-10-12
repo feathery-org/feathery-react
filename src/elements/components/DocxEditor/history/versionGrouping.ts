@@ -20,13 +20,15 @@ const MONTHS = [
   'December'
 ];
 
+export type ClusterAuthor = { kind: string; label: string; key?: string };
+
 export interface VersionCluster {
   /** Newest version in the cluster (the visible row). */
   primary: DocxVersion;
   /** Older versions folded under the row, newest-first (shown on expand). */
   earlier: DocxVersion[];
   /** Distinct authors across the cluster, in first-seen (newest-first) order. */
-  authors: Array<{ kind: string; label: string }>;
+  authors: ClusterAuthor[];
 }
 
 export interface MonthSection {
@@ -35,16 +37,34 @@ export interface MonthSection {
   clusters: VersionCluster[];
 }
 
-const mergeAuthors = (into: VersionCluster, version: DocxVersion): void => {
-  for (const author of version.authors ?? []) {
-    if (
-      !into.authors.some(
-        (a) => a.kind === author.kind && a.label === author.label
-      )
-    ) {
-      into.authors.push({ kind: author.kind, label: author.label });
-    }
+// Browser sessions store every person as "You"; the saved actor says whose
+// session it was, so resolve before merging sessions from different people.
+export const resolveAuthors = (
+  version: DocxVersion,
+  authors: ClusterAuthor[] = version.authors ?? []
+): ClusterAuthor[] =>
+  authors.map((author) =>
+    author.kind === 'user' &&
+    (!author.label || author.label === 'You') &&
+    (version.actor_name || version.actor_label)
+      ? {
+          kind: author.kind,
+          label: version.actor_name || version.actor_label,
+          key: version.actor_label || version.actor_name
+        }
+      : { kind: author.kind, label: author.label, key: author.key }
+  );
+
+const authorId = (author: ClusterAuthor) =>
+  `${author.kind}\u0000${author.label}`;
+
+/** Distinct authors across the lists, in first-seen order. */
+export const mergeAuthorLists = (lists: ClusterAuthor[][]): ClusterAuthor[] => {
+  const merged = new Map<string, ClusterAuthor>();
+  for (const author of lists.flat()) {
+    if (!merged.has(authorId(author))) merged.set(authorId(author), author);
   }
+  return Array.from(merged.values());
 };
 
 const isSameDay = (a: Date, b: Date): boolean =>
@@ -110,7 +130,10 @@ export function groupVersions(
       cluster = { primary: version, earlier: [], authors: [] };
       section.clusters.push(cluster);
     }
-    mergeAuthors(cluster, version);
+    cluster.authors = mergeAuthorLists([
+      cluster.authors,
+      resolveAuthors(version)
+    ]);
     newer = version;
   }
 

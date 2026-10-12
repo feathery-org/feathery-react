@@ -14,7 +14,13 @@ import {
   firstUserActorKey,
   initialsForAuthor
 } from './authorColors';
-import { groupVersions, MonthSection, VersionCluster } from './versionGrouping';
+import {
+  groupVersions,
+  mergeAuthorLists,
+  MonthSection,
+  resolveAuthors,
+  VersionCluster
+} from './versionGrouping';
 import {
   DocxHistoryHost,
   DocxVersion,
@@ -168,23 +174,18 @@ function VersionRow({
   toggle?: React.ReactNode;
   onSelect?: (v: DocxVersion) => void;
 }) {
-  // A live diff supplies the same evidence, including an empty list after undo.
-  const effectiveAuthors: Author[] =
-    liveAuthors ??
-    ([version, ...folded].some(hasAuthorEvidence) ? authors : []);
-  // The session writes "You" in the browser; the saved actor identifies who
-  // that session belonged to. Use the durable label for display and colour.
-  const displayedAuthors = effectiveAuthors.map((author) =>
-    author.kind === 'user' &&
-    (!author.label || author.label === 'You') &&
-    (version.actor_name || version.actor_label)
-      ? {
-          ...author,
-          label: version.actor_name || version.actor_label,
-          key: version.actor_label || version.actor_name
-        }
-      : author
-  );
+  // A live diff supplies the open session's evidence, including an empty list
+  // after undo; sessions folded under it keep their own saved authors.
+  const displayedAuthors: Author[] = liveAuthors
+    ? mergeAuthorLists([
+        resolveAuthors(version, liveAuthors),
+        folded.some(hasAuthorEvidence)
+          ? mergeAuthorLists(folded.map((v) => resolveAuthors(v)))
+          : []
+      ])
+    : [version, ...folded].some(hasAuthorEvidence)
+    ? authors
+    : [];
   return (
     <div
       onClick={() => onSelect?.(version)}

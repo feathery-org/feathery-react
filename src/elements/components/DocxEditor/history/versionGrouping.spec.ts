@@ -34,7 +34,7 @@ const at = (iso: string, minutesBefore = 0) =>
   new Date(new Date(iso).getTime() - minutesBefore * 60_000).toISOString();
 
 // A fixed "now" in a later year so the 2026 fixtures read as past months.
-const NOW = new Date('2027-01-15T12:00:00Z');
+const NOW = new Date('2027-01-15T12:00:00');
 
 describe('groupVersions', () => {
   beforeEach(() => {
@@ -43,7 +43,7 @@ describe('groupVersions', () => {
 
   it('buckets versions under month headers', () => {
     const sections = groupVersions(
-      [v('2026-09-02T10:00:00Z'), v('2026-08-15T10:00:00Z')],
+      [v('2026-09-02T10:00:00'), v('2026-08-15T10:00:00')],
       NOW
     );
     expect(sections.map((s) => s.label)).toEqual([
@@ -53,11 +53,11 @@ describe('groupVersions', () => {
   });
 
   it('puts versions ended today under a Today header', () => {
-    const now = new Date('2027-01-15T12:00:00Z');
+    const now = new Date('2027-01-15T12:00:00');
     const sections = groupVersions(
       [
-        v('2027-01-15T11:59:30Z'), // today
-        v('2026-12-20T10:00:00Z') // last month
+        v('2027-01-15T11:59:30'), // today
+        v('2026-12-20T10:00:00') // last month
       ],
       now
     );
@@ -65,8 +65,8 @@ describe('groupVersions', () => {
   });
 
   it('uses a bare month name in the current year', () => {
-    const now = new Date('2027-04-30T12:00:00Z');
-    const sections = groupVersions([v('2027-04-02T10:00:00Z')], now);
+    const now = new Date('2027-04-30T12:00:00');
+    const sections = groupVersions([v('2027-04-02T10:00:00')], now);
     expect(sections[0].label).toBe('April');
   });
 
@@ -82,7 +82,7 @@ describe('groupVersions', () => {
   };
 
   it('chains versions each within 15 minutes of the next-newer one', () => {
-    const base = '2026-09-02T12:00:00Z';
+    const base = '2026-09-02T12:00:00';
     // 0, -10, -20, -30: each hop is 10 min, though the ends span 30 min.
     const rows = burst(base, [10, 10, 10]);
     const [section] = groupVersions(rows, NOW);
@@ -92,7 +92,7 @@ describe('groupVersions', () => {
   });
 
   it('folds at exactly 15 minutes and splits just past it', () => {
-    const base = '2026-09-02T12:00:00Z';
+    const base = '2026-09-02T12:00:00';
     const rows = [
       v(base, { seq: 100 }),
       v(at(base, 15)), // exactly 15:00 after the previous: folds
@@ -104,7 +104,7 @@ describe('groupVersions', () => {
   });
 
   it('measures the gap from the newer session start, not its end', () => {
-    const base = '2026-09-02T12:00:00Z';
+    const base = '2026-09-02T12:00:00';
     // Newer session ran 20 min but started 5 min after the older one ended.
     const rows = [
       v(base, { seq: 100, started_at: at(base, 20) }),
@@ -136,12 +136,12 @@ describe('groupVersions', () => {
   });
 
   it('keeps Current, named, restored and baseline versions on their own row', () => {
-    const base = '2026-09-02T12:00:00Z';
+    const base = '2026-09-02T12:00:00';
     const rows = [
       v(base, { seq: 100 }), // Current (highest seq)
       v(at(base, 2), { name: 'Signed off' }),
       v(at(base, 4)),
-      v(at(base, 6), { restored_from_at: '2026-08-01T10:00:00Z' }),
+      v(at(base, 6), { restored_from_at: '2026-08-01T10:00:00' }),
       v(at(base, 8)),
       v(at(base, 10), { is_baseline: true })
     ];
@@ -162,7 +162,7 @@ describe('groupVersions', () => {
   });
 
   it('merges authors across a cluster in newest-first order', () => {
-    const base = '2026-09-02T12:00:00Z';
+    const base = '2026-09-02T12:00:00';
     const [section] = groupVersions(
       [
         v(base, { seq: 100 }),
@@ -177,8 +177,24 @@ describe('groupVersions', () => {
     ]);
   });
 
+  it('keeps different people apart when their sessions fold', () => {
+    const base = '2026-09-02T12:00:00';
+    const [section] = groupVersions(
+      [
+        v(base, { seq: 100, actor_name: 'Bob', actor_label: 'bob@x.io' }),
+        v(at(base, 10), { actor_name: 'Alice', actor_label: 'alice@x.io' })
+      ],
+      NOW
+    );
+    expect(section.clusters).toHaveLength(1);
+    expect(section.clusters[0].authors).toEqual([
+      { kind: 'user', label: 'Bob', key: 'bob@x.io' },
+      { kind: 'user', label: 'Alice', key: 'alice@x.io' }
+    ]);
+  });
+
   it('keeps versions newest-first within a month', () => {
-    const base = '2026-09-02T12:00:00Z';
+    const base = '2026-09-02T12:00:00';
     const sections = groupVersions([v(base), v(at(base, 20))], NOW);
     expect(sections[0].clusters.map((c) => c.primary.ended_at)).toEqual([
       base,
@@ -187,7 +203,7 @@ describe('groupVersions', () => {
   });
 
   it('lists each version with its own author(s)', () => {
-    const base = '2026-09-02T12:00:00Z';
+    const base = '2026-09-02T12:00:00';
     const sections = groupVersions(
       [
         v(base, { authors: [{ kind: 'user', label: 'You' }] }),
