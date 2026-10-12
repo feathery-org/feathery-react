@@ -16908,13 +16908,14 @@ function createBindingInCell(
   );
   // The cell being written, read as a physical cell (inventory anchors) and
   // as a logical column; whatever it already holds is updated, not joined.
-  const targetRow = table.tablePath
-    ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
+  const tablePath = table.tablePath;
+  const targetRow = tablePath
+    ? getAt(state.sfdt, [...tablePath, 'rows', rowIndex])
     : undefined;
-  const targetPaths = table.tablePath
+  const targetPaths = tablePath
     ? [columnIndex, physicalCellIndexAt(targetRow, columnIndex)]
         .filter((cell): cell is number => cell != null)
-        .map((cell) => [...table.tablePath!, 'rows', rowIndex, 'cells', cell])
+        .map((cell) => [...tablePath, 'rows', rowIndex, 'cells', cell])
     : [];
   const joined = joinedDocumentBinding(
     state.index,
