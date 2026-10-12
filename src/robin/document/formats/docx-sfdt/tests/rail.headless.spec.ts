@@ -201,6 +201,36 @@ describe('the review rail and undo routing in the real editor', () => {
     expect(await settled()).toBe(pre);
   });
 
+  // review item 3: a bookmarked move, a reload, then Reject on its card
+  it('Reject after a reload restores a moved bookmarked table with its bookmarks', async () => {
+    const pre = await fresh();
+    const names = (native: string) => {
+      const out: string[] = [];
+      const walk = (n: any) => {
+        if (Array.isArray(n)) return n.forEach(walk);
+        if (!n || typeof n !== 'object') return;
+        if (typeof n.bookmarkType === 'number' && typeof n.name === 'string' && !n.name.startsWith('_')) out.push(`${n.bookmarkType}:${n.name}`);
+        Object.values(n).forEach(walk);
+      };
+      walk(JSON.parse(native).sections);
+      return out.sort();
+    };
+    const cid = await at(['sections', 1, 'blocks', 10]);
+    const aid = await at(['sections', 0, 'blocks', 3]);
+    const sid = await at(['sections', 0]);
+    const n = await read([cid, sid]);
+    const r = await dispatch('write', { intent: 'Move the property premium table to the front.', scope: { ids: [cid] }, changes: [{ kind: 'move', id: cid, shape: n[cid].shape, anchor: aid, position: 'after', container: n[sid].shape }] });
+    expect(r.ok).toBe(true);
+    // a reload: the document as saved, opened again, with no engine snapshot behind it
+    await lane.call('open', await settled());
+    const cards = await lane.call<Array<{ title: string }>>('rail');
+    const move = cards.findIndex((c) => /^Moved/.test(c.title));
+    expect(move).toBeGreaterThanOrEqual(0);
+    await lane.call('clickCard', move, 'Reject');
+    const after = await settled();
+    expect(names(after)).toEqual(names(pre));
+  });
+
   it('toolbar Undo after a structural commit goes to the engine: the document before the write', async () => {
     const pre = await fresh();
     const tid = await at(['sections', 3, 'blocks', 10, 'blocks', 0]);

@@ -406,10 +406,10 @@ describe('reconciler', () => {
     if (engine.outcome === 'committed') {
       expect(engine.proof.reversible).toBe(true);
       expect(engine.warnings.map((w) => w.code)).toContain('reject-by-card');
-      // the snapshot is the session's: the warning says it does not survive a reload (ruling on D7B)
+      // the card's reject holds after a reload too (review item 3: moved bookmarks come back)
       expect(
         engine.warnings.find((w) => w.code === 'reject-by-card')?.message
-      ).toMatch(/does not survive a reload/);
+      ).toMatch(/after a reload rejecting the card still carries/);
     }
     const editor = run('editor', new ToyHost(doc));
     expect(editor.outcome).toBe('proof-failed');

@@ -157,16 +157,143 @@ function project(nf: NormalForm, drop: string, group?: string): NormalForm {
 export const accept = (nf: NormalForm): NormalForm => project(nf, 'Deletion');
 /** All pending changes rejected. */
 export const reject = (nf: NormalForm): NormalForm => project(nf, 'Insertion');
+/** A node's content less ids, pending changes and bookmarks: what a move leaves the same. */
+function moveKey(n: unknown): string {
+  const strip = (v: unknown): unknown => {
+    if (Array.isArray(v))
+      return v
+        .filter((x) => !(isObject(x) && x.kind === KIND.bookmark))
+        .map(strip);
+    if (!isObject(v)) return v;
+    const out: Obj = {};
+    for (const [k, x] of Object.entries(v))
+      if (k !== 'id' && k !== 'pending') out[k] = strip(x);
+    return out;
+  };
+  return canonicalJson(strip(n));
+}
+
+const hasBookmarks = (n: unknown): boolean => {
+  if (Array.isArray(n)) return n.some(hasBookmarks);
+  if (!isObject(n)) return false;
+  if (n.kind === KIND.bookmark) return true;
+  return Object.values(n).some(hasBookmarks);
+};
+
+/**
+ * The moves of change set `group`: each a copy the change set deletes where the node was and a
+ * copy it inserts where the node goes, the same content but for the bookmarks, which stay with the
+ * inserted copy (so accepting keeps the pair). Found by content, so they survive a reload.
+ */
+function movesOf(
+  nf: NormalForm,
+  group: string
+): Array<{ removed: NfNode; placed: NfNode }> {
+  const gone: NfNode[] = [];
+  const placed: NfNode[] = [];
+  const rec = (n: NfNode) => {
+    for (const key of docxTree.childLists(n))
+      for (const c of arr<NfNode>(listOf(n, key))) {
+        scope = group;
+        let deleted: boolean;
+        let inserted: boolean;
+        try {
+          deleted = removedBy(c, 'Insertion')
+            ? false
+            : removedBy(c, 'Deletion');
+          inserted = !deleted && removedBy(c, 'Insertion');
+        } finally {
+          scope = undefined;
+        }
+        if (deleted) gone.push(c);
+        else if (inserted) placed.push(c);
+        else rec(c);
+      }
+  };
+  rec(nf.root);
+  const out: Array<{ removed: NfNode; placed: NfNode }> = [];
+  const free = [...placed];
+  for (const removed of gone) {
+    const key = moveKey(removed);
+    const i = free.findIndex((p) => moveKey(p) === key);
+    if (i < 0) continue;
+    out.push({ removed, placed: free[i] });
+    free.splice(i, 1);
+  }
+  return out;
+}
+
+/**
+ * Carry the bookmarks of a move's inserted copy back onto the copy rejecting restores: the two are
+ * walked together, and each inline list of the restored copy takes the inserted copy's sequence,
+ * its own inlines in place of the inserted copy's non-bookmark ones.
+ */
+function carryBookmarks(to: NfNode, from: NfNode): void {
+  const walk = (a: NfNode, b: NfNode) => {
+    for (const key of docxTree.childLists(b)) {
+      const listA = listOf(a, key) as NfNode[] | undefined;
+      const listB = listOf(b, key) as NfNode[] | undefined;
+      if (!listA || !listB) continue;
+      if (key === 'inlines' || key.endsWith('/inlines')) {
+        const own = listA.filter((x) => x.kind !== KIND.bookmark);
+        if (own.length !== listB.filter((x) => x.kind !== KIND.bookmark).length)
+          continue;
+        let k = 0;
+        const merged = listB.map((x) =>
+          x.kind === KIND.bookmark ? clone(x) : own[k++]
+        );
+        listA.splice(0, listA.length, ...merged);
+        merged.forEach((x) => {
+          if (x.kind !== KIND.bookmark) walk(x, listB[merged.indexOf(x)]);
+        });
+        continue;
+      }
+      if (listA.length !== listB.length) continue;
+      listA.forEach((x, i) => walk(x, listB[i]));
+    }
+  };
+  walk(to, from);
+}
+
+/**
+ * Whether change set `group` holds a move whose bookmarks only the engine can carry back on a
+ * reject (the editor's own reject restores the deleted copy, which holds none).
+ */
+export function bookmarkedMoves(nf: NormalForm, group: string): boolean {
+  return movesOf(nf, group).some(({ placed }) => hasBookmarks(placed));
+}
+
 /**
  * One change set's card resolved, every other pending change left as it is: what the engine
- * applies when it owns a card's accept or reject (a structural card, or a feature replacement the
- * editor's own resolution would leave as an empty control).
+ * applies when it owns a card's accept or reject (a structural card, a feature replacement the
+ * editor's own resolution would leave as an empty control, or a bookmarked move, whose reject
+ * carries the bookmarks back to where the node was).
  */
 export const resolveGroup = (
   nf: NormalForm,
   group: string,
   acceptIt: boolean
-): NormalForm => project(nf, acceptIt ? 'Deletion' : 'Insertion', group);
+): NormalForm => {
+  if (acceptIt) return project(nf, 'Deletion', group);
+  const moves = movesOf(nf, group);
+  if (!moves.length) return project(nf, 'Insertion', group);
+  const copy = clone(nf);
+  const index = new Map<NfNode, NfNode>();
+  // the same nodes in the copy, by position
+  const pair = (a: NfNode, b: NfNode) => {
+    index.set(a, b);
+    for (const key of docxTree.childLists(a)) {
+      const la = arr<NfNode>(listOf(a, key));
+      const lb = arr<NfNode>(listOf(b, key));
+      la.forEach((x, i) => lb[i] && pair(x, lb[i]));
+    }
+  };
+  pair(nf.root, copy.root);
+  for (const { removed, placed } of moves)
+    if (hasBookmarks(placed))
+      carryBookmarks(index.get(removed) as NfNode, placed);
+  return project(copy, 'Insertion', group);
+};
 
 // ------------------------------------------------------------------ normalizations
 
@@ -612,6 +739,7 @@ export function conservedResidue(entry: unknown): unknown {
  * restore the story (architecture 7.5, probe P1b).
  */
 export function ownsResolution(nf: NormalForm, group: string): boolean {
+  if (bookmarkedMoves(nf, group)) return true;
   const seen = new Map<string, number>();
   let story = false;
   const ours = (n: NfNode) =>

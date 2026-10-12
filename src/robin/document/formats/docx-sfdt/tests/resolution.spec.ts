@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { DocumentSession } from '../../../session';
-import { NfNode, NormalForm, baseOf } from '../../../tree';
+import { NfNode, NormalForm, baseOf, shapeOf } from '../../../tree';
 import { docxPack } from '../index';
 import { ownsResolution } from '../projections';
 import { composeTracked } from '../reconcile';
@@ -78,6 +78,37 @@ describe('engine-owned card resolution', () => {
     const t = arr<NfNode>(arr<NfNode>(arr<NfNode>(rowGone.root.sections)[3].blocks)[10].blocks)[0];
     t.rows = arr<NfNode>(t.rows).filter((r) => r.id !== row.id);
     expect(ownsResolution(composeTracked(s.view, rowGone, 'turn-8').tracked, 'turn-8')).toBe(false);
+  });
+});
+
+describe('a bookmarked move rejected after a reload (review item 3)', () => {
+  const bookmarks = (native: string) => {
+    const out: string[] = [];
+    const walk = (n: any) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!n || typeof n !== 'object') return;
+      if (typeof n.bookmarkType === 'number' && typeof n.name === 'string' && !n.name.startsWith('_')) out.push(`${n.bookmarkType}:${n.name}`);
+      Object.values(n).forEach(walk);
+    };
+    walk(JSON.parse(native).sections);
+    return out.sort();
+  };
+  it('the card is the engine\'s after a reload, and its reject carries the bookmarks back to the restored copy', () => {
+    const m = mount();
+    const s = m.session.state;
+    const sections = arr<NfNode>(s.view.nf.root.sections);
+    const control = arr<NfNode>(sections[1].blocks)[10];
+    const anchor = arr<NfNode>(sections[0].blocks)[3];
+    const out = m.session.dispatch({ protocolVersion: 1, turnId: 'turn-m', editorId: 'ed', target: { type: 'envelope', id: 'e' }, verb: 'write', input: { intent: 'Move the table.', scope: { ids: [control.id] }, changes: [{ kind: 'move', id: control.id, shape: shapeOf(control, docxPack.tree), anchor: anchor.id, position: 'after', container: shapeOf(sections[0], docxPack.tree) }] } });
+    if (out.status !== 'ok' || !out.response.result.ok) throw new Error(JSON.stringify(out).slice(0, 600));
+    // a reload: a new session over the saved bytes, no snapshot, ids minted afresh
+    let doc = m.doc();
+    const host = { serialize: () => doc, open: (x: string) => { doc = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const reloaded = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' }, editorId: 'ed' });
+    expect(reloaded.ownsCard('turn-m')).toBe(true);
+    expect(reloaded.resolveCard('turn-m', false)).toBe(true);
+    expect(bookmarks(doc)).toEqual(bookmarks(flagship));
+    expect(JSON.stringify(JSON.parse(doc).revisions ?? [])).not.toContain('turn-m');
   });
 });
 
