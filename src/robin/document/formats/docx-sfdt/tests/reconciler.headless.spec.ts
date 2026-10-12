@@ -193,6 +193,20 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(row).toEqual(expect.objectContaining(SPLICE));
   });
 
+  it('D3C three paragraphs inserted after one anchor land in the order listed (matrix-2 T7)', async () => {
+    const pre = await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const sid = await at(['sections', 3]);
+    const n = await read([pid, sid]);
+    const after = (text: string) => ({ kind: 'insert_after', anchor: pid, container: n[sid].shape, node: { kind: 'paragraph', style: n[pid].style, inlines: [{ kind: 'run', text }] } });
+    const row = await commitAndUndo('D3C', pre, { intent: 'Add three paragraphs.', scope: { ids: [] }, changes: [after('First.'), after('Second.'), after('Third.')] }, async () => {
+      const sec = (await read([sid]))[sid];
+      const i = sec.blocks.findIndex((b: any) => b.id === pid);
+      expect(sec.blocks.slice(i + 1, i + 4).map((b: any) => b.inlines.map((x: any) => x.text).join(''))).toEqual(['First.', 'Second.', 'Third.']);
+    });
+    expect(row).toEqual(expect.objectContaining(SPLICE));
+  });
+
   it('D4 insert a column in a plain table: splice, geometry derived', async () => {
     const pre = await fresh();
     const tid = await at(['sections', 1, 'blocks', 4]);
@@ -480,6 +494,74 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     const row = await commitAndUndo('D19W', pre, percentFirst(firstColumn(t)));
     expect(row.proof).toBe('passed');
     expect(row.undo).toMatch(/(byte-equal|equivalent)$/);
+  });
+
+  it('D20 a new table written with bare formats and a section copied from stubs (matrix-2 T10): the proof passes', async () => {
+    const pre = await fresh();
+    const sid = await at(['sections', 0]);
+    const root = (await read(['root'])).root;
+    const stubs = await dispatch('read', { ids: [sid], children: 'stubs' });
+    const sec = stubs.nodes[0];
+    const cell = (text: string, fill?: string) => ({ kind: 'cell', style: fill ? 'tmp:head' : 'tmp:cell', blocks: [{ kind: 'paragraph', inlines: text ? [{ kind: 'run', text }] : [] }] });
+    const row = await commitAndUndo('D20', pre, {
+      intent: 'Add a section with an options table.',
+      scope: { ids: [] },
+      formats: {
+        'tmp:tbl': { preferredWidth: 100, preferredWidthType: 'Percent' },
+        'tmp:hrow': { isHeader: true },
+        'tmp:head': { preferredWidth: 156, preferredWidthType: 'Point', verticalAlignment: 'Center', shading: { backgroundColor: '#001B49FF' } },
+        'tmp:cell': { preferredWidth: 156, preferredWidthType: 'Point', verticalAlignment: 'Center' }
+      },
+      changes: [{
+        kind: 'insert_after',
+        anchor: sid,
+        container: root.shape,
+        node: {
+          kind: 'section',
+          style: sec.style,
+          // the stubs a read returned, written back: the headers and footers as read
+          headersFooters: sec.headersFooters,
+          blocks: [
+            { kind: 'paragraph', inlines: [{ kind: 'run', text: 'Policy options' }] },
+            { kind: 'table', style: 'tmp:tbl', rows: [
+              { kind: 'row', style: 'tmp:hrow', cells: [cell('', 'head'), cell('Recommended', 'head'), cell('Alternative', 'head')] },
+              { kind: 'row', cells: [cell('Carrier'), cell('Chubb'), cell('Cincinnati')] }
+            ] },
+            { kind: 'paragraph', inlines: [] }
+          ]
+        }
+      }]
+    });
+    expect(row).toEqual(expect.objectContaining(SPLICE));
+  });
+
+  it('D21 a new column beside another author\'s pending row (matrix-2 T11): the new cells are Robin\'s, her revisions keep their anchors', async () => {
+    const run = JSON.parse(fs.readFileSync(path.join(__dirname, 'runs', 'matrix-2-run.json'), 'utf8')) as { writes: Array<{ task: string; fixture: string; input: any }> };
+    const w = run.writes.find((x) => x.task === 'T11') as { fixture: string; input: any };
+    turn += 1;
+    await lane.call('open', fs.readFileSync(path.join(__dirname, 'corpus', w.fixture), 'utf8'));
+    const anchors = (native: string) => {
+      const d = JSON.parse(native);
+      const by: Record<string, string> = {};
+      for (const r of d.revisions ?? []) by[r.revisionId] = r.author;
+      const out: Record<string, Record<string, number>> = {};
+      const walk = (n: any) => {
+        if (Array.isArray(n)) return n.forEach(walk);
+        if (!n || typeof n !== 'object') return;
+        for (const id of n.revisionIds ?? []) ((out[by[id]] ??= {})[id] = (out[by[id]]?.[id] ?? 0) + 1);
+        Object.entries(n).forEach(([k, v]) => k !== 'revisionIds' && walk(v));
+      };
+      walk(d.sections);
+      return out;
+    };
+    // as loaded: the editor gives each of her inserted row's cells its own revision of hers
+    const loaded = anchors(await lane.call<string>('settled'));
+    const r = await dispatch('write', w.input);
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 600));
+    const after = anchors(await lane.call<string>('settled'));
+    expect(after.Ayesha).toEqual(loaded.Ayesha);
+    expect(Object.keys(after).sort()).toEqual(['Ayesha', 'Robin']);
+    expect(r.trace.proof.outcome).toBe('passed');
   });
 
   afterAll(() => {

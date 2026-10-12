@@ -185,6 +185,18 @@ const api = {
     return (await settled()).length;
   },
 
+  /**
+   * Replace the document in the mounted editor, as a person loading another file does (the rig's
+   * matrix loads its fixtures this way): the session continues, numbering the new document's
+   * nodes after the old one's.
+   */
+  async editorOpen(text: string): Promise<number> {
+    live().open(text);
+    await frame();
+    await frame();
+    return (await settled()).length;
+  },
+
   /** The user's own untracked edit, so their undo stack is not empty when Robin commits. */
   async userEdit(at: string, text: string): Promise<string> {
     const e = live() as any;
