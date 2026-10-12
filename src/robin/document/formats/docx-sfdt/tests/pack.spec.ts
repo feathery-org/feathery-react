@@ -120,6 +120,15 @@ describe('the format pack', () => {
     expect(r).toEqual(expect.objectContaining({ ok: true }));
   });
 
+  it('a span aimed at a run names its paragraph and where the text reads there (matrix-1 T1)', () => {
+    const { session, call } = mount();
+    const para = session.state.view.nodes().find((n) => n.kind === 'paragraph' && /valid from/.test(JSON.stringify(n))) as NfNode;
+    const run = (para.inlines as NfNode[]).find((i) => i.kind === 'run' && /valid from/.test(String(i.text))) as NfNode;
+    const r = call('write', { intent: 'Bold it.', scope: { ids: [run.id] }, changes: [{ kind: 'set', target: { id: run.id, shape: shapeOf(run, docxPack.tree), match: { text: 'valid from', span: { start: 0, end: 10 } } }, props: { bold: true } }] }) as { ok: boolean; refusal: { hint: string } };
+    expect(r.ok).toBe(false);
+    expect(r.refusal.hint).toMatch(new RegExp(`${para.id} reads "valid from" at \\[\\d+, \\d+\\)`));
+  });
+
   it('finds a formula by its feature whatever the control is titled (QA-1: the client titles controls by name)', () => {
     const control = (tag: string, title: string, text: string) => ({ inlines: [{ text }], contentControlProperties: { lockContents: true, tag, color: '#00000000', title, type: 'Text' } });
     const doc = JSON.stringify({

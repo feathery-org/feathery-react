@@ -530,6 +530,43 @@ describe('write: refusals (each a true positive; the verified cases above are th
         ]
       }).destroyed
     ).toContain('reads "one"');
+    // a span aimed at a node with no text of its own names the nodes with text inside it, and
+    // where the claimed text reads there (matrix-1 T1: a span on the wrong node cost a round)
+    const boxed = refusal({
+      intent: 'x',
+      scope: { ids: ['n2'] },
+      changes: [
+        {
+          kind: 'set',
+          target: {
+            id: 'n2',
+            shape: sh(s, 'n2'),
+            match: { text: 'two', span: { start: 0, end: 3 } }
+          },
+          props: { border: true }
+        }
+      ]
+    });
+    expect(boxed.destroyed).toContain('n2 has no text');
+    expect(boxed.hint).toContain('n4 reads "two" at [0, 3)');
+    // and a span at the wrong offsets says where the text is
+    expect(
+      refusal({
+        intent: 'x',
+        scope: { ids: ['n3'] },
+        changes: [
+          {
+            kind: 'set',
+            target: {
+              id: 'n3',
+              shape: sh(s, 'n3'),
+              match: { text: 'ne', span: { start: 0, end: 2 } }
+            },
+            props: { bold: true }
+          }
+        ]
+      }).hint
+    ).toContain('n3 reads "ne" at [1, 3)');
     expect(
       refusal({
         intent: 'x',

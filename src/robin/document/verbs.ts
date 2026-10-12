@@ -231,6 +231,62 @@ function walkWritten(
   for (const child of Object.values(value)) walkWritten(child, visit);
 }
 
+/**
+ * Where a span's claimed text reads: in the target itself, or in the nodes with text inside it,
+ * or else in the nearest node with text around it (a run's paragraph), so a retry can aim at once.
+ */
+function spanHint(
+  view: DocumentView,
+  pack: Pack,
+  node: NfNode,
+  claimed: string
+): string {
+  const at = (n: NfNode): string | null => {
+    const text = pack.text(n);
+    if (text === null) return null;
+    const i = text.toLowerCase().indexOf(claimed.toLowerCase());
+    return i < 0
+      ? null
+      : `${n.id} reads ${JSON.stringify(
+          text.slice(i, i + claimed.length)
+        )} at [${i}, ${i + claimed.length})`;
+  };
+  const found: string[] = [];
+  const withText: string[] = [];
+  const below = (n: NfNode) => {
+    if (found.length >= 5) return;
+    if (pack.text(n) !== null) {
+      const hit = at(n);
+      if (hit) found.push(hit);
+      else if (withText.length < 5) withText.push(n.id);
+    }
+    for (const key of pack.tree.childLists(n))
+      for (const c of listAt(n, key) ?? [])
+        if (isPlainObject(c)) below(c as NfNode);
+  };
+  below(node);
+  if (!found.length && !withText.length) {
+    // nothing with text inside: the nearest node around it that has text
+    let p = view.placement(node.id);
+    while (p?.parent) {
+      if (pack.text(p.parent) !== null) {
+        const hit = at(p.parent);
+        if (hit) found.push(hit);
+        else withText.push(p.parent.id);
+        break;
+      }
+      p = view.placement(p.parent.id);
+    }
+  }
+  if (found.length)
+    return `Aim the span where the text is: ${found.join('; ')}.`;
+  if (withText.length)
+    return `The text is not there as claimed; nodes with text to aim at: ${withText.join(
+      ', '
+    )}. Copy span from a find hit, or count offsets in the node text as read.`;
+  return 'Copy span from a find hit, or count offsets in the node text as read.';
+}
+
 export function prepareWrite(
   state: DocumentState,
   write: WriteInput
@@ -639,7 +695,7 @@ export function prepareWrite(
                       t.match.text
                     )}`
               }`,
-              'Copy span from a find hit, or count offsets in the node text as read.'
+              spanHint(view, pack, node, t.match.text)
             );
             return;
           }
