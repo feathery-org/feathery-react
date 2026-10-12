@@ -1,5 +1,18 @@
 import internalState from '../../internalState';
 import { fillFields } from '../fillFields';
+import * as formActionUtils from '../utils';
+
+// The real first-interaction release needs a configured client, covered in utils.spec
+let markInteraction: jest.SpyInstance;
+beforeEach(() => {
+  markInteraction = jest
+    .spyOn(formActionUtils, 'markInteraction')
+    .mockImplementation(() => {});
+});
+
+afterEach(() => {
+  markInteraction.mockRestore();
+});
 
 // A fill runs the form's change rules like a person's edit and returns once they settle
 describe('fillFields', () => {
@@ -69,6 +82,14 @@ describe('fillFields', () => {
     expect(state.formActions.changeValue).toHaveBeenCalledTimes(1);
     expect(runFieldChangeLogic.mock.calls[0][0].servar.key).toBe('name');
     expect(settled).toBe(true);
+  });
+
+  it('counts a fill as the person interacting with the form', async () => {
+    makeState(jest.fn());
+
+    await fillFields(formUuid, [{ key: 'name', value: 'Ada' }]);
+
+    expect(markInteraction).toHaveBeenCalled();
   });
 
   it('skips change logic when the value did not change', async () => {

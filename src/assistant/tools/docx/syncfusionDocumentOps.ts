@@ -217,7 +217,7 @@ import type {
 export type { LiveEditor } from '../../../utils/documentEditorPrimitives';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
-export const SELECTION_TEXT_LIMIT = 500;
+const SELECTION_TEXT_LIMIT = 500;
 export const ASSISTANT_DOCUMENT_AUTHOR = 'Robin';
 
 // Syncfusion layers pending edits by author. Invisible suffixes isolate
@@ -282,7 +282,7 @@ export interface DocFormat {
  * What a read tells the model about one binding: enough to see that a figure is
  * computed rather than typed, and which field to change instead.
  */
-export interface BindingFact {
+interface BindingFact {
   /** The binding's name, i.e. what a formula refers to it by. */
   field: string;
   /** Explicit wire identity; equal field labels do not imply global scope. */
@@ -343,18 +343,18 @@ export interface IndexBlock {
   format?: DocFormat;
 }
 
-export interface SectionPatternConfidence {
+interface SectionPatternConfidence {
   matches: number;
   sampled: number;
   level: 'high' | 'medium' | 'low';
 }
 
-export interface SectionPatternValue<T> {
+interface SectionPatternValue<T> {
   value: T;
   confidence: SectionPatternConfidence;
 }
 
-export interface SectionPatternSequenceElement {
+interface SectionPatternSequenceElement {
   role:
     | 'section_heading'
     | 'intro_paragraph'
@@ -366,14 +366,14 @@ export interface SectionPatternSequenceElement {
   confidence: SectionPatternConfidence;
 }
 
-export interface SectionPatternRoleFormat {
+interface SectionPatternRoleFormat {
   styleName?: string;
   characterFormat?: FormatBag;
   paragraphFormat?: FormatBag;
   confidence: SectionPatternConfidence;
 }
 
-export interface SectionPatternTable {
+interface SectionPatternTable {
   ordinal: number;
   columns: SectionPatternValue<number>;
   headerRow: SectionPatternValue<boolean>;
@@ -385,9 +385,9 @@ export interface SectionPatternTable {
   styleName?: SectionPatternValue<string>;
 }
 
-export type SectionBoundaryElement = 'empty_paragraph' | 'page_break';
+type SectionBoundaryElement = 'empty_paragraph' | 'page_break';
 
-export interface SectionPatternBoundary {
+interface SectionPatternBoundary {
   /** Ordered paragraph-level separator observed between sibling sections. */
   separator: SectionPatternValue<SectionBoundaryElement[]>;
   /** Paragraph spacing is reported separately because it does not add blocks. */
@@ -395,7 +395,7 @@ export interface SectionPatternBoundary {
   endingParagraphAfterSpacing?: SectionPatternValue<number>;
 }
 
-export interface SectionPatternResult {
+interface SectionPatternResult {
   ok: true;
   pattern: {
     sectionLevel?: SectionPatternValue<number>;
@@ -419,13 +419,13 @@ export interface SectionPatternResult {
 // retry only after performing the named remedy, 'modified_input' means the
 // input itself was wrong. Every refusal this module returns must carry one -
 // a refusal without a remedy is an invitation to resend the identical call.
-export interface InventoryRemedy {
+interface InventoryRemedy {
   action: string;
   tool: string;
   input?: Record<string, unknown>;
 }
 
-export interface InventoryRefusal {
+interface InventoryRefusal {
   error: string;
   message: string;
   remedy?: InventoryRemedy;
@@ -482,7 +482,7 @@ export interface DocumentStructure {
 // The completeness contract for capped reads: a clipped list must say how
 // many of how many, in data. A partial read that looks complete is how a
 // 94-row table got summed from 60 rows and an anchor got guessed.
-export interface InventoryTruncation {
+interface InventoryTruncation {
   returned: number;
   total: number;
   message: string;
@@ -492,7 +492,7 @@ export interface InventoryTruncation {
 // (the writable locator) and its verbatim text. `text: null` with no anchor
 // means the row has no cell at that column (short/merged row) - reported,
 // never silently skipped.
-export interface TableColumnCell {
+interface TableColumnCell {
   row: number;
   anchor?: string;
   text: string | null;
@@ -500,7 +500,7 @@ export interface TableColumnCell {
 
 // A whole table column returned as data. `rowCount` is the table's true row
 // count; `returned` and `truncated` make any capped read visibly partial.
-export interface TableColumnRead {
+interface TableColumnRead {
   tableAnchor: string;
   column: number;
   columns: number;
@@ -533,7 +533,7 @@ export interface TableColumnRead {
 /** Per-cell text is bounded so one prose-heavy table cannot blow the turn. */
 export const TABLE_FACTS_CELL_TEXT_CHARS = 200;
 
-export interface TableCellFact {
+interface TableCellFact {
   row: number;
   column: number;
   /** Anchor of the cell's first paragraph - the anchor a formula references. */
@@ -655,7 +655,7 @@ export interface TableFacts {
   truncated: false;
 }
 
-export type InventoryResult =
+type InventoryResult =
   | { sections: OutlineSection[]; truncation?: InventoryTruncation }
   | { structure: DocumentStructure; truncation?: InventoryTruncation }
   | { inventory: InventoryEntry[]; truncation?: InventoryTruncation }
@@ -740,7 +740,7 @@ function observeMutationGuardBoundary(
  * text that was read, because for `[cell] * 1.13` the only way to see that the
  * engine read the WRONG cell is to see what it read.
  */
-export type FormulaResolvedTerm =
+type FormulaResolvedTerm =
   | {
       kind: 'cell';
       reference: string;
@@ -766,7 +766,7 @@ export type FormulaResolvedTerm =
       description: string;
     };
 
-export interface FormulaCellReport {
+interface FormulaCellReport {
   /** The formula as the model sent it, verbatim. */
   formula: string;
   /**
@@ -803,7 +803,7 @@ export interface FormulaCellReport {
 }
 
 /** One row's outcome in a column-wide recompute. */
-export interface ColumnRowOutcome {
+interface ColumnRowOutcome {
   row: number;
   anchor: string;
   /**
@@ -830,7 +830,7 @@ export interface ColumnRowOutcome {
  * a bulk operation that reports only its writes hides the far more important
  * number, which is how many rows it looked at.
  */
-export interface ColumnFormulaReport {
+interface ColumnFormulaReport {
   /** The per-row formula template as the model sent it, verbatim. */
   formula: string;
   /** The model's own description of what the column holds. */
@@ -859,7 +859,7 @@ export interface ColumnFormulaReport {
  * format, so the bytes written are not the bytes sent. The guard carries both
  * forms long enough to describe an unsafe write precisely.
  */
-export interface ColumnFormatRender {
+interface ColumnFormatRender {
   /** The figure exactly as the op supplied it. */
   asSent: string;
   /** The bytes actually written, in the column's own format. */
@@ -874,14 +874,14 @@ export interface ColumnFormatRender {
  * directions - it is how a wrong resolver stays visible instead of silently
  * imposed.
  */
-export interface ComposedStyleDisagreement {
+interface ComposedStyleDisagreement {
   requested: string;
   resolved: string;
   from: string;
 }
 
 /** The record a creation path leaves when the document could not answer. */
-export interface CreationGap {
+interface CreationGap {
   /** The component that could not inherit. */
   what: string;
   reason: string;
@@ -896,7 +896,7 @@ export interface CreationGap {
  * rather than in the appearance of the output - a fallback that reads exactly
  * like a success is how a wrong family survived a day of testing.
  */
-export interface ComposedSectionInheritance {
+interface ComposedSectionInheritance {
   /** The block whose sibling family every inherited format came from. */
   familyAnchor: string;
   /** That family's outline level, and how many siblings it was derived from. */
@@ -1066,7 +1066,7 @@ export interface ApplyEditsResult {
   };
 }
 
-export interface SelectionContext {
+interface SelectionContext {
   anchor: string;
   text: string;
   isCollapsed: boolean;
@@ -1088,7 +1088,7 @@ export interface SelectionContext {
   spansBlocks: boolean;
 }
 
-export interface DocumentOccurrence {
+interface DocumentOccurrence {
   anchor: string;
   kind: string;
   blockText: string;
@@ -1097,7 +1097,7 @@ export interface DocumentOccurrence {
   end: number;
 }
 
-export interface FindDocumentOccurrencesResult {
+interface FindDocumentOccurrencesResult {
   ok: boolean;
   query: { text: string; matchCase: boolean; wholeWord: boolean };
   count: number;
@@ -1124,7 +1124,7 @@ export interface FindDocumentOccurrencesResult {
   error?: string;
 }
 
-export interface FindDocumentOccurrencesBatchResult {
+interface FindDocumentOccurrencesBatchResult {
   ok: boolean;
   results: FindDocumentOccurrencesResult[];
   truncated: boolean;
@@ -2767,7 +2767,7 @@ function collectSectionBoundaries(
  * computation, so what the model reads and what the engine sums are the same
  * cells by construction. Returns null when no table answers to `tableAnchor`.
  */
-export function collectTableColumnCells(
+function collectTableColumnCells(
   blocks: FlatBlock[],
   tableAnchor: string,
   column: number
@@ -4262,8 +4262,8 @@ export function buildIndexBlocks(editor: LiveEditor): IndexBlock[] {
   return buildIndexBlocksFromBlocks(flattenSfdt(serializeSfdt(editor)));
 }
 
-export const MAX_LIVE_OCCURRENCE_QUERIES = 20;
-export const MAX_LIVE_OCCURRENCES_PER_QUERY = 200;
+const MAX_LIVE_OCCURRENCE_QUERIES = 20;
+const MAX_LIVE_OCCURRENCES_PER_QUERY = 200;
 
 function findOption(matchCase: boolean, wholeWord: boolean): string {
   if (matchCase && wholeWord) return 'CaseSensitiveWholeWord';
@@ -6146,7 +6146,7 @@ type ToleratedFields<K extends AdvertisedDocumentOp> =
   K extends keyof RuntimeToleratedFields ? RuntimeToleratedFields[K] : unknown;
 
 /** One op as its registry entry declares it, plus the reserved fields. */
-export type TypedEditOp<K extends AdvertisedDocumentOp> = {
+type TypedEditOp<K extends AdvertisedDocumentOp> = {
   op: K;
 } & OpParams<K> &
   ToleratedFields<K> &
@@ -13241,7 +13241,7 @@ const FORMAT_OPS = new Set([
 // the preflight retargets it to the table's first cell before resolving it -
 // naming the table the way the read names it must not be an error (see
 // retargetTableScopedAnchor).
-export const TABLE_SCOPED_OPS = new Set([
+const TABLE_SCOPED_OPS = new Set([
   'copy_table_format',
   'restripe_table',
   'duplicate_table'
@@ -16908,13 +16908,14 @@ function createBindingInCell(
   );
   // The cell being written, read as a physical cell (inventory anchors) and
   // as a logical column; whatever it already holds is updated, not joined.
-  const targetRow = table.tablePath
-    ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
+  const tablePath = table.tablePath;
+  const targetRow = tablePath
+    ? getAt(state.sfdt, [...tablePath, 'rows', rowIndex])
     : undefined;
-  const targetPaths = table.tablePath
+  const targetPaths = tablePath
     ? [columnIndex, physicalCellIndexAt(targetRow, columnIndex)]
         .filter((cell): cell is number => cell != null)
-        .map((cell) => [...table.tablePath!, 'rows', rowIndex, 'cells', cell])
+        .map((cell) => [...tablePath, 'rows', rowIndex, 'cells', cell])
     : [];
   const joined = joinedDocumentBinding(
     state.index,
@@ -22978,6 +22979,12 @@ const ASSISTANT_WRITING_KEY = '__featheryAssistantWriting';
 // Guards the gaps BETWEEN tool calls in one editing turn: set by the docx
 // bridge on the first write of a turn, cleared by AssistantChat at turn end.
 const ASSISTANT_SESSION_KEY = '__featheryAssistantSession';
+// Edge-triggered listeners for that flag, stored per editor instance. The
+// version-history session tracker reads a turn end (true → false) as a slice
+// boundary, so only transitions are delivered, never repeated same-value sets.
+const ASSISTANT_SESSION_LISTENERS_KEY = '__featheryAssistantSessionListeners';
+
+type AssistantSessionListener = (active: boolean) => void;
 const DOCUMENT_EDIT_TRACE_HOOK = '__featheryDocumentEditTrace';
 
 function emitDocumentEditTrace(entry: Record<string, unknown>): void {
@@ -23023,6 +23030,13 @@ export function isAssistantWriting(
   return !!ed?.[ASSISTANT_WRITING_KEY] || !!ed?.[ASSISTANT_SESSION_KEY];
 }
 
+/** Attribution follows actual mutations; humans can type between tool calls. */
+export function isAssistantApplyingEdits(
+  editor: LiveEditor | null | undefined
+): boolean {
+  return !!(editor as any)?.[ASSISTANT_WRITING_KEY];
+}
+
 /** Mark the assistant editing turn driving this editor as in flight. The docx
  *  bridge sets it on the first document write of a turn; AssistantChat clears
  *  it when the turn settles. */
@@ -23031,7 +23045,30 @@ export function setAssistantSessionActive(
   active: boolean
 ): void {
   if (!editor) return;
-  (editor as any)[ASSISTANT_SESSION_KEY] = active;
+  const ed = editor as any;
+  const next = !!active;
+  if (!!ed[ASSISTANT_SESSION_KEY] === next) return; // edge-only
+  ed[ASSISTANT_SESSION_KEY] = next;
+  const listeners: Set<AssistantSessionListener> | undefined =
+    ed[ASSISTANT_SESSION_LISTENERS_KEY];
+  if (listeners) listeners.forEach((cb) => cb(next));
+}
+
+/** Subscribe to assistant-session active/inactive EDGES on this editor. The
+ *  callback fires only when the flag transitions. Returns an unsubscribe. */
+export function onAssistantSessionChange(
+  editor: LiveEditor | null | undefined,
+  cb: AssistantSessionListener
+): () => void {
+  if (!editor) return () => undefined;
+  const ed = editor as any;
+  const listeners: Set<AssistantSessionListener> =
+    ed[ASSISTANT_SESSION_LISTENERS_KEY] ??
+    (ed[ASSISTANT_SESSION_LISTENERS_KEY] = new Set());
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
 }
 
 // Applies a logical change set in deterministic phases. We preflight only the

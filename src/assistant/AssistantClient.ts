@@ -8,7 +8,7 @@ type AssistantClientCallbacks = {
   changeValue: (value: any, field: any, index?: number | null) => void;
 };
 
-export type TableHandlers = {
+type TableHandlers = {
   // The columns the grid is actually rendering, which on a Hub table are
   // resolved from the live Hub schema rather than the ones stored on the element
   columns: Column[];
@@ -66,11 +66,6 @@ export default class AssistantClient {
 
   registerTable(tableId: string, handlers: TableHandlers): void {
     this._tables.set(tableId, handlers);
-  }
-
-  /** Columns a mounted table is rendering, null when it isn't mounted */
-  getTableColumns(tableId: string): Column[] | null {
-    return this._tables.get(tableId)?.columns ?? null;
   }
 
   unregisterTable(tableId: string): void {

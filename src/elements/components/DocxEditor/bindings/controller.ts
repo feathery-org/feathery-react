@@ -109,7 +109,7 @@ export interface ControllerEvent {
 
 export type TimerId = unknown;
 
-export interface ControllerOptions {
+interface ControllerOptions {
   editor: EditorPort;
   persistence?: DocumentPersistence | null;
   /**
@@ -123,13 +123,9 @@ export interface ControllerOptions {
   clearTimeoutFn?: (id: TimerId) => void;
 }
 
-export type ControllerPhase =
-  | 'idle'
-  | 'serializing'
-  | 'reconciling'
-  | 'loading';
+type ControllerPhase = 'idle' | 'serializing' | 'reconciling' | 'loading';
 
-export type ControllerSaveResult =
+type ControllerSaveResult =
   | SaveResult
   | { ok: false; reason: 'blocked-by-diagnostics' | 'no-persistence' };
 

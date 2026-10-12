@@ -1,5 +1,18 @@
 import internalState from '../../internalState';
 import { navigateToStep } from '../navigateToStep';
+import * as formActionUtils from '../utils';
+
+// The real first-interaction release needs a configured client, covered in utils.spec
+let markInteraction: jest.SpyInstance;
+beforeEach(() => {
+  markInteraction = jest
+    .spyOn(formActionUtils, 'markInteraction')
+    .mockImplementation(() => {});
+});
+
+afterEach(() => {
+  markInteraction.mockRestore();
+});
 
 // A submit error published late still comes back in fieldErrors
 describe('navigateToStep inline error reporting', () => {

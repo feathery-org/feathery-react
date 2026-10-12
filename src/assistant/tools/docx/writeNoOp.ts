@@ -63,7 +63,7 @@ export function writeIsNoOp(current: string, next: string): boolean {
  * what lets a receipt say "same number, different format" out loud rather than
  * leaving a reviewer to spot it.
  */
-export type WriteDifference =
+type WriteDifference =
   | { changed: false }
   | {
       changed: true;

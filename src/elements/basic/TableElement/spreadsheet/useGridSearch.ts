@@ -5,18 +5,18 @@ import type { SpreadsheetRow } from './table';
 import { formatCellDisplay } from './fieldEditors';
 import type { CellRules } from './validation';
 
-export type SearchMatch = {
+type SearchMatch = {
   rowId: string;
   rowIndex: number;
   columnId: string;
 };
 
-export type SearchMatchState = 'match' | 'current';
+type SearchMatchState = 'match' | 'current';
 
-export const searchMatchKey = (rowIndex: number, fieldKey: string) =>
+const searchMatchKey = (rowIndex: number, fieldKey: string) =>
   `${rowIndex}:${fieldKey}`;
 
-export type SearchableCell = SearchMatch & { text: string };
+type SearchableCell = SearchMatch & { text: string };
 
 /** Every cell's displayed (formatted) text, lowercased, in reading order.
  * Built once per data change so a keystroke only scans strings. */
@@ -154,5 +154,3 @@ export function useGridSearch({
     close
   };
 }
-
-export type GridSearch = ReturnType<typeof useGridSearch>;

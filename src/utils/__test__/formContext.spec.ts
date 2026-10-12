@@ -1,6 +1,7 @@
 import { getFormContext } from '../formContext';
 import { defaultClient, initState } from '../init';
 import { setFormInternalState } from '../internalState';
+import Field from '../entities/Field';
 import { mountDocument } from '../../robin/document/mounts';
 import { DocumentSession } from '../../robin/document/session';
 import {
@@ -26,6 +27,98 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       client,
       generateEnvelopeFlow: flow
     } as any);
+  });
+
+  it.each([undefined, 'sign'] as const)(
+    'creates a DocuSign draft with envelopeAction %s and preserves signer roles',
+    async (envelopeAction) => {
+      flow.mockResolvedValue({
+        docusign_envelope_id: 'ds-1',
+        status: 'created'
+      });
+      const result = await getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        signMethod: 'docusign',
+        draft: true,
+        envelopeAction,
+        signers: [{ documentId: 'tpl-1', roleId: 'owner', email: 'a@x.com' }]
+      });
+      expect(flow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          envelope_action: 'sign',
+          sign_method: 'docusign',
+          draft: true,
+          envelope_signers: [
+            {
+              document_id: 'tpl-1',
+              role_id: 'owner',
+              email: 'a@x.com',
+              filler: false
+            }
+          ]
+        })
+      );
+      expect(result).toEqual({
+        docusign_envelope_id: 'ds-1',
+        status: 'created'
+      });
+      expect(client.generateDocuments).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    { signMethod: undefined },
+    { signMethod: 'feathery' },
+    { envelopeAction: 'fill' },
+    { envelopeAction: 'download' },
+    { envelopeAction: 'save' },
+    { envelopeAction: 'open_in_editor' },
+    { download: true },
+    { toolbarActions: ['draft'] }
+  ])(
+    'rejects incompatible draft options before saving or generating: %j',
+    async (options) => {
+      await expect(
+        getFormContext(uuid).generateDocuments({
+          documentIds: ['tpl-1'],
+          signMethod: 'docusign',
+          draft: true,
+          ...options
+        } as any)
+      ).rejects.toThrow('draft requires');
+      expect(client.flushCustomFields).not.toHaveBeenCalled();
+      expect(flow).not.toHaveBeenCalled();
+      expect(client.generateDocuments).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects headless drafts instead of silently dropping the draft option', async () => {
+    const headlessUuid = 'formContext-headless-draft';
+    setFormInternalState(headlessUuid, { fields: {}, client } as any);
+    await expect(
+      getFormContext(headlessUuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        signMethod: 'docusign',
+        draft: true
+      })
+    ).rejects.toThrow('draft requires a mounted <Form />');
+    expect(client.flushCustomFields).not.toHaveBeenCalled();
+    expect(client.generateDocuments).not.toHaveBeenCalled();
+  });
+
+  it('keeps editor generation available when draft is explicitly false', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      signMethod: 'docusign',
+      envelopeAction: 'open_in_editor',
+      draft: false
+    });
+    expect(flow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        envelope_action: 'open_in_editor',
+        draft: false
+      })
+    );
   });
 
   it('routes the editor + signer options through the form flow with a built action', async () => {
@@ -168,16 +261,94 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     ]);
   });
 
-  it('routes a quik-only document list through the flow even with no other options', async () => {
-    await getFormContext(uuid).generateDocuments({
-      documentIds: [{ kind: 'quik' }]
-    });
+  it('routes a source-object-only document list through the flow even with no other options', async () => {
+    for (const source of [
+      { kind: 'quik' as const },
+      { kind: 'file_upload' as const, field_id: 'f1' }
+    ]) {
+      flow.mockClear();
+      await getFormContext(uuid).generateDocuments({ documentIds: [source] });
 
-    expect(flow).toHaveBeenCalledTimes(1);
-    expect(flow.mock.calls[0][0]).toMatchObject({
-      documents: [{ kind: 'quik' }]
-    });
+      expect(flow).toHaveBeenCalledTimes(1);
+      expect(flow.mock.calls[0][0]).toMatchObject({ documents: [source] });
+    }
     expect(client.generateDocuments).not.toHaveBeenCalled();
+  });
+
+  it('treats download as the envelope action for source objects', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: [{ kind: 'quik' }],
+      download: true
+    });
+    expect(flow.mock.calls[0][0].envelope_action).toBe('download');
+
+    // A call that signs keeps signing.
+    for (const signing of [
+      { signMethod: 'docusign' as const },
+      { redirect: 'https://done.example.com' }
+    ]) {
+      flow.mockClear();
+      await getFormContext(uuid).generateDocuments({
+        documentIds: [{ kind: 'quik' }],
+        download: true,
+        ...signing
+      });
+      expect(flow.mock.calls[0][0].envelope_action).toBeUndefined();
+    }
+  });
+
+  it('resolves a file upload field key to its field id', async () => {
+    setFormInternalState(uuid, {
+      fields: {},
+      client,
+      generateEnvelopeFlow: flow,
+      steps: {
+        s1: {
+          servar_fields: [
+            { servar: { id: 'id-name', key: 'Name', type: 'text_field' } },
+            { servar: { id: 'id-up', key: 'IdUpload', type: 'file_upload' } }
+          ]
+        }
+      }
+    } as any);
+
+    // By key, or by passing the field itself as a logic rule sees it.
+    for (const source of [
+      { kind: 'file_upload' as const, field_key: 'IdUpload' },
+      new Field('IdUpload', uuid)
+    ]) {
+      flow.mockClear();
+      await getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1', source]
+      });
+      expect(flow.mock.calls[0][0].documents).toEqual([
+        'tpl-1',
+        { kind: 'file_upload', field_id: 'id-up' }
+      ]);
+    }
+
+    // A file upload source must name its field.
+    flow.mockClear();
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: [{ kind: 'file_upload' } as any]
+      })
+    ).rejects.toThrow('a file upload source needs its field');
+    expect(flow).not.toHaveBeenCalled();
+
+    // Unknown keys and non-upload fields fail before anything is generated.
+    flow.mockClear();
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: [
+          { kind: 'file_upload', field_key: 'Missing' },
+          { kind: 'file_upload', field_key: 'Name' }
+        ]
+      })
+    ).rejects.toThrow(
+      'generateDocuments: no file upload field with key Missing, Name'
+    );
+    expect(flow).not.toHaveBeenCalled();
   });
 
   it('keeps the simple client path for plain template fill/merge (no rich options)', async () => {

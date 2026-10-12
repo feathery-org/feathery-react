@@ -5,8 +5,10 @@ import React, {
   useRef,
   useState
 } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
+import { documentRefTemplateId } from '../../../utils/featheryClient/integrationClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import internalState from '../../../utils/internalState';
@@ -26,6 +28,8 @@ import {
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
 import { mountRobinDocument } from './robinDocument';
+import { DocxHistoryHost, DocxSaveMeta } from './history/types';
+import { fetchDocumentBytes } from '../../../utils/documentPersistence';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose editor_mode matches
@@ -175,8 +179,13 @@ export default function DocumentEditorContainer({
   // Document is owned by the button that targets this container.
   const documentId = useMemo(
     () =>
-      (targetAction?.documents ?? [])[0] ??
-      pendingDraft?.documents?.[0] ??
+      // Only a template can open here; other sources are rejected at generate.
+      (targetAction?.documents ?? [])
+        .map(documentRefTemplateId)
+        .find(Boolean) ??
+      (pendingDraft?.documents ?? [])
+        .map(documentRefTemplateId)
+        .find(Boolean) ??
       pendingDraft?.envelopes?.[0]?.document,
     [targetAction, pendingDraft]
   );
@@ -188,6 +197,14 @@ export default function DocumentEditorContainer({
   );
   const [loading, setLoading] = useState(!envelope);
   const [error, setError] = useState<string | null>(null);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const beforeReplaceRef = useRef<(() => Promise<unknown>) | null>(null);
+  const registerBeforeReplace = useCallback(
+    (save: (() => Promise<unknown>) | null) => {
+      beforeReplaceRef.current = save;
+    },
+    []
+  );
   // Bumped to force the editor to reload its source after a (re)generate.
   // NOT bumped on save (so saving doesn't reload the document out from under
   // the user).
@@ -251,7 +268,7 @@ export default function DocumentEditorContainer({
 
   useEffect(() => {
     if (editMode) return undefined;
-    const handler = (event: Event) => {
+    const handler = async (event: Event) => {
       const detail = (event as CustomEvent<RefreshEventDetail>).detail;
       if (
         detail?.containerId &&
@@ -261,8 +278,20 @@ export default function DocumentEditorContainer({
         return;
       }
 
+      try {
+        await beforeReplaceRef.current?.();
+      } catch (error) {
+        setOperationError(
+          `The new document could not be opened because your current edits could not be saved. ${
+            error instanceof Error ? error.message : ''
+          }`
+        );
+        return;
+      }
+
       const generatedEnvelope = getGeneratedEnvelope(detail, documentId);
       if (generatedEnvelope?.id) {
+        setOperationError(null);
         setEnvelope(generatedEnvelope);
         setSourceUrl(envelopeSourceUrl(generatedEnvelope));
         setError(null);
@@ -311,14 +340,19 @@ export default function DocumentEditorContainer({
     FORCE_DOCUMENT_BINDINGS || syncfusion.bindings === true;
   // The most recent committed document-field values, read at save time.
   const bindingValuesRef = useRef<Record<string, string>>({});
+  const pendingWritebackRef = useRef<Record<string, any>>({});
 
   const saveEnvelope = useCallback(
-    async (blob: Blob) => {
+    async (blob: Blob, meta?: DocxSaveMeta) => {
       if (!envelope) return;
+      const savedBindings = {
+        ...(meta?.bindingValues ?? bindingValuesRef.current)
+      };
       const updated = await client.saveEnvelopeFile(
         envelope.id,
         blob,
-        'document.docx'
+        'document.docx',
+        meta
       );
       const savedFileUrl = updated?.file ?? envelope.file;
       if (updated?.file) {
@@ -344,17 +378,83 @@ export default function DocumentEditorContainer({
       // ONLY to fields the form already has - a binding in a template is not
       // permission to invent a field. Pushed here with the save rather than on
       // every reconcile: pressing Enter should not cost a network round trip.
-      for (const [name, value] of Object.entries(bindingValuesRef.current)) {
+      for (const [name, value] of Object.entries(savedBindings)) {
         if (name in fieldValues) newValues[name] = value;
       }
+      for (const name of Object.keys(newValues)) {
+        if (
+          fieldValues[name] === newValues[name] &&
+          !(name in pendingWritebackRef.current)
+        )
+          delete newValues[name];
+      }
       if (Object.keys(newValues).length) {
+        Object.assign(pendingWritebackRef.current, newValues);
         setFieldValues(newValues, true, true);
         await client.submitCustom(newValues);
+        for (const [name, value] of Object.entries(newValues)) {
+          if (pendingWritebackRef.current[name] === value)
+            delete pendingWritebackRef.current[name];
+        }
       }
+      setOperationError(null);
       return updated;
     },
     [client, envelope, targetAction, savesToField]
   );
+
+  // The version-history I/O adapter DocxEditor injects into its session hook.
+  // Keeps index.tsx free of the Feathery API. Disabled in the designer preview.
+  const envelopeId = envelope?.id;
+  const restoreOperationRef = useRef<{
+    envelopeId: string;
+    versionId: string;
+    sessionId: string;
+  } | null>(null);
+  const historyHost = useMemo<DocxHistoryHost | undefined>(() => {
+    if (editMode || !envelopeId) return undefined;
+    return {
+      listVersions: () => client.listEnvelopeVersions(envelopeId),
+      getVersion: (versionId) =>
+        client.getEnvelopeVersion(envelopeId, versionId),
+      closeVersion: (sessionId, payload) =>
+        client.closeEnvelopeVersion(envelopeId, sessionId, payload),
+      fetchVersionFile: fetchDocumentBytes,
+      restoreVersion: async (versionId) => {
+        let operation = restoreOperationRef.current;
+        if (
+          !operation ||
+          operation.envelopeId !== envelopeId ||
+          operation.versionId !== versionId
+        ) {
+          operation = { envelopeId, versionId, sessionId: uuidv4() };
+          restoreOperationRef.current = operation;
+        }
+        const updated = await client.restoreEnvelopeVersion(
+          envelopeId,
+          versionId,
+          operation.sessionId
+        );
+        // Reopen the DOCX the restore made live; the source row's final SFDT
+        // can be an older checkpoint than that DOCX.
+        setEnvelope((current) =>
+          current?.id === envelopeId
+            ? {
+                ...current,
+                file: updated.file,
+                editor_file: updated.editor_file ?? null
+              }
+            : current
+        );
+        setSourceUrl(envelopeSourceUrl({ ...updated } as Envelope));
+        setReloadKey((k) => k + 1);
+        restoreOperationRef.current = null;
+        return updated.version;
+      },
+      renameVersion: (versionId, name) =>
+        client.renameEnvelopeVersion(envelopeId, versionId, name)
+    };
+  }, [client, envelopeId, editMode]);
 
   // Only the signing actions run here; 'download' is handled inside DocxEditor,
   // which saves first and then serves the envelope's public (stripped) copy.
@@ -549,7 +649,6 @@ export default function DocumentEditorContainer({
   // Robin's document engine: one session per opened document, mounted under this form instance so
   // the form context's `liveDocument` accessor reaches it. Only where Robin is on; a regenerate or
   // a new envelope is a new session (a new editor id), and unmount ends any editing turn.
-  const envelopeId = envelope?.id;
   useEffect(() => {
     if (
       !assistantEnabled ||
@@ -635,70 +734,80 @@ export default function DocumentEditorContainer({
   }
 
   return box(
-    <DocxEditor
-      source={source}
-      serviceUrl={serviceUrl}
-      headers={serviceHeaders}
-      licenseKey={syncfusion.licenseKey}
-      readOnly={readOnly}
-      reviewChanges={reviewChanges}
-      openNonce={reloadKey}
-      fileName='document'
-      terminalAction={terminalAction}
-      onTerminalAction={terminalAction ? runTerminalAction : undefined}
-      onTerminalActionDraft={offersDraft ? runTerminalActionDraft : undefined}
-      // Signing needs a signer to open as, which only finalizing an unsigned
-      // envelope hands back - so there's nothing behind the button once signed.
-      terminalActionDisabled={!envelope.file || envelope.signed}
-      // Without this a failed send is swallowed: DocxEditor routes terminal
-      // errors here and there is nothing else listening.
-      onError={setError}
-      // Download shows only when the toolbar config offers it, and never in
-      // the save-to-field flow: there the document's destination is a form
-      // field (set on every save), not the user's machine.
-      hideDownload={savesToField || !offersDownload}
-      // Downloads serve the stripped public copy, never the editor bytes —
-      // content controls must not leave the platform.
-      downloadUrl={envelope.file}
-      bindings={{
-        enabled: bindingsEnabled,
-        onFieldValues: (values) => {
-          bindingValuesRef.current = values;
+    <>
+      {operationError && (
+        <div role='alert' css={{ color: '#b42318', padding: 8 }}>
+          {operationError}
+        </div>
+      )}
+      <DocxEditor
+        source={source}
+        envelopeId={envelope.id}
+        serviceUrl={serviceUrl}
+        headers={serviceHeaders}
+        licenseKey={syncfusion.licenseKey}
+        readOnly={readOnly}
+        reviewChanges={reviewChanges}
+        openNonce={reloadKey}
+        fileName='document'
+        terminalAction={terminalAction}
+        onTerminalAction={terminalAction ? runTerminalAction : undefined}
+        onTerminalActionDraft={offersDraft ? runTerminalActionDraft : undefined}
+        // Signing needs a signer to open as, which only finalizing an unsigned
+        // envelope hands back - so there's nothing behind the button once signed.
+        terminalActionDisabled={!envelope.file || envelope.signed}
+        // Without this a failed send is swallowed: DocxEditor routes terminal
+        // errors here and there is nothing else listening.
+        onError={setOperationError}
+        onBeforeReplaceReady={registerBeforeReplace}
+        // Download shows only when the toolbar config offers it, and never in
+        // the save-to-field flow: there the document's destination is a form
+        // field (set on every save), not the user's machine.
+        hideDownload={savesToField || !offersDownload}
+        // Downloads serve the stripped public copy, never the editor bytes —
+        // content controls must not leave the platform.
+        downloadUrl={envelope.file}
+        bindings={{
+          enabled: bindingsEnabled,
+          onFieldValues: (values) => {
+            bindingValuesRef.current = values;
+          }
+        }}
+        onSave={saveEnvelope}
+        history={historyHost}
+        // A completed Save is the container's Save-to-field review action; a
+        // completed Download is the download action. Only fire when the toolbar
+        // config actually offers that outcome.
+        onSaved={
+          savesToField
+            ? (result) =>
+                fireReviewAction(
+                  'save',
+                  result?.file ? { files: [result.file] } : null
+                )
+            : undefined
         }
-      }}
-      onSave={saveEnvelope}
-      // A completed Save is the container's Save-to-field review action; a
-      // completed Download is the download action. Only fire when the toolbar
-      // config actually offers that outcome.
-      onSaved={
-        savesToField
-          ? (result) =>
-              fireReviewAction(
-                'save',
-                result?.file ? { files: [result.file] } : null
-              )
-          : undefined
-      }
-      onDownloaded={
-        offersDownload
-          ? () =>
-              fireReviewAction(
-                'download',
-                envelope.file ? { files: [envelope.file] } : null
-              )
-          : undefined
-      }
-      // readOnly editors never dirty, so skip registering them entirely
-      onChange={
-        !readOnly && containerId
-          ? (dirty: boolean) => setDocxEditorDirty(formId, containerId, dirty)
-          : undefined
-      }
-      onEditorReady={onEditorReady}
-      onReady={onDocumentReady}
-      // Server-side docx→pdf conversion (doc-conversion Lambda); does not
-      // persist anything — the envelope stays an editable docx.
-      onExportPdf={() => client.downloadEnvelopePdf(envelope.id)}
-    />
+        onDownloaded={
+          offersDownload
+            ? () =>
+                fireReviewAction(
+                  'download',
+                  envelope.file ? { files: [envelope.file] } : null
+                )
+            : undefined
+        }
+        // readOnly editors never dirty, so skip registering them entirely
+        onChange={
+          !readOnly && containerId
+            ? (dirty: boolean) => setDocxEditorDirty(formId, containerId, dirty)
+            : undefined
+        }
+        onEditorReady={onEditorReady}
+        onReady={onDocumentReady}
+        // Server-side docx→pdf conversion (doc-conversion Lambda); does not
+        // persist anything — the envelope stays an editable docx.
+        onExportPdf={() => client.downloadEnvelopePdf(envelope.id)}
+      />
+    </>
   );
 }

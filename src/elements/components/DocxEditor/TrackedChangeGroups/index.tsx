@@ -21,6 +21,7 @@ import RailHead from './RailHead';
 import GroupCard from './GroupCard';
 import { ChipView, GroupView } from './types';
 import { ACCENT_LINE, INK, PANEL } from './styles';
+import type { TrackedChangeAcceptance } from '../history/useDocxHistorySession';
 
 // Review rail for pending tracked changes: one card per assistant change set
 // (plus one per human author), expanding to −/+ diff "chips" with
@@ -39,6 +40,11 @@ interface Props {
   onHiddenChange?: (hidden: boolean) => void;
   /** Reports the pending tracked-change count whenever it changes. */
   onPendingCountChange?: (count: number) => void;
+  /** Persists an accept operation as a distinct confirmed history version. */
+  onAcceptTrackedChanges?: (
+    acceptance: TrackedChangeAcceptance,
+    accept: () => void
+  ) => Promise<void>;
 }
 
 // contentChange fires once per keystroke; one trailing refresh after typing
@@ -76,11 +82,16 @@ function afterNextPaint(fn: () => void): void {
 // here rather than being swallowed at its call site. Contained errors log at
 // the browser's verbose/debug level: teardown noise stays out of production
 // logs, but a RECURRING failure - a real regression - stays visible.
-const handleEditorEvent = (fn: () => void) => {
+const reportEditorEventError = (error: unknown) =>
+  console.debug('Feathery: tracked-changes rail editor call failed.', error);
+
+const handleEditorEvent = (fn: () => void | Promise<void>) => {
   try {
-    fn();
+    const result = fn();
+    if (result && typeof result.catch === 'function')
+      result.catch(reportEditorEventError);
   } catch (error) {
-    console.debug('Feathery: tracked-changes rail editor call failed.', error);
+    reportEditorEventError(error);
   }
 };
 
@@ -160,7 +171,8 @@ function TrackedChangeGroups({
   editor,
   hidden,
   onHiddenChange,
-  onPendingCountChange
+  onPendingCountChange,
+  onAcceptTrackedChanges
 }: Props) {
   // Only live (pending) revisions render; a resolved edit disappears from
   // the rail and reappears if the resolution is undone.
@@ -179,6 +191,7 @@ function TrackedChangeGroups({
   // every arrow press skip an edit.
   const activeRevisionRef = useRef<any>(null);
   const ignoreSelectionRef = useRef(false);
+  const resolvingRef = useRef(false);
   // Survives the refresh that follows the resolve, and only that: the next
   // resolve replaces it, and a clean one clears it.
   const [stall, setStall] = useState<string | null>(null);
@@ -423,6 +436,74 @@ function TrackedChangeGroups({
     }
   };
 
+  const revisionIdsForAcceptance = (
+    revisions: any[],
+    beforeSfdt: string
+  ): string[] => {
+    const ids = revisions
+      .map((revision) => revision?.revisionID ?? revision?.revisionId)
+      .filter((id): id is string => typeof id === 'string' && !!id);
+    if (ids.length) return Array.from(new Set(ids));
+
+    // Older Syncfusion builds did not expose revisionID on the live wrapper.
+    // Match the SFDT metadata in that case so confirmation versions still work.
+    const keys = new Set(
+      revisions.map((revision) =>
+        JSON.stringify([
+          revision?.author ?? '',
+          revision?.revisionType ?? '',
+          revision?.customData ?? ''
+        ])
+      )
+    );
+    const doc = JSON.parse(beforeSfdt);
+    return Array.from(
+      new Set<string>(
+        (doc.revisions ?? [])
+          .filter((revision: any) =>
+            keys.has(
+              JSON.stringify([
+                revision?.author ?? '',
+                revision?.revisionType ?? '',
+                revision?.customData ?? ''
+              ])
+            )
+          )
+          .map((revision: any) => String(revision.revisionId ?? ''))
+          .filter(Boolean)
+      )
+    );
+  };
+
+  const resolveWithHistory = async (
+    revisions: any[],
+    isAccept: boolean,
+    resolve: () => void
+  ) => {
+    if (resolvingRef.current) return;
+    resolvingRef.current = true;
+    try {
+      if (isAccept && onAcceptTrackedChanges) {
+        const beforeSfdt = editor.serialize();
+        await onAcceptTrackedChanges(
+          {
+            beforeSfdt,
+            revisionIds: revisionIdsForAcceptance(revisions, beforeSfdt)
+          },
+          () => suppressingSelectionEcho(resolve)
+        );
+      } else {
+        suppressingSelectionEcho(resolve);
+      }
+      refresh();
+      // Resolving the last edit unmounts the rail — focus would land on
+      // <body>, where nobody sees the next ⌘Z.
+      if (listRevisionGroups(editor).length) refocusPanel();
+      else editor?.focusIn?.();
+    } finally {
+      resolvingRef.current = false;
+    }
+  };
   // Every resolve path reports through here, so a stall can never be surfaced
   // by one entry point and swallowed by another.
   const reportStall = (
@@ -435,52 +516,43 @@ function TrackedChangeGroups({
   // Non-cascading resolve (native accept/reject settles whatever is
   // CONTIGUOUS, not the group), wrapped as ONE undo step.
   const resolveChips = (chips: ChipView[], isAccept: boolean) => {
-    if (!chips.length) return;
+    if (!chips.length) return Promise.resolve();
     const revisions = chips.flatMap(chipRevisions).filter(Boolean);
-    const outcome = suppressingSelectionEcho(() =>
-      resolveRevisionsAsOneUndo(editor, revisions, isAccept)
-    );
-    reportStall(
-      outcome?.unresolved?.length ?? 0,
-      outcome?.length ?? 0,
-      isAccept
-    );
-    refresh();
-    // Resolving the last edit unmounts the rail — focus would land on
-    // <body>, where nobody sees the next ⌘Z.
-    if (listRevisionGroups(editor).length) refocusPanel();
-    else editor?.focusIn?.();
+    return resolveWithHistory(revisions, isAccept, () => {
+      const outcome = resolveRevisionsAsOneUndo(editor, revisions, isAccept);
+      reportStall(
+        outcome?.unresolved?.length ?? 0,
+        outcome?.length ?? 0,
+        isAccept
+      );
+    });
   };
 
   // A card the document engine owns (structural, or one the editor's own accept or reject cannot
   // settle) is resolved by the engine as a whole; every other card natively, as before.
   const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
-    const resolver = cardResolverFor(editor);
-    const owned = groupViews.filter(
-      (g) => !g.untagged && resolver?.owns(g.changeSetId)
+    const revisions = groupViews.flatMap((group) =>
+      group.chips.flatMap(chipRevisions)
     );
-    const native = groupViews.filter((g) => !owned.includes(g));
-    let unresolvedOwned = 0;
-    for (const g of owned)
-      if (
-        !suppressingSelectionEcho(() =>
-          resolver?.resolve(g.changeSetId, isAccept)
-        )
-      )
-        unresolvedOwned += g.chips.length;
-    const outcome = native.length
-      ? suppressingSelectionEcho(() =>
-          resolveLiveRevisionGroupsAsOneUndo(editor, native, isAccept)
-        )
-      : null;
-    reportStall(
-      (outcome?.unresolved?.length ?? 0) + unresolvedOwned,
-      outcome?.length ?? 0,
-      isAccept
-    );
-    refresh();
-    if (listRevisionGroups(editor).length) refocusPanel();
-    else editor?.focusIn?.();
+    return resolveWithHistory(revisions, isAccept, () => {
+      const resolver = cardResolverFor(editor);
+      const owned = groupViews.filter(
+        (g) => !g.untagged && resolver?.owns(g.changeSetId)
+      );
+      const native = groupViews.filter((g) => !owned.includes(g));
+      let unresolvedOwned = 0;
+      for (const g of owned)
+        if (!resolver?.resolve(g.changeSetId, isAccept))
+          unresolvedOwned += g.chips.length;
+      const outcome = native.length
+        ? resolveLiveRevisionGroupsAsOneUndo(editor, native, isAccept)
+        : null;
+      reportStall(
+        (outcome?.unresolved?.length ?? 0) + unresolvedOwned,
+        outcome?.length ?? 0,
+        isAccept
+      );
+    });
   };
 
   // Accept all / Reject all: the same resolve, but a big batch blocks long
@@ -492,8 +564,9 @@ function TrackedChangeGroups({
     if (resolvingAll) return;
     setResolvingAll(isAccept ? 'accept' : 'reject');
     afterNextPaint(() => {
-      handleEditorEvent(() => resolveGroups(groupViews, isAccept));
-      setResolvingAll(null);
+      resolveGroups(groupViews, isAccept)
+        .catch(reportEditorEventError)
+        .finally(() => setResolvingAll(null));
     });
   };
 

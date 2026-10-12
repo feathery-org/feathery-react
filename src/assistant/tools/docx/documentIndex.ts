@@ -38,7 +38,7 @@ import {
 //     full layout in both the sync and async open paths - forces a re-index,
 //     catching a load that pauses long enough to fool the stability check.
 export const INDEX_POLL_MS = 500;
-export const INDEX_MAX_POLLS = 40; // 20s of headroom for a large docx conversion
+const INDEX_MAX_POLLS = 40; // 20s of headroom for a large docx conversion
 export const INDEX_STABLE_POLLS = 2;
 
 // Re-index this long after content settles. Robin's own bulk edits, a user's
@@ -46,10 +46,10 @@ export const INDEX_STABLE_POLLS = 2;
 // instance, so no fresh registration fires) all arrive as content changes.
 export const REINDEX_DEBOUNCE_MS = 5000;
 
-export const GENERATED_DOCUMENT_TARGET_TYPE = 'generated_document';
+const GENERATED_DOCUMENT_TARGET_TYPE = 'generated_document';
 export const ENVELOPE_TARGET_TYPE = 'envelope';
 
-export type DocumentIndexTarget = { type: string; id: string };
+type DocumentIndexTarget = { type: string; id: string };
 
 const getDocumentTarget = (
   targets: DocumentIndexTarget[]
@@ -146,11 +146,11 @@ const fingerprint = (blocks: IndexBlock[]): string => {
   return `${serialized.length}:${hash}`;
 };
 
-export type DocumentIndexAnchorRemap =
+type DocumentIndexAnchorRemap =
   | { hash: string; anchor: string }
   | { hash: string; anchors: string[] };
 
-export type PostDocumentIndexArgs = {
+type PostDocumentIndexArgs = {
   // `${origin}/agent/assistant/` - the same base the chat posts to.
   baseUrl: string;
   // The authenticated chat target manifest. The backend verifies its envelope
@@ -172,7 +172,7 @@ export type PostDocumentIndexArgs = {
 // What the index endpoint reports it did. `failed` counts blocks whose
 // embedding failed (they are NOT in the index); `storedBlocks` is how many
 // blocks the scope holds after the sync. Older servers return neither.
-export interface PostDocumentIndexResult {
+interface PostDocumentIndexResult {
   posted: boolean;
   failed?: number;
   storedBlocks?: number;
@@ -264,7 +264,7 @@ interface DocumentIndexDelta {
   anchorRemap: DocumentIndexAnchorRemap[];
 }
 
-export const DOCUMENT_INDEX_DELTA_CHANGED_RATIO = 0.6;
+const DOCUMENT_INDEX_DELTA_CHANGED_RATIO = 0.6;
 
 // Match ai-services' `createHash('sha256').update(text).digest('hex')`: Web
 // Crypto digests TextEncoder's UTF-8 bytes and emits the same lowercase hex.

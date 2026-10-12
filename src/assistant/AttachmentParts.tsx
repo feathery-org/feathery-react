@@ -59,7 +59,7 @@ const TypedFileIcon = ({
   return <Icon css={{ width: size, height: size, color, flexShrink: 0 }} />;
 };
 
-export const LazyPdfThumbnail = memo(function LazyPdfThumbnail({
+const LazyPdfThumbnail = memo(function LazyPdfThumbnail({
   url,
   width = 140,
   glyph

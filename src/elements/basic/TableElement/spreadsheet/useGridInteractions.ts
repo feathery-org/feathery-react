@@ -5,7 +5,6 @@ import type {
   CellSelectionRangeOperation,
   CellSelectionState
 } from '@tanstack/react-table';
-import { CellWrite } from '../types';
 import {
   buildFillPatches,
   cellValuesEqual,
@@ -23,9 +22,9 @@ import { choiceRows } from './ChoiceMenu';
 import type { SpreadsheetTable } from './table';
 
 /** Where the selection goes after a commit: an arrow direction, or along the Tab order. */
-export type CommitMove = CellSelectionDirection | 'next' | 'prev';
+type CommitMove = CellSelectionDirection | 'next' | 'prev';
 
-export type EditingCell = {
+type EditingCell = {
   rowId: string;
   columnId: string;
   draft: string;
@@ -838,4 +837,3 @@ export function useGridInteractions(options: GridInteractionOptions) {
 }
 
 export type GridInteractions = ReturnType<typeof useGridInteractions>;
-export type { CellWrite };

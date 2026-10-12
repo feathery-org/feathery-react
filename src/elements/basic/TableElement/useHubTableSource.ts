@@ -73,7 +73,7 @@ export type HubFilter = {
   field_key?: string;
 };
 
-export type HubWhereCondition =
+type HubWhereCondition =
   | { entryId: string }
   | { fieldId: string; value?: any; operator?: HubFilterOperator };
 
@@ -127,6 +127,7 @@ type UseHubTableSourceProps = {
 };
 
 type UseHubTableSourceReturn = {
+  hubId?: string;
   hubColumns: Column[];
   hubFieldValues: Record<string, any[]>;
   entryIds: Array<string | null>;
@@ -946,6 +947,7 @@ export function useHubTableSource({
   );
 
   return {
+    hubId,
     hubColumns,
     hubFieldValues,
     entryIds,
@@ -977,10 +979,7 @@ export function useHubTableSource({
  * their places. Only entries the grid has not seen fall back to id order,
  * and they land at the top, where the grid puts its own new rows.
  */
-export function orderLikeGrid(
-  entries: HubEntry[],
-  current: HubRow[]
-): HubEntry[] {
+function orderLikeGrid(entries: HubEntry[], current: HubRow[]): HubEntry[] {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const kept = current
     .map((row) => (row.entryId ? byId.get(row.entryId) : undefined))

@@ -52,7 +52,7 @@ const columnHelper = createColumnHelper<
   SpreadsheetRow
 >();
 
-export type SpreadsheetTableProps = {
+type SpreadsheetTableProps = {
   columns: Column[];
   /** Feathery row indices, already searched/sorted by `useTableData`. */
   rowIndices: number[];

@@ -3,10 +3,10 @@ import ResponsiveStyles, {
   DEFAULT_MOBILE_BREAKPOINT
 } from '../elements/styles';
 
-export const MIN_AXIS_SIZE = 15;
+const MIN_AXIS_SIZE = 15;
 
-export const FIT = 'fit';
-export const FILL = 'fill';
+const FIT = 'fit';
+const FILL = 'fill';
 
 export const isFill = (v: any) => v === FILL;
 export const isFit = (v: any) => v === FIT;

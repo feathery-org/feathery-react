@@ -14,7 +14,9 @@ const hubTable = {
   position: []
 };
 
-const buildState = (assistantClient?: any) => {
+const buildState = (
+  liveColumns?: Array<{ name: string; fieldKey: string }>
+) => {
   const currentStep = {
     id: 'step-1',
     key: 'intro',
@@ -35,7 +37,19 @@ const buildState = (assistantClient?: any) => {
     visiblePositions: {},
     inlineErrors: {},
     logicRules: [],
-    assistantClient
+    ...(liveColumns
+      ? {
+          tables: new Map([
+            [
+              TABLE_ID,
+              {
+                getLiveState: () => ({ columns: liveColumns, rowCount: 0 }),
+                getRows: () => ({ rowCount: 0, rows: [] })
+              }
+            ]
+          ])
+        }
+      : {})
   };
 };
 
@@ -45,13 +59,11 @@ afterEach(() => {
 
 describe('hub table column parity', () => {
   it('describes the columns the mounted grid renders, not the ones stored on the element', () => {
-    buildState({
-      getTableColumns: () => [
-        { name: 'Status', hub_field_key: 'status' },
-        { name: 'Email', hub_field_key: 'email' },
-        { name: 'Advisor', hub_field_key: 'advisor' }
-      ]
-    });
+    buildState([
+      { name: 'Status', fieldKey: 'status' },
+      { name: 'Email', fieldKey: 'email' },
+      { name: 'Advisor', fieldKey: 'advisor' }
+    ]);
 
     const table = getPanelRuntimeSnapshot(FORM)!.currentStepTables![0];
 
@@ -63,7 +75,7 @@ describe('hub table column parity', () => {
   });
 
   it('falls back to the stored columns while the table is not mounted', () => {
-    buildState({ getTableColumns: () => null });
+    buildState();
 
     const table = getPanelRuntimeSnapshot(FORM)!.currentStepTables![0];
 

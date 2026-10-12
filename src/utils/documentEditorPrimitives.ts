@@ -1253,7 +1253,7 @@ export const invalidateDocumentLayout = (editor: LiveEditor): void => {
  * A widget the document no longer holds restores nothing - the cell went away
  * with the change the restore was part of, so there is nothing to put back.
  */
-export interface AppearanceTarget {
+interface AppearanceTarget {
   restore: AppearanceRestore;
   /** The first paragraph of the cell the restore names, captured live. */
   paragraph?: unknown;
@@ -2164,6 +2164,17 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   );
 }
 
+// Untagged revisions (including DOCX round trips that drop customData) are
+// grouped by their visible author. Resolution must use that same identity:
+// Robin's invisible change-set suffix is not part of the review card's name.
+function untaggedRevisionAuthor(author: unknown): string {
+  return (
+    String(author ?? '')
+      .replace(/[\u2060\u2061]/g, '')
+      .trim() || 'Unknown author'
+  );
+}
+
 function resolveLiveRevisionGroupsAsOneUndoInner(
   editor: LiveEditor,
   groups: RevisionGroupIdentity[],
@@ -2183,7 +2194,7 @@ function resolveLiveRevisionGroupsAsOneUndoInner(
     const tag = revisionTagIdentity(revision.customData);
     return tag
       ? tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
-      : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
+      : authors.has(untaggedRevisionAuthor(revision.author));
   };
   const initial = liveRevisionsRaw(editor).filter(matchesGroup);
   const stylePayloadsByGroup = new Map<
@@ -2450,10 +2461,7 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   for (const revision of snapshotRevisions(editor)) {
     const tag = parseRevisionGroupTag(revision.customData);
     // The invisible per-change-set identity suffix is not for readers.
-    const author =
-      String(revision.author ?? '')
-        .replace(/[\u2060\u2061]/g, '')
-        .trim() || 'Unknown author';
+    const author = untaggedRevisionAuthor(revision.author);
     const key = tag ? `${tag.changeSetId} ${tag.group}` : `author ${author}`;
     let view = views.get(key);
     if (!view) {
@@ -2675,7 +2683,7 @@ export const clearCellShading = (
  * Called before the first member of a group resolves, which is the last moment
  * at which that is true.
  */
-export const resolveAppearanceTargets = (
+const resolveAppearanceTargets = (
   editor: LiveEditor,
   restores: AppearanceRestore[]
 ): AppearanceTarget[] =>
@@ -2785,7 +2793,7 @@ const replayAppearanceRestores = (
  * overwrites a style someone set deliberately. A collapsed caret is enough:
  * SyncFusion applies a paragraph style to the paragraph containing the selection.
  */
-export const replayParagraphStyles = (
+const replayParagraphStyles = (
   editor: LiveEditor,
   restores: ParagraphStyleRestore[]
 ) => {

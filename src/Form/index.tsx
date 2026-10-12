@@ -256,6 +256,7 @@ import {
 } from '../integrations/connectAccount/oauthPopup';
 import { isNum } from '../utils/primitives';
 import {
+  documentSourceUploadFields,
   editorContainerId,
   getSignUrl,
   isDocusignSignAction,
@@ -313,7 +314,6 @@ const stackAbove = (height: number) =>
   height > 0 ? height + BOTTOM_RIGHT_STACK_GAP : 0;
 
 export * from './grid/StyledContainer';
-export type { StyledContainerProps } from './grid/StyledContainer';
 
 export interface Props {
   formId: string;
@@ -591,15 +591,28 @@ function Form({
       const { servar, step } = found;
       if (!FILE_FIELD_TYPES.includes(servar.type)) continue;
       if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
-      fileEntries.push({
-        servar: {
-          key: servar.key,
-          [servar.type]: fieldValues[fieldKey],
-          repeated: Boolean(servar.repeated)
-        },
-        stepKey: step.key
-      });
+      fileEntries.push(fileSubmitEntry(servar, step));
     }
+    if (fileEntries.length) await client.submitFiles(fileEntries);
+  };
+
+  const fileSubmitEntry = (servar: any, step: any) => ({
+    servar: {
+      key: servar.key,
+      [servar.type]: fieldValues[servar.key],
+      repeated: Boolean(servar.repeated)
+    },
+    stepKey: step.key
+  });
+
+  // Force-submit the file upload fields a Generate Documents action includes,
+  // regardless of the button's submit toggle, so the backend has the files.
+  const submitDocumentSourceFiles = async (action: Record<string, any>) => {
+    // A container rejects upload sources, so there's nothing to send.
+    if (editorContainerId(action)) return;
+    const fileEntries = documentSourceUploadFields(action.documents, steps).map(
+      ({ servar, step }) => fileSubmitEntry(servar, step)
+    );
     if (fileEntries.length) await client.submitFiles(fileEntries);
   };
 
@@ -1503,6 +1516,7 @@ function Form({
                 );
             }
           };
+          await submitDocumentSourceFiles(action);
           const data = await client.generateEnvelopes(action);
           if (!data) throw new Error('Document generation failed');
           if (data.status === 'error') throw new Error(data.message);
@@ -1562,7 +1576,7 @@ function Form({
               });
             });
           }
-          await runEnvelopeAction(data);
+          await runEnvelopeAction(data, undefined, action.draft === true);
           return data;
         },
         // Lets a document-editor container, which runs its own signing action
@@ -3509,6 +3523,7 @@ function Form({
           }
         };
         try {
+          await submitDocumentSourceFiles(action);
           const data = await client.generateEnvelopes(action);
           // A missing response is a failure, not a success: _fetch resolves
           // undefined on a network blip / 403 / 409, and reading .status off it

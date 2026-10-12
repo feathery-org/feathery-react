@@ -42,6 +42,29 @@ export function getSignUrl(token: string, redirect?: boolean | string) {
   return `https://${regionPart}document.feathery.io/to/${token}${query}`;
 }
 
+// The file upload fields a Generate Documents action includes, with the step
+// each is on. Empty fields stay in so a removed upload can be cleared.
+export function documentSourceUploadFields(
+  documents: any[] = [],
+  steps: Record<string, any> = {}
+): { servar: any; step: any }[] {
+  const fieldIds = new Set(
+    documents
+      .filter((doc) => doc?.kind === 'file_upload')
+      .map((doc) => doc.field_id)
+  );
+  const fields: { servar: any; step: any }[] = [];
+  if (!fieldIds.size) return fields;
+  for (const step of Object.values(steps) as any[]) {
+    for (const { servar } of step?.servar_fields ?? []) {
+      if (servar.type !== 'file_upload' || !fieldIds.has(servar.id)) continue;
+      fieldIds.delete(servar.id);
+      fields.push({ servar, step });
+    }
+  }
+  return fields;
+}
+
 /** The Document Editor container this action targets, or '' when it doesn't
  * target one. `editor_mode` is the single source of truth for how the editor is
  * presented: '' (none), 'overlay', or a container id. */

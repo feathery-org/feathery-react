@@ -38,7 +38,7 @@ export const secondaryButtonCss = {
   '&:hover:not(:disabled)': { backgroundColor: color.surfaceHover }
 } as const;
 
-export const quietButtonCss = {
+const quietButtonCss = {
   ...baseButtonCss,
   padding: '8px 10px',
   backgroundColor: 'transparent',
