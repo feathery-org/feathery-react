@@ -1,7 +1,7 @@
 /**
  * The live editor as the engine drives it (the core's `EditorHost`), around the document editor
  * instance the bindings already type as `SyncfusionEditorLike`. Undo goes through the editor's own
- * history; opening a document keeps the user's track-changes setting as it was.
+ * history; opening a document keeps the user's track-changes setting and scroll position as they were.
  */
 import type { SyncfusionEditorLike } from '../../../../elements/components/DocxEditor/bindings/editorAdapter';
 import type { EditorHost } from '../../pack';
@@ -34,10 +34,35 @@ export function createHost(editor: LiveEditor): DocxHost {
     serialize: () => editor.serialize(),
     open(native: string) {
       const tracking = editor.enableTrackChanges;
+      // opening lays the document out from page 1 with the caret at its start: the person keeps
+      // their caret and the place they were reading (restored last, after the bindings' re-read,
+      // whose selection changes scroll to the caret)
+      const viewer = editor.documentHelper?.viewerContainer as
+        | HTMLElement
+        | undefined;
+      const place = viewer && {
+        top: viewer.scrollTop,
+        left: viewer.scrollLeft
+      };
+      const selection = editor.selection as Obj | undefined;
+      const caret =
+        typeof selection?.startOffset === 'string'
+          ? { start: selection.startOffset, end: selection.endOffset }
+          : null;
       editor.open(native);
       editor.enableTrackChanges = tracking;
       // the bindings re-read the replaced document as their baseline (no dispose and re-attach)
       bindingCommandSurfaceFor(editor)?.reopened?.();
+      if (caret)
+        try {
+          (editor.selection as Obj).select(caret.start, caret.end);
+        } catch {
+          // the caret's place is gone from the new document: it stays at the start
+        }
+      if (viewer && place) {
+        viewer.scrollTop = place.top;
+        viewer.scrollLeft = place.left;
+      }
     },
     canUndo: () => !!historyOf(editor)?.canUndo?.(),
     undo: () => historyOf(editor)?.undo?.(),

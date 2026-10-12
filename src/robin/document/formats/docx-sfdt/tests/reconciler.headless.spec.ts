@@ -180,6 +180,19 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(row.undo).toMatch(/^engine: (byte-equal|equivalent)$/);
   });
 
+  it('D3B insert a paragraph written with no format: the editor makes it Normal, and that is what was written', async () => {
+    const pre = await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const sid = await at(['sections', 3]);
+    const n = await read([pid, sid]);
+    const row = await commitAndUndo('D3B', pre, {
+      intent: 'Add a paragraph.',
+      scope: { ids: [] },
+      changes: [{ kind: 'insert_after', anchor: pid, container: n[sid].shape, node: { kind: 'paragraph', inlines: [{ kind: 'run', text: 'A paragraph with no format of its own.' }] } }]
+    });
+    expect(row).toEqual(expect.objectContaining(SPLICE));
+  });
+
   it('D4 insert a column in a plain table: splice, geometry derived', async () => {
     const pre = await fresh();
     const tid = await at(['sections', 1, 'blocks', 4]);

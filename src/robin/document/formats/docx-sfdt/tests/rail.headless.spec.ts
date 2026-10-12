@@ -84,6 +84,39 @@ describe('the review rail and undo routing in the real editor', () => {
     expect((table.rows as NfNode[]).length).toBe(rowsBefore - 1);
   });
 
+  it('Accept on an engine card keeps the place the person was reading', async () => {
+    await fresh();
+    const tid = await at(['sections', 3, 'blocks', 10, 'blocks', 0]);
+    const t = (await read([tid]))[tid];
+    await dispatch('write', { intent: 'Remove a line.', scope: { ids: [t.rows[2].id] }, changes: [{ kind: 'delete', id: t.rows[2].id, base: t.rows[2].base }] });
+    const place = await lane.call<number>('viewerScroll', 2400);
+    expect(place).toBeGreaterThan(1000);
+    await lane.call('clickCard', 0, 'Accept');
+    expect(await lane.call('rail')).toEqual([]);
+    expect(Math.abs((await lane.call<number>('viewerScroll')) - place)).toBeLessThan(40);
+  });
+
+  it('a card\'s title goes to its first change a person can see, past a page break', async () => {
+    await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const sid = await at(['sections', 3]);
+    const n = await read([sid, pid]);
+    const sec = n[sid];
+    const style = n[pid].style;
+    const r = await dispatch('write', {
+      intent: 'Start a new page with a note.',
+      scope: { ids: [sid] },
+      changes: [
+        { kind: 'insert_after', anchor: pid, container: sec.shape, node: { kind: 'paragraph', id: 'tmp:p1', style, inlines: [{ kind: 'run', text: '\f' }] } },
+        { kind: 'insert_after', anchor: 'tmp:p1', container: sec.shape, node: { kind: 'paragraph', style, inlines: [{ kind: 'run', text: 'A note on its own page.' }] } }
+      ]
+    });
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 800));
+    await lane.call('rail');
+    await lane.call('clickTitle', 0);
+    expect(await lane.call<string>('caretParagraphText')).toContain('A note on its own page.');
+  });
+
   it('toolbar Undo after a structural commit goes to the engine: the document before the write', async () => {
     const pre = await fresh();
     const tid = await at(['sections', 3, 'blocks', 10, 'blocks', 0]);

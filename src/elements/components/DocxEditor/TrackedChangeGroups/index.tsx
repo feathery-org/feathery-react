@@ -140,6 +140,17 @@ const chipRevisions = (chip: ChipView) => [
   ...(chip.partnerRevisions ?? (chip.partner ? [chip.partner] : []))
 ];
 
+/**
+ * The first chip a person can see: one whose text, before or after, holds more
+ * than page breaks, paragraph marks and whitespace. A card can open with a page
+ * break or an empty paragraph, and going there shows nothing; the first chip
+ * when none is visible.
+ */
+const firstVisibleChip = (chips: ChipView[]): ChipView =>
+  chips.find((chip) =>
+    /[^\s\ufffc]/.test(`${chip.text ?? ''}${chip.beforeText ?? ''}`)
+  ) ?? chips[0];
+
 const itemRevisions = (item: RevisionGroupItem) => [
   ...item.revisions,
   ...(item.partnerRevisions ?? [])
@@ -530,12 +541,13 @@ function TrackedChangeGroups({
     refocusPanel();
   };
 
-  // Group-title click: navigate to the group's first edit but ring every
-  // chip, and never expand — that's the caret's job alone.
+  // Group-title click: navigate to the group's first edit a person can see
+  // (not a page break or an empty paragraph mark) but ring every chip, and
+  // never expand — that's the caret's job alone.
   const focusGroupFirst = (group: GroupView) => {
     if (!group.chips.length) return;
     commitActiveRevisions(group.chips.flatMap(chipRevisions));
-    selectAndScrollToRevision(group.chips[0].revision);
+    selectAndScrollToRevision(firstVisibleChip(group.chips).revision);
     refocusPanel();
   };
 

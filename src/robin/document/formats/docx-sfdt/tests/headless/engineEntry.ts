@@ -282,6 +282,42 @@ const api = {
     await frame();
   },
 
+  /** Click card `index`'s title ("Go to ..."), as a person does to find the change. */
+  async clickTitle(index: number): Promise<void> {
+    const host = document.getElementById('fm-review') as HTMLElement;
+    const titles = [...host.querySelectorAll('button[aria-label^="Go to "]')] as HTMLElement[];
+    titles[index].click();
+    await frame();
+    await frame();
+  },
+
+  /** The text of the paragraph the caret is in. */
+  caretParagraphText(): string {
+    const selection = (live() as any).selection;
+    const start = selection.startOffset as string;
+    selection.selectParagraph?.();
+    if (!selection.text) {
+      // older builds: extend from the paragraph start to its end
+      selection.moveToParagraphStart?.();
+      selection.extendToParagraphEnd?.();
+    }
+    const text = String(selection.text ?? '');
+    selection.select(start, start);
+    return text;
+  },
+
+  /** The document viewer's scroll offset, or set it (as a person scrolling to a place). */
+  async viewerScroll(top?: number): Promise<number> {
+    const viewer = (live() as any).documentHelper?.viewerContainer as HTMLElement;
+    if (top !== undefined) {
+      viewer.scrollTop = top;
+      viewer.dispatchEvent(new Event('scroll'));
+      await frame();
+      await frame();
+    }
+    return viewer.scrollTop;
+  },
+
   /** Click the toolbar's Undo or Redo button. */
   async clickToolbar(which: 'Undo' | 'Redo'): Promise<void> {
     const button = byText(document.getElementById('fm-history') as HTMLElement, 'button', which);
