@@ -71,6 +71,51 @@ it('normalizes runtime-only values at the panelRuntime source and retains empty 
   expect(() => JSON.stringify(snapshot)).not.toThrow();
 });
 
+it('labels choice options with what the person sees, falling back to the value', () => {
+  const currentStep = {
+    id: 'step-1',
+    key: 'billing',
+    subgrids: [],
+    texts: [],
+    images: [],
+    buttons: [],
+    tables: [],
+    tabs: [],
+    progress_bars: [],
+    next_conditions: [],
+    servar_fields: [
+      {
+        servar: {
+          id: 'field-1',
+          key: 'frequency',
+          type: 'dropdown',
+          metadata: {
+            options: ['opt_1', 'opt_2'],
+            option_labels: ['Monthly', '']
+          }
+        },
+        properties: {},
+        position: []
+      }
+    ]
+  };
+  (internalState as any)[FORM] = {
+    currentStep,
+    steps: { billing: currentStep },
+    fields: { frequency: { value: '' } },
+    visiblePositions: {},
+    inlineErrors: {},
+    logicRules: []
+  };
+
+  const snapshot = getPanelRuntimeSnapshot(FORM)!;
+
+  expect(snapshot.currentStepFields[0].options).toEqual([
+    { value: 'opt_1', label: 'Monthly' },
+    { value: 'opt_2', label: 'opt_2' }
+  ]);
+});
+
 describe('tables in the snapshot', () => {
   const stepWithTables = (tables: any[]) => ({
     id: 'step-1',

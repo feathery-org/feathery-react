@@ -9,6 +9,7 @@ import {
   diffInlineErrorSnapshots,
   getLiveStepKey,
   InlineErrorReport,
+  markInteraction,
   NOT_LOADED_MESSAGE,
   snapshotInlineErrors,
   validateRepeatIndex
@@ -161,6 +162,7 @@ export async function clickElement(
     };
   }
 
+  markInteraction();
   const fromStepKey = getLiveStepKey(state) ?? '';
   const errorsBefore = snapshotInlineErrors(state);
   const elementForDispatch =

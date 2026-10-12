@@ -7,6 +7,7 @@ import {
   diffInlineErrorSnapshots,
   getLiveStepKey,
   InlineErrorReport,
+  markInteraction,
   NOT_LOADED_MESSAGE,
   snapshotInlineErrors
 } from './utils';
@@ -92,6 +93,7 @@ export async function runLogicRule(
     return { ok: false, reason: 'invalid_params', message: paramsError };
   }
 
+  markInteraction();
   const fromStepKey = getLiveStepKey(state) ?? '';
   const errorsBefore = snapshotInlineErrors(state);
   const run = await runLogicRuleById(ruleId, params, formUuid);

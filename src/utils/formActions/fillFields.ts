@@ -9,6 +9,7 @@ import {
   awaitPendingInlineErrors,
   diffInlineErrorSnapshots,
   InlineErrorReport,
+  markInteraction,
   NOT_LOADED_MESSAGE,
   snapshotInlineErrors,
   validateRepeatIndex
@@ -220,10 +221,10 @@ function resolveOptions(
   }
   const rawOptions = Array.isArray(meta.options) ? meta.options : null;
   if (!rawOptions) return [];
-  const rawLabels = Array.isArray(meta.labels) ? meta.labels : [];
+  const rawLabels = Array.isArray(meta.option_labels) ? meta.option_labels : [];
   return rawOptions.map((value: any, i: number) => ({
     value: String(value ?? ''),
-    label: String(rawLabels[i] ?? value ?? '')
+    label: String(rawLabels[i] || value || '')
   }));
 }
 
@@ -462,6 +463,7 @@ export async function fillFields(
 
   const applied: AppliedField[] = [];
   const rejected: RejectedField[] = [];
+  markInteraction();
   const errorsBefore = snapshotInlineErrors(state);
   const changeLogicRuns: Promise<unknown>[] = [];
   for (const write of prepared) {

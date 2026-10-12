@@ -396,11 +396,13 @@ export const getPanelRuntimeSnapshot = (
       : undefined;
     const repeatAncestorId = repeatAncestor?.id ?? '';
     const rawOptions = Array.isArray(meta.options) ? meta.options : null;
-    const rawLabels = Array.isArray(meta.labels) ? meta.labels : [];
+    const rawLabels = Array.isArray(meta.option_labels)
+      ? meta.option_labels
+      : [];
     const options = rawOptions
       ? rawOptions.map((value: any, i: number) => ({
           value: String(value ?? ''),
-          label: String(rawLabels[i] ?? value ?? '')
+          label: String(rawLabels[i] || value || '')
         }))
       : undefined;
     // Per-row option overrides for repeated choice fields
