@@ -265,7 +265,9 @@ export type ReadFormatsMode = typeof READ_FORMATS_MODES[number];
 export const readInputSchema = z.strictObject({
   ids: z.array(readIdSchema).min(1).max(64),
   formats: z.enum(READ_FORMATS_MODES).optional(),
-  properties: z.boolean().optional()
+  properties: z.boolean().optional(),
+  /** `stubs`: each node's own fields, its child lists as `{id, kind, base, shape}` stubs. */
+  children: z.enum(['full', 'stubs']).optional()
 });
 export type ReadInput = z.output<typeof readInputSchema>;
 

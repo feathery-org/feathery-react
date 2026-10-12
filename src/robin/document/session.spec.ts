@@ -95,7 +95,9 @@ describe('document session: the four verbs end to end', () => {
     };
     expect(outline.lines.split('\n')).toEqual([
       'n1 para "Insurance proposal"',
-      'n2 box 2 items [name=lines] usedBy[n5]',
+      expect.stringMatching(
+        /^n2 box @[0-9a-f]{8} 2 items \[name=lines\] usedBy\[n5\]$/
+      ),
       '  n3 para "Motor"',
       '  n4 para "Property"',
       'n5 para "Items: 2" {formula=count(lines)}'
@@ -749,7 +751,9 @@ describe('document session: the four verbs end to end', () => {
     expect(outline.slice(0, 3)).toEqual([
       'n6 para "Cover note"',
       'n1 para "Insurance proposal"',
-      'n2 box 2 items [name=lines] usedBy[n5]'
+      expect.stringMatching(
+        /^n2 box @[0-9a-f]{8} 2 items \[name=lines\] usedBy\[n5\]$/
+      )
     ]);
   });
 });

@@ -105,7 +105,7 @@ export function readVerb(state: DocumentState, input: ReadInput): ReadResult {
     nodes.push(
       emitNode(view, pack, node, {
         properties: input.properties === true,
-        stubChildren: id === ROOT_ID
+        stubChildren: id === ROOT_ID || input.children === 'stubs'
       })
     );
   }

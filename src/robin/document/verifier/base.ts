@@ -18,6 +18,7 @@ import { isNodeId } from '../envelope';
 import type { DocumentView, Pack } from '../pack';
 import { baseOf, NfNode, shapeOf, withoutLists } from '../tree';
 import { emitNode, matchQuery, referencedFormats } from '../view';
+import { SHAPE_PREFIX } from '../outline';
 import { problem } from './index';
 
 export type Conflict = ConflictResult['conflict'];
@@ -45,6 +46,17 @@ export function bulkQuery(find: FindInput): FindInput {
   return query;
 }
 
+/**
+ * A carried shape matches the live one when equal, or when it is at least the outline's prefix
+ * (`@<shape8>` on a container's line) and the live shape starts with it. A base is whole or stale.
+ */
+export function shapeMatches(live: string, carried: string): boolean {
+  return (
+    live === carried ||
+    (carried.length >= SHAPE_PREFIX && live.startsWith(carried))
+  );
+}
+
 export function checkBases(
   view: DocumentView,
   pack: Pack,
@@ -65,7 +77,7 @@ export function checkBases(
     const node = view.get(id);
     if (!node) return; // an unknown id is a refusal, decided before this check
     const now = axis === 'base' ? baseOf(node) : shapeOf(node, pack.tree);
-    if (now !== carried)
+    if (axis === 'base' ? now !== carried : !shapeMatches(now, carried))
       stale.set(id, {
         id,
         [axis]: carried,
@@ -173,7 +185,11 @@ export function misplacedHashes(
     if (base === shape) return;
     const other = wanted === 'base' ? shape : base;
     const right = wanted === 'base' ? base : shape;
-    if (carried !== other || carried === right) return;
+    const names = (full: string) =>
+      wanted === 'base' && full === shape
+        ? shapeMatches(full, carried)
+        : full === carried;
+    if (!names(other) || names(right)) return;
     problems.push(
       problem(
         'envelope',

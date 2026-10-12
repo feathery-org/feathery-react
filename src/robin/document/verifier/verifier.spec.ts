@@ -203,6 +203,47 @@ describe('base hashes (compare-and-swap)', () => {
     );
   });
 
+  it("accepts the outline's 8-hex shape prefix wherever a shape is carried, never a base prefix", () => {
+    const at = (container: string) =>
+      checkBases(
+        s.view,
+        s.pack,
+        write({
+          changes: [
+            {
+              kind: 'insert_after',
+              anchor: 'n4',
+              container,
+              node: { text: 'x' }
+            }
+          ]
+        }),
+        'h'
+      );
+    // true negative: the outline's @ value, or the whole shape
+    expect(at(shape('n2').slice(0, 8))).toBeNull();
+    expect(at(shape('n2'))).toBeNull();
+    // true positive: too short to be the outline's value, a wrong prefix, a base prefix
+    expect(at(shape('n2').slice(0, 7))?.stale.map((e) => e.id)).toEqual(['n2']);
+    expect(at('00000000')?.stale.map((e) => e.id)).toEqual(['n2']);
+    const set = checkBases(
+      s.view,
+      s.pack,
+      write({
+        changes: [
+          {
+            kind: 'replace',
+            id: 'n2',
+            base: base('n2').slice(0, 8),
+            node: { items: [] }
+          }
+        ]
+      }),
+      'h'
+    );
+    expect(set?.stale.map((e) => e.id)).toEqual(['n2']);
+  });
+
   it('a change inside a child moves the parent base but not its shape; a new child moves both', () => {
     const edited = stateOf(doc.replace('"text":"one"', '"text":"uno"'));
     expect(baseOf(edited.view.get('n2'))).not.toBe(base('n2'));

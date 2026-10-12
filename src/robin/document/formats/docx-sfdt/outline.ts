@@ -7,7 +7,7 @@
  */
 import type { DocumentView, FeatureMark } from '../../pack';
 import type { NfNode } from '../../tree';
-import { HEADER_FOOTER, KIND } from './adapter/keys';
+import { HEADER_FOOTER, INLINE_KINDS, KIND } from './adapter/keys';
 import { bindingMarks } from './features/formula';
 import { sectionMarkerMark } from './features/sectionMarker';
 import { arr } from './util';
@@ -16,7 +16,10 @@ type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 
-const clip = (s: string, n = 90) => {
+/** The characters of text a line previews: enough to find a thing by, short enough to scan. */
+export const PREVIEW = 60;
+
+const clip = (s: string, n = PREVIEW) => {
   const t = s.replace(/\f/g, '').replace(/\s+/g, ' ').trim();
   return t.length > n ? `${t.slice(0, n)}... (${t.length} chars)` : t;
 };
@@ -35,10 +38,31 @@ export function ownText(node: NfNode): string | null {
   return out;
 }
 
-const cellText = (cell: NfNode): string =>
-  arr<NfNode>(cell.blocks)
-    .map((b) => (b.kind === KIND.table ? '[table]' : ownText(b) ?? ''))
+/** The text of a list of blocks, a nested table as `[table]`. */
+const blocksText = (blocks: unknown): string =>
+  arr<NfNode>(blocks)
+    .map((b) =>
+      b.kind === KIND.table
+        ? '[table]'
+        : Array.isArray(b.blocks)
+        ? blocksText(b.blocks)
+        : ownText(b) ?? ''
+    )
     .join(' ');
+const cellText = (cell: NfNode): string => blocksText(cell.blocks);
+/** A control's own text: its runs, or its blocks'. */
+const controlText = (node: NfNode): string =>
+  Array.isArray(node.blocks)
+    ? blocksText(node.blocks)
+    : ownText({ ...node, kind: KIND.paragraph }) ?? '';
+/** A container's quoted text and a space, or nothing when it holds no text of its own. */
+const preview = (text: string): string => {
+  const t = clip(text.replace(/\[table\]/g, ''));
+  return t ? `"${t}" ` : '';
+};
+/** A text box's text, from its frame's blocks. */
+const frameText = (node: NfNode): string =>
+  isObject(node.textFrame) ? blocksText(node.textFrame.blocks) : '';
 
 const pendingTag = (n: NfNode): string => {
   if (!isObject(n.pending)) return '';
@@ -135,7 +159,7 @@ export function detail(node: NfNode, view: DocumentView): string {
       return `${rows.length} rows x ${cols} cells${pendingTag(node)}`;
     }
     case KIND.row: {
-      const cells = arr<NfNode>(node.cells).map((c) => clip(cellText(c), 40));
+      const cells = clip(arr<NfNode>(node.cells).map(cellText).join(' | '));
       const bs = bindingsIn(node, view);
       let key: string | null = null;
       const rec = (n: unknown) => {
@@ -152,12 +176,12 @@ export function detail(node: NfNode, view: DocumentView): string {
         typeof node.style === 'string' && formats[node.style]?.isHeader === true
           ? ' (header)'
           : '';
-      return `${cells.join(' | ')}${header}${pendingTag(node)}${
+      return `"${cells}"${header}${pendingTag(node)}${
         bs.length ? `  {${key ? `row=${key}; ` : ''}${bs.join('; ')}}` : ''
       }`;
     }
     case KIND.cell:
-      return `"${clip(cellText(node), 40)}"${pendingTag(node)}`;
+      return `"${clip(cellText(node))}"${pendingTag(node)}`;
     case KIND.control: {
       const b = isObject(node.binding) ? node.binding : null;
       const what = b
@@ -165,12 +189,12 @@ export function detail(node: NfNode, view: DocumentView): string {
           ? `(bound table "${b.table}")`
           : `(binding ${b.name}${b.expr ? `=${b.expr}` : ''})`
         : '';
-      return `${
-        Array.isArray(node.blocks) ? 'block ' : ''
-      }${what}${usedBy}${pendingTag(node)}`.trim();
+      return `${Array.isArray(node.blocks) ? 'block ' : ''}${preview(
+        controlText(node)
+      )}${what}${usedBy}${pendingTag(node)}`.trim();
     }
     case KIND.run:
-      return `"${clip(String(node.text ?? ''), 60)}"${pendingTag(node)}`;
+      return `"${clip(String(node.text ?? ''))}"${pendingTag(node)}`;
     case KIND.bookmark:
       return `${node.bookmarkType === 0 ? 'start' : 'end'} ${node.name}`;
     case KIND.field:
@@ -184,7 +208,7 @@ export function detail(node: NfNode, view: DocumentView): string {
     case KIND.image:
       return `${node.width ?? '?'} x ${node.height ?? '?'}${pendingTag(node)}`;
     case KIND.shape:
-      return 'text box';
+      return `text box ${preview(frameText(node))}${pendingTag(node)}`.trim();
     default:
       return pendingTag(node).trim();
   }
@@ -195,6 +219,18 @@ export function listLabel(node: NfNode, key: string): string | null {
   if (node.kind !== KIND.section) return null;
   if (key === 'blocks') return 'body';
   return key.startsWith(`${HEADER_FOOTER}/`) ? key.split('/')[1] : null;
+}
+
+/**
+ * Below block level: runs and the other inlines (an inline control's binding shows in its
+ * paragraph's line), and cells (a row's line previews their text). A text box stays: it holds
+ * blocks of its own.
+ */
+export function belowBlocks(node: NfNode): boolean {
+  if (node.kind === KIND.cell) return true;
+  if (node.kind === KIND.shape) return false;
+  if (node.kind === KIND.control) return !Array.isArray(node.blocks);
+  return INLINE_KINDS.has(node.kind);
 }
 
 export function features(node: NfNode): FeatureMark[] {

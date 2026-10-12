@@ -1,5 +1,6 @@
 import { IdTable } from './ids';
 import { renderOutline } from './outline';
+import { baseOf, shapeOf } from './tree';
 import { makeView } from './view';
 import { box, makeToyPack, para, toyNative } from './tests/toyPack';
 
@@ -21,11 +22,13 @@ const doc = toyNative(
 );
 
 describe('outline', () => {
-  it('renders id and kind first, pack detail after, children indented under parents', () => {
-    const r = renderOutline(viewOf(doc), pack);
+  it('renders id and kind first, the shape of a container, pack detail after, children indented under parents', () => {
+    const view = viewOf(doc);
+    const r = renderOutline(view, pack);
+    const shape8 = shapeOf(view.get('n2') as never, pack.tree).slice(0, 8);
     expect(r.lines.split('\n')).toEqual([
       'n1 para "Title"',
-      'n2 box 2 items [name=alpha] usedBy[n5]',
+      `n2 box @${shape8} 2 items [name=alpha] usedBy[n5]`,
       '  n3 para "one"',
       '  n4 para "two"',
       'n5 para "Items: 2" {formula=count(alpha)}'
@@ -58,9 +61,11 @@ describe('outline', () => {
       },
       pack
     );
+    const at = (id: string) =>
+      `@${shapeOf(nested.get(id) as never, pack.tree).slice(0, 8)}`;
     expect(renderOutline(nested, pack, 1).lines.split('\n')).toEqual([
-      'n1 box 1 items',
-      '  n2 box 1 items [+1 below]'
+      `n1 box ${at('n1')} 1 items`,
+      `  n2 box ${at('n2')} 1 items [+1 below]`
     ]);
     expect(renderOutline(nested, pack, 2).lines).toContain(
       '    n3 para "deep"'
@@ -99,11 +104,44 @@ describe('outline', () => {
     });
     const lines = renderOutline(viewOf(doc), labelled).lines.split('\n');
     expect(lines.slice(1, 5)).toEqual([
-      'n2 box 2 items [name=alpha] usedBy[n5] second line',
+      expect.stringMatching(
+        /^n2 box @[0-9a-f]{8} 2 items \[name=alpha\] usedBy\[n5\] second line$/
+      ),
       '  items:',
       '    n3 para "one" second line',
       '    n4 para "two" second line'
     ]);
+  });
+
+  it('never shows a base, and a leaf carries no shape', () => {
+    const view = viewOf(doc);
+    const text = renderOutline(view, pack).lines;
+    for (const n of view.nodes())
+      expect(text).not.toContain(baseOf(n).slice(0, 8));
+    expect(text.split('\n')[0]).toBe('n1 para "Title"');
+  });
+
+  it("by default stops at the pack's block level: what is below it is left out, with no count", () => {
+    const blocks = makeToyPack({
+      outline: {
+        ...pack.outline,
+        belowBlocks: (node) =>
+          node.kind === 'para' && String(node.text).length <= 3
+      }
+    });
+    const r = renderOutline(viewOf(doc), blocks);
+    expect(r.lines.split('\n')).toEqual([
+      'n1 para "Title"',
+      expect.stringMatching(
+        /^n2 box @[0-9a-f]{8} 2 items \[name=alpha\] usedBy\[n5\]$/
+      ),
+      'n5 para "Items: 2" {formula=count(alpha)}'
+    ]);
+    expect(r.depth).toBe(1);
+    // an explicit depth renders every kind, as before
+    expect(renderOutline(viewOf(doc), blocks, 2).lines).toContain(
+      '  n3 para "one"'
+    );
   });
 
   it('renders an empty document as no lines', () => {

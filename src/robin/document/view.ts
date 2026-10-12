@@ -44,7 +44,8 @@ export function makeView(nf: NormalForm, pack: Pack): DocumentView {
 /**
  * A node as `read` returns it (contract 2.3): `id`, `base` and `kind` first on it and every nested
  * node, `usedBy` and `derived` where the pack derives them, `properties` when asked for. With
- * `stubChildren`, child lists hold only `{id, base, kind}` (how the root is read).
+ * `stubChildren`, child lists hold only `{id, base, shape, kind}` (how the root is read, and every
+ * node under `children: "stubs"`).
  */
 export function emitNode(
   view: DocumentView,

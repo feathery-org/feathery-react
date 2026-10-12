@@ -131,8 +131,14 @@ export interface Adapter {
 }
 
 export interface OutlineRenderer {
-  /** Levels rendered below the root's children when `outline` names no depth. */
+  /** Levels rendered below the root's children when `outline` names no depth and no block level. */
   defaultDepth: number;
+  /**
+   * The nodes below block level (in a document, runs and cells): when `outline` names no depth,
+   * the outline renders every other node and leaves these out with what is under them, so their
+   * text belongs in their container's detail.
+   */
+  belowBlocks?(node: NfNode): boolean;
   /** Everything after the id and kind tokens of the node's line; may be empty. */
   detail(node: NfNode, view: DocumentView): string;
   /** A label line printed before a child list (for example a story name), or null. */

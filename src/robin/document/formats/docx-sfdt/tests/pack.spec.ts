@@ -7,7 +7,7 @@ import * as path from 'path';
 import { ReadResult, VerbResult, validateVerbResult } from '../../../envelope';
 import { clearPackRegistry, conformanceProblems, registerPack } from '../../../pack';
 import { DocumentSession } from '../../../session';
-import { NfNode } from '../../../tree';
+import { baseOf, NfNode, shapeOf } from '../../../tree';
 import { makeView } from '../../../view';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
@@ -76,6 +76,48 @@ describe('the format pack', () => {
     expect(hits.hits.some((h) => h.kind === 'paragraph')).toBe(true);
     const formulas = call('find', { feature: { name: 'formula' } }) as { total: number };
     expect(formulas.total).toBeGreaterThan(10);
+  });
+
+  it('outlines at block level: every container with its shape prefix, rows and text boxes with a preview, no runs or cells', () => {
+    const { session, call } = mount();
+    const outline = call('outline', {}) as { lines: string; depth: number };
+    const lines = outline.lines.split('\n');
+    const kinds = new Set(lines.map((l) => l.trim().split(' ')[1]).filter(Boolean));
+    expect(kinds.has('run')).toBe(false);
+    expect(kinds.has('cell')).toBe(false);
+    // the grammar: <id> <kind> [@<shape8>] <pack detail>, the shape on every container, never a base
+    const view = session.state.view;
+    for (const line of lines) {
+      const m = /^\s*(n\d+) (\w+)(?: @([0-9a-f]{8}))?/.exec(line);
+      if (!m) continue; // a story label
+      const node = view.get(m[1]) as NfNode;
+      const container = docxPack.tree.childLists(node).length > 0;
+      expect([m[1], m[3] !== undefined]).toEqual([m[1], container]);
+      if (m[3]) expect(shapeOf(node, docxPack.tree).startsWith(m[3])).toBe(true);
+      // a node with no content below its own fields has one hash for both
+      if (baseOf(node) !== shapeOf(node, docxPack.tree)) expect(line).not.toContain(baseOf(node).slice(0, 8));
+    }
+    // the cover title sits in a text box and a row's cells are joined: both findable from the outline
+    expect(lines.find((l) => / shape @\w+ text box "Commercial Combined Insurance Proposal"$/.test(l))).toBeDefined();
+    expect(lines.some((l) => / row @\w+ "Buildings \| 12 \| \$640\.50 \| \$7,686\.00"/.test(l))).toBe(true);
+    // find still searches the full text, not the preview
+    expect((call('find', { text: 'valid from' }) as { total: number }).total).toBeGreaterThan(0);
+    // the flagship outline stays small: about 3.7k tokens at three characters a token
+    expect(outline.lines.length).toBeLessThan(12000);
+    // an explicit depth renders every kind
+    expect((call('outline', { depth: 6 }) as { lines: string }).lines).toMatch(/ run "/);
+  });
+
+  it('accepts the outline\'s shape prefix as a container in a write', () => {
+    const { call, next } = mount();
+    const lines = (call('outline', {}) as { lines: string }).lines.split('\n');
+    const [, id, shape8] = /^\s*(n\d+) table @([0-9a-f]{8})/.exec(lines.find((l) => / table @/.test(l)) as string) as RegExpExecArray;
+    const table = nodeOf(call('read', { ids: [id] }), id) as unknown as { rows: Array<Record<string, unknown>> };
+    const row = table.rows[1];
+    const copy = JSON.parse(JSON.stringify(row, (k, v) => (k === 'id' || k === 'base' || k === 'shape' ? undefined : v)));
+    next();
+    const r = call('write', { intent: 'Add a line.', scope: { ids: [String(row.id)] }, changes: [{ kind: 'insert_after', anchor: row.id, container: shape8, node: copy }] }) as { ok: boolean };
+    expect(r).toEqual(expect.objectContaining({ ok: true }));
   });
 
   it('finds a formula by its feature whatever the control is titled (QA-1: the client titles controls by name)', () => {

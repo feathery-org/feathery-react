@@ -90,6 +90,36 @@ describe('read', () => {
       Object.keys(readVerb(s, { ids: ['n1'], formats: 'all' }).formats)
     ).toEqual(['f1', 'f2']);
   });
+
+  it('reads stubs: each node its own fields, every child list as stubs, formats its own fields use', () => {
+    const s = fresh();
+    const r = readVerb(s, { ids: ['n2'], children: 'stubs' });
+    expect(r.nodes[0]).toEqual(
+      expect.objectContaining({
+        id: 'n2',
+        kind: 'box',
+        name: 'alpha',
+        items: ['n3', 'n4'].map((id) => ({
+          id,
+          base: b(s, id),
+          shape: sh(s, id),
+          kind: 'para'
+        }))
+      })
+    );
+    // the children's formats are not the box's own: none are referenced
+    expect(Object.keys(r.formats)).toEqual([]);
+    expect(Object.keys(readVerb(s, { ids: ['n2'] }).formats).sort()).toEqual([
+      'f1',
+      'f2'
+    ]);
+    expect(parseVerbInput('read', { ids: ['n2'], children: 'stubs' }).ok).toBe(
+      true
+    );
+    expect(parseVerbInput('read', { ids: ['n2'], children: 'some' }).ok).toBe(
+      false
+    );
+  });
 });
 
 describe('find', () => {

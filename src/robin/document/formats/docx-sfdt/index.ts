@@ -25,7 +25,7 @@ import { fieldTriplets } from './invariants/fields';
 import { orphanedDependents } from './invariants/formulas';
 import { controlShape } from './invariants/identity';
 import { styleReferences } from './invariants/references';
-import { detail, features, listLabel, ownText } from './outline';
+import { belowBlocks, detail, features, listLabel, ownText } from './outline';
 import {
   NORMALIZATIONS,
   UNDO_NORMALIZATIONS,
@@ -64,7 +64,7 @@ export const docxPack: Pack = {
     toNormalForm,
     fromNormalForm: (nf, residue) => fromNormalForm(nf, residue as never)
   },
-  outline: { defaultDepth: 3, detail, listLabel },
+  outline: { defaultDepth: 3, belowBlocks, detail, listLabel },
   text: ownText,
   features,
   annotate: (view) => bindingAnnotations(view.nf),
