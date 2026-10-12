@@ -10,6 +10,11 @@ import {
 } from './useDocxHistorySession';
 import { DocxHistoryHost, VersionAuthor } from './types';
 
+const must = <T,>(value: T | null | undefined): T => {
+  if (value == null) throw new Error('Expected a value');
+  return value;
+};
+
 const YOU: VersionAuthor = { kind: 'user', key: 'you', label: 'You' };
 const SFDT = JSON.stringify({
   sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
@@ -51,8 +56,9 @@ const flush = async () => {
 };
 
 // jsdom's Blob has no .text(); read it the long way.
-const blobText = (b: Blob) =>
+const blobText = (b: Blob | undefined) =>
   new Promise<string>((resolve, reject) => {
+    if (!b) return reject(new Error('Expected a blob'));
     const r = new FileReader();
     r.onload = () => resolve(String(r.result));
     r.onerror = () => reject(r.error);
@@ -110,7 +116,7 @@ describe('useDocxHistorySession', () => {
       } else {
         expect(host.closeVersion).toHaveBeenCalledTimes(1);
         const changes = JSON.parse(
-          await blobText(host.closeVersion.mock.calls[0][1].changesJson!)
+          await blobText(host.closeVersion.mock.calls[0][1].changesJson)
         );
         expect(changes.confirmed).toBe(true);
         expect(changes.hunks.every((h: any) => h.at.block[2] === 0)).toBe(true);
@@ -758,9 +764,7 @@ describe('useDocxHistorySession', () => {
     );
 
     const confirmationPayload = host.closeVersion.mock.calls[1][1];
-    const changes = JSON.parse(
-      await blobText(confirmationPayload.changesJson!)
-    );
+    const changes = JSON.parse(await blobText(confirmationPayload.changesJson));
     expect(confirmationPayload.startSha256).not.toBe(
       confirmationPayload.finalSha256
     );
@@ -876,7 +880,7 @@ describe('useDocxHistorySession', () => {
       expect(pendingPayload.startSha256).toBe('');
 
       const confirmationChanges = JSON.parse(
-        await blobText(host.closeVersion.mock.calls[1][1].changesJson!)
+        await blobText(host.closeVersion.mock.calls[1][1].changesJson)
       );
       expect(confirmationChanges.confirmed).toBe(true);
     }
@@ -897,11 +901,11 @@ describe('useDocxHistorySession', () => {
 
     const preview = view.result.current.previewSession();
     expect(preview).not.toBeNull();
-    expect(preview!.editCount).toBeGreaterThan(0);
+    expect(must(preview).editCount).toBeGreaterThan(0);
     // applyHunks baked synthetic revisions into the display document.
-    expect(preview!.sfdt).toContain('revisionId');
-    expect(preview!.authors).toEqual([YOU]);
-    expect(preview!.sessionId).toBeTruthy();
+    expect(must(preview).sfdt).toContain('revisionId');
+    expect(must(preview).authors).toEqual([YOU]);
+    expect(must(preview).sessionId).toBeTruthy();
   });
 
   it('derives live avatars from surviving edits, clearing them after undo', async () => {
@@ -1066,7 +1070,7 @@ describe('useDocxHistorySession', () => {
     await flush();
 
     const payload = host.closeVersion.mock.calls[0][1];
-    const changes = JSON.parse(await blobText(payload.changesJson!));
+    const changes = JSON.parse(await blobText(payload.changesJson));
     const authorsOf = (needle: string) =>
       changes.hunks
         .filter((h: any) => JSON.stringify(h).includes(needle))
@@ -1111,7 +1115,7 @@ describe('useDocxHistorySession', () => {
     doc = document('User paragraph human addition', ' robin addition');
     act(() => view.result.current.onEdit({ assistant: false }));
 
-    const preview = JSON.parse(view.result.current.previewSession()!.sfdt);
+    const preview = JSON.parse(must(view.result.current.previewSession()).sfdt);
     expect(preview.revisions.map((r: any) => r.author)).toEqual(
       expect.arrayContaining(['you', 'robin'])
     );
@@ -1119,7 +1123,7 @@ describe('useDocxHistorySession', () => {
       await view.result.current.save();
     });
     const payload = host.closeVersion.mock.calls.slice(-1)[0][1];
-    const changes = JSON.parse(await blobText(payload.changesJson!));
+    const changes = JSON.parse(await blobText(payload.changesJson));
     expect(changes.trackedAuthors).toEqual(
       expect.arrayContaining(['you', 'robin'])
     );
@@ -1171,7 +1175,7 @@ describe('useDocxHistorySession', () => {
       );
     });
     const closes = host.closeVersion.mock.calls.slice(-2);
-    const preceding = JSON.parse(await blobText(closes[0][1].changesJson!));
+    const preceding = JSON.parse(await blobText(closes[0][1].changesJson));
     expect(preceding.trackedAuthors).toEqual(
       expect.arrayContaining(['you', 'robin'])
     );
@@ -1186,7 +1190,7 @@ describe('useDocxHistorySession', () => {
           (r: any) => r.author === 'you' && !JSON.parse(r.customData).pending
         )
     ).toBe(true);
-    const confirmation = JSON.parse(await blobText(closes[1][1].changesJson!));
+    const confirmation = JSON.parse(await blobText(closes[1][1].changesJson));
     expect(confirmation.trackedAuthors).toEqual(['robin']);
     expect(confirmation.confirmed).toBe(true);
   });
@@ -1218,7 +1222,7 @@ describe('useDocxHistorySession', () => {
     act(() => view.result.current.onEdit({ assistant: false }));
     const preview = view.result.current.previewSession();
     expect(preview).not.toBeNull();
-    expect(preview!.sfdt).not.toContain('Old document');
+    expect(must(preview).sfdt).not.toContain('Old document');
   });
 
   it('saves DOCX and history from the same snapshot while later typing stays dirty', async () => {
@@ -1296,11 +1300,11 @@ describe('useDocxHistorySession', () => {
     // Original session, intervening human edit, then the acceptance itself.
     expect(host.closeVersion).toHaveBeenCalledTimes(3);
     const human = JSON.parse(
-      await blobText(host.closeVersion.mock.calls[1][1].changesJson!)
+      await blobText(host.closeVersion.mock.calls[1][1].changesJson)
     );
     expect(human.trackedAuthors).toEqual(['you']);
     const confirmation = JSON.parse(
-      await blobText(host.closeVersion.mock.calls[2][1].changesJson!)
+      await blobText(host.closeVersion.mock.calls[2][1].changesJson)
     );
     expect(confirmation.hunks.every((h: any) => h.at.block[2] === 1)).toBe(
       true
@@ -1355,7 +1359,7 @@ describe('useDocxHistorySession', () => {
       const preview = view.result.current.previewSession();
       expect(preview).not.toBeNull();
       expect(
-        JSON.parse(preview!.sfdt).revisions.map((r: any) => r.author)
+        JSON.parse(must(preview).sfdt).revisions.map((r: any) => r.author)
       ).toEqual(expect.arrayContaining(['you', 'robin']));
     } finally {
       clock.mockRestore();
@@ -1408,7 +1412,7 @@ describe('useDocxHistorySession', () => {
     await flush();
 
     const payload = host.closeVersion.mock.calls[0][1];
-    const changes = JSON.parse(await blobText(payload.changesJson!));
+    const changes = JSON.parse(await blobText(payload.changesJson));
     expect(
       (changes.robinRuns ?? []).some(
         (r: any) =>
@@ -1460,7 +1464,7 @@ describe('useDocxHistorySession', () => {
 
     const preview = view.result.current.previewSession();
     expect(preview).toBeTruthy();
-    const display = JSON.parse(preview!.sfdt);
+    const display = JSON.parse(must(preview).sfdt);
     const authors = (display.revisions ?? []).map((r: any) => r.author);
     expect(authors).toContain('robin');
     expect(authors).not.toContain('you');
@@ -1468,7 +1472,7 @@ describe('useDocxHistorySession', () => {
       await view.result.current.save();
     });
     const savedChanges = JSON.parse(
-      await blobText(host.closeVersion.mock.calls[0][1].changesJson!)
+      await blobText(host.closeVersion.mock.calls[0][1].changesJson)
     );
     expect(savedChanges.trackedAuthors).toContain('robin');
     expect(savedChanges.trackedAuthors).not.toContain('you');
@@ -1502,11 +1506,11 @@ describe('useDocxHistorySession', () => {
     await flush();
 
     const payload = host.closeVersion.mock.calls[0][1];
-    const changes = JSON.parse(await blobText(payload.changesJson!));
+    const changes = JSON.parse(await blobText(payload.changesJson));
     expect(changes.hunks.length).toBeGreaterThan(0);
     expect(changes.hunks.every((h: any) => h.author === 'robin')).toBe(true);
     // The mid-close edit is NOT part of the closed version's document.
-    const finalSfdt = await blobText(payload.finalSfdtGz!);
+    const finalSfdt = await blobText(payload.finalSfdtGz);
     expect(finalSfdt).not.toContain('later');
   });
 

@@ -5,6 +5,11 @@ import {
 } from './sessionTracker';
 import { VersionAuthor } from './types';
 
+const must = <T>(value: T | null | undefined): T => {
+  if (value == null) throw new Error('Expected a value');
+  return value;
+};
+
 const USER: VersionAuthor = { kind: 'user', key: 'you', label: 'You' };
 const ROBIN: VersionAuthor = {
   kind: 'assistant',
@@ -49,14 +54,14 @@ describe('createSessionTracker', () => {
 
     clock += 1000;
     tracker.noteEdit(USER);
-    expect(tracker.currentMeta()!.sessionId).toBe(first!.sessionId);
+    expect(must(tracker.currentMeta()).sessionId).toBe(must(first).sessionId);
     expect(closes).toEqual([]);
   });
 
   it('closes an idle session and starts a new one on the next edit', () => {
     const { tracker, closes, closeMetas } = make();
     tracker.noteEdit(USER);
-    const first = tracker.currentMeta()!.sessionId;
+    const first = must(tracker.currentMeta()).sessionId;
 
     clock += SESSION_IDLE_MS; // exactly the idle threshold
     tracker.noteEdit(USER);
@@ -64,7 +69,7 @@ describe('createSessionTracker', () => {
     expect(closes).toEqual(['idle']);
     // onClose carries the closing session's meta (cleared internally first).
     expect(closeMetas[0].sessionId).toBe(first);
-    expect(tracker.currentMeta()!.sessionId).not.toBe(first);
+    expect(must(tracker.currentMeta()).sessionId).not.toBe(first);
   });
 
   it('closes on checkIdle without a new edit', () => {
@@ -99,7 +104,7 @@ describe('createSessionTracker', () => {
     tracker.noteEdit(USER);
     tracker.noteEdit(ROBIN);
     tracker.noteEdit(USER);
-    expect(tracker.currentMeta()!.authors).toEqual([
+    expect(must(tracker.currentMeta()).authors).toEqual([
       { kind: 'user', label: 'You' },
       { kind: 'assistant', label: 'Robin' }
     ]);
@@ -113,7 +118,7 @@ describe('createSessionTracker', () => {
       label: 'Editor'
     });
     tracker.noteEdit({ kind: 'user', key: 'bob@example.com', label: 'Editor' });
-    expect(tracker.currentMeta()!.authors).toEqual([
+    expect(must(tracker.currentMeta()).authors).toEqual([
       { kind: 'user', key: 'alice@example.com', label: 'Editor' },
       { kind: 'user', key: 'bob@example.com', label: 'Editor' }
     ]);
@@ -146,14 +151,14 @@ describe('createSessionTracker', () => {
     const { tracker, closes } = make();
     tracker.noteEdit(USER);
     tracker.noteEdit(ROBIN);
-    const before = tracker.currentMeta()!;
+    const before = must(tracker.currentMeta());
     expect(tracker.renew('another-session')).toBeNull();
     clock += 1000;
-    const renewed = tracker.renew(before.sessionId)!;
+    const renewed = must(tracker.renew(before.sessionId));
     expect(renewed.sessionId).not.toBe(before.sessionId);
     expect(renewed.authors).toEqual(before.authors);
     expect(renewed.sessionStartedAt).toBe(new Date(clock).toISOString());
-    expect(tracker.currentMeta()!.sessionId).toBe(renewed.sessionId);
+    expect(must(tracker.currentMeta()).sessionId).toBe(renewed.sessionId);
     expect(closes).toEqual([]);
   });
 });

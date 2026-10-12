@@ -11,6 +11,11 @@ import {
 import { DocxHistoryHost, DocxVersion } from './types';
 import { contentHash, diffSession, normalizeForDiff } from './sfdtDiff';
 
+const must = <T>(value: T | null | undefined): T => {
+  if (value == null) throw new Error('Expected a value');
+  return value;
+};
+
 const version = (over: Partial<DocxVersion>): DocxVersion =>
   ({
     id: 'v1',
@@ -449,7 +454,7 @@ describe('useVersionDocument', () => {
     const { result } = renderHook(() => useVersionDocument(h, ver));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    const doc = JSON.parse(result.current.sfdt!);
+    const doc = JSON.parse(must(result.current.sfdt));
     const tableRow = doc.sections[0].blocks[0].rows[0];
     expect(tableRow.rowFormat.revisionIds).toBeUndefined();
     const cellPara = tableRow.cells[0].blocks[0];

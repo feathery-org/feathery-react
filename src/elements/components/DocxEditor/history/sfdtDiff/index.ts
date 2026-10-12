@@ -321,8 +321,8 @@ function emitInlineHunks(block: WBlock, hunks: Hunk[], id: () => number): void {
         !chars[i].del &&
         !chars[i].ins &&
         chars[i].fmtChange &&
-        chars[i].fmtChange!.author === author &&
-        JSON.stringify(chars[i].fmtChange!.props) === key
+        chars[i].fmtChange?.author === author &&
+        JSON.stringify(chars[i].fmtChange?.props) === key
       ) {
         length++;
         i++;
