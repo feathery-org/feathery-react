@@ -1142,6 +1142,33 @@ describe('DocumentEditorContainer signing outcomes', () => {
     );
   });
 
+  it('reloads the PDF when signing overwrites the same stored file', async () => {
+    const presigned = (sig: string) =>
+      `https://x/envelopes/e1/signable.pdf?X-Amz-Signature=${sig}`;
+    mockFinalizeEnvelope.mockResolvedValue(finalizedPdf(presigned('first')));
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+    await waitFor(() =>
+      expect(getByTestId(`signed-view:${presigned('first')}`)).toBeTruthy()
+    );
+
+    mockGetCurrentEnvelope.mockResolvedValue({
+      ...finalizedPdf(presigned('signed')),
+      signed: true
+    });
+    await focus();
+
+    await waitFor(() =>
+      expect(getByTestId(`signed-view:${presigned('signed')}`)).toHaveAttribute(
+        'data-status',
+        'signed'
+      )
+    );
+  });
+
   it('shows a PDF it did not send without a status and without polling', async () => {
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
