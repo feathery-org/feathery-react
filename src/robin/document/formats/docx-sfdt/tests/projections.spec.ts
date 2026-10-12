@@ -4,6 +4,7 @@ import { comparable, comparableText } from '../../../proof';
 import { NfNode, NormalForm, canonicalJson, walk } from '../../../tree';
 import { docxPack } from '../index';
 import { toNormalForm } from '../adapter/toNormalForm';
+import { ownText } from '../outline';
 import { docxTree } from '../tree';
 import {
   N1,
@@ -14,6 +15,7 @@ import {
   N6,
   N7,
   N9,
+  N11,
   NORMALIZATIONS,
   UNDO_NORMALIZATIONS,
   accept,
@@ -212,6 +214,29 @@ describe('normalizations (each a true positive and a true negative)', () => {
     (all(undone).find((n) => n.id === row.id) as NfNode).style = 'withGrid';
     const fmt = (d: NormalForm) => d.formats[String((all(d).find((n) => n.id === row.id) as NfNode).style)];
     expect(fmt(N7.apply(undone))).toEqual(fmt(N7.apply(nf)));
+  });
+
+  it('N11 a paragraph with only the Normal style and empty borders and list is one with no format', () => {
+    const nf = fresh();
+    const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string' && ownText(n)) as NfNode;
+    const withStyle = (entry: Record<string, unknown> | undefined) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      const p = all(d).find((n) => n.id === para.id) as NfNode;
+      if (entry === undefined) delete p.style;
+      else {
+        d.formats.probe = entry;
+        p.style = 'probe';
+      }
+      return d;
+    };
+    const styleOf = (d: NormalForm) => (all(N11.apply(d)).find((n) => n.id === para.id) as NfNode).style;
+    const editorDefault = { borders: { top: {}, left: {}, right: {}, bottom: {}, horizontal: {}, vertical: {} }, styleName: 'Normal', listFormat: {} };
+    // true negative: what the editor gives a paragraph written without a format
+    expect(styleOf(withStyle(editorDefault))).toBe(styleOf(withStyle(undefined)));
+    // true positive: another style, or a real border, still counts
+    expect(styleOf(withStyle({ ...editorDefault, styleName: 'Heading 1' }))).toBe('probe');
+    expect(styleOf(withStyle({ ...editorDefault, borders: { top: { lineStyle: 'Single' } } }))).toBe('probe');
+    expect(NORMALIZATIONS.map((n) => n.name)).toContain('N11');
   });
 
   it('N9 a paragraph property an undo writes back explicitly as the value it inherits, only in undo comparisons', () => {

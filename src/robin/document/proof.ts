@@ -16,7 +16,7 @@
  */
 import { READ_ONLY_NODE_KEYS } from './envelope';
 import { renameFormatRefs } from './ids';
-import type { EditorHost, Pack, Residue } from './pack';
+import type { EditorHost, Normalization, Pack, Residue } from './pack';
 import {
   NormalForm,
   canonicalJson,
@@ -126,6 +126,30 @@ interface Comparison {
  * ones that changed either side (a normalization returns its input when it changes nothing, so
  * this costs no extra reads of the documents).
  */
+/**
+ * Apply `normalizations` until a full pass changes nothing, so none depends on running after
+ * another (one that drops an inherited value can leave what another treats as the default). Each
+ * returns its input when it changes nothing, so a settled pass is cheap. `used` collects the names
+ * of those that changed something.
+ */
+export function toFixedPoint(
+  normalizations: readonly Normalization[],
+  nf: NormalForm,
+  used?: Set<string>
+): NormalForm {
+  let out = nf;
+  for (let pass = 0; pass <= normalizations.length; pass += 1) {
+    const start = out;
+    for (const n of normalizations) {
+      const next = n.apply(out);
+      if (next !== out) used?.add(n.name);
+      out = next;
+    }
+    if (out === start) break;
+  }
+  return out;
+}
+
 function compareWithNormalizations(
   pack: Pack,
   live: NormalForm,
@@ -134,20 +158,17 @@ function compareWithNormalizations(
   const canon = (nf: NormalForm) => comparableText(pack, nf);
   if (canon(live) === canon(intended))
     return { equal: true, normalizations: [], diff: [] };
-  let l = live;
-  let i = intended;
-  const used: string[] = [];
-  for (const n of pack.projections.normalizations) {
-    const nl = n.apply(l);
-    const ni = n.apply(i);
-    if (nl !== l || ni !== i) used.push(n.name);
-    l = nl;
-    i = ni;
-  }
+  const used = new Set<string>();
+  const l = toFixedPoint(pack.projections.normalizations, live, used);
+  const i = toFixedPoint(pack.projections.normalizations, intended, used);
   const equal = canon(l) === canon(i);
   return {
     equal,
-    normalizations: equal ? used : [],
+    normalizations: equal
+      ? pack.projections.normalizations
+          .map((n) => n.name)
+          .filter((name) => used.has(name))
+      : [],
     diff: equal ? [] : differences(comparable(pack, l), comparable(pack, i))
   };
 }
@@ -287,15 +308,15 @@ export function prove(pack: Pack, input: ProofInput): ProofOutcome {
  */
 export function equivalentNative(pack: Pack, a: string, b: string): boolean {
   if (a === b) return true;
-  const normalized = (native: string) => {
-    let nf = pack.adapter.toNormalForm(native).nf;
-    for (const n of [
-      ...pack.projections.normalizations,
-      ...(pack.projections.undoNormalizations ?? [])
-    ])
-      nf = n.apply(nf);
-    return comparableText(pack, nf);
-  };
+  const all = [
+    ...pack.projections.normalizations,
+    ...(pack.projections.undoNormalizations ?? [])
+  ];
+  const normalized = (native: string) =>
+    comparableText(
+      pack,
+      toFixedPoint(all, pack.adapter.toNormalForm(native).nf)
+    );
   return normalized(a) === normalized(b);
 }
 

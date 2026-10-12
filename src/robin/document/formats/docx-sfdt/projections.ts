@@ -327,6 +327,35 @@ export const N6: Normalization = {
     })
 };
 
+/** An object with nothing in it at any depth (`borders` with six empty sides, say). */
+const emptyDeep = (v: unknown): boolean =>
+  isObject(v) && Object.values(v).every(emptyDeep);
+
+/**
+ * N11: a paragraph whose format is only the Normal style, with empty borders and an empty list
+ * format beside it, is the same as one with no format: the editor gives a paragraph written
+ * without one exactly that (measured in the headless lane), and Normal is the default style.
+ */
+export const N11: Normalization = {
+  name: 'N11',
+  apply: (nf) =>
+    eachNode(nf, (n, _s, out) => {
+      if (n.kind !== KIND.paragraph || typeof n.style !== 'string')
+        return false;
+      const entry = out.formats[n.style];
+      if (!entry) return false;
+      const rest = Object.entries(entry).filter(([, v]) => !emptyDeep(v));
+      if (
+        rest.length !== 1 ||
+        rest[0][0] !== 'styleName' ||
+        rest[0][1] !== 'Normal'
+      )
+        return false;
+      delete n.style;
+      return true;
+    })
+};
+
 const ROW_UNDO_DEFAULTS = [
   'gridBefore',
   'gridAfter',
@@ -412,7 +441,8 @@ export const NORMALIZATIONS: readonly Normalization[] = [
   N3,
   N4,
   N5,
-  N6
+  N6,
+  N11
 ];
 export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7, N9];
 

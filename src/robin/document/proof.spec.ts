@@ -3,8 +3,10 @@ import {
   comparableText,
   differences,
   prove,
-  rollback
+  rollback,
+  toFixedPoint
 } from './proof';
+import type { Normalization } from './pack';
 import { canonicalJson, NfNode, NormalForm } from './tree';
 import { ToyHost, makeToyPack, para, toyNative } from './tests/toyPack';
 
@@ -237,6 +239,35 @@ describe('rollback', () => {
       equivalent: true,
       via: 'snapshot',
       undoSteps: 0
+    });
+  });
+});
+
+describe('toFixedPoint', () => {
+  it('applies normalizations until none changes anything, whatever their order', () => {
+    // b drops `x`; only then does a see an empty entry to drop: a listed first still runs after b
+    const a: Normalization = {
+      name: 'a',
+      apply: (nf) =>
+        nf.formats.f && !Object.keys(nf.formats.f).length
+          ? { ...nf, formats: {} }
+          : nf
+    };
+    const b: Normalization = {
+      name: 'b',
+      apply: (nf) => (nf.formats.f?.x ? { ...nf, formats: { f: {} } } : nf)
+    };
+    const nf = {
+      root: { id: 'root', kind: 'doc' },
+      formats: { f: { x: 1 } }
+    } as unknown as NormalForm;
+    const used = new Set<string>();
+    expect(toFixedPoint([a, b], nf, used).formats).toEqual({});
+    expect([...used].sort()).toEqual(['a', 'b']);
+    // nothing to do: the input itself comes back
+    expect(toFixedPoint([a, b], { ...nf, formats: {} } as NormalForm)).toEqual({
+      ...nf,
+      formats: {}
     });
   });
 });
