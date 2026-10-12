@@ -87,6 +87,8 @@ import {
 import { EventQueue } from '../eventQueue';
 import { STEP_EVENT_LOAD, STEP_EVENT_SUBMIT } from '../stepEvents';
 
+declare const __PACKAGE_VERSION__: string;
+
 setEnvironment('production');
 try {
   setEnvironment((process.env.BACKEND_ENV || 'production') as URL_ENUM);
@@ -224,10 +226,13 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
+    const url = `${API_URL}panel/step/submit/v3/`;
+    // A new step submission is a manual retry opportunity for earlier answers,
+    // including a confirmation step with no JSON fields of its own.
+    await this.offlineRequestHandler.resetRetryAttemptsByUrl(url);
     if (servars.length === 0) return Promise.resolve();
 
     const { userId, collaboratorId } = initInfo();
-    const url = `${API_URL}panel/step/submit/v3/`;
     const data: Record<string, any> = {
       fuser_key: userId,
       step_key: stepKey,
@@ -246,6 +251,7 @@ export default class FeatheryClient extends IntegrationClient {
       ),
       panel_key: this.formKey,
       __feathery_version: this.version,
+      __feathery_sdk_version: __PACKAGE_VERSION__,
       no_complete: noComplete
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
@@ -434,6 +440,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);
+    formData.set('__feathery_sdk_version', __PACKAGE_VERSION__);
     if (this.version) formData.set('__feathery_version', this.version);
 
     const options: RequestOptions = {
@@ -470,6 +477,13 @@ export default class FeatheryClient extends IntegrationClient {
           queueUpload(this.formKey, servar.key);
         }
       );
+      // Queuing an offline upload is not a server acknowledgement. Keep its
+      // request and allow the next manual submission to retry the file.
+      if (queuedForReplay) {
+        fileRetryStatus[servar.key] = false;
+        delete fileDeduplicationCount[servar.key];
+        return result;
+      }
       // Mark as successful upload - will block duplicate attempts
       fileRetryStatus[servar.key] = true;
       if (!queuedForReplay) completeUpload(this.formKey, servar.key);
@@ -1165,6 +1179,7 @@ export default class FeatheryClient extends IntegrationClient {
       form_key: this.formKey,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {}),
+      __feathery_sdk_version: __PACKAGE_VERSION__,
       event_id: uuidv4()
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
@@ -1184,28 +1199,32 @@ export default class FeatheryClient extends IntegrationClient {
       prom = this.flushCustomFields();
     }
 
-    const triggerEvent = () =>
-      this.offlineRequestHandler.runOrSaveRequest(
-        // Ensure events complete before user exits page. Submit and load event of
-        // next step must happen after the previous step is done submitting
-        () =>
-          this.submitQueue
-            // Swallow TypeErrors (network failures) so _fetch proceeds regardless
-            .catch((error) => {
-              if (error instanceof TypeError) return;
-              throw error;
-            })
-            .then(() => this._fetch(url, options, true, true)),
+    const triggerEvent = async () => {
+      // Let a failed submit enter the offline queue before the event handler
+      // checks that queue. The event itself may proceed after a network error,
+      // but only after its save has been queued for replay.
+      await this.submitQueue.catch((error) => {
+        if (!(error instanceof TypeError)) throw error;
+      });
+      return this.offlineRequestHandler.runOrSaveRequest(
+        () => this._fetch(url, options, true, true),
         url,
         options,
         'registerEvent',
-        stepKey
+        stepKey,
+        { requireAcknowledgement: !!eventData.completed }
       );
+    };
 
-    let eventPromise: Promise<any>;
-    if (eventData.completed && prom)
-      eventPromise = prom.then(() => triggerEvent());
-    else eventPromise = Promise.all([prom, triggerEvent()]);
+    // Custom field writes must settle before the event can acknowledge the
+    // step. On a network failure, the queued event follows the queued write.
+    const eventPromise = prom
+      ? prom
+          .catch((error) => {
+            if (!(error instanceof TypeError)) throw error;
+          })
+          .then(triggerEvent)
+      : triggerEvent();
 
     // Callers still see the rejection; the shared chain must not stay rejected
     this.eventQueue = this.eventQueue.then(() => eventPromise.catch(() => {}));

@@ -45,6 +45,7 @@ interface SerializedRequestBody {
 interface RequestMetadata {
   fieldKey?: string;
   preserveStepRequests?: boolean;
+  requireAcknowledgement?: boolean;
 }
 
 interface SerializedRequest {
@@ -61,6 +62,8 @@ interface SerializedRequest {
   key?: IDBValidKey;
   metadata?: RequestMetadata;
   retryAttempts?: number;
+  enqueueOrder?: number;
+  snapshot?: Request;
 }
 
 let _connectivityCache: { online: boolean; timestamp: number } | null = null;
@@ -185,6 +188,8 @@ export class OfflineRequestHandler {
   private onlineSignals: Map<string, any[]>;
   private indexedDBSupported: boolean;
   private errorCallback?: (error: string) => void;
+  private memoryRequests = new Map<IDBValidKey, SerializedRequest>();
+  private enqueueOrder = 0;
 
   constructor(formKey: string, errorCallback?: (error: string) => void) {
     this.isReplayingRequests = new Map();
@@ -200,7 +205,14 @@ export class OfflineRequestHandler {
   }
 
   // Check if any requests are stored in indexedDB
-  public async dbHasRequest(): Promise<boolean> {
+  public async dbHasRequest(type?: string): Promise<boolean> {
+    if (
+      [...this.memoryRequests.values()].some(
+        (row) => !type || row.type === type
+      )
+    )
+      return true;
+    if (!this.indexedDBSupported) return false;
     const dbTransaction = await this.getDbTransaction('readonly');
     if (dbTransaction) {
       const { store } = dbTransaction;
@@ -212,7 +224,10 @@ export class OfflineRequestHandler {
             .result;
           if (cursor) {
             const request = cursor.value as SerializedRequest;
-            if (request.formKey === this.formKey) {
+            if (
+              request.formKey === this.formKey &&
+              (!type || request.type === type)
+            ) {
               count++;
             }
             cursor.continue();
@@ -226,6 +241,13 @@ export class OfflineRequestHandler {
     } else {
       return false;
     }
+  }
+
+  private async hasQueuedWrites(): Promise<boolean> {
+    return (
+      (await this.dbHasRequest('submit')) ||
+      (await this.dbHasRequest('customRequest'))
+    );
   }
 
   // Wait for user to be online and for any replayed requests to finish
@@ -316,34 +338,42 @@ export class OfflineRequestHandler {
     if (await verifyConnectivity()) {
       // Prevent page unload while processing requests to avoid data loss
       trackUnload();
-      if (this.indexedDBSupported) {
+      if (this.indexedDBSupported || this.memoryRequests.size) {
         if (this.isReplayingRequests.get(this.formKey)) {
           // Replay already in progress, wait for it to complete
           await this.onlineAndReplayed();
         } else if (await this.dbHasRequest()) {
-          // Clear any stale requests for this step before attempting
-          // Step submissions create multiple parallel requests (JSON, custom fields, files)
-          // all with the same stepKey. Clear all of them to prevent replay loops.
-          if (stepKey !== undefined && !metadata?.preserveStepRequests) {
-            await this.clearFailedRequestsByStep(stepKey);
-          }
-
-          // Check again if there are OTHER pending requests that need replay
-          if (await this.dbHasRequest()) {
-            // Other pending requests exist → trigger replay for them
-            await this.replayRequests();
-          }
+          await this.replayRequests();
         }
       }
-      try {
-        const response = await run();
+      // An intermediate event waits in the queue. A terminal event requires a
+      // fresh acknowledgement on retry so its side effects cannot fire twice.
+      if (type === 'registerEvent' && (await this.hasQueuedWrites())) {
+        if (metadata?.requireAcknowledgement) {
+          untrackUnload();
+          throw new Error(
+            'Some answers are still being saved. Please try again.'
+          );
+        }
+        await this.saveRequest(url, options, type, stepKey, metadata);
+        onQueued?.();
         untrackUnload();
-        return response;
+        return;
+      }
+      // Only rows already queued when this snapshot starts can be superseded.
+      // A concurrent save may queue a newer answer while this request is in flight.
+      const supersededStepRequests =
+        type === 'submit' && stepKey && !metadata?.preserveStepRequests
+          ? await this.getFailedStepRequestKeys(stepKey, url)
+          : [];
+      let response;
+      try {
+        response = await run();
       } catch (e) {
         const errorToThrow = e;
         // TypeError indicates network connectivity issues
         // This catches scenarios like timeouts, resolution failures, etc.
-        if (e instanceof TypeError) {
+        if (e instanceof TypeError && !metadata?.requireAcknowledgement) {
           await this.saveRequest(url, options, type, stepKey, metadata);
           onQueued?.();
           // Don't immediately trigger replay - this can cause infinite loops
@@ -355,7 +385,33 @@ export class OfflineRequestHandler {
         untrackUnload();
         throw errorToThrow; // Re-throw error so caller knows submission failed
       }
+      if (metadata?.requireAcknowledgement && !response) {
+        untrackUnload();
+        throw new Error(
+          'The submission could not be completed. Please try again.'
+        );
+      }
+      // A successful full step snapshot supersedes only older snapshots for
+      // that step. File uploads and partial custom updates must be retained.
+      if (
+        response &&
+        type === 'submit' &&
+        stepKey &&
+        !metadata?.preserveStepRequests
+      ) {
+        await this.clearFailedRequestsByStep(
+          stepKey,
+          url,
+          supersededStepRequests
+        );
+      }
+      untrackUnload();
+      return response;
     } else {
+      if (metadata?.requireAcknowledgement)
+        throw new Error(
+          'Some answers are still being saved. Please try again.'
+        );
       await this.saveRequest(url, options, type, stepKey, metadata);
       onQueued?.();
     }
@@ -368,17 +424,49 @@ export class OfflineRequestHandler {
     stepKey?: string,
     metadata?: RequestMetadata
   ): Promise<void> {
-    // If IndexedDB is unsupported, we cannot store requests to replay
-    if (!this.indexedDBSupported) return;
-
     const { sdkKey } = initInfo();
     options.headers = { ...options.headers, Authorization: `Token ${sdkKey}` };
     const request = new Request(url, options);
+    const enqueueOrder = ++this.enqueueOrder;
+    const timestamp = Date.now();
+    const headers: Record<string, string> = {};
+    request.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
 
     const keepalive =
       request.keepalive !== undefined
         ? request.keepalive
         : ['POST', 'PATCH', 'PUT'].includes(request.method);
+
+    // A storage failure must not discard a failed write or unblock completion.
+    // The immutable Request snapshot survives manual retry within this page;
+    // unlike IndexedDB, this fallback cannot survive a reload.
+    const retainWrite = () => {
+      if (!['submit', 'customRequest'].includes(type)) return;
+      const key = `memory:${enqueueOrder}`;
+      this.memoryRequests.set(key, {
+        key,
+        formKey: this.formKey,
+        url: request.url,
+        method: request.method,
+        headers: JSON.stringify(headers),
+        body: '',
+        bodyType: 'text',
+        timestamp,
+        enqueueOrder,
+        type,
+        stepKey,
+        keepalive,
+        metadata,
+        retryAttempts: 0,
+        snapshot: request.clone()
+      });
+    };
+    if (!this.indexedDBSupported) {
+      retainWrite();
+      return;
+    }
 
     try {
       const requestClone: Request = request.clone();
@@ -390,11 +478,6 @@ export class OfflineRequestHandler {
           .then(this.serializeRequestBody);
       }
 
-      const headers: Record<string, string> = {};
-      request.headers.forEach((value, key) => {
-        headers[key] = value;
-      });
-
       const serializedRequest: SerializedRequest = {
         formKey: this.formKey,
         url: requestClone.url,
@@ -402,7 +485,8 @@ export class OfflineRequestHandler {
         headers: JSON.stringify(headers),
         body: serializedBody.body,
         bodyType: serializedBody.type,
-        timestamp: Date.now(),
+        timestamp,
+        enqueueOrder,
         type,
         stepKey,
         keepalive,
@@ -419,8 +503,9 @@ export class OfflineRequestHandler {
         });
         store.add(serializedRequest);
         await requestPromise;
-      }
+      } else retainWrite();
     } catch (error) {
+      retainWrite();
       console.warn('Error saving request', error);
     }
   }
@@ -452,12 +537,12 @@ export class OfflineRequestHandler {
   /**
    * Replay queued requests:
    *
-   * Step 1: Submit requests (form submissions, custom requests) - executed in parallel
+   * Step 1: Submit requests (form submissions, custom requests) - oldest first
    * Step 2: Event registrations - grouped by step and executed sequentially by step,
    *          but in parallel within each step to maintain event ordering per form step
    */
   public async replayRequests() {
-    if (!this.indexedDBSupported) {
+    if (!this.indexedDBSupported && !this.memoryRequests.size) {
       return;
     }
 
@@ -472,11 +557,14 @@ export class OfflineRequestHandler {
     this.isReplayingRequests.set(this.formKey, true);
     trackUnload();
     try {
-      const dbTransaction = await this.getDbTransaction('readwrite');
+      const allRequests = [...this.memoryRequests.values()];
+      const dbTransaction = this.indexedDBSupported
+        ? await this.getDbTransaction('readwrite')
+        : undefined;
       if (dbTransaction) {
         const { store } = dbTransaction;
 
-        const allRequests: SerializedRequest[] = await new Promise<
+        const persistedRequests: SerializedRequest[] = await new Promise<
           SerializedRequest[]
         >((resolve) => {
           const requests: SerializedRequest[] = [];
@@ -497,34 +585,50 @@ export class OfflineRequestHandler {
             }
           };
         });
+        allRequests.push(...persistedRequests);
+      }
+      allRequests.sort(
+        (a, b) =>
+          a.timestamp - b.timestamp ||
+          (a.enqueueOrder ?? 0) - (b.enqueueOrder ?? 0)
+      );
 
-        // Step 1: Process all submit/custom requests in parallel
-        const submitRequests = allRequests.filter((req) =>
-          ['submit', 'customRequest'].includes(req.type)
-        );
-        await this.replayRequestsInParallel(submitRequests);
+      // Apply queued writes in the order they were made. Two offline step
+      // snapshots may contain different values for the same field; allowing
+      // the older request to finish last would restore stale answers.
+      const submitRequests = allRequests.filter((req) =>
+        ['submit', 'customRequest'].includes(req.type)
+      );
+      for (const request of submitRequests) {
+        const [saved] = await this.replayRequestsInParallel([request]);
+        if (!saved) return;
+      }
 
-        // Step 2: Process event registrations with step-level ordering
-        const registerEventRequests = allRequests.filter(
-          (req) => req.type === 'registerEvent'
-        );
-        const stepKeys = Array.from(
-          new Set(registerEventRequests.map((req) => req.stepKey))
-        );
+      // A failed submit row stays queued after its retry budget is exhausted.
+      // Do not replay a completion event ahead of that missing data.
+      if (await this.hasQueuedWrites()) return;
 
-        for (const stepKey of stepKeys) {
-          const requestsForStep = registerEventRequests.filter(
-            (req) => req.stepKey === stepKey
-          );
-          await this.replayRequestsInParallel(requestsForStep);
-        }
+      // Step 2: Process event registrations with step-level ordering
+      const registerEventRequests = allRequests.filter(
+        (req) => req.type === 'registerEvent'
+      );
+      const stepKeys = Array.from(
+        new Set(registerEventRequests.map((req) => req.stepKey))
+      );
+
+      for (const stepKey of stepKeys) {
+        const requestsForStep = registerEventRequests.filter(
+          (req) => req.stepKey === stepKey
+        );
+        await this.replayRequestsInParallel(requestsForStep);
       }
     } finally {
       this.isReplayingRequests.set(this.formKey, false);
 
       // Check if there are any new requests in IndexedDB that are still retryable and trigger replayRequests again
       const retryable = await this.hasReplayableRequest();
-      if (retryable) await this.replayRequests();
+      if (retryable && !(await this.hasQueuedWrites()))
+        await this.replayRequests();
 
       untrackUnload();
       // Release all waiting promises that were blocked on onlineAndReplayed()
@@ -554,9 +658,9 @@ export class OfflineRequestHandler {
           const fieldKey = request.metadata?.fieldKey;
 
           // Ensure exhausted retries are marked as failed before being skipped
-          if (attempts >= this.maxRetryAttempts) {
+          if (attempts >= this.maxRetryAttempts && !request.snapshot) {
             markFileUploadRetryFailure(fieldKey, this.formKey);
-            return;
+            return false;
           }
 
           // Surface replayed file uploads (e.g. after a reload) in the
@@ -564,8 +668,11 @@ export class OfflineRequestHandler {
           if (fieldKey && url.includes('panel/step/submit/file'))
             startUpload(this.formKey, fieldKey);
 
-          while (attempts < this.maxRetryAttempts) {
+          while (attempts < this.maxRetryAttempts || request.snapshot) {
             try {
+              if (request.snapshot) {
+                fetchOptions.body = await request.snapshot.clone().blob();
+              }
               // The queued headers predate the link gate - they were captured
               // before _fetch attached the header, and a replay can outlive the
               // page that queued them. The link this device holds now is the
@@ -577,16 +684,23 @@ export class OfflineRequestHandler {
               await checkResponseSuccess(response);
               markFileUploadRetrySuccess(fieldKey, this.formKey);
               await this.removeRequest(key);
-              return;
+              return true;
             } catch (error: any) {
               if (error instanceof FormConflictError) {
                 handleFormConflict();
-                markFileUploadRetrySuccess(fieldKey, this.formKey);
-                await this.removeRequest(key);
-                return;
+                // The form needs to reload before this write can be retried.
+                // Keeping it queued also prevents a completion event from
+                // outrunning data that the server rejected.
+                return false;
               }
               attempts++;
               await this.updateRetryAttempts(key, attempts);
+              // Storage fallback makes one bounded attempt per replay cycle.
+              // A later manual action or reconnect can retry the retained write.
+              if (request.snapshot) {
+                markFileUploadRetryFailure(fieldKey, this.formKey);
+                return false;
+              }
 
               if (await verifyConnectivity()) {
                 const nextDelay = this.getExponentialDelay(attempts);
@@ -598,7 +712,7 @@ export class OfflineRequestHandler {
                     );
                   }
                   markFileUploadRetryFailure(fieldKey, this.formKey);
-                  return;
+                  return false;
                 }
                 await this.delay(nextDelay);
               } else {
@@ -606,11 +720,12 @@ export class OfflineRequestHandler {
                 // rather than spinning for as long as the user stays offline;
                 // the next replay re-announces it as uploading.
                 if (fieldKey) queueUpload(this.formKey, fieldKey);
-                await this.onlineAndReplayed();
-                return;
+                // Release the replay owner before the online event retries.
+                return false;
               }
             }
           }
+          return false;
         };
 
         return attemptRequest();
@@ -620,6 +735,7 @@ export class OfflineRequestHandler {
 
   private async removeRequest(key?: IDBValidKey) {
     if (!key) return;
+    if (this.memoryRequests.delete(key)) return;
     const dbTransaction = await this.getDbTransaction('readwrite');
     if (dbTransaction) {
       const { store } = dbTransaction;
@@ -696,9 +812,59 @@ export class OfflineRequestHandler {
     }
   }
 
-  public async clearFailedRequestsByStep(stepKey: string): Promise<void> {
+  private async getFailedStepRequestKeys(
+    stepKey: string,
+    url: string
+  ): Promise<IDBValidKey[]> {
+    const memoryKeys = [...this.memoryRequests.entries()]
+      .filter(
+        ([, record]) =>
+          record.stepKey === stepKey &&
+          record.type === 'submit' &&
+          record.url === url
+      )
+      .map(([key]) => key);
+    if (!this.indexedDBSupported) return memoryKeys;
+    const dbTransaction = await this.getDbTransaction('readonly');
+    if (!dbTransaction) return memoryKeys;
+
+    const request = dbTransaction.store.openCursor();
+    return new Promise((resolve) => {
+      const keys: IDBValidKey[] = [...memoryKeys];
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
+          .result;
+        if (!cursor) {
+          resolve(keys);
+          return;
+        }
+        const record = cursor.value as SerializedRequest;
+        if (
+          record.formKey === this.formKey &&
+          record.stepKey === stepKey &&
+          record.type === 'submit' &&
+          record.url === url
+        ) {
+          keys.push(cursor.key);
+        }
+        cursor.continue();
+      };
+      request.onerror = () => resolve(memoryKeys);
+    });
+  }
+
+  public async clearFailedRequestsByStep(
+    stepKey: string,
+    url: string,
+    supersededKeys: IDBValidKey[]
+  ): Promise<void> {
     return this.deleteRecordsWhere(
-      (record) => record.formKey === this.formKey && record.stepKey === stepKey
+      (record, key) =>
+        supersededKeys.includes(key) &&
+        record.formKey === this.formKey &&
+        record.stepKey === stepKey &&
+        record.type === 'submit' &&
+        record.url === url
     );
   }
 
@@ -711,8 +877,11 @@ export class OfflineRequestHandler {
   }
 
   private async deleteRecordsWhere(
-    predicate: (record: SerializedRequest) => boolean
+    predicate: (record: SerializedRequest, key: IDBValidKey) => boolean
   ): Promise<void> {
+    for (const [key, record] of this.memoryRequests) {
+      if (predicate(record, key)) this.memoryRequests.delete(key);
+    }
     if (!this.indexedDBSupported) return;
 
     const dbTransaction = await this.getDbTransaction('readwrite');
@@ -727,7 +896,7 @@ export class OfflineRequestHandler {
           .result;
         if (cursor) {
           const record = cursor.value as SerializedRequest;
-          if (predicate(record)) {
+          if (predicate(record, cursor.key)) {
             cursor.delete();
           }
           cursor.continue();
@@ -749,6 +918,11 @@ export class OfflineRequestHandler {
     updater: (record: SerializedRequest) => void
   ): Promise<void> {
     if (!key) return;
+    const memoryRequest = this.memoryRequests.get(key);
+    if (memoryRequest) {
+      updater(memoryRequest);
+      return;
+    }
     const dbTransaction = await this.getDbTransaction('readwrite');
     if (!dbTransaction) return;
 
@@ -773,6 +947,10 @@ export class OfflineRequestHandler {
     predicate: (record: SerializedRequest) => boolean,
     updater: (record: SerializedRequest) => SerializedRequest
   ): Promise<void> {
+    for (const [key, record] of this.memoryRequests) {
+      if (predicate(record))
+        this.memoryRequests.set(key, updater({ ...record }));
+    }
     if (!this.indexedDBSupported) return;
 
     const dbTransaction = await this.getDbTransaction('readwrite');
@@ -815,6 +993,8 @@ export class OfflineRequestHandler {
 
   // Check if any queued requests can still be retried (haven't exceeded max attempts)
   private async hasReplayableRequest(): Promise<boolean> {
+    if (this.memoryRequests.size) return true;
+    if (!this.indexedDBSupported) return false;
     const dbTransaction = await this.getDbTransaction('readonly');
     if (!dbTransaction) return false;
 

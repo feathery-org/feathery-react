@@ -25,7 +25,11 @@ import {
   setUploadIndicatorEnabled,
   startUpload
 } from '../fileUploadProgress';
-import { getApiUrl, setEnvironment } from '@feathery/client-utils';
+import {
+  FormConflictError,
+  getApiUrl,
+  setEnvironment
+} from '@feathery/client-utils';
 
 // Mock init module. A replay reads the access link off initState, so the mock
 // carries it too - without it every replay to the API host throws.
@@ -46,6 +50,7 @@ setEnvironment('production');
 
 // Mock checkResponseSuccess
 jest.mock('../featheryClient/utils', () => ({
+  handleFormConflict: jest.fn(),
   checkResponseSuccess: jest.fn().mockImplementation(async (response) => {
     if (!response.ok) {
       throw new Error('Response not ok');
@@ -117,6 +122,854 @@ describe('OfflineRequestHandler - Integration Tests', () => {
   });
 
   describe('Request execution behavior', () => {
+    describe('storage failure recovery', () => {
+      let originalRequest: any;
+      let originalFetch: any;
+
+      beforeEach(() => {
+        originalRequest = (global as any).Request;
+        originalFetch = (global as any).fetch;
+        (handler as any).indexedDBSupported = false;
+        (global as any).Request = class {
+          url: string;
+          method: string;
+          headers: Map<string, string>;
+          body: any;
+          keepalive: boolean;
+          constructor(url: string, options: any) {
+            this.url = url;
+            this.method = options.method;
+            this.headers = new Map(Object.entries(options.headers ?? {}));
+            this.body = options.body;
+            this.keepalive = options.keepalive ?? false;
+          }
+
+          clone() {
+            return new (global as any).Request(this.url, {
+              method: this.method,
+              headers: Object.fromEntries(this.headers),
+              body: this.body,
+              keepalive: this.keepalive
+            });
+          }
+
+          async blob() {
+            return this.body instanceof FormData
+              ? this.body
+              : { text: async () => this.body };
+          }
+        };
+      });
+
+      afterEach(() => {
+        (global as any).Request = originalRequest;
+        (global as any).fetch = originalFetch;
+        jest.restoreAllMocks();
+      });
+
+      it('retains JSON and file writes without IndexedDB and acknowledges both before completion', async () => {
+        const accepted: string[] = [];
+        let isRestored = false;
+        (global as any).fetch = jest.fn(async (_url: string, options: any) => {
+          if (!isRestored) throw new TypeError('Failed to fetch');
+          accepted.push(
+            options.body instanceof FormData
+              ? 'synthetic card'
+              : await options.body.text()
+          );
+          return { status: 200 };
+        });
+        const failed = async () => {
+          throw new TypeError('Failed to fetch');
+        };
+        await expect(
+          handler.runOrSaveRequest(
+            failed,
+            '/save/',
+            { method: 'POST', body: 'synthetic birthdate' },
+            'submit',
+            'Insurance'
+          )
+        ).rejects.toThrow('Failed to fetch');
+        const file = new FormData();
+        file.append('card', new Blob(['synthetic card']));
+        await expect(
+          handler.runOrSaveRequest(
+            failed,
+            '/file/',
+            { method: 'POST', body: file },
+            'submit',
+            'Insurance',
+            { fieldKey: 'card', preserveStepRequests: true }
+          )
+        ).rejects.toThrow('Failed to fetch');
+        const complete = jest.fn(async () => {
+          accepted.push('complete');
+          return { status: 200 };
+        });
+        await expect(
+          handler.runOrSaveRequest(
+            complete,
+            '/event/',
+            { method: 'POST', body: '{}' },
+            'registerEvent',
+            'last',
+            { requireAcknowledgement: true }
+          )
+        ).rejects.toThrow('Some answers are still being saved');
+        expect(complete).not.toHaveBeenCalled();
+        expect(await handler.dbHasRequest('submit')).toBe(true);
+        isRestored = true;
+        await handler.runOrSaveRequest(
+          complete,
+          '/event/',
+          { method: 'POST', body: '{}' },
+          'registerEvent',
+          'last',
+          { requireAcknowledgement: true }
+        );
+        expect(accepted).toEqual([
+          'synthetic birthdate',
+          'synthetic card',
+          'complete'
+        ]);
+        expect(await handler.dbHasRequest()).toBe(false);
+        expect(mockFileRetryStatus.card).toBe(true);
+      });
+
+      it('retries a fallback file once per cycle and recovers on terminal retry after four failures', async () => {
+        const file = new FormData();
+        file.append('card', new Blob(['synthetic card']));
+        await handler.saveRequest(
+          '/file/',
+          { method: 'POST', body: file },
+          'submit',
+          'Insurance',
+          { fieldKey: 'card', preserveStepRequests: true }
+        );
+        (global as any).fetch = jest
+          .fn()
+          .mockRejectedValue(new TypeError('offline'));
+        for (let attempt = 0; attempt < 4; attempt++) {
+          await handler.replayRequests();
+          expect((global as any).fetch).toHaveBeenCalledTimes(attempt + 1);
+        }
+        expect(await handler.dbHasRequest('submit')).toBe(true);
+        (global as any).fetch.mockResolvedValue({ status: 200 });
+        const complete = jest.fn(async () => {
+          expect(mockFileRetryStatus.card).toBe(true);
+          return { status: 200 };
+        });
+        await handler.runOrSaveRequest(
+          complete,
+          '/event/',
+          { method: 'POST', body: '{}' },
+          'registerEvent',
+          'last',
+          { requireAcknowledgement: true }
+        );
+        expect((global as any).fetch).toHaveBeenCalledTimes(5);
+        expect(complete).toHaveBeenCalledTimes(1);
+        expect(await handler.dbHasRequest()).toBe(false);
+      });
+
+      it('recovers a failed IndexedDB put without losing its captured payload', async () => {
+        (handler as any).indexedDBSupported = true;
+        jest.spyOn(handler as any, 'getDbTransaction').mockResolvedValue({
+          tx: {},
+          store: {
+            add: () => {
+              throw new Error('quota');
+            }
+          }
+        });
+        const options = { method: 'POST', body: 'original answer' };
+        await handler.saveRequest('/save/', options, 'submit', 'Insurance');
+        options.body = 'later mutation';
+        (handler as any).indexedDBSupported = false;
+        const accepted: string[] = [];
+        (global as any).fetch = jest.fn(async (_url: string, request: any) => {
+          accepted.push(await request.body.text());
+          return { status: 200 };
+        });
+        await handler.replayRequests();
+        expect(accepted).toEqual(['original answer']);
+        expect(await handler.dbHasRequest()).toBe(false);
+      });
+
+      it('orders durable and memory writes with tied timestamps and retains a newer in-flight write', async () => {
+        const rows: any[] = [];
+        let nextKey = 1;
+        let failPut = false;
+        const tx: any = {};
+        const store = {
+          add: (row: any) => {
+            if (failPut) throw new Error('quota');
+            rows.push({ ...row, key: nextKey++ });
+            Promise.resolve().then(() => tx.oncomplete());
+          },
+          delete: (key: number) => {
+            rows.splice(
+              0,
+              rows.length,
+              ...rows.filter((row) => row.key !== key)
+            );
+          },
+          openCursor: () => {
+            const request: any = {};
+            const snapshot = [...rows];
+            let index = 0;
+            const advance = () => {
+              const row = snapshot[index];
+              request.onsuccess?.({
+                target: {
+                  result: row
+                    ? {
+                        value: row,
+                        key: row.key,
+                        continue: () => {
+                          index++;
+                          Promise.resolve().then(advance);
+                        }
+                      }
+                    : null
+                }
+              });
+            };
+            Promise.resolve().then(advance);
+            return request;
+          }
+        };
+        (handler as any).indexedDBSupported = true;
+        jest
+          .spyOn(handler as any, 'getDbTransaction')
+          .mockResolvedValue({ tx, store });
+        jest.spyOn(Date, 'now').mockReturnValue(100);
+        await handler.saveRequest(
+          '/save/',
+          { method: 'POST', body: 'old' },
+          'submit',
+          'Insurance'
+        );
+        failPut = true;
+        await handler.saveRequest(
+          '/save/',
+          { method: 'POST', body: 'middle' },
+          'submit',
+          'Insurance'
+        );
+        failPut = false;
+        await handler.saveRequest(
+          '/save/',
+          { method: 'POST', body: 'new' },
+          'submit',
+          'Insurance'
+        );
+        const accepted: string[] = [];
+        (global as any).fetch = jest.fn(async (_url: string, request: any) => {
+          const body =
+            typeof request.body === 'string'
+              ? request.body
+              : await request.body.text();
+          accepted.push(body);
+          if (body === 'old') {
+            failPut = true;
+            await handler.saveRequest(
+              '/save/',
+              { method: 'POST', body: 'later' },
+              'submit',
+              'Insurance'
+            );
+          }
+          return { status: 200 };
+        });
+        await handler.replayRequests();
+        expect(accepted).toEqual(['old', 'middle', 'new']);
+        expect(await handler.dbHasRequest('submit')).toBe(true);
+        await handler.replayRequests();
+        expect(accepted).toEqual(['old', 'middle', 'new', 'later']);
+        expect(await handler.dbHasRequest()).toBe(false);
+      });
+    });
+
+    it('replays a queued step save before sending its completion event', async () => {
+      const queued: { type: string; stepKey?: string; url: string }[] = [];
+      const persisted: string[] = [];
+      (handler as any).indexedDBSupported = true;
+      jest
+        .spyOn(handler, 'dbHasRequest')
+        .mockImplementation(async (type?: string) =>
+          queued.some((request) => !type || request.type === type)
+        );
+      jest
+        .spyOn(handler, 'saveRequest')
+        .mockImplementation(async (url, _options, type, stepKey) => {
+          queued.push({ url, type, stepKey });
+        });
+      jest
+        .spyOn(handler, 'clearFailedRequestsByStep')
+        .mockImplementation(async (stepKey) => {
+          queued.splice(
+            0,
+            queued.length,
+            ...queued.filter((request) => request.stepKey !== stepKey)
+          );
+        });
+      jest.spyOn(handler, 'replayRequests').mockImplementation(async () => {
+        queued.forEach((request) => {
+          if (request.type === 'submit') persisted.push('step save');
+        });
+        queued.splice(0, queued.length);
+      });
+
+      await expect(
+        handler.runOrSaveRequest(
+          async () => {
+            throw new TypeError('Failed to fetch');
+          },
+          '/panel/step/submit/v3/',
+          { method: 'POST', body: '{}' },
+          'submit',
+          'Insurance'
+        )
+      ).rejects.toThrow('Failed to fetch');
+
+      await handler.runOrSaveRequest(
+        async () => {
+          persisted.push('complete event');
+        },
+        '/event/',
+        { method: 'POST', body: '{}' },
+        'registerEvent',
+        'Insurance'
+      );
+
+      expect(persisted).toEqual(['step save', 'complete event']);
+    });
+
+    it('keeps completion queued while a step save cannot be replayed', async () => {
+      const queued: { type: string; stepKey?: string; url: string }[] = [];
+      (handler as any).indexedDBSupported = true;
+      jest
+        .spyOn(handler, 'dbHasRequest')
+        .mockImplementation(async (type?: string) =>
+          queued.some((request) => !type || request.type === type)
+        );
+      jest
+        .spyOn(handler, 'saveRequest')
+        .mockImplementation(async (url, _options, type, stepKey) => {
+          queued.push({ url, type, stepKey });
+        });
+      jest.spyOn(handler, 'replayRequests').mockResolvedValue();
+      const sendEvent = jest.fn();
+
+      await expect(
+        handler.runOrSaveRequest(
+          async () => {
+            throw new TypeError('Failed to fetch');
+          },
+          '/panel/step/submit/v3/',
+          { method: 'POST', body: '{}' },
+          'submit',
+          'Insurance'
+        )
+      ).rejects.toThrow('Failed to fetch');
+
+      await handler.runOrSaveRequest(
+        sendEvent,
+        '/event/',
+        { method: 'POST', body: '{}' },
+        'registerEvent',
+        'Insurance'
+      );
+
+      expect(sendEvent).not.toHaveBeenCalled();
+      expect(queued.map((request) => request.type)).toEqual([
+        'submit',
+        'registerEvent'
+      ]);
+    });
+
+    it('does not acknowledge completion when the event request resolves without a response', async () => {
+      await expect(
+        handler.runOrSaveRequest(
+          async () => undefined,
+          '/event/',
+          { method: 'POST', body: '{}' },
+          'registerEvent',
+          'Insurance',
+          { requireAcknowledgement: true }
+        )
+      ).rejects.toThrow('The submission could not be completed');
+    });
+
+    it('does not queue a terminal event whose network request failed', async () => {
+      const save = jest.spyOn(handler, 'saveRequest');
+
+      await expect(
+        handler.runOrSaveRequest(
+          async () => {
+            throw new TypeError('Failed to fetch');
+          },
+          '/event/',
+          { method: 'POST', body: '{}' },
+          'registerEvent',
+          'Insurance',
+          { requireAcknowledgement: true }
+        )
+      ).rejects.toThrow('Failed to fetch');
+
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('holds an event behind a queued partial custom write', async () => {
+      const queued = [{ type: 'customRequest', stepKey: 'Insurance' }];
+      (handler as any).indexedDBSupported = true;
+      jest
+        .spyOn(handler, 'dbHasRequest')
+        .mockImplementation(async (type?: string) =>
+          queued.some((request) => !type || request.type === type)
+        );
+      jest.spyOn(handler, 'replayRequests').mockResolvedValue();
+      jest
+        .spyOn(handler, 'saveRequest')
+        .mockImplementation(async (_url, _options, type, stepKey) => {
+          queued.push({ type, stepKey });
+        });
+      const sendEvent = jest.fn();
+
+      await handler.runOrSaveRequest(
+        sendEvent,
+        '/event/',
+        { method: 'POST', body: '{}' },
+        'registerEvent',
+        'Insurance'
+      );
+
+      expect(sendEvent).not.toHaveBeenCalled();
+      expect(queued.map((request) => request.type)).toEqual([
+        'customRequest',
+        'registerEvent'
+      ]);
+    });
+
+    it('supersedes only an older full step snapshot after a successful retry', async () => {
+      const queued: {
+        type: string;
+        stepKey?: string;
+        url: string;
+        key?: number;
+      }[] = [];
+      const stepUrl = '/panel/step/submit/v3/';
+      (handler as any).indexedDBSupported = true;
+      jest
+        .spyOn(handler, 'dbHasRequest')
+        .mockImplementation(async (type?: string) =>
+          queued.some((request) => !type || request.type === type)
+        );
+      jest
+        .spyOn(handler, 'saveRequest')
+        .mockImplementation(async (url, _options, type, stepKey) => {
+          queued.push({ url, type, stepKey, key: queued.length + 1 });
+        });
+      jest.spyOn(handler, 'replayRequests').mockResolvedValue();
+      jest
+        .spyOn(handler as any, 'getFailedStepRequestKeys')
+        .mockImplementation(async (stepKey: string, url: string) =>
+          queued
+            .filter(
+              (row) =>
+                row.type === 'submit' &&
+                row.stepKey === stepKey &&
+                row.url === url
+            )
+            .map((row) => row.key)
+        );
+      jest
+        .spyOn(handler as any, 'deleteRecordsWhere')
+        .mockImplementation(
+          async (
+            predicate: (request: typeof queued[number], key?: number) => boolean
+          ) => {
+            queued.splice(
+              0,
+              queued.length,
+              ...queued.filter(
+                (row) => !predicate({ ...row, formKey: 'test-form' }, row.key)
+              )
+            );
+          }
+        );
+
+      await expect(
+        handler.runOrSaveRequest(
+          async () => {
+            throw new TypeError('Failed to fetch');
+          },
+          stepUrl,
+          { method: 'POST', body: '{"name":"old"}' },
+          'submit',
+          'Insurance'
+        )
+      ).rejects.toThrow('Failed to fetch');
+      queued.push(
+        {
+          type: 'submit',
+          stepKey: 'Insurance',
+          url: '/panel/step/submit/file/'
+        },
+        { type: 'submit', stepKey: 'Other', url: stepUrl },
+        { type: 'submit', url: '/panel/custom/submit/v3/' },
+        { type: 'registerEvent', stepKey: 'Insurance', url: '/event/' }
+      );
+
+      await handler.runOrSaveRequest(
+        async () => ({ ok: true }),
+        stepUrl,
+        { method: 'POST', body: '{"name":"new"}' },
+        'submit',
+        'Insurance'
+      );
+
+      expect(queued).toEqual([
+        {
+          type: 'submit',
+          stepKey: 'Insurance',
+          url: '/panel/step/submit/file/'
+        },
+        { type: 'submit', stepKey: 'Other', url: stepUrl },
+        { type: 'submit', url: '/panel/custom/submit/v3/' },
+        { type: 'registerEvent', stepKey: 'Insurance', url: '/event/' }
+      ]);
+    });
+
+    it('retains a newer queued snapshot when an older concurrent save succeeds', async () => {
+      const queued: any[] = [];
+      const stepUrl = '/panel/step/submit/v3/';
+      let nextKey = 1;
+      (handler as any).indexedDBSupported = true;
+      jest
+        .spyOn(handler, 'saveRequest')
+        .mockImplementation(async (url, options, type, stepKey) => {
+          queued.push({
+            key: nextKey++,
+            formKey: 'test-form',
+            url,
+            type,
+            stepKey,
+            body: options.body
+          });
+        });
+      jest
+        .spyOn(handler, 'dbHasRequest')
+        .mockImplementation(async (type) =>
+          queued.some((row) => !type || row.type === type)
+        );
+      jest.spyOn(handler, 'replayRequests').mockResolvedValue();
+      jest
+        .spyOn(handler as any, 'getDbTransaction')
+        .mockImplementation(async () => ({
+          store: {
+            openCursor: () => {
+              const request: any = {};
+              const rows = [...queued];
+              let index = 0;
+              const advance = () => {
+                const row = rows[index];
+                request.onsuccess?.({
+                  target: {
+                    result: row
+                      ? {
+                          value: row,
+                          key: row.key,
+                          delete: () => queued.splice(queued.indexOf(row), 1),
+                          continue: () => {
+                            index++;
+                            Promise.resolve().then(advance);
+                          }
+                        }
+                      : null
+                  }
+                });
+              };
+              Promise.resolve().then(advance);
+              return request;
+            }
+          }
+        }));
+      let finishOlder!: (response: any) => void;
+      let olderStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        olderStarted = resolve;
+      });
+      const older = handler.runOrSaveRequest(
+        () => {
+          olderStarted();
+          return new Promise((resolve) => {
+            finishOlder = resolve;
+          });
+        },
+        stepUrl,
+        { method: 'POST', body: '{"name":"old"}' },
+        'submit',
+        'Insurance'
+      );
+      await started;
+      await expect(
+        handler.runOrSaveRequest(
+          async () => {
+            throw new TypeError('Failed to fetch');
+          },
+          stepUrl,
+          { method: 'POST', body: '{"name":"new"}' },
+          'submit',
+          'Insurance'
+        )
+      ).rejects.toThrow('Failed to fetch');
+      finishOlder({ ok: true });
+      await older;
+      expect(queued.map((row) => row.body)).toEqual(['{"name":"new"}']);
+      const complete = jest.fn().mockResolvedValue({ ok: true });
+      await expect(
+        handler.runOrSaveRequest(
+          complete,
+          '/event/',
+          { method: 'POST', body: '{}' },
+          'registerEvent',
+          'Insurance',
+          { requireAcknowledgement: true }
+        )
+      ).rejects.toThrow('Some answers are still being saved');
+      expect(complete).not.toHaveBeenCalled();
+      await handler.runOrSaveRequest(
+        async () => ({ ok: true }),
+        stepUrl,
+        { method: 'POST', body: '{"name":"new"}' },
+        'submit',
+        'Insurance'
+      );
+      expect(queued).toEqual([]);
+      await handler.runOrSaveRequest(
+        complete,
+        '/event/',
+        { method: 'POST', body: '{}' },
+        'registerEvent',
+        'Insurance',
+        { requireAcknowledgement: true }
+      );
+      expect(complete).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases replay after connectivity drops so reconnect can save before completion', async () => {
+      const originalFetch = (global as any).fetch;
+      const queued: any[] = [
+        {
+          formKey: 'test-form',
+          key: 1,
+          timestamp: 1,
+          type: 'submit',
+          stepKey: 'Insurance',
+          url: '/step/',
+          method: 'POST',
+          headers: '{}',
+          body: '{}',
+          bodyType: 'text',
+          retryAttempts: 0
+        },
+        {
+          formKey: 'test-form',
+          key: 2,
+          timestamp: 2,
+          type: 'registerEvent',
+          stepKey: 'Insurance',
+          url: '/event/',
+          method: 'POST',
+          headers: '{}',
+          body: '{}',
+          bodyType: 'text',
+          retryAttempts: 0
+        }
+      ];
+      (handler as any).indexedDBSupported = true;
+      jest
+        .spyOn(handler, 'dbHasRequest')
+        .mockImplementation(async (type) =>
+          queued.some((row) => !type || row.type === type)
+        );
+      jest
+        .spyOn(handler as any, 'hasReplayableRequest')
+        .mockResolvedValue(false);
+      jest
+        .spyOn(handler as any, 'getDbTransaction')
+        .mockImplementation(async () => ({
+          store: {
+            openCursor: () => {
+              const request: any = {};
+              const rows = [...queued];
+              let index = 0;
+              const advance = () => {
+                const row = rows[index];
+                request.onsuccess?.({
+                  target: {
+                    result: row
+                      ? {
+                          value: row,
+                          key: row.key,
+                          continue: () => {
+                            index++;
+                            Promise.resolve().then(advance);
+                          }
+                        }
+                      : null
+                  }
+                });
+              };
+              Promise.resolve().then(advance);
+              return request;
+            },
+            get: (key: number) => {
+              const request: any = {};
+              Promise.resolve().then(() => {
+                request.result = queued.find((row) => row.key === key);
+                request.onsuccess?.();
+              });
+              return request;
+            },
+            put: (row: any, key: number) => {
+              queued[queued.findIndex((old) => old.key === key)] = row;
+            },
+            delete: (key: number) => {
+              queued.splice(
+                queued.findIndex((row) => row.key === key),
+                1
+              );
+            }
+          }
+        }));
+      (global as any).fetch = jest.fn().mockImplementation(async () => {
+        (global.navigator as any).onLine = false;
+        throw new TypeError('Failed to fetch');
+      });
+      try {
+        const settled = await Promise.race([
+          handler.replayRequests().then(() => true),
+          new Promise<boolean>((resolve) =>
+            setTimeout(() => resolve(false), 1000)
+          )
+        ]);
+        expect(settled).toBe(true);
+        expect(queued.map((row) => row.type)).toEqual([
+          'submit',
+          'registerEvent'
+        ]);
+        expect(queued[0].retryAttempts).toBe(1);
+        (global.navigator as any).onLine = true;
+        const persisted: string[] = [];
+        (global as any).fetch = jest
+          .fn()
+          .mockImplementation(async (url: string) => {
+            persisted.push(url);
+            return { status: 200 };
+          });
+        await handler.replayRequests();
+        expect(persisted).toEqual(['/step/', '/event/']);
+        expect(queued).toEqual([]);
+      } finally {
+        (global as any).fetch = originalFetch;
+        (global.navigator as any).onLine = true;
+      }
+    });
+
+    it('does not replay queued completion until a failed step save succeeds', async () => {
+      const queued = [
+        {
+          type: 'submit',
+          stepKey: 'Insurance',
+          url: '/step/',
+          timestamp: 1,
+          value: 'old'
+        },
+        {
+          type: 'submit',
+          stepKey: 'Insurance',
+          url: '/step/',
+          timestamp: 2,
+          value: 'new'
+        },
+        {
+          type: 'registerEvent',
+          stepKey: 'Insurance',
+          url: '/event/',
+          timestamp: 3,
+          value: ''
+        }
+      ];
+      const replayed: string[] = [];
+      let saveSucceeds = false;
+      (handler as any).indexedDBSupported = true;
+      jest
+        .spyOn(handler, 'dbHasRequest')
+        .mockImplementation(async (type?: string) =>
+          queued.some((request) => !type || request.type === type)
+        );
+      jest
+        .spyOn(handler as any, 'hasReplayableRequest')
+        .mockResolvedValue(false);
+      jest
+        .spyOn(handler as any, 'getDbTransaction')
+        .mockImplementation(async () => ({
+          store: {
+            openCursor: () => {
+              const request: { onsuccess?: (event: any) => void } = {};
+              let index = 0;
+              const advance = () => {
+                const row = queued[index];
+                request.onsuccess?.({
+                  target: {
+                    result: row
+                      ? {
+                          value: row,
+                          key: index + 1,
+                          continue: () => {
+                            index++;
+                            Promise.resolve().then(advance);
+                          }
+                        }
+                      : null
+                  }
+                });
+              };
+              Promise.resolve().then(advance);
+              return request;
+            }
+          }
+        }));
+      jest
+        .spyOn(handler as any, 'replayRequestsInParallel')
+        .mockImplementation(async (requests: typeof queued) => {
+          let saved = true;
+          requests.forEach((request) => {
+            if (request.value === 'old' && !saveSucceeds) {
+              saved = false;
+              return;
+            }
+            replayed.push(request.value || request.type);
+            const index = queued.indexOf(request);
+            if (index !== -1) queued.splice(index, 1);
+          });
+          return [saved];
+        });
+
+      await handler.replayRequests();
+      expect(replayed).toEqual([]);
+      expect(queued).toHaveLength(3);
+
+      saveSucceeds = true;
+      await handler.replayRequests();
+      expect(replayed).toEqual(['old', 'new', 'registerEvent']);
+      expect(queued).toEqual([]);
+    });
+
     it('executes request immediately when online', async () => {
       const mockRun = jest.fn().mockResolvedValue({ ok: true });
 
@@ -577,6 +1430,30 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       (global as any).fetch = originalFetch;
     });
 
+    it('keeps a conflicted step save queued and blocks later replay', async () => {
+      const originalFetch = (global as any).fetch;
+      (global as any).fetch = jest
+        .fn()
+        .mockRejectedValue(new FormConflictError());
+      const remove = jest.spyOn(handler as any, 'removeRequest');
+
+      const result = await (handler as any).replayRequestsInParallel([
+        {
+          url: '/panel/step/submit/v3/',
+          method: 'POST',
+          headers: JSON.stringify({}),
+          body: '{}',
+          bodyType: 'text',
+          key: 10,
+          retryAttempts: 0
+        }
+      ]);
+
+      expect(result).toEqual([false]);
+      expect(remove).not.toHaveBeenCalled();
+      (global as any).fetch = originalFetch;
+    });
+
     it('does not alert when max retries exhausted for specific field upload', async () => {
       const handlerWithCallback = new OfflineRequestHandler(
         'test-form',
@@ -787,9 +1664,12 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       const hasRequest1 = await handler1.dbHasRequest();
       const hasRequest2 = await handler2.dbHasRequest();
 
-      // Both should handle gracefully (false without IndexedDB)
-      expect(hasRequest1).toBe(false);
-      expect(hasRequest2).toBe(false);
+      // Storage failures now retain each form's writes in its own memory queue.
+      expect(hasRequest1).toBe(true);
+      expect(hasRequest2).toBe(true);
+      await handler1.clearFailedRequestByUrl('https://api.example.com/1');
+      expect(await handler1.dbHasRequest()).toBe(false);
+      expect(await handler2.dbHasRequest()).toBe(true);
     });
   });
 
