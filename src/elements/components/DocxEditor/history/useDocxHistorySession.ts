@@ -251,12 +251,37 @@ export function useDocxHistorySession(
       sent: { current: DocxSaveMeta },
       renew: (stale: DocxSaveMeta) => DocxSaveMeta
     ) => {
+      let result: Awaited<ReturnType<typeof saveDocument>>;
       try {
-        return await saveDocument(blob, sent.current);
+        result = await saveDocument(blob, sent.current);
       } catch (error) {
         if (!isSessionConflict(error)) throw error;
         sent.current = renew(sent.current);
-        return saveDocument(blob, sent.current);
+        result = await saveDocument(blob, sent.current);
+      }
+      savedSessions.add(sent.current.sessionId);
+      return result;
+    };
+    // Sessions with a stored save; only these have a backend version row.
+    const savedSessions = new Set<string>();
+    // An unsaved session whose document still matches its start changed
+    // nothing, so it is never sent and leaves no version row.
+    const isUnsavedNoOp = (sessionId: string, current: string | null) => {
+      if (
+        savedSessions.has(sessionId) ||
+        documentWrites.pending() ||
+        acceptanceRef.current ||
+        !s0Ref.current ||
+        !current
+      )
+        return false;
+      try {
+        return (
+          contentHash(normalizeForDiff(JSON.parse(s0Ref.current))) ===
+          contentHash(normalizeForDiff(JSON.parse(current)))
+        );
+      } catch {
+        return false;
       }
     };
     // Close/checkpoint uploads mutate the same backend row. Keep them in one
@@ -465,6 +490,14 @@ export function useDocxHistorySession(
       } catch {
         fStr = null; // Serialize failed: the row keeps its docx pair only.
       }
+      if (isUnsavedNoOp(meta.sessionId, fStr)) {
+        slices.clear();
+        s0Ref.current = null;
+        robinRunsRef.current = [];
+        baselineRef.current = fStr;
+        setStatus(tracker.isOpen() ? 'dirty' : 'saved');
+        return undefined;
+      }
       const snap: CloseSnapshot = {
         host: hostRef.current,
         fStr,
@@ -553,6 +586,13 @@ export function useDocxHistorySession(
       save: async () => {
         const meta = tracker.currentMeta();
         if (!meta) return;
+        let current: string | null = null;
+        try {
+          current = editorRef.current?.serialize() ?? null;
+        } catch {
+          current = null;
+        }
+        if (isUnsavedNoOp(meta.sessionId, current)) return;
         const saveDocument = saveRef.current;
         const epoch = documentEpochRef.current;
         const checkpointRequest = requestedCheckpoint;
@@ -1036,8 +1076,8 @@ export function useDocxHistorySession(
         { sfdt: fDoc, author: currentAuthorRef.current }
       ];
       const startDoc = JSON.parse(s0Ref.current);
-      // The backend removes net-zero versions. Do not display intermediate
-      // author-boundary edits after the document has been fully undone.
+      // Do not display intermediate author-boundary edits after the document
+      // has been fully undone.
       const unchanged =
         contentHash(normalizeForDiff(startDoc)) ===
         contentHash(normalizeForDiff(fDoc));

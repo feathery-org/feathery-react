@@ -15,6 +15,7 @@ import {
   initialsForAuthor
 } from './authorColors';
 import { groupVersions, MonthSection } from './versionGrouping';
+import { hideNoOpVersions } from './noOpVersions';
 import {
   DocxHistoryHost,
   DocxVersion,
@@ -294,7 +295,7 @@ export default function HistoryPanel({
     try {
       const rows = await host.listVersions();
       if (id === reqId.current) {
-        setVersions(rows);
+        setVersions(hideNoOpVersions(rows));
         onVersionsLoadedRef.current?.(rows);
       }
     } catch {
