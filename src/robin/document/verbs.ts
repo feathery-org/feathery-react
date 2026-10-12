@@ -299,6 +299,28 @@ export function prepareWrite(
   // Section 6.2: read-only keys on written nodes are stripped with a warning.
   const strippedKeys = new Set<string>();
   const residueKeys = Object.keys(pack.residueKeys ?? {});
+  // A stub written back (`{id, kind}` and its hashes, as `read` with stubs returns children) stands
+  // for that node as read, its whole subtree: in place it keeps the node, elsewhere it copies it.
+  const STUB_KEYS = new Set(['id', 'kind', 'base', 'shape']);
+  const expandStubs = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(expandStubs);
+    if (!isPlainObject(value)) return value;
+    const keys = Object.keys(value);
+    const id = value.id;
+    if (
+      typeof id === 'string' &&
+      isNodeId(id) &&
+      keys.every((k) => STUB_KEYS.has(k)) &&
+      view.get(id) &&
+      (value.kind === undefined || value.kind === view.get(id)?.kind)
+    ) {
+      const { node } = stripReadOnlyKeys(clone(view.get(id) as NfNode));
+      return node;
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, expandStubs(v)])
+    );
+  };
   const changes: Change[] = write.changes.map((change) => {
     if (change.kind === 'set') {
       // a property the residue holds is not the model's to set either
@@ -312,7 +334,7 @@ export function prepareWrite(
     }
     if (!('node' in change)) return clone(change);
     const { node, stripped } = stripReadOnlyKeys(
-      clone(change.node),
+      expandStubs(clone(change.node)) as typeof change.node,
       residueKeys
     );
     stripped.forEach((k) => strippedKeys.add(k));
@@ -504,6 +526,22 @@ export function prepareWrite(
     return false;
   };
 
+  // Changes on one anchor land in the order listed (contract 6.1): each placement after an anchor
+  // goes after what the last one placed there, not straight after the anchor.
+  const placedAfter = new Map<string, Record<string, unknown>>();
+  /** Where a node goes after `anchor`: after the last node placed after it, while that sits beside it. */
+  const afterIndex = (
+    anchorId: string,
+    parent: NfNode,
+    key: string,
+    anchorIndex: number
+  ): number => {
+    const last = placedAfter.get(anchorId);
+    const list = listOf(parent, key) as unknown[];
+    const at = last ? list.indexOf(last) : -1;
+    return at > anchorIndex ? at + 1 : anchorIndex + 1;
+  };
+
   changes.forEach((change, i) => {
     const at = `changes[${i}]`;
     switch (change.kind) {
@@ -545,12 +583,15 @@ export function prepareWrite(
         const node = change.node as Record<string, unknown>;
         if (!prepare(node, anchor.parent.kind, anchor.key, `${at}.node`))
           return;
-        const offset = change.kind === 'insert_after' ? 1 : 0;
         listOf(anchor.parent, anchor.key).splice(
-          anchor.index + offset,
+          change.kind === 'insert_after'
+            ? afterIndex(change.anchor, anchor.parent, anchor.key, anchor.index)
+            : anchor.index,
           0,
           node
         );
+        if (change.kind === 'insert_after')
+          placedAfter.set(change.anchor, node);
         written.add(node);
         reindex();
         const where = change.kind === 'insert_after' ? 'after' : 'before';
@@ -618,10 +659,14 @@ export function prepareWrite(
           return;
         }
         listOf(anchor.parent, anchor.key).splice(
-          anchor.index + (change.position === 'after' ? 1 : 0),
+          change.position === 'after'
+            ? afterIndex(change.anchor, anchor.parent, anchor.key, anchor.index)
+            : anchor.index,
           0,
           node
         );
+        if (change.position === 'after')
+          placedAfter.set(change.anchor, node as Record<string, unknown>);
         reindex();
         factsFor.push(() => ({
           kind: 'moved',

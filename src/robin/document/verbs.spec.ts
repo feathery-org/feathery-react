@@ -173,6 +173,117 @@ describe('outline', () => {
 });
 
 describe('write: verified changes', () => {
+  it('a stub written back stands for the node as read (matrix-2 T10: a section copied from a stubs read)', () => {
+    const s = fresh();
+    const stub = (id: string) => ({
+      id,
+      kind: s.view.get(id)?.kind,
+      base: b(s, id),
+      shape: sh(s, id)
+    });
+    // a stub inside a replaced container keeps that child as it was
+    const r = prepareWrite(
+      s,
+      write({
+        intent: 'x',
+        scope: { ids: ['n2'] },
+        changes: [
+          {
+            kind: 'replace',
+            id: 'n2',
+            base: b(s, 'n2'),
+            node: {
+              kind: 'box',
+              name: 'alpha',
+              items: [stub('n3'), { kind: 'para', text: 'new' }]
+            }
+          }
+        ]
+      } as WriteInput)
+    );
+    if (r.outcome !== 'verified')
+      throw new Error(JSON.stringify(r).slice(0, 400));
+    const items = (r.intended.root.blocks as NfNode[])[1].items as NfNode[];
+    expect(items[0]).toEqual(
+      expect.objectContaining({ id: 'n3', text: 'one' })
+    );
+    // a stub of a kept node written elsewhere is a copy of the whole node, with a new id
+    const c = prepareWrite(
+      fresh(),
+      write({
+        intent: 'x',
+        scope: { ids: [] },
+        changes: [
+          {
+            kind: 'insert_after',
+            anchor: 'n5',
+            container: sh(s, 'root'),
+            node: { id: 'n1', kind: 'para' }
+          }
+        ]
+      } as WriteInput)
+    );
+    if (c.outcome !== 'verified')
+      throw new Error(JSON.stringify(c).slice(0, 400));
+    const last = (c.intended.root.blocks as NfNode[]).slice(-1)[0];
+    expect(last.text).toBe('Title');
+    expect(last.id).not.toBe('n1');
+  });
+
+  it('changes on one anchor land in the order listed (matrix-2 T7: six inserts after one paragraph)', () => {
+    const s = fresh();
+    const after = (text: string) => ({
+      kind: 'insert_after',
+      anchor: 'n1',
+      container: sh(s, 'root'),
+      node: { kind: 'para', text }
+    });
+    const r = prepareWrite(
+      s,
+      write({
+        intent: 'x',
+        scope: { ids: [] },
+        changes: [after('a'), after('b'), after('c')]
+      } as WriteInput)
+    );
+    if (r.outcome !== 'verified') throw new Error(r.outcome);
+    const texts = (r.intended.root.blocks as NfNode[]).map(
+      (b) => b.text ?? b.kind
+    );
+    expect(texts.slice(0, 4)).toEqual(['Title', 'a', 'b', 'c']);
+    // moves after one anchor keep their order too
+    const m = prepareWrite(
+      fresh(),
+      write({
+        intent: 'x',
+        scope: { ids: ['n3', 'n4'] },
+        changes: [
+          {
+            kind: 'move',
+            id: 'n3',
+            shape: sh(s, 'n3'),
+            anchor: 'n1',
+            position: 'after',
+            container: sh(s, 'root')
+          },
+          {
+            kind: 'move',
+            id: 'n4',
+            shape: sh(s, 'n4'),
+            anchor: 'n1',
+            position: 'after',
+            container: sh(s, 'root')
+          }
+        ]
+      } as WriteInput)
+    );
+    if (m.outcome !== 'verified')
+      throw new Error(JSON.stringify(m).slice(0, 400));
+    expect(
+      (m.intended.root.blocks as NfNode[]).slice(0, 3).map((b) => b.id)
+    ).toEqual(['n1', 'n3', 'n4']);
+  });
+
   it('inserts with temporary ids, sets on a temporary id, recomputes formulas, and reports facts', () => {
     const s = fresh();
     const r = prepareWrite(
