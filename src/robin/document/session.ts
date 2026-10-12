@@ -367,6 +367,7 @@ export class DocumentSession {
                   conserved: outcome.proof.conservedDiff,
                   authorship: outcome.proof.authorshipDiff
                 },
+                read: [...(this.pack.methodCards ?? [])],
                 retry: rolledBack ? 'modified_input' : 'do_not_retry'
               }
             )
@@ -374,6 +375,7 @@ export class DocumentSession {
               'apply-failed',
               `The editor could not place the change (${outcome.error}), so ${restored}.`,
               {
+                read: [...(this.pack.methodCards ?? [])],
                 retry: rolledBack ? 'modified_input' : 'do_not_retry'
               }
             );

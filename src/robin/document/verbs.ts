@@ -686,7 +686,8 @@ export function prepareWrite(
   for (const finalizer of pack.finalizers) {
     const result = finalizer.run(working, {
       before: view,
-      formats: formatTable
+      formats: formatTable,
+      residue: state.residue
     });
     finalizerScope.push({ name: finalizer.name, ids: [...result.ids] });
     result.ids.forEach((id) => finalizerIds.add(id));

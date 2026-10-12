@@ -9,7 +9,10 @@ import { toNormalForm } from './adapter/toNormalForm';
 import { bindingAnnotations } from './features/binding';
 import { formulasFinalizer } from './finalizers/formulas';
 import { restripeFinalizer } from './finalizers/appearance';
-import { tableGeometryReport } from './finalizers/geometry';
+import {
+  tableGeometryReport,
+  widthUnitsFinalizer
+} from './finalizers/geometry';
 import { cardCollections } from './card';
 import {
   copiedBookmarksFinalizer,
@@ -89,6 +92,7 @@ export const docxPack: Pack = {
     rowIdentityFinalizer,
     formulasFinalizer,
     restripeFinalizer,
+    widthUnitsFinalizer,
     tableGeometryReport
   ],
   projections: {
@@ -106,6 +110,8 @@ export const docxPack: Pack = {
   reconcile: { plan },
   seams: { text: textSeam, format: formatSeam, splice: spliceSeam },
   featureKeys: FEATURE_KEYS,
+  // the server's card for how to edit a document (what it attached to these refusals on the rig)
+  methodCards: ['edit-document'],
   cardCollections,
   cardNouns: {
     section: ['section', 'sections'],

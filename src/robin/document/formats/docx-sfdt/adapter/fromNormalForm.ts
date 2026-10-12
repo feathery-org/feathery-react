@@ -324,7 +324,21 @@ export function fromNormalForm(
       record.geometry === geometrySignature(table)
     )
       return;
-    table.grid = derivedGrid(table);
+    // widths in points: a percent of the width the table had, an Auto cell its laid-out width
+    const before = record?.hidden.grid;
+    const total = Array.isArray(before)
+      ? before.reduce((n: number, w) => n + (Number(w) || 0), 0)
+      : 0;
+    const pointsOf = (cell: Obj): number => {
+      const cf = (cell.cellFormat as Obj | undefined) ?? {};
+      const width = Number(cf.preferredWidth);
+      if (cf.preferredWidthType === 'Percent' && Number.isFinite(width))
+        return total > 0 ? (width / 100) * total : width;
+      if (Number.isFinite(width) && cf.preferredWidthType !== 'Auto')
+        return width;
+      return Number(cf.cellWidth) || 0;
+    };
+    table.grid = derivedGrid(table, pointsOf);
     table.columnCount = derivedColumnCount(table);
     for (const row of arr<Obj>(table.rows)) {
       const indices = columnIndices(row);
@@ -335,7 +349,7 @@ export function fromNormalForm(
         if (!isObject(cf) || typeof cf.preferredWidth !== 'number') return;
         const keep =
           rec && rec.preferredWidth === cf.preferredWidth && 'cellWidth' in cf;
-        if (!keep) cf.cellWidth = cf.preferredWidth;
+        if (!keep) cf.cellWidth = pointsOf(cell);
       });
     }
   }

@@ -345,10 +345,13 @@ export function rollback(
       };
   }
   host.open(beforeNative);
-  const byteEqual = host.serialize() === beforeNative;
+  // the editor may lay a reopened document out again (cell widths, measured on the rig): the
+  // same document under the pack's normalizations is a rollback that worked
+  const now = host.serialize();
+  const byteEqual = now === beforeNative;
   return {
     byteEqual,
-    equivalent: byteEqual,
+    equivalent: byteEqual || equivalent(now),
     via: 'snapshot',
     undoSteps: steps
   };

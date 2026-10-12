@@ -230,6 +230,8 @@ export interface Invariant {
 export interface FinalizerContext {
   before: DocumentView;
   formats: FormatTable;
+  /** The residue of the document before: native data the normal form does not show (laid-out sizes, say). */
+  residue: Residue;
 }
 
 export interface FinalizerResult {
@@ -413,6 +415,11 @@ export interface Pack {
     count: number;
     ids: string[];
   }>;
+  /**
+   * The knowledge cards that teach how to write to this format: what a refusal of the core's own
+   * commit checks (a failed proof, a change the editor could not place) tells the model to read.
+   */
+  methodCards?: readonly string[];
   /** Own fields that are content rather than formatting (a binding): a change to one is an edit. */
   featureKeys?: readonly string[];
 }

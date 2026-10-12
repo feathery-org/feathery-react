@@ -454,6 +454,46 @@ describe('document session: the four verbs end to end', () => {
     expect(host.serialize()).toBe(doc);
   });
 
+  it("a failed proof names the pack's method cards, so the model knows what to read before retrying", () => {
+    const host = new ToyHost(doc);
+    const session = new DocumentSession({
+      pack: makeToyPack({ methodCards: ['writing-method'] }),
+      host,
+      target,
+      editorId: 'ed-1'
+    });
+    const send = (verb: string, input: unknown) => {
+      const out = session.dispatch({
+        protocolVersion: 1,
+        turnId: 't9',
+        editorId: 'ed-1',
+        target,
+        verb,
+        input
+      });
+      if (out.status !== 'ok') throw new Error('dispatch failed');
+      return out.response.result as any;
+    };
+    const n2 = send('read', { ids: ['n2'] }).nodes.find(
+      (n: { id: string }) => n.id === 'n2'
+    );
+    host.corruptNextSeam = true;
+    const result = send('write', {
+      intent: 'Add a line.',
+      scope: { ids: [] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: 'n4',
+          container: n2.shape,
+          node: { text: 'Cyber', style: 'f2' }
+        }
+      ]
+    });
+    expect(result.refusal.invariant).toBe('proof-failed');
+    expect(result.refusal.read).toEqual(['writing-method']);
+  });
+
   it('a seam that drops native-only data fails the proof and rolls back (residue is proved too)', () => {
     const { host, call } = mount();
     const n3 = nodeOf(call('read', { ids: ['n3'] }), 'n3');

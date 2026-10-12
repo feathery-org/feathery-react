@@ -311,6 +311,14 @@ const api = {
     await frame();
   },
 
+  /** Test support: open bytes through the engine's host, as a rollback does. */
+  hostOpen(native: string): string {
+    if (!session) throw new Error('no session');
+    session.host.open(native);
+    // what a synchronous caller (the rollback) reads straight after the open
+    return session.host.serialize();
+  },
+
   /** The form's Robin turn settled (the hosted handler calls liveDocument.finishTurn()). */
   finishTurn() {
     session?.finishTurn();

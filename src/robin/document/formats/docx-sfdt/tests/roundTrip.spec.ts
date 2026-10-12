@@ -119,3 +119,23 @@ describe('pending changes both ways', () => {
     expect(inlines[1].revisionIds).toHaveLength(2);
   });
 });
+
+describe('table geometry by width unit', () => {
+  const cell = (cf: Record<string, unknown>) => ({ cellFormat: { ...cf, columnSpan: 1, rowSpan: 1 }, blocks: [{ inlines: [{ text: 'x' }] }] });
+  const native = JSON.stringify({
+    sections: [{ blocks: [{ tableFormat: { preferredWidth: 100, preferredWidthType: 'Percent' }, grid: [100, 300], columnCount: 2, rows: [{ rowFormat: {}, cells: [cell({ preferredWidth: 25, preferredWidthType: 'Percent', cellWidth: 100 }), cell({ preferredWidth: 75, preferredWidthType: 'Percent', cellWidth: 300 })] }] }] }]
+  });
+
+  it("derives a percent cell's laid-out width and the grid in points, from the table it had", () => {
+    const { nf, residue } = toNormalForm(native);
+    const table = (nf.root.sections as any)[0].blocks[0];
+    const [a, b] = table.rows[0].cells;
+    nf.formats.p20 = { ...nf.formats[a.style], preferredWidth: 20 };
+    nf.formats.p80 = { ...nf.formats[b.style], preferredWidth: 80 };
+    a.style = 'p20';
+    b.style = 'p80';
+    const out = JSON.parse(fromNormalForm(nf, residue)).sections[0].blocks[0];
+    expect(out.rows[0].cells.map((c: any) => c.cellFormat.cellWidth)).toEqual([80, 320]);
+    expect(out.grid).toEqual([80, 320]);
+  });
+});

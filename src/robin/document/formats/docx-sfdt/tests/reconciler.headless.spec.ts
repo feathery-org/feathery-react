@@ -396,6 +396,38 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(row.title).toBe('Removed a column');
   });
 
+  const firstColumn = (t: any) => t.rows.map((r: any) => r.cells[0]);
+  const percentFirst = (cells: any[]) =>
+    setOnAll(cells, { preferredWidth: 20, preferredWidthType: 'Percent' }, 'Narrow the first column to 20%.');
+  const setOnAll = (ns: any[], props: Record<string, unknown>, intent: string) => ({
+    intent,
+    scope: { ids: ns.map((n) => n.id) },
+    changes: [{ kind: 'set', target: { ids: ns.map((n) => n.id), shape: Object.fromEntries(ns.map((n) => [n.id, n.shape])) }, props }]
+  });
+
+  it('D19 a percent width on a column of a point-width table: the row keeps one unit, proof passes, undo exact', async () => {
+    const pre = await fresh();
+    const tid = await at(['sections', 1, 'blocks', 4]);
+    const t = (await read([tid]))[tid];
+    const row = await commitAndUndo('D19', pre, percentFirst(firstColumn(t)));
+    expect(row.proof).toBe('passed');
+    expect(row.undo).toMatch(/(byte-equal|equivalent)$/);
+  });
+
+  // QA-1 step 8 on the client's document (Premium Summary: a percent header row over Auto rows),
+  // replayed only where the private corpus is present; client data never enters the repo
+  const williamsPath = path.join(process.env.ROBIN_DOCUMENT_PRIVATE_CORPUS ?? '/nonexistent', 'hilb-williams.sfdt.json');
+  (fs.existsSync(williamsPath) ? it : it.skip)('D19W the QA percent width on a percent-over-Auto table inside a control: proof passes, rollback exact', async () => {
+    turn += 1;
+    await lane.call('open', fs.readFileSync(williamsPath, 'utf8'));
+    const pre = await lane.call<string>('settled');
+    const tid = await at(['sections', 5, 'blocks', 41, 'blocks', 0]);
+    const t = (await read([tid]))[tid];
+    const row = await commitAndUndo('D19W', pre, percentFirst(firstColumn(t)));
+    expect(row.proof).toBe('passed');
+    expect(row.undo).toMatch(/(byte-equal|equivalent)$/);
+  });
+
   afterAll(() => {
     // eslint-disable-next-line no-console
     console.log(

@@ -120,3 +120,69 @@ describe('formula finalizer: writing a control text', () => {
     expect(setControlText(control, '$7.00')).toEqual([]);
   });
 });
+
+describe('width units finalizer', () => {
+  // a table laid out 100 + 300 points: the header row in percent, the body rows Auto (laid out)
+  const cell = (text: string, cf: Record<string, unknown>) => ({ cellFormat: { ...cf, columnSpan: 1, rowSpan: 1 }, blocks: [{ inlines: [{ text }] }] });
+  const sfdt = JSON.stringify({
+    sections: [
+      {
+        blocks: [
+          {
+            tableFormat: { preferredWidth: 100, preferredWidthType: 'Percent' },
+            grid: [100, 300],
+            columnCount: 2,
+            rows: [
+              { rowFormat: {}, cells: [cell('Coverage', { preferredWidth: 25, preferredWidthType: 'Percent', cellWidth: 100 }), cell('Premium', { preferredWidth: 75, preferredWidthType: 'Percent', cellWidth: 300 })] },
+              { rowFormat: {}, cells: [cell('Auto', { preferredWidthType: 'Auto', cellWidth: 100 }), cell('$1', { preferredWidthType: 'Auto', cellWidth: 300 })] }
+            ]
+          }
+        ]
+      }
+    ]
+  });
+  const mount = () => {
+    let d = sfdt;
+    const host = { serialize: () => d, open: (x: string) => { d = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    return new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+  };
+
+  it('a percent width on one cell of a row of Auto cells gives the others their laid-out width in percent', () => {
+    const s = mount();
+    const table = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[0];
+    const firsts = arr<NfNode>(table.rows).map((r) => arr<NfNode>(r.cells)[0]);
+    const r = prepareWrite(s, {
+      intent: 'Narrow the first column to 20%.',
+      scope: { ids: firsts.map((c) => c.id) },
+      changes: [{ kind: 'set', target: { ids: firsts.map((c) => c.id), shape: Object.fromEntries(firsts.map((c) => [c.id, shapeOf(c, docxTree)])) }, props: { preferredWidth: 20, preferredWidthType: 'Percent' } }]
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 500));
+    const body = arr<NfNode>(arr<NfNode>(arr<NfNode>(arr<NfNode>(r.intended.root.sections)[0].blocks)[0].rows)[1].cells);
+    const w = (c: NfNode) => r.intended.formats[String(c.style)];
+    expect(w(body[0])).toEqual(expect.objectContaining({ preferredWidth: 20, preferredWidthType: 'Percent' }));
+    // the Auto sibling, laid out at 300 of 400 points, becomes 75 percent: the row has one unit
+    expect(w(body[1])).toEqual(expect.objectContaining({ preferredWidth: 75, preferredWidthType: 'Percent' }));
+    expect(r.facts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'finalizer', name: 'width-units' })]));
+  });
+
+  it('a percent width written into a row of point widths converts the row to percent', () => {
+    let d = sfdt.replace(/"preferredWidthType":"Auto","cellWidth":(\d+)/g, '"preferredWidth":$1,"preferredWidthType":"Point","cellWidth":$1');
+    const host = { serialize: () => d, open: (x: string) => { d = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+    const table = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[0];
+    const c = arr<NfNode>(arr<NfNode>(table.rows)[1].cells)[0];
+    const r = prepareWrite(s, { intent: 'x', scope: { ids: [c.id] }, changes: [{ kind: 'set', target: { ids: [c.id], shape: { [c.id]: shapeOf(c, docxTree) } }, props: { preferredWidth: 20, preferredWidthType: 'Percent' } }] } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(r.outcome);
+    const body = arr<NfNode>(arr<NfNode>(arr<NfNode>(arr<NfNode>(r.intended.root.sections)[0].blocks)[0].rows)[1].cells);
+    expect(r.intended.formats[String(body[1].style)]).toEqual(expect.objectContaining({ preferredWidth: 75, preferredWidthType: 'Percent' }));
+  });
+
+  it('leaves a row alone when every cell already has the unit, or none was written', () => {
+    const s = mount();
+    const table = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[0];
+    const head = arr<NfNode>(arr<NfNode>(table.rows)[0].cells)[0];
+    const r = prepareWrite(s, { intent: 'x', scope: { ids: [head.id] }, changes: [{ kind: 'set', target: { ids: [head.id], shape: { [head.id]: shapeOf(head, docxTree) } }, props: { preferredWidth: 30, preferredWidthType: 'Percent' } }] } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(r.outcome);
+    expect(r.facts.some((f) => f.kind === 'finalizer' && f.name === 'width-units')).toBe(false);
+  });
+});

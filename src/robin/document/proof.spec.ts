@@ -223,4 +223,20 @@ describe('rollback', () => {
     });
     expect(host.serialize()).toBe(A);
   });
+
+  it('a snapshot the editor reopens with re-laid-out bytes is equivalent, not a failed rollback', () => {
+    // measured on the HILB Williams document: reopening it, unchanged, re-lays out cell widths
+    const host = new ToyHost(A);
+    host.open(toyNative(para('replaced')));
+    const open = host.open.bind(host);
+    host.open = (native: string) => open(native === A ? `${A} ` : native);
+    expect(
+      rollback(host, A, { undoLimit: 0, equivalent: (now) => now.trim() === A })
+    ).toEqual({
+      byteEqual: false,
+      equivalent: true,
+      via: 'snapshot',
+      undoSteps: 0
+    });
+  });
 });

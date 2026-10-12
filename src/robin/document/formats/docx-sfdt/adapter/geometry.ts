@@ -36,7 +36,11 @@ export function derivedColumnCount(table: Obj): number {
 }
 
 /** Grid widths from the widest row; a spanned cell's width is split evenly across its columns. */
-export function derivedGrid(table: Obj): number[] {
+export function derivedGrid(
+  table: Obj,
+  widthOf: (cell: Obj) => number = (cell) =>
+    Number(fmt(cell, 'cellFormat').preferredWidth) || 0
+): number[] {
   const count = derivedColumnCount(table);
   const grid = new Array(count).fill(0);
   let best: Obj | null = null;
@@ -46,7 +50,7 @@ export function derivedGrid(table: Obj): number[] {
   let at = Number(fmt(best, 'rowFormat').gridBefore ?? 0);
   for (const cell of cellsOf(best)) {
     const s = span(cell);
-    const width = Number(fmt(cell, 'cellFormat').preferredWidth) || 0;
+    const width = widthOf(cell);
     for (let k = 0; k < s && at < count; k += 1, at += 1) grid[at] = width / s;
   }
   return grid;
