@@ -67,6 +67,8 @@ export interface UseDocxHistorySessionOptions {
   save: (blob: Blob, meta: DocxSaveMeta) => Promise<unknown>;
   /** Extra gate (the binding soft-gate): autosave holds while it is false. */
   canSave?: () => boolean;
+  /** A skipped save found the document back at its start: nothing is unsaved. */
+  onUnchanged?: () => void;
 }
 
 /** The current session's live change list, as the viewer would render a stored
@@ -148,7 +150,8 @@ export function useDocxHistorySession(
     openNonce,
     exportDoc,
     save,
-    canSave
+    canSave,
+    onUnchanged
   } = opts;
 
   const mountedRef = useRef(true);
@@ -183,6 +186,8 @@ export function useDocxHistorySession(
   hostRef.current = host;
   const canSaveRef = useRef(canSave);
   canSaveRef.current = canSave;
+  const onUnchangedRef = useRef(onUnchanged);
+  onUnchangedRef.current = onUnchanged;
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
   // Diff baseline (S0): must predate the first edit, and contentChange fires
@@ -495,6 +500,7 @@ export function useDocxHistorySession(
         s0Ref.current = null;
         robinRunsRef.current = [];
         baselineRef.current = fStr;
+        onUnchangedRef.current?.();
         setStatus(tracker.isOpen() ? 'dirty' : 'saved');
         return undefined;
       }
@@ -592,7 +598,10 @@ export function useDocxHistorySession(
         } catch {
           current = null;
         }
-        if (isUnsavedNoOp(meta.sessionId, current)) return;
+        if (isUnsavedNoOp(meta.sessionId, current)) {
+          onUnchangedRef.current?.();
+          return;
+        }
         const saveDocument = saveRef.current;
         const epoch = documentEpochRef.current;
         const checkpointRequest = requestedCheckpoint;

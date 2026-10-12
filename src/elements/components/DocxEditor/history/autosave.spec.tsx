@@ -953,7 +953,11 @@ describe('useDocxHistorySession', () => {
   });
 
   it('does not save or version a session that changed nothing', async () => {
-    const { view, save, host } = setup({}, { serialize: () => SFDT });
+    const onUnchanged = jest.fn();
+    const { view, save, host } = setup(
+      { onUnchanged },
+      { serialize: () => SFDT }
+    );
 
     act(() => view.result.current.onEdit({ assistant: false }));
     await act(async () => {
@@ -964,11 +968,14 @@ describe('useDocxHistorySession', () => {
     expect(host.closeVersion).not.toHaveBeenCalled();
     expect(view.result.current.isSessionOpen()).toBe(false);
     expect(view.result.current.status).toBe('saved');
+    // The editor clears its "Unsaved changes" mark from this.
+    expect(onUnchanged).toHaveBeenCalledTimes(1);
   });
 
   it('does not autosave a session that still matches its start', async () => {
     jest.useFakeTimers();
-    const { view, save } = setup({}, { serialize: () => SFDT });
+    const onUnchanged = jest.fn();
+    const { view, save } = setup({ onUnchanged }, { serialize: () => SFDT });
 
     act(() => view.result.current.onEdit({ assistant: false }));
     await act(async () => {
@@ -977,6 +984,7 @@ describe('useDocxHistorySession', () => {
     });
 
     expect(save).not.toHaveBeenCalled();
+    expect(onUnchanged).toHaveBeenCalledTimes(1);
   });
 
   it('skips a session whose edit was undone before it ever saved', async () => {
@@ -998,7 +1006,11 @@ describe('useDocxHistorySession', () => {
   it('still closes a session that saved before its edits were undone', async () => {
     jest.useFakeTimers();
     let doc = SFDT;
-    const { view, save, host } = setup({}, { serialize: () => doc });
+    const onUnchanged = jest.fn();
+    const { view, save, host } = setup(
+      { onUnchanged },
+      { serialize: () => doc }
+    );
 
     doc = EDITED_SFDT;
     act(() => view.result.current.onEdit({ assistant: false }));
@@ -1022,6 +1034,8 @@ describe('useDocxHistorySession', () => {
       closing.sessionId,
       expect.anything()
     );
+    // A real save clears the mark itself; this path must not claim it.
+    expect(onUnchanged).not.toHaveBeenCalled();
   });
 
   it('autosaves with the session id (no close flag) after the idle window', async () => {
