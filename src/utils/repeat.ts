@@ -1,6 +1,7 @@
 import { PositionedElement, Subgrid } from '../types/Form';
 import { getPositionKey } from './hideAndRepeats';
 import { getDefaultFieldValue } from './fieldHelperFunctions';
+import { ACTION_ADD_REPEATED_ROW } from './elementActions';
 
 interface Step {
   subgrids: Subgrid[];
@@ -100,6 +101,32 @@ export function getContainerById(
   id: string
 ): Subgrid | undefined {
   return step.subgrids.find((subgrid) => subgrid.id === id);
+}
+
+// True when an element sits inside more than one repeated container
+export function isNestedRepeat(step: Step, element: PositionedElement) {
+  const elKey = getPositionKey(element);
+  return (
+    getRepeatedContainers(step).filter((subgrid) =>
+      inRepeat(elKey, getPositionKey(subgrid))
+    ).length > 1
+  );
+}
+
+// The add_repeated_row action targeting a container; holds its max_repeats
+export function findAddRowButtonAction(
+  step: { buttons?: any[] },
+  containerId: string
+): { max_repeats?: number | null } | undefined {
+  for (const button of step.buttons ?? []) {
+    const action = (button.properties?.actions ?? []).find(
+      (a: any) =>
+        a?.type === ACTION_ADD_REPEATED_ROW &&
+        a?.repeat_container === containerId
+    );
+    if (action) return action;
+  }
+  return undefined;
 }
 
 /**
