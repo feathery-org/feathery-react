@@ -72,7 +72,7 @@ export function iconGlyphDataUrl(glyph?: IconGlyphData | null, color = '') {
   const iconColor = /^[\da-f]{6}(?:[\da-f]{2})?$/i.test(color)
     ? `#${color}`
     : '#000000';
-  const escapeAttribute = (value: string | number) =>
+  const escapeAttribute = (value: unknown) =>
     String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   const paths = nodes
     .map(
