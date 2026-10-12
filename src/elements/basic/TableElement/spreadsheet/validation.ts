@@ -102,6 +102,11 @@ export function mergeCellErrors(
   return { ...Object.fromEntries(remaining), ...validated };
 }
 
+export const parseCellErrorKey = (key: string) => {
+  const at = key.indexOf(':');
+  return { rowIndex: Number(key.slice(0, at)), fieldKey: key.slice(at + 1) };
+};
+
 const TAX_ID_PATTERN = /^\d{9}$/;
 const UUID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;

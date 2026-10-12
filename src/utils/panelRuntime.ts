@@ -10,7 +10,7 @@ import { getPrevStepKey, nextStepKey } from './stepHelperFunctions';
 import { isStepperStepReachable, isStepperStepVisible } from './stepper';
 import { sanitizeTransportValue } from './transportValue';
 import { getImageAltText } from './accessibility';
-import type { TableRowRead } from './formActions/tables';
+import type { TableRowRead, TableSelection } from './formActions/tables';
 
 type PanelRuntimeFieldEntry = {
   key: string;
@@ -110,6 +110,10 @@ type PanelRuntimeTableEntry = {
   canDeleteRows?: boolean;
   canEditCells?: boolean;
   pending?: { edits: number; deletions: number };
+  selection?: TableSelection;
+  viewport?: { visibleRowIndexes: number[] };
+  ruleErrors?: { total: number };
+  findings?: number;
   hasLogicRules?: boolean;
   visible: boolean;
 };
@@ -721,6 +725,11 @@ export const getPanelRuntimeSnapshot = (
       ...(liveState?.canDeleteRows ? { canDeleteRows: true } : {}),
       ...(liveState?.canEditCells ? { canEditCells: true } : {}),
       ...(liveState?.pending ? { pending: liveState.pending } : {}),
+      // What the person has in front of them in a spreadsheet grid, this turn only
+      ...(liveState?.selection ? { selection: liveState.selection } : {}),
+      ...(liveState?.viewport ? { viewport: liveState.viewport } : {}),
+      ...(liveState?.ruleErrors ? { ruleErrors: liveState.ruleErrors } : {}),
+      ...(liveState?.findings ? { findings: liveState.findings } : {}),
       ...(hasLogicRules ? { hasLogicRules: true } : {}),
       visible: visibilityFor(el)
     });
