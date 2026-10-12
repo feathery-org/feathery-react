@@ -12,7 +12,7 @@ type PendingState = {
 
 const EMPTY: PendingState = { values: {}, deletedRows: [] };
 
-export type PendingEdits = {
+type PendingEdits = {
   /** Cell edits plus row deletions still waiting on a Save. */
   count: number;
   /** The buffered value for a cell, or `undefined` if it has none. */

@@ -195,7 +195,7 @@ export const paginationListStyle = {
   margin: 0
 } as const;
 
-export const buttonStyle = {
+const buttonStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',

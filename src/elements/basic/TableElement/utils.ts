@@ -1,7 +1,7 @@
 import { stringifyWithNull } from '../../../utils/primitives';
 import { CellCoord } from './types';
 
-export type SortableValue = {
+type SortableValue = {
   original: any;
   asNumber: number | null;
   asDate: Date | null;
@@ -9,7 +9,7 @@ export type SortableValue = {
 };
 
 // Utility functions for sorting strings as numbers and dates
-export function tryParseNumber(value: any): number | null {
+function tryParseNumber(value: any): number | null {
   if (value === null || value === undefined || value === '') return null;
 
   const stringValue = String(value).trim();
@@ -24,7 +24,7 @@ export function tryParseNumber(value: any): number | null {
   return isNaN(parsed) ? null : parsed;
 }
 
-export function tryParseDate(value: any): Date | null {
+function tryParseDate(value: any): Date | null {
   if (value === null || value === undefined || value === '') return null;
 
   const stringValue = String(value).trim();

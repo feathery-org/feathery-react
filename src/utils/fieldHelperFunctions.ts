@@ -507,7 +507,7 @@ export function castHiddenVal(hfType: string, val: any) {
   return newVal;
 }
 
-export function getServarAttrMap(steps: any) {
+function getServarAttrMap(steps: any) {
   const servarKeyToTypeMap: Record<
     string,
     { type: string; repeated: boolean }

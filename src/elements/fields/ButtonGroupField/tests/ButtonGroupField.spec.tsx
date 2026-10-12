@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   createButtonGroupElement,
   createButtonGroupProps,
@@ -19,7 +20,6 @@ import {
   expectButtonGroupToBeDisabled,
   expectErrorInputToHaveAttributes
 } from './test-utils';
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import ButtonGroupField from '../index';
 
@@ -321,7 +321,7 @@ describe('ButtonGroupField', () => {
       );
       const props = createButtonGroupProps(element);
 
-      const { container } = render(<ButtonGroupField {...props} />);
+      render(<ButtonGroupField {...props} />);
 
       expectButtonToHaveTooltip('opt1', 'Tooltip 1');
       expectButtonToHaveTooltip('opt2', 'Tooltip 2');

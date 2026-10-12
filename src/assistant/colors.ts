@@ -9,7 +9,7 @@ export const GRAY_800 = '#1f2937';
 export const RED_500 = '#ef4444';
 
 // Generate lighter/darker variants from hex color
-export const adjustColor = (hex: string, percent: number): string => {
+const adjustColor = (hex: string, percent: number): string => {
   const num = parseInt(hex.replace('#', ''), 16);
   const r = Math.min(
     255,
@@ -92,7 +92,7 @@ const getDisabledColor = (primary: string): string => {
   return mixColors(disabled, '#000000', high);
 };
 
-export interface ChatColors {
+interface ChatColors {
   primary: string;
   hover: string;
   disabled: string;

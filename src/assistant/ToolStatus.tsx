@@ -25,12 +25,12 @@ const STATUS_LABEL_PADDING_Y = 4;
 export const STATUS_LABEL_BLOCK_HEIGHT =
   STATUS_LABEL_LINE_HEIGHT + STATUS_LABEL_PADDING_Y * 2;
 
-export interface ToolLabel {
+interface ToolLabel {
   running: string;
   done?: string;
 }
 
-export const TOOL_LABELS: Record<string, ToolLabel> = {
+const TOOL_LABELS: Record<string, ToolLabel> = {
   searchWeb: {
     running: 'Searching the web...',
     done: 'Searched the web'
@@ -657,5 +657,3 @@ export const BusyWash = () => (
     />
   </div>
 );
-
-export default ToolChunk;

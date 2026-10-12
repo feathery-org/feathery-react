@@ -1,5 +1,4 @@
 import React from 'react';
-import DropdownMultiField from '../index';
 import { waitFor } from '@testing-library/react';
 import { isTouchDevice } from '../../../../utils/browser';
 import {

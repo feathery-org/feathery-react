@@ -131,7 +131,7 @@ export function isOpeningDocument(ed: any): boolean {
 }
 
 /** One pending edit's painted extent, in viewport-canvas coordinates. */
-export interface RevisionRect {
+interface RevisionRect {
   kind: 'add' | 'del' | 'mod';
   top: number;
   bottom: number;
@@ -156,16 +156,6 @@ export function setActiveInlineRevisions(ed: any, revisions: any[]): void {
   } catch {
     // Repaint is best-effort; the next natural render picks the ring up.
   }
-}
-
-/** The geometry recorded during the last render pass (see RevisionRect). */
-export function getRevisionRects(ed: any): Map<any, RevisionRect> {
-  return ed?.[REVISION_RECTS_KEY] ?? new Map();
-}
-
-/** Subscribe to "a render pass just finished" (single subscriber). */
-export function setAfterRenderCallback(ed: any, cb: (() => void) | null): void {
-  if (ed) ed[AFTER_RENDER_KEY] = cb ?? undefined;
 }
 
 // Exported for tests (installed automatically at editor create).

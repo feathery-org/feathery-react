@@ -1,4 +1,5 @@
 import { toAscii } from '../../../../utils/ascii';
+import React from 'react';
 import ae from './ae';
 import au from './au';
 import br from './br';
@@ -30,7 +31,6 @@ import ru from './ru';
 import th from './th';
 import us, { onlyStates } from './us';
 import za from './za';
-import React from 'react';
 
 export const stateMap: Record<string, { name: string; code: string }[]> = {
   ae,

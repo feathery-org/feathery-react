@@ -1,6 +1,6 @@
 const CAMERA_PREFERENCE_KEY = 'feathery-camera';
 
-export type Camera_Preference = {
+type Camera_Preference = {
   device_id: string;
 };
 

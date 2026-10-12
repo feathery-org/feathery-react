@@ -14,7 +14,7 @@ import {
 /**
  * Normalizes a raw dropdown option into the OptionData shape, emitting warnings for invalid entries.
  */
-export const normalizeDropdownOption = ({
+const normalizeDropdownOption = ({
   warningState,
   option,
   fieldKey,

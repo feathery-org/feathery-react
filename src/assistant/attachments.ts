@@ -4,11 +4,11 @@ import { featheryDoc } from '../utils/browser';
 import { AssistantHeaders, withFormKey } from './utils';
 import { withLinkRequestHeaders } from '../utils/accessLinkRequest';
 
-export const MAX_DIMENSION = 1568;
+const MAX_DIMENSION = 1568;
 export const MAX_FILE_SIZE = 25 * 1024 * 1024;
 export const MAX_ATTACHMENTS = 5;
 
-export const IMAGE_MEDIA_TYPES = new Set([
+const IMAGE_MEDIA_TYPES = new Set([
   'image/png',
   'image/jpeg',
   'image/gif',
@@ -17,7 +17,7 @@ export const IMAGE_MEDIA_TYPES = new Set([
 
 // Mirrors MEDIA_TYPE_TO_EXTENSION on the ai-services side
 // (src/modules/robin/attachment/mediaTypes.ts), keep in sync
-export const DOC_MEDIA_TYPES = new Set([
+const DOC_MEDIA_TYPES = new Set([
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -92,7 +92,7 @@ export interface AssistantAttachment {
 
 // Attachment endpoints are the /agent/attachment/ sibling of the chat base,
 // same origin (threadsBase precedent in utils.ts)
-export const attachmentBase = (baseUrl: string) =>
+const attachmentBase = (baseUrl: string) =>
   new URL('/agent/attachment/', baseUrl).href;
 
 // The thread id doubles as the attachment session key (builder convention:
@@ -138,7 +138,7 @@ export async function compressImage(file: File): Promise<File> {
   }
 }
 
-export type UploadedAttachment = {
+type UploadedAttachment = {
   id: string;
   url: string;
   filename: string;

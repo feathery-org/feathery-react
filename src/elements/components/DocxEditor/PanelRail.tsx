@@ -18,7 +18,7 @@ import {
 
 export type PanelKind = 'changes' | 'sections' | 'history';
 
-export const PANEL_RAIL_WIDTH = 44;
+const PANEL_RAIL_WIDTH = 44;
 
 interface Props {
   activePanel: PanelKind | null;
