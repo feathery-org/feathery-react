@@ -1169,6 +1169,31 @@ describe('DocumentEditorContainer signing outcomes', () => {
     );
   });
 
+  it('reloads a plain URL with a version query when signing overwrites it', async () => {
+    const plain = 'https://x/envelopes/e1/signable.pdf';
+    mockFinalizeEnvelope.mockResolvedValue(finalizedPdf(plain));
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+    await waitFor(() =>
+      expect(getByTestId(`signed-view:${plain}`)).toBeTruthy()
+    );
+
+    mockGetCurrentEnvelope.mockResolvedValue({
+      ...finalizedPdf(plain),
+      signed: true
+    });
+    await focus();
+
+    const versioned =
+      /^signed-view:https:\/\/x\/envelopes\/e1\/signable\.pdf\?v=\d+$/;
+    const view = await waitFor(() => getByTestId(versioned));
+    expect(view).toHaveAttribute('data-status', 'signed');
+    expect(view.getAttribute('data-download')).toMatch(/signable\.pdf\?v=\d+$/);
+  });
+
   it('shows a PDF it did not send without a status and without polling', async () => {
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];

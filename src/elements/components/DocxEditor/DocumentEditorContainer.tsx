@@ -334,16 +334,26 @@ export default function DocumentEditorContainer({
       !envelope.signed &&
       sentVia[envelope.id] === 'feathery'
   );
-  // Envelope files are presigned anew on every fetch; keep the viewer on the
-  // URL it loaded until the file or its signed state changes. Signing
-  // overwrites the same stored file, so the path alone can't tell.
-  const pdfView = useRef<{ key: string; url: string | null }>({
-    key: '',
-    url: null
-  });
+  // Reload only when the file or its signed state changes (signing overwrites
+  // the same path); an unchanged plain URL gets ?v= to bypass caches.
+  const pdfView = useRef<{
+    key: string;
+    raw: string | null;
+    url: string | null;
+    version: number;
+  }>({ key: '', raw: null, url: null, version: 0 });
   const pdfViewKey = `${storedFile(envelope?.file)}|${!!envelope?.signed}`;
-  if (pdfView.current.key !== pdfViewKey)
-    pdfView.current = { key: pdfViewKey, url: envelope?.file ?? null };
+  if (pdfView.current.key !== pdfViewKey) {
+    const raw = envelope?.file ?? null;
+    const version = pdfView.current.version + 1;
+    const reused = !!raw && raw === pdfView.current.raw && !raw.includes('?');
+    pdfView.current = {
+      key: pdfViewKey,
+      raw,
+      version,
+      url: reused ? `${raw}?v=${version}` : raw
+    };
+  }
 
   // Stable source unless a different envelope loads or a regenerate is
   // signalled (reloadKey) — a plain save leaves both unchanged, so it doesn't
@@ -757,7 +767,13 @@ export default function DocumentEditorContainer({
         {operationAlert}
         <SignedEnvelopeView
           pdfUrl={pdfView.current.url ?? envelope.file}
-          downloadUrl={envelope.file}
+          // A presigned URL is freshest as fetched; a plain one may need the
+          // version query to skip a cached copy.
+          downloadUrl={
+            envelope.file.includes('?')
+              ? envelope.file
+              : pdfView.current.url ?? envelope.file
+          }
           status={
             envelope.signed
               ? 'signed'
