@@ -65,11 +65,21 @@ const timedPack: typeof docxPack = {
     Object.entries(docxPack.seams).map(([name, seam]) => [name, { ...seam, apply: timedCall(seam.apply) }])
   )
 };
+/** When set, the next engine open lands a document that differs from the one composed (one run's text). */
+let injectFailure = false;
+const corrupt = (native: string): string => native.replace(/"text":"([^"\\]{3,})"/, '"text":"$1 (not as composed)"');
+
 function timedHost(h: ReturnType<typeof createHost>): ReturnType<typeof createHost> {
   return {
     ...h,
     serialize: timedCall(h.serialize),
-    open: timedCall(h.open),
+    open: timedCall((native: string) => {
+      if (injectFailure) {
+        injectFailure = false;
+        return h.open(corrupt(native));
+      }
+      return h.open(native);
+    }),
     undo: timedCall(h.undo),
     redo: timedCall(h.redo)
   };
@@ -197,6 +207,11 @@ const api = {
     return (await settled()).length;
   },
 
+  /** Make the next engine open land something other than what was composed, so the proof fails. */
+  injectFailure(): void {
+    injectFailure = true;
+  },
+
   /** The user's own untracked edit, so their undo stack is not empty when Robin commits. */
   async userEdit(at: string, text: string): Promise<string> {
     const e = live() as any;
@@ -221,7 +236,12 @@ const api = {
 
   dispatch(payload: unknown) {
     if (!session) throw new Error('no session');
-    return session.dispatch(payload);
+    try {
+      return session.dispatch(payload);
+    } finally {
+      // an injected failure is for this one dispatch only
+      injectFailure = false;
+    }
   },
 
   /** One dispatch timed in the page, in milliseconds (per-verb cost, measured without the bridge). */
