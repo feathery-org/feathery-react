@@ -646,9 +646,9 @@ export default function DocumentEditorContainer({
       // A grouping failure must not break the opened document.
     }
   }, [reviewChanges]);
-  // Robin's document engine: one session per opened document, mounted under this form instance so
-  // the form context's `liveDocument` accessor reaches it. Only where Robin is on; a regenerate or
-  // a new envelope is a new session (a new editor id), and unmount ends any editing turn.
+  // Robin's document engine: each opened document is mounted under this form instance so the form
+  // context's `liveDocument` accessor reaches it; its session is created when Robin first uses it.
+  // A regenerate or a new envelope is a new mount (a new editor id), and unmount ends any turn.
   useEffect(() => {
     if (
       !assistantEnabled ||
@@ -659,14 +659,12 @@ export default function DocumentEditorContainer({
       !envelopeId
     )
       return undefined;
-    return (
-      mountRobinDocument({
-        formKey: formId,
-        slot: containerId,
-        editor: liveEditor,
-        envelopeId
-      }) ?? undefined
-    );
+    return mountRobinDocument({
+      formKey: formId,
+      slot: containerId,
+      editor: liveEditor,
+      envelopeId
+    });
   }, [
     assistantEnabled,
     liveEditor,

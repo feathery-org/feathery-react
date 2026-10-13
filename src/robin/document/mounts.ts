@@ -6,13 +6,57 @@
  * mount several editors; the descriptor names one of them, the one in the lexically first slot, so
  * the choice follows the schema and not mount order. `dispatch` routes by the payload's editor id,
  * so a request reaches the editor it was made for or fails as `wrong-editor`.
+ *
+ * A mounted document's session may be created on first use (`lazySession`): mounting an editor
+ * costs nothing where Robin never runs, and the session reads the document when Robin first asks.
  */
 import { Descriptor, Selection, parseBridgePayload } from './envelope';
-import type { DispatchOutcome, DocumentSession } from './session';
+import { DispatchOutcome, DocumentSession } from './session';
+
+/** A mounted document's session, created when first used. */
+export interface MountedSession {
+  readonly editorId: string;
+  /** The session, created now if it was not yet; null when it cannot be created. */
+  get(): DocumentSession | null;
+  /** The session if it was created. */
+  peek(): DocumentSession | null;
+}
+
+/**
+ * A session created by `create` the first time it is used. A creation that throws leaves the
+ * document unmounted for Robin (and is tried again on the next use): the engine must never break
+ * the editor it serves.
+ */
+export function lazySession(
+  editorId: string,
+  create: (editorId: string) => DocumentSession
+): MountedSession {
+  let session: DocumentSession | null = null;
+  return {
+    editorId,
+    get() {
+      if (!session)
+        try {
+          session = create(editorId);
+        } catch (error) {
+          console.debug('Feathery: Robin document session unavailable.', error);
+          return null;
+        }
+      return session;
+    },
+    peek: () => session
+  };
+}
+
+const created = (session: DocumentSession): MountedSession => ({
+  editorId: session.editorId,
+  get: () => session,
+  peek: () => session
+});
 
 interface Slot {
   slot: string;
-  session: DocumentSession;
+  session: MountedSession;
 }
 
 const forms = new Map<string, Map<string, Slot>>();
@@ -21,14 +65,17 @@ const forms = new Map<string, Map<string, Slot>>();
 export function mountDocument(
   formKey: string,
   slot: string,
-  session: DocumentSession
+  session: DocumentSession | MountedSession
 ): () => void {
   let slots = forms.get(formKey);
   if (!slots) {
     slots = new Map();
     forms.set(formKey, slots);
   }
-  const entry = { slot, session };
+  const entry = {
+    slot,
+    session: session instanceof DocumentSession ? created(session) : session
+  };
   slots.set(slot, entry);
   return () => {
     const current = forms.get(formKey);
@@ -38,11 +85,18 @@ export function mountDocument(
   };
 }
 
-/** The sessions mounted in a form, the descriptor's first. */
-export function mountedDocuments(formKey: string): DocumentSession[] {
+/** The documents mounted in a form, the descriptor's first. */
+function slotsOf(formKey: string): MountedSession[] {
   return [...(forms.get(formKey)?.values() ?? [])]
     .sort((a, b) => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0))
     .map((s) => s.session);
+}
+
+/** The sessions mounted in a form, the descriptor's first; creates any not yet created. */
+export function mountedDocuments(formKey: string): DocumentSession[] {
+  return slotsOf(formKey)
+    .map((s) => s.get())
+    .filter((s): s is DocumentSession => s !== null);
 }
 
 export interface LiveDocumentAccessor {
@@ -64,16 +118,16 @@ export interface LiveDocumentAccessor {
 export function liveDocumentAccessor(formKey: string): LiveDocumentAccessor {
   return {
     descriptor(selection) {
-      const [first] = mountedDocuments(formKey);
-      return first ? first.descriptor(selection) : null;
+      const [first] = slotsOf(formKey);
+      return first?.get()?.descriptor(selection) ?? null;
     },
     dispatch(payload) {
-      const sessions = mountedDocuments(formKey);
+      const sessions = slotsOf(formKey);
       const editorId =
         payload && typeof payload === 'object'
           ? (payload as { editorId?: unknown }).editorId
           : undefined;
-      const session = sessions.find((s) => s.editorId === editorId);
+      const session = sessions.find((s) => s.editorId === editorId)?.get();
       if (session) return session.dispatch(payload);
       const parsed = parseBridgePayload(payload);
       if (!parsed.ok) return { status: 'error', failure: parsed.failure };
@@ -88,7 +142,8 @@ export function liveDocumentAccessor(formKey: string): LiveDocumentAccessor {
       };
     },
     finishTurn() {
-      for (const session of mountedDocuments(formKey)) session.finishTurn();
+      // a session not yet created has no turn to finish
+      for (const session of slotsOf(formKey)) session.peek()?.finishTurn();
     },
     documentType() {
       return null;

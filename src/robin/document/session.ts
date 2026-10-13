@@ -79,7 +79,8 @@ export type DispatchOutcome =
   | { status: 'error'; failure: DispatchFailure };
 
 let mounts = 0;
-const newEditorId = () => {
+/** A new editor id: stable for the life of a mount, unique across mounts. */
+export const newEditorId = (): string => {
   mounts += 1;
   return `ed-${Date.now().toString(36)}-${mounts}`;
 };

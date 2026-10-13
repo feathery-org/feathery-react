@@ -1104,8 +1104,10 @@ describe("DocumentEditorContainer: Robin's document session", () => {
     delete OPEN_STATE.native;
     const debug = jest.spyOn(console, 'debug').mockImplementation(() => {});
     const unreadable = mount();
-    await waitFor(() => expect(debug).toHaveBeenCalled());
+    await waitFor(() => expect(getDocxEditor('form-robin')).toBeDefined());
+    // the session is created on first use; an unreadable editor leaves no document for Robin
     expect(liveDocumentAccessor('form-robin').descriptor()).toBeNull();
+    expect(debug).toHaveBeenCalled();
     unreadable.unmount();
     debug.mockRestore();
   });

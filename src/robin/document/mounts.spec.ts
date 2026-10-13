@@ -4,6 +4,7 @@
  */
 import { descriptorSchema } from './envelope';
 import {
+  lazySession,
   liveDocumentAccessor,
   mountDocument,
   mountedDocuments
@@ -176,5 +177,72 @@ describe('mounted documents and the form accessor', () => {
     );
     expect(out.status).toBe('ok');
     expect(s.activeTurn).toBe('t1');
+  });
+});
+
+describe('a session created on first use (review: no session where Robin never runs)', () => {
+  function lazy(editorId: string) {
+    const created: string[] = [];
+    let made: DocumentSession | null = null;
+    const mounted = lazySession(editorId, (id) => {
+      created.push(id);
+      made = session(id);
+      return made;
+    });
+    return { mounted, created, made: () => made };
+  }
+
+  it('mounting creates nothing; finishing a turn before any use creates nothing', () => {
+    const a = lazy('ed-lazy-a');
+    const off = mountDocument('form-lazy-1', 'c1', a.mounted);
+    liveDocumentAccessor('form-lazy-1').finishTurn();
+    expect(a.created).toEqual([]);
+    off();
+  });
+
+  it('the first descriptor read creates the described session only', () => {
+    const a = lazy('ed-lazy-b');
+    const z = lazy('ed-lazy-z');
+    const offs = [
+      mountDocument('form-lazy-2', 'a', a.mounted),
+      mountDocument('form-lazy-2', 'z', z.mounted)
+    ];
+    const d = liveDocumentAccessor('form-lazy-2').descriptor();
+    expect(d?.editorId).toBe('ed-lazy-b');
+    expect(a.created).toEqual(['ed-lazy-b']);
+    expect(z.created).toEqual([]);
+    offs.forEach((off) => off());
+  });
+
+  it('a dispatch creates the session it names, once, and reaches it', () => {
+    const a = lazy('ed-lazy-c');
+    const off = mountDocument('form-lazy-3', 'c1', a.mounted);
+    const accessor = liveDocumentAccessor('form-lazy-3');
+    const call = () =>
+      accessor.dispatch({
+        protocolVersion: 1,
+        turnId: 't1',
+        editorId: 'ed-lazy-c',
+        target: { type: 'envelope', id: 'env-ed-lazy-c' },
+        verb: 'outline',
+        input: {}
+      });
+    expect(call().status).toBe('ok');
+    expect(call().status).toBe('ok');
+    expect(a.created).toEqual(['ed-lazy-c']);
+    off();
+  });
+
+  it('a session that cannot be created is a document not mounted, never a thrown error', () => {
+    const off = mountDocument(
+      'form-lazy-4',
+      'c1',
+      lazySession('ed-lazy-d', () => {
+        throw new Error('no editor');
+      })
+    );
+    const accessor = liveDocumentAccessor('form-lazy-4');
+    expect(accessor.descriptor()).toBeNull();
+    off();
   });
 });
