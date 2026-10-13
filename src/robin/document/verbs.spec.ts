@@ -605,6 +605,69 @@ describe('write: conflicts', () => {
     );
     expect(r.checks.slice(-1)).toEqual([{ name: 'base-hashes', pass: false }]);
   });
+
+  // the captain's split: a section's conflict carried the whole section (60k tokens)
+  it('returns a stale container as its own fields and child stubs, never its subtree', () => {
+    const s = fresh();
+    const r = prepareWrite(
+      s,
+      write({
+        intent: 'x',
+        scope: { ids: [] },
+        changes: [
+          {
+            kind: 'insert_after',
+            anchor: 'n3',
+            container: 'ffffffffffffffff',
+            node: { kind: 'para', text: 'x' }
+          }
+        ]
+      })
+    );
+    expect(r.outcome).toBe('conflict');
+    if (r.outcome !== 'conflict') return;
+    const live = r.conflict.stale[0].live as Record<string, unknown>;
+    expect(live).toEqual(
+      expect.objectContaining({
+        id: 'n2',
+        kind: 'box',
+        name: 'alpha',
+        shape: sh(s, 'n2')
+      })
+    );
+    expect(live.items).toEqual(
+      ['n3', 'n4'].map((id) => ({
+        id,
+        base: b(s, id),
+        shape: sh(s, id),
+        kind: 'para'
+      }))
+    );
+  });
+
+  it("refuses a container that is the shape of another node, naming the right one (the captain's split: a sibling section's @ value)", () => {
+    const s = fresh();
+    const r = prepareWrite(
+      s,
+      write({
+        intent: 'x',
+        scope: { ids: [] },
+        changes: [
+          {
+            kind: 'insert_after',
+            anchor: 'n3',
+            container: sh(s, 'root').slice(0, 8),
+            node: { kind: 'para', text: 'x' }
+          }
+        ]
+      })
+    );
+    expect(r.outcome).toBe('refused');
+    if (r.outcome !== 'refused') return;
+    expect(r.refusal.invariant).toBe('envelope');
+    expect(r.refusal.destroyed).toMatch(/is the shape of root, not of n2/);
+    expect(r.refusal.hint).toContain(sh(s, 'n2').slice(0, 8));
+  });
 });
 
 describe('write: refusals (each a true positive; the verified cases above are the negatives)', () => {
