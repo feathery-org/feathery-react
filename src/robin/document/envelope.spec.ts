@@ -909,6 +909,8 @@ describe('section 9 descriptor', () => {
       format: FORMAT,
       readOnly: false,
       outlineHash: '5c0f1a9e2b7d4c31',
+      outline:
+        'n1 section @2e90f1a7 1\n  body:\n    n12 paragraph @44a0c3d9 [Title] "Insurance proposal"',
       selection: {
         start: { id: 'n204', offset: 0 },
         end: { id: 'n204', offset: 13 },

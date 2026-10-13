@@ -334,6 +334,8 @@ export interface EditorHost {
   canRedo(): boolean;
   redo(): void;
   readOnly(): boolean;
+  /** The person's selection as the editor reports it, opaque to the core; null when there is none. */
+  selection?(): unknown;
 }
 
 export interface SeamContext {
@@ -446,6 +448,18 @@ export interface Pack {
   residueKeys?: Readonly<Record<string, string>>;
   /** Own fields that are content rather than formatting (a binding): a change to one is an edit. */
   featureKeys?: readonly string[];
+  /**
+   * The editor's selection (`EditorHost.selection`) as node ids and character offsets into each
+   * node's own text, with the selected text; null when it does not fall in addressable nodes.
+   */
+  selection?(
+    view: DocumentView,
+    native: unknown
+  ): {
+    start: { id: string; offset: number };
+    end: { id: string; offset: number };
+    text: string;
+  } | null;
 }
 
 const REQUIRED_FUNCTIONS: Array<[string, (p: Pack) => unknown]> = [

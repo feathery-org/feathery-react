@@ -310,6 +310,12 @@ const api = {
     };
   },
 
+  /** The descriptor the form would send now (section 9), the selection read from the editor. */
+  descriptor() {
+    if (!session) throw new Error('no session');
+    return session.descriptor();
+  },
+
   /** Test support: the text the editor selects between two hierarchical offsets. */
   selectText(start: string, end: string): string {
     const selection = (live() as any).selection;

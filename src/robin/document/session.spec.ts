@@ -81,8 +81,29 @@ describe('document session: the four verbs end to end', () => {
       target,
       format: TOY_FORMAT,
       readOnly: false,
-      outlineHash: (call('outline', {}) as { outlineHash: string }).outlineHash
+      outlineHash: (call('outline', {}) as { outlineHash: string }).outlineHash,
+      outline: (call('outline', {}) as { lines: string }).lines
     });
+  });
+
+  it('reads the selection from the editor: its text capped at 500 characters, and none when the editor cannot say', () => {
+    const { host, session } = mount();
+    host.selected = {
+      start: { id: 'n1', offset: 0 },
+      end: { id: 'n3', offset: 2 },
+      text: 'x'.repeat(600)
+    };
+    const d = session.descriptor();
+    expect(descriptorSchema.safeParse(d).success).toBe(true);
+    expect(d.selection).toEqual({
+      start: { id: 'n1', offset: 0 },
+      end: { id: 'n3', offset: 2 },
+      text: 'x'.repeat(500),
+      truncated: true
+    });
+    host.selected = new Error('editor gone');
+    expect(session.descriptor().selection).toBeUndefined();
+    expect(session.descriptor().outline).toEqual(expect.any(String));
   });
 
   it('outline, find, read, write a tracked text change; the proof passes and the card is the turn', () => {

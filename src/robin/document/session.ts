@@ -14,6 +14,7 @@ import {
   ERROR_CODES,
   HostTarget,
   PROTOCOL_VERSION,
+  SELECTION_TEXT_MAX,
   Selection,
   Verb,
   VerbResult,
@@ -181,18 +182,46 @@ export class DocumentSession {
     };
   }
 
-  /** Section 9: what the form sends in `context.liveDocument` while this editor is mounted. */
-  descriptor(selection?: Selection): Descriptor {
-    const { outlineHash } = this.state;
+  /**
+   * Section 9: what the form sends in `context.liveDocument` while this editor is mounted: the
+   * block-level outline itself, and the person's selection read from the editor at send time.
+   */
+  descriptor(): Descriptor {
+    const state = this.state;
+    const outline = outlineVerb(state, {});
+    const selection = this.selection(state);
     return {
       protocolVersion: PROTOCOL_VERSION,
       editorId: this.editorId,
       target: { ...this.target },
       format: this.pack.format,
       readOnly: this.host.readOnly(),
-      outlineHash,
+      outlineHash: state.outlineHash,
+      outline: outline.ok ? outline.lines : '',
       ...(selection ? { selection } : {})
     };
+  }
+
+  /** The editor's selection as the pack maps it, its text capped (section 9); never throws. */
+  private selection(state: DocumentState): Selection | null {
+    try {
+      const native = this.host.selection?.();
+      if (native == null || !this.pack.selection) return null;
+      const mapped = this.pack.selection(state.view, native);
+      if (!mapped) return null;
+      const truncated = mapped.text.length > SELECTION_TEXT_MAX;
+      return {
+        start: { ...mapped.start },
+        end: { ...mapped.end },
+        text: truncated
+          ? mapped.text.slice(0, SELECTION_TEXT_MAX)
+          : mapped.text,
+        truncated
+      };
+    } catch {
+      // a selection the editor cannot report is no selection, never a failed descriptor
+      return null;
+    }
   }
 
   /** Section 10: one document action (its verb) and its payload in, its outcome out. */

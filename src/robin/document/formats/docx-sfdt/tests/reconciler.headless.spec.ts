@@ -677,6 +677,87 @@ describe("Robin's commits reach the editor's change handling (review: dirty, aut
   });
 });
 
+describe('the descriptor (protocol 2, section 9): the outline itself and the selection read from the editor', () => {
+  const ownText = (p: any): string => {
+    let out = '';
+    const rec = (inlines: any[]) => {
+      for (const i of inlines ?? []) {
+        if (i.kind === 'run') out += i.text ?? '';
+        if (Array.isArray(i.inlines)) rec(i.inlines);
+      }
+    };
+    rec(p.inlines);
+    return out;
+  };
+
+  it('carries the block-level outline the outline verb returns; a collapsed caret is a selection whose start is its end', async () => {
+    await fresh();
+    const d = await lane.call<any>('descriptor');
+    const outline = await dispatch('outline', {});
+    expect(d.protocolVersion).toBe(2);
+    expect(d.outline).toBe(outline.lines);
+    expect(d.outlineHash).toBe(outline.outlineHash);
+    await lane.call('selectText', '3;16;7', '3;16;7');
+    const caret = (await lane.call<any>('descriptor')).selection;
+    expect(caret.start).toEqual(caret.end);
+    expect(caret.text).toBe('');
+  });
+
+  it('a selection inside one paragraph: its id and own-text offsets, and the text', async () => {
+    await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const text = ownText((await read([pid]))[pid]);
+    const selected = await lane.call<string>('selectText', '3;16;4', '3;16;20');
+    const d = await lane.call<any>('descriptor');
+    expect(d.selection).toEqual({ start: { id: pid, offset: 4 }, end: { id: pid, offset: 20 }, text: selected, truncated: false });
+    expect(selected).toBe(text.slice(4, 20));
+  });
+
+  it('a selection across two paragraphs, made backwards: start before end, each in its own paragraph', async () => {
+    await fresh();
+    const first = await at(['sections', 3, 'blocks', 16]);
+    // the next paragraph with some text of its own
+    let block = 17;
+    let second = '';
+    let n: Record<string, any> = {};
+    for (; block < 40; block += 1) {
+      second = await at(['sections', 3, 'blocks', block]);
+      n = await read([first, second]);
+      if (n[second]?.kind === 'paragraph' && ownText(n[second]).length > 6) break;
+    }
+    const selected = await lane.call<string>('selectText', `3;${block};5`, '3;16;10');
+    const d = await lane.call<any>('descriptor');
+    expect(d.selection.start).toEqual({ id: first, offset: 10 });
+    expect(d.selection.end).toEqual({ id: second, offset: 5 });
+    expect(d.selection.text).toBe(selected);
+    expect(selected).toContain(ownText(n[first]).slice(10));
+    expect(selected).toContain(ownText(n[second]).slice(0, 5));
+  });
+
+  it('offsets after an inline content control are own-text offsets (the control boundaries the editor counts are taken out)', async () => {
+    await fresh();
+    const pid = await at(['sections', 0, 'blocks', 3]);
+    const p = (await read([pid]))[pid];
+    const text = ownText(p);
+    const own = text.indexOf('valid from');
+    expect(own).toBeGreaterThan(0);
+    // the editor counts each inline control's start and end as a position
+    let controls = 0;
+    let seen = 0;
+    for (const i of p.inlines) {
+      if (seen >= own) break;
+      if (i.kind === 'control') controls += 1;
+      const len = ownText({ inlines: [i] }).length;
+      seen += len;
+    }
+    const at0 = own + 2 * controls;
+    const selected = await lane.call<string>('selectText', `0;3;${at0}`, `0;3;${at0 + 10}`);
+    expect(selected).toBe('valid from');
+    const d = await lane.call<any>('descriptor');
+    expect(d.selection).toEqual({ start: { id: pid, offset: own }, end: { id: pid, offset: own + 10 }, text: 'valid from', truncated: false });
+  });
+});
+
 describe('per-verb time on the flagship', () => {
   const RUNS = 5;
   const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];

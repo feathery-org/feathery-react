@@ -1164,6 +1164,7 @@ export const descriptorSchema = z.looseObject({
   format: z.string().min(1),
   readOnly: z.boolean(),
   outlineHash: z.string().min(1),
+  outline: z.string(),
   selection: selectionSchema.optional()
 });
 export type Descriptor = {
@@ -1173,6 +1174,8 @@ export type Descriptor = {
   format: string;
   readOnly: boolean;
   outlineHash: string;
+  /** The block-level outline at the pack's default depth, as the `outline` verb returns it. */
+  outline: string;
   selection?: Selection;
 };
 

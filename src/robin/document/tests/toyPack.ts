@@ -65,7 +65,17 @@ interface NativeDoc {
 
 // ------------------------------------------------------------------ native text, canonical order
 
-const PARA_KEYS = ['t', 'text', 'bold', 'size', 'align', 'formula', 'x', 'rev', 'by'];
+const PARA_KEYS = [
+  't',
+  'text',
+  'bold',
+  'size',
+  'align',
+  'formula',
+  'x',
+  'rev',
+  'by'
+];
 const BOX_KEYS = ['t', 'name', 'items', 'rev', 'by'];
 
 function writeBlock(b: NativeBlock): Record<string, unknown> {
@@ -74,8 +84,7 @@ function writeBlock(b: NativeBlock): Record<string, unknown> {
   for (const k of keys) {
     const v = (b as unknown as Record<string, unknown>)[k];
     if (v === undefined) continue;
-    out[k] =
-      k === 'items' ? (v as NativePara[]).map((p) => writeBlock(p)) : v;
+    out[k] = k === 'items' ? (v as NativePara[]).map((p) => writeBlock(p)) : v;
   }
   return out;
 }
@@ -121,10 +130,16 @@ function toNormalForm(native: string): { nf: NormalForm; residue: Residue } {
     const entry: Record<string, unknown> = {};
     if (p.bold !== undefined) entry.bold = p.bold;
     if (p.size !== undefined) entry.size = p.size;
-    const node: NfNode = { id, kind: 'para', text: p.text, style: intern(entry) };
+    const node: NfNode = {
+      id,
+      kind: 'para',
+      text: p.text,
+      style: intern(entry)
+    };
     if (p.align !== undefined) node.align = p.align;
     if (p.formula !== undefined) node.formula = p.formula;
-    if (p.rev) node.pending = { kind: PENDING[p.rev], ...(p.by ? { by: p.by } : {}) };
+    if (p.rev)
+      node.pending = { kind: PENDING[p.rev], ...(p.by ? { by: p.by } : {}) };
     if (p.x !== undefined) residue[id] = { x: p.x };
     return node;
   };
@@ -133,7 +148,8 @@ function toNormalForm(native: string): { nf: NormalForm; residue: Residue } {
     const node: NfNode = { id: `t${next++}`, kind: 'box' };
     if (b.name !== undefined) node.name = b.name;
     node.items = b.items.map(toPara);
-    if (b.rev) node.pending = { kind: PENDING[b.rev], ...(b.by ? { by: b.by } : {}) };
+    if (b.rev)
+      node.pending = { kind: PENDING[b.rev], ...(b.by ? { by: b.by } : {}) };
     return node;
   };
   const root: NfNode = { id: 'r', kind: 'doc', blocks: doc.body.map(toBlock) };
@@ -144,7 +160,9 @@ function fromNormalForm(nf: NormalForm, residue: Residue): string {
   const revOf = (n: NfNode): Rev | undefined =>
     isPlainObject(n.pending) ? REV[String(n.pending.kind)] : undefined;
   const byOf = (n: NfNode): string | undefined =>
-    isPlainObject(n.pending) && typeof n.pending.by === 'string' ? n.pending.by : undefined;
+    isPlainObject(n.pending) && typeof n.pending.by === 'string'
+      ? n.pending.by
+      : undefined;
   const toPara = (n: NfNode): NativePara => {
     const entry = nf.formats[String(n.style)] ?? {};
     const r = residue[n.id] as { x?: string } | undefined;
@@ -304,7 +322,11 @@ const listIds = (n: NfNode | undefined) =>
     .map((c) => c.id);
 
 /** Compose the tracked document: deleted nodes kept as deletions, new and changed as insertions. */
-function composeTracked(before: DocumentView, intended: DocumentView, turnId: string): NormalForm {
+function composeTracked(
+  before: DocumentView,
+  intended: DocumentView,
+  turnId: string
+): NormalForm {
   const out = clone(intended.nf);
   const formatOnly = (a: NfNode, b: NfNode) =>
     a.text === b.text && a.formula === b.formula && a.kind === b.kind;
@@ -314,12 +336,17 @@ function composeTracked(before: DocumentView, intended: DocumentView, turnId: st
       const kids = node[key] as NfNode[];
       const result: NfNode[] = [];
       const keep = new Set(kids.map((k) => k.id));
-      const before_ = (Array.isArray(original?.[key]) ? original?.[key] : []) as NfNode[];
+      const before_ = (
+        Array.isArray(original?.[key]) ? original?.[key] : []
+      ) as NfNode[];
       let bi = 0;
       for (const kid of kids) {
         // removed originals that preceded this kid stay in place as deletions
         while (bi < before_.length && !keep.has(before_[bi].id)) {
-          result.push({ ...clone(before_[bi]), pending: { kind: 'deletion', by: turnId } });
+          result.push({
+            ...clone(before_[bi]),
+            pending: { kind: 'deletion', by: turnId }
+          });
           bi += 1;
         }
         const old = before.get(kid.id);
@@ -330,7 +357,10 @@ function composeTracked(before: DocumentView, intended: DocumentView, turnId: st
         if (before_[bi]?.id === kid.id) bi += 1;
         if (kid.kind === 'para' && !formatOnly(old, kid) && !kid.pending) {
           // both halves keep the id, so both find the node's residue on the way back
-          result.push({ ...clone(old), pending: { kind: 'deletion', by: turnId } });
+          result.push({
+            ...clone(old),
+            pending: { kind: 'deletion', by: turnId }
+          });
           result.push({ ...kid, pending: { kind: 'insertion', by: turnId } });
           continue;
         }
@@ -339,7 +369,10 @@ function composeTracked(before: DocumentView, intended: DocumentView, turnId: st
       }
       while (bi < before_.length) {
         if (!keep.has(before_[bi].id))
-          result.push({ ...clone(before_[bi]), pending: { kind: 'deletion', by: turnId } });
+          result.push({
+            ...clone(before_[bi]),
+            pending: { kind: 'deletion', by: turnId }
+          });
         bi += 1;
       }
       node[key] = result;
@@ -356,11 +389,14 @@ function plan(ctx: PlanContext): CommitPlan {
     before.nodes().every((n) => {
       const m = intended.get(n.id);
       return (
-        m && canonicalJson(listIds(n)) === canonicalJson(listIds(m)) && !n.pending
+        m &&
+        canonicalJson(listIds(n)) === canonicalJson(listIds(m)) &&
+        !n.pending
       );
     });
   const textEdits: Array<{ path: number[]; text: string }> = [];
-  const formatEdits: Array<{ path: number[]; set: Record<string, unknown> }> = [];
+  const formatEdits: Array<{ path: number[]; set: Record<string, unknown> }> =
+    [];
   if (sameStructure) {
     for (const n of intended.nodes()) {
       if (n.kind !== 'para') continue;
@@ -379,9 +415,18 @@ function plan(ctx: PlanContext): CommitPlan {
   }
   const boxChanged = intended
     .nodes()
-    .some((n) => n.kind === 'box' && (before.get(n.id)?.border !== n.border || before.get(n.id)?.name !== n.name));
+    .some(
+      (n) =>
+        n.kind === 'box' &&
+        (before.get(n.id)?.border !== n.border ||
+          before.get(n.id)?.name !== n.name)
+    );
   if (sameStructure && !boxChanged && textEdits.length && !formatEdits.length)
-    return { steps: [{ seam: 'text', payload: textEdits }], landed: 'card', history: 'editor' };
+    return {
+      steps: [{ seam: 'text', payload: textEdits }],
+      landed: 'card',
+      history: 'editor'
+    };
   if (sameStructure && !boxChanged && formatEdits.length && !textEdits.length)
     return {
       steps: [{ seam: 'format', payload: formatEdits }],
@@ -399,7 +444,10 @@ function plan(ctx: PlanContext): CommitPlan {
     steps: [
       {
         seam: 'splice',
-        payload: fromNormalForm(tracked, { ...ctx.beforeResidue, ...ctx.intendedResidue })
+        payload: fromNormalForm(tracked, {
+          ...ctx.beforeResidue,
+          ...ctx.intendedResidue
+        })
       }
     ],
     landed: 'card',
@@ -414,10 +462,16 @@ function plan(ctx: PlanContext): CommitPlan {
   };
 }
 
-function expectedRejection(before: NormalForm, intended: NormalForm): NormalForm {
+function expectedRejection(
+  before: NormalForm,
+  intended: NormalForm
+): NormalForm {
   // formatting lands untracked, so rejecting restores text and structure but keeps the look
   const out = clone(before);
-  const shape = { childLists: (n: NfNode) => ['blocks', 'items'].filter((k) => Array.isArray(n[k])) };
+  const shape = {
+    childLists: (n: NfNode) =>
+      ['blocks', 'items'].filter((k) => Array.isArray(n[k]))
+  };
   const later = indexTree(intended.root, shape);
   const formatsByContent = new Map(
     Object.entries(out.formats).map(([k, v]) => [canonicalJson(v), k])
@@ -503,6 +557,12 @@ export class ToyHost implements EditorHost {
   readOnly(): boolean {
     return this.locked;
   }
+  /** What the toy editor reports as selected: already ids and offsets, or a fault. */
+  selected: unknown = null;
+  selection(): unknown {
+    if (this.selected instanceof Error) throw this.selected;
+    return this.selected;
+  }
   /** A user edit: one undo step. */
   userEdit(mutate: (doc: NativeDoc) => void): void {
     const doc = JSON.parse(this.native) as NativeDoc;
@@ -546,10 +606,14 @@ export class ToyHost implements EditorHost {
     if (!fault) return;
     this.seamFault = null;
     const d = JSON.parse(this.native) as NativeDoc;
-    const blocks = d.body.flatMap((b): Array<NativePara | NativeBox> => (b.t === 'box' ? [b, ...b.items] : [b]));
+    const blocks = d.body.flatMap(
+      (b): Array<NativePara | NativeBox> =>
+        b.t === 'box' ? [b, ...b.items] : [b]
+    );
     for (const b of blocks) {
       if (fault === 'drop-residue' && b.t === 'p') delete b.x;
-      if (fault === 'reauthor-foreign' && b.rev && b.by !== turnId) b.by = turnId;
+      if (fault === 'reauthor-foreign' && b.rev && b.by !== turnId)
+        b.by = turnId;
       if (fault === 'omit-group' && b.by === turnId) delete b.by;
     }
     this.native = writeNative(d);
@@ -563,22 +627,19 @@ const at = (doc: NativeDoc, path: number[]) =>
 
 // ------------------------------------------------------------------ invariants
 
-function orphanedDependents(ctx: {
-  after: DocumentView;
-}): RefusalProblem[] {
+function orphanedDependents(ctx: { after: DocumentView }): RefusalProblem[] {
   const boxes = boxesByName(ctx.after);
-  const orphans = ctx.after
-    .nodes()
-    .filter((n) => {
-      const m =
-        typeof n.formula === 'string' ? FORMULA.exec(n.formula) : null;
-      return m && !boxes.has(m[1]) && !n.pending;
-    });
+  const orphans = ctx.after.nodes().filter((n) => {
+    const m = typeof n.formula === 'string' ? FORMULA.exec(n.formula) : null;
+    return m && !boxes.has(m[1]) && !n.pending;
+  });
   if (!orphans.length) return [];
   return [
     {
       invariant: 'orphaned-dependents',
-      destroyed: `${orphans.length} formula(s) would read a box this change removes: ${orphans
+      destroyed: `${
+        orphans.length
+      } formula(s) would read a box this change removes: ${orphans
         .map((n) => `${n.id} = ${n.formula}`)
         .join('; ')}`,
       detail: orphans.map((n) => ({ ids: [n.id], expr: n.formula })),
@@ -614,6 +675,9 @@ function uniqueBoxNames(ctx: { after: DocumentView }): RefusalProblem[] {
 
 export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
   return {
+    // the toy editor already reports node ids and own-text offsets
+    selection: (_view, native) =>
+      native as ReturnType<NonNullable<Pack['selection']>>,
     format: TOY_FORMAT,
     vocabulary: ['toy-format'],
     tree: {
@@ -626,10 +690,14 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
           ? 'box'
           : null,
       accepts: (parentKind, key, kind) =>
-        (parentKind === 'doc' && key === 'blocks' && (kind === 'para' || kind === 'box')) ||
+        (parentKind === 'doc' &&
+          key === 'blocks' &&
+          (kind === 'para' || kind === 'box')) ||
         (parentKind === 'box' && key === 'items' && kind === 'para'),
       identity: (node) =>
-        node.kind === 'box' && typeof node.name === 'string' ? `box:${node.name}` : null
+        node.kind === 'box' && typeof node.name === 'string'
+          ? `box:${node.name}`
+          : null
     },
     formatRefKeys: ['style'],
     adapter: { toNormalForm, fromNormalForm },
@@ -639,11 +707,17 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
         const marks: string[] = [];
         if (node.kind === 'para') marks.push(JSON.stringify(node.text));
         if (node.kind === 'box')
-          marks.push(`${(node.items as unknown[]).length} items${node.name ? ` [name=${node.name}]` : ''}`);
-        if (typeof node.formula === 'string') marks.push(`{formula=${node.formula}}`);
+          marks.push(
+            `${(node.items as unknown[]).length} items${
+              node.name ? ` [name=${node.name}]` : ''
+            }`
+          );
+        if (typeof node.formula === 'string')
+          marks.push(`{formula=${node.formula}}`);
         const used = view.annotation(node.id)?.usedBy;
         if (used?.length) marks.push(`usedBy[${used.join(',')}]`);
-        if (isPlainObject(node.pending)) marks.push(`[pending ${node.pending.kind}]`);
+        if (isPlainObject(node.pending))
+          marks.push(`[pending ${node.pending.kind}]`);
         return marks.join(' ');
       }
     },
@@ -652,22 +726,34 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
       ...(node.kind === 'box' && typeof node.name === 'string'
         ? [{ name: 'named', value: node.name }]
         : []),
-      ...(typeof node.formula === 'string' ? [{ name: 'formula', value: node.formula }] : [])
+      ...(typeof node.formula === 'string'
+        ? [{ name: 'formula', value: node.formula }]
+        : [])
     ],
     annotate,
     properties: {
-      schema: (kind) => (kind === 'para' ? PARA_SCHEMA : kind === 'box' ? BOX_SCHEMA : null),
+      schema: (kind) =>
+        kind === 'para' ? PARA_SCHEMA : kind === 'box' ? BOX_SCHEMA : null,
       formatSchema: [boolean, size],
       effective: (node, view): Record<string, EffectiveProperty> => {
         if (node.kind === 'box')
           return {
-            border: { value: node.border ?? false, source: node.border === undefined ? 'default' : 'override' }
+            border: {
+              value: node.border ?? false,
+              source: node.border === undefined ? 'default' : 'override'
+            }
           };
         const entry = view.nf.formats[String(node.style)] ?? {};
         const parent = view.placement(node.id)?.parent;
         return {
-          bold: { value: entry.bold ?? false, source: entry.bold === undefined ? 'default' : 'format' },
-          size: { value: entry.size ?? 11, source: entry.size === undefined ? 'default' : 'format' },
+          bold: {
+            value: entry.bold ?? false,
+            source: entry.bold === undefined ? 'default' : 'format'
+          },
+          size: {
+            value: entry.size ?? 11,
+            source: entry.size === undefined ? 'default' : 'format'
+          },
           align:
             node.align !== undefined
               ? { value: node.align, source: 'override' }
@@ -680,7 +766,8 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
       setOnSpan: (node, span, text, props, formats) => {
         if (span.start !== 0 || span.end !== String(node.text).length)
           return 'this format formats whole paragraphs only; use the ids target';
-        for (const [k, v] of Object.entries(props)) setOverride(node, k, v, formats);
+        for (const [k, v] of Object.entries(props))
+          setOverride(node, k, v, formats);
         return null;
       },
       setOnFormat: (entry, name, value) => {
@@ -689,21 +776,32 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
       }
     },
     invariants: [
-      { name: 'orphaned-dependents', cards: ['formula'], check: orphanedDependents },
+      {
+        name: 'orphaned-dependents',
+        cards: ['formula'],
+        check: orphanedDependents
+      },
       { name: 'box-name-unique', cards: ['box'], check: uniqueBoxNames }
     ],
     finalizers: [
       {
         name: 'formulas',
         run: (after) => {
-          const shape = { childLists: (n: NfNode) => ['blocks', 'items'].filter((k) => Array.isArray(n[k])) };
+          const shape = {
+            childLists: (n: NfNode) =>
+              ['blocks', 'items'].filter((k) => Array.isArray(n[k]))
+          };
           const index = indexTree(after.root, shape);
           const boxes = new Map<string, NfNode>();
           for (const { node } of index.values())
-            if (node.kind === 'box' && typeof node.name === 'string') boxes.set(node.name, node);
+            if (node.kind === 'box' && typeof node.name === 'string')
+              boxes.set(node.name, node);
           const ids: string[] = [];
           for (const { node } of index.values()) {
-            const m = typeof node.formula === 'string' ? FORMULA.exec(node.formula) : null;
+            const m =
+              typeof node.formula === 'string'
+                ? FORMULA.exec(node.formula)
+                : null;
             const target = m ? boxes.get(m[1]) : undefined;
             if (!target) continue;
             const text = `Items: ${(target.items as unknown[]).length}`;
@@ -715,7 +813,14 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
           return {
             ids,
             facts: ids.length
-              ? [{ kind: 'finalizer', name: 'formulas', ids, summary: `${ids.length} formula(s) recomputed` }]
+              ? [
+                  {
+                    kind: 'finalizer',
+                    name: 'formulas',
+                    ids,
+                    summary: `${ids.length} formula(s) recomputed`
+                  }
+                ]
               : []
           };
         }
@@ -726,7 +831,8 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
       reject: (nf) => project(nf, 'insertion'),
       normalizations: [{ name: 'T1', apply: trimText }],
       expectedRejection,
-      authoredBy: (pending, turnId) => isPlainObject(pending) && pending.by === turnId
+      authoredBy: (pending, turnId) =>
+        isPlainObject(pending) && pending.by === turnId
     },
     reconcile: { plan },
     seams: {
@@ -744,7 +850,12 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
                   i,
                   1,
                   { ...old, rev: 'del', by: ctx.turnId },
-                  { ...old, text: e.text.replace(/\s+$/, ''), rev: 'ins', by: ctx.turnId }
+                  {
+                    ...old,
+                    text: e.text.replace(/\s+$/, ''),
+                    rev: 'ins',
+                    by: ctx.turnId
+                  }
                 );
               }
             },
@@ -753,16 +864,23 @@ export function makeToyPack(overrides: Partial<Pack> = {}): Pack {
       },
       format: {
         apply: (host, payload, ctx) =>
-          (host as ToyHost).seamEdit('format', (doc) => {
-            for (const e of payload as Array<{ path: number[]; set: Record<string, unknown> }>) {
-              const { list, i } = at(doc, e.path);
-              const p = list[i] as unknown as Record<string, unknown>;
-              for (const [k, v] of Object.entries(e.set)) {
-                if (v === null) delete p[k];
-                else p[k] = v;
+          (host as ToyHost).seamEdit(
+            'format',
+            (doc) => {
+              for (const e of payload as Array<{
+                path: number[];
+                set: Record<string, unknown>;
+              }>) {
+                const { list, i } = at(doc, e.path);
+                const p = list[i] as unknown as Record<string, unknown>;
+                for (const [k, v] of Object.entries(e.set)) {
+                  if (v === null) delete p[k];
+                  else p[k] = v;
+                }
               }
-            }
-          }, ctx.turnId)
+            },
+            ctx.turnId
+          )
       },
       splice: {
         apply: (host, payload, ctx) => {

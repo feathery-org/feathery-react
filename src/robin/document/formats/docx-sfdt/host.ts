@@ -99,6 +99,19 @@ export function createHost(editor: LiveEditor): DocxHost {
     undo: () => historyOf(editor)?.undo?.(),
     canRedo: () => !!historyOf(editor)?.canRedo?.(),
     redo: () => historyOf(editor)?.redo?.(),
-    readOnly: () => !!(editor.isReadOnly || editor.isReadOnlyMode)
+    readOnly: () => !!(editor.isReadOnly || editor.isReadOnlyMode),
+    selection: () => {
+      const selection = editor.selection as Obj | undefined;
+      if (
+        typeof selection?.startOffset !== 'string' ||
+        typeof selection?.endOffset !== 'string'
+      )
+        return null;
+      return {
+        start: selection.startOffset,
+        end: selection.endOffset,
+        text: typeof selection.text === 'string' ? selection.text : ''
+      };
+    }
   };
 }

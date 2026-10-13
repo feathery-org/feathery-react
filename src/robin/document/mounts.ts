@@ -13,7 +13,6 @@
 import {
   Descriptor,
   DispatchOutcome,
-  Selection,
   Verb,
   VerbResult,
   WriteInput,
@@ -114,8 +113,11 @@ export function mountedDocuments(formKey: string): DocumentSession[] {
 export type DocumentAction = (payload: unknown) => DispatchOutcome;
 
 export interface LiveDocumentAccessor {
-  /** Section 9: what the form sends as `context.liveDocument`; null when no document is mounted. */
-  descriptor(selection?: Selection): Descriptor | null;
+  /**
+   * Section 9: what the form sends as `context.liveDocument`, with the person's selection read from
+   * the editor; null when no document is mounted.
+   */
+  descriptor(): Descriptor | null;
   /** Section 10: the four document actions, `document_outline` to `document_write`. */
   outline: DocumentAction;
   read: DocumentAction;
@@ -196,9 +198,9 @@ export function liveDocumentAccessor(formKey: string): LiveDocumentAccessor {
       );
     };
   return {
-    descriptor(selection) {
+    descriptor() {
       const [first] = slotsOf(formKey);
-      return first?.get()?.descriptor(selection) ?? null;
+      return first?.get()?.descriptor() ?? null;
     },
     outline: action('outline'),
     read: action('read'),

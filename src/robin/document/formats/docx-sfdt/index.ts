@@ -52,6 +52,7 @@ import {
 import { formatSeam } from './seams/format';
 import { spliceSeam } from './seams/splice';
 import { textSeam } from './seams/text';
+import { selectionOf } from './selection';
 import { docxTree } from './tree';
 import VOCABULARY from './vocabulary.json';
 
@@ -115,6 +116,7 @@ export const docxPack: Pack = {
   reconcile: { plan },
   seams: { text: textSeam, format: formatSeam, splice: spliceSeam },
   featureKeys: FEATURE_KEYS,
+  selection: selectionOf,
   // the server's card for how to edit a document (what it attached to these refusals on the rig)
   methodCards: ['edit-document'],
   residueKeys: {
