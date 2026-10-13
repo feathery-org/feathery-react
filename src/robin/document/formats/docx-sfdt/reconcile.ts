@@ -563,8 +563,26 @@ function nativePlan(
       z += 1;
     // whole words: a tracked change reads as words replaced, not letters inside a word
     const ws = (c: string | undefined) => c === undefined || /\s/.test(c);
-    while (a > 0 && !ws(oldText[a - 1])) a -= 1;
-    while (z > 0 && !ws(oldText[oldText.length - z])) z -= 1;
+    // ... but never across an inline that is not text (a marker parts the words for the editor)
+    const joined = (k: number) =>
+      editorOffset(before, id, k) - editorOffset(before, id, k - 1) === 1;
+    while (a > 0 && !ws(oldText[a - 1]) && joined(a)) a -= 1;
+    while (
+      z > 0 &&
+      !ws(oldText[oldText.length - z]) &&
+      joined(oldText.length - z)
+    )
+      z -= 1;
+    // a native edit replaces everything between its ends: when a bookmark, a field marker, an
+    // image or a control boundary sits inside the span, the edit would remove it, so the change
+    // is not text-shaped
+    const b = oldText.length - z;
+    if (
+      b > a &&
+      editorOffset(before, id, b - 1) + 1 - editorOffset(before, id, a) !==
+        b - a
+    )
+      return null;
     text.push({
       hi,
       a,
@@ -588,38 +606,62 @@ function enclosingParagraph(view: DocumentView, id: string): NfNode | null {
 }
 
 /**
- * A text offset in a paragraph's own text as the editor counts it: each inline content control's
- * start and end take one position (measured in the headless lane), so an offset after a control is
- * two further on, and one inside it one further. Offsets come from the normal form, never searched.
+ * How the editor counts positions in a paragraph (measured in the headless lane): a run takes its
+ * text's length, an inline content control one position at each end around its content, and every
+ * other inline (a bookmark marker, a field marker, an image, a shape) one position. `visit` gets
+ * each run with where it starts in the paragraph's own text and in the editor's count; returning
+ * true stops the walk. Returns the totals.
+ */
+export function walkPositions(
+  paragraph: NfNode | undefined,
+  visit: (run: NfNode, own: number, native: number) => boolean | void
+): { own: number; native: number } {
+  let own = 0;
+  let native = 0;
+  let stopped = false;
+  const rec = (inlines: NfNode[] | undefined) => {
+    for (const i of inlines ?? []) {
+      if (stopped) return;
+      if (i.kind === KIND.run) {
+        if (visit(i, own, native)) {
+          stopped = true;
+          return;
+        }
+        const len = String(i.text ?? '').length;
+        own += len;
+        native += len;
+      } else if (Array.isArray(i.inlines)) {
+        // an inline control (or any container of inlines): one position at each end
+        native += 1;
+        rec(i.inlines as NfNode[]);
+        if (stopped) return;
+        native += 1;
+      } else native += 1;
+    }
+  };
+  rec(paragraph?.inlines as NfNode[] | undefined);
+  return { own, native };
+}
+
+/**
+ * A text offset in a paragraph's own text as the editor counts it (`walkPositions`). Offsets come
+ * from the normal form, never searched.
  */
 export function editorOffset(
   view: DocumentView,
   paragraphId: string,
   offset: number
 ): number {
-  let t = 0;
-  let markers = 0;
-  let done = false;
-  const rec = (inlines: NfNode[] | undefined) => {
-    for (const i of inlines ?? []) {
-      if (done) return;
-      if (i.kind === KIND.run) {
-        const len = String(i.text ?? '').length;
-        if (t + len > offset || (t === offset && len > 0)) {
-          done = true;
-          return;
-        }
-        t += len;
-      } else if (i.kind === KIND.control && Array.isArray(i.inlines)) {
-        markers += 1;
-        rec(i.inlines as NfNode[]);
-        if (done) return;
-        markers += 1;
-      } else if (Array.isArray(i.inlines)) rec(i.inlines as NfNode[]);
+  let found: number | null = null;
+  const total = walkPositions(view.get(paragraphId), (run, own, native) => {
+    const len = String(run.text ?? '').length;
+    if (own + len > offset || (own === offset && len > 0)) {
+      found = native + (offset - own);
+      return true;
     }
-  };
-  rec(view.get(paragraphId)?.inlines as NfNode[] | undefined);
-  return offset + markers;
+    return false;
+  });
+  return found ?? total.native - (total.own - offset);
 }
 
 /** A run's character offset in its paragraph's own text. */

@@ -310,6 +310,14 @@ const api = {
     };
   },
 
+  /** Test support: select the first occurrence of a text through the editor's own search; the selection's native positions. */
+  selectFound(text: string): { start: string; end: string; text: string } {
+    const ed: any = live();
+    ed.search.find(text, 'None');
+    const sel = ed.selection;
+    return { start: sel.startOffset, end: sel.endOffset, text: String(sel.text ?? '') };
+  },
+
   /** The descriptor the form would send now (section 9), the selection read from the editor. */
   descriptor() {
     if (!session) throw new Error('no session');

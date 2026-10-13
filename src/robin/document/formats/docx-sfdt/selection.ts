@@ -7,7 +7,7 @@
 import type { DocumentView } from '../../pack';
 import type { NfNode } from '../../tree';
 import { KIND } from './adapter/keys';
-import { hierOf } from './reconcile';
+import { hierOf, walkPositions } from './reconcile';
 
 /** What the host reports: the editor's start and end positions and the selected text. */
 export interface NativeSelection {
@@ -16,36 +16,22 @@ export interface NativeSelection {
   text: string;
 }
 
-/** A paragraph's own-text offset for an editor offset (the inverse of `editorOffset`). */
+/** A paragraph's own-text offset for an editor offset: the inverse of `editorOffset`. */
 function ownOffset(paragraph: NfNode, editorAt: number): number {
-  let own = 0;
-  let at = 0;
   let found: number | null = null;
-  const rec = (inlines: unknown) => {
-    for (const i of (Array.isArray(inlines) ? inlines : []) as NfNode[]) {
-      if (found !== null) return;
-      if (i.kind === KIND.run) {
-        const len = String(i.text ?? '').length;
-        if (editorAt <= at + len) {
-          found = own + Math.max(0, editorAt - at);
-          return;
-        }
-        own += len;
-        at += len;
-      } else if (i.kind === KIND.control && Array.isArray(i.inlines)) {
-        at += 1; // the control's start
-        if (editorAt < at) {
-          found = own;
-          return;
-        }
-        rec(i.inlines);
-        if (found !== null) return;
-        at += 1; // its end
-      } else if (Array.isArray(i.inlines)) rec(i.inlines);
+  const total = walkPositions(paragraph, (run, own, native) => {
+    // a position before this run (on a marker, an image or a control end) is where its text starts
+    if (editorAt <= native) {
+      found = own;
+      return true;
     }
-  };
-  rec(paragraph.inlines);
-  return found ?? own;
+    if (editorAt <= native + String(run.text ?? '').length) {
+      found = own + (editorAt - native);
+      return true;
+    }
+    return false;
+  });
+  return found ?? total.own;
 }
 
 export function selectionOf(
