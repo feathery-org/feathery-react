@@ -4,8 +4,7 @@ import {
   applyHunks,
   ChangeList,
   countEditGroups,
-  diffSession,
-  normalizeForDiff
+  diffSession
 } from './sfdtDiff/index';
 import { DocxVersion } from './types';
 
@@ -14,9 +13,6 @@ export interface FoldedSession {
   changes: ChangeList | null;
   author: string;
 }
-
-// Highlights the diff adds to a display document; real tracked changes differ.
-const SYNTHETIC_REVISION_PREFIX = 'vh-';
 
 /** The author key a whole session's edits are drawn with. Browser sessions
  *  record a person as 'you', so the saved actor names them instead. */
@@ -46,17 +42,6 @@ export function approvedEditCount(sessions: FoldedSession[]): number {
         : total,
     0
   );
-}
-
-/** The document before a session, rebuilt by rejecting its own highlights;
- *  null without a usable change list. */
-export function sessionStart(session: FoldedSession): any | null {
-  if (!session.changes?.hunks?.length) return null;
-  const display = applyHunks(JSON.parse(session.finalSfdt), session.changes);
-  const ids = (display.revisions ?? [])
-    .map((revision: any) => String(revision.revisionId ?? ''))
-    .filter((id: string) => id.startsWith(SYNTHETIC_REVISION_PREFIX));
-  return normalizeForDiff(display, { rejectRevisionIds: ids });
 }
 
 /** One change list from `start` through every session, oldest first; null

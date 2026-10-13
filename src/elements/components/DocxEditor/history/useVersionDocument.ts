@@ -19,9 +19,9 @@ import {
   diffFoldedSessions,
   FoldedSession,
   mixesPersonAndRobin,
-  sessionAuthorKey,
-  sessionStart
+  sessionAuthorKey
 } from './foldedSessions';
+import { DocxToSfdt } from './convertOriginal';
 
 export interface VersionDocument {
   loading: boolean;
@@ -75,6 +75,8 @@ export function retainVersionDocuments(host: DocxHistoryHost): () => void {
       if (key.startsWith(`${scope.id}:`)) versionCache.delete(key);
     for (const key of resolveInFlight.keys())
       if (key.startsWith(`${scope.id}:`)) resolveInFlight.delete(key);
+    for (const key of convertedStarts.keys())
+      if (key.startsWith(`${scope.id}:`)) convertedStarts.delete(key);
   };
 }
 
@@ -129,6 +131,7 @@ export function __clearVersionDocumentCache(): void {
   versionCache.clear();
   resolveInFlight.clear();
   localArtifacts.clear();
+  convertedStarts.clear();
 }
 
 export interface LocalVersionArtifacts {
@@ -382,12 +385,42 @@ async function versionArtifacts(
   return { finalSfdt, changes };
 }
 
+// Docx-only rows (the original upload) converted to SFDT, a few at a time.
+const CONVERTED_MAX = 2;
+const convertedStarts = new Map<string, Promise<any>>();
+
+/** The document before the folded sessions, or null when it can't be had. */
+async function foldedStart(
+  host: DocxHistoryHost,
+  preceding: DocxVersion | null,
+  convertDocx?: DocxToSfdt
+): Promise<any | null> {
+  if (!preceding) return null;
+  const before = await versionArtifacts(host, preceding);
+  if (before) return JSON.parse(before.finalSfdt);
+  const docxUrl = preceding.editor_file ?? preceding.file;
+  if (!docxUrl || !convertDocx) return null;
+  const key = cacheKey(host, preceding);
+  let pending = convertedStarts.get(key);
+  if (!pending) {
+    pending = host.fetchVersionFile(docxUrl).then(convertDocx);
+    pending.catch(() => convertedStarts.delete(key));
+    convertedStarts.set(key, pending);
+    while (convertedStarts.size > CONVERTED_MAX) {
+      const oldest = convertedStarts.keys().next().value as string | undefined;
+      if (oldest !== undefined) convertedStarts.delete(oldest);
+    }
+  }
+  return pending;
+}
+
 // A folded row shows every folded session's edits; anything missing falls
 // back to the row's own version.
 async function resolveFolded(
   host: DocxHistoryHost,
   version: DocxVersion,
-  folded: FoldedVersions
+  folded: FoldedVersions,
+  convertDocx?: DocxToSfdt
 ): Promise<ResolvedVersion> {
   try {
     const members = [...folded.earlier, version].sort((a, b) => a.seq - b.seq);
@@ -401,12 +434,7 @@ async function resolveFolded(
         ...(artifact as Omit<FoldedSession, 'author'>),
         author: sessionAuthorKey(members[index])
       }));
-      const before = folded.preceding
-        ? await versionArtifacts(host, folded.preceding)
-        : null;
-      const start = before
-        ? JSON.parse(before.finalSfdt)
-        : sessionStart(sessions[0]);
+      const start = await foldedStart(host, folded.preceding, convertDocx);
       const changes = start && diffFoldedSessions(start, sessions);
       if (changes) {
         const combined = buildFromFinal(
@@ -441,7 +469,8 @@ export function prefetchVersionDocuments(
 export function useVersionDocument(
   host: DocxHistoryHost | null | undefined,
   version: DocxVersion | null,
-  folded?: FoldedVersions | null
+  folded?: FoldedVersions | null,
+  convertDocx?: DocxToSfdt
 ): VersionDocument {
   const [state, setState] = useState<VersionDocument>({
     loading: true,
@@ -453,6 +482,8 @@ export function useVersionDocument(
   latestVersion.current = version;
   const latestFolded = useRef(folded);
   latestFolded.current = folded;
+  const latestConvert = useRef(convertDocx);
+  latestConvert.current = convertDocx;
   const documentKey = version
     ? [version, ...(folded?.earlier ?? [])].map(versionDocumentKey).join(',')
     : '';
@@ -486,7 +517,7 @@ export function useVersionDocument(
     };
 
     (foldedVersions
-      ? resolveFolded(host, version, foldedVersions)
+      ? resolveFolded(host, version, foldedVersions, latestConvert.current)
       : resolveAndCache(host, version)
     ).then(done);
     return () => {

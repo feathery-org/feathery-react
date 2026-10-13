@@ -3,8 +3,7 @@ import {
   diffFoldedSessions,
   FoldedSession,
   mixesPersonAndRobin,
-  sessionAuthorKey,
-  sessionStart
+  sessionAuthorKey
 } from './foldedSessions';
 import { applyHunks, diffSession, trackedAuthorKeys } from './sfdtDiff';
 import { DocxVersion } from './types';
@@ -73,33 +72,6 @@ describe('approvedEditCount', () => {
     const plain = session('Hello there', 'Hello there again', 'you');
     expect(approvedEditCount([confirmed, plain])).toBe(1);
     expect(approvedEditCount([plain])).toBe(0);
-  });
-});
-
-describe('sessionStart', () => {
-  it('rebuilds the document before the session', () => {
-    const stored = session('Hello', 'Hello world', 'alice');
-    const start = must(sessionStart(stored));
-    expect(start.sections[0].blocks[0].inlines.map((i: any) => i.text)).toEqual(
-      ['Hello']
-    );
-    // Diffing from the rebuilt start reproduces the session's own edits.
-    const again = diffSession(
-      start,
-      [{ sfdt: doc('Hello world'), author: 'you' }],
-      'x'
-    );
-    expect(again.changeCount).toBe(must(stored.changes).changeCount);
-  });
-
-  it('is null without a change list', () => {
-    expect(
-      sessionStart({
-        finalSfdt: JSON.stringify(doc('x')),
-        changes: null,
-        author: 'a'
-      })
-    ).toBeNull();
   });
 });
 
