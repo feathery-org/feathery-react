@@ -43,11 +43,11 @@
  * What the core guarantees a pack: inputs validated against the envelope contract before the
  * pack sees them; ids minted and re-anchored across user edits; read-before-write by content
  * hash; declared scope checked against a diff of the two documents; finalizers and invariants run
- * on a virtual copy, never the live document; one write per message; after every commit the proof
- * (accept equals intended, reject equals what rejecting should restore, residue conserved, other
- * changes untouched), a rollback that undoes only the commit's own steps, and the engine's undo
- * history beside the editor's; card titles from the diff; and the bridge, descriptor and form
- * accessor (`mounts.ts`) without the pack naming any of them.
+ * on a virtual copy, never the live document; a resent write replayed from the journal; after
+ * every commit the proof (accept equals intended, reject equals what rejecting should restore,
+ * residue conserved, other changes untouched), a rollback that undoes only the commit's own steps,
+ * and the engine's undo history beside the editor's; card titles from the diff; and the bridge,
+ * descriptor and form accessor (`mounts.ts`) without the pack naming any of them.
  */
 import type {
   Fact,

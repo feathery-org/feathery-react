@@ -1,6 +1,7 @@
 // Robin's document engine for a mounted editor: one session per opened document, mounted under
 // the form instance so the form's `liveDocument` accessor reaches it.
 import {
+  journalFor,
   lazySession,
   mountDocument,
   registerCardResolver,
@@ -39,13 +40,15 @@ export interface RobinDocumentMount {
 export function createRobinSession(
   editor: LiveEditor,
   envelopeId: string,
-  editorId?: string
+  editorId?: string,
+  journal?: SessionOptions['journal']
 ): DocumentSession {
   return new DocumentSession({
     pack: docxPack,
     host: createHost(editor),
     target: { type: 'envelope', id: envelopeId },
     ...(editorId ? { editorId } : {}),
+    ...(journal ? { journal } : {}),
     ...robinMarks(editor)
   });
 }
@@ -76,7 +79,13 @@ export function mountRobinDocument({
 }: RobinDocumentMount): () => void {
   let unroute = () => {};
   const mounted = lazySession(newEditorId(), (editorId) => {
-    const session = createRobinSession(editor, envelopeId, editorId);
+    // the form session's journal: a resent write finds its record after a remount
+    const session = createRobinSession(
+      editor,
+      envelopeId,
+      editorId,
+      journalFor(formKey)
+    );
     // undo and redo go to the editor when it has an entry, else to the engine (decision D4)
     unroute = registerHistoryRoute(editor, {
       undo: () => session.undo(),

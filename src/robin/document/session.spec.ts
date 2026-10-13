@@ -509,35 +509,46 @@ describe('document session: the four verbs end to end', () => {
     expect(result.refusal.hint).toContain('shape');
   });
 
-  it('one write per message: a resend replays, a different second write is refused', () => {
-    const { call } = mount();
-    const n1 = nodeOf(call('read', { ids: ['n1'] }), 'n1');
-    const input = {
+  it('a resend replays the recorded result; a different write in the same turn is a new commit with the next card (protocol 2)', () => {
+    const { host, call } = mount();
+    const nodes = (call('read', { ids: ['n1', 'n3'] }) as ReadResult).nodes;
+    const retitle = {
       intent: 'Retitle.',
       scope: { ids: ['n1'] },
       changes: [
         {
           kind: 'replace',
           id: 'n1',
-          base: n1.base,
+          base: nodes[0].base,
           node: { text: 'Proposal', style: 'f1' }
         }
       ]
     };
-    const first = call('write', input);
-    expect(call('write', input)).toEqual(first);
+    // a dry run is never journaled: the real write that follows it executes
+    expect(call('write', { ...retitle, dryRun: true })).toEqual(
+      expect.objectContaining({ committed: false, dryRun: true })
+    );
+    const first = call('write', retitle);
+    expect(first).toEqual(
+      expect.objectContaining({ committed: true, cardId: 'turn-0' })
+    );
+    const once = host.serialize();
+    expect(call('write', retitle)).toEqual(first);
+    expect(host.serialize()).toBe(once);
     const second = call('write', {
-      ...input,
-      changes: [{ ...input.changes[0], node: { text: 'Other', style: 'f1' } }]
+      intent: 'Rename the line.',
+      scope: { ids: ['n3'] },
+      changes: [
+        {
+          kind: 'replace',
+          id: 'n3',
+          base: nodes[1].base,
+          node: { text: 'Motor fleet', style: nodes[1].style }
+        }
+      ]
     });
     expect(second).toEqual(
-      expect.objectContaining({
-        ok: false,
-        refusal: expect.objectContaining({
-          invariant: 'one-write-per-message',
-          retry: 'do_not_retry'
-        })
-      })
+      expect.objectContaining({ committed: true, cardId: 'turn-0.2' })
     );
   });
 

@@ -15,9 +15,13 @@ import {
   DispatchOutcome,
   Selection,
   Verb,
+  VerbResult,
+  WriteInput,
   dispatchFailure,
-  parseBridgePayload
+  parseBridgePayload,
+  parseVerbInput
 } from './envelope';
+import { WriteJournal } from './loop';
 import { DocumentSession } from './session';
 
 /** A mounted document's session, created when first used. */
@@ -128,22 +132,62 @@ export interface LiveDocumentAccessor {
   documentType(): string | null;
 }
 
+const journals = new Map<string, WriteJournal<VerbResult>>();
+
+/**
+ * The form session's write journal (contract 10.3): every document session mounted in the form
+ * shares it, so a resent write finds its record after the editor remounted.
+ */
+export function journalFor(formKey: string): WriteJournal<VerbResult> {
+  let journal = journals.get(formKey);
+  if (!journal) {
+    journal = new WriteJournal<VerbResult>();
+    journals.set(formKey, journal);
+  }
+  return journal;
+}
+
+/** A resent write the journal recorded, answered without an editor (it remounted since). */
+function recordedWrite(formKey: string, raw: unknown): DispatchOutcome | null {
+  const parsed = parseBridgePayload(raw);
+  if (!parsed.ok) return null;
+  const input = parseVerbInput('write', parsed.value.input);
+  if (!input.ok) return null;
+  const recorded = journals
+    .get(formKey)
+    ?.replay(parsed.value.turnId, input.value as WriteInput);
+  if (!recorded) return null;
+  return {
+    status: 'ok',
+    result: {
+      ...recorded,
+      editorId: parsed.value.editorId,
+      target: { ...parsed.value.target },
+      // a committed write's result carries the outline hash after it
+      outlineHash: (recorded as { outlineHash: string }).outlineHash
+    }
+  };
+}
+
 export function liveDocumentAccessor(formKey: string): LiveDocumentAccessor {
   const action =
     (verb: Verb): DocumentAction =>
     (payload) => {
       const sessions = slotsOf(formKey);
-      if (!sessions.length)
-        return dispatchFailure(
-          'not-mounted',
-          'No document editor is mounted in this form.'
-        );
       const editorId =
         payload && typeof payload === 'object'
           ? (payload as { editorId?: unknown }).editorId
           : undefined;
       const session = sessions.find((s) => s.editorId === editorId)?.get();
       if (session) return session.dispatch(verb, payload);
+      const recorded =
+        verb === 'write' ? recordedWrite(formKey, payload) : null;
+      if (recorded) return recorded;
+      if (!sessions.length)
+        return dispatchFailure(
+          'not-mounted',
+          'No document editor is mounted in this form.'
+        );
       const parsed = parseBridgePayload(payload);
       if (!parsed.ok) return parsed.failure;
       return dispatchFailure(

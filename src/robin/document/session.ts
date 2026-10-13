@@ -72,6 +72,11 @@ export interface SessionOptions {
    * redo through the engine's history. The host runs its change handling as for any edit.
    */
   onReplaced?: (by: 'robin' | 'person') => void;
+  /**
+   * The write journal (contract 10.3). The form shares one per form session, so a resent write
+   * finds its record after the editor remounted; without it the session keeps its own.
+   */
+  journal?: WriteJournal<VerbResult>;
 }
 
 export type { DispatchOutcome };
@@ -98,7 +103,7 @@ export class DocumentSession {
 
   private readonly ids = new IdTable();
 
-  private readonly journal = new WriteJournal<VerbResult>();
+  private readonly journal: WriteJournal<VerbResult>;
 
   private native = '';
 
@@ -124,6 +129,7 @@ export class DocumentSession {
     this.onTurnChange = options.onTurnChange;
     this.writing = options.writing ?? ((commit) => commit());
     this.onReplaced = options.onReplaced;
+    this.journal = options.journal ?? new WriteJournal<VerbResult>();
     this.history =
       options.history ??
       new EngineHistory(ENGINE_HISTORY_LIMIT, (a, b) =>
@@ -257,27 +263,10 @@ export class DocumentSession {
     trace.requested(write);
     if (this.host.readOnly()) return readOnlyResult();
 
-    const journaled = this.journal.check(turnId, write);
-    if (journaled && 'replay' in journaled) return journaled.replay;
-    if (journaled) {
-      trace.verified('refused', [
-        { name: 'envelope', pass: true },
-        { name: 'one-write-per-message', pass: false }
-      ]);
-      return refusedResult(
-        makeRefusal([
-          problem(
-            'one-write-per-message',
-            'Nothing was applied: this message already committed its change; a message makes one change.',
-            {
-              retry: 'do_not_retry',
-              hint: 'Reply to the user with what landed; a further change is a new message.'
-            }
-          )
-        ]),
-        trace.build()
-      );
-    }
+    // a resent identical write returns what it committed; a different one is the turn's next card
+    const recorded = this.journal.replay(turnId, write);
+    if (recorded) return recorded;
+    const changeSetId = this.journal.nextChangeSet(turnId);
 
     const before = this.state;
     const prepared = prepareWrite(before, write);
@@ -325,7 +314,7 @@ export class DocumentSession {
         pack: this.pack,
         host: this.host,
         history: this.history,
-        turnId,
+        turnId: changeSetId,
         intent: write.intent,
         title: prepared.title,
         derived: prepared.facts
@@ -426,7 +415,7 @@ export class DocumentSession {
 
     this.install(outcome.live.native, outcome.live);
     if (outcome.plan.history === 'engine' && outcome.plan.landed === 'card')
-      this.structural.add(turnId);
+      this.structural.add(changeSetId);
     trace.committed('committed', outcome.seams, prepared.touched.length);
     trace.proof({
       outcome: 'passed',
@@ -439,7 +428,7 @@ export class DocumentSession {
       ok: true,
       committed: true,
       dryRun: false,
-      cardId: outcome.plan.landed === 'card' ? turnId : null,
+      cardId: outcome.plan.landed === 'card' ? changeSetId : null,
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
       ...common,

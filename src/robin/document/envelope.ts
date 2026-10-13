@@ -49,7 +49,6 @@ export const CORE_INVARIANTS = [
   'property-invalid',
   'unknown-format',
   'format-entry-rejected',
-  'one-write-per-message',
   'proof-failed'
 ] as const;
 export type CoreInvariant = typeof CORE_INVARIANTS[number];

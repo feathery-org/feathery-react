@@ -4,6 +4,7 @@
  */
 import { descriptorSchema } from './envelope';
 import {
+  journalFor,
   lazySession,
   liveDocumentAccessor,
   mountDocument,
@@ -244,5 +245,62 @@ describe('a session created on first use (review: no session where Robin never r
     const accessor = liveDocumentAccessor('form-lazy-4');
     expect(accessor.descriptor()).toBeNull();
     off();
+  });
+});
+
+describe('the form session journal (protocol 2, contract 10.3)', () => {
+  it('a resent write finds its record after the editor remounted, and a new editor shares the journal', () => {
+    const journal = journalFor('form-journal');
+    const make = (editorId: string) =>
+      new DocumentSession({
+        pack: makeToyPack(),
+        host: new ToyHost(doc),
+        target: { type: 'envelope', id: 'env-j' },
+        editorId,
+        journal
+      });
+    const first = make('ed-before');
+    const off = mountDocument('form-journal', 'c1', first);
+    const accessor = liveDocumentAccessor('form-journal');
+    const read = accessor.read(payload(first, { ids: ['n1'] }, 'turn-j'));
+    if (read.status !== 'ok') throw new Error('read failed');
+    const n1 = (
+      read.result as unknown as {
+        nodes: Array<{ base: string; style?: string }>;
+      }
+    ).nodes[0];
+    const request = payload(
+      first,
+      {
+        intent: 'Rename.',
+        scope: { ids: ['n1'] },
+        changes: [
+          {
+            kind: 'replace',
+            id: 'n1',
+            base: n1.base,
+            node: { text: 'Motor fleet', style: n1.style }
+          }
+        ]
+      },
+      'turn-j'
+    );
+    const committed = accessor.write(request);
+    expect(committed).toEqual(
+      expect.objectContaining({
+        status: 'ok',
+        result: expect.objectContaining({ committed: true, cardId: 'turn-j' })
+      })
+    );
+    off();
+    // the editor remounts: a new editor id over the same document
+    const second = make('ed-after');
+    const offAgain = mountDocument('form-journal', 'c1', second);
+    expect(accessor.write(request)).toEqual(committed);
+    // the resend executed nothing on the new editor
+    expect(second.host.serialize()).toBe(doc);
+    offAgain();
+    // and with no editor mounted at all, the record still answers
+    expect(accessor.write(request)).toEqual(committed);
   });
 });

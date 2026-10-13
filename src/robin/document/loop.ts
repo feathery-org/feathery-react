@@ -1,9 +1,12 @@
 /**
- * One message, one transaction (architecture 5.4, decision D5).
+ * The engine's write journal (contract section 10.3), keyed by the bridge `turnId`.
  *
- * The engine enforces exactly one rule itself: one committed write per message, keyed by the
- * bridge `turnId`. The journal returns the recorded response, without re-executing, to a resent
- * identical write, and refuses a different second write with `one-write-per-message`.
+ * It records committed writes only: never a dry run, a refusal, a conflict, a no-change answer or a
+ * read-only answer, because a journaled dry run would otherwise be replayed to the real write that
+ * follows it. A resent identical write (same changes and formats) returns the recorded result
+ * without executing; a different write in the same turn executes as a new commit, whose card is
+ * `<turnId>.2`, `<turnId>.3`. The form holds one journal per form session, so a resent request
+ * still finds its record after the editor remounted.
  *
  * When to stop retrying refusals and conflicts is the server's loop (contract 7.1, 7.2), not the
  * engine's.
@@ -11,7 +14,7 @@
 import { WriteInput } from './envelope';
 import { canonicalJson, hash64 } from './tree';
 
-/** Turns the journal remembers; a message's writes all land within one turn. */
+/** Turns the journal remembers. */
 export const JOURNAL_TURNS = 50;
 
 /** The identity of a write's content: what it changes, not how it is worded. */
@@ -22,29 +25,40 @@ export function writeSignature(write: WriteInput): string {
 }
 
 export class WriteJournal<R = unknown> {
-  private readonly entries = new Map<
+  private readonly turns = new Map<
     string,
-    { signature: string; response: R }
+    Array<{ signature: string; response: R }>
   >();
 
-  /** Null when the turn has no committed write yet. */
-  check(
-    turnId: string,
-    write: WriteInput
-  ): { replay: R } | { secondWrite: true } | null {
-    const entry = this.entries.get(turnId);
-    if (!entry) return null;
-    return entry.signature === writeSignature(write)
-      ? { replay: entry.response }
-      : { secondWrite: true };
+  /** The recorded result of an identical committed write in this turn, if there is one. */
+  replay(turnId: string, write: WriteInput): R | undefined {
+    const signature = writeSignature(write);
+    return this.turns.get(turnId)?.find((e) => e.signature === signature)
+      ?.response;
   }
 
+  /** How many writes this turn has committed. */
+  committed(turnId: string): number {
+    return this.turns.get(turnId)?.length ?? 0;
+  }
+
+  /** The change set id the next committed write of this turn takes: the turn, then `.2`, `.3`. */
+  nextChangeSet(turnId: string): string {
+    const n = this.committed(turnId);
+    return n ? `${turnId}.${n + 1}` : turnId;
+  }
+
+  /** Record a committed write's result. */
   record(turnId: string, write: WriteInput, response: R): void {
-    this.entries.delete(turnId);
-    this.entries.set(turnId, { signature: writeSignature(write), response });
-    while (this.entries.size > JOURNAL_TURNS) {
-      const oldest = this.entries.keys().next().value as string;
-      this.entries.delete(oldest);
+    const entries = this.turns.get(turnId) ?? [];
+    this.turns.delete(turnId);
+    this.turns.set(turnId, [
+      ...entries,
+      { signature: writeSignature(write), response }
+    ]);
+    while (this.turns.size > JOURNAL_TURNS) {
+      const oldest = this.turns.keys().next().value as string;
+      this.turns.delete(oldest);
     }
   }
 }
