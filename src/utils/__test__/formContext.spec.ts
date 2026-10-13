@@ -162,10 +162,11 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
   });
 
   it('captures independent Quik copies before flushing saved fields', async () => {
+    const signerIds = { '1own': 'person-first' };
     const source = {
       kind: 'quik' as const,
       forms: [
-        { id: 44249, fields: { '1own.FName': 'First' } },
+        { id: 44249, fields: { '1own.FName': 'First' }, signerIds },
         { id: 44249, fields: { '1own.FName': 'Second' } }
       ]
     };
@@ -181,10 +182,15 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       toolbarActions: ['download', 'draft']
     });
     source.forms[0].fields['1own.FName'] = 'Changed later';
+    signerIds['1own'] = 'person-second';
     finishSave();
     await pending;
     expect(flow.mock.calls[0][0].documents[0].forms).toEqual([
-      { id: 44249, fields: { '1own.FName': 'First' } },
+      {
+        id: 44249,
+        fields: { '1own.FName': 'First' },
+        signerIds: { '1own': 'person-first' }
+      },
       { id: 44249, fields: { '1own.FName': 'Second' } }
     ]);
   });

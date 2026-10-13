@@ -360,7 +360,8 @@ export const getFormContext = (formUuid: string) => {
               ...doc,
               forms: doc.forms.map((form) => ({
                 ...form,
-                fields: { ...form.fields }
+                fields: { ...form.fields },
+                ...(form.signerIds ? { signerIds: { ...form.signerIds } } : {})
               }))
             }
           : doc
