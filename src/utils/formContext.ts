@@ -37,9 +37,13 @@ import { runLogicRule, RunLogicRuleParams } from './formActions/runLogicRule';
 import {
   addTableRow,
   deleteTableRow,
+  focusTableCell,
+  getTableIssues,
   getTableRows,
   setTableCells,
   SetTableCellsInput,
+  setTableFindings,
+  SetTableFindingsInput,
   TableRowTarget,
   triggerTableAction
 } from './formActions/tables';
@@ -180,6 +184,17 @@ export const getFormContext = (formUuid: string) => {
       target: TableRowTarget,
       actionLabel?: string
     ) => triggerTableAction(formUuid, tableId, target, actionLabel),
+    // Marks, focuses and reads the cells of a spreadsheet table the person is looking at
+    setTableFindings: (tableId: string, findings: SetTableFindingsInput[]) =>
+      setTableFindings(formUuid, tableId, findings),
+    focusTableCell: (
+      tableId: string,
+      target: TableRowTarget & { fieldKey?: string }
+    ) => focusTableCell(formUuid, tableId, target),
+    getTableIssues: (
+      tableId: string,
+      query: TableRowTarget & { scope: 'table' | 'row' }
+    ) => getTableIssues(formUuid, tableId, query),
     isLastStep: () => {
       const step = formState.currentStep;
       return step.next_conditions.length === 0;

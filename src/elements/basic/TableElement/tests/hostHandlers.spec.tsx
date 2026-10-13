@@ -1,9 +1,20 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within
+} from '@testing-library/react';
 import TableElement from '../index';
 import internalState from '../../../../utils/internalState';
 import { fieldValues } from '../../../../utils/init';
 import type { TableHandlers } from '../../../../utils/formActions/tables';
+import {
+  SpreadsheetTable,
+  SpreadsheetTableHandle
+} from '../spreadsheet/SpreadsheetTable';
 
 const FORM = 'host-handlers-form';
 const TABLE = 'table1';
@@ -97,6 +108,9 @@ const stubLayout = () => {
 const handlers = (): TableHandlers =>
   (internalState as any)[FORM].tables.get(TABLE);
 
+const cell = (text: string) =>
+  screen.getByText(text).closest('[role="gridcell"]')!;
+
 beforeEach(() => {
   (internalState as any)[FORM] = {};
 });
@@ -145,7 +159,8 @@ describe('a field-backed classic table', () => {
       canDeleteRows: true,
       showsActions: true,
       allowsRowClick: false,
-      buffersEdits: false
+      buffersEdits: false,
+      showsGrid: false
     });
     expect(handlers().getRows({ offset: 0, limit: 10, search: 'bob' })).toEqual(
       {
@@ -439,5 +454,337 @@ describe('a hub spreadsheet table', () => {
         entryIds: ['entry1', 'entry2', null]
       })
     );
+  });
+
+  it('marks a cell by its row, replaces the set on the next call, and clears a finding when its cell is edited', async () => {
+    await renderHubTable();
+
+    let outcomes: any;
+    act(() => {
+      outcomes = handlers().setFindings([
+        { rowIndex: 1, fieldKey: 'email', message: 'Check this email' }
+      ]);
+    });
+    expect(outcomes).toEqual([]);
+    await waitFor(() =>
+      expect(cell('bob@test.com')).toHaveAttribute('title', 'Check this email')
+    );
+    expect(cell('Bob')).not.toHaveAttribute('title');
+    expect(handlers().getLiveState()).toMatchObject({
+      showsGrid: true,
+      findings: 1
+    });
+
+    act(() => {
+      handlers().setFindings([{ rowIndex: 0, message: 'Row looks wrong' }]);
+    });
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('title', 'Row looks wrong')
+    );
+    expect(cell('alice@test.com')).toHaveAttribute('title', 'Row looks wrong');
+    expect(cell('bob@test.com')).not.toHaveAttribute('title');
+
+    act(() => {
+      handlers().setFindings([
+        { rowIndex: 1, fieldKey: 'email', message: 'Check this email' },
+        { rowIndex: 0, fieldKey: 'name', message: 'Check this name' }
+      ]);
+    });
+    act(() => {
+      handlers().editCells([
+        { rowIndex: 1, fieldKey: 'email', value: 'bob@new.com' }
+      ]);
+    });
+    await waitFor(() =>
+      expect(cell('bob@new.com')).not.toHaveAttribute('title')
+    );
+    expect(cell('Alice')).toHaveAttribute('title', 'Check this name');
+    expect(handlers().getLiveState()).toMatchObject({
+      findings: 1,
+      pending: { edits: 1, deletions: 0 }
+    });
+  });
+
+  it('rejects a finding on a row the grid is not showing or an unknown column, and keeps the rest', async () => {
+    await renderHubTable();
+    act(() => {
+      handlers().deleteRow(1);
+    });
+    await waitFor(() => expect(screen.queryByText('Bob')).toBeNull());
+
+    let outcomes: any;
+    act(() => {
+      outcomes = handlers().setFindings([
+        { rowIndex: 1, message: 'Gone' },
+        { rowIndex: 0, fieldKey: 'phone', message: 'No column' },
+        { rowIndex: 0, message: 'Kept' }
+      ]);
+    });
+
+    expect(outcomes).toEqual([
+      { index: 0, reason: 'row_hidden', message: expect.stringContaining('1') },
+      {
+        index: 1,
+        reason: 'unknown_column',
+        message: expect.stringContaining('phone')
+      }
+    ]);
+    await waitFor(() => expect(cell('Alice')).toHaveAttribute('title', 'Kept'));
+    expect(handlers().getLiveState()).toMatchObject({ findings: 1 });
+  });
+
+  it('drops a finding on an unsaved row once rows shift, and keeps one on a saved row', async () => {
+    await renderHubTable();
+    act(() => {
+      handlers().addRow();
+    });
+    await waitFor(() =>
+      expect(handlers().getLiveState()).toMatchObject({ rowCount: 3 })
+    );
+    act(() => {
+      handlers().setFindings([
+        { rowIndex: 2, fieldKey: 'name', message: 'Fill in' },
+        { rowIndex: 0, fieldKey: 'name', message: 'Saved' }
+      ]);
+    });
+    await waitFor(() =>
+      expect(handlers().getLiveState()).toMatchObject({ findings: 2 })
+    );
+
+    act(() => {
+      handlers().deleteRow(1);
+    });
+
+    await waitFor(() =>
+      expect(handlers().getLiveState()).toMatchObject({ findings: 1 })
+    );
+    expect(cell('Alice')).toHaveAttribute('title', 'Saved');
+  });
+
+  it('focuses a cell after committing an open draft, shows the selection and viewport, and refuses what it cannot show', async () => {
+    await renderHubTable();
+    fireEvent.doubleClick(cell('bob@test.com'));
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'bob@new.com' }
+    });
+
+    let outcome: any;
+    act(() => {
+      outcome = handlers().focusCell(0, 'name');
+    });
+
+    expect(outcome).toEqual({ ok: true });
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(handlers().getLiveState()).toMatchObject({
+      pending: { edits: 1, deletions: 0 },
+      selection: {
+        rowIndex: 0,
+        entryId: 'entry1',
+        fieldKey: 'name',
+        columnName: 'Name',
+        value: 'Alice',
+        row: { name: 'Alice', email: 'alice@test.com' }
+      },
+      viewport: { visibleRowIndexes: [0, 1] }
+    });
+    expect(handlers().focusCell(0, 'phone')).toMatchObject({
+      ok: false,
+      reason: 'unknown_column'
+    });
+
+    act(() => {
+      handlers().deleteRow(1);
+    });
+    await waitFor(() => expect(screen.queryByText('Bob')).toBeNull());
+    expect(handlers().focusCell(1, 'name')).toMatchObject({
+      ok: false,
+      reason: 'row_hidden'
+    });
+  });
+
+  it('reads a row’s rule errors and findings, a row-level finding answered once', async () => {
+    const getHubSchemas = () =>
+      Promise.resolve({
+        hubs: [
+          {
+            id: 'hub1',
+            fields: [
+              { id: 'hf1', key: 'name', type: 'text' },
+              { id: 'hf2', key: 'email', type: 'number' }
+            ]
+          }
+        ]
+      });
+    await renderHubTable({}, { getHubSchemas });
+    await waitFor(() =>
+      expect(handlers().getLiveState()).toMatchObject({
+        ruleErrors: { total: 2 }
+      })
+    );
+    act(() => {
+      handlers().setFindings([{ rowIndex: 1, message: 'Row looks wrong' }]);
+    });
+
+    const issues = handlers().getIssues(1);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        {
+          rowIndex: 1,
+          entryId: 'entry2',
+          message: 'Row looks wrong',
+          severity: 'warning',
+          source: 'assistant'
+        },
+        expect.objectContaining({
+          rowIndex: 1,
+          entryId: 'entry2',
+          fieldKey: 'email',
+          columnName: 'email',
+          severity: 'error',
+          source: 'rule'
+        })
+      ])
+    );
+    expect(issues).toHaveLength(2);
+    expect(handlers().getIssues()).toHaveLength(3);
+
+    act(() => {
+      handlers().focusCell(0, 'email');
+    });
+    await waitFor(() =>
+      expect(handlers().getLiveState()).toMatchObject({
+        selection: { fieldKey: 'email', error: expect.any(String) }
+      })
+    );
+  });
+
+  it('shows no grid on a classic display, so nothing to select or scroll', async () => {
+    await renderHubTable({ display_mode: undefined });
+
+    await waitFor(() =>
+      expect(handlers().getLiveState()).toMatchObject({
+        rowCount: 2,
+        showsGrid: false
+      })
+    );
+    const live = handlers().getLiveState();
+    expect(live).not.toHaveProperty('viewport');
+    expect(live).not.toHaveProperty('selection');
+  });
+});
+
+describe('the spreadsheet handle', () => {
+  const gridColumns = [
+    { name: 'Name', field_id: 'f1', field_type: 'text', field_key: 'name' },
+    { name: 'Age', field_id: 'f2', field_type: 'text', field_key: 'age' }
+  ];
+
+  beforeEach(() => {
+    stubLayout();
+  });
+
+  afterEach(() => {
+    restoreLayout?.();
+  });
+
+  it('refuses a row the grid is not showing and reports the rows it is', async () => {
+    const ref = React.createRef<SpreadsheetTableHandle>();
+    render(
+      <SpreadsheetTable
+        ref={ref}
+        columns={gridColumns.slice(0, 1)}
+        rowIndices={[0, 2]}
+        fieldValues={{ name: ['Alice', 'Bob', 'Cara'] }}
+        canEdit
+        onCellsEdit={jest.fn()}
+      />
+    );
+    await screen.findByText('Cara');
+
+    expect(ref.current!.getSelection()).toBeNull();
+    let focused: boolean | undefined;
+    act(() => {
+      focused = ref.current!.focusCell(1, 'name');
+    });
+    expect(focused).toBe(false);
+    act(() => {
+      focused = ref.current!.focusCell(2, 'name');
+    });
+    expect(focused).toBe(true);
+    await waitFor(() =>
+      expect(ref.current!.getSelection()).toEqual({
+        rowIndex: 2,
+        fieldKey: 'name'
+      })
+    );
+    expect(ref.current!.getVisibleRowIndexes()).toEqual([0, 2]);
+  });
+
+  it('selects the whole row when no column is named', async () => {
+    const ref = React.createRef<SpreadsheetTableHandle>();
+    render(
+      <SpreadsheetTable
+        ref={ref}
+        columns={gridColumns}
+        rowIndices={[0, 1]}
+        fieldValues={{ name: ['Alice', 'Bob'], age: ['30', '40'] }}
+        canEdit
+        onCellsEdit={jest.fn()}
+      />
+    );
+    await screen.findByText('Bob');
+
+    act(() => {
+      ref.current!.focusCell(1);
+    });
+    await waitFor(() =>
+      expect(ref.current!.getSelection()).toEqual({
+        rowIndex: 1,
+        fieldKey: 'name',
+        extended: true
+      })
+    );
+    expect(
+      screen.getByText('Bob').closest('[aria-selected="true"]')
+    ).not.toBeNull();
+    expect(
+      screen.getByText('40').closest('[aria-selected="true"]')
+    ).not.toBeNull();
+  });
+
+  it('refuses a row a column filter hides and keeps the filter', async () => {
+    const ref = React.createRef<SpreadsheetTableHandle>();
+    render(
+      <SpreadsheetTable
+        ref={ref}
+        columns={gridColumns.slice(0, 1)}
+        rowIndices={[0, 1]}
+        fieldValues={{ name: ['Alice', 'Bob'] }}
+        canEdit
+        onCellsEdit={jest.fn()}
+      />
+    );
+    await screen.findByText('Bob');
+    fireEvent.contextMenu(screen.getByRole('columnheader', { name: /^Name/ }), {
+      clientX: 10,
+      clientY: 10
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Filter…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Filter column Name' });
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Bob' }));
+    const cellTexts = () =>
+      screen.getAllByRole('gridcell').map((gridCell) => gridCell.textContent);
+    expect(cellTexts()).not.toContain('Bob');
+
+    let focused: boolean | undefined;
+    act(() => {
+      focused = ref.current!.focusCell(1, 'name');
+    });
+    expect(focused).toBe(false);
+    expect(cellTexts()).not.toContain('Bob');
+    expect(ref.current!.getSelection()).toBeNull();
   });
 });

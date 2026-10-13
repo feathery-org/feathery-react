@@ -103,7 +103,11 @@ describe('resolveTableIssues', () => {
     ];
     const { cells, unresolved } = resolveTableIssues(issues, context([0, 1, 2]));
     expect(cells).toEqual({});
-    expect(unresolved).toEqual(issues);
+    expect(unresolved).toEqual([
+      { index: 0, reason: 'row_not_shown' },
+      { index: 1, reason: 'unknown_field' },
+      { index: 2, reason: 'row_not_shown' }
+    ]);
   });
 
   test('the first issue to name a cell keeps it', () => {

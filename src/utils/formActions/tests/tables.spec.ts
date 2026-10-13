@@ -2,8 +2,12 @@ import internalState from '../../internalState';
 import {
   addTableRow,
   deleteTableRow,
+  focusTableCell,
+  getTableIssues,
   getTableRows,
   setTableCells,
+  setTableFindings,
+  TableCellIssue,
   TableHandlers,
   TableLiveState,
   triggerTableAction
@@ -30,6 +34,7 @@ describe('table form actions', () => {
     showsActions: true,
     allowsRowClick: false,
     buffersEdits: false,
+    showsGrid: false,
     ...over
   });
 
@@ -52,6 +57,9 @@ describe('table form actions', () => {
     addRow: jest.fn(() => 0),
     deleteRow: jest.fn(),
     runAction: jest.fn(async () => {}),
+    setFindings: jest.fn(() => []),
+    focusCell: jest.fn(() => ({ ok: true as const })),
+    getIssues: jest.fn(() => []),
     ...over
   });
 
@@ -373,6 +381,160 @@ describe('table form actions', () => {
         message: 'boom'
       });
       expect(handlers.runAction).toHaveBeenCalledWith(0, undefined);
+    });
+  });
+
+  describe('setTableFindings', () => {
+    it('refuses a table that is not showing a grid', () => {
+      makeState(makeHandlers());
+      expect(setTableFindings(formUuid, TABLE, [])).toMatchObject({
+        ok: false,
+        reason: 'table_not_shown'
+      });
+    });
+
+    it('places what it can, folds a suggestion into the message, and reports every rejection by position', () => {
+      const handlers = makeHandlers(
+        liveState({ showsGrid: true, entryIds: ['e1', 'e2'] }),
+        {
+          getRow: (rowIndex) => (rowIndex === 1 ? null : ROWS[rowIndex]),
+          setFindings: jest.fn(() => [
+            { index: 1, reason: 'unknown_column', message: 'no phone' }
+          ])
+        }
+      );
+      makeState(handlers);
+
+      const result = setTableFindings(formUuid, TABLE, [
+        { entryId: 'e9', message: 'gone' },
+        { rowIndex: 1, message: 'deleted' },
+        { rowIndex: 0, fieldKey: 'name', message: 'Fix.', suggestedValue: 'Al' },
+        { rowIndex: 0, fieldKey: 'phone', message: 'No column' },
+        { rowIndex: 0, fieldKey: '', message: 'Whole row' }
+      ]);
+
+      expect(handlers.setFindings).toHaveBeenCalledWith([
+        { rowIndex: 0, fieldKey: 'name', message: 'Fix. Suggested: Al' },
+        { rowIndex: 0, fieldKey: 'phone', message: 'No column' },
+        { rowIndex: 0, message: 'Whole row' }
+      ]);
+      expect(result).toEqual({
+        ok: true,
+        applied: 2,
+        rejected: [
+          { index: 0, reason: 'unknown_row', message: expect.any(String) },
+          { index: 1, reason: 'row_deleted', message: expect.any(String) },
+          { index: 3, reason: 'unknown_column', message: 'no phone' }
+        ]
+      });
+    });
+  });
+
+  describe('focusTableCell', () => {
+    it('focuses the resolved row and passes the grid refusal through', () => {
+      const handlers = makeHandlers(
+        liveState({ showsGrid: true, entryIds: ['e1', 'e2'] }),
+        {
+          focusCell: jest.fn((rowIndex) =>
+            rowIndex === 1
+              ? { ok: false as const, reason: 'row_hidden' as const, message: 'hidden' }
+              : { ok: true as const }
+          )
+        }
+      );
+      makeState(handlers);
+
+      expect(
+        focusTableCell(formUuid, TABLE, { entryId: 'e1', fieldKey: 'name' })
+      ).toEqual({ ok: true, rowIndex: 0, entryId: 'e1' });
+      expect(handlers.focusCell).toHaveBeenCalledWith(0, 'name');
+      expect(focusTableCell(formUuid, TABLE, { rowIndex: 1 })).toEqual({
+        ok: false,
+        reason: 'row_hidden',
+        message: 'hidden'
+      });
+      expect(focusTableCell(formUuid, TABLE, { rowIndex: 5 })).toMatchObject({
+        ok: false,
+        reason: 'unknown_row'
+      });
+
+      makeState(makeHandlers());
+      expect(focusTableCell(formUuid, TABLE, { rowIndex: 0 })).toMatchObject({
+        ok: false,
+        reason: 'table_not_shown'
+      });
+    });
+  });
+
+  describe('getTableIssues', () => {
+    const ruleError = (rowIndex: number): TableCellIssue => ({
+      rowIndex,
+      fieldKey: 'email',
+      columnName: 'Email',
+      message: 'Must be a number',
+      severity: 'error',
+      source: 'rule'
+    });
+    const ISSUES: TableCellIssue[] = [
+      ...Array.from({ length: 60 }, (_, rowIndex) => ruleError(rowIndex)),
+      {
+        rowIndex: 1,
+        message: 'Row looks wrong',
+        severity: 'warning',
+        source: 'assistant'
+      }
+    ];
+
+    it('reads one row cell by cell, or the whole table grouped by what is wrong with its rows capped', () => {
+      const handlers = makeHandlers(
+        liveState({ showsGrid: true, rowCount: 60 }),
+        {
+          getRow: (rowIndex) => ({ email: rowIndex }),
+          getIssues: jest.fn((rowIndex?: number) =>
+            rowIndex === undefined
+              ? ISSUES
+              : ISSUES.filter((issue) => issue.rowIndex === rowIndex)
+          )
+        }
+      );
+      makeState(handlers);
+
+      expect(
+        getTableIssues(formUuid, TABLE, { scope: 'row', rowIndex: 1 })
+      ).toEqual({
+        ok: true,
+        rowIndex: 1,
+        issues: [
+          {
+            fieldKey: 'email',
+            columnName: 'Email',
+            message: 'Must be a number',
+            severity: 'error',
+            source: 'rule'
+          },
+          { message: 'Row looks wrong', severity: 'warning', source: 'assistant' }
+        ]
+      });
+
+      const grouped = getTableIssues(formUuid, TABLE, { scope: 'table' });
+      expect(grouped).toMatchObject({ ok: true, total: 61 });
+      const { groups } = grouped as { groups: any[] };
+      expect(groups).toHaveLength(2);
+      expect(groups[0]).toMatchObject({
+        fieldKey: 'email',
+        message: 'Must be a number',
+        count: 60
+      });
+      expect(groups[0].rowIndexes).toHaveLength(50);
+      expect(groups[1]).toMatchObject({
+        message: 'Row looks wrong',
+        count: 1,
+        rowIndexes: [1]
+      });
+
+      expect(
+        getTableIssues(formUuid, TABLE, { scope: 'row', rowIndex: 99 })
+      ).toMatchObject({ ok: false, reason: 'unknown_row' });
     });
   });
 });

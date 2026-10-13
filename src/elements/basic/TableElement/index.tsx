@@ -9,8 +9,12 @@ import { nameProps } from '../../../utils/domName';
 import { stringifyWithNull } from '../../../utils/primitives';
 import internalState from '../../../utils/internalState';
 import type {
+  TableCellIssue,
   TableCellOutcome,
   TableCellWrite,
+  TableFinding,
+  TableFindingOutcome,
+  TableFocusOutcome,
   TableHandlers,
   TableLiveState,
   TableRowRead
@@ -26,20 +30,26 @@ import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
 import { entryIdsShifted, useHubTableSource } from './useHubTableSource';
-import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
+import {
+  SpreadsheetTable,
+  SpreadsheetTableHandle
+} from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
 import { editorKindFor, parseCellInput } from './spreadsheet/fieldEditors';
 import {
   buildCellIssues,
   CellIssues,
+  ResolveIssuesContext,
   resolveTableIssues,
-  TableIssue
+  TableIssue,
+  TableRowRef
 } from './spreadsheet/issues';
 import {
   CellErrors,
   cellErrorKey,
   fieldCellRules,
   mergeCellErrors,
+  parseCellErrorKey,
   validateGrid
 } from './spreadsheet/validation';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
@@ -66,6 +76,9 @@ import {
   unverifyIconStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
+
+const rowHiddenMessage = (rowIndex: number) =>
+  `Row ${rowIndex} is hidden by a column filter right now.`;
 
 function applyTableStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('table', 'thead', 'tbody', 'th', 'td', 'tr');
@@ -296,6 +309,9 @@ function TableElement({
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
   // Findings the assistant has placed on this table (see `setIssues` below).
   const [assistantIssues, setAssistantIssues] = useState<TableIssue[]>([]);
+  // The grid keeps an older copy of the edit handler, so it reads the current columns through a ref
+  const issuesContextRef = useRef<ResolveIssuesContext | undefined>(undefined);
+  const spreadsheetRef = useRef<SpreadsheetTableHandle>(null);
   const pendingAddRowsRef = useRef(pendingAddRows);
   pendingAddRowsRef.current = pendingAddRows;
 
@@ -358,10 +374,18 @@ function TableElement({
   // The spreadsheet's undo history is keyed by row index, so it is dropped
   // when this changes rather than replayed onto the wrong rows.
   const [rowIdentityVersion, setRowIdentityVersion] = useState(0);
-  const bumpRowIdentity = useCallback(
-    () => setRowIdentityVersion((version) => version + 1),
-    []
-  );
+  const bumpRowIdentity = useCallback(() => {
+    setRowIdentityVersion((version) => version + 1);
+    // A finding named by row position would now mark a different row
+    setAssistantIssues((issues) =>
+      issues.filter(({ target }) =>
+        (target.kind === 'range'
+          ? [target.from.row, target.to.row]
+          : [target.row]
+        ).every((row) => 'entryId' in row)
+      )
+    );
+  }, []);
   // A Hub resync renumbers rows too: entries the grid has not seen (another
   // user's new rows) land at the top, and one deleted elsewhere closes its gap.
   // Bumped in the same render the rows move in, not in an effect after it, so
@@ -460,6 +484,20 @@ function TableElement({
 
   const spreadsheetCellsEdit = useCallback(
     (writes: CellWrite[]) => {
+      // A finding described the old value, so editing the cell clears it
+      const edited = new Set(
+        writes.map(({ rowIndex, fieldKey }) => cellErrorKey(rowIndex, fieldKey))
+      );
+      setAssistantIssues((issues) =>
+        issues.filter((issue) => {
+          const context = issuesContextRef.current;
+          if (issue.target.kind !== 'cell' || !context) return true;
+          const [cellKey] = Object.keys(
+            resolveTableIssues([issue], context).cells
+          );
+          return !cellKey || !edited.has(cellKey);
+        })
+      );
       // A pending "provisional" row stops being provisional as soon as any of
       // its cells is written, the same rule single-cell editing follows.
       if (buffersEdits) {
@@ -577,51 +615,64 @@ function TableElement({
     cellRules
   ]);
 
-  /**
-   * The assistant names rows and fields the way the form's author does (a hub
-   * entry id or row number, a hub field key or column name); the grid stores
-   * cells under its own keys. Expanded here, against the rows and columns
-   * actually rendered, so a finding on a hidden column or a deleted row simply
-   * does not show.
-   */
-  const assistantMessages = useMemo(() => {
-    if (!isSpreadsheet || !assistantIssues.length) return {};
-    // Keys first, display names second, so a hub field whose key is "Status"
-    // is never shadowed by a column merely named that (the status column,
-    // say — which is not the assistant's to flag at all).
-    const byName = new Map<string, string>();
-    const targetable = columns.filter(
-      (column: any) => column.hub_field_id !== STATUS_HUB_FIELD_ID
+  // The form's host names a hub column by its hub field key, the grid stores it under a synthetic key
+  const publishedFieldKey = useCallback(
+    (column: any): string =>
+      (isHub && column.hub_field_key) || column.field_key || '',
+    [isHub]
+  );
+  const storageKeyFor = useMemo(() => {
+    const byPublishedKey = new Map<string, string>(
+      baseColumns.map((column) => [publishedFieldKey(column), column.field_key])
     );
-    targetable.forEach((column: any) => {
-      [column.hub_field_key, column.field_key].forEach((key?: string) => {
-        if (key && !byName.has(key)) byName.set(key, column.field_key);
-      });
+    return (fieldKey: string) => byPublishedKey.get(fieldKey);
+  }, [baseColumns, publishedFieldKey]);
+  const isColumnReadOnly = useCallback(
+    (storageKey: string) =>
+      (isHub && hub.readOnlyKeys.has(storageKey)) ||
+      editorKindFor(cellRules[storageKey]) === 'readonly',
+    [isHub, hub.readOnlyKeys, cellRules]
+  );
+
+  // The rows and columns a finding can land on, a hub row also by entry id
+  const issuesContext = useMemo<ResolveIssuesContext>(() => {
+    // The status column is the hub's to flag, so a hub field keyed like it wins
+    const byPublishedKey = new Map<string, string>();
+    baseColumns.forEach((column: any) => {
+      if (column.hub_field_id === STATUS_HUB_FIELD_ID) return;
+      const key = publishedFieldKey(column);
+      if (!byPublishedKey.has(key)) byPublishedKey.set(key, column.field_key);
     });
-    targetable.forEach((column: any) => {
-      if (column.name && !byName.has(column.name)) {
-        byName.set(column.name, column.field_key);
-      }
-    });
-    return resolveTableIssues(assistantIssues, {
+    return {
       rowIndices: spreadsheetRowIndices,
       fieldKeys: columns.map((column: any) => column.field_key),
-      resolveField: (name) => byName.get(name),
+      resolveField: (fieldKey) => byPublishedKey.get(fieldKey),
       resolveRow: (ref) => {
         if ('rowIndex' in ref) return ref.rowIndex;
         if (!isHub) return undefined;
         const rowIndex = hub.entryIds.indexOf(ref.entryId);
         return rowIndex === -1 ? undefined : rowIndex;
       }
-    }).cells;
+    };
   }, [
-    isSpreadsheet,
-    assistantIssues,
+    baseColumns,
+    publishedFieldKey,
     columns,
     spreadsheetRowIndices,
     isHub,
     hub.entryIds
   ]);
+  issuesContextRef.current = issuesContext;
+
+  // Resolved against the rendered rows and columns, so a hidden column or deleted row shows no finding
+  const resolvedFindings = useMemo(
+    () =>
+      isSpreadsheet
+        ? resolveTableIssues(assistantIssues, issuesContext)
+        : { cells: {}, unresolved: [] },
+    [isSpreadsheet, assistantIssues, issuesContext]
+  );
+  const assistantMessages = resolvedFindings.cells;
 
   /**
    * Every cell with something wrong, each with its severity and whether it
@@ -736,25 +787,6 @@ function TableElement({
     [formId, unsavedWorkId]
   );
 
-  // The form's host names a hub column by its hub field key, the grid stores it under a synthetic key
-  const publishedFieldKey = useCallback(
-    (column: any): string =>
-      (isHub && column.hub_field_key) || column.field_key || '',
-    [isHub]
-  );
-  const storageKeyFor = useMemo(() => {
-    const byPublishedKey = new Map<string, string>(
-      baseColumns.map((column) => [publishedFieldKey(column), column.field_key])
-    );
-    return (fieldKey: string) => byPublishedKey.get(fieldKey);
-  }, [baseColumns, publishedFieldKey]);
-  const isColumnReadOnly = useCallback(
-    (storageKey: string) =>
-      (isHub && hub.readOnlyKeys.has(storageKey)) ||
-      editorKindFor(cellRules[storageKey]) === 'readonly',
-    [isHub, hub.readOnlyKeys, cellRules]
-  );
-
   // A transposed table shows records as columns, the host still reads them as rows
   const cellValue = useCallback(
     (rowIndex: number, storageKey: string) => {
@@ -831,8 +863,20 @@ function TableElement({
     ]
   );
 
-  const getLiveState = useCallback(
-    (): TableLiveState => ({
+  const getLiveState = useCallback((): TableLiveState => {
+    const grid = spreadsheetRef.current;
+    const selected = grid?.getSelection();
+    const selectedColumn =
+      selected &&
+      baseColumns.find((column) => column.field_key === selected.fieldKey);
+    const selectedEntryId = selected && hub.entryIds[selected.rowIndex];
+    const selectionError =
+      selected &&
+      cellErrors[cellErrorKey(selected.rowIndex, selected.fieldKey)];
+    const ruleErrorTotal = Object.keys(cellErrors).length;
+    const shownFindings =
+      assistantIssues.length - resolvedFindings.unresolved.length;
+    return {
       ...(isHub && hub.hubId ? { hubId: hub.hubId } : {}),
       columns: baseColumns.map((column) => ({
         name: column.name,
@@ -854,27 +898,51 @@ function TableElement({
               deletions: pendingEdits.deletedRows.length
             }
           }
-        : {})
-    }),
-    [
-      isHub,
-      hub.hubId,
-      hub.entryIds,
-      baseColumns,
-      publishedFieldKey,
-      isColumnReadOnly,
-      baseNumRows,
-      canEdit,
-      canAddRows,
-      canDeleteRows,
-      isSpreadsheet,
-      actions.length,
-      isTransposed,
-      buffersEdits,
-      pendingEdits.writes,
-      pendingEdits.deletedRows
-    ]
-  );
+        : {}),
+      showsGrid: grid !== null,
+      ...(selected && selectedColumn
+        ? {
+            selection: {
+              rowIndex: selected.rowIndex,
+              ...(selectedEntryId ? { entryId: selectedEntryId } : {}),
+              fieldKey: publishedFieldKey(selectedColumn),
+              columnName: selectedColumn.name,
+              value: cellValue(selected.rowIndex, selected.fieldKey),
+              ...(selectionError ? { error: selectionError } : {}),
+              row: getRow(selected.rowIndex) ?? {},
+              ...(selected.extended ? { extended: true } : {})
+            }
+          }
+        : {}),
+      ...(grid
+        ? { viewport: { visibleRowIndexes: grid.getVisibleRowIndexes() } }
+        : {}),
+      ...(ruleErrorTotal > 0 ? { ruleErrors: { total: ruleErrorTotal } } : {}),
+      ...(shownFindings > 0 ? { findings: shownFindings } : {})
+    };
+  }, [
+    isHub,
+    hub.hubId,
+    hub.entryIds,
+    baseColumns,
+    publishedFieldKey,
+    isColumnReadOnly,
+    baseNumRows,
+    canEdit,
+    canAddRows,
+    canDeleteRows,
+    isSpreadsheet,
+    actions.length,
+    isTransposed,
+    buffersEdits,
+    pendingEdits.writes,
+    pendingEdits.deletedRows,
+    cellErrors,
+    cellValue,
+    getRow,
+    assistantIssues,
+    resolvedFindings
+  ]);
 
   // A host write takes the same column, read-only and typing rules as the person's own
   const editCells = useCallback(
@@ -953,6 +1021,126 @@ function TableElement({
     [baseColumns, baseFieldValues, onClick]
   );
 
+  // Only the findings that landed are kept, a saved hub row's by entry id so it follows the row
+  const setFindings = useCallback(
+    (findings: TableFinding[]): TableFindingOutcome[] => {
+      const issueFor = (
+        row: TableRowRef,
+        fieldKey: string | undefined,
+        message: string
+      ): TableIssue => ({
+        message,
+        target:
+          fieldKey === undefined
+            ? { kind: 'row', row }
+            : { kind: 'cell', row, field: fieldKey }
+      });
+      const { unresolved } = resolveTableIssues(
+        findings.map(({ rowIndex, fieldKey, message }) =>
+          issueFor({ rowIndex }, fieldKey, message)
+        ),
+        issuesContext
+      );
+      const rejected = new Set(unresolved.map(({ index }) => index));
+      setAssistantIssues(
+        findings.flatMap(({ rowIndex, fieldKey, message }, index) => {
+          if (rejected.has(index)) return [];
+          const entryId = hub.entryIds[rowIndex];
+          return [
+            issueFor(entryId ? { entryId } : { rowIndex }, fieldKey, message)
+          ];
+        })
+      );
+      return unresolved.map(({ index, reason }) =>
+        reason === 'unknown_field'
+          ? {
+              index,
+              reason: 'unknown_column',
+              message: `This table has no column with fieldKey '${findings[index].fieldKey}'.`
+            }
+          : {
+              index,
+              reason: 'row_hidden',
+              message: rowHiddenMessage(findings[index].rowIndex)
+            }
+      );
+    },
+    [issuesContext, hub.entryIds]
+  );
+  const focusCell = useCallback(
+    (rowIndex: number, fieldKey?: string): TableFocusOutcome => {
+      const storageKey =
+        fieldKey === undefined ? undefined : storageKeyFor(fieldKey);
+      if (fieldKey !== undefined && !storageKey) {
+        return {
+          ok: false,
+          reason: 'unknown_column',
+          message: `This table has no column with fieldKey '${fieldKey}'.`
+        };
+      }
+      if (!spreadsheetRef.current?.focusCell(rowIndex, storageKey)) {
+        return {
+          ok: false,
+          reason: 'row_hidden',
+          message: rowHiddenMessage(rowIndex)
+        };
+      }
+      return { ok: true };
+    },
+    [storageKeyFor]
+  );
+  const getIssues = useCallback(
+    (rowIndex?: number): TableCellIssue[] => {
+      const columnsByKey = new Map<string, any>(
+        baseColumns.map((column) => [column.field_key, column])
+      );
+      // A row-level finding answers once, even where a rule error took one of its cells
+      const rowLevel = new Set<string>();
+      assistantIssues.forEach(({ target, message }) => {
+        if (target.kind !== 'row') return;
+        rowLevel.add(`${issuesContext.resolveRow(target.row)}:${message}`);
+      });
+      const answered = new Set<string>();
+      const issues: TableCellIssue[] = [];
+      Object.entries(cellIssues).forEach(([key, issue]) => {
+        const cell = parseCellErrorKey(key);
+        if (rowIndex !== undefined && cell.rowIndex !== rowIndex) return;
+        const entryId = isHub ? hub.entryIds[cell.rowIndex] : undefined;
+        const read: TableCellIssue = {
+          rowIndex: cell.rowIndex,
+          ...(entryId ? { entryId } : {}),
+          message: issue.message,
+          severity: issue.severity,
+          source: issue.source === 'assistant' ? 'assistant' : 'rule'
+        };
+        const rowKey = `${cell.rowIndex}:${issue.message}`;
+        if (issue.source === 'assistant' && rowLevel.has(rowKey)) {
+          if (!answered.has(rowKey)) {
+            answered.add(rowKey);
+            issues.push(read);
+          }
+          return;
+        }
+        const column = columnsByKey.get(cell.fieldKey);
+        issues.push({
+          ...read,
+          fieldKey: column ? publishedFieldKey(column) : cell.fieldKey,
+          columnName: column?.name ?? cell.fieldKey
+        });
+      });
+      return issues;
+    },
+    [
+      baseColumns,
+      assistantIssues,
+      issuesContext,
+      cellIssues,
+      isHub,
+      hub.entryIds,
+      publishedFieldKey
+    ]
+  );
+
   // Lets the form's host act on this table through the handlers the person's own edits use
   useEffect(() => {
     const state = editMode ? undefined : internalState[formId];
@@ -965,7 +1153,10 @@ function TableElement({
       editCells,
       addRow,
       deleteRow: spreadsheetDeleteRow,
-      runAction
+      runAction,
+      setFindings,
+      focusCell,
+      getIssues
     };
     tables.set(tableId, handlers);
     return () => {
@@ -981,7 +1172,10 @@ function TableElement({
     editCells,
     addRow,
     spreadsheetDeleteRow,
-    runAction
+    runAction,
+    setFindings,
+    focusCell,
+    getIssues
   ]);
 
   // Lets the assistant invoke this table's mutations through the same handlers the user UI calls
@@ -1097,6 +1291,7 @@ function TableElement({
         <EmptyState hasSearchQuery={searchQuery.trim().length > 0} />
       ) : isSpreadsheet ? (
         <SpreadsheetTable
+          ref={spreadsheetRef}
           columns={columns}
           rowIndices={spreadsheetRowIndices}
           fieldValues={spreadsheetFieldValues}
