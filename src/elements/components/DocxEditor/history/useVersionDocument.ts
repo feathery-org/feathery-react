@@ -250,7 +250,7 @@ function buildFromFinal(
       return {
         error: false,
         sfdt: displaySfdt,
-        editCount: countEditGroups(display),
+        editCount: countEditGroups(display, { includeFormatting: true }),
         formatCount: changes.formatChangeCount,
         pendingCount: countPendingGroups(display),
         approvedCount: changes.confirmed ? countEditGroups(display) : 0,
