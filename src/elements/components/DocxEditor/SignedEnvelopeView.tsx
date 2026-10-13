@@ -23,11 +23,14 @@ const STATUS_LABELS = {
 export default function SignedEnvelopeView({
   pdfUrl,
   downloadUrl,
+  signUrl,
   status
 }: {
   pdfUrl: string;
   /** The freshest URL; `pdfUrl` may be an older presign of the same file. */
   downloadUrl: string;
+  /** The filler's signing page while their signature is still awaited. */
+  signUrl?: string;
   /** Null when nothing says whether this PDF was sent: no pill is shown. */
   status: keyof typeof STATUS_LABELS | null;
 }) {
@@ -94,15 +97,27 @@ export default function SignedEnvelopeView({
         ) : (
           <span />
         )}
-        <a
-          href={downloadUrl}
-          target='_blank'
-          rel='noopener noreferrer'
-          // Matches the overlay toolbar's Download (secondary button).
-          css={{ ...secondaryButtonCss, textDecoration: 'none' }}
-        >
-          Download
-        </a>
+        <div css={{ display: 'flex', gap: 8 }}>
+          {signUrl && (
+            <a
+              href={signUrl}
+              target='_blank'
+              rel='noopener noreferrer'
+              css={{ ...secondaryButtonCss, textDecoration: 'none' }}
+            >
+              Open signing page
+            </a>
+          )}
+          <a
+            href={downloadUrl}
+            target='_blank'
+            rel='noopener noreferrer'
+            // Matches the overlay toolbar's Download (secondary button).
+            css={{ ...secondaryButtonCss, textDecoration: 'none' }}
+          >
+            Download
+          </a>
+        </div>
       </div>
       <div
         ref={scrollRef}

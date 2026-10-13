@@ -154,10 +154,16 @@ jest.mock('./index', () => {
 // pdf.js; exposes its props for assertion.
 jest.mock('./SignedEnvelopeView', () => {
   const React = jest.requireActual('react');
-  return function MockSignedEnvelopeView({ pdfUrl, downloadUrl, status }: any) {
+  return function MockSignedEnvelopeView({
+    pdfUrl,
+    downloadUrl,
+    signUrl,
+    status
+  }: any) {
     return React.createElement('div', {
       'data-testid': `signed-view:${pdfUrl}`,
       'data-download': downloadUrl,
+      'data-sign-url': signUrl ?? '',
       'data-status': String(status)
     });
   };
@@ -804,7 +810,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
 
     // The docx must be converted to a signable PDF before it is sent, and the
     // sign method goes with it so that conversion doesn't also mail a Feathery
@@ -853,7 +861,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     await waitFor(() =>
       expect(getByTestId('terminal:draft-menu')).toBeTruthy()
     );
-    getByTestId('terminal:draft-menu').click();
+    await act(async () => {
+      getByTestId('terminal:draft-menu').click();
+    });
 
     await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
     expect(mockFinalizeEnvelopeReview.mock.calls[0][1].draft).toBe(true);
@@ -934,7 +944,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
 
     await waitFor(() => expect(mockFinalizeEnvelope).toHaveBeenCalled());
     expect(mockFinalizeEnvelopeReview).not.toHaveBeenCalled();
@@ -962,7 +974,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId, queryByTestId } = mount();
 
     await waitFor(() => expect(getByTestId(`editor:${url}`)).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
 
     await waitFor(() =>
       expect(getByTestId('signed-view:https://x/signed.pdf')).toBeTruthy()
@@ -990,7 +1004,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId(`editor:${url}`)).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
 
     // Finalized but not yet signed → awaiting-signature PDF view.
     await waitFor(() =>
@@ -1046,7 +1062,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId, getByRole, queryByTestId } = mount();
 
     await waitFor(() => expect(getByTestId(`editor:${url}`)).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
 
     await waitFor(() =>
       expect(getByRole('alert')).toHaveTextContent('DocuSign rejected the send')
@@ -1068,7 +1086,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     await waitFor(() =>
       expect(getByTestId('terminal:draft-menu')).toBeTruthy()
     );
-    getByTestId('terminal:draft-menu').click();
+    await act(async () => {
+      getByTestId('terminal:draft-menu').click();
+    });
 
     await waitFor(() =>
       expect(showEnvelopeOutcome).toHaveBeenCalledWith('Saved as Draft', [
@@ -1085,7 +1105,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
 
     await waitFor(() =>
       expect(getByTestId('signed-view:https://x/signable.pdf')).toHaveAttribute(
@@ -1104,16 +1126,21 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId, queryByRole } = mount();
 
     await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
     await waitFor(() =>
       expect(getByTestId('signed-view:https://x/signable.pdf')).toBeTruthy()
     );
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockGetCurrentEnvelope.mockClear();
 
     mockGetCurrentEnvelope.mockRejectedValueOnce(new Error('Failed to fetch'));
     await focus();
     mockGetCurrentEnvelope.mockResolvedValueOnce(undefined);
     await focus();
+    // Both refreshes ran, and failing them left the view in place.
+    expect(mockGetCurrentEnvelope).toHaveBeenCalledTimes(2);
 
     expect(getByTestId('signed-view:https://x/signable.pdf')).toHaveAttribute(
       'data-status',
@@ -1130,7 +1157,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
     await waitFor(() =>
       expect(getByTestId(`signed-view:${presigned('first')}`)).toBeTruthy()
     );
@@ -1154,7 +1183,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
     await waitFor(() =>
       expect(getByTestId(`signed-view:${presigned('first')}`)).toBeTruthy()
     );
@@ -1180,7 +1211,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
     await waitFor(() =>
       expect(getByTestId(`signed-view:${plain}`)).toBeTruthy()
     );
@@ -1196,6 +1229,35 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const view = await waitFor(() => getByTestId(versioned));
     expect(view).toHaveAttribute('data-status', 'signed');
     expect(view.getAttribute('data-download')).toMatch(/signable\.pdf\?v=\d+$/);
+  });
+
+  it('offers the signing page again while the filler’s signature is awaited', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    // The tab opened after finalize may be blocked, so the link stays on hand.
+    mockFinalizeEnvelope.mockResolvedValue({
+      ...finalizedPdf(),
+      signer_id: 'signer-7',
+      invited: false
+    });
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
+
+    await waitFor(() =>
+      expect(
+        getByTestId('signed-view:https://x/signable.pdf').getAttribute(
+          'data-sign-url'
+        )
+      ).toContain('signer-7')
+    );
+    expect(getByTestId('signed-view:https://x/signable.pdf')).toHaveAttribute(
+      'data-status',
+      'awaiting'
+    );
   });
 
   it('shows a PDF it did not send without a status and without polling', async () => {
@@ -1238,7 +1300,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
-    getByTestId('terminal:sign').click();
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
 
     await waitFor(() => expect(runDocumentReviewLogic).toHaveBeenCalled());
     const trigger = runDocumentReviewLogic.mock.calls[0][0];
