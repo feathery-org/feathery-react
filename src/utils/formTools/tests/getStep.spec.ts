@@ -90,6 +90,35 @@ describe('getStepTool', () => {
     expect(result.buttons[0]).toMatchObject({ id: 'btn-1', saves: true });
   });
 
+  it('reports the button next_step would press: a visible Next, preferring one that submits', () => {
+    const next = (id: string, extra: any = {}) => ({
+      id,
+      position: [],
+      properties: { actions: [{ type: 'next' }], ...extra }
+    });
+    const currentStep = {
+      id: 'step-1',
+      key: 'intro',
+      servar_fields: [],
+      buttons: [
+        {
+          id: 'back',
+          position: [],
+          properties: { actions: [{ type: 'back' }] }
+        },
+        next('skip'),
+        next('save', { submit: true })
+      ],
+      previous_conditions: [],
+      ...emptyStepArrays
+    };
+    seed(currentStep, {});
+    expect(getStepTool(FORM).nextButton).toBe('save');
+
+    currentStep.buttons = currentStep.buttons.slice(0, 1);
+    expect(getStepTool(FORM).nextButton).toBeNull();
+  });
+
   it('falls back to the placeholder, then the key, when a field has no label', () => {
     const currentStep = {
       id: 'step-1',

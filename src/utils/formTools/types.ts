@@ -45,6 +45,8 @@ export type GetStepResult = {
   step: { id: string; key: string };
   fields: GetStepField[];
   buttons: GetStepButton[];
+  // The button feathery_next_step presses when given no buttonId
+  nextButton: string | null;
 };
 
 export type FillFieldStatus =

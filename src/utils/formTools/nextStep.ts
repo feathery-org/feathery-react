@@ -2,7 +2,6 @@ import internalState from '../internalState';
 import { initState } from '../init';
 import { isStepTerminal } from '../stepHelperFunctions';
 import { ACTION_NEXT } from '../elementActions';
-import { getPositionKey } from '../hideAndRepeats';
 import { isButtonDisabled } from '../button';
 import { validateElements } from '../validation';
 import {
@@ -17,7 +16,7 @@ import {
   waitForNextCommit
 } from './renderTick';
 import { awaitClientQueues } from './clientQueues';
-import { getStepTool } from './getStep';
+import { getStepTool, qualifyingButton } from './getStep';
 import { NextStepResult } from './types';
 
 // html5 forms report a blocked submit via DOM constraint validation, not
@@ -37,31 +36,6 @@ const currentStepErrors = (state: any): Record<string, string> => {
     if (first) out[key] = first;
   }
   return out;
-};
-
-// Mirrors dispatchClickElement's own hidden check (assistant/tools/clickElement.ts):
-// a button hidden by a show_if rule must never be pressed on its behalf.
-const isButtonVisible = (state: any, button: any): boolean => {
-  const flags = (state.visiblePositions ?? {})[
-    getPositionKey(button) ?? 'root'
-  ];
-  return Array.isArray(flags) ? flags.some(Boolean) : true;
-};
-
-// A person can press any visible Next button; one that also submits the step
-// is preferred, since only that press saves the step (and uploads its files)
-const qualifyingButton = (state: any, buttonId?: string): any | null => {
-  const candidates = (state.currentStep?.buttons ?? []).filter(
-    (b: any) =>
-      (b.properties?.actions ?? []).some((a: any) => a?.type === ACTION_NEXT) &&
-      isButtonVisible(state, b)
-  );
-  if (buttonId) return candidates.find((b: any) => b.id === buttonId) ?? null;
-  return (
-    candidates.find((b: any) => b.properties?.submit === true) ??
-    candidates[0] ??
-    null
-  );
 };
 
 export async function nextStepTool(

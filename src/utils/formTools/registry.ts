@@ -11,7 +11,7 @@ export const getFormTools = (formUuid: string): FormTool[] => [
     name: 'feathery_get_step',
     title: 'Get current step',
     description:
-      "Read the fields, values, and buttons on the current step of this form. A repeated field reports repeated: true, its repeatContainerId, rowCount, and hiddenRows (row indexes hidden by the row's own hide-if; null when not repeated).",
+      "Read the fields, values, and buttons on the current step of this form, and nextButton: the id of the button feathery_next_step presses when given no buttonId (null when none can advance). A repeated field reports repeated: true, its repeatContainerId, rowCount, and hiddenRows (row indexes hidden by the row's own hide-if; null when not repeated).",
     inputSchema: {
       type: 'object',
       properties: {},
