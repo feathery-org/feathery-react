@@ -26,7 +26,13 @@ import {
 } from '../repeat';
 import { getStepTool } from './getStep';
 import { awaitClientQueues } from './clientQueues';
-import { FillFieldResult, FillStepResult, RowResult } from './types';
+import {
+  FillFieldResult,
+  FillStepResult,
+  FormToolsStepWrites,
+  RepeatedWrite,
+  RowResult
+} from './types';
 
 // fillStepTool checks the form is mounted on entry, and it stays mounted for the call
 const currentSnapshot = (formUuid: string): PanelRuntimeSnapshot => {
@@ -386,29 +392,42 @@ export async function fillStepTool(
       fields[fieldKey] = { status: 'not_shown' };
       continue;
     }
-
-    const servar = findServarField(state.currentStep, fieldKey).servar;
-    const storedValue = internalState[formUuid]?.fields?.[fieldKey]?.value;
-    const maskedValue = maskFieldValue(servar.type, storedValue);
-
-    if (entry.error) {
-      fields[fieldKey] = { status: 'rejected', message: entry.error };
-    } else if (
-      valuesEqual(servar.type, storedValue, intendedValues[fieldKey])
-    ) {
-      // Before isEmptyValue: clearing a field is a successful write
-      fields[fieldKey] = { status: 'filled', value: maskedValue };
-    } else if (isEmptyValue(storedValue, servar.type)) {
-      fields[fieldKey] = { status: 'rejected', message: 'Value was rejected.' };
-    } else {
-      fields[fieldKey] = {
-        status: 'changed',
-        value: maskedValue,
-        message:
-          'A rule changed this field to a different value after it was filled.'
-      };
-    }
+    fields[fieldKey] = classifyWrittenValue(
+      formUuid,
+      finalSnapshot,
+      fieldKey,
+      intendedValues[fieldKey]
+    );
   }
+
+  // Earlier calls on this step wrote these, and this call's rules may have
+  // rewritten them since
+  const stepWrites = currentStepWrites(formUuid);
+  for (const [fieldKey, intended] of Object.entries(stepWrites.intended)) {
+    if (!inputKeys.includes(fieldKey))
+      fields[fieldKey] = classifyWrittenValue(
+        formUuid,
+        finalSnapshot,
+        fieldKey,
+        intended
+      );
+  }
+  for (const [fieldKey, repeated] of Object.entries(stepWrites.repeated)) {
+    if (!inputKeys.includes(fieldKey))
+      fields[fieldKey] = classifyRepeatedRows(
+        finalSnapshot,
+        fieldKey,
+        repeated
+      );
+  }
+  for (const fieldKey of inputKeys) {
+    delete stepWrites.intended[fieldKey];
+    delete stepWrites.repeated[fieldKey];
+  }
+  written.forEach((fieldKey) => {
+    stepWrites.intended[fieldKey] = intendedValues[fieldKey];
+  });
+  Object.assign(stepWrites.repeated, repeatedWrites);
 
   const newlyShown = finalSnapshot.currentStepFields
     .filter((f) => f.visible && !visibleBefore.has(f.key))
@@ -435,13 +454,6 @@ const isAbsent = (value: unknown) => value === null || value === undefined;
 // values[key] is an array, one entry per row. Missing rows are added like a
 // click on "Add another", then each row is written on its own; a row's outcome
 // never affects its siblings.
-type RepeatedWrite = {
-  servar: any;
-  rows: RowResult[];
-  writtenRows: number[];
-  intendedValues: Record<number, unknown>;
-};
-
 async function fillRepeatedField(
   formUuid: string,
   state: any,
@@ -562,7 +574,7 @@ async function fillRepeatedField(
       continue;
     }
 
-    const validated = validateAndNormalizeForFill(servar, rowValue);
+    const validated = validateAndNormalizeForFill(servar, rowValue, row);
     if (!validated.ok) {
       rows[row] = { status: 'rejected', message: validated.error };
       continue;
@@ -637,6 +649,45 @@ async function fillRepeatedField(
   return writtenRows.length > 0
     ? { result, written: { servar, rows, writtenRows, intendedValues } }
     : { result };
+}
+
+// A step can take several fill_step calls; this call's record starts over once
+// the form moves to another step
+function currentStepWrites(formUuid: string): FormToolsStepWrites {
+  const state = internalState[formUuid];
+  const stepKey = state.currentStep.key;
+  const existing = state.formToolsStepWrites;
+  if (existing && existing.stepKey === stepKey) return existing;
+  const writes: FormToolsStepWrites = { stepKey, intended: {}, repeated: {} };
+  state.formToolsStepWrites = writes;
+  return writes;
+}
+
+function classifyWrittenValue(
+  formUuid: string,
+  finalSnapshot: ReturnType<typeof currentSnapshot>,
+  fieldKey: string,
+  intended: unknown
+): FillFieldResult {
+  const entry = finalSnapshot.currentStepFields.find((f) => f.key === fieldKey);
+  const servar = findServarField(
+    internalState[formUuid].currentStep,
+    fieldKey
+  ).servar;
+  const storedValue = internalState[formUuid]?.fields?.[fieldKey]?.value;
+  const maskedValue = maskFieldValue(servar.type, storedValue);
+  if (entry?.error) return { status: 'rejected', message: entry.error };
+  // Before isEmptyValue: clearing a field is a successful write
+  if (valuesEqual(servar.type, storedValue, intended))
+    return { status: 'filled', value: maskedValue };
+  if (isEmptyValue(storedValue, servar.type))
+    return { status: 'rejected', message: 'Value was rejected.' };
+  return {
+    status: 'changed',
+    value: maskedValue,
+    message:
+      'A rule changed this field to a different value after it was filled.'
+  };
 }
 
 // Classify written rows from the step's final snapshot, as fillStepTool does

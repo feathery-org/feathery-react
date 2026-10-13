@@ -101,3 +101,19 @@ export type NextStepResult = {
   // The new step, present only when status is 'advanced'
   snapshot?: GetStepResult;
 };
+
+// Rows of a repeated field one fill_step call wrote, with the values it meant
+export type RepeatedWrite = {
+  servar: any;
+  rows: RowResult[];
+  writtenRows: number[];
+  intendedValues: Record<number, unknown>;
+};
+
+// What fill_step calls on the current step wrote, so a later call on the
+// same step reclassifies them after its own rules run
+export type FormToolsStepWrites = {
+  stepKey: string;
+  intended: Record<string, unknown>;
+  repeated: Record<string, RepeatedWrite>;
+};

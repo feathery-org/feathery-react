@@ -351,6 +351,29 @@ describe('fillStepTool', () => {
     });
   });
 
+  it("reclassifies a field an earlier call on the step wrote when a later call's rule rewrites it", async () => {
+    seed([
+      field({ servar: { key: 'ssn', type: 'ssn' } }),
+      field({ servar: { key: 'id_scan', type: 'text_field' } })
+    ]);
+    const first = await fillStepTool(FORM, { values: { ssn: '123456789' } });
+    expect(first.fields.ssn).toEqual({ status: 'filled', value: '••••6789' });
+
+    // The second call's change rule rewrites the SSN the first call wrote
+    awaitChangeRulesMock.mockImplementation(async () => {
+      (internalState as any)[FORM].fields.ssn = { value: '987654321' };
+      (internalState as any)[FORM].formToolsRenderTick += 1;
+    });
+    const second = await fillStepTool(FORM, { values: { id_scan: 'scan' } });
+
+    expect(second.fields.ssn).toEqual({
+      status: 'changed',
+      value: '••••4321',
+      message:
+        'A rule changed this field to a different value after it was filled.'
+    });
+  });
+
   it('masks a filled masked-type value (e.g. password)', async () => {
     seed([field({ servar: { key: 'pw', type: 'password' } })]);
 

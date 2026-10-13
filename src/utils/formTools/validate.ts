@@ -113,7 +113,9 @@ const normalizeDateSelector = (
 // and time-aware date_selector
 export const validateAndNormalizeForFill = (
   servar: any,
-  rawValue: unknown
+  rawValue: unknown,
+  // A repeated field's row, whose options can differ from the field's own
+  repeatIndex?: number
 ): { ok: true; value: unknown } | { ok: false; error: string } => {
   // An empty value clears the field, as fillFields does
   if (servar.type !== 'matrix' && isEmptyValue(rawValue))
@@ -148,7 +150,7 @@ export const validateAndNormalizeForFill = (
         ok: false,
         error: `Field '${servar.key}' (select) expects a single option value (string).`
       };
-    const options = resolveOptions(servar, undefined);
+    const options = resolveOptions(servar, repeatIndex);
     if (options.length > 0 && !options.some((o) => o.value === rawValue))
       return {
         ok: false,
@@ -211,7 +213,7 @@ export const validateAndNormalizeForFill = (
     };
   }
 
-  const error = checkValueAgainstField(servar, rawValue, undefined);
+  const error = checkValueAgainstField(servar, rawValue, repeatIndex);
   return error ? { ok: false, error } : { ok: true, value: rawValue };
 };
 

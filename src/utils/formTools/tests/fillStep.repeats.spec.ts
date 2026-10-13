@@ -17,11 +17,11 @@ const FORM = 'fill-step-repeats-form';
 
 const CONTAINER = { id: 'grp-1', position: [0], repeated: true };
 
-const repeatedField = (key: string, type = 'text_field') => ({
+const repeatedField = (key: string, type = 'text_field', metadata = {}) => ({
   id: `${key}-el`,
   position: [0, 0],
   properties: {},
-  servar: { id: `${key}-sv`, key, type, repeated: true, metadata: {} }
+  servar: { id: `${key}-sv`, key, type, repeated: true, metadata }
 });
 
 let changeValueMock: jest.Mock;
@@ -42,6 +42,7 @@ const seed = (
     maxRepeats?: number;
     visible?: boolean[];
     type?: string;
+    metadata?: Record<string, unknown>;
     // Fields after the repeat container, written after vehicle_vin
     after?: any[];
   } = {}
@@ -55,7 +56,10 @@ const seed = (
     awaitChangeRules: awaitChangeRulesMock,
     getNextStepKey: getNextStepKeyMock
   } = seedForm(FORM, {
-    fields: [repeatedField('vehicle_vin', opts.type), ...(opts.after ?? [])],
+    fields: [
+      repeatedField('vehicle_vin', opts.type, opts.metadata),
+      ...(opts.after ?? [])
+    ],
     step: {
       subgrids: [CONTAINER],
       buttons:
@@ -302,6 +306,31 @@ describe('fillStepTool: repeated fields', () => {
 
     expect((result.fields.vehicle_vin as any).rows).toEqual([
       { status: 'changed', value: '••••4321' }
+    ]);
+  });
+
+  it("checks each dropdown row against that row's own options", async () => {
+    seed(['', ''], {
+      type: 'dropdown',
+      metadata: {
+        options: ['Ford', 'Toyota'],
+        repeat_options: [
+          ['Ford', 'Toyota'],
+          ['Volvo', 'Kenworth']
+        ]
+      }
+    });
+
+    const result = await fillStepTool(FORM, {
+      values: { vehicle_vin: ['Volvo', 'Volvo'] }
+    });
+
+    expect((result.fields.vehicle_vin as any).rows).toEqual([
+      {
+        status: 'rejected',
+        message: 'Value not in allowed options. Allowed: Ford, Toyota.'
+      },
+      { status: 'filled', value: 'Volvo' }
     ]);
   });
 

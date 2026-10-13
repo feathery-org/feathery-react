@@ -12,6 +12,7 @@ import FeatheryClient from './featheryClient';
 import { LogicRule, Subgrid } from '../types/Form';
 import AssistantClient from '../assistant/AssistantClient';
 import type { FormActionHandlers } from './formActions/utils';
+import type { FormToolsStepWrites } from './formTools/types';
 import type { TableHandlers } from './formActions/tables';
 import {
   ExtractionActionOptions,
@@ -232,6 +233,8 @@ export interface FormInternalState {
   formToolsLastSave?: Promise<any>;
   // Bumped once per <Form/> commit; undefined when no <Form/> is mounted
   formToolsRenderTick?: number;
+  // What fill_step wrote on the current step, across its calls
+  formToolsStepWrites?: FormToolsStepWrites;
   // Set when a rerender is requested, cleared by the commit it produces
   formToolsRenderOwed?: boolean;
   runtimeListeners?: Set<(event: FormRuntimeEvent) => void>;
