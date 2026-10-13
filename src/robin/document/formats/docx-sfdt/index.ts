@@ -54,7 +54,7 @@ import { spliceSeam } from './seams/splice';
 import { textSeam } from './seams/text';
 import { selectionOf } from './selection';
 import { docxTree } from './tree';
-import VOCABULARY from './vocabulary.json';
+import VOCABULARY from './vocabulary';
 
 export const FORMAT = 'docx-sfdt';
 

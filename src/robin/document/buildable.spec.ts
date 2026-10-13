@@ -45,3 +45,14 @@ describe('the engine builds with the product babel configuration', () => {
     120000
   );
 });
+
+describe('the engine builds with the SDK bundle', () => {
+  it('imports no JSON: the package build has no JSON plugin, and a JSON import fails it', () => {
+    const json = files(__dirname).filter((file) =>
+      /from\s+['"][^'"]+\.json['"]|require\(\s*['"][^'"]+\.json['"]\s*\)/.test(
+        fs.readFileSync(file, 'utf8')
+      )
+    );
+    expect(json.map((file) => path.relative(__dirname, file))).toEqual([]);
+  });
+});

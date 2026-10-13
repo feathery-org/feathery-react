@@ -5,7 +5,7 @@
  *
  * The forbidden words are never written here. They come from the packs themselves: every
  * `formats/<name>/` folder contributes its own name, the dash-separated parts of that name, and
- * the words in its `vocabulary.json` (which the pack also exports as `Pack.vocabulary`).
+ * the words its `vocabulary.ts` exports (which the pack also exports as `Pack.vocabulary`).
  */
 import * as fs from 'fs';
 import * as os from 'os';
@@ -27,12 +27,13 @@ function forbiddenWords(coreRoot: string): string[] {
     words.add(name.toLowerCase());
     for (const part of name.split('-'))
       if (part.length >= 3) words.add(part.toLowerCase());
-    const vocabularyFile = path.join(dir, 'vocabulary.json');
+    const vocabularyFile = path.join(dir, 'vocabulary.ts');
     if (!fs.existsSync(vocabularyFile))
       throw new Error(
-        `pack folder ${name} has no vocabulary.json naming its format words`
+        `pack folder ${name} has no vocabulary.ts naming its format words`
       );
-    const vocabulary = JSON.parse(fs.readFileSync(vocabularyFile, 'utf8'));
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const vocabulary = require(vocabularyFile).default;
     if (!Array.isArray(vocabulary) || !vocabulary.length)
       throw new Error(`${vocabularyFile} must be a non-empty array of words`);
     for (const word of vocabulary) words.add(String(word).toLowerCase());
@@ -91,7 +92,7 @@ describe('the core names no format', () => {
 
   it('catches a pack name, a name part and a vocabulary word (true positive)', () => {
     const root = makeTree({
-      'formats/acme-binary/vocabulary.json': '["AcmeKit"]',
+      'formats/acme-binary/vocabulary.ts': "export default ['AcmeKit'];",
       'formats/acme-binary/index.ts': 'export const ok = "acme-binary";',
       'verbs.ts': '// handles Acme documents\nconst x = 1;',
       'session.ts': "import { Editor } from '@vendor/acmekit-editor';",
@@ -111,7 +112,7 @@ describe('the core names no format', () => {
 
   it('passes a clean core beside a pack (true negative)', () => {
     const root = makeTree({
-      'formats/acme-binary/vocabulary.json': '["AcmeKit"]',
+      'formats/acme-binary/vocabulary.ts': "export default ['AcmeKit'];",
       'formats/acme-binary/index.ts': 'export const name = "acme-binary";',
       'verbs.ts': 'export const verbs = ["outline", "read", "find", "write"];'
     });
@@ -120,6 +121,6 @@ describe('the core names no format', () => {
 
   it('refuses a pack folder that does not declare its vocabulary', () => {
     const root = makeTree({ 'formats/acme-binary/index.ts': 'export {};' });
-    expect(() => violations(root)).toThrow(/vocabulary\.json/);
+    expect(() => violations(root)).toThrow(/vocabulary\.ts/);
   });
 });

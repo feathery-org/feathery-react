@@ -25,11 +25,11 @@
  *
  * How to add a format
  *
- * 1. Make `formats/<name>/` with an `index.ts` exporting the `Pack`, and a `vocabulary.json`: a
- *    non-empty array of the words that name the format and its SDK. The format-names test
- *    (`formatNames.spec.ts`) forbids the folder name, its dash-separated parts and those words
- *    anywhere in the core, in code, strings, comments and paths; it fails on a folder without the
- *    file. Import only from the core and from the editor modules the format builds on.
+ * 1. Make `formats/<name>/` with an `index.ts` exporting the `Pack`, and a `vocabulary.ts` whose
+ *    default export is a non-empty array of the words that name the format and its SDK. The
+ *    format-names test (`formatNames.spec.ts`) forbids the folder name, its dash-separated parts
+ *    and those words anywhere in the core, in code, strings, comments and paths; it fails on a
+ *    folder without the file. Import only from the core and from the editor modules the format builds on.
  * 2. Declare every slot above. The adapter is the foundation: native bytes to a normal form and
  *    back byte-exact, engine-owned values kept in the residue (identity-free, see `Residue`).
  * 3. Give the pack a fixture corpus and pass `conformanceProblems` over it: every required slot,
