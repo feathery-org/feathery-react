@@ -88,7 +88,6 @@ describe('getStepTool', () => {
     ]);
     expect(result.buttons).toHaveLength(1);
     expect(result.buttons[0]).toMatchObject({ id: 'btn-1', saves: true });
-    expect(result.repeatGroups).toEqual([]);
   });
 
   it('falls back to the placeholder, then the key, when a field has no label', () => {
@@ -368,69 +367,6 @@ describe('getStepTool', () => {
     expect(field.repeatContainerId).toBe('grp-1');
     expect(field.rowCount).toBe(2);
     expect(field.errorRows).toEqual({ '1': 'Invalid VIN' });
-    expect(result.repeatGroups).toEqual([
-      {
-        containerId: 'grp-1',
-        fieldKeys: ['vehicle_vin'],
-        rowCount: 2,
-        canAddRow: true,
-        maxRows: 3
-      }
-    ]);
-  });
-
-  it('reports canAddRow false and maxRows null when the step has no add_repeated_row button', () => {
-    const currentStep = {
-      id: 'step-1',
-      key: 'autos',
-      servar_fields: [
-        {
-          id: 'vin-el',
-          position: [0, 0],
-          properties: {},
-          servar: {
-            id: 'vin-sv',
-            key: 'vehicle_vin',
-            type: 'text_field',
-            name: 'VIN',
-            repeated: true,
-            metadata: {}
-          }
-        }
-      ],
-      subgrids: [{ id: 'grp-1', position: [0], repeated: true }],
-      buttons: [],
-      ...Object.fromEntries(
-        [
-          'texts',
-          'images',
-          'tables',
-          'tabs',
-          'progress_bars',
-          'next_conditions'
-        ].map((k) => [k, []])
-      )
-    };
-    (internalState as any)[FORM] = {
-      currentStep,
-      steps: { autos: currentStep },
-      fields: { vehicle_vin: { value: ['1FA'] } },
-      visiblePositions: { '0': [true], '0,0': [true] },
-      inlineErrors: {},
-      logicRules: []
-    };
-
-    const result = getStepTool(FORM);
-
-    expect(result.repeatGroups).toEqual([
-      {
-        containerId: 'grp-1',
-        fieldKeys: ['vehicle_vin'],
-        rowCount: 1,
-        canAddRow: false,
-        maxRows: null
-      }
-    ]);
   });
 
   it('reports options and the current selection for a multi-select button_group', () => {

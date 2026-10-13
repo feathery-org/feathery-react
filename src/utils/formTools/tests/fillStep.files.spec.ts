@@ -260,24 +260,21 @@ describe('fillStepTool: repeated file_upload', () => {
     seed([repeatedFileField()], {
       step: {
         subgrids: [{ id: 'grp-1', position: [0], repeated: true }],
-        buttons:
-          opts.maxRepeats === undefined
-            ? []
-            : [
+        buttons: [
+          {
+            id: 'add-btn',
+            position: [],
+            properties: {
+              actions: [
                 {
-                  id: 'add-btn',
-                  position: [],
-                  properties: {
-                    actions: [
-                      {
-                        type: 'add_repeated_row',
-                        repeat_container: 'grp-1',
-                        max_repeats: opts.maxRepeats
-                      }
-                    ]
-                  }
+                  type: 'add_repeated_row',
+                  repeat_container: 'grp-1',
+                  max_repeats: opts.maxRepeats ?? null
                 }
               ]
+            }
+          }
+        ]
       },
       fieldValues: { doc: Array(rowCount).fill(null) },
       visiblePositions: {

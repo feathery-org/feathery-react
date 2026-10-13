@@ -41,19 +41,10 @@ export type GetStepButton = {
   saves: boolean;
 };
 
-export type RepeatGroup = {
-  containerId: string;
-  fieldKeys: string[];
-  rowCount: number;
-  canAddRow: boolean;
-  maxRows: number | null;
-};
-
 export type GetStepResult = {
   step: { id: string; key: string };
   fields: GetStepField[];
   buttons: GetStepButton[];
-  repeatGroups: RepeatGroup[];
 };
 
 export type FillFieldStatus =

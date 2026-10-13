@@ -40,6 +40,9 @@ const seed = (
   values: unknown[],
   opts: {
     maxRepeats?: number;
+    // false leaves the container with no add-row button
+    addRowButton?: boolean;
+    repeatTrigger?: string;
     visible?: boolean[];
     type?: string;
     metadata?: Record<string, unknown>;
@@ -57,13 +60,19 @@ const seed = (
     getNextStepKey: getNextStepKeyMock
   } = seedForm(FORM, {
     fields: [
-      repeatedField('vehicle_vin', opts.type, opts.metadata),
+      {
+        ...repeatedField('vehicle_vin', opts.type, opts.metadata),
+        servar: {
+          ...repeatedField('vehicle_vin', opts.type, opts.metadata).servar,
+          ...(opts.repeatTrigger ? { repeat_trigger: opts.repeatTrigger } : {})
+        }
+      },
       ...(opts.after ?? [])
     ],
     step: {
       subgrids: [CONTAINER],
       buttons:
-        opts.maxRepeats === undefined
+        opts.addRowButton === false
           ? []
           : [
               {
@@ -74,7 +83,7 @@ const seed = (
                     {
                       type: 'add_repeated_row',
                       repeat_container: 'grp-1',
-                      max_repeats: opts.maxRepeats
+                      max_repeats: opts.maxRepeats ?? null
                     }
                   ]
                 }
@@ -331,6 +340,38 @@ describe('fillStepTool: repeated fields', () => {
         message: 'Value not in allowed options. Allowed: Ford, Toyota.'
       },
       { status: 'filled', value: 'Volvo' }
+    ]);
+  });
+
+  it('adds no rows when the container has no add-row button, as a person could not', async () => {
+    seed(['existing'], { addRowButton: false });
+
+    const result = await fillStepTool(FORM, {
+      values: { vehicle_vin: ['VIN1', 'VIN2'] }
+    });
+
+    expect(addRepeatedRowMock).not.toHaveBeenCalled();
+    expect((result.fields.vehicle_vin as any).rows).toEqual([
+      { status: 'filled', value: 'VIN1' },
+      {
+        status: 'max_repeats_exceeded',
+        message:
+          'Row 1 needs a new row, and this container has no way to add one.'
+      }
+    ]);
+  });
+
+  it('adds rows for a field that adds one when its last row is filled', async () => {
+    seed(['existing'], { addRowButton: false, repeatTrigger: 'set_value' });
+
+    const result = await fillStepTool(FORM, {
+      values: { vehicle_vin: ['VIN1', 'VIN2'] }
+    });
+
+    expect(addRepeatedRowMock).toHaveBeenCalledTimes(1);
+    expect((result.fields.vehicle_vin as any).rows).toEqual([
+      { status: 'filled', value: 'VIN1' },
+      { status: 'filled', value: 'VIN2' }
     ]);
   });
 

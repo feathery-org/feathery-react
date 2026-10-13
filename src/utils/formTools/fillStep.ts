@@ -22,6 +22,7 @@ import { getPositionKey } from '../hideAndRepeats';
 import {
   findAddRowButtonAction,
   getContainerById,
+  getRepeatedContainer,
   isNestedRepeat
 } from '../repeat';
 import { getStepTool } from './getStep';
@@ -481,9 +482,18 @@ async function fillRepeatedField(
     0
   );
 
-  if (neededRows > rowCount) {
+  // A person adds rows with the container's add-row button, or by filling the
+  // last row of a field that adds one when set
+  const addAction = findAddRowButtonAction(state.currentStep, containerId);
+  const canAddRows =
+    !!addAction ||
+    (state.currentStep.servar_fields ?? []).some(
+      (f: any) =>
+        f.servar?.repeat_trigger === 'set_value' &&
+        getRepeatedContainer(state.currentStep, f)?.id === containerId
+    );
+  if (canAddRows && neededRows > rowCount) {
     const container = getContainerById(state.currentStep, containerId);
-    const addAction = findAddRowButtonAction(state.currentStep, containerId);
     const maxRepeats = addAction?.max_repeats ?? null;
     // Growth is checked on the raw array, not a commit: max_repeats makes
     // the write a no-op that never re-renders
@@ -518,7 +528,9 @@ async function fillRepeatedField(
     if (row >= rowCount) {
       rows[row] = {
         status: 'max_repeats_exceeded',
-        message: `Row ${row} is past this container's row limit.`
+        message: canAddRows
+          ? `Row ${row} is past this container's row limit.`
+          : `Row ${row} needs a new row, and this container has no way to add one.`
       };
       continue;
     }

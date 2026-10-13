@@ -1,9 +1,8 @@
 import internalState from '../internalState';
 import { getPanelRuntimeSnapshot } from '../panelRuntime';
-import { findAddRowButtonAction } from '../repeat';
 import { getPositionKey } from '../hideAndRepeats';
 import { maskFieldValue } from './mask';
-import { GetStepResult, RepeatGroup } from './types';
+import { GetStepResult } from './types';
 
 export const getStepTool = (formUuid: string): GetStepResult => {
   const snapshot = getPanelRuntimeSnapshot(formUuid);
@@ -68,36 +67,12 @@ export const getStepTool = (formUuid: string): GetStepResult => {
       saves: el.submit
     }));
 
-  // One entry per repeat container present on this step, in first-seen order.
-  const repeatGroups: RepeatGroup[] = [];
-  const groupByContainer = new Map<string, RepeatGroup>();
-  fields.forEach((f) => {
-    if (!f.repeatContainerId) return;
-    let group = groupByContainer.get(f.repeatContainerId);
-    if (!group) {
-      const action = findAddRowButtonAction(currentStep, f.repeatContainerId);
-      const maxRows = action ? action.max_repeats ?? null : null;
-      const rowCount = f.rowCount ?? 0;
-      group = {
-        containerId: f.repeatContainerId,
-        fieldKeys: [],
-        rowCount,
-        canAddRow: !!action && (maxRows === null || rowCount < maxRows),
-        maxRows
-      };
-      groupByContainer.set(f.repeatContainerId, group);
-      repeatGroups.push(group);
-    }
-    group.fieldKeys.push(f.key);
-  });
-
   return {
     step: {
       id: snapshot?.currentStep.id ?? '',
       key: snapshot?.currentStep.key ?? ''
     },
     fields,
-    buttons,
-    repeatGroups
+    buttons
   };
 };
