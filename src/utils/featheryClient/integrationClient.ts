@@ -202,7 +202,6 @@ export default class IntegrationClient {
   submitQueue: Promise<any>;
   eventQueue: Promise<any>;
   offlineRequestHandler: OfflineRequestHandler;
-  private shownErrorMessages = new Set<string>();
 
   constructor(
     formKey = '',
@@ -221,12 +220,9 @@ export default class IntegrationClient {
     );
   }
 
-  // Alerts a failure the offline queue reports. Each message alerts once per
-  // page so a failing replay cannot stack dialogs, while a different failure
-  // still reaches the user.
+  // Alerts a failure the offline queue reports. The queue reports each
+  // message once per replay, so a failing replay cannot stack dialogs.
   errorCallback(message: string) {
-    if (this.shownErrorMessages.has(message)) return;
-    this.shownErrorMessages.add(message);
     featheryWindow().alert(message);
   }
 

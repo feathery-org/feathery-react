@@ -906,6 +906,153 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         expect(errorCallback).not.toHaveBeenCalled();
       });
 
+      it("finishes once when the link gate refuses another submission's queued event", async () => {
+        store.seed({
+          ...queuedEvent('Insurance', 'other submission event'),
+          userId: 'linked-submission'
+        });
+        (global as any).fetch = jest.fn(async () => {
+          // Lets timers run between attempts, so a replay that loops shows up
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          return fakeResponse(403, {
+            message: 'Link opens another submission'
+          });
+        });
+        const waiter = queue.onlineAndReplayed();
+
+        const isSettled = await Promise.race([
+          Promise.all([queue.replayRequests(), waiter]).then(() => true),
+          new Promise<boolean>((resolve) =>
+            setTimeout(() => resolve(false), 500)
+          )
+        ]);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        expect(isSettled).toBe(true);
+        expect((global as any).fetch).toHaveBeenCalledTimes(1);
+        expect(store.rows()).toHaveLength(1);
+      });
+
+      it('refuses completion after its replay drops a rejected answer, until that step is saved again', async () => {
+        store.seed({ ...queuedAnswer, body: 'invalid answer' });
+        serveReplay((body) => (body === 'invalid answer' ? 400 : 200));
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'Please go back and submit that step again'
+        );
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'Please go back and submit that step again'
+        );
+        expect(sendCompletion).not.toHaveBeenCalled();
+
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          stepUrl,
+          { method: 'POST', body: 'corrected answer' },
+          'submit',
+          'Insurance'
+        );
+        await completeForm(sendCompletion);
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+      });
+
+      it('allows completion once any answer lands after a rejected custom field write', async () => {
+        store.seed({
+          type: 'submit',
+          url: '/panel/custom/submit/v3/',
+          userId: 'user-1',
+          body: 'invalid custom answer'
+        });
+        serveReplay(() => 400);
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'Please go back and submit that step again'
+        );
+        // Submitting a step again saves its answers but has no custom fields to send
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          stepUrl,
+          { method: 'POST', body: 'step answers' },
+          'submit',
+          'Insurance'
+        );
+        await completeForm(sendCompletion);
+
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+      });
+
+      it('supersedes an older upload for a user id its stored URL percent-encodes', async () => {
+        mockInitInfo.userId = 'user one';
+        store.seed({
+          ...queuedAnswer,
+          userId: 'user one',
+          url: '/panel/step/submit/file/user%20one/',
+          metadata: { fieldKey: 'card' },
+          body: 'older card'
+        });
+        // The server cannot take the queued upload yet
+        serveReplay(() => 503);
+
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          '/panel/step/submit/file/user one/',
+          { method: 'POST', body: 'newer card' },
+          'submit',
+          'Insurance',
+          { fieldKey: 'card' }
+        );
+
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('attributes rows from SDK builds that did not record the user, then resets and supersedes them', async () => {
+        const fileUrl = '/panel/step/submit/file/user-1/';
+        store.seed({
+          ...queuedAnswer,
+          userId: undefined,
+          body: JSON.stringify({ fuser_key: 'user-1', step_key: 'Insurance' }),
+          retryAttempts: 4
+        });
+        store.seed({
+          ...queuedAnswer,
+          userId: undefined,
+          url: fileUrl,
+          metadata: { fieldKey: 'card' },
+          body: 'card upload',
+          retryAttempts: 4
+        });
+
+        await queue.resetAnswerWriteRetries();
+        expect(
+          store.rows().map((row) => [row.userId, row.retryAttempts])
+        ).toEqual([
+          ['user-1', 0],
+          ['user-1', 0]
+        ]);
+
+        // The server cannot take the queued rows, but newer saves of the same
+        // step snapshot and file field land and replace them
+        serveReplay(() => 503);
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          stepUrl,
+          { method: 'POST', body: 'newer snapshot' },
+          'submit',
+          'Insurance'
+        );
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          fileUrl,
+          { method: 'POST', body: 'newer card' },
+          'submit',
+          'Insurance',
+          { fieldKey: 'card' }
+        );
+        expect(store.rows()).toEqual([]);
+      });
+
       it('retries a row whose 403 comes from something other than the access check', async () => {
         store.seed(queuedAnswer);
         serveReplay();

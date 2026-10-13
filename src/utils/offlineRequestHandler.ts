@@ -38,12 +38,22 @@ const isRejectedStatus = (status: number) =>
   status >= 400 && status < 500 && ![403, 408, 429].includes(status);
 
 // One user's step snapshot or file field. A newer write to it replaces an older one.
+// An upload URL carries the user id, which a stored Request has percent-encoded
+// while the live request's URL may not have, so URLs compare decoded
+const endpointOf = (url: string) => {
+  try {
+    return decodeURIComponent(url);
+  } catch (error) {
+    return url;
+  }
+};
+
 const writeSlotKey = (
   userId: string | undefined,
   stepKey: string,
   url: string,
   fieldKey?: string
-) => JSON.stringify([userId, stepKey, url, fieldKey ?? null]);
+) => JSON.stringify([userId, stepKey, endpointOf(url), fieldKey ?? null]);
 
 // A custom field write, as FeatheryClient._debouncedSubmitCustom builds it:
 // JSON values under custom_key_values, and files paired by index with
@@ -119,6 +129,40 @@ interface SerializedRequest {
   snapshot?: Request;
 }
 
+// The write slot of a queued answer row. A custom field write has no step.
+const answerSlotKey = (request: SerializedRequest) =>
+  writeSlotKey(
+    request.userId,
+    request.stepKey ?? '',
+    request.url,
+    request.metadata?.fieldKey
+  );
+
+// The user a row from an SDK build that did not record one was queued for,
+// read from its payload: the upload URL, or the fuser_key a step save, custom
+// field write or event carries. Undefined when the payload does not say.
+const FILE_UPLOAD_USER_PATTERN = /\/panel\/step\/submit\/file\/([^/]+)\//;
+const MULTIPART_USER_PATTERN = /name="fuser_key"\r?\n\r?\n([^\r\n]+)/;
+
+const userInBody = (bodyText: string): string | undefined => {
+  try {
+    return JSON.parse(bodyText).fuser_key || undefined;
+  } catch (error) {
+    // Not JSON, so a multipart custom field write
+    return MULTIPART_USER_PATTERN.exec(bodyText)?.[1];
+  }
+};
+
+const queuedUserOf = (request: SerializedRequest): string | undefined => {
+  const uploadUser = FILE_UPLOAD_USER_PATTERN.exec(request.url)?.[1];
+  if (uploadUser) return decodeURIComponent(uploadUser);
+  if (request.bodyType === 'formData')
+    return (request.body as Record<string, any>).fuser_key || undefined;
+  if (request.bodyType === 'text') return userInBody(request.body as string);
+  if (typeof TextDecoder === 'undefined') return undefined;
+  return userInBody(new TextDecoder().decode(request.body as ArrayBuffer));
+};
+
 /**
  * How a replayed row ended: 'settled' left the queue with nothing for the user
  * to do (accepted, or dropped because the page moves on: a form version
@@ -127,13 +171,19 @@ interface SerializedRequest {
  */
 type ReplayOutcome = 'settled' | 'rejected' | 'queued';
 
+const REJECTED_ANSWERS_MESSAGE =
+  'Some answers from an earlier step could not be saved. Please go back and submit that step again.';
+
 /**
- * Completing the form is refused while the user still has answers queued,
- * because the server would act on the submission without them.
+ * Completing the form is refused while the user still has answers queued, or
+ * answers the server rejected that were not submitted again, because the
+ * server would act on the submission without them.
  */
 export class AnswersPendingError extends Error {
-  constructor() {
-    super('Some answers are still being saved. Please try again.');
+  constructor(
+    message = 'Some answers are still being saved. Please try again.'
+  ) {
+    super(message);
     this.name = 'AnswersPendingError';
     Object.setPrototypeOf(this, AnswersPendingError.prototype);
   }
@@ -281,6 +331,15 @@ export class OfflineRequestHandler {
   // queues behind them if it does not.
   private liveWriteSlots = new Map<string, number>();
   private isReplayingConnectorRequests = false;
+  // Rows the link gate refused for another submission. They wait, untried, for
+  // the rest of this page, so they cannot keep a replay looping.
+  private parkedRequestKeys = new Set<IDBValidKey>();
+  // The current user's write slots whose queued write the server rejected,
+  // until a write to the same slot lands
+  private rejectedWriteSlots = new Map<
+    string,
+    { userId: string; isCustomFieldWrite: boolean }
+  >();
 
   constructor(formKey: string, errorCallback?: (error: string) => void) {
     this.isReplayingRequests = new Map();
@@ -354,6 +413,8 @@ export class OfflineRequestHandler {
   public async resetAnswerWriteRetries(): Promise<void> {
     const { userId } = initInfo();
     if (!userId) return;
+    // Reading the queue attributes rows from older SDK builds to their user
+    await this.readQueuedRequests();
     await this.updateRecordsWhere(
       (record) =>
         record.formKey === this.formKey &&
@@ -470,6 +531,10 @@ export class OfflineRequestHandler {
         // A terminal event needs every answer acknowledged first. It is
         // refused rather than queued so its side effects cannot fire twice.
         if (isCompletion) {
+          if (this.hasRejectedAnswerWrite()) {
+            untrackUnload();
+            throw new AnswersPendingError(REJECTED_ANSWERS_MESSAGE);
+          }
           if (await this.hasQueuedAnswerWrite()) {
             untrackUnload();
             throw new AnswersPendingError();
@@ -560,6 +625,24 @@ export class OfflineRequestHandler {
         throw new Error(
           'The submission could not be completed. Please try again.'
         );
+      }
+      if (response && type === 'submit') {
+        const { userId } = initInfo();
+        const landedSlot = writeSlotKey(
+          userId,
+          stepKey ?? '',
+          url,
+          metadata?.fieldKey
+        );
+        // A rejected custom field write has no step of its own to submit
+        // again, so any of the user's answers landing resolves it
+        this.rejectedWriteSlots.forEach((rejected, slot) => {
+          if (
+            slot === landedSlot ||
+            (rejected.isCustomFieldWrite && rejected.userId === userId)
+          )
+            this.rejectedWriteSlots.delete(slot);
+        });
       }
       if (response && writeSlot && stepKey) {
         this.acknowledgedWriteOrder.set(
@@ -763,6 +846,9 @@ export class OfflineRequestHandler {
 
     this.isReplayingRequests.set(this.formKey, true);
     trackUnload();
+    // Declared outside the try block: Babel's block scoping fails to compile
+    // the event loop below when it captures a const declared inside it
+    const reportError = this.createReplayErrorReporter();
     try {
       const queuedRequests = await this.readQueuedRequests();
 
@@ -782,16 +868,22 @@ export class OfflineRequestHandler {
           heldWrites.push(write);
           continue;
         }
-        const outcome = await this.replayRequest(write, { isUserWaiting });
+        const outcome = await this.replayRequest(write, {
+          isUserWaiting,
+          reportError
+        });
         if (outcome === 'queued') heldWrites.push(write);
-        if (outcome === 'rejected' && this.isCurrentUsersRequest(write))
+        if (outcome === 'rejected' && this.isCurrentUsersRequest(write)) {
           hasRejectedWrite = true;
+          this.rejectedWriteSlots.set(answerSlotKey(write), {
+            userId: write.userId ?? '',
+            isCustomFieldWrite: !write.stepKey
+          });
+        }
       }
-      if (hasRejectedWrite) {
-        this.errorCallback?.(
-          'Some answers from an earlier step could not be saved. Please go back and submit that step again.'
-        );
-      }
+      // A user waiting to complete gets this as the completion's refusal
+      if (hasRejectedWrite && !isUserWaiting)
+        reportError(REJECTED_ANSWERS_MESSAGE);
 
       // An event for a step whose answers are still queued would let the
       // server act on that step without its data
@@ -814,7 +906,7 @@ export class OfflineRequestHandler {
         );
         await Promise.all(
           requestsForStep.map((request) =>
-            this.replayRequest(request, { isUserWaiting })
+            this.replayRequest(request, { isUserWaiting, reportError })
           )
         );
       }
@@ -828,25 +920,42 @@ export class OfflineRequestHandler {
       );
     } finally {
       this.isReplayingRequests.set(this.formKey, false);
-
-      // Pick up requests queued during this replay. A write that is still
-      // queued waits for the next manual submission or reconnect instead, so a
-      // failing write cannot spin here. A user waiting to complete is not held
-      // for that.
-      if (
-        !isUserWaiting &&
-        (await this.hasReplayableRequest()) &&
-        !(await this.dbHasRequest('submit'))
-      )
-        await this.replayRequests();
-
       untrackUnload();
       // Release all waiting promises that were blocked on onlineAndReplayed()
-      // This allows queued requests in runOrSaveRequest to proceed
+      // This allows queued requests in runOrSaveRequest to proceed. They are
+      // released before any follow-up replay, which they do not wait on.
       const signals = this.onlineSignals.get(this.formKey) || [];
       signals.forEach((signal) => signal());
       this.onlineSignals.delete(this.formKey);
     }
+
+    // Pick up requests queued during this replay. A write that is still
+    // queued waits for the next manual submission or reconnect instead, so a
+    // failing write cannot spin here. A user waiting to complete is not held
+    // for that.
+    if (
+      !isUserWaiting &&
+      (await this.hasReplayableRequest()) &&
+      !(await this.dbHasRequest('submit'))
+    )
+      await this.replayRequests();
+  }
+
+  // Each failure message reaches the user once per replay
+  private createReplayErrorReporter() {
+    const reportedErrors = new Set<string>();
+    return (message: string) => {
+      if (reportedErrors.has(message)) return;
+      reportedErrors.add(message);
+      this.errorCallback?.(message);
+    };
+  }
+
+  private hasRejectedAnswerWrite(): boolean {
+    const { userId } = initInfo();
+    return [...this.rejectedWriteSlots.values()].some(
+      (rejected) => !!userId && rejected.userId === userId
+    );
   }
 
   private async replayConnectorRequests(
@@ -872,20 +981,23 @@ export class OfflineRequestHandler {
 
   private isWriteSlotLive(request: SerializedRequest): boolean {
     if (request.type !== 'submit' || !request.stepKey) return false;
-    const writeSlot = writeSlotKey(
-      request.userId,
-      request.stepKey,
-      request.url,
-      request.metadata?.fieldKey
-    );
-    return (this.liveWriteSlots.get(writeSlot) ?? 0) > 0;
+    return (this.liveWriteSlots.get(answerSlotKey(request)) ?? 0) > 0;
   }
 
   private async replayRequest(
     request: SerializedRequest,
-    { isUserWaiting = false }: { isUserWaiting?: boolean } = {}
+    {
+      isUserWaiting = false,
+      reportError
+    }: {
+      isUserWaiting?: boolean;
+      reportError?: (message: string) => void;
+    } = {}
   ): Promise<ReplayOutcome> {
     const { url, method, headers, body, bodyType, keepalive, key } = request;
+    const report =
+      reportError ?? ((message: string) => this.errorCallback?.(message));
+    if (key !== undefined && this.parkedRequestKeys.has(key)) return 'queued';
     const fetchOptions: RequestInit = {
       method,
       headers: JSON.parse(headers),
@@ -946,7 +1058,10 @@ export class OfflineRequestHandler {
           // The link gate refuses another submission's row when this device's
           // link now opens a different one. The row waits for a device that
           // can send it, without spending retries or alerting.
-          if (!isCurrentUsersRow) return 'queued';
+          if (!isCurrentUsersRow) {
+            if (key !== undefined) this.parkedRequestKeys.add(key);
+            return 'queued';
+          }
           // This submission's own link expired or was revoked after the row
           // was queued. Close the form as a live request does; the row can
           // never be sent.
@@ -972,8 +1087,8 @@ export class OfflineRequestHandler {
         if (await verifyConnectivity()) {
           const nextDelay = this.getExponentialDelay(attempts);
           if (attempts >= this.maxRetryAttempts) {
-            if (this.errorCallback && alertsOnExhaustion) {
-              this.errorCallback(
+            if (alertsOnExhaustion) {
+              report(
                 `Failed to submit after ${this.maxRetryAttempts} attempts. Please check your connection and try again.`
               );
             }
@@ -999,7 +1114,7 @@ export class OfflineRequestHandler {
   private async readQueuedRequests(): Promise<SerializedRequest[]> {
     const queuedRequests = [...this.memoryRequests.values()];
     const dbTransaction = this.indexedDBSupported
-      ? await this.getDbTransaction('readonly')
+      ? await this.getDbTransaction('readwrite')
       : undefined;
     if (dbTransaction) {
       const persistedRequests = await new Promise<SerializedRequest[]>(
@@ -1014,8 +1129,20 @@ export class OfflineRequestHandler {
               resolve(requests);
               return;
             }
-            const request = cursor.value as SerializedRequest;
-            if (request.formKey === this.formKey || !request.formKey) {
+            const storedRequest = cursor.value as SerializedRequest;
+            if (
+              storedRequest.formKey === this.formKey ||
+              !storedRequest.formKey
+            ) {
+              // A row from an older SDK build is attributed to its user once,
+              // and from then on is treated like any other row of that user
+              const legacyUserId = storedRequest.userId
+                ? undefined
+                : queuedUserOf(storedRequest);
+              const request = legacyUserId
+                ? { ...storedRequest, userId: legacyUserId }
+                : storedRequest;
+              if (legacyUserId) cursor.update(request);
               requests.push({ ...request, key: cursor.key });
             }
             cursor.continue();
@@ -1047,7 +1174,10 @@ export class OfflineRequestHandler {
     options?: { fieldKey?: string }
   ): Promise<void> {
     const matchesRecord = (record: SerializedRequest) => {
-      if (record.url !== url || record.formKey !== this.formKey) {
+      if (
+        endpointOf(record.url) !== endpointOf(url) ||
+        record.formKey !== this.formKey
+      ) {
         return false;
       }
 
@@ -1129,7 +1259,7 @@ export class OfflineRequestHandler {
           request.formKey === this.formKey &&
           request.type === 'submit' &&
           request.stepKey === stepKey &&
-          request.url === url &&
+          endpointOf(request.url) === endpointOf(url) &&
           request.userId === userId &&
           request.metadata?.fieldKey === metadata?.fieldKey &&
           (startedBefore === undefined ||
@@ -1155,7 +1285,7 @@ export class OfflineRequestHandler {
           request.formKey === this.formKey &&
           request.type === 'submit' &&
           !request.stepKey &&
-          request.url === url &&
+          endpointOf(request.url) === endpointOf(url) &&
           this.isCurrentUsersRequest(request)
       )
       .map((request) => request.key)
@@ -1366,7 +1496,12 @@ export class OfflineRequestHandler {
 
   // Check if any queued requests can still be retried (haven't exceeded max attempts)
   private async hasReplayableRequest(): Promise<boolean> {
-    if (this.memoryRequests.size) return true;
+    if (
+      [...this.memoryRequests.keys()].some(
+        (key) => !this.parkedRequestKeys.has(key)
+      )
+    )
+      return true;
     if (!this.indexedDBSupported) return false;
     const dbTransaction = await this.getDbTransaction('readonly');
     if (!dbTransaction) return false;
@@ -1383,7 +1518,8 @@ export class OfflineRequestHandler {
           // the next replay, so they must not keep this replay looping
           if (
             record.formKey === this.formKey &&
-            record.type !== 'customRequest'
+            record.type !== 'customRequest' &&
+            !this.parkedRequestKeys.has(cursor.key)
           ) {
             const attempts = record.retryAttempts ?? 0;
             if (attempts < this.maxRetryAttempts) {
@@ -1408,7 +1544,11 @@ export class OfflineRequestHandler {
   ): Promise<void> {
     await this.updateRecordsWhere(
       (record) => {
-        if (record.url !== url || record.formKey !== this.formKey) return false;
+        if (
+          endpointOf(record.url) !== endpointOf(url) ||
+          record.formKey !== this.formKey
+        )
+          return false;
         if (!options?.fieldKey) return true;
         return this.recordMatchesFieldKey(record, options.fieldKey);
       },

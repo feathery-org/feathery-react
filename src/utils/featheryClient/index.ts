@@ -495,12 +495,11 @@ export default class FeatheryClient extends IntegrationClient {
         delete fileDeduplicationCount[servar.key];
         return result;
       }
-      // Mark as successful upload - will block duplicate attempts
+      // Mark as successful upload - will block duplicate attempts. The queue
+      // drops only this user's older uploads of the field itself; a newer one
+      // that failed while this was in flight stays queued.
       fileRetryStatus[servar.key] = true;
       completeUpload(this.formKey, servar.key);
-      await this.offlineRequestHandler.clearFailedRequestByUrl(url, {
-        fieldKey: servar.key
-      });
       return result;
     } catch (error) {
       // Mark as failed - allows retry on next submission

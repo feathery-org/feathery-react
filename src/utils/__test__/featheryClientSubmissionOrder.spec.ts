@@ -306,6 +306,11 @@ describe('step save and completion ordering', () => {
       expect.stringContaining('submit that step again')
     );
     expect(store.rows()).toEqual([]);
+
+    // A later replay that drops another step's answers alerts again
+    store.seed(queuedAnswer({ stepKey: 'third', url, retryAttempts: 0 }));
+    await client.offlineRequestHandler.replayRequests();
+    expect(alert).toHaveBeenCalledTimes(2);
   });
 
   // Expectation moved: only completion waits on the flush; other events go out alongside it
@@ -498,6 +503,43 @@ describe('step save and completion ordering', () => {
     } finally {
       process.off('unhandledRejection', unhandled);
     }
+  });
+
+  it('keeps a newer upload that failed while an older one of the field was still in flight', async () => {
+    const { client, store } = createClientWithStorage();
+    let landOlderUpload!: () => void;
+    const uploads: string[] = [];
+    jest
+      .spyOn(client, '_fetch')
+      .mockImplementation(async (_url: any, options: any) => {
+        const file = options.body.get('card') as File;
+        uploads.push(file.name);
+        if (file.name === 'newer.png') throw new TypeError('Failed to fetch');
+        return new Promise((resolve) => {
+          landOlderUpload = () => resolve({});
+        });
+      });
+    const upload = (name: string) =>
+      client.submitFiles([
+        {
+          servar: { key: 'card', file_upload: new File([name], name) },
+          stepKey: 'Insurance'
+        }
+      ]);
+
+    const olderUpload = upload('older.png');
+    await waitUntil(() => uploads.length === 1);
+    const newerUpload = upload('newer.png');
+    newerUpload.catch(() => {});
+    await waitUntil(() => store.rows().length === 1);
+    landOlderUpload();
+    await olderUpload;
+    await expect(newerUpload).rejects.toThrow('Failed to fetch');
+
+    expect(uploads).toEqual(['older.png', 'newer.png']);
+    expect(store.rows()).toEqual([
+      expect.objectContaining({ metadata: { fieldKey: 'card' } })
+    ]);
   });
 
   it("keeps a field's newer upload status when an older upload of it fails afterwards", async () => {
