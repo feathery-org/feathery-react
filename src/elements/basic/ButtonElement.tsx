@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import TextNodes from '../components/TextNodes';
 import { hasIconGlyph, IconGlyph } from '../components/icons/iconGlyph';
 import { imgMaxSizeStyles } from '../styles';
-import { adjustColor } from '../../utils/styles';
+import { adjustColor, getImageColorStyles } from '../../utils/styles';
 import { isFit } from '../../utils/hydration';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
@@ -19,12 +19,8 @@ const BUTTON_IMAGE_SELECTOR = 'img, [data-feathery-button-icon]';
 
 const getButtonImageFilterStyles = (color: string) => {
   if (!color) return {};
-  const level = color === 'black' ? 0 : 100;
   return {
-    [BUTTON_IMAGE_SELECTOR]: {
-      webkitFilter: `brightness(${level}%)`,
-      filter: `brightness(${level}%)`
-    }
+    [BUTTON_IMAGE_SELECTOR]: getImageColorStyles(color)
   };
 };
 
@@ -81,6 +77,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyWidth('img', 'image_');
   responsiveStyles.applyMargin('img', 'image_');
   responsiveStyles.applyColor('img', 'icon_color', 'color');
+  responsiveStyles.apply('img', 'image_color', getImageColorStyles);
 
   if (element.styles.hover_background_color) {
     responsiveStyles.applyColor(

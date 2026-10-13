@@ -6,6 +6,13 @@ export function isDirectionColumn(flexDirection: any) {
   return flexDirection.includes('column');
 }
 
+export function getImageColorStyles(color: string) {
+  if (!color) return {};
+  const filter =
+    color === 'black' ? 'brightness(0%)' : 'brightness(0%) invert(100%)';
+  return { WebkitFilter: filter, filter };
+}
+
 export function adjustColor(color: string, amount: number) {
   return (
     '#' +
