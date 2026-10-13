@@ -40,10 +40,7 @@
 // text and is correctly written.
 // ---------------------------------------------------------------------------
 
-import {
-  parseNumericCell,
-  rescaleExact
-} from '../../../robin/document/formats/docx-sfdt/numericCells';
+import { parseNumericCell, rescaleExact } from './numericCells';
 
 /**
  * THE RULE. True when writing `next` where `current` already stands would

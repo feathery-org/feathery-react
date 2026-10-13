@@ -14,7 +14,7 @@ import {
   getDocumentInventory,
   LiveEditor
 } from '../../syncfusionDocumentOps';
-import { deriveTableStructure } from '../../../../../robin/document/formats/docx-sfdt/tableStructure';
+import { deriveTableStructure } from '../../tableStructure';
 import {
   attachBindings,
   AttachedBindings
