@@ -46,8 +46,19 @@ export function hiddenEditorConverter(
       const editor = container.documentEditor;
       editor.enableSfdtExport = true;
       const loaded = waitForDocumentLoad(editor);
-      await editor.openAsync(new Blob([bytes], { type: DOCX_MIME }));
-      if (!(await loaded)) throw new Error('Original document did not load');
+      // A failed Import never settles openAsync; fail now, not at the timeout.
+      const failed = new Promise<never>((resolve, reject) =>
+        editor.addEventListener('serviceFailure', () =>
+          reject(new Error('Original document import failed'))
+        )
+      );
+      failed.catch(() => undefined);
+      await Promise.race([
+        editor.openAsync(new Blob([bytes], { type: DOCX_MIME })),
+        failed
+      ]);
+      if (!(await Promise.race([loaded, failed])))
+        throw new Error('Original document did not load');
       return populateVersionBindings(JSON.parse(editor.serialize()));
     } finally {
       try {
