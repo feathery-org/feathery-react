@@ -115,22 +115,22 @@ function takeFrom(
 
 export const restripeFinalizer: Finalizer = {
   name: 'restripe',
-  run(after, { before, formats }) {
+  run(after, { before, formats, copies = {} }) {
     const ids = new Set<string>();
     const rowIds = (t: NfNode) =>
       arr<NfNode>(t.rows)
         .map((r) => r.id)
         .join(',');
-    /** The table a row sat in before, when it sat in one. */
+    /** The table a row sat in before (or the row it copies did), when it sat in one. */
     const tableOfRow = (rowId: string): NfNode | null => {
-      const parent = before.placement(rowId)?.parent;
+      const parent = before.placement(copies[rowId] ?? rowId)?.parent;
       return parent && parent.kind === KIND.table ? parent : null;
     };
     /**
      * Which tables restripe and from which table's banding: a table whose rows were added, removed
      * or reordered restripes whole; one that came out of a split (a new table holding rows of a
-     * table before) restripes whole from that table's banding; one that only gained cells gives
-     * each new cell its row's look.
+     * table before, moved or copied) restripes whole from that table's banding; one that only
+     * gained cells gives each new cell its row's look.
      */
     const work: Array<{ table: NfNode; source: NfNode; whole: boolean }> = [];
     const rec = (n: unknown) => {

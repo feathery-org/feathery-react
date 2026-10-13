@@ -312,6 +312,32 @@ describe('restripe on cell changes and splits (matrix-1 T3, T4, T11: the model\'
     expect(r.facts.some((f) => f.name === 'restripe')).toBe(true);
   });
 
+  it('a new table built from copied rows (the captain\'s split) takes its source table\'s banding, its header kept', () => {
+    // a new property table holding a copy of the header and a copy of the third item: the copies
+    // carry new ids, so the source is known from what they copy
+    let doc = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4d.sfdt.json'), 'utf8');
+    const host = { serialize: () => doc, open: (x: string) => { doc = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+    // the coverage schedule: a plain banded table
+    const control = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[1].blocks)[4];
+    const table = control;
+    expect(table.kind).toBe('table');
+    const rows = arr<NfNode>(table.rows);
+    const r = prepareWrite(s, {
+      intent: 'A second table.',
+      scope: { ids: [] },
+      changes: [{ kind: 'insert_after', anchor: control.id, container: shapeOf(arr<NfNode>(s.view.nf.root.sections)[1], docxTree), node: { kind: 'table', style: table.style, rows: [{ id: rows[0].id, kind: 'row' }, { id: rows[2].id, kind: 'row' }] } }]
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+    const blocks = arr<NfNode>(arr<NfNode>(r.intended.root.sections)[1].blocks);
+    const made = blocks[5];
+    expect(made.kind).toBe('table');
+    const fills = arr<NfNode>(made.rows).map((row) => fill(r.intended.formats, arr<NfNode>(row.cells)[0]));
+    // the header keeps its look; the first body row is the first band, as in the source
+    expect(fills[0]).toBe(fill(s.view.nf.formats, arr<NfNode>(rows[0].cells)[0]));
+    expect(fills[1]).toBe(fill(s.view.nf.formats, arr<NfNode>(rows[1].cells)[0]));
+  });
+
   it('T4: both tables that came out of a split carry the banding from their first body row', () => {
     // the split alone: its two summary rewrites name controls by the ids of the rig's session, whose
     // fixture the editor had laid out first (ids after the tables run differently there)

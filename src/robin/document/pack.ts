@@ -244,6 +244,8 @@ export interface FinalizerContext {
   formats: FormatTable;
   /** The residue of the document before: native data the normal form does not show (laid-out sizes, say). */
   residue: Residue;
+  /** Each node this write copied, by its new id: the id of the node it copies. */
+  copies?: Readonly<Record<string, string>>;
 }
 
 export interface FinalizerResult {

@@ -886,7 +886,8 @@ export function prepareWrite(
     const result = finalizer.run(working, {
       before: view,
       formats: formatTable,
-      residue: state.residue
+      residue: state.residue,
+      copies: minted.copies
     });
     finalizerScope.push({ name: finalizer.name, ids: [...result.ids] });
     result.ids.forEach((id) => finalizerIds.add(id));
