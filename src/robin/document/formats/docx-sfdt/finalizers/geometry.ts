@@ -4,8 +4,14 @@
  * set that leaves a table it touched ragged, where it was even before, verifies with a fact and a
  * `table-ragged` warning the model can act on. It runs as the last finalizer and changes nothing.
  */
-import type { DocumentView, Finalizer, Residue } from '../../../pack';
-import { NfNode, canonicalJson } from '../../../tree';
+import type {
+  DocumentView,
+  Finalizer,
+  FinalizerContext,
+  Residue
+} from '../../../pack';
+import { NfNode, NormalForm, canonicalJson, listAt } from '../../../tree';
+import { docxTree } from '../tree';
 import { KIND } from '../adapter/keys';
 import { arr } from '../util';
 
@@ -196,6 +202,88 @@ function contentWidth(view: DocumentView, id: string): number | null {
   return null;
 }
 
+/** The text width of the section a node sits in, in `nf`; null inside a cell (it fits its cell). */
+function textWidthIn(nf: NormalForm, id: string): number | null {
+  let found: number | null | undefined;
+  const rec = (n: NfNode, section: NfNode | null, inCell: boolean) => {
+    if (found !== undefined) return;
+    if (n.id === id) {
+      if (inCell || !section) found = null;
+      else {
+        const f =
+          typeof section.style === 'string'
+            ? (nf.formats as Formats)[section.style] ?? {}
+            : {};
+        const width =
+          Number(f.pageWidth) - Number(f.leftMargin) - Number(f.rightMargin);
+        found = Number.isFinite(width) && width > 0 ? width : null;
+      }
+      return;
+    }
+    for (const key of docxTree.childLists(n))
+      for (const c of arr<NfNode>(listAt(n, key)))
+        rec(
+          c,
+          n.kind === KIND.section ? n : section,
+          inCell || n.kind === KIND.cell
+        );
+  };
+  rec(nf.root, null, false);
+  return found ?? null;
+}
+
+/**
+ * A new table written with no widths at all (not a copy, which brings its source's): the editor
+ * would lay it out on a zero grid, so its columns share the width the table has equally, the text
+ * width or the table's own preferred width when it sets one, as point widths.
+ */
+function shareNewTable(
+  after: NormalForm,
+  table: NfNode,
+  formats: FinalizerContext['formats'],
+  copies: Readonly<Record<string, string>>
+): { ids: string[]; summary: string } | null {
+  if (copies[table.id]) return null;
+  const now = after.formats as Formats;
+  const rows = arr<NfNode>(table.rows);
+  const cells = rows.flatMap((r) => arr<NfNode>(r.cells));
+  if (!cells.length || cells.some((c) => copies[c.id])) return null;
+  if (cells.some((c) => widthOf(now, c).width !== undefined)) return null;
+  const text = textWidthIn(after, table.id);
+  if (text === null) return null;
+  const own = typeof table.style === 'string' ? now[table.style] ?? {} : {};
+  const ownWidth = Number(own.preferredWidth);
+  const room =
+    own.preferredWidthType === 'Point' && ownWidth > 0
+      ? Math.min(text, ownWidth)
+      : own.preferredWidthType === 'Percent' && ownWidth > 0
+      ? Math.min(text, (text * ownWidth) / 100)
+      : text;
+  const spanOf = (c: NfNode) => {
+    const f = typeof c.style === 'string' ? now[c.style] ?? {} : {};
+    return Math.max(1, Number(f.columnSpan) || 1);
+  };
+  const columns = Math.max(
+    ...rows.map((r) => arr<NfNode>(r.cells).reduce((n, c) => n + spanOf(c), 0))
+  );
+  if (!(columns > 0)) return null;
+  const share = Math.round((room / columns) * 100) / 100;
+  for (const cell of cells)
+    cell.style = formats.intern({
+      ...(typeof cell.style === 'string' ? formats.get(cell.style) ?? {} : {}),
+      preferredWidth: Math.round(share * spanOf(cell) * 100) / 100,
+      preferredWidthType: 'Point'
+    });
+  return {
+    ids: cells.map((c) => c.id),
+    summary: `table ${
+      table.id
+    } was written with no widths, so its ${columns} columns share the ${
+      Math.round(room * 100) / 100
+    } pt the table has equally, ${share} pt each`
+  };
+}
+
 /**
  * Column fit (QA-1): a column added to a table that fit between the margins would push it past
  * them, since every new cell brings its own width. The other columns narrow in proportion so each
@@ -205,7 +293,7 @@ function contentWidth(view: DocumentView, id: string): number | null {
  */
 export const columnFitFinalizer: Finalizer = {
   name: 'column-fit',
-  run(after, { before, formats, residue }) {
+  run(after, { before, formats, residue, copies = {} }) {
     const ids: string[] = [];
     const tables: string[] = [];
     const fitted: string[] = [];
@@ -214,7 +302,14 @@ export const columnFitFinalizer: Finalizer = {
     const round = (n: number) => Math.round(n * 100) / 100;
     for (const table of tablesOf(after.root)) {
       const old = before.get(table.id);
-      if (!old) continue;
+      if (!old) {
+        const shared = shareNewTable(after, table, formats, copies);
+        if (shared) {
+          ids.push(...shared.ids);
+          fitted.push(shared.summary);
+        }
+        continue;
+      }
       const grid = (
         residue[table.id] as { hidden?: { grid?: unknown } } | undefined
       )?.hidden?.grid;

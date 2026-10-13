@@ -712,6 +712,24 @@ describe('N1: a computed field\'s cached result belongs to the editor (rule 12: 
   });
 });
 
+describe('a new table written with no widths (matrix T10)', () => {
+  it('lands with its columns sharing the text width: the grid is no longer zero, and the fact says so', async () => {
+    await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const sid = await at(['sections', 3]);
+    const n = await read([pid, sid]);
+    const cell = (t: string) => ({ kind: 'cell', blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: t }] }] });
+    const r = await dispatch('write', { intent: 'Add a table.', scope: { ids: [] }, changes: [{ kind: 'insert_after', anchor: pid, container: n[sid].shape, node: { kind: 'table', rows: [{ kind: 'row', cells: [cell('A'), cell('B'), cell('C')] }, { kind: 'row', cells: [cell('1'), cell('2'), cell('3')] }] } }] });
+    expect(r).toEqual(expect.objectContaining({ ok: true, committed: true }));
+    expect(r.facts.find((f: any) => f.name === 'column-fit')?.summary).toMatch(/no widths.*3 columns/);
+    const doc = JSON.parse(await lane.call<string>('settled'));
+    const table = doc.sections[3].blocks[17];
+    expect(table.grid).toHaveLength(3);
+    expect(table.grid.every((w: number) => w > 0)).toBe(true);
+    expect(table.rows[0].cells.every((c: any) => c.cellFormat.cellWidth > 0)).toBe(true);
+  });
+});
+
 describe('the descriptor (protocol 2, section 9): the outline itself and the selection read from the editor', () => {
   const ownText = (p: any): string => {
     let out = '';

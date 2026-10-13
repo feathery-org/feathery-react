@@ -272,6 +272,51 @@ describe('column fit finalizer', () => {
     expect(r.facts.find((f) => f.name === 'column-fit')?.summary).toMatch(/200, 300 pt \(500 pt\).*400 pt.*160, 240/);
   });
 
+  // a new table written with no widths: the editor would lay out a zero grid (lane, matrix T10)
+  const newTable = (tableFormat?: Record<string, unknown>, cellWidth?: number) => {
+    let d = sfdtOf([156, 312]);
+    const host = { serialize: () => d, open: (x: string) => { d = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+    const section = arr<NfNode>(s.view.nf.root.sections)[0];
+    const anchor = arr<NfNode>(section.blocks)[0];
+    const cell = (t: string, k: number) => ({ kind: 'cell', ...(cellWidth !== undefined && k === 0 ? { style: 'tmp:w' } : {}), blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: t }] }] });
+    const row = (p: string) => ({ kind: 'row', cells: [0, 1, 2].map((k) => cell(`${p}${k}`, k)) });
+    const r = prepareWrite(s, {
+      intent: 'Add a table.',
+      scope: { ids: [] },
+      formats: { ...(tableFormat ? { 'tmp:t': tableFormat } : {}), ...(cellWidth !== undefined ? { 'tmp:w': { preferredWidth: cellWidth, preferredWidthType: 'Point' } } : {}) },
+      changes: [{ kind: 'insert_after', anchor: anchor.id, container: shapeOf(section, docxTree), node: { kind: 'table', ...(tableFormat ? { style: 'tmp:t' } : {}), rows: [row('H'), row('B')] } }]
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+    const table = arr<NfNode>(arr<NfNode>(r.intended.root.sections)[0].blocks)[1];
+    const widths = arr<NfNode>(table.rows).map((x) =>
+      arr<NfNode>(x.cells).map((c) => {
+        const f = r.intended.formats[String(c.style)] ?? {};
+        if (f.preferredWidth === undefined) return 'none';
+        return `${f.preferredWidth}${f.preferredWidthType === 'Point' ? 'pt' : f.preferredWidthType}`;
+      })
+    );
+    return { widths, fact: r.facts.find((f) => f.name === 'column-fit') };
+  };
+
+  it('a new table written with no widths shares the text width equally, and says so (matrix T10)', () => {
+    const { widths, fact } = newTable();
+    expect(widths).toEqual([['156pt', '156pt', '156pt'], ['156pt', '156pt', '156pt']]);
+    expect(fact?.summary).toMatch(/no widths.*3 columns.*468 pt.*156 pt each/);
+  });
+
+  it('a new table that sets its own width shares that width: a point width, and a percent of the text', () => {
+    expect(newTable({ preferredWidth: 300, preferredWidthType: 'Point' }).widths[0]).toEqual(['100pt', '100pt', '100pt']);
+    expect(newTable({ preferredWidth: 50, preferredWidthType: 'Percent' }).widths[1]).toEqual(['78pt', '78pt', '78pt']);
+  });
+
+  it('a new table with any width written is left as written', () => {
+    const { widths, fact } = newTable(undefined, 200);
+    expect(widths[0][0]).toBe('200pt');
+    expect(widths[0][1]).toBe('none');
+    expect(fact).toBeUndefined();
+  });
+
   it('leaves a table that still fits, and one that did not fit before, as written', () => {
     expect(addColumn([100, 100]).widths).toEqual([[100, 100, 100], [100, 100, 100]]);
     expect(addColumn([300, 300]).facts.some((f) => f.name === 'column-fit')).toBe(false);
