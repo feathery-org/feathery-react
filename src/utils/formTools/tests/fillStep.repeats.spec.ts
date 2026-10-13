@@ -38,7 +38,13 @@ let bumpTick: () => void;
 // addRepeatedRow's synchronous fieldValues write.
 const seed = (
   values: unknown[],
-  opts: { maxRepeats?: number; visible?: boolean[]; type?: string } = {}
+  opts: {
+    maxRepeats?: number;
+    visible?: boolean[];
+    type?: string;
+    // Fields after the repeat container, written after vehicle_vin
+    after?: any[];
+  } = {}
 ) => {
   const rowCount = values.length;
   ({
@@ -49,7 +55,7 @@ const seed = (
     awaitChangeRules: awaitChangeRulesMock,
     getNextStepKey: getNextStepKeyMock
   } = seedForm(FORM, {
-    fields: [repeatedField('vehicle_vin', opts.type)],
+    fields: [repeatedField('vehicle_vin', opts.type), ...(opts.after ?? [])],
     step: {
       subgrids: [CONTAINER],
       buttons:
@@ -267,6 +273,35 @@ describe('fillStepTool: repeated fields', () => {
     expect((result.fields.vehicle_vin as any).rows).toEqual([
       { status: 'changed', value: 'REWRITTEN' },
       { status: 'filled', value: 'NEW1' }
+    ]);
+  });
+
+  it("reclassifies a row as 'changed' when a later field's change rule rewrites it", async () => {
+    seed(['row0'], {
+      type: 'ssn',
+      after: [
+        {
+          id: 'owner-el',
+          position: [1],
+          properties: {},
+          servar: { id: 'owner-sv', key: 'owner', type: 'text_field' }
+        }
+      ]
+    });
+    // The owner write's change rule rewrites the SSN row written before it
+    awaitChangeRulesMock.mockImplementation(async () => {
+      const state = (internalState as any)[FORM];
+      if (state.fields.owner?.value === 'Ada')
+        state.fields.vehicle_vin = { value: ['987654321'] };
+      bumpTick();
+    });
+
+    const result = await fillStepTool(FORM, {
+      values: { vehicle_vin: ['123456789'], owner: 'Ada' }
+    });
+
+    expect((result.fields.vehicle_vin as any).rows).toEqual([
+      { status: 'changed', value: '••••4321' }
     ]);
   });
 

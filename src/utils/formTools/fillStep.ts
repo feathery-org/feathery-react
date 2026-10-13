@@ -180,6 +180,8 @@ export async function fillStepTool(
   // 'filled' from 'changed'
   const written = new Set<string>();
   const intendedValues: Record<string, unknown> = {};
+  // Repeated rows written, classified in the final pass with the scalar fields
+  const repeatedWrites: Record<string, RepeatedWrite> = {};
 
   // Each pass writes every visible, enabled, not-yet-attempted field in
   // on-screen order; a field revealed by a later write is picked up in this
@@ -234,7 +236,7 @@ export async function fillStepTool(
       }
 
       if (servar.repeated) {
-        resolved[fieldKey] = await fillRepeatedField(
+        const repeated = await fillRepeatedField(
           formUuid,
           state,
           callbacks,
@@ -243,6 +245,8 @@ export async function fillStepTool(
           entry,
           values[fieldKey]
         );
+        resolved[fieldKey] = repeated.result;
+        if (repeated.written) repeatedWrites[fieldKey] = repeated.written;
         continue;
       }
 
@@ -358,7 +362,10 @@ export async function fillStepTool(
   const fields: Record<string, FillFieldResult> = {};
   for (const fieldKey of inputKeys) {
     if (resolved[fieldKey]) {
-      fields[fieldKey] = resolved[fieldKey];
+      const repeated = repeatedWrites[fieldKey];
+      fields[fieldKey] = repeated
+        ? classifyRepeatedRows(finalSnapshot, fieldKey, repeated)
+        : resolved[fieldKey];
       continue;
     }
     const entry = finalSnapshot.currentStepFields.find(
@@ -428,6 +435,13 @@ const isAbsent = (value: unknown) => value === null || value === undefined;
 // values[key] is an array, one entry per row. Missing rows are added like a
 // click on "Add another", then each row is written on its own; a row's outcome
 // never affects its siblings.
+type RepeatedWrite = {
+  servar: any;
+  rows: RowResult[];
+  writtenRows: number[];
+  intendedValues: Record<number, unknown>;
+};
+
 async function fillRepeatedField(
   formUuid: string,
   state: any,
@@ -436,11 +450,13 @@ async function fillRepeatedField(
   fieldKey: string,
   entry: PanelRuntimeFieldEntry,
   rawValue: unknown
-): Promise<FillFieldResult> {
+): Promise<{ result: FillFieldResult; written?: RepeatedWrite }> {
   if (!Array.isArray(rawValue))
     return {
-      status: 'rejected',
-      message: `Field '${fieldKey}' (repeated) expects an array, one entry per row.`
+      result: {
+        status: 'rejected',
+        message: `Field '${fieldKey}' (repeated) expects an array, one entry per row.`
+      }
     };
 
   const servar = rawField.servar;
@@ -617,29 +633,37 @@ async function fillRepeatedField(
     }
   }
 
-  // Classify from one final snapshot, as fillStepTool does for scalar fields
-  if (writtenRows.length > 0) {
-    const finalEntry = currentSnapshot(formUuid).currentStepFields.find(
-      (f) => f.key === fieldKey
-    );
-    const finalValues = Array.isArray(finalEntry?.value)
-      ? finalEntry.value
-      : [];
-    for (const row of writtenRows) {
-      const rowError = finalEntry?.errorRows?.[String(row)];
-      const storedValue = finalValues[row];
-      const maskedValue = maskFieldValue(servar.type, storedValue);
-      if (rowError) {
-        rows[row] = { status: 'rejected', message: rowError };
-      } else if (valuesEqual(servar.type, storedValue, intendedValues[row])) {
-        rows[row] = { status: 'filled', value: maskedValue };
-      } else if (isEmptyValue(storedValue, servar.type)) {
-        rows[row] = { status: 'rejected', message: 'Value was rejected.' };
-      } else {
-        rows[row] = { status: 'changed', value: maskedValue };
-      }
+  const result: FillFieldResult = { status: 'repeated', rows };
+  return writtenRows.length > 0
+    ? { result, written: { servar, rows, writtenRows, intendedValues } }
+    : { result };
+}
+
+// Classify written rows from the step's final snapshot, as fillStepTool does
+// for scalar fields, so a later field's rule rewriting a row shows as 'changed'
+function classifyRepeatedRows(
+  finalSnapshot: ReturnType<typeof currentSnapshot>,
+  fieldKey: string,
+  { servar, rows, writtenRows, intendedValues }: RepeatedWrite
+): FillFieldResult {
+  const finalEntry = finalSnapshot.currentStepFields.find(
+    (f) => f.key === fieldKey
+  );
+  const finalValues = Array.isArray(finalEntry?.value) ? finalEntry.value : [];
+  const classified = [...rows];
+  for (const row of writtenRows) {
+    const rowError = finalEntry?.errorRows?.[String(row)];
+    const storedValue = finalValues[row];
+    const maskedValue = maskFieldValue(servar.type, storedValue);
+    if (rowError) {
+      classified[row] = { status: 'rejected', message: rowError };
+    } else if (valuesEqual(servar.type, storedValue, intendedValues[row])) {
+      classified[row] = { status: 'filled', value: maskedValue };
+    } else if (isEmptyValue(storedValue, servar.type)) {
+      classified[row] = { status: 'rejected', message: 'Value was rejected.' };
+    } else {
+      classified[row] = { status: 'changed', value: maskedValue };
     }
   }
-
-  return { status: 'repeated', rows };
+  return { status: 'repeated', rows: classified };
 }
