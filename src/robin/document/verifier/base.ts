@@ -81,8 +81,10 @@ export function checkBases(
     axis: 'base' | 'shape',
     carried: string | undefined
   ) => {
-    if (!isNodeId(id) || carried === undefined || stale.has(id)) return;
-    const node = view.get(id);
+    if (!(isNodeId(id) || id === ROOT_ID) || carried === undefined) return;
+    if (stale.has(id)) return;
+    // the root owns the top-level list: its shape is checked like any container's
+    const node = id === ROOT_ID ? view.nf.root : view.get(id);
     if (!node) return; // an unknown id is a refusal, decided before this check
     const now = axis === 'base' ? baseOf(node) : shapeOf(node, pack.tree);
     if (

@@ -361,6 +361,39 @@ describe('document session: the four verbs end to end', () => {
     ]);
   });
 
+  it('the top-level list is a container like any other: a replayed insert into it is a conflict naming root (review)', () => {
+    const { host, call, nextTurn } = mount();
+    const root = nodeOf(call('read', { ids: ['root'] }), 'root');
+    const insert = {
+      intent: 'Add a closing line.',
+      scope: { ids: [] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: 'n5',
+          container: root.shape,
+          node: { text: 'Thank you.', style: 'f1' }
+        }
+      ]
+    };
+    expect(call('write', insert)).toEqual(
+      expect.objectContaining({ committed: true })
+    );
+    const once = host.serialize();
+    nextTurn();
+    const replayed = call('write', insert) as {
+      conflict: { stale: Array<Record<string, unknown>> };
+    };
+    expect(replayed.conflict.stale).toEqual([
+      expect.objectContaining({
+        id: 'root',
+        shape: root.shape,
+        live: expect.objectContaining({ id: 'root' })
+      })
+    ]);
+    expect(host.serialize()).toBe(once);
+  });
+
   it('a hash sent in the wrong field is an envelope refusal naming the right field, not a conflict', () => {
     const { call } = mount();
     const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2') as {
