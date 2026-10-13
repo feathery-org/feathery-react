@@ -4,10 +4,10 @@
  * conflicts, the one-write rule and undo routing.
  */
 import {
-  BridgeResponse,
+  Verb,
   ReadResult,
   VerbResult,
-  bridgeResponseSchema,
+  bridgeResultSchema,
   descriptorSchema,
   validateVerbResult
 } from './envelope';
@@ -45,21 +45,19 @@ function mount(native = doc) {
     input: unknown,
     turnId = `turn-${turn}`
   ): VerbResult => {
-    const out: DispatchOutcome = session.dispatch({
-      protocolVersion: 1,
+    const out: DispatchOutcome = session.dispatch(verb as Verb, {
       turnId,
       editorId: 'ed-1',
       target,
-      verb,
       input
     });
     if (out.status !== 'ok')
-      throw new Error(`dispatch failed: ${JSON.stringify(out.failure)}`);
-    expect(bridgeResponseSchema.safeParse(out.response).success).toBe(true);
-    expect(validateVerbResult(verb as never, out.response.result)).toEqual({
+      throw new Error(`dispatch failed: ${JSON.stringify(out)}`);
+    expect(bridgeResultSchema.safeParse(out.result).success).toBe(true);
+    expect(validateVerbResult(verb as never, out.result)).toEqual({
       ok: true
     });
-    return out.response.result;
+    return out.result;
   };
   const nextTurn = () => {
     turn += 1;
@@ -78,7 +76,7 @@ describe('document session: the four verbs end to end', () => {
     const d = session.descriptor();
     expect(descriptorSchema.safeParse(d).success).toBe(true);
     expect(d).toEqual({
-      protocolVersion: 1,
+      protocolVersion: 2,
       editorId: 'ed-1',
       target,
       format: TOY_FORMAT,
@@ -587,16 +585,14 @@ describe('document session: the four verbs end to end', () => {
       editorId: 'ed-1'
     });
     const send = (verb: string, input: unknown) => {
-      const out = session.dispatch({
-        protocolVersion: 1,
+      const out = session.dispatch(verb as Verb, {
         turnId: 't9',
         editorId: 'ed-1',
         target,
-        verb,
         input
       });
       if (out.status !== 'ok') throw new Error('dispatch failed');
-      return out.response.result as any;
+      return out.result as any;
     };
     const n2 = send('read', { ids: ['n2'] }).nodes.find(
       (n: { id: string }) => n.id === 'n2'
@@ -801,40 +797,34 @@ describe('document session: the four verbs end to end', () => {
     expect(call('outline', {})).toEqual(expect.objectContaining({ ok: true }));
   });
 
-  it('dispatch failures: malformed payload, unsupported version, wrong editor; an invalid input is a refusal', () => {
+  it('dispatch failures are typed codes with the message in result: a malformed payload, a wrong editor; an invalid input is a refusal', () => {
     const { session } = mount();
-    const base = {
-      protocolVersion: 1,
-      turnId: 't',
-      editorId: 'ed-1',
-      target,
-      verb: 'outline',
-      input: {}
-    };
-    expect(session.dispatch({ ...base, verb: 'apply' })).toEqual({
+    const base = { turnId: 't', editorId: 'ed-1', target, input: {} };
+    expect(session.dispatch('outline', { ...base, verb: 'outline' })).toEqual({
       status: 'error',
-      failure: expect.objectContaining({ reason: 'payload-invalid' })
+      error: 'handler-exception',
+      result: { message: expect.stringContaining('malformed') }
     });
-    expect(session.dispatch({ ...base, protocolVersion: 2 })).toEqual({
+    // protocol 2 carries no version in the payload: the descriptor is the handshake
+    expect(
+      session.dispatch('outline', { ...base, protocolVersion: 2 })
+    ).toEqual(expect.objectContaining({ error: 'handler-exception' }));
+    expect(session.dispatch('outline', { ...base, editorId: 'ed-2' })).toEqual({
       status: 'error',
-      failure: expect.objectContaining({ reason: 'protocol-unsupported' })
+      error: 'wrong-editor',
+      result: { message: expect.any(String) }
     });
-    expect(session.dispatch({ ...base, editorId: 'ed-2' })).toEqual({
-      status: 'error',
-      failure: expect.objectContaining({ reason: 'wrong-editor' })
-    });
-    const invalid = session.dispatch({
-      ...base,
-      verb: 'read',
-      input: { ids: [] }
-    });
-    expect(invalid.status).toBe('ok');
-    expect((invalid as { response: BridgeResponse }).response.result).toEqual(
-      expect.objectContaining({
+    const invalid = session.dispatch('read', { ...base, input: { ids: [] } });
+    expect(invalid).toEqual({
+      status: 'ok',
+      result: expect.objectContaining({
         ok: false,
+        editorId: 'ed-1',
+        target,
+        outlineHash: expect.any(String),
         refusal: expect.objectContaining({ invariant: 'envelope' })
       })
-    );
+    });
   });
 
   it('a pack that throws mid-verb is a handler exception, which the server treats as uncertain', () => {
@@ -850,17 +840,16 @@ describe('document session: the four verbs end to end', () => {
       throw new Error('broken pack');
     };
     expect(
-      session.dispatch({
-        protocolVersion: 1,
+      session.dispatch('find', {
         turnId: 't',
         editorId: 'ed-1',
         target,
-        verb: 'find',
         input: { text: 'x' }
       })
     ).toEqual({
       status: 'error',
-      failure: { reason: 'handler-exception', message: 'broken pack' }
+      error: 'handler-exception',
+      result: { message: 'broken pack' }
     });
   });
 
@@ -984,16 +973,14 @@ describe('document session: telling the host whose change it is', () => {
         events.push(`replaced:${by}${writing ? ':marked' : ''}`)
     });
     const call = (verb: string, input: unknown, turnId = 'turn-1') => {
-      const out = session.dispatch({
-        protocolVersion: 1,
+      const out = session.dispatch(verb as Verb, {
         turnId,
         editorId: 'ed-1',
         target,
-        verb,
         input
       });
       if (out.status !== 'ok') throw new Error('dispatch failed');
-      return out.response.result;
+      return out.result;
     };
     return { host, session, call, events };
   }

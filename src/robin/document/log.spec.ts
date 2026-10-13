@@ -2,6 +2,7 @@
  * The engine's console diagnostics: a write that does not commit warns, a handler exception is an
  * error, a commit is a debug line; all tagged, all off when logging is off.
  */
+import { Verb } from './envelope';
 import { LOG_TAG, loggingByDefault, setDocumentLogging } from './log';
 import { DocumentSession } from './session';
 import { NfNode } from './tree';
@@ -18,19 +19,17 @@ function mount() {
   const pack = makeToyPack();
   const session = new DocumentSession({ pack, host, target, editorId: 'ed-1' });
   const call = (verb: string, input: unknown, turnId = 't1') =>
-    session.dispatch({
-      protocolVersion: 1,
+    session.dispatch(verb as Verb, {
       turnId,
       editorId: 'ed-1',
       target,
-      verb,
       input
     });
   const node = (id: string) => {
     const out = call('read', { ids: [id] }, 'read');
     if (out.status !== 'ok') throw new Error('read failed');
     return (
-      out.response.result as unknown as {
+      out.result as unknown as {
         nodes: Array<NfNode & { base: string; shape: string }>;
       }
     ).nodes[0];

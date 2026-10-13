@@ -21,9 +21,9 @@ afterAll(async () => {
 
 let turn = 0;
 const dispatch = async (verb: string, input: unknown): Promise<any> => {
-  const out = await lane.call<any>('dispatch', { protocolVersion: 1, turnId: `turn-${turn}`, editorId: 'ed', target: { type: 'envelope', id: 'env' }, verb, input });
-  if (out.status !== 'ok') throw new Error(JSON.stringify(out.failure));
-  return out.response.result;
+  const out = await lane.call<any>('dispatch', verb, { turnId: `turn-${turn}`, editorId: 'ed', target: { type: 'envelope', id: 'env' }, input });
+  if (out.status !== 'ok') throw new Error(JSON.stringify(out));
+  return out.result;
 };
 const read = async (ids: string[]): Promise<Record<string, any>> => {
   const r = await dispatch('read', { ids });
@@ -681,9 +681,9 @@ describe('per-verb time on the flagship', () => {
   const RUNS = 5;
   const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
   const timed = async (verb: string, input: unknown): Promise<{ ms: number; editorMs: number; result: any }> => {
-    const out = await lane.call<{ ms: number; editorMs: number; result: any }>('timedDispatch', { protocolVersion: 1, turnId: `turn-${turn}`, editorId: 'ed', target: { type: 'envelope', id: 'env' }, verb, input });
+    const out = await lane.call<{ ms: number; editorMs: number; result: any }>('timedDispatch', verb, { turnId: `turn-${turn}`, editorId: 'ed', target: { type: 'envelope', id: 'env' }, input });
     expect(out.result.status).toBe('ok');
-    return { ms: out.ms, editorMs: out.editorMs, result: out.result.response.result };
+    return { ms: out.ms, editorMs: out.editorMs, result: out.result.result };
   };
 
   it('measures outline, read, find and the three write paths', async () => {

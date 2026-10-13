@@ -20,7 +20,7 @@ import { z } from 'zod';
 // ---------------------------------------------------------------------------------------------
 
 /** The integer naming the section 2 to 10 shapes of the contract as a whole. */
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 2 as const;
 
 /** The versions this engine build implements; the descriptor declares the current one. */
 export const SUPPORTED_PROTOCOL_VERSIONS: readonly number[] = [
@@ -1178,22 +1178,26 @@ export type Descriptor = {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Section 10. The bridge action
+// Section 10. The four document bridge actions
 // ---------------------------------------------------------------------------------------------
 
-/** The bridge action name; the bridge envelope around the payload is the existing one. */
-export const BRIDGE_ACTION = 'document_tool' as const;
+/** The bridge action of each verb: the action name is the verb. */
+export const BRIDGE_ACTIONS = {
+  outline: 'document_outline',
+  read: 'document_read',
+  find: 'document_find',
+  write: 'document_write'
+} as const;
 
 /**
- * Section 10.1. The input is validated per verb by `parseVerbInput`, so an invalid input becomes a
- * refusal (bridge status ok) rather than a dispatch error.
+ * Section 10.1. No verb and no protocol version: the action names the verb, and the version
+ * handshake is the descriptor's. The input is validated per verb by `parseVerbInput`, so an invalid
+ * input becomes a refusal (bridge status ok) rather than a dispatch error.
  */
 export const bridgePayloadSchema = z.strictObject({
-  protocolVersion: z.int(),
   turnId: z.string().min(1).max(256),
   editorId: z.string().min(1),
   target: z.strictObject({ type: z.string().min(1), id: z.string().min(1) }),
-  verb: z.enum(VERBS),
   input: z.unknown()
 });
 export type BridgePayload = Omit<
@@ -1203,55 +1207,59 @@ export type BridgePayload = Omit<
   input: unknown;
 };
 
-/** Section 10.2. */
-export const bridgeResponseSchema = z.looseObject({
+/**
+ * Section 10.2. The verb result returned directly, with the editor, the target and the outline hash
+ * after the call added to it.
+ */
+export const bridgeResultSchema = z.looseObject({
+  ok: z.boolean(),
   editorId: z.string().min(1),
   target: targetSchema,
-  outlineHash: z.string().min(1),
-  result: z.looseObject({ ok: z.boolean() })
+  outlineHash: z.string().min(1)
 });
-export type BridgeResponse = {
+export type BridgeResult = VerbResult & {
   editorId: string;
   target: HostTarget;
   outlineHash: string;
-  result: VerbResult;
 };
 
-/** Transport and dispatch failures, reported as bridge status error (section 10.2). */
-export type DispatchFailure =
-  | { reason: 'payload-invalid'; message: string }
-  | { reason: 'protocol-unsupported'; message: string }
-  | { reason: 'wrong-editor'; message: string }
-  | { reason: 'handler-exception'; message: string };
+/** Section 10.2: the typed codes of a bridge status error, the dispatch failures the form detects. */
+export const DISPATCH_ERRORS = [
+  'not-mounted',
+  'wrong-editor',
+  'handler-exception'
+] as const;
+export type DispatchError = typeof DISPATCH_ERRORS[number];
 
+/** One action's outcome: the verb result, or a typed dispatch failure with its message. */
+export type DispatchOutcome =
+  | { status: 'ok'; result: BridgeResult }
+  | { status: 'error'; error: DispatchError; result: { message: string } };
+
+export function dispatchFailure(
+  error: DispatchError,
+  message: string
+): DispatchOutcome {
+  return { status: 'error', error, result: { message } };
+}
+
+/** A malformed payload is the caller's bug, reported as a handler exception with what was wrong. */
 export function parseBridgePayload(
   raw: unknown
 ):
   | { ok: true; value: BridgePayload }
-  | { ok: false; failure: DispatchFailure } {
+  | { ok: false; failure: DispatchOutcome } {
   const parsed = bridgePayloadSchema.safeParse(raw);
-  if (!parsed.success) {
+  if (!parsed.success)
     return {
       ok: false,
-      failure: {
-        reason: 'payload-invalid',
-        message: parsed.error.issues.map(describeIssue).join('; ')
-      }
+      failure: dispatchFailure(
+        'handler-exception',
+        `The request payload is malformed: ${parsed.error.issues
+          .map(describeIssue)
+          .join('; ')}`
+      )
     };
-  }
-  if (!isSupportedProtocolVersion(parsed.data.protocolVersion)) {
-    return {
-      ok: false,
-      failure: {
-        reason: 'protocol-unsupported',
-        message: `protocolVersion ${
-          parsed.data.protocolVersion
-        } is not supported; this engine implements ${SUPPORTED_PROTOCOL_VERSIONS.join(
-          ', '
-        )}`
-      }
-    };
-  }
   return { ok: true, value: parsed.data };
 }
 

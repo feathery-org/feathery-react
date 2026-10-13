@@ -10,8 +10,15 @@
  * A mounted document's session may be created on first use (`lazySession`): mounting an editor
  * costs nothing where Robin never runs, and the session reads the document when Robin first asks.
  */
-import { Descriptor, Selection, parseBridgePayload } from './envelope';
-import { DispatchOutcome, DocumentSession } from './session';
+import {
+  Descriptor,
+  DispatchOutcome,
+  Selection,
+  Verb,
+  dispatchFailure,
+  parseBridgePayload
+} from './envelope';
+import { DocumentSession } from './session';
 
 /** A mounted document's session, created when first used. */
 export interface MountedSession {
@@ -99,11 +106,17 @@ export function mountedDocuments(formKey: string): DocumentSession[] {
     .filter((s): s is DocumentSession => s !== null);
 }
 
+/** One document action: its payload in (section 10.1), its outcome out (section 10.2). */
+export type DocumentAction = (payload: unknown) => DispatchOutcome;
+
 export interface LiveDocumentAccessor {
   /** Section 9: what the form sends as `context.liveDocument`; null when no document is mounted. */
   descriptor(selection?: Selection): Descriptor | null;
-  /** Section 10: one bridge payload in, the bridge response or a dispatch failure out. */
-  dispatch(payload: unknown): DispatchOutcome;
+  /** Section 10: the four document actions, `document_outline` to `document_write`. */
+  outline: DocumentAction;
+  read: DocumentAction;
+  find: DocumentAction;
+  write: DocumentAction;
   /** The form's Robin turn settled: every mounted document ends its editing turn. */
   finishTurn(): void;
   /**
@@ -116,31 +129,37 @@ export interface LiveDocumentAccessor {
 }
 
 export function liveDocumentAccessor(formKey: string): LiveDocumentAccessor {
-  return {
-    descriptor(selection) {
-      const [first] = slotsOf(formKey);
-      return first?.get()?.descriptor(selection) ?? null;
-    },
-    dispatch(payload) {
+  const action =
+    (verb: Verb): DocumentAction =>
+    (payload) => {
       const sessions = slotsOf(formKey);
+      if (!sessions.length)
+        return dispatchFailure(
+          'not-mounted',
+          'No document editor is mounted in this form.'
+        );
       const editorId =
         payload && typeof payload === 'object'
           ? (payload as { editorId?: unknown }).editorId
           : undefined;
       const session = sessions.find((s) => s.editorId === editorId)?.get();
-      if (session) return session.dispatch(payload);
+      if (session) return session.dispatch(verb, payload);
       const parsed = parseBridgePayload(payload);
-      if (!parsed.ok) return { status: 'error', failure: parsed.failure };
-      return {
-        status: 'error',
-        failure: {
-          reason: 'wrong-editor',
-          message: sessions.length
-            ? 'The request named an editor that is not mounted in this form.'
-            : 'No document editor is mounted in this form.'
-        }
-      };
+      if (!parsed.ok) return parsed.failure;
+      return dispatchFailure(
+        'wrong-editor',
+        'The request named an editor that is not mounted in this form.'
+      );
+    };
+  return {
+    descriptor(selection) {
+      const [first] = slotsOf(formKey);
+      return first?.get()?.descriptor(selection) ?? null;
     },
+    outline: action('outline'),
+    read: action('read'),
+    find: action('find'),
+    write: action('write'),
     finishTurn() {
       // a session not yet created has no turn to finish
       for (const session of slotsOf(formKey)) session.peek()?.finishTurn();

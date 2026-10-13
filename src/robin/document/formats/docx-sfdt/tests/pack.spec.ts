@@ -4,7 +4,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { ReadResult, VerbResult, validateVerbResult } from '../../../envelope';
+import { ReadResult, Verb, VerbResult, validateVerbResult } from '../../../envelope';
 import { conformanceProblems, packProblems } from '../../../pack';
 import { DocumentSession } from '../../../session';
 import { baseOf, NfNode, shapeOf } from '../../../tree';
@@ -47,10 +47,10 @@ function mount(doc = flagship) {
   const session = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'env' }, editorId: 'ed' });
   let turn = 0;
   const call = (verb: string, input: unknown): VerbResult => {
-    const out = session.dispatch({ protocolVersion: 1, turnId: `turn-${turn}`, editorId: 'ed', target: { type: 'envelope', id: 'env' }, verb, input });
-    if (out.status !== 'ok') throw new Error(JSON.stringify(out.failure));
-    expect(validateVerbResult(verb as never, out.response.result)).toEqual({ ok: true });
-    return out.response.result;
+    const out = session.dispatch(verb as Verb, { turnId: `turn-${turn}`, editorId: 'ed', target: { type: 'envelope', id: 'env' }, input });
+    if (out.status !== 'ok') throw new Error(JSON.stringify(out));
+    expect(validateVerbResult(verb as never, out.result)).toEqual({ ok: true });
+    return out.result;
   };
   return { host, session, call, next: () => (turn += 1) };
 }

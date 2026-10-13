@@ -992,7 +992,7 @@ describe("DocumentEditorContainer: Robin's document session", () => {
     await waitFor(() =>
       expect(liveDocumentAccessor('form-robin').descriptor()).toEqual(
         expect.objectContaining({
-          protocolVersion: 1,
+          protocolVersion: 2,
           format: 'docx-sfdt',
           readOnly: false,
           target: { type: 'envelope', id: 'envelope-document-container-a' }
@@ -1018,25 +1018,23 @@ describe("DocumentEditorContainer: Robin's document session", () => {
     expect(historyRouteFor(editor)).toBeUndefined();
   });
 
-  it('dispatches an outline through the accessor to the mounted editor', async () => {
+  it('runs the outline action through the accessor on the mounted editor', async () => {
     const view = mount();
     await waitFor(() =>
       expect(liveDocumentAccessor('form-robin').descriptor()).not.toBeNull()
     );
     const d = liveDocumentAccessor('form-robin').descriptor();
     if (!d) throw new Error('no descriptor');
-    const out = liveDocumentAccessor('form-robin').dispatch({
-      protocolVersion: 1,
+    const out = liveDocumentAccessor('form-robin').outline({
       turnId: 'turn-1',
       editorId: d.editorId,
       target: d.target,
-      verb: 'outline',
       input: {}
     });
     expect(out.status).toBe('ok');
     if (out.status === 'ok') {
-      expect(out.response.result.ok).toBe(true);
-      expect(out.response.outlineHash).toBe(d.outlineHash);
+      expect(out.result.ok).toBe(true);
+      expect(out.result.outlineHash).toBe(d.outlineHash);
     }
     view.unmount();
   });

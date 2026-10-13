@@ -29,17 +29,10 @@ function session(editorId: string, turns: Array<string | null> = []) {
     onTurnChange: (t) => turns.push(t)
   });
 }
-const payload = (
-  s: DocumentSession,
-  verb: string,
-  input: unknown,
-  turnId = 't1'
-) => ({
-  protocolVersion: 1,
+const payload = (s: DocumentSession, input: unknown, turnId = 't1') => ({
   turnId,
   editorId: s.editorId,
   target: s.target,
-  verb,
   input
 });
 
@@ -55,7 +48,7 @@ describe('mounted documents and the form accessor', () => {
       expect.objectContaining({
         editorId: 'ed-a',
         format: TOY_FORMAT,
-        protocolVersion: 1,
+        protocolVersion: 2,
         readOnly: false,
         target: { type: 'envelope', id: 'env-ed-a' }
       })
@@ -88,7 +81,7 @@ describe('mounted documents and the form accessor', () => {
     expect(mountedDocuments('form-d')).toEqual([]);
   });
 
-  it('dispatch reaches the editor the payload names; others fail as wrong-editor or payload-invalid', () => {
+  it('each action reaches the editor the payload names; others fail with a typed code', () => {
     const a = session('ed-a');
     const z = session('ed-z');
     const off = [
@@ -96,28 +89,36 @@ describe('mounted documents and the form accessor', () => {
       mountDocument('form-e', 'z', z)
     ];
     const accessor = liveDocumentAccessor('form-e');
-    const out = accessor.dispatch(payload(z, 'outline', {}));
-    expect(out.status).toBe('ok');
-    if (out.status === 'ok') expect(out.response.editorId).toBe('ed-z');
+    const out = accessor.outline(payload(z, {}));
+    expect(out).toEqual({
+      status: 'ok',
+      result: expect.objectContaining({
+        ok: true,
+        editorId: 'ed-z',
+        target: z.target,
+        outlineHash: expect.any(String),
+        lines: expect.any(String)
+      })
+    });
+    expect(accessor.find(payload(a, { text: 'motor' }))).toEqual({
+      status: 'ok',
+      result: expect.objectContaining({ ok: true, total: 1 })
+    });
     expect(
-      accessor.dispatch({ ...payload(a, 'outline', {}), editorId: 'ed-gone' })
+      accessor.read({ ...payload(a, { ids: ['n1'] }), editorId: 'ed-gone' })
     ).toEqual({
       status: 'error',
-      failure: expect.objectContaining({ reason: 'wrong-editor' })
+      error: 'wrong-editor',
+      result: { message: expect.any(String) }
     });
-    expect(accessor.dispatch('not a payload')).toEqual({
-      status: 'error',
-      failure: expect.objectContaining({ reason: 'payload-invalid' })
-    });
+    expect(accessor.outline('not a payload')).toEqual(
+      expect.objectContaining({ status: 'error', error: 'handler-exception' })
+    );
     off.forEach((f) => f());
-    expect(
-      liveDocumentAccessor('form-e').dispatch(payload(a, 'outline', {}))
-    ).toEqual({
+    expect(liveDocumentAccessor('form-e').write(payload(a, {}))).toEqual({
       status: 'error',
-      failure: {
-        reason: 'wrong-editor',
-        message: 'No document editor is mounted in this form.'
-      }
+      error: 'not-mounted',
+      result: { message: 'No document editor is mounted in this form.' }
     });
   });
 
@@ -126,17 +127,17 @@ describe('mounted documents and the form accessor', () => {
     const s = session('ed-t', turns);
     const off = mountDocument('form-f', 'c1', s);
     const accessor = liveDocumentAccessor('form-f');
-    accessor.dispatch(payload(s, 'outline', {}));
+    accessor.outline(payload(s, {}));
     expect(s.activeTurn).toBeNull();
-    const read = accessor.dispatch(payload(s, 'read', { ids: ['n1'] }));
+    const read = accessor.read(payload(s, { ids: ['n1'] }));
     if (read.status !== 'ok') throw new Error('read failed');
     const node = (
-      read.response.result as unknown as {
+      read.result as unknown as {
         nodes: Array<{ base: string; style?: string }>;
       }
     ).nodes[0];
-    const write = accessor.dispatch(
-      payload(s, 'write', {
+    const write = accessor.write(
+      payload(s, {
         intent: 'Rename.',
         scope: { ids: ['n1'] },
         changes: [
@@ -149,7 +150,7 @@ describe('mounted documents and the form accessor', () => {
         ]
       })
     );
-    expect(write.status === 'ok' && write.response.result.ok).toBe(true);
+    expect(write.status === 'ok' && write.result.ok).toBe(true);
     expect(s.activeTurn).toBe('t1');
     accessor.finishTurn();
     expect(s.activeTurn).toBeNull();
@@ -169,7 +170,8 @@ describe('mounted documents and the form accessor', () => {
       }
     });
     const out = s.dispatch(
-      payload(s, 'write', {
+      'write',
+      payload(s, {
         intent: 'Nothing.',
         scope: { ids: [] },
         changes: []
@@ -219,12 +221,10 @@ describe('a session created on first use (review: no session where Robin never r
     const off = mountDocument('form-lazy-3', 'c1', a.mounted);
     const accessor = liveDocumentAccessor('form-lazy-3');
     const call = () =>
-      accessor.dispatch({
-        protocolVersion: 1,
+      accessor.outline({
         turnId: 't1',
         editorId: 'ed-lazy-c',
         target: { type: 'envelope', id: 'env-ed-lazy-c' },
-        verb: 'outline',
         input: {}
       });
     expect(call().status).toBe('ok');

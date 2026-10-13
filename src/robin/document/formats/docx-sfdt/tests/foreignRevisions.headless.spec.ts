@@ -20,10 +20,10 @@ afterAll(async () => {
 
 let turn = 0;
 const dispatch = async (verb: string, input: unknown): Promise<any> => {
-  const out = await lane.call<any>('dispatch', { protocolVersion: 1, turnId: `fr-${turn}`, editorId: 'ed', target: { type: 'envelope', id: 'env' }, verb, input });
-  if (out.status !== 'ok') throw new Error(JSON.stringify(out.failure));
+  const out = await lane.call<any>('dispatch', verb, { turnId: `fr-${turn}`, editorId: 'ed', target: { type: 'envelope', id: 'env' }, input });
+  if (out.status !== 'ok') throw new Error(JSON.stringify(out));
   if (verb === 'write') await lane.call('finishTurn');
-  return out.response.result;
+  return out.result;
 };
 const read = async (ids: string[]): Promise<Record<string, any>> => {
   const r = await dispatch('read', { ids });

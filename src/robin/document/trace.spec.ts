@@ -43,7 +43,7 @@ describe('trace', () => {
       })
       .build();
     expect(t).toEqual({
-      protocolVersion: 1,
+      protocolVersion: 2,
       format: 'toy-format',
       turnId: 'turn-1',
       requested: {

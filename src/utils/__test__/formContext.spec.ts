@@ -523,19 +523,17 @@ describe('liveDocument', () => {
     const d = doc.descriptor();
     expect(d).toEqual(
       expect.objectContaining({
-        protocolVersion: 1,
+        protocolVersion: 2,
         editorId: 'ed-1',
         target: { type: 'envelope', id: 'env-1' },
         readOnly: false
       })
     );
     expect(typeof d?.outlineHash).toBe('string');
-    const out = doc.dispatch({
-      protocolVersion: 1,
+    const out = doc.write({
       turnId: 'turn-1',
       editorId: 'ed-1',
       target: { type: 'envelope', id: 'env-1' },
-      verb: 'write',
       input: { intent: 'Nothing.', scope: { ids: [] }, changes: [] }
     });
     expect(out.status).toBe('ok');

@@ -18,6 +18,7 @@ import {
 import { SyncfusionEditorLike } from '../../../../../../elements/components/DocxEditor/bindings/editorAdapter';
 import { comparable, differences, equivalentNative } from '../../../../proof';
 import { DocumentSession } from '../../../../session';
+import type { Verb } from '../../../../envelope';
 import { canonicalJson, NfNode, NormalForm } from '../../../../tree';
 import { createHost, docxPack, LiveEditor } from '../../index';
 import React from 'react';
@@ -273,10 +274,10 @@ const api = {
     return cur && typeof (cur as NfNode).id === 'string' ? (cur as NfNode).id : null;
   },
 
-  dispatch(payload: unknown) {
+  dispatch(verb: Verb, payload: unknown) {
     if (!session) throw new Error('no session');
     try {
-      return session.dispatch(payload);
+      return session.dispatch(verb, payload);
     } finally {
       // an injected failure is for this one dispatch only
       injectFailure = false;
@@ -284,11 +285,11 @@ const api = {
   },
 
   /** One dispatch timed in the page, in milliseconds (per-verb cost, measured without the bridge). */
-  timedDispatch(payload: unknown): { ms: number; editorMs: number; result: unknown } {
+  timedDispatch(verb: Verb, payload: unknown): { ms: number; editorMs: number; result: unknown } {
     if (!session) throw new Error('no session');
     editorMs = 0;
     const t0 = performance.now();
-    const result = session.dispatch(payload);
+    const result = session.dispatch(verb, payload);
     return { ms: performance.now() - t0, editorMs, result };
   },
 

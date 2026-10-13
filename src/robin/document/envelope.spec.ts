@@ -1,6 +1,7 @@
 import {
   PROTOCOL_VERSION,
   idShape,
+  BRIDGE_ACTIONS,
   parseBridgePayload,
   parseVerbInput,
   sameEditor,
@@ -97,7 +98,7 @@ const liveColumnWrite = {
 };
 
 const trace = {
-  protocolVersion: 1,
+  protocolVersion: 2,
   format: FORMAT,
   turnId: '3f8a1c',
   requested: {
@@ -930,36 +931,37 @@ describe('section 9 descriptor', () => {
 
 describe('section 10 bridge payload', () => {
   const payload = {
-    protocolVersion: 1,
     turnId: '3f8a1c',
     editorId: 'ed-3a1f',
     target: { type: 'envelope', id: 'env_8f2c' },
-    verb: 'write',
     input: liveColumnWrite
   };
 
-  it('parses the contract example and leaves input validation to the verb', () => {
+  it('parses the contract example and leaves input validation to the verb its action names', () => {
     const r = parseBridgePayload(payload);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    const input = parseVerbInput(r.value.verb, r.value.input);
+    const input = parseVerbInput('write', r.value.input);
     expect(input.ok).toBe(true);
     expect((input as { value: WriteInput }).value.changes).toHaveLength(7);
+    expect(BRIDGE_ACTIONS).toEqual({
+      outline: 'document_outline',
+      read: 'document_read',
+      find: 'document_find',
+      write: 'document_write'
+    });
   });
 
-  it('reports an unsupported protocol version and a malformed payload as dispatch failures', () => {
-    expect(parseBridgePayload({ ...payload, protocolVersion: 2 })).toEqual({
-      ok: false,
-      failure: expect.objectContaining({ reason: 'protocol-unsupported' })
-    });
-    expect(parseBridgePayload({ ...payload, verb: 'apply' })).toEqual({
-      ok: false,
-      failure: expect.objectContaining({ reason: 'payload-invalid' })
-    });
-    expect(parseBridgePayload({ ...payload, extra: 1 })).toEqual({
-      ok: false,
-      failure: expect.objectContaining({ reason: 'payload-invalid' })
-    });
+  it('a payload with a verb, a protocol version or any other extra key is malformed: a typed handler exception', () => {
+    for (const extra of [{ verb: 'write' }, { protocolVersion: 2 }, { x: 1 }])
+      expect(parseBridgePayload({ ...payload, ...extra })).toEqual({
+        ok: false,
+        failure: {
+          status: 'error',
+          error: 'handler-exception',
+          result: { message: expect.stringContaining('malformed') }
+        }
+      });
   });
 
   it('rechecks editor id and target', () => {

@@ -20,9 +20,9 @@ function mount() {
   const deleteRow = (turnId: string, tableAt: number, row: number) => {
     const table = arr<NfNode>(arr<NfNode>(arr<NfNode>(session.state.view.nf.root.sections)[3].blocks)[tableAt].blocks)[0];
     const r = arr<NfNode>(table.rows)[row];
-    const out = session.dispatch({ protocolVersion: 1, turnId, editorId: 'ed', target: { type: 'envelope', id: 'e' }, verb: 'write', input: { intent: 'Remove a line.', scope: { ids: [r.id] }, changes: [{ kind: 'delete', id: r.id, base: baseOf(r) }] } });
-    if (out.status !== 'ok' || !out.response.result.ok) throw new Error(JSON.stringify((out as any).response?.result?.refusal?.detail ?? out).slice(0, 2000));
-    return out.response.result;
+    const out = session.dispatch('write', { turnId, editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { intent: 'Remove a line.', scope: { ids: [r.id] }, changes: [{ kind: 'delete', id: r.id, base: baseOf(r) }] } });
+    if (out.status !== 'ok' || !out.result.ok) throw new Error(JSON.stringify((out as any).response?.result?.refusal?.detail ?? out).slice(0, 2000));
+    return out.result;
   };
   const groupsIn = () => {
     const d = JSON.parse(doc);
@@ -99,8 +99,8 @@ describe('a bookmarked move rejected after a reload (review item 3)', () => {
     const sections = arr<NfNode>(s.view.nf.root.sections);
     const control = arr<NfNode>(sections[1].blocks)[10];
     const anchor = arr<NfNode>(sections[0].blocks)[3];
-    const out = m.session.dispatch({ protocolVersion: 1, turnId: 'turn-m', editorId: 'ed', target: { type: 'envelope', id: 'e' }, verb: 'write', input: { intent: 'Move the table.', scope: { ids: [control.id] }, changes: [{ kind: 'move', id: control.id, shape: shapeOf(control, docxPack.tree), anchor: anchor.id, position: 'after', container: shapeOf(sections[0], docxPack.tree) }] } });
-    if (out.status !== 'ok' || !out.response.result.ok) throw new Error(JSON.stringify(out).slice(0, 600));
+    const out = m.session.dispatch('write', { turnId: 'turn-m', editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { intent: 'Move the table.', scope: { ids: [control.id] }, changes: [{ kind: 'move', id: control.id, shape: shapeOf(control, docxPack.tree), anchor: anchor.id, position: 'after', container: shapeOf(sections[0], docxPack.tree) }] } });
+    if (out.status !== 'ok' || !out.result.ok) throw new Error(JSON.stringify(out).slice(0, 600));
     // a reload: a new session over the saved bytes, no snapshot, ids minted afresh
     let doc = m.doc();
     const host = { serialize: () => doc, open: (x: string) => { doc = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };

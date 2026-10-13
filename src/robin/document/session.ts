@@ -9,9 +9,8 @@
  * request context (section 9).
  */
 import {
-  BridgeResponse,
   Descriptor,
-  DispatchFailure,
+  DispatchOutcome,
   ERROR_CODES,
   HostTarget,
   PROTOCOL_VERSION,
@@ -20,6 +19,7 @@ import {
   VerbResult,
   WriteInput,
   makeRefusal,
+  dispatchFailure,
   parseBridgePayload,
   parseVerbInput,
   readOnlyResult,
@@ -74,9 +74,7 @@ export interface SessionOptions {
   onReplaced?: (by: 'robin' | 'person') => void;
 }
 
-export type DispatchOutcome =
-  | { status: 'ok'; response: BridgeResponse }
-  | { status: 'error'; failure: DispatchFailure };
+export type { DispatchOutcome };
 
 let mounts = 0;
 /** A new editor id: stable for the life of a mount, unique across mounts. */
@@ -191,37 +189,31 @@ export class DocumentSession {
     };
   }
 
-  /** Section 10: one bridge request in, one bridge response or dispatch failure out. */
-  dispatch(raw: unknown): DispatchOutcome {
+  /** Section 10: one document action (its verb) and its payload in, its outcome out. */
+  dispatch(verb: Verb, raw: unknown): DispatchOutcome {
     const started = this.clock();
     let turnId: string | undefined;
-    let verb: string | undefined;
     try {
       const parsed = parseBridgePayload(raw);
-      if (!parsed.ok) return { status: 'error', failure: parsed.failure };
+      if (!parsed.ok) return parsed.failure;
       const payload = parsed.value;
       turnId = payload.turnId;
-      verb = payload.verb;
       if (!sameEditor(payload, this))
-        return {
-          status: 'error',
-          failure: {
-            reason: 'wrong-editor',
-            message:
-              'The request named a different editor or target than the one mounted.'
-          }
-        };
-      if (payload.verb === 'write') this.setTurn(payload.turnId);
-      const result = this.execute(payload.verb, payload.input, payload.turnId);
-      if (payload.verb === 'write')
+        return dispatchFailure(
+          'wrong-editor',
+          'The request named a different editor or target than the one mounted.'
+        );
+      if (verb === 'write') this.setTurn(payload.turnId);
+      const result = this.execute(verb, payload.input, payload.turnId);
+      if (verb === 'write')
         logWriteOutcome(payload.turnId, result, this.clock() - started);
       return {
         status: 'ok',
-        response: {
+        result: {
+          ...result,
           editorId: this.editorId,
           target: { ...this.target },
-          outlineHash: this.state.outlineHash,
-          result
+          outlineHash: this.state.outlineHash
         }
       };
     } catch (e) {
@@ -231,13 +223,10 @@ export class DocumentSession {
         message: e instanceof Error ? e.message : String(e),
         stack: e instanceof Error ? e.stack : undefined
       });
-      return {
-        status: 'error',
-        failure: {
-          reason: 'handler-exception',
-          message: e instanceof Error ? e.message : String(e)
-        }
-      };
+      return dispatchFailure(
+        'handler-exception',
+        e instanceof Error ? e.message : String(e)
+      );
     }
   }
 
