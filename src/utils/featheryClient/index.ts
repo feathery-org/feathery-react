@@ -165,6 +165,9 @@ export default class FeatheryClient extends IntegrationClient {
    */
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
   customSubmitInFlight: Record<string, any>;
+  // A Robin form-fill driver's session, whose saves and events never complete
+  // the form
+  formFill: boolean;
 
   /**
    * Queue for events triggered before user interaction
@@ -175,9 +178,11 @@ export default class FeatheryClient extends IntegrationClient {
     formKey = '',
     ignoreNetworkErrors?: any,
     draft = false,
-    bypassCDN = false
+    bypassCDN = false,
+    formFill = false
   ) {
     super(formKey, ignoreNetworkErrors, draft, bypassCDN);
+    this.formFill = formFill;
     this.pendingCustomFieldUpdates = {};
     this.customSubmitInFlight = {};
     this.debouncedSubmitCustom = debounce(
@@ -254,6 +259,7 @@ export default class FeatheryClient extends IntegrationClient {
       no_complete: noComplete
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
+    if (this.formFill) data.robin_fill = true;
 
     const options: RequestOptions = {
       headers: { 'Content-Type': 'application/json' },
@@ -1166,13 +1172,14 @@ export default class FeatheryClient extends IntegrationClient {
     const { userId, collaboratorId } = initInfo();
 
     const url = `${API_URL}event/`;
-    const data: Record<string, string> = {
+    const data: Record<string, any> = {
       form_key: this.formKey,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {}),
       event_id: uuidv4()
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
+    if (this.formFill) data.robin_fill = true;
     if (this.version) data.__feathery_version = this.version;
     const options = {
       headers: { 'Content-Type': 'application/json' },

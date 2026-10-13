@@ -1951,7 +1951,8 @@ function Form({
       formId,
       hasRedirected,
       _draft,
-      _bypassCDN
+      _bypassCDN,
+      enableFormTools
     );
     const newClient = clientRef.current;
     let saveUrlParamsFormSetting = false;
