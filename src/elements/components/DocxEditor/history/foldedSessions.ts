@@ -3,6 +3,7 @@
 import {
   applyHunks,
   ChangeList,
+  countEditGroups,
   diffSession,
   normalizeForDiff
 } from './sfdtDiff/index';
@@ -24,6 +25,27 @@ export function sessionAuthorKey(version: DocxVersion): string {
   if (authors.length && authors.every((a) => a.kind === 'assistant'))
     return 'robin';
   return version.actor_label || version.actor_name || 'you';
+}
+
+/** A session where a person and Robin both edited. One author per session
+ *  would paint Robin's edits in the person's colour, so these aren't combined. */
+export function mixesPersonAndRobin(version: DocxVersion): boolean {
+  const kinds = new Set((version.authors ?? []).map((a) => a.kind));
+  return kinds.has('user') && kinds.has('assistant');
+}
+
+/** Robin edit groups the folded sessions confirmed, as each counts on its own. */
+export function approvedEditCount(sessions: FoldedSession[]): number {
+  return sessions.reduce(
+    (total, session) =>
+      session.changes?.confirmed
+        ? total +
+          countEditGroups(
+            applyHunks(JSON.parse(session.finalSfdt), session.changes)
+          )
+        : total,
+    0
+  );
 }
 
 /** The document before a session, rebuilt by rejecting its own highlights;
@@ -55,7 +77,7 @@ export function diffFoldedSessions(
   );
   if (changes.degraded?.includes('time-budget')) return null;
   changes.attribution = 'slices';
-  // Keeps accepted Robin text red inside sessions a person also edited.
+  // Robin-only sessions keep their accepted text red, as in their own view.
   const robinRuns = sessions.flatMap(
     (session) => session.changes?.robinRuns ?? []
   );
