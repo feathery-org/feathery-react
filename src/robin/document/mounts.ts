@@ -192,12 +192,13 @@ export function liveDocumentAccessor(
   const action =
     (verb: Verb): DocumentAction =>
     (payload) => {
+      // a malformed payload is the caller's bug whatever is mounted
+      const parsed = parseBridgePayload(payload);
+      if (!parsed.ok) return parsed.failure;
       const sessions = slotsOf(formKey);
-      const editorId =
-        payload && typeof payload === 'object'
-          ? (payload as { editorId?: unknown }).editorId
-          : undefined;
-      const session = sessions.find((s) => s.editorId === editorId)?.get();
+      const session = sessions
+        .find((s) => s.editorId === parsed.value.editorId)
+        ?.get();
       if (session) return session.dispatch(verb, payload);
       const recorded =
         verb === 'write' ? recordedWrite(formKey, payload) : null;
@@ -207,8 +208,6 @@ export function liveDocumentAccessor(
           'not-mounted',
           'No document editor is mounted in this form.'
         );
-      const parsed = parseBridgePayload(payload);
-      if (!parsed.ok) return parsed.failure;
       return dispatchFailure(
         'wrong-editor',
         'The request named an editor that is not mounted in this form.'

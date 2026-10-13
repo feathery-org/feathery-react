@@ -304,3 +304,44 @@ describe('the form session journal (protocol 2, contract 10.3)', () => {
     expect(accessor.write(request)).toEqual(committed);
   });
 });
+
+describe('a malformed payload is a handler exception before anything else (review 8)', () => {
+  it('with no editor mounted, with an editor mounted, and for a write the journal could answer', () => {
+    const malformed = [
+      'not a payload',
+      {
+        turnId: 42,
+        editorId: 'ed',
+        target: { type: 'envelope', id: 'e' },
+        input: {}
+      },
+      {
+        turnId: 't',
+        editorId: 'ed',
+        target: { type: 'envelope', id: 'e' },
+        input: {},
+        verb: 'write'
+      }
+    ];
+    const unmounted = liveDocumentAccessor('form-malformed-none');
+    for (const payload of malformed)
+      for (const action of [unmounted.outline, unmounted.write])
+        expect(action(payload)).toEqual(
+          expect.objectContaining({
+            status: 'error',
+            error: 'handler-exception'
+          })
+        );
+    const off = mountDocument(
+      'form-malformed-one',
+      'c1',
+      session('ed-malformed')
+    );
+    const mounted = liveDocumentAccessor('form-malformed-one');
+    for (const payload of malformed)
+      expect(mounted.read(payload)).toEqual(
+        expect.objectContaining({ status: 'error', error: 'handler-exception' })
+      );
+    off();
+  });
+});
