@@ -222,6 +222,9 @@ export default function DocumentEditorContainer({
   const [sentVia, setSentVia] = useState<
     Record<string, 'feathery' | 'docusign'>
   >({});
+  // The filler's signing page, offered again in case the browser blocked the
+  // tab opened after the finalize round trip.
+  const [signUrls, setSignUrls] = useState<Record<string, string>>({});
 
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
   // featheryWindow() is {} so a mount-once memo freezes serviceUrl as
@@ -638,6 +641,7 @@ export default function DocumentEditorContainer({
       }
       showSent('feathery');
       const url = getSignUrl(finalized.signer_id, targetAction?.redirect);
+      setSignUrls((current) => ({ ...current, [envelope.id]: url }));
       if (targetAction?.redirect) featheryWindow().location.href = url;
       else openTab(url);
     },
@@ -773,6 +777,11 @@ export default function DocumentEditorContainer({
             envelope.file.includes('?')
               ? envelope.file
               : pdfView.current.url ?? envelope.file
+          }
+          signUrl={
+            !envelope.signed && via === 'feathery'
+              ? signUrls[envelope.id]
+              : undefined
           }
           status={
             envelope.signed
