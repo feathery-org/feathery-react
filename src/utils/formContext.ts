@@ -17,6 +17,7 @@ import internalState, {
   AlloyEntities,
   GetConfigParams,
   CreateEgnyteFolderParams,
+  EditableEsignField,
   GetDocusignEnvelopeParams,
   UploadFileToEgnyteParams,
   LoanProCustomerObject,
@@ -263,6 +264,7 @@ export const getFormContext = (formUuid: string) => {
       toolbarActions,
       emailSubject,
       emailBlurb,
+      editableEsignFields,
       repeatable,
       download,
       merge,
@@ -309,6 +311,9 @@ export const getFormContext = (formUuid: string) => {
       // signing email, as sendDocusignEnvelope takes them.
       emailSubject?: string;
       emailBlurb?: string;
+      // Only for signMethod 'docusign': the Quik fields signers may edit,
+      // replacing the integration's list for this envelope.
+      editableEsignFields?: EditableEsignField[];
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
@@ -452,6 +457,7 @@ export const getFormContext = (formUuid: string) => {
             editor_toolbar_actions: toolbarActions,
             email_subject: emailSubject,
             email_blurb: emailBlurb,
+            editable_esign_fields: editableEsignFields,
             repeatable,
             merge_docs: merge,
             merged_file_name: mergedFileName,
