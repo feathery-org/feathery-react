@@ -9,6 +9,7 @@
 const WRITING_KEY = '__featheryAssistantWriting';
 const TURN_KEY = '__featheryAssistantSession';
 const TURN_LISTENERS_KEY = '__featheryAssistantSessionListeners';
+const REPLACED_LISTENERS_KEY = '__featheryRobinReplacedListeners';
 
 type Marked = Record<string, any>;
 type Listener<A extends unknown[]> = (...args: A) => void;
@@ -67,6 +68,31 @@ export function onRobinTurnChange(
   const ed = editor as Marked | null | undefined;
   if (!ed) return () => undefined;
   const listeners = listenersOf<[boolean]>(ed, TURN_LISTENERS_KEY);
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+/**
+ * The document was replaced whole (a structural write, a card resolved, an undo through Robin's
+ * history). Opening a document fires no change event in the editor, so whoever replaced it says
+ * so here, and the editor's change handling runs as it does for any edit.
+ */
+export function documentReplaced(editor: unknown): void {
+  const ed = editor as Marked | null | undefined;
+  const listeners: Set<Listener<[]>> | undefined = ed?.[REPLACED_LISTENERS_KEY];
+  listeners?.forEach((cb) => cb());
+}
+
+/** Hear the document being replaced whole. Returns the unsubscribe. */
+export function onDocumentReplaced(
+  editor: unknown,
+  cb: () => void
+): () => void {
+  const ed = editor as Marked | null | undefined;
+  if (!ed) return () => undefined;
+  const listeners = listenersOf<[]>(ed, REPLACED_LISTENERS_KEY);
   listeners.add(cb);
   return () => {
     listeners.delete(cb);

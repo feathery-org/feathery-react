@@ -1,3 +1,4 @@
+import { documentReplaced, whileRobinWrites } from './robinActivity';
 import React from 'react';
 import { act, render } from '@testing-library/react';
 import {
@@ -431,6 +432,36 @@ describe('useDocxEditor across a review-gate flip', () => {
     await act(async () => fireContentChange());
     expect(onEdit).toHaveBeenLastCalledWith({ assistant: false });
     expect(onEdit).toHaveBeenCalledTimes(4);
+  });
+
+  it("a document Robin's engine replaced whole is dirty and edited like any change, attributed by the writing mark", async () => {
+    const onEdit = jest.fn();
+    const onDirty = jest.fn();
+    const Edited = () => {
+      const api = useDocxEditor({
+        source: { url: 'https://example.test/doc.docx' },
+        serviceUrl: 'https://example.test/service/',
+        reviewChanges: false,
+        licenseKey: 'test-key',
+        onEdit,
+        onDirty
+      });
+      return <div ref={api.containerRef} />;
+    };
+
+    render(<Edited />);
+    await settle();
+    const ed = editors[0] as any;
+
+    // a structural write: the editor fires no contentChange for an open, the engine reports it
+    await act(async () => whileRobinWrites(ed, () => documentReplaced(ed)));
+    expect(onDirty).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: true });
+
+    // an undo through the engine's history is the person's
+    await act(async () => documentReplaced(ed));
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: false });
+    expect(onEdit).toHaveBeenCalledTimes(2);
   });
 
   it('routes Ctrl/Cmd+S to onSaveShortcut and blocks the default SFDT download', async () => {

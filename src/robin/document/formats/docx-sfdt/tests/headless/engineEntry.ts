@@ -26,7 +26,8 @@ import TrackedChangeGroups from '../../../../../../elements/components/DocxEdito
 import HistoryGroup from '../../../../../../elements/components/DocxEditor/DocxToolbar/groups/HistoryGroup';
 import { installHistoryRouting } from '../../../../../../elements/components/DocxEditor/historyRouting';
 import { registerCardResolver, registerHistoryRoute } from '../../../../mounts';
-import { setRobinTurnActive } from '../../../../../../elements/components/DocxEditor/robinActivity';
+import { robinMarks } from '../../../../../../elements/components/DocxEditor/robinDocument';
+import { isRobinWriting, onDocumentReplaced } from '../../../../../../elements/components/DocxEditor/robinActivity';
 
 declare const __SYNCFUSION_LICENSE_KEY__: string;
 if (__SYNCFUSION_LICENSE_KEY__) registerLicense(__SYNCFUSION_LICENSE_KEY__);
@@ -38,6 +39,7 @@ let scratch: DocumentEditor | null = null;
 let attached: AttachedBindings | null = null;
 let session: DocumentSession | null = null;
 const errors: string[] = [];
+const changes: string[] = [];
 
 /**
  * Time spent inside the editor (host calls and seam applications) during a dispatch, so per-verb
@@ -180,8 +182,8 @@ const api = {
       host: timedHost(createHost(editor as unknown as LiveEditor)),
       target: { type: 'envelope', id: 'env' },
       editorId: 'ed',
-      // the flag the rail reads for "Robin is editing", as robinDocument.ts sets it
-      onTurnChange: (turnId) => setRobinTurnActive(editor, turnId !== null)
+      // Robin's marks and replaced-document reports, as the product wires them
+      ...robinMarks(editor as unknown as LiveEditor)
     });
     // as the product mounts it (robinDocument.ts): the rail's resolver, the undo route, the keys
     const live = session;
@@ -191,6 +193,12 @@ const api = {
     });
     registerHistoryRoute(editor, { undo: () => live.undo(), redo: () => live.redo() });
     installHistoryRouting(editor);
+    // the editor's change events and the engine's replaced-document reports, with whose they were
+    changes.length = 0;
+    const ed = editor;
+    const whose = () => (isRobinWriting(ed) ? 'robin' : 'person');
+    ed.addEventListener('contentChange', () => changes.push(`content:${whose()}`));
+    onDocumentReplaced(ed, () => changes.push(`replaced:${whose()}`));
     renderReviewUi();
     return (await settled()).length;
   },
@@ -205,6 +213,11 @@ const api = {
     await frame();
     await frame();
     return (await settled()).length;
+  },
+
+  /** The change events since the last call: `content:` from the editor, `replaced:` from the engine. */
+  changeEvents(): string[] {
+    return changes.splice(0);
   },
 
   /** Make the next engine open land something other than what was composed, so the proof fails. */

@@ -6,13 +6,20 @@ import {
   registerHistoryRoute
 } from '../../../robin/document/mounts';
 import { getPack, registerPack } from '../../../robin/document/pack';
-import { DocumentSession } from '../../../robin/document/session';
+import {
+  DocumentSession,
+  SessionOptions
+} from '../../../robin/document/session';
 import {
   createHost,
   docxPack,
   LiveEditor
 } from '../../../robin/document/formats/docx-sfdt';
-import { setRobinTurnActive } from './robinActivity';
+import {
+  documentReplaced,
+  setRobinTurnActive,
+  whileRobinWrites
+} from './robinActivity';
 
 /** Register the docx pack; safe to call on every mount. */
 export function ensureDocxPack(): void {
@@ -29,6 +36,35 @@ export interface RobinDocumentMount {
 }
 
 /**
+ * The engine session over an opened document, wired to the editor as the product mounts it: its
+ * turn and its writes carry Robin's marks, so the rail tells Robin's changes from the person's and
+ * version history attributes them; a document it replaces whole is reported as an edit.
+ */
+export function createRobinSession(
+  editor: LiveEditor,
+  envelopeId: string
+): DocumentSession {
+  ensureDocxPack();
+  return new DocumentSession({
+    pack: docxPack,
+    host: createHost(editor),
+    target: { type: 'envelope', id: envelopeId },
+    ...robinMarks(editor)
+  });
+}
+
+/** The session options that put Robin's marks on the editor and report replaced documents. */
+export function robinMarks(
+  editor: LiveEditor
+): Pick<SessionOptions, 'onTurnChange' | 'writing' | 'onReplaced'> {
+  return {
+    onTurnChange: (turnId) => setRobinTurnActive(editor, turnId !== null),
+    writing: (commit) => whileRobinWrites(editor, commit),
+    onReplaced: () => documentReplaced(editor)
+  };
+}
+
+/**
  * Create the session for a just-opened document and mount it. Returns the unmount, which also
  * ends any editing turn so the rail stops treating selection moves as Robin's. Returns null when
  * the session cannot be created: the engine must never break the editor it serves.
@@ -41,14 +77,7 @@ export function mountRobinDocument({
 }: RobinDocumentMount): (() => void) | null {
   let session: DocumentSession;
   try {
-    ensureDocxPack();
-    session = new DocumentSession({
-      pack: docxPack,
-      host: createHost(editor),
-      target: { type: 'envelope', id: envelopeId },
-      // The flag the rail and the section panel already read for "Robin is editing".
-      onTurnChange: (turnId) => setRobinTurnActive(editor, turnId !== null)
-    });
+    session = createRobinSession(editor, envelopeId);
   } catch (error) {
     console.debug('Feathery: Robin document session unavailable.', error);
     return null;

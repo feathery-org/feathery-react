@@ -838,3 +838,96 @@ describe('document session: the four verbs end to end', () => {
     ]);
   });
 });
+
+describe('document session: telling the host whose change it is', () => {
+  function watched() {
+    const host = new ToyHost(doc);
+    const events: string[] = [];
+    let writing = false;
+    const session = new DocumentSession({
+      pack: makeToyPack(),
+      host,
+      target,
+      editorId: 'ed-1',
+      writing: (commit) => {
+        writing = true;
+        events.push('writing');
+        try {
+          return commit();
+        } finally {
+          writing = false;
+        }
+      },
+      onReplaced: (by) =>
+        events.push(`replaced:${by}${writing ? ':marked' : ''}`)
+    });
+    const call = (verb: string, input: unknown, turnId = 'turn-1') => {
+      const out = session.dispatch({
+        protocolVersion: 1,
+        turnId,
+        editorId: 'ed-1',
+        target,
+        verb,
+        input
+      });
+      if (out.status !== 'ok') throw new Error('dispatch failed');
+      return out.response.result;
+    };
+    return { host, session, call, events };
+  }
+
+  const addLine = (container: string) => ({
+    intent: 'Add a line.',
+    scope: { ids: [] },
+    changes: [
+      {
+        kind: 'insert_after',
+        anchor: 'n4',
+        container,
+        node: { text: 'Cyber', style: 'f2' }
+      }
+    ]
+  });
+
+  it('a structural commit runs marked as Robin and reports the replaced document while marked', () => {
+    const { call, events } = watched();
+    const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2');
+    call('write', addLine(n2.shape));
+    expect(events).toEqual(['writing', 'replaced:robin:marked']);
+  });
+
+  it("an in-place commit runs marked; the editor's own change event reports it", () => {
+    const { call, events } = watched();
+    const n1 = nodeOf(call('read', { ids: ['n1'] }), 'n1');
+    call('write', {
+      intent: 'Make the title larger.',
+      scope: { ids: ['n1'] },
+      changes: [
+        {
+          kind: 'set',
+          target: { ids: ['n1'], shape: { n1: n1.shape } },
+          props: { size: 24 }
+        }
+      ]
+    });
+    expect(events).toEqual(['writing']);
+  });
+
+  it("an undo or redo through the engine's history is the person's replacement; the editor's own is not reported", () => {
+    const { call, session, events } = watched();
+    const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2');
+    call('write', addLine(n2.shape));
+    events.length = 0;
+    session.undo();
+    session.redo();
+    expect(events).toEqual(['replaced:person', 'replaced:person']);
+  });
+
+  it('a refused or dry-run write is not marked and reports nothing', () => {
+    const { call, events } = watched();
+    const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2');
+    call('write', { ...addLine(n2.shape), dryRun: true });
+    call('write', addLine('@00000000'));
+    expect(events).toEqual([]);
+  });
+});

@@ -10,7 +10,7 @@ import {
   preserveDocumentViewDuring,
   registerWrappingDocumentEditorContainer
 } from '../../../utils/documentEditorPrimitives';
-import { isRobinWriting } from './robinActivity';
+import { isRobinWriting, onDocumentReplaced } from './robinActivity';
 import { EJ2_SCRIPT_URL } from './constants';
 import { loadStyles, waitForDocumentLoad, waitForEj } from './ejLoader';
 import { stampMissingContentControlColors } from './contentControlSafety';
@@ -1052,7 +1052,7 @@ export function useDocxEditor({
         // Suppress Syncfusion's native review pane for every host (not just
         // review-gated ones) — we render our own tracked-change UI.
         closeTrackedChangeReviewPane();
-        ed.addEventListener('contentChange', () => {
+        const contentChanged = () => {
           // A tracked edit (e.g. the assistant's) can spawn/reopen the native
           // pane; keep it suppressed. Idempotent once patched.
           closeTrackedChangeReviewPane();
@@ -1062,7 +1062,11 @@ export function useDocxEditor({
           // Unlike onDirty (edge-only), onEdit fires on every change so the
           // session tracker can debounce autosave and attribute each edit.
           onEditRef.current?.({ assistant: isRobinWriting(ed) });
-        });
+        };
+        ed.addEventListener('contentChange', contentChanged);
+        // Opening a document fires no contentChange; Robin's engine reports a
+        // document it replaced whole, and it is handled as any change.
+        onDocumentReplaced(ed, contentChanged);
         // Ctrl/Cmd+S: Syncfusion's default saves the document as a downloaded
         // SFDT file. Intercept it, stop that default (isHandled + preventDefault),
         // and route to the host's Save so the shortcut persists like the toolbar.

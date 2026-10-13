@@ -61,6 +61,17 @@ export interface SessionOptions {
    * with null. The host uses it to tell Robin's selection moves from the user's while a turn runs.
    */
   onTurnChange?: (turnId: string | null) => void;
+  /**
+   * Runs each write's commit, so the host can mark the editor's own change events during it as
+   * Robin's (version history attributes them). Without it the commit simply runs.
+   */
+  writing?: <T>(commit: () => T) => T;
+  /**
+   * The engine replaced the document whole, which the editor reports no change event for:
+   * `robin` for a write (called inside `writing`), `person` for a card they resolved or an undo or
+   * redo through the engine's history. The host runs its change handling as for any edit.
+   */
+  onReplaced?: (by: 'robin' | 'person') => void;
 }
 
 export type DispatchOutcome =
@@ -101,6 +112,10 @@ export class DocumentSession {
 
   private readonly onTurnChange?: (turnId: string | null) => void;
 
+  private readonly writing: <T>(commit: () => T) => T;
+
+  private readonly onReplaced?: (by: 'robin' | 'person') => void;
+
   constructor(options: SessionOptions) {
     this.pack = options.pack;
     this.host = options.host;
@@ -108,6 +123,8 @@ export class DocumentSession {
     this.editorId = options.editorId ?? newEditorId();
     this.clock = options.clock ?? defaultClock;
     this.onTurnChange = options.onTurnChange;
+    this.writing = options.writing ?? ((commit) => commit());
+    this.onReplaced = options.onReplaced;
     this.history =
       options.history ??
       new EngineHistory(ENGINE_HISTORY_LIMIT, (a, b) =>
@@ -313,30 +330,39 @@ export class DocumentSession {
       };
     }
 
-    const outcome = reconcile({
-      pack: this.pack,
-      host: this.host,
-      history: this.history,
-      turnId,
-      intent: write.intent,
-      title: prepared.title,
-      derived: prepared.facts
-        .filter((f) => f.kind === 'finalizer')
-        .flatMap((f) => f.ids),
-      before: {
-        view: before.view,
-        residue: before.residue,
-        native: this.native
-      },
-      intended: {
-        view: makeView(prepared.intended, this.pack),
-        residue: prepared.intendedResidue
-      },
-      adopt: (fresh) =>
-        this.ids.adopt(fresh, this.pack.tree, this.pack.formatRefKeys, [
-          prepared.intended,
-          before.view.nf
-        ])
+    const outcome = this.writing(() => {
+      const out = reconcile({
+        pack: this.pack,
+        host: this.host,
+        history: this.history,
+        turnId,
+        intent: write.intent,
+        title: prepared.title,
+        derived: prepared.facts
+          .filter((f) => f.kind === 'finalizer')
+          .flatMap((f) => f.ids),
+        before: {
+          view: before.view,
+          residue: before.residue,
+          native: this.native
+        },
+        intended: {
+          view: makeView(prepared.intended, this.pack),
+          residue: prepared.intendedResidue
+        },
+        adopt: (fresh) =>
+          this.ids.adopt(fresh, this.pack.tree, this.pack.formatRefKeys, [
+            prepared.intended,
+            before.view.nf
+          ])
+      });
+      // the document was opened whole: a structural commit, or a rollback that did not restore it
+      const replaced =
+        out.outcome === 'committed'
+          ? out.plan.history === 'engine'
+          : !(out.rollback.byteEqual || out.rollback.equivalent);
+      if (replaced) this.replaced('robin');
+      return out;
     });
     if (outcome.outcome !== 'committed') {
       const rolledBack =
@@ -466,6 +492,7 @@ export class DocumentSession {
     });
     this.structural.delete(changeSetId);
     this.refresh();
+    this.replaced('person');
     return true;
   }
 
@@ -493,6 +520,7 @@ export class DocumentSession {
   undo(): HistoryOutcome {
     const out = this.history.undo(this.host);
     this.refresh();
+    if (out.via === 'engine') this.replaced('person');
     return out;
   }
 
@@ -500,7 +528,16 @@ export class DocumentSession {
   redo(): HistoryOutcome {
     const out = this.history.redo(this.host);
     this.refresh();
+    if (out.via === 'engine') this.replaced('person');
     return out;
+  }
+
+  private replaced(by: 'robin' | 'person'): void {
+    try {
+      this.onReplaced?.(by);
+    } catch {
+      // A host listener must never change what the verb does.
+    }
   }
 }
 

@@ -596,6 +596,47 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
  * (serialize, and the adapter when the bytes changed); a write also verifies, commits and proves.
  * A verb above 50 ms is a finding to optimize; the numbers go in the PR's numbers table.
  */
+describe("Robin's commits reach the editor's change handling (review: dirty, autosave, attribution)", () => {
+  it('a native commit fires the editor\'s own change events while marked as Robin\'s', async () => {
+    await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const run = (await read([pid]))[pid].inlines.find((i: any) => i.kind === 'run');
+    await lane.call('changeEvents');
+    const r = await dispatch('write', { intent: 'Replace the clause.', scope: { ids: [run.id] }, changes: [{ kind: 'replace', id: run.id, base: run.base, node: { ...strip(run), text: 'Replaced natively.' } }] });
+    expect(r.trace.committed.seams).toEqual(['text']);
+    const events = await lane.call<string[]>('changeEvents');
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((e) => e === 'content:robin')).toBe(true);
+  });
+
+  it('a structural commit opens the document (no change event) and the engine reports it as Robin\'s; its engine undo is the person\'s', async () => {
+    await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const sid = await at(['sections', 3]);
+    const n = await read([pid, sid]);
+    await lane.call('changeEvents');
+    const r = await dispatch('write', { intent: 'Add a paragraph.', scope: { ids: [] }, changes: [{ kind: 'insert_after', anchor: pid, container: n[sid].shape, node: { style: n[pid].style, markStyle: n[pid].markStyle, inlines: [{ text: 'A new paragraph.' }] } }] });
+    expect(r.trace.committed.seams).toEqual(['splice']);
+    // the editor's open fires no contentChange (only the bindings' re-read can, when it writes a
+    // value), so the engine's report is what marks the document changed; all of it is Robin's
+    const committed = await lane.call<string[]>('changeEvents');
+    expect(committed).toContain('replaced:robin');
+    expect(committed.every((e) => e.endsWith(':robin'))).toBe(true);
+    expect((await lane.call<{ via: string }>('sessionUndo')).via).toBe('engine');
+    const undone = await lane.call<string[]>('changeEvents');
+    expect(undone).toContain('replaced:person');
+    expect(undone.every((e) => e.endsWith(':person'))).toBe(true);
+  });
+
+  it("the editor's open fires no change event of its own", async () => {
+    await fresh();
+    const native = await lane.call<string>('settled');
+    await lane.call('changeEvents');
+    await lane.call('editorOpen', native);
+    expect(await lane.call<string[]>('changeEvents')).toEqual([]);
+  });
+});
+
 describe('per-verb time on the flagship', () => {
   const RUNS = 5;
   const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
