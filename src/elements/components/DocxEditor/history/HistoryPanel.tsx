@@ -15,7 +15,6 @@ import {
   initialsForAuthor
 } from './authorColors';
 import { groupVersions, MonthSection } from './versionGrouping';
-import { hideNoOpVersions } from './noOpVersions';
 import {
   DocxHistoryHost,
   DocxVersion,
@@ -295,10 +294,8 @@ export default function HistoryPanel({
     try {
       const rows = await host.listVersions();
       if (id === reqId.current) {
-        // The editor folds and colours from the same list the panel shows.
-        const visible = hideNoOpVersions(rows);
-        setVersions(visible);
-        onVersionsLoadedRef.current?.(visible);
+        setVersions(rows);
+        onVersionsLoadedRef.current?.(rows);
       }
     } catch {
       if (id === reqId.current) setError(true);
