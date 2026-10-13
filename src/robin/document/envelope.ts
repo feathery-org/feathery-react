@@ -901,9 +901,10 @@ export type Warning = {
   message: string;
 };
 
+/** A finalizer changes nodes, never the root: its scope is node ids (the server's schema agrees). */
 const finalizerScopeSchema = z.looseObject({
   name: z.string().min(1),
-  ids: z.array(nodeIdSchema.or(z.literal(ROOT_ID)))
+  ids: z.array(nodeIdSchema)
 });
 export type FinalizerScope = { name: string; ids: string[] };
 

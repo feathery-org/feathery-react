@@ -783,7 +783,17 @@ describe('results validate against the result contract', () => {
     );
     expect(
       validateVerbResult('write', { ...result, mapping: { 'tmp:a': 'x1' } }).ok
+    ).toBe(false); // finalizers change nodes, never the root (agreed with the server's schema); touched may
+    // name root, whose top-level list a write changes
+    expect(
+      validateVerbResult('write', {
+        ...result,
+        finalizerScope: [{ name: 'restripe', ids: ['root'] }]
+      }).ok
     ).toBe(false);
+    expect(
+      validateVerbResult('write', { ...result, touched: ['root', 'n901'] }).ok
+    ).toBe(true);
   });
 
   it('section 13.2 refusal result, built by the helpers', () => {
