@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { keyframes } from '@emotion/react';
 
 import { INK_3, PAPER } from '../TrackedChangeGroups/styles';
@@ -9,6 +9,7 @@ import {
   installRevisionHighlightRendering
 } from '../useDocxEditor';
 import { colorForRevisionAuthor } from './authorColors';
+import { hiddenEditorConverter } from './convertOriginal';
 import { populateVersionBindings } from './populateVersionBindings';
 import { normalizeForDiff } from './sfdtDiff';
 import {
@@ -141,7 +142,17 @@ export default function VersionViewer({
   // With a live document (the in-progress current version — no stored files),
   // use it directly and skip the fetch. It carries the applyHunks display SFDT,
   // so the normal highlight path renders it exactly like a stored version.
-  const fetched = useVersionDocument(host, liveDoc ? null : version, folded);
+  // A folded group right after the original starts from the converted upload.
+  const convertDocx = useMemo(
+    () => (serviceUrl ? hiddenEditorConverter(serviceUrl, headers) : undefined),
+    [serviceUrl, headers]
+  );
+  const fetched = useVersionDocument(
+    host,
+    liveDoc ? null : version,
+    folded,
+    convertDocx
+  );
   const doc = liveDoc ?? fetched;
   // Restores establish a clean baseline; embedded suggestions are reviewable
   // in the live editor, not replayed as edits in the restored history row.
