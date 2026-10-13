@@ -10,7 +10,7 @@ import {
   preserveDocumentViewDuring,
   registerWrappingDocumentEditorContainer
 } from '../../../utils/documentEditorPrimitives';
-import { isAssistantApplyingEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinWriting } from './robinActivity';
 import { EJ2_SCRIPT_URL } from './constants';
 import { loadStyles, waitForDocumentLoad, waitForEj } from './ejLoader';
 import { stampMissingContentControlColors } from './contentControlSafety';
@@ -1061,7 +1061,7 @@ export function useDocxEditor({
           onDirtyRef.current?.();
           // Unlike onDirty (edge-only), onEdit fires on every change so the
           // session tracker can debounce autosave and attribute each edit.
-          onEditRef.current?.({ assistant: isAssistantApplyingEdits(ed) });
+          onEditRef.current?.({ assistant: isRobinWriting(ed) });
         });
         // Ctrl/Cmd+S: Syncfusion's default saves the document as a downloaded
         // SFDT file. Intercept it, stop that default (isHandled + preventDefault),

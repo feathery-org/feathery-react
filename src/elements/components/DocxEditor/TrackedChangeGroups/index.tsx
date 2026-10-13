@@ -11,7 +11,7 @@ import {
   resolveRevisionsAsOneUndo,
   RevisionGroupItem
 } from '../../../../utils/documentEditorPrimitives';
-import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinEditing } from '../robinActivity';
 import { featheryWindow } from '../../../../utils/browser';
 import { cardResolverFor } from '../../../../robin/document/mounts';
 import { redoDocument, undoDocument } from '../historyRouting';
@@ -246,7 +246,7 @@ function TrackedChangeGroups({
     lastRevisionCountRef.current = revisionCount();
     // Neither a (re)load nor an assistant batch is something the user asked
     // to review, so nothing stays expanded through one.
-    if (isOpeningDocument(editor) || isAssistantWriting(editor)) {
+    if (isOpeningDocument(editor) || isRobinEditing(editor)) {
       setExpanded({});
     }
     setGroups(
@@ -310,8 +310,7 @@ function TrackedChangeGroups({
         // Every op changes the revision count, so refreshing immediately on
         // each one is O(n^2) across a batch whose intermediate state nobody
         // sees. Debounce instead: one refresh once the batch settles.
-        const suppressed =
-          isOpeningDocument(editor) || isAssistantWriting(editor);
+        const suppressed = isOpeningDocument(editor) || isRobinEditing(editor);
         if (!suppressed && revisionCount() !== lastRevisionCountRef.current)
           refresh();
         else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
@@ -344,7 +343,7 @@ function TrackedChangeGroups({
         if (ignoreSelectionRef.current) return;
         // Same window refresh() collapses for. Without this, each op expands
         // whichever group it lands on and refresh() collapses it right back.
-        if (isOpeningDocument(editor) || isAssistantWriting(editor)) return;
+        if (isOpeningDocument(editor) || isRobinEditing(editor)) return;
         const current = editor.selection?.getCurrentRevision?.();
         const revisions: any[] = Array.isArray(current)
           ? current

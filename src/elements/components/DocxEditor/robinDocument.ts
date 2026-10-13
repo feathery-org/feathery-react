@@ -1,6 +1,5 @@
 // Robin's document engine for a mounted editor: the docx pack registered once, and one session per
 // opened document, mounted under the form instance so the form's `liveDocument` accessor reaches it.
-import { setAssistantSessionActive } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import {
   mountDocument,
   registerCardResolver,
@@ -13,6 +12,7 @@ import {
   docxPack,
   LiveEditor
 } from '../../../robin/document/formats/docx-sfdt';
+import { setRobinTurnActive } from './robinActivity';
 
 /** Register the docx pack; safe to call on every mount. */
 export function ensureDocxPack(): void {
@@ -47,11 +47,7 @@ export function mountRobinDocument({
       host: createHost(editor),
       target: { type: 'envelope', id: envelopeId },
       // The flag the rail and the section panel already read for "Robin is editing".
-      onTurnChange: (turnId) =>
-        setAssistantSessionActive(
-          editor as unknown as Parameters<typeof setAssistantSessionActive>[0],
-          turnId !== null
-        )
+      onTurnChange: (turnId) => setRobinTurnActive(editor, turnId !== null)
     });
   } catch (error) {
     console.debug('Feathery: Robin document session unavailable.', error);

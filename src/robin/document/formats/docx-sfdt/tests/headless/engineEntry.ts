@@ -26,7 +26,7 @@ import TrackedChangeGroups from '../../../../../../elements/components/DocxEdito
 import HistoryGroup from '../../../../../../elements/components/DocxEditor/DocxToolbar/groups/HistoryGroup';
 import { installHistoryRouting } from '../../../../../../elements/components/DocxEditor/historyRouting';
 import { registerCardResolver, registerHistoryRoute } from '../../../../mounts';
-import { setAssistantSessionActive } from '../../../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { setRobinTurnActive } from '../../../../../../elements/components/DocxEditor/robinActivity';
 
 declare const __SYNCFUSION_LICENSE_KEY__: string;
 if (__SYNCFUSION_LICENSE_KEY__) registerLicense(__SYNCFUSION_LICENSE_KEY__);
@@ -181,7 +181,7 @@ const api = {
       target: { type: 'envelope', id: 'env' },
       editorId: 'ed',
       // the flag the rail reads for "Robin is editing", as robinDocument.ts sets it
-      onTurnChange: (turnId) => setAssistantSessionActive(editor as never, turnId !== null)
+      onTurnChange: (turnId) => setRobinTurnActive(editor, turnId !== null)
     });
     // as the product mounts it (robinDocument.ts): the rail's resolver, the undo route, the keys
     const live = session;
