@@ -52,6 +52,29 @@ describe('hideNoOpVersions', () => {
     }
   });
 
+  it('keeps an accepted-suggestion version that matches the one before it', () => {
+    // Accepting a tracked change leaves the text unchanged, so the fingerprints
+    // match, but the version records the changes it confirmed.
+    expect(
+      ids(
+        hideNoOpVersions([
+          v(3, { is_current: true }),
+          v(2, { final_sha256: 'same', change_count: 2 }),
+          v(1, { final_sha256: 'same', change_count: 2 })
+        ])
+      )
+    ).toEqual(['v3', 'v2', 'v1']);
+    expect(
+      ids(
+        hideNoOpVersions([
+          v(3, { is_current: true }),
+          v(2, { final_sha256: 'same', format_change_count: 1 }),
+          v(1, { final_sha256: 'same' })
+        ])
+      )
+    ).toEqual(['v3', 'v2', 'v1']);
+  });
+
   it('keeps a version when either fingerprint is missing', () => {
     expect(
       ids(

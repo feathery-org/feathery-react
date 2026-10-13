@@ -1,7 +1,7 @@
 import { DocxVersion } from './types';
 
-// A closed session whose final content matches the version before it changed
-// nothing on balance (its edits were undone). It stays stored, just unlisted.
+// A closed session that recorded no changes and ends where the version before
+// it did was undone; accepting tracked changes keeps its count, so it stays.
 export function hideNoOpVersions(versions: DocxVersion[]): DocxVersion[] {
   const bySeq = [...versions].sort((a, b) => b.seq - a.seq);
   const hidden = new Set<string>();
@@ -12,6 +12,8 @@ export function hideNoOpVersions(versions: DocxVersion[]): DocxVersion[] {
       version.final_sha256 &&
       version.final_sha256 === prior.final_sha256 &&
       version.closed_at &&
+      !version.change_count &&
+      !version.format_change_count &&
       !version.is_current &&
       !version.is_baseline &&
       !version.name &&
