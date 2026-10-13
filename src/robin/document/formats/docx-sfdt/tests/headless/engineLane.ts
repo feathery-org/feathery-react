@@ -5,7 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { Browser, Page } from 'puppeteer-core';
-import { launchLaneChrome } from '../../../../../../assistant/tools/docx/tests/headless/laneChrome';
+import { launchLaneChrome } from '../../../../tests/headless/laneChrome';
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const webpack = require('webpack');
