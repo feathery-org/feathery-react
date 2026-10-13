@@ -1,6 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import { isFit } from '../../utils/hydration';
 import { isNum } from '../../utils/primitives';
+import { getImageColorStyles } from '../../utils/styles';
 import {
   DEFAULT_CHEVRON_GAP,
   DROPDOWN_CHEVRON_CLEARANCE,
@@ -481,14 +482,11 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
       styles.applyColor('img', 'icon_color', 'color');
+      styles.apply('img', 'image_color', getImageColorStyles);
       styles.apply('hover', 'hover_image_color', (a: string) => {
         if (!a) return {};
-        const level = a === 'black' ? 0 : 100;
         return {
-          'img, [data-feathery-option-icon]': {
-            webkitFilter: `brightness(${level}%)`,
-            filter: `brightness(${level}%)`
-          }
+          'img, [data-feathery-option-icon]': getImageColorStyles(a)
         };
       });
       styles.applyColor('hover', 'hover_font_color', 'color');
@@ -496,12 +494,8 @@ export function applyFieldStyles(field: any, styles: any) {
 
       styles.apply('active', 'selected_image_color', (a: string) => {
         if (!a) return {};
-        const level = a === 'black' ? 0 : 100;
         return {
-          'img, [data-feathery-option-icon]': {
-            webkitFilter: `brightness(${level}%)`,
-            filter: `brightness(${level}%)`
-          }
+          'img, [data-feathery-option-icon]': getImageColorStyles(a)
         };
       });
       break;

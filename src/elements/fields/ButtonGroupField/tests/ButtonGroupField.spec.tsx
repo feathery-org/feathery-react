@@ -253,7 +253,7 @@ describe('ButtonGroupField', () => {
       expect(
         responsiveStyles.getTarget('hover')['img, [data-feathery-option-icon]']
           .filter
-      ).toBe('brightness(100%)');
+      ).toBe('brightness(0%) invert(100%)');
     });
 
     it('renders buttons with images when option_images provided', () => {

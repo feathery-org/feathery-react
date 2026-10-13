@@ -119,56 +119,62 @@ const rulesFor = (element: Element | null) => {
 };
 
 describe('ButtonElement', () => {
-  it('renders stored glyphs with icon color and existing image state colors', async () => {
-    const ButtonElement = (await import('../ButtonElement')).default;
-    const element = {
-      id: 'button-icon-states',
-      properties: {
-        actions: [{}],
-        icon_source: 'IconHeart',
-        icon_glyph: {
-          variant: 'outline',
-          nodes: [['path', { d: 'M12 5l0 14' }]]
+  it.each([
+    ['black', 'brightness(0%)'],
+    ['white', 'brightness(0%) invert(100%)']
+  ])(
+    'renders stored glyphs with %s image state colors',
+    async (color, filter) => {
+      const ButtonElement = (await import('../ButtonElement')).default;
+      const element = {
+        id: 'button-icon-states',
+        properties: {
+          actions: [{}],
+          icon_source: 'IconHeart',
+          icon_glyph: {
+            variant: 'outline',
+            nodes: [['path', { d: 'M12 5l0 14' }]]
+          },
+          text: '',
+          text_formatted: []
         },
-        text: '',
-        text_formatted: []
-      },
-      styles: {
-        background_color: 'FFFFFF',
-        flex_direction: 'row',
-        icon_color: 'F5A623',
-        hover_image_color: 'black',
-        selected_image_color: 'black',
-        disabled_image_color: 'black'
-      },
-      mobile_styles: {}
-    };
-    const responsiveStyles = new ResponsiveStyles(element, [], true);
+        styles: {
+          background_color: 'FFFFFF',
+          flex_direction: 'row',
+          icon_color: 'F5A623',
+          hover_image_color: color,
+          selected_image_color: color,
+          disabled_image_color: color
+        },
+        mobile_styles: {}
+      };
+      const responsiveStyles = new ResponsiveStyles(element, [], true);
 
-    const { container } = render(
-      <ButtonElement element={element} responsiveStyles={responsiveStyles} />
-    );
-    const button = container.querySelector('button');
-    const icon = container.querySelector('[data-feathery-button-icon] svg');
-    const rules = rulesFor(button).filter((rule) =>
-      rule.cssText.includes('brightness(0%)')
-    );
-    const hasRule = (state: string, target: string) =>
-      rules.some(
-        (rule) =>
-          rule.selectorText.includes(state) &&
-          rule.selectorText.includes(target)
+      const { container } = render(
+        <ButtonElement element={element} responsiveStyles={responsiveStyles} />
       );
+      const button = container.querySelector('button');
+      const icon = container.querySelector('[data-feathery-button-icon] svg');
+      const rules = rulesFor(button).filter((rule) =>
+        rule.cssText.includes(filter)
+      );
+      const hasRule = (state: string, target: string) =>
+        rules.some(
+          (rule) =>
+            rule.selectorText.includes(state) &&
+            rule.selectorText.includes(target)
+        );
 
-    expect(icon).toHaveAttribute('stroke', 'currentColor');
-    expect(responsiveStyles.getTarget('img').color).toBe('#F5A623');
-    expect(hasRule(':hover', 'img')).toBe(true);
-    expect(hasRule(':hover', '[data-feathery-button-icon]')).toBe(true);
-    expect(hasRule('.active', 'img')).toBe(true);
-    expect(hasRule('.active', '[data-feathery-button-icon]')).toBe(true);
-    expect(hasRule('[aria-disabled="true"]', 'img')).toBe(true);
-    expect(
-      hasRule('[aria-disabled="true"]', '[data-feathery-button-icon]')
-    ).toBe(true);
-  });
+      expect(icon).toHaveAttribute('stroke', 'currentColor');
+      expect(responsiveStyles.getTarget('img').color).toBe('#F5A623');
+      expect(hasRule(':hover', 'img')).toBe(true);
+      expect(hasRule(':hover', '[data-feathery-button-icon]')).toBe(true);
+      expect(hasRule('.active', 'img')).toBe(true);
+      expect(hasRule('.active', '[data-feathery-button-icon]')).toBe(true);
+      expect(hasRule('[aria-disabled="true"]', 'img')).toBe(true);
+      expect(
+        hasRule('[aria-disabled="true"]', '[data-feathery-button-icon]')
+      ).toBe(true);
+    }
+  );
 });
