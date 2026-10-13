@@ -400,6 +400,52 @@ describe('column fit finalizer', () => {
     expect(nested()).toEqual([150.6, 150.6]);
   });
 
+  // Codex review D7: amounts must not wrap mid-number when a column narrows
+  const moneyTable = (widths: number[]) => {
+    const cellOf = (text: string, width: number) => ({ cellFormat: { preferredWidth: width, preferredWidthType: 'Point', cellWidth: width, columnSpan: 1, rowSpan: 1 }, blocks: [{ inlines: [{ text }] }] });
+    const texts = [['Coverage', 'Carrier', 'Premium'], ['Business Auto', 'Old Guard', '$1,450,554.00'], ['Total Annual Premium', '', '$1,471,389.04']];
+    let d = JSON.stringify({ sections: [{ sectionFormat: { pageWidth: 612, pageHeight: 792, leftMargin: 72, rightMargin: 72 }, blocks: [{ tableFormat: {}, grid: widths, columnCount: widths.length, rows: texts.map((row) => ({ rowFormat: {}, cells: row.map((t, i) => cellOf(t, widths[i])) })) }] }] });
+    const host = { serialize: () => d, open: (x: string) => { d = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    return new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+  };
+  const widthsAfter = (r: any) => arr<NfNode>(arr<NfNode>(arr<NfNode>(r.intended.root.sections)[0].blocks)[0].rows).map((row) => arr<NfNode>(row.cells).map((c) => Number(r.intended.formats[String(c.style)]?.preferredWidth)));
+
+  it('a column added narrows the others, never an amount column below its longest amount (review D7)', () => {
+    const s = moneyTable([234, 117, 117]);
+    const table = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[0];
+    const rows = arr<NfNode>(table.rows);
+    const lasts = rows.map((r) => arr<NfNode>(r.cells)[2]);
+    const r = prepareWrite(s, { intent: 'Add a column.', scope: { ids: lasts.map((c) => c.id) }, changes: lasts.map((c, i) => ({ kind: 'insert_after', anchor: c.id, container: shapeOf(rows[i], docxTree), node: { kind: 'cell', style: c.style, blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: '' }] }] } })) } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+    const widths = widthsAfter(r);
+    // "$1,450,554.00" in 11 pt needs about 89 pt with the cell's margins; proportional narrowing
+    // alone would give it 87.75
+    for (const row of widths) {
+      expect(row[2]).toBeGreaterThanOrEqual(89);
+      expect(row.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(468.5);
+    }
+    expect(widths.every((row) => JSON.stringify(row) === JSON.stringify(widths[0]))).toBe(true);
+  });
+
+  it('widths written that leave an amount narrower than itself are kept, with a warning naming the column (review D7)', () => {
+    const s = moneyTable([156, 156, 156]);
+    const table = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[0];
+    const column = (k: number) => arr<NfNode>(table.rows).map((r) => arr<NfNode>(r.cells)[k]);
+    const setWidth = (cells: NfNode[], width: number) => ({ kind: 'set', target: { ids: cells.map((c) => c.id), shape: Object.fromEntries(cells.map((c) => [c.id, shapeOf(c, docxTree)])) }, props: { preferredWidth: width, preferredWidthType: 'Point' } });
+    const narrow = prepareWrite(s, { intent: 'Widths.', scope: { ids: [0, 1, 2].flatMap((k) => column(k).map((c) => c.id)) }, changes: [setWidth(column(0), 250), setWidth(column(1), 150), setWidth(column(2), 68)] } as WriteInput);
+    if (narrow.outcome !== 'verified') throw new Error(JSON.stringify(narrow).slice(0, 600));
+    expect(widthsAfter(narrow)[1][2]).toBe(68);
+    expect(narrow.warnings.find((w) => w.code === 'column-too-narrow')?.message).toMatch(/\$1,450,554\.00/);
+    const wide = prepareWrite(s, { intent: 'Widths.', scope: { ids: column(2).map((c) => c.id) }, changes: [setWidth(column(2), 156)] } as WriteInput);
+    if (wide.outcome !== 'verified') throw new Error(JSON.stringify(wide).slice(0, 600));
+    expect(wide.warnings.some((w) => w.code === 'column-too-narrow')).toBe(false);
+    // the same in percent, as the rig's write was (16 percent of 468 pt is about 75 pt)
+    const setPercent = (cells: NfNode[], width: number) => ({ kind: 'set', target: { ids: cells.map((c) => c.id), shape: Object.fromEntries(cells.map((c) => [c.id, shapeOf(c, docxTree)])) }, props: { preferredWidth: width, preferredWidthType: 'Percent' } });
+    const percent = prepareWrite(s, { intent: 'Widths.', scope: { ids: [0, 1, 2].flatMap((k) => column(k).map((c) => c.id)) }, changes: [setPercent(column(0), 50), setPercent(column(1), 34), setPercent(column(2), 16)] } as WriteInput);
+    if (percent.outcome !== 'verified') throw new Error(JSON.stringify(percent).slice(0, 600));
+    expect(percent.warnings.find((w) => w.code === 'column-too-narrow')?.message).toMatch(/\$1,471,389\.04/);
+  });
+
   it('leaves a table that still fits, and one that did not fit before, as written', () => {
     expect(addColumn([100, 100]).widths).toEqual([[100, 100, 100], [100, 100, 100]]);
     expect(addColumn([300, 300]).facts.some((f) => f.name === 'column-fit')).toBe(false);

@@ -318,6 +318,92 @@ function shareNewTable(
 }
 
 /**
+ * About how wide a character is, in ems, for the width a cell's longest word needs: digits in the
+ * fonts proposals use are about 0.51 em (Lato, Calibri), with room for bold and wider faces. An
+ * estimate for a fact and for narrowing, never a measurement of the editor's layout.
+ */
+const CHAR_EM = 0.55;
+/** The font size a run without one inherits, in points. */
+const DEFAULT_SIZE = 11;
+
+/**
+ * The width a cell needs so its longest word does not wrap: the longest run of characters
+ * without a space in any of its paragraphs, at the paragraph's largest font size, plus the cell's
+ * side margins. An estimate (`CHAR_EM`).
+ */
+function contentMinimum(
+  cell: NfNode,
+  formats: Formats
+): { word: string; width: number } {
+  let best = { word: '', width: 0 };
+  const sizeOf = (n: NfNode, key: 'style' | 'markStyle') =>
+    typeof n[key] === 'string'
+      ? Number(formats[n[key] as string]?.fontSize)
+      : NaN;
+  const paragraphs = (n: NfNode): NfNode[] =>
+    n.kind === KIND.paragraph
+      ? [n]
+      : arr<NfNode>(n.blocks).flatMap((b) => paragraphs(b));
+  for (const para of paragraphs(cell)) {
+    let text = '';
+    let size = sizeOf(para, 'markStyle');
+    const rec = (inlines: unknown) => {
+      for (const i of arr<NfNode>(inlines)) {
+        if (i.kind === KIND.run) {
+          text += String(i.text ?? '');
+          const own = sizeOf(i, 'style');
+          if (own > 0) size = Math.max(Number.isFinite(size) ? size : 0, own);
+        }
+        if (Array.isArray(i.inlines)) rec(i.inlines);
+      }
+    };
+    rec(para.inlines);
+    const points = size > 0 ? size : DEFAULT_SIZE;
+    for (const word of text.split(/\s+/)) {
+      const width = word.length * points * CHAR_EM + 2 * CELL_MARGIN;
+      if (word && width > best.width) best = { word, width };
+    }
+  }
+  return best;
+}
+
+/**
+ * Narrow widths to fit `room`, in proportion, but no column below its minimum while others can
+ * give: a column that would fall under its minimum keeps the minimum (or its own width, if less)
+ * and the rest share what is left. Proportional when even the minimums do not fit.
+ */
+function fitColumns(
+  widths: number[],
+  minimums: number[],
+  room: number
+): number[] {
+  const all = widths.reduce((n, w) => n + w, 0);
+  const proportional = widths.map((w) => (w * room) / all);
+  const out = [...widths];
+  const fixed = new Set<number>();
+  for (let pass = 0; pass <= widths.length; pass += 1) {
+    const free = widths.map((_, i) => i).filter((i) => !fixed.has(i));
+    const taken = [...fixed].reduce((n, i) => n + out[i], 0);
+    const freeWidth = free.reduce((n, i) => n + widths[i], 0);
+    if (!free.length || !(freeWidth > 0) || !(room - taken > 0))
+      return proportional;
+    const factor = (room - taken) / freeWidth;
+    let again = false;
+    for (const i of free) {
+      out[i] = widths[i] * factor;
+      if (factor < 1 && out[i] < minimums[i]) {
+        out[i] = Math.min(minimums[i], widths[i]);
+        fixed.add(i);
+        again = true;
+      }
+    }
+    if (!again) break;
+  }
+  // even the minimums do not fit: in proportion, as before
+  return out.reduce((n, w) => n + w, 0) > room + 0.01 ? proportional : out;
+}
+
+/**
  * Column fit (QA-1): a column added to a table that fit between the margins would push it past
  * them, since every new cell brings its own width. The other columns narrow in proportion so each
  * row fits again, the new column keeping the width it was written with; each keeps its own unit
@@ -429,6 +515,25 @@ export const columnFitFinalizer: Finalizer = {
         continue;
       }
       if (total > room + 0.5) continue;
+      // each column's minimum: the widest its cells' longest words need. Only where every row has
+      // the same cells one to a column; with spans, rows narrow in proportion as before, so the
+      // columns stay aligned
+      const columnMinimum: number[] = [];
+      const counts = new Set(rows.map((r) => arr<NfNode>(r.cells).length));
+      const spanned = rows.some((r) =>
+        arr<NfNode>(r.cells).some((c) => {
+          const f = typeof c.style === 'string' ? now[c.style] ?? {} : {};
+          return Number(f.columnSpan) > 1;
+        })
+      );
+      if (counts.size === 1 && !spanned)
+        for (const row of rows)
+          arr<NfNode>(row.cells).forEach((cell, k) => {
+            columnMinimum[k] = Math.max(
+              columnMinimum[k] ?? 0,
+              contentMinimum(cell, now).width
+            );
+          });
       let changed = false;
       for (const row of rows) {
         const fresh = added(row);
@@ -438,14 +543,21 @@ export const columnFitFinalizer: Finalizer = {
         const keptWidth = kept.reduce((n, c) => n + points(c), 0);
         if (!Number.isFinite(freshWidth + keptWidth)) continue;
         if (freshWidth + keptWidth <= room + 0.5) continue;
-        const factor = (room - freshWidth) / keptWidth;
-        if (!(factor > 0)) continue;
+        if (!(room - freshWidth > 0)) continue;
+        // in proportion, but no column under what its longest word needs (review D7)
+        const fittedPts = fitColumns(
+          kept.map((c) => points(c)),
+          kept.map(
+            (c) => columnMinimum[arr<NfNode>(row.cells).indexOf(c)] ?? 0
+          ),
+          room - freshWidth
+        );
         const freshUnit = widthOf(now, fresh[0]).type;
-        for (const cell of kept) {
+        for (const [k, cell] of kept.entries()) {
           const own = widthOf(now, cell).type;
           const unit =
             own !== 'Auto' ? own : freshUnit !== 'Auto' ? freshUnit : 'Point';
-          const pts = points(cell) * factor;
+          const pts = fittedPts[k];
           const width =
             unit === 'Percent'
               ? Math.round((pts / total) * 100 * 100) / 100
@@ -475,6 +587,48 @@ export const columnFitFinalizer: Finalizer = {
         : []),
       ...fitted
     ];
+    // widths that leave a word narrower than itself are the write's to choose; it is told
+    const narrow: string[] = [];
+    for (const table of tablesOf(after.root)) {
+      const old = before.get(table.id);
+      const cells = arr<NfNode>(table.rows).flatMap((r) =>
+        arr<NfNode>(r.cells)
+      );
+      const touched =
+        !old ||
+        cells.some((c) => {
+          const b = before.get(c.id);
+          return (
+            !b ||
+            JSON.stringify(widthOf(was, b)) !== JSON.stringify(widthOf(now, c))
+          );
+        });
+      if (!touched) continue;
+      const grid = (
+        residue[table.id] as { hidden?: { grid?: unknown } } | undefined
+      )?.hidden?.grid;
+      const laidOut = Array.isArray(grid)
+        ? grid.reduce((n: number, w) => n + (Number(w) || 0), 0)
+        : availableWidth(after, table.id) ?? 0;
+      for (const cell of cells) {
+        const w = widthOf(now, cell);
+        const width =
+          w.type === 'Point'
+            ? Number(w.width)
+            : w.type === 'Percent' && laidOut > 0
+            ? (Number(w.width) / 100) * laidOut
+            : NaN;
+        if (!Number.isFinite(width)) continue;
+        const need = contentMinimum(cell, now);
+        if (need.word && width + 0.5 < need.width)
+          narrow.push(
+            `"${need.word}" in table ${table.id} needs about ${round(
+              need.width
+            )} pt and its column is ${round(width)} pt`
+          );
+      }
+    }
+    const unique = [...new Set(narrow)];
     return {
       ids,
       facts: summaries.length
@@ -486,7 +640,21 @@ export const columnFitFinalizer: Finalizer = {
               summary: summaries.join('; ')
             }
           ]
-        : []
+        : [],
+      ...(unique.length
+        ? {
+            warnings: [
+              {
+                code: 'column-too-narrow',
+                message: `Some text will wrap mid-word: ${unique
+                  .slice(0, 3)
+                  .join('; ')}${
+                  unique.length > 3 ? ` (and ${unique.length - 3} more)` : ''
+                }. Widen those columns if the text should stay on one line.`
+              }
+            ]
+          }
+        : {})
     };
   }
 };
