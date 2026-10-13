@@ -65,15 +65,14 @@ jobs:
           yarn --cwd packages/types build
           yarn --cwd packages/robin build
           (cd packages/types && yarn pack --filename ../../feathery-types.tgz)
-          (cd packages/robin && yarn pack --filename ../../feathery-robin.tgz)
+          # the packed robin package takes its types dependency from the tarball just built
+          (cd packages/robin && npm pkg set "dependencies.@feathery-org/types=file:$GITHUB_WORKSPACE/feathery-frontend/feathery-types.tgz" && yarn pack --filename ../../feathery-robin.tgz)
 
       - name: Test in hosted-forms
         working-directory: hosted-forms-next
         run: |
           yarn add ../feathery-react/v${{ github.event.pull_request.number }}.tgz
           if [[ "${{ github.base_ref }}" == feat/robin-v* ]]; then
-            # the robin package's own dependency on types resolves to the tarball built above
-            npm pkg set 'resolutions.@feathery-org/types=file:../feathery-frontend/feathery-types.tgz'
             yarn add ../feathery-frontend/feathery-types.tgz ../feathery-frontend/feathery-robin.tgz i18next@^23.16.8 react-i18next@^14.1.3
           fi
           yarn test
