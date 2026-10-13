@@ -126,13 +126,6 @@ export interface LiveDocumentAccessor {
   /** The form's Robin turn settled: every mounted document ends its editing turn. */
   finishTurn(): void;
   /**
-   * The business document type the mounted document's template declares, for the request context
-   * beside the descriptor. Always null today: nothing the SDK loads carries it yet. It will come
-   * from the document template's metadata (a declared type on the template the Generate Documents
-   * action names), read here once the form schema delivers it.
-   */
-  documentType(): string | null;
-  /**
    * Whether the form has a document element on any step, current or not: the server grants the
    * document tools per form from it, constant across that form's turns.
    */
@@ -225,9 +218,6 @@ export function liveDocumentAccessor(
     finishTurn() {
       // a session not yet created has no turn to finish
       for (const session of slotsOf(formKey)) session.peek()?.finishTurn();
-    },
-    documentType() {
-      return null;
     },
     hasDocumentElement: () => form.hasDocumentElement()
   };
