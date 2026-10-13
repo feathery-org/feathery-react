@@ -286,6 +286,23 @@ describe('HistoryPanel', () => {
     expect(onVersionsLoaded).toHaveBeenCalledWith(rows);
   });
 
+  it('reports only the versions it shows, so the editor groups the same list', async () => {
+    const rows = [
+      v({ name: 'Current one', seq: 3, is_current: true }),
+      v({ seq: 2, final_sha256: 'same', change_count: 0 }),
+      v({ name: 'Kept', seq: 1, final_sha256: 'same', change_count: 1 })
+    ];
+    const onVersionsLoaded = jest.fn();
+    const { findByText } = renderPanel(
+      makeHost(rows),
+      undefined,
+      onVersionsLoaded
+    );
+
+    await findByText('Current one');
+    expect(onVersionsLoaded).toHaveBeenCalledWith([rows[0], rows[2]]);
+  });
+
   it('shows a retry on load failure', async () => {
     const host = makeHost([]);
     host.listVersions

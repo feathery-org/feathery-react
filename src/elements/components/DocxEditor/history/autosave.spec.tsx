@@ -1003,6 +1003,33 @@ describe('useDocxHistorySession', () => {
     expect(host.closeVersion).not.toHaveBeenCalled();
   });
 
+  it('saves a session whose only change is accepting a suggestion', async () => {
+    // Accepting a tracked insertion leaves the same text, so a fingerprint that
+    // ignores revision marks would call it unchanged and lose the accept.
+    const pending = JSON.stringify({
+      sections: [
+        { blocks: [{ inlines: [{ text: 'Added', revisionIds: ['r1'] }] }] }
+      ],
+      revisions: [
+        { author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }
+      ]
+    });
+    const accepted = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'Added' }] }] }]
+    });
+    let doc = pending;
+    const { view, save } = setup({}, { serialize: () => doc });
+
+    doc = accepted;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][1].closeSession).toBe(true);
+  });
+
   it('still closes a session that saved before its edits were undone', async () => {
     jest.useFakeTimers();
     let doc = SFDT;

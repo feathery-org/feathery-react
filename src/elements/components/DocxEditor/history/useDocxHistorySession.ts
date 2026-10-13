@@ -269,26 +269,14 @@ export function useDocxHistorySession(
     };
     // Sessions with a stored save; only these have a backend version row.
     const savedSessions = new Set<string>();
-    // An unsaved session whose document still matches its start changed
-    // nothing, so it is never sent and leaves no version row.
-    const isUnsavedNoOp = (sessionId: string, current: string | null) => {
-      if (
-        savedSessions.has(sessionId) ||
-        documentWrites.pending() ||
-        acceptanceRef.current ||
-        !s0Ref.current ||
-        !current
-      )
-        return false;
-      try {
-        return (
-          contentHash(normalizeForDiff(JSON.parse(s0Ref.current))) ===
-          contentHash(normalizeForDiff(JSON.parse(current)))
-        );
-      } catch {
-        return false;
-      }
-    };
+    // An unsaved session whose document is exactly its start changed nothing,
+    // so it is never sent. Raw equality keeps accepting a suggestion a change.
+    const isUnsavedNoOp = (sessionId: string, current: string | null) =>
+      !savedSessions.has(sessionId) &&
+      !documentWrites.pending() &&
+      !acceptanceRef.current &&
+      !!s0Ref.current &&
+      current === s0Ref.current;
     // Close/checkpoint uploads mutate the same backend row. Keep them in one
     // FIFO so an older checkpoint can never complete after a newer final close.
     let closeQueue: Promise<void> = Promise.resolve();

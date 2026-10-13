@@ -295,8 +295,10 @@ export default function HistoryPanel({
     try {
       const rows = await host.listVersions();
       if (id === reqId.current) {
-        setVersions(hideNoOpVersions(rows));
-        onVersionsLoadedRef.current?.(rows);
+        // The editor folds and colours from the same list the panel shows.
+        const visible = hideNoOpVersions(rows);
+        setVersions(visible);
+        onVersionsLoadedRef.current?.(visible);
       }
     } catch {
       if (id === reqId.current) setError(true);
