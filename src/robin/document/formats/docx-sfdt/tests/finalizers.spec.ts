@@ -55,6 +55,46 @@ describe('restripe finalizer', () => {
   });
 });
 
+describe('a new table takes the look of the document\'s tables (Codex review D5)', () => {
+  // the flagship's banded table at sections[3].blocks[10]: write a new one after it with no fills
+  const newTableAfter = (rows: number, keepHeaderFill = false) => {
+    const s = state();
+    const source = tableAt(s.view.nf.root, 3, 10);
+    const control = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[3].blocks)[10];
+    const section = arr<NfNode>(s.view.nf.root.sections)[3];
+    const width = arr<NfNode>(arr<NfNode>(source.rows)[0].cells).length;
+    const headFill = keepHeaderFill ? { 'tmp:h': { shading: { backgroundColor: '#123456' } } } : {};
+    const row = (t: string, header = false) => ({
+      kind: 'row',
+      cells: Array.from({ length: width }, (_, k) => ({ kind: 'cell', ...(header && keepHeaderFill ? { style: 'tmp:h' } : {}), blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: `${t}${k}` }] }] }))
+    });
+    const r = prepareWrite(s, {
+      intent: 'Add a table.',
+      scope: { ids: [] },
+      formats: headFill,
+      changes: [{ kind: 'insert_after', anchor: control.id, container: shapeOf(section, docxTree), node: { kind: 'table', rows: [row('H', true), ...Array.from({ length: rows - 1 }, (_, i) => row(`B${i}`))] } }]
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+    const created = arr<NfNode>(arr<NfNode>(r.intended.root.sections)[3].blocks)[11];
+    const fills = arr<NfNode>(created.rows).map((x) => arr<NfNode>(x.cells).map((c) => fill(r.intended.formats, c)));
+    const sourceFills = arr<NfNode>(source.rows).map((x) => arr<NfNode>(x.cells).map((c) => fill(s.view.nf.formats, c)));
+    return { fills, sourceFills, facts: r.facts };
+  };
+
+  it('its header row takes the header fill and its body rows the bands of the table before it', () => {
+    const { fills, sourceFills, facts } = newTableAfter(5);
+    expect(fills[0]).toEqual(sourceFills[0]);
+    expect(new Set(fills.slice(1).map((r) => r[0])).size).toBeGreaterThan(1);
+    expect(fills.slice(1).map((r) => r[0])).toEqual(sourceFills.slice(1, 5).map((r) => r[0]));
+    expect(facts.some((f) => f.kind === 'finalizer' && f.name === 'restripe')).toBe(true);
+  });
+
+  it('a header fill the write gives is kept', () => {
+    const { fills } = newTableAfter(5, true);
+    expect(fills[0].every((f) => f === '#123456')).toBe(true);
+  });
+});
+
 describe('table identity finalizer', () => {
   it('a copied bound table gets its own table id; the original keeps its own', () => {
     const s = state();

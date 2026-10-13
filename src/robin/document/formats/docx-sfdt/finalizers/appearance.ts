@@ -132,16 +132,24 @@ export const restripeFinalizer: Finalizer = {
      * table before, moved or copied) restripes whole from that table's banding; one that only
      * gained cells gives each new cell its row's look.
      */
-    const work: Array<{ table: NfNode; source: NfNode; whole: boolean }> = [];
+    const work: Array<{
+      table: NfNode;
+      sources: NfNode[];
+      whole: boolean;
+      fresh?: boolean;
+    }> = [];
+    // every table in document order, for a new table's neighbours
+    const order: NfNode[] = [];
     const rec = (n: unknown) => {
       if (Array.isArray(n)) return n.forEach(rec);
       if (!isObject(n)) return;
       if (n.kind === KIND.table) {
         const table = n as NfNode;
+        order.push(table);
         const old = before.get(table.id);
         if (old) {
           if (rowIds(old) !== rowIds(table))
-            work.push({ table, source: old, whole: true });
+            work.push({ table, sources: [old], whole: true });
           else if (
             arr<NfNode>(table.rows).some(
               (r) =>
@@ -153,7 +161,7 @@ export const restripeFinalizer: Finalizer = {
                   .join(',')
             )
           )
-            work.push({ table, source: old, whole: false });
+            work.push({ table, sources: [old], whole: false });
         } else {
           const counts = new Map<NfNode, number>();
           for (const r of arr<NfNode>(table.rows)) {
@@ -161,13 +169,28 @@ export const restripeFinalizer: Finalizer = {
             if (from) counts.set(from, (counts.get(from) ?? 0) + 1);
           }
           const source = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
-          if (source) work.push({ table, source: source[0], whole: true });
+          // a table of new rows only takes the look of the document's tables: the nearest one
+          // before it with banding, else the nearest after it (resolved below, once known)
+          work.push({
+            table,
+            sources: source ? [source[0]] : [],
+            whole: true,
+            fresh: !source
+          });
         }
       }
       for (const [k, v] of Object.entries(n))
         if (k !== 'binding' && k !== 'pending') rec(v);
     };
     rec(after.root);
+    for (const item of work) {
+      if (!item.fresh) continue;
+      const at = order.indexOf(item.table);
+      const kept = (t: NfNode) => before.get(t.id);
+      item.sources = [...order.slice(0, at).reverse(), ...order.slice(at + 1)]
+        .map(kept)
+        .filter((t): t is NfNode => !!t && t.kind === KIND.table);
+    }
     if (!work.length) return { ids: [], facts: [] };
     // the document before is a settled view, its binding state cached; the working copy is read
     // once, before any cell is restriped
@@ -202,12 +225,21 @@ export const restripeFinalizer: Finalizer = {
     };
     walk(after.root, null, null, 0);
     const working = { placement: (id: string) => index.get(id) };
-    for (const { table, source, whole } of work) {
-      const appearance = collectTableAppearance(
-        nativeAt(beforeNative, pathOf(before, source.id))
-      );
-      const banding = appearance ? detectTableBanding(appearance) : null;
-      if (!banding) continue;
+    for (const { table, sources, whole } of work) {
+      // the first source whose banding reads
+      let source: NfNode | null = null;
+      let banding: ReturnType<typeof detectTableBanding> = null;
+      for (const candidate of sources) {
+        const appearance = collectTableAppearance(
+          nativeAt(beforeNative, pathOf(before, candidate.id))
+        );
+        banding = appearance ? detectTableBanding(appearance) : null;
+        if (banding) {
+          source = candidate;
+          break;
+        }
+      }
+      if (!banding || !source) continue;
       const block = nativeAt(afterNative, pathOf(working, table.id));
       if (!block) continue;
       // each fill as this table writes it, from a cell that has it
@@ -246,8 +278,27 @@ export const restripeFinalizer: Finalizer = {
           }
         if (!whole) return;
         const role = roles[i]?.role;
-        if (i < banding.headerRows || role === 'aggregate' || role === 'header')
+        // a header row with no fill of its own takes the source's header fill, column by column
+        if (i < banding.headerRows) {
+          const heads = arr<NfNode>(arr<NfNode>(source?.rows)[i]?.cells);
+          cells.forEach((cell, k) => {
+            const own =
+              typeof cell.style === 'string'
+                ? formats.get(cell.style)?.shading
+                : undefined;
+            if (fillKey(own) !== 'NONE') return;
+            const head = heads[Math.min(k, heads.length - 1)];
+            const shading =
+              head && typeof head.style === 'string'
+                ? before.nf.formats[head.style]?.shading
+                : undefined;
+            const want = fillKey(shading);
+            if (want === 'NONE') return;
+            if (setShading(cell, want, exemplars, formats)) ids.add(cell.id);
+          });
           return;
+        }
+        if (role === 'aggregate' || role === 'header') return;
         const want = bandedShadingForRow(banding, i);
         if (want === undefined) return;
         for (const cell of cells)

@@ -745,6 +745,27 @@ describe('a nested table written with only its own width (Codex review 4)', () =
   });
 });
 
+describe('a new table takes the look of the document\'s tables (Codex review D5)', () => {
+  it('written with no fills after a banded table, it lands with that table\'s header fill and bands', async () => {
+    await fresh();
+    const control = await at(['sections', 3, 'blocks', 10]);
+    const source = await at(['sections', 3, 'blocks', 10, 'blocks', 0]);
+    const sid = await at(['sections', 3]);
+    const n = await read([sid, source]);
+    const width = n[source].rows[0].cells.length;
+    const row = (t: string) => ({ kind: 'row', cells: Array.from({ length: width }, (_, k) => ({ kind: 'cell', blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: `${t}${k}` }] }] })) });
+    const r = await dispatch('write', { intent: 'Add a table.', scope: { ids: [] }, changes: [{ kind: 'insert_after', anchor: control, container: n[sid].shape, node: { kind: 'table', rows: [row('H'), row('A'), row('B'), row('C')] } }] });
+    expect(r).toEqual(expect.objectContaining({ ok: true, committed: true }));
+    const doc = JSON.parse(await lane.call<string>('settled'));
+    const fillsOf = (t: any) => t.rows.map((x: any) => { const c = String(x.cells[0].cellFormat?.shading?.backgroundColor ?? 'none').toUpperCase(); return c === 'EMPTY' ? 'NONE' : c; });
+    const created = doc.sections[3].blocks[11];
+    const original = doc.sections[3].blocks[10].blocks[0];
+    expect(fillsOf(created)[0]).toBe(fillsOf(original)[0]);
+    expect(fillsOf(created)[0]).not.toBe('NONE');
+    expect(fillsOf(created).slice(1)).toEqual(fillsOf(original).slice(1, 4));
+  });
+});
+
 describe('the descriptor (protocol 2, section 9): the outline itself and the selection read from the editor', () => {
   const ownText = (p: any): string => {
     let out = '';
