@@ -5,17 +5,12 @@
  * bridge `turnId`. The journal returns the recorded response, without re-executing, to a resent
  * identical write, and refuses a different second write with `one-write-per-message`.
  *
- * The retry policy around refusals and conflicts is the server's loop (contract 7.1, 7.2), not the
- * engine's; `turnPolicy` states it here once, as a pure function over a turn's results, so the
- * engine's tests and any in-browser driver run the same rules the server mirrors: stop after a
- * committed write, stop after three conflicts, stop when a refused write is sent again unchanged,
- * stop on an uncertain or terminal result.
+ * When to stop retrying refusals and conflicts is the server's loop (contract 7.1, 7.2), not the
+ * engine's.
  */
-import { ERROR_CODES, VerbResult, WriteInput } from './envelope';
-import { canonicalJson, hash64, isPlainObject } from './tree';
+import { WriteInput } from './envelope';
+import { canonicalJson, hash64 } from './tree';
 
-/** Conflict rounds per message before the server tells the user plainly (D5). */
-export const CONFLICT_CAP = 3;
 /** Turns the journal remembers; a message's writes all land within one turn. */
 export const JOURNAL_TURNS = 50;
 
@@ -52,73 +47,4 @@ export class WriteJournal<R = unknown> {
       this.entries.delete(oldest);
     }
   }
-}
-
-export type ResultClass =
-  | 'committed'
-  | 'dry-run'
-  | 'read'
-  | 'refused'
-  | 'conflict'
-  | 'uncertain'
-  | 'terminal';
-
-export function classifyResult(result: VerbResult): ResultClass {
-  if (result.ok) {
-    if (!('committed' in result)) return 'read';
-    return result.committed ? 'committed' : 'dry-run';
-  }
-  switch ((result as { error?: { code?: string } }).error?.code) {
-    case ERROR_CODES.refused:
-      return 'refused';
-    case ERROR_CODES.conflict:
-      return 'conflict';
-    case ERROR_CODES.uncertain:
-      return 'uncertain';
-    default:
-      return 'terminal';
-  }
-}
-
-export interface TurnStep {
-  /** The write's signature, for writes; absent for the read verbs. */
-  signature?: string;
-  result: VerbResult;
-}
-
-export type TurnDecision =
-  | { next: 'continue' }
-  | {
-      next: 'stop';
-      reason:
-        | 'committed'
-        | 'conflict-cap'
-        | 'no-progress'
-        | 'uncertain'
-        | 'terminal';
-    };
-
-export function turnPolicy(steps: TurnStep[]): TurnDecision {
-  let conflicts = 0;
-  const refused = new Set<string>();
-  for (const step of steps) {
-    const kind = classifyResult(step.result);
-    if (kind === 'committed') return { next: 'stop', reason: 'committed' };
-    if (kind === 'uncertain') return { next: 'stop', reason: 'uncertain' };
-    if (kind === 'terminal') return { next: 'stop', reason: 'terminal' };
-    if (kind === 'conflict') {
-      conflicts += 1;
-      if (conflicts >= CONFLICT_CAP)
-        return { next: 'stop', reason: 'conflict-cap' };
-    }
-    if (kind === 'refused' && step.signature !== undefined) {
-      const retry = isPlainObject(step.result)
-        ? (step.result as { retry?: string }).retry
-        : undefined;
-      if (refused.has(step.signature) || retry === 'do_not_retry')
-        return { next: 'stop', reason: 'no-progress' };
-      refused.add(step.signature);
-    }
-  }
-  return { next: 'continue' };
 }
