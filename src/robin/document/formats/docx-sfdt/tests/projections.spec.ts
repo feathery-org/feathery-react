@@ -109,17 +109,60 @@ describe('accept and reject projections', () => {
 });
 
 describe('normalizations (each a true positive and a true negative)', () => {
-  it('N1 page-number text in a header or footer only', () => {
+  // N1: a computed field's cached result belongs to the editor (measured in the lane: PAGE,
+  // NUMPAGES and SECTIONPAGES are rewritten on open, case and switches aside; other fields keep
+  // what was written)
+  const fieldInlines = (code: string, result: string, id: string): NfNode[] => [
+    { id: `${id}a`, kind: 'run', text: 'Page ' },
+    { id: `${id}b`, kind: 'field', fieldType: 0, hasFieldEnd: true },
+    { id: `${id}c`, kind: 'run', text: ` ${code} ` },
+    { id: `${id}d`, kind: 'field', fieldType: 2 },
+    { id: `${id}e`, kind: 'run', text: result },
+    { id: `${id}f`, kind: 'field', fieldType: 1 }
+  ];
+  /** The document with one paragraph's inlines replaced: in the body, in a table cell, or in a footer. */
+  const withField = (where: 'body' | 'cell' | 'footer', code: string, result: string) => {
     const nf = fresh();
-    const footerRun = all(nf).find((n) => n.kind === 'run' && /^\d+$/.test(String(n.text)));
-    expect(footerRun).toBeDefined();
-    const before = JSON.stringify(nf);
-    (footerRun as NfNode).text = '99';
-    expect(JSON.stringify(N1.apply(nf))).toBe(JSON.stringify(N1.apply(JSON.parse(before))));
-    const body = all(nf).find((n) => n.kind === 'run' && /[a-z]/.test(String(n.text))) as NfNode;
-    const changed = JSON.parse(JSON.stringify(nf));
-    (all(changed).find((n) => n.id === body.id) as NfNode).text = 'Different';
-    expect(JSON.stringify(N1.apply(nf))).not.toBe(JSON.stringify(N1.apply(changed)));
+    const paragraphs = all(nf).filter((n) => n.kind === 'paragraph');
+    const inCell = new Set<string>();
+    const inStory = new Set<string>();
+    const rec = (node: NfNode, keys: string[]) => {
+      if (keys.includes('cells')) inCell.add(node.id);
+      if (keys.some((k) => k.includes('/'))) inStory.add(node.id);
+      for (const key of docxTree.childLists(node)) {
+        const list = key.split('/').reduce((o: any, k) => o?.[k], node);
+        for (const child of Array.isArray(list) ? list : []) rec(child as NfNode, [...keys, key]);
+      }
+    };
+    rec(nf.root, []);
+    const target =
+      where === 'cell'
+        ? paragraphs.find((n) => inCell.has(n.id))
+        : where === 'footer'
+        ? paragraphs.find((n) => inStory.has(n.id))
+        : paragraphs.find((n) => !inCell.has(n.id) && !inStory.has(n.id) && ownText(n));
+    if (!target) throw new Error(`no ${where} paragraph`);
+    target.inlines = fieldInlines(code, result, `${target.id}x`);
+    return nf;
+  };
+  const same = (a: NormalForm, b: NormalForm) => canonicalJson(N1.apply(a)) === canonicalJson(N1.apply(b));
+
+  it('N1 a computed field result is the editor\'s wherever it sits: body, table cell, footer; PAGE, NUMPAGES, SECTIONPAGES', () => {
+    expect(same(withField('body', 'PAGE', '1'), withField('body', 'PAGE', '4'))).toBe(true);
+    expect(same(withField('cell', 'NUMPAGES \\* Arabic', '1'), withField('cell', 'NUMPAGES \\* Arabic', '5'))).toBe(true);
+    expect(same(withField('footer', 'sectionpages', '9'), withField('footer', 'sectionpages', '2'))).toBe(true);
+  });
+
+  it('N1 leaves every other field result and every digit outside a field as written', () => {
+    expect(same(withField('body', 'MERGEFIELD Name', '1'), withField('body', 'MERGEFIELD Name', '4'))).toBe(false);
+    expect(same(withField('footer', 'SECTION', '1'), withField('footer', 'SECTION', '2'))).toBe(false);
+    // the code itself is content: a PAGE field is not a NUMPAGES field
+    expect(same(withField('body', 'PAGE', '1'), withField('body', 'NUMPAGES', '1'))).toBe(false);
+    const nf = fresh();
+    const digits = all(nf).find((n) => n.kind === 'run' && typeof n.text === 'string' && /[a-z]/i.test(n.text)) as NfNode;
+    const changed = JSON.parse(JSON.stringify(nf)) as NormalForm;
+    (all(changed).find((n) => n.id === digits.id) as NfNode).text = '12345';
+    expect(same(nf, changed)).toBe(false);
   });
 
   it('each normalization returns its input when it has nothing left to change, a new document otherwise', () => {

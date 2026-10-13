@@ -677,6 +677,41 @@ describe("Robin's commits reach the editor's change handling (review: dirty, aut
   });
 });
 
+describe('N1: a computed field\'s cached result belongs to the editor (rule 12: body, table cell)', () => {
+  const field = (code: string, cached: string) => [
+    { text: 'Page ' },
+    { kind: 'field', fieldType: 0, hasFieldEnd: true },
+    { text: ` ${code} ` },
+    { kind: 'field', fieldType: 2 },
+    { text: cached },
+    { kind: 'field', fieldType: 1 }
+  ];
+
+  it('a body PAGE field written with the wrong number lands, the editor computes it, and the proof passes under N1', async () => {
+    await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const sid = await at(['sections', 3]);
+    const n = await read([pid, sid]);
+    const r = await dispatch('write', { intent: 'Add a page number.', scope: { ids: [] }, changes: [{ kind: 'insert_after', anchor: pid, container: n[sid].shape, node: { style: n[pid].style, inlines: field('PAGE', '1') } }] });
+    expect(r).toEqual(expect.objectContaining({ ok: true, committed: true }));
+    expect(r.trace.proof.normalizations).toContain('N1');
+    const doc = JSON.parse(await lane.call<string>('settled'));
+    const texts = (doc.sections[3].blocks[17].inlines as any[]).map((i) => i.text ?? `<${i.fieldType}>`);
+    expect(texts.join('|')).toMatch(/PAGE \|<2>\|[2-9]\|<1>$/);
+  });
+
+  it('a NUMPAGES field in a table cell, written with the wrong count, lands the same way', async () => {
+    await fresh();
+    const hits = (await dispatch('find', { kind: 'cell' })).hits as Array<{ id: string }>;
+    const cells = await read(hits.slice(0, 1).map((h) => h.id));
+    const cell = Object.values(cells)[0] as any;
+    const paragraph = (cell.blocks ?? []).find((b: any) => b.kind === 'paragraph');
+    const r = await dispatch('write', { intent: 'Count the pages.', scope: { ids: [] }, changes: [{ kind: 'insert_after', anchor: paragraph.id, container: cell.shape, node: { style: paragraph.style, inlines: field('NUMPAGES', '99') } }] });
+    expect(r).toEqual(expect.objectContaining({ ok: true, committed: true }));
+    expect(r.trace.proof.normalizations).toContain('N1');
+  });
+});
+
 describe('the descriptor (protocol 2, section 9): the outline itself and the selection read from the editor', () => {
   const ownText = (p: any): string => {
     let out = '';

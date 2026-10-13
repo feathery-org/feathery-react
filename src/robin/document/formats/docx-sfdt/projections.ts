@@ -11,7 +11,8 @@
  *
  * The proof admits exactly these differences:
  *
- *   N1  a PAGE field's cached text in a header or footer drifts with layout
+ *   N1  a computed field's cached result belongs to the editor: the editor rewrites a PAGE,
+ *       NUMPAGES or SECTIONPAGES result on open, wherever the field sits
  *   N2  created runs and marks get an empty character format (absorbed: the normal form never
  *       references an empty format, and this drops any reference to one)
  *   N3  `insertText` writes `bidi: false` into the character format
@@ -348,21 +349,56 @@ const textOf = (n: NfNode): string =>
     .map((r) => String(r.text ?? ''))
     .join('');
 
+/**
+ * The field codes whose cached result the editor recomputes when it opens a document, measured in
+ * the headless lane: PAGE, NUMPAGES and SECTIONPAGES are rewritten (whatever their case and
+ * switches); SECTION, DATE, TIME, AUTHOR, REF, MERGEFIELD, HYPERLINK, FILENAME and TOC keep what
+ * was written.
+ */
+const COMPUTED_FIELDS = new Set(['PAGE', 'NUMPAGES', 'SECTIONPAGES']);
+
+/** A paragraph's inline nodes in reading order, through inline controls. */
+function inlineOrder(paragraph: NfNode): NfNode[] {
+  const out: NfNode[] = [];
+  const rec = (inlines: unknown) => {
+    for (const i of arr<NfNode>(inlines)) {
+      out.push(i);
+      if (Array.isArray(i.inlines)) rec(i.inlines);
+    }
+  };
+  rec(paragraph.inlines);
+  return out;
+}
+
 export const N1: Normalization = {
   name: 'N1',
+  // a computed field's cached result belongs to the editor, wherever the field sits
   apply: (nf) =>
-    eachNode(nf, (n, inStory) => {
-      if (
-        inStory &&
-        n.kind === KIND.run &&
-        typeof n.text === 'string' &&
-        /^\d+$/.test(n.text) &&
-        n.text !== '#'
-      ) {
-        n.text = '#';
-        return true;
+    eachNode(nf, (n) => {
+      if (n.kind !== KIND.paragraph) return false;
+      let changed = false;
+      const open: Array<{ code: string; result: boolean }> = [];
+      for (const i of inlineOrder(n)) {
+        const top = open[open.length - 1];
+        if (i.kind === KIND.field && i.fieldType === 0)
+          open.push({ code: '', result: false });
+        else if (i.kind === KIND.field && i.fieldType === 2) {
+          if (top) top.result = true;
+        } else if (i.kind === KIND.field && i.fieldType === 1) open.pop();
+        else if (i.kind === KIND.run && top && typeof i.text === 'string') {
+          if (!top.result) top.code += i.text;
+          else if (
+            COMPUTED_FIELDS.has(
+              top.code.trim().split(/\s+/)[0].toUpperCase()
+            ) &&
+            i.text !== '#'
+          ) {
+            i.text = '#';
+            changed = true;
+          }
+        }
       }
-      return false;
+      return changed;
     })
 };
 
