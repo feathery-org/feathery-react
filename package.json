@@ -160,7 +160,7 @@
     "scriptjs": "^2.5.9",
     "streamdown": "2.4.0",
     "uuid": "^8.3.2",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "jest": {
     "collectCoverage": false,
