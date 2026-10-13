@@ -227,10 +227,64 @@ function movesOf(
   return out;
 }
 
+/** An inline's length in its paragraph's own text: a run's text, a control's runs, else none. */
+function textLength(n: NfNode): number {
+  if (n.kind === KIND.run) return String(n.text ?? '').length;
+  return arr<NfNode>(n.inlines).reduce((k, c) => k + textLength(c), 0);
+}
+
 /**
- * Carry the bookmarks of a move's inserted copy back onto the copy rejecting restores: the two are
- * walked together, and each inline list of the restored copy takes the inserted copy's sequence,
- * its own inlines in place of the inserted copy's non-bookmark ones.
+ * Put bookmarks into an inline list at own-text positions: each goes before the first inline that
+ * starts at or after its position, a run it falls inside being split there; a bookmark at the end
+ * of the text it came from goes at the end of this one, whatever text the person changed.
+ */
+function placeBookmarks(
+  list: NfNode[],
+  marks: Array<{ at: number; end: boolean; node: NfNode }>
+): NfNode[] {
+  const total = list.reduce((k, x) => k + textLength(x), 0);
+  const pending = marks.map((m) => ({
+    ...m,
+    at: m.end ? total : Math.min(m.at, total)
+  }));
+  const out: NfNode[] = [];
+  let at = 0;
+  const flush = (upTo: number) => {
+    for (let m = pending[0]; m && m.at <= upTo; m = pending[0]) {
+      out.push(m.node);
+      pending.shift();
+    }
+  };
+  for (const x of list) {
+    flush(at);
+    const len = textLength(x);
+    // a bookmark inside this run: split the run there, its halves keeping its fields
+    while (
+      x.kind === KIND.run &&
+      pending.length &&
+      pending[0].at > at &&
+      pending[0].at < at + len
+    ) {
+      const cut = pending[0].at - at;
+      const text = String(x.text ?? '');
+      out.push({ ...clone(x), id: x.id, text: text.slice(0, cut) });
+      x.text = text.slice(cut);
+      delete (x as { id?: string }).id;
+      at += cut;
+      flush(at);
+    }
+    out.push(x);
+    at += textLength(x);
+  }
+  flush(Number.POSITIVE_INFINITY);
+  return out;
+}
+
+/**
+ * Carry the bookmarks of a move's inserted copy back onto the copy rejecting restores. A bookmark's
+ * place in an inline list is a position in the paragraph's own text, never a child index, because
+ * the person may have split or joined the moved copy's runs (formatting part of it) before the
+ * reject: each bookmark goes back at its text position (its end position, if it closed the text).
  */
 function carryBookmarks(to: NfNode, from: NfNode): void {
   const walk = (a: NfNode, b: NfNode) => {
@@ -239,17 +293,19 @@ function carryBookmarks(to: NfNode, from: NfNode): void {
       const listB = listOf(b, key) as NfNode[] | undefined;
       if (!listA || !listB) continue;
       if (key === 'inlines' || key.endsWith('/inlines')) {
+        const totalB = listB.reduce((k, x) => k + textLength(x), 0);
+        const marks: Array<{ at: number; end: boolean; node: NfNode }> = [];
+        let at = 0;
+        for (const x of listB) {
+          if (x.kind === KIND.bookmark)
+            marks.push({ at, end: at === totalB && at > 0, node: clone(x) });
+          else at += textLength(x);
+        }
         const own = listA.filter((x) => x.kind !== KIND.bookmark);
-        if (own.length !== listB.filter((x) => x.kind !== KIND.bookmark).length)
-          continue;
-        let k = 0;
-        const merged = listB.map((x) =>
-          x.kind === KIND.bookmark ? clone(x) : own[k++]
-        );
-        listA.splice(0, listA.length, ...merged);
-        merged.forEach((x) => {
-          if (x.kind !== KIND.bookmark) walk(x, listB[merged.indexOf(x)]);
-        });
+        const ownB = listB.filter((x) => x.kind !== KIND.bookmark);
+        // nested inline lists (a control's) pair up when the two copies hold the same controls
+        if (own.length === ownB.length) own.forEach((x, k) => walk(x, ownB[k]));
+        listA.splice(0, listA.length, ...placeBookmarks(own, marks));
         continue;
       }
       if (listA.length !== listB.length) continue;

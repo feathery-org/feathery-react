@@ -318,6 +318,11 @@ const api = {
     return { start: sel.startOffset, end: sel.endOffset, text: String(sel.text ?? '') };
   },
 
+  /** Test support: the person bolds what is selected, as the toolbar's Bold does. */
+  boldSelection(): void {
+    (live() as any).selection.characterFormat.bold = true;
+  },
+
   /** The descriptor the form would send now (section 9), the selection read from the editor. */
   descriptor() {
     if (!session) throw new Error('no session');
