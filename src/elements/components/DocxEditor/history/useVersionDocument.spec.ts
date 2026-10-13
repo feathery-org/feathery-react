@@ -474,6 +474,105 @@ describe('useVersionDocument', () => {
     );
   });
 
+  it('opens the row on its own when a folded session mixes a person and Robin', async () => {
+    const text = (t: string) => ({
+      sections: [{ blocks: [{ inlines: [{ text: t }] }] }]
+    });
+    const close = (sessionId: string, from: string, to: string) =>
+      registerLocalVersionArtifacts(sessionId, {
+        finalSfdt: JSON.stringify(text(to)),
+        changes: diffSession(
+          text(from),
+          [{ sfdt: text(to), author: 'you' }],
+          sessionId
+        )
+      });
+    close('mix-a', 'Hello', 'Hello Alice');
+    close('mix-b', 'Hello Alice', 'Hello Alice and Bob');
+    const mixed = version({
+      id: 'ma',
+      session_id: 'mix-a',
+      seq: 1,
+      authors: [
+        { kind: 'user', label: 'You' },
+        { kind: 'assistant', label: 'Robin' }
+      ],
+      actor_label: 'alice@x.io'
+    });
+    const head = version({
+      id: 'mb',
+      session_id: 'mix-b',
+      seq: 2,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'bob@x.io'
+    });
+
+    const h = host();
+    const { result } = renderHook(() =>
+      useVersionDocument(h, head, { earlier: [mixed], preceding: null })
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const authors = JSON.parse(must(result.current.sfdt)).revisions.map(
+      (r: any) => r.author
+    );
+    expect(Array.from(new Set(authors))).toEqual(['you']);
+    clearLocalVersionArtifacts('mix-a', JSON.stringify(text('Hello Alice')));
+    clearLocalVersionArtifacts(
+      'mix-b',
+      JSON.stringify(text('Hello Alice and Bob'))
+    );
+  });
+
+  it('counts the approved Robin edits of every folded session', async () => {
+    const text = (t: string) => ({
+      sections: [{ blocks: [{ inlines: [{ text: t }] }] }]
+    });
+    const accepted = diffSession(
+      text('Hello'),
+      [{ sfdt: text('Hello Robin'), author: 'robin' }],
+      'ok-a'
+    );
+    accepted.confirmed = true;
+    registerLocalVersionArtifacts('ok-a', {
+      finalSfdt: JSON.stringify(text('Hello Robin')),
+      changes: accepted
+    });
+    registerLocalVersionArtifacts('ok-b', {
+      finalSfdt: JSON.stringify(text('Hello Robin and Bob')),
+      changes: diffSession(
+        text('Hello Robin'),
+        [{ sfdt: text('Hello Robin and Bob'), author: 'you' }],
+        'ok-b'
+      )
+    });
+    const robin = version({
+      id: 'oa',
+      session_id: 'ok-a',
+      seq: 1,
+      authors: [{ kind: 'assistant', label: 'Robin' }]
+    });
+    const bob = version({
+      id: 'ob',
+      session_id: 'ok-b',
+      seq: 2,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'bob@x.io'
+    });
+
+    const h = host();
+    const { result } = renderHook(() =>
+      useVersionDocument(h, bob, { earlier: [robin], preceding: null })
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.degraded).toBe(false);
+    expect(result.current.approvedCount).toBe(1);
+    clearLocalVersionArtifacts('ok-a', JSON.stringify(text('Hello Robin')));
+    clearLocalVersionArtifacts(
+      'ok-b',
+      JSON.stringify(text('Hello Robin and Bob'))
+    );
+  });
+
   it('falls back to the row version when a folded session has no snapshot', async () => {
     const h = host({ fetchVersionFile: jest.fn() });
     const lost = version({ id: 'lost', session_id: 'lost', seq: 1 });

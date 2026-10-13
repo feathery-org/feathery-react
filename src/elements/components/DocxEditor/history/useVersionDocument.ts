@@ -15,8 +15,10 @@ import {
 import { DocxHistoryHost, DocxVersion } from './types';
 import { parseChangeList } from './validation';
 import {
+  approvedEditCount,
   diffFoldedSessions,
   FoldedSession,
+  mixesPersonAndRobin,
   sessionAuthorKey,
   sessionStart
 } from './foldedSessions';
@@ -389,6 +391,8 @@ async function resolveFolded(
 ): Promise<ResolvedVersion> {
   try {
     const members = [...folded.earlier, version].sort((a, b) => a.seq - b.seq);
+    if (members.some(mixesPersonAndRobin))
+      return await resolveAndCache(host, version);
     const artifacts = await Promise.all(
       members.map((member) => versionArtifacts(host, member))
     );
@@ -404,12 +408,14 @@ async function resolveFolded(
         ? JSON.parse(before.finalSfdt)
         : sessionStart(sessions[0]);
       const changes = start && diffFoldedSessions(start, sessions);
-      if (changes)
-        return buildFromFinal(
+      if (changes) {
+        const combined = buildFromFinal(
           sessions[sessions.length - 1].finalSfdt,
           changes,
           null
         );
+        return { ...combined, approvedCount: approvedEditCount(sessions) };
+      }
     }
   } catch {
     // Fall through to the single-version view.

@@ -1,6 +1,8 @@
 import {
+  approvedEditCount,
   diffFoldedSessions,
   FoldedSession,
+  mixesPersonAndRobin,
   sessionAuthorKey,
   sessionStart
 } from './foldedSessions';
@@ -50,6 +52,27 @@ describe('sessionAuthorKey', () => {
         version({ authors: [{ kind: 'user', label: 'You' }], actor_label: '' })
       )
     ).toBe('you');
+  });
+});
+
+describe('mixesPersonAndRobin', () => {
+  const version = (kinds: string[]) =>
+    ({ authors: kinds.map((kind) => ({ kind, label: kind })) } as any);
+
+  it('flags a session a person and Robin both edited', () => {
+    expect(mixesPersonAndRobin(version(['user', 'assistant']))).toBe(true);
+    expect(mixesPersonAndRobin(version(['user']))).toBe(false);
+    expect(mixesPersonAndRobin(version(['assistant']))).toBe(false);
+  });
+});
+
+describe('approvedEditCount', () => {
+  it('counts the edit groups of confirmed sessions only', () => {
+    const confirmed = session('Hello', 'Hello there', 'robin');
+    must(confirmed.changes).confirmed = true;
+    const plain = session('Hello there', 'Hello there again', 'you');
+    expect(approvedEditCount([confirmed, plain])).toBe(1);
+    expect(approvedEditCount([plain])).toBe(0);
   });
 });
 
