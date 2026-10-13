@@ -290,11 +290,11 @@ export class DocumentSession {
     }
     const write: WriteInput = parsed.value;
     trace.requested(write);
-    if (this.host.readOnly()) return readOnlyResult();
-
-    // a resent identical write returns what it committed; a different one is the turn's next card
+    // a resent identical write returns what it committed, whatever the editor's state now; a
+    // different one is the turn's next card
     const recorded = this.journal.replay(turnId, write);
     if (recorded) return recorded;
+    if (this.host.readOnly()) return readOnlyResult();
     const changeSetId = this.journal.nextChangeSet(turnId);
 
     const before = this.state;

@@ -573,6 +573,46 @@ describe('document session: the four verbs end to end', () => {
     );
   });
 
+  it('a resent recorded write answers with its record even after the editor turned read-only (review 6)', () => {
+    const { host, call } = mount();
+    const n1 = nodeOf(call('read', { ids: ['n1'] }), 'n1');
+    const write = {
+      intent: 'Retitle.',
+      scope: { ids: ['n1'] },
+      changes: [
+        {
+          kind: 'replace',
+          id: 'n1',
+          base: n1.base,
+          node: { text: 'Proposal', style: 'f1' }
+        }
+      ]
+    };
+    const first = call('write', write, 'turn-ro');
+    expect(first).toEqual(expect.objectContaining({ committed: true }));
+    host.locked = true;
+    expect(call('write', write, 'turn-ro')).toEqual(first);
+    // a write the journal has no record of is read-only
+    expect(
+      call(
+        'write',
+        {
+          ...write,
+          intent: 'Other.',
+          changes: [
+            { ...write.changes[0], node: { text: 'Other', style: 'f1' } }
+          ]
+        },
+        'turn-ro'
+      )
+    ).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ code: 'document.read_only' })
+      })
+    );
+  });
+
   it('a failed proof rolls back byte-equal and refuses with the trace saying so', () => {
     const { host, call } = mount();
     const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2');
