@@ -5,7 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ReadResult, VerbResult, validateVerbResult } from '../../../envelope';
-import { clearPackRegistry, conformanceProblems, registerPack } from '../../../pack';
+import { conformanceProblems, packProblems } from '../../../pack';
 import { DocumentSession } from '../../../session';
 import { baseOf, NfNode, shapeOf } from '../../../tree';
 import { makeView } from '../../../view';
@@ -56,13 +56,11 @@ function mount(doc = flagship) {
 }
 const nodeOf = (r: VerbResult, id: string) => (r as ReadResult).nodes.find((n) => n.id === id) as ReadResult['nodes'][number];
 
-afterEach(() => clearPackRegistry());
-
 describe('the format pack', () => {
   it('is complete and passes the conformance suite over the corpus', () => {
     const fixtures = Object.fromEntries(fs.readdirSync(corpus).map((f) => [f, fs.readFileSync(path.join(corpus, f), 'utf8')]));
     expect(conformanceProblems(docxPack, fixtures)).toEqual([]);
-    expect(() => registerPack(docxPack)).not.toThrow();
+    expect(packProblems(docxPack)).toEqual([]);
   });
 
   it('describes the document and reads bindings with their readers and computed values', () => {

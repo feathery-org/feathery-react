@@ -1,11 +1,10 @@
-// Robin's document engine for a mounted editor: the docx pack registered once, and one session per
-// opened document, mounted under the form instance so the form's `liveDocument` accessor reaches it.
+// Robin's document engine for a mounted editor: one session per opened document, mounted under
+// the form instance so the form's `liveDocument` accessor reaches it.
 import {
   mountDocument,
   registerCardResolver,
   registerHistoryRoute
 } from '../../../robin/document/mounts';
-import { getPack, registerPack } from '../../../robin/document/pack';
 import {
   DocumentSession,
   SessionOptions
@@ -20,11 +19,6 @@ import {
   setRobinTurnActive,
   whileRobinWrites
 } from './robinActivity';
-
-/** Register the docx pack; safe to call on every mount. */
-export function ensureDocxPack(): void {
-  if (getPack(docxPack.format) !== docxPack) registerPack(docxPack);
-}
 
 export interface RobinDocumentMount {
   /** The form instance the editor renders in: the key the form context reads by. */
@@ -44,7 +38,6 @@ export function createRobinSession(
   editor: LiveEditor,
   envelopeId: string
 ): DocumentSession {
-  ensureDocxPack();
   return new DocumentSession({
     pack: docxPack,
     host: createHost(editor),

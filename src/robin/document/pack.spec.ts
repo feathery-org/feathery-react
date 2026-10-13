@@ -1,13 +1,5 @@
-import {
-  Pack,
-  clearPackRegistry,
-  conformanceProblems,
-  getPack,
-  packProblems,
-  registerPack,
-  registeredFormats
-} from './pack';
-import { TOY_FORMAT, box, makeToyPack, para, toyNative } from './tests/toyPack';
+import { Pack, conformanceProblems, packProblems } from './pack';
+import { box, makeToyPack, para, toyNative } from './tests/toyPack';
 
 const fixtures = {
   plain: toyNative(
@@ -23,8 +15,6 @@ const fixtures = {
   tracked: toyNative(para('gone', { rev: 'del' }), para('new', { rev: 'ins' })),
   empty: toyNative()
 };
-
-afterEach(() => clearPackRegistry());
 
 describe('pack interface', () => {
   it('the fake pack is complete and passes the conformance suite', () => {
@@ -82,19 +72,15 @@ describe('pack interface', () => {
     expect(problems.some((p) => p.includes('unknown format nope'))).toBe(true);
   });
 
-  it('registers by format, refuses an incomplete pack and a second pack under one name', () => {
-    const pack = makeToyPack();
-    registerPack(pack);
-    registerPack(pack);
-    expect(getPack(TOY_FORMAT)).toBe(pack);
-    expect(registeredFormats()).toEqual([TOY_FORMAT]);
-    expect(() => registerPack(makeToyPack())).toThrow(/already registered/);
-    expect(() =>
-      registerPack(
+  it('names the missing slots of an incomplete pack', () => {
+    expect(packProblems(makeToyPack())).toEqual([]);
+    expect(
+      packProblems(
         makeToyPack({ format: 'other', outline: undefined as never })
       )
-    ).toThrow(/incomplete: outline.detail, outline.defaultDepth/);
-    expect(getPack('other')).toBeUndefined();
+    ).toEqual(
+      expect.arrayContaining(['outline.detail', 'outline.defaultDepth'])
+    );
   });
 
   it('every pack invariant names at least one card, and its refusals always carry one in read', () => {

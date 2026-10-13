@@ -34,8 +34,8 @@
  *    back byte-exact, engine-owned values kept in the residue (identity-free, see `Residue`).
  * 3. Give the pack a fixture corpus and pass `conformanceProblems` over it: every required slot,
  *    a byte-exact round trip, unique node ids, every format reference resolving, and accept and
- *    reject leaving a document with no pending changes as it is. `registerPack` refuses a pack
- *    with a missing slot.
+ *    reject leaving a document with no pending changes as it is. `packProblems` names any
+ *    missing slot.
  * 4. Test each invariant with a true positive and a true negative, each with a non-empty `cards`;
  *    measure each normalization against the real editor and test it both ways; reproduce the
  *    pack's commit paths in a headless editor before trusting them.
@@ -557,42 +557,4 @@ export function conformanceProblems(
     }
   }
   return problems;
-}
-
-// ---------------------------------------------------------------------------------------------
-// The registry, keyed by format
-// ---------------------------------------------------------------------------------------------
-
-const registry = new Map<string, Pack>();
-
-/** Register a pack. Throws naming every missing slot, so a half-written pack fails loudly. */
-export function registerPack(pack: Pack): void {
-  const problems = packProblems(pack);
-  if (problems.length)
-    throw new Error(
-      `document pack ${JSON.stringify(
-        pack?.format
-      )} is incomplete: ${problems.join(', ')}`
-    );
-  const existing = registry.get(pack.format);
-  if (existing && existing !== pack)
-    throw new Error(
-      `a different document pack is already registered as ${JSON.stringify(
-        pack.format
-      )}`
-    );
-  registry.set(pack.format, pack);
-}
-
-export function getPack(format: string): Pack | undefined {
-  return registry.get(format);
-}
-
-export function registeredFormats(): string[] {
-  return [...registry.keys()];
-}
-
-/** Test support: forget every registration. */
-export function clearPackRegistry(): void {
-  registry.clear();
 }
