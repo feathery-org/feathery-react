@@ -22,11 +22,12 @@ import type {
 import {
   ProofOutcome,
   RollbackOutcome,
+  comparableText,
   equivalentNative,
   prove,
   rollback
 } from './proof';
-import type { NormalForm } from './tree';
+import { canonicalJson, NormalForm } from './tree';
 
 export interface ReconcileInput {
   pack: Pack;
@@ -51,6 +52,8 @@ export interface ReconcileInput {
 }
 
 export type ReconcileOutcome =
+  /** The intended document reads as the live one: nothing to apply, no seam runs. */
+  | { outcome: 'unchanged' }
   | {
       outcome: 'committed';
       plan: CommitPlan;
@@ -104,6 +107,14 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
       };
     }
   };
+  // a write that changes nothing (a value it already has, a move to where it is) applies nothing:
+  // no seam, no card, and the editor's undo history as it was
+  if (
+    comparableText(pack, intended.view.nf) ===
+      comparableText(pack, before.view.nf) &&
+    canonicalJson(intended.residue) === canonicalJson(before.residue)
+  )
+    return { outcome: 'unchanged' };
   let plan: CommitPlan | null = null;
   const seams: string[] = [];
   try {

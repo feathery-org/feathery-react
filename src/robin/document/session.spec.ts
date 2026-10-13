@@ -426,6 +426,63 @@ describe('document session: the four verbs end to end', () => {
     expect(host.serialize()).toBe(once);
   });
 
+  it('a write that changes nothing returns before any seam: no card, the editor and its undo untouched (review)', () => {
+    const { host, call } = mount();
+    host.userEdit((d) => d.body.push(para('Typed')));
+    const userUndo = [...host.undoStack];
+    const nodes = (call('read', { ids: ['n1', 'n2', 'n3'] }) as ReadResult)
+      .nodes;
+    const [n1, n2, n3] = nodes;
+    const before = host.serialize();
+    const opens = host.opens;
+    const writes = [
+      // a property it already has
+      {
+        intent: 'Bold the title.',
+        scope: { ids: ['n1'] },
+        changes: [
+          {
+            kind: 'set',
+            target: { ids: ['n1'], shape: { n1: n1.shape } },
+            props: { bold: true }
+          }
+        ]
+      },
+      // a move to where it already is
+      {
+        intent: 'Keep Motor first.',
+        scope: { ids: ['n3'] },
+        changes: [
+          {
+            kind: 'move',
+            id: 'n3',
+            shape: n3.shape,
+            anchor: 'n4',
+            container: n2.shape,
+            position: 'before'
+          }
+        ]
+      }
+    ];
+    writes.forEach((write, i) => {
+      const r = call('write', write, `same-${i}`);
+      expect(r).toEqual(
+        expect.objectContaining({
+          ok: true,
+          committed: false,
+          dryRun: false,
+          cardId: null,
+          landed: 'none',
+          warnings: [expect.objectContaining({ code: 'no-change' })]
+        })
+      );
+      expect((r as { trace: any }).trace.committed.seams).toEqual([]);
+    });
+    expect(host.serialize()).toBe(before);
+    expect(host.opens).toBe(opens);
+    expect(host.undoStack).toEqual(userUndo);
+  });
+
   it('a hash sent in the wrong field is an envelope refusal naming the right field, not a conflict', () => {
     const { call } = mount();
     const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2') as {

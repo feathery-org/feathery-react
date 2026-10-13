@@ -152,6 +152,20 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     table.push({ delta: 'N1', seam: 'none', landed: result.landed, proof: result.trace.proof.outcome, native: '-', undo: '-', userUndoKept: true });
   });
 
+  it('N1B a move to where it already is lands nothing: no seam, no card, the person\'s undo kept (review)', async () => {
+    const pre = await fresh();
+    const pid = await at(['sections', 3, 'blocks', 16]);
+    const next = await at(['sections', 3, 'blocks', 17]);
+    const sid = await at(['sections', 3]);
+    const n = await read([pid, sid]);
+    const result = await dispatch('write', { intent: 'Keep the clause where it is.', scope: { ids: [pid] }, changes: [{ kind: 'move', id: pid, shape: n[pid].shape, anchor: next, container: n[sid].shape, position: 'before' }] });
+    expect(result).toEqual(expect.objectContaining({ ok: true, committed: false, landed: 'none', cardId: null }));
+    expect(result.warnings.map((w: any) => w.code)).toContain('no-change');
+    expect(result.trace.committed.seams).toEqual([]);
+    expect(await lane.call<string>('serialize')).toBe(pre);
+    expect(await lane.call<boolean>('canUndo')).toBe(true);
+  });
+
   it('R4 a native commit that fails its proof while the user has an undo group open rolls back only Robin\'s edit (review item 4)', async () => {
     const beforeUser = await fresh();
     const pid = await at(['sections', 3, 'blocks', 16]);

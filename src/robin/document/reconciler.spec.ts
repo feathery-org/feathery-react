@@ -264,6 +264,8 @@ describe('reconciler', () => {
   it('refuses a plan naming a seam the pack does not have, with nothing applied', () => {
     const host = new ToyHost(doc);
     const s = stateOf(doc);
+    // any intended change: the plan is what fails
+    const changed = stateOf(toyNative(para('Title, changed', { bold: true })));
     const pack = {
       ...s.pack,
       reconcile: {
@@ -281,7 +283,7 @@ describe('reconciler', () => {
       turnId: 't',
       intent: 'x',
       before: { view: s.view, residue: s.residue, native: doc },
-      intended: { view: s.view, residue: s.residue },
+      intended: { view: changed.view, residue: changed.residue },
       adopt: (fresh) => fresh
     });
     expect(out.outcome).toBe('apply-failed');

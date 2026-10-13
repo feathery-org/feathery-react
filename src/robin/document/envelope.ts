@@ -875,7 +875,8 @@ export const CORE_WARNING_CODES = [
   'undo-history-cleared',
   'immediate-not-tracked',
   'stripped-read-only',
-  'reject-by-card'
+  'reject-by-card',
+  'no-change'
 ] as const;
 export type CoreWarningCode = typeof CORE_WARNING_CODES[number];
 

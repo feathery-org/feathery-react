@@ -360,10 +360,32 @@ export class DocumentSession {
       const replaced =
         out.outcome === 'committed'
           ? out.plan.history === 'engine'
-          : !(out.rollback.byteEqual || out.rollback.equivalent);
+          : out.outcome !== 'unchanged' &&
+            !(out.rollback.byteEqual || out.rollback.equivalent);
       if (replaced) this.replaced('robin');
       return out;
     });
+    if (outcome.outcome === 'unchanged') {
+      trace.committed('skipped', [], 0);
+      return {
+        ok: true,
+        committed: false,
+        dryRun: false,
+        cardId: null,
+        landed: 'none',
+        outlineHash: before.outlineHash,
+        ...common,
+        warnings: [
+          ...prepared.warnings,
+          {
+            code: 'no-change',
+            message:
+              'Nothing was applied: the document already reads as this write would leave it.'
+          }
+        ],
+        trace: trace.build()
+      };
+    }
     if (outcome.outcome !== 'committed') {
       const rolledBack =
         outcome.rollback.byteEqual || outcome.rollback.equivalent;
