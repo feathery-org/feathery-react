@@ -1099,7 +1099,7 @@ export function useDocxHistorySession(
         ),
         sfdt: JSON.stringify(display),
         // Same grouping as the steppers: a Robin turn counts as one edit.
-        editCount: countEditGroups(display),
+        editCount: countEditGroups(display, { includeFormatting: true }),
         formatCount: changes.formatChangeCount,
         pendingCount: countPendingGroups(display)
       };

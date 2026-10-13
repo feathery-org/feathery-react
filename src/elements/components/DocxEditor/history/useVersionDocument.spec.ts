@@ -661,6 +661,8 @@ describe('useVersionDocument', () => {
 
       expect(result.current.degraded).toBe(false);
       expect(result.current.formatCount).toBe(1);
+      // The bar counts both stops the steppers visit.
+      expect(result.current.editCount).toBe(2);
       // "Hello" was already there, so Alice's edit reads as formatting.
       const display = JSON.parse(must(result.current.sfdt));
       const authorById = new Map(
