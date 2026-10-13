@@ -383,6 +383,32 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     expect(row.native).toMatch(/^accept differs .* reject differs /);
   });
 
+  it('D11B a pending formula replacement reloaded with no engine turn counts once, by its marker; without the marker it counts twice (review)', async () => {
+    await fresh();
+    const hits = (await dispatch('find', { feature: { name: 'formula' } })).hits as Array<{ id: string }>;
+    const nodes = await read(hits.map((h) => h.id));
+    const formulas = Object.values(nodes).filter((n: any) => n.kind === 'control' && typeof n.binding?.expr === 'string') as any[];
+    const control = formulas.find((n) => formulas.filter((m) => m.binding.name === n.binding.name).length === 1);
+    const name = control.binding.name as string;
+    const once = await lane.call<number>('bindingOccurrences', name);
+    const r = await dispatch('write', { intent: 'Write the formula out in full.', scope: { ids: [control.id] }, changes: [{ kind: 'replace', id: control.id, base: control.base, node: { ...strip(control), binding: { ...control.binding, expr: `mul(${control.binding.expr},1)` } } }] });
+    expect(r.committed).toBe(true);
+    const saved = await lane.call<string>('settled');
+    // a reload: a new editor and bindings over the saved document, before any engine turn
+    await lane.call('open', saved);
+    expect(await lane.call<number>('bindingOccurrences', name)).toBe(once);
+    // the same document with the change set's move marker taken out of its revision tags
+    const unmarked = JSON.parse(saved);
+    for (const rev of unmarked.revisions ?? []) {
+      if (typeof rev.customData !== 'string') continue;
+      const tag = JSON.parse(rev.customData);
+      delete tag.move;
+      rev.customData = JSON.stringify(tag);
+    }
+    await lane.call('open', JSON.stringify(unmarked));
+    expect(await lane.call<number>('bindingOccurrences', name)).toBe(once * 2);
+  });
+
   const setOn = (n: any, props: Record<string, unknown>, intent: string) => ({
     intent,
     scope: { ids: [n.id] },

@@ -334,6 +334,12 @@ const api = {
     return { indexed: [...indexed].sort(), tags: tags.sort() };
   },
 
+  /** How many occurrences of a binding name the bindings' index holds. */
+  bindingOccurrences(name: string): number {
+    const index = attached?.controller.index as any;
+    return (index?.occurrences ?? []).filter((o: any) => o?.def?.name === name).length;
+  },
+
   /** Rows the bindings' controller indexes for a bound table, and how many times it was attached. */
   bindingRows(tableId: string): number {
     return attached?.controller.index?.tables.get(tableId)?.rows.length ?? -1;
