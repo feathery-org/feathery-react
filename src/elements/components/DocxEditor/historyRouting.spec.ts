@@ -48,7 +48,7 @@ describe('history routing', () => {
 
   it('goes through the route when there is one: toolbar and keyboard alike', () => {
     const editor = fakeEditor();
-    const route = { undo: jest.fn(), redo: jest.fn() };
+    const route = { undo: jest.fn(), redo: jest.fn(), engineHas: () => true };
     const unregister = registerHistoryRoute(editor, route);
     undoDocument(editor);
     expect(route.undo).toHaveBeenCalledTimes(1);
@@ -68,6 +68,35 @@ describe('history routing', () => {
       isHandled: false
     });
     expect(route.undo).toHaveBeenCalledTimes(1);
+    unregister();
+  });
+
+  it('takes a chord only when the engine has an entry for it; otherwise the editor keeps its own keys (review: Ctrl+Shift+Z)', () => {
+    const editor = fakeEditor();
+    const entries = { undo: false, redo: false };
+    const route = {
+      undo: jest.fn(),
+      redo: jest.fn(),
+      engineHas: (direction: 'undo' | 'redo') => entries[direction]
+    };
+    const unregister = registerHistoryRoute(editor, route);
+    const off = installHistoryRouting(editor);
+    const press = (event: Record<string, unknown>) => {
+      const args = {
+        event: { ...event, preventDefault: jest.fn() },
+        isHandled: false
+      };
+      editor.fire('keyDown', args);
+      return args.isHandled;
+    };
+    expect(press({ key: 'z', ctrlKey: true, shiftKey: true })).toBe(false);
+    expect(press({ key: 'z', ctrlKey: true })).toBe(false);
+    expect(route.redo).not.toHaveBeenCalled();
+    expect(route.undo).not.toHaveBeenCalled();
+    entries.redo = true;
+    expect(press({ key: 'z', ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(route.redo).toHaveBeenCalledTimes(1);
+    off();
     unregister();
   });
 });

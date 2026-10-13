@@ -189,6 +189,11 @@ export function cardResolverFor(editor: unknown): CardResolver | undefined {
 export interface HistoryRoute {
   undo(): void;
   redo(): void;
+  /**
+   * Whether the engine holds an entry in that direction: the keyboard chord is taken from the
+   * editor only then, so an editor whose history is all its own keeps its keys as they were.
+   */
+  engineHas(direction: 'undo' | 'redo'): boolean;
 }
 
 const routes = new WeakMap<object, HistoryRoute>();

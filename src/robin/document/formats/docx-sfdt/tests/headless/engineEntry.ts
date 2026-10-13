@@ -191,7 +191,7 @@ const api = {
       owns: (id) => live.ownsCard(id),
       resolve: (id, accept) => live.resolveCard(id, accept)
     });
-    registerHistoryRoute(editor, { undo: () => live.undo(), redo: () => live.redo() });
+    registerHistoryRoute(editor, { undo: () => live.undo(), redo: () => live.redo(), engineHas: (direction) => live.history.depth[direction] > 0 });
     installHistoryRouting(editor);
     // the editor's change events and the engine's replaced-document reports, with whose they were
     changes.length = 0;

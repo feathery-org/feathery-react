@@ -80,7 +80,8 @@ export function mountRobinDocument({
     // undo and redo go to the editor when it has an entry, else to the engine (decision D4)
     unroute = registerHistoryRoute(editor, {
       undo: () => session.undo(),
-      redo: () => session.redo()
+      redo: () => session.redo(),
+      engineHas: (direction) => session.history.depth[direction] > 0
     });
     return session;
   });
