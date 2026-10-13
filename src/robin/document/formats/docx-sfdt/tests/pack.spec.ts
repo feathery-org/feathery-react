@@ -152,6 +152,14 @@ describe('the format pack', () => {
   });
 
   const williams = path.join(process.env.ROBIN_DOCUMENT_PRIVATE_CORPUS ?? '/nonexistent', 'hilb-williams.sfdt.json');
+  (fs.existsSync(williams) ? it : it.skip)('refuses the captain\'s table split, which deleted rows and reused their ids in the new table, as ambiguous-move (private corpus only)', () => {
+    const { call } = mount(fs.readFileSync(williams, 'utf8'));
+    const run = JSON.parse(fs.readFileSync(path.join(__dirname, 'runs', 'captain-split-run.json'), 'utf8')) as { input: unknown };
+    const r = call('write', run.input) as { ok: boolean; refusal?: { invariant: string; destroyed: string } };
+    expect(r.ok).toBe(false);
+    expect(r.refusal?.invariant).toBe('ambiguous-move');
+    expect(r.refusal?.destroyed).toMatch(/deletes n768, which changes\[1\] also reuses/);
+  });
   (fs.existsSync(williams) ? it : it.skip)('finds the client document\'s TotalAnnualPremium formula (private corpus only)', () => {
     const { call } = mount(fs.readFileSync(williams, 'utf8'));
     expect((call('find', { feature: { name: 'formula', value: 'TotalAnnualPremium' } }) as { total: number }).total).toBe(1);

@@ -40,6 +40,7 @@ export function isSupportedProtocolVersion(value: unknown): boolean {
 export const CORE_INVARIANTS = [
   'envelope',
   'unknown-id',
+  'ambiguous-move',
   'id-shape-mismatch',
   'node-not-one-node',
   'placeholder-call',
@@ -1048,6 +1049,8 @@ const INVARIANT_HINTS: Partial<Record<CoreInvariant, string>> = {
     'Send the input exactly in the documented shape; every id copied from outline, read or find as given.',
   'unknown-id':
     'Copy every id from outline, read or find exactly as given; a temporary id is declared on a node an earlier change writes.',
+  'ambiguous-move':
+    'Say a move one way: a move change; reusing an id elsewhere copies the node, and the original stays unless a rewrite of its container leaves it out.',
   'node-not-one-node':
     'Send one node per change; several siblings are several changes on the same anchor, landing in the order listed.',
   'placeholder-call':

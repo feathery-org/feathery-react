@@ -230,6 +230,103 @@ describe('write: verified changes', () => {
     expect(last.id).not.toBe('n1');
   });
 
+  it('a change naming an id written twice acts on the node the document had, not the copy', () => {
+    const s = fresh();
+    // a new box holding a copy of n4, then n4 rewritten: the original changes, the copy does not
+    const r = prepareWrite(
+      s,
+      write({
+        intent: 'x',
+        scope: { ids: ['n2', 'n4'] },
+        changes: [
+          {
+            kind: 'insert_after',
+            anchor: 'n2',
+            container: sh(s, 'root'),
+            node: {
+              kind: 'box',
+              name: 'beta',
+              items: [{ id: 'n4', kind: 'para' }]
+            }
+          },
+          {
+            kind: 'replace',
+            id: 'n4',
+            base: b(s, 'n4'),
+            node: { kind: 'para', text: 'zwei', style: s.view.get('n4')?.style }
+          }
+        ]
+      } as WriteInput)
+    );
+    if (r.outcome !== 'verified')
+      throw new Error(JSON.stringify(r).slice(0, 400));
+    const blocks = r.intended.root.blocks as NfNode[];
+    expect((blocks[1].items as NfNode[]).map((x) => x.text)).toEqual([
+      'one',
+      'zwei'
+    ]);
+    expect((blocks[2].items as NfNode[]).map((x) => x.text)).toEqual(['two']);
+  });
+
+  it('a move said two ways (an id deleted and reused in the same write) is refused as ambiguous-move', () => {
+    const s = fresh();
+    const r = prepareWrite(
+      s,
+      write({
+        intent: 'x',
+        scope: { ids: ['n2', 'n4'] },
+        changes: [
+          {
+            kind: 'insert_after',
+            anchor: 'n2',
+            container: sh(s, 'root'),
+            node: {
+              kind: 'box',
+              name: 'beta',
+              items: [{ id: 'n4', kind: 'para' }]
+            }
+          },
+          { kind: 'delete', id: 'n4', base: b(s, 'n4') }
+        ]
+      } as WriteInput)
+    );
+    expect(r.outcome).toBe('refused');
+    if (r.outcome !== 'refused') return;
+    expect(r.refusal.invariant).toBe('ambiguous-move');
+    expect(r.refusal.hint).toMatch(/move change/);
+    // a move with its id also reused is the same ambiguity
+    const m = prepareWrite(
+      fresh(),
+      write({
+        intent: 'x',
+        scope: { ids: ['n2', 'n4'] },
+        changes: [
+          {
+            kind: 'insert_after',
+            anchor: 'n2',
+            container: sh(s, 'root'),
+            node: {
+              kind: 'box',
+              name: 'beta',
+              items: [{ id: 'n4', kind: 'para' }]
+            }
+          },
+          {
+            kind: 'move',
+            id: 'n4',
+            shape: sh(s, 'n4'),
+            anchor: 'n1',
+            position: 'after',
+            container: sh(s, 'root')
+          }
+        ]
+      } as WriteInput)
+    );
+    expect(m.outcome === 'refused' && m.refusal.invariant).toBe(
+      'ambiguous-move'
+    );
+  });
+
   it('changes on one anchor land in the order listed (matrix-2 T7: six inserts after one paragraph)', () => {
     const s = fresh();
     const after = (text: string) => ({
@@ -327,6 +424,7 @@ describe('write: verified changes', () => {
     expect(r.checks.map((c) => c.name)).toEqual([
       'envelope',
       'unknown-id',
+      'ambiguous-move',
       'unknown-format',
       'base-hashes',
       'format-entry-rejected',

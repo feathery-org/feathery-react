@@ -44,6 +44,7 @@ import {
   indexTree,
   isPlainObject,
   listAt,
+  Placement,
   walk
 } from './tree';
 import { CheckRecord, CheckRunner, problem, runInvariants } from './verifier';
@@ -387,6 +388,53 @@ export function prepareWrite(
       )
     ];
   });
+  // Section 6.4: a node is moved one way. An id deleted or moved by one change and reused inside a
+  // node another change writes says the same move twice, and the two readings differ (the captain's
+  // table split: the rows were deleted where they were and reused in the new table)
+  runner.run('ambiguous-move', () => {
+    const reused = new Map<string, string>();
+    changes.forEach((change, i) => {
+      if (!('node' in change)) return;
+      walkWritten(change.node, (n) => {
+        if (typeof n.id !== 'string' || !isNodeId(n.id)) return;
+        // a replaced node keeps its own id: that is the node in place, not a reuse
+        if (change.kind === 'replace' && n === change.node) return;
+        if (!reused.has(n.id)) reused.set(n.id, `changes[${i}]`);
+      });
+    });
+    const both = changes.flatMap((change, i) =>
+      (change.kind === 'delete' || change.kind === 'move') &&
+      reused.has(change.id)
+        ? [
+            {
+              id: change.id,
+              at: `changes[${i}]`,
+              reusedAt: reused.get(change.id) as string,
+              kind: change.kind
+            }
+          ]
+        : []
+    );
+    if (!both.length) return [];
+    return [
+      problem(
+        'ambiguous-move',
+        `Nothing was applied: ${both
+          .map(
+            (b) =>
+              `${b.at} ${b.kind === 'delete' ? 'deletes' : 'moves'} ${
+                b.id
+              }, which ${b.reusedAt} also reuses`
+          )
+          .join('; ')}.`,
+        {
+          detail: both,
+          hint: `To move ${both[0].id}, use a move change, or reuse its id in its new place and rewrite its old container without it; not a reuse together with a ${both[0].kind} of the same id.`
+        }
+      )
+    ];
+  });
+  if (runner.failed) return refused();
   runner.run('unknown-format', () => {
     const missing = changes.flatMap((c, i) =>
       c.kind === 'set' &&
@@ -459,9 +507,25 @@ export function prepareWrite(
   const applyProblems: RefusalProblem[] = [];
   const bulkHits = new Map<number, string[]>();
   const factsFor: Array<() => Fact> = [];
+  // An id written twice (a stub copied into a new place, a kept node beside its copy) names the node
+  // the document had: a later change on that id acts on the original, never on a written copy.
+  const indexWorking = () => {
+    // a node is written when it, or a node it sits in, was written by this write (parents are
+    // visited before their children)
+    const isWritten = new Map<object, boolean>();
+    const out = new Map<string, Placement>();
+    walk(working.root, pack.tree, (p) => {
+      const mine =
+        written.has(p.node) || (!!p.parent && !!isWritten.get(p.parent));
+      isWritten.set(p.node, mine);
+      const prev = out.get(p.node.id);
+      if (!prev || (isWritten.get(prev.node) && !mine)) out.set(p.node.id, p);
+    });
+    return out;
+  };
   let index = indexTree(working.root, pack.tree);
   const reindex = () => {
-    index = indexTree(working.root, pack.tree);
+    index = indexWorking();
   };
   const fail = (invariant: string, what: string, hint?: string) =>
     applyProblems.push(
