@@ -14,7 +14,7 @@ const write = parseVerbInput('write', {
     { kind: 'insert_after', anchor: 'n2', container: 'c', node: { text: 'b' } },
     {
       kind: 'set',
-      target: { find: { kind: 'para' }, total: 3 },
+      target: { find: { kind: 'para' }, total: 3, shape: 's' },
       props: { bold: true }
     }
   ],

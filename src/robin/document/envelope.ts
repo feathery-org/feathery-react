@@ -342,7 +342,9 @@ export const findResultSchema = z.looseObject({
   outlineHash: z.string().min(1),
   hits: z.array(findHitSchema),
   truncated: z.boolean(),
-  total: z.int().min(0)
+  total: z.int().min(0),
+  /** The shape of everything matched (all `total` nodes): a bulk `set` carries it back. */
+  shape: z.string().min(1)
 });
 export type FindResult = z.output<typeof findResultSchema>;
 
@@ -362,10 +364,19 @@ const matchTargetSchema = z.strictObject({
     span: spanSchema
   })
 });
-/** Bulk find target. A `limit` in the copied query is ignored: `total` is the acknowledgement. */
-const findTargetSchema = z.strictObject({
+/** A bulk query acknowledged in scope: its `total`. A `limit` in the copied query is ignored. */
+const bulkScopeSchema = z.strictObject({
   find: findQuerySchema,
   total: z.int().min(0)
+});
+/**
+ * Bulk find target: the query, with find's `total` and `shape` for what it matched, so a change
+ * to any matched node since the find is a conflict (not only a change in their number).
+ */
+const findTargetSchema = z.strictObject({
+  find: findQuerySchema,
+  total: z.int().min(0),
+  shape: z.string().min(1)
 });
 const formatTargetSchema = z.strictObject({
   formatId: formatIdSchema,
@@ -394,7 +405,7 @@ export function setTargetForm(target: SetTarget): SetTargetForm {
 }
 
 const SET_TARGET_FORMS =
-  'target must be exactly one of {ids, shape}, {id, shape, match: {text, span}}, {find, total} or {formatId, base, referrers}';
+  'target must be exactly one of {ids, shape}, {id, shape, match: {text, span}}, {find, total, shape} or {formatId, base, referrers}';
 
 /** Property values are JSON; `null` clears an override. Names and types are the pack schema's. */
 const propsSchema = z
@@ -484,7 +495,7 @@ export type Change = z.output<typeof changeSchema>;
 
 export const scopeSchema = z.strictObject({
   ids: z.array(nodeIdSchema).max(10000),
-  bulk: z.array(findTargetSchema).optional(),
+  bulk: z.array(bulkScopeSchema).optional(),
   formats: z
     .array(
       z.strictObject({

@@ -16,7 +16,14 @@ import type {
 } from '../envelope';
 import { isNodeId, ROOT_ID } from '../envelope';
 import type { DocumentView, Pack } from '../pack';
-import { baseOf, NfNode, shapeOf, withoutLists } from '../tree';
+import {
+  baseOf,
+  canonicalJson,
+  hash64,
+  NfNode,
+  shapeOf,
+  withoutLists
+} from '../tree';
 import { emitNode, matchQuery, referencedFormats } from '../view';
 import { SHAPE_PREFIX } from '../outline';
 import { problem } from './index';
@@ -44,6 +51,25 @@ export function bulkQuery(find: FindInput): FindInput {
   const query = { ...find };
   delete query.limit;
   return query;
+}
+
+/**
+ * The shape of everything a bulk query matches: each matched node's id and own shape, in document
+ * order. Find returns it and a bulk `set` carries it back.
+ */
+export function matchedShape(
+  view: DocumentView,
+  pack: Pack,
+  find: FindInput
+): string {
+  return hash64(
+    canonicalJson(
+      matchQuery(view, pack, bulkQuery(find)).map((hit) => {
+        const node = view.get(hit.id);
+        return [hit.id, node ? shapeOf(node, pack.tree) : null];
+      })
+    )
+  );
 }
 
 /**
@@ -132,8 +158,15 @@ export function checkBases(
         else if ('match' in t) compare(t.id, 'shape', t.shape);
         else if ('find' in t) {
           const count = matchQuery(view, pack, bulkQuery(t.find)).length;
-          if (count !== t.total)
-            bulk.push({ find: t.find, total: t.total, live: count });
+          const liveShape = matchedShape(view, pack, t.find);
+          if (count !== t.total || liveShape !== t.shape)
+            bulk.push({
+              find: t.find,
+              total: t.total,
+              shape: t.shape,
+              live: count,
+              liveShape
+            });
         } else {
           const entry = view.nf.formats[t.formatId];
           if (!entry) return; // unknown format: a refusal, decided before this check
@@ -165,8 +198,10 @@ export function conflictMessage(conflict: Conflict): string {
   if (conflict.bulk.length)
     parts.push(
       conflict.bulk
-        .map(
-          (b) => `a bulk target now matches ${b.live} node(s), not ${b.total}`
+        .map((b) =>
+          b.live !== b.total
+            ? `a bulk target now matches ${b.live} node(s), not ${b.total}`
+            : 'the nodes a bulk target matches changed since find returned them'
         )
         .join('; ')
     );

@@ -2,6 +2,7 @@ import { WriteInput, parseVerbInput, validateVerbResult } from './envelope';
 import { baseOf, NfNode, shapeOf } from './tree';
 import { findVerb, outlineVerb, prepareWrite, readVerb } from './verbs';
 import { stateOf } from './tests/fixtures';
+import { matchedShape } from './verifier/base';
 import { box, para, toyNative } from './tests/toyPack';
 
 const doc = toyNative(
@@ -532,7 +533,14 @@ describe('write: verified changes', () => {
           },
           {
             kind: 'set',
-            target: { find: { kind: 'para', within: 'n2' }, total: 2 },
+            target: {
+              find: { kind: 'para', within: 'n2' },
+              total: 2,
+              shape: matchedShape(s.view, s.pack, {
+                kind: 'para',
+                within: 'n2'
+              })
+            },
             props: { size: 14 }
           },
           {

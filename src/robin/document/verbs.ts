@@ -50,6 +50,7 @@ import {
 import { CheckRecord, CheckRunner, problem, runInvariants } from './verifier';
 import {
   bulkQuery,
+  matchedShape,
   checkBases,
   misplacedHashes,
   referrersOf
@@ -147,7 +148,8 @@ export function findVerb(state: DocumentState, input: FindInput): FindResult {
     outlineHash: state.outlineHash,
     hits: hits.slice(0, limit),
     truncated: hits.length > limit,
-    total: hits.length
+    total: hits.length,
+    shape: matchedShape(state.view, state.pack, input)
   };
 }
 

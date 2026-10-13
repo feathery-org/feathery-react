@@ -292,7 +292,11 @@ describe('section 6 write envelope', () => {
         },
         {
           kind: 'set',
-          target: { find: { kind: 'paragraph', format: 'f7' }, total: 23 },
+          target: {
+            find: { kind: 'paragraph', format: 'f7' },
+            total: 23,
+            shape: '9c2e41aa07b3d5f1'
+          },
           props: { alignment: 'Center' }
         },
         {
@@ -734,7 +738,8 @@ describe('results validate against the result contract', () => {
           }
         ],
         truncated: false,
-        total: 1
+        total: 1,
+        shape: '3a91c0de52f7b864'
       })
     ).toEqual({ ok: true });
   });

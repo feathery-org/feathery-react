@@ -3,7 +3,7 @@ import { makeView } from '../view';
 import { stateOf } from '../tests/fixtures';
 import { box, para, toyNative } from '../tests/toyPack';
 import { CheckRunner, problem, runInvariants } from './index';
-import { checkBases, conflictMessage, referrersOf } from './base';
+import { checkBases, conflictMessage, matchedShape, referrersOf } from './base';
 import {
   formatPropertyProblems,
   newFormatProblems,
@@ -96,7 +96,11 @@ describe('base hashes (compare-and-swap)', () => {
             },
             {
               kind: 'set',
-              target: { find: { kind: 'para' }, total: 4 },
+              target: {
+                find: { kind: 'para' },
+                total: 4,
+                shape: matchedShape(s.view, s.pack, { kind: 'para' })
+              },
               props: { bold: true }
             },
             {
@@ -130,7 +134,11 @@ describe('base hashes (compare-and-swap)', () => {
           },
           {
             kind: 'set',
-            target: { find: { kind: 'para', limit: 1 }, total: 3 },
+            target: {
+              find: { kind: 'para', limit: 1 },
+              total: 3,
+              shape: 'old'
+            },
             props: { bold: true }
           },
           {
@@ -160,7 +168,13 @@ describe('base hashes (compare-and-swap)', () => {
       })
     );
     expect(c?.bulk).toEqual([
-      { find: { kind: 'para', limit: 1 }, total: 3, live: 4 }
+      {
+        find: { kind: 'para', limit: 1 },
+        total: 3,
+        shape: 'old',
+        live: 4,
+        liveShape: matchedShape(s.view, s.pack, { kind: 'para' })
+      }
     ]);
     expect(c?.formats).toEqual([
       {
@@ -434,7 +448,7 @@ describe('scope', () => {
       changes: [
         {
           kind: 'set',
-          target: { find: { kind: 'para', limit: 9 }, total: 4 },
+          target: { find: { kind: 'para', limit: 9 }, total: 4, shape: 's' },
           props: { bold: true }
         }
       ]

@@ -394,6 +394,38 @@ describe('document session: the four verbs end to end', () => {
     expect(host.serialize()).toBe(once);
   });
 
+  it('a bulk set carries the shape of what find matched: an edit to a matched node is a conflict even when the count holds (review)', () => {
+    const { host, call, nextTurn } = mount();
+    const query = { kind: 'para', within: 'n2' };
+    const found = call('find', query) as { total: number; shape: string };
+    expect(found.total).toBe(2);
+    expect(found.shape).toEqual(expect.any(String));
+    const bulkSet = (shape: string) => ({
+      intent: 'Bigger lines.',
+      scope: { ids: [], bulk: [{ find: query, total: 2 }] },
+      changes: [
+        {
+          kind: 'set',
+          target: { find: query, total: 2, shape },
+          props: { size: 14 }
+        }
+      ]
+    });
+    expect(call('write', bulkSet(found.shape))).toEqual(
+      expect.objectContaining({ committed: true })
+    );
+    const once = host.serialize();
+    // replayed in a new turn: the same count, but the matched nodes are not as find returned them
+    nextTurn();
+    const replayed = call('write', bulkSet(found.shape)) as {
+      conflict: { bulk: Array<Record<string, unknown>> };
+    };
+    expect(replayed.conflict.bulk).toEqual([
+      expect.objectContaining({ total: 2, live: 2, shape: found.shape })
+    ]);
+    expect(host.serialize()).toBe(once);
+  });
+
   it('a hash sent in the wrong field is an envelope refusal naming the right field, not a conflict', () => {
     const { call } = mount();
     const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2') as {
