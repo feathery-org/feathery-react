@@ -317,6 +317,49 @@ describe('column fit finalizer', () => {
     expect(fact).toBeUndefined();
   });
 
+  // Codex review D6: a table made of moved rows keeps the widths its cells were laid out at
+  it('a new table made of moved cells keeps their laid-out widths: no equal shares (review D6)', () => {
+    let d = sfdtOf([156, 312]).replace(/"preferredWidth":(\d+),"preferredWidthType":"Point"/g, '"preferredWidthType":"Auto"');
+    const host = { serialize: () => d, open: (x: string) => { d = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+    const section = arr<NfNode>(s.view.nf.root.sections)[0];
+    const table = arr<NfNode>(section.blocks)[0];
+    const body = arr<NfNode>(table.rows)[1];
+    const r = prepareWrite(s, {
+      intent: 'Split the table.',
+      scope: { ids: [body.id, table.id] },
+      changes: [
+        { kind: 'insert_after', anchor: table.id, container: shapeOf(section, docxTree), node: { id: 'tmp:t', kind: 'table', rows: [{ id: 'tmp:head', kind: 'row', cells: [0, 1].map((k) => ({ kind: 'cell', blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: `H${k}` }] }] })) }] } },
+        { kind: 'move', id: body.id, shape: shapeOf(body, docxTree), anchor: 'tmp:head', container: 'tmp:t', position: 'after' }
+      ]
+    } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 900));
+    expect(r.facts.find((f) => f.name === 'column-fit' && /no widths/.test(f.summary))).toBeUndefined();
+  });
+
+  it('a nested table with its own point width shares that width; one in a point-width cell shares the cell (review 4)', () => {
+    const nested = (tableFormat?: Record<string, unknown>) => {
+      let d = sfdtOf([156, 312]);
+      const host = { serialize: () => d, open: (x: string) => { d = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+      const s = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' } }).state;
+      const table = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections)[0].blocks)[0];
+      const cell = arr<NfNode>(arr<NfNode>(table.rows)[1].cells)[1];
+      const para = arr<NfNode>(cell.blocks)[0];
+      const r = prepareWrite(s, {
+        intent: 'Nest a table.',
+        scope: { ids: [] },
+        formats: tableFormat ? { 'tmp:t': tableFormat } : {},
+        changes: [{ kind: 'insert_after', anchor: para.id, container: shapeOf(cell, docxTree), node: { kind: 'table', ...(tableFormat ? { style: 'tmp:t' } : {}), rows: [{ kind: 'row', cells: ['A', 'B'].map((t) => ({ kind: 'cell', blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: t }] }] })) }] } }]
+      } as WriteInput);
+      if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 600));
+      const inner = arr<NfNode>(arr<NfNode>(arr<NfNode>(arr<NfNode>(arr<NfNode>(r.intended.root.sections)[0].blocks)[0].rows)[1].cells)[1].blocks)[1];
+      return arr<NfNode>(arr<NfNode>(inner.rows)[0].cells).map((c) => r.intended.formats[String(c.style)]?.preferredWidth);
+    };
+    expect(nested({ preferredWidth: 200, preferredWidthType: 'Point' })).toEqual([100, 100]);
+    // the cell is 312 points wide: its nested table shares that, less the cell's own margins
+    expect(nested()).toEqual([150.6, 150.6]);
+  });
+
   it('leaves a table that still fits, and one that did not fit before, as written', () => {
     expect(addColumn([100, 100]).widths).toEqual([[100, 100, 100], [100, 100, 100]]);
     expect(addColumn([300, 300]).facts.some((f) => f.name === 'column-fit')).toBe(false);

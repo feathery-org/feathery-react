@@ -730,6 +730,21 @@ describe('a new table written with no widths (matrix T10)', () => {
   });
 });
 
+describe('a nested table written with only its own width (Codex review 4)', () => {
+  it('lands with its columns sharing that width: no zero grid', async () => {
+    await fresh();
+    const hits = (await dispatch('find', { kind: 'cell' })).hits as Array<{ id: string }>;
+    const cell = Object.values(await read([hits[0].id]))[0] as any;
+    const paragraph = (cell.blocks ?? []).find((b: any) => b.kind === 'paragraph');
+    const leaf = (t: string) => ({ kind: 'cell', blocks: [{ kind: 'paragraph', inlines: [{ kind: 'run', text: t }] }] });
+    const r = await dispatch('write', { intent: 'Nest a table.', scope: { ids: [] }, formats: { 'tmp:t': { preferredWidth: 120, preferredWidthType: 'Point' } }, changes: [{ kind: 'insert_after', anchor: paragraph.id, container: cell.shape, node: { kind: 'table', style: 'tmp:t', rows: [{ kind: 'row', cells: [leaf('A'), leaf('B')] }] } }] });
+    expect(r).toEqual(expect.objectContaining({ ok: true, committed: true }));
+    const doc = await lane.call<string>('settled');
+    const grids = [...doc.matchAll(/"grid":\[([^\]]*)\]/g)].map((m) => m[1]);
+    expect(grids.some((g) => g.split(',').map(Number).every((w) => w === 0))).toBe(false);
+  });
+});
+
 describe('the descriptor (protocol 2, section 9): the outline itself and the selection read from the editor', () => {
   const ownText = (p: any): string => {
     let out = '';

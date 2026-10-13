@@ -202,22 +202,46 @@ function contentWidth(view: DocumentView, id: string): number | null {
   return null;
 }
 
-/** The text width of the section a node sits in, in `nf`; null inside a cell (it fits its cell). */
-function textWidthIn(nf: NormalForm, id: string): number | null {
+/** A cell's default side margins when neither it nor its table sets them, in points. */
+const CELL_MARGIN = 5.4;
+
+/**
+ * The width a table is laid out into, in `nf`: the text width of its section at the top level,
+ * or, inside a cell, that cell's point width less its side margins; null when unknown.
+ */
+function availableWidth(nf: NormalForm, id: string): number | null {
+  const formats = nf.formats as Formats;
+  const formatOf = (n: NfNode | null) =>
+    n && typeof n.style === 'string' ? formats[n.style] ?? {} : {};
   let found: number | null | undefined;
-  const rec = (n: NfNode, section: NfNode | null, inCell: boolean) => {
+  const rec = (
+    n: NfNode,
+    section: NfNode | null,
+    cell: NfNode | null,
+    table: NfNode | null
+  ) => {
     if (found !== undefined) return;
     if (n.id === id) {
-      if (inCell || !section) found = null;
-      else {
-        const f =
-          typeof section.style === 'string'
-            ? (nf.formats as Formats)[section.style] ?? {}
-            : {};
+      if (cell) {
+        const c = formatOf(cell);
+        const t = formatOf(table);
+        const width = Number(c.preferredWidth);
+        const side = (k: 'leftMargin' | 'rightMargin') =>
+          Number.isFinite(Number(c[k]))
+            ? Number(c[k])
+            : Number.isFinite(Number(t[k]))
+            ? Number(t[k])
+            : CELL_MARGIN;
+        found =
+          c.preferredWidthType === 'Point' && width > 0
+            ? width - side('leftMargin') - side('rightMargin')
+            : null;
+      } else if (section) {
+        const f = formatOf(section);
         const width =
           Number(f.pageWidth) - Number(f.leftMargin) - Number(f.rightMargin);
         found = Number.isFinite(width) && width > 0 ? width : null;
-      }
+      } else found = null;
       return;
     }
     for (const key of docxTree.childLists(n))
@@ -225,40 +249,49 @@ function textWidthIn(nf: NormalForm, id: string): number | null {
         rec(
           c,
           n.kind === KIND.section ? n : section,
-          inCell || n.kind === KIND.cell
+          n.kind === KIND.cell ? n : cell,
+          n.kind === KIND.table ? n : table
         );
   };
-  rec(nf.root, null, false);
+  rec(nf.root, null, null, null);
   return found ?? null;
 }
 
 /**
- * A new table written with no widths at all (not a copy, which brings its source's): the editor
- * would lay it out on a zero grid, so its columns share the width the table has equally, the text
- * width or the table's own preferred width when it sets one, as point widths.
+ * A new table written with no widths at all: every cell new (not moved, not a copy, which bring
+ * the widths they were laid out at) and none with a preferred width. The editor would lay it out
+ * on a zero grid, so its columns share equally the width the table has: its own point width, or a
+ * percent of what it is laid out into (the text width, or its cell's width when nested), or all
+ * of that.
  */
 function shareNewTable(
   after: NormalForm,
   table: NfNode,
   formats: FinalizerContext['formats'],
-  copies: Readonly<Record<string, string>>
+  copies: Readonly<Record<string, string>>,
+  before: DocumentView
 ): { ids: string[]; summary: string } | null {
   if (copies[table.id]) return null;
   const now = after.formats as Formats;
   const rows = arr<NfNode>(table.rows);
   const cells = rows.flatMap((r) => arr<NfNode>(r.cells));
-  if (!cells.length || cells.some((c) => copies[c.id])) return null;
+  if (!cells.length || cells.some((c) => copies[c.id] || before.get(c.id)))
+    return null;
   if (cells.some((c) => widthOf(now, c).width !== undefined)) return null;
-  const text = textWidthIn(after, table.id);
-  if (text === null) return null;
+  const available = availableWidth(after, table.id);
   const own = typeof table.style === 'string' ? now[table.style] ?? {} : {};
   const ownWidth = Number(own.preferredWidth);
   const room =
     own.preferredWidthType === 'Point' && ownWidth > 0
-      ? Math.min(text, ownWidth)
+      ? available === null
+        ? ownWidth
+        : Math.min(available, ownWidth)
+      : available === null
+      ? null
       : own.preferredWidthType === 'Percent' && ownWidth > 0
-      ? Math.min(text, (text * ownWidth) / 100)
-      : text;
+      ? (available * Math.min(100, ownWidth)) / 100
+      : available;
+  if (room === null || !(room > 0)) return null;
   const spanOf = (c: NfNode) => {
     const f = typeof c.style === 'string' ? now[c.style] ?? {} : {};
     return Math.max(1, Number(f.columnSpan) || 1);
@@ -303,7 +336,7 @@ export const columnFitFinalizer: Finalizer = {
     for (const table of tablesOf(after.root)) {
       const old = before.get(table.id);
       if (!old) {
-        const shared = shareNewTable(after, table, formats, copies);
+        const shared = shareNewTable(after, table, formats, copies, before);
         if (shared) {
           ids.push(...shared.ids);
           fitted.push(shared.summary);
