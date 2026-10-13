@@ -132,6 +132,17 @@ export interface LiveDocumentAccessor {
    * action names), read here once the form schema delivers it.
    */
   documentType(): string | null;
+  /**
+   * Whether the form has a document element on any step, current or not: the server grants the
+   * document tools per form from it, constant across that form's turns.
+   */
+  hasDocumentElement(): boolean;
+}
+
+/** What the form tells the accessor about itself. */
+export interface FormDocuments {
+  /** Whether any step of the form holds a document element, from the form's step configuration. */
+  hasDocumentElement(): boolean;
 }
 
 const journals = new Map<string, WriteJournal<VerbResult>>();
@@ -171,7 +182,13 @@ function recordedWrite(formKey: string, raw: unknown): DispatchOutcome | null {
   };
 }
 
-export function liveDocumentAccessor(formKey: string): LiveDocumentAccessor {
+export function liveDocumentAccessor(
+  formKey: string,
+  form: FormDocuments = {
+    // without the form's configuration, a mounted document is the only evidence
+    hasDocumentElement: () => slotsOf(formKey).length > 0
+  }
+): LiveDocumentAccessor {
   const action =
     (verb: Verb): DocumentAction =>
     (payload) => {
@@ -212,7 +229,8 @@ export function liveDocumentAccessor(formKey: string): LiveDocumentAccessor {
     },
     documentType() {
       return null;
-    }
+    },
+    hasDocumentElement: () => form.hasDocumentElement()
   };
 }
 

@@ -544,3 +544,36 @@ describe('liveDocument', () => {
     unmount();
   });
 });
+
+describe('liveDocument.hasDocumentElement', () => {
+  it('is true when any step of the form has a document editor, the current step or not', () => {
+    const uuid = 'formContext-has-document';
+    setFormInternalState(uuid, {
+      fields: {},
+      currentStep: { key: 'intro', subgrids: [{ id: 'c0', properties: {} }] },
+      steps: {
+        intro: { key: 'intro', subgrids: [{ id: 'c0', properties: {} }] },
+        review: {
+          key: 'review',
+          subgrids: [
+            { id: 'c1', properties: {} },
+            { id: 'c2', properties: { document_editor: true } }
+          ]
+        }
+      }
+    } as any);
+    expect(getFormContext(uuid).liveDocument.hasDocumentElement()).toBe(true);
+  });
+
+  it('is false when no step has one, and before the form has loaded its steps', () => {
+    const uuid = 'formContext-no-document';
+    expect(getFormContext(uuid).liveDocument.hasDocumentElement()).toBe(false);
+    setFormInternalState(uuid, {
+      fields: {},
+      steps: {
+        only: { key: 'only', subgrids: [{ id: 'c0', properties: {} }] }
+      }
+    } as any);
+    expect(getFormContext(uuid).liveDocument.hasDocumentElement()).toBe(false);
+  });
+});
