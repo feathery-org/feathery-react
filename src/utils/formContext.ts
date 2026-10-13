@@ -18,6 +18,7 @@ import internalState, {
   GetConfigParams,
   CreateEgnyteFolderParams,
   DocusignNotification,
+  EditableEsignField,
   GetDocusignEnvelopeParams,
   UploadFileToEgnyteParams,
   LoanProCustomerObject,
@@ -404,6 +405,7 @@ export const getFormContext = (formUuid: string) => {
       smsAuthentication,
       ccRecipients,
       customFields,
+      editableEsignFields,
       repeatable,
       download,
       merge,
@@ -477,6 +479,9 @@ export const getFormContext = (formUuid: string) => {
         string,
         string | { listItems: string[]; value?: string }
       >;
+      // Only for signMethod 'docusign': the Quik fields signers may edit,
+      // replacing the integration's list for this envelope.
+      editableEsignFields?: EditableEsignField[];
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
@@ -720,6 +725,7 @@ export const getFormContext = (formUuid: string) => {
               : {}),
             cc_recipients: ccCopies,
             custom_fields: customFields,
+            editable_esign_fields: editableEsignFields,
             repeatable,
             merge_docs: merge,
             merged_file_name: mergedFileName,
