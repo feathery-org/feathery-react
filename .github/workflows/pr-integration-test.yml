@@ -45,10 +45,37 @@ jobs:
           token: ${{ secrets.FEATHERY_BOT_TOKEN }}
           path: hosted-forms-next # Clone into /hosted-forms-next
 
+      # A Robin version branch of hosted-forms imports @feathery-org/robin, which is not published:
+      # build it, with the @feathery-org/types it depends on, from feathery-frontend's branch of the
+      # same name (inside that monorepo both resolve as workspaces, no registry token needed)
+      - name: Checkout feathery-frontend (Robin branches)
+        if: startsWith(github.base_ref, 'feat/robin-v')
+        uses: actions/checkout@v6
+        with:
+          repository: feathery-org/feathery-frontend
+          ref: ${{ github.base_ref }}
+          token: ${{ secrets.FEATHERY_BOT_TOKEN }}
+          path: feathery-frontend # Clone into /feathery-frontend
+
+      - name: Build the Robin package (Robin branches)
+        if: startsWith(github.base_ref, 'feat/robin-v')
+        working-directory: feathery-frontend
+        run: |
+          yarn install --frozen-lockfile
+          yarn --cwd packages/types build
+          yarn --cwd packages/robin build
+          (cd packages/types && yarn pack --filename ../../feathery-types.tgz)
+          (cd packages/robin && yarn pack --filename ../../feathery-robin.tgz)
+
       - name: Test in hosted-forms
         working-directory: hosted-forms-next
         run: |
           yarn add ../feathery-react/v${{ github.event.pull_request.number }}.tgz
+          if [[ "${{ github.base_ref }}" == feat/robin-v* ]]; then
+            # the robin package's own dependency on types resolves to the tarball built above
+            npm pkg set 'resolutions.@feathery-org/types=file:../feathery-frontend/feathery-types.tgz'
+            yarn add ../feathery-frontend/feathery-types.tgz ../feathery-frontend/feathery-robin.tgz i18next@^23.16.8 react-i18next@^14.1.3
+          fi
           yarn test
           npx playwright install --with-deps
           yarn test:e2e
