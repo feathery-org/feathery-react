@@ -23,6 +23,7 @@ import {
 } from '../../../elements/components/TextNodes';
 import DocumentEditorContainer from '../../../elements/components/DocxEditor/DocumentEditorContainer';
 import { ShadowDomHtmlContent } from '../../../utils/ShadowDomHtmlContent';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 export type StyledContainerProps = PropsWithChildren & {
   key?: string;
@@ -109,8 +110,16 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
     );
 
     const url = replaceTextVariables(node.properties.iframe_url);
-    // Unresolved field references would navigate relative to the current page.
-    if (url && !url.match(TEXT_VARIABLE_PATTERN)) {
+    let blockEditorIframe = editMode && !url;
+    if (editMode && url.match(TEXT_VARIABLE_PATTERN)) {
+      const link = featheryDoc().createElement?.('a');
+      if (link) {
+        link.href = url;
+        // Only same-origin embeds can load the dashboard inside its editor.
+        blockEditorIframe = link.origin === featheryWindow().location.origin;
+      }
+    }
+    if (node.properties.iframe_url && !blockEditorIframe) {
       children.push(
         <iframe
           key={`iframe:${url}`}

@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { StyledContainer } from '.';
 import { fieldValues, setFieldValues } from '../../../utils/init';
+import { featheryWindow } from '../../../utils/browser';
 
 jest.mock('../../../elements/components/DocxEditor', () => {
   const React = jest.requireActual('react');
@@ -39,30 +40,65 @@ describe('StyledContainer iframe embeds', () => {
 
   it.each([
     '{{extraction_review_url}}',
-    'https://example.com/review/{{submission_id}}',
+    '/review/{{submission_id}}',
+    `${featheryWindow().location.origin}/review/{{submission_id}}`,
     ''
-  ])('skips an unresolved or empty editor embed URL: %s', (source) => {
+  ])(
+    'skips an unresolved same-origin or empty editor embed URL: %s',
+    (source) => {
+      const { container } = render(
+        <StyledContainer
+          node={{ ...baseNode, properties: { iframe_url: source } }}
+          breakpoint={480}
+          editMode
+        >
+          <span>Container contents</span>
+        </StyledContainer>
+      );
+
+      expect(container.querySelector('iframe')).toBeNull();
+      expect(container).toHaveTextContent('Container contents');
+    }
+  );
+
+  it.each([
+    'https://calendly.com/team/demo?email={{email}}',
+    '//calendly.com/team/demo?email={{email}}'
+  ])(
+    'preserves an external editor embed with unresolved parameters: %s',
+    (source) => {
+      const { container } = render(
+        <StyledContainer
+          node={{ ...baseNode, properties: { iframe_url: source } }}
+          breakpoint={480}
+          editMode
+        />
+      );
+
+      expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+    }
+  );
+
+  it('preserves unresolved live-form embeds', () => {
+    const source = '{{extraction_review_url}}';
     const { container } = render(
       <StyledContainer
         node={{ ...baseNode, properties: { iframe_url: source } }}
         breakpoint={480}
-        editMode
-      >
-        <span>Container contents</span>
-      </StyledContainer>
+      />
     );
 
-    expect(container.querySelector('iframe')).toBeNull();
-    expect(container).toHaveTextContent('Container contents');
+    expect(container.querySelector('iframe')).toHaveAttribute('src', source);
   });
 
-  it('renders a live embed only while its field resolves to a nonempty URL', () => {
+  it('renders an editor embed once its field resolves to a nonempty URL', () => {
     const props = {
       node: {
         ...baseNode,
         properties: { iframe_url: '{{extraction_review_url}}' }
       },
-      breakpoint: 480
+      breakpoint: 480,
+      editMode: true
     };
     const { container, rerender } = render(<StyledContainer {...props} />);
     expect(container.querySelector('iframe')).toBeNull();
