@@ -252,7 +252,7 @@ describe('fieldHelperFunctions', () => {
   });
 
   describe('saveInitialValuesAndUrlParams', () => {
-    const saveParams = (search) => {
+    const saveParams = (search, { steps = null, hiddenFields = {} } = {}) => {
       featheryWindow().history.replaceState({}, '', `/to/form${search}`);
       const updateFieldValues = jest.fn();
       const client = { submitCustom: jest.fn() };
@@ -262,8 +262,8 @@ describe('fieldHelperFunctions', () => {
         client,
         saveUrlParams: true,
         initialValues: {},
-        steps: null,
-        hiddenFields: {}
+        steps,
+        hiddenFields
       });
 
       return updateFieldValues.mock.calls[0]?.[0] ?? {};
@@ -278,6 +278,45 @@ describe('fieldHelperFunctions', () => {
     it('never submits the access link token, which is a credential', () => {
       expect(saveParams('?_lt=tok&utm_source=email')).toEqual({
         utm_source: 'email'
+      });
+    });
+
+    it('casts url params to the type of the field they fill', () => {
+      const steps = {
+        step1: {
+          servar_fields: [
+            { servar: { key: 'age', type: 'integer_field', repeated: false } },
+            { servar: { key: 'agree', type: 'checkbox', repeated: false } },
+            { servar: { key: 'colors', type: 'multiselect', repeated: false } },
+            { servar: { key: 'tags', type: 'multiselect', repeated: false } },
+            { servar: { key: 'names', type: 'text_field', repeated: true } }
+          ]
+        }
+      };
+      const search =
+        '?age=30&agree=false&colors=red&colors=blue&tags=one&names=a&names=b';
+
+      expect(saveParams(search, { steps })).toEqual({
+        age: 30,
+        agree: false,
+        colors: ['red', 'blue'],
+        tags: ['one'],
+        names: ['a', 'b']
+      });
+    });
+
+    it('casts url params to the type of the hidden field they fill', () => {
+      const hiddenFields = { score: 'number_value', vip: 'boolean_value' };
+
+      expect(saveParams('?score=7&vip=yes', { hiddenFields })).toEqual({
+        score: 7,
+        vip: true
+      });
+    });
+
+    it('keeps the last value of a repeated param for a single-value field', () => {
+      expect(saveParams('?utm_source=a&utm_source=b')).toEqual({
+        utm_source: 'b'
       });
     });
   });

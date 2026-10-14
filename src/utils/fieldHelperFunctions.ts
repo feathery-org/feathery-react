@@ -543,24 +543,37 @@ export function saveInitialValuesAndUrlParams({
   let rerenderRequired = false;
   // Submit initial values & URL params
   let valuesToSubmit: Record<string, any> = {};
+  const servarAttrMap = getServarAttrMap(steps);
+  const castVal = (key: string, val: any) => {
+    const attrs = servarAttrMap[key] ?? {};
+    const hiddenFieldType = hiddenFields[key];
+    return hiddenFieldType
+      ? castHiddenVal(hiddenFieldType, val)
+      : castServarVal(attrs.type, val, attrs.repeated);
+  };
   if (!isObjectEmpty(initialValues)) {
     rerenderRequired = true;
-    const servarAttrMap = getServarAttrMap(steps);
     valuesToSubmit = { ...initialValues };
     Object.entries(valuesToSubmit).map(([key, val]) => {
-      const attrs = servarAttrMap[key] ?? {};
-      const hiddenFieldType = hiddenFields[key];
-      valuesToSubmit[key] = hiddenFieldType
-        ? castHiddenVal(hiddenFieldType, val)
-        : castServarVal(attrs.type, val, attrs.repeated);
+      valuesToSubmit[key] = castVal(key, val);
     });
   }
   const params = new URLSearchParams(featheryWindow().location.search);
   if (saveUrlParams) {
-    params.forEach((value, key) => {
+    new Set(params.keys()).forEach((key) => {
       // The access link token is a credential, not submitted data
       if (['_slug', LINK_TOKEN_PARAM].includes(key)) return;
-      valuesToSubmit[key] = value;
+      // URL params are always strings, so cast them like initial values or
+      // non-text fields (numbers, multiselects, ...) fail server validation
+      const attrs = servarAttrMap[key];
+      const values = params.getAll(key);
+      const takesList =
+        attrs && (ARRAY_FIELD_TYPES.includes(attrs.type) || attrs.repeated);
+      valuesToSubmit[key] = castVal(
+        key,
+        takesList && values.length > 1 ? values : values[values.length - 1]
+      );
+      if (attrs) rerenderRequired = true;
     });
   }
   if (!isObjectEmpty(valuesToSubmit)) {
