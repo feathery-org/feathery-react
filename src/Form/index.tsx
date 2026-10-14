@@ -3,6 +3,7 @@ import React, {
   ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -154,10 +155,12 @@ import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
+import { FormWebMCPTools, hasWebMCPRuntime } from '../utils/formTools/webmcp';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   CreateEgnyteFolderParams,
+  FormToolsCallbacks,
   GetDocusignEnvelopeParams,
   UploadFileToEgnyteParams,
   RunComputerAgentOptions,
@@ -229,6 +232,7 @@ import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils/utils';
 import { triggerPersona } from '../integrations/persona';
 import Collaborator from '../utils/entities/Collaborator';
+import { flushFormRerender } from '../utils/entities/Field';
 import {
   useOfflineRequestHandler,
   verifyConnectivity
@@ -348,6 +352,9 @@ export interface Props {
   _draft?: boolean;
   readOnly?: boolean;
   hashNavigation?: boolean;
+  // Registers feathery_get_step/fill_step/next_step on document.modelContext
+  // when present
+  enableFormTools?: boolean;
 }
 
 interface InternalProps {
@@ -455,7 +462,8 @@ function Form({
   className = '',
   children,
   readOnly = false,
-  hashNavigation
+  hashNavigation,
+  enableFormTools = false
 }: InternalProps & Props) {
   const [formName, setFormName] = useState('');
   const [formId, setFormId] = useState(formIdProp);
@@ -861,6 +869,8 @@ function Form({
   // All mount and unmount logic should live here
   useEffect(() => {
     registerRenderCallback(_internalId, 'form', () => {
+      if (enableFormTools && internalState[_internalId])
+        internalState[_internalId].formToolsRenderOwed = true;
       setRender((render) => ({ ...render }));
     });
     if (
@@ -1016,7 +1026,10 @@ function Form({
     });
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
+  function addRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    limit: number | null = null
+  ) {
     const getNewVal = (field: any) => {
       const val = fieldValues[field.servar.key];
       if (limit && val && Array.isArray(val) && val.length >= limit) return val;
@@ -1923,6 +1936,14 @@ function Form({
     }
   }
 
+  // Commit signal for formTools' fillStep (see renderTick.ts)
+  useLayoutEffect(() => {
+    if (!enableFormTools || !internalState[_internalId]) return;
+    internalState[_internalId].formToolsRenderTick =
+      (internalState[_internalId].formToolsRenderTick ?? 0) + 1;
+    internalState[_internalId].formToolsRenderOwed = false;
+  });
+
   useEffect(() => {
     if (clientRef.current) return;
 
@@ -1930,7 +1951,8 @@ function Form({
       formId,
       hasRedirected,
       _draft,
-      _bypassCDN
+      _bypassCDN,
+      enableFormTools
     );
     const newClient = clientRef.current;
     let saveUrlParamsFormSetting = false;
@@ -2272,6 +2294,8 @@ function Form({
     });
 
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);
+    if (enableFormTools)
+      internalState[_internalId].formToolsLastSave = stepPromise;
 
     const fieldData: Record<string, any> = {};
     if (integrations?.segment?.metadata.track_fields)
@@ -3931,6 +3955,24 @@ function Form({
       assistantClientRef.current = new AssistantClient(callbacks);
       internalState[_internalId].assistantClient = assistantClientRef.current;
     }
+    // Merged into one object: a running tool call holds the object it read at
+    // its start, and still gets each later render's callbacks through it
+    if (enableFormTools) {
+      const formToolsCallbacks: FormToolsCallbacks = {
+        changeValue,
+        flushRerender: flushFormRerender,
+        fieldOnChange,
+        getNextStepKey,
+        buttonOnClick,
+        awaitChangeRules: () => callbackRef.current.all(),
+        addRepeatedRow,
+        submitFiles: (fileEntries) => client.submitFiles(fileEntries)
+      };
+      internalState[_internalId].formToolsCallbacks = Object.assign(
+        internalState[_internalId].formToolsCallbacks ?? {},
+        formToolsCallbacks
+      );
+    }
   }
 
   const form = {
@@ -4123,6 +4165,9 @@ function Form({
         )}
         {flinksFrame}
         <Grid step={activeStep} form={form} viewport={viewport} />
+        {enableFormTools && hasWebMCPRuntime() && (
+          <FormWebMCPTools formUuid={_internalId} />
+        )}
         {popupOptions && (
           <CloseIcon
             fill='white'

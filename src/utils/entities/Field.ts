@@ -474,3 +474,6 @@ export function parseUserVal(
 // debounce is still needed for long running async logic rules that could
 // complete after the event handling is done.
 const debouncedFormRerender = debounce(() => rerenderAllForms(), 100);
+
+// Runs a pending rule-triggered rerender now
+export const flushFormRerender = () => debouncedFormRerender.flush();
