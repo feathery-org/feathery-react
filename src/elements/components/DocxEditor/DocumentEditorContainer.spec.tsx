@@ -158,14 +158,23 @@ jest.mock('./SignedEnvelopeView', () => {
     pdfUrl,
     downloadUrl,
     signUrl,
+    onOpenSigningPage,
     status
   }: any) {
-    return React.createElement('div', {
-      'data-testid': `signed-view:${pdfUrl}`,
-      'data-download': downloadUrl,
-      'data-sign-url': signUrl ?? '',
-      'data-status': String(status)
-    });
+    return React.createElement(
+      'div',
+      {
+        'data-testid': `signed-view:${pdfUrl}`,
+        'data-download': downloadUrl,
+        'data-sign-url': signUrl ?? '',
+        'data-status': String(status)
+      },
+      onOpenSigningPage &&
+        React.createElement('button', {
+          'data-testid': 'open-signing-page',
+          onClick: onOpenSigningPage
+        })
+    );
   };
 });
 
@@ -1281,6 +1290,112 @@ describe('DocumentEditorContainer signing outcomes', () => {
     mockGetCurrentEnvelope.mockClear();
     await focus();
     expect(mockGetCurrentEnvelope).not.toHaveBeenCalled();
+  });
+
+  describe('after a reload', () => {
+    const reopened = (sent: Record<string, any>) => {
+      seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+      delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
+      mockGetCurrentEnvelope.mockResolvedValue({
+        id: `envelope-${CONTAINER}`,
+        file: 'https://x/sent.pdf',
+        editor_file: null,
+        type: 'pdf',
+        signed: false,
+        ...sent
+      });
+      return mount();
+    };
+
+    it('still shows a Feathery send as awaiting and keeps polling it', async () => {
+      const { getByTestId } = reopened({ sent: true, sent_via: 'feathery' });
+
+      await waitFor(() =>
+        expect(getByTestId('signed-view:https://x/sent.pdf')).toHaveAttribute(
+          'data-status',
+          'awaiting'
+        )
+      );
+      mockGetCurrentEnvelope.mockClear();
+      await focus();
+      expect(mockGetCurrentEnvelope).toHaveBeenCalledTimes(1);
+    });
+
+    it('fetches the signing page again and opens it', async () => {
+      const open = jest
+        .spyOn(featheryWindow(), 'open')
+        .mockImplementation(() => null);
+      mockFinalizeEnvelope.mockResolvedValue({
+        ...finalizedPdf('https://x/sent.pdf'),
+        signer_id: 'signer-9',
+        invited: false
+      });
+      const { getByTestId } = reopened({ sent: true, sent_via: 'feathery' });
+
+      await waitFor(() =>
+        expect(getByTestId('open-signing-page')).toBeTruthy()
+      );
+      await act(async () => {
+        getByTestId('open-signing-page').click();
+      });
+
+      expect(mockFinalizeEnvelope).toHaveBeenCalledWith(
+        `envelope-${CONTAINER}`,
+        expect.any(Array),
+        'feathery'
+      );
+      expect(open).toHaveBeenCalledWith(
+        expect.stringContaining('signer-9'),
+        '_blank',
+        'noopener'
+      );
+      // Kept as a link in case that tab was blocked too.
+      expect(
+        getByTestId('signed-view:https://x/sent.pdf').getAttribute(
+          'data-sign-url'
+        )
+      ).toContain('signer-9');
+    });
+
+    it('says so when it is someone else’s turn to sign', async () => {
+      mockFinalizeEnvelope.mockResolvedValue({
+        ...finalizedPdf('https://x/sent.pdf'),
+        signer_id: null
+      });
+      const { getByTestId, findByRole } = reopened({
+        sent: true,
+        sent_via: 'feathery'
+      });
+
+      await waitFor(() =>
+        expect(getByTestId('open-signing-page')).toBeTruthy()
+      );
+      await act(async () => {
+        getByTestId('open-signing-page').click();
+      });
+
+      expect((await findByRole('alert')).textContent).toContain(
+        'waiting on another signer'
+      );
+    });
+
+    it('labels a DocuSign send, offers no Feathery page and does not poll', async () => {
+      const { getByTestId, queryByTestId } = reopened({
+        sent: true,
+        sent_via: 'docusign'
+      });
+
+      await waitFor(() =>
+        expect(getByTestId('signed-view:https://x/sent.pdf')).toHaveAttribute(
+          'data-status',
+          'docusign'
+        )
+      );
+      expect(queryByTestId('open-signing-page')).toBeNull();
+      mockGetCurrentEnvelope.mockClear();
+      await focus();
+      expect(mockGetCurrentEnvelope).not.toHaveBeenCalled();
+    });
   });
 
   it('carries the signable file on the sign trigger (single file → files list)', async () => {
