@@ -22,6 +22,7 @@ import {
   setRobinTurnActive,
   whileRobinWrites
 } from './robinActivity';
+import { settleTurnWhenIdle } from './robinTurnGuard';
 
 export interface RobinDocumentMount {
   /** The form instance the editor renders in: the key the form context reads by. */
@@ -41,7 +42,8 @@ export function createRobinSession(
   editor: LiveEditor,
   envelopeId: string,
   editorId?: string,
-  journal?: SessionOptions['journal']
+  journal?: SessionOptions['journal'],
+  onActivity?: () => void
 ): DocumentSession {
   return new DocumentSession({
     pack: docxPack,
@@ -49,17 +51,28 @@ export function createRobinSession(
     target: { type: 'envelope', id: envelopeId },
     ...(editorId ? { editorId } : {}),
     ...(journal ? { journal } : {}),
-    ...robinMarks(editor)
+    ...robinMarks(editor, onActivity)
   });
 }
 
-/** The session options that put Robin's marks on the editor and report replaced documents. */
+/**
+ * The session options that put Robin's marks on the editor and report replaced documents;
+ * `onActivity` hears each turn start and each write.
+ */
 export function robinMarks(
-  editor: LiveEditor
+  editor: LiveEditor,
+  onActivity?: () => void
 ): Pick<SessionOptions, 'onTurnChange' | 'writing' | 'onReplaced'> {
   return {
-    onTurnChange: (turnId) => setRobinTurnActive(editor, turnId !== null),
-    writing: (commit) => whileRobinWrites(editor, commit),
+    onTurnChange: (turnId) => {
+      setRobinTurnActive(editor, turnId !== null);
+      if (turnId !== null) onActivity?.();
+    },
+    writing: (commit) => {
+      const out = whileRobinWrites(editor, commit);
+      onActivity?.();
+      return out;
+    },
     onReplaced: () => documentReplaced(editor)
   };
 }
@@ -78,14 +91,18 @@ export function mountRobinDocument({
   envelopeId
 }: RobinDocumentMount): () => void {
   let unroute = () => {};
+  let guard: { activity(): void; dispose(): void } | null = null;
   const mounted = lazySession(newEditorId(), (editorId) => {
     // the form session's journal: a resent write finds its record after a remount
     const session = createRobinSession(
       editor,
       envelopeId,
       editorId,
-      journalFor(formKey)
+      journalFor(formKey),
+      () => guard?.activity()
     );
+    // the turn mark clears itself if the form's settle signal never comes
+    guard = settleTurnWhenIdle(editor, session);
     // undo and redo go to the editor when it has an entry, else to the engine (decision D4)
     unroute = registerHistoryRoute(editor, {
       undo: () => session.undo(),
@@ -102,6 +119,7 @@ export function mountRobinDocument({
       !!mounted.get()?.resolveCard(changeSetId, accept)
   });
   return () => {
+    guard?.dispose();
     unroute();
     unregister();
     unmount();
