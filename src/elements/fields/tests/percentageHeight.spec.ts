@@ -64,6 +64,15 @@ describe('a percentage-height input box', () => {
       expect([type, box.flex]).toEqual([type, '1 1 auto']);
     });
   });
+
+  // 'fc' does not stretch its children, so a box with no width of its own --
+  // the phone's flex row -- shrank to its content. It claims the full width.
+  it('keeps every input box full width in the column', () => {
+    INPUT_BOX_FIELDS.forEach((type) => {
+      const box = targets(type, PCT).getTarget('sub-fc', true);
+      expect([type, box.alignSelf]).toEqual([type, 'stretch']);
+    });
+  });
 });
 
 describe('what a percentage height must not disturb', () => {
@@ -113,6 +122,7 @@ describe('across the mobile breakpoint', () => {
     const t = targets('text_field', PCT, { mobileStyles: PX });
     const key = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
     expect((t.getTarget('sub-fc') as any)[key].flex).toBe('0 1 auto');
+    expect((t.getTarget('sub-fc') as any)[key].alignSelf).toBe('auto');
     expect((t.getTarget('fc') as any)[key]).toEqual(
       expect.objectContaining({
         display: 'block',
