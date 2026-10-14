@@ -1939,27 +1939,45 @@ export default class ResponsiveStyles {
     if (styles.placeholder_transition === 'shrink_top') {
       // The shrunken label is an overlay pinned to the box top, at fixed
       // offsets the padding never moves -- production geometry.
-      this.apply('placeholderFocus', 'font_size', (fontSize: any) => {
-        const minFontSize = Math.min(fontSize, 10);
-        const pinned: any = {
-          // Half a shrunken font down, in the resting label's own line box.
-          top: 0,
-          marginTop: `${minFontSize / 2}px`,
-          fontSize: `${minFontSize}px`
-        };
-        // Fixed on the inline axis too: the resting label tracks the padding
-        // with the value it stands in for, but the shrunken label keeps its
-        // production seat whatever the theme sets. That seat is the 0.75rem
-        // Placeholder anchors it at inline, and it has to be re-declared in
-        // the same unit -- `12px` is only the same seat at a 16px root, so on
-        // a page with any other root size it would move every shrunken label
-        // on the form. Emitted unconditionally because it is exactly that
-        // anchor: a mobile pass can then return the label to it (apply()
-        // cannot undo a declaration, only overwrite it).
-        if (takesInnerPadding(type))
-          pinned.insetInlineStart = RESET_INLINE_PADDING_CSS;
-        return pinned;
-      });
+      this.apply(
+        'placeholderFocus',
+        ['font_size', 'corner_top_left_radius'],
+        (fontSize: any, radius: any) => {
+          const minFontSize = Math.min(fontSize, 10);
+          const pinned: any = {
+            // Half a shrunken font down, in the resting label's own line box.
+            top: 0,
+            marginTop: `${minFontSize / 2}px`,
+            fontSize: `${minFontSize}px`
+          };
+          // Fixed on the inline axis too: the resting label tracks the padding
+          // with the value it stands in for, but the shrunken label keeps its
+          // production seat whatever the theme sets. That seat is the 0.75rem
+          // Placeholder anchors it at inline, and it has to be re-declared in
+          // the same unit -- `12px` is only the same seat at a 16px root, so on
+          // a page with any other root size it would move every shrunken label
+          // on the form. Emitted unconditionally because it is exactly that
+          // anchor: a mobile pass can then return the label to it (apply()
+          // cannot undo a declaration, only overwrite it).
+          if (takesInnerPadding(type)) {
+            const seat = RESET_INLINE_PADDING_CSS;
+            // A rounded top-left corner curves through the label's band. Where
+            // the curve still reaches inward at the label's top edge, the seat
+            // moves just past it: the sweep at height y is r - sqrt(r^2 -
+            // (r-y)^2), plus a little air. The production seat already clears
+            // every radius under ~26px, so those labels do not move; the plain
+            // seat rides as the fallback for browsers without max().
+            const r = isNum(radius) ? Number(radius) : 0;
+            const yTop = minFontSize / 2;
+            const sweep =
+              r > yTop ? r - Math.sqrt(2 * r * yTop - yTop * yTop) : 0;
+            const clear = Math.round((sweep + 2) * 10) / 10;
+            pinned.insetInlineStart =
+              clear > 10 ? [seat, `max(${seat}, ${clear}px)`] : seat;
+          }
+          return pinned;
+        }
+      );
       // Resting mobile placement must not override the pinned desktop anchor
       // when the breakpoint has no font override of its own.
       if (this.handleMobile)
