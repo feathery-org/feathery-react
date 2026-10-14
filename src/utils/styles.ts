@@ -8,8 +8,9 @@ export function isDirectionColumn(flexDirection: any) {
 
 export function getImageColorStyles(color: string) {
   if (!color) return {};
-  const filter =
-    color === 'black' ? 'brightness(0%)' : 'brightness(0%) invert(100%)';
+  // Live forms already store 'white' and render it unchanged, so it stays a
+  // no-op instead of turning images white.
+  const filter = color === 'black' ? 'brightness(0%)' : 'brightness(100%)';
   return { WebkitFilter: filter, filter };
 }
 

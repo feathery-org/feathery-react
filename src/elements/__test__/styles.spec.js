@@ -382,4 +382,22 @@ describe('stored background icons', () => {
       ].backgroundImage
     ).toBe('none');
   });
+
+  it('keeps a mobile image over an inherited desktop icon', () => {
+    const styles = new ResponsiveStyles(
+      {
+        styles: { background_icon: icon, background_image_url: '' },
+        mobile_styles: { background_image_url: 'https://cdn.test/m.png' }
+      },
+      ['cell'],
+      true
+    );
+    styles.applyBackgroundImageStyles('cell');
+    const result = styles.getTarget('cell');
+    expect(result.backgroundImage).toContain('data:image/svg+xml');
+    expect(
+      result[`@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`]
+        .backgroundImage
+    ).toBe('url(https://cdn.test/m.png)');
+  });
 });

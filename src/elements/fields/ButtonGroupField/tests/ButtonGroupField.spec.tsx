@@ -253,7 +253,56 @@ describe('ButtonGroupField', () => {
       expect(
         responsiveStyles.getTarget('hover')['img, [data-feathery-option-icon]']
           .filter
-      ).toBe('brightness(0%) invert(100%)');
+      ).toBe('brightness(100%)');
+    });
+
+    it('spaces option icons from their labels unless image margins are set', () => {
+      const iconCss = (imageMargin: number) => {
+        const element = createImageButtonGroupElement(['Yes', ''], ['', '']);
+        const icon = {
+          icon: 'IconHeart',
+          glyph: { variant: 'outline', nodes: [['path', { d: 'M12 5v14' }]] }
+        };
+        element.servar.metadata.option_icons = [icon, icon];
+        element.styles.flex_direction = 'column';
+        element.styles.image_margin_bottom = imageMargin;
+        const responsiveStyles = applyFieldStyles(
+          element,
+          new ResponsiveStyles(element, [], false)
+        );
+        const { container, unmount } = render(
+          <ButtonGroupField
+            {...createButtonGroupProps(element, { responsiveStyles })}
+          />
+        );
+        const icons = Array.from(
+          container.querySelectorAll('[data-feathery-option-icon]')
+        ).map((node) => getComputedStyle(node).marginBottom);
+        unmount();
+        return icons;
+      };
+
+      expect(iconCss(0)).toEqual(['0.5em', '']);
+      expect(iconCss(4)).not.toContain('0.5em');
+    });
+
+    it('colors option icons with explicit hover and selected font colors', () => {
+      const element = createImageButtonGroupElement(['Yes'], ['']);
+      element.styles.flex_direction = 'row';
+      element.styles.icon_color = 'F5A623';
+      element.styles.hover_font_color = 'FFFFFF';
+      element.styles.selected_font_color = '000000';
+      const responsiveStyles = applyFieldStyles(
+        element,
+        new ResponsiveStyles(element, [], false)
+      );
+
+      expect(
+        responsiveStyles.getTarget('hover')['[data-feathery-option-icon]']
+      ).toEqual({ color: '#FFFFFF' });
+      expect(
+        responsiveStyles.getTarget('active')['[data-feathery-option-icon]']
+      ).toEqual({ color: '#000000' });
     });
 
     it('renders buttons with images when option_images provided', () => {

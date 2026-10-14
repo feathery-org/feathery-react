@@ -83,6 +83,7 @@ function ImageElement({
 
   const displayPDF = documentUrl && documentType === 'application/pdf';
 
+  const altText = getImageAltText(element.properties);
   const iconGlyph = element.properties.icon_glyph;
   if (hasIconGlyph(iconGlyph)) {
     return (
@@ -104,15 +105,13 @@ function ImageElement({
           glyph={iconGlyph}
           size='100%'
           role='img'
-          aria-label={element.properties.aria_label}
+          aria-label={altText || undefined}
           style={{ maxWidth: '100%', maxHeight: '100%' }}
           {...elementProps}
         />
       </div>
     );
   }
-
-  const altText = getImageAltText(element.properties);
 
   return (
     <div

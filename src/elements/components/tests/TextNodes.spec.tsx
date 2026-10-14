@@ -252,26 +252,58 @@ describe('TextNodes icon embeds', () => {
     expect(getComputedStyle(runs[1]).fontSize).toBe('27px');
   });
 
-  it('drops whitespace-only text runs in icon-only labels', () => {
+  it('hides whitespace-only text runs in icon-only labels', () => {
     const { container } = renderNodes([iconOp('IconTrash'), { insert: ' ' }]);
     expect(
       container.querySelector('[data-feathery-icon="IconTrash"]')
     ).not.toBeNull();
-    expect((container.textContent ?? '').trim()).toBe('');
-    expect(container.querySelectorAll('span[data-index]').length).toBe(1);
+    const runs = container.querySelectorAll('span[data-index]');
+    expect(runs).toHaveLength(2);
+    expect(getComputedStyle(runs[1]).display).toBe('none');
   });
 
-  it('keeps whitespace runs while focused for editing (caret targets)', () => {
+  it('keeps whitespace runs visible while focused for editing (caret targets)', () => {
     const { container } = renderNodes(
       [iconOp('IconTrash'), { insert: ' ' }],
       'editable',
       true
     );
-    expect(container.querySelectorAll('span[data-index]').length).toBe(2);
+    const runs = container.querySelectorAll('span[data-index]');
+    expect(runs).toHaveLength(2);
+    expect(getComputedStyle(runs[1]).display).not.toBe('none');
     expect(container.querySelector('#span-text-1')).toHaveAttribute(
       'contenteditable',
       'true'
     );
+  });
+
+  it('keeps the same whitespace node when the label loses focus', () => {
+    const element = makeElement([iconOp('IconTrash'), { insert: ' ' }]);
+    const responsiveStyles = new ResponsiveStyles(element, ['text'], true);
+    const props = { element, responsiveStyles, editMode: 'editable' };
+    const { container, rerender } = render(<TextNodes {...props} focused />);
+    const space = container.querySelectorAll('span[data-index]')[1];
+
+    rerender(<TextNodes {...props} focused={false} />);
+
+    expect(container.querySelectorAll('span[data-index]')[1]).toBe(space);
+    expect(getComputedStyle(space).display).toBe('none');
+  });
+
+  it('collapses an empty editable label until it is selected', () => {
+    const element = {
+      ...makeElement([]),
+      properties: { text: '', text_formatted: [], actions: [] }
+    };
+    const responsiveStyles = new ResponsiveStyles(element, ['text'], true);
+    const props = { element, responsiveStyles, editMode: 'editable' };
+    const { container, rerender } = render(<TextNodes {...props} />);
+    const label = container.querySelector('#span-text-1')!;
+    expect(getComputedStyle(label).minWidth).toBe('0');
+
+    rerender(<TextNodes {...props} focused />);
+
+    expect(getComputedStyle(label).minWidth).toBe('5px');
   });
 
   it('keeps whitespace runs when real text accompanies an icon', () => {
