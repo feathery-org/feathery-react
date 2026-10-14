@@ -325,6 +325,9 @@ type VerticalPlacement = {
   bottom: number;
   line: number;
   height: number;
+  // The flex-end top offset: as low as the box allows, floored at `top` so a
+  // bottom alignment can never run the value into a pinned label's reserve.
+  end: number;
 };
 
 // A single-line input centers its text in its content box and ignores any
@@ -357,17 +360,22 @@ const inputBoxVertical = (
   // theme set no top padding of its own, so a stored value still stands as set.
   const top = flooredTopPadding(type, padTop, topFloor);
   const bottom = paddingSide(padBottom, legacy);
+  // The box grows to fit a raised padding, so align against that same floor
+  // or the text lands outside the box it was aligned to. Computed off the
+  // same raise applyInputBoxMinHeight clamps on, so the two agree.
+  const box = raisedPaddingY(type, padTop, padBottom)
+    ? Math.max(Number(height), top + bottom + line)
+    : Number(height);
   return {
     align,
     top,
     bottom,
     line,
-    // The box grows to fit a raised padding, so align against that same floor
-    // or the text lands outside the box it was aligned to. Computed off the
-    // same raise applyInputBoxMinHeight clamps on, so the two agree.
-    height: raisedPaddingY(type, padTop, padBottom)
-      ? Math.max(Number(height), top + bottom + line)
-      : Number(height)
+    height: box,
+    // Bottom alignment never places the value above where top alignment
+    // would: in a box too short for both, the label's room wins and the
+    // value sits as low as it can without running into the label's ink.
+    end: Math.max(top, box - bottom - line)
   };
 };
 
@@ -432,7 +440,7 @@ const valueLineY = (
   if (placement)
     return placement.align === 'flex-start'
       ? `${placement.top + placement.line / 2}px`
-      : `${placement.height - placement.bottom - placement.line / 2}px`;
+      : `${placement.end + placement.line / 2}px`;
 
   // Centred between the paddings, the same shift the placeholder takes.
   const delta =
@@ -471,7 +479,7 @@ const inputValueDelta = (
   if (placement)
     return placement.align === 'flex-start'
       ? placement.top + placement.line / 2 - placement.height / 2
-      : placement.height / 2 - placement.bottom - placement.line / 2;
+      : placement.end + placement.line / 2 - placement.height / 2;
   const delta =
     (flooredTopPadding(type, padTop, topFloor) -
       paddingSide(padBottom, legacyPaddingY(type))) /
@@ -1182,7 +1190,7 @@ export default class ResponsiveStyles {
               paddingBottom: `${Math.max(0, box - top - line)}px`
             }
           : {
-              paddingTop: `${Math.max(0, box - bottom - line)}px`,
+              paddingTop: `${placement.end}px`,
               paddingBottom: blockPaddingCss(type, padBottom)
             };
       }
@@ -1895,9 +1903,10 @@ export default class ResponsiveStyles {
             lineHeight
           );
           if (!takesInnerPadding(type)) return { paddingTop: reserve };
-          // An alignment the box can resolve has already placed the value, and
-          // the label takes no room in the content box, so the reserve would
-          // only fight it. Left to applyInputBoxAlignment.
+          // An alignment the box can resolve has already placed the value --
+          // stored padding included, which applyInputBoxAlignment reads as its
+          // floor -- so emitting here would only fight it. Left entirely to
+          // applyInputBoxAlignment, whichever way the padding came to be.
           //
           // Not for a multiselect: applyInputBoxAlignment places an input's
           // value by padding this same target, but a multiselect's chips are
@@ -1906,7 +1915,6 @@ export default class ResponsiveStyles {
           // clear of the label, which is the very defect this rule exists for.
           if (
             type !== MULTISELECT_FIELD &&
-            !isSet(t) &&
             isSet(align) &&
             canSynthesizeVertical(
               type,
