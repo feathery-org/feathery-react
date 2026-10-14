@@ -47,7 +47,14 @@ export default class CallbackQueue {
         const idx = this.queue.indexOf(promise);
         if (idx !== -1) this.queue.splice(idx, 1);
       };
-      promise.then(forget, forget);
+      promise.then(forget, (error: unknown) => {
+        forget();
+        // Rethrown outside the queue so a throwing rule still reaches the
+        // console and Sentry
+        setTimeout(() => {
+          throw error;
+        });
+      });
 
       if (!this.awaiting) {
         this.awaiting = true;
@@ -56,8 +63,8 @@ export default class CallbackQueue {
     }
   }
 
-  // Waits until the queue is empty; rejections are reported by addCallback,
-  // this only owns the loading indicator
+  // Waits until the queue is empty; addCallback reports rejections, this only
+  // owns the loading indicator
   _clearQueueLoader(): Promise<void> {
     return this.all()
       .catch(() => undefined)

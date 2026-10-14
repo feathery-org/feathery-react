@@ -35,6 +35,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { render, cleanup } from '@testing-library/react';
 import internalState from '../../internalState';
 import CallbackQueue from '../../callbackQueue';
+import { featheryWindow } from '../../browser';
 import Field, { flushFormRerender } from '../../entities/Field';
 import {
   defaultClient,
@@ -308,11 +309,20 @@ describe('fillStepTool against a mounted host', () => {
   });
 
   it('waits for the write to render even when its change rule rejects', async () => {
+    // The queue rethrows the rule's error for the page to report
+    const uncaught: unknown[] = [];
+    const onError = (event: ErrorEvent) => {
+      uncaught.push(event.error?.message);
+      event.preventDefault();
+    };
+    featheryWindow().addEventListener('error', onError);
     render(<TestFormHost />);
 
     const result = await fillStepTool(FORM, {
       values: { rejecting: 'x', after_rejecting: 'revealed' }
     });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    featheryWindow().removeEventListener('error', onError);
 
     expect(result.fields.rejecting).toEqual({
       status: 'rejected',
@@ -322,5 +332,6 @@ describe('fillStepTool against a mounted host', () => {
       status: 'filled',
       value: 'revealed'
     });
+    expect(uncaught).toEqual(['rule failed']);
   });
 });
