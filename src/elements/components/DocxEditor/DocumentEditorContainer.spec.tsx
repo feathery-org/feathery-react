@@ -143,6 +143,8 @@ jest.mock('./index', () => {
   };
 });
 
+const mockGetCurrentEnvelope = jest.fn().mockResolvedValue({});
+const mockSubmitCustom = jest.fn().mockResolvedValue({});
 const mockFinalizeEnvelope = jest.fn();
 const mockFinalizeEnvelopeReview = jest.fn();
 const mockSaveEnvelopeFile = jest.fn().mockResolvedValue({});
@@ -157,7 +159,9 @@ jest.mock('../../../utils/featheryClient', () => ({
     this.finalizeEnvelope = (...args: any[]) => mockFinalizeEnvelope(...args);
     this.finalizeEnvelopeReview = (...args: any[]) =>
       mockFinalizeEnvelopeReview(...args);
-    this.getCurrentEnvelope = jest.fn().mockResolvedValue({});
+    this.getCurrentEnvelope = (...args: any[]) =>
+      mockGetCurrentEnvelope(...args);
+    this.submitCustom = (...args: any[]) => mockSubmitCustom(...args);
     this.saveEnvelopeFile = (...args: any[]) => mockSaveEnvelopeFile(...args);
     this.restoreEnvelopeVersion = (...args: any[]) =>
       mockRestoreEnvelopeVersion(...args);
@@ -941,5 +945,180 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const trigger = runDocumentReviewLogic.mock.calls[0][0];
     expect(trigger.action).toBe('sign');
     expect(trigger.files).toEqual(['https://x/signable.pdf']);
+  });
+});
+
+describe('document tab navigation', () => {
+  const containerId = 'packet-editor';
+  const first = {
+    id: 'env-a',
+    document: 'doc-a',
+    key: 'Agreement.docx',
+    type: 'docx',
+    file: 'a.docx',
+    editor_file: 'a.editor.docx',
+    signed: false
+  };
+  const second = {
+    id: 'env-b',
+    document: 'doc-b',
+    key: 'Schedule.docx',
+    type: 'docx',
+    file: 'b.docx',
+    signed: false
+  };
+  beforeEach(() => {
+    mockBeforeReplace.mockReset().mockResolvedValue(undefined);
+    mockGetCurrentEnvelope.mockReset().mockResolvedValue({});
+    mockSaveEnvelopeFile.mockReset().mockResolvedValue({
+      file: 'saved.docx',
+      editor_file: 'saved.editor.docx'
+    });
+    mockSubmitCustom.mockClear();
+    const schema = schemaFor([containerId]);
+    schema.steps[0].buttons[0].properties.actions[0].documents = [
+      'doc-a',
+      'doc-b'
+    ];
+    initState.formSchemas = { 'form-key': schema };
+    (featheryWindow() as any)[PENDING_DRAFTS_KEY] = {
+      [containerId]: {
+        documents: ['doc-a', 'doc-b'],
+        envelopes: [first, second]
+      }
+    };
+  });
+  afterEach(() => {
+    initState.formSchemas = {};
+    delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
+    _clearDocxEditors();
+    _clearDocxDirtyRegistry();
+  });
+
+  it('saves before switching and reopens the saved editor copy without crossing envelope history', async () => {
+    const view = render(
+      <DocumentEditorContainer containerId={containerId} formId='tabs-form' />
+    );
+    await view.findByTestId('editor:a.editor.docx');
+    fireEvent.click(view.getByTestId('save:a.editor.docx'));
+    await waitFor(() =>
+      expect(mockSaveEnvelopeFile).toHaveBeenCalledWith(
+        'env-a',
+        expect.any(Blob),
+        'document.docx',
+        expect.any(Object)
+      )
+    );
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    await view.findByTestId('editor:b.docx');
+    expect(mockBeforeReplace).toHaveBeenCalledTimes(1);
+    fireEvent.click(view.getByTestId('restore:b.docx'));
+    await waitFor(() =>
+      expect(mockRestoreEnvelopeVersion).toHaveBeenCalledWith(
+        'env-b',
+        'version-1',
+        expect.any(String)
+      )
+    );
+    fireEvent.click(view.getByRole('tab', { name: 'Agreement.docx' }));
+    await view.findByTestId('editor:saved.editor.docx');
+    expect(view.getByRole('tab', { name: 'Agreement.docx' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+  });
+
+  it('keeps edits open on a failed save and allows retry; concurrent tab clicks wait', async () => {
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    await view.findByTestId('editor:a.editor.docx');
+    mockBeforeReplace.mockRejectedValueOnce(new Error('Offline'));
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    expect(await view.findByRole('alert')).toHaveTextContent('Offline');
+    expect(view.getByTestId('editor:a.editor.docx')).toBeInTheDocument();
+    let finish!: () => void;
+    mockBeforeReplace.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    expect(mockBeforeReplace).toHaveBeenCalledTimes(2);
+    await act(async () => finish());
+    await view.findByTestId('editor:b.docx');
+    expect(view.queryByRole('alert')).toBeNull();
+  });
+
+  it('recovers each template after reload and retries a failed load without closing the active document', async () => {
+    delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
+    mockGetCurrentEnvelope
+      .mockResolvedValueOnce(first)
+      .mockRejectedValueOnce(new Error('Load failed'))
+      .mockResolvedValueOnce(second);
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    await view.findByTestId('editor:a.editor.docx');
+    fireEvent.click(view.getByRole('tab', { name: 'Document 2' }));
+    expect(await view.findByRole('alert')).toHaveTextContent('Load failed');
+    expect(view.getByTestId('editor:a.editor.docx')).toBeInTheDocument();
+    fireEvent.click(view.getByRole('tab', { name: 'Document 2' }));
+    await view.findByTestId('editor:b.docx');
+    expect(mockGetCurrentEnvelope.mock.calls.map((call) => call[0])).toEqual([
+      'doc-a',
+      'doc-b',
+      'doc-b'
+    ]);
+  });
+
+  it('replaces the whole packet on regeneration and keeps duplicate-template envelopes distinct', async () => {
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    await view.findByTestId('editor:a.editor.docx');
+    await act(async () =>
+      featheryWindow().dispatchEvent(
+        new CustomEvent('feathery-docx-editor-refresh', {
+          detail: {
+            containerId,
+            envelopes: [
+              { ...second, id: 'repeat-1', key: 'First instance' },
+              {
+                ...second,
+                id: 'repeat-2',
+                key: 'Second instance',
+                file: 'repeat.docx'
+              }
+            ]
+          }
+        })
+      )
+    );
+    await view.findByTestId('editor:b.docx');
+    expect(view.queryByRole('tab', { name: 'Agreement.docx' })).toBeNull();
+    fireEvent.click(view.getByRole('tab', { name: 'Second instance' }));
+    await view.findByTestId('editor:repeat.docx');
+    fireEvent.click(view.getByTestId('save:repeat.docx'));
+    await waitFor(() =>
+      expect(mockSaveEnvelopeFile).toHaveBeenCalledWith(
+        'repeat-2',
+        expect.any(Blob),
+        'document.docx',
+        expect.any(Object)
+      )
+    );
+  });
+
+  it('saves every document URL to the field in packet order', async () => {
+    initState.sdkKey = 'test-sdk-key';
+    const action = (initState.formSchemas as any)['form-key'].steps[0]
+      .buttons[0].properties.actions[0];
+    action.editor_toolbar_actions = ['save'];
+    action.save_document_field_key = 'packet-files';
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    await view.findByTestId('editor:a.editor.docx');
+    fireEvent.click(view.getByTestId('save:a.editor.docx'));
+    await waitFor(() =>
+      expect(mockSubmitCustom).toHaveBeenCalledWith({
+        'packet-files': ['saved.docx', 'b.docx']
+      })
+    );
   });
 });

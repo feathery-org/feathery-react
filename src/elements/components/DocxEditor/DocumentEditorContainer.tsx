@@ -7,8 +7,13 @@ import React, {
 } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import DocxEditor from './index';
+import DocumentTabs from '../DocumentEditor/DocumentTabs';
+import { useDocumentPacket } from '../DocumentEditor/useDocumentPacket';
+import {
+  EditorEnvelope as Envelope,
+  envelopeSourceUrl
+} from '../DocumentEditor/documentPacket';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
-import { documentRefTemplateId } from '../../../utils/featheryClient/integrationClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import internalState from '../../../utils/internalState';
@@ -32,7 +37,7 @@ import { fetchDocumentBytes } from '../../../utils/documentPersistence';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose editor_mode matches
-// this container and use its first document. The schema key it was found under
+// this container. The schema key it was found under
 // is the form key, which the DocuSign finalize needs — the `formId` prop is a
 // form *instance* id and can't stand in for it.
 function resolveTargetAction(containerId?: string): {
@@ -63,34 +68,6 @@ function resolveTargetAction(containerId?: string): {
   return {};
 }
 
-interface Envelope {
-  id: string;
-  file: string | null;
-  // Control-bearing docx copy for the editor; `file` is the stripped public
-  // copy. Null/absent for non-docx envelopes and control-free docx.
-  editor_file?: string | null;
-  document?: string;
-  type: string;
-  signed: boolean;
-}
-
-// The editor must open the control-bearing copy when the envelope has one;
-// legacy and control-free envelopes only have the public `file`.
-function envelopeSourceUrl(envelope?: Envelope | null): string | undefined {
-  return envelope?.editor_file ?? envelope?.file ?? undefined;
-}
-
-interface RefreshEventDetail {
-  containerId?: string;
-  documents?: string[];
-  envelopes?: Envelope[];
-}
-
-// Fired by the Generate Documents action targeting this container so an
-// already mounted editor reloads the freshly generated envelope.
-const REFRESH_EVENT = 'feathery-docx-editor-refresh';
-const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
-
 /**
  * FLIP THIS TO TEST DOCUMENT BINDINGS. Ships false.
  *
@@ -106,22 +83,6 @@ const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
  *   - it applies globally, so leave it false on anything shared.
  */
 const FORCE_DOCUMENT_BINDINGS = true;
-
-function getPendingDraft(containerId?: string): RefreshEventDetail | undefined {
-  if (!containerId) return undefined;
-  return (featheryWindow() as any)[PENDING_DRAFTS_KEY]?.[containerId];
-}
-
-function getGeneratedEnvelope(
-  detail?: RefreshEventDetail,
-  documentId?: string
-): Envelope | undefined {
-  return (
-    detail?.envelopes?.find(
-      (env) => documentId && env.document === documentId
-    ) ?? detail?.envelopes?.[0]
-  );
-}
 
 const placeholder = {
   display: 'flex',
@@ -164,10 +125,6 @@ export default function DocumentEditorContainer({
   editMode?: boolean;
   assistantEnabled?: boolean;
 }) {
-  const pendingDraft = useMemo(
-    () => getPendingDraft(containerId),
-    [containerId]
-  );
   const { action: targetAction, formKey } = useMemo(
     () => resolveTargetAction(containerId),
     [containerId]
@@ -175,28 +132,6 @@ export default function DocumentEditorContainer({
   // Carries the form key because the DocuSign sign path posts form_key; the
   // other envelope calls only need initInfo().
   const client = useMemo(() => new FeatheryClient(formKey ?? ''), [formKey]);
-  // Document is owned by the button that targets this container.
-  const documentId = useMemo(
-    () =>
-      // Only a template can open here; other sources are rejected at generate.
-      (targetAction?.documents ?? [])
-        .map(documentRefTemplateId)
-        .find(Boolean) ??
-      (pendingDraft?.documents ?? [])
-        .map(documentRefTemplateId)
-        .find(Boolean) ??
-      pendingDraft?.envelopes?.[0]?.document,
-    [targetAction, pendingDraft]
-  );
-  const [envelope, setEnvelope] = useState<Envelope | null>(
-    () => getGeneratedEnvelope(pendingDraft, documentId) ?? null
-  );
-  const [sourceUrl, setSourceUrl] = useState<string | undefined>(() =>
-    envelopeSourceUrl(getGeneratedEnvelope(pendingDraft, documentId))
-  );
-  const [loading, setLoading] = useState(!envelope);
-  const [error, setError] = useState<string | null>(null);
-  const [operationError, setOperationError] = useState<string | null>(null);
   const beforeReplaceRef = useRef<(() => Promise<unknown>) | null>(null);
   const registerBeforeReplace = useCallback(
     (save: (() => Promise<unknown>) | null) => {
@@ -204,14 +139,39 @@ export default function DocumentEditorContainer({
     },
     []
   );
-  // Bumped to force the editor to reload its source after a (re)generate.
-  // NOT bumped on save (so saving doesn't reload the document out from under
-  // the user).
-  const [reloadKey, setReloadKey] = useState(0);
-  // Envelope that was finalized for signing (docx → signable PDF) this
-  // session. Keyed by id so a regenerated envelope is editable again without
-  // any reset wiring.
-  const [finalizedId, setFinalizedId] = useState<string | null>(null);
+  const loadCurrentEnvelope = useCallback(
+    (id: string) => client.getCurrentEnvelope(id),
+    [client]
+  );
+  const beforeReplace = useCallback(
+    () => beforeReplaceRef.current?.() ?? Promise.resolve(),
+    []
+  );
+  const {
+    tabs,
+    activeId,
+    documentId,
+    envelope,
+    setEnvelope,
+    sourceUrl,
+    setSourceUrl,
+    loading,
+    switching,
+    error,
+    operationError,
+    setOperationError,
+    reloadKey,
+    setReloadKey,
+    selectTab,
+    filesForSave
+  } = useDocumentPacket({
+    containerId,
+    documents: targetAction?.documents,
+    editMode,
+    load: loadCurrentEnvelope,
+    beforeReplace
+  });
+  const [finalizedIds, setFinalizedIds] = useState<string[]>([]);
 
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
   // featheryWindow() is {} so a mount-once memo freezes serviceUrl as
@@ -231,81 +191,6 @@ export default function DocumentEditorContainer({
     return [];
   }, [sdkKey, syncfusion.headers]);
 
-  const loadEnvelope = useCallback(async () => {
-    if (!documentId) return;
-    try {
-      const env = await client.getCurrentEnvelope(documentId);
-      const nextEnvelope = env && env.id ? (env as Envelope) : null;
-      setEnvelope(nextEnvelope);
-      setSourceUrl(envelopeSourceUrl(nextEnvelope));
-      setError(null);
-    } catch (e: any) {
-      console.error('Feathery: failed to load current envelope', e);
-      setError(e?.message || String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [documentId, client]);
-
-  useEffect(() => {
-    if (editMode || !documentId) {
-      setLoading(false);
-      return;
-    }
-    const pendingEnvelope = getGeneratedEnvelope(
-      getPendingDraft(containerId),
-      documentId
-    );
-    if (pendingEnvelope?.id) {
-      setEnvelope(pendingEnvelope);
-      setSourceUrl(envelopeSourceUrl(pendingEnvelope));
-      setLoading(false);
-      return;
-    }
-    loadEnvelope();
-  }, [containerId, documentId, editMode, loadEnvelope]);
-
-  useEffect(() => {
-    if (editMode) return undefined;
-    const handler = async (event: Event) => {
-      const detail = (event as CustomEvent<RefreshEventDetail>).detail;
-      if (
-        detail?.containerId &&
-        containerId &&
-        detail.containerId !== containerId
-      ) {
-        return;
-      }
-
-      try {
-        await beforeReplaceRef.current?.();
-      } catch (error) {
-        setOperationError(
-          `The new document could not be opened because your current edits could not be saved. ${
-            error instanceof Error ? error.message : ''
-          }`
-        );
-        return;
-      }
-
-      const generatedEnvelope = getGeneratedEnvelope(detail, documentId);
-      if (generatedEnvelope?.id) {
-        setOperationError(null);
-        setEnvelope(generatedEnvelope);
-        setSourceUrl(envelopeSourceUrl(generatedEnvelope));
-        setError(null);
-        setLoading(false);
-        setReloadKey((k) => k + 1);
-        return;
-      }
-
-      loadEnvelope().then(() => setReloadKey((k) => k + 1));
-    };
-    const win = featheryWindow();
-    win.addEventListener(REFRESH_EVENT, handler);
-    return () => win.removeEventListener(REFRESH_EVENT, handler);
-  }, [containerId, documentId, editMode, loadEnvelope]);
-
   // Stable source unless a different envelope loads or a regenerate is
   // signalled (reloadKey) — a plain save leaves both unchanged, so it doesn't
   // reload the document.
@@ -324,7 +209,7 @@ export default function DocumentEditorContainer({
     typeof targetAction?.editor_read_only === 'boolean'
       ? targetAction.editor_read_only
       : false;
-  const finalized = !!envelope && envelope.id === finalizedId;
+  const finalized = !!envelope && finalizedIds.includes(envelope.id);
   const readOnly = !!envelope?.signed || !!actionReadOnly || finalized;
   // The outcomes this container offers, read from `editor_toolbar_actions` —
   // the same key the overlay editor uses. See containerToolbarOutcomes.
@@ -371,7 +256,10 @@ export default function DocumentEditorContainer({
         targetAction?.save_document_field_key &&
         savedFileUrl
       ) {
-        newValues[targetAction.save_document_field_key] = savedFileUrl;
+        newValues[targetAction.save_document_field_key] = await filesForSave({
+          ...envelope,
+          file: savedFileUrl
+        });
       }
       // Document-level bindings write back to form fields of the same name, and
       // ONLY to fields the form already has - a binding in a template is not
@@ -512,7 +400,7 @@ export default function DocumentEditorContainer({
           signers,
           targetAction?.sign_method
         );
-        setFinalizedId(envelope.id);
+        setFinalizedIds((ids) => [...ids, envelope.id]);
       }
 
       // Nothing here navigates away, so the outcome is only visible if it's
@@ -611,10 +499,12 @@ export default function DocumentEditorContainer({
   // retain the editor object as well so cleanup can only remove this exact
   // registration, never another mounted container's editor.
   const registeredEditor = useRef<any>(undefined);
+  const registeredEnvelopeId = useRef<string | undefined>(undefined);
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
       registeredEditor.current = editor;
+      registeredEnvelopeId.current = envelope?.id;
       registerDocxEditor(containerId, editor, {
         formId,
         stepId,
@@ -650,19 +540,59 @@ export default function DocumentEditorContainer({
       envelopeId: envelope?.id
     });
   }, [activeDocumentId, containerId, envelope?.id, formId, stepId]);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const ownerId = envelope?.id;
+    return () => {
+      bindingValuesRef.current = {};
       if (containerId) {
         clearDocxEditorDirty(formId, containerId);
-        if (registeredEditor.current) {
+        if (
+          registeredEnvelopeId.current === ownerId &&
+          registeredEditor.current
+        ) {
           unregisterDocxEditor(containerId, registeredEditor.current, formId);
+          registeredEditor.current = undefined;
         }
       }
-    },
-    [containerId, formId]
-  );
+    };
+  }, [containerId, formId, envelope?.id]);
 
-  const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
+  const tabListId = `documents-${containerId ?? 'editor'}`;
+  const box = (child: React.ReactNode) => (
+    <div css={{ ...wrap, display: 'flex', flexDirection: 'column' }}>
+      {!editMode && (
+        <DocumentTabs
+          tabs={tabs}
+          activeId={activeId}
+          disabled={loading || switching}
+          onSelect={selectTab}
+          id={tabListId}
+        />
+      )}
+      {operationError && (
+        <div role='alert' css={{ color: '#b42318', padding: 8 }}>
+          {operationError}
+        </div>
+      )}
+      <div
+        role={tabs.length > 1 ? 'tabpanel' : undefined}
+        id={`${tabListId}-panel`}
+        aria-labelledby={
+          tabs.length > 1
+            ? `${tabListId}-tab-${tabs.findIndex((tab) => tab.id === activeId)}`
+            : undefined
+        }
+        css={{
+          flex: 1,
+          minHeight: 0,
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      >
+        {child}
+      </div>
+    </div>
+  );
 
   if (editMode) return box(<DocxEditor preview hideDownload />);
   if (!activeDocumentId && !envelope) {
@@ -699,12 +629,8 @@ export default function DocumentEditorContainer({
 
   return box(
     <>
-      {operationError && (
-        <div role='alert' css={{ color: '#b42318', padding: 8 }}>
-          {operationError}
-        </div>
-      )}
       <DocxEditor
+        key={envelope.id}
         source={source}
         envelopeId={envelope.id}
         serviceUrl={serviceUrl}
@@ -713,7 +639,7 @@ export default function DocumentEditorContainer({
         readOnly={readOnly}
         reviewChanges={reviewChanges}
         openNonce={reloadKey}
-        fileName='document'
+        fileName={tabs.find((tab) => tab.id === activeId)?.label ?? 'document'}
         terminalAction={terminalAction}
         onTerminalAction={terminalAction ? runTerminalAction : undefined}
         onTerminalActionDraft={offersDraft ? runTerminalActionDraft : undefined}
