@@ -77,29 +77,26 @@ export const openTab = (url: any) =>
 
 // Long enough that a download the host defers behind a prompt still finds the
 // blob, short enough that the bytes are not pinned in memory for the session.
+// FileSaver.js holds its blob URLs for 40s for the same reason.
 const BLOB_URL_LIFETIME = 60000;
 
 /**
- * Save a file to the user's device.
+ * Save a file to the user's device via a blob: URL on a detached anchor.
  *
- * Two details here exist so this survives being embedded in a Salesforce
- * Visualforce iframe, where the straightforward version fails:
+ * The anchor is never put in the document. Salesforce's Visualforce container
+ * watches for link clicks from a listener on the document and, on seeing one,
+ * cancels the click and re-opens the href itself outside the iframe, where a
+ * blob: URL minted here no longer resolves. A detached anchor's click event
+ * propagates to nothing, so no delegated listener sees it.
  *
- * 1. The anchor is never put in the document. Salesforce watches for link
- *    clicks from a listener on the host document, and on seeing one it
- *    cancels the click and re-opens the href itself, outside the iframe -
- *    where a blob: URL, being scoped to the origin that minted it, no longer
- *    resolves. A detached anchor's click event propagates to nothing, so
- *    there is no delegated listener - capturing or bubbling - for Salesforce
- *    to intercept it from.
- * 2. The blob: URL outlives the click. Browsers hand a download off to the
- *    download manager asynchronously, so revoking on the very next line
- *    races it; a host that defers the click further loses the blob outright.
+ * The blob: URL is revoked on a timer rather than on the next line. Browsers
+ * hand a download to the download manager asynchronously, so an immediate
+ * revoke races it. This is independent of the Salesforce fix and matches what
+ * FileSaver.js has always done.
  *
- * This keeps the blob rather than linking to the file's stored URL: those URLs
- * are cross-origin (S3), where the `download` attribute is ignored, so without
- * a stored `Content-Disposition: attachment` the browser would render the PDF
- * inline instead of saving it.
+ * Linking straight at the stored S3 URL would need `Content-Disposition:
+ * attachment` signed into the presigned URL, since the `download` attribute
+ * is ignored cross-origin. That is a backend change tracked separately.
  */
 export function downloadFile(file: File) {
   const href = featheryWindow().URL.createObjectURL(file);
