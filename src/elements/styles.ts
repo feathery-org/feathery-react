@@ -1433,7 +1433,12 @@ export default class ResponsiveStyles {
       // makes the box contribute nothing to its own cell's intrinsic height --
       // a 6-row text area collapsed from 123px to the 50px floor, and a 20-row
       // one from 392px. With auto it keeps the content height it always had.
-      return { flex: unit === '%' ? '1 1 auto' : '0 1 auto' };
+      // Stretch restores the full width a block-level box had before the
+      // column: a box with no width of its own (the phone's flex row) would
+      // otherwise shrink to fit its content.
+      return unit === '%'
+        ? { flex: '1 1 auto', alignSelf: 'stretch' }
+        : { flex: '0 1 auto', alignSelf: 'auto' };
     });
   }
 
