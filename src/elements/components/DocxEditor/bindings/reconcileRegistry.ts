@@ -87,6 +87,8 @@ export interface BindingCommandOptions {
 
 export interface BindingCommandSurface {
   flush(): void;
+  /** The document was replaced from outside: re-read it as the baseline (no write, no dirty). */
+  reopened?(): void;
   runCommands(
     commands: BindingCommand[],
     options?: BindingCommandOptions

@@ -11,8 +11,10 @@ import {
   resolveRevisionsAsOneUndo,
   RevisionGroupItem
 } from '../../../../utils/documentEditorPrimitives';
-import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinEditing } from '../robinActivity';
 import { featheryWindow } from '../../../../utils/browser';
+import { cardResolverFor } from '../../../../robin/document/mounts';
+import { redoDocument, undoDocument } from '../historyRouting';
 import { isOpeningDocument, setActiveInlineRevisions } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
@@ -149,6 +151,17 @@ const chipRevisions = (chip: ChipView) => [
   ...(chip.partnerRevisions ?? (chip.partner ? [chip.partner] : []))
 ];
 
+/**
+ * The first chip a person can see: one whose text, before or after, holds more
+ * than page breaks, paragraph marks and whitespace. A card can open with a page
+ * break or an empty paragraph, and going there shows nothing; the first chip
+ * when none is visible.
+ */
+const firstVisibleChip = (chips: ChipView[]): ChipView =>
+  chips.find((chip) =>
+    /[^\s\ufffc]/.test(`${chip.text ?? ''}${chip.beforeText ?? ''}`)
+  ) ?? chips[0];
+
 const itemRevisions = (item: RevisionGroupItem) => [
   ...item.revisions,
   ...(item.partnerRevisions ?? [])
@@ -233,7 +246,7 @@ function TrackedChangeGroups({
     lastRevisionCountRef.current = revisionCount();
     // Neither a (re)load nor an assistant batch is something the user asked
     // to review, so nothing stays expanded through one.
-    if (isOpeningDocument(editor) || isAssistantWriting(editor)) {
+    if (isOpeningDocument(editor) || isRobinEditing(editor)) {
       setExpanded({});
     }
     setGroups(
@@ -241,8 +254,14 @@ function TrackedChangeGroups({
         key: groupKeyOf(view.changeSetId, view.group),
         changeSetId: view.changeSetId,
         group: view.group,
-        // A human view's "group" IS the author name; keep it verbatim.
-        title: view.untagged ? view.group : humanizeGroupId(view.group),
+        // A human view's "group" IS the author name; keep it verbatim. An engine card carries
+        // its own title in the tag.
+        title: view.untagged
+          ? view.group
+          : view.title ?? humanizeGroupId(view.group),
+        ...(view.intent ? { intent: view.intent } : {}),
+        engineOwned:
+          !view.untagged && !!cardResolverFor(editor)?.owns(view.changeSetId),
         untagged: view.untagged,
         // Shown once in the group header instead of on every chip. Untagged
         // groups already show it as the title, so leave theirs unset.
@@ -291,8 +310,7 @@ function TrackedChangeGroups({
         // Every op changes the revision count, so refreshing immediately on
         // each one is O(n^2) across a batch whose intermediate state nobody
         // sees. Debounce instead: one refresh once the batch settles.
-        const suppressed =
-          isOpeningDocument(editor) || isAssistantWriting(editor);
+        const suppressed = isOpeningDocument(editor) || isRobinEditing(editor);
         if (!suppressed && revisionCount() !== lastRevisionCountRef.current)
           refresh();
         else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
@@ -325,7 +343,7 @@ function TrackedChangeGroups({
         if (ignoreSelectionRef.current) return;
         // Same window refresh() collapses for. Without this, each op expands
         // whichever group it lands on and refresh() collapses it right back.
-        if (isOpeningDocument(editor) || isAssistantWriting(editor)) return;
+        if (isOpeningDocument(editor) || isRobinEditing(editor)) return;
         const current = editor.selection?.getCurrentRevision?.();
         const revisions: any[] = Array.isArray(current)
           ? current
@@ -509,18 +527,27 @@ function TrackedChangeGroups({
     });
   };
 
+  // A card the document engine owns (structural, or one the editor's own accept or reject cannot
+  // settle) is resolved by the engine as a whole; every other card natively, as before.
   const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
     const revisions = groupViews.flatMap((group) =>
       group.chips.flatMap(chipRevisions)
     );
     return resolveWithHistory(revisions, isAccept, () => {
-      const outcome = resolveLiveRevisionGroupsAsOneUndo(
-        editor,
-        groupViews,
-        isAccept
+      const resolver = cardResolverFor(editor);
+      const owned = groupViews.filter(
+        (g) => !g.untagged && resolver?.owns(g.changeSetId)
       );
+      const native = groupViews.filter((g) => !owned.includes(g));
+      let unresolvedOwned = 0;
+      for (const g of owned)
+        if (!resolver?.resolve(g.changeSetId, isAccept))
+          unresolvedOwned += g.chips.length;
+      const outcome = native.length
+        ? resolveLiveRevisionGroupsAsOneUndo(editor, native, isAccept)
+        : null;
       reportStall(
-        outcome?.unresolved?.length ?? 0,
+        (outcome?.unresolved?.length ?? 0) + unresolvedOwned,
         outcome?.length ?? 0,
         isAccept
       );
@@ -586,12 +613,13 @@ function TrackedChangeGroups({
     refocusPanel();
   };
 
-  // Group-title click: navigate to the group's first edit but ring every
-  // chip, and never expand — that's the caret's job alone.
+  // Group-title click: navigate to the group's first edit a person can see
+  // (not a page break or an empty paragraph mark) but ring every chip, and
+  // never expand — that's the caret's job alone.
   const focusGroupFirst = (group: GroupView) => {
     if (!group.chips.length) return;
     commitActiveRevisions(group.chips.flatMap(chipRevisions));
-    selectAndScrollToRevision(group.chips[0].revision);
+    selectAndScrollToRevision(firstVisibleChip(group.chips).revision);
     refocusPanel();
   };
 
@@ -620,9 +648,9 @@ function TrackedChangeGroups({
       if (key === 'z' || key === 'y') {
         event.preventDefault();
         event.stopPropagation();
-        const history = editor?.editorHistory ?? editor?.editorHistoryModule;
-        if (key === 'y' || event.shiftKey) history?.redo?.();
-        else history?.undo?.();
+        // the same routing as the document and the toolbar (decision D4)
+        if (key === 'y' || event.shiftKey) redoDocument(editor);
+        else undoDocument(editor);
       }
       return;
     }
@@ -660,7 +688,10 @@ function TrackedChangeGroups({
     if (!focused) return;
     event.preventDefault();
     event.stopPropagation();
-    resolveChips([focused], key === 'a');
+    // an engine card has no per-edit resolution: A or R settles the card
+    const owner = groups.find((g) => g.chips.includes(focused));
+    if (owner?.engineOwned) resolveGroups([owner], key === 'a');
+    else resolveChips([focused], key === 'a');
   };
 
   if (!groups.length) return null;

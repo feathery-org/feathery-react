@@ -2,6 +2,14 @@ import { getFormContext } from '../formContext';
 import { defaultClient, initState } from '../init';
 import { setFormInternalState } from '../internalState';
 import Field from '../entities/Field';
+import { mountDocument, robinHostMounted } from '../../robin/document/mounts';
+import { DocumentSession } from '../../robin/document/session';
+import {
+  ToyHost,
+  makeToyPack,
+  para,
+  toyNative
+} from '../../robin/document/tests/toyPack';
 
 describe('feathery.generateDocuments logic-rule method routing', () => {
   const uuid = 'formContext-test';
@@ -491,5 +499,92 @@ describe('subscribe', () => {
 
     expect(listener).toHaveBeenCalledWith({ type: 'identity' });
     expect(context.requestIdentity().fuserKey).toBe('merged-fuser');
+  });
+});
+
+describe('liveDocument', () => {
+  const uuid = 'formContext-live-document';
+  const session = () =>
+    new DocumentSession({
+      pack: makeToyPack(),
+      host: new ToyHost(toyNative(para('Motor'))),
+      target: { type: 'envelope', id: 'env-1' },
+      editorId: 'ed-1'
+    });
+
+  it('describes nothing until a document mounts in this form', () => {
+    expect(getFormContext(uuid).liveDocument.descriptor()).toBeNull();
+  });
+
+  it('describes, dispatches to and finishes the turn of the document mounted in this form', () => {
+    const s = session();
+    const unmount = mountDocument(uuid, 'container-1', s);
+    const doc = getFormContext(uuid).liveDocument;
+    const d = doc.descriptor();
+    expect(d).toEqual(
+      expect.objectContaining({
+        protocolVersion: 2,
+        editorId: 'ed-1',
+        target: { type: 'envelope', id: 'env-1' },
+        readOnly: false
+      })
+    );
+    expect(typeof d?.outlineHash).toBe('string');
+    const out = doc.write({
+      turnId: 'turn-1',
+      editorId: 'ed-1',
+      target: { type: 'envelope', id: 'env-1' },
+      input: { intent: 'Nothing.', scope: { ids: [] }, changes: [] }
+    });
+    expect(out.status).toBe('ok');
+    expect(s.activeTurn).toBe('turn-1');
+    doc.finishTurn();
+    expect(s.activeTurn).toBeNull();
+    expect(getFormContext('another-form').liveDocument.descriptor()).toBeNull();
+    unmount();
+  });
+});
+
+describe('liveDocument.hasDocumentElement', () => {
+  it('is true when any step of the form has a document editor, the current step or not', () => {
+    const uuid = 'formContext-has-document';
+    setFormInternalState(uuid, {
+      fields: {},
+      currentStep: { key: 'intro', subgrids: [{ id: 'c0', properties: {} }] },
+      steps: {
+        intro: { key: 'intro', subgrids: [{ id: 'c0', properties: {} }] },
+        review: {
+          key: 'review',
+          subgrids: [
+            { id: 'c1', properties: {} },
+            { id: 'c2', properties: { document_editor: true } }
+          ]
+        }
+      }
+    } as any);
+    expect(getFormContext(uuid).liveDocument.hasDocumentElement()).toBe(true);
+  });
+
+  it('is false when no step has one, and before the form has loaded its steps', () => {
+    const uuid = 'formContext-no-document';
+    expect(getFormContext(uuid).liveDocument.hasDocumentElement()).toBe(false);
+    setFormInternalState(uuid, {
+      fields: {},
+      steps: {
+        only: { key: 'only', subgrids: [{ id: 'c0', properties: {} }] }
+      }
+    } as any);
+    expect(getFormContext(uuid).liveDocument.hasDocumentElement()).toBe(false);
+  });
+});
+
+describe('liveDocument.setHostMounted', () => {
+  it("marks the form's Robin root mounted and gone, for this form only", () => {
+    const uuid = 'formContext-robin-host';
+    getFormContext(uuid).liveDocument.setHostMounted(true);
+    expect(robinHostMounted(uuid)).toBe(true);
+    expect(robinHostMounted('another-form')).toBe(false);
+    getFormContext(uuid).liveDocument.setHostMounted(false);
+    expect(robinHostMounted(uuid)).toBe(false);
   });
 });

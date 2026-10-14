@@ -248,6 +248,93 @@ export function hasRevisionId(node: any, ids: Set<string>): boolean {
   );
 }
 
+/**
+ * True when a content control's text is all pending deletion. A control with no text at all is
+ * not deleted. Whether the control itself is on its way out is `replacedBeside`'s question.
+ */
+export function wholeContentDeleted(
+  node: any,
+  deletedRevisionIds: Set<string>
+): boolean {
+  let text = 0;
+  let live = 0;
+  const visit = (inlines: any[] | undefined) => {
+    for (const inline of inlines || []) {
+      if (!inline) continue;
+      if (typeof inline.text === 'string' && !inline.contentControlProperties) {
+        text += 1;
+        if (!hasOnlyRevisionIds(inline, deletedRevisionIds)) live += 1;
+      }
+      if (Array.isArray(inline.inlines)) visit(inline.inlines);
+    }
+  };
+  visit(
+    node.inlines ||
+      (node.blocks || []).flatMap((block: any) => block?.inlines || [])
+  );
+  return text > 0 && live === 0;
+}
+
+/** Per revision id, the move marker its group tag carries (a tracked replacement records one). */
+export function revisionMoves(sfdt: SfdtDocument): Map<string, string> {
+  const out = new Map<string, string>();
+  const revisions = Array.isArray(sfdt.revisions) ? sfdt.revisions : [];
+  for (const revision of revisions as any[]) {
+    const id = revision?.revisionId ?? revision?.revisionID;
+    if (id == null || typeof revision.customData !== 'string') continue;
+    try {
+      const tag = JSON.parse(revision.customData);
+      if (tag?.source === 'robin' && typeof tag.move === 'string')
+        out.set(String(id), `${tag.changeSetId}/${tag.move}`);
+    } catch {
+      // not a group tag
+    }
+  }
+  return out;
+}
+
+/** The move markers of the revisions anywhere under a node. */
+function movesUnder(node: any, moves: Map<string, string>): Set<string> {
+  const out = new Set<string>();
+  const visit = (n: any) => {
+    if (Array.isArray(n)) return n.forEach(visit);
+    if (!n || typeof n !== 'object') return;
+    for (const id of Array.isArray(n.revisionIds) ? n.revisionIds : []) {
+      const m = moves.get(String(id));
+      if (m) out.add(m);
+    }
+    for (const [k, v] of Object.entries(n)) if (k !== 'revisionIds') visit(v);
+  };
+  visit(node);
+  return out;
+}
+
+/**
+ * True when a control is on its way out: its text is all pending deletion and the live control
+ * right after it is its replacement, as the change set that replaced it recorded (a tracked
+ * replacement keeps the old control beside the new one until its card is resolved, and marks both
+ * with one move marker in their revisions' group tag). Neither the same name nor adjacency is
+ * evidence: a control whose text alone was deleted, with no such marker, is still an occurrence.
+ */
+export function replacedBeside(
+  list: any[],
+  i: number,
+  deletedRevisionIds: Set<string>,
+  moves: Map<string, string>
+): boolean {
+  const next = list[i + 1];
+  if (
+    !wholeContentDeleted(list[i], deletedRevisionIds) ||
+    !next?.contentControlProperties ||
+    wholeContentDeleted(next, deletedRevisionIds)
+  )
+    return false;
+  const mine = movesUnder(list[i], moves);
+  if (!mine.size) return false;
+  for (const m of movesUnder(next, moves)) if (mine.has(m)) return true;
+  return false;
+}
+
 function ccText(node: any, deletedRevisionIds: Set<string>): string {
   let out = '';
   const inlines =
@@ -291,6 +378,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
   };
   const ordinals = new Map<string, number>();
   const deletedRevisionIds = revisionIdsOfType(sfdt, 'Deletion');
+  const moves = revisionMoves(sfdt);
 
   // Minified SFDT has none of the keys below, so it would otherwise scan as a
   // document with zero bindings - indistinguishable from an unbound template.
@@ -389,6 +477,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
       // in, so recurse with a fresh context.
       walkTextFrames(inline, path);
       if (!inline.contentControlProperties) return;
+      if (replacedBeside(inlines || [], i, deletedRevisionIds, moves)) return;
       const rawTag = String(inline.contentControlProperties.tag || '');
       const def = parseTagOrDiagnose(rawTag, path);
       if (def && (def.kind === 'field' || def.kind === 'formula')) {
@@ -511,7 +600,10 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
           if (hasRevisionId(row.rowFormat, deletedRevisionIds)) return;
           const currentRowPath = [...path, 'rows', r];
           (row.cells || []).forEach((cell, c) => {
-            if ((cell as any).contentControlProperties) {
+            if (
+              (cell as any).contentControlProperties &&
+              !replacedBeside(row.cells || [], c, deletedRevisionIds, moves)
+            ) {
               const cellPath = [...currentRowPath, 'cells', c];
               const rawTag = String(
                 (cell as any).contentControlProperties.tag || ''

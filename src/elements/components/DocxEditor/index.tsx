@@ -36,10 +36,7 @@ import {
   VersionAuthor
 } from './history/types';
 import { DocxSource } from './types';
-import {
-  isAssistantWriting,
-  onAssistantSessionChange
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinEditing, onRobinTurnChange } from './robinActivity';
 
 const DEFAULT_CURRENT_USER: VersionAuthor = {
   kind: 'user',
@@ -651,8 +648,8 @@ function DocxEditor({
   }, [onBeforeReplaceReady]);
 
   useEffect(() => {
-    setAssistantWriting(isAssistantWriting(editor));
-    return onAssistantSessionChange(editor, setAssistantWriting);
+    setAssistantWriting(isRobinEditing(editor));
+    return onRobinTurnChange(editor, setAssistantWriting);
   }, [editor]);
 
   // Opening the history rail is a good idle point to resolve its recent,
@@ -1064,7 +1061,7 @@ function DocxEditor({
   const restoreBlockedReason = () =>
     readOnly
       ? "Signed or read-only documents can't be restored"
-      : assistantWriting || isAssistantWriting(editor)
+      : assistantWriting || isRobinEditing(editor)
       ? 'Wait for Robin to finish'
       : null;
 

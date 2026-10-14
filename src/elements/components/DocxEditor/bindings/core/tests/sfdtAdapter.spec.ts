@@ -15,6 +15,7 @@ import {
   validateSfdt
 } from '../sfdtAdapter';
 import { buildCostsFixture } from './fixtures/costsFixture';
+import { applyRules } from '../engine';
 
 describe('scanBindings', () => {
   it('finds fields, formulas, tables and rows', () => {
@@ -48,6 +49,116 @@ describe('scanBindings', () => {
     expect(index.diagnostics.map((entry) => entry.code)).toEqual([
       'optimized-sfdt'
     ]);
+  });
+});
+
+describe('scanBindings: tracked deletions', () => {
+  // the engine's tracked replacement records itself on both controls' revisions (the move marker)
+  const tag = JSON.stringify({ v: 1, source: 'robin', changeSetId: 'turn-1', group: 'robin', move: 'n7' });
+  const doc = (deleted: boolean) => ({
+    revisions: [
+      { revisionId: 'r-del', revisionType: 'Deletion', author: 'Robin', customData: tag },
+      { revisionId: 'r-ins', revisionType: 'Insertion', author: 'Robin', customData: tag }
+    ],
+    sections: [
+      {
+        blocks: [
+          {
+            inlines: [
+              {
+                contentControlProperties: { tag: '[[name=total|type=currency|expr=sum(1,2)]]' },
+                inlines: [{ text: '$3.00', ...(deleted ? { revisionIds: ['r-del'] } : {}) }]
+              },
+              {
+                contentControlProperties: { tag: '[[name=total|type=currency|expr=mul(sum(1,2),1)]]' },
+                inlines: [{ text: '$3.00', revisionIds: ['r-ins'] }]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  });
+
+  it('skips a control whose whole content is a pending deletion, as it skips a deleted row', () => {
+    const index = scanBindings(doc(true) as any);
+    expect(index.formulas.get('total')).toHaveLength(1);
+    expect(index.occurrences).toHaveLength(1);
+    expect(index.occurrences[0].path).toEqual(['sections', 0, 'blocks', 0, 'inlines', 1]);
+  });
+
+  it('keeps a control whose content is live', () => {
+    expect(scanBindings(doc(false) as any).formulas.get('total')).toHaveLength(2);
+  });
+
+  // review regression: the same name is no evidence of a replacement; only the replacement's marker is
+  it('keeps both of two adjacent controls binding one name when the user deleted the first one\'s text', () => {
+    const twins = {
+      revisions: [{ revisionId: 'r-del', revisionType: 'Deletion', author: 'User' }],
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { contentControlProperties: { tag: '[[name=rate|type=percent]]' }, inlines: [{ text: '8.5%', revisionIds: ['r-del'] }] },
+                { contentControlProperties: { tag: '[[name=rate|type=percent]]' }, inlines: [{ text: '8.5%' }] }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    expect(scanBindings(twins as any).fields.get('rate')).toHaveLength(2);
+  });
+
+  // review regression: a following live control with a different binding is a neighbour, not the
+  // control's replacement
+  it('keeps a control whose text the user deleted when the next control binds something else', () => {
+    const adjacent = {
+      revisions: [{ revisionId: 'r-del', revisionType: 'Deletion', author: 'User' }],
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { contentControlProperties: { tag: '[[name=first|type=text]]' }, inlines: [{ text: 'One', revisionIds: ['r-del'] }] },
+                { contentControlProperties: { tag: '[[name=second|type=text]]' }, inlines: [{ text: 'Two' }] }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const index = scanBindings(adjacent as any);
+    expect(index.occurrences.map((o) => o.name).sort()).toEqual(['first', 'second']);
+  });
+
+  // review item 5: the user deleting a control's text with track changes on deletes the text, not
+  // the control; only a control replaced beside its successor is on its way out
+  it('keeps a control whose text alone the user deleted, tracked', () => {
+    const single = {
+      revisions: [{ revisionId: 'r-del', revisionType: 'Deletion', author: 'User' }],
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { text: 'Total: ' },
+                { contentControlProperties: { tag: '[[name=total|type=currency|expr=sum(1,2)]]' }, inlines: [{ text: '$3.00', revisionIds: ['r-del'] }] },
+                { text: ' due.' }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const index = scanBindings(single as any);
+    expect(index.formulas.get('total')).toHaveLength(1);
+    expect(index.occurrences).toHaveLength(1);
+    // and its deleted text is the user's to keep: the engine writes nothing back into it
+    const result = applyRules(single as any);
+    expect(result.writes).toEqual([]);
+    expect(JSON.stringify(result.sfdt)).toBe(JSON.stringify(single));
   });
 });
 

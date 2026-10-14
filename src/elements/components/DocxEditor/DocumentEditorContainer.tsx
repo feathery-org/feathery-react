@@ -27,6 +27,11 @@ import {
 } from '../../../assistant/tools/docx/docxEditorRegistry';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
+import { mountRobinDocument } from './robinDocument';
+import {
+  onRobinHostChange,
+  robinHostMounted
+} from '../../../robin/document/mounts';
 import { DocxHistoryHost, DocxSaveMeta } from './history/types';
 import { fetchDocumentBytes } from '../../../utils/documentPersistence';
 
@@ -611,10 +616,15 @@ export default function DocumentEditorContainer({
   // retain the editor object as well so cleanup can only remove this exact
   // registration, never another mounted container's editor.
   const registeredEditor = useRef<any>(undefined);
+  // The live editor and a count of documents it has opened, as state, so Robin's document session
+  // is created for each opened document (not the blank one at create) and follows a regenerate.
+  const [liveEditor, setLiveEditor] = useState<any>(undefined);
+  const [openedDocuments, setOpenedDocuments] = useState(0);
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
       registeredEditor.current = editor;
+      setLiveEditor(editor);
       registerDocxEditor(containerId, editor, {
         formId,
         stepId,
@@ -631,6 +641,7 @@ export default function DocumentEditorContainer({
   // Idempotent (already-bound revisions are skipped), so the blank-document
   // firing of this same callback is a harmless no-op.
   const onDocumentReady = useCallback(() => {
+    setOpenedDocuments((n) => n + 1);
     const editor = registeredEditor.current;
     if (!editor || !reviewChanges) return;
     try {
@@ -639,6 +650,44 @@ export default function DocumentEditorContainer({
       // A grouping failure must not break the opened document.
     }
   }, [reviewChanges]);
+  // Robin's document engine: where the form's Robin root is mounted, each opened document is
+  // mounted under this form instance so the form context's `liveDocument` accessor reaches it, its
+  // session created at open. A regenerate or a new envelope is a new mount (a new editor id), and
+  // unmount ends any turn. Without the Robin root (embeds, previews, custom domains) nothing is.
+  const [robinHost, setRobinHostMounted] = useState(() =>
+    formId ? robinHostMounted(formId) : false
+  );
+  useEffect(() => {
+    if (!formId) return undefined;
+    setRobinHostMounted(robinHostMounted(formId));
+    return onRobinHostChange(formId, setRobinHostMounted);
+  }, [formId]);
+  useEffect(() => {
+    if (
+      !assistantEnabled ||
+      !robinHost ||
+      !liveEditor ||
+      !openedDocuments ||
+      !formId ||
+      !containerId ||
+      !envelopeId
+    )
+      return undefined;
+    return mountRobinDocument({
+      formKey: formId,
+      slot: containerId,
+      editor: liveEditor,
+      envelopeId
+    });
+  }, [
+    assistantEnabled,
+    robinHost,
+    liveEditor,
+    openedDocuments,
+    formId,
+    containerId,
+    envelopeId
+  ]);
   // Envelope identity can settle after SyncFusion's created callback. Refresh
   // only the assistant registration; the editor itself stays mounted.
   useEffect(() => {

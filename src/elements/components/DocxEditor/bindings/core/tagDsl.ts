@@ -173,7 +173,7 @@ export function encodeValue(value: string): string {
  * Tolerant: a "%" that does not start a valid %XX escape is taken literally, so
  * hand-authored values like "default=0%" work without writing "0%25".
  */
-function decodeValue(value: string): string {
+export function decodeValue(value: string): string {
   const safe = String(value).replace(/%(?![0-9A-Fa-f]{2})/g, '%25');
   try {
     return decodeURIComponent(safe);
