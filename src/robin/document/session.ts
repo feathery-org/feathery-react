@@ -29,7 +29,7 @@ import {
 } from './envelope';
 import { ENGINE_HISTORY_LIMIT, EngineHistory, HistoryOutcome } from './history';
 import { IdTable } from './ids';
-import { WriteJournal } from './loop';
+import { WriteJournal, journalKey } from './loop';
 import { renderOutline } from './outline';
 import type { EditorHost, Pack, Residue } from './pack';
 import { logDebug, logError, logWarn, truncatedDetail } from './log';
@@ -292,10 +292,11 @@ export class DocumentSession {
     trace.requested(write);
     // a resent identical write returns what it committed, whatever the editor's state now; a
     // different one is the turn's next card
-    const recorded = this.journal.replay(turnId, write);
+    const key = journalKey(turnId, this.editorId, this.target);
+    const recorded = this.journal.replay(key, write);
     if (recorded) return recorded;
     if (this.host.readOnly()) return readOnlyResult();
-    const changeSetId = this.journal.nextChangeSet(turnId);
+    const changeSetId = this.journal.nextChangeSet(key, turnId);
 
     const before = this.state;
     const prepared = prepareWrite(before, write);
@@ -464,7 +465,11 @@ export class DocumentSession {
       warnings: [...prepared.warnings, ...outcome.warnings],
       trace: trace.build()
     };
-    this.journal.record(turnId, write, result);
+    this.journal.record(
+      journalKey(turnId, this.editorId, this.target),
+      write,
+      result
+    );
     return result;
   }
 

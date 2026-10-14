@@ -20,7 +20,7 @@ import {
   parseBridgePayload,
   parseVerbInput
 } from './envelope';
-import { WriteJournal } from './loop';
+import { WriteJournal, journalKey } from './loop';
 import { DocumentSession } from './session';
 
 /** A mounted document's session, created when first used. */
@@ -161,7 +161,14 @@ function recordedWrite(formKey: string, raw: unknown): DispatchOutcome | null {
   if (!input.ok) return null;
   const recorded = journals
     .get(formKey)
-    ?.replay(parsed.value.turnId, input.value as WriteInput);
+    ?.replay(
+      journalKey(
+        parsed.value.turnId,
+        parsed.value.editorId,
+        parsed.value.target
+      ),
+      input.value as WriteInput
+    );
   if (!recorded) return null;
   return {
     status: 'ok',

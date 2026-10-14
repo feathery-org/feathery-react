@@ -1,5 +1,7 @@
 /**
- * The engine's write journal (contract section 10.3), keyed by the bridge `turnId`.
+ * The engine's write journal (contract section 10.3), keyed by the bridge `turnId` with the editor
+ * and target the write was for (`journalKey`), so two editors written in one turn keep their own
+ * records.
  *
  * It records committed writes only: never a dry run, a refusal, a conflict, a no-change answer or a
  * read-only answer, because a journaled dry run would otherwise be replayed to the real write that
@@ -13,6 +15,15 @@
  */
 import { WriteInput } from './envelope';
 import { canonicalJson, hash64 } from './tree';
+
+/** The journal's key for a write: its turn, its editor and its target. */
+export function journalKey(
+  turnId: string,
+  editorId: string,
+  target: { type: string; id: string }
+): string {
+  return canonicalJson({ turnId, editorId, target: [target.type, target.id] });
+}
 
 /** Turns the journal remembers. */
 export const JOURNAL_TURNS = 50;
@@ -31,28 +42,28 @@ export class WriteJournal<R = unknown> {
   >();
 
   /** The recorded result of an identical committed write in this turn, if there is one. */
-  replay(turnId: string, write: WriteInput): R | undefined {
+  replay(key: string, write: WriteInput): R | undefined {
     const signature = writeSignature(write);
-    return this.turns.get(turnId)?.find((e) => e.signature === signature)
+    return this.turns.get(key)?.find((e) => e.signature === signature)
       ?.response;
   }
 
   /** How many writes this turn has committed. */
-  committed(turnId: string): number {
-    return this.turns.get(turnId)?.length ?? 0;
+  committed(key: string): number {
+    return this.turns.get(key)?.length ?? 0;
   }
 
-  /** The change set id the next committed write of this turn takes: the turn, then `.2`, `.3`. */
-  nextChangeSet(turnId: string): string {
-    const n = this.committed(turnId);
+  /** The change set id the next committed write under `key` takes: the turn, then `.2`, `.3`. */
+  nextChangeSet(key: string, turnId: string): string {
+    const n = this.committed(key);
     return n ? `${turnId}.${n + 1}` : turnId;
   }
 
   /** Record a committed write's result. */
-  record(turnId: string, write: WriteInput, response: R): void {
-    const entries = this.turns.get(turnId) ?? [];
-    this.turns.delete(turnId);
-    this.turns.set(turnId, [
+  record(key: string, write: WriteInput, response: R): void {
+    const entries = this.turns.get(key) ?? [];
+    this.turns.delete(key);
+    this.turns.set(key, [
       ...entries,
       { signature: writeSignature(write), response }
     ]);

@@ -344,3 +344,76 @@ describe('a malformed payload is a handler exception before anything else (revie
     off();
   });
 });
+
+describe('the journal keys a write by turn, editor and target (review)', () => {
+  it('two editors in one turn each commit the same write; neither replays the other', () => {
+    const journal = journalFor('form-two-editors');
+    const make = (editorId: string, envelope: string) =>
+      new DocumentSession({
+        pack: makeToyPack(),
+        host: new ToyHost(doc),
+        target: { type: 'envelope', id: envelope },
+        editorId,
+        journal
+      });
+    const a = make('ed-two-a', 'env-a');
+    const b = make('ed-two-b', 'env-b');
+    const offs = [
+      mountDocument('form-two-editors', 'a', a),
+      mountDocument('form-two-editors', 'b', b)
+    ];
+    const accessor = liveDocumentAccessor('form-two-editors');
+    const writeTo = (s: DocumentSession) => {
+      const read = accessor.read(payload(s, { ids: ['n1'] }, 'turn-two'));
+      if (read.status !== 'ok') throw new Error('read failed');
+      const n1 = (
+        read.result as unknown as {
+          nodes: Array<{ base: string; style?: string }>;
+        }
+      ).nodes[0];
+      return accessor.write(
+        payload(
+          s,
+          {
+            intent: 'Rename.',
+            scope: { ids: ['n1'] },
+            changes: [
+              {
+                kind: 'replace',
+                id: 'n1',
+                base: n1.base,
+                node: { text: 'Motor fleet', style: n1.style }
+              }
+            ]
+          },
+          'turn-two'
+        )
+      );
+    };
+    const first = writeTo(a);
+    const second = writeTo(b);
+    expect(first).toEqual(
+      expect.objectContaining({
+        status: 'ok',
+        result: expect.objectContaining({
+          committed: true,
+          editorId: 'ed-two-a'
+        })
+      })
+    );
+    expect(second).toEqual(
+      expect.objectContaining({
+        status: 'ok',
+        result: expect.objectContaining({
+          committed: true,
+          editorId: 'ed-two-b',
+          target: { type: 'envelope', id: 'env-b' }
+        })
+      })
+    );
+    // each editor's document changed: the second write executed, it was not a replay
+    expect(a.host.serialize()).not.toBe(doc);
+    expect(b.host.serialize()).not.toBe(doc);
+    offs.forEach((off) => off());
+  });
+});
