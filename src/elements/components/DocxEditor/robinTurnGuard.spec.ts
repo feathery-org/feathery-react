@@ -1,6 +1,9 @@
-import { isRobinEditing, whileRobinWrites } from './robinActivity';
+import {
+  isRobinEditing,
+  setRobinTurnActive,
+  whileRobinWrites
+} from './robinActivity';
 import { ROBIN_TURN_IDLE_MS, settleTurnWhenIdle } from './robinTurnGuard';
-import { setRobinTurnActive } from './robinActivity';
 
 function fakeEditor() {
   const listeners: Record<string, Array<() => void>> = {};
