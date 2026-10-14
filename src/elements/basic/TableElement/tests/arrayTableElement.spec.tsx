@@ -22,8 +22,10 @@ const makeElement = (propsOverride: Record<string, any> = {}) => ({
   }
 });
 
+// applyTableStyles calls addTargets and apply; the render reads getTarget.
 const responsiveStyles = {
   addTargets: jest.fn(),
+  apply: jest.fn(),
   getTarget: () => ({})
 };
 

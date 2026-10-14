@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { fieldValues } from '../../../utils/init';
-import { Column } from './types';
+import { CellWrite, Column } from './types';
 import {
   arrayColumnCount,
   deriveArrayColumns,
@@ -31,7 +31,9 @@ type Use2dArrayTableSourceReturn = {
   errors: string[];
   canAddRow: boolean;
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
+  handleCellsEdit: (writes: CellWrite[]) => void;
   handleAddRow: () => void;
+  handleInsertRow: (atIndex: number) => void;
   handleDeleteRow: (rowIndex: number) => void;
 };
 
@@ -121,29 +123,49 @@ export function use2dArrayTableSource({
     commitRef.current(normalizeRows(rowsRef.current), true);
   }, [needsNormalizing]);
 
-  const handleCellEdit = useCallback(
-    (key: string, rowIndex: number, newValue: any) => {
-      const columnIndex = keyToIndex[key];
-      if (columnIndex === undefined) return;
+  // The whole array is rewritten on every write, so a batch costs no more
+  // than a single cell and a spreadsheet save lands as one commit.
+  const handleCellsEdit = useCallback(
+    (writes: CellWrite[]) => {
+      if (!writes.length) return;
       const rows = rowsRef.current.map((row) => [...row]);
-      // Row 0 holds the headers, so data row N lives at N + 1.
-      const target = rows[rowIndex + 1];
-      if (!target) return;
-      while (target.length <= columnIndex) target.push('');
-      target[columnIndex] = newValue;
-      commit(rows, true);
+      let changed = false;
+      writes.forEach(({ fieldKey: key, rowIndex, value }) => {
+        const columnIndex = keyToIndex[key];
+        if (columnIndex === undefined) return;
+        // Row 0 holds the headers, so data row N lives at N + 1.
+        const target = rows[rowIndex + 1];
+        if (!target) return;
+        while (target.length <= columnIndex) target.push('');
+        target[columnIndex] = value;
+        changed = true;
+      });
+      if (changed) commit(rows, true);
     },
     [keyToIndex, commit]
   );
 
-  const handleAddRow = useCallback(() => {
-    const rows = rowsRef.current.map((row) => [...row]);
-    if (!rows.length) return;
-    // New rows go to the top, matching the other two sources.
-    rows.splice(1, 0, Array(arrayColumnCount(rows)).fill(''));
-    // No submitCustom: a new row stays provisional until its first edit.
-    commit(rows, false);
-  }, [commit]);
+  const handleCellEdit = useCallback(
+    (key: string, rowIndex: number, newValue: any) =>
+      handleCellsEdit([{ fieldKey: key, rowIndex, value: newValue }]),
+    [handleCellsEdit]
+  );
+
+  const handleInsertRow = useCallback(
+    (atIndex: number) => {
+      const rows = rowsRef.current.map((row) => [...row]);
+      // Without a header row there are no columns to shape the new row to.
+      if (!rows.length) return;
+      const columnCount = arrayColumnCount(rows);
+      const at = Math.min(Math.max(atIndex, 0), rows.length - 1);
+      rows.splice(at + 1, 0, Array(columnCount).fill(''));
+      // No submitCustom: a new row stays provisional until its first edit.
+      commit(rows, false);
+    },
+    [commit]
+  );
+
+  const handleAddRow = useCallback(() => handleInsertRow(0), [handleInsertRow]);
 
   const handleDeleteRow = useCallback(
     (rowIndex: number) => {
@@ -163,7 +185,9 @@ export function use2dArrayTableSource({
     // to add a row to.
     canAddRow: active && !parsed.error && parsed.rows.length > 0,
     handleCellEdit,
+    handleCellsEdit,
     handleAddRow,
+    handleInsertRow,
     handleDeleteRow
   };
 }
