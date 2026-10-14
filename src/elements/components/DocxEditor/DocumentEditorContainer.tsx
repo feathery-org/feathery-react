@@ -240,6 +240,10 @@ export default function DocumentEditorContainer({
   // The filler's signing page, offered again in case the browser blocked the
   // tab opened after the finalize round trip.
   const [signUrls, setSignUrls] = useState<Record<string, string>>({});
+  // A reopen in flight; a second click would finalize and open a tab twice.
+  // The ref blocks clicks landing before the disabled state renders.
+  const [openingSigningPage, setOpeningSigningPage] = useState(false);
+  const openingSigningPageRef = useRef(false);
 
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
   // featheryWindow() is {} so a mount-once memo freezes serviceUrl as
@@ -679,13 +683,16 @@ export default function DocumentEditorContainer({
   // After a reload the session's signing link is gone. Finalizing a sent PDF
   // again converts and emails nothing; it just hands the filler's link back.
   const reopenSigningPage = useCallback(async () => {
-    if (!envelope) return;
+    if (!envelope || openingSigningPageRef.current) return;
+    openingSigningPageRef.current = true;
+    setOpeningSigningPage(true);
     try {
       setOperationError(null);
+      // The button only shows for a Feathery send, whatever the action says now.
       const finalized = await client.finalizeEnvelope(
         envelope.id,
         signerEntries(),
-        targetAction?.sign_method
+        'feathery'
       );
       if (!finalized?.signer_id) {
         setOperationError('This document is waiting on another signer.');
@@ -696,11 +703,23 @@ export default function DocumentEditorContainer({
       if (targetAction?.redirect) featheryWindow().location.href = url;
       else openTab(url);
     } catch (e: any) {
+      // Signed elsewhere since this loaded: show that instead of the refusal.
+      const fresh = documentId
+        ? await client.getCurrentEnvelope(documentId).catch(() => null)
+        : null;
+      if (fresh?.id === envelope.id && fresh.signed) {
+        setEnvelope(fresh as Envelope);
+        setSourceUrl(envelopeSourceUrl(fresh as Envelope));
+        return;
+      }
       setOperationError(
         `The signing page could not be opened. ${e?.message ?? ''}`.trim()
       );
+    } finally {
+      openingSigningPageRef.current = false;
+      setOpeningSigningPage(false);
     }
-  }, [client, envelope, targetAction, signerEntries]);
+  }, [client, envelope, targetAction, signerEntries, documentId]);
 
   // 'draft' as the terminal action means Create Draft is the only signing
   // outcome configured; offersDraft puts it in a menu beside Sign instead.
@@ -836,6 +855,7 @@ export default function DocumentEditorContainer({
           signUrl={awaitingFiller ? signUrls[envelope.id] : undefined}
           // Only after a reload: this session's own send already knows
           // whether there's a page for the filler to open.
+          openingSigningPage={openingSigningPage}
           onOpenSigningPage={
             awaitingFiller && !sentVia[envelope.id] && terminalAction === 'sign'
               ? reopenSigningPage
