@@ -2029,6 +2029,26 @@ describe('a mobile alignment override can return a field to the default', () => 
     expect(moved.paddingBottom).toBe('0.375rem');
   });
 
+  it('drops a container-synthesized vertical alignment back to centred', () => {
+    // A percentage box aligns through cqh paddings; the re-centring
+    // breakpoint has to hand both sides back just like the pixel case.
+    const reset = mobileBlock(
+      'text_field',
+      'field',
+      {
+        ...untouched(),
+        height: 100,
+        height_unit: '%',
+        font_size: 16,
+        content_vertical_align: 'flex-end'
+      },
+      { content_vertical_align: 'center' }
+    );
+
+    expect(reset.paddingTop).toBe('0.375rem');
+    expect(reset.paddingBottom).toBe('0.375rem');
+  });
+
   it('re-centres the placeholder with the text it stands in for', () => {
     const base = { ...untouched(), ...SIZED };
 
