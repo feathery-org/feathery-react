@@ -1906,7 +1906,7 @@ describe('a phone flag rides its number', () => {
   };
   const flagTarget = (styles: any) =>
     targets('phone_number', styles, { placeholder: 'Phone' }).getTarget(
-      'fieldToggle',
+      'fieldFlag',
       true
     );
 
@@ -2076,7 +2076,7 @@ describe('a mobile alignment override can return a field to the default', () => 
     expect(
       mobileBlock(
         'phone_number',
-        'fieldToggle',
+        'fieldFlag',
         {
           ...untouched(),
           ...SIZED,
@@ -2564,10 +2564,29 @@ describe('vertical alignment on a percentage height', () => {
     expect(t.getTarget('tooltipTrigger', true).transform).toEqual(expected);
   });
 
+  it('moves only the flag glyph, never the column carrying the divider', () => {
+    // The toggle column is full height and its border is the divider, so a
+    // translation on it pushed the line out of the box.
+    ['flex-start', 'center', 'flex-end'].forEach((align) => {
+      const t = targets('phone_number', pct(align), { placeholder: 'Phone' });
+      expect([align, t.getTarget('fieldToggle', true).transform]).toEqual([
+        align,
+        undefined
+      ]);
+    });
+    const px = targets(
+      'phone_number',
+      { ...pct('flex-end'), height: 56, height_unit: 'px' },
+      { placeholder: 'Phone' }
+    );
+    expect(px.getTarget('fieldToggle', true).transform).toBeUndefined();
+    expect(px.getTarget('fieldFlag', true).transform).toMatch(/^translateY/);
+  });
+
   it('rides the phone flag on the same container math, top and bottom', () => {
     const flag = (align: string) =>
       targets('phone_number', pct(align), { placeholder: 'Phone' }).getTarget(
-        'fieldToggle',
+        'fieldFlag',
         true
       ).transform;
     expect(flag('flex-end')).toEqual([
