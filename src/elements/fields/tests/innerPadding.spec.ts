@@ -2564,6 +2564,40 @@ describe('vertical alignment on a percentage height', () => {
     expect(t.getTarget('tooltipTrigger', true).transform).toEqual(expected);
   });
 
+  it('puts the resting placeholder on the value line, top and bottom', () => {
+    const top = (type: string, align: string) =>
+      targets(type, pct(align), { placeholder: 'Name' }).getTarget(
+        'placeholder',
+        true
+      ).top;
+    ['text_field', 'phone_number'].forEach((type) => {
+      // Top: the floored padding (reserve 21) plus half a line, so the label
+      // can never be pulled up into the pinned label's reserve.
+      expect([type, top(type, 'flex-start')]).toEqual([type, '30.6px']);
+      // Bottom: half a line above the bottom padding, never above that floor.
+      expect([type, top(type, 'flex-end')]).toEqual([
+        type,
+        'max(30.6px, calc(100% - 15.6px))'
+      ]);
+      // Centre keeps the neutral an untouched floating label renders with.
+      expect([type, top(type, 'center')]).toEqual([type, '50%']);
+    });
+  });
+
+  it('keeps the value, the placeholder and the flag on one line', () => {
+    // Same floor and line feed all three: the input's top padding seat, the
+    // placeholder's centre, and the flag's offset (box-relative, cqh).
+    const t = targets('phone_number', pct('flex-start'), {
+      placeholder: 'Phone'
+    });
+    expect(t.getTarget('field', true).paddingTop).toBe('21px');
+    expect(t.getTarget('placeholder', true).top).toBe('30.6px');
+    expect(t.getTarget('fieldFlag', true).transform).toEqual([
+      'translateY(7.5px)',
+      'translateY(calc(30.6px - 50cqh))'
+    ]);
+  });
+
   it('moves only the flag glyph, never the column carrying the divider', () => {
     // The toggle column is full height and its border is the divider, so a
     // translation on it pushed the line out of the box.

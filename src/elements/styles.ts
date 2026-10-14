@@ -2003,6 +2003,29 @@ export default class ResponsiveStyles {
               };
             }
 
+            // A percentage box: the same line the input's container-unit
+            // padding puts the value on, measured from the box edges. The
+            // floored top keeps it below a pinned label's reserve.
+            if (
+              (align === 'flex-start' || align === 'flex-end') &&
+              canContainerSynthesizeVertical(
+                type,
+                heightUnit,
+                lineHeight,
+                fontSize
+              )
+            ) {
+              const line = inputLineHeight(lineHeight, fontSize) as number;
+              const top = flooredTopPadding(type, t, topFloor);
+              if (align === 'flex-start') return { top: `${top + line / 2}px` };
+              const bottom = paddingSide(b, legacyPaddingY(type));
+              return {
+                top: `max(${top + line / 2}px, calc(100% - ${
+                  bottom + line / 2
+                }px))`
+              };
+            }
+
             // '50%' is the neutral Placeholder declares inline, so a mobile
             // override can re-centre the label -- and it is also what an
             // untouched floating-label field renders, because the reserve
