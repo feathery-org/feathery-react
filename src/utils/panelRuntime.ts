@@ -12,7 +12,7 @@ import { sanitizeTransportValue } from './transportValue';
 import { getImageAltText } from './accessibility';
 import type { TableRowRead, TableSelection } from './formActions/tables';
 
-type PanelRuntimeFieldEntry = {
+export type PanelRuntimeFieldEntry = {
   key: string;
   type: string;
   value: unknown;
@@ -118,7 +118,7 @@ type PanelRuntimeTableEntry = {
   visible: boolean;
 };
 
-type PanelRuntimeSnapshot = {
+export type PanelRuntimeSnapshot = {
   currentStep: { id: string; key: string };
   previousStepName?: string;
   activeStepKey: string;
