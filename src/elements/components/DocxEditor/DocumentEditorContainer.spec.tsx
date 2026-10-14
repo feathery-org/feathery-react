@@ -1289,8 +1289,11 @@ describe('DocumentEditorContainer signing outcomes', () => {
   });
 
   describe('after a reload', () => {
-    const reopened = (sent: Record<string, any>) => {
-      seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const reopened = (
+      sent: Record<string, any>,
+      toolbar: string[] = ['sign']
+    ) => {
+      seed({ sign_method: 'feathery', editor_toolbar_actions: toolbar });
       delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
       mockGetCurrentEnvelope.mockResolvedValue({
         id: `envelope-${CONTAINER}`,
@@ -1312,6 +1315,8 @@ describe('DocumentEditorContainer signing outcomes', () => {
           'awaiting'
         )
       );
+      // Let the focus listener bind before firing focus.
+      await act(async () => {});
       mockGetCurrentEnvelope.mockClear();
       await focus();
       expect(mockGetCurrentEnvelope).toHaveBeenCalledTimes(1);
@@ -1388,10 +1393,51 @@ describe('DocumentEditorContainer signing outcomes', () => {
         )
       );
       expect(queryByTestId('open-signing-page')).toBeNull();
+      // Let the focus listener bind, so a wrongful poll would show.
+      await act(async () => {});
       mockGetCurrentEnvelope.mockClear();
       await focus();
       expect(mockGetCurrentEnvelope).not.toHaveBeenCalled();
     });
+
+    it('offers no signing page on a toolbar without Sign', async () => {
+      const { getByTestId, queryByTestId } = reopened(
+        { sent: true, sent_via: 'feathery' },
+        ['download']
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('signed-view:https://x/sent.pdf')).toHaveAttribute(
+          'data-status',
+          'awaiting'
+        )
+      );
+      expect(queryByTestId('open-signing-page')).toBeNull();
+    });
+  });
+
+  it('offers no signing page after a send that only invited others', async () => {
+    mockFinalizeEnvelope.mockResolvedValue({
+      ...finalizedPdf(),
+      signer_id: null,
+      invited: true
+    });
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId, queryByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await act(async () => {
+      getByTestId('terminal:sign').click();
+    });
+
+    await waitFor(() =>
+      expect(getByTestId('signed-view:https://x/signable.pdf')).toHaveAttribute(
+        'data-status',
+        'awaiting'
+      )
+    );
+    expect(queryByTestId('open-signing-page')).toBeNull();
+    expect(mockFinalizeEnvelope).toHaveBeenCalledTimes(1);
   });
 
   it('carries the signable file on the sign trigger (single file → files list)', async () => {
