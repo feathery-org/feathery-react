@@ -608,7 +608,7 @@ export function applyFieldStyles(field: any, styles: any) {
         styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'phone_number':
-      styles.addTargets('fieldToggle', 'dropdown');
+      styles.addTargets('fieldToggle', 'fieldFlag', 'dropdown');
 
       styles.applyFontStyles('dropdown', false, true);
       styles.apply('dropdown', 'background_color', (color: any) => {

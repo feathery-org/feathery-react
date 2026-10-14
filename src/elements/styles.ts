@@ -1640,6 +1640,8 @@ export default class ResponsiveStyles {
   // left padding is the border-to-flag gap -- the number keeps the fixed 12px
   // gap it has always had from the flag, so one value moves both together --
   // and once the value's line leaves the box centre, the flag rides with it.
+  // Only the glyph rides: the toggle column is full height and carries the
+  // divider as its border, so translating it pushed the line out of the box.
   applyPhoneFlagPlacement() {
     // Unset means the flag keeps sitting flush on the border, which is where it
     // has always sat -- no margin declared at all.
@@ -1647,7 +1649,7 @@ export default class ResponsiveStyles {
       isSet(l) ? { marginInlineStart: `${isNum(l) ? Number(l) : 0}px` } : {}
     );
     this.apply(
-      'fieldToggle',
+      'fieldFlag',
       VERTICAL_PLACEMENT_KEYS,
       (
         align: any,
