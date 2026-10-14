@@ -38,6 +38,7 @@ import {
   SpinnerIcon
 } from '../../DocxEditor/icons';
 import type { PptxEditorProps } from '../types';
+import { savePresentation } from '../persistence';
 import { withShortcut } from './shortcuts';
 import { onFontMetricsSettled } from '../core/render/fonts';
 
@@ -67,6 +68,7 @@ function PptxEditorInner({
   onChange,
   onError,
   onSave,
+  onBeforeReplaceReady,
   onExportPdf,
   historyHost,
   devJsonPanel = false
@@ -139,23 +141,48 @@ function PptxEditorInner({
   useEffect(() => onFontMetricsSettled(() => store.refreshRender()), [store]);
 
   // ---- save / download ----
-  const handleSave = useCallback(async () => {
-    if (!onSave || !state.deck || saving) return;
-    // Flush any in-flight contenteditable edit before exporting.
-    store.commitSvgTextEdit?.({ render: false });
+  const pendingSave = useRef<Promise<void> | null>(null);
+  const saveCurrent = useCallback((): Promise<void> => {
+    if (pendingSave.current) return pendingSave.current;
+    if (readOnly) return Promise.resolve();
+    if (!store.getState().deck || !onSave)
+      return Promise.reject(
+        new Error('The presentation is not ready to save.')
+      );
     setSaving(true);
-    try {
-      const blob = store.engine.exportPptx();
-      await onSave(blob);
-      store.markSaved();
+    const save = async () => {
+      await savePresentation(store, onSave);
       dirtyRef.current = false;
       onChange?.(false);
+    };
+    pendingSave.current = save().finally(() => {
+      pendingSave.current = null;
+      setSaving(false);
+    });
+    return pendingSave.current;
+  }, [onSave, readOnly, store, onChange]);
+
+  const beforeReplaceRef = useRef<() => Promise<unknown>>(() =>
+    Promise.resolve()
+  );
+  beforeReplaceRef.current = async () => {
+    if (readOnly) return;
+    if (pendingSave.current) await pendingSave.current;
+    store.commitSvgTextEdit?.({ render: false });
+    if (store.engine.isDirty()) await saveCurrent();
+  };
+  useEffect(() => {
+    onBeforeReplaceReady?.(() => beforeReplaceRef.current());
+    return () => onBeforeReplaceReady?.(null);
+  }, [onBeforeReplaceReady]);
+
+  const handleSave = useCallback(async () => {
+    try {
+      await saveCurrent();
     } catch (err: any) {
       onError?.(err?.message || 'Saving the presentation failed.');
-    } finally {
-      setSaving(false);
     }
-  }, [onSave, state.deck, saving, store, onChange, onError]);
+  }, [saveCurrent, onError]);
 
   const handleDownload = useCallback(() => {
     if (!state.deck) return;
@@ -177,11 +204,7 @@ function PptxEditorInner({
       // reported as a save error, distinct from a conversion failure.
       if (onSave) {
         try {
-          store.commitSvgTextEdit?.({ render: false });
-          await onSave(store.engine.exportPptx());
-          store.markSaved();
-          dirtyRef.current = false;
-          onChange?.(false);
+          await saveCurrent();
         } catch (err: any) {
           onError?.(err?.message || 'Saving the presentation failed.');
           return;
@@ -199,7 +222,7 @@ function PptxEditorInner({
     } finally {
       setDownloadingPdf(false);
     }
-  }, [onExportPdf, downloadingPdf, onSave, store, onChange, onError, fileName]);
+  }, [onExportPdf, downloadingPdf, onSave, saveCurrent, onError, fileName]);
 
   useOutsideClose(
     downloadMenuOpen,

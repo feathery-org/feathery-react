@@ -6,6 +6,8 @@ import React, {
   useState
 } from 'react';
 import DocxEditor from '../DocxEditor';
+import DocumentTabs from './DocumentTabs';
+import { useDocumentPacket } from './useDocumentPacket';
 import {
   EDITOR_PLACEHOLDER_ERROR_COLOR,
   EDITOR_PLACEHOLDER_STYLE
@@ -71,34 +73,6 @@ function resolveTargetAction(containerId?: string): {
   return {};
 }
 
-interface Envelope {
-  id: string;
-  file: string | null;
-  // Control-bearing docx copy for the editor; `file` is the stripped public
-  // copy. Null/absent for non-docx envelopes and control-free docx.
-  editor_file?: string | null;
-  document?: string;
-  type: string;
-  signed: boolean;
-}
-
-// The editor must open the control-bearing copy when the envelope has one;
-// legacy and control-free envelopes only have the public `file`.
-function envelopeSourceUrl(envelope?: Envelope | null): string | undefined {
-  return envelope?.editor_file ?? envelope?.file ?? undefined;
-}
-
-interface RefreshEventDetail {
-  containerId?: string;
-  documents?: string[];
-  envelopes?: Envelope[];
-}
-
-// Fired by the Generate Documents action targeting this container so an
-// already mounted editor reloads the freshly generated envelope.
-const REFRESH_EVENT = 'feathery-docx-editor-refresh';
-const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
-
 /**
  * FLIP THIS TO TEST DOCUMENT BINDINGS. Ships false.
  *
@@ -114,22 +88,6 @@ const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
  *   - it applies globally, so leave it false on anything shared.
  */
 const FORCE_DOCUMENT_BINDINGS = true;
-
-function getPendingDraft(containerId?: string): RefreshEventDetail | undefined {
-  if (!containerId) return undefined;
-  return (featheryWindow() as any)[PENDING_DRAFTS_KEY]?.[containerId];
-}
-
-function getGeneratedEnvelope(
-  detail?: RefreshEventDetail,
-  documentId?: string
-): Envelope | undefined {
-  return (
-    detail?.envelopes?.find(
-      (env) => documentId && env.document === documentId
-    ) ?? detail?.envelopes?.[0]
-  );
-}
 
 const placeholder = EDITOR_PLACEHOLDER_STYLE;
 
@@ -174,10 +132,6 @@ export default function DocumentEditorContainer({
   editMode?: boolean;
   assistantEnabled?: boolean;
 }) {
-  const pendingDraft = useMemo(
-    () => getPendingDraft(containerId),
-    [containerId]
-  );
   const { action: targetAction, formKey } = useMemo(
     () => resolveTargetAction(containerId),
     [containerId]
@@ -185,29 +139,44 @@ export default function DocumentEditorContainer({
   // Carries the form key because the DocuSign sign path posts form_key; the
   // other envelope calls only need initInfo().
   const client = useMemo(() => new FeatheryClient(formKey ?? ''), [formKey]);
-  // Document is owned by the button that targets this container.
-  const documentId = useMemo(
-    () =>
-      (targetAction?.documents ?? [])[0] ??
-      pendingDraft?.documents?.[0] ??
-      pendingDraft?.envelopes?.[0]?.document,
-    [targetAction, pendingDraft]
+  const beforeReplaceRef = useRef<(() => Promise<unknown>) | null>(null);
+  const registerBeforeReplace = useCallback(
+    (save: (() => Promise<unknown>) | null) => {
+      beforeReplaceRef.current = save;
+    },
+    []
   );
-  const [envelope, setEnvelope] = useState<Envelope | null>(
-    () => getGeneratedEnvelope(pendingDraft, documentId) ?? null
+  const beforeReplace = useCallback(
+    () => beforeReplaceRef.current?.() ?? Promise.resolve(),
+    []
   );
-  const [sourceUrl, setSourceUrl] = useState<string | undefined>(() =>
-    envelopeSourceUrl(getGeneratedEnvelope(pendingDraft, documentId))
+  const loadCurrentEnvelope = useCallback(
+    (id: string) => client.getCurrentEnvelope(id),
+    [client]
   );
-  const [loading, setLoading] = useState(!envelope);
-  const [error, setError] = useState<string | null>(null);
-  // Bumped to force the editor to reload its source after a (re)generate.
-  // NOT bumped on save (so saving doesn't reload the document out from under
-  // the user).
-  const [reloadKey, setReloadKey] = useState(0);
-  // Envelope that was finalized for signing (docx → signable PDF) this
-  // session. Keyed by id so a regenerated envelope is editable again without
-  // any reset wiring.
+  const {
+    tabs,
+    activeId,
+    documentId,
+    envelope,
+    setEnvelope,
+    sourceUrl,
+    loading,
+    switching,
+    error,
+    setError,
+    operationError,
+    setOperationError,
+    reloadKey,
+    selectTab,
+    filesForSave
+  } = useDocumentPacket({
+    containerId,
+    documents: targetAction?.documents,
+    editMode,
+    load: loadCurrentEnvelope,
+    beforeReplace
+  });
   const [finalizedId, setFinalizedId] = useState<string | null>(null);
 
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
@@ -227,69 +196,6 @@ export default function DocumentEditorContainer({
     if (sdkKey) return [{ Authorization: `Token ${sdkKey}` }];
     return [];
   }, [sdkKey, syncfusion.headers]);
-
-  const loadEnvelope = useCallback(async () => {
-    if (!documentId) return;
-    try {
-      const env = await client.getCurrentEnvelope(documentId);
-      const nextEnvelope = env && env.id ? (env as Envelope) : null;
-      setEnvelope(nextEnvelope);
-      setSourceUrl(envelopeSourceUrl(nextEnvelope));
-      setError(null);
-    } catch (e: any) {
-      console.error('Feathery: failed to load current envelope', e);
-      setError(e?.message || String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [documentId, client]);
-
-  useEffect(() => {
-    if (editMode || !documentId) {
-      setLoading(false);
-      return;
-    }
-    const pendingEnvelope = getGeneratedEnvelope(
-      getPendingDraft(containerId),
-      documentId
-    );
-    if (pendingEnvelope?.id) {
-      setEnvelope(pendingEnvelope);
-      setSourceUrl(envelopeSourceUrl(pendingEnvelope));
-      setLoading(false);
-      return;
-    }
-    loadEnvelope();
-  }, [containerId, documentId, editMode, loadEnvelope]);
-
-  useEffect(() => {
-    if (editMode) return undefined;
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<RefreshEventDetail>).detail;
-      if (
-        detail?.containerId &&
-        containerId &&
-        detail.containerId !== containerId
-      ) {
-        return;
-      }
-
-      const generatedEnvelope = getGeneratedEnvelope(detail, documentId);
-      if (generatedEnvelope?.id) {
-        setEnvelope(generatedEnvelope);
-        setSourceUrl(envelopeSourceUrl(generatedEnvelope));
-        setError(null);
-        setLoading(false);
-        setReloadKey((k) => k + 1);
-        return;
-      }
-
-      loadEnvelope().then(() => setReloadKey((k) => k + 1));
-    };
-    const win = featheryWindow();
-    win.addEventListener(REFRESH_EVENT, handler);
-    return () => win.removeEventListener(REFRESH_EVENT, handler);
-  }, [containerId, documentId, editMode, loadEnvelope]);
 
   // Stable source unless a different envelope loads or a regenerate is
   // signalled (reloadKey) — a plain save leaves both unchanged, so it doesn't
@@ -333,6 +239,8 @@ export default function DocumentEditorContainer({
         blob,
         `document.${envelope.type || 'docx'}`
       );
+      if (envelope.type === 'pptx' && !updated?.file)
+        throw new Error('The presentation could not be saved. Please retry.');
       const savedFileUrl = updated?.file ?? envelope.file;
       if (updated?.file) {
         setEnvelope((current) =>
@@ -351,7 +259,10 @@ export default function DocumentEditorContainer({
         targetAction?.save_document_field_key &&
         savedFileUrl
       ) {
-        newValues[targetAction.save_document_field_key] = savedFileUrl;
+        newValues[targetAction.save_document_field_key] =
+          envelope.type === 'pptx'
+            ? await filesForSave({ ...envelope, file: savedFileUrl })
+            : savedFileUrl;
       }
       // Document-level bindings write back to form fields of the same name, and
       // ONLY to fields the form already has - a binding in a template is not
@@ -531,8 +442,42 @@ export default function DocumentEditorContainer({
     [containerId, formId]
   );
 
+  const tabListId = `documents-${containerId ?? 'editor'}`;
+  const showTabs = envelope?.type === 'pptx' && tabs.length > 1;
   const box = (child: React.ReactNode, style: WrapStyle = wrap) => (
-    <div css={style}>{child}</div>
+    <div css={{ ...style, display: 'flex', flexDirection: 'column' }}>
+      {showTabs && (
+        <DocumentTabs
+          tabs={tabs}
+          activeId={activeId}
+          disabled={loading || switching}
+          onSelect={selectTab}
+          id={tabListId}
+        />
+      )}
+      {operationError && (
+        <div role='alert' css={{ color: '#b42318', padding: 8 }}>
+          {operationError}
+        </div>
+      )}
+      <div
+        role={showTabs ? 'tabpanel' : undefined}
+        id={`${tabListId}-panel`}
+        aria-labelledby={
+          showTabs
+            ? `${tabListId}-tab-${tabs.findIndex((tab) => tab.id === activeId)}`
+            : undefined
+        }
+        css={{
+          flex: 1,
+          minHeight: 0,
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      >
+        {child}
+      </div>
+    </div>
   );
 
   if (editMode) return box(<div css={placeholder}>Document editor</div>);
@@ -566,11 +511,17 @@ export default function DocumentEditorContainer({
             never growing the hosting page. */}
         <div css={{ position: 'absolute', inset: 0 }}>
           <PptxEditor
+            key={envelope.id}
+            onBeforeReplaceReady={registerBeforeReplace}
             source={source}
             readOnly={readOnly}
             reviewChanges={reviewChanges}
             openNonce={reloadKey}
-            fileName='document.pptx'
+            fileName={
+              tabs
+                .find((tab) => tab.id === activeId)
+                ?.label.replace(/\.pptx$/i, '') + '.pptx'
+            }
             // Signing stays docx-only (no pptx signature flow); PDF export is
             // supported server-side via the shared conversion endpoint.
             hideDownload={savesToField || !offersDownload}
@@ -579,7 +530,7 @@ export default function DocumentEditorContainer({
                 ? () => client.downloadEnvelopePdf(envelope.id)
                 : undefined
             }
-            onError={setError}
+            onError={setOperationError}
             onSave={saveEnvelope}
             onChange={
               !readOnly && containerId
