@@ -78,11 +78,12 @@ export function robinMarks(
 }
 
 /**
- * Mount an opened document for Robin. Nothing is read until Robin first uses it: the session is
- * created on the first liveDocument read or request, or when the rail asks the engine about one of
- * Robin's cards (so a reloaded document's engine-owned cards are still resolved by the engine).
- * Undo and redo are routed through the engine once the session exists. Returns the unmount, which
- * also ends any editing turn so the rail stops treating selection moves as Robin's.
+ * Mount an opened document for Robin, on a form whose Robin root is mounted: the session is
+ * created at once (one read of the document), so it owns its cards from the start, a reloaded
+ * document's engine-owned cards included. Undo and redo are routed through the engine. A session
+ * that cannot be created leaves the document unmounted for Robin and is tried again on first use.
+ * Returns the unmount, which also ends any editing turn so the rail stops treating selection moves
+ * as Robin's.
  */
 export function mountRobinDocument({
   formKey,
@@ -112,6 +113,8 @@ export function mountRobinDocument({
     return session;
   });
   const unmount = mountDocument(formKey, slot, mounted);
+  // created at open, where Robin is: the rail asking about a card never builds it mid-keystroke
+  mounted.get();
   // the rail asks the engine first about Robin's cards, for the ones it must resolve itself
   const unregister = registerCardResolver(editor, {
     owns: (changeSetId) => !!mounted.get()?.ownsCard(changeSetId),

@@ -230,6 +230,44 @@ export function liveDocumentAccessor(
   };
 }
 
+// ---------------------------------------------------------------------------------------------
+// The Robin host: whether the form's Robin root is mounted (the hosted form sets it)
+// ---------------------------------------------------------------------------------------------
+
+const robinHosts = new Set<string>();
+const robinHostListeners = new Map<string, Set<(on: boolean) => void>>();
+
+/**
+ * Mark the form's Robin root mounted or gone. A document is mounted for Robin only where it is:
+ * embeds, previews and custom domains without Robin build nothing.
+ */
+export function setRobinHost(formKey: string, on: boolean): void {
+  if (robinHosts.has(formKey) === on) return;
+  if (on) robinHosts.add(formKey);
+  else robinHosts.delete(formKey);
+  robinHostListeners.get(formKey)?.forEach((cb) => cb(on));
+}
+
+export function robinHostMounted(formKey: string): boolean {
+  return robinHosts.has(formKey);
+}
+
+/** Hear the form's Robin root mount and unmount. Returns the unsubscribe. */
+export function onRobinHostChange(
+  formKey: string,
+  cb: (on: boolean) => void
+): () => void {
+  let listeners = robinHostListeners.get(formKey);
+  if (!listeners) {
+    listeners = new Set();
+    robinHostListeners.set(formKey, listeners);
+  }
+  listeners.add(cb);
+  return () => {
+    listeners?.delete(cb);
+  };
+}
+
 /**
  * A review card the engine resolves itself (a structural card, or one the editor's own accept or
  * reject cannot settle), looked up by the editor the rail renders for: the rail asks first and

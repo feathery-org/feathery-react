@@ -2,7 +2,7 @@ import { getFormContext } from '../formContext';
 import { defaultClient, initState } from '../init';
 import { setFormInternalState } from '../internalState';
 import Field from '../entities/Field';
-import { mountDocument } from '../../robin/document/mounts';
+import { mountDocument, robinHostMounted } from '../../robin/document/mounts';
 import { DocumentSession } from '../../robin/document/session';
 import {
   ToyHost,
@@ -575,5 +575,16 @@ describe('liveDocument.hasDocumentElement', () => {
       }
     } as any);
     expect(getFormContext(uuid).liveDocument.hasDocumentElement()).toBe(false);
+  });
+});
+
+describe('setRobinHost', () => {
+  it("marks the form's Robin root mounted and gone, for this form only", () => {
+    const uuid = 'formContext-robin-host';
+    getFormContext(uuid).setRobinHost(true);
+    expect(robinHostMounted(uuid)).toBe(true);
+    expect(robinHostMounted('another-form')).toBe(false);
+    getFormContext(uuid).setRobinHost(false);
+    expect(robinHostMounted(uuid)).toBe(false);
   });
 });

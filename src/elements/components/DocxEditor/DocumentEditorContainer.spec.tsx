@@ -12,6 +12,7 @@ import { setFormInternalState } from '../../../utils/internalState';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
 import {
+  setRobinHost,
   cardResolverFor,
   historyRouteFor,
   liveDocumentAccessor
@@ -960,6 +961,7 @@ describe("DocumentEditorContainer: Robin's document session", () => {
   });
   beforeEach(() => {
     _clearDocxEditors();
+    setRobinHost('form-robin', true);
     OPEN_STATE.native = native;
     initState.formSchemas = {
       'form-key': schemaFor(['document-container-a', 'document-container-b'])
@@ -971,6 +973,7 @@ describe("DocumentEditorContainer: Robin's document session", () => {
   });
   afterEach(() => {
     _clearDocxEditors();
+    setRobinHost('form-robin', false);
     delete OPEN_STATE.native;
     initState.formSchemas = {};
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
@@ -1092,6 +1095,21 @@ describe("DocumentEditorContainer: Robin's document session", () => {
       )
     );
     b.unmount();
+  });
+
+  it('with no Robin host on the form, mounts nothing for Robin: no session, no card resolver, no undo route (review)', async () => {
+    setRobinHost('form-robin', false);
+    const view = mount();
+    await waitFor(() => expect(getDocxEditor('form-robin')).toBeDefined());
+    const editor = getDocxEditor('form-robin');
+    expect(cardResolverFor(editor)).toBeUndefined();
+    expect(historyRouteFor(editor)).toBeUndefined();
+    expect(liveDocumentAccessor('form-robin').descriptor()).toBeNull();
+    // the Robin host mounting later mounts the document then, its session created at once
+    act(() => setRobinHost('form-robin', true));
+    await waitFor(() => expect(historyRouteFor(editor)).toBeDefined());
+    expect(cardResolverFor(editor)).toBeDefined();
+    view.unmount();
   });
 
   it('creates no session where Robin is off, or when the editor cannot be read', async () => {

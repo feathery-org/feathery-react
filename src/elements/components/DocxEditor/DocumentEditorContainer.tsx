@@ -28,6 +28,10 @@ import {
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
 import { mountRobinDocument } from './robinDocument';
+import {
+  onRobinHostChange,
+  robinHostMounted
+} from '../../../robin/document/mounts';
 import { DocxHistoryHost, DocxSaveMeta } from './history/types';
 import { fetchDocumentBytes } from '../../../utils/documentPersistence';
 
@@ -646,12 +650,22 @@ export default function DocumentEditorContainer({
       // A grouping failure must not break the opened document.
     }
   }, [reviewChanges]);
-  // Robin's document engine: each opened document is mounted under this form instance so the form
-  // context's `liveDocument` accessor reaches it; its session is created when Robin first uses it.
-  // A regenerate or a new envelope is a new mount (a new editor id), and unmount ends any turn.
+  // Robin's document engine: where the form's Robin root is mounted, each opened document is
+  // mounted under this form instance so the form context's `liveDocument` accessor reaches it, its
+  // session created at open. A regenerate or a new envelope is a new mount (a new editor id), and
+  // unmount ends any turn. Without the Robin root (embeds, previews, custom domains) nothing is.
+  const [robinHost, setRobinHostMounted] = useState(() =>
+    formId ? robinHostMounted(formId) : false
+  );
+  useEffect(() => {
+    if (!formId) return undefined;
+    setRobinHostMounted(robinHostMounted(formId));
+    return onRobinHostChange(formId, setRobinHostMounted);
+  }, [formId]);
   useEffect(() => {
     if (
       !assistantEnabled ||
+      !robinHost ||
       !liveEditor ||
       !openedDocuments ||
       !formId ||
@@ -667,6 +681,7 @@ export default function DocumentEditorContainer({
     });
   }, [
     assistantEnabled,
+    robinHost,
     liveEditor,
     openedDocuments,
     formId,

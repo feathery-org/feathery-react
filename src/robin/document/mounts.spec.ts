@@ -5,6 +5,9 @@
 import { descriptorSchema } from './envelope';
 import {
   journalFor,
+  onRobinHostChange,
+  robinHostMounted,
+  setRobinHost,
   lazySession,
   liveDocumentAccessor,
   mountDocument,
@@ -415,5 +418,22 @@ describe('the journal keys a write by turn, editor and target (review)', () => {
     expect(a.host.serialize()).not.toBe(doc);
     expect(b.host.serialize()).not.toBe(doc);
     offs.forEach((off) => off());
+  });
+});
+
+describe("the Robin host mark (review: gate the document session on the form's Robin root)", () => {
+  it('is per form, off until the form sets it, and tells listeners each change', () => {
+    const heard: boolean[] = [];
+    const off = onRobinHostChange('form-host-a', (on) => heard.push(on));
+    expect(robinHostMounted('form-host-a')).toBe(false);
+    setRobinHost('form-host-a', true);
+    setRobinHost('form-host-a', true);
+    expect(robinHostMounted('form-host-a')).toBe(true);
+    expect(robinHostMounted('form-host-b')).toBe(false);
+    setRobinHost('form-host-a', false);
+    off();
+    setRobinHost('form-host-a', true);
+    expect(heard).toEqual([true, false]);
+    setRobinHost('form-host-a', false);
   });
 });

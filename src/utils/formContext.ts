@@ -30,7 +30,7 @@ import { validateElements } from './validation';
 import { getPanelRuntimeSnapshot } from './panelRuntime';
 import { linkRequestHeaders } from './accessLink';
 import { fillFields, FillFieldInput } from './formActions/fillFields';
-import { liveDocumentAccessor } from '../robin/document/mounts';
+import { liveDocumentAccessor, setRobinHost } from '../robin/document/mounts';
 import { navigateToStep } from './formActions/navigateToStep';
 import { clickElement } from './formActions/clickElement';
 import { runLogicRule, RunLogicRuleParams } from './formActions/runLogicRule';
@@ -158,6 +158,8 @@ export const getFormContext = (formUuid: string) => {
     fillFields: (fields: FillFieldInput[]) => fillFields(formUuid, fields),
     // Robin's document editing: the mounted document's descriptor for the request context, one bridge
     // payload in and its response out, and the end of the editing turn when Robin's turn settles
+    // The hosted form's Robin root says it is mounted, so documents are mounted for Robin there only
+    setRobinHost: (mounted: boolean) => setRobinHost(formUuid, mounted),
     liveDocument: liveDocumentAccessor(formUuid, {
       hasDocumentElement: () =>
         formHasDocumentElement(internalState[formUuid]?.steps)
