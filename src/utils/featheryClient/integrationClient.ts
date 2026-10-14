@@ -48,7 +48,7 @@ export type QuikDocumentSource = {
   forms?: {
     id: string | number;
     fields: Record<string, string>;
-    // Quik role prefix -> stable person ID, e.g. { '1own': 'client-123' }.
+    // DocuSign-only: Quik role prefix -> stable person ID, e.g. { '1own': 'client-123' }.
     signerIds?: Record<string, string>;
   }[];
 };
@@ -651,6 +651,24 @@ export default class IntegrationClient {
   ENVELOPE_MAX_TIME = 8 * 60 * 1000;
 
   async generateEnvelopes(action: Record<string, any>) {
+    if (
+      action.sign_method !== 'docusign' &&
+      ((action.envelope_signers ?? []).some((entry: any) =>
+        entry.signer_id?.trim()
+      ) ||
+        (action.documents ?? []).some(
+          (doc: any) =>
+            doc?.kind === 'quik' &&
+            doc.forms?.some(
+              (form: any) =>
+                Object.keys(form.signerIds ?? form.signer_ids ?? {}).length
+            )
+        ))
+    ) {
+      throw new Error(
+        "generateDocuments: signer IDs require signMethod 'docusign'"
+      );
+    }
     const { userId, sdkKey } = initInfo();
     // Editor flow: the backend converts a docx envelope to PDF at generation
     // whenever a signer is present, which would make the draft uneditable in
@@ -701,8 +719,8 @@ export default class IntegrationClient {
             ? { repeat_index: entry.repeat_index }
             : {}),
           email,
-          ...(entry.signer_id !== undefined
-            ? { signer_id: entry.signer_id }
+          ...(entry.signer_id?.trim()
+            ? { signer_id: entry.signer_id.trim() }
             : {}),
           ...(entry.name ? { name: entry.name } : {}),
           // Omitted rather than blanked: a present phone is the request to
@@ -798,7 +816,12 @@ export default class IntegrationClient {
       formId: this.formKey,
       documentIds: templateIdOrNull as string[],
       userId,
-      signers,
+      signers: signers.map((signer) => {
+        const legacySigner = { ...signer };
+        delete legacySigner.signer_id;
+        delete legacySigner.name;
+        return legacySigner;
+      }),
       repeatable,
       runAsync,
       envelopeAction,

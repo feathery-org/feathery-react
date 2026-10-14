@@ -548,6 +548,8 @@ describe('IntegrationClient', () => {
         }
       ];
       for (const envelopeAction of ['open_in_editor', 'sign']) {
+        signers[1].email =
+          envelopeAction === 'sign' ? 'mary@example.com' : 'shared@example.com';
         global.fetch.mockResolvedValue({
           ok: true,
           json: jest.fn().mockResolvedValue({ files: [] })
@@ -1128,7 +1130,15 @@ describe('IntegrationClient', () => {
         repeatable: true,
         run_async: false,
         envelope_action: 'download',
-        sign_method: 'feathery'
+        sign_method: 'feathery',
+        envelope_signers: [
+          {
+            document_id: 'doc1',
+            email: 'test@example.com',
+            signer_id: '',
+            name: 'Legacy name'
+          }
+        ]
       };
 
       Object.assign(fieldValues, { signer_field: 'test@example.com' });
@@ -1138,6 +1148,15 @@ describe('IntegrationClient', () => {
         json: jest.fn().mockResolvedValue({ files: ['file1.pdf', 'file2.pdf'] })
       });
 
+      await expect(
+        integrationClient.generateEnvelopes({
+          ...action,
+          envelope_signers: [
+            { ...action.envelope_signers[0], signer_id: 'person' }
+          ]
+        })
+      ).rejects.toThrow(/signer IDs require/);
+      expect(global.fetch).not.toHaveBeenCalled();
       const result = await integrationClient.generateEnvelopes(action);
 
       expect(global.fetch).toHaveBeenCalledWith(

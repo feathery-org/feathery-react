@@ -176,15 +176,34 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
         finishSave = resolve;
       })
     );
+    const signers = [
+      {
+        documentId: 'tpl-1',
+        email: 'first@example.com',
+        signerId: 'person-first',
+        name: 'First'
+      }
+    ];
     const pending = getFormContext(uuid).generateDocuments({
+      signers,
+      signMethod: 'docusign',
       documentIds: [source],
       envelopeAction: 'open_in_editor',
       toolbarActions: ['download', 'draft']
     });
     source.forms[0].fields['1own.FName'] = 'Changed later';
     signerIds['1own'] = 'person-second';
+    signers[0].signerId = 'changed';
+    signers[0].email = 'changed@example.com';
     finishSave();
     await pending;
+    expect(flow.mock.calls[0][0].envelope_signers[0]).toEqual({
+      document_id: 'tpl-1',
+      email: 'first@example.com',
+      signer_id: 'person-first',
+      name: 'First',
+      filler: false
+    });
     expect(flow.mock.calls[0][0].documents[0].forms).toEqual([
       {
         id: 44249,
@@ -193,6 +212,37 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       },
       { id: 44249, fields: { '1own.FName': 'Second' } }
     ]);
+  });
+
+  it('rejects native identities before saving and treats blank IDs as absent', async () => {
+    for (const options of [
+      {
+        signers: [{ documentId: 'tpl-1', email: 'a@x.com', signerId: 'person' }]
+      },
+      {
+        documentIds: [
+          {
+            kind: 'quik' as const,
+            forms: [{ id: 44249, fields: {}, signerIds: { '1own': 'person' } }]
+          }
+        ]
+      }
+    ]) {
+      await expect(
+        getFormContext(uuid).generateDocuments({
+          documentIds: ['tpl-1'],
+          ...options
+        })
+      ).rejects.toThrow(/signer IDs require/);
+    }
+    expect(client.flushCustomFields).not.toHaveBeenCalled();
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      signers: [{ documentId: 'tpl-1', email: 'a@x.com', signerId: '  ' }]
+    });
+    expect(flow.mock.calls[0][0].envelope_signers[0]).not.toHaveProperty(
+      'signer_id'
+    );
   });
 
   it('routes a bare sign envelope action through the flow', async () => {

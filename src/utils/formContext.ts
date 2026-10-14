@@ -291,7 +291,7 @@ export const getFormContext = (formUuid: string) => {
         documentId: string;
         roleId?: string;
         repeatIndex?: number;
-        // Stable person identity across documents; omit for legacy email grouping.
+        // DocuSign-only identity across documents; omit for email grouping.
         signerId?: string;
         email: string;
         name?: string;
@@ -320,6 +320,26 @@ export const getFormContext = (formUuid: string) => {
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
     }) => {
+      signers = signers?.map((signer) => ({ ...signer }));
+      if (
+        signMethod !== 'docusign' &&
+        (signers?.some((signer) => signer.signerId?.trim()) ||
+          documentSources.some(
+            (doc) =>
+              !(doc instanceof Field) &&
+              typeof doc !== 'string' &&
+              doc.kind === 'quik' &&
+              doc.forms?.some(
+                (form) => Object.keys(form.signerIds ?? {}).length
+              )
+          ))
+      ) {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: signer IDs require signMethod 'docusign'"
+          )
+        );
+      }
       if (draft) {
         if (
           signMethod !== 'docusign' ||
@@ -448,7 +468,7 @@ export const getFormContext = (formUuid: string) => {
                   ? { repeat_index: repeatIndex }
                   : {}),
                 email,
-                ...(signerId !== undefined ? { signer_id: signerId } : {}),
+                ...(signerId?.trim() ? { signer_id: signerId.trim() } : {}),
                 ...(name ? { name } : {}),
                 ...(phone ? { phone } : {}),
                 filler: !!filler
