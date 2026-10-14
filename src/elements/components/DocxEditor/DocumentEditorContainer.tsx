@@ -834,8 +834,12 @@ export default function DocumentEditorContainer({
               : pdfView.current.url ?? envelope.file
           }
           signUrl={awaitingFiller ? signUrls[envelope.id] : undefined}
+          // Only after a reload: this session's own send already knows
+          // whether there's a page for the filler to open.
           onOpenSigningPage={
-            awaitingFiller && terminalAction ? reopenSigningPage : undefined
+            awaitingFiller && !sentVia[envelope.id] && terminalAction === 'sign'
+              ? reopenSigningPage
+              : undefined
           }
           status={
             envelope.signed
