@@ -1224,6 +1224,14 @@ export default class ResponsiveStyles {
               heightUnit,
               lineHeight,
               fontSize
+            ) &&
+            // A container-synthesized alignment also needs undoing on the
+            // breakpoint that re-centres, or its cqh paddings bleed through.
+            !canContainerSynthesizeVertical(
+              type,
+              heightUnit,
+              lineHeight,
+              fontSize
             )
           )
             return {};
