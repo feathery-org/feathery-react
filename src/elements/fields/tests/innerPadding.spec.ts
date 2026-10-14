@@ -2547,3 +2547,42 @@ describe('vertical alignment on a percentage height', () => {
     expect(centred.containerType).toBeUndefined();
   });
 });
+
+describe('the shrunken label against a rounded corner', () => {
+  const pinnedAt = (radius: number) =>
+    targets(
+      'text_field',
+      {
+        placeholder_transition: 'shrink_top',
+        height: 90,
+        height_unit: 'px',
+        font_size: 16,
+        corner_top_left_radius: radius
+      },
+      { placeholder: 'Name' }
+    ).getTarget('placeholderFocus', true);
+
+  it('keeps the production seat where the curve already clears it', () => {
+    expect(pinnedAt(8).insetInlineStart).toBe('0.75rem');
+    expect(pinnedAt(16).insetInlineStart).toBe('0.75rem');
+    // At 24 the max() is emitted but the production seat still wins it:
+    // 11.3px < 0.75rem, so nothing moves visually.
+    expect(pinnedAt(24).insetInlineStart).toEqual([
+      '0.75rem',
+      'max(0.75rem, 11.3px)'
+    ]);
+  });
+
+  it('moves in just past a larger curve, production seat as fallback', () => {
+    // r=28, label top edge at 5px: sweep = 28 - sqrt(2*28*5 - 25) ~= 12, plus
+    // 2px of air = 14 -- the band the T13 screenshot showed the stroke crossing.
+    expect(pinnedAt(28).insetInlineStart).toEqual([
+      '0.75rem',
+      'max(0.75rem, 14px)'
+    ]);
+    expect(pinnedAt(50).insetInlineStart).toEqual([
+      '0.75rem',
+      'max(0.75rem, 30.2px)'
+    ]);
+  });
+});
