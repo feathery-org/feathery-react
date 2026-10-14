@@ -1,5 +1,10 @@
 import React, { useMemo, useRef } from 'react';
-import { imgMaxSizeStyles, noTextSelectStyles } from '../../styles';
+import {
+  hasImageMargins,
+  imgMaxSizeStyles,
+  mergeMobileStyles,
+  noTextSelectStyles
+} from '../../styles';
 import useBorder from '../../components/useBorder';
 import { hoverStylesGuard } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
@@ -67,6 +72,11 @@ function ButtonGroupField({
     }));
   }
 
+  const iconImgStyles = responsiveStyles.getTargets('img');
+  const iconGapStyles = hasImageMargins(element)
+    ? {}
+    : responsiveStyles.getTarget('iconGap');
+
   return (
     <div
       ref={containerRef}
@@ -102,6 +112,7 @@ function ButtonGroupField({
               ? servar.metadata.option_icons?.[index]
               : undefined);
           const tooltip = option.tooltip ?? '';
+          const optionIconGapStyles = label ? iconGapStyles : {};
 
           return (
             <div
@@ -145,7 +156,13 @@ function ButtonGroupField({
                     display: 'inline-flex',
                     alignItems: 'center',
                     ...imgMaxSizeStyles,
-                    ...responsiveStyles.getTargets('img'),
+                    ...iconImgStyles,
+                    ...optionIconGapStyles,
+                    ...mergeMobileStyles(
+                      iconImgStyles,
+                      optionIconGapStyles,
+                      responsiveStyles.getMobileBreakpoint()
+                    ),
                     pointerEvents: 'none'
                   }}
                 >

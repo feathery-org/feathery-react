@@ -1666,8 +1666,10 @@ export default class ResponsiveStyles {
         backgroundPositionY: imageVerticalLayout
       };
       const iconUrl = iconGlyphDataUrl(icon?.glyph, iconColor);
-      if (iconUrl) formattedStyles.backgroundImage = `url("${iconUrl}")`;
-      else if (imageUrl) formattedStyles.backgroundImage = `url(${imageUrl})`;
+      // Picking either source clears the other, so both are set only when a
+      // mobile image inherits the desktop icon; the mobile image wins.
+      if (imageUrl) formattedStyles.backgroundImage = `url(${imageUrl})`;
+      else if (iconUrl) formattedStyles.backgroundImage = `url("${iconUrl}")`;
       else if (this.styles.background_icon)
         formattedStyles.backgroundImage = 'none';
 
@@ -1711,6 +1713,30 @@ export const imgMaxSizeStyles: CSSProperties = {
   maxWidth: '80%',
   maxHeight: '100%'
 };
+
+const NATIVE_ICON_GAP = '0.5em';
+// The icon renders before its label, so the side facing the label follows the flex direction.
+const NATIVE_ICON_GAP_SIDE: Record<string, string> = {
+  'row-reverse': 'marginLeft',
+  column: 'marginBottom',
+  'column-reverse': 'marginTop'
+};
+
+export function nativeIconGapStyles(flexDirection?: string) {
+  return {
+    [NATIVE_ICON_GAP_SIDE[flexDirection ?? ''] ?? 'marginRight']:
+      NATIVE_ICON_GAP
+  };
+}
+
+// Authored image margins own the spacing; the default gap only fills in when none are set.
+export function hasImageMargins(element: any) {
+  return [element.styles, element.mobile_styles].some((styles) =>
+    ['top', 'right', 'bottom', 'left'].some((side) =>
+      Boolean(Number(styles?.[`image_margin_${side}`]))
+    )
+  );
+}
 
 export const ERROR_COLOR = '#F42525';
 

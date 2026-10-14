@@ -144,11 +144,20 @@ function TextNodes({
     .map((op: any) => op.insert?.icon)
     .join(',');
 
+  // Empty labels stay mounted in the builder so they can be typed into, but
+  // take no space until selected so the canvas matches the published form.
+  const collapseEmptyLabel =
+    editMode === 'editable' &&
+    !focused &&
+    !element.properties.text &&
+    !iconEmbedNames;
+
   editableProps.css = {
     ...editableProps.css,
     ...responsiveStyles.getTarget(cssTarget),
     // Remove baseline padding from labels that contain icons.
-    ...(iconEmbedNames ? { paddingBottom: 0 } : {})
+    ...(iconEmbedNames ? { paddingBottom: 0 } : {}),
+    ...(collapseEmptyLabel ? { minWidth: 0, paddingBottom: 0 } : {})
   };
 
   // Not using jsonpath because of issues with NextJS
@@ -228,7 +237,9 @@ function TextNodes({
           />
         ) : (
           ops.map((op, i) => {
-            if (iconOnly && typeof op.insert === 'string') return null;
+            // Hide rather than unmount so a selection change never removes
+            // DOM the browser may already have edited.
+            const hidden = iconOnly && typeof op.insert === 'string';
             const attrs = op.attributes || {};
             let onClick = () => {};
             let cursor = 'inherit';
@@ -292,7 +303,10 @@ function TextNodes({
                 key={i}
                 index={i}
                 cursor={cursor}
-                fontStyles={responsiveStyles.getRichFontStyles(attrs)}
+                fontStyles={{
+                  ...responsiveStyles.getRichFontStyles(attrs),
+                  ...(hidden ? { display: 'none' } : {})
+                }}
                 onClick={onClick}
                 text={text}
                 link={link}

@@ -2,7 +2,12 @@ import React, { useMemo } from 'react';
 
 import TextNodes from '../components/TextNodes';
 import { hasIconGlyph, IconGlyph } from '../components/icons/iconGlyph';
-import { imgMaxSizeStyles } from '../styles';
+import {
+  hasImageMargins,
+  imgMaxSizeStyles,
+  mergeMobileStyles,
+  nativeIconGapStyles
+} from '../styles';
 import { adjustColor, getImageColorStyles } from '../../utils/styles';
 import { isFit } from '../../utils/hydration';
 import useBorder from '../components/useBorder';
@@ -78,6 +83,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyMargin('img', 'image_');
   responsiveStyles.applyColor('img', 'icon_color', 'color');
   responsiveStyles.apply('img', 'image_color', getImageColorStyles);
+  responsiveStyles.apply('iconGap', 'flex_direction', nativeIconGapStyles);
 
   if (element.styles.hover_background_color) {
     responsiveStyles.applyColor(
@@ -207,43 +213,64 @@ function ButtonElement({
   const labelEditMode =
     managedElement && editMode === 'editable' ? 'disabled' : editMode;
 
+  const hasIcon = hasIconGlyph(element.properties.icon_glyph);
+  const hasLabelContent =
+    Boolean(String(labelElement.properties.text ?? '').trim()) ||
+    (labelElement.properties.text_formatted ?? []).some(
+      (op: any) => typeof op.insert === 'object'
+    );
+  let buttonImage = null;
+  if (hasIcon) {
+    const breakpoint = responsiveStyles.getMobileBreakpoint();
+    const labelFontStyles = responsiveStyles.getRichFontStyles(
+      element.properties.text_formatted?.[0]?.attributes ?? {}
+    );
+    const imgStyles = responsiveStyles.getTargets('img');
+    const gapStyles =
+      hasLabelContent && !hasImageMargins(element)
+        ? responsiveStyles.getTarget('iconGap')
+        : {};
+    buttonImage = (
+      <span
+        data-feathery-button-icon={element.properties.icon_source}
+        css={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          ...imgMaxSizeStyles,
+          ...labelFontStyles,
+          ...imgStyles,
+          ...gapStyles,
+          // A 1em icon scales with the label's mobile font size too.
+          ...mergeMobileStyles(
+            mergeMobileStyles(labelFontStyles, imgStyles, breakpoint),
+            gapStyles,
+            breakpoint
+          )
+        }}
+      >
+        <IconGlyph
+          glyph={element.properties.icon_glyph}
+          size={element.styles.image_width ? '100%' : '1em'}
+        />
+      </span>
+    );
+  } else if (element.properties.image) {
+    buttonImage = (
+      <img
+        src={element.properties.image}
+        css={{
+          ...imgMaxSizeStyles,
+          ...responsiveStyles.getTargets('img')
+        }}
+      />
+    );
+  }
+
   const buttonContent = (
     <>
-      {hasIconGlyph(element.properties.icon_glyph) ? (
-        <span
-          data-feathery-button-icon={element.properties.icon_source}
-          css={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            ...imgMaxSizeStyles,
-            ...responsiveStyles.getRichFontStyles(
-              element.properties.text_formatted?.[0]?.attributes ?? {}
-            ),
-            ...responsiveStyles.getTargets('img')
-          }}
-        >
-          <IconGlyph
-            glyph={element.properties.icon_glyph}
-            size={element.styles.image_width ? '100%' : '1em'}
-          />
-        </span>
-      ) : (
-        element.properties.image && (
-          <img
-            src={element.properties.image}
-            css={{
-              ...imgMaxSizeStyles,
-              ...responsiveStyles.getTargets('img')
-            }}
-          />
-        )
-      )}
+      {buttonImage}
       {/* Keep labels mounted for icon-only and emptied editable buttons. */}
-      {(labelElement.properties.text ||
-        labelEditMode ||
-        (labelElement.properties.text_formatted ?? []).some(
-          (op: any) => typeof op.insert === 'object'
-        )) && (
+      {(labelElement.properties.text || hasLabelContent || labelEditMode) && (
         <TextNodes
           element={labelElement}
           responsiveStyles={responsiveStyles}
@@ -253,10 +280,7 @@ function ButtonElement({
           focused={focused}
           textCallbacks={textCallbacks}
           featheryContext={featheryContext}
-          expand={
-            !element.properties.image &&
-            !hasIconGlyph(element.properties.icon_glyph)
-          }
+          expand={!element.properties.image && !hasIcon}
         />
       )}
     </>

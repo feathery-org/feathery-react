@@ -11,6 +11,7 @@ import {
   INNER_PADDING_RIGHT,
   INPUT_BOX_FIELDS,
   MULTISELECT_FIELD,
+  nativeIconGapStyles,
   RESET_INLINE_PADDING_CSS
 } from '../styles';
 import {
@@ -232,6 +233,10 @@ function applyLabelFontStyles(styles: any) {
   // semantic for UIs that need the concrete displayed value — keep the two in sync.
   styles.applyFontStyles('fieldLabel', false, true, 'label_', true);
 }
+
+// Option icons follow an explicit state font color, like button icons do.
+const optionIconStateColor = (color: string) =>
+  color ? { '[data-feathery-option-icon]': { color: `#${color}` } } : {};
 
 export function applyFieldStyles(field: any, styles: any) {
   const type = field.servar.type;
@@ -483,6 +488,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyMargin('img', 'image_');
       styles.applyColor('img', 'icon_color', 'color');
       styles.apply('img', 'image_color', getImageColorStyles);
+      styles.apply('iconGap', 'flex_direction', nativeIconGapStyles);
       styles.apply('hover', 'hover_image_color', (a: string) => {
         if (!a) return {};
         return {
@@ -490,7 +496,9 @@ export function applyFieldStyles(field: any, styles: any) {
         };
       });
       styles.applyColor('hover', 'hover_font_color', 'color');
+      styles.apply('hover', 'hover_font_color', optionIconStateColor);
       styles.applyColor('active', 'selected_font_color', 'color');
+      styles.apply('active', 'selected_font_color', optionIconStateColor);
 
       styles.apply('active', 'selected_image_color', (a: string) => {
         if (!a) return {};

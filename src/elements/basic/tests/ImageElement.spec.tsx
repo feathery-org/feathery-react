@@ -77,6 +77,31 @@ describe('ImageElement', () => {
     expect(responsiveStyles.getTarget('image').color).toBeUndefined();
   });
 
+  it('names a stored glyph from its alt text like an uploaded image', async () => {
+    const element = {
+      properties: {
+        uploaded_image_file_field_key: '',
+        alt_text: 'Company logo',
+        aria_label: '',
+        icon_glyph: {
+          variant: 'outline',
+          nodes: [['path', { d: 'M12 5l0 14' }]]
+        }
+      },
+      styles: {},
+      mobile_styles: {},
+      repeat: 0
+    };
+    const responsiveStyles = new ResponsiveStyles(element, [], true);
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement element={element} responsiveStyles={responsiveStyles} />
+    );
+
+    expect(screen.getByRole('img', { name: 'Company logo' })).toBeTruthy();
+  });
+
   // EMPTY SOURCE
   it('renders placeholder image in edit mode if no source image', async () => {
     const mockElement = {
