@@ -17,7 +17,10 @@ import classNames from 'classnames';
 import { fieldValues } from '../../../utils/init';
 import { getRenderData } from '../../../utils/image';
 import DangerouslySetHtmlContent from '../../../utils/DangerouslySetHTMLContent';
-import { replaceTextVariables } from '../../../elements/components/TextNodes';
+import {
+  replaceTextVariables,
+  TEXT_VARIABLE_PATTERN
+} from '../../../elements/components/TextNodes';
 import DocumentEditorContainer from '../../../elements/components/DocxEditor/DocumentEditorContainer';
 import { ShadowDomHtmlContent } from '../../../utils/ShadowDomHtmlContent';
 
@@ -105,8 +108,9 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       breakpoint
     );
 
-    if (node.properties.iframe_url) {
-      const url = replaceTextVariables(node.properties.iframe_url);
+    const url = replaceTextVariables(node.properties.iframe_url);
+    // Unresolved field references would navigate relative to the current page.
+    if (url && !url.match(TEXT_VARIABLE_PATTERN)) {
       children.push(
         <iframe
           key={`iframe:${url}`}
