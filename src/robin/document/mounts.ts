@@ -130,6 +130,11 @@ export interface LiveDocumentAccessor {
    * document tools per form from it, constant across that form's turns.
    */
   hasDocumentElement(): boolean;
+  /**
+   * The hosted form's Robin root says it is mounted (true) or gone (false): documents are mounted
+   * for Robin, their sessions created at open, only while it is.
+   */
+  setHostMounted(mounted: boolean): void;
 }
 
 /** What the form tells the accessor about itself. */
@@ -226,7 +231,8 @@ export function liveDocumentAccessor(
       // a session not yet created has no turn to finish
       for (const session of slotsOf(formKey)) session.peek()?.finishTurn();
     },
-    hasDocumentElement: () => form.hasDocumentElement()
+    hasDocumentElement: () => form.hasDocumentElement(),
+    setHostMounted: (mounted) => setRobinHost(formKey, mounted)
   };
 }
 

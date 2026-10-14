@@ -578,13 +578,13 @@ describe('liveDocument.hasDocumentElement', () => {
   });
 });
 
-describe('setRobinHost', () => {
+describe('liveDocument.setHostMounted', () => {
   it("marks the form's Robin root mounted and gone, for this form only", () => {
     const uuid = 'formContext-robin-host';
-    getFormContext(uuid).setRobinHost(true);
+    getFormContext(uuid).liveDocument.setHostMounted(true);
     expect(robinHostMounted(uuid)).toBe(true);
     expect(robinHostMounted('another-form')).toBe(false);
-    getFormContext(uuid).setRobinHost(false);
+    getFormContext(uuid).liveDocument.setHostMounted(false);
     expect(robinHostMounted(uuid)).toBe(false);
   });
 });
