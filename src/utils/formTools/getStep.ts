@@ -7,7 +7,7 @@ import { GetStepResult } from './types';
 
 // Mirrors dispatchClickElement's own hidden check (assistant/tools/clickElement.ts):
 // a button hidden by a show_if rule must never be pressed on its behalf.
-const isButtonVisible = (state: any, button: any): boolean => {
+export const isButtonVisible = (state: any, button: any): boolean => {
   const flags = (state.visiblePositions ?? {})[
     getPositionKey(button) ?? 'root'
   ];

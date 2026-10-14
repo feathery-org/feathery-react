@@ -42,6 +42,8 @@ const seed = (
     maxRepeats?: number;
     // false leaves the container with no add-row button
     addRowButton?: boolean;
+    // A show-if rule hides the add-row button
+    addRowButtonHidden?: boolean;
     repeatTrigger?: string;
     visible?: boolean[];
     type?: string;
@@ -77,7 +79,7 @@ const seed = (
           : [
               {
                 id: 'add-btn',
-                position: [],
+                position: [1],
                 properties: {
                   actions: [
                     {
@@ -93,7 +95,8 @@ const seed = (
     fieldValues: { vehicle_vin: values },
     visiblePositions: {
       '0': Array(rowCount).fill(true),
-      '0,0': opts.visible ?? Array(rowCount).fill(true)
+      '0,0': opts.visible ?? Array(rowCount).fill(true),
+      '1': [!opts.addRowButtonHidden]
     },
     // index === null mirrors the real changeValue: replace the field's whole
     // value outright (how fillStep.ts's row-level rollback restores it), rather
@@ -359,6 +362,21 @@ describe('fillStepTool: repeated fields', () => {
           'Row 1 needs a new row, and this container has no way to add one.'
       }
     ]);
+  });
+
+  it('adds no rows through an add-row button a show-if rule hides', async () => {
+    seed(['existing'], { addRowButtonHidden: true });
+
+    const result = await fillStepTool(FORM, {
+      values: { vehicle_vin: ['VIN1', 'VIN2'] }
+    });
+
+    expect(addRepeatedRowMock).not.toHaveBeenCalled();
+    expect((result.fields.vehicle_vin as any).rows[1]).toEqual({
+      status: 'max_repeats_exceeded',
+      message:
+        'Row 1 needs a new row, and this container has no way to add one.'
+    });
   });
 
   it('adds rows for a field that adds one when its last row is filled', async () => {

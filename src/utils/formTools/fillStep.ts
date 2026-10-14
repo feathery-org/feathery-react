@@ -25,7 +25,7 @@ import {
   getRepeatedContainer,
   isNestedRepeat
 } from '../repeat';
-import { getStepTool } from './getStep';
+import { getStepTool, isButtonVisible } from './getStep';
 import { awaitClientQueues } from './clientQueues';
 import {
   FillFieldResult,
@@ -482,9 +482,16 @@ async function fillRepeatedField(
     0
   );
 
-  // A person adds rows with the container's add-row button, or by filling the
-  // last row of a field that adds one when set
-  const addAction = findAddRowButtonAction(state.currentStep, containerId);
+  // A person adds rows with the container's visible add-row button, or by
+  // filling the last row of a field that adds one when set
+  const addAction = findAddRowButtonAction(
+    {
+      buttons: (state.currentStep.buttons ?? []).filter((b: any) =>
+        isButtonVisible(state, b)
+      )
+    },
+    containerId
+  );
   const canAddRows =
     !!addAction ||
     (state.currentStep.servar_fields ?? []).some(
