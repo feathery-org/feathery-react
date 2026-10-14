@@ -25,6 +25,7 @@ export default function SignedEnvelopeView({
   downloadUrl,
   signUrl,
   onOpenSigningPage,
+  openingSigningPage = false,
   status
 }: {
   pdfUrl: string;
@@ -34,6 +35,8 @@ export default function SignedEnvelopeView({
   signUrl?: string;
   /** Fetches that page when this session doesn't hold it (after a reload). */
   onOpenSigningPage?: () => void;
+  /** While that fetch runs; the button is disabled. */
+  openingSigningPage?: boolean;
   /** Null when nothing says whether this PDF was sent: no pill is shown. */
   status: keyof typeof STATUS_LABELS | null;
 }) {
@@ -115,6 +118,7 @@ export default function SignedEnvelopeView({
               <button
                 type='button'
                 onClick={onOpenSigningPage}
+                disabled={openingSigningPage}
                 css={secondaryButtonCss}
               >
                 Open signing page

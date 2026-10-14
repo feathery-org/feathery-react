@@ -159,6 +159,7 @@ jest.mock('./SignedEnvelopeView', () => {
     downloadUrl,
     signUrl,
     onOpenSigningPage,
+    openingSigningPage,
     status
   }: any) {
     return React.createElement(
@@ -172,6 +173,7 @@ jest.mock('./SignedEnvelopeView', () => {
       onOpenSigningPage &&
         React.createElement('button', {
           'data-testid': 'open-signing-page',
+          disabled: openingSigningPage,
           onClick: onOpenSigningPage
         })
     );
@@ -1291,9 +1293,14 @@ describe('DocumentEditorContainer signing outcomes', () => {
   describe('after a reload', () => {
     const reopened = (
       sent: Record<string, any>,
-      toolbar: string[] = ['sign']
+      toolbar: string[] = ['sign'],
+      action: Record<string, any> = {}
     ) => {
-      seed({ sign_method: 'feathery', editor_toolbar_actions: toolbar });
+      seed({
+        sign_method: 'feathery',
+        editor_toolbar_actions: toolbar,
+        ...action
+      });
       delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
       mockGetCurrentEnvelope.mockResolvedValue({
         id: `envelope-${CONTAINER}`,
@@ -1326,12 +1333,34 @@ describe('DocumentEditorContainer signing outcomes', () => {
       const open = jest
         .spyOn(featheryWindow(), 'open')
         .mockImplementation(() => null);
+      Object.assign(fieldValues, {
+        signer_field: 'alice@test.com',
+        client_field: 'bob@test.com'
+      });
       mockFinalizeEnvelope.mockResolvedValue({
         ...finalizedPdf('https://x/sent.pdf'),
         signer_id: 'signer-9',
         invited: false
       });
-      const { getByTestId } = reopened({ sent: true, sent_via: 'feathery' });
+      const { getByTestId } = reopened(
+        { sent: true, sent_via: 'feathery' },
+        ['sign'],
+        {
+          envelope_signer_field_key: 'signer_field',
+          envelope_signers: [
+            {
+              document_id: `document-${CONTAINER}`,
+              role_id: 'role-client',
+              field_key: 'client_field'
+            },
+            {
+              document_id: `document-${CONTAINER}`,
+              role_id: 'role-advisor',
+              field_key: 'signer_field'
+            }
+          ]
+        }
+      );
 
       await waitFor(() =>
         expect(getByTestId('open-signing-page')).toBeTruthy()
@@ -1342,7 +1371,20 @@ describe('DocumentEditorContainer signing outcomes', () => {
 
       expect(mockFinalizeEnvelope).toHaveBeenCalledWith(
         `envelope-${CONTAINER}`,
-        expect.any(Array),
+        [
+          {
+            document_id: `document-${CONTAINER}`,
+            role_id: 'role-client',
+            email: 'bob@test.com',
+            filler: false
+          },
+          {
+            document_id: `document-${CONTAINER}`,
+            role_id: 'role-advisor',
+            email: 'alice@test.com',
+            filler: true
+          }
+        ],
         'feathery'
       );
       expect(open).toHaveBeenCalledWith(
@@ -1356,6 +1398,74 @@ describe('DocumentEditorContainer signing outcomes', () => {
           'data-sign-url'
         )
       ).toContain('signer-9');
+      delete fieldValues.signer_field;
+      delete fieldValues.client_field;
+    });
+
+    it('fetches the page once however often the button is clicked', async () => {
+      jest.spyOn(featheryWindow(), 'open').mockImplementation(() => null);
+      let finish: (value: any) => void = () => undefined;
+      mockFinalizeEnvelope.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+      );
+      const { getByTestId } = reopened({ sent: true, sent_via: 'feathery' });
+
+      await waitFor(() =>
+        expect(getByTestId('open-signing-page')).toBeTruthy()
+      );
+      // Two clicks before any re-render, then one more once it's disabled.
+      await act(async () => {
+        getByTestId('open-signing-page').click();
+        getByTestId('open-signing-page').click();
+      });
+      expect(getByTestId('open-signing-page')).toBeDisabled();
+      await act(async () => {
+        getByTestId('open-signing-page').click();
+      });
+      await act(async () => {
+        finish({
+          ...finalizedPdf('https://x/sent.pdf'),
+          signer_id: 'signer-9'
+        });
+      });
+
+      expect(mockFinalizeEnvelope).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the signed PDF when it was signed elsewhere in the meantime', async () => {
+      mockFinalizeEnvelope.mockRejectedValue(
+        new Error('Signed envelopes cannot be modified')
+      );
+      const { getByTestId, queryByRole } = reopened({
+        sent: true,
+        sent_via: 'feathery'
+      });
+      await waitFor(() =>
+        expect(getByTestId('open-signing-page')).toBeTruthy()
+      );
+      mockGetCurrentEnvelope.mockResolvedValue({
+        id: `envelope-${CONTAINER}`,
+        file: 'https://x/sent.pdf',
+        editor_file: null,
+        type: 'pdf',
+        signed: true,
+        sent: true,
+        sent_via: 'feathery'
+      });
+
+      await act(async () => {
+        getByTestId('open-signing-page').click();
+      });
+
+      // The signed file reloads with a version query.
+      await waitFor(() =>
+        expect(
+          getByTestId(/^signed-view:https:\/\/x\/sent\.pdf/)
+        ).toHaveAttribute('data-status', 'signed')
+      );
+      expect(queryByRole('alert')).toBeNull();
     });
 
     it('says so when it is someone else’s turn to sign', async () => {
