@@ -74,6 +74,21 @@ interface Envelope {
   document?: string;
   type: string;
   signed: boolean;
+  // Whether and how it went out for signature, recorded by the backend so the
+  // status survives a reload. Absent on older backends.
+  sent?: boolean;
+  sent_via?: 'feathery' | 'docusign' | null;
+}
+
+// How it was sent: this session's record, else the backend's.
+function sentMethod(
+  envelope: Envelope,
+  sentVia: Record<string, 'feathery' | 'docusign'>
+): 'feathery' | 'docusign' | undefined {
+  return (
+    sentVia[envelope.id] ??
+    (envelope.sent ? envelope.sent_via ?? 'feathery' : undefined)
+  );
 }
 
 // The editor must open the control-bearing copy when the envelope has one;
@@ -225,6 +240,10 @@ export default function DocumentEditorContainer({
   // The filler's signing page, offered again in case the browser blocked the
   // tab opened after the finalize round trip.
   const [signUrls, setSignUrls] = useState<Record<string, string>>({});
+  // A reopen in flight; a second click would finalize and open a tab twice.
+  // The ref blocks clicks landing before the disabled state renders.
+  const [openingSigningPage, setOpeningSigningPage] = useState(false);
+  const openingSigningPageRef = useRef(false);
 
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
   // featheryWindow() is {} so a mount-once memo freezes serviceUrl as
@@ -335,7 +354,7 @@ export default function DocumentEditorContainer({
       !!documentId &&
       envelope?.type === 'pdf' &&
       !envelope.signed &&
-      sentVia[envelope.id] === 'feathery'
+      sentMethod(envelope, sentVia) === 'feathery'
   );
   // Reload only when the file or its signed state changes (signing overwrites
   // the same path); an unchanged plain URL gets ?v= to bypass caches.
@@ -509,56 +528,59 @@ export default function DocumentEditorContainer({
 
   // Only the signing actions run here; 'download' is handled inside DocxEditor,
   // which saves first and then serves the envelope's public (stripped) copy.
+  // The signers sent up with a finalize, the filler flagged on their own rows.
+  const signerEntries = useCallback(() => {
+    // The field names whoever signs inline. Nobody does on DocuSign - it
+    // mails every recipient itself, from the role mappings - so routing to
+    // that field would reach someone never listed as a signer.
+    const signerKey = signsViaDocusign(targetAction ?? {})
+      ? ''
+      : targetAction?.envelope_signer_field_key;
+    const fillerEmail = signerKey
+      ? fieldValues[signerKey]?.toString() ?? ''
+      : '';
+    // Per-role signers were held back at generation for the same reason, so
+    // they go up now, scoped to the document actually on screen. Without
+    // any, the shared signer field covers every role instead.
+    const roleSigners = (targetAction?.envelope_signers ?? [])
+      .filter((entry: any) => entry.document_id === activeDocumentId)
+      .map((entry: any) => {
+        const email = fieldValues[entry.field_key]?.toString() ?? '';
+        return {
+          document_id: entry.document_id,
+          role_id: entry.role_id,
+          email,
+          // Flagged entries are the ones this filler opens and signs
+          // inline.
+          filler:
+            !!fillerEmail && email.toLowerCase() === fillerEmail.toLowerCase()
+        };
+      });
+    return (
+      roleSigners.length || !activeDocumentId
+        ? roleSigners
+        : // role_id left off rather than nulled - the backend rejects an
+          // explicit null, and omitting it covers every role.
+          [
+            {
+              document_id: activeDocumentId,
+              email: fillerEmail,
+              filler: true
+            }
+          ]
+    ).filter((entry: any) => entry.email);
+  }, [targetAction, activeDocumentId]);
+
   const runSigningAction = useCallback(
     async (draft: boolean) => {
       if (!envelope) return;
-      const viaDocusign = signsViaDocusign(targetAction ?? {});
-      // The field names whoever signs inline. Nobody does on DocuSign - it
-      // mails every recipient itself, from the role mappings - so routing to
-      // that field would reach someone never listed as a signer.
-      const signerKey = viaDocusign
-        ? ''
-        : targetAction?.envelope_signer_field_key;
-      const fillerEmail = signerKey
-        ? fieldValues[signerKey]?.toString() ?? ''
-        : '';
       let finalized: Record<string, any> | undefined;
       // Both backends need a PDF carrying signature fields, and generation
       // skipped that conversion to keep the docx editable. One-way: this draft
       // stops being editable. Throws so nothing is sent unfinalized. It's also
       // what hands back the signer to open as.
       if (envelope.type === 'docx' && !envelope.signed) {
-        // Per-role signers were held back at generation for the same reason, so
-        // they go up now, scoped to the document actually on screen. Without
-        // any, the shared signer field covers every role instead.
-        const roleSigners = (targetAction?.envelope_signers ?? [])
-          .filter((entry: any) => entry.document_id === activeDocumentId)
-          .map((entry: any) => {
-            const email = fieldValues[entry.field_key]?.toString() ?? '';
-            return {
-              document_id: entry.document_id,
-              role_id: entry.role_id,
-              email,
-              // Flagged entries are the ones this filler opens and signs
-              // inline.
-              filler:
-                !!fillerEmail &&
-                email.toLowerCase() === fillerEmail.toLowerCase()
-            };
-          });
-        const signers = (
-          roleSigners.length || !activeDocumentId
-            ? roleSigners
-            : // role_id left off rather than nulled - the backend rejects an
-              // explicit null, and omitting it covers every role.
-              [
-                {
-                  document_id: activeDocumentId,
-                  email: fillerEmail,
-                  filler: true
-                }
-              ]
-        ).filter((entry: any) => entry.email);
+        const signers = signerEntries();
         finalized = await client.finalizeEnvelope(
           envelope.id,
           signers,
@@ -645,8 +667,49 @@ export default function DocumentEditorContainer({
       if (targetAction?.redirect) featheryWindow().location.href = url;
       else openTab(url);
     },
-    [client, envelope, targetAction, activeDocumentId, formId, containerId]
+    [client, envelope, targetAction, signerEntries, formId, containerId]
   );
+
+  // After a reload the session's signing link is gone. Finalizing a sent PDF
+  // again converts and emails nothing; it just hands the filler's link back.
+  const reopenSigningPage = useCallback(async () => {
+    if (!envelope || openingSigningPageRef.current) return;
+    openingSigningPageRef.current = true;
+    setOpeningSigningPage(true);
+    try {
+      setOperationError(null);
+      // The button only shows for a Feathery send, whatever the action says now.
+      const finalized = await client.finalizeEnvelope(
+        envelope.id,
+        signerEntries(),
+        'feathery'
+      );
+      if (!finalized?.signer_id) {
+        setOperationError('This document is waiting on another signer.');
+        return;
+      }
+      const url = getSignUrl(finalized.signer_id, targetAction?.redirect);
+      setSignUrls((current) => ({ ...current, [envelope.id]: url }));
+      if (targetAction?.redirect) featheryWindow().location.href = url;
+      else openTab(url);
+    } catch (e: any) {
+      // Signed elsewhere since this loaded: show that instead of the refusal.
+      const fresh = documentId
+        ? await client.getCurrentEnvelope(documentId).catch(() => null)
+        : null;
+      if (fresh?.id === envelope.id && fresh.signed) {
+        setEnvelope(fresh as Envelope);
+        setSourceUrl(envelopeSourceUrl(fresh as Envelope));
+        return;
+      }
+      setOperationError(
+        `The signing page could not be opened. ${e?.message ?? ''}`.trim()
+      );
+    } finally {
+      openingSigningPageRef.current = false;
+      setOpeningSigningPage(false);
+    }
+  }, [client, envelope, targetAction, signerEntries, documentId]);
 
   // 'draft' as the terminal action means Create Draft is the only signing
   // outcome configured; offersDraft puts it in a menu beside Sign instead.
@@ -763,9 +826,10 @@ export default function DocumentEditorContainer({
     </div>
   );
   // A PDF has no editable docx to open, so show it read-only. Its status is
-  // only claimed when this session sent it (or the backend says signed).
+  // only claimed when it was sent (this session or per the backend) or signed.
   if (envelope.type === 'pdf') {
-    const via = sentVia[envelope.id];
+    const via = sentMethod(envelope, sentVia);
+    const awaitingFiller = !envelope.signed && via === 'feathery';
     return box(
       <>
         {operationAlert}
@@ -778,9 +842,13 @@ export default function DocumentEditorContainer({
               ? envelope.file
               : pdfView.current.url ?? envelope.file
           }
-          signUrl={
-            !envelope.signed && via === 'feathery'
-              ? signUrls[envelope.id]
+          signUrl={awaitingFiller ? signUrls[envelope.id] : undefined}
+          // Only after a reload: this session's own send already knows
+          // whether there's a page for the filler to open.
+          openingSigningPage={openingSigningPage}
+          onOpenSigningPage={
+            awaitingFiller && !sentVia[envelope.id] && terminalAction === 'sign'
+              ? reopenSigningPage
               : undefined
           }
           status={
