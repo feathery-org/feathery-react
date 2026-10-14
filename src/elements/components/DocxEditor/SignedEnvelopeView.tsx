@@ -24,6 +24,7 @@ export default function SignedEnvelopeView({
   pdfUrl,
   downloadUrl,
   signUrl,
+  onOpenSigningPage,
   status
 }: {
   pdfUrl: string;
@@ -31,6 +32,8 @@ export default function SignedEnvelopeView({
   downloadUrl: string;
   /** The filler's signing page while their signature is still awaited. */
   signUrl?: string;
+  /** Fetches that page when this session doesn't hold it (after a reload). */
+  onOpenSigningPage?: () => void;
   /** Null when nothing says whether this PDF was sent: no pill is shown. */
   status: keyof typeof STATUS_LABELS | null;
 }) {
@@ -98,7 +101,7 @@ export default function SignedEnvelopeView({
           <span />
         )}
         <div css={{ display: 'flex', gap: 8 }}>
-          {signUrl && (
+          {signUrl ? (
             <a
               href={signUrl}
               target='_blank'
@@ -107,6 +110,16 @@ export default function SignedEnvelopeView({
             >
               Open signing page
             </a>
+          ) : (
+            onOpenSigningPage && (
+              <button
+                type='button'
+                onClick={onOpenSigningPage}
+                css={secondaryButtonCss}
+              >
+                Open signing page
+              </button>
+            )
           )}
           <a
             href={downloadUrl}
