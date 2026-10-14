@@ -2404,3 +2404,56 @@ describe('pinned labels across mobile placement overrides', () => {
     expect(mobile.lineHeight).toBe(`${mobileStyles.font_size ?? 16}px`);
   });
 });
+
+describe('vertical alignment on a stored reserve', () => {
+  // A seeded floating-label field: stored 23px reserve, 100px box, 16px text
+  // (19.2px line, 6px bottom reset).
+  const seeded = (align: string) => ({
+    placeholder_transition: 'shrink_top',
+    height: 100,
+    height_unit: 'px',
+    font_size: 16,
+    inner_padding_top: 23,
+    content_vertical_align: align
+  });
+
+  it('lets bottom alignment win over the stored reserve', () => {
+    // The synthesized offset places the value at the bottom: 100 - 6 - 19.2.
+    // The stored 23 is a floor, not a ceiling -- it must not clobber this.
+    const field = fieldTarget('text_field', seeded('flex-end'), {
+      placeholder: 'Name'
+    });
+    expect(field.paddingTop).toBe('74.8px');
+    expect(field.paddingBottom).toBe('0.375rem');
+  });
+
+  it('keeps top alignment on the stored padding', () => {
+    const field = fieldTarget('text_field', seeded('flex-start'), {
+      placeholder: 'Name'
+    });
+    expect(field.paddingTop).toBe('23px');
+    expect(field.paddingBottom).toBe('57.8px');
+  });
+
+  it('keeps a centred value behind the stored padding', () => {
+    const field = fieldTarget('text_field', seeded('center'), {
+      placeholder: 'Name'
+    });
+    expect(field.paddingTop).toBe('23px');
+  });
+
+  it('floors bottom alignment at the label reserve in a short box', () => {
+    // Unseeded 30px box: the reserve clamps to the room left for one line
+    // (30 - 19.2 - 6 = 5), and flex-end has nowhere lower to go -- the floor
+    // keeps the value from running into the label's ink.
+    const field = fieldTarget(
+      'text_field',
+      {
+        ...shrinkUntouched(30),
+        content_vertical_align: 'flex-end'
+      },
+      { placeholder: 'Name' }
+    );
+    expect(field.paddingTop).toBe('5px');
+  });
+});
