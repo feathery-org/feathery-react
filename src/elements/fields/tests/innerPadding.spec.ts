@@ -2551,6 +2551,36 @@ describe('vertical alignment on a percentage height', () => {
     ]);
   });
 
+  it('rides the eye icon and tooltip on the same container math', () => {
+    const t = targets('ssn', pct('flex-end'), {
+      placeholder: 'SSN',
+      tooltipText: 'help'
+    });
+    const expected = [
+      'translateY(7.5px)',
+      'translateY(calc(50cqh - 15.6px))'
+    ];
+    expect(t.getTarget('endIcon', true).transform).toEqual(expected);
+    expect(t.getTarget('tooltipTrigger', true).transform).toEqual(expected);
+  });
+
+  it('rides the phone flag on the same container math, top and bottom', () => {
+    const flag = (align: string) =>
+      targets('phone_number', pct(align), { placeholder: 'Phone' }).getTarget(
+        'fieldToggle',
+        true
+      ).transform;
+    expect(flag('flex-end')).toEqual([
+      'translateY(7.5px)',
+      'translateY(calc(50cqh - 15.6px))'
+    ]);
+    // Top alignment measures from the box top: reserve 21 + half a line.
+    expect(flag('flex-start')).toEqual([
+      'translateY(7.5px)',
+      'translateY(calc(30.6px - 50cqh))'
+    ]);
+  });
+
   it('leaves a text area and a centred box out of the container branch', () => {
     const area = fieldTarget('text_area', pct('flex-end'), {
       placeholder: 'Name'

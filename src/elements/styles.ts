@@ -504,6 +504,32 @@ const inputValueDelta = (
   return delta || null;
 };
 
+// The container twin of inputValueDelta: the value's midline offset from the
+// box centre as a length the browser resolves at layout time, since a
+// percentage box has no pixel height to do the math with. Null wherever the
+// pixel path (or the centre default) already answers.
+const containerValueDelta = (
+  type: string,
+  align: any,
+  heightUnit: any,
+  padTop: any,
+  padBottom: any,
+  lineHeight: any,
+  fontSize: any,
+  topFloor: number | null = null
+): string | null => {
+  if (align !== 'flex-start' && align !== 'flex-end') return null;
+  if (!canContainerSynthesizeVertical(type, heightUnit, lineHeight, fontSize))
+    return null;
+  const line = inputLineHeight(lineHeight, fontSize) as number;
+  if (align === 'flex-start') {
+    const top = flooredTopPadding(type, padTop, topFloor);
+    return `calc(${top + line / 2}px - 50cqh)`;
+  }
+  const bottom = paddingSide(padBottom, legacyPaddingY(type));
+  return `calc(50cqh - ${bottom + line / 2}px)`;
+};
+
 const VERTICAL_PLACEMENT_KEYS = [
   CONTENT_VERTICAL_ALIGN,
   'height',
@@ -1579,8 +1605,32 @@ export default class ResponsiveStyles {
             )
           );
           // A zero translation is the neutral, so a mobile override can
-          // bring the icon back to the box midline.
-          return { transform: delta ? `translateY(${delta}px)` : NO_TRANSLATE };
+          // bring the icon back to the box midline. A percentage box rides
+          // the same line through container units, with the pixel answer as
+          // the parse-time fallback -- the pair the padding itself emits.
+          const base = delta ? `translateY(${delta}px)` : NO_TRANSLATE;
+          const container = containerValueDelta(
+            type,
+            align,
+            heightUnit,
+            t,
+            b,
+            lineHeight,
+            fontSize,
+            this.pinnedTopFloor(
+              type,
+              height,
+              heightUnit,
+              t,
+              align,
+              b,
+              fontSize,
+              lineHeight
+            )
+          );
+          return {
+            transform: container ? [base, `translateY(${container})`] : base
+          };
         }
       );
     });
@@ -1628,8 +1678,31 @@ export default class ResponsiveStyles {
             lineHeight
           )
         );
-        // Neutral zero translation, so a mobile override can re-centre the flag.
-        return { transform: delta ? `translateY(${delta}px)` : NO_TRANSLATE };
+        // Neutral zero translation, so a mobile override can re-centre the
+        // flag; a percentage box rides the line through container units.
+        const base = delta ? `translateY(${delta}px)` : NO_TRANSLATE;
+        const container = containerValueDelta(
+          'phone_number',
+          align,
+          heightUnit,
+          t,
+          b,
+          lineHeight,
+          fontSize,
+          this.pinnedTopFloor(
+            'phone_number',
+            height,
+            heightUnit,
+            t,
+            align,
+            b,
+            fontSize,
+            lineHeight
+          )
+        );
+        return {
+          transform: container ? [base, `translateY(${container})`] : base
+        };
       }
     );
   }
