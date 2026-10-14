@@ -1,5 +1,5 @@
-import { render, waitFor } from '@testing-library/react';
 import React from 'react';
+import { render, waitFor } from '@testing-library/react';
 import useSalesforceSync from './useSalesforceSync';
 import { clearOptionLabels, getOptionLabel } from '../utils/optionLabels';
 

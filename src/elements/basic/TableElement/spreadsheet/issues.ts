@@ -16,8 +16,8 @@ import { CellErrors, cellErrorKey } from './validation';
  *    table (a verification rule, a cross-reference, a judgement call). Always
  *    a warning (orange), never blocking — the hub has no rule behind it.
  */
-export type IssueSource = 'hub_rule' | 'assistant';
-export type IssueSeverity = 'error' | 'warning';
+type IssueSource = 'hub_rule' | 'assistant';
+type IssueSeverity = 'error' | 'warning';
 
 export type CellIssue = {
   message: string;
@@ -55,7 +55,7 @@ export type TableIssue = {
   message: string;
 };
 
-export type ResolveIssuesContext = {
+type ResolveIssuesContext = {
   /** Source row indices currently rendered, in display order. */
   rowIndices: number[];
   /** Rendered columns' storage keys, left to right. */
@@ -66,7 +66,7 @@ export type ResolveIssuesContext = {
   resolveRow: (ref: TableRowRef) => number | undefined;
 };
 
-export type ResolvedIssues = {
+type ResolvedIssues = {
   /** `${rowIndex}:${fieldKey}` -> message, for every cell an issue covers. */
   cells: CellErrors;
   /** Issues that named a row or field the table does not have. */
@@ -163,7 +163,7 @@ export function resolveTableIssues(
   return { cells, unresolved };
 }
 
-export type BuildCellIssuesOptions = {
+type BuildCellIssuesOptions = {
   /** Hub field-rule failures (client-side mirror plus server rejections). */
   ruleErrors: CellErrors;
   /** Assistant findings, already expanded onto cells. */
@@ -207,7 +207,7 @@ export function buildCellIssues({
   return issues;
 }
 
-export type IssueCounts = {
+type IssueCounts = {
   /** Hub rule errors on verified rows: the save is held until they are fixed. */
   blocking: number;
   /** Hub rule errors on unverified rows: red, but the save still goes through. */

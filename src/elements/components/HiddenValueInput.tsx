@@ -1,5 +1,4 @@
 import React from 'react';
-
 /**
  * Mirrors a field's value into a named, non-interactive form control.
  *

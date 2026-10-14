@@ -7,7 +7,7 @@ import {
   searchInputStyle
 } from './styles';
 
-export type SearchBarProps = {
+type SearchBarProps = {
   query: string;
   onQueryChange: (query: string) => void;
   matchCount: number;

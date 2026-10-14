@@ -8,7 +8,7 @@ import { CellRule } from './validation';
  * decides what that control actually is — a fixed option list is picked, a date
  * gets a picker, a tax ID is masked until you edit it.
  */
-export type EditorKind =
+type EditorKind =
   | 'select'
   | 'number'
   | 'date'

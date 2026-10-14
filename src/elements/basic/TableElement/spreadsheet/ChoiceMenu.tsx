@@ -5,13 +5,13 @@ import { choiceMenuStyle, choiceOptionStyle, HEADER_HEIGHT } from './styles';
 import { placeCellTooltip } from './tooltipPlacement';
 
 /** The value a menu row stands for: a choice, or '' to clear the cell. */
-export const EMPTY_CHOICE_LABEL = '(empty)';
+const EMPTY_CHOICE_LABEL = '(empty)';
 
 /** The menu's rows in order: a clear-the-cell row, then every choice. The grid's
  * keyboard handling walks this same list, so what it highlights is what is drawn. */
 export const choiceRows = (choices: string[]): string[] => ['', ...choices];
 
-export type ChoiceMenuProps = {
+type ChoiceMenuProps = {
   choices: string[];
   /** The highlighted row; the value Enter would commit. */
   value: string;

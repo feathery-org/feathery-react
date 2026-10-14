@@ -11,7 +11,7 @@ import {
   toEditorValue
 } from './fieldEditors';
 
-export type CellEditorProps = {
+type CellEditorProps = {
   /** The column's rule, when it has one. Absent columns get a text input. */
   rule?: CellRule;
   draft: string;

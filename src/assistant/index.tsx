@@ -10,5 +10,3 @@ export const AssistantChat = (props: AssistantChatProps) => (
     <LazyAssistantChat {...props} />
   </Suspense>
 );
-
-export type { AssistantChatProps };

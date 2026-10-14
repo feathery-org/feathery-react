@@ -142,7 +142,7 @@ const getUploadFileNames = (fileValue: any): string[] => {
  * `{"message": ...}` 400 would otherwise be shown to the user as raw JSON.
  * Anything we can't read a message out of falls back to the body as-is.
  */
-export function parseInviteError(body?: string) {
+function parseInviteError(body?: string) {
   if (!body) return 'Failed to invite collaborators';
   try {
     const parsed = JSON.parse(body);

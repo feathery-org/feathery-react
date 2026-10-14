@@ -24,12 +24,10 @@ import { createPositionalGrid } from './positionalGrid';
 import {
   Ast,
   bareCellRef,
-  CellRef,
   collectPositional,
   FormulaError,
   isFormulaError,
-  parseExpression,
-  RangeRef
+  parseExpression
 } from './formula';
 import {
   isNumericType,
@@ -81,7 +79,7 @@ export type ReconcileMode = 'commit' | 'self-heal';
  */
 export type RowTemplates = Map<string, SfdtRow>;
 
-export interface ApplyRulesOptions {
+interface ApplyRulesOptions {
   prevValues?: Map<string, string> | null;
   mode?: ReconcileMode;
   /** Templates from earlier reconciles; used only when no bound row survives. */

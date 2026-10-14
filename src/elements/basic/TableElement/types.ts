@@ -34,9 +34,6 @@ export type TableRowDefault = {
 
 export type CellCoord = { rowIndex: number; colIndex: number };
 
-// Table row storage lives in a Data Hub instead of form field values.
-export type TableDataSource = 'fields' | 'hub';
-
 // One cell to write. Batched so a range edit (paste, drag-fill, clear, undo)
 // reaches the backend as a single submission per row/column rather than one
 // request per cell.
@@ -45,8 +42,6 @@ export type CellWrite = {
   rowIndex: number;
   value: any;
 };
-
-export type TableDisplayMode = 'classic' | 'spreadsheet';
 
 /**
  * Appends a column to the table. Only a data source that owns its own schema

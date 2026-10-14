@@ -37,7 +37,7 @@ export const MAX_LISTED_VALUES = 500;
 export type CellTextOf<R> = (row: R, fieldKey: string) => string;
 
 /** What a displayed value is compared by: its text, ignoring case. */
-export function valueKey(text: string): string {
+function valueKey(text: string): string {
   return text.toLowerCase();
 }
 
@@ -80,7 +80,7 @@ const collator = new Intl.Collator(undefined, {
 });
 
 /** Blanks first, then a natural sort ("2" before "10"). */
-export function compareValues(a: string, b: string): number {
+function compareValues(a: string, b: string): number {
   if (a === b) return 0;
   if (a === '') return -1;
   if (b === '') return 1;

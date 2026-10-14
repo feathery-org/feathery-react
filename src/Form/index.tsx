@@ -327,7 +327,6 @@ const stackAbove = (height: number) =>
   height > 0 ? height + BOTTOM_RIGHT_STACK_GAP : 0;
 
 export * from './grid/StyledContainer';
-export type { StyledContainerProps } from './grid/StyledContainer';
 
 export interface Props {
   formId: string;

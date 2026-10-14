@@ -1,23 +1,5 @@
-import {
-  createDropdownElement,
-  createDropdownProps,
-  createStatefulOnChange,
-  createOptionsMetadata,
-  createRepeatOptionsMetadata,
-  getMockFieldValue,
-  resetMockFieldValue,
-  getSelectElement,
-  getOptionElements,
-  getOptionByValue,
-  getOptionByText,
-  expectOptionToHaveTooltip,
-  expectSelectToHaveValue,
-  expectSelectToHaveOptionCount,
-  expectFieldToBeDisabled,
-  expectFieldToBeRequired,
-  expectFieldToHaveAriaLabel
-} from './test-utils';
 import React from 'react';
+import { createDropdownElement, createDropdownProps, createStatefulOnChange, createOptionsMetadata, getMockFieldValue, resetMockFieldValue, getOptionByValue, expectOptionToHaveTooltip, expectSelectToHaveValue, expectSelectToHaveOptionCount, expectFieldToBeDisabled } from './test-utils';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import DropdownField from '../index';
 

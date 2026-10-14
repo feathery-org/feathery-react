@@ -518,7 +518,7 @@ describe('IntegrationClient', () => {
   });
 
   describe('generateEnvelopes', () => {
-    it('forwards copy-specific signers, SMS and all-copy defaults to the API', async () => {
+    it('forwards signer names, copy-specific signers, SMS and all-copy defaults to the API', async () => {
       const client = new IntegrationClient('test_form_key');
       const signers = [
         {
@@ -544,6 +544,7 @@ describe('IntegrationClient', () => {
           document_id: 'aaf',
           role_id: 'advisor',
           email: 'advisor@example.com',
+          name: 'Alyssa Advisor',
           filler: false
         }
       ];

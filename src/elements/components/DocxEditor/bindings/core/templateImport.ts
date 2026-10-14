@@ -44,7 +44,7 @@ import {
 
 const TOKEN_RE = /\[\[[^[\]]*\]\]/g;
 
-export interface TemplateImportResult {
+interface TemplateImportResult {
   sfdt: SfdtDocument;
   converted: number;
   diagnostics: Diagnostic[];
