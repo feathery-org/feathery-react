@@ -1949,8 +1949,8 @@ export default class ResponsiveStyles {
       // offsets the padding never moves -- production geometry.
       this.apply(
         'placeholderFocus',
-        ['font_size', 'corner_top_left_radius'],
-        (fontSize: any, radius: any) => {
+        ['font_size', 'corner_top_left_radius', 'corner_top_right_radius'],
+        (fontSize: any, radiusLeft: any, radiusRight: any) => {
           const minFontSize = Math.min(fontSize, 10);
           const pinned: any = {
             // Half a shrunken font down, in the resting label's own line box.
@@ -1969,13 +1969,18 @@ export default class ResponsiveStyles {
           // cannot undo a declaration, only overwrite it).
           if (takesInnerPadding(type)) {
             const seat = RESET_INLINE_PADDING_CSS;
-            // A rounded top-left corner curves through the label's band. Where
-            // the curve still reaches inward at the label's top edge, the seat
+            // A rounded top corner curves through the label's band. Where the
+            // curve still reaches inward at the label's top edge, the seat
             // moves just past it: the sweep at height y is r - sqrt(r^2 -
             // (r-y)^2), plus a little air. The production seat already clears
             // every radius under ~26px, so those labels do not move; the plain
-            // seat rides as the fallback for browsers without max().
-            const r = isNum(radius) ? Number(radius) : 0;
+            // seat rides as the fallback for browsers without max(). The seat
+            // is inline-start, which RTL anchors at the top-right corner, so
+            // clear the larger of the two rather than picking a direction.
+            const r = Math.max(
+              isNum(radiusLeft) ? Number(radiusLeft) : 0,
+              isNum(radiusRight) ? Number(radiusRight) : 0
+            );
             const yTop = minFontSize / 2;
             const sweep =
               r > yTop ? r - Math.sqrt(2 * r * yTop - yTop * yTop) : 0;

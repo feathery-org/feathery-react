@@ -2605,4 +2605,21 @@ describe('the shrunken label against a rounded corner', () => {
       'max(0.75rem, 30.2px)'
     ]);
   });
+
+  it('clears the larger top corner, since RTL anchors the seat at the right', () => {
+    const pinned = targets(
+      'text_field',
+      {
+        placeholder_transition: 'shrink_top',
+        height: 90,
+        height_unit: 'px',
+        font_size: 16,
+        corner_top_left_radius: 0,
+        corner_top_right_radius: 28
+      },
+      { placeholder: 'Name' }
+    ).getTarget('placeholderFocus', true);
+
+    expect(pinned.insetInlineStart).toEqual(['0.75rem', 'max(0.75rem, 14px)']);
+  });
 });
