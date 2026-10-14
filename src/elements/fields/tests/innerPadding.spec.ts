@@ -817,15 +817,19 @@ describe('input box content alignment', () => {
     expect(placeholderTarget('text_field', styles).top).toBe('49.6px');
   });
 
-  it('leaves the vertical placement alone when it cannot be resolved', () => {
-    // A percentage height has no pixel value to pad against, and a text area
-    // already starts its text at the top padding.
+  it('synthesizes a percentage placement in container units instead', () => {
+    // A percentage height has no pixel value to pad against at style time, so
+    // the offset is written against the size container the box becomes. A text
+    // area already starts its text at the top padding and stays untouched.
     const percent = fieldTarget('text_field', {
       ...SIZED,
       height_unit: '%',
       content_vertical_align: 'flex-start'
     });
-    expect(percent).not.toHaveProperty('paddingBottom');
+    expect(percent.paddingBottom).toEqual([
+      '0.375rem',
+      'max(0px, calc(100cqh - 25.2px))'
+    ]);
 
     const textArea = fieldTarget('text_area', {
       ...SIZED,
@@ -1580,23 +1584,31 @@ describe('the legacy geometry typed in by hand', () => {
 });
 
 describe('vertical alignment reach', () => {
-  it('only resolves against a pixel height', () => {
-    // The offset is synthesized as padding, and a percentage padding resolves
-    // against width, so there is no CSS-only equivalent. 'fit' stores an empty
-    // height, which is the same dead end.
-    (['%', 'fit'] as const).forEach((unit) => {
-      const target = fieldTarget('text_field', {
-        ...untouched(),
-        height: unit === 'fit' ? '' : 100,
-        height_unit: unit,
-        font_size: 16,
-        content_vertical_align: 'flex-end'
-      });
-
-      // Nothing to synthesize and no padding behind it, so nothing is said at
-      // all: resetStyles' own block padding stands.
-      expect([unit, 'paddingTop' in target]).toEqual([unit, false]);
+  it('resolves a pixel height directly and a percentage via container units', () => {
+    // A percentage resolves only at layout time, so its offset is written in
+    // cqh against the size container the box becomes. 'fit' stores an empty
+    // height and sizes the box from its content: there is no box to align
+    // within, so nothing is said at all.
+    const pctTarget = fieldTarget('text_field', {
+      ...untouched(),
+      height: 100,
+      height_unit: '%',
+      font_size: 16,
+      content_vertical_align: 'flex-end'
     });
+    expect(pctTarget.paddingTop).toEqual([
+      '0.375rem',
+      'max(6px, calc(100cqh - 25.2px))'
+    ]);
+
+    const fitTarget = fieldTarget('text_field', {
+      ...untouched(),
+      height: '',
+      height_unit: 'fit',
+      font_size: 16,
+      content_vertical_align: 'flex-end'
+    });
+    expect('paddingTop' in fitTarget).toBe(false);
   });
 
   it('holds for a multiselect at any height unit', () => {
@@ -2455,5 +2467,83 @@ describe('vertical alignment on a stored reserve', () => {
       { placeholder: 'Name' }
     );
     expect(field.paddingTop).toBe('5px');
+  });
+});
+
+describe('vertical alignment on a percentage height', () => {
+  // A pinned 100%-height field, 16px text: reserve floor 21, line 19.2,
+  // bottom reset 6. The box is made a size container, so 100cqh is its
+  // resolved height; browsers without container units keep the fallback.
+  const pct = (align: string, overrides: any = {}) => ({
+    placeholder_transition: 'shrink_top',
+    height: 100,
+    height_unit: '%',
+    font_size: 16,
+    content_vertical_align: align,
+    ...overrides
+  });
+
+  it('writes bottom alignment in container units, floored at the reserve', () => {
+    const field = fieldTarget('text_field', pct('flex-end'), {
+      placeholder: 'Name'
+    });
+    expect(field.paddingTop).toEqual([
+      '21px',
+      'max(21px, calc(100cqh - 25.2px))'
+    ]);
+    expect(field.paddingBottom).toBe('0.375rem');
+    expect(
+      boxTarget('text_field', pct('flex-end'), { placeholder: 'Name' })
+        .containerType
+    ).toBe('size');
+  });
+
+  it('writes top alignment with the bottom side synthesized', () => {
+    const field = fieldTarget('text_field', pct('flex-start'), {
+      placeholder: 'Name'
+    });
+    expect(field.paddingTop).toBe('21px');
+    expect(field.paddingBottom).toEqual([
+      '0.375rem',
+      'max(0px, calc(100cqh - 40.2px))'
+    ]);
+  });
+
+  it('keeps a stored padding as the floor and the fallback', () => {
+    const field = fieldTarget(
+      'text_field',
+      pct('flex-end', { inner_padding_top: 40 }),
+      { placeholder: 'Name' }
+    );
+    expect(field.paddingTop).toEqual([
+      '40px',
+      'max(40px, calc(100cqh - 25.2px))'
+    ]);
+  });
+
+  it('seats a dropdown chevron on the same container math', () => {
+    const field = targets('dropdown', pct('flex-end'), {
+      placeholder: 'Name'
+    }).getTarget('field', true);
+    expect(field.backgroundPositionY).toEqual([
+      'calc(50% + 7.5px)',
+      'calc(100cqh - 15.6px)'
+    ]);
+  });
+
+  it('leaves a text area and a centred box out of the container branch', () => {
+    const area = fieldTarget('text_area', pct('flex-end'), {
+      placeholder: 'Name'
+    });
+    expect(area.paddingTop).toBe('25px');
+    expect(
+      boxTarget('text_area', pct('flex-end'), { placeholder: 'Name' })
+        .containerType
+    ).toBeUndefined();
+    const centred = fieldTarget('text_field', pct('center'), {
+      placeholder: 'Name'
+    });
+    expect(centred.paddingTop).toBe('21px');
+    expect(centred.containerType).toBeUndefined();
   });
 });

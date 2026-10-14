@@ -396,6 +396,23 @@ const canSynthesizeVertical = (
   return !!inputLineHeight(lineHeight, fontSize);
 };
 
+// Whether the container-unit branch could place this box's value instead: a
+// percentage height resolves only at layout time, so the offset cannot be a
+// pixel number -- but it can be a length. With the box made a size container,
+// 100cqh is its resolved height and the browser runs the same arithmetic the
+// pixel branch does. A multiselect lays its chips out with flexbox and a text
+// area's text starts at its top padding, so neither is placed this way.
+const canContainerSynthesizeVertical = (
+  type: string,
+  heightUnit: any,
+  lineHeight: any,
+  fontSize: any
+) => {
+  if (type === 'text_area' || type === MULTISELECT_FIELD) return false;
+  if (heightUnit !== '%') return false;
+  return !!inputLineHeight(lineHeight, fontSize);
+};
+
 // Where the value sits vertically, as a length against the box. The chevron
 // rides this so it stays with the content instead of floating at the box's
 // midline. Null means the box's own centre, which is the CSS default.
@@ -1093,8 +1110,11 @@ export default class ResponsiveStyles {
     if (this.element?.styles?.placeholder_transition !== 'shrink_top')
       return null;
     if (!rendersPlaceholderStyles(type, this.element?.properties)) return null;
-    // Only a resolved pixel height has a reserve that can be compared.
-    if (heightUnit !== 'px' || !isNum(height)) return null;
+    // A pixel height resolves the reserve directly. A percentage box still
+    // pins its label, and its reserve is the label's own footprint, which
+    // needs no height to clamp against; any other unit has no reserve here.
+    if ((heightUnit !== 'px' || !isNum(height)) && heightUnit !== '%')
+      return null;
     // The same definition the reserve itself is built from, off the same
     // breakpoint-resolved values apply() hands the caller, so the floor and the
     // padding it floors can never describe different geometry. Reading the
@@ -1156,6 +1176,39 @@ export default class ResponsiveStyles {
         const paddingTopCss =
           topFloor === null ? blockPaddingCss(type, padTop) : `${topFloor}px`;
 
+        // A percentage height resolves only at layout time, so the offset is
+        // written in container-query units against the box made a size
+        // container below. Each synthesized side carries the resolved-less
+        // value as its fallback: a browser without container units drops the
+        // cqh declaration at parse and keeps rendering what it renders today.
+        if (
+          !placement &&
+          (align === 'flex-start' || align === 'flex-end') &&
+          canContainerSynthesizeVertical(type, heightUnit, lineHeight, fontSize)
+        ) {
+          const line = inputLineHeight(lineHeight, fontSize);
+          const top = flooredTopPadding(type, padTop, topFloor);
+          const bottom = paddingSide(padBottom, legacyPaddingY(type));
+          return align === 'flex-end'
+            ? {
+                // Floored at the top padding for the same reason as the pixel
+                // branch: bottom alignment never runs the value into a pinned
+                // label's reserve.
+                paddingTop: [
+                  paddingTopCss,
+                  `max(${top}px, calc(100cqh - ${bottom + line}px))`
+                ],
+                paddingBottom: blockPaddingCss(type, padBottom)
+              }
+            : {
+                paddingTop: paddingTopCss,
+                paddingBottom: [
+                  blockPaddingCss(type, padBottom),
+                  `max(0px, calc(100cqh - ${top + line}px))`
+                ]
+              };
+        }
+
         // Centred, or a top/bottom alignment this box cannot resolve an offset
         // for. The padding the theme asked for stands on its own, and both
         // sides are emitted so a mobile override can undo a synthesized one --
@@ -1194,6 +1247,28 @@ export default class ResponsiveStyles {
               paddingBottom: blockPaddingCss(type, padBottom)
             };
       }
+    );
+
+    // The box the container units above resolve against. Size containment is
+    // safe exactly where this branch applies: a percentage-height box takes
+    // its size from the cell, never from its content. Browsers without
+    // container queries ignore the property along with the cqh declarations.
+    this.apply(
+      'sub-fc',
+      VERTICAL_PLACEMENT_KEYS,
+      (
+        align: any,
+        height: any,
+        heightUnit: any,
+        t: any,
+        b: any,
+        lineHeight: any,
+        fontSize: any
+      ) =>
+        (align === 'flex-start' || align === 'flex-end') &&
+        canContainerSynthesizeVertical(type, heightUnit, lineHeight, fontSize)
+          ? { containerType: 'size' }
+          : {}
     );
   }
 
@@ -1371,6 +1446,16 @@ export default class ResponsiveStyles {
         fontSize: any
       ) => {
         if (!verticalPlacementAsked(align, padTop, padBottom)) return {};
+        const floor = this.pinnedTopFloor(
+          type,
+          height,
+          heightUnit,
+          padTop,
+          align,
+          padBottom,
+          fontSize,
+          lineHeight
+        );
         const y = valueLineY(
           type,
           align,
@@ -1380,16 +1465,7 @@ export default class ResponsiveStyles {
           padBottom,
           lineHeight,
           fontSize,
-          this.pinnedTopFloor(
-            type,
-            height,
-            heightUnit,
-            padTop,
-            align,
-            padBottom,
-            fontSize,
-            lineHeight
-          ),
+          floor,
           this.multiselectControlTop(
             type,
             height,
@@ -1399,6 +1475,25 @@ export default class ResponsiveStyles {
             lineHeight
           )
         );
+        // The container branch's seat for the glyph, with today's value as
+        // the parse-time fallback for browsers without container units --
+        // the same pair the padding itself emits.
+        if (
+          (align === 'flex-start' || align === 'flex-end') &&
+          canContainerSynthesizeVertical(type, heightUnit, lineHeight, fontSize)
+        ) {
+          const line = inputLineHeight(lineHeight, fontSize);
+          const top = flooredTopPadding(type, padTop, floor);
+          const bottom = paddingSide(padBottom, legacyPaddingY(type));
+          return {
+            backgroundPositionY: [
+              y ?? 'center',
+              align === 'flex-end'
+                ? `calc(100cqh - ${bottom + line / 2}px)`
+                : `${top + line / 2}px`
+            ]
+          };
+        }
         // 'center' is the neutral -- what both components declare inline before
         // spreading this target -- so a mobile override can bring the glyph
         // back to the box midline.
@@ -1916,13 +2011,22 @@ export default class ResponsiveStyles {
           if (
             type !== MULTISELECT_FIELD &&
             isSet(align) &&
-            canSynthesizeVertical(
+            (canSynthesizeVertical(
               type,
               height,
               heightUnit,
               lineHeight,
               fontSize
-            )
+            ) ||
+              // The container branch also places the box, but only a top or
+              // bottom placement: a centred percentage box keeps its reserve.
+              ((align === 'flex-start' || align === 'flex-end') &&
+                canContainerSynthesizeVertical(
+                  type,
+                  heightUnit,
+                  lineHeight,
+                  fontSize
+                )))
           )
             return {};
           if (!isSet(t)) return { paddingTop: reserve };
