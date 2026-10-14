@@ -729,6 +729,7 @@ export default class IntegrationClient {
             ? { repeat_index: entry.repeat_index }
             : {}),
           email,
+          ...(entry.name ? { name: entry.name.toString() } : {}),
           // Omitted rather than blanked: a present phone is the request to
           // challenge that recipient by SMS, so an empty one must not read as
           // one.
