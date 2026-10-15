@@ -2727,6 +2727,32 @@ describe('the shrunken label against a rounded corner', () => {
   });
 });
 
+describe('a size-contained percentage box', () => {
+  // Containment stops it growing to fit, which a Fit parent relies on.
+  const pct = (align?: string) => ({
+    height: 100,
+    height_unit: '%',
+    font_size: 24,
+    placeholder_transition: 'shrink_top',
+    ...(align ? { content_vertical_align: align } : {})
+  });
+
+  it('floors its height on the label room plus a line', () => {
+    const box = boxTarget('text_field', pct('flex-start'), {
+      placeholder: 'SSN'
+    });
+    expect(box.containerType).toBe('size');
+    // 29 reserve + 6 bottom + 28.8 line.
+    expect(box.minHeight).toBe('63.8px');
+  });
+
+  it('keeps the plain floor when centred', () => {
+    expect(
+      boxTarget('text_field', pct(), { placeholder: 'SSN' }).minHeight
+    ).not.toBe('63.8px');
+  });
+});
+
 describe('a cleared top padding under a pinned label', () => {
   it('reserves room for the label as if unset', () => {
     const pinned = {

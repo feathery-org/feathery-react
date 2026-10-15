@@ -1760,6 +1760,20 @@ export default class ResponsiveStyles {
           // covers these same keys and so reaches the breakpoint on its own.
           // Emitting anything here would clobber it.
           if (type === MULTISELECT_FIELD) return {};
+          // Size containment stops the box growing to fit, so floor it on the
+          // label's room plus a line; a Fit parent leaves it nothing else.
+          if (
+            (align === 'flex-start' || align === 'flex-end') &&
+            canContainerSynthesizeVertical(
+              type,
+              heightUnit,
+              lineHeight,
+              fontSize
+            )
+          )
+            return {
+              minHeight: `${Math.max(top + bottom + line, DEFAULT_MIN_SIZE)}px`
+            };
           // Otherwise hand the clamp back, so a mobile override that lowers a
           // raised padding lets the box shrink again: 'auto' is the initial
           // value, and a percentage-height box keeps applyHeight's own floor.
