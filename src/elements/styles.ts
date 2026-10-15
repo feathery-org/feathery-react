@@ -249,6 +249,42 @@ const shrinkLabelReserve = (
 ) =>
   `${shrinkLabelReservePx(type, height, heightUnit, fontSize, lineHeight)}px`;
 
+// A reserve the builder seeded is a cached derivation, marked by an ownership
+// record holding the same number. A theme edited outside the builder leaves it
+// stale, so it renders from the current typography instead -- the value the
+// builder's own refresh would write. A padding the record does not match is
+// the user's and stands exactly as stored.
+const withLiveOwnedReserve = (element: any, own: any, desktop?: any) => {
+  const type = element?.servar?.type;
+  const viewport = desktop ? 'mobile' : 'desktop';
+  const record = element?.properties?._floating_label_reserve?.[viewport];
+  if (
+    !own ||
+    !takesInnerPadding(type) ||
+    typeof record !== 'number' ||
+    own.inner_padding_top !== record
+  )
+    return own;
+  const pinned =
+    element.styles?.placeholder_transition === 'shrink_top' &&
+    rendersPlaceholderStyles(type, element.properties);
+  if (!pinned) {
+    const { inner_padding_top: _unpinned, ...rest } = own;
+    return rest;
+  }
+  const resolved = desktop ? { ...desktop, ...own } : own;
+  return {
+    ...own,
+    inner_padding_top: shrinkLabelReservePx(
+      type,
+      resolved.height,
+      resolved.height_unit,
+      resolved.font_size,
+      resolved.line_height
+    )
+  };
+};
+
 // The neutral for a companion that rides the value line with a transform.
 // 'none' rather than a zero translation: any transform other than none creates
 // a stacking context and a containing block for positioned descendants, so
@@ -601,14 +637,18 @@ export default class ResponsiveStyles {
     mobileBreakpoint = DEFAULT_MOBILE_BREAKPOINT
   ) {
     this.element = element;
-    this.styles = element.styles;
+    this.styles = withLiveOwnedReserve(element, element.styles);
     this.targets = objectFromEntries(targets.map((t: string) => [t, {}]));
     this.handleMobile = handleMobile;
     this.mobileBreakpoint = mobileBreakpoint;
     this.mobileBreakpointKey = `@media (max-width: ${mobileBreakpoint}px)`;
 
     if (handleMobile) {
-      this.mobileStyles = element.mobile_styles ?? {};
+      this.mobileStyles = withLiveOwnedReserve(
+        element,
+        element.mobile_styles ?? {},
+        element.styles
+      );
       this.mobileTargets = objectFromEntries(
         targets.map((t: string) => [t, {}])
       );

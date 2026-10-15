@@ -2706,3 +2706,68 @@ describe('the shrunken label against a rounded corner', () => {
     expect(pinned.insetInlineStart).toEqual(['0.75rem', 'max(0.75rem, 14px)']);
   });
 });
+
+describe('a builder-owned reserve renders from the current theme', () => {
+  // 90px box, 28px font: the label needs 5 + 28 = 33. An owned reserve seeded
+  // under an older 16px theme (21) is stale; a padding with no matching record
+  // is the user's and must render exactly as stored.
+  const MOBILE = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
+  const PINNED = {
+    placeholder_transition: 'shrink_top',
+    height: 90,
+    height_unit: 'px',
+    font_size: 28
+  };
+  const NAME = { placeholder: 'Name' };
+  const record = (r: any) => ({ ...NAME, _floating_label_reserve: r });
+
+  it('recomputes a stale owned reserve', () => {
+    expect(
+      fieldTarget('text_field', { ...PINNED, inner_padding_top: 21 }, record({ desktop: 21 }))
+        .paddingTop
+    ).toBe('33px');
+  });
+
+  it('keeps a padding with no record, even one equal to height/3', () => {
+    expect(
+      fieldTarget('text_field', { ...PINNED, inner_padding_top: 30 }, NAME).paddingTop
+    ).toBe('30px');
+  });
+
+  it('keeps a padding its record does not match', () => {
+    expect(
+      fieldTarget('text_field', { ...PINNED, inner_padding_top: 30 }, record({ desktop: 21 }))
+        .paddingTop
+    ).toBe('30px');
+  });
+
+  it('renders an up-to-date owned reserve exactly as a stored one', () => {
+    const owned = targets('text_field', { ...PINNED, inner_padding_top: 33 }, record({ desktop: 33 }));
+    const stored = targets('text_field', { ...PINNED, inner_padding_top: 33 }, NAME);
+    expect(owned.getTarget('field')).toEqual(stored.getTarget('field'));
+    expect(owned.getTarget('placeholder')).toEqual(stored.getTarget('placeholder'));
+  });
+
+  it('recomputes a mobile reserve without touching a user-owned desktop padding', () => {
+    // Desktop 40 is the user's; mobile was seeded at 33 under a 28px mobile
+    // font and the theme now gives mobile 16px, which needs 21.
+    const t = targets(
+      'text_field',
+      { ...PINNED, inner_padding_top: 40 },
+      record({ mobile: 33 }),
+      { font_size: 16, inner_padding_top: 33 }
+    );
+    expect(t.getTarget('field', true).paddingTop).toBe('40px');
+    expect((t.getTarget('field') as any)[MOBILE].paddingTop).toBe('21px');
+  });
+
+  it('drops an owned reserve once the label no longer floats', () => {
+    const unpinned = targets(
+      'text_field',
+      { ...PINNED, inner_padding_top: 21 },
+      { _floating_label_reserve: { desktop: 21 } }
+    ).getTarget('field', true);
+    const unset = targets('text_field', PINNED, {}).getTarget('field', true);
+    expect(unpinned.paddingTop).toEqual(unset.paddingTop);
+  });
+});
