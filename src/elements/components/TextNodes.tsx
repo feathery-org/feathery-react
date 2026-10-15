@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import { isNum, stringifyWithNull } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
-import { hasIconGlyph, IconGlyph } from './icons/iconGlyph';
 import { fieldValues, initInfo, initState } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
 import { formatNumberValue } from '../fields/TextField/mask';
@@ -142,24 +141,14 @@ function TextNodes({
     ...textCallbacks
   });
 
-  const iconEmbedNames = (element.properties.text_formatted ?? [])
-    .filter((op: any) => typeof op.insert === 'object')
-    .map((op: any) => op.insert?.icon)
-    .join(',');
-
   // Empty labels stay mounted in the builder so they can be typed into, but
   // take no space until selected so the canvas matches the published form.
   const collapseEmptyLabel =
-    editMode === 'editable' &&
-    !focused &&
-    !element.properties.text &&
-    !iconEmbedNames;
+    editMode === 'editable' && !focused && !element.properties.text;
 
   editableProps.css = {
     ...editableProps.css,
     ...responsiveStyles.getTarget(cssTarget),
-    // Remove baseline padding from labels that contain icons.
-    ...(iconEmbedNames ? { paddingBottom: 0 } : {}),
     ...(collapseEmptyLabel ? { minWidth: 0, paddingBottom: 0 } : {})
   };
 
@@ -201,25 +190,13 @@ function TextNodes({
     }
     const textIsFromData =
       element.properties.text_mode === 'data' && textFromData !== null;
-    const ops = delta.filter((op) => !!op.insert);
-    const isIconOp = (op: any) =>
-      typeof op.insert === 'object' && hasIconGlyph(op.insert?.glyph);
-    const editingNow = editMode === 'editable' && focused;
-    const iconOnly =
-      !editingNow &&
-      ops.some(isIconOp) &&
-      ops.every(
-        (op) =>
-          isIconOp(op) || (typeof op.insert === 'string' && !op.insert.trim())
-      );
 
     return (
       <span
         id={`span-${element.id}`}
         ref={spanRef}
         {...editableProps}
-        // Remount browser-edited DOM only when icon membership changes.
-        key={`${text}|${iconEmbedNames}`}
+        key={text}
       >
         {textIsFromData ? (
           <TextNode
@@ -239,84 +216,47 @@ function TextNodes({
             editMode={editMode}
           />
         ) : (
-          ops.map((op, i) => {
-            // Hide rather than unmount so a selection change never removes
-            // DOM the browser may already have edited.
-            const hidden = iconOnly && typeof op.insert === 'string';
-            const attrs = op.attributes || {};
-            let onClick = () => {};
-            let cursor = 'inherit';
-            let link = '';
-            if (!editMode && !disabled) {
-              if (attrs.font_link) {
-                link = replaceTextVariables(attrs.font_link, element.repeat);
-                cursor = 'pointer';
-              } else if (
-                attrs.fullSpan ||
-                (isNum(attrs.start) && isNum(attrs.end))
-              ) {
-                onClick = () => textSpanOnClick(attrs.start, attrs.end);
-                cursor = 'pointer';
+          delta
+            .filter((op) => !!op.insert)
+            .map((op, i) => {
+              const attrs = op.attributes || {};
+              let onClick = () => {};
+              let cursor = 'inherit';
+              let link = '';
+              if (!editMode && !disabled) {
+                if (attrs.font_link) {
+                  link = replaceTextVariables(attrs.font_link, element.repeat);
+                  cursor = 'pointer';
+                } else if (
+                  attrs.fullSpan ||
+                  (isNum(attrs.start) && isNum(attrs.end))
+                ) {
+                  onClick = () => textSpanOnClick(attrs.start, attrs.end);
+                  cursor = 'pointer';
+                }
               }
-            }
 
-            // data-feathery-icon lets the builder restore embeds after editing.
-            if (typeof op.insert === 'object') {
-              const iconName = (op.insert as any)?.icon;
-              const glyph = (op.insert as any)?.glyph;
-              if (!hasIconGlyph(glyph)) return null;
-              const iconStyles = {
-                display: 'inline-flex',
-                verticalAlign: '-0.125em',
-                cursor,
-                ...responsiveStyles.getRichFontStyles(attrs)
-              };
-              return link && !editMode ? (
-                <a
+              const text = editMode
+                ? (op.insert as string)
+                : replaceTextVariables(
+                    op.insert as string,
+                    element.repeat,
+                    true
+                  );
+
+              return (
+                <TextNode
                   key={i}
-                  data-index={i}
-                  data-feathery-icon={iconName}
-                  css={iconStyles}
-                  href={link}
-                  target='_blank'
-                  rel='noreferrer'
-                >
-                  <IconGlyph glyph={glyph} />
-                </a>
-              ) : (
-                <span
-                  key={i}
-                  data-index={i}
-                  data-feathery-icon={iconName}
-                  contentEditable={editMode ? false : undefined}
+                  index={i}
+                  cursor={cursor}
+                  fontStyles={responsiveStyles.getRichFontStyles(attrs)}
                   onClick={onClick}
-                  css={iconStyles}
-                >
-                  <IconGlyph glyph={glyph} />
-                </span>
+                  text={text}
+                  link={link}
+                  editMode={editMode}
+                />
               );
-            }
-
-            const text = editMode
-              ? (op.insert as string)
-              : replaceTextVariables(op.insert as string, element.repeat, true);
-
-            return (
-              <TextNode
-                key={i}
-                index={i}
-                cursor={cursor}
-                fontStyles={{
-                  ...responsiveStyles.getRichFontStyles(attrs),
-                  ...(hidden ? { display: 'none' } : {})
-                }}
-                onClick={onClick}
-                text={text}
-                link={link}
-                editMode={editMode}
-              />
-            );
-          })
+            })
         )}
       </span>
     );

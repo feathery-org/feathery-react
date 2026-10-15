@@ -214,11 +214,9 @@ function ButtonElement({
     managedElement && editMode === 'editable' ? 'disabled' : editMode;
 
   const hasIcon = hasIconGlyph(element.properties.icon_glyph);
-  const hasLabelContent =
-    Boolean(String(labelElement.properties.text ?? '').trim()) ||
-    (labelElement.properties.text_formatted ?? []).some(
-      (op: any) => typeof op.insert === 'object'
-    );
+  const hasLabelContent = Boolean(
+    String(labelElement.properties.text ?? '').trim()
+  );
   let buttonImage = null;
   if (hasIcon) {
     const breakpoint = responsiveStyles.getMobileBreakpoint();
@@ -270,7 +268,7 @@ function ButtonElement({
     <>
       {buttonImage}
       {/* Keep labels mounted for icon-only and emptied editable buttons. */}
-      {(labelElement.properties.text || hasLabelContent || labelEditMode) && (
+      {(labelElement.properties.text || labelEditMode) && (
         <TextNodes
           element={labelElement}
           responsiveStyles={responsiveStyles}
