@@ -256,32 +256,39 @@ const shrinkLabelReserve = (
 // the user's and stands exactly as stored.
 const withLiveOwnedReserve = (element: any, own: any, desktop?: any) => {
   const type = element?.servar?.type;
-  const viewport = desktop ? 'mobile' : 'desktop';
-  const record = element?.properties?._floating_label_reserve?.[viewport];
-  if (
-    !own ||
-    !takesInnerPadding(type) ||
-    typeof record !== 'number' ||
-    own.inner_padding_top !== record
-  )
-    return own;
+  const owned = element?.properties?._floating_label_reserve ?? {};
+  const ownsAt = (viewport: string, styles: any) =>
+    typeof owned[viewport] === 'number' &&
+    styles?.inner_padding_top === owned[viewport];
+  if (!own || !takesInnerPadding(type)) return own;
+  const livePx = (styles: any) =>
+    shrinkLabelReservePx(
+      type,
+      styles.height,
+      styles.height_unit,
+      styles.font_size,
+      styles.line_height
+    );
   const pinned =
     element.styles?.placeholder_transition === 'shrink_top' &&
     rendersPlaceholderStyles(type, element.properties);
+  if (desktop && own.inner_padding_top === undefined) {
+    // Mobile inheriting an owned desktop reserve needs its own where its
+    // typography differs, as the builder's refresh would seed.
+    if (!pinned || !ownsAt('desktop', desktop)) return own;
+    const mobilePx = livePx({ ...desktop, ...own });
+    return mobilePx === livePx(desktop)
+      ? own
+      : { ...own, inner_padding_top: mobilePx };
+  }
+  if (!ownsAt(desktop ? 'mobile' : 'desktop', own)) return own;
   if (!pinned) {
     const { inner_padding_top: _unpinned, ...rest } = own;
     return rest;
   }
-  const resolved = desktop ? { ...desktop, ...own } : own;
   return {
     ...own,
-    inner_padding_top: shrinkLabelReservePx(
-      type,
-      resolved.height,
-      resolved.height_unit,
-      resolved.font_size,
-      resolved.line_height
-    )
+    inner_padding_top: livePx(desktop ? { ...desktop, ...own } : own)
   };
 };
 
@@ -1342,6 +1349,8 @@ export default class ResponsiveStyles {
         (align === 'flex-start' || align === 'flex-end') &&
         canContainerSynthesizeVertical(type, heightUnit, lineHeight, fontSize)
           ? { containerType: 'size' }
+          : align
+          ? { containerType: 'normal' }
           : {}
     );
   }
