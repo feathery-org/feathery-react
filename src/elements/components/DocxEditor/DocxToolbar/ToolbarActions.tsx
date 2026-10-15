@@ -19,6 +19,8 @@ import {
 
 export interface ToolbarActionsProps {
   onSave?: () => void;
+  onSaveAll?: () => void;
+  onDownloadAll?: () => void;
   onDownload?: () => void;
   /** When provided, Download becomes a DOCX / PDF menu. */
   onDownloadPdf?: () => void;
@@ -49,6 +51,8 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
   function ToolbarActions(
     {
       onSave,
+      onSaveAll,
+      onDownloadAll,
       onDownload,
       onDownloadPdf,
       downloadBusy,
@@ -115,7 +119,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
               tooltip); the label would crowd out the tool row. */}
           {!compact && 'Unsaved changes'}
         </span>
-        {onDownload && onDownloadPdf ? (
+        {onDownload && (onDownloadPdf || onDownloadAll) ? (
           <Menu
             align='end'
             trigger={({ toggle }) => (
@@ -146,18 +150,32 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                     close();
                   }}
                 >
-                  Download as DOCX
+                  {onDownloadAll ? 'This document as DOCX' : 'Download as DOCX'}
                 </button>
-                <button
-                  type='button'
-                  css={menuItem()}
-                  onClick={() => {
-                    onDownloadPdf();
-                    close();
-                  }}
-                >
-                  Download as PDF
-                </button>
+                {onDownloadPdf && (
+                  <button
+                    type='button'
+                    css={menuItem()}
+                    onClick={() => {
+                      onDownloadPdf?.();
+                      close();
+                    }}
+                  >
+                    {onDownloadAll ? 'This document as PDF' : 'Download as PDF'}
+                  </button>
+                )}
+                {onDownloadAll && (
+                  <button
+                    type='button'
+                    css={menuItem()}
+                    onClick={() => {
+                      onDownloadAll();
+                      close();
+                    }}
+                  >
+                    All documents (ZIP)
+                  </button>
+                )}
               </div>
             )}
           </Menu>
@@ -179,7 +197,8 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
         ) : null}
         {terminalAction &&
           onTerminalAction &&
-          (terminalAction === 'download' && onTerminalActionPdf ? (
+          (terminalAction === 'download' &&
+          (onTerminalActionPdf || onDownloadAll) ? (
             <Menu
               align='end'
               trigger={({ toggle }) => (
@@ -210,18 +229,36 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                       close();
                     }}
                   >
-                    Download as DOCX
+                    {onDownloadAll
+                      ? 'This document as DOCX'
+                      : 'Download as DOCX'}
                   </button>
-                  <button
-                    type='button'
-                    css={menuItem()}
-                    onClick={() => {
-                      onTerminalActionPdf();
-                      close();
-                    }}
-                  >
-                    Download as PDF
-                  </button>
+                  {onTerminalActionPdf && (
+                    <button
+                      type='button'
+                      css={menuItem()}
+                      onClick={() => {
+                        onTerminalActionPdf?.();
+                        close();
+                      }}
+                    >
+                      {onDownloadAll
+                        ? 'This document as PDF'
+                        : 'Download as PDF'}
+                    </button>
+                  )}
+                  {onDownloadAll && (
+                    <button
+                      type='button'
+                      css={menuItem()}
+                      onClick={() => {
+                        onDownloadAll();
+                        close();
+                      }}
+                    >
+                      All documents (ZIP)
+                    </button>
+                  )}
                 </div>
               )}
             </Menu>
@@ -295,39 +332,81 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                 : 'Sign'}
             </button>
           ))}
-        {onSave && (
-          <button
-            type='button'
-            css={{
-              display: 'flex',
-              height: 32,
-              alignItems: 'center',
-              gap: 6,
-              borderRadius: 6,
-              border: 'none',
-              background: FEATHERY_RED,
-              padding: '0 12px',
-              fontSize: 14,
-              fontWeight: 500,
-              color: '#fff',
-              cursor: saving ? 'default' : 'pointer',
-              '&:hover': {
-                background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
-              }
-            }}
-            disabled={saving}
-            onClick={onSave}
+        {onSave && onSaveAll ? (
+          <Menu
+            align='end'
+            trigger={({ toggle }) => (
+              <button
+                type='button'
+                css={terminalBtn(!!saving)}
+                disabled={saving}
+                onClick={toggle}
+              >
+                <SaveIcon width={16} height={16} /> Save{' '}
+                <ChevronDownIcon width={14} height={14} />
+              </button>
+            )}
           >
-            {/* Icon slot is a fixed 16px in both states, and the label stays
+            {(close) => (
+              <div css={{ width: 200 }}>
+                <button
+                  type='button'
+                  css={menuItem()}
+                  onClick={() => {
+                    onSave();
+                    close();
+                  }}
+                >
+                  This document
+                </button>
+                <button
+                  type='button'
+                  css={menuItem()}
+                  onClick={() => {
+                    onSaveAll();
+                    close();
+                  }}
+                >
+                  All documents
+                </button>
+              </div>
+            )}
+          </Menu>
+        ) : (
+          onSave && (
+            <button
+              type='button'
+              css={{
+                display: 'flex',
+                height: 32,
+                alignItems: 'center',
+                gap: 6,
+                borderRadius: 6,
+                border: 'none',
+                background: FEATHERY_RED,
+                padding: '0 12px',
+                fontSize: 14,
+                fontWeight: 500,
+                color: '#fff',
+                cursor: saving ? 'default' : 'pointer',
+                '&:hover': {
+                  background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
+                }
+              }}
+              disabled={saving}
+              onClick={onSave}
+            >
+              {/* Icon slot is a fixed 16px in both states, and the label stays
                 "Save", so swapping in the spinner never resizes the button
                 (no flicker on quick saves). */}
-            {saving ? (
-              <SpinnerIcon width={16} height={16} />
-            ) : (
-              <SaveIcon width={16} height={16} />
-            )}
-            Save
-          </button>
+              {saving ? (
+                <SpinnerIcon width={16} height={16} />
+              ) : (
+                <SaveIcon width={16} height={16} />
+              )}
+              Save
+            </button>
+          )
         )}
       </div>
     );
