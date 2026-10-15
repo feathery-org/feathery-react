@@ -608,7 +608,7 @@ export function applyFieldStyles(field: any, styles: any) {
         styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'phone_number':
-      styles.addTargets('fieldToggle', 'dropdown');
+      styles.addTargets('fieldToggle', 'fieldFlag', 'dropdown');
 
       styles.applyFontStyles('dropdown', false, true);
       styles.apply('dropdown', 'background_color', (color: any) => {
@@ -684,11 +684,8 @@ export function applyFieldStyles(field: any, styles: any) {
   // percentage height brings a floor of its own to merge with.
   if (INPUT_BOX_FIELDS.includes(type) || type === MULTISELECT_FIELD)
     styles.applyInputBoxMinHeight(type);
-  // Not the multiselect. applyMultiselectLayout makes a column of its element
-  // only once the theme sets a padding or alignment; untouched, it keeps
-  // master's block layout on purpose, so a percentage-height multiselect still
-  // spills by its label's height. Restacking it here would shift chips that
-  // asked for nothing -- a follow-up, not this change.
+  // Not the multiselect: it keeps block layout until the theme sets padding or
+  // alignment, and restacking it here would shift untouched chips.
   if (INPUT_BOX_FIELDS.includes(type)) styles.applyInputBoxLabelFlow();
   return styles;
 }

@@ -12,10 +12,12 @@ export default function Placeholder({
   const placeholder =
     repeatPlaceholders[repeatIndex ?? 0] ?? (props.placeholder || '');
 
-  const focusedStyles = {
-    ...responsiveStyles.getTarget('placeholderFocus'),
-    ...responsiveStyles.getTarget('placeholderActive')
-  };
+  // getTargets, not spread getTarget calls: each target has its own @media
+  // block, and a spread lets the second replace the first's mobile styles.
+  const focusedStyles = responsiveStyles.getTargets(
+    'placeholderFocus',
+    'placeholderActive'
+  );
   return (
     <span
       css={{
@@ -24,9 +26,12 @@ export default function Placeholder({
         insetInlineStart: '0.75rem',
         transition: '0.2s ease all',
         top: type === 'input' ? '50%' : '0.6rem',
-        ...responsiveStyles.getTarget('placeholder'),
-        ...(value ? responsiveStyles.getTarget('placeholderFocus') : {}),
-        ...(inputFocused ? focusedStyles : {}),
+        ...responsiveStyles.getTargets(
+          'placeholder',
+          value ? 'placeholderFocus' : '',
+          inputFocused ? 'placeholderFocus' : '',
+          inputFocused ? 'placeholderActive' : ''
+        ),
         [`${type}:focus ~ &`]: focusedStyles
       }}
     >

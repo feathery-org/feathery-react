@@ -240,12 +240,15 @@ export default function DropdownField({
             insetInlineStart: '0.75rem',
             transition: '0.2s ease all',
             top: '50%',
-            ...responsiveStyles.getTarget('placeholder'),
-            ...(fieldVal ? responsiveStyles.getTarget('placeholderFocus') : {}),
-            [`input:focus + &`]: {
-              ...responsiveStyles.getTarget('placeholderFocus'),
-              ...responsiveStyles.getTarget('placeholderActive')
-            }
+            // getTargets merges @media blocks; a spread would drop the resting one.
+            ...responsiveStyles.getTargets(
+              'placeholder',
+              fieldVal ? 'placeholderFocus' : ''
+            ),
+            [`input:focus + &`]: responsiveStyles.getTargets(
+              'placeholderFocus',
+              'placeholderActive'
+            )
           }}
         >
           {element.properties.placeholder || ''}
