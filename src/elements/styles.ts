@@ -2222,7 +2222,8 @@ export default class ResponsiveStyles {
                 )))
           )
             return {};
-          if (!isSet(t)) return { paddingTop: reserve };
+          // A null top is a cleared padding, not a value; the label still needs room.
+          if (t == null) return { paddingTop: reserve };
           // A multiselect's own padding lands on the value container react-
           // select lays the chips out in, so this target is only ever the room
           // the pinned label needs: keep whichever is larger rather than
