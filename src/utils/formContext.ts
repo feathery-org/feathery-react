@@ -291,6 +291,8 @@ export const getFormContext = (formUuid: string) => {
         documentId: string;
         roleId?: string;
         repeatIndex?: number;
+        // DocuSign-only identity across documents; omit for email grouping.
+        signerId?: string;
         email: string;
         name?: string;
         phone?: string;
@@ -318,6 +320,26 @@ export const getFormContext = (formUuid: string) => {
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
     }) => {
+      signers = signers?.map((signer) => ({ ...signer }));
+      if (
+        signMethod !== 'docusign' &&
+        (signers?.some((signer) => signer.signerId?.trim()) ||
+          documentSources.some(
+            (doc) =>
+              !(doc instanceof Field) &&
+              typeof doc !== 'string' &&
+              doc.kind === 'quik' &&
+              doc.forms?.some(
+                (form) => Object.keys(form.signerIds ?? {}).length
+              )
+          ))
+      ) {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: signer IDs require signMethod 'docusign'"
+          )
+        );
+      }
       if (draft) {
         if (
           signMethod !== 'docusign' ||
@@ -358,7 +380,8 @@ export const getFormContext = (formUuid: string) => {
               ...doc,
               forms: doc.forms.map((form) => ({
                 ...form,
-                fields: { ...form.fields }
+                fields: { ...form.fields },
+                ...(form.signerIds ? { signerIds: { ...form.signerIds } } : {})
               }))
             }
           : doc
@@ -433,6 +456,7 @@ export const getFormContext = (formUuid: string) => {
                 documentId,
                 roleId,
                 repeatIndex,
+                signerId,
                 email,
                 name,
                 phone,
@@ -444,6 +468,7 @@ export const getFormContext = (formUuid: string) => {
                   ? { repeat_index: repeatIndex }
                   : {}),
                 email,
+                ...(signerId?.trim() ? { signer_id: signerId.trim() } : {}),
                 ...(name ? { name } : {}),
                 ...(phone ? { phone } : {}),
                 filler: !!filler

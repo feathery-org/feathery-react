@@ -518,14 +518,16 @@ describe('IntegrationClient', () => {
   });
 
   describe('generateEnvelopes', () => {
-    it('forwards copy-specific signers, SMS and all-copy defaults to the API', async () => {
+    it('forwards signer names, copy-specific signers, SMS and all-copy defaults to the API', async () => {
       const client = new IntegrationClient('test_form_key');
       const signers = [
         {
           document_id: 'aaf',
           role_id: 'owner',
           repeat_index: 0,
-          email: 'john@example.com',
+          email: 'shared@example.com',
+          name: 'John',
+          signer_id: 'client-john',
           phone: '+15551234567',
           filler: false
         },
@@ -533,23 +535,36 @@ describe('IntegrationClient', () => {
           document_id: 'aaf',
           role_id: 'owner',
           repeat_index: 1,
-          email: 'mary@example.com',
+          email: 'shared@example.com',
+          name: 'Mary',
+          signer_id: 'client-mary',
           filler: false
         },
         {
           document_id: 'aaf',
           role_id: 'advisor',
           email: 'advisor@example.com',
+          name: 'Alyssa Advisor',
           filler: false
         }
       ];
       for (const envelopeAction of ['open_in_editor', 'sign']) {
+        signers[1].email =
+          envelopeAction === 'sign' ? 'mary@example.com' : 'shared@example.com';
         global.fetch.mockResolvedValue({
           ok: true,
           json: jest.fn().mockResolvedValue({ files: [] })
         });
         await client.generateEnvelopes({
-          documents: [{ kind: 'quik' }, 'aaf'],
+          documents: [
+            {
+              kind: 'quik',
+              forms: [
+                { id: 44249, fields: {}, signerIds: { '1own': 'client-john' } }
+              ]
+            },
+            'aaf'
+          ],
           repeatable: true,
           sign_method: 'docusign',
           envelope_action: envelopeAction,
@@ -562,7 +577,15 @@ describe('IntegrationClient', () => {
         expect(body.signers).toEqual(signers);
         expect(body.repeatable).toBe(true);
         expect(body.sign_method).toBe('docusign');
-        expect(body.documents).toEqual([{ kind: 'quik' }, 'aaf']);
+        expect(body.documents).toEqual([
+          {
+            kind: 'quik',
+            forms: [
+              { id: 44249, fields: {}, signer_ids: { '1own': 'client-john' } }
+            ]
+          },
+          'aaf'
+        ]);
       }
     });
 
@@ -1108,7 +1131,15 @@ describe('IntegrationClient', () => {
         repeatable: true,
         run_async: false,
         envelope_action: 'download',
-        sign_method: 'feathery'
+        sign_method: 'feathery',
+        envelope_signers: [
+          {
+            document_id: 'doc1',
+            email: 'test@example.com',
+            signer_id: '',
+            name: 'Legacy name'
+          }
+        ]
       };
 
       Object.assign(fieldValues, { signer_field: 'test@example.com' });
@@ -1118,6 +1149,15 @@ describe('IntegrationClient', () => {
         json: jest.fn().mockResolvedValue({ files: ['file1.pdf', 'file2.pdf'] })
       });
 
+      await expect(
+        integrationClient.generateEnvelopes({
+          ...action,
+          envelope_signers: [
+            { ...action.envelope_signers[0], signer_id: 'person' }
+          ]
+        })
+      ).rejects.toThrow(/signer IDs require/);
+      expect(global.fetch).not.toHaveBeenCalled();
       const result = await integrationClient.generateEnvelopes(action);
 
       expect(global.fetch).toHaveBeenCalledWith(

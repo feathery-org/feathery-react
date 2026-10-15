@@ -256,14 +256,24 @@ export default function DocumentEditorContainer({
           const roleSigners = (action?.envelope_signers ?? [])
             .filter((entry: any) => entry.document_id === documentId)
             .map((entry: any) => {
-              const email = fieldValues[entry.field_key]?.toString() ?? '';
+              const email =
+                (entry.email ?? fieldValues[entry.field_key])?.toString() ?? '';
               return {
                 document_id: documentId,
-                role_id: entry.role_id,
+                ...(entry.role_id ? { role_id: entry.role_id } : {}),
+                ...(entry.repeat_index !== undefined
+                  ? { repeat_index: entry.repeat_index }
+                  : {}),
                 email,
+                ...(entry.signer_id?.trim()
+                  ? { signer_id: entry.signer_id.trim() }
+                  : {}),
+                ...(entry.name ? { name: entry.name } : {}),
+                ...(entry.phone ? { phone: entry.phone.toString() } : {}),
                 filler:
-                  !!fillerEmail &&
-                  email.toLowerCase() === fillerEmail.toLowerCase()
+                  entry.filler ??
+                  (!!fillerEmail &&
+                    email.toLowerCase() === fillerEmail.toLowerCase())
               };
             });
           const signers = (
