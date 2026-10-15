@@ -19,7 +19,10 @@ const untouched = (overrides: any = {}) => ({ ...overrides });
 // The same geometry typed in by hand: pixel-identical to `untouched`, but the
 // declarations are there. What tells the two apart is whether the renderer
 // emits anything at all, which is what several tests below are about.
-const LEGACY_BLOCK: Record<string, number> = { text_area: 8, dropdown_multi: 8 };
+const LEGACY_BLOCK: Record<string, number> = {
+  text_area: 8,
+  dropdown_multi: 8
+};
 
 const legacy = (type: string, overrides: any = {}) => {
   const block = LEGACY_BLOCK[type] ?? 6;
@@ -202,9 +205,9 @@ describe('input box inner padding', () => {
       'paddingInlineEnd'
     );
     // Typed in by hand, the legacy 10 composes back to exactly that inset.
-    expect(
-      fieldTarget('dropdown', legacy('dropdown')).paddingInlineEnd
-    ).toBe('30px');
+    expect(fieldTarget('dropdown', legacy('dropdown')).paddingInlineEnd).toBe(
+      '30px'
+    );
   });
 
   it('lands a dropdown chevron exactly a padding from the border', () => {
@@ -214,10 +217,9 @@ describe('input box inner padding', () => {
       fieldTarget('dropdown', { inner_padding_right: 60 })['--fe-chevron-x']
     ).toBe('60px');
     DROPDOWN_FIELDS.forEach((type) => {
-      expect([
-        type,
-        fieldTarget(type, legacy(type))['--fe-chevron-x']
-      ]).toEqual([type, '10px']);
+      expect([type, fieldTarget(type, legacy(type))['--fe-chevron-x']]).toEqual(
+        [type, '10px']
+      );
     });
 
     // Zero padding, zero gap: the glyph sits on the border and the value
@@ -229,9 +231,7 @@ describe('input box inner padding', () => {
 
   it('lands a multiselect chevron on the same 10px gap', () => {
     expect(
-      fieldTarget('dropdown_multi', legacy('dropdown_multi'))[
-        '--fe-chevron-x'
-      ]
+      fieldTarget('dropdown_multi', legacy('dropdown_multi'))['--fe-chevron-x']
     ).toBe('10px');
   });
 
@@ -529,12 +529,12 @@ describe('input box inner padding', () => {
   it('drops a text area placeholder to just below its top padding', () => {
     // 8px of padding is what the text area rendered with before this was
     // themeable, and its placeholder sat at 0.6rem -- 1.6px lower.
-    expect(
-      placeholderTarget('text_area', { inner_padding_top: 8 }).top
-    ).toBe('9.6px');
-    expect(
-      placeholderTarget('text_area', { inner_padding_top: 40 }).top
-    ).toBe('41.6px');
+    expect(placeholderTarget('text_area', { inner_padding_top: 8 }).top).toBe(
+      '9.6px'
+    );
+    expect(placeholderTarget('text_area', { inner_padding_top: 40 }).top).toBe(
+      '41.6px'
+    );
   });
 
   it('leaves the placeholder alone when the theme has no padding values', () => {
@@ -568,8 +568,7 @@ describe('input box inner padding', () => {
     ).forEach(([t, expected]) => {
       expect([
         t,
-        fieldTarget('text_field', styles(t), { placeholder: 'Name' })
-          .paddingTop
+        fieldTarget('text_field', styles(t), { placeholder: 'Name' }).paddingTop
       ]).toEqual([t, expected]);
     });
 
@@ -623,10 +622,10 @@ describe('input box inner padding', () => {
         fieldTarget(type, styles, { placeholder: 'Name' }).paddingTop
       ]).toEqual([type, height, expected]);
       // And nothing clamps the box: an untouched field asks for no floor.
-      expect([
+      expect([type, boxTarget(type, styles, { placeholder: 'Name' })]).toEqual([
         type,
-        boxTarget(type, styles, { placeholder: 'Name' })
-      ]).toEqual([type, expect.not.objectContaining({ minHeight: '0px' })]);
+        expect.not.objectContaining({ minHeight: '0px' })
+      ]);
     });
   });
 
@@ -797,8 +796,10 @@ describe('input box content alignment', () => {
     ).toBe('15.6px');
 
     expect(
-      placeholderTarget('text_field', { ...SIZED, content_vertical_align: 'flex-end' })
-        .top
+      placeholderTarget('text_field', {
+        ...SIZED,
+        content_vertical_align: 'flex-end'
+      }).top
     ).toBe('44.4px');
   });
 
@@ -1014,7 +1015,9 @@ describe('multiselect content alignment', () => {
     // The value container is already a flex container, so both axes take the
     // stored value directly -- and it holds at any height unit.
     expect(
-      valueContainerTarget('dropdown_multi', { content_vertical_align: 'flex-start' })
+      valueContainerTarget('dropdown_multi', {
+        content_vertical_align: 'flex-start'
+      })
     ).toEqual(
       expect.objectContaining({
         alignItems: 'flex-start',
@@ -1044,8 +1047,9 @@ describe('multiselect content alignment', () => {
         .alignSelf
     ).toBe('stretch');
     expect(
-      valueContainerTarget('dropdown_multi', { content_vertical_align: 'flex-end' })
-        .alignSelf
+      valueContainerTarget('dropdown_multi', {
+        content_vertical_align: 'flex-end'
+      }).alignSelf
     ).toBe('stretch');
   });
 
@@ -1065,8 +1069,10 @@ describe('multiselect content alignment', () => {
     // a multiselect somebody edited: absent keys never get here.
     ['inner_padding_top', 'content_vertical_align'].forEach((key) => {
       const value = key === 'inner_padding_top' ? 8 : 'center';
-      expect([key, valueContainerTarget('dropdown_multi', { [key]: value })
-        .alignSelf]).toEqual([key, 'stretch']);
+      expect([
+        key,
+        valueContainerTarget('dropdown_multi', { [key]: value }).alignSelf
+      ]).toEqual([key, 'stretch']);
     });
   });
 
@@ -1150,7 +1156,9 @@ describe('multiselect content alignment', () => {
 
   it('distributes the chips horizontally', () => {
     expect(
-      valueContainerTarget('dropdown_multi', { content_horizontal_align: 'center' })
+      valueContainerTarget('dropdown_multi', {
+        content_horizontal_align: 'center'
+      })
     ).toEqual(
       expect.objectContaining({ justifyContent: 'center', textAlign: 'center' })
     );
@@ -1159,8 +1167,9 @@ describe('multiselect content alignment', () => {
     // all (initial 'normal' behaves as flex-start), so emitting it changes
     // nothing -- and lets a mobile override undo a centred desktop.
     expect(
-      valueContainerTarget('dropdown_multi', { content_horizontal_align: 'flex-start' })
-        .justifyContent
+      valueContainerTarget('dropdown_multi', {
+        content_horizontal_align: 'flex-start'
+      }).justifyContent
     ).toBe('flex-start');
   });
 
@@ -1377,10 +1386,7 @@ describe('input box minimum height', () => {
 
     // Untouched, the box keeps master's whole-element percentage, label
     // overflow deliberately included.
-    const legacy = boxTarget(
-      'dropdown_multi',
-      untouched(PERCENT)
-    );
+    const legacy = boxTarget('dropdown_multi', untouched(PERCENT));
 
     expect(legacy.height).toBe('100%');
     // 0 is the initial flex-grow, so the percentage height governs.
@@ -1808,20 +1814,19 @@ describe('inline end icons ride the padding', () => {
   });
 
   it('moves in and out with the right padding, never past the border', () => {
-    expect(
-      endIcon(untouched({ inner_padding_right: 40 })).insetInlineEnd
-    ).toBe('36px');
-    expect(
-      endIcon(untouched({ inner_padding_right: 0 })).insetInlineEnd
-    ).toBe('0px');
+    expect(endIcon(untouched({ inner_padding_right: 40 })).insetInlineEnd).toBe(
+      '36px'
+    );
+    expect(endIcon(untouched({ inner_padding_right: 0 })).insetInlineEnd).toBe(
+      '0px'
+    );
   });
 
   it('keeps its wider seat next to a tooltip', () => {
     const props = { placeholder: 'SSN', tooltipText: 'help' };
     expect(endIcon(legacy('ssn'), props).insetInlineEnd).toBe('30px');
     expect(
-      endIcon(untouched({ inner_padding_right: 40 }), props)
-        .insetInlineEnd
+      endIcon(untouched({ inner_padding_right: 40 }), props).insetInlineEnd
     ).toBe('58px');
   });
 
@@ -1855,10 +1860,9 @@ describe('inline end icons ride the padding', () => {
       );
     expect(trigger(untouched())).not.toHaveProperty('insetInlineEnd');
     expect(trigger(legacy('dropdown')).insetInlineEnd).toBe('10px');
-    expect(
-      trigger(untouched({ inner_padding_right: 30 }))
-        .insetInlineEnd
-    ).toBe('30px');
+    expect(trigger(untouched({ inner_padding_right: 30 })).insetInlineEnd).toBe(
+      '30px'
+    );
   });
 });
 
@@ -1915,9 +1919,7 @@ describe('a phone flag rides its number', () => {
     // it does undeclared -- a zero translation would still create a stacking
     // context and a containing block. Emitted so a mobile override can
     // re-centre a moved flag.
-    expect(
-      flagTarget({ ...untouched(), ...SHRINK }).transform
-    ).toBe('none');
+    expect(flagTarget({ ...untouched(), ...SHRINK }).transform).toBe('none');
   });
 
   it('rides the value line under a floating label', () => {
@@ -1979,8 +1981,9 @@ describe('a mobile alignment override can return a field to the default', () => 
 
     // And the other way, so the override is not simply being ignored.
     expect(
-      mobileBlock('text_field', 'field', base, { content_horizontal_align: 'center' })
-        .textAlign
+      mobileBlock('text_field', 'field', base, {
+        content_horizontal_align: 'center'
+      }).textAlign
     ).toBe('center');
   });
 
@@ -2016,8 +2019,10 @@ describe('a mobile alignment override can return a field to the default', () => 
 
     // The desktop target still carries the synthesized value.
     expect(
-      fieldTarget('text_field', { ...base, content_vertical_align: 'flex-start' })
-        .paddingBottom
+      fieldTarget('text_field', {
+        ...base,
+        content_vertical_align: 'flex-start'
+      }).paddingBottom
     ).toBe('34.8px');
 
     // Centred desktop, aligned mobile.
@@ -2097,7 +2102,8 @@ describe('a mobile alignment override can return a field to the default', () => 
     ['endIcon', 'tooltipTrigger'].forEach((target) => {
       expect([
         target,
-        mobileBlock('ssn', target, base, { content_vertical_align: 'center' }).transform
+        mobileBlock('ssn', target, base, { content_vertical_align: 'center' })
+          .transform
       ]).toEqual([target, 'none']);
     });
   });
@@ -2196,9 +2202,9 @@ describe('which fields count as carrying a pinned label', () => {
     expect(fieldTarget('text_field', base)).not.toHaveProperty('paddingTop');
     // ...and the same padding an unpinned field renders with once centred.
     const centred = { content_vertical_align: 'center' };
-    expect(
-      fieldTarget('text_field', { ...base, ...centred }).paddingTop
-    ).toBe(fieldTarget('text_field', { ...SIZED, ...centred }).paddingTop);
+    expect(fieldTarget('text_field', { ...base, ...centred }).paddingTop).toBe(
+      fieldTarget('text_field', { ...SIZED, ...centred }).paddingTop
+    );
   });
 
   // The reserve on a multiselect is not something an alignment can take over:
@@ -2390,7 +2396,7 @@ describe('the reserve both repos compute', () => {
 describe('merging the placeholder targets for a pinned label', () => {
   const MOBILE_KEY = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
 
-  it('keeps both targets\' mobile declarations in one block', () => {
+  it("keeps both targets' mobile declarations in one block", () => {
     const merged: any = targets(
       'text_field',
       {
@@ -2556,10 +2562,7 @@ describe('vertical alignment on a percentage height', () => {
       placeholder: 'SSN',
       tooltipText: 'help'
     });
-    const expected = [
-      'translateY(7.5px)',
-      'translateY(calc(50cqh - 15.6px))'
-    ];
+    const expected = ['translateY(7.5px)', 'translateY(calc(50cqh - 15.6px))'];
     expect(t.getTarget('endIcon', true).transform).toEqual(expected);
     expect(t.getTarget('tooltipTrigger', true).transform).toEqual(expected);
   });
@@ -2642,12 +2645,28 @@ describe('vertical alignment on a percentage height', () => {
     expect(
       boxTarget('text_area', pct('flex-end'), { placeholder: 'Name' })
         .containerType
-    ).toBeUndefined();
+    ).toBe('normal');
     const centred = fieldTarget('text_field', pct('center'), {
       placeholder: 'Name'
     });
     expect(centred.paddingTop).toBe('21px');
     expect(centred.containerType).toBeUndefined();
+  });
+
+  it('undoes the size container on a mobile pixel height', () => {
+    const box = targets(
+      'text_field',
+      pct('flex-end'),
+      { placeholder: 'Name' },
+      {
+        height: 60,
+        height_unit: 'px'
+      }
+    ).getTarget('sub-fc') as any;
+    expect(box.containerType).toBe('size');
+    expect(
+      box[`@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`].containerType
+    ).toBe('normal');
   });
 });
 
@@ -2723,29 +2742,46 @@ describe('a builder-owned reserve renders from the current theme', () => {
 
   it('recomputes a stale owned reserve', () => {
     expect(
-      fieldTarget('text_field', { ...PINNED, inner_padding_top: 21 }, record({ desktop: 21 }))
-        .paddingTop
+      fieldTarget(
+        'text_field',
+        { ...PINNED, inner_padding_top: 21 },
+        record({ desktop: 21 })
+      ).paddingTop
     ).toBe('33px');
   });
 
   it('keeps a padding with no record, even one equal to height/3', () => {
     expect(
-      fieldTarget('text_field', { ...PINNED, inner_padding_top: 30 }, NAME).paddingTop
+      fieldTarget('text_field', { ...PINNED, inner_padding_top: 30 }, NAME)
+        .paddingTop
     ).toBe('30px');
   });
 
   it('keeps a padding its record does not match', () => {
     expect(
-      fieldTarget('text_field', { ...PINNED, inner_padding_top: 30 }, record({ desktop: 21 }))
-        .paddingTop
+      fieldTarget(
+        'text_field',
+        { ...PINNED, inner_padding_top: 30 },
+        record({ desktop: 21 })
+      ).paddingTop
     ).toBe('30px');
   });
 
   it('renders an up-to-date owned reserve exactly as a stored one', () => {
-    const owned = targets('text_field', { ...PINNED, inner_padding_top: 33 }, record({ desktop: 33 }));
-    const stored = targets('text_field', { ...PINNED, inner_padding_top: 33 }, NAME);
+    const owned = targets(
+      'text_field',
+      { ...PINNED, inner_padding_top: 33 },
+      record({ desktop: 33 })
+    );
+    const stored = targets(
+      'text_field',
+      { ...PINNED, inner_padding_top: 33 },
+      NAME
+    );
     expect(owned.getTarget('field')).toEqual(stored.getTarget('field'));
-    expect(owned.getTarget('placeholder')).toEqual(stored.getTarget('placeholder'));
+    expect(owned.getTarget('placeholder')).toEqual(
+      stored.getTarget('placeholder')
+    );
   });
 
   it('recomputes a mobile reserve without touching a user-owned desktop padding', () => {
@@ -2759,6 +2795,27 @@ describe('a builder-owned reserve renders from the current theme', () => {
     );
     expect(t.getTarget('field', true).paddingTop).toBe('40px');
     expect((t.getTarget('field') as any)[MOBILE].paddingTop).toBe('21px');
+  });
+
+  it('gives mobile its own reserve when it inherits an owned desktop one', () => {
+    // Desktop owns 33 at 28px; mobile inherits it but renders 16px, needing 21.
+    const t = targets(
+      'text_field',
+      { ...PINNED, inner_padding_top: 33 },
+      record({ desktop: 33 }),
+      { font_size: 16 }
+    );
+    expect(t.getTarget('field', true).paddingTop).toBe('33px');
+    expect((t.getTarget('field') as any)[MOBILE].paddingTop).toBe('21px');
+  });
+
+  it('leaves an inheriting mobile alone when its typography matches', () => {
+    const t = targets(
+      'text_field',
+      { ...PINNED, inner_padding_top: 33 },
+      record({ desktop: 33 })
+    );
+    expect((t.getTarget('field') as any)[MOBILE]?.paddingTop).toBeUndefined();
   });
 
   it('drops an owned reserve once the label no longer floats', () => {
