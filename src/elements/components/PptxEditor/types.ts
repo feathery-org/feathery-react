@@ -41,6 +41,9 @@ export interface PptxEditorProps {
   onError?: (message: string) => void;
   onBeforeReplaceReady?: (save: (() => Promise<unknown>) | null) => void;
   onSave?: (blob: Blob) => unknown | Promise<unknown>;
+  onSaved?: () => void | Promise<void>;
+  onSaveAll?: () => Promise<void>;
+  onDownloadAll?: () => Promise<void>;
   /** Convert the saved presentation to PDF (host calls the backend). When set,
    * the editor offers "Download as PDF" alongside the native .pptx download. */
   onExportPdf?: () => Promise<Blob>;

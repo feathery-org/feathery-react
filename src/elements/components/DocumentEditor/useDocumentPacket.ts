@@ -21,13 +21,15 @@ export function useDocumentPacket({
   documents,
   editMode,
   load,
-  beforeReplace
+  beforeReplace,
+  saveOnSwitch = true
 }: {
   containerId?: string;
   documents?: DocumentPacket['documents'];
   editMode?: boolean;
   load: (documentId: string) => Promise<any>;
   beforeReplace: () => Promise<unknown>;
+  saveOnSwitch?: boolean | ((envelope: EditorEnvelope | null) => boolean);
 }) {
   const [tabs, setTabs] = useState(() =>
     packetTabs(pendingPacket(containerId) ?? { documents })
@@ -46,8 +48,22 @@ export function useDocumentPacket({
   const [reloadKey, setReloadKey] = useState(0);
   const busy = useRef(false);
   const generation = useRef(0);
-  const current = useRef({ tabs, activeId, envelope, load, beforeReplace });
-  current.current = { tabs, activeId, envelope, load, beforeReplace };
+  const current = useRef({
+    tabs,
+    activeId,
+    envelope,
+    load,
+    beforeReplace,
+    saveOnSwitch
+  });
+  current.current = {
+    tabs,
+    activeId,
+    envelope,
+    load,
+    beforeReplace,
+    saveOnSwitch
+  };
 
   const resolveTab = async (tab?: DocumentTab) => {
     if (tab?.envelope) return tab.envelope;
@@ -102,7 +118,11 @@ export function useDocumentPacket({
     setSwitching(true);
     const sequence = ++generation.current;
     try {
-      await current.current.beforeReplace();
+      const saveBeforeSwitch =
+        typeof current.current.saveOnSwitch === 'function'
+          ? current.current.saveOnSwitch(current.current.envelope)
+          : current.current.saveOnSwitch;
+      if (saveBeforeSwitch) await current.current.beforeReplace();
       const value = await resolveTab(tab);
       if (sequence !== generation.current) return;
       open(tab, value);
@@ -189,6 +209,36 @@ export function useDocumentPacket({
     [containerId]
   );
 
+  const updateTabEnvelope = useCallback(
+    (value: EditorEnvelope) => {
+      const nextTabs = current.current.tabs.map((tab) =>
+        tab.envelope?.id === value.id ? { ...tab, envelope: value } : tab
+      );
+      current.current.tabs = nextTabs;
+      setTabs(nextTabs);
+      if (current.current.envelope?.id === value.id) {
+        current.current.envelope = value;
+        updateEnvelope(value);
+      }
+      const pending = pendingPacket(containerId);
+      if (pending?.envelopes)
+        pending.envelopes = pending.envelopes.map((item) =>
+          item.id === value.id ? value : item
+        );
+    },
+    [containerId]
+  );
+
+  const resolveEnvelopes = useCallback(async () => {
+    const resolved = [];
+    for (const tab of current.current.tabs) {
+      const value = await resolveTab(tab);
+      if (!value?.file) throw new Error(`No generated file for ${tab.label}`);
+      resolved.push(value);
+    }
+    return resolved;
+  }, []);
+
   const filesForSave = useCallback(async (saved: EditorEnvelope) => {
     const values = await Promise.all(
       current.current.tabs.map(async (tab) => {
@@ -218,6 +268,8 @@ export function useDocumentPacket({
     reloadKey,
     setReloadKey,
     selectTab,
-    filesForSave
+    filesForSave,
+    updateTabEnvelope,
+    resolveEnvelopes
   };
 }

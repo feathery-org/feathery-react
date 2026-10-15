@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import DocxEditor from '../DocxEditor';
 import DocumentTabs from './DocumentTabs';
+import PptxDocumentPacket from './PptxDocumentPacket';
 import { useDocumentPacket } from './useDocumentPacket';
 import {
   EDITOR_PLACEHOLDER_ERROR_COLOR,
@@ -33,12 +34,6 @@ import {
   clearDocxEditorDirty,
   setDocxEditorDirty
 } from '../DocxEditor/docxDirtyRegistry';
-
-// PPTX editing ships in its own chunk: fflate + fast-xml-parser + the SVG
-// renderer must not enter ordinary form startup.
-const PptxEditor = React.lazy(
-  () => import(/* webpackChunkName: "PptxEditor" */ '../PptxEditor')
-);
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose editor_mode matches
@@ -169,14 +164,18 @@ export default function DocumentEditorContainer({
     setOperationError,
     reloadKey,
     selectTab,
-    filesForSave
+    filesForSave,
+    updateTabEnvelope,
+    resolveEnvelopes
   } = useDocumentPacket({
     containerId,
     documents: targetAction?.documents,
     editMode,
     load: loadCurrentEnvelope,
-    beforeReplace
+    beforeReplace,
+    saveOnSwitch: (current) => current?.type !== 'pptx'
   });
+  const [packetBusy, setPacketBusy] = useState(false);
   const [finalizedId, setFinalizedId] = useState<string | null>(null);
 
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
@@ -450,7 +449,7 @@ export default function DocumentEditorContainer({
         <DocumentTabs
           tabs={tabs}
           activeId={activeId}
-          disabled={loading || switching}
+          disabled={loading || switching || packetBusy}
           onSelect={selectTab}
           id={tabListId}
         />
@@ -505,42 +504,20 @@ export default function DocumentEditorContainer({
   }
   if (envelope.type === 'pptx') {
     return box(
-      <React.Suspense fallback={<div css={placeholder}>Loading document…</div>}>
-        {/* Absolute fill inside the container's relative box: the editor is
-            bounded by the container's dimensions and scrolls internally,
-            never growing the hosting page. */}
-        <div css={{ position: 'absolute', inset: 0 }}>
-          <PptxEditor
-            key={envelope.id}
-            onBeforeReplaceReady={registerBeforeReplace}
-            source={source}
-            readOnly={readOnly}
-            reviewChanges={reviewChanges}
-            openNonce={reloadKey}
-            fileName={
-              tabs
-                .find((tab) => tab.id === activeId)
-                ?.label.replace(/\.pptx$/i, '') + '.pptx'
-            }
-            // Signing stays docx-only (no pptx signature flow); PDF export is
-            // supported server-side via the shared conversion endpoint.
-            hideDownload={savesToField || !offersDownload}
-            onExportPdf={
-              envelope.id
-                ? () => client.downloadEnvelopePdf(envelope.id)
-                : undefined
-            }
-            onError={setOperationError}
-            onSave={saveEnvelope}
-            onChange={
-              !readOnly && containerId
-                ? (dirty: boolean) =>
-                    setDocxEditorDirty(formId, containerId, dirty)
-                : undefined
-            }
-          />
-        </div>
-      </React.Suspense>,
+      <PptxDocumentPacket
+        tabs={tabs}
+        activeId={activeId}
+        reloadKey={reloadKey}
+        client={client}
+        action={targetAction}
+        containerId={containerId}
+        formId={formId}
+        updateEnvelope={updateTabEnvelope}
+        resolveEnvelopes={resolveEnvelopes}
+        registerBeforeReplace={registerBeforeReplace}
+        onBusy={setPacketBusy}
+        onError={setOperationError}
+      />,
       editorWrap
     );
   }
