@@ -12,10 +12,8 @@ export default function Placeholder({
   const placeholder =
     repeatPlaceholders[repeatIndex ?? 0] ?? (props.placeholder || '');
 
-  // getTargets, not a spread of getTarget calls: each target carries its own
-  // @media block, and spreading two of them lets the second replace the first.
-  // That dropped the resting label's mobile lineHeight -- the line box the
-  // pinned label's reserve is computed from -- whenever the label was pinned.
+  // getTargets, not spread getTarget calls: each target has its own @media
+  // block, and a spread lets the second replace the first's mobile styles.
   const focusedStyles = responsiveStyles.getTargets(
     'placeholderFocus',
     'placeholderActive'
