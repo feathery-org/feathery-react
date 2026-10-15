@@ -17,9 +17,13 @@ import classNames from 'classnames';
 import { fieldValues } from '../../../utils/init';
 import { getRenderData } from '../../../utils/image';
 import DangerouslySetHtmlContent from '../../../utils/DangerouslySetHTMLContent';
-import { replaceTextVariables } from '../../../elements/components/TextNodes';
+import {
+  replaceTextVariables,
+  TEXT_VARIABLE_PATTERN
+} from '../../../elements/components/TextNodes';
 import DocumentEditorContainer from '../../../elements/components/DocxEditor/DocumentEditorContainer';
 import { ShadowDomHtmlContent } from '../../../utils/ShadowDomHtmlContent';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 export type StyledContainerProps = PropsWithChildren & {
   key?: string;
@@ -105,8 +109,17 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       breakpoint
     );
 
-    if (node.properties.iframe_url) {
-      const url = replaceTextVariables(node.properties.iframe_url);
+    const url = replaceTextVariables(node.properties.iframe_url);
+    let blockEditorIframe = editMode && !url;
+    if (editMode && url.match(TEXT_VARIABLE_PATTERN)) {
+      const link = featheryDoc().createElement?.('a');
+      if (link) {
+        link.href = url;
+        // Only same-origin embeds can load the dashboard inside its editor.
+        blockEditorIframe = link.origin === featheryWindow().location.origin;
+      }
+    }
+    if (node.properties.iframe_url && !blockEditorIframe) {
       children.push(
         <iframe
           key={`iframe:${url}`}
