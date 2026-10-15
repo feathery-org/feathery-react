@@ -19,6 +19,14 @@ function applyTabsStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyCorners('tab');
   responsiveStyles.applyBoxShadow('tab');
   responsiveStyles.applyTextAlign('tab');
+  for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
+    responsiveStyles.apply(
+      'tab',
+      `inner_padding_${side.toLowerCase()}`,
+      (value: number | undefined) =>
+        value === undefined ? {} : { [`padding${side}`]: `${value}px` }
+    );
+  }
   responsiveStyles.applyBorders({ target: 'tab' });
   responsiveStyles.applyFontStyles('tab', false, true);
 
