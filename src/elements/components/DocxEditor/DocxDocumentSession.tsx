@@ -6,7 +6,7 @@ import React, {
   useState
 } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import DocxEditor from './index';
+import DocxEditor, { DocxEditorProps } from './index';
 import {
   EditorEnvelope as Envelope,
   envelopeSourceUrl
@@ -72,6 +72,10 @@ export default function DocxDocumentSession({
   label,
   active,
   multiple,
+  actionStatus,
+  onDirty,
+  railPanel,
+  onRailPanelChange,
   onEnvelopeChange,
   onSessionReady,
   onSaveAll,
@@ -91,6 +95,10 @@ export default function DocxDocumentSession({
   label: string;
   active: boolean;
   multiple: boolean;
+  actionStatus?: string;
+  onDirty: (dirty: boolean) => void;
+  railPanel?: DocxEditorProps['railPanel'];
+  onRailPanelChange?: DocxEditorProps['onRailPanelChange'];
   onEnvelopeChange: (value: Envelope) => void;
   onSessionReady: (
     id: string,
@@ -406,6 +414,9 @@ export default function DocxDocumentSession({
         fileName={label}
         manualSave
         active={active}
+        actionStatus={actionStatus}
+        railPanel={railPanel}
+        onRailPanelChange={onRailPanelChange}
         onSaveAll={multiple ? onSaveAll : undefined}
         onDownloadAll={
           multiple && offersDownload && !finalized ? onDownloadAll : undefined
@@ -452,14 +463,17 @@ export default function DocxDocumentSession({
         }
         // readOnly editors never dirty, so skip registering them entirely
         onChange={
-          !readOnly && containerId
-            ? (dirty: boolean) =>
-                setDocxEditorDirty(
-                  formId,
-                  `${containerId}:${initialEnvelope.id}`,
-                  dirty
-                )
-            : undefined
+          readOnly
+            ? undefined
+            : (dirty: boolean) => {
+                onDirty(dirty);
+                if (containerId)
+                  setDocxEditorDirty(
+                    formId,
+                    `${containerId}:${initialEnvelope.id}`,
+                    dirty
+                  );
+              }
         }
         onEditorReady={onEditorReady}
         onReady={onDocumentReady}

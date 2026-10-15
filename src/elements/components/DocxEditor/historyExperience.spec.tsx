@@ -125,6 +125,75 @@ describe('version history experience', () => {
   });
   afterEach(() => jest.useRealTimers());
 
+  it('keeps shared Changes open when empty and ignores background review counts', async () => {
+    const onRailPanelChange = jest.fn();
+    const view = render(
+      <DocxEditor
+        reviewChanges
+        railPanel='changes'
+        onRailPanelChange={onRailPanelChange}
+      />
+    );
+    expect(view.getByText('Suggested changes')).toBeInTheDocument();
+    expect(onRailPanelChange).not.toHaveBeenCalled();
+    view.rerender(
+      <DocxEditor
+        active={false}
+        reviewChanges
+        railPanel='history'
+        onRailPanelChange={onRailPanelChange}
+      />
+    );
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onRailPanelChange).not.toHaveBeenCalled();
+    view.rerender(
+      <DocxEditor
+        reviewChanges
+        railPanel='changes'
+        onRailPanelChange={onRailPanelChange}
+      />
+    );
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onRailPanelChange).toHaveBeenCalledWith(null);
+  });
+
+  it('loads History only for the active document and uses its own host', async () => {
+    const hostA: DocxHistoryHost = {
+      listVersions: jest.fn().mockResolvedValue([]),
+      closeVersion: jest.fn(),
+      restoreVersion: jest.fn(),
+      fetchVersionFile: jest.fn(),
+      renameVersion: jest.fn()
+    };
+    const hostB = { ...hostA, listVersions: jest.fn().mockResolvedValue([]) };
+    const onRailPanelChange = jest.fn();
+    function Packet({ firstActive }: { firstActive: boolean }) {
+      return (
+        <>
+          <DocxEditor
+            active={firstActive}
+            history={hostA}
+            railPanel='history'
+            onRailPanelChange={onRailPanelChange}
+          />
+          <DocxEditor
+            active={!firstActive}
+            history={hostB}
+            railPanel='history'
+            onRailPanelChange={onRailPanelChange}
+          />
+        </>
+      );
+    }
+    const view = render(<Packet firstActive />);
+    await waitFor(() => expect(hostA.listVersions).toHaveBeenCalledTimes(1));
+    expect(hostB.listVersions).not.toHaveBeenCalled();
+    view.rerender(<Packet firstActive={false} />);
+    await waitFor(() => expect(hostB.listVersions).toHaveBeenCalledTimes(1));
+    expect(hostA.listVersions).toHaveBeenCalledTimes(1);
+    expect(onRailPanelChange).not.toHaveBeenCalled();
+  });
+
   it('toggles highlights without rebuilding, flashing a loader, or moving the viewport', async () => {
     let savedMeta: DocxSaveMeta | undefined;
     const host: DocxHistoryHost = {

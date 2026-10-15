@@ -1,5 +1,6 @@
 import React, { forwardRef } from 'react';
 import Menu from './Menu';
+import DocumentSaveStatus from '../../DocumentEditor/DocumentSaveStatus';
 import {
   ChevronDownIcon,
   DownloadIcon,
@@ -13,12 +14,12 @@ import {
   FEATHERY_RED,
   FEATHERY_RED_HOVER,
   menuItem,
-  terminalBtn,
-  ZINC
+  terminalBtn
 } from './styles';
 
 export interface ToolbarActionsProps {
   onSave?: () => void;
+  actionStatus?: string;
   onSaveAll?: () => void;
   onDownloadAll?: () => void;
   onDownload?: () => void;
@@ -51,6 +52,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
   function ToolbarActions(
     {
       onSave,
+      actionStatus,
       onSaveAll,
       onDownloadAll,
       onDownload,
@@ -85,40 +87,12 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
           justifyContent: 'flex-end',
           gap: 8,
           background: '#fff',
-          zIndex: 1
+          zIndex: 1,
+          '@container document-editor (max-width: 560px)': {
+            '& [data-action-label]': { display: 'none' }
+          }
         }}
       >
-        {/* Always rendered, hidden while clean: this region's width feeds the
-            tool row's clearance (useToolbarOverflow), so the indicator popping
-            in and out must not change it — otherwise every first edit shoves
-            the centered tool row to the left edge, and it only recovers on an
-            explicit save. */}
-        <span
-          css={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 13,
-            color: ZINC[500],
-            whiteSpace: 'nowrap',
-            visibility: dirty ? 'visible' : 'hidden'
-          }}
-          aria-hidden={!dirty}
-          title={dirty ? 'You have unsaved changes' : undefined}
-        >
-          <span
-            css={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: FEATHERY_RED,
-              flex: '0 0 auto'
-            }}
-          />
-          {/* On narrow toolbars the dot alone carries the state (with the
-              tooltip); the label would crowd out the tool row. */}
-          {!compact && 'Unsaved changes'}
-        </span>
         {onDownload && (onDownloadPdf || onDownloadAll) ? (
           <Menu
             align='end'
@@ -128,6 +102,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                 css={{ ...downloadBtn, opacity: downloadBusy ? 0.6 : 1 }}
                 onClick={toggle}
                 disabled={downloadBusy}
+                aria-label='Download'
                 title={downloadBusy ? 'Preparing download…' : 'Download'}
               >
                 {downloadBusy ? (
@@ -135,7 +110,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                 ) : (
                   <DownloadIcon width={16} height={16} />
                 )}
-                Download
+                <span data-action-label>Download</span>
                 <ChevronDownIcon width={14} height={14} />
               </button>
             )}
@@ -185,6 +160,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
             css={{ ...downloadBtn, opacity: downloadBusy ? 0.6 : 1 }}
             onClick={onDownload}
             disabled={downloadBusy}
+            aria-label='Download'
             title={downloadBusy ? 'Preparing download…' : 'Download'}
           >
             {downloadBusy ? (
@@ -192,7 +168,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
             ) : (
               <DownloadIcon width={16} height={16} />
             )}
-            Download
+            <span data-action-label>Download</span>
           </button>
         ) : null}
         {terminalAction &&
@@ -207,6 +183,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                   css={terminalBtn(terminalDisabled)}
                   disabled={terminalDisabled}
                   onClick={toggle}
+                  aria-label='Download'
                   title='Saves changes before downloading'
                 >
                   {terminalActionLoading ? (
@@ -214,7 +191,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                   ) : (
                     <DownloadIcon width={16} height={16} />
                   )}
-                  Download
+                  <span data-action-label>Download</span>
                   <ChevronDownIcon width={14} height={14} />
                 </button>
               )}
@@ -273,6 +250,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                   css={terminalBtn(terminalDisabled)}
                   disabled={terminalDisabled}
                   onClick={toggle}
+                  aria-label='Sign'
                   title='Saves changes before continuing'
                 >
                   {terminalActionLoading ? (
@@ -280,7 +258,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                   ) : (
                     <SignatureIcon width={16} height={16} />
                   )}
-                  Sign
+                  <span data-action-label>Sign</span>
                   <ChevronDownIcon width={14} height={14} />
                 </button>
               )}
@@ -316,6 +294,13 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
               css={terminalBtn(terminalDisabled)}
               disabled={terminalDisabled}
               onClick={onTerminalAction}
+              aria-label={
+                terminalAction === 'download'
+                  ? 'Download'
+                  : terminalAction === 'draft'
+                  ? 'Create Draft'
+                  : 'Sign'
+              }
               title='Saves changes before continuing'
             >
               {terminalActionLoading ? (
@@ -325,13 +310,20 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
               ) : (
                 <SignatureIcon width={16} height={16} />
               )}
-              {terminalAction === 'download'
-                ? 'Download'
-                : terminalAction === 'draft'
-                ? 'Create Draft'
-                : 'Sign'}
+              <span data-action-label>
+                {terminalAction === 'download'
+                  ? 'Download'
+                  : terminalAction === 'draft'
+                  ? 'Create Draft'
+                  : 'Sign'}
+              </span>
             </button>
           ))}
+        <DocumentSaveStatus
+          message={actionStatus}
+          dirty={dirty}
+          compact={compact}
+        />
         {onSave && onSaveAll ? (
           <Menu
             align='end'

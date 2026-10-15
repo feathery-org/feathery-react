@@ -111,6 +111,10 @@ export interface DocxEditorProps {
   visible?: boolean;
   /** Whether this cached document owns keyboard-driven panels. */
   active?: boolean;
+  /** Packet-wide rail choice; history and edits still belong to this editor. */
+  railPanel?: ActivePanel;
+  onRailPanelChange?: (panel: ActivePanel) => void;
+  actionStatus?: string;
   /** Hide the local Download button (shown by default). */
   hideDownload?: boolean;
   /** Keep editing sessions local until an explicit persistence action. */
@@ -215,6 +219,9 @@ function DocxEditor({
   reviewChanges = false,
   visible = true,
   active = true,
+  railPanel,
+  onRailPanelChange,
+  actionStatus,
   hideDownload,
   manualSave = false,
   onSaveAll,
@@ -287,7 +294,21 @@ function DocxEditor({
   const [downloading, setDownloading] = useState(false);
   // The single right-rail slot shows at most one panel, toggled from the
   // toolbar's two buttons (Changes / Sections).
-  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const [localPanel, setLocalPanel] = useState<ActivePanel>(null);
+  // Inactive cached editors do not load panel data or own the shared choice.
+  const activePanel = active
+    ? railPanel !== undefined
+      ? railPanel
+      : localPanel
+    : null;
+  const setActivePanel = useCallback(
+    (panel: ActivePanel) => {
+      if (!active) return;
+      if (onRailPanelChange) onRailPanelChange(panel);
+      else setLocalPanel(panel);
+    },
+    [active, onRailPanelChange]
+  );
   // A selected older version, shown read-only over the live editor. The live
   // editor keeps autosaving underneath while it is open.
   const [viewingVersion, setViewingVersion] = useState<DocxVersion | null>(
@@ -483,6 +504,9 @@ function DocxEditor({
   // to be missing, which left a landed change set invisible behind whichever
   // panel the user had open.
   useReviewPanelPresentation({
+    // A packet's explicit navigation choice stays stable even for documents
+    // with no pending edits, or when a cached editor reports a new count.
+    enabled: active && railPanel === undefined,
     activePanel,
     count: changesCount,
     reviewChanges:
@@ -507,7 +531,7 @@ function DocxEditor({
     const doc = featheryDoc();
     doc.addEventListener('keydown', onKey);
     return () => doc.removeEventListener('keydown', onKey);
-  }, [viewingVersion, activePanel, active]);
+  }, [viewingVersion, activePanel, active, setActivePanel]);
 
   /**
    * Reconcile anything uncommitted before bytes leave the editor and report the
@@ -1183,6 +1207,8 @@ function DocxEditor({
         overflow: 'hidden',
         position: 'relative',
         background: '#fff',
+        containerType: 'inline-size',
+        containerName: 'document-editor',
         pointerEvents: preview ? 'none' : undefined
       }}
     >
@@ -1227,6 +1253,7 @@ function DocxEditor({
           // persist edits without committing to download/sign. Arrow-wrapped:
           // handleSave takes a force flag a raw click event must not satisfy.
           onSave={onSave ? () => handleSave() : undefined}
+          actionStatus={actionStatus}
           onSaveAll={onSaveAll}
           onDownloadAll={onDownloadAll}
           // Secondary Download hides only when the terminal button IS the
@@ -1401,14 +1428,12 @@ function DocxEditor({
             showChanges={!!reviewChanges}
             changesCount={changesCount}
             showHistory={!!history}
-            onToggle={(panel) =>
-              setActivePanel((p) => {
-                const next = p === panel ? null : panel;
-                // Leaving the History panel returns to the live editor.
-                if (p === 'history' && next !== 'history') exitVersionView();
-                return next;
-              })
-            }
+            onToggle={(panel) => {
+              const next = activePanel === panel ? null : panel;
+              if (activePanel === 'history' && next !== 'history')
+                exitVersionView();
+              setActivePanel(next);
+            }}
           />
         )}
       </div>
