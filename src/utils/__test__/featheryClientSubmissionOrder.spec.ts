@@ -52,6 +52,7 @@ describe('step save and completion ordering', () => {
   beforeEach(() => {
     originalFetch = (global as any).fetch;
     mockInteraction.isDetected = true;
+    jest.spyOn(featheryWindow(), 'confirm').mockReturnValue(false);
     const { fileRetryStatus, fileDeduplicationCount } =
       jest.requireMock('../init');
     Object.keys(fileRetryStatus).forEach((key) => delete fileRetryStatus[key]);
@@ -85,6 +86,29 @@ describe('step save and completion ordering', () => {
     ...row
   });
 
+  it('clears an optional empty file with a persisted rejection before mount replay', async () => {
+    const { client, store } = createClientWithStorage();
+    const url = `${API_URL}panel/step/submit/file/user/`;
+    store.seed(
+      queuedAnswer({
+        url,
+        stepKey: 'Documents',
+        metadata: { fieldKey: 'card' },
+        rejected: true
+      })
+    );
+    jest.spyOn(client, '_getFileValue').mockResolvedValue(undefined);
+    const send = jest.spyOn(client, '_fetch').mockResolvedValue({ ok: true });
+
+    await client._submitFileData({ key: 'card' }, 'Documents');
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toBe(url);
+    expect((send.mock.calls[0][1] as any).body.get('card')).toBe('');
+    expect(store.rows()).toEqual([]);
+    expect(featheryWindow().confirm).not.toHaveBeenCalled();
+  });
+
   it('sends the SDK build version separately from the form version on saves and events', async () => {
     const client: any = new FeatheryClient('form');
     client.version = 'published-form-version';
@@ -111,6 +135,28 @@ describe('step save and completion ordering', () => {
         __feathery_version: 'published-form-version'
       });
     }
+  });
+
+  it('sends the step answers when resetting stored retry budgets fails', async () => {
+    const { client } = createClientWithStorage();
+    jest
+      .spyOn(client.offlineRequestHandler, 'resetAnswerWriteRetries')
+      .mockRejectedValue(new Error('IndexedDB connection lost'));
+    const send = jest.spyOn(client, '_fetch').mockResolvedValue({});
+
+    await expect(
+      client.submitStep(
+        [{ key: 'profile', text_field: 'synthetic answer' }],
+        { key: 'Insurance', buttons: [], subgrids: [] },
+        true
+      )
+    ).resolves.toBeDefined();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(send.mock.calls[0][1].body)).toMatchObject({
+      step_key: 'Insurance',
+      servars: [{ key: 'profile', text_field: 'synthetic answer' }]
+    });
   });
 
   it('queues completion behind a save that fails after the event starts, then allows retry', async () => {

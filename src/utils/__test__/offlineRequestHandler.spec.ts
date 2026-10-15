@@ -11,6 +11,7 @@
  * Focus: Integration behavior rather than internal implementation details
  */
 
+import { featheryWindow } from '../browser';
 import {
   OfflineRequestHandler,
   SUPERSEDED_WRITE,
@@ -353,6 +354,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         replayed = [];
         // Retries go out at once instead of waiting out the backoff
         jest.spyOn(queue as any, 'delay').mockResolvedValue(undefined);
+        jest.spyOn(featheryWindow(), 'confirm').mockReturnValue(false);
       });
 
       afterEach(() => {
@@ -994,6 +996,152 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         expect(store.rows()).toEqual([]);
       });
 
+      it.each([
+        ['removed step', { stepKey: 'Removed step' }],
+        [
+          'custom fields',
+          { stepKey: undefined, url: '/panel/custom/submit/v3/' }
+        ],
+        ['file', { metadata: { fieldKey: 'card' } }]
+      ])(
+        'discards only confirmed rejected %s answers before completing',
+        async (_kind, overrides) => {
+          store.seed({ ...queuedAnswer, ...overrides, rejected: true });
+          store.seed({
+            ...queuedAnswer,
+            userId: 'other-user',
+            rejected: true,
+            body: 'other user'
+          });
+          store.seed({
+            ...queuedAnswer,
+            formKey: 'other-form',
+            rejected: true,
+            body: 'other form'
+          });
+          store.seed(queuedEvent('Removed step', 'held event'));
+          serveReplay();
+          const sendCompletion = jest.fn().mockImplementation(async () => {
+            expect(store.rows().map((row) => row.body)).toEqual([
+              'other user',
+              'other form'
+            ]);
+            return { ok: true };
+          });
+
+          await expect(completeForm(sendCompletion)).rejects.toThrow(
+            'could not be saved'
+          );
+          expect(store.rows()).toHaveLength(_kind === 'removed step' ? 4 : 3);
+          expect(sendCompletion).not.toHaveBeenCalled();
+          (featheryWindow().confirm as jest.Mock).mockReturnValue(true);
+          await completeForm(sendCompletion);
+
+          expect(featheryWindow().confirm).toHaveBeenCalledWith(
+            expect.stringContaining('discard')
+          );
+          expect(sendCompletion).toHaveBeenCalledTimes(1);
+          expect(replayed).toEqual(['held event']);
+        }
+      );
+
+      it('never offers to discard retryable answers alongside rejected answers', async () => {
+        store.seed({ ...queuedAnswer, rejected: true });
+        store.seed({
+          ...queuedAnswer,
+          stepKey: 'Contact',
+          body: 'offline answer'
+        });
+        serveReplay(() => 503);
+        (featheryWindow().confirm as jest.Mock).mockReturnValue(true);
+        const sendCompletion = jest.fn();
+
+        await expect(completeForm(sendCompletion)).rejects.toThrow();
+
+        expect(featheryWindow().confirm).not.toHaveBeenCalled();
+        expect(store.rows()).toHaveLength(2);
+        expect(sendCompletion).not.toHaveBeenCalled();
+      });
+
+      it("does not start repeated replay passes for another user's rejected answers and held events", async () => {
+        store.seed({ ...queuedAnswer, userId: 'other-user', rejected: true });
+        store.seed({
+          ...queuedEvent('Insurance', 'held event'),
+          userId: 'other-user'
+        });
+        const replay = jest.spyOn(queue, 'replayRequests');
+        const send = jest.fn().mockResolvedValue({ ok: true });
+        for (let index = 0; index < 3; index++)
+          await queue.runOrSaveRequest(
+            send,
+            '/custom_request/',
+            { method: 'POST', body: '{}' },
+            'customRequest'
+          );
+
+        expect(send).toHaveBeenCalledTimes(3);
+        expect(replay).not.toHaveBeenCalled();
+        expect(store.rows()).toHaveLength(2);
+        expect(featheryWindow().confirm).not.toHaveBeenCalled();
+      });
+
+      it('offers the same confirmed recovery for rejected memory-only answers', async () => {
+        const memoryQueue = new OfflineRequestHandler(
+          'test-form',
+          errorCallback
+        );
+        (memoryQueue as any).indexedDBSupported = false;
+        jest.spyOn(memoryQueue, 'openDatabase').mockResolvedValue(undefined);
+        await memoryQueue.saveRequest(
+          stepUrl,
+          { method: 'POST', body: 'rejected memory answer' },
+          'submit',
+          'Removed step'
+        );
+        serveReplay(() => 400);
+        await memoryQueue.replayRequests();
+        queue = memoryQueue;
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'could not be saved'
+        );
+        expect(await queue.dbHasRequest()).toBe(true);
+
+        (featheryWindow().confirm as jest.Mock).mockReturnValue(true);
+        await completeForm(sendCompletion);
+
+        expect(await queue.dbHasRequest()).toBe(false);
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+      });
+
+      it.each(['abort', 'new rejection', 'changed user'])(
+        'keeps completion blocked after discard encounters %s',
+        async (scenario) => {
+          store.seed({ ...queuedAnswer, rejected: true });
+          serveReplay();
+          (featheryWindow().confirm as jest.Mock).mockImplementation(() => {
+            if (scenario === 'abort') store.abortNextCommit('readwrite');
+            if (scenario === 'new rejection')
+              store.seed({
+                ...queuedAnswer,
+                rejected: true,
+                body: 'new rejection'
+              });
+            if (scenario === 'changed user') mockInitInfo.userId = 'other-user';
+            return true;
+          });
+          const sendCompletion = jest.fn();
+
+          await expect(completeForm(sendCompletion)).rejects.toThrow();
+
+          expect(featheryWindow().confirm).toHaveBeenCalledTimes(1);
+          expect(sendCompletion).not.toHaveBeenCalled();
+          expect(queuedBodies()).toEqual([
+            scenario === 'new rejection' ? 'new rejection' : 'answer'
+          ]);
+        }
+      );
+
       it('keeps rejected custom fields blocked until each field is saved', async () => {
         const customUrl = '/panel/custom/submit/v3/';
         store.seed({
@@ -1011,7 +1159,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         serveReplay(() => 400);
         const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
         await expect(completeForm(sendCompletion)).rejects.toThrow(
-          'Please go back and submit that step again'
+          'could not be saved'
         );
 
         // A step save cannot acknowledge custom fields that it did not carry.
@@ -1023,7 +1171,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
           'Insurance'
         );
         await expect(completeForm(sendCompletion)).rejects.toThrow(
-          'Please go back and submit that step again'
+          'could not be saved'
         );
         for (const values of [{ plan: 'premium' }, { referrer: 'friend' }]) {
           const body = new FormData();
@@ -1036,7 +1184,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
           );
           if ('plan' in values) {
             await expect(completeForm(sendCompletion)).rejects.toThrow(
-              'Please go back and submit that step again'
+              'could not be saved'
             );
           }
         }
@@ -1307,12 +1455,14 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       );
 
       it.each(['abort', 'error'] as const)(
-        'surfaces a queue-count transaction %s without treating saved answers as absent',
+        'sends a live answer after a queue-count transaction %s and retires its older snapshot',
         async (event) => {
           store.seed(queuedAnswer);
           store.failNextTransaction(event);
-
+          serveReplay();
           const send = jest.fn().mockResolvedValue({ ok: true });
+
+          // Queue-read failures must not prevent sending the user's live answer.
           await expect(
             queue.runOrSaveRequest(
               send,
@@ -1321,12 +1471,470 @@ describe('OfflineRequestHandler - Integration Tests', () => {
               'submit',
               'Insurance'
             )
-          ).rejects.toThrow('Saved answers could not be read');
-          expect(send).not.toHaveBeenCalled();
-          expect(queuedBodies()).toEqual(['answer']);
-          await expect(queue.dbHasRequest()).resolves.toBe(true);
+          ).resolves.toEqual({ ok: true });
+          expect(send).toHaveBeenCalledTimes(1);
+
+          await queue.replayRequests();
+          expect(replayed).toEqual([]);
+          expect(store.rows()).toEqual([]);
         }
       );
+
+      it('sends a live answer when previously usable storage cannot reopen and reconciles before replay', async () => {
+        store.seed(queuedAnswer);
+        await queue.dbHasRequest();
+        const openDatabase = jest
+          .spyOn(queue, 'openDatabase')
+          .mockResolvedValue(undefined);
+        const send = jest.fn().mockResolvedValue({ ok: true });
+
+        await expect(
+          queue.runOrSaveRequest(
+            send,
+            stepUrl,
+            { method: 'POST', body: 'new answer' },
+            'submit',
+            'Insurance'
+          )
+        ).resolves.toEqual({ ok: true });
+        expect(send).toHaveBeenCalledTimes(1);
+        openDatabase.mockRestore();
+        serveReplay();
+        await queue.replayRequests();
+
+        expect(replayed).toEqual([]);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('preserves a newer snapshot from another tab when an outage delays live-save cleanup', async () => {
+        jest.spyOn(Date, 'now').mockReturnValue(1000);
+        store.seed({ ...queuedAnswer, timestamp: 100, body: 'old answer' });
+        await queue.dbHasRequest();
+        const openDatabase = jest
+          .spyOn(queue, 'openDatabase')
+          .mockResolvedValue(undefined);
+        let finishSave!: (response: any) => void;
+        const saving = queue.runOrSaveRequest(
+          () =>
+            new Promise((resolve) => {
+              finishSave = resolve;
+            }),
+          stepUrl,
+          { method: 'POST', body: 'live answer' },
+          'submit',
+          'Insurance'
+        );
+        saving.catch(() => {});
+        await waitUntil(() => !!finishSave);
+        store.seed({
+          ...queuedAnswer,
+          timestamp: 2000,
+          pageId: 'other-tab',
+          writeOrder: 1,
+          body: 'newer answer'
+        });
+        finishSave({ ok: true });
+        await saving;
+        openDatabase.mockRestore();
+        serveReplay();
+
+        await queue.replayRequests();
+
+        expect(replayed).toEqual(['newer answer']);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('holds an equal-timestamp answer from another tab until a scoped resubmission resolves its order', async () => {
+        jest.spyOn(Date, 'now').mockReturnValue(1000);
+        store.seed({
+          ...queuedAnswer,
+          timestamp: 1000,
+          pageId: 'other-tab',
+          writeOrder: 1,
+          body: 'other tab answer'
+        });
+        await queue.dbHasRequest();
+        const openDatabase = jest
+          .spyOn(queue, 'openDatabase')
+          .mockResolvedValue(undefined);
+        const send = jest.fn().mockResolvedValue({ ok: true });
+
+        await expect(
+          queue.runOrSaveRequest(
+            send,
+            stepUrl,
+            { method: 'POST', body: 'live answer' },
+            'submit',
+            'Insurance'
+          )
+        ).resolves.toEqual({ ok: true });
+        openDatabase.mockRestore();
+        serveReplay();
+
+        await expect(queue.replayRequests()).rejects.toThrow(
+          'need to be submitted again'
+        );
+        expect(replayed).toEqual([]);
+        expect(queuedBodies()).toEqual(['other tab answer']);
+
+        await expect(
+          queue.runOrSaveRequest(
+            send,
+            stepUrl,
+            { method: 'POST', body: 'confirmed latest answer' },
+            'submit',
+            'Insurance'
+          )
+        ).resolves.toEqual({ ok: true });
+        await queue.replayRequests();
+
+        expect(send).toHaveBeenCalledTimes(2);
+        expect(replayed).toEqual([]);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('isolates an ambiguous cleanup across an in-page user switch until its owner resubmits', async () => {
+        jest.spyOn(Date, 'now').mockReturnValue(1000);
+        store.seed({
+          ...queuedAnswer,
+          timestamp: 1000,
+          pageId: 'other-tab',
+          writeOrder: 1,
+          body: 'user A queued answer'
+        });
+        store.seed(queuedEvent('Contact', 'user A queued event'));
+        await queue.dbHasRequest();
+        const openDatabase = jest
+          .spyOn(queue, 'openDatabase')
+          .mockResolvedValue(undefined);
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          stepUrl,
+          { method: 'POST', body: 'user A live answer' },
+          'submit',
+          'Insurance'
+        );
+        openDatabase.mockRestore();
+        mockInitInfo.userId = 'user-2';
+        serveReplay();
+        const sendUserB = jest.fn().mockResolvedValue({ ok: true });
+        await queue.runOrSaveRequest(
+          sendUserB,
+          stepUrl,
+          { method: 'POST', body: 'user B answer' },
+          'submit',
+          'Contact'
+        );
+        const completeUserB = jest.fn().mockResolvedValue({ ok: true });
+        await completeForm(completeUserB);
+
+        expect(sendUserB).toHaveBeenCalledTimes(1);
+        expect(completeUserB).toHaveBeenCalledTimes(1);
+        expect(replayed).toEqual([]);
+        expect(queuedBodies()).toEqual([
+          'user A queued answer',
+          'user A queued event'
+        ]);
+
+        mockInitInfo.userId = 'user-1';
+        const completeUserA = jest.fn(async () => {
+          expect(replayed).toEqual(['user A queued event']);
+          return { ok: true };
+        });
+        await expect(completeForm(completeUserA)).rejects.toThrow(
+          'need to be submitted again'
+        );
+        expect(completeUserA).not.toHaveBeenCalled();
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          stepUrl,
+          { method: 'POST', body: 'user A resubmitted answer' },
+          'submit',
+          'Insurance'
+        );
+        await completeForm(completeUserA);
+        expect(completeUserA).toHaveBeenCalledTimes(1);
+        expect(replayed).toEqual(['user A queued event']);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('drains cleanup added by a successful live save while replay starts reconciliation', async () => {
+        store.seed({ ...queuedAnswer, retryAttempts: 4 });
+        let finishSave!: (response: any) => void;
+        const saving = queue.runOrSaveRequest(
+          () =>
+            new Promise((resolve) => {
+              finishSave = resolve;
+            }),
+          stepUrl,
+          { method: 'POST', body: 'live answer' },
+          'submit',
+          'Insurance'
+        );
+        await waitUntil(() => !!finishSave);
+        await queue.resetAnswerWriteRetries();
+        const reconcile = (queue as any).reconcileLiveWriteCleanups.bind(queue);
+        let hasFinishedSave = false;
+        jest
+          .spyOn(queue as any, 'reconcileLiveWriteCleanups')
+          .mockImplementation(() => {
+            if (!hasFinishedSave) {
+              hasFinishedSave = true;
+              // The live save resumes while the empty reconciliation worker settles.
+              finishSave({ ok: true });
+            }
+            return reconcile();
+          });
+        serveReplay();
+
+        await Promise.all([queue.replayRequests(), saving]);
+
+        expect(replayed).toEqual([]);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('holds a custom replay snapshot acknowledged while its live cleanup starts', async () => {
+        const customUrl = '/panel/custom/submit/v3/';
+        store.seed({
+          type: 'submit',
+          userId: 'user-1',
+          url: customUrl,
+          retryAttempts: 4,
+          bodyType: 'formData',
+          body: {
+            custom_key_values: JSON.stringify({
+              plan: 'basic',
+              referrer: 'friend'
+            })
+          }
+        });
+        const body = new FormData();
+        body.set('custom_key_values', JSON.stringify({ plan: 'premium' }));
+        let finishSave!: (response: any) => void;
+        const saving = queue.runOrSaveRequest(
+          () =>
+            new Promise((resolve) => {
+              finishSave = resolve;
+            }),
+          customUrl,
+          { method: 'POST', body },
+          'submit'
+        );
+        await waitUntil(() => !!finishSave);
+        await queue.resetAnswerWriteRetries();
+        const reconcile = (queue as any).reconcileLiveWriteCleanups.bind(queue);
+        let hasFinishedSave = false;
+        jest
+          .spyOn(queue as any, 'reconcileLiveWriteCleanups')
+          .mockImplementation(() => {
+            if (!hasFinishedSave) {
+              hasFinishedSave = true;
+              finishSave({ ok: true });
+            }
+            return reconcile();
+          });
+        const replayedValues: Record<string, string>[] = [];
+        (global as any).fetch = jest.fn(async (_url: string, options: any) => {
+          replayedValues.push(
+            JSON.parse(options.body.get('custom_key_values'))
+          );
+          return fakeResponse(200);
+        });
+
+        await Promise.all([queue.replayRequests(), saving]);
+        await queue.replayRequests();
+
+        expect(replayedValues).toEqual([{ referrer: 'friend' }]);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('uses enqueue order to preserve only newer same-page offline answers with equal timestamps', async () => {
+        jest.spyOn(Date, 'now').mockReturnValue(1000);
+        await queue.saveRequest(
+          stepUrl,
+          { method: 'POST', body: 'older answer' },
+          'submit',
+          'Insurance'
+        );
+        const openDatabase = jest
+          .spyOn(queue, 'openDatabase')
+          .mockResolvedValue(undefined);
+        let finishSave!: (response: any) => void;
+        const saving = queue.runOrSaveRequest(
+          () =>
+            new Promise((resolve) => {
+              finishSave = resolve;
+            }),
+          stepUrl,
+          { method: 'POST', body: 'live answer' },
+          'submit',
+          'Insurance'
+        );
+        saving.catch(() => {});
+        await waitUntil(() => !!finishSave);
+        await queue.saveRequest(
+          stepUrl,
+          { method: 'POST', body: 'newer answer' },
+          'submit',
+          'Insurance'
+        );
+        finishSave({ ok: true });
+        await saving;
+        openDatabase.mockRestore();
+        (global as any).fetch = jest.fn(async (_url: string, options: any) => {
+          replayed.push(
+            typeof options.body === 'string'
+              ? options.body
+              : await options.body.text()
+          );
+          return fakeResponse(200);
+        });
+
+        await queue.replayRequests();
+
+        expect(replayed).toEqual(['newer answer']);
+        await expect(queue.dbHasRequest()).resolves.toBe(false);
+      });
+
+      it('retains a failed live answer in memory during a storage outage and replays it after recovery', async () => {
+        await queue.dbHasRequest();
+        const openDatabase = jest
+          .spyOn(queue, 'openDatabase')
+          .mockResolvedValue(undefined);
+        const send = jest
+          .fn()
+          .mockRejectedValue(new TypeError('Failed to fetch'));
+
+        await expect(
+          queue.runOrSaveRequest(
+            send,
+            stepUrl,
+            { method: 'POST', body: 'pending answer' },
+            'submit',
+            'Insurance'
+          )
+        ).rejects.toThrow('Failed to fetch');
+        expect(send).toHaveBeenCalledTimes(1);
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+        await expect(completeForm(sendCompletion)).rejects.toThrow(/answers/i);
+        expect(sendCompletion).not.toHaveBeenCalled();
+
+        openDatabase.mockRestore();
+        (global as any).fetch = jest.fn(async (_url: string, options: any) => {
+          replayed.push(
+            typeof options.body === 'string'
+              ? options.body
+              : await options.body.text()
+          );
+          return fakeResponse(200);
+        });
+        await queue.replayRequests();
+        await completeForm(sendCompletion);
+
+        expect(replayed).toEqual(['pending answer']);
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+        await expect(queue.dbHasRequest()).resolves.toBe(false);
+      });
+
+      it.each([
+        ['step', 'read'],
+        ['step', 'commit'],
+        ['file', 'read'],
+        ['file', 'commit']
+      ])(
+        'keeps a successful live %s save successful after a cleanup %s failure',
+        async (kind, failure) => {
+          const url =
+            kind === 'file' ? '/panel/step/submit/file/user-1/' : stepUrl;
+          const metadata = kind === 'file' ? { fieldKey: 'card' } : undefined;
+          store.seed({ ...queuedAnswer, url, metadata, retryAttempts: 4 });
+          serveReplay();
+          const send = jest.fn(async () => {
+            if (failure === 'read')
+              store.failNextTransaction('abort', 'readonly');
+            else store.abortNextCommit('readwrite');
+            return { ok: true };
+          });
+
+          await expect(
+            queue.runOrSaveRequest(
+              send,
+              url,
+              { method: 'POST', body: 'new answer' },
+              'submit',
+              'Insurance',
+              metadata
+            )
+          ).resolves.toEqual({ ok: true });
+          expect(send).toHaveBeenCalledTimes(1);
+          await queue.replayRequests();
+
+          expect(replayed).toEqual([]);
+          expect(store.rows()).toEqual([]);
+        }
+      );
+
+      it('reconciles a custom save after cleanup fails without discarding unrelated fields or another user', async () => {
+        const customUrl = '/panel/custom/submit/v3/';
+        store.seed({
+          type: 'submit',
+          userId: 'user-1',
+          url: customUrl,
+          retryAttempts: 4,
+          bodyType: 'formData',
+          body: {
+            custom_key_values: JSON.stringify({
+              plan: 'basic',
+              referrer: 'friend'
+            })
+          }
+        });
+        store.seed({
+          type: 'submit',
+          userId: 'other-user',
+          url: customUrl,
+          retryAttempts: 4,
+          bodyType: 'formData',
+          body: {
+            custom_key_values: JSON.stringify({ plan: 'other user plan' })
+          }
+        });
+        const body = new FormData();
+        body.set('custom_key_values', JSON.stringify({ plan: 'premium' }));
+        const send = jest.fn(async () => {
+          store.abortNextCommit('readwrite');
+          return { ok: true };
+        });
+
+        await expect(
+          queue.runOrSaveRequest(
+            send,
+            customUrl,
+            { method: 'POST', body },
+            'submit'
+          )
+        ).resolves.toEqual({ ok: true });
+        const replayedValues: Record<string, string>[] = [];
+        (global as any).fetch = jest.fn(async (_url: string, options: any) => {
+          replayedValues.push(
+            JSON.parse(options.body.get('custom_key_values'))
+          );
+          return fakeResponse(200);
+        });
+        await queue.resetAnswerWriteRetries();
+        await queue.replayRequests();
+
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(replayedValues).toEqual([{ referrer: 'friend' }]);
+        expect(store.rows()).toEqual([
+          expect.objectContaining({
+            userId: 'other-user',
+            body: {
+              custom_key_values: JSON.stringify({ plan: 'other user plan' })
+            }
+          })
+        ]);
+      });
 
       it('retains the answer if its rejection update aborts at commit, then recovers after reload', async () => {
         store.seed(queuedAnswer);
@@ -2134,7 +2742,8 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       // Storage failures now retain each form's writes in its own memory queue.
       expect(hasRequest1).toBe(true);
       expect(hasRequest2).toBe(true);
-      await handler1.clearFailedFileUploadRequests();
+      (global as any).fetch = jest.fn().mockResolvedValue(fakeResponse(200));
+      await handler1.replayRequests();
       expect(await handler1.dbHasRequest()).toBe(false);
       expect(await handler2.dbHasRequest()).toBe(true);
     });

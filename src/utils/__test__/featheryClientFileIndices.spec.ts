@@ -81,6 +81,22 @@ describe('repeatable file upload wire format', () => {
     expect(fileDeduplicationCount.f).toBeUndefined();
   });
 
+  it('sends a file and preserves its acknowledged status when resetting stored retries fails', async () => {
+    const client = newClient();
+    client.offlineRequestHandler.resetRetryAttemptsByUrl.mockRejectedValue(
+      new Error('IndexedDB connection lost')
+    );
+    const upload = { ...servar, file_upload: [new Blob(['synthetic card'])] };
+
+    await expect(client._submitFileData(upload, 'Insurance')).resolves.toEqual(
+      {}
+    );
+    expect(client._fetch).toHaveBeenCalledTimes(1);
+    expect(jest.requireMock('../init').fileRetryStatus.f).toBe(true);
+    await client._submitFileData(upload, 'Insurance');
+    expect(client._fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a hole at every empty repeat row', async () => {
     const file = new Blob(['x']);
     const client = newClient();

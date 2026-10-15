@@ -957,13 +957,6 @@ function Form({
     }
   }, [language]);
 
-  useEffect(() => {
-    if (!clientRef.current) return;
-    clientRef.current.offlineRequestHandler
-      .clearFailedFileUploadRequests()
-      .catch(() => {});
-  }, []);
-
   // Logic to run every time step changes
   useEffect(() => {
     if (!activeStep) return;

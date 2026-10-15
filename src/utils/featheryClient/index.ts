@@ -402,7 +402,10 @@ export default class FeatheryClient extends IntegrationClient {
       if (
         !restoredFileKeys.has(servar.key) &&
         fileDeduplicationCount[servar.key] === undefined &&
-        !hasPreviousSuccess
+        !hasPreviousSuccess &&
+        !(await this.offlineRequestHandler
+          .hasRejectedFileWrite(stepKey, servar.key)
+          .catch(() => false))
       ) {
         return Promise.resolve();
       }
@@ -469,9 +472,13 @@ export default class FeatheryClient extends IntegrationClient {
     let queuedForReplay = false;
     try {
       // Reset retry attempts for this field before retrying so new submissions get the full budget
-      await this.offlineRequestHandler.resetRetryAttemptsByUrl(url, {
-        fieldKey: servar.key
-      });
+      await this.offlineRequestHandler
+        .resetRetryAttemptsByUrl(url, {
+          fieldKey: servar.key
+        })
+        .catch((error) =>
+          console.warn('Error resetting upload retries', error)
+        );
 
       const result = await this.offlineRequestHandler.runOrSaveRequest(
         () => this._fetch(url, options, true, true),
@@ -1126,7 +1133,11 @@ export default class FeatheryClient extends IntegrationClient {
     const submission = (async () => {
       // A step submission is the user's manual retry for answers still queued
       // from earlier steps, including a confirmation step with no fields.
-      await this.offlineRequestHandler.resetAnswerWriteRetries();
+      await this.offlineRequestHandler
+        .resetAnswerWriteRetries()
+        .catch((error) =>
+          console.warn('Error resetting saved answer retries', error)
+        );
       return Promise.all([
         earlierSubmissions.catch(() => undefined),
         this.submitCustom(hiddenFields, { shouldFlush: true }),
