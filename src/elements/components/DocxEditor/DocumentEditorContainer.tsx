@@ -12,6 +12,7 @@ import DocxDocumentSession, {
 import DocumentTabs from '../DocumentEditor/DocumentTabs';
 import { useDocumentPacket } from '../DocumentEditor/useDocumentPacket';
 import { EditorEnvelope } from '../DocumentEditor/documentPacket';
+import type { ActivePanel } from './reviewPanelPresentation';
 import FeatheryClient from '../../../utils/featheryClient';
 import {
   downloadAllFileUrls,
@@ -120,6 +121,11 @@ export default function DocumentEditorContainer({
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [feedback, setFeedback] = useState('');
+  const [railPanel, setRailPanel] = useState<ActivePanel>(null);
+  const clearFeedbackOnEdit = useCallback((dirty: boolean) => {
+    if (dirty) setFeedback('');
+  }, []);
+  useEffect(() => setFeedback(''), [reloadKey]);
   const { savesToField } = containerToolbarOutcomes(action ?? {});
   const currentTabs = useRef(tabs);
   currentTabs.current = tabs;
@@ -352,11 +358,6 @@ export default function DocumentEditorContainer({
           {packet.operationError}
         </div>
       )}
-      {feedback && (
-        <div role='status' css={{ padding: 6, fontSize: 12 }}>
-          {feedback}
-        </div>
-      )}
       <div
         role={tabs.length > 1 ? 'tabpanel' : undefined}
         id={`${tabListId}-panel`}
@@ -409,6 +410,10 @@ export default function DocumentEditorContainer({
                   documentId={tab.documentId}
                   label={tab.label}
                   active={active}
+                  actionStatus={feedback}
+                  onDirty={clearFeedbackOnEdit}
+                  railPanel={tabs.length > 1 ? railPanel : undefined}
+                  onRailPanelChange={tabs.length > 1 ? setRailPanel : undefined}
                   multiple={tabs.length > 1}
                   onEnvelopeChange={updateTabEnvelope}
                   onSessionReady={registerSession}

@@ -50,6 +50,10 @@ jest.mock('./index', () => {
     onSave,
     onSaveAll,
     onDownloadAll,
+    actionStatus,
+    active,
+    railPanel,
+    onRailPanelChange,
     onError,
     onBeforeReplaceReady,
     history,
@@ -87,8 +91,19 @@ jest.mock('./index', () => {
       {
         'data-testid': `editor:${source?.url ?? 'none'}`,
         'data-preview': String(!!preview),
+        'data-rail-panel': railPanel ?? 'closed',
         'data-review-changes': String(!!reviewChanges)
       },
+      active &&
+        actionStatus &&
+        React.createElement('span', { role: 'status' }, actionStatus),
+      ...['history', 'changes', 'sections', null].map((panel) =>
+        React.createElement('button', {
+          key: `panel:${panel}`,
+          'data-testid': `panel:${source?.url}:${panel ?? 'closed'}`,
+          onClick: () => onRailPanelChange?.(panel)
+        })
+      ),
       React.createElement('input', {
         'aria-label': `local:${source?.url}`,
         defaultValue: ''
@@ -1065,6 +1080,39 @@ describe('document tab navigation', () => {
         'true'
       )
     );
+  });
+
+  it('shares the rail selection, including closed, across cached document tabs', async () => {
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    const firstEditor = await view.findByTestId('editor:a.editor.docx');
+    for (const panel of ['history', 'changes', 'sections', 'closed']) {
+      fireEvent.click(view.getByTestId(`panel:a.editor.docx:${panel}`));
+      fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+      expect(await view.findByTestId('editor:b.docx')).toHaveAttribute(
+        'data-rail-panel',
+        panel
+      );
+      fireEvent.click(view.getByRole('tab', { name: 'Agreement.docx' }));
+      expect(view.getByTestId('editor:a.editor.docx')).toBe(firstEditor);
+      expect(firstEditor).toHaveAttribute('data-rail-panel', panel);
+    }
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    fireEvent.click(view.getByTestId('panel:b.docx:history'));
+    fireEvent.click(view.getByRole('tab', { name: 'Agreement.docx' }));
+    expect(firstEditor).toHaveAttribute('data-rail-panel', 'history');
+    expect(mockBeforeReplace).not.toHaveBeenCalled();
+    expect(mockSaveEnvelopeFile).not.toHaveBeenCalled();
+  });
+
+  it('clears packet confirmation when another cached document changes', async () => {
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    await view.findByTestId('editor:a.editor.docx');
+    fireEvent.click(view.getByTestId('save-all:a.editor.docx'));
+    await view.findByText('All documents saved');
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    await view.findByTestId('editor:b.docx');
+    fireEvent.click(view.getByTestId('dirty:b.docx'));
+    expect(view.queryAllByText('All documents saved')).toHaveLength(0);
   });
 
   it('keeps local edits mounted across tab switches without saving', async () => {

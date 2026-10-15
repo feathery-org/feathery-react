@@ -46,3 +46,36 @@ it.each([false, true])(
     }
   }
 );
+
+it.each([false, true])(
+  'places the accessible status immediately before Save, compact=%s',
+  (compact) => {
+    const view = render(
+      <ToolbarActions
+        compact={compact}
+        actionStatus='All documents saved'
+        onSave={() => undefined}
+        onSaveAll={() => undefined}
+        onDownload={() => undefined}
+      />
+    );
+    const status = screen.getByRole('status', { name: 'All documents saved' });
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(status.nextElementSibling?.contains(save)).toBe(true);
+    expect(status).toHaveAttribute('title', 'All documents saved');
+    view.rerender(
+      <ToolbarActions
+        compact={compact}
+        dirty
+        actionStatus='All documents saved'
+        onSave={() => undefined}
+      />
+    );
+    expect(
+      screen.queryByRole('status', { name: 'All documents saved' })
+    ).toBeNull();
+    expect(
+      screen.getByRole('status', { name: 'Unsaved changes' })
+    ).toBeInTheDocument();
+  }
+);
