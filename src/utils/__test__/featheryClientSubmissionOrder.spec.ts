@@ -305,9 +305,10 @@ describe('step save and completion ordering', () => {
     expect(alert).toHaveBeenCalledWith(
       expect.stringContaining('submit that step again')
     );
-    expect(store.rows()).toEqual([]);
+    // Rejected answers remain durable so a reload cannot unblock completion.
+    expect(store.rows().map((row) => row.stepKey)).toEqual(['first', 'second']);
 
-    // A later replay that drops another step's answers alerts again
+    // A later replay that rejects another step's answers alerts again
     store.seed(queuedAnswer({ stepKey: 'third', url, retryAttempts: 0 }));
     await client.offlineRequestHandler.replayRequests();
     expect(alert).toHaveBeenCalledTimes(2);

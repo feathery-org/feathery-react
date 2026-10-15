@@ -121,6 +121,7 @@ interface SerializedRequest {
   key?: IDBValidKey;
   metadata?: RequestMetadata;
   retryAttempts?: number;
+  rejected?: boolean;
   enqueueOrder?: number;
   // Start order of the live write this row was queued from, which only
   // compares between rows of the same page
@@ -154,25 +155,35 @@ const userInBody = (bodyText: string): string | undefined => {
 };
 
 const queuedUserOf = (request: SerializedRequest): string | undefined => {
-  const uploadUser = FILE_UPLOAD_USER_PATTERN.exec(request.url)?.[1];
-  if (uploadUser) return decodeURIComponent(uploadUser);
-  if (request.bodyType === 'formData')
-    return (request.body as Record<string, any>).fuser_key || undefined;
-  if (request.bodyType === 'text') return userInBody(request.body as string);
-  if (typeof TextDecoder === 'undefined') return undefined;
-  return userInBody(new TextDecoder().decode(request.body as ArrayBuffer));
+  try {
+    const uploadUser = FILE_UPLOAD_USER_PATTERN.exec(request.url)?.[1];
+    if (uploadUser) return endpointOf(uploadUser);
+    if (request.bodyType === 'formData')
+      return (request.body as Record<string, any>).fuser_key || undefined;
+    if (request.bodyType === 'text') return userInBody(request.body as string);
+    if (typeof TextDecoder === 'undefined') return undefined;
+    return userInBody(new TextDecoder().decode(request.body as ArrayBuffer));
+  } catch (error) {
+    // An unreadable legacy payload must not prevent the rest of the queue loading.
+    return undefined;
+  }
 };
 
 /**
  * How a replayed row ended: 'settled' left the queue with nothing for the user
  * to do (accepted, or dropped because the page moves on: a form version
  * conflict reloads it, a revoked link closes the form), 'rejected' was refused
- * by the server and dropped, and 'queued' stays for a later retry.
+ * by the server and retained until replaced, and 'queued' stays for a later retry.
  */
 type ReplayOutcome = 'settled' | 'rejected' | 'queued';
 
 const REJECTED_ANSWERS_MESSAGE =
   'Some answers from an earlier step could not be saved. Please go back and submit that step again.';
+
+const rejectedAnswersMessage = (request: SerializedRequest) =>
+  request.stepKey
+    ? `Some answers from step "${request.stepKey}" could not be saved. Please go back and submit that step again.`
+    : REJECTED_ANSWERS_MESSAGE;
 
 /**
  * Completing the form is refused while the user still has answers queued, or
@@ -290,8 +301,11 @@ export function useOfflineRequestHandler(client: FeatheryClient) {
   useEffect(() => {
     if (!runningInClient() || !client) return;
 
-    client.offlineRequestHandler.replayRequests();
-    const handleOnline = () => client.offlineRequestHandler.replayRequests();
+    const handleOnline = () =>
+      client.offlineRequestHandler.replayRequests().catch((error) => {
+        console.warn('Error replaying saved answers', error);
+      });
+    handleOnline();
     featheryWindow().addEventListener('online', handleOnline);
     return () => featheryWindow().removeEventListener('online', handleOnline);
   }, [client]);
@@ -317,6 +331,7 @@ export class OfflineRequestHandler {
   private readonly retryDelayMs: number;
   private onlineSignals: Map<string, any[]>;
   private indexedDBSupported: boolean;
+  private hasOpenedDatabase = false;
   private errorCallback?: (error: string) => void;
   private memoryRequests = new Map<IDBValidKey, SerializedRequest>();
   private enqueueOrder = 0;
@@ -326,20 +341,20 @@ export class OfflineRequestHandler {
   // Write orders restart on every page load, and another tab has its own
   private readonly pageId = uuidv4();
   private acknowledgedWriteOrder = new Map<string, number>();
+  // A successful HTTP write must not be sent again just because local cleanup
+  // failed. Keep it here until queue reconciliation succeeds on this page.
+  private acknowledgedRequestKeys = new Set<IDBValidKey>();
   // Live writes in flight per write slot. A replay leaves that slot's queued
   // rows alone meanwhile: the live write supersedes them if it lands and
   // queues behind them if it does not.
   private liveWriteSlots = new Map<string, number>();
   private isReplayingConnectorRequests = false;
-  // Rows the link gate refused for another submission. They wait, untried, for
-  // the rest of this page, so they cannot keep a replay looping.
+  // Rows the link gate refused for another submission wait until that user
+  // becomes current, so an unknown identity during init cannot park its own writes.
   private parkedRequestKeys = new Set<IDBValidKey>();
-  // The current user's write slots whose queued write the server rejected,
-  // until a write to the same slot lands
-  private rejectedWriteSlots = new Map<
-    string,
-    { userId: string; isCustomFieldWrite: boolean }
-  >();
+  // Cache even unsuccessful attribution: large legacy bodies are decoded at
+  // most once per row per page, while rows arriving from other tabs are adopted too.
+  private legacyUserIds = new Map<IDBValidKey, string | undefined>();
 
   constructor(formKey: string, errorCallback?: (error: string) => void) {
     this.isReplayingRequests = new Map();
@@ -356,41 +371,9 @@ export class OfflineRequestHandler {
 
   // Check if any requests are stored in indexedDB
   public async dbHasRequest(type?: string): Promise<boolean> {
-    if (
-      [...this.memoryRequests.values()].some(
-        (row) => !type || row.type === type
-      )
-    )
-      return true;
-    if (!this.indexedDBSupported) return false;
-    const dbTransaction = await this.getDbTransaction('readonly');
-    if (dbTransaction) {
-      const { store } = dbTransaction;
-      const count = await new Promise<number>((resolve) => {
-        const request = store.openCursor();
-        let count = 0;
-        request.onsuccess = (event) => {
-          const cursor = (event.target as IDBRequest<IDBCursorWithValue>)
-            .result;
-          if (cursor) {
-            const request = cursor.value as SerializedRequest;
-            if (
-              request.formKey === this.formKey &&
-              (!type || request.type === type)
-            ) {
-              count++;
-            }
-            cursor.continue();
-          } else {
-            resolve(count);
-          }
-        };
-      });
-
-      return count > 0;
-    } else {
-      return false;
-    }
+    return (await this.readQueuedRequests()).some(
+      (request) => !type || request.type === type
+    );
   }
 
   // Whether the current user still has an answer write queued, optionally for
@@ -476,6 +459,7 @@ export class OfflineRequestHandler {
   ): Promise<{ tx: IDBTransaction; store: IDBObjectStore } | undefined> {
     const db = await this.openDatabase();
     if (db) {
+      this.hasOpenedDatabase = true;
       const tx = db.transaction(this.storeName, mode);
       const store = tx.objectStore(this.storeName);
       return { tx, store };
@@ -512,171 +496,162 @@ export class OfflineRequestHandler {
     if (await verifyConnectivity()) {
       // Prevent page unload while processing requests to avoid data loss
       trackUnload();
-      const isCompletion =
-        type === 'registerEvent' && !!metadata?.requireAcknowledgement;
-      if (this.indexedDBSupported || this.memoryRequests.size) {
-        // Completing is the user's manual retry, as a step submission is, so
-        // a completion that submits no step still retries exhausted answers
-        if (isCompletion) await this.resetAnswerWriteRetries();
-        const wasReplaying = !!this.isReplayingRequests.get(this.formKey);
-        // Replay already in progress, wait for it to complete
-        if (wasReplaying) await this.onlineAndReplayed();
-        // A replay that was already running may have passed rows before their
-        // budgets were reset, so a completion replays once more
-        if ((!wasReplaying || isCompletion) && (await this.dbHasRequest())) {
-          await this.replayRequests({ isUserWaiting: isCompletion });
-        }
-      }
-      if (type === 'registerEvent') {
-        // A terminal event needs every answer acknowledged first. It is
-        // refused rather than queued so its side effects cannot fire twice.
-        if (isCompletion) {
-          if (this.hasRejectedAnswerWrite()) {
-            untrackUnload();
-            throw new AnswersPendingError(REJECTED_ANSWERS_MESSAGE);
-          }
-          if (await this.hasQueuedAnswerWrite()) {
-            untrackUnload();
-            throw new AnswersPendingError();
-          }
-        } else if (
-          stepKey &&
-          (await this.hasQueuedAnswerWrite(stepKey)) &&
-          (await this.saveRequest(url, options, type, stepKey, metadata))
-        ) {
-          // The step's answers are still queued, so its event follows them on
-          // replay. Without storage to hold it, the event is sent now instead.
-          onQueued?.();
-          untrackUnload();
-          return;
-        }
-      }
-      const writeSlot =
-        type === 'submit' && stepKey
-          ? writeSlotKey(initInfo().userId, stepKey, url, metadata?.fieldKey)
-          : undefined;
-      // Without override the server may keep the values it already has, so
-      // only an overriding custom field write supersedes older queued values
-      const isCustomFieldWrite =
-        type === 'submit' &&
-        !stepKey &&
-        url.includes(CUSTOM_FIELD_SUBMIT_PATH) &&
-        options.body instanceof FormData &&
-        options.body.get('override') !== 'false';
-      const writeOrder = ++this.writeOrder;
-      // Only rows already queued when this write starts can be superseded.
-      // A concurrent save may queue a newer answer while this request is in flight.
-      const supersededStepRequests =
-        type === 'submit' && stepKey
-          ? await this.getFailedStepRequestKeys(stepKey, url, metadata)
-          : [];
-      const olderCustomFieldWrites = isCustomFieldWrite
-        ? await this.getQueuedCustomFieldWriteKeys(url)
-        : [];
-      let response;
-      if (writeSlot)
-        this.liveWriteSlots.set(
-          writeSlot,
-          (this.liveWriteSlots.get(writeSlot) ?? 0) + 1
-        );
       try {
-        response = await run();
-      } catch (e) {
-        const errorToThrow = e;
-        // A newer write to the same step snapshot or file field has already
-        // landed. Queuing this older one would revert it, and its failure
-        // loses nothing.
-        const isOutdated =
-          !!writeSlot &&
-          (this.acknowledgedWriteOrder.get(writeSlot) ?? 0) > writeOrder;
-        if (isOutdated) {
-          untrackUnload();
-          return SUPERSEDED_WRITE;
+        const isCompletion =
+          type === 'registerEvent' && !!metadata?.requireAcknowledgement;
+        if (this.indexedDBSupported || this.memoryRequests.size) {
+          // Completing is the user's manual retry, as a step submission is, so
+          // a completion that submits no step still retries exhausted answers
+          if (isCompletion) await this.resetAnswerWriteRetries();
+          const wasReplaying = !!this.isReplayingRequests.get(this.formKey);
+          // Replay already in progress, wait for it to complete
+          if (wasReplaying) await this.onlineAndReplayed();
+          // A replay that was already running may have passed rows before their
+          // budgets were reset, so a completion replays once more
+          if ((!wasReplaying || isCompletion) && (await this.dbHasRequest())) {
+            await this.replayRequests({ isUserWaiting: isCompletion });
+          }
         }
-        // TypeError indicates network connectivity issues
-        // This catches scenarios like timeouts, resolution failures, etc.
-        if (e instanceof TypeError && !metadata?.requireAcknowledgement) {
-          await this.saveRequest(
-            url,
-            options,
-            type,
-            stepKey,
-            metadata,
-            writeOrder
-          );
-          onQueued?.();
-          // Don't immediately trigger replay - this can cause infinite loops
-          // when the same request keeps failing. Instead, rely on:
-          // 1. The 'online' event listener to trigger replay when connectivity returns
-          // 2. The next user action (button click) to attempt submission again
-          // 3. The replayRequests() recursion check at the end of replay cycle
+        if (type === 'registerEvent') {
+          // A terminal event needs every answer acknowledged first. It is
+          // refused rather than queued so its side effects cannot fire twice.
+          if (isCompletion) {
+            const rejectedWrite = (await this.readQueuedRequests()).find(
+              (request) =>
+                request.rejected && this.isCurrentUsersRequest(request)
+            );
+            if (rejectedWrite) {
+              throw new AnswersPendingError(
+                rejectedAnswersMessage(rejectedWrite)
+              );
+            }
+            if (await this.hasQueuedAnswerWrite()) {
+              throw new AnswersPendingError();
+            }
+          } else if (
+            stepKey &&
+            (await this.hasQueuedAnswerWrite(stepKey)) &&
+            (await this.saveRequest(url, options, type, stepKey, metadata))
+          ) {
+            // The step's answers are still queued, so its event follows them on
+            // replay. Without storage to hold it, the event is sent now instead.
+            onQueued?.();
+            return;
+          }
         }
-        untrackUnload();
-        throw errorToThrow; // Re-throw error so caller knows submission failed
-      } finally {
+        const writeSlot =
+          type === 'submit' && stepKey
+            ? writeSlotKey(initInfo().userId, stepKey, url, metadata?.fieldKey)
+            : undefined;
+        // Without override the server may keep the values it already has, so
+        // only an overriding custom field write supersedes older queued values
+        const isCustomFieldWrite =
+          type === 'submit' &&
+          !stepKey &&
+          url.includes(CUSTOM_FIELD_SUBMIT_PATH) &&
+          options.body instanceof FormData &&
+          options.body.get('override') !== 'false';
+        const writeOrder = ++this.writeOrder;
+        // Only rows already queued when this write starts can be superseded.
+        // A concurrent save may queue a newer answer while this request is in flight.
+        const supersededStepRequests =
+          type === 'submit' && stepKey
+            ? await this.getFailedStepRequestKeys(stepKey, url, metadata)
+            : [];
+        const olderCustomFieldWrites = isCustomFieldWrite
+          ? await this.getQueuedCustomFieldWriteKeys(url)
+          : [];
+        let response;
         if (writeSlot)
           this.liveWriteSlots.set(
             writeSlot,
-            (this.liveWriteSlots.get(writeSlot) ?? 1) - 1
+            (this.liveWriteSlots.get(writeSlot) ?? 0) + 1
           );
-      }
-      if (metadata?.requireAcknowledgement && !response) {
-        untrackUnload();
-        throw new Error(
-          'The submission could not be completed. Please try again.'
-        );
-      }
-      if (response && type === 'submit') {
-        const { userId } = initInfo();
-        const landedSlot = writeSlotKey(
-          userId,
-          stepKey ?? '',
-          url,
-          metadata?.fieldKey
-        );
-        // A rejected custom field write has no step of its own to submit
-        // again, so any of the user's answers landing resolves it
-        this.rejectedWriteSlots.forEach((rejected, slot) => {
-          if (
-            slot === landedSlot ||
-            (rejected.isCustomFieldWrite && rejected.userId === userId)
-          )
-            this.rejectedWriteSlots.delete(slot);
-        });
-      }
-      if (response && writeSlot && stepKey) {
-        this.acknowledgedWriteOrder.set(
-          writeSlot,
-          Math.max(writeOrder, this.acknowledgedWriteOrder.get(writeSlot) ?? 0)
-        );
-        // A successful step write supersedes only older queued writes of the
-        // same step snapshot or file field: those queued before it started,
-        // and those that started earlier but failed while it was in flight
-        const startedEarlier = await this.getFailedStepRequestKeys(
-          stepKey,
-          url,
-          metadata,
-          writeOrder
-        );
-        await this.removeRequests([
-          ...supersededStepRequests,
-          ...startedEarlier
-        ]);
-      }
-      // A custom field write supersedes only the fields it carried. The write
-      // itself has landed, so failing to tidy the queue must not fail it.
-      if (response && olderCustomFieldWrites.length) {
         try {
-          await this.stripSavedCustomFields(
-            olderCustomFieldWrites,
-            customFieldKeysOf(options.body)
-          );
-        } catch (error) {
-          console.warn('Error removing saved fields from queued writes', error);
+          response = await run();
+        } catch (e) {
+          const errorToThrow = e;
+          // A newer write to the same step snapshot or file field has already
+          // landed. Queuing this older one would revert it, and its failure
+          // loses nothing.
+          const isOutdated =
+            !!writeSlot &&
+            (this.acknowledgedWriteOrder.get(writeSlot) ?? 0) > writeOrder;
+          if (isOutdated) {
+            return SUPERSEDED_WRITE;
+          }
+          // TypeError indicates network connectivity issues
+          // This catches scenarios like timeouts, resolution failures, etc.
+          if (e instanceof TypeError && !metadata?.requireAcknowledgement) {
+            await this.saveRequest(
+              url,
+              options,
+              type,
+              stepKey,
+              metadata,
+              writeOrder
+            );
+            onQueued?.();
+            // Don't immediately trigger replay - this can cause infinite loops
+            // when the same request keeps failing. Instead, rely on:
+            // 1. The 'online' event listener to trigger replay when connectivity returns
+            // 2. The next user action (button click) to attempt submission again
+            // 3. The replayRequests() recursion check at the end of replay cycle
+          }
+          throw errorToThrow; // Re-throw error so caller knows submission failed
+        } finally {
+          if (writeSlot)
+            this.liveWriteSlots.set(
+              writeSlot,
+              (this.liveWriteSlots.get(writeSlot) ?? 1) - 1
+            );
         }
+        if (metadata?.requireAcknowledgement && !response) {
+          throw new Error(
+            'The submission could not be completed. Please try again.'
+          );
+        }
+        if (response && writeSlot && stepKey) {
+          this.acknowledgedWriteOrder.set(
+            writeSlot,
+            Math.max(
+              writeOrder,
+              this.acknowledgedWriteOrder.get(writeSlot) ?? 0
+            )
+          );
+          // A successful step write supersedes only older queued writes of the
+          // same step snapshot or file field: those queued before it started,
+          // and those that started earlier but failed while it was in flight
+          const startedEarlier = await this.getFailedStepRequestKeys(
+            stepKey,
+            url,
+            metadata,
+            writeOrder
+          );
+          await this.removeRequests([
+            ...supersededStepRequests,
+            ...startedEarlier
+          ]);
+        }
+        // A custom field write supersedes only the fields it carried. The write
+        // itself has landed, so failing to tidy the queue must not fail it.
+        if (response && olderCustomFieldWrites.length) {
+          try {
+            await this.stripSavedCustomFields(
+              olderCustomFieldWrites,
+              customFieldKeysOf(options.body)
+            );
+          } catch (error) {
+            console.warn(
+              'Error removing saved fields from queued writes',
+              error
+            );
+          }
+        }
+        return response;
+      } finally {
+        untrackUnload();
       }
-      untrackUnload();
-      return response;
     } else {
       if (metadata?.requireAcknowledgement) throw new AnswersPendingError();
       await this.saveRequest(url, options, type, stepKey, metadata);
@@ -868,28 +843,37 @@ export class OfflineRequestHandler {
           heldWrites.push(write);
           continue;
         }
+        const wasRejected = write.rejected;
         const outcome = await this.replayRequest(write, {
           isUserWaiting,
           reportError
         });
         if (outcome === 'queued') heldWrites.push(write);
-        if (outcome === 'rejected' && this.isCurrentUsersRequest(write)) {
+        if (
+          outcome === 'rejected' &&
+          !wasRejected &&
+          this.isCurrentUsersRequest(write)
+        ) {
           hasRejectedWrite = true;
-          this.rejectedWriteSlots.set(answerSlotKey(write), {
-            userId: write.userId ?? '',
-            isCustomFieldWrite: !write.stepKey
-          });
         }
       }
+      // Rejected rows block their step's events, but must not block a later
+      // corrected answer from replaying. Read again after those corrections land.
+      const pendingWrites = (await this.readQueuedRequests()).filter(
+        (request) => request.type === 'submit'
+      );
+      const rejectedWrite = pendingWrites.find(
+        (request) => request.rejected && this.isCurrentUsersRequest(request)
+      );
       // A user waiting to complete gets this as the completion's refusal
-      if (hasRejectedWrite && !isUserWaiting)
-        reportError(REJECTED_ANSWERS_MESSAGE);
+      if (hasRejectedWrite && rejectedWrite && !isUserWaiting)
+        reportError(rejectedAnswersMessage(rejectedWrite));
 
       // An event for a step whose answers are still queued would let the
       // server act on that step without its data
       const isHeldByWrite = (event: SerializedRequest) =>
         !!event.stepKey &&
-        heldWrites.some(
+        pendingWrites.some(
           (write) =>
             write.stepKey === event.stepKey && write.userId === event.userId
         );
@@ -951,13 +935,6 @@ export class OfflineRequestHandler {
     };
   }
 
-  private hasRejectedAnswerWrite(): boolean {
-    const { userId } = initInfo();
-    return [...this.rejectedWriteSlots.values()].some(
-      (rejected) => !!userId && rejected.userId === userId
-    );
-  }
-
   private async replayConnectorRequests(
     connectorRequests: SerializedRequest[]
   ): Promise<void> {
@@ -979,6 +956,16 @@ export class OfflineRequestHandler {
     return !!userId && request.userId === userId;
   }
 
+  private isParked(request: SerializedRequest): boolean {
+    if (request.key === undefined || !this.parkedRequestKeys.has(request.key))
+      return false;
+    if (this.isCurrentUsersRequest(request)) {
+      this.parkedRequestKeys.delete(request.key);
+      return false;
+    }
+    return true;
+  }
+
   private isWriteSlotLive(request: SerializedRequest): boolean {
     if (request.type !== 'submit' || !request.stepKey) return false;
     return (this.liveWriteSlots.get(answerSlotKey(request)) ?? 0) > 0;
@@ -997,7 +984,12 @@ export class OfflineRequestHandler {
     const { url, method, headers, body, bodyType, keepalive, key } = request;
     const report =
       reportError ?? ((message: string) => this.errorCallback?.(message));
-    if (key !== undefined && this.parkedRequestKeys.has(key)) return 'queued';
+    if (request.rejected) return 'rejected';
+    if (this.isParked(request)) return 'queued';
+    if (key !== undefined && this.acknowledgedRequestKeys.has(key)) {
+      await this.removeAcceptedRequest(request);
+      return 'settled';
+    }
     const fetchOptions: RequestInit = {
       method,
       headers: JSON.parse(headers),
@@ -1040,9 +1032,6 @@ export class OfflineRequestHandler {
         // one the submission is open under, so it wins over the snapshot.
         response = await fetch(url, withLinkRequestHeaders(url, fetchOptions));
         await checkResponseSuccess(response);
-        markFileUploadRetrySuccess(fieldKey, this.formKey);
-        await this.removeRequest(key);
-        return 'settled';
       } catch (error: any) {
         if (error instanceof FormConflictError) {
           // The page reloads onto the new form version. This payload carries
@@ -1071,7 +1060,11 @@ export class OfflineRequestHandler {
         }
         if (response && isRejectedStatus(response.status)) {
           markFileUploadRetryFailure(fieldKey, this.formKey);
-          await this.removeRequest(key);
+          if (request.type === 'submit') {
+            await this.updateRequest(key, (record) => {
+              record.rejected = true;
+            });
+          } else await this.removeRequest(key);
           return 'rejected';
         }
         attempts++;
@@ -1104,7 +1097,14 @@ export class OfflineRequestHandler {
           // Release the replay owner before the online event retries.
           return 'queued';
         }
+        continue;
       }
+      markFileUploadRetrySuccess(fieldKey, this.formKey);
+      if (key !== undefined) this.acknowledgedRequestKeys.add(key);
+      // Queue failures propagate separately from HTTP failures. A retry only
+      // reconciles this acknowledged row; it cannot repeat an upload or append.
+      await this.removeAcceptedRequest(request);
+      return 'settled';
     }
     return 'queued';
   }
@@ -1114,42 +1114,70 @@ export class OfflineRequestHandler {
   private async readQueuedRequests(): Promise<SerializedRequest[]> {
     const queuedRequests = [...this.memoryRequests.values()];
     const dbTransaction = this.indexedDBSupported
-      ? await this.getDbTransaction('readwrite')
+      ? await this.getDbTransaction('readonly')
       : undefined;
+    // Storage becoming temporarily unavailable must not erase a known durable
+    // queue. Browsers that never allowed IndexedDB still use the memory fallback.
+    if (!dbTransaction && this.indexedDBSupported && this.hasOpenedDatabase)
+      throw new AnswersPendingError(
+        'Saved answers could not be read. Please try again.'
+      );
     if (dbTransaction) {
+      const adoptedUsers = new Map<IDBValidKey, string>();
       const persistedRequests = await new Promise<SerializedRequest[]>(
-        (resolve) => {
+        (resolve, reject) => {
           const requests: SerializedRequest[] = [];
+          const failRead = () =>
+            reject(
+              new AnswersPendingError(
+                'Saved answers could not be read. Please try again.'
+              )
+            );
+          dbTransaction.tx.onerror = failRead;
+          dbTransaction.tx.onabort = failRead;
+          dbTransaction.tx.oncomplete = () => resolve(requests);
           const cursorRequest = dbTransaction.store.openCursor();
           cursorRequest.onsuccess = (event: Event) => {
             const cursor = (
               event.target as IDBRequest<IDBCursorWithValue | null>
             ).result;
-            if (!cursor) {
-              resolve(requests);
-              return;
-            }
+            if (!cursor) return;
             const storedRequest = cursor.value as SerializedRequest;
             if (
               storedRequest.formKey === this.formKey ||
               !storedRequest.formKey
             ) {
-              // A row from an older SDK build is attributed to its user once,
-              // and from then on is treated like any other row of that user
+              if (
+                !storedRequest.userId &&
+                !this.legacyUserIds.has(cursor.key)
+              ) {
+                const userId = queuedUserOf(storedRequest);
+                this.legacyUserIds.set(cursor.key, userId);
+              }
               const legacyUserId = storedRequest.userId
                 ? undefined
-                : queuedUserOf(storedRequest);
+                : this.legacyUserIds.get(cursor.key);
               const request = legacyUserId
                 ? { ...storedRequest, userId: legacyUserId }
                 : storedRequest;
-              if (legacyUserId) cursor.update(request);
+              if (legacyUserId) adoptedUsers.set(cursor.key, legacyUserId);
               requests.push({ ...request, key: cursor.key });
             }
             cursor.continue();
           };
-          cursorRequest.onerror = () => resolve(requests);
+          cursorRequest.onerror = failRead;
         }
       );
+      for (const [key, userId] of adoptedUsers) {
+        try {
+          await this.updateRequest(key, (record) => {
+            if (!record.userId) record.userId = userId;
+          });
+        } catch (error) {
+          // Attribution is still available in memory when storage cannot persist it.
+          console.warn('Error attributing a queued request', error);
+        }
+      }
       queuedRequests.push(...persistedRequests);
     }
     return queuedRequests.sort(
@@ -1163,32 +1191,25 @@ export class OfflineRequestHandler {
     if (!key) return;
     if (this.memoryRequests.delete(key)) return;
     const dbTransaction = await this.getDbTransaction('readwrite');
-    if (dbTransaction) {
-      const { store } = dbTransaction;
-      await store.delete(key);
-    }
+    if (!dbTransaction)
+      throw new AnswersPendingError(
+        'Saved answers could not be updated. Please try again.'
+      );
+    const { tx, store } = dbTransaction;
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+      store.delete(key);
+    });
   }
 
-  public async clearFailedRequestByUrl(
-    url: string,
-    options?: { fieldKey?: string }
-  ): Promise<void> {
-    const matchesRecord = (record: SerializedRequest) => {
-      if (
-        endpointOf(record.url) !== endpointOf(url) ||
-        record.formKey !== this.formKey
-      ) {
-        return false;
-      }
-
-      if (!options?.fieldKey) {
-        return true;
-      }
-
-      return this.recordMatchesFieldKey(record, options.fieldKey);
-    };
-
-    return this.deleteRecordsWhere(matchesRecord);
+  private async removeAcceptedRequest(request: SerializedRequest) {
+    if (request.type === 'submit')
+      await this.removeSupersededRejectedWrites(request);
+    await this.removeRequest(request.key);
+    if (request.key !== undefined)
+      this.acknowledgedRequestKeys.delete(request.key);
   }
 
   private recordMatchesFieldKey(
@@ -1292,6 +1313,36 @@ export class OfflineRequestHandler {
       .filter((key): key is IDBValidKey => key !== undefined);
   }
 
+  private async removeSupersededRejectedWrites(
+    savedRequest: SerializedRequest
+  ): Promise<void> {
+    const queuedRequests = await this.readQueuedRequests();
+    const savedIndex = queuedRequests.findIndex(
+      (request) => request.key === savedRequest.key
+    );
+    if (savedIndex < 0) return;
+    const olderRejectedWrites = queuedRequests
+      .slice(0, savedIndex)
+      .filter(
+        (request) =>
+          request.type === 'submit' &&
+          request.rejected &&
+          request.formKey === savedRequest.formKey &&
+          answerSlotKey(request) === answerSlotKey(savedRequest)
+      );
+    const keys = olderRejectedWrites
+      .map((request) => request.key)
+      .filter((key): key is IDBValidKey => key !== undefined);
+    if (!keys.length) return;
+    if (savedRequest.stepKey) {
+      await this.removeRequests(keys);
+    } else if (savedRequest.url.includes(CUSTOM_FIELD_SUBMIT_PATH)) {
+      const body = await this.readFormDataBody(savedRequest);
+      if (body && body.get('override') !== 'false')
+        await this.stripSavedCustomFields(keys, customFieldKeysOf(body));
+    }
+  }
+
   // Removes the fields a newer custom field write saved from this user's older
   // queued ones, so a later replay cannot revert them. An older write left with
   // no fields is dropped.
@@ -1388,12 +1439,21 @@ export class OfflineRequestHandler {
     if (!this.indexedDBSupported) return;
 
     const dbTransaction = await this.getDbTransaction('readwrite');
-    if (!dbTransaction) return;
+    if (!dbTransaction) {
+      if (this.hasOpenedDatabase)
+        throw new AnswersPendingError(
+          'Saved answers could not be updated. Please try again.'
+        );
+      return;
+    }
 
-    const { store } = dbTransaction;
+    const { tx, store } = dbTransaction;
     const request = store.openCursor();
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
       request.onsuccess = (event) => {
         const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
           .result;
@@ -1403,15 +1463,10 @@ export class OfflineRequestHandler {
             cursor.delete();
           }
           cursor.continue();
-        } else {
-          resolve();
         }
       };
 
-      request.onerror = () => {
-        console.warn('Error during IndexedDB cursor operation');
-        resolve(); // Don't block retry on cleanup failure
-      };
+      request.onerror = () => reject(request.error);
     });
   }
 
@@ -1427,21 +1482,26 @@ export class OfflineRequestHandler {
       return;
     }
     const dbTransaction = await this.getDbTransaction('readwrite');
-    if (!dbTransaction) return;
+    if (!dbTransaction)
+      throw new AnswersPendingError(
+        'Saved answers could not be updated. Please try again.'
+      );
 
-    const { store } = dbTransaction;
+    const { tx, store } = dbTransaction;
     const getReq = store.get(key);
 
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
       getReq.onsuccess = () => {
         const record = getReq.result as SerializedRequest | undefined;
         if (record) {
           updater(record);
           store.put(record, key);
         }
-        resolve();
       };
-      getReq.onerror = () => resolve();
+      getReq.onerror = () => reject(getReq.error);
     });
   }
 
@@ -1457,12 +1517,21 @@ export class OfflineRequestHandler {
     if (!this.indexedDBSupported) return;
 
     const dbTransaction = await this.getDbTransaction('readwrite');
-    if (!dbTransaction) return;
+    if (!dbTransaction) {
+      if (this.hasOpenedDatabase)
+        throw new AnswersPendingError(
+          'Saved answers could not be updated. Please try again.'
+        );
+      return;
+    }
 
-    const { store } = dbTransaction;
+    const { tx, store } = dbTransaction;
     const request = store.openCursor();
 
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
       request.onsuccess = (event) => {
         const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
           .result;
@@ -1473,15 +1542,10 @@ export class OfflineRequestHandler {
             cursor.update(updated);
           }
           cursor.continue();
-        } else {
-          resolve();
         }
       };
 
-      request.onerror = () => {
-        console.warn('Error during IndexedDB cursor update operation');
-        resolve();
-      };
+      request.onerror = () => reject(request.error);
     });
   }
 
@@ -1496,43 +1560,14 @@ export class OfflineRequestHandler {
 
   // Check if any queued requests can still be retried (haven't exceeded max attempts)
   private async hasReplayableRequest(): Promise<boolean> {
-    if (
-      [...this.memoryRequests.keys()].some(
-        (key) => !this.parkedRequestKeys.has(key)
-      )
-    )
-      return true;
-    if (!this.indexedDBSupported) return false;
-    const dbTransaction = await this.getDbTransaction('readonly');
-    if (!dbTransaction) return false;
-
-    const { store } = dbTransaction;
-
-    return await new Promise<boolean>((resolve) => {
-      store.openCursor().onsuccess = (event) => {
-        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
-          .result;
-        if (cursor) {
-          const record = cursor.value as SerializedRequest;
-          // Connector requests replay in the background and are picked up by
-          // the next replay, so they must not keep this replay looping
-          if (
-            record.formKey === this.formKey &&
-            record.type !== 'customRequest' &&
-            !this.parkedRequestKeys.has(cursor.key)
-          ) {
-            const attempts = record.retryAttempts ?? 0;
-            if (attempts < this.maxRetryAttempts) {
-              resolve(true);
-              return;
-            }
-          }
-          cursor.continue();
-        } else {
-          resolve(false);
-        }
-      };
-    });
+    return (await this.readQueuedRequests()).some(
+      (request) =>
+        request.type !== 'customRequest' &&
+        !request.rejected &&
+        !this.isParked(request) &&
+        (!!request.snapshot ||
+          (request.retryAttempts ?? 0) < this.maxRetryAttempts)
+    );
   }
 
   // Reset retry counter for queued requests before new submission attempt.

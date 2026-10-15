@@ -36,9 +36,6 @@ function newClient() {
   jest
     .spyOn(client.offlineRequestHandler, 'resetRetryAttemptsByUrl')
     .mockResolvedValue(undefined);
-  jest
-    .spyOn(client.offlineRequestHandler, 'clearFailedRequestByUrl')
-    .mockResolvedValue(undefined);
   jest.spyOn(client, '_fetch').mockResolvedValue({} as any);
   return client;
 }
@@ -82,9 +79,6 @@ describe('repeatable file upload wire format', () => {
     expect(client._fetch).not.toHaveBeenCalled();
     expect(fileRetryStatus.f).toBe(false);
     expect(fileDeduplicationCount.f).toBeUndefined();
-    expect(
-      client.offlineRequestHandler.clearFailedRequestByUrl
-    ).not.toHaveBeenCalled();
   });
 
   it('keeps a hole at every empty repeat row', async () => {

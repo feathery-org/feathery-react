@@ -18,58 +18,118 @@ export function installFakeIndexedDB(formKey: string) {
   // IndexedDB answers through callbacks set after the call returns
   const later = (callback: () => void) => Promise.resolve().then(callback);
 
-  const openCursor = () => {
-    const request: any = {};
-    const keys = [...rowsByKey.keys()];
-    let index = 0;
-    const advance = () => {
-      while (index < keys.length && !rowsByKey.has(keys[index])) index++;
-      const key = keys[index];
-      const result =
-        key === undefined
-          ? null
-          : {
-              key,
-              value: { ...rowsByKey.get(key) },
-              continue: () => {
-                index++;
-                later(advance);
-              },
-              delete: () => rowsByKey.delete(key),
-              update: (row: QueuedRow) => rowsByKey.set(key, { ...row })
-            };
-      request.onsuccess?.({ target: { result } });
-    };
-    later(advance);
-    return request;
-  };
+  const transactionModes: IDBTransactionMode[] = [];
+  let nextTransactionFailure: 'abort' | 'error' | undefined;
+  let nextFailingTransactionMode: IDBTransactionMode | undefined;
+  let shouldAbortNextCommit = false;
+  let nextAbortingCommitMode: IDBTransactionMode | undefined;
 
-  const transaction = () => {
+  const transaction = (_storeName: string, mode: IDBTransactionMode) => {
+    transactionModes.push(mode);
     const tx: any = {};
-    tx.objectStore = () => ({
-      add: (row: QueuedRow) => {
-        // A quota failure surfaces at commit, as an aborted transaction
-        if (isCommitAborting) {
-          tx.error = new Error('QuotaExceededError');
-          later(() => tx.onabort?.());
+    const failure =
+      !nextFailingTransactionMode || nextFailingTransactionMode === mode
+        ? nextTransactionFailure
+        : undefined;
+    if (failure) nextTransactionFailure = undefined;
+    const shouldAbortCommit =
+      shouldAbortNextCommit &&
+      (!nextAbortingCommitMode || nextAbortingCommitMode === mode);
+    if (shouldAbortCommit) shouldAbortNextCommit = false;
+    const stagedRows = new Map<number, QueuedRow | undefined>();
+    let hasAddition = false;
+    const rowAt = (key: number) =>
+      stagedRows.has(key) ? stagedRows.get(key) : rowsByKey.get(key);
+    let pendingRequests = 0;
+    let isFinished = false;
+    const finishRequest = () => {
+      pendingRequests--;
+      later(() => {
+        if (!pendingRequests && !isFinished) {
+          if (shouldAbortCommit || (hasAddition && isCommitAborting)) {
+            fail('abort', 'QuotaExceededError');
+            return;
+          }
+          for (const [key, row] of stagedRows) {
+            if (row) rowsByKey.set(key, row);
+            else rowsByKey.delete(key);
+          }
+          isFinished = true;
+          tx.oncomplete?.();
+        }
+      });
+    };
+    const fail = (event: 'abort' | 'error', message: string) => {
+      if (isFinished) return;
+      isFinished = true;
+      tx.error = new Error(message);
+      tx[event === 'abort' ? 'onabort' : 'onerror']?.();
+    };
+    const scheduleRequest = (operation: () => any) => {
+      const request: any = {};
+      pendingRequests++;
+      later(() => {
+        if (isFinished) return;
+        if (failure) {
+          fail(failure, 'IndexedDB transaction failed');
           return;
         }
-        rowsByKey.set(nextKey++, { ...row });
-        later(() => tx.oncomplete?.());
-      },
-      get: (key: number) => {
+        try {
+          request.result = operation();
+          if (!isFinished) request.onsuccess?.({ target: request });
+        } catch (error) {
+          request.error = error;
+          request.onerror?.({ target: request });
+          fail('abort', 'IndexedDB transaction aborted');
+        }
+        finishRequest();
+      });
+      return request;
+    };
+    const store = {
+      add: (row: QueuedRow) =>
+        scheduleRequest(() => {
+          hasAddition = true;
+          stagedRows.set(nextKey++, { ...row });
+        }),
+      get: (key: number) =>
+        scheduleRequest(() => {
+          const row = rowAt(key);
+          return row && { ...row };
+        }),
+      put: (row: QueuedRow, key: number) =>
+        scheduleRequest(() => stagedRows.set(key, { ...row })),
+      delete: (key: number) =>
+        scheduleRequest(() => stagedRows.set(key, undefined)),
+      openCursor: () => {
         const request: any = {};
-        later(() => {
-          const row = rowsByKey.get(key);
-          request.result = row && { ...row };
-          request.onsuccess?.();
-        });
+        const keys = [...new Set([...rowsByKey.keys(), ...stagedRows.keys()])];
+        let index = 0;
+        const advance = () => {
+          const cursorRequest = scheduleRequest(() => {
+            while (index < keys.length && !rowAt(keys[index])) index++;
+            const key = keys[index];
+            return key === undefined
+              ? null
+              : {
+                  key,
+                  value: { ...rowAt(key) },
+                  continue: () => {
+                    index++;
+                    advance();
+                  },
+                  delete: () => store.delete(key),
+                  update: (row: QueuedRow) => store.put(row, key)
+                };
+          });
+          cursorRequest.onsuccess = (event: any) => request.onsuccess?.(event);
+          cursorRequest.onerror = (event: any) => request.onerror?.(event);
+        };
+        advance();
         return request;
-      },
-      put: (row: QueuedRow, key: number) => rowsByKey.set(key, { ...row }),
-      delete: (key: number) => rowsByKey.delete(key),
-      openCursor
-    });
+      }
+    };
+    tx.objectStore = () => store;
     return tx;
   };
 
@@ -85,6 +145,18 @@ export function installFakeIndexedDB(formKey: string) {
   };
 
   return {
+    transactionModes,
+    abortNextCommit: (mode?: IDBTransactionMode) => {
+      shouldAbortNextCommit = true;
+      nextAbortingCommitMode = mode;
+    },
+    failNextTransaction: (
+      event: 'abort' | 'error',
+      mode?: IDBTransactionMode
+    ) => {
+      nextTransactionFailure = event;
+      nextFailingTransactionMode = mode;
+    },
     /** Rows still queued, oldest first */
     rows: () => [...rowsByKey.values()],
     /** Queue a row as an earlier page or SDK build would have left it */

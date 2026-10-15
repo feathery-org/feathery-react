@@ -3,7 +3,7 @@
  *
  * These tests verify the high-level behavior and integration:
  * 1. Request queueing behavior when offline/network fails
- * 2. clearFailedRequestByUrl functionality (critical for file upload retry)
+ * 2. Retaining queued answers until a matching save succeeds
  * 3. Online/offline state handling
  * 4. Retry mechanism and error handling
  * 5. File upload retry scenarios
@@ -590,7 +590,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         expect(store.rows()).toEqual([]);
       });
 
-      it('drops answers the server rejects, reports them once and saves the rest', async () => {
+      it('retains rejected answers without retrying them, reports them once and saves the rest', async () => {
         store.seed({ ...queuedAnswer, body: 'invalid answer' });
         store.seed({
           type: 'submit',
@@ -612,11 +612,17 @@ describe('OfflineRequestHandler - Integration Tests', () => {
           'invalid custom answer',
           'valid answer'
         ]);
-        expect(store.rows()).toEqual([]);
+        // Rejected answers remain durable so reloading cannot unblock completion.
+        expect(queuedBodies()).toEqual([
+          'invalid answer',
+          'invalid custom answer'
+        ]);
         expect(errorCallback).toHaveBeenCalledTimes(1);
         expect(errorCallback).toHaveBeenCalledWith(
           expect.stringContaining('could not be saved')
         );
+        await queue.replayRequests();
+        expect(replayed).toHaveLength(3);
       });
 
       it.each([408, 429, 503])(
@@ -933,7 +939,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         expect(store.rows()).toHaveLength(1);
       });
 
-      it('refuses completion after its replay drops a rejected answer, until that step is saved again', async () => {
+      it('refuses completion after replay rejects an answer, until that step is saved again', async () => {
         store.seed({ ...queuedAnswer, body: 'invalid answer' });
         serveReplay((body) => (body === 'invalid answer' ? 400 : 200));
         const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
@@ -957,20 +963,58 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         expect(sendCompletion).toHaveBeenCalledTimes(1);
       });
 
-      it('allows completion once any answer lands after a rejected custom field write', async () => {
-        store.seed({
-          type: 'submit',
-          url: '/panel/custom/submit/v3/',
-          userId: 'user-1',
-          body: 'invalid custom answer'
-        });
+      it('keeps completion blocked after a rejected answer survives a page reload', async () => {
+        store.seed({ ...queuedAnswer, body: 'invalid answer' });
         serveReplay(() => 400);
-        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+        await queue.replayRequests();
 
+        queue = new OfflineRequestHandler('test-form', errorCallback);
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
         await expect(completeForm(sendCompletion)).rejects.toThrow(
           'Please go back and submit that step again'
         );
-        // Submitting a step again saves its answers but has no custom fields to send
+
+        expect(sendCompletion).not.toHaveBeenCalled();
+        expect(replayed).toEqual(['invalid answer']);
+        expect(queuedBodies()).toEqual(['invalid answer']);
+      });
+
+      it('allows completion after a correction fails offline and then succeeds through replay', async () => {
+        store.seed({ ...queuedAnswer, body: 'invalid answer' });
+        serveReplay(() => 400);
+        await queue.replayRequests();
+        await failToSave('corrected answer');
+
+        serveReplay();
+        await queue.replayRequests();
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+        await completeForm(sendCompletion);
+
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('keeps rejected custom fields blocked until each field is saved', async () => {
+        const customUrl = '/panel/custom/submit/v3/';
+        store.seed({
+          type: 'submit',
+          url: customUrl,
+          userId: 'user-1',
+          bodyType: 'formData',
+          body: {
+            custom_key_values: JSON.stringify({
+              plan: 'invalid',
+              referrer: 'invalid'
+            })
+          }
+        });
+        serveReplay(() => 400);
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'Please go back and submit that step again'
+        );
+
+        // A step save cannot acknowledge custom fields that it did not carry.
         await queue.runOrSaveRequest(
           async () => ({ ok: true }),
           stepUrl,
@@ -978,9 +1022,139 @@ describe('OfflineRequestHandler - Integration Tests', () => {
           'submit',
           'Insurance'
         );
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'Please go back and submit that step again'
+        );
+        for (const values of [{ plan: 'premium' }, { referrer: 'friend' }]) {
+          const body = new FormData();
+          body.set('custom_key_values', JSON.stringify(values));
+          await queue.runOrSaveRequest(
+            async () => ({ ok: true }),
+            customUrl,
+            { method: 'POST', body },
+            'submit'
+          );
+          if ('plan' in values) {
+            await expect(completeForm(sendCompletion)).rejects.toThrow(
+              'Please go back and submit that step again'
+            );
+          }
+        }
         await completeForm(sendCompletion);
 
         expect(sendCompletion).toHaveBeenCalledTimes(1);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it.each(['', 'pre-redemption-user'])(
+        'retries a parked answer after initialization changes user %s to its owner',
+        async (initialUser) => {
+          mockInitInfo.userId = initialUser;
+          store.seed(queuedAnswer);
+          (global as any).fetch = jest
+            .fn()
+            .mockResolvedValue(
+              fakeResponse(403, { message: 'Link opens another submission' })
+            );
+          await queue.replayRequests();
+          expect(handleFormAuthenticationError).not.toHaveBeenCalled();
+          expect(store.rows()).toHaveLength(1);
+
+          mockInitInfo.userId = 'user-1';
+          serveReplay();
+          const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+          await completeForm(sendCompletion);
+
+          expect(replayed).toEqual(['answer']);
+          expect(sendCompletion).toHaveBeenCalledTimes(1);
+          expect(store.rows()).toEqual([]);
+        }
+      );
+
+      it('holds a rejected step event while later steps and corrections can still save', async () => {
+        store.seed({ ...queuedAnswer, body: 'invalid answer' });
+        store.seed(queuedEvent('Insurance', 'insurance event'));
+        store.seed({
+          ...queuedAnswer,
+          stepKey: 'Contact',
+          body: 'contact answer'
+        });
+        store.seed(queuedEvent('Contact', 'contact event'));
+        serveReplay((body) => (body === 'invalid answer' ? 400 : 200));
+
+        await queue.replayRequests();
+        expect(replayed).toEqual([
+          'invalid answer',
+          'contact answer',
+          'contact event'
+        ]);
+        expect(queuedBodies()).toEqual(['invalid answer', 'insurance event']);
+
+        await queue.runOrSaveRequest(
+          async () => ({ ok: true }),
+          stepUrl,
+          { method: 'POST', body: 'corrected answer' },
+          'submit',
+          'Insurance'
+        );
+        await queue.replayRequests();
+
+        expect(replayed).toEqual([
+          'invalid answer',
+          'contact answer',
+          'contact event',
+          'insurance event'
+        ]);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('clears rejected custom fields when their queued correction succeeds through replay', async () => {
+        const customUrl = '/panel/custom/submit/v3/';
+        store.seed({
+          type: 'submit',
+          url: customUrl,
+          userId: 'user-1',
+          bodyType: 'formData',
+          body: { custom_key_values: JSON.stringify({ plan: 'invalid' }) }
+        });
+        serveReplay(() => 400);
+        await queue.replayRequests();
+        const body = new FormData();
+        body.set('custom_key_values', JSON.stringify({ plan: 'premium' }));
+        await expect(
+          queue.runOrSaveRequest(
+            failedRun,
+            customUrl,
+            { method: 'POST', body },
+            'submit'
+          )
+        ).rejects.toThrow('Failed to fetch');
+
+        serveReplay();
+        await queue.replayRequests();
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+        await completeForm(sendCompletion);
+
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('reconsiders a parked answer on reconnect once its owner becomes current', async () => {
+        mockInitInfo.userId = '';
+        store.seed(queuedAnswer);
+        (global as any).fetch = jest
+          .fn()
+          .mockResolvedValue(
+            fakeResponse(403, { message: 'Link opens another submission' })
+          );
+        await queue.replayRequests();
+        mockInitInfo.userId = 'user-1';
+        serveReplay();
+
+        await queue.replayRequests();
+
+        expect(replayed).toEqual(['answer']);
+        expect(store.rows()).toEqual([]);
       });
 
       it('supersedes an older upload for a user id its stored URL percent-encodes', async () => {
@@ -1051,6 +1225,251 @@ describe('OfflineRequestHandler - Integration Tests', () => {
           { fieldKey: 'card' }
         );
         expect(store.rows()).toEqual([]);
+      });
+
+      it('preserves malformed legacy rows without blocking later attribution or reads', async () => {
+        store.seed({
+          ...queuedAnswer,
+          userId: undefined,
+          url: '/panel/step/submit/file/50%off/',
+          body: 'card upload'
+        });
+        store.seed({
+          ...queuedAnswer,
+          userId: undefined,
+          bodyType: 'blob',
+          body: { damaged: true }
+        });
+        store.seed({
+          ...queuedAnswer,
+          userId: undefined,
+          bodyType: 'formData',
+          body: null
+        });
+        store.seed({
+          ...queuedAnswer,
+          userId: undefined,
+          body: JSON.stringify({ fuser_key: 'user-1' })
+        });
+
+        await queue.resetAnswerWriteRetries();
+        await queue.resetAnswerWriteRetries();
+
+        expect(store.rows()).toHaveLength(4);
+        expect(store.rows()[0].userId).toBe('50%off');
+        expect(store.rows()[1].body).toEqual({ damaged: true });
+        expect(store.rows()[2].body).toBeNull();
+        expect(store.rows()[3].userId).toBe('user-1');
+      });
+
+      it('decodes an unattributable legacy body once per page and keeps later reads readonly', async () => {
+        store.seed({
+          ...queuedAnswer,
+          userId: undefined,
+          bodyType: 'blob',
+          retryAttempts: 4,
+          body: new TextEncoder().encode('legacy multipart without a user')
+            .buffer
+        });
+        const decode = jest.spyOn(TextDecoder.prototype, 'decode');
+
+        await queue.replayRequests();
+        await queue.replayRequests();
+        await queue.replayRequests();
+
+        expect(decode).toHaveBeenCalledTimes(1);
+        expect(store.transactionModes.length).toBeGreaterThan(0);
+        expect(
+          store.transactionModes.every((mode) => mode === 'readonly')
+        ).toBe(true);
+        expect(store.rows()).toHaveLength(1);
+      });
+
+      it.each(['abort', 'error'] as const)(
+        'settles a queue-read transaction %s and releases replay waiters without losing rows',
+        async (event) => {
+          store.seed(queuedAnswer);
+          serveReplay();
+          const waiter = queue.onlineAndReplayed();
+          store.failNextTransaction(event);
+
+          await expect(queue.replayRequests()).rejects.toThrow(
+            'Saved answers could not be read'
+          );
+          await waiter;
+          expect(replayed).toEqual([]);
+          expect(queuedBodies()).toEqual(['answer']);
+
+          await queue.replayRequests();
+          expect(replayed).toEqual(['answer']);
+          expect(store.rows()).toEqual([]);
+        }
+      );
+
+      it.each(['abort', 'error'] as const)(
+        'surfaces a queue-count transaction %s without treating saved answers as absent',
+        async (event) => {
+          store.seed(queuedAnswer);
+          store.failNextTransaction(event);
+
+          const send = jest.fn().mockResolvedValue({ ok: true });
+          await expect(
+            queue.runOrSaveRequest(
+              send,
+              stepUrl,
+              { method: 'POST', body: 'new answer' },
+              'submit',
+              'Insurance'
+            )
+          ).rejects.toThrow('Saved answers could not be read');
+          expect(send).not.toHaveBeenCalled();
+          expect(queuedBodies()).toEqual(['answer']);
+          await expect(queue.dbHasRequest()).resolves.toBe(true);
+        }
+      );
+
+      it('retains the answer if its rejection update aborts at commit, then recovers after reload', async () => {
+        store.seed(queuedAnswer);
+        (global as any).fetch = jest.fn(async () => {
+          store.abortNextCommit();
+          return fakeResponse(400);
+        });
+
+        await expect(queue.replayRequests()).rejects.toThrow(
+          'QuotaExceededError'
+        );
+        expect(queuedBodies()).toEqual(['answer']);
+        expect(store.rows()[0].rejected).toBeUndefined();
+
+        queue = new OfflineRequestHandler('test-form', errorCallback);
+        serveReplay();
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+        await completeForm(sendCompletion);
+
+        expect(replayed).toEqual(['answer']);
+        expect(sendCompletion).toHaveBeenCalledTimes(1);
+        expect(store.rows()).toEqual([]);
+      });
+
+      it('blocks completion when storage holding a rejected answer becomes unavailable', async () => {
+        store.seed(queuedAnswer);
+        serveReplay(() => 400);
+        await queue.replayRequests();
+        const openDatabase = jest
+          .spyOn(queue as any, 'openDatabase')
+          .mockResolvedValue(undefined);
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'Saved answers could not be read'
+        );
+        expect(sendCompletion).not.toHaveBeenCalled();
+        expect(queuedBodies()).toEqual(['answer']);
+        openDatabase.mockRestore();
+
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'submit that step again'
+        );
+        expect(sendCompletion).not.toHaveBeenCalled();
+      });
+
+      it('retries an aborted legacy attribution commit without decoding the body again', async () => {
+        store.seed({
+          ...queuedAnswer,
+          userId: undefined,
+          retryAttempts: 4,
+          bodyType: 'blob',
+          body: new TextEncoder().encode(
+            JSON.stringify({ fuser_key: 'user-1' })
+          ).buffer
+        });
+        const decode = jest.spyOn(TextDecoder.prototype, 'decode');
+        store.abortNextCommit('readwrite');
+
+        await expect(queue.dbHasRequest()).resolves.toBe(true);
+        expect(store.rows()[0].userId).toBeUndefined();
+        await queue.resetAnswerWriteRetries();
+
+        expect(store.rows()[0]).toEqual(
+          expect.objectContaining({ userId: 'user-1', retryAttempts: 0 })
+        );
+        expect(decode).toHaveBeenCalledTimes(1);
+      });
+
+      it.each(['abort', 'error'] as const)(
+        'settles a retry-budget transaction %s during manual completion and allows a later retry',
+        async (event) => {
+          store.seed({ ...queuedAnswer, retryAttempts: 4 });
+          store.failNextTransaction(event, 'readwrite');
+          const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+
+          await expect(completeForm(sendCompletion)).rejects.toThrow();
+          expect(sendCompletion).not.toHaveBeenCalled();
+          expect(store.rows()[0].retryAttempts).toBe(4);
+
+          await queue.resetAnswerWriteRetries();
+          expect(store.rows()[0].retryAttempts).toBe(0);
+          serveReplay();
+          await completeForm(sendCompletion);
+          expect(sendCompletion).toHaveBeenCalledTimes(1);
+        }
+      );
+
+      it.each(['read', 'commit'] as const)(
+        'retains a successful correction after a cleanup %s failure without sending it again',
+        async (failure) => {
+          store.seed({
+            ...queuedAnswer,
+            body: 'invalid answer',
+            rejected: true
+          });
+          store.seed({ ...queuedAnswer, body: 'corrected answer' });
+          (global as any).fetch = jest.fn(
+            async (_url: string, options: any) => {
+              replayed.push(options.body);
+              if (failure === 'read')
+                store.failNextTransaction('abort', 'readonly');
+              else store.abortNextCommit('readwrite');
+              return fakeResponse(200);
+            }
+          );
+
+          await expect(queue.replayRequests()).rejects.toThrow();
+          expect(replayed).toEqual(['corrected answer']);
+          expect(queuedBodies()).toEqual([
+            'invalid answer',
+            'corrected answer'
+          ]);
+
+          await queue.replayRequests();
+          expect(replayed).toEqual(['corrected answer']);
+          expect(store.rows()).toEqual([]);
+        }
+      );
+
+      it('reports a rejected memory-only answer once while retaining the completion gate', async () => {
+        (queue as any).indexedDBSupported = false;
+        await queue.saveRequest(
+          stepUrl,
+          { method: 'POST', body: 'invalid answer' },
+          'submit',
+          'Insurance'
+        );
+        serveReplay(() => 400);
+
+        await queue.replayRequests();
+        await queue.replayRequests();
+
+        expect(errorCallback).toHaveBeenCalledTimes(1);
+        expect(errorCallback).toHaveBeenCalledWith(
+          expect.stringContaining('could not be saved')
+        );
+        expect((global as any).fetch).toHaveBeenCalledTimes(1);
+        const sendCompletion = jest.fn().mockResolvedValue({ ok: true });
+        await expect(completeForm(sendCompletion)).rejects.toThrow(
+          'submit that step again'
+        );
+        expect(sendCompletion).not.toHaveBeenCalled();
       });
 
       it('retries a row whose 403 comes from something other than the access check', async () => {
@@ -1516,305 +1935,32 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       expect(mockRun).toHaveBeenCalledTimes(1);
     });
 
-    it('allows clearFailedRequestByUrl without throwing', async () => {
-      const fileUrl =
-        'https://api.feathery.io/api/panel/step/submit/file/field1';
-
-      // This should not throw even without IndexedDB
-      await expect(
-        handler.clearFailedRequestByUrl(fileUrl, { fieldKey: 'field1' })
-      ).resolves.not.toThrow();
-    });
-
-    it('clearFailedRequestByUrl handles missing IndexedDB gracefully', async () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-
-      await handler.clearFailedRequestByUrl(
-        'https://api.example.com/submit/file/',
-        { fieldKey: 'testField' }
-      );
-
-      // Should handle gracefully without errors
-      expect(consoleSpy).not.toHaveBeenCalled();
-
-      consoleSpy.mockRestore();
-    });
-
-    it('allows retry flow: fail -> clear -> retry succeed', async () => {
-      const fileUrl =
-        'https://api.feathery.io/api/panel/step/submit/file/field1';
-
-      // Step 1: Upload fails with network error
-      const mockRun1 = jest
-        .fn()
-        .mockRejectedValue(new TypeError('Network blocked'));
-
-      await expect(
-        handler.runOrSaveRequest(
-          mockRun1,
-          fileUrl,
-          { method: 'POST', headers: {}, body: '{}' },
-          'submit'
-        )
-      ).rejects.toThrow('Network blocked');
-
-      expect(mockRun1).toHaveBeenCalledTimes(1);
-
-      // Step 2: User sees error and clicks retry
-
-      // Step 3: Clear the failed request
-      await handler.clearFailedRequestByUrl(fileUrl, { fieldKey: 'field1' });
-
-      // Step 4: Network recovers - retry succeeds
-      const mockRun2 = jest.fn().mockResolvedValue({ ok: true });
-
-      await handler.runOrSaveRequest(
-        mockRun2,
-        fileUrl,
-        { method: 'POST', headers: {}, body: '{}' },
-        'submit'
-      );
-
-      expect(mockRun2).toHaveBeenCalledTimes(1);
-    });
-
-    it('clears failed request and allows immediate retry after network recovery', async () => {
-      const fileUrl =
-        'https://api.feathery.io/api/panel/step/submit/file/field1';
-
-      // Simulate real user flow with button state management
-      let buttonLocked = false;
-      let errorOccurred = false;
-
-      // Step 1: User clicks submit, button locks
-      buttonLocked = true;
-
-      const mockRun1 = jest
-        .fn()
-        .mockRejectedValue(new TypeError('Network blocked'));
-
-      // Upload fails with network error
-      try {
-        await handler.runOrSaveRequest(
-          mockRun1,
-          fileUrl,
-          { method: 'POST', headers: {}, body: '{}' },
-          'submit'
-        );
-      } catch (error) {
-        // Error caught by Form component
-        errorOccurred = true;
-        // Button should unlock on error (this is what we're testing the fix for)
-        buttonLocked = false;
-      }
-
-      expect(errorOccurred).toBe(true);
-      expect(buttonLocked).toBe(false); // CRITICAL: Button must be unlocked for retry
-      expect(mockRun1).toHaveBeenCalledTimes(1);
-
-      // Step 2: User sees error message
-
-      // Step 3: Network recovers, user clicks "next" again
-      // Clear the failed request (happens in featheryClient before retry)
-      await handler.clearFailedRequestByUrl(fileUrl, { fieldKey: 'field1' });
-
-      // Step 4: Button can be clicked again (not locked)
-      buttonLocked = true;
-      const mockRun2 = jest.fn().mockResolvedValue({ ok: true });
-
-      await handler.runOrSaveRequest(
-        mockRun2,
-        fileUrl,
-        { method: 'POST', headers: {}, body: '{}' },
-        'submit'
-      );
-
-      // Success! Button unlocked after error = retry worked
-      buttonLocked = false;
-      expect(mockRun2).toHaveBeenCalledTimes(1);
-    });
-
-    it('supports multiple independent file uploads', async () => {
-      const fileUrl = 'https://api.feathery.io/api/panel/step/submit/file/';
-
-      // Upload file1 fails
-      const mockRun1 = jest
-        .fn()
-        .mockRejectedValue(new TypeError('Network error'));
-      await expect(
-        handler.runOrSaveRequest(
-          mockRun1,
-          fileUrl,
-          { method: 'POST', headers: {}, body: '{}' },
-          'submit'
-        )
-      ).rejects.toThrow();
-
-      // Upload file2 fails
-      const mockRun2 = jest
-        .fn()
-        .mockRejectedValue(new TypeError('Network error'));
-      await expect(
-        handler.runOrSaveRequest(
-          mockRun2,
-          fileUrl,
-          { method: 'POST', headers: {}, body: '{}' },
-          'submit'
-        )
-      ).rejects.toThrow();
-
-      // Clear field1 only
-      await handler.clearFailedRequestByUrl(fileUrl, { fieldKey: 'field1' });
-
-      // Retry field1 successfully
-      const mockRun3 = jest.fn().mockResolvedValue({ ok: true });
-      await handler.runOrSaveRequest(
-        mockRun3,
-        fileUrl,
-        { method: 'POST', headers: {}, body: '{}' },
-        'submit'
-      );
-
-      expect(mockRun3).toHaveBeenCalledTimes(1);
-
-      // field2 can still be retried separately
-      await handler.clearFailedRequestByUrl(fileUrl, { fieldKey: 'field2' });
-      const mockRun4 = jest.fn().mockResolvedValue({ ok: true });
-      await handler.runOrSaveRequest(
-        mockRun4,
-        fileUrl,
-        { method: 'POST', headers: {}, body: '{}' },
-        'submit'
-      );
-
-      expect(mockRun4).toHaveBeenCalledTimes(1);
-    });
-
-    it('clears queue during submit, not during file removal', async () => {
-      const fileUrl =
-        'https://api.feathery.io/api/panel/step/submit/file/user123/';
-
-      // Step 1: Upload fails with network error and gets queued
-      const mockRun1 = jest
-        .fn()
-        .mockRejectedValue(new TypeError('Network blocked'));
-
-      try {
-        await handler.runOrSaveRequest(
-          mockRun1,
-          fileUrl,
-          { method: 'POST', headers: {}, body: '{}' },
-          'submit'
-        );
-      } catch (error) {
-        // Expected to fail and queue the request
-      }
-
-      expect(mockRun1).toHaveBeenCalledTimes(1);
-
-      // Step 2: User removes the file from the form
-      // NOTE: clearFilePathMapEntry does NOT clear the queue
-      // Only clears in-memory tracking (filePathMap, fileSubmittedMap)
-
-      // Step 3: User clicks "next" to submit
-      // _submitFileData will clear the failed request before submitting
-      await handler.clearFailedRequestByUrl(fileUrl, { fieldKey: 'image1' });
-
-      // Step 4: Submit with empty file array succeeds
-      const mockRun2 = jest.fn().mockResolvedValue({ ok: true });
-
-      await handler.runOrSaveRequest(
-        mockRun2,
-        fileUrl,
-        { method: 'POST', headers: {}, body: '{}' },
-        'submit'
-      );
-
-      expect(mockRun2).toHaveBeenCalledTimes(1);
-    });
-
-    it('keeps queued request after max retries and marks field as pending', async () => {
-      const handlerWithSpy = new OfflineRequestHandler(
-        'test-form',
-        errorCallback
-      );
-      const removeSpy = jest
-        .spyOn(handlerWithSpy as any, 'removeRequest')
-        .mockResolvedValue(undefined);
+    it('retains an exhausted file upload and marks it pending without alerting', async () => {
+      const { store, queue } = createQueueWithStorage();
       const originalFetch = (global as any).fetch;
       (global as any).fetch = jest
         .fn()
         .mockRejectedValue(new TypeError('Failed to fetch'));
-
-      (handlerWithSpy as any).maxRetryAttempts = 1;
-      (handlerWithSpy as any).retryDelayMs = 0;
-
-      const request: any = {
-        url: 'https://api.feathery.io/api/panel/step/submit/file',
-        method: 'POST',
-        headers: JSON.stringify({}),
-        body: '',
-        bodyType: 'text',
+      (queue as any).maxRetryAttempts = 1;
+      store.seed({
+        type: 'submit',
+        stepKey: 'Insurance',
+        url: 'https://api.feathery.io/api/panel/step/submit/file/user-1/',
         metadata: { fieldKey: 'FileUpload1' },
-        userId: 'user-1',
-        key: 99,
-        retryAttempts: 0
-      };
+        userId: 'user-1'
+      });
 
-      jest.useFakeTimers();
-      const replayPromise = (handlerWithSpy as any).replayRequest(request);
-      while (jest.getTimerCount() > 0) {
-        jest.runOnlyPendingTimers();
+      try {
+        await queue.replayRequests();
+
+        expect(store.rows()).toEqual([
+          expect.objectContaining({ retryAttempts: 1 })
+        ]);
+        expect(mockFileRetryStatus.FileUpload1).toBe(false);
+        expect(errorCallback).not.toHaveBeenCalled();
+      } finally {
+        (global as any).fetch = originalFetch;
       }
-      await replayPromise;
-      jest.useRealTimers();
-
-      // Request should NOT be removed after max retries - it stays in IndexedDB for retry on next submit
-      expect(removeSpy).not.toHaveBeenCalled();
-      // Field should be marked as pending/failed
-      expect(mockFileRetryStatus.FileUpload1).toBe(false);
-
-      removeSpy.mockRestore();
-      (global as any).fetch = originalFetch;
-    });
-
-    it('does not alert when max retries exhausted for specific field upload', async () => {
-      const handlerWithCallback = new OfflineRequestHandler(
-        'test-form',
-        errorCallback
-      );
-      const originalFetch = (global as any).fetch;
-      (global as any).fetch = jest
-        .fn()
-        .mockRejectedValue(new TypeError('Failed to fetch'));
-
-      (handlerWithCallback as any).maxRetryAttempts = 1;
-      (handlerWithCallback as any).retryDelayMs = 0;
-
-      const request: any = {
-        url: 'https://api.feathery.io/api/panel/step/submit/file',
-        method: 'POST',
-        headers: JSON.stringify({}),
-        body: '',
-        bodyType: 'text',
-        metadata: { fieldKey: 'FileUpload1' },
-        userId: 'user-1',
-        key: 101,
-        retryAttempts: 0
-      };
-
-      jest.useFakeTimers();
-      const replayPromise = (handlerWithCallback as any).replayRequest(request);
-      while (jest.getTimerCount() > 0) {
-        jest.runOnlyPendingTimers();
-      }
-      await replayPromise;
-      jest.useRealTimers();
-
-      expect(errorCallback).not.toHaveBeenCalled();
-      expect(mockFileRetryStatus.FileUpload1).toBe(false);
-
-      (global as any).fetch = originalFetch;
     });
 
     it('sends the access link the device holds now, not the queued headers', async () => {
@@ -1972,7 +2118,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
 
       // Operations should not interfere with each other
       await handler1.saveRequest(
-        'https://api.example.com/1',
+        'https://api.example.com/panel/step/submit/file/user-1/',
         { method: 'POST', headers: {}, body: '{}' },
         'submit'
       );
@@ -1988,7 +2134,7 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       // Storage failures now retain each form's writes in its own memory queue.
       expect(hasRequest1).toBe(true);
       expect(hasRequest2).toBe(true);
-      await handler1.clearFailedRequestByUrl('https://api.example.com/1');
+      await handler1.clearFailedFileUploadRequests();
       expect(await handler1.dbHasRequest()).toBe(false);
       expect(await handler2.dbHasRequest()).toBe(true);
     });
