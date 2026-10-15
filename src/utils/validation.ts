@@ -196,6 +196,13 @@ const loadPhoneValidator = () => {
   });
 };
 
+// The phone library is only preloaded when the form has a phone field, so
+// actions that validate phone numbers from other field types must load it
+const ensurePhoneValidator = async () => {
+  if (!phoneLib) loadPhoneValidator();
+  await phoneLibPromise;
+};
+
 const validators = {
   email: (a: string) => {
     if (!a) return false;
@@ -371,6 +378,7 @@ export {
   isFieldValueEmpty,
   emailPatternStr,
   loadPhoneValidator,
+  ensurePhoneValidator,
   validators,
   phoneLibPromise,
   phoneLib
