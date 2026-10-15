@@ -2726,6 +2726,26 @@ describe('the shrunken label against a rounded corner', () => {
   });
 });
 
+describe('a bottom-aligned box shorter than its paddings', () => {
+  it('rests the placeholder on the value line', () => {
+    // 30px box, pinned 16px label: the value line is floored at the 5px
+    // reserve, so its midline is 5 + 9.6, not the bottom edge's 30 - 6 - 9.6.
+    const t = targets(
+      'text_field',
+      {
+        height: 30,
+        height_unit: 'px',
+        font_size: 16,
+        placeholder_transition: 'shrink_top',
+        content_vertical_align: 'flex-end'
+      },
+      { placeholder: 'Name' }
+    );
+    expect(t.getTarget('field', true).paddingTop).toBe('5px');
+    expect(t.getTarget('placeholder', true).top).toBe('14.6px');
+  });
+});
+
 describe('a builder-owned reserve renders from the current theme', () => {
   // 90px box, 28px font: the label needs 5 + 28 = 33. An owned reserve seeded
   // under an older 16px theme (21) is stale; a padding with no matching record
