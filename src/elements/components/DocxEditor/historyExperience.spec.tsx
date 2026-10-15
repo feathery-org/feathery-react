@@ -8,6 +8,7 @@ import {
 } from '@testing-library/react';
 
 import DocxEditor from './index';
+import { featheryDoc } from '../../../utils/browser';
 import { AUTOSAVE_IDLE_MS } from './history/autosaveScheduler';
 import { DocxHistoryHost, DocxSaveMeta, DocxVersion } from './history/types';
 import { setAssistantSessionActive } from '../../../assistant/tools/docx/syncfusionDocumentOps';
@@ -125,7 +126,7 @@ describe('version history experience', () => {
   });
   afterEach(() => jest.useRealTimers());
 
-  it('keeps shared Changes open when empty and ignores background review counts', async () => {
+  it('keeps shared Changes open when empty and handles Escape only in the active editor', async () => {
     const onRailPanelChange = jest.fn();
     const view = render(
       <DocxEditor
@@ -144,7 +145,7 @@ describe('version history experience', () => {
         onRailPanelChange={onRailPanelChange}
       />
     );
-    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
     expect(onRailPanelChange).not.toHaveBeenCalled();
     view.rerender(
       <DocxEditor
@@ -153,7 +154,7 @@ describe('version history experience', () => {
         onRailPanelChange={onRailPanelChange}
       />
     );
-    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
     expect(onRailPanelChange).toHaveBeenCalledWith(null);
   });
 
