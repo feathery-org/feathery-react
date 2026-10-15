@@ -1085,7 +1085,8 @@ describe('multiselect content alignment', () => {
         content_vertical_align: 'flex-start',
         inner_padding_top: 20
       }).backgroundPositionY
-    ).toBe('29.6px');
+      // The value line is 29.6px down; the 6px glyph's top sits 3px above it.
+    ).toBe('26.6px');
 
     expect(
       fieldTarget('dropdown_multi', {
@@ -1093,7 +1094,7 @@ describe('multiselect content alignment', () => {
         content_vertical_align: 'flex-end',
         inner_padding_bottom: 20
       }).backgroundPositionY
-    ).toBe('calc(100% - 29.6px)');
+    ).toBe('calc(100% - 26.6px)');
 
     // A single dropdown's value is centred in its content box, so the chevron
     // takes the same shift the text does.
@@ -2230,8 +2231,8 @@ describe('which fields count as carrying a pinned label', () => {
 
   it.each([
     ['center', undefined, 'calc(50% + 10.5px)'],
-    ['flex-start', undefined, '38.6px'],
-    ['flex-end', undefined, 'calc(100% - 17.6px)'],
+    ['flex-start', undefined, '35.6px'],
+    ['flex-end', undefined, 'calc(100% - 14.6px)'],
     ['center', 0, 'calc(50% + 6.5px)'],
     ['center', 30, 'calc(50% + 26px)']
   ])(
@@ -2553,7 +2554,7 @@ describe('vertical alignment on a percentage height', () => {
     }).getTarget('field', true);
     expect(field.backgroundPositionY).toEqual([
       'calc(50% + 7.5px)',
-      'calc(100cqh - 15.6px)'
+      'calc(100cqh - 18.6px)'
     ]);
   });
 

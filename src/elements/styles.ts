@@ -48,6 +48,20 @@ export const MULTISELECT_CHEVRON_RESERVE = 28;
 // what it falls back to when a theme sets none.
 export const DEFAULT_CHEVRON_GAP = 10;
 
+// The chevron glyph is 6px tall. A length places its top edge, so centre it on
+// the value line; `calc(100% - x)` already subtracts the glyph once.
+const CHEVRON_HALF_HEIGHT = 3;
+const lessHalfChevron = (n: string) =>
+  Math.round((Number(n) - CHEVRON_HALF_HEIGHT) * 100) / 100;
+const chevronSeat = (y: string | null) => {
+  if (y === null) return 'center';
+  const px = /^(-?[\d.]+)px$/.exec(y);
+  if (px) return `${lessHalfChevron(px[1])}px`;
+  const fromBottom = /^calc\(100% - ([\d.]+)px\)$/.exec(y);
+  if (fromBottom) return `calc(100% - ${lessHalfChevron(fromBottom[1])}px)`;
+  return y;
+};
+
 // The production seats of the icons on an input's inline end -- the zero the
 // theme's right padding moves them from. The eye toggle steps aside when a
 // tooltip trigger shares the edge. Shared with the components, whose own
@@ -1571,17 +1585,17 @@ export default class ResponsiveStyles {
           const bottom = paddingSide(padBottom, legacyPaddingY(type));
           return {
             backgroundPositionY: [
-              y ?? 'center',
+              chevronSeat(y),
               align === 'flex-end'
-                ? `calc(100cqh - ${bottom + line / 2}px)`
-                : `${top + line / 2}px`
+                ? `calc(100cqh - ${bottom + line / 2 + CHEVRON_HALF_HEIGHT}px)`
+                : `${top + line / 2 - CHEVRON_HALF_HEIGHT}px`
             ]
           };
         }
         // 'center' is the neutral -- what both components declare inline before
         // spreading this target -- so a mobile override can bring the glyph
         // back to the box midline.
-        return { backgroundPositionY: y ?? 'center' };
+        return { backgroundPositionY: chevronSeat(y) };
       }
     );
   }
