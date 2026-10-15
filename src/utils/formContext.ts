@@ -263,6 +263,7 @@ export const getFormContext = (formUuid: string) => {
       toolbarActions,
       emailSubject,
       emailBlurb,
+      customFields,
       repeatable,
       download,
       merge,
@@ -311,6 +312,11 @@ export const getFormContext = (formUuid: string) => {
       // signing email, as sendDocusignEnvelope takes them.
       emailSubject?: string;
       emailBlurb?: string;
+      // DocuSign envelope metadata (not PDF fields), e.g. account_submission_id.
+      customFields?: Record<
+        string,
+        string | { listItems: string[]; value?: string }
+      >;
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
@@ -320,6 +326,25 @@ export const getFormContext = (formUuid: string) => {
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
     }) => {
+      if (customFields !== undefined && signMethod !== 'docusign') {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: customFields require signMethod 'docusign'"
+          )
+        );
+      }
+      // Capture before pending field saves or document review can yield.
+      customFields =
+        customFields === undefined
+          ? undefined
+          : Object.fromEntries(
+              Object.entries(customFields).map(([name, value]) => [
+                name,
+                typeof value === 'string'
+                  ? value
+                  : { ...value, listItems: [...value.listItems] }
+              ])
+            );
       signers = signers?.map((signer) => ({ ...signer }));
       if (
         signMethod !== 'docusign' &&
@@ -477,6 +502,7 @@ export const getFormContext = (formUuid: string) => {
             editor_toolbar_actions: toolbarActions,
             email_subject: emailSubject,
             email_blurb: emailBlurb,
+            custom_fields: customFields,
             repeatable,
             merge_docs: merge,
             merged_file_name: mergedFileName,

@@ -20,6 +20,34 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     } as any);
   });
 
+  it('captures DocuSign metadata before saves and review', async () => {
+    const customFields = {
+      account_submission_id: 'original',
+      accounts: { listItems: ['a', 'b'], value: 'a' }
+    };
+    client.flushCustomFields.mockImplementation(async () => {
+      customFields.account_submission_id = 'changed';
+      customFields.accounts.listItems.push('c');
+    });
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      signMethod: 'docusign',
+      envelopeAction: 'open_in_editor',
+      toolbarActions: ['draft'],
+      customFields
+    });
+    expect(flow.mock.calls[0][0].custom_fields).toEqual({
+      account_submission_id: 'original',
+      accounts: { listItems: ['a', 'b'], value: 'a' }
+    });
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        customFields
+      })
+    ).rejects.toThrow('customFields require');
+  });
+
   it.each([undefined, 'sign'] as const)(
     'creates a DocuSign draft with envelopeAction %s and preserves signer roles',
     async (envelopeAction) => {

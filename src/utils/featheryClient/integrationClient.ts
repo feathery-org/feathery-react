@@ -838,7 +838,8 @@ export default class IntegrationClient {
         signMethod: action.sign_method,
         draft: action.draft,
         emailSubject: action.email_subject,
-        emailBlurb: action.email_blurb
+        emailBlurb: action.email_blurb,
+        customFields: action.custom_fields
       });
     }
 
@@ -1143,7 +1144,8 @@ export default class IntegrationClient {
     signMethod,
     draft,
     emailSubject,
-    emailBlurb
+    emailBlurb,
+    customFields
   }: {
     documentIds: GenerateDocumentRef[];
     signers: Record<string, any>[];
@@ -1160,6 +1162,10 @@ export default class IntegrationClient {
     // DocuSign sign only: subject and body of the envelope's signing email.
     emailSubject?: string;
     emailBlurb?: string;
+    customFields?: Record<
+      string,
+      string | { listItems: string[]; value?: string }
+    >;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
@@ -1195,6 +1201,7 @@ export default class IntegrationClient {
     if (signMethod) payload.sign_method = signMethod;
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;
+    if (customFields !== undefined) payload.custom_fields = customFields;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
 
@@ -1267,6 +1274,8 @@ export default class IntegrationClient {
     // DocuSign envelope until the filler presses Sign.
     if (action.email_subject) payload.email_subject = action.email_subject;
     if (action.email_blurb) payload.email_blurb = action.email_blurb;
+    if (action.custom_fields !== undefined)
+      payload.custom_fields = action.custom_fields;
 
     const url = `${getApiUrl()}document/form/finalize/`;
     const options = {
