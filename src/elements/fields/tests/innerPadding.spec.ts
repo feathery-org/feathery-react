@@ -2727,6 +2727,25 @@ describe('the shrunken label against a rounded corner', () => {
   });
 });
 
+describe('a cleared top padding under a pinned label', () => {
+  it('reserves room for the label as if unset', () => {
+    const pinned = {
+      placeholder_transition: 'shrink_top',
+      height: 90,
+      height_unit: 'px',
+      font_size: 16
+    };
+    const cleared = fieldTarget(
+      'text_field',
+      { ...pinned, inner_padding_top: null },
+      { placeholder: 'Name' }
+    );
+    const unset = fieldTarget('text_field', pinned, { placeholder: 'Name' });
+    expect(cleared.paddingTop).toBe('21px');
+    expect(cleared.paddingTop).toEqual(unset.paddingTop);
+  });
+});
+
 describe('a bottom-aligned box shorter than its paddings', () => {
   it('rests the placeholder on the value line', () => {
     // 30px box, pinned 16px label: the value line is floored at the 5px
