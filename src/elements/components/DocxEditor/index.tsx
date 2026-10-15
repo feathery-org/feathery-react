@@ -109,8 +109,14 @@ export interface DocxEditorProps {
   reviewChanges?: boolean;
   /** Controlled reveal. When explicitly false the editor is unmounted. */
   visible?: boolean;
+  /** Whether this cached document owns keyboard-driven panels. */
+  active?: boolean;
   /** Hide the local Download button (shown by default). */
   hideDownload?: boolean;
+  /** Keep editing sessions local until an explicit persistence action. */
+  manualSave?: boolean;
+  onSaveAll?: () => Promise<void>;
+  onDownloadAll?: () => Promise<void>;
   /** URL of the document's public copy (content controls stripped). When set,
    *  Download saves current edits, then serves this copy (or the fresher one
    *  from the save result) — never the raw editor bytes. */
@@ -208,7 +214,11 @@ function DocxEditor({
   preview = false,
   reviewChanges = false,
   visible = true,
+  active = true,
   hideDownload,
+  manualSave = false,
+  onSaveAll,
+  onDownloadAll,
   downloadUrl,
   onExportPdf,
   terminalAction,
@@ -484,7 +494,7 @@ function DocxEditor({
   // Escape backs out one layer at a time: first the version viewer, then the
   // side panel.
   useEffect(() => {
-    if (!viewingVersion && activePanel === null) return undefined;
+    if (!active || (!viewingVersion && activePanel === null)) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (restoreInFlightRef.current) return;
       if (e.key !== 'Escape') return;
@@ -497,7 +507,7 @@ function DocxEditor({
     const doc = featheryDoc();
     doc.addEventListener('keydown', onKey);
     return () => doc.removeEventListener('keydown', onKey);
-  }, [viewingVersion, activePanel]);
+  }, [viewingVersion, activePanel, active]);
 
   /**
    * Reconcile anything uncommitted before bytes leave the editor and report the
@@ -625,6 +635,7 @@ function DocxEditor({
     loading,
     readOnly,
     host: history ?? null,
+    manualSave,
     currentUser: currentUser ?? DEFAULT_CURRENT_USER,
     envelopeId,
     openNonce,
@@ -1061,6 +1072,7 @@ function DocxEditor({
           (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
         if (url) triggerDownload(await fetchDownloadBlob(url));
         else triggerDownload(blob);
+        onDownloaded?.();
       } else {
         await onTerminalAction?.(saveResult);
       }
@@ -1215,6 +1227,8 @@ function DocxEditor({
           // persist edits without committing to download/sign. Arrow-wrapped:
           // handleSave takes a force flag a raw click event must not satisfy.
           onSave={onSave ? () => handleSave() : undefined}
+          onSaveAll={onSaveAll}
+          onDownloadAll={onDownloadAll}
           // Secondary Download hides only when the terminal button IS the
           // download (one Download, not two) — beside Sign/Draft it stays, so
           // configuring Sign + Download shows both. Arrow-wrapped: the handlers

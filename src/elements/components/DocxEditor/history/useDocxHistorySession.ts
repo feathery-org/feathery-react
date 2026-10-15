@@ -56,6 +56,8 @@ export interface UseDocxHistorySessionOptions {
   editor: any;
   loading: boolean;
   readOnly?: boolean;
+  /** No background persistence; document edits and revision sessions stay local. */
+  manualSave?: boolean;
   /** I/O adapter; absent → history disabled (autosave still runs via `save`). */
   host?: DocxHistoryHost | null;
   /** The current viewer's identity (always kind 'user', key 'you'). */
@@ -146,6 +148,7 @@ export function useDocxHistorySession(
     editor,
     loading,
     readOnly,
+    manualSave = false,
     host,
     currentUser,
     envelopeId,
@@ -866,9 +869,10 @@ export function useDocxHistorySession(
           /* best-effort; attribution falls back to the diff's slice author */
         }
       }
-      scheduler.touch();
+      if (manualSave) setStatus('dirty');
+      else scheduler.touch();
     },
-    [readOnly, scheduler, tracker]
+    [readOnly, manualSave, scheduler, tracker]
   );
 
   // Assistant turn START snapshots the pre-batch document (the user→Robin
@@ -886,26 +890,26 @@ export function useDocxHistorySession(
       } else {
         // Turn end checkpoints but keeps the session open (versions cut on
         // save/idle/restore); skips the throttle, not the gate or save queue.
-        checkpointSession();
+        if (!manualSave) checkpointSession();
       }
     });
-  }, [editor, host, readOnly, checkpointSession]);
+  }, [editor, host, readOnly, manualSave, checkpointSession]);
 
   // Idle sessions close on their own.
   useEffect(() => {
-    if (!host || readOnly) return undefined;
+    if (!host || readOnly || manualSave) return undefined;
     const iv = setInterval(() => {
       if (engine.canPersist() && (!canSaveRef.current || canSaveRef.current()))
         tracker.checkIdle();
     }, IDLE_CHECK_MS);
     return () => clearInterval(iv);
-  }, [host, readOnly, tracker, engine]);
+  }, [host, readOnly, manualSave, tracker, engine]);
 
   // Finalization/signing can make the editor read-only while a retry timer is
   // armed. No further autosave is valid once that transition happens.
   useEffect(() => {
-    if (readOnly) scheduler.cancel();
-  }, [readOnly, scheduler]);
+    if (readOnly || manualSave) scheduler.cancel();
+  }, [readOnly, manualSave, scheduler]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -927,6 +931,7 @@ export function useDocxHistorySession(
   }, [scheduler, engine]);
 
   useEffect(() => {
+    if (manualSave) return undefined;
     const doc = featheryDoc();
     const checkpointBeforeHide = () => {
       if (
@@ -939,7 +944,7 @@ export function useDocxHistorySession(
     doc.addEventListener('visibilitychange', checkpointBeforeHide);
     return () =>
       doc.removeEventListener('visibilitychange', checkpointBeforeHide);
-  }, [scheduler, tracker, engine]);
+  }, [scheduler, tracker, engine, manualSave]);
 
   const explicitSave = useCallback(async () => {
     if (!tracker.isOpen() && !engine.documentWrites.pending()) {
@@ -988,6 +993,14 @@ export function useDocxHistorySession(
 
   const acceptTrackedChanges = useCallback(
     async (acceptance: TrackedChangeAcceptance, accept: () => void) => {
+      if (manualSave) {
+        // Preserve Robin attribution before native acceptance removes revisions.
+        // All snapshots remain in this document session until explicit Save.
+        onEdit({ assistant: true });
+        accept();
+        onEdit({ assistant: true });
+        return;
+      }
       const documentEpoch = documentEpochRef.current;
       // Cut the preceding editing session while the suggestion is still
       // pending. The confirmation then becomes a distinct version.
@@ -1049,7 +1062,7 @@ export function useDocxHistorySession(
         throw error;
       }
     },
-    [preservePendingCurrentVersion, tracker]
+    [preservePendingCurrentVersion, tracker, manualSave, onEdit]
   );
 
   const retry = useCallback(() => {
