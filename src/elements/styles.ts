@@ -283,7 +283,8 @@ const withLiveOwnedReserve = (element: any, own: any, desktop?: any) => {
   }
   if (!ownsAt(desktop ? 'mobile' : 'desktop', own)) return own;
   if (!pinned) {
-    const { inner_padding_top: _unpinned, ...rest } = own;
+    const rest = { ...own };
+    delete rest.inner_padding_top;
     return rest;
   }
   return {
@@ -1313,7 +1314,7 @@ export default class ResponsiveStyles {
           };
         }
 
-        const { top, bottom, line, height: box } = placement;
+        const { top, line, height: box } = placement;
         // A box shorter than one line of text leaves nothing to pad out, and a
         // negative padding is not a value CSS will take. The side that is not
         // padded out is emitted raw, so switching alignment across a breakpoint
