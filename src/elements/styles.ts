@@ -2043,12 +2043,12 @@ export default class ResponsiveStyles {
               topFloor
             );
             if (placement) {
-              const { top, bottom, line, height: box } = placement;
+              const { top, end, line } = placement;
               return {
                 top:
                   placement.align === 'flex-start'
                     ? `${top + line / 2}px`
-                    : `${box - bottom - line / 2}px`
+                    : `${end + line / 2}px`
               };
             }
 
