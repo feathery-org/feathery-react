@@ -1,3 +1,5 @@
+import SharedDocumentRail from './SharedDocumentRail';
+import DocumentToast from '../DocumentEditor/DocumentToast';
 import React, {
   useCallback,
   useEffect,
@@ -126,6 +128,11 @@ export default function DocumentEditorContainer({
     if (dirty) setFeedback('');
   }, []);
   useEffect(() => setFeedback(''), [reloadKey]);
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(''), 2500);
+    return () => clearTimeout(timer);
+  }, [feedback]);
   const { savesToField } = containerToolbarOutcomes(action ?? {});
   const currentTabs = useRef(tabs);
   currentTabs.current = tabs;
@@ -368,79 +375,91 @@ export default function DocumentEditorContainer({
         }
         css={{ flex: 1, minHeight: 0, position: 'relative' }}
       >
-        {packet.loading ? (
-          <div>Loading document…</div>
-        ) : packet.error ? (
-          <div role='alert'>{packet.error}</div>
-        ) : !packet.envelope?.file ? (
-          <div>No document yet — generate it to start editing.</div>
-        ) : null}
-        {tabs
-          .filter(
-            (tab) =>
-              tab.envelope?.file &&
-              (visited.includes(tab.id) || tab.id === activeId)
-          )
-          .map((tab) => {
-            const envelope = tab.envelope;
-            if (!envelope) return null;
-            const active = tab.id === activeId;
-            return (
-              <div
-                key={`${reloadKey}:${envelope.id}`}
-                aria-hidden={!active}
-                ref={(node) => {
-                  if (node) node.toggleAttribute('inert', busy || !active);
-                }}
-                css={{
-                  position: 'absolute',
-                  inset: 0,
-                  visibility: active ? 'visible' : 'hidden',
-                  pointerEvents: active ? 'auto' : 'none'
-                }}
-              >
-                <DocxDocumentSession
-                  containerId={containerId}
-                  formId={formId}
-                  stepId={stepId}
-                  assistantEnabled={assistantEnabled}
-                  targetAction={action}
-                  client={client}
-                  initialEnvelope={envelope}
-                  documentId={tab.documentId}
-                  label={tab.label}
-                  active={active}
-                  actionStatus={feedback}
-                  onDirty={clearFeedbackOnEdit}
-                  railPanel={tabs.length > 1 ? railPanel : undefined}
-                  onRailPanelChange={tabs.length > 1 ? setRailPanel : undefined}
-                  multiple={tabs.length > 1}
-                  onEnvelopeChange={updateTabEnvelope}
-                  onSessionReady={registerSession}
-                  onSaveAll={saveAll}
-                  onDownloadAll={downloadAll}
-                  onPacketSign={signPacket}
-                  onDocumentSaved={savedOne}
-                  onDocumentDownloaded={downloadedOne}
-                />
-              </div>
-            );
-          })}
-        {busy && (
-          <div
-            role='status'
-            css={{
-              position: 'absolute',
-              inset: 0,
-              background: 'rgba(255,255,255,.65)',
-              zIndex: 20,
-              display: 'grid',
-              placeItems: 'center'
-            }}
-          >
-            Processing documents…
-          </div>
-        )}
+        <SharedDocumentRail
+          key={reloadKey}
+          enabled={tabs.length > 1}
+          activeId={packet.envelope?.id}
+          panel={railPanel}
+          onPanelChange={setRailPanel}
+          showChanges={!!assistantEnabled && !action?.editor_read_only}
+        >
+          {packet.loading ? (
+            <div>Loading document…</div>
+          ) : packet.error ? (
+            <div role='alert'>{packet.error}</div>
+          ) : !packet.envelope?.file ? (
+            <div>No document yet — generate it to start editing.</div>
+          ) : null}
+          {tabs
+            .filter(
+              (tab) =>
+                tab.envelope?.file &&
+                (visited.includes(tab.id) || tab.id === activeId)
+            )
+            .map((tab) => {
+              const envelope = tab.envelope;
+              if (!envelope) return null;
+              const active = tab.id === activeId;
+              return (
+                <div
+                  key={`${reloadKey}:${envelope.id}`}
+                  aria-hidden={!active}
+                  ref={(node) => {
+                    if (node) node.toggleAttribute('inert', busy || !active);
+                  }}
+                  css={{
+                    position: 'absolute',
+                    inset: 0,
+                    opacity: active ? 1 : 0,
+                    visibility: active ? 'visible' : 'hidden',
+                    pointerEvents: active ? 'auto' : 'none'
+                  }}
+                >
+                  <DocxDocumentSession
+                    containerId={containerId}
+                    formId={formId}
+                    stepId={stepId}
+                    assistantEnabled={assistantEnabled}
+                    targetAction={action}
+                    client={client}
+                    initialEnvelope={envelope}
+                    documentId={tab.documentId}
+                    label={tab.label}
+                    active={active}
+                    onDirty={clearFeedbackOnEdit}
+                    railPanel={tabs.length > 1 ? railPanel : undefined}
+                    onRailPanelChange={
+                      tabs.length > 1 ? setRailPanel : undefined
+                    }
+                    multiple={tabs.length > 1}
+                    onEnvelopeChange={updateTabEnvelope}
+                    onSessionReady={registerSession}
+                    onSaveAll={saveAll}
+                    onDownloadAll={downloadAll}
+                    onPacketSign={signPacket}
+                    onDocumentSaved={savedOne}
+                    onDocumentDownloaded={downloadedOne}
+                  />
+                </div>
+              );
+            })}
+          {feedback && <DocumentToast message={feedback} />}
+          {busy && (
+            <div
+              role='status'
+              css={{
+                position: 'absolute',
+                inset: 0,
+                background: 'rgba(255,255,255,.65)',
+                zIndex: 20,
+                display: 'grid',
+                placeItems: 'center'
+              }}
+            >
+              Processing documents…
+            </div>
+          )}
+        </SharedDocumentRail>
       </div>
     </div>
   );

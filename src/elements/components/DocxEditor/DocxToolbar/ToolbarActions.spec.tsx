@@ -48,34 +48,33 @@ it.each([false, true])(
 );
 
 it.each([false, true])(
-  'places the accessible status immediately before Save, compact=%s',
+  'shows only unsaved status before Save, compact=%s',
   (compact) => {
     const view = render(
-      <ToolbarActions
-        compact={compact}
-        actionStatus='All documents saved'
-        onSave={() => undefined}
-        onSaveAll={() => undefined}
-        onDownload={() => undefined}
-      />
+      <ToolbarActions compact={compact} onSave={() => undefined} />
     );
-    const status = screen.getByRole('status', { name: 'All documents saved' });
-    const save = screen.getByRole('button', { name: 'Save' });
-    expect(status.nextElementSibling?.contains(save)).toBe(true);
-    expect(status).toHaveAttribute('title', 'All documents saved');
+    expect(view.queryByText('All documents saved')).toBeNull();
+    expect(view.queryByRole('status')).toBeNull();
     view.rerender(
-      <ToolbarActions
-        compact={compact}
-        dirty
-        actionStatus='All documents saved'
-        onSave={() => undefined}
-      />
+      <ToolbarActions compact={compact} dirty onSave={() => undefined} />
     );
+    const status = screen.getByRole('status', { name: 'Unsaved changes' });
     expect(
-      screen.queryByRole('status', { name: 'All documents saved' })
-    ).toBeNull();
-    expect(
-      screen.getByRole('status', { name: 'Unsaved changes' })
-    ).toBeInTheDocument();
+      status.nextElementSibling?.contains(
+        screen.getByRole('button', { name: 'Save' })
+      )
+    ).toBe(true);
   }
 );
+
+it('does not make a hidden cached editor status visible over the active toolbar', () => {
+  const view = render(
+    <div style={{ visibility: 'hidden' }}>
+      <ToolbarActions dirty onSave={() => undefined} />
+    </div>
+  );
+  const status = view.container.querySelector('[role="status"]');
+  if (!status) throw new Error('Missing unsaved status');
+  expect(getComputedStyle(status).visibility).not.toBe('visible');
+  expect(view.queryByText('All documents saved')).toBeNull();
+});
