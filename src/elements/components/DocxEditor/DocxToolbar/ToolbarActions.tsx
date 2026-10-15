@@ -19,7 +19,6 @@ import {
 
 export interface ToolbarActionsProps {
   onSave?: () => void;
-  actionStatus?: string;
   onSaveAll?: () => void;
   onDownloadAll?: () => void;
   onDownload?: () => void;
@@ -52,7 +51,6 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
   function ToolbarActions(
     {
       onSave,
-      actionStatus,
       onSaveAll,
       onDownloadAll,
       onDownload,
@@ -319,11 +317,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
               </span>
             </button>
           ))}
-        <DocumentSaveStatus
-          message={actionStatus}
-          dirty={dirty}
-          compact={compact}
-        />
+        <DocumentSaveStatus dirty={dirty} compact={compact} />
         {onSave && onSaveAll ? (
           <Menu
             align='end'

@@ -72,7 +72,6 @@ export default function DocxDocumentSession({
   label,
   active,
   multiple,
-  actionStatus,
   onDirty,
   railPanel,
   onRailPanelChange,
@@ -95,7 +94,6 @@ export default function DocxDocumentSession({
   label: string;
   active: boolean;
   multiple: boolean;
-  actionStatus?: string;
   onDirty: (dirty: boolean) => void;
   railPanel?: DocxEditorProps['railPanel'];
   onRailPanelChange?: DocxEditorProps['onRailPanelChange'];
@@ -414,7 +412,6 @@ export default function DocxDocumentSession({
         fileName={label}
         manualSave
         active={active}
-        actionStatus={actionStatus}
         railPanel={railPanel}
         onRailPanelChange={onRailPanelChange}
         onSaveAll={multiple ? onSaveAll : undefined}

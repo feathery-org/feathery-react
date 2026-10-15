@@ -29,6 +29,7 @@ import {
 } from './types';
 
 interface Props {
+  active?: boolean;
   host: DocxHistoryHost;
   currentUser: VersionAuthor;
   /** Selecting a version opens it in the viewer. */
@@ -418,6 +419,7 @@ const Message = ({ children }: { children: React.ReactNode }) => (
 );
 
 export default function HistoryPanel({
+  active = true,
   host,
   onSelect,
   onVersionsLoaded,
@@ -429,26 +431,56 @@ export default function HistoryPanel({
   const [versions, setVersions] = useState<DocxVersion[] | null>(null);
   const [error, setError] = useState(false);
   const reqId = useRef(0);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const loaded = useRef<{
+    host: DocxHistoryHost;
+    refreshKey: Props['refreshKey'];
+  } | null>(null);
+  const inFlight = useRef<typeof loaded.current>(null);
   const onVersionsLoadedRef = useRef(onVersionsLoaded);
   onVersionsLoadedRef.current = onVersionsLoaded;
 
   const load = useCallback(async () => {
+    if (
+      inFlight.current?.host === host &&
+      inFlight.current?.refreshKey === refreshKey
+    )
+      return;
+    inFlight.current = { host, refreshKey };
     const id = ++reqId.current;
     setError(false);
     try {
       const rows = await host.listVersions();
       if (id === reqId.current) {
         setVersions(rows);
-        onVersionsLoadedRef.current?.(rows);
+        loaded.current = { host, refreshKey };
+        if (activeRef.current) onVersionsLoadedRef.current?.(rows);
       }
     } catch {
       if (id === reqId.current) setError(true);
+    } finally {
+      if (id === reqId.current) inFlight.current = null;
     }
-  }, [host]);
+  }, [host, refreshKey]);
 
   useEffect(() => {
-    load();
-  }, [load, refreshKey]);
+    if (!active) return;
+    if (
+      loaded.current?.host !== host ||
+      loaded.current?.refreshKey !== refreshKey
+    )
+      load();
+    else if (versions) onVersionsLoadedRef.current?.(versions);
+  }, [active, load]);
+
+  useEffect(
+    () => () => {
+      reqId.current++;
+      inFlight.current = null;
+    },
+    []
+  );
 
   if (error) {
     return (

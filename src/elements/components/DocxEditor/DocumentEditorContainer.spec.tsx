@@ -50,8 +50,6 @@ jest.mock('./index', () => {
     onSave,
     onSaveAll,
     onDownloadAll,
-    actionStatus,
-    active,
     railPanel,
     onRailPanelChange,
     onError,
@@ -94,9 +92,6 @@ jest.mock('./index', () => {
         'data-rail-panel': railPanel ?? 'closed',
         'data-review-changes': String(!!reviewChanges)
       },
-      active &&
-        actionStatus &&
-        React.createElement('span', { role: 'status' }, actionStatus),
       ...['history', 'changes', 'sections', null].map((panel) =>
         React.createElement('button', {
           key: `panel:${panel}`,
@@ -1745,6 +1740,30 @@ describe('document tab navigation', () => {
     await view.findByTestId('editor:b.docx');
     fireEvent.click(view.getByTestId('dirty:b.docx'));
     expect(view.queryAllByText('All documents saved')).toHaveLength(0);
+  });
+
+  it('shows one packet save toast and dismisses it without leaving toolbar text', async () => {
+    jest.useFakeTimers();
+    try {
+      const view = render(
+        <DocumentEditorContainer containerId={containerId} />
+      );
+      await view.findByTestId('editor:a.editor.docx');
+      for (let save = 0; save < 2; save++) {
+        fireEvent.click(view.getByTestId('save-all:a.editor.docx'));
+        const toast = await view.findByRole('status', {
+          name: 'Document notification'
+        });
+        expect(toast).toHaveTextContent('All documents saved');
+        expect(view.getAllByText('All documents saved')).toHaveLength(1);
+        act(() => {
+          jest.advanceTimersByTime(2500);
+        });
+        expect(view.queryByText('All documents saved')).toBeNull();
+      }
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('keeps local edits mounted across tab switches without saving', async () => {
