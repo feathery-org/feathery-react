@@ -42,6 +42,7 @@ export interface PptxEditorProps {
   onBeforeReplaceReady?: (save: (() => Promise<unknown>) | null) => void;
   onSave?: (blob: Blob) => unknown | Promise<unknown>;
   onSaved?: () => void | Promise<void>;
+  actionStatus?: string;
   onSaveAll?: () => Promise<void>;
   onDownloadAll?: () => Promise<void>;
   /** Convert the saved presentation to PDF (host calls the backend). When set,

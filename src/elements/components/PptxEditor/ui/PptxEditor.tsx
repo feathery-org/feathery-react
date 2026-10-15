@@ -6,6 +6,7 @@ import {
 } from '../state/PptxEditorContext';
 import { SvgSlide, ZOOM_MAX, ZOOM_MIN } from './SlideStage';
 import { Toolbar } from './PptxToolbar';
+import DocumentSaveStatus from '../../DocumentEditor/DocumentSaveStatus';
 import InstantTooltips from './InstantTooltips';
 import { SlideNavigator } from './SlideNavigator';
 import { JsonPanel } from './JsonPanel';
@@ -70,6 +71,7 @@ function PptxEditorInner({
   onSave,
   onSaved,
   onSaveAll,
+  actionStatus,
   onDownloadAll,
   onBeforeReplaceReady,
   onExportPdf,
@@ -297,6 +299,8 @@ function PptxEditorInner({
         maxHeight: '100%',
         minHeight: 0,
         background: PAPER,
+        containerType: 'inline-size',
+        containerName: 'document-editor',
         overflow: 'hidden'
       }}
     >
@@ -304,35 +308,6 @@ function PptxEditorInner({
       {(() => {
         const hostActions = (
           <>
-            {/* Mirrors DocxToolbar's ToolbarActions: the dot is always rendered
-              and only toggles visibility so the row never shifts. */}
-            {!readOnly && (
-              <span
-                css={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontSize: 13,
-                  color: ZINC[500],
-                  whiteSpace: 'nowrap',
-                  visibility: dirty ? 'visible' : 'hidden'
-                }}
-                aria-hidden={!dirty}
-                title={dirty ? 'You have unsaved changes' : undefined}
-                style={{ marginRight: 8 }}
-              >
-                <span
-                  css={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: FEATHERY_RED,
-                    flex: '0 0 auto'
-                  }}
-                />
-                Unsaved changes
-              </span>
-            )}
             {!hideDownload &&
               (onExportPdf || onDownloadAll ? (
                 <span
@@ -409,6 +384,9 @@ function PptxEditorInner({
                   Download
                 </button>
               ))}
+            {!readOnly && (
+              <DocumentSaveStatus message={actionStatus} dirty={dirty} />
+            )}
             {onSave && !readOnly && onSaveAll ? (
               <span
                 ref={saveMenuRef}

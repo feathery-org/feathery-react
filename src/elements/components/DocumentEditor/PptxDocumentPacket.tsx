@@ -35,7 +35,9 @@ function PresentationSession({
   onSaved,
   onSaveAll,
   onDownloadAll,
-  onError
+  onError,
+  actionStatus,
+  onDirty
 }: {
   envelope: EditorEnvelope;
   active: boolean;
@@ -52,6 +54,8 @@ function PresentationSession({
   onSaveAll?: () => Promise<void>;
   onDownloadAll?: () => Promise<void>;
   onError: (message: string) => void;
+  actionStatus?: string;
+  onDirty: (dirty: boolean) => void;
 }) {
   const current = useRef(initial);
   const [source] = useState(() => ({ url: envelopeSourceUrl(initial) ?? '' }));
@@ -111,19 +115,23 @@ function PresentationSession({
           onSave={save}
           onBeforeReplaceReady={registerSave}
           onSaved={() => onSaved([current.current])}
+          actionStatus={actionStatus}
           onSaveAll={onSaveAll}
           onDownloadAll={offersDownload ? onDownloadAll : undefined}
           onExportPdf={() => client.downloadEnvelopePdf(initial.id)}
           onError={onError}
           onChange={
-            containerId && !readOnly && !initial.signed
-              ? (dirty) =>
-                  setDocxEditorDirty(
-                    formId,
-                    `${containerId}:${initial.id}`,
-                    dirty
-                  )
-              : undefined
+            readOnly || initial.signed
+              ? undefined
+              : (dirty) => {
+                  onDirty(dirty);
+                  if (containerId)
+                    setDocxEditorDirty(
+                      formId,
+                      `${containerId}:${initial.id}`,
+                      dirty
+                    );
+                }
           }
         />
       </React.Suspense>
@@ -163,6 +171,10 @@ export default function PptxDocumentPacket({
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [feedback, setFeedback] = useState('');
+  const clearFeedbackOnEdit = useCallback((dirty: boolean) => {
+    if (dirty) setFeedback('');
+  }, []);
+  useEffect(() => setFeedback(''), [reloadKey]);
   const register = useCallback((id: string, handle: Handle | null) => {
     if (handle) sessions.current.set(id, handle);
     else sessions.current.delete(id);
@@ -272,26 +284,14 @@ export default function PptxDocumentPacket({
             readOnly={!!action?.editor_read_only}
             offersDownload={offersDownload}
             onSaved={saved}
+            actionStatus={feedback}
+            onDirty={clearFeedbackOnEdit}
             onSaveAll={tabs.length > 1 ? saveAll : undefined}
             onDownloadAll={tabs.length > 1 ? downloadAll : undefined}
             onError={onError}
           />
         );
       })}
-      {feedback && (
-        <div
-          role='status'
-          css={{
-            position: 'absolute',
-            bottom: 4,
-            left: 8,
-            fontSize: 12,
-            background: '#fff'
-          }}
-        >
-          {feedback}
-        </div>
-      )}
       {busy && (
         <div
           role='status'

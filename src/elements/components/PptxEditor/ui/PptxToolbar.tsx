@@ -932,13 +932,22 @@ export function Toolbar({
               </>
             )}
           </MenuButton>
-          <span css={{ flex: 1 }} />
+
           {devJson && (
             <B on={showJson} onClick={toggleJson} title='Live JSON panel'>
               {'{ }'}
             </B>
           )}
-          {rightActions}
+          <div
+            css={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginLeft: 'auto'
+            }}
+          >
+            {rightActions}
+          </div>
         </div>
         {/* Hidden file inputs live outside the menus: closing a menu must not
           unmount the input while the OS file dialog is still open. */}

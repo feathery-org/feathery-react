@@ -9,9 +9,26 @@ it('offers separate current/all actions on the actual presentation toolbar', asy
   const saveAll = jest.fn().mockResolvedValue(undefined);
   const downloadAll = jest.fn().mockResolvedValue(undefined);
   const bytes = sampleBytes();
-  const source = { buffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer };
-  render(<PptxEditor source={source} onSave={save} onSaved={saved} onSaveAll={saveAll} onDownloadAll={downloadAll} />);
-  fireEvent.click(await screen.findByRole('button', { name: /Save/ }));
+  const source = {
+    buffer: bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength
+    ) as ArrayBuffer
+  };
+  render(
+    <PptxEditor
+      source={source}
+      actionStatus='All documents saved'
+      onSave={save}
+      onSaved={saved}
+      onSaveAll={saveAll}
+      onDownloadAll={downloadAll}
+    />
+  );
+  const saveButton = await screen.findByRole('button', { name: /Save/ });
+  const status = screen.getByRole('status', { name: 'All documents saved' });
+  expect(status.nextElementSibling?.contains(saveButton)).toBe(true);
+  fireEvent.click(saveButton);
   fireEvent.click(screen.getByRole('button', { name: 'This document' }));
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
   expect(save).toHaveBeenCalledTimes(1);
@@ -20,8 +37,12 @@ it('offers separate current/all actions on the actual presentation toolbar', asy
   fireEvent.click(screen.getByRole('button', { name: 'All documents' }));
   expect(saveAll).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: /Download/ }));
-  expect(screen.getByRole('button', { name: 'This document as PPTX' })).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'This document as PDF' })).toBeNull();
+  expect(
+    screen.getByRole('button', { name: 'This document as PPTX' })
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'This document as PDF' })
+  ).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'All documents (ZIP)' }));
   expect(downloadAll).toHaveBeenCalledTimes(1);
 });
