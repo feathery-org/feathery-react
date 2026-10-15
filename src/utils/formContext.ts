@@ -384,8 +384,27 @@ export const getFormContext = (formUuid: string) => {
                 ...(form.signerIds ? { signerIds: { ...form.signerIds } } : {})
               }))
             }
+          : typeof doc !== 'string' && doc.kind === 'template'
+          ? {
+              ...doc,
+              ...(doc.references ? { references: [...doc.references] } : {})
+            }
           : doc
       );
+      const hasReferences = documentIds.some(
+        (doc) =>
+          typeof doc !== 'string' &&
+          ((doc.kind === 'template' && doc.references !== undefined) ||
+            (doc.kind === 'quik' &&
+              doc.forms?.some((form) => form.reference !== undefined)))
+      );
+      if (hasReferences && (signMethod !== 'docusign' || merge)) {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: references require signMethod 'docusign' and cannot be merged"
+          )
+        );
+      }
       const unknownUploadKeys: string[] = [];
       let missingUploadField = false;
       documentIds = documentIds.map((doc) => {

@@ -58,6 +58,8 @@ export type QuikDocumentSource = {
   forms?: {
     id: string | number;
     fields: Record<string, string>;
+    // Opaque identity returned with the actual DocuSign document ID on completion.
+    reference?: string;
     // DocuSign-only: Quik role prefix -> stable person ID, e.g. { '1own': 'client-123' }.
     signerIds?: Record<string, string>;
   }[];
@@ -71,7 +73,12 @@ export type GenerateDocumentRef =
   | string
   | QuikDocumentSource
   | FileUploadDocumentSource
-  | { kind: 'template'; document_id: string };
+  | {
+      kind: 'template';
+      document_id: string;
+      // Exactly one opaque reference per generated copy, in repeat order.
+      references?: string[];
+    };
 
 // The template id a document entry names, or null for a non-template source.
 export const documentRefTemplateId = (
