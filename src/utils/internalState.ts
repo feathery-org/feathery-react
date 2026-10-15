@@ -89,6 +89,13 @@ type DocusignDocument =
       // (0-based), so the same template can be sent once per repetition
       repeatIndex?: number;
     };
+// A Quik field signers may edit in DocuSign: an exact name ('1own.FName') or a
+// pattern ('*', '1own.*', '*.Phone'). A bare name is required; an object can
+// make it optional. An exact name beats a pattern, so one field can stay
+// required under a '*' that makes the rest optional.
+export type EditableEsignField =
+  | string
+  | { FieldName: string; Required?: boolean };
 type DocusignLibraryDocuments = {
   library: 'quik';
   groups: {
@@ -101,6 +108,9 @@ type DocusignLibraryDocuments = {
   // ('1own.44252.2.Sign') or a pattern covering every role
   // ('*.44252.2.Sign'). The page still ships; only the tab is dropped.
   skipEsignFields?: string[];
+  // Quik fields signers may edit, replacing the integration's list for this
+  // envelope. Omit to use the integration's.
+  editableEsignFields?: EditableEsignField[];
 };
 // Reminder + expiration schedule (day counts). Omit either block to leave that
 // part on the DocuSign account default.

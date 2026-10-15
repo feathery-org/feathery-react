@@ -5,6 +5,7 @@ import { OfflineRequestHandler } from '../offlineRequestHandler';
 import {
   AlloyEntities,
   CreateEgnyteFolderParams,
+  EditableEsignField,
   GetDocusignEnvelopeParams,
   LoanProCustomerObject,
   SendDocusignParams,
@@ -838,7 +839,8 @@ export default class IntegrationClient {
         signMethod: action.sign_method,
         draft: action.draft,
         emailSubject: action.email_subject,
-        emailBlurb: action.email_blurb
+        emailBlurb: action.email_blurb,
+        editableEsignFields: action.editable_esign_fields
       });
     }
 
@@ -1143,7 +1145,8 @@ export default class IntegrationClient {
     signMethod,
     draft,
     emailSubject,
-    emailBlurb
+    emailBlurb,
+    editableEsignFields
   }: {
     documentIds: GenerateDocumentRef[];
     signers: Record<string, any>[];
@@ -1160,6 +1163,9 @@ export default class IntegrationClient {
     // DocuSign sign only: subject and body of the envelope's signing email.
     emailSubject?: string;
     emailBlurb?: string;
+    // DocuSign sign only: the Quik fields signers may edit, replacing the
+    // integration's list. Omitted (not emptied) to keep the integration's.
+    editableEsignFields?: EditableEsignField[];
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
@@ -1195,6 +1201,8 @@ export default class IntegrationClient {
     if (signMethod) payload.sign_method = signMethod;
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;
+    if (editableEsignFields?.length)
+      payload.editable_esign_fields = editableEsignFields;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
 
@@ -1267,6 +1275,8 @@ export default class IntegrationClient {
     // DocuSign envelope until the filler presses Sign.
     if (action.email_subject) payload.email_subject = action.email_subject;
     if (action.email_blurb) payload.email_blurb = action.email_blurb;
+    if (action.editable_esign_fields?.length)
+      payload.editable_esign_fields = action.editable_esign_fields;
 
     const url = `${getApiUrl()}document/form/finalize/`;
     const options = {

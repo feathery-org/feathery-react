@@ -950,7 +950,7 @@ describe('IntegrationClient', () => {
       });
     });
 
-    it('forwards email subject and blurb, omitting them when unset', async () => {
+    it('forwards email subject, blurb and editable fields, omitting them when unset', async () => {
       const integrationClient = new IntegrationClient('test_form_key');
 
       global.fetch.mockResolvedValue({
@@ -963,11 +963,15 @@ describe('IntegrationClient', () => {
         run_async: false,
         sign_method: 'docusign',
         email_subject: 'Please sign this',
-        email_blurb: 'Two signatures needed.'
+        email_blurb: 'Two signatures needed.',
+        editable_esign_fields: [{ FieldName: '*', Required: false }]
       });
       let body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBe('Please sign this');
       expect(body.email_blurb).toBe('Two signatures needed.');
+      expect(body.editable_esign_fields).toEqual([
+        { FieldName: '*', Required: false }
+      ]);
 
       // Omitted rather than sent empty, so the backend's default subject wins
       global.fetch.mockClear();
@@ -979,6 +983,8 @@ describe('IntegrationClient', () => {
       body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBeUndefined();
       expect(body.email_blurb).toBeUndefined();
+      // Omitted so the Quik integration's own list applies
+      expect(body.editable_esign_fields).toBeUndefined();
     });
 
     it('ignores the form signer field for a docusign sign, keeping the role mappings', async () => {
@@ -1334,7 +1340,8 @@ describe('IntegrationClient', () => {
           run_async: false,
           sign_method: 'docusign',
           email_subject: 'Signed, sealed',
-          email_blurb: 'Last step.'
+          email_blurb: 'Last step.',
+          editable_esign_fields: ['1own.*']
         },
         { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
       );
@@ -1342,6 +1349,7 @@ describe('IntegrationClient', () => {
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBe('Signed, sealed');
       expect(body.email_blurb).toBe('Last step.');
+      expect(body.editable_esign_fields).toEqual(['1own.*']);
     });
 
     it('polls until complete when finalize runs async', async () => {
