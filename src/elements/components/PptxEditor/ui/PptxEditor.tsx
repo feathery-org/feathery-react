@@ -71,7 +71,6 @@ function PptxEditorInner({
   onSave,
   onSaved,
   onSaveAll,
-  actionStatus,
   onDownloadAll,
   onBeforeReplaceReady,
   onExportPdf,
@@ -384,9 +383,7 @@ function PptxEditorInner({
                   Download
                 </button>
               ))}
-            {!readOnly && (
-              <DocumentSaveStatus message={actionStatus} dirty={dirty} />
-            )}
+            {!readOnly && <DocumentSaveStatus dirty={dirty} />}
             {onSave && !readOnly && onSaveAll ? (
               <span
                 ref={saveMenuRef}

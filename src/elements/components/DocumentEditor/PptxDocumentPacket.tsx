@@ -1,3 +1,4 @@
+import DocumentToast from './DocumentToast';
 import React, {
   useCallback,
   useEffect,
@@ -36,7 +37,6 @@ function PresentationSession({
   onSaveAll,
   onDownloadAll,
   onError,
-  actionStatus,
   onDirty
 }: {
   envelope: EditorEnvelope;
@@ -54,7 +54,6 @@ function PresentationSession({
   onSaveAll?: () => Promise<void>;
   onDownloadAll?: () => Promise<void>;
   onError: (message: string) => void;
-  actionStatus?: string;
   onDirty: (dirty: boolean) => void;
 }) {
   const current = useRef(initial);
@@ -102,6 +101,7 @@ function PresentationSession({
       css={{
         position: 'absolute',
         inset: 0,
+        opacity: active ? 1 : 0,
         visibility: active ? 'visible' : 'hidden',
         pointerEvents: active ? 'auto' : 'none'
       }}
@@ -115,7 +115,6 @@ function PresentationSession({
           onSave={save}
           onBeforeReplaceReady={registerSave}
           onSaved={() => onSaved([current.current])}
-          actionStatus={actionStatus}
           onSaveAll={onSaveAll}
           onDownloadAll={offersDownload ? onDownloadAll : undefined}
           onExportPdf={() => client.downloadEnvelopePdf(initial.id)}
@@ -175,6 +174,11 @@ export default function PptxDocumentPacket({
     if (dirty) setFeedback('');
   }, []);
   useEffect(() => setFeedback(''), [reloadKey]);
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(''), 2500);
+    return () => clearTimeout(timer);
+  }, [feedback]);
   const register = useCallback((id: string, handle: Handle | null) => {
     if (handle) sessions.current.set(id, handle);
     else sessions.current.delete(id);
@@ -284,7 +288,6 @@ export default function PptxDocumentPacket({
             readOnly={!!action?.editor_read_only}
             offersDownload={offersDownload}
             onSaved={saved}
-            actionStatus={feedback}
             onDirty={clearFeedbackOnEdit}
             onSaveAll={tabs.length > 1 ? saveAll : undefined}
             onDownloadAll={tabs.length > 1 ? downloadAll : undefined}
@@ -292,6 +295,7 @@ export default function PptxDocumentPacket({
           />
         );
       })}
+      {feedback && <DocumentToast message={feedback} />}
       {busy && (
         <div
           role='status'

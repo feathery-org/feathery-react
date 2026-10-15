@@ -42,7 +42,6 @@ jest.mock('../PptxEditor', () => {
       onSave,
       onSaved,
       onSaveAll,
-      actionStatus,
       onDownloadAll,
       onChange,
       onBeforeReplaceReady
@@ -58,12 +57,6 @@ jest.mock('../PptxEditor', () => {
           'data-read-only': String(!!readOnly),
           'data-hide-download': String(!!hideDownload)
         },
-        actionStatus &&
-          ReactActual.createElement(
-            'span',
-            { role: 'status', 'aria-label': actionStatus },
-            actionStatus
-          ),
         ReactActual.createElement('input', {
           'aria-label': `local:${source?.url}`,
           defaultValue: ''
@@ -338,7 +331,9 @@ describe('presentation document tabs', () => {
     fireEvent.click(
       screen.getByTestId('save-all:https://example.com/second.pptx')
     );
-    await screen.findByRole('status', { name: 'All documents saved' });
+    expect(
+      await screen.findByRole('status', { name: 'Document notification' })
+    ).toHaveTextContent('All documents saved');
     fireEvent.click(screen.getAllByTestId('pptx-dirty')[0]);
     expect(screen.queryAllByText('All documents saved')).toHaveLength(0);
     expect(mockBeforeReplace).toHaveBeenCalledTimes(3);

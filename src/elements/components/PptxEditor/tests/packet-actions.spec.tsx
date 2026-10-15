@@ -18,7 +18,6 @@ it('offers separate current/all actions on the actual presentation toolbar', asy
   render(
     <PptxEditor
       source={source}
-      actionStatus='All documents saved'
       onSave={save}
       onSaved={saved}
       onSaveAll={saveAll}
@@ -26,8 +25,7 @@ it('offers separate current/all actions on the actual presentation toolbar', asy
     />
   );
   const saveButton = await screen.findByRole('button', { name: /Save/ });
-  const status = screen.getByRole('status', { name: 'All documents saved' });
-  expect(status.nextElementSibling?.contains(saveButton)).toBe(true);
+  expect(screen.queryByText('All documents saved')).toBeNull();
   fireEvent.click(saveButton);
   fireEvent.click(screen.getByRole('button', { name: 'This document' }));
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
