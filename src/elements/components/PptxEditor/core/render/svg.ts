@@ -1028,6 +1028,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
         ? resolveListProps(curDeck, curSlide, shape, p.level ?? 0)
         : {};
     const paraProps = readParagraphProps(p.node);
+    const lineSpacing = paraProps.lineSpacing ?? inherited.lineSpacing;
     const bullet = p.bullet ?? inherited.bullet;
     const paraDef = inherited.defRPr;
 
@@ -1054,6 +1055,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     let css = `flex-shrink:0;text-align:${align};white-space:${
       body.wrap === 'none' ? 'pre' : 'pre-wrap'
     };`;
+    if (body.wrap !== 'none') css += 'overflow-wrap:break-word;';
     if (bullet && bullet.kind !== 'none') {
       // The marker hangs beside the text. Both the first text line and any
       // Shift+Enter/wrapped lines start at the same padding edge.
@@ -1079,15 +1081,12 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     // the size), not the bare em, so 150% = 1.5 x 1.2 x size (rules expect this).
     const NATURAL_LINE = 1.2;
     const lineHeightPx =
-      paraProps.lineSpacing?.kind === 'points'
-        ? ptToCssPx(paraProps.lineSpacing.valPt)
-        : paraProps.lineSpacing?.kind === 'percent'
+      lineSpacing?.kind === 'points'
+        ? ptToCssPx(lineSpacing.valPt)
+        : lineSpacing?.kind === 'percent'
         ? baseFontPx *
           NATURAL_LINE *
-          Math.max(
-            0.1,
-            (paraProps.lineSpacing.valPct - lineSpaceReduction) / 100
-          )
+          Math.max(0.1, (lineSpacing.valPct - lineSpaceReduction) / 100)
         : baseFontPx * NATURAL_LINE;
     // PowerPoint puts line-spacing leading below the baseline; CSS splits it
     // half/half, so shift the top half below (pitch preserved via margins).
@@ -1111,7 +1110,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     }
     // Unitless 1 matches PowerPoint's single spacing (the font's content line),
     // tighter than CSS 'normal'; explicit percent/points keep the px value.
-    const cssLineHeight = paraProps.lineSpacing ? `${lineHeightPx}px` : '1';
+    const cssLineHeight = lineSpacing ? `${lineHeightPx}px` : '1';
     // Size the line-box strut from the lead run; otherwise it inherits the
     // host's 16px font and sinks/loosens any text smaller than that.
     css += `font-size:${baseFontPx}px;font-family:${cssFamilyList(
