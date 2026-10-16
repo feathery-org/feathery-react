@@ -220,6 +220,41 @@ describe('fillFields value checks', () => {
     ]);
   });
 
+  it('masks a sensitive value and the one it replaced in the result', async () => {
+    makeState([{ key: 'ssn', type: 'ssn', metadata: {} }], {
+      ssn: '111223333'
+    });
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'ssn', value: '123456789' }
+    ]);
+
+    expect(result.applied).toEqual([
+      { key: 'ssn', value: '••••6789', priorValue: '••••3333' }
+    ]);
+  });
+
+  it('refuses a masked value so a sensitive field is never overwritten with its mask', async () => {
+    makeState(
+      [
+        { key: 'ssn', type: 'ssn', metadata: {} },
+        { key: 'confirm_ssn', type: 'text_field', metadata: {} }
+      ],
+      { ssn: '123456789', confirm_ssn: '' }
+    );
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'ssn', value: '••••3333' },
+      { key: 'confirm_ssn', value: '••••6789' }
+    ]);
+
+    expect(result.applied).toEqual([]);
+    expect(result.rejected).toEqual([
+      expect.objectContaining({ key: 'ssn', reason: 'invalid_value' }),
+      expect.objectContaining({ key: 'confirm_ssn', reason: 'invalid_value' })
+    ]);
+  });
+
   it('refuses field types it has no check for', async () => {
     makeState([{ key: 'grid', type: 'matrix', metadata: {} }], { grid: {} });
 

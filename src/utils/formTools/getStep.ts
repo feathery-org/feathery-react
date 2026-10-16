@@ -2,7 +2,6 @@ import internalState from '../internalState';
 import { getPanelRuntimeSnapshot } from '../panelRuntime';
 import { getPositionKey } from '../hideAndRepeats';
 import { ACTION_NEXT } from '../elementActions';
-import { maskFieldValue } from './mask';
 import { GetStepResult } from './types';
 
 // Mirrors dispatchClickElement's own hidden check (assistant/tools/clickElement.ts):
@@ -31,7 +30,7 @@ export const qualifyingButton = (state: any, buttonId?: string): any | null => {
 };
 
 export const getStepTool = (formUuid: string): GetStepResult => {
-  const snapshot = getPanelRuntimeSnapshot(formUuid);
+  const snapshot = getPanelRuntimeSnapshot(formUuid, { masked: true });
   const currentStep = internalState[formUuid]?.currentStep;
   const visiblePositions = internalState[formUuid]?.visiblePositions ?? {};
   const rawFields = currentStep?.servar_fields ?? [];
@@ -50,11 +49,6 @@ export const getStepTool = (formUuid: string): GetStepResult => {
     // Fall back to the placeholder, then the key
     const label = rawLabel || f.placeholder?.trim() || f.key;
     const repeated = repeatedByKey.get(f.key) ?? false;
-    // Mask each row independently
-    const value =
-      repeated && Array.isArray(f.value)
-        ? f.value.map((v) => maskFieldValue(f.type, v))
-        : maskFieldValue(f.type, f.value);
     let hiddenRows: number[] | null = null;
     if (repeated) {
       const positionKey = positionKeyByKey.get(f.key);
@@ -72,7 +66,7 @@ export const getStepTool = (formUuid: string): GetStepResult => {
       required: f.required,
       visible: f.visible,
       disabled: f.disabled,
-      value,
+      value: f.value,
       options: f.options ?? [],
       error: f.error ?? '',
       repeated,

@@ -9,6 +9,7 @@ import {
 } from '../repeat';
 import { getPositionKey } from '../hideAndRepeats';
 import { formatDateString } from '../../elements/fields/DateSelectorField/utils';
+import { isMaskedValue, maskFieldValue } from '../sensitiveFieldValues';
 import {
   awaitPendingInlineErrors,
   diffInlineErrorSnapshots,
@@ -256,6 +257,9 @@ export function checkValueAgainstField(
   const type = servar.type;
   const key = servar.key;
   const meta = servar.metadata ?? {};
+  if (isMaskedValue(value)) {
+    return `Field '${key}' was given a masked value, ask the person for the real one.`;
+  }
   const minLength =
     typeof servar.min_length === 'number' ? servar.min_length : undefined;
   const maxLength =
@@ -552,11 +556,12 @@ export async function fillFields(
         : Array.isArray(prior)
         ? prior[index] ?? null
         : null;
+    const type = write.field.servar.type;
     applied.push({
       key: write.key,
       repeatIndex: write.repeatIndex,
-      value: write.normalized,
-      priorValue
+      value: maskFieldValue(type, write.normalized),
+      priorValue: maskFieldValue(type, priorValue)
     });
   }
 

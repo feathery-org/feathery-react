@@ -13,6 +13,7 @@ import { ACTION_BACK, ACTION_NEXT } from './elementActions';
 import { getPrevStepKey, nextStepKey } from './stepHelperFunctions';
 import { isStepperStepReachable, isStepperStepVisible } from './stepper';
 import { sanitizeTransportValue } from './transportValue';
+import { maskFieldValue } from './sensitiveFieldValues';
 import { getImageAltText } from './accessibility';
 import type { TableRowRead, TableSelection } from './formActions/tables';
 
@@ -329,10 +330,14 @@ const elementHasLogicRules = (
   });
 
 export const getPanelRuntimeSnapshot = (
-  formId: string
+  formId: string,
+  { masked = false }: { masked?: boolean } = {}
 ): PanelRuntimeSnapshot | null => {
   const state = internalState[formId];
   if (!state || !state.currentStep) return null;
+  // An agent's read hides sensitive values, the form's own reads keep them
+  const shown = (type: string | undefined, value: unknown) =>
+    masked ? maskFieldValue(type, value) : value;
 
   const step = state.currentStep;
   const visiblePositions = state.visiblePositions ?? {};
@@ -485,7 +490,7 @@ export const getPanelRuntimeSnapshot = (
     return {
       key: servar.key,
       type: servar.type,
-      value: sanitizeRuntimeValue(value),
+      value: shown(servar.type, sanitizeRuntimeValue(value)),
       visible,
       disabled,
       required: !!servar.required,
@@ -517,12 +522,12 @@ export const getPanelRuntimeSnapshot = (
     };
   });
 
-  // Collect every servar key across the form
-  const servarKeys = new Set<string>();
+  // Collect every servar's type across the form
+  const servarTypes = new Map<string, string>();
   for (const stepKey of Object.keys(state.steps ?? {})) {
     const loopStep = (state.steps as any)[stepKey];
     (loopStep?.servar_fields ?? []).forEach((f: any) => {
-      if (f?.servar?.key) servarKeys.add(f.servar.key);
+      if (f?.servar?.key) servarTypes.set(f.servar.key, f.servar.type);
     });
   }
 
@@ -536,8 +541,8 @@ export const getPanelRuntimeSnapshot = (
   const hiddenFieldsEmpty: string[] = [];
   for (const key of Object.keys(fieldsMap)) {
     const v = sanitizeRuntimeValue(fieldsMap[key]?.value ?? null);
-    if (servarKeys.has(key)) {
-      values[key] = v;
+    if (servarTypes.has(key)) {
+      values[key] = shown(servarTypes.get(key), v);
     } else if (isMeaningful(v)) {
       hiddenFieldValues[key] = v;
     } else {
@@ -726,7 +731,19 @@ export const getPanelRuntimeSnapshot = (
       ...(hubId ? { hubId } : {}),
       columns,
       rowCount,
-      ...(rows ? { rows } : {}),
+      ...(rows
+        ? {
+            rows: rows.map((row) => ({
+              ...row,
+              values: Object.fromEntries(
+                Object.entries(row.values).map(([key, v]) => [
+                  key,
+                  shown(servarTypes.get(key), v)
+                ])
+              )
+            }))
+          }
+        : {}),
       ...(rowsOmitted > 0 ? { rowsOmitted } : {}),
       ...(actions.length > 0 && (liveState?.showsActions ?? true)
         ? { actions }

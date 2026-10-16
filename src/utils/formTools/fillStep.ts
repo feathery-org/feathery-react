@@ -11,7 +11,7 @@ import {
   isUnsupportedType,
   validateAndNormalizeForFill
 } from './validate';
-import { maskFieldValue } from './mask';
+import { maskFieldValue } from '../sensitiveFieldValues';
 import { clearFilePathMapEntry } from '../formHelperFunctions';
 import {
   captureRenderTick,

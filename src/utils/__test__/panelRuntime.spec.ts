@@ -379,3 +379,72 @@ describe('unique repeat options in the snapshot', () => {
     ]);
   });
 });
+
+it('masks sensitive values on every step for the agent, leaving the runtime read raw', () => {
+  const step = (key: string, servars: any[]) => ({
+    id: key,
+    key,
+    subgrids: [],
+    texts: [],
+    images: [],
+    buttons: [],
+    tables: [],
+    tabs: [],
+    progress_bars: [],
+    next_conditions: [],
+    servar_fields: servars.map((servar) => ({
+      servar,
+      properties: {},
+      position: []
+    }))
+  });
+  const identity = step('identity', [{ id: 'f-ssn', key: 'ssn', type: 'ssn' }]);
+  const account = {
+    ...step('account', [
+      { id: 'f-pw', key: 'pw', type: 'password' },
+      { id: 'f-pin', key: 'pins', type: 'pin_input', repeated: true },
+      { id: 'f-name', key: 'name', type: 'text_field' }
+    ]),
+    tables: [
+      {
+        id: 'tbl',
+        position: [0],
+        properties: { columns: [{ name: 'PIN', field_key: 'pins' }] }
+      }
+    ]
+  };
+  (internalState as any)[FORM] = {
+    currentStep: account,
+    steps: { identity, account },
+    fields: {
+      ssn: { value: '123456789' },
+      pw: { value: 'hunter22' },
+      pins: { value: ['4242', null] },
+      name: { value: 'Ada' }
+    },
+    visiblePositions: {},
+    inlineErrors: {},
+    logicRules: []
+  };
+
+  const raw = getPanelRuntimeSnapshot(FORM);
+  const snapshot = getPanelRuntimeSnapshot(FORM, { masked: true });
+
+  expect(raw?.values.ssn).toBe('123456789');
+
+  expect(snapshot?.values).toEqual({
+    ssn: '••••6789',
+    pw: '••••',
+    pins: ['••••', null],
+    name: 'Ada'
+  });
+  expect(
+    Object.fromEntries(
+      (snapshot?.currentStepFields ?? []).map((f) => [f.key, f.value])
+    )
+  ).toEqual({ pw: '••••', pins: ['••••', null], name: 'Ada' });
+  expect(snapshot?.currentStepTables[0].rows).toEqual([
+    { rowIndex: 0, values: { pins: '••••' } },
+    { rowIndex: 1, values: { pins: null } }
+  ]);
+});
