@@ -314,8 +314,10 @@ export function checkValueAgainstField(
         options
       )}.`;
     }
+    // A row with its own options ignores other rows' picks, as the dropdown does
     if (
       typeof repeatIndex === 'number' &&
+      !Array.isArray(meta.repeat_options?.[repeatIndex]) &&
       Array.isArray(fieldValue) &&
       isTakenByOtherRow(servar, value, fieldValue, fieldValue[repeatIndex])
     ) {

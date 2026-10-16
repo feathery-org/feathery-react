@@ -448,6 +448,22 @@ describe('fillFields unique repeat options', () => {
     ]);
   });
 
+  it("accepts another row's pick from a row that has its own options", async () => {
+    makeState(
+      {
+        unique_repeat_options: true,
+        repeat_options: [null, ['pro', 'enterprise']]
+      },
+      ['pro', '', '']
+    );
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'plan', value: 'pro', repeatIndex: 1 }
+    ]);
+
+    expect(result.rejected).toEqual([]);
+  });
+
   it('lets rows repeat an option when the field does not ask for unique ones', async () => {
     makeState({}, ['pro', '', '']);
 
