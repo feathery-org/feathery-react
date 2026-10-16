@@ -25,6 +25,7 @@ import internalState, {
   UpdateDocusignEnvelopeParams,
   setFormInternalState
 } from './internalState';
+import type { HubSchema } from '../elements/components/dataMapping/types';
 import { validateElements } from './validation';
 import { STEP_EVENT_SKIP } from './stepEvents';
 import {
@@ -254,6 +255,13 @@ export const getFormContext = (formUuid: string) => {
         where,
         verification
       }),
+    // Field schemas (key, type, required, unique, constraint_rules,
+    // description) per hub, so rules can read the flags set in hub settings
+    // instead of hardcoding field lists. Accepts one hub ID or several.
+    getHubSchemas: (
+      hubIds: string | string[]
+    ): Promise<{ hubs: HubSchema[] }> =>
+      formState.client.getHubSchemas(Array.isArray(hubIds) ? hubIds : [hubIds]),
     generateDocuments: ({
       documentIds: documentSources,
       signers,
