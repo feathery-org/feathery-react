@@ -29,6 +29,7 @@ import { installRevisionHighlightRendering } from '../../../../../elements/compo
 import { colorForRevisionAuthor } from '../../../../../elements/components/DocxEditor/history/authorColors';
 import { versionPreviewHarness } from './versionPreviewHarness';
 import { historyReviewHarness } from './historyReviewHarness';
+import { multiDocumentPerformanceHarness } from './multiDocumentPerformanceHarness';
 
 declare const __SYNCFUSION_LICENSE_KEY__: string;
 
@@ -148,6 +149,7 @@ function inventoryEntryHolding(find: string) {
 const api = {
   ...versionPreviewHarness,
   ...historyReviewHarness,
+  ...multiDocumentPerformanceHarness,
   async open(
     sfdt: string,
     headerRowsHint = 1,

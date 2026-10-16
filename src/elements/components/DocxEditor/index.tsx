@@ -314,6 +314,11 @@ function DocxEditor({
   );
   // A selected older version, shown read-only over the live editor. The live
   // editor keeps autosaving underneath while it is open.
+  const previewViewportRef = useRef<{
+    versionId: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const [viewingVersion, setViewingVersion] = useState<DocxVersion | null>(
     null
   );
@@ -715,8 +720,9 @@ function DocxEditor({
   // immutable snapshots. This cache only contains rendered preview data; live
   // restores continue to fetch the current editor file without caching.
   useEffect(() => {
-    prefetchVersionDocuments(history ?? null, historyVersions);
-  }, [history, historyVersions]);
+    if (active && activePanel === 'history')
+      prefetchVersionDocuments(history ?? null, historyVersions, 2);
+  }, [active, activePanel, history, historyVersions]);
 
   // Both DocumentEditorContainers expose the same zoom footer. Keep the
   // editing and read-only containers at one zoom level when moving between
@@ -752,14 +758,31 @@ function DocxEditor({
   // Open a version read-only in the viewer. An in-progress session previews
   // live edits; a saved Current row with no open session reads its stored change
   // files, like any older version.
+  const previewRequestRef = useRef(0);
+  useLayoutEffect(() => {
+    previewRequestRef.current++;
+  }, [active, activePanel, envelopeId, openNonce]);
+  useEffect(
+    () => () => {
+      previewRequestRef.current++;
+    },
+    []
+  );
   const selectVersion = useCallback(
-    (version: DocxVersion) => {
+    async (version: DocxVersion) => {
+      const request = ++previewRequestRef.current;
+      const revision = editRevisionRef.current;
       let live: LiveVersionDocument | null = null;
       // During an open session, autosave checkpoints can already be stale.
       // After Save/reload, the browser has no live diff baseline; the latest
       // saved change files are then the only source for user edit stepping.
       if (version.is_current) {
-        const preview = historySession.previewSession();
+        const preview = await historySession.previewSession();
+        if (
+          request !== previewRequestRef.current ||
+          revision !== editRevisionRef.current
+        )
+          return;
         setLiveSessionAuthors(
           preview
             ? { sessionId: preview.sessionId, authors: preview.authors }
@@ -843,6 +866,7 @@ function DocxEditor({
   // Back to the live editor (its toolbar returns because viewingVersion clears).
   const exitVersionView = useCallback(() => {
     if (restoreInFlightRef.current) return;
+    previewRequestRef.current++;
     setViewingVersion(null);
     setDisplayedVersion(null);
     setLiveDoc(null);
@@ -1433,9 +1457,10 @@ function DocxEditor({
           />
           {loading && !error && <div css={overlay}>Loading document…</div>}
           {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
-          {history && viewingVersion && (
+          {active && history && viewingVersion && (
             <VersionViewer
               host={history}
+              viewportRef={previewViewportRef}
               version={viewingVersion}
               firstUserKey={firstUserKey}
               serviceUrl={serviceUrl}

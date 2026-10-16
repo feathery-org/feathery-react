@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { keyframes } from '@emotion/react';
 
 import { INK_3, PAPER } from '../TrackedChangeGroups/styles';
@@ -89,6 +89,10 @@ export interface VersionMeta {
 }
 
 interface Props {
+  /** Retain this document’s reading position when its inactive preview is released. */
+  viewportRef?: {
+    current: { versionId: string; top: number; left: number } | null;
+  };
   host: DocxHistoryHost;
   version: DocxVersion;
   serviceUrl?: string;
@@ -120,6 +124,7 @@ interface Props {
 // assistant/rail can't see it. Reused across version selections.
 export default function VersionViewer({
   host,
+  viewportRef,
   version,
   serviceUrl,
   headers,
@@ -165,6 +170,22 @@ export default function VersionViewer({
   onZoomFactorChangeRef.current = onZoomFactorChange;
   const onDisplayedVersionRef = useRef(onDisplayedVersion);
   onDisplayedVersionRef.current = onDisplayedVersion;
+
+  // Capture before React removes the scroll container. Passive cleanup runs
+  // after removal, when the browser has already reset scrollTop to zero.
+  useLayoutEffect(
+    () => () => {
+      const viewport = editorRef.current?.documentHelper?.viewerContainer;
+      if (viewportRef && viewport && displayedVersionIdRef.current) {
+        viewportRef.current = {
+          versionId: displayedVersionIdRef.current,
+          top: viewport.scrollTop,
+          left: viewport.scrollLeft
+        };
+      }
+    },
+    [viewportRef]
+  );
 
   // Use a DocumentEditorContainer, not a bare DocumentEditor: only the
   // container sizes to a height:100% host, so the page isn't laid out zoomed.
@@ -354,6 +375,21 @@ export default function VersionViewer({
         if (!(await loaded))
           throw new Error('Version preview did not finish loading');
         if (cancelled) return;
+        // Apply the pending zoom property before restoring pixel offsets;
+        // otherwise EJ2's deferred dataBind scales the restored position again.
+        viewer.dataBind?.();
+        const savedViewport = viewportRef?.current;
+        if (
+          !displayedVersionIdRef.current &&
+          savedViewport?.versionId === version.id
+        ) {
+          const viewport = viewer.documentHelper?.viewerContainer;
+          if (viewport) {
+            viewport.scrollTop = savedViewport.top;
+            viewport.scrollLeft = savedViewport.left;
+            viewer.viewer?.updateScrollBars?.();
+          }
+        }
         // Re-apply after the open: opening a doc with tracked changes can flip
         // showRevisions back on and paint Syncfusion's author tints.
         if (!showHighlights) {
