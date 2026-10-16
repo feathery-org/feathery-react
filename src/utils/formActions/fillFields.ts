@@ -11,6 +11,14 @@ import { getPositionKey } from '../hideAndRepeats';
 import { formatDateString } from '../../elements/fields/DateSelectorField/utils';
 import { isMaskedValue, maskFieldValue } from '../sensitiveFieldValues';
 import {
+  fileSizeLimitFor,
+  NUM_FILES_LIMIT,
+  resolveAllowedFileTypes,
+  validateFileSizes,
+  validateFileTypes
+} from '../../elements/fields/FileUploadField/validation';
+import { clearFilePathMapEntry } from '../formHelperFunctions';
+import {
   awaitPendingInlineErrors,
   diffInlineErrorSnapshots,
   InlineErrorReport,
@@ -50,7 +58,8 @@ const WRITABLE_TYPES = new Set([
   ...SINGLE_CHOICE_TYPES,
   ...MULTI_CHOICE_TYPES,
   'checkbox',
-  'date_selector'
+  'date_selector',
+  'file_upload'
 ]);
 
 export const isEmptyValue = (value: unknown) =>
@@ -187,6 +196,17 @@ function validateFill(
       reason: 'hidden',
       message: `Row ${repeatIndex} of field '${fieldKey}' is hidden right now.`
     };
+  }
+
+  if (type === 'file_upload') {
+    const fileError = checkFilesAgainstField(
+      servar,
+      rawValue,
+      !!repeatContainer
+    );
+    return fileError
+      ? { ok: false, reason: 'invalid_value', message: fileError }
+      : { ok: true, field: found, servar, value: rawValue };
   }
 
   // Phone numbers commonly arrive as numbers
@@ -373,6 +393,39 @@ export function checkValueAgainstField(
   return null;
 }
 
+// Same type and size rules as the upload field, one file per repeated row
+export function checkFilesAgainstField(
+  servar: any,
+  files: unknown,
+  singleRow: boolean
+): string | null {
+  if (
+    !Array.isArray(files) ||
+    files.length === 0 ||
+    !files.every((file) => file instanceof File)
+  )
+    return `Field '${servar.key}' (file_upload) expects a non-empty array of files.`;
+
+  const isMultiple = !singleRow && !!servar.metadata?.multiple;
+  if (!isMultiple && files.length > 1)
+    return singleRow
+      ? `Field '${servar.key}' accepts only one file per row.`
+      : `Field '${servar.key}' accepts only one file.`;
+  if (files.length > NUM_FILES_LIMIT)
+    return `Too many files; the limit is ${NUM_FILES_LIMIT}.`;
+
+  try {
+    validateFileTypes(files, resolveAllowedFileTypes(servar));
+    validateFileSizes(files, fileSizeLimitFor(servar));
+  } catch (e: any) {
+    return e?.message ?? 'Invalid file.';
+  }
+  return null;
+}
+
+const describeFiles = (files: File[]) =>
+  files.map((file) => ({ name: file.name, mimeType: file.type }));
+
 function normalizeGmapState(value: unknown, servar: any): unknown {
   if (typeof value !== 'string' || !value) return value;
 
@@ -470,6 +523,7 @@ export async function fillFields(
     repeatIndex?: number;
     field: any;
     normalized: unknown;
+    files?: File[];
   };
 
   // Resolve every value first so the writes below land in a single render
@@ -492,6 +546,16 @@ export async function fillFields(
         };
       }
       const { field, servar } = validation;
+      if (servar.type === 'file_upload') {
+        const files = validation.value as File[];
+        return {
+          key,
+          repeatIndex,
+          field,
+          normalized: files.map((file) => Promise.resolve(file)),
+          files
+        };
+      }
       let normalized = isEmptyValue(validation.value)
         ? emptyValueFor(servar)
         : validation.value;
@@ -518,11 +582,14 @@ export async function fillFields(
     }
   );
 
-  const applied: AppliedField[] = [];
+  let applied: AppliedField[] = [];
   const rejected: RejectedField[] = [];
   markInteraction();
+  // Saved files belong to the step they were filled on, even if a rule navigates
+  const stepKey = state.currentStep.key;
   const errorsBefore = snapshotInlineErrors(state);
   const changeLogicRuns: Promise<unknown>[] = [];
+  const writtenFileServars = new Map<string, any>();
   for (const write of prepared) {
     if ('reason' in write) {
       rejected.push(write);
@@ -532,13 +599,20 @@ export async function fillFields(
     const fieldForChange =
       index === null ? write.field : { ...write.field, repeat: index };
     try {
+      if (write.files) clearFilePathMapEntry(write.key, index);
       const changed = handlers.changeValue(
         write.normalized,
         fieldForChange,
         index
       );
+      // A replaced file list reports its first file as the one that changed, as an upload does
       const changeLogic =
-        changed && handlers.runFieldChangeLogic(fieldForChange, index);
+        changed &&
+        handlers.runFieldChangeLogic(
+          fieldForChange,
+          index,
+          write.files ? 0 : undefined
+        );
       if (changeLogic) changeLogicRuns.push(changeLogic);
     } catch (err) {
       rejected.push({
@@ -557,16 +631,48 @@ export async function fillFields(
         ? prior[index] ?? null
         : null;
     const type = write.field.servar.type;
+    if (write.files) writtenFileServars.set(write.key, write.field.servar);
     applied.push({
       key: write.key,
       repeatIndex: write.repeatIndex,
-      value: maskFieldValue(type, write.normalized),
+      value: write.files
+        ? describeFiles(write.files)
+        : maskFieldValue(type, write.normalized),
       priorValue: maskFieldValue(type, priorValue)
     });
   }
 
   // Let change rules settle so the caller reads the form they produce
   await Promise.allSettled(changeLogicRuns);
+
+  // Save each written file field once, its entry carries every row
+  for (const [key, servar] of writtenFileServars) {
+    try {
+      await handlers.submitFiles([
+        {
+          servar: {
+            key,
+            [servar.type]: state.fields?.[key]?.value,
+            repeated: Boolean(servar.repeated)
+          },
+          stepKey
+        }
+      ]);
+    } catch (err) {
+      const message = `The file is on the form but could not be saved: ${
+        err instanceof Error ? err.message : String(err)
+      }`;
+      for (const failed of applied.filter((f) => f.key === key))
+        rejected.push({
+          key,
+          repeatIndex: failed.repeatIndex,
+          reason: 'write_failed',
+          message
+        });
+      applied = applied.filter((f) => f.key !== key);
+    }
+  }
+
   await awaitPendingInlineErrors(state);
   const fieldErrors = diffInlineErrorSnapshots(
     errorsBefore,

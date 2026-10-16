@@ -509,3 +509,156 @@ describe('fillFields unique repeat options', () => {
     expect(result.rejected).toEqual([]);
   });
 });
+
+describe('fillFields file uploads', () => {
+  const formUuid = 'form-fill-files-test';
+  const pdf = (name = 'id.pdf') =>
+    new File(['%PDF'], name, { type: 'application/pdf' });
+
+  const makeState = (servar: Record<string, any>, repeated = false) => {
+    const state: any = {
+      currentStep: {
+        key: 'step-1',
+        subgrids: repeated ? [{ id: 'sg', position: [0], repeated: true }] : [],
+        servar_fields: [
+          {
+            id: 'el-docs',
+            position: repeated ? [0, 0] : [0],
+            servar: {
+              key: 'docs',
+              type: 'file_upload',
+              repeated,
+              metadata: { file_types: [] },
+              ...servar
+            }
+          }
+        ]
+      },
+      visiblePositions: repeated
+        ? { '0': [true, true], '0,0': [true, true] }
+        : { '0': [true] },
+      formSettings: {},
+      fields: { docs: { value: repeated ? [null, null] : [] } },
+      inlineErrors: {},
+      formActions: {
+        changeValue: jest.fn((value: unknown) => {
+          state.fields.docs.value = value;
+          return true;
+        }),
+        runFieldChangeLogic: jest.fn(),
+        submitFiles: jest.fn(async () => {})
+      }
+    };
+    (internalState as any)[formUuid] = state;
+    return state;
+  };
+
+  afterEach(() => {
+    delete (internalState as any)[formUuid];
+  });
+
+  it('enters the files and saves them, reporting only their names and types', async () => {
+    const state = makeState({ metadata: { file_types: [], multiple: true } });
+    const files = [pdf('a.pdf'), pdf('b.pdf')];
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'docs', value: files }
+    ]);
+
+    const written = state.formActions.changeValue.mock.calls[0][0];
+    await expect(Promise.all(written)).resolves.toEqual(files);
+    expect(state.formActions.submitFiles).toHaveBeenCalledWith([
+      {
+        servar: { key: 'docs', file_upload: written, repeated: false },
+        stepKey: 'step-1'
+      }
+    ]);
+    expect(result.applied).toEqual([
+      expect.objectContaining({
+        key: 'docs',
+        value: [
+          { name: 'a.pdf', mimeType: 'application/pdf' },
+          { name: 'b.pdf', mimeType: 'application/pdf' }
+        ]
+      })
+    ]);
+  });
+
+  it('tells change rules which file changed, as an upload does', async () => {
+    const state = makeState({});
+
+    await fillFields(formUuid, [{ key: 'docs', value: [pdf()] }]);
+
+    expect(state.formActions.runFieldChangeLogic).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'el-docs' }),
+      null,
+      0
+    );
+  });
+
+  it('saves the files to the step they were filled on when a rule navigates', async () => {
+    const state = makeState({});
+    state.formActions.runFieldChangeLogic.mockImplementation(async () => {
+      state.currentStep = { ...state.currentStep, key: 'step-2' };
+    });
+
+    await fillFields(formUuid, [{ key: 'docs', value: [pdf()] }]);
+
+    expect(state.formActions.submitFiles).toHaveBeenCalledWith([
+      expect.objectContaining({ stepKey: 'step-1' })
+    ]);
+  });
+
+  it.each([
+    ['a value that is not files', 'id.pdf'],
+    ['a type the field does not accept', [pdf()]],
+    ['more files than a single-file field holds', [pdf(), pdf()]]
+  ])('refuses %s without writing', async (_label, value) => {
+    const state = makeState({ metadata: { file_types: ['image/*'] } });
+
+    const result: any = await fillFields(formUuid, [{ key: 'docs', value }]);
+
+    expect(state.formActions.changeValue).not.toHaveBeenCalled();
+    expect(state.formActions.submitFiles).not.toHaveBeenCalled();
+    expect(result.rejected).toEqual([
+      expect.objectContaining({ key: 'docs', reason: 'invalid_value' })
+    ]);
+  });
+
+  it('enters one file per row of a repeated field and saves the field once', async () => {
+    const state = makeState({}, true);
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'docs', value: [pdf('a.pdf')], repeatIndex: 0 },
+      { key: 'docs', value: [pdf('b.pdf')], repeatIndex: 1 },
+      { key: 'docs', value: [pdf(), pdf()], repeatIndex: 1 }
+    ]);
+
+    expect(
+      state.formActions.changeValue.mock.calls.map((c: any) => c[2])
+    ).toEqual([0, 1]);
+    expect(state.formActions.submitFiles).toHaveBeenCalledTimes(1);
+    expect(result.applied.map((f: any) => f.repeatIndex)).toEqual([0, 1]);
+    expect(result.rejected).toEqual([
+      expect.objectContaining({ repeatIndex: 1, reason: 'invalid_value' })
+    ]);
+  });
+
+  it('reports a file that could not be saved as not entered', async () => {
+    const state = makeState({});
+    state.formActions.submitFiles.mockRejectedValue(new Error('S3 down'));
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'docs', value: [pdf()] }
+    ]);
+
+    expect(result.applied).toEqual([]);
+    expect(result.rejected).toEqual([
+      expect.objectContaining({
+        key: 'docs',
+        reason: 'write_failed',
+        message: expect.stringContaining('S3 down')
+      })
+    ]);
+  });
+});
