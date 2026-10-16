@@ -112,12 +112,12 @@ export const formulasFinalizer: Finalizer = {
         | undefined;
       if (typeof binding?.expr !== 'string') continue;
       if (detail.some((d) => d.id === control.id)) continue;
-      const text = controlText(control);
+      // in the fact's ids too, with no before (review finding 7)
+      ids.add(control.id);
       detail.push({
         id: control.id,
         ...(typeof binding.name === 'string' ? { name: binding.name } : {}),
-        before: text,
-        after: text
+        after: controlText(control)
       });
     }
     const list = [...ids];
