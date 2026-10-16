@@ -13,7 +13,11 @@ import { ACTION_BACK, ACTION_NEXT } from './elementActions';
 import { getPrevStepKey, nextStepKey } from './stepHelperFunctions';
 import { isStepperStepReachable, isStepperStepVisible } from './stepper';
 import { sanitizeTransportValue } from './transportValue';
-import { maskFieldValue } from './sensitiveFieldValues';
+import {
+  fieldTypesByKey,
+  maskFieldValue,
+  maskFieldValues
+} from './sensitiveFieldValues';
 import { getImageAltText } from './accessibility';
 import type { TableRowRead, TableSelection } from './formActions/tables';
 
@@ -149,15 +153,6 @@ const extractRawText = (props: Record<string, unknown>): string => {
     .map((op) => (typeof op?.insert === 'string' ? op.insert : ''))
     .join('')
     .trim();
-};
-
-const resolveText = (text: string, repeat?: number): string => {
-  if (!text) return '';
-  try {
-    return replaceTextVariables(text, repeat, true);
-  } catch {
-    return text;
-  }
 };
 
 export const getCurrentStepKey = (formId: string): string | undefined =>
@@ -336,8 +331,24 @@ export const getPanelRuntimeSnapshot = (
   const state = internalState[formId];
   if (!state || !state.currentStep) return null;
   // An agent's read hides sensitive values, the form's own reads keep them
+  const servarTypes = fieldTypesByKey(state.steps);
   const shown = (type: string | undefined, value: unknown) =>
     masked ? maskFieldValue(type, value) : value;
+  const resolveText = (text: string, repeat?: number): string => {
+    if (!text) return '';
+    try {
+      return replaceTextVariables(
+        text,
+        repeat,
+        true,
+        masked
+          ? (key, value) => maskFieldValue(servarTypes.get(key), value)
+          : undefined
+      );
+    } catch {
+      return text;
+    }
+  };
 
   const step = state.currentStep;
   const visiblePositions = state.visiblePositions ?? {};
@@ -521,15 +532,6 @@ export const getPanelRuntimeSnapshot = (
         : {})
     };
   });
-
-  // Collect every servar's type across the form
-  const servarTypes = new Map<string, string>();
-  for (const stepKey of Object.keys(state.steps ?? {})) {
-    const loopStep = (state.steps as any)[stepKey];
-    (loopStep?.servar_fields ?? []).forEach((f: any) => {
-      if (f?.servar?.key) servarTypes.set(f.servar.key, f.servar.type);
-    });
-  }
 
   // Split values into servars and hidden fields at the transport source. Every
   // value is JSON-shaped here so File/Promise-like runtime objects become
@@ -733,15 +735,12 @@ export const getPanelRuntimeSnapshot = (
       rowCount,
       ...(rows
         ? {
-            rows: rows.map((row) => ({
-              ...row,
-              values: Object.fromEntries(
-                Object.entries(row.values).map(([key, v]) => [
-                  key,
-                  shown(servarTypes.get(key), v)
-                ])
-              )
-            }))
+            rows: masked
+              ? rows.map((row) => ({
+                  ...row,
+                  values: maskFieldValues(row.values, servarTypes)
+                }))
+              : rows
           }
         : {}),
       ...(rowsOmitted > 0 ? { rowsOmitted } : {}),
@@ -753,7 +752,20 @@ export const getPanelRuntimeSnapshot = (
       ...(liveState?.canEditCells ? { canEditCells: true } : {}),
       ...(liveState?.pending ? { pending: liveState.pending } : {}),
       // What the person has in front of them in a spreadsheet grid, this turn only
-      ...(liveState?.selection ? { selection: liveState.selection } : {}),
+      ...(liveState?.selection
+        ? {
+            selection: masked
+              ? {
+                  ...liveState.selection,
+                  value: maskFieldValue(
+                    servarTypes.get(liveState.selection.fieldKey),
+                    liveState.selection.value
+                  ),
+                  row: maskFieldValues(liveState.selection.row, servarTypes)
+                }
+              : liveState.selection
+          }
+        : {}),
       ...(liveState?.viewport ? { viewport: liveState.viewport } : {}),
       ...(liveState?.ruleErrors ? { ruleErrors: liveState.ruleErrors } : {}),
       ...(liveState?.findings ? { findings: liveState.findings } : {}),

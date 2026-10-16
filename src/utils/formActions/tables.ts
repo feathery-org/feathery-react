@@ -8,6 +8,12 @@ import {
   NOT_LOADED_MESSAGE,
   snapshotInlineErrors
 } from './utils';
+import {
+  fieldTypesByKey,
+  isMaskedValue,
+  maskFieldValue,
+  maskFieldValues
+} from '../sensitiveFieldValues';
 
 export const TABLE_ROWS_READ_LIMIT = 50;
 
@@ -155,7 +161,12 @@ type RejectedCell = {
   rowIndex?: number;
   entryId?: string | null;
   fieldKey: string;
-  reason: 'unknown_row' | 'row_deleted' | 'unknown_column' | 'read_only';
+  reason:
+    | 'unknown_row'
+    | 'row_deleted'
+    | 'unknown_column'
+    | 'read_only'
+    | 'invalid_value';
   message: string;
 };
 
@@ -327,7 +338,16 @@ export function getTableRows(
     limit,
     search: query.search?.trim() || undefined
   });
-  return { ok: true, rowCount, offset, rows };
+  const types = fieldTypesByKey(found.state.steps);
+  return {
+    ok: true,
+    rowCount,
+    offset,
+    rows: rows.map((row) => ({
+      ...row,
+      values: maskFieldValues(row.values, types)
+    }))
+  };
 }
 
 export function setTableCells(
@@ -339,6 +359,7 @@ export function setTableCells(
   if (!found.ok) return found;
   const { handlers, live } = found;
   if (!live.canEditCells) return notAllowed(tableId, 'cell editing');
+  const types = fieldTypesByKey(found.state.steps);
 
   type Verdict = AppliedCell | RejectedCell;
   const verdicts: Verdict[] = new Array(cells.length);
@@ -356,12 +377,25 @@ export function setTableCells(
       };
       return;
     }
+    if (isMaskedValue(cell.value)) {
+      verdicts[index] = {
+        rowIndex: row.rowIndex,
+        ...('entryId' in row ? { entryId: row.entryId } : {}),
+        fieldKey: cell.fieldKey,
+        reason: 'invalid_value',
+        message: `Cell '${cell.fieldKey}' was given a masked value, ask the person for the real one.`
+      };
+      return;
+    }
     verdicts[index] = {
       rowIndex: row.rowIndex,
       ...('entryId' in row ? { entryId: row.entryId } : {}),
       fieldKey: cell.fieldKey,
       value: undefined,
-      priorValue: handlers.getRow(row.rowIndex)?.[cell.fieldKey] ?? null,
+      priorValue: maskFieldValue(
+        types.get(cell.fieldKey),
+        handlers.getRow(row.rowIndex)?.[cell.fieldKey] ?? null
+      ),
       ...(live.buffersEdits ? { pending: true } : {})
     };
     writes.push({
@@ -377,7 +411,10 @@ export function setTableCells(
     const index = writeCells[writeIndex];
     const { rowIndex, entryId, fieldKey } = verdicts[index];
     verdicts[index] = outcome.ok
-      ? { ...verdicts[index], value: outcome.value }
+      ? {
+          ...verdicts[index],
+          value: maskFieldValue(types.get(fieldKey), outcome.value)
+        }
       : {
           rowIndex,
           ...(entryId === undefined ? {} : { entryId }),
