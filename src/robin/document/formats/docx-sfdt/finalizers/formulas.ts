@@ -86,15 +86,17 @@ export const formulasFinalizer: Finalizer = {
       )) {
         const control = state.nodeAt(occurrence.path);
         if (!control || control.kind !== KIND.control) continue;
-        const was = controlText(control);
         const changed = setControlText(control, write.text);
         if (!changed.length) continue;
         changed.forEach((id) => ids.add(id));
         const name = (control.binding as { name?: unknown } | undefined)?.name;
+        // before is what the control read before the write (review finding 5); a control the
+        // write created read nothing before
+        const was = before.get(control.id);
         detail.push({
           id: control.id,
           ...(typeof name === 'string' ? { name } : {}),
-          before: was,
+          ...(was ? { before: controlText(was) } : {}),
           after: controlText(control)
         });
       }
