@@ -1,4 +1,5 @@
 import { InlineErrorEntry, InlineErrors } from '../inlineErrors';
+import type { FormToolsCallbacks } from '../internalState';
 import { featheryWindow } from '../browser';
 import {
   FEATHERY_INTERACTION_EVENT,
@@ -20,6 +21,7 @@ export type FormActionHandlers = {
     field: any,
     index: number | null
   ) => Promise<unknown> | undefined;
+  submitFiles: FormToolsCallbacks['submitFiles'];
 };
 
 export const NOT_LOADED_MESSAGE = 'The form has not loaded yet.';

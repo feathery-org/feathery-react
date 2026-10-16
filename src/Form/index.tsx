@@ -3949,7 +3949,9 @@ function Form({
           fieldKey: field.servar.key,
           servarId: field.servar.id,
           elementRepeatIndex: index ?? 0
-        })
+        }),
+      submitFiles: (fileEntries: { servar: any; stepKey: string }[]) =>
+        client.submitFiles(fileEntries)
     };
     internalState[_internalId].formActions = callbacks;
     if (assistantClientRef.current) {

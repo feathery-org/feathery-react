@@ -146,6 +146,17 @@ describe('decodeAndValidateFiles', () => {
     const result = decodeAndValidateFiles(servar(), 'not-an-array');
     expect(result.ok).toBe(false);
   });
+
+  it("holds a decoded file to the field's allowed types", () => {
+    const dataBase64 = Buffer.from('hello world').toString('base64');
+    const result = decodeAndValidateFiles(servar({ file_types: ['image/*'] }), [
+      { name: 'hello.txt', mimeType: 'text/plain', dataBase64 }
+    ]);
+    expect(result).toEqual({
+      ok: false,
+      error: 'Invalid file type. Allowed types: image/*'
+    });
+  });
 });
 
 describe('validateAndNormalizeForFill: date_selector', () => {

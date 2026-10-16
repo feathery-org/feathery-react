@@ -1,4 +1,5 @@
 import {
+  checkFilesAgainstField,
   checkValueAgainstField,
   describeOptions,
   emptyValueFor,
@@ -9,13 +10,6 @@ import { formatDateString } from '../../elements/fields/DateSelectorField/utils'
 import countryData from '../../elements/components/data/countries';
 import { stateMap } from '../../elements/components/data/states';
 import { dataURLToFile } from '../image';
-import {
-  fileSizeLimitFor,
-  NUM_FILES_LIMIT,
-  resolveAllowedFileTypes,
-  validateFileSizes,
-  validateFileTypes
-} from '../../elements/fields/FileUploadField/validation';
 import { validators } from '../validation';
 import { FileInput } from './types';
 
@@ -231,44 +225,20 @@ export const decodeAndValidateFiles = (
   rawValue: unknown,
   singleRow = false
 ): { ok: true; files: File[] } | { ok: false; error: string } => {
-  if (!Array.isArray(rawValue) || rawValue.length === 0)
-    return {
-      ok: false,
-      error: `Field '${servar.key}' (file_upload) expects a non-empty array of files.`
-    };
-
-  const isMultiple = !singleRow && !!servar.metadata?.multiple;
-  if (!isMultiple && rawValue.length > 1)
-    return {
-      ok: false,
-      error: singleRow
-        ? `Field '${servar.key}' accepts only one file per row.`
-        : `Field '${servar.key}' accepts only one file.`
-    };
-  if (rawValue.length > NUM_FILES_LIMIT)
-    return {
-      ok: false,
-      error: `Too many files; the limit is ${NUM_FILES_LIMIT}.`
-    };
-
-  let files: File[];
-  try {
-    files = (rawValue as FileInput[]).map((f) =>
-      dataURLToFile(`data:${f.mimeType};base64,${f.dataBase64}`, f.name)
-    );
-  } catch {
-    return {
-      ok: false,
-      error: `Field '${servar.key}' (file_upload) got an undecodable file.`
-    };
+  let files = rawValue;
+  if (Array.isArray(rawValue)) {
+    try {
+      files = (rawValue as FileInput[]).map((f) =>
+        dataURLToFile(`data:${f.mimeType};base64,${f.dataBase64}`, f.name)
+      );
+    } catch {
+      return {
+        ok: false,
+        error: `Field '${servar.key}' (file_upload) got an undecodable file.`
+      };
+    }
   }
 
-  try {
-    validateFileTypes(files, resolveAllowedFileTypes(servar));
-    validateFileSizes(files, fileSizeLimitFor(servar));
-  } catch (e: any) {
-    return { ok: false, error: e?.message ?? 'Invalid file.' };
-  }
-
-  return { ok: true, files };
+  const error = checkFilesAgainstField(servar, files, singleRow);
+  return error ? { ok: false, error } : { ok: true, files: files as File[] };
 };
