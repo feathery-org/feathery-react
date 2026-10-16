@@ -360,7 +360,7 @@ describe('fillStepTool: repeated fields', () => {
       { status: 'filled', value: 'Ford' },
       {
         status: 'rejected',
-        message: 'Value not in allowed options. Allowed: Toyota.'
+        message: "'Ford' is already chosen in another row. Still open: Toyota."
       }
     ]);
   });

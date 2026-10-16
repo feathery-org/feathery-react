@@ -156,6 +156,7 @@ export function isTakenByOtherRow(
   rowValue: unknown
 ): boolean {
   return (
+    servar.type === 'dropdown' &&
     !!servar.repeated &&
     !!servar.metadata?.unique_repeat_options &&
     Array.isArray(fieldValue) &&
@@ -170,7 +171,7 @@ export function availableRowOptions<T extends { value: string }>(
   fieldValue: unknown,
   repeatIndex: number
 ): T[] {
-  if (servar.type !== 'dropdown' || !Array.isArray(fieldValue)) return options;
+  if (!Array.isArray(fieldValue)) return options;
   const rowValue = fieldValue[repeatIndex];
   return options.filter(
     (option) => !isTakenByOtherRow(servar, option.value, fieldValue, rowValue)

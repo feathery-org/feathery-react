@@ -385,7 +385,7 @@ describe('fillFields unique repeat options', () => {
         key: 'plan',
         repeatIndex: 1,
         reason: 'invalid_value',
-        message: 'Value not in allowed options. Allowed: basic, max.'
+        message: "'pro' is already chosen in another row. Still open: basic, max."
       }
     ]);
   });
@@ -417,6 +417,34 @@ describe('fillFields unique repeat options', () => {
         repeatIndex: 2,
         reason: 'invalid_value'
       })
+    ]);
+  });
+
+  it('refuses any pick once other rows hold every option, and still clears', async () => {
+    makeState({ unique_repeat_options: true, options: ['basic', 'pro'] }, [
+      'basic',
+      'pro',
+      ''
+    ]);
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'plan', value: 'basic', repeatIndex: 2 },
+      { key: 'plan', value: 'enterprise', repeatIndex: 2 },
+      { key: 'plan', value: '', repeatIndex: 2 }
+    ]);
+
+    expect(result.rejected).toEqual([
+      expect.objectContaining({
+        repeatIndex: 2,
+        message: "'basic' is already chosen in another row. Still open: none."
+      }),
+      expect.objectContaining({
+        repeatIndex: 2,
+        message: expect.stringContaining('Value not in allowed options')
+      })
+    ]);
+    expect(result.applied).toEqual([
+      expect.objectContaining({ repeatIndex: 2, value: '' })
     ]);
   });
 

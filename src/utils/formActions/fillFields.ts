@@ -2,7 +2,11 @@ import internalState from '../internalState';
 import { initState } from '../init';
 import { loadPhoneValidator, phoneLib, phoneLibPromise } from '../validation';
 import { stateMap } from '../../elements/components/data/states';
-import { availableRowOptions, getRepeatedContainer } from '../repeat';
+import {
+  availableRowOptions,
+  getRepeatedContainer,
+  isTakenByOtherRow
+} from '../repeat';
 import { getPositionKey } from '../hideAndRepeats';
 import { formatDateString } from '../../elements/fields/DateSelectorField/utils';
 import {
@@ -209,8 +213,7 @@ function validateFill(
 
 export function resolveOptions(
   servar: any,
-  repeatIndex: number | undefined,
-  fieldValue?: unknown
+  repeatIndex: number | undefined
 ): Array<{ value: string; label: string }> {
   const meta = servar.metadata ?? {};
   const rawRowOptions = Array.isArray(meta.repeat_options)
@@ -229,13 +232,10 @@ export function resolveOptions(
   const rawOptions = Array.isArray(meta.options) ? meta.options : null;
   if (!rawOptions) return [];
   const rawLabels = Array.isArray(meta.option_labels) ? meta.option_labels : [];
-  const options = rawOptions.map((value: any, i: number) => ({
+  return rawOptions.map((value: any, i: number) => ({
     value: String(value ?? ''),
     label: String(rawLabels[i] || value || '')
   }));
-  return typeof repeatIndex === 'number'
-    ? availableRowOptions(servar, options, fieldValue, repeatIndex)
-    : options;
 }
 
 // Values with their labels where they differ, so a caller can both refill and ask the person
@@ -308,11 +308,26 @@ export function checkValueAgainstField(
     if (typeof value !== 'string') {
       return `Field '${key}' (${type}) expects a single option value (string).`;
     }
-    const options = resolveOptions(servar, repeatIndex, fieldValue);
+    const options = resolveOptions(servar, repeatIndex);
     if (options.length > 0 && !options.some((o) => o.value === value)) {
       return `Value not in allowed options. Allowed: ${describeOptions(
         options
       )}.`;
+    }
+    if (
+      typeof repeatIndex === 'number' &&
+      Array.isArray(fieldValue) &&
+      isTakenByOtherRow(servar, value, fieldValue, fieldValue[repeatIndex])
+    ) {
+      const open = availableRowOptions(
+        servar,
+        options,
+        fieldValue,
+        repeatIndex
+      );
+      return `'${value}' is already chosen in another row. Still open: ${
+        open.length > 0 ? describeOptions(open) : 'none'
+      }.`;
     }
     return null;
   }
@@ -325,7 +340,7 @@ export function checkValueAgainstField(
       return `Field '${key}' (button_group) is single-select; pass at most one option.`;
     }
     const opts = new Set(
-      resolveOptions(servar, repeatIndex, fieldValue).map((o) => o.value)
+      resolveOptions(servar, repeatIndex).map((o) => o.value)
     );
     if (opts.size > 0) {
       const bad = (value as string[]).filter((v) => !opts.has(v));

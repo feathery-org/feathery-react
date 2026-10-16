@@ -151,7 +151,7 @@ export const validateAndNormalizeForFill = (
         ok: false,
         error: `Field '${servar.key}' (select) expects a single option value (string).`
       };
-    const options = resolveOptions(servar, repeatIndex, fieldValue);
+    const options = resolveOptions(servar, repeatIndex);
     if (options.length > 0 && !options.some((o) => o.value === rawValue))
       return {
         ok: false,
