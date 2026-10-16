@@ -56,6 +56,85 @@ describe('multiple cached document performance', () => {
     console.log(JSON.stringify(rows));
     expect(rows.map((row) => row.previews)).toEqual([1, 1, 1]);
   }, 120000);
+  it('reuses saved version data when flipping versions and revisiting the second document', async () => {
+    const sfdt = process.env.DOCX_HISTORY_FIXTURE
+      ? fs.readFileSync(process.env.DOCX_HISTORY_FIXTURE, 'utf8')
+      : JSON.stringify({
+          sections: [
+            {
+              blocks: Array.from({ length: 180 }, (_, i) => ({
+                inlines: [
+                  { text: `Paragraph ${i} ` + 'Document content. '.repeat(30) }
+                ]
+              }))
+            }
+          ]
+        });
+    await session.call('openPerformanceDocuments', sfdt, 2);
+    try {
+      const rows = await session.call('measureVersionSwitches', sfdt);
+      if (process.env.DOCX_HISTORY_OUTPUT)
+        fs.writeFileSync(
+          process.env.DOCX_HISTORY_OUTPUT,
+          JSON.stringify(rows, null, 2)
+        );
+      // eslint-disable-next-line no-console
+      console.log(JSON.stringify(rows));
+      expect(rows.map((row: any) => row.fetches)).toEqual([1, 2, 2, 2, 2]);
+    } finally {
+      await session.call('closePerformanceDocuments');
+    }
+  }, 120000);
+  it('keeps overflowing document tabs and their dropdown inside a narrow viewport', async () => {
+    await session.page.setViewport({ width: 320, height: 700 });
+    await session.call('openOverflowDocuments', 320);
+    try {
+      await session.page.waitForSelector('[aria-label="More documents"]');
+      const row = await session.page.evaluate(() => {
+        const list = document.querySelector('[role="tablist"]')!;
+        const more = document.querySelector('[aria-label="More documents"]')!;
+        return {
+          tabs: list.children.length,
+          right: more.getBoundingClientRect().right,
+          scrollWidth: list.scrollWidth,
+          width: list.clientWidth
+        };
+      });
+      expect(row.tabs).toBe(1);
+      expect(row.right).toBeLessThanOrEqual(320);
+      expect(row.scrollWidth).toBeLessThanOrEqual(row.width);
+      await session.page.click('[aria-label="More documents"]');
+      await session.page.waitForSelector('[role="menu"]');
+      await session.page.keyboard.press('End');
+      await session.page.keyboard.press('Enter');
+      await session.page.waitForFunction(() =>
+        document
+          .querySelector('[aria-selected="true"]')
+          ?.textContent?.includes('Document 20')
+      );
+      await session.page.click('[aria-label="More documents"]');
+      const menu = await session.page.$eval('[role="menu"]', (el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          left: r.left,
+          right: r.right,
+          height: r.height,
+          scrollHeight: el.scrollHeight
+        };
+      });
+      expect(menu.left).toBeGreaterThanOrEqual(0);
+      expect(menu.right).toBeLessThanOrEqual(320);
+      expect(menu.height).toBeLessThanOrEqual(330);
+      expect(menu.scrollHeight).toBeGreaterThan(menu.height);
+      if (process.env.DOCX_OVERFLOW_SCREENSHOT)
+        await session.page.screenshot({
+          path: process.env.DOCX_OVERFLOW_SCREENSHOT
+        });
+    } finally {
+      await session.call('closePerformanceDocuments');
+      await session.page.setViewport({ width: 1440, height: 1000 });
+    }
+  });
   it('computes identical history off the UI thread while timers keep responding', async () => {
     const result = await session.call('measureHistoryWorker');
     if (process.env.DOCX_WORKER_OUTPUT)

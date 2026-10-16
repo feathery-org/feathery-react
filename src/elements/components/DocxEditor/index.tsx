@@ -1338,7 +1338,9 @@ function DocxEditor({
             formatCount={versionMeta?.formatCount}
             pendingCount={versionMeta?.pendingCount}
             approvedCount={versionMeta?.approvedCount}
-            highlightsAvailable={!!versionMeta && !versionMeta.degraded}
+            highlightsAvailable={
+              versionMeta ? !versionMeta.degraded : undefined
+            }
             highlightsOn={highlightsOn}
             onToggleHighlights={setHighlightsOn}
             onPrevChange={() => stepChange(-1)}
