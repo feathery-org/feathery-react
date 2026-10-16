@@ -74,6 +74,7 @@ import {
   getVisiblePositions
 } from '../utils/hideAndRepeats';
 import {
+  ensurePhoneValidator,
   isFieldValueEmpty,
   validateElements,
   validators
@@ -3220,6 +3221,7 @@ function Form({
         }
       } else if (type === ACTION_SEND_SMS_MESSAGE) {
         const phoneNum = fieldValues[action.phone_target_field_key] as string;
+        await ensurePhoneValidator();
         if (validators.phone(phoneNum)) {
           try {
             await client.sendSMSMessage(phoneNum, action.sms_message);
@@ -3233,6 +3235,7 @@ function Form({
         }
       } else if (type === ACTION_SEND_SMS_CODE) {
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
+        await ensurePhoneValidator();
         if (validators.phone(phoneNum)) {
           try {
             await Auth.sendSms(phoneNum, client);

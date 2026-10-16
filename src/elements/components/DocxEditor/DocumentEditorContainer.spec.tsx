@@ -782,8 +782,10 @@ describe('DocumentEditorContainer signing outcomes', () => {
       envelope_signers: [
         {
           document_id: `document-${CONTAINER}`,
-          role_id: 'role-1',
-          field_key: 'buyer_field'
+          email: 'buyer@test.com',
+          signer_id: 'buyer',
+          name: 'Buyer',
+          phone: '+15551234567'
         }
       ]
     });
@@ -803,7 +805,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
       [
         {
           document_id: `document-${CONTAINER}`,
-          role_id: 'role-1',
+          signer_id: 'buyer',
+          name: 'Buyer',
+          phone: '+15551234567',
           email: 'buyer@test.com',
           filler: false
         }

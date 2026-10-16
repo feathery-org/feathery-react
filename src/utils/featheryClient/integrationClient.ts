@@ -55,7 +55,12 @@ export type QuikDocumentSource = {
   // Omit to use the configured Quik integration's forms and mappings.
   // When supplied, each entry is one PDF, including repeated form IDs.
   // Values use Quik field names and never fall back to saved form answers.
-  forms?: { id: string | number; fields: Record<string, string> }[];
+  forms?: {
+    id: string | number;
+    fields: Record<string, string>;
+    // DocuSign-only: Quik role prefix -> stable person ID, e.g. { '1own': 'client-123' }.
+    signerIds?: Record<string, string>;
+  }[];
 };
 // Every file uploaded to the field becomes a document, converted to PDF.
 // Logic rules name the field by `field_key`, resolved to `field_id` before sending.
@@ -679,6 +684,24 @@ export default class IntegrationClient {
   ENVELOPE_MAX_TIME = 8 * 60 * 1000;
 
   async generateEnvelopes(action: Record<string, any>) {
+    if (
+      action.sign_method !== 'docusign' &&
+      ((action.envelope_signers ?? []).some((entry: any) =>
+        entry.signer_id?.trim()
+      ) ||
+        (action.documents ?? []).some(
+          (doc: any) =>
+            doc?.kind === 'quik' &&
+            doc.forms?.some(
+              (form: any) =>
+                Object.keys(form.signerIds ?? form.signer_ids ?? {}).length
+            )
+        ))
+    ) {
+      throw new Error(
+        "generateDocuments: signer IDs require signMethod 'docusign'"
+      );
+    }
     const { userId, sdkKey } = initInfo();
     // Editor flow: the backend converts a docx envelope to PDF at generation
     // whenever a signer is present, which would make the draft uneditable in
@@ -729,6 +752,10 @@ export default class IntegrationClient {
             ? { repeat_index: entry.repeat_index }
             : {}),
           email,
+          ...(entry.signer_id?.trim()
+            ? { signer_id: entry.signer_id.trim() }
+            : {}),
+          ...(entry.name ? { name: entry.name.toString() } : {}),
           // Omitted rather than blanked: a present phone is the request to
           // challenge that recipient by SMS, so an empty one must not read as
           // one.
@@ -811,7 +838,8 @@ export default class IntegrationClient {
         signMethod: action.sign_method,
         draft: action.draft,
         emailSubject: action.email_subject,
-        emailBlurb: action.email_blurb
+        emailBlurb: action.email_blurb,
+        customFields: action.custom_fields
       });
     }
 
@@ -822,7 +850,12 @@ export default class IntegrationClient {
       formId: this.formKey,
       documentIds: templateIdOrNull as string[],
       userId,
-      signers,
+      signers: signers.map((signer) => {
+        const legacySigner = { ...signer };
+        delete legacySigner.signer_id;
+        delete legacySigner.name;
+        return legacySigner;
+      }),
       repeatable,
       runAsync,
       envelopeAction,
@@ -1111,7 +1144,8 @@ export default class IntegrationClient {
     signMethod,
     draft,
     emailSubject,
-    emailBlurb
+    emailBlurb,
+    customFields
   }: {
     documentIds: GenerateDocumentRef[];
     signers: Record<string, any>[];
@@ -1128,12 +1162,28 @@ export default class IntegrationClient {
     // DocuSign sign only: subject and body of the envelope's signing email.
     emailSubject?: string;
     emailBlurb?: string;
+    customFields?: Record<
+      string,
+      string | { listItems: string[]; value?: string }
+    >;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
-      documents: documentIds,
+      documents: documentIds.map((document) =>
+        typeof document !== 'string' &&
+        document.kind === 'quik' &&
+        document.forms
+          ? {
+              ...document,
+              forms: document.forms.map(({ signerIds, ...form }) => ({
+                ...form,
+                ...(signerIds !== undefined ? { signer_ids: signerIds } : {})
+              }))
+            }
+          : document
+      ),
       run_async: runAsync,
       envelope_action: openInEditor ? 'open_in_editor' : envelopeAction,
       // Forwarded even though neither path merges at generate time: it lets the
@@ -1151,6 +1201,7 @@ export default class IntegrationClient {
     if (signMethod) payload.sign_method = signMethod;
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;
+    if (customFields !== undefined) payload.custom_fields = customFields;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
 
@@ -1223,6 +1274,8 @@ export default class IntegrationClient {
     // DocuSign envelope until the filler presses Sign.
     if (action.email_subject) payload.email_subject = action.email_subject;
     if (action.email_blurb) payload.email_blurb = action.email_blurb;
+    if (action.custom_fields !== undefined)
+      payload.custom_fields = action.custom_fields;
 
     const url = `${getApiUrl()}document/form/finalize/`;
     const options = {

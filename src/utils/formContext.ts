@@ -355,6 +355,7 @@ export const getFormContext = (formUuid: string) => {
       toolbarActions,
       emailSubject,
       emailBlurb,
+      customFields,
       repeatable,
       download,
       merge,
@@ -383,6 +384,8 @@ export const getFormContext = (formUuid: string) => {
         documentId: string;
         roleId?: string;
         repeatIndex?: number;
+        // DocuSign-only identity across documents; omit for email grouping.
+        signerId?: string;
         email: string;
         name?: string;
         phone?: string;
@@ -401,6 +404,11 @@ export const getFormContext = (formUuid: string) => {
       // signing email, as sendDocusignEnvelope takes them.
       emailSubject?: string;
       emailBlurb?: string;
+      // DocuSign envelope metadata (not PDF fields), e.g. account_submission_id.
+      customFields?: Record<
+        string,
+        string | { listItems: string[]; value?: string }
+      >;
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
@@ -410,6 +418,45 @@ export const getFormContext = (formUuid: string) => {
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
     }) => {
+      if (customFields !== undefined && signMethod !== 'docusign') {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: customFields require signMethod 'docusign'"
+          )
+        );
+      }
+      // Capture before pending field saves or document review can yield.
+      customFields =
+        customFields === undefined
+          ? undefined
+          : Object.fromEntries(
+              Object.entries(customFields).map(([name, value]) => [
+                name,
+                typeof value === 'string'
+                  ? value
+                  : { ...value, listItems: [...value.listItems] }
+              ])
+            );
+      signers = signers?.map((signer) => ({ ...signer }));
+      if (
+        signMethod !== 'docusign' &&
+        (signers?.some((signer) => signer.signerId?.trim()) ||
+          documentSources.some(
+            (doc) =>
+              !(doc instanceof Field) &&
+              typeof doc !== 'string' &&
+              doc.kind === 'quik' &&
+              doc.forms?.some(
+                (form) => Object.keys(form.signerIds ?? {}).length
+              )
+          ))
+      ) {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: signer IDs require signMethod 'docusign'"
+          )
+        );
+      }
       if (draft) {
         if (
           signMethod !== 'docusign' ||
@@ -450,7 +497,8 @@ export const getFormContext = (formUuid: string) => {
               ...doc,
               forms: doc.forms.map((form) => ({
                 ...form,
-                fields: { ...form.fields }
+                fields: { ...form.fields },
+                ...(form.signerIds ? { signerIds: { ...form.signerIds } } : {})
               }))
             }
           : doc
@@ -525,6 +573,7 @@ export const getFormContext = (formUuid: string) => {
                 documentId,
                 roleId,
                 repeatIndex,
+                signerId,
                 email,
                 name,
                 phone,
@@ -536,6 +585,7 @@ export const getFormContext = (formUuid: string) => {
                   ? { repeat_index: repeatIndex }
                   : {}),
                 email,
+                ...(signerId?.trim() ? { signer_id: signerId.trim() } : {}),
                 ...(name ? { name } : {}),
                 ...(phone ? { phone } : {}),
                 filler: !!filler
@@ -544,6 +594,7 @@ export const getFormContext = (formUuid: string) => {
             editor_toolbar_actions: toolbarActions,
             email_subject: emailSubject,
             email_blurb: emailBlurb,
+            custom_fields: customFields,
             repeatable,
             merge_docs: merge,
             merged_file_name: mergedFileName,

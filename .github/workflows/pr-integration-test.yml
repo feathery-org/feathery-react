@@ -9,6 +9,9 @@ on:
 jobs:
   integration-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout feathery-react
         uses: actions/checkout@v6
@@ -47,6 +50,8 @@ jobs:
 
       - name: Test in hosted-forms
         working-directory: hosted-forms-next
+        env:
+          GITHUB_PACKAGES_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           yarn add ../feathery-react/v${{ github.event.pull_request.number }}.tgz
           yarn test
