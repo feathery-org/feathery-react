@@ -7,9 +7,11 @@ import React, {
 } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import DocxEditor from './index';
+import SignedEnvelopeView from './SignedEnvelopeView';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { documentRefTemplateId } from '../../../utils/featheryClient/integrationClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
+import useRefreshOnFocus from '../../../utils/useRefreshOnFocus';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import internalState from '../../../utils/internalState';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
@@ -79,6 +81,9 @@ interface Envelope {
 function envelopeSourceUrl(envelope?: Envelope | null): string | undefined {
   return envelope?.editor_file ?? envelope?.file ?? undefined;
 }
+
+// The stored file a URL points at, without a presigned URL's query.
+const storedFile = (url?: string | null) => url?.split('?')[0] ?? null;
 
 interface RefreshEventDetail {
   containerId?: string;
@@ -212,6 +217,14 @@ export default function DocumentEditorContainer({
   // session. Keyed by id so a regenerated envelope is editable again without
   // any reset wiring.
   const [finalizedId, setFinalizedId] = useState<string | null>(null);
+  // Envelopes this session actually sent for signature, and how. Only these
+  // read as sent; a PDF reopened later carries no such record.
+  const [sentVia, setSentVia] = useState<
+    Record<string, 'feathery' | 'docusign'>
+  >({});
+  // The filler's signing page, offered again in case the browser blocked the
+  // tab opened after the finalize round trip.
+  const [signUrls, setSignUrls] = useState<Record<string, string>>({});
 
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
   // featheryWindow() is {} so a mount-once memo freezes serviceUrl as
@@ -231,21 +244,27 @@ export default function DocumentEditorContainer({
     return [];
   }, [sdkKey, syncfusion.headers]);
 
-  const loadEnvelope = useCallback(async () => {
-    if (!documentId) return;
-    try {
-      const env = await client.getCurrentEnvelope(documentId);
-      const nextEnvelope = env && env.id ? (env as Envelope) : null;
-      setEnvelope(nextEnvelope);
-      setSourceUrl(envelopeSourceUrl(nextEnvelope));
-      setError(null);
-    } catch (e: any) {
-      console.error('Feathery: failed to load current envelope', e);
-      setError(e?.message || String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [documentId, client]);
+  // A background refresh keeps what is shown when it fails or comes back
+  // empty: a dead network can resolve with nothing rather than throw.
+  const loadEnvelope = useCallback(
+    async (background = false) => {
+      if (!documentId) return;
+      try {
+        const env = await client.getCurrentEnvelope(documentId);
+        const nextEnvelope = env && env.id ? (env as Envelope) : null;
+        if (background && !nextEnvelope) return;
+        setEnvelope(nextEnvelope);
+        setSourceUrl(envelopeSourceUrl(nextEnvelope));
+        setError(null);
+      } catch (e: any) {
+        console.error('Feathery: failed to load current envelope', e);
+        if (!background) setError(e?.message || String(e));
+      } finally {
+        if (!background) setLoading(false);
+      }
+    },
+    [documentId, client]
+  );
 
   useEffect(() => {
     if (editMode || !documentId) {
@@ -305,6 +324,39 @@ export default function DocumentEditorContainer({
     win.addEventListener(REFRESH_EVENT, handler);
     return () => win.removeEventListener(REFRESH_EVENT, handler);
   }, [containerId, documentId, editMode, loadEnvelope]);
+
+  // Re-pull the envelope when the filler returns from the hosted sign tab, so
+  // its status + signed PDF update. Scoped to the awaiting-signature window.
+  // Only Feathery signing flips `signed` here; nothing on our side ever
+  // records a DocuSign signature, so those are not polled.
+  useRefreshOnFocus(
+    () => loadEnvelope(true),
+    !editMode &&
+      !!documentId &&
+      envelope?.type === 'pdf' &&
+      !envelope.signed &&
+      sentVia[envelope.id] === 'feathery'
+  );
+  // Reload only when the file or its signed state changes (signing overwrites
+  // the same path); an unchanged plain URL gets ?v= to bypass caches.
+  const pdfView = useRef<{
+    key: string;
+    raw: string | null;
+    url: string | null;
+    version: number;
+  }>({ key: '', raw: null, url: null, version: 0 });
+  const pdfViewKey = `${storedFile(envelope?.file)}|${!!envelope?.signed}`;
+  if (pdfView.current.key !== pdfViewKey) {
+    const raw = envelope?.file ?? null;
+    const version = pdfView.current.version + 1;
+    const reused = !!raw && raw === pdfView.current.raw && !raw.includes('?');
+    pdfView.current = {
+      key: pdfViewKey,
+      raw,
+      version,
+      url: reused ? `${raw}?v=${version}` : raw
+    };
+  }
 
   // Stable source unless a different envelope loads or a regenerate is
   // signalled (reloadKey) — a plain save leaves both unchanged, so it doesn't
@@ -524,6 +576,23 @@ export default function DocumentEditorContainer({
         );
         setFinalizedId(envelope.id);
       }
+      // Finalize turned the docx into a signable PDF, but the editor stays
+      // until something is actually sent: a failed send or a draft keeps the
+      // editor, its error and its Sign button. Then adopt the returned PDF.
+      const showSent = (via: 'feathery' | 'docusign') => {
+        setSentVia((current) => ({ ...current, [envelope.id]: via }));
+        setEnvelope((current) =>
+          current && finalized && current.id === envelope.id
+            ? {
+                ...current,
+                file: finalized.file ?? current.file,
+                editor_file: finalized.editor_file ?? null,
+                type: finalized.type ?? current.type,
+                signed: finalized.signed ?? current.signed
+              }
+            : current
+        );
+      };
 
       // Nothing here navigates away, so the outcome is only visible if it's
       // announced.
@@ -560,6 +629,7 @@ export default function DocumentEditorContainer({
         });
         if (!result) throw Error('Failed to send the document to DocuSign');
         if (result.status === 'error') throw Error(result.message);
+        if (!draft) showSent('docusign');
         announce?.(
           draft ? 'Saved as Draft' : 'Sent for Signature',
           targetAction?.documents
@@ -573,11 +643,15 @@ export default function DocumentEditorContainer({
       // A signer id comes back only when the filler signs first. Without one
       // the envelope is someone else's to sign, so there's nothing to open.
       if (!finalized?.signer_id) {
-        if (finalized?.invited)
+        if (finalized?.invited) {
+          showSent('feathery');
           announce?.('Sent for Signature', targetAction?.documents);
+        }
         return;
       }
+      showSent('feathery');
       const url = getSignUrl(finalized.signer_id, targetAction?.redirect);
+      setSignUrls((current) => ({ ...current, [envelope.id]: url }));
       if (targetAction?.redirect) featheryWindow().location.href = url;
       else openTab(url);
     },
@@ -693,6 +767,45 @@ export default function DocumentEditorContainer({
       </div>
     );
   }
+  const operationAlert = operationError && (
+    <div role='alert' css={{ color: '#b42318', padding: 8 }}>
+      {operationError}
+    </div>
+  );
+  // A PDF has no editable docx to open, so show it read-only. Its status is
+  // only claimed when this session sent it (or the backend says signed).
+  if (envelope.type === 'pdf') {
+    const via = sentVia[envelope.id];
+    return box(
+      <>
+        {operationAlert}
+        <SignedEnvelopeView
+          pdfUrl={pdfView.current.url ?? envelope.file}
+          // A presigned URL is freshest as fetched; a plain one may need the
+          // version query to skip a cached copy.
+          downloadUrl={
+            envelope.file.includes('?')
+              ? envelope.file
+              : pdfView.current.url ?? envelope.file
+          }
+          signUrl={
+            !envelope.signed && via === 'feathery'
+              ? signUrls[envelope.id]
+              : undefined
+          }
+          status={
+            envelope.signed
+              ? 'signed'
+              : via === 'docusign'
+              ? 'docusign'
+              : via
+              ? 'awaiting'
+              : null
+          }
+        />
+      </>
+    );
+  }
   if (envelope.type !== 'docx') {
     return box(
       <div css={placeholder}>
@@ -709,11 +822,7 @@ export default function DocumentEditorContainer({
 
   return box(
     <>
-      {operationError && (
-        <div role='alert' css={{ color: '#b42318', padding: 8 }}>
-          {operationError}
-        </div>
-      )}
+      {operationAlert}
       <DocxEditor
         source={source}
         envelopeId={envelope.id}
