@@ -880,10 +880,12 @@ export function prepareWrite(
   );
   Object.assign(mapping, minted.mapping);
 
-  // Finalizers, each declaring what it touched.
-  const finalizerScope: FinalizerScope[] = [];
+  // Finalizers. What they touch is the engine's declaration, never the model's, and it is derived
+  // by diff over the whole pass (changed, removed, created, moved), not taken from what each
+  // finalizer says it touched: a finalizer's own list is advisory, for its facts and for naming it.
+  const beforeFinalizers = makeView(clone(working), pack);
+  const reported: Array<{ name: string; ids: Set<string> }> = [];
   const finalizerFacts: Fact[] = [];
-  const finalizerIds = new Set<string>();
   for (const finalizer of pack.finalizers) {
     const result = finalizer.run(working, {
       before: view,
@@ -891,12 +893,26 @@ export function prepareWrite(
       residue: state.residue,
       copies: minted.copies
     });
-    finalizerScope.push({ name: finalizer.name, ids: [...result.ids] });
-    result.ids.forEach((id) => finalizerIds.add(id));
+    reported.push({ name: finalizer.name, ids: new Set(result.ids) });
     finalizerFacts.push(...(result.facts ?? []));
     warnings.push(...(result.warnings ?? []));
   }
   mintWritten(working.root, pack.tree, ids, () => null);
+  const after = makeView(working, pack);
+  const pass = diffTrees(beforeFinalizers, after, pack);
+  const finalizerIds = new Set<string>([
+    ...pass.changed,
+    ...pass.removed,
+    ...pass.created,
+    ...pass.moved
+  ]);
+  const finalizerScope = attributeFinalizerScope(
+    reported,
+    finalizerIds,
+    (id) =>
+      (after.get(id) ? after : beforeFinalizers).placement(id)?.parent?.id ??
+      null
+  );
 
   const intendedResidue: Residue = {};
   walk(working.root, pack.tree, ({ node }) => {
@@ -907,7 +923,6 @@ export function prepareWrite(
     if (original in state.residue)
       intendedResidue[copy] = clone(state.residue[original]);
 
-  const after = makeView(working, pack);
   const diff = diffTrees(view, after, pack);
   runner.run('scope', () =>
     scopeProblems({
@@ -943,6 +958,32 @@ export function prepareWrite(
     diff,
     title: cardTitle({ pack, before: view, after, diff, derived: finalizerIds })
   };
+}
+
+/**
+ * Name the finalizer behind each node the pass touched: the one that reported the node, or the
+ * nearest ancestor of it (a run a finalizer dropped from a control it rewrote is that finalizer's).
+ * A node no finalizer's report reaches is listed as `unreported`, still the engine's.
+ */
+function attributeFinalizerScope(
+  reported: Array<{ name: string; ids: Set<string> }>,
+  touched: ReadonlySet<string>,
+  parentOf: (id: string) => string | null
+): FinalizerScope[] {
+  const scope = reported.map((r) => ({ name: r.name, ids: [...r.ids] }));
+  const unreported: string[] = [];
+  for (const id of touched) {
+    // the root is no finalizer's node (its list changing is reported on what it holds)
+    if (id === ROOT_ID || reported.some((r) => r.ids.has(id))) continue;
+    let owner = -1;
+    for (let at = parentOf(id); at && owner < 0; at = parentOf(at))
+      owner = reported.findIndex((r) => r.ids.has(at as string));
+    if (owner >= 0) scope[owner].ids.push(id);
+    else unreported.push(id);
+  }
+  return unreported.length
+    ? [...scope, { name: 'unreported', ids: unreported }]
+    : scope;
 }
 
 /** Count of nodes referencing a format, for callers composing scope acknowledgements. */
