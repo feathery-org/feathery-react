@@ -3,6 +3,7 @@ import { act, render, waitFor } from '@testing-library/react';
 
 import { installRevisionHighlightRendering } from '../useDocxEditor';
 import VersionViewer from './VersionViewer';
+import { __clearVersionDocumentCache } from './useVersionDocument';
 import { colorForAuthor } from './authorColors';
 import { applyHunks, diffSession } from './sfdtDiff';
 import { DocxHistoryHost, DocxVersion } from './types';
@@ -125,6 +126,8 @@ const host = (over: Partial<DocxHistoryHost> = {}): DocxHistoryHost => ({
 });
 
 beforeEach(() => {
+  __clearVersionDocumentCache();
+  openAsync.mockReset().mockResolvedValue(undefined);
   construct.mockClear();
   open.mockClear();
   destroy.mockClear();
@@ -220,6 +223,24 @@ describe('VersionViewer', () => {
       expect(h.fetchVersionFile).toHaveBeenCalledWith('saved-current')
     );
     await waitFor(() => expect(open).toHaveBeenCalledWith('{"sfdt":"v"}'));
+  });
+
+  it('reopens a DOCX-only version from its cached import without another conversion', async () => {
+    const h = host();
+    const row = version({ is_baseline: true, editor_file: 'baseline.docx' });
+    const displayed = jest.fn();
+    const first = render(
+      <VersionViewer host={h} version={row} onDisplayedVersion={displayed} />
+    );
+    await waitFor(() => expect(displayed).toHaveBeenCalled());
+    first.unmount();
+    displayed.mockClear();
+    render(
+      <VersionViewer host={h} version={row} onDisplayedVersion={displayed} />
+    );
+    await waitFor(() => expect(displayed).toHaveBeenCalled());
+    expect(openAsync).toHaveBeenCalledTimes(1);
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
   });
 
   it('destroys the editor on unmount', async () => {
@@ -358,7 +379,11 @@ describe('VersionViewer', () => {
         version={version({ id: 'v2', final_sfdt: 'second' })}
       />
     );
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(view.queryByText('Loading version…')).toBeNull();
+    expect(open).toHaveBeenCalledTimes(1);
 
     resolveSecond?.(new TextEncoder().encode('{"sfdt":"second"}').buffer);
     await waitFor(() => expect(open).toHaveBeenCalledWith('{"sfdt":"second"}'));

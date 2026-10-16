@@ -1,5 +1,8 @@
 // Real React surfaces and pinned Syncfusion engine; no network or save side effects.
 import React from 'react';
+import DocumentTabs from '../../../../../elements/components/DocumentEditor/DocumentTabs';
+import VersionViewer from '../../../../../elements/components/DocxEditor/history/VersionViewer';
+import { __clearVersionDocumentCache } from '../../../../../elements/components/DocxEditor/history/useVersionDocument';
 import { computeHistoryTask } from '../../../../../elements/components/DocxEditor/history/historyComputation';
 import { runHistoryTask } from '../../../../../elements/components/DocxEditor/history/historyWorkerClient';
 import { createRoot, Root } from 'react-dom/client';
@@ -90,6 +93,89 @@ const render = () =>
   );
 
 export const multiDocumentPerformanceHarness = {
+  openOverflowDocuments(width: number) {
+    root?.unmount();
+    host?.remove();
+    host = document.createElement('div');
+    host.style.cssText = `position:fixed;inset:0;width:${width}px;height:300px;background:white`;
+    document.body.appendChild(host);
+    root = createRoot(host);
+    const tabs = Array.from({ length: 20 }, (_, i) => ({
+      id: `${i}`,
+      label: `Document ${i + 1} — a long document name.docx`
+    }));
+    const draw = (activeId: string) =>
+      root!.render(
+        React.createElement(DocumentTabs, {
+          tabs,
+          activeId,
+          disabled: false,
+          id: 'overflow-test',
+          onSelect: draw
+        })
+      );
+    draw('0');
+  },
+  async measureVersionSwitches(sfdt: string) {
+    __clearVersionDocumentCache();
+    const previewHost = document.createElement('div');
+    previewHost.style.cssText =
+      'position:fixed;inset:0;width:1200px;height:800px;background:white';
+    document.body.appendChild(previewHost);
+    let previewRoot = createRoot(previewHost);
+    let fetches = 0;
+    const history = {
+      fetchVersionFile: async () => {
+        fetches++;
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        return new TextEncoder().encode(sfdt).buffer;
+      }
+    } as any;
+    const rows: any[] = [];
+    try {
+      for (const [index, key] of [
+        'current',
+        'older',
+        'current',
+        'older',
+        'current'
+      ].entries()) {
+        // Revisit the document after releasing its only preview engine.
+        if (index === 4) {
+          previewRoot.unmount();
+          previewRoot = createRoot(previewHost);
+        }
+        let displayed = false;
+        const started = performance.now();
+        previewRoot.render(
+          React.createElement(VersionViewer, {
+            host: history,
+            version: {
+              id: key,
+              is_current: key === 'current',
+              final_sfdt: key
+            } as any,
+            onDisplayedVersion: (version: any) => {
+              if (version.id === key) displayed = true;
+            }
+          })
+        );
+        for (let n = 0; n < 600 && !displayed; n++) await frame();
+        if (!displayed) throw new Error('Version never displayed');
+        await frame();
+        rows.push({
+          selection: key,
+          remounted: index === 4,
+          ms: performance.now() - started,
+          fetches
+        });
+      }
+      return rows;
+    } finally {
+      previewRoot.unmount();
+      previewHost.remove();
+    }
+  },
   async measureHistoryWorker() {
     const document = (tail: string) =>
       JSON.stringify({

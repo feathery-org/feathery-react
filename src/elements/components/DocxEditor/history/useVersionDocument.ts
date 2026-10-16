@@ -35,8 +35,8 @@ export interface VersionDocument {
   degraded: boolean;
 }
 
-// Older versions are immutable and cached (small LRU); current can still get
-// a checkpoint or close at the same id, so it is refetched on refresh.
+// Cache resolved snapshots, including Current. The artifact key changes when
+// a checkpoint/save replaces its content; live session artifacts take precedence.
 type ResolvedVersion = Omit<VersionDocument, 'loading'>;
 const CACHE_MAX = 8;
 const CACHE_BYTES_MAX = 16 * 1024 * 1024;
@@ -214,13 +214,13 @@ async function resolveVersionDocument(
 ): Promise<ResolvedVersion> {
   try {
     if (version.final_sfdt) {
-      const finalSfdt = await gunzip(
-        await host.fetchVersionFile(version.final_sfdt)
-      );
-      let changes: ChangeList | null = null;
-      if (version.changes && version.change_count != null) {
+      const finalSfdtPromise = host
+        .fetchVersionFile(version.final_sfdt)
+        .then(gunzip);
+      const changesPromise = (async (): Promise<ChangeList | null> => {
+        if (!version.changes || version.change_count == null) return null;
         try {
-          changes = parseChangeList(
+          return parseChangeList(
             JSON.parse(
               await gunzip(await host.fetchVersionFile(version.changes))
             )
@@ -232,9 +232,13 @@ async function resolveVersionDocument(
             [403, 404].includes((error as any)?.status)
           )
             throw error;
-          changes = null;
+          return null;
         }
-      }
+      })();
+      const [finalSfdt, changes] = await Promise.all([
+        finalSfdtPromise,
+        changesPromise
+      ]);
       return await runHistoryTask('stored', {
         finalSfdt,
         changes,
@@ -283,7 +287,6 @@ async function resolveAndCache(
       // Malformed local snapshot: fall through to the fetched/docx path.
     }
   }
-  if (version.is_current) return resolveVersionDocument(host, version);
   const key = cacheKey(host, version);
   const scope = scopeFor(host);
   const epoch = scope.epoch;
@@ -415,6 +418,16 @@ async function resolveFolded(
   return fallback();
 }
 
+/** Retain converted previews as data, without keeping their editor alive. */
+export function cacheImportedVersion(
+  host: DocxHistoryHost,
+  version: DocxVersion,
+  sfdt: string
+): void {
+  if (!version.final_sfdt && !localFor(version))
+    cacheSet(cacheKey(host, version), { error: false, degraded: true, sfdt });
+}
+
 /** Warm a small set of immutable historical versions after the rail opens. */
 export function prefetchVersionDocuments(
   host: DocxHistoryHost | null | undefined,
@@ -477,7 +490,7 @@ export function useVersionDocument(
     // Local artifacts outrank a cached resolution: a prefetch may have cached
     // the degraded docx fallback before the close registered its snapshot.
     const cached =
-      foldedVersions || version.is_current || localFor(version)
+      foldedVersions || localFor(version)
         ? undefined
         : cacheGet(cacheKey(host, version));
     if (cached) {

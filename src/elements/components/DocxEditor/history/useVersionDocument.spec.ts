@@ -80,6 +80,53 @@ describe('useVersionDocument', () => {
     expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
   });
 
+  it('reopens an unchanged saved Current version without downloading it again', async () => {
+    const h = host({
+      fetchVersionFile: jest
+        .fn()
+        .mockResolvedValue(new TextEncoder().encode('{}').buffer)
+    });
+    const current = version({
+      is_current: true,
+      final_sfdt: 'current-file',
+      final_sha256: ''
+    });
+    const first = renderHook(() => useVersionDocument(h, current));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    first.unmount();
+    const second = renderHook(() => useVersionDocument(h, current));
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts snapshot and changes downloads together instead of serializing network waits', async () => {
+    let finishSnapshot!: (value: ArrayBuffer) => void;
+    const snapshot = new Promise<ArrayBuffer>((resolve) => {
+      finishSnapshot = resolve;
+    });
+    const fetchVersionFile = jest.fn((url: string) =>
+      url === 'snapshot'
+        ? snapshot
+        : Promise.resolve(new TextEncoder().encode('{}').buffer)
+    );
+    const h = host({ fetchVersionFile });
+    const view = renderHook(() =>
+      useVersionDocument(
+        h,
+        version({ final_sfdt: 'snapshot', changes: 'changes', change_count: 1 })
+      )
+    );
+    try {
+      expect(fetchVersionFile.mock.calls.map(([url]) => url)).toEqual([
+        'snapshot',
+        'changes'
+      ]);
+    } finally {
+      finishSnapshot(new TextEncoder().encode('{}').buffer);
+      await waitFor(() => expect(view.result.current.loading).toBe(false));
+    }
+  });
+
   it('releases one editor’s cache without clearing another editor’s versions', async () => {
     const bytes = new TextEncoder().encode('{}').buffer;
     const first = host({

@@ -13,6 +13,7 @@ import { hiddenEditorConverter } from './convertOriginal';
 import { populateVersionBindings } from './populateVersionBindings';
 import { normalizeForDiff } from './sfdtDiff';
 import {
+  cacheImportedVersion,
   FoldedVersions,
   useVersionDocument,
   LiveVersionDocument
@@ -408,6 +409,7 @@ export default function VersionViewer({
           try {
             const parsed = JSON.parse(viewer.serialize());
             const populatedSfdt = populateVersionBindings(parsed);
+            const importedSfdt = JSON.stringify(populatedSfdt);
             const displaySfdt = showHighlights
               ? populatedSfdt
               : normalizeForDiff(populatedSfdt, { digestImages: false });
@@ -417,6 +419,7 @@ export default function VersionViewer({
               populated = await reloaded;
               if (cancelled) return;
             }
+            if (populated) cacheImportedVersion(host, version, importedSfdt);
           } catch {
             /* population is best-effort; show the raw document if it fails */
           }
