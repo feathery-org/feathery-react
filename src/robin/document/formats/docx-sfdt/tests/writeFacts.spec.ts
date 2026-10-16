@@ -95,7 +95,9 @@ function setup() {
         kind: 'replace',
         id: r.id,
         base: baseOf(r),
+        // as staging sent it: the run's own id and style inside the written node
         node: {
+          id: r.id,
           kind: 'run',
           ...(r.style ? { style: r.style } : {}),
           text: '$5,000.00'

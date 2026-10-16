@@ -77,6 +77,28 @@ const formulasDetail = (facts: Fact[]) =>
       | undefined
   )?.detail ?? [];
 
+/** The flagship with an empty run after the text of every client_name occurrence but the first. */
+function withTrailingRuns(): string {
+  const d = JSON.parse(flagship);
+  let seen = 0;
+  const visit = (x: unknown): void => {
+    if (Array.isArray(x)) return x.forEach(visit);
+    if (!x || typeof x !== 'object') return;
+    const n = x as Record<string, any>;
+    if (
+      String(n.contentControlProperties?.tag ?? '').includes(
+        'name=client_name'
+      ) &&
+      Array.isArray(n.inlines) &&
+      seen++ > 0
+    )
+      n.inlines.push({ characterFormat: {}, text: '' });
+    Object.values(n).forEach(visit);
+  };
+  visit(d);
+  return JSON.stringify(d);
+}
+
 describe('A: the facts report every value a finalizer derived, by node, with its text', () => {
   it('(a) a field edited at one occurrence: every carried occurrence with its new text', () => {
     const s = stateOf(flagship);
@@ -314,5 +336,154 @@ describe('a content key offered to set points at replace', () => {
     if (r.outcome !== 'refused') return;
     expect(r.refusal.invariant).toBe('property-invalid');
     expect(r.refusal.hint).toMatch(/replace/);
+  });
+});
+
+describe('adversarial review of the rulings (findings 3 to 7)', () => {
+  it('3: a node the model changed is charged to its scope even when a finalizer then rewrites it', () => {
+    const s = stateOf(withTrailingRuns());
+    const [, second] = controlsNamed(s.view.nf.root, 'client_name');
+    const empty = arr<NfNode>(second.inlines).find(
+      (i) => i.kind === 'run' && i.text === ''
+    ) as NfNode;
+    const r = prepareWrite(s, {
+      intent: 'x',
+      scope: { ids: [] },
+      changes: [replaceText(empty, 'JUNK')]
+    } as unknown as WriteInput);
+    expect(r.outcome).toBe('refused');
+    if (r.outcome !== 'refused') return;
+    expect(r.refusal.invariant).toBe('scope');
+    expect(r.refusal.destroyed).toContain(empty.id);
+  });
+
+  it('4: touched holds every node a finalizer rewrote, and finalizerScope is within touched', () => {
+    const s = stateOf(flagship);
+    const [edited] = controlsNamed(s.view.nf.root, 'client_name');
+    const run = firstRun(edited);
+    const r = prepareWrite(s, {
+      intent: 'x',
+      scope: { ids: [run.id] },
+      changes: [replaceText(run, 'Contoso Foods')]
+    } as unknown as WriteInput);
+    if (r.outcome !== 'verified')
+      throw new Error(JSON.stringify(r).slice(0, 600));
+    for (const d of formulasDetail(r.facts)) expect(r.touched).toContain(d.id);
+    for (const f of r.finalizerScope)
+      for (const id of f.ids) expect(r.touched).toContain(id);
+    // a single re-render: the control whose run the finalizer rewrote is touched
+    const [limit] = controlsNamed(s.view.nf.root, 'property_limit');
+    const lr = prepareWrite(s, {
+      intent: 'x',
+      scope: { ids: [firstRun(limit).id] },
+      changes: [replaceText(firstRun(limit), '3000000')]
+    } as unknown as WriteInput);
+    if (lr.outcome !== 'verified')
+      throw new Error(JSON.stringify(lr).slice(0, 600));
+    expect(lr.touched).toEqual(
+      expect.arrayContaining([limit.id, firstRun(limit).id])
+    );
+  });
+
+  it("5: before is the text the control read before the write, not the model's own text", () => {
+    const s = stateOf(flagship);
+    const [limit] = controlsNamed(s.view.nf.root, 'property_limit');
+    const r = prepareWrite(s, {
+      intent: 'x',
+      scope: { ids: [firstRun(limit).id] },
+      changes: [replaceText(firstRun(limit), '3000000')]
+    } as unknown as WriteInput);
+    if (r.outcome !== 'verified')
+      throw new Error(JSON.stringify(r).slice(0, 600));
+    expect(formulasDetail(r.facts)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: limit.id,
+          before: '$2,500,000.00',
+          after: '$3,000,000.00'
+        })
+      ])
+    );
+  });
+
+  it('6: nodes the write minted and a finalizer removed are not reported, and write-created nodes are not unreported', () => {
+    const s = stateOf(flagship);
+    const para = s.view.get('n152') as NfNode;
+    const cell = s.view.get('n151') as NfNode;
+    const marks = arr<NfNode>(para.inlines)
+      .filter((i) => i.kind === 'bookmark')
+      .map((b) => ({
+        id: b.id,
+        kind: 'bookmark',
+        bookmarkType: b.bookmarkType,
+        name: b.name
+      }));
+    const r = prepareWrite(s, {
+      intent: 'x',
+      scope: { ids: [] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: para.id,
+          container: shapeOf(cell, docxTree),
+          node: {
+            kind: 'paragraph',
+            ...(para.style ? { style: para.style } : {}),
+            inlines: marks
+          }
+        }
+      ]
+    } as unknown as WriteInput);
+    if (r.outcome !== 'verified')
+      throw new Error(JSON.stringify(r).slice(0, 600));
+    const finalIds = new Set<string>();
+    walk(r.intended.root, docxTree, ({ node }) => {
+      finalIds.add(node.id);
+    });
+    for (const id of r.touched)
+      expect(s.view.get(id) || finalIds.has(id)).toBeTruthy();
+    expect(r.finalizerScope.some((f) => f.name === 'unreported')).toBe(false);
+  });
+
+  it("7: a formula the write created is in the fact's ids, with no before", () => {
+    const s = stateOf(flagship);
+    const table = s.view.get('n119') as NfNode;
+    const row = s.view.get('n169') as NfNode;
+    const strip = (v: unknown): unknown =>
+      Array.isArray(v)
+        ? v.map(strip)
+        : v && typeof v === 'object'
+        ? Object.fromEntries(
+            Object.entries(v as object)
+              .filter(
+                ([k]) =>
+                  !['id', 'base', 'shape', 'usedBy', 'derived'].includes(k)
+              )
+              .map(([k, x]) => [k, strip(x)])
+          )
+        : v;
+    const r = prepareWrite(s, {
+      intent: 'x',
+      scope: { ids: [] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: row.id,
+          container: shapeOf(table, docxTree),
+          node: strip(row)
+        }
+      ]
+    } as unknown as WriteInput);
+    if (r.outcome !== 'verified')
+      throw new Error(JSON.stringify(r).slice(0, 600));
+    const fact = r.facts.find(
+      (f) => f.kind === 'finalizer' && f.name === 'formulas'
+    ) as Fact & { detail: Array<{ id: string; before?: string }> };
+    const created = fact.detail.filter((d) => !s.view.get(d.id));
+    expect(created.length).toBeGreaterThan(0);
+    for (const d of created) {
+      expect(fact.ids).toContain(d.id);
+      expect(d.before).toBeUndefined();
+    }
   });
 });
