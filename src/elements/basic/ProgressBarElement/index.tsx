@@ -1,10 +1,14 @@
-import React, { useEffect, useMemo, useReducer } from 'react';
+import React, { useEffect, useMemo, useReducer, useState } from 'react';
 import { isNum } from '../../../utils/primitives';
 import { ACTION_NEXT } from '../../../utils/elementActions';
 import { loadCompletedSteps } from '../../../utils/init';
 import SmoothBar from './components/SmoothBar';
 import SegmentBar from './components/SegmentBar';
 import StepperBar from './components/StepperBar';
+
+// How long a step click can take before the clicked step shows a spinner, so
+// navigation that resolves right away doesn't flash one
+const PENDING_SPINNER_DELAY_MS = 200;
 
 function applyProgressBarStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('barContainer', 'bar', 'barWrapper');
@@ -43,6 +47,8 @@ function ProgressBarElement({
   );
 
   const [, rerender] = useReducer((x) => x + 1, 0);
+  // Step whose click is still running (e.g. a slow action logic rule)
+  const [pendingStepKey, setPendingStepKey] = useState<string>();
   const isStepper = !!element.properties?.stepper;
   // Fetch prior step completion the first time a stepper renders (deduped per
   // form inside loadCompletedSteps), then re-render this stepper to show it
@@ -75,16 +81,26 @@ function ProgressBarElement({
     const resetCompletionOnBack =
       !!element.properties?.reset_completion_on_back;
     const stepConfigs = element.properties?.entries ?? [];
-    const onStepClick = (config: any) =>
-      runElementActions({
-        element,
-        elementType: 'progress_bar',
-        actions: [{ type: ACTION_NEXT, next_step_key: config.step_key }],
-        triggerPayload: {
-          entryIndex: stepConfigs.indexOf(config),
-          text: config.label
-        }
-      });
+    const onStepClick = async (config: any) => {
+      const timer = setTimeout(
+        () => setPendingStepKey(config.step_key),
+        PENDING_SPINNER_DELAY_MS
+      );
+      try {
+        await runElementActions({
+          element,
+          elementType: 'progress_bar',
+          actions: [{ type: ACTION_NEXT, next_step_key: config.step_key }],
+          triggerPayload: {
+            entryIndex: stepConfigs.indexOf(config),
+            text: config.label
+          }
+        });
+      } finally {
+        clearTimeout(timer);
+        setPendingStepKey(undefined);
+      }
+    };
     return (
       <div {...containerProps}>
         {children}
@@ -94,6 +110,7 @@ function ProgressBarElement({
           stepKey={stepKey}
           textPlacement={element.styles.percent_text_layout}
           onStepClick={onStepClick}
+          pendingStepKey={pendingStepKey}
           allowAllNavigation={allowAllNavigation}
           resetCompletionOnBack={resetCompletionOnBack}
           vertical={vertical}
