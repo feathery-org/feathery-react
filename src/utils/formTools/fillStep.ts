@@ -593,7 +593,12 @@ async function fillRepeatedField(
       continue;
     }
 
-    const validated = validateAndNormalizeForFill(servar, rowValue, row);
+    const validated = validateAndNormalizeForFill(
+      servar,
+      rowValue,
+      row,
+      internalState[formUuid]?.fields?.[fieldKey]?.value
+    );
     if (!validated.ok) {
       rows[row] = { status: 'rejected', message: validated.error };
       continue;

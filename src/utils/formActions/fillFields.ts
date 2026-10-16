@@ -2,7 +2,11 @@ import internalState from '../internalState';
 import { initState } from '../init';
 import { loadPhoneValidator, phoneLib, phoneLibPromise } from '../validation';
 import { stateMap } from '../../elements/components/data/states';
-import { getRepeatedContainer } from '../repeat';
+import {
+  availableRowOptions,
+  getRepeatedContainer,
+  isTakenByOtherRow
+} from '../repeat';
 import { getPositionKey } from '../hideAndRepeats';
 import { formatDateString } from '../../elements/fields/DateSelectorField/utils';
 import {
@@ -107,7 +111,8 @@ function validateFill(
   state: any,
   fieldKey: string,
   rawValue: unknown,
-  repeatIndex: number | undefined
+  repeatIndex: number | undefined,
+  fieldValue: unknown
 ): FillValidation {
   const currentStep = state?.currentStep;
   const stepFields = currentStep?.servar_fields ?? [];
@@ -194,7 +199,12 @@ function validateFill(
   }
 
   // Type and bound checks
-  const shapeError = checkValueAgainstField(servar, value, repeatIndex);
+  const shapeError = checkValueAgainstField(
+    servar,
+    value,
+    repeatIndex,
+    fieldValue
+  );
   if (shapeError)
     return { ok: false, reason: 'invalid_value', message: shapeError };
 
@@ -240,7 +250,8 @@ export function describeOptions(
 export function checkValueAgainstField(
   servar: any,
   value: unknown,
-  repeatIndex: number | undefined
+  repeatIndex: number | undefined,
+  fieldValue?: unknown
 ): string | null {
   const type = servar.type;
   const key = servar.key;
@@ -302,6 +313,23 @@ export function checkValueAgainstField(
       return `Value not in allowed options. Allowed: ${describeOptions(
         options
       )}.`;
+    }
+    // A row with its own options ignores other rows' picks, as the dropdown does
+    if (
+      typeof repeatIndex === 'number' &&
+      !Array.isArray(meta.repeat_options?.[repeatIndex]) &&
+      Array.isArray(fieldValue) &&
+      isTakenByOtherRow(servar, value, fieldValue, fieldValue[repeatIndex])
+    ) {
+      const open = availableRowOptions(
+        servar,
+        options,
+        fieldValue,
+        repeatIndex
+      );
+      return `'${value}' is already chosen in another row. Still open: ${
+        open.length > 0 ? describeOptions(open) : 'none'
+      }.`;
     }
     return null;
   }
@@ -441,9 +469,16 @@ export async function fillFields(
   };
 
   // Resolve every value first so the writes below land in a single render
+  const pendingValues = new Map(priorValues);
   const prepared: Array<PreparedWrite | RejectedField> = fields.map(
     ({ key, value, repeatIndex }) => {
-      const validation = validateFill(state, key, value, repeatIndex);
+      const validation = validateFill(
+        state,
+        key,
+        value,
+        repeatIndex,
+        pendingValues.get(key)
+      );
       if (!validation.ok) {
         return {
           key,
@@ -467,6 +502,13 @@ export async function fillFields(
         normalized
       ) {
         normalized = formatDateString(new Date(normalized), servar.metadata);
+      }
+      // Later rows in this call see the options earlier rows took
+      if (typeof repeatIndex === 'number') {
+        const prior = pendingValues.get(key);
+        const rows = Array.isArray(prior) ? [...prior] : [];
+        rows[repeatIndex] = normalized;
+        pendingValues.set(key, rows);
       }
       return { key, repeatIndex, field, normalized };
     }
