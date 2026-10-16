@@ -1,6 +1,8 @@
 import { getFormContext } from '../formContext';
 import { setFormInternalState } from '../internalState';
 import Field from '../entities/Field';
+import { featheryWindow } from '../browser';
+import { AnswersPendingError } from '../offlineRequestHandler';
 
 describe('feathery.generateDocuments logic-rule method routing', () => {
   const uuid = 'formContext-test';
@@ -507,5 +509,27 @@ describe('feathery.runComputerAgent return shape', () => {
     await expect(
       getFormContext(uuid).runComputerAgent('agent_1')
     ).resolves.toEqual({ status: 'error', message: 'nope' });
+  });
+});
+
+describe('feathery.setFormCompletion', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('tells the user and rejects when completion is refused while answers are still being saved', async () => {
+    const refusal = new AnswersPendingError();
+    setFormInternalState('formContext-completion', {
+      fields: {},
+      client: { registerEvent: jest.fn().mockRejectedValue(refusal) },
+      currentStep: { key: 'last' }
+    } as any);
+    const alert = jest
+      .spyOn(featheryWindow(), 'alert')
+      .mockImplementation(() => {});
+
+    await expect(
+      getFormContext('formContext-completion').setFormCompletion()
+    ).rejects.toBe(refusal);
+
+    expect(alert).toHaveBeenCalledWith(refusal.message);
   });
 });

@@ -46,7 +46,7 @@ import {
 import { authState } from '../../auth/LoginForm';
 import { loadQRScanner } from '../../elements/fields/QRScanner/qrLoader';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
-import { RequestOptions } from '../offlineRequestHandler';
+import { RequestOptions, SUPERSEDED_WRITE } from '../offlineRequestHandler';
 import {
   completeUpload,
   failUpload,
@@ -87,6 +87,8 @@ import {
 import { EventQueue } from '../eventQueue';
 import { STEP_EVENT_LOAD, STEP_EVENT_SUBMIT } from '../stepEvents';
 
+declare const __PACKAGE_VERSION__: string;
+
 setEnvironment('production');
 try {
   setEnvironment((process.env.BACKEND_ENV || 'production') as URL_ENUM);
@@ -119,6 +121,12 @@ export const updateRegionApiUrls = (region: string) => {
   STATIC_URL = getStaticUrl();
   S3_URL = getS3Url();
 };
+
+// An event held until the user interacts, with the submit queue it follows
+interface HeldEvent {
+  eventData: any;
+  earlierSubmissions: Promise<any>;
+}
 
 /**
  * The number of milliseconds waited until another submitCustom call
@@ -211,9 +219,18 @@ export default class FeatheryClient extends IntegrationClient {
   private async replayQueuedEvents() {
     if (this.userEventQueue.isEmpty()) return;
 
-    await this.userEventQueue.replayAll(async (eventData) => {
-      return this._registerEventInternal(eventData);
-    });
+    await this.userEventQueue.replayAll(
+      async ({ eventData, earlierSubmissions }: HeldEvent) =>
+        this._registerEventInternal(eventData, earlierSubmissions)
+    );
+  }
+
+  // A submission counts as an interaction, so it releases the held events,
+  // without waiting on them: an event held while it runs waits on it.
+  private releaseHeldEvents() {
+    this.handleInteraction().catch((error) =>
+      console.warn('Error releasing held events', error)
+    );
   }
 
   public destroy() {
@@ -246,6 +263,7 @@ export default class FeatheryClient extends IntegrationClient {
       ),
       panel_key: this.formKey,
       __feathery_version: this.version,
+      __feathery_sdk_version: __PACKAGE_VERSION__,
       no_complete: noComplete
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
@@ -384,7 +402,10 @@ export default class FeatheryClient extends IntegrationClient {
       if (
         !restoredFileKeys.has(servar.key) &&
         fileDeduplicationCount[servar.key] === undefined &&
-        !hasPreviousSuccess
+        !hasPreviousSuccess &&
+        !(await this.offlineRequestHandler
+          .hasRejectedFileWrite(stepKey, servar.key)
+          .catch(() => false))
       ) {
         return Promise.resolve();
       }
@@ -434,6 +455,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);
+    formData.set('__feathery_sdk_version', __PACKAGE_VERSION__);
     if (this.version) formData.set('__feathery_version', this.version);
 
     const options: RequestOptions = {
@@ -450,9 +472,13 @@ export default class FeatheryClient extends IntegrationClient {
     let queuedForReplay = false;
     try {
       // Reset retry attempts for this field before retrying so new submissions get the full budget
-      await this.offlineRequestHandler.resetRetryAttemptsByUrl(url, {
-        fieldKey: servar.key
-      });
+      await this.offlineRequestHandler
+        .resetRetryAttemptsByUrl(url, {
+          fieldKey: servar.key
+        })
+        .catch((error) =>
+          console.warn('Error resetting upload retries', error)
+        );
 
       const result = await this.offlineRequestHandler.runOrSaveRequest(
         () => this._fetch(url, options, true, true),
@@ -460,22 +486,27 @@ export default class FeatheryClient extends IntegrationClient {
         options,
         'submit',
         stepKey,
-        {
-          fieldKey: servar.key,
-          preserveStepRequests: true
-        },
+        { fieldKey: servar.key },
         () => {
           queuedForReplay = true;
           // Waiting on connectivity, not stalled mid-upload
           queueUpload(this.formKey, servar.key);
         }
       );
-      // Mark as successful upload - will block duplicate attempts
+      // A newer upload of this field landed first and keeps its status
+      if (result === SUPERSEDED_WRITE) return;
+      // Queuing an offline upload is not a server acknowledgement. Keep its
+      // request and allow the next manual submission to retry the file.
+      if (queuedForReplay) {
+        fileRetryStatus[servar.key] = false;
+        delete fileDeduplicationCount[servar.key];
+        return result;
+      }
+      // Mark as successful upload - will block duplicate attempts. The queue
+      // drops only this user's older uploads of the field itself; a newer one
+      // that failed while this was in flight stays queued.
       fileRetryStatus[servar.key] = true;
-      if (!queuedForReplay) completeUpload(this.formKey, servar.key);
-      await this.offlineRequestHandler.clearFailedRequestByUrl(url, {
-        fieldKey: servar.key
-      });
+      completeUpload(this.formKey, servar.key);
       return result;
     } catch (error) {
       // Mark as failed - allows retry on next submission
@@ -1097,20 +1128,30 @@ export default class FeatheryClient extends IntegrationClient {
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
 
-    await this.handleInteraction();
-    const waitForPreviousSubmission = this.submitQueue.catch(() => undefined);
-    const submission = Promise.all([
-      waitForPreviousSubmission,
-      this.submitCustom(hiddenFields, { shouldFlush: true }),
-      this._submitJSONData(jsonServars, step.key, hasNext),
-      ...fileServars.map((servar: any) =>
-        this._submitFileData(servar, step.key)
-      )
-    ]);
+    this.releaseHeldEvents();
+    const earlierSubmissions = this.submitQueue;
+    const submission = (async () => {
+      // A step submission is the user's manual retry for answers still queued
+      // from earlier steps, including a confirmation step with no fields.
+      await this.offlineRequestHandler
+        .resetAnswerWriteRetries()
+        .catch((error) =>
+          console.warn('Error resetting saved answer retries', error)
+        );
+      return Promise.all([
+        earlierSubmissions.catch(() => undefined),
+        this.submitCustom(hiddenFields, { shouldFlush: true }),
+        this._submitJSONData(jsonServars, step.key, hasNext),
+        ...fileServars.map((servar: any) =>
+          this._submitFileData(servar, step.key)
+        )
+      ]);
+    })();
 
     // Maintain submitQueue semantics so downstream consumers (like registerEvent)
     // still see actual success/failure while preventing previous rejections
-    // from blocking new submit attempts.
+    // from blocking new submit attempts. It is set before anything is awaited,
+    // so an event registered right after this call waits behind this save.
     this.submitQueue = submission;
 
     return submission;
@@ -1126,7 +1167,7 @@ export default class FeatheryClient extends IntegrationClient {
     if (this.draft || this.getNoSave()) return;
     if (!fileEntries.length) return;
 
-    await this.handleInteraction();
+    this.releaseHeldEvents();
     const submission = Promise.all([
       this.submitQueue.catch(() => undefined),
       ...fileEntries.map(({ servar, stepKey }) =>
@@ -1149,13 +1190,24 @@ export default class FeatheryClient extends IntegrationClient {
     const timedEvent = { ...eventData, timestamp: new Date().toISOString() };
 
     if (!isInteractionDetected() || this.userEventQueue.isReplayingEvents()) {
-      return this.userEventQueue.enqueue(timedEvent);
+      // It waits behind the submissions made so far once replayed, not the
+      // ones in flight when it is replayed
+      const heldEvent: HeldEvent = {
+        eventData: timedEvent,
+        earlierSubmissions: this.submitQueue
+      };
+      return this.userEventQueue.enqueue(heldEvent);
     }
 
     return this._registerEventInternal(timedEvent);
   }
 
-  private async _registerEventInternal(eventData: any) {
+  // `earlierSubmissions` is the submit queue the event waits behind; by default
+  // the current one, read when the event is about to go out
+  private async _registerEventInternal(
+    eventData: any,
+    earlierSubmissions?: Promise<any>
+  ) {
     await initFormsPromise;
 
     const { userId, collaboratorId } = initInfo();
@@ -1165,6 +1217,7 @@ export default class FeatheryClient extends IntegrationClient {
       form_key: this.formKey,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {}),
+      __feathery_sdk_version: __PACKAGE_VERSION__,
       event_id: uuidv4()
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
@@ -1184,28 +1237,49 @@ export default class FeatheryClient extends IntegrationClient {
       prom = this.flushCustomFields();
     }
 
-    const triggerEvent = () =>
-      this.offlineRequestHandler.runOrSaveRequest(
-        // Ensure events complete before user exits page. Submit and load event of
-        // next step must happen after the previous step is done submitting
-        () =>
-          this.submitQueue
-            // Swallow TypeErrors (network failures) so _fetch proceeds regardless
-            .catch((error) => {
-              if (error instanceof TypeError) return;
-              throw error;
-            })
-            .then(() => this._fetch(url, options, true, true)),
+    const triggerEvent = async () => {
+      // Let a failed submit enter the offline queue before the event handler
+      // checks that queue. The event itself may proceed after a network error,
+      // but only after its save has been queued for replay.
+      await (earlierSubmissions ?? this.submitQueue).catch((error) => {
+        if (!(error instanceof TypeError)) throw error;
+      });
+      return this.offlineRequestHandler.runOrSaveRequest(
+        () => this._fetch(url, options, true, true),
         url,
         options,
         'registerEvent',
-        stepKey
+        stepKey,
+        { requireAcknowledgement: !!eventData.completed }
       );
+    };
 
+    // Completion must not be acknowledged before the custom field writes
+    // settle; on a network failure the queued write makes completion refuse.
+    // Any other event goes out regardless of the flush, as step tracking and
+    // backend integrations depend on it.
     let eventPromise: Promise<any>;
-    if (eventData.completed && prom)
-      eventPromise = prom.then(() => triggerEvent());
-    else eventPromise = Promise.all([prom, triggerEvent()]);
+    if (!prom) eventPromise = triggerEvent();
+    else if (eventData.completed)
+      eventPromise = prom
+        .catch((error) => {
+          if (!(error instanceof TypeError)) throw error;
+        })
+        .then(triggerEvent);
+    else {
+      const sending = triggerEvent();
+      // Its outcome reaches the caller through eventPromise, which may only
+      // pick it up once the flush settles
+      sending.catch(() => {});
+      // Settles once the event is out, then reports a failed flush
+      eventPromise = prom.then(
+        () => sending,
+        async (flushError) => {
+          await sending;
+          throw flushError;
+        }
+      );
+    }
 
     // Callers still see the rejection; the shared chain must not stay rejected
     this.eventQueue = this.eventQueue.then(() => eventPromise.catch(() => {}));
