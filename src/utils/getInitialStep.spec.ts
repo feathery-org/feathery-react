@@ -41,4 +41,16 @@ describe('getInitialStep', () => {
       })
     ).toBe('intro');
   });
+
+  it('ignores a resume step that no longer exists, falling back', () => {
+    // A form promotion can remove the step a collaborator was resuming on.
+    expect(
+      getInitialStep({
+        initialStepId: '',
+        steps,
+        sessionCurrentStep: 'deleted',
+        collaboratorStartStep: 'details'
+      })
+    ).toBe('details');
+  });
 });
