@@ -364,7 +364,9 @@ export default function DocxDocumentSession({
       unregisterDocxEditor(containerId, registeredEditor.current, formId);
       return;
     }
-    registeredEditor.current.resize?.();
+    // Cached tabs retain their layout size while hidden. Opening and the
+    // editor's ResizeObserver own layout; resizing here can touch the caret
+    // before its page exists and crash a newly selected document.
     registerDocxEditor(containerId, registeredEditor.current, {
       formId,
       stepId,
