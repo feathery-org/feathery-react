@@ -36,9 +36,6 @@ function newClient() {
   jest
     .spyOn(client.offlineRequestHandler, 'resetRetryAttemptsByUrl')
     .mockResolvedValue(undefined);
-  jest
-    .spyOn(client.offlineRequestHandler, 'clearFailedRequestByUrl')
-    .mockResolvedValue(undefined);
   jest.spyOn(client, '_fetch').mockResolvedValue({} as any);
   return client;
 }
@@ -56,6 +53,50 @@ beforeEach(() => {
 });
 
 describe('repeatable file upload wire format', () => {
+  it('keeps an offline queued upload retryable until the server acknowledges it', async () => {
+    const client = newClient();
+    const { fileRetryStatus } = jest.requireMock('../init');
+    delete fileRetryStatus.f;
+    client.offlineRequestHandler.runOrSaveRequest.mockImplementation(
+      async (
+        _run: any,
+        _url: any,
+        _options: any,
+        _type: any,
+        _step: any,
+        _metadata: any,
+        onQueued: any
+      ) => {
+        onQueued();
+      }
+    );
+
+    await client._submitFileData(
+      { ...servar, file_upload: [new Blob(['synthetic card'])] },
+      'Insurance'
+    );
+
+    expect(client._fetch).not.toHaveBeenCalled();
+    expect(fileRetryStatus.f).toBe(false);
+    expect(fileDeduplicationCount.f).toBeUndefined();
+  });
+
+  it('sends a file and preserves its acknowledged status when resetting stored retries fails', async () => {
+    const client = newClient();
+    client.offlineRequestHandler.resetRetryAttemptsByUrl.mockRejectedValue(
+      new Error('IndexedDB connection lost')
+    );
+    const upload = { ...servar, file_upload: [new Blob(['synthetic card'])] };
+
+    await expect(client._submitFileData(upload, 'Insurance')).resolves.toEqual(
+      {}
+    );
+    expect(client._fetch).toHaveBeenCalledTimes(1);
+    expect(jest.requireMock('../init').fileRetryStatus.f).toBe(true);
+    await client._submitFileData(upload, 'Insurance');
+    expect(client._fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a hole at every empty repeat row', async () => {
     const file = new Blob(['x']);
     const client = newClient();
@@ -81,6 +122,7 @@ describe('repeatable file upload wire format', () => {
       'step'
     );
     const body = bodyOf(client);
+    expect(body.get('__feathery_sdk_version')).toBe('0.0.0-test');
     expect(body.getAll('f')).toHaveLength(1);
     expect(indicesOf(body)).toBe(
       JSON.stringify({ f: { keep: [], new: [2], length: 3 } })

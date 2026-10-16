@@ -1,6 +1,8 @@
 import {
   BrowserMod,
   CheckButtonActionMod,
+  ClientMod,
+  FormHelperMod,
   GridMod,
   ValidationMod
 } from './testMocks';
@@ -475,5 +477,30 @@ describe('enableFormTools', () => {
     );
 
     delete (internalState as any)['iid-tools-click'];
+  });
+});
+
+describe('URL action completion', () => {
+  const refusal = 'Some answers are still being saved. Please try again.';
+
+  afterEach(() => {
+    ClientMod._spies.registerEvent.mockResolvedValue(undefined);
+  });
+
+  it('stays on the form and shows the refusal when completion is refused', async () => {
+    ClientMod._spies.registerEvent.mockImplementation(async (event: any) => {
+      if (event.completed) throw new Error(refusal);
+    });
+    GridMod._spies.actions = [{ type: 'url', url: 'https://example.org/done' }];
+
+    render(<JSForm formId='f1' _internalId='iid-url-refused' />);
+    fireEvent.click(await screen.findByTestId('btn'));
+
+    await waitFor(() =>
+      expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: `Error: ${refusal}` })
+      )
+    );
+    expect(BrowserMod._spies.location.href).toBe('https://example.com/');
   });
 });

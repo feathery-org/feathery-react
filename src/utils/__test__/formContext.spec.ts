@@ -10,6 +10,8 @@ import {
   para,
   toyNative
 } from '../../robin/document/tests/toyPack';
+import { featheryWindow } from '../browser';
+import { AnswersPendingError } from '../offlineRequestHandler';
 
 describe('feathery.generateDocuments logic-rule method routing', () => {
   const uuid = 'formContext-test';
@@ -670,5 +672,27 @@ describe('liveDocument.setHostMounted', () => {
     expect(robinHostMounted('another-form')).toBe(false);
     getFormContext(uuid).liveDocument.setHostMounted(false);
     expect(robinHostMounted(uuid)).toBe(false);
+  });
+});
+
+describe('feathery.setFormCompletion', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('tells the user and rejects when completion is refused while answers are still being saved', async () => {
+    const refusal = new AnswersPendingError();
+    setFormInternalState('formContext-completion', {
+      fields: {},
+      client: { registerEvent: jest.fn().mockRejectedValue(refusal) },
+      currentStep: { key: 'last' }
+    } as any);
+    const alert = jest
+      .spyOn(featheryWindow(), 'alert')
+      .mockImplementation(() => {});
+
+    await expect(
+      getFormContext('formContext-completion').setFormCompletion()
+    ).rejects.toBe(refusal);
+
+    expect(alert).toHaveBeenCalledWith(refusal.message);
   });
 });

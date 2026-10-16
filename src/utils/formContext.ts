@@ -48,6 +48,7 @@ import {
   triggerTableAction
 } from './formActions/tables';
 import { STEP_EVENT_SKIP } from './stepEvents';
+import { AnswersPendingError } from './offlineRequestHandler';
 import {
   FillQuikParams,
   ForwardInboxEmailOptions,
@@ -105,12 +106,21 @@ export const getFormContext = (formUuid: string) => {
     collaborator: formState.collaborator,
     setFormCompletion: () => {
       const { client, currentStep } = formState;
-      return client.registerEvent({
-        step_key: currentStep.key,
-        next_step_key: '',
-        event: STEP_EVENT_SKIP,
-        completed: true
-      });
+      return client
+        .registerEvent({
+          step_key: currentStep.key,
+          next_step_key: '',
+          event: STEP_EVENT_SKIP,
+          completed: true
+        })
+        .catch((error: unknown) => {
+          // Completion is refused while answers are still being saved. Tell
+          // the user, and reject so the calling logic does not carry on as if
+          // the form were complete.
+          if (error instanceof AnswersPendingError)
+            featheryWindow().alert(error.message);
+          throw error;
+        });
     },
     setProgress: (val: any) => formState.setUserProgress(val),
     openDataMapping: ({ hubs }: { hubs: any[] }) =>

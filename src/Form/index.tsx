@@ -908,13 +908,6 @@ function Form({
     }
   }, [language]);
 
-  useEffect(() => {
-    if (!clientRef.current) return;
-    clientRef.current.offlineRequestHandler
-      .clearFailedFileUploadRequests()
-      .catch(() => {});
-  }, []);
-
   // Logic to run every time step changes
   useEffect(() => {
     if (!activeStep) return;
@@ -2477,10 +2470,9 @@ function Form({
             );
           }
 
-          // Note: We don't check dbHasRequest() here because:
-          // 1. If submitPromise succeeded, the requests were already handled
-          // 2. If submitPromise failed, we threw an error above and won't reach here
-          // 3. Checking dbHasRequest() here would block manual retries after fixing network
+          // The completion event replays answers still queued from earlier
+          // steps and is refused while any remain. The refusal rejects here,
+          // so the message reaches the button and the form is not finished.
 
           eventData.completed = true;
           await client.registerEvent(eventData).then(() => {

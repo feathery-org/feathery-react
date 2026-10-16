@@ -614,6 +614,11 @@ function DocxEditor({
     openNonce,
     exportDoc,
     save: saveCurrentDocument,
+    onUnchanged: () => {
+      dirtyRef.current = false;
+      setDirty(false);
+      onChange?.(false);
+    },
     canSave: () =>
       !bindings?.enabled ||
       (bindingsState.ready && bindingsState.commitForSave())
