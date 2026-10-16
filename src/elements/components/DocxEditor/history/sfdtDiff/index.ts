@@ -1006,7 +1006,31 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
       resolved.pending,
       resolved.group ?? blockGroupKey(delAuthor, hunk.at.block)
     );
-    const { arr, index } = containerOf(doc, hunk.at.block);
+    // Serializing a document can omit a now-empty header/footer entirely.
+    // Recreate its display-only region before placing deleted content there;
+    // otherwise one removed footer drops the entire session's body highlights.
+    const path = hunk.at.block;
+    if (
+      path.length === 5 &&
+      path[1] === 'headersFooters' &&
+      [
+        'header',
+        'footer',
+        'evenHeader',
+        'evenFooter',
+        'firstPageHeader',
+        'firstPageFooter'
+      ].includes(String(path[2])) &&
+      path[3] === 'blocks'
+    ) {
+      const section = doc.sections?.[path[0] as number];
+      if (section) {
+        section.headersFooters ??= {};
+        section.headersFooters[path[2]] ??= { blocks: [] };
+        section.headersFooters[path[2]].blocks ??= [];
+      }
+    }
+    const { arr, index } = containerOf(doc, path);
     if (!Array.isArray(arr)) continue;
     if (hunk.table && Array.isArray((hunk.table as any).rows)) {
       const table = JSON.parse(JSON.stringify(hunk.table));

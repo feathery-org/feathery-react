@@ -85,14 +85,58 @@ describe('multiple cached document performance', () => {
       await session.call('closePerformanceDocuments');
     }
   }, 120000);
+  it('saves second-document diffs and displays highlights across repeated version selections', async () => {
+    const sfdt = process.env.DOCX_HISTORY_FIXTURE
+      ? fs.readFileSync(process.env.DOCX_HISTORY_FIXTURE, 'utf8')
+      : JSON.stringify({
+          sections: [{ blocks: [{ inlines: [{ text: 'Test document' }] }] }]
+        });
+    await session.call('openPerformanceDocuments', sfdt, 2, true);
+    try {
+      const saved = await session.call('measureSecondDocumentSave');
+      expect(saved.artifacts).toHaveLength(1);
+      expect(saved.artifacts[0]).toMatchObject({
+        document: 1,
+        changes: true,
+        start: true
+      });
+      const rows = await session.call(
+        'measureVersionSwitches',
+        sfdt,
+        true,
+        process.env.DOCX_HISTORY_CHANGES
+          ? JSON.parse(
+              fs.readFileSync(process.env.DOCX_HISTORY_CHANGES, 'utf8')
+            )
+          : null
+      );
+      expect(rows.map((row: any) => row.fetches)).toEqual([2, 4, 4, 4, 4]);
+      for (const row of rows) {
+        expect(row.degraded).toBe(false);
+        expect(row.editCount).toBeGreaterThan(0);
+        expect(row.revisions).toBeGreaterThan(0);
+      }
+      if (process.env.DOCX_DIFF_OUTPUT)
+        fs.writeFileSync(
+          process.env.DOCX_DIFF_OUTPUT,
+          JSON.stringify({ saved, rows }, null, 2)
+        );
+    } finally {
+      await session.call('closePerformanceDocuments');
+    }
+  }, 120000);
+
   it('keeps overflowing document tabs and their dropdown inside a narrow viewport', async () => {
     await session.page.setViewport({ width: 320, height: 700 });
+    await session.call('dismissTrialNotice');
     await session.call('openOverflowDocuments', 320);
     try {
       await session.page.waitForSelector('[aria-label="More documents"]');
       const row = await session.page.evaluate(() => {
-        const list = document.querySelector('[role="tablist"]')!;
-        const more = document.querySelector('[aria-label="More documents"]')!;
+        const list = globalThis.document.querySelector('[role="tablist"]')!;
+        const more = globalThis.document.querySelector(
+          '[aria-label="More documents"]'
+        )!;
         return {
           tabs: list.children.length,
           right: more.getBoundingClientRect().right,
@@ -108,7 +152,7 @@ describe('multiple cached document performance', () => {
       await session.page.keyboard.press('End');
       await session.page.keyboard.press('Enter');
       await session.page.waitForFunction(() =>
-        document
+        globalThis.document
           .querySelector('[aria-selected="true"]')
           ?.textContent?.includes('Document 20')
       );

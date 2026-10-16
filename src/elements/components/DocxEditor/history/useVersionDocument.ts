@@ -14,6 +14,8 @@ export interface VersionDocument {
   sfdt?: string;
   /** Docx URL to open through the service (no final SFDT — the fallback). */
   docxUrl?: string;
+  /** Downloaded fallback bytes, shared by prefetch and the selected viewer. */
+  docxBytes?: ArrayBuffer;
   /** Text-edit count for this version (from its change list). */
   editCount?: number;
   /** Formatting-change count for this version. */
@@ -99,7 +101,10 @@ function cacheSet(key: string, value: ResolvedVersion): void {
   versionCache.set(key, value);
   const bytes = () =>
     [...versionCache.values()].reduce(
-      (total, entry) => total + (entry.sfdt?.length ?? 0) * 2,
+      (total, entry) =>
+        total +
+        (entry.sfdt?.length ?? 0) * 2 +
+        (entry.docxBytes?.byteLength ?? 0),
       0
     );
   while (versionCache.size > CACHE_MAX || bytes() > CACHE_BYTES_MAX) {
@@ -232,7 +237,8 @@ async function resolveVersionDocument(
 
     const docxUrl = version.editor_file ?? version.file;
     if (!docxUrl) throw new Error('version has no document');
-    return { error: false, docxUrl, degraded: true };
+    const docxBytes = await host.fetchVersionFile(docxUrl);
+    return { error: false, docxUrl, docxBytes, degraded: true };
   } catch (error) {
     if (
       !refreshed &&

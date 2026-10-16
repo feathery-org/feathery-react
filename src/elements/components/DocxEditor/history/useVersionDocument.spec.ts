@@ -3,6 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import {
   __clearVersionDocumentCache,
   clearLocalVersionArtifacts,
+  cacheImportedVersion,
   prefetchVersionDocuments,
   registerLocalVersionArtifacts,
   retainVersionDocuments,
@@ -54,6 +55,25 @@ const host = (over: Partial<DocxHistoryHost> = {}): DocxHistoryHost => ({
 });
 
 describe('useVersionDocument', () => {
+  it('downloads a DOCX fallback once during prefetch, then retains its converted preview', async () => {
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(bytes) });
+    const row = version({ editor_file: 'baseline.docx' });
+    await prefetchVersionDocuments(h, [row]);
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+    const view = renderHook(() => useVersionDocument(h, row));
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(view.result.current.docxBytes).toBe(bytes);
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+    view.unmount();
+    cacheImportedVersion(h, row, '{"sections":[]}');
+    const again = renderHook(() => useVersionDocument(h, row));
+    await waitFor(() => expect(again.result.current.loading).toBe(false));
+    expect(again.result.current.sfdt).toBe('{"sections":[]}');
+    expect(again.result.current.docxBytes).toBeUndefined();
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
   it('does not refetch Current when only row object identity and signatures change', async () => {
     const h = host({
       fetchVersionFile: jest
