@@ -316,7 +316,12 @@ export async function fillStepTool(
         continue;
       }
 
-      const validated = validateAndNormalizeForFill(servar, values[fieldKey]);
+      const validated = validateAndNormalizeForFill(
+        servar,
+        values[fieldKey],
+        undefined,
+        internalState[formUuid]?.fields?.[fieldKey]?.value
+      );
       if (!validated.ok) {
         resolved[fieldKey] = { status: 'rejected', message: validated.error };
         continue;

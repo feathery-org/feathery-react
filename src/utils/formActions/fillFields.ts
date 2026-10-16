@@ -59,32 +59,52 @@ export const isEmptyValue = (value: unknown) =>
   value === null || value === '' || (Array.isArray(value) && !value.length);
 
 // What each field holds when nothing is entered, so a clear never stores a value the field can't render
-export function emptyValueFor(servar: any): unknown {
+export function emptyValueFor(
+  servar: any,
+  fieldValue?: unknown,
+  repeatIndex?: number
+): unknown {
   if (MULTI_CHOICE_TYPES.has(servar.type)) return [];
   if (servar.type === 'select') return null;
   if (servar.type === 'checkbox') return !!servar.metadata?.always_checked;
   if (servar.type === 'rating') return 0;
   if (servar.type === 'slider') return servar.min_length ?? 0;
-  if (servar.type === 'matrix') return readOnlyMatrixAnswers(servar);
+  if (servar.type === 'matrix')
+    return readOnlyMatrixAnswers(servar, fieldValue, repeatIndex);
   return '';
 }
 
-// Read-only matrix questions keep their configured answers
-function readOnlyMatrixAnswers(servar: any): Record<string, string[]> {
+// Read-only matrix questions keep the answers the form shows, or their defaults before it shows any
+function readOnlyMatrixAnswers(
+  servar: any,
+  fieldValue: unknown,
+  repeatIndex: number | undefined
+): Record<string, string[]> {
   const readOnlyQuestions = (servar.metadata?.questions ?? []).filter(
     (q: any) => q?.read_only
   );
   if (!readOnlyQuestions.length) return {};
-  const defaults = getDefaultFieldValue({ servar });
+  const shown =
+    typeof repeatIndex === 'number' && Array.isArray(fieldValue)
+      ? fieldValue[repeatIndex]
+      : fieldValue;
+  const answers =
+    shown && typeof shown === 'object' && !Array.isArray(shown)
+      ? (shown as Record<string, unknown>)
+      : getDefaultFieldValue({ servar });
   return Object.fromEntries(
-    readOnlyQuestions.map((q: any) => [q.id, defaults[q.id] ?? []])
+    readOnlyQuestions.map((q: any) => [
+      q.id,
+      Array.isArray(answers[q.id]) ? answers[q.id] : []
+    ])
   );
 }
 
 function checkMatrixValue(
   servar: any,
   value: unknown,
-  repeatIndex: number | undefined
+  repeatIndex: number | undefined,
+  fieldValue: unknown
 ): string | null {
   const key = servar.key;
   if (typeof value !== 'object' || value === null || Array.isArray(value))
@@ -113,7 +133,7 @@ function checkMatrixValue(
   }
 
   for (const [questionId, locked] of Object.entries(
-    readOnlyMatrixAnswers(servar)
+    readOnlyMatrixAnswers(servar, fieldValue, repeatIndex)
   )) {
     const answers = (answersByQuestion[questionId] ?? []) as string[];
     const keepsLocked =
@@ -329,7 +349,8 @@ export function checkValueAgainstField(
   // An empty value clears the field, which is how an earlier entry is undone
   if (isEmptyValue(value)) return null;
 
-  if (type === 'matrix') return checkMatrixValue(servar, value, repeatIndex);
+  if (type === 'matrix')
+    return checkMatrixValue(servar, value, repeatIndex, fieldValue);
 
   // Boolean field
   if (type === 'checkbox') {
@@ -556,7 +577,7 @@ export async function fillFields(
       }
       const { field, servar } = validation;
       let normalized = isEmptyValue(validation.value)
-        ? emptyValueFor(servar)
+        ? emptyValueFor(servar, pendingValues.get(key), repeatIndex)
         : validation.value;
       if (servar.type === 'gmap_state') {
         normalized = normalizeGmapState(normalized, servar);

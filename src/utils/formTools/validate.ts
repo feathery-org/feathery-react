@@ -99,7 +99,8 @@ export const validateAndNormalizeForFill = (
   fieldValue?: unknown
 ): { ok: true; value: unknown } | { ok: false; error: string } => {
   // An empty value clears the field, as fillFields does
-  if (isEmptyValue(rawValue)) return { ok: true, value: emptyValueFor(servar) };
+  if (isEmptyValue(rawValue))
+    return { ok: true, value: emptyValueFor(servar, fieldValue, repeatIndex) };
 
   if (servar.type === 'date_selector')
     return normalizeDateSelector(servar, rawValue);

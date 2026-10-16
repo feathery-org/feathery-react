@@ -473,6 +473,39 @@ describe('fillFields value checks', () => {
       ]);
     });
 
+    it('keeps the answer a read-only question shows, even when it differs from its default', async () => {
+      const state = makeState(
+        [
+          matrix({
+            questions: [
+              { id: 'q1', label: 'Service' },
+              {
+                id: 'q2',
+                label: 'Price',
+                read_only: true,
+                default_value: 'Good'
+              }
+            ]
+          })
+        ],
+        { csat: { q1: ['Good'], q2: ['Bad'] } }
+      );
+
+      const result: any = await fillFields(formUuid, [
+        { key: 'csat', value: { q1: ['Bad'], q2: ['Bad'] } },
+        { key: 'csat', value: { q1: ['Bad'], q2: ['Good'] } },
+        { key: 'csat', value: null }
+      ]);
+
+      expect(result.rejected).toEqual([
+        expect.objectContaining({ reason: 'invalid_value' })
+      ]);
+      expect(state.formActions.changeValue.mock.calls.map((c: any) => c[0])).toEqual([
+        { q1: ['Bad'], q2: ['Bad'] },
+        { q2: ['Bad'] }
+      ]);
+    });
+
     it('clears every answer with an empty value', async () => {
       const state = makeState([matrix()], { csat: { q1: ['Good'] } });
 
