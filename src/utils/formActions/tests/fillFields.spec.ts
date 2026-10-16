@@ -459,18 +459,69 @@ describe('fillFields value checks', () => {
       const result: any = await fillFields(formUuid, [
         { key: 'csat', value: { q1: ['Good'], q2: ['Bad'] } },
         { key: 'csat', value: { q1: ['Good'] } },
-        { key: 'csat', value: { q1: ['Good'], q2: ['Good'] } },
         { key: 'csat', value: null }
       ]);
 
-      expect(result.rejected.map((f: any) => f.reason)).toEqual([
-        'invalid_value',
-        'invalid_value'
-      ]);
+      expect(result.rejected).toEqual([]);
       expect(state.formActions.changeValue.mock.calls.map((c: any) => c[0])).toEqual([
+        { q1: ['Good'], q2: ['Good'] },
         { q1: ['Good'], q2: ['Good'] },
         { q2: ['Good'] }
       ]);
+    });
+
+    it('keeps the answer a read-only question shows, even when it differs from its default', async () => {
+      const state = makeState(
+        [
+          matrix({
+            questions: [
+              { id: 'q1', label: 'Service' },
+              {
+                id: 'q2',
+                label: 'Price',
+                read_only: true,
+                default_value: 'Good'
+              }
+            ]
+          })
+        ],
+        { csat: { q1: ['Good'], q2: ['Bad'] } }
+      );
+
+      const result: any = await fillFields(formUuid, [
+        { key: 'csat', value: { q1: ['Bad'], q2: ['Good'] } },
+        { key: 'csat', value: null }
+      ]);
+
+      expect(result.rejected).toEqual([]);
+      expect(state.formActions.changeValue.mock.calls.map((c: any) => c[0])).toEqual([
+        { q1: ['Bad'], q2: ['Bad'] },
+        { q2: ['Bad'] }
+      ]);
+    });
+
+    it('fills around a read-only answer that is not one of the columns', async () => {
+      const state = makeState(
+        [
+          matrix({
+            questions: [
+              { id: 'q1', label: 'Service' },
+              { id: 'q2', label: 'Price', read_only: true }
+            ]
+          })
+        ],
+        { csat: { q2: ['good'] } }
+      );
+
+      const result: any = await fillFields(formUuid, [
+        { key: 'csat', value: { q1: ['Bad'], q2: ['good'] } }
+      ]);
+
+      expect(result.rejected).toEqual([]);
+      expect(state.formActions.changeValue.mock.calls[0][0]).toEqual({
+        q1: ['Bad'],
+        q2: ['good']
+      });
     });
 
     it('clears every answer with an empty value', async () => {

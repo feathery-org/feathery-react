@@ -3,6 +3,7 @@ import {
   describeOptions,
   emptyValueFor,
   isEmptyValue,
+  readOnlyMatrixAnswers,
   resolveOptions
 } from '../formActions/fillFields';
 import { formatDateString } from '../../elements/fields/DateSelectorField/utils';
@@ -99,7 +100,8 @@ export const validateAndNormalizeForFill = (
   fieldValue?: unknown
 ): { ok: true; value: unknown } | { ok: false; error: string } => {
   // An empty value clears the field, as fillFields does
-  if (isEmptyValue(rawValue)) return { ok: true, value: emptyValueFor(servar) };
+  if (isEmptyValue(rawValue))
+    return { ok: true, value: emptyValueFor(servar, repeatIndex, fieldValue) };
 
   if (servar.type === 'date_selector')
     return normalizeDateSelector(servar, rawValue);
@@ -194,7 +196,16 @@ export const validateAndNormalizeForFill = (
     repeatIndex,
     fieldValue
   );
-  return error ? { ok: false, error } : { ok: true, value: rawValue };
+  if (error) return { ok: false, error };
+  if (servar.type === 'matrix')
+    return {
+      ok: true,
+      value: {
+        ...(rawValue as Record<string, string[]>),
+        ...readOnlyMatrixAnswers(servar, repeatIndex, fieldValue)
+      }
+    };
+  return { ok: true, value: rawValue };
 };
 
 // Decodes FileInput[] into File objects and runs FileUploadField's

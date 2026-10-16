@@ -59,25 +59,44 @@ export const isEmptyValue = (value: unknown) =>
   value === null || value === '' || (Array.isArray(value) && !value.length);
 
 // What each field holds when nothing is entered, so a clear never stores a value the field can't render
-export function emptyValueFor(servar: any): unknown {
+export function emptyValueFor(
+  servar: any,
+  repeatIndex?: number,
+  fieldValue?: unknown
+): unknown {
   if (MULTI_CHOICE_TYPES.has(servar.type)) return [];
   if (servar.type === 'select') return null;
   if (servar.type === 'checkbox') return !!servar.metadata?.always_checked;
   if (servar.type === 'rating') return 0;
   if (servar.type === 'slider') return servar.min_length ?? 0;
-  if (servar.type === 'matrix') return readOnlyMatrixAnswers(servar);
+  if (servar.type === 'matrix')
+    return readOnlyMatrixAnswers(servar, repeatIndex, fieldValue);
   return '';
 }
 
-// Read-only matrix questions keep their configured answers
-function readOnlyMatrixAnswers(servar: any): Record<string, string[]> {
+// Read-only matrix questions keep the answers the form shows, or their defaults before it shows any
+export function readOnlyMatrixAnswers(
+  servar: any,
+  repeatIndex: number | undefined,
+  fieldValue: unknown
+): Record<string, string[]> {
   const readOnlyQuestions = (servar.metadata?.questions ?? []).filter(
     (q: any) => q?.read_only
   );
   if (!readOnlyQuestions.length) return {};
-  const defaults = getDefaultFieldValue({ servar });
+  const shown =
+    typeof repeatIndex === 'number' && Array.isArray(fieldValue)
+      ? fieldValue[repeatIndex]
+      : fieldValue;
+  const answers =
+    shown && typeof shown === 'object' && !Array.isArray(shown)
+      ? (shown as Record<string, unknown>)
+      : getDefaultFieldValue({ servar });
   return Object.fromEntries(
-    readOnlyQuestions.map((q: any) => [q.id, defaults[q.id] ?? []])
+    readOnlyQuestions.map((q: any) => [
+      q.id,
+      Array.isArray(answers[q.id]) ? answers[q.id] : []
+    ])
   );
 }
 
@@ -91,8 +110,10 @@ function checkMatrixValue(
     return `Field '${key}' (matrix) expects an object of questionId -> string[].`;
   const answersByQuestion = value as Record<string, unknown>;
 
-  const questionIds = new Set(
-    (servar.metadata?.questions ?? []).map((q: any) => q?.id)
+  const questions = servar.metadata?.questions ?? [];
+  const questionIds = new Set(questions.map((q: any) => q?.id));
+  const readOnlyIds = new Set(
+    questions.filter((q: any) => q?.read_only).map((q: any) => q.id)
   );
   const options = resolveOptions(servar, repeatIndex);
   const optionValues = new Set(options.map((o) => o.value));
@@ -101,6 +122,8 @@ function checkMatrixValue(
       return `Field '${key}' (matrix) has no question '${questionId}'. Questions: ${[
         ...questionIds
       ].join(', ')}.`;
+    // Read-only answers are overwritten with the shown ones
+    if (readOnlyIds.has(questionId)) continue;
     if (!Array.isArray(answers) || !answers.every((a) => typeof a === 'string'))
       return `Field '${key}' (matrix) question '${questionId}' expects a string[].`;
     if (!servar.metadata?.multiple && answers.length > 1)
@@ -112,18 +135,6 @@ function checkMatrixValue(
       )}. Allowed: ${describeOptions(options)}.`;
   }
 
-  for (const [questionId, locked] of Object.entries(
-    readOnlyMatrixAnswers(servar)
-  )) {
-    const answers = (answersByQuestion[questionId] ?? []) as string[];
-    const keepsLocked =
-      answers.length === locked.length &&
-      locked.every((a) => answers.includes(a));
-    if (!keepsLocked)
-      return `Field '${key}' (matrix) question '${questionId}' is read-only and must keep its answer [${locked.join(
-        ', '
-      )}].`;
-  }
   return null;
 }
 
@@ -556,9 +567,14 @@ export async function fillFields(
       }
       const { field, servar } = validation;
       let normalized = isEmptyValue(validation.value)
-        ? emptyValueFor(servar)
+        ? emptyValueFor(servar, repeatIndex, pendingValues.get(key))
         : validation.value;
-      if (servar.type === 'gmap_state') {
+      if (servar.type === 'matrix') {
+        normalized = {
+          ...(normalized as Record<string, string[]>),
+          ...readOnlyMatrixAnswers(servar, repeatIndex, pendingValues.get(key))
+        };
+      } else if (servar.type === 'gmap_state') {
         normalized = normalizeGmapState(normalized, servar);
       } else if (servar.type === 'phone_number') {
         normalized = normalizePhone(normalized, servar, state, key);
