@@ -346,6 +346,25 @@ describe('fillStepTool: repeated fields', () => {
     ]);
   });
 
+  it('refuses a unique option an earlier row took in the same call', async () => {
+    seed(['', ''], {
+      type: 'dropdown',
+      metadata: { options: ['Ford', 'Toyota'], unique_repeat_options: true }
+    });
+
+    const result = await fillStepTool(FORM, {
+      values: { vehicle_vin: ['Ford', 'Ford'] }
+    });
+
+    expect((result.fields.vehicle_vin as any).rows).toEqual([
+      { status: 'filled', value: 'Ford' },
+      {
+        status: 'rejected',
+        message: 'Value not in allowed options. Allowed: Toyota.'
+      }
+    ]);
+  });
+
   it('adds no rows when the container has no add-row button, as a person could not', async () => {
     seed(['existing'], { addRowButton: false });
 

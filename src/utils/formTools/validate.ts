@@ -115,7 +115,8 @@ export const validateAndNormalizeForFill = (
   servar: any,
   rawValue: unknown,
   // A repeated field's row, whose options can differ from the field's own
-  repeatIndex?: number
+  repeatIndex?: number,
+  fieldValue?: unknown
 ): { ok: true; value: unknown } | { ok: false; error: string } => {
   // An empty value clears the field, as fillFields does
   if (servar.type !== 'matrix' && isEmptyValue(rawValue))
@@ -150,7 +151,7 @@ export const validateAndNormalizeForFill = (
         ok: false,
         error: `Field '${servar.key}' (select) expects a single option value (string).`
       };
-    const options = resolveOptions(servar, repeatIndex);
+    const options = resolveOptions(servar, repeatIndex, fieldValue);
     if (options.length > 0 && !options.some((o) => o.value === rawValue))
       return {
         ok: false,
@@ -213,7 +214,12 @@ export const validateAndNormalizeForFill = (
     };
   }
 
-  const error = checkValueAgainstField(servar, rawValue, repeatIndex);
+  const error = checkValueAgainstField(
+    servar,
+    rawValue,
+    repeatIndex,
+    fieldValue
+  );
   return error ? { ok: false, error } : { ok: true, value: rawValue };
 };
 

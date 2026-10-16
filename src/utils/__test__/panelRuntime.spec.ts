@@ -315,3 +315,67 @@ describe('tables in the snapshot', () => {
     });
   });
 });
+
+describe('unique repeat options in the snapshot', () => {
+  const setUp = (metadata: Record<string, unknown>) => {
+    const currentStep = {
+      id: 'step-1',
+      key: 'plans',
+      subgrids: [{ id: 'sg', position: [0], repeated: true }],
+      texts: [],
+      images: [],
+      buttons: [],
+      tables: [],
+      tabs: [],
+      progress_bars: [],
+      next_conditions: [],
+      servar_fields: [
+        {
+          servar: {
+            id: 'field-1',
+            key: 'plan',
+            type: 'dropdown',
+            repeated: true,
+            metadata: {
+              options: ['basic', 'pro'],
+              option_labels: ['Basic', 'Pro'],
+              ...metadata
+            }
+          },
+          properties: {},
+          position: [0, 0]
+        }
+      ]
+    };
+    (internalState as any)[FORM] = {
+      currentStep,
+      steps: { plans: currentStep },
+      fields: { plan: { value: ['pro', ''] } },
+      visiblePositions: { '0': [true, true], '0,0': [true, true] },
+      inlineErrors: {},
+      logicRules: []
+    };
+    const snapshot = getPanelRuntimeSnapshot(FORM);
+    if (!snapshot) throw new Error('The form did not load');
+    return snapshot.currentStepFields[0];
+  };
+
+  it("leaves other rows' picks out of each row's options", () => {
+    const field = setUp({ unique_repeat_options: true });
+
+    expect(field.rowOptions).toEqual([
+      null,
+      [{ value: 'basic', label: 'Basic' }]
+    ]);
+  });
+
+  it('lists the full options for every row when picks may repeat', () => {
+    const field = setUp({});
+
+    expect(field.rowOptions).toBeUndefined();
+    expect(field.options).toEqual([
+      { value: 'basic', label: 'Basic' },
+      { value: 'pro', label: 'Pro' }
+    ]);
+  });
+});

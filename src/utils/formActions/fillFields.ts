@@ -2,7 +2,7 @@ import internalState from '../internalState';
 import { initState } from '../init';
 import { loadPhoneValidator, phoneLib, phoneLibPromise } from '../validation';
 import { stateMap } from '../../elements/components/data/states';
-import { getRepeatedContainer } from '../repeat';
+import { availableRowOptions, getRepeatedContainer } from '../repeat';
 import { getPositionKey } from '../hideAndRepeats';
 import { formatDateString } from '../../elements/fields/DateSelectorField/utils';
 import {
@@ -107,7 +107,8 @@ function validateFill(
   state: any,
   fieldKey: string,
   rawValue: unknown,
-  repeatIndex: number | undefined
+  repeatIndex: number | undefined,
+  fieldValue: unknown
 ): FillValidation {
   const currentStep = state?.currentStep;
   const stepFields = currentStep?.servar_fields ?? [];
@@ -194,7 +195,12 @@ function validateFill(
   }
 
   // Type and bound checks
-  const shapeError = checkValueAgainstField(servar, value, repeatIndex);
+  const shapeError = checkValueAgainstField(
+    servar,
+    value,
+    repeatIndex,
+    fieldValue
+  );
   if (shapeError)
     return { ok: false, reason: 'invalid_value', message: shapeError };
 
@@ -203,7 +209,8 @@ function validateFill(
 
 export function resolveOptions(
   servar: any,
-  repeatIndex: number | undefined
+  repeatIndex: number | undefined,
+  fieldValue?: unknown
 ): Array<{ value: string; label: string }> {
   const meta = servar.metadata ?? {};
   const rawRowOptions = Array.isArray(meta.repeat_options)
@@ -222,10 +229,13 @@ export function resolveOptions(
   const rawOptions = Array.isArray(meta.options) ? meta.options : null;
   if (!rawOptions) return [];
   const rawLabels = Array.isArray(meta.option_labels) ? meta.option_labels : [];
-  return rawOptions.map((value: any, i: number) => ({
+  const options = rawOptions.map((value: any, i: number) => ({
     value: String(value ?? ''),
     label: String(rawLabels[i] || value || '')
   }));
+  return typeof repeatIndex === 'number'
+    ? availableRowOptions(servar, options, fieldValue, repeatIndex)
+    : options;
 }
 
 // Values with their labels where they differ, so a caller can both refill and ask the person
@@ -240,7 +250,8 @@ export function describeOptions(
 export function checkValueAgainstField(
   servar: any,
   value: unknown,
-  repeatIndex: number | undefined
+  repeatIndex: number | undefined,
+  fieldValue?: unknown
 ): string | null {
   const type = servar.type;
   const key = servar.key;
@@ -297,7 +308,7 @@ export function checkValueAgainstField(
     if (typeof value !== 'string') {
       return `Field '${key}' (${type}) expects a single option value (string).`;
     }
-    const options = resolveOptions(servar, repeatIndex);
+    const options = resolveOptions(servar, repeatIndex, fieldValue);
     if (options.length > 0 && !options.some((o) => o.value === value)) {
       return `Value not in allowed options. Allowed: ${describeOptions(
         options
@@ -314,7 +325,7 @@ export function checkValueAgainstField(
       return `Field '${key}' (button_group) is single-select; pass at most one option.`;
     }
     const opts = new Set(
-      resolveOptions(servar, repeatIndex).map((o) => o.value)
+      resolveOptions(servar, repeatIndex, fieldValue).map((o) => o.value)
     );
     if (opts.size > 0) {
       const bad = (value as string[]).filter((v) => !opts.has(v));
@@ -441,9 +452,16 @@ export async function fillFields(
   };
 
   // Resolve every value first so the writes below land in a single render
+  const pendingValues = new Map(priorValues);
   const prepared: Array<PreparedWrite | RejectedField> = fields.map(
     ({ key, value, repeatIndex }) => {
-      const validation = validateFill(state, key, value, repeatIndex);
+      const validation = validateFill(
+        state,
+        key,
+        value,
+        repeatIndex,
+        pendingValues.get(key)
+      );
       if (!validation.ok) {
         return {
           key,
@@ -467,6 +485,13 @@ export async function fillFields(
         normalized
       ) {
         normalized = formatDateString(new Date(normalized), servar.metadata);
+      }
+      // Later rows in this call see the options earlier rows took
+      if (typeof repeatIndex === 'number') {
+        const prior = pendingValues.get(key);
+        const rows = Array.isArray(prior) ? [...prior] : [];
+        rows[repeatIndex] = normalized;
+        pendingValues.set(key, rows);
       }
       return { key, repeatIndex, field, normalized };
     }

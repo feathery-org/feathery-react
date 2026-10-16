@@ -147,3 +147,32 @@ export function getServarRepeatNum(field: any, fieldValue: unknown): number {
     ? fieldValue.length + 1
     : fieldValue.length;
 }
+
+// A repeated dropdown with unique options hides from each row what the other rows picked
+export function isTakenByOtherRow(
+  servar: any,
+  option: unknown,
+  fieldValue: unknown,
+  rowValue: unknown
+): boolean {
+  return (
+    !!servar.repeated &&
+    !!servar.metadata?.unique_repeat_options &&
+    Array.isArray(fieldValue) &&
+    option !== rowValue &&
+    fieldValue.includes(option)
+  );
+}
+
+export function availableRowOptions<T extends { value: string }>(
+  servar: any,
+  options: T[],
+  fieldValue: unknown,
+  repeatIndex: number
+): T[] {
+  if (servar.type !== 'dropdown' || !Array.isArray(fieldValue)) return options;
+  const rowValue = fieldValue[repeatIndex];
+  return options.filter(
+    (option) => !isTakenByOtherRow(servar, option.value, fieldValue, rowValue)
+  );
+}

@@ -333,3 +333,100 @@ describe('fillFields value checks', () => {
     );
   });
 });
+
+describe('fillFields unique repeat options', () => {
+  const formUuid = 'form-fill-unique-test';
+
+  const makeState = (metadata: Record<string, unknown>, value: unknown[]) => {
+    const state: any = {
+      currentStep: {
+        key: 'step-1',
+        subgrids: [{ id: 'sg', position: [0], repeated: true }],
+        servar_fields: [
+          {
+            id: 'el-plan',
+            position: [0, 0],
+            servar: {
+              key: 'plan',
+              type: 'dropdown',
+              repeated: true,
+              metadata: { options: ['basic', 'pro', 'max'], ...metadata }
+            }
+          }
+        ]
+      },
+      visiblePositions: { '0': [true, true, true], '0,0': [true, true, true] },
+      formSettings: {},
+      fields: { plan: { value } },
+      inlineErrors: {},
+      formActions: {
+        changeValue: jest.fn(() => true),
+        runFieldChangeLogic: jest.fn()
+      }
+    };
+    (internalState as any)[formUuid] = state;
+    return state;
+  };
+
+  afterEach(() => {
+    delete (internalState as any)[formUuid];
+  });
+
+  it('refuses an option another row already picked', async () => {
+    makeState({ unique_repeat_options: true }, ['pro', '', '']);
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'plan', value: 'pro', repeatIndex: 1 }
+    ]);
+
+    expect(result.applied).toEqual([]);
+    expect(result.rejected).toEqual([
+      {
+        key: 'plan',
+        repeatIndex: 1,
+        reason: 'invalid_value',
+        message: 'Value not in allowed options. Allowed: basic, max.'
+      }
+    ]);
+  });
+
+  it("keeps a row's own pick allowed", async () => {
+    makeState({ unique_repeat_options: true }, ['pro', '', '']);
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'plan', value: 'pro', repeatIndex: 0 }
+    ]);
+
+    expect(result.rejected).toEqual([]);
+  });
+
+  it('refuses the second row when one call writes the same option twice', async () => {
+    makeState({ unique_repeat_options: true }, ['', '', '']);
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'plan', value: 'basic', repeatIndex: 0 },
+      { key: 'plan', value: 'basic', repeatIndex: 2 }
+    ]);
+
+    expect(result.applied).toEqual([
+      expect.objectContaining({ key: 'plan', repeatIndex: 0, value: 'basic' })
+    ]);
+    expect(result.rejected).toEqual([
+      expect.objectContaining({
+        key: 'plan',
+        repeatIndex: 2,
+        reason: 'invalid_value'
+      })
+    ]);
+  });
+
+  it('lets rows repeat an option when the field does not ask for unique ones', async () => {
+    makeState({}, ['pro', '', '']);
+
+    const result: any = await fillFields(formUuid, [
+      { key: 'plan', value: 'pro', repeatIndex: 1 }
+    ]);
+
+    expect(result.rejected).toEqual([]);
+  });
+});

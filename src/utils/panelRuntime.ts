@@ -1,7 +1,11 @@
 import internalState from './internalState';
 import { getCompletedStepKeys, initState, loadCompletedSteps } from './init';
 import { replaceTextVariables } from '../elements/components/TextNodes';
-import { getRepeatedContainer, getRepeatedContainers } from './repeat';
+import {
+  availableRowOptions,
+  getRepeatedContainer,
+  getRepeatedContainers
+} from './repeat';
 import { getPositionKey } from './hideAndRepeats';
 import { getDefaultFieldValue } from './fieldHelperFunctions';
 import { isButtonDisabled } from './button';
@@ -422,11 +426,17 @@ export const getPanelRuntimeSnapshot = (
       : undefined;
     const padTarget =
       rowCountByContainer[repeatAncestorId] ?? rawRowOptions?.length ?? 0;
-    const rowOptions = rawRowOptions
-      ? Array.from({ length: padTarget }, (_, i) =>
-          Array.isArray(rawRowOptions[i]) ? rawRowOptions[i] : null
-        )
-      : undefined;
+    const rowOptions = Array.from({ length: padTarget }, (_, i) => {
+      if (Array.isArray(rawRowOptions?.[i])) return rawRowOptions[i];
+      if (!options) return null;
+      const available = availableRowOptions(
+        servar,
+        options,
+        fieldEntity?.value,
+        i
+      );
+      return available.length < options.length ? available : null;
+    });
     const rawQuestions = Array.isArray(meta.questions) ? meta.questions : null;
     const questions = rawQuestions
       ? rawQuestions
@@ -488,7 +498,7 @@ export const getPanelRuntimeSnapshot = (
       ...(error ? { error } : {}),
       ...(hasErrorRows ? { errorRows } : {}),
       ...(options ? { options } : {}),
-      ...(rowOptions ? { rowOptions } : {}),
+      ...(rawRowOptions || rowOptions.some(Boolean) ? { rowOptions } : {}),
       ...(questions ? { questions } : {}),
       ...(typeof servar.min_length === 'number'
         ? { minLength: servar.min_length }
