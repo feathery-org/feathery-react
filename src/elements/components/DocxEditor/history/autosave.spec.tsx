@@ -77,6 +77,39 @@ const blobText = (b: Blob | undefined) =>
   });
 
 describe('useDocxHistorySession', () => {
+  it('uploads body diffs even when serialization drops an empty footer region', async () => {
+    const before = JSON.stringify({
+      sections: [
+        {
+          blocks: [{ inlines: [{ text: 'Body' }] }],
+          headersFooters: {
+            evenFooter: { blocks: [{ inlines: [{ text: 'Footer' }] }] }
+          }
+        }
+      ]
+    });
+    const after = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'Body edited' }] }] }]
+    });
+    let snapshot = before;
+    const { view, host } = setup(
+      { manualSave: true },
+      { serialize: () => snapshot }
+    );
+    snapshot = after;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+    const payload = host.closeVersion.mock.calls[0][1];
+    expect(payload.changesJson).toBeDefined();
+    const changes = JSON.parse(await blobText(payload.changesJson));
+    expect(changes.hunks.some((h: any) => h.type.startsWith('ins'))).toBe(true);
+    expect(changes.hunks.some((h: any) => h.type === 'del_block')).toBe(true);
+    expect(() => applyHunks(JSON.parse(after), changes)).not.toThrow();
+    view.unmount();
+  });
+
   it('keeps manual sessions local across idle, assistant turn end, and tab hiding until Save', async () => {
     jest.useFakeTimers();
     const { view, save, host, editor } = setup({ manualSave: true });

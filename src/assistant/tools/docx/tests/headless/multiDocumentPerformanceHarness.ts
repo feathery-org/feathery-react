@@ -34,6 +34,7 @@ class CountedContainer extends DocumentEditorContainer {
     super(options);
     instances++;
   }
+
   destroy() {
     if (this.counted) {
       instances--;
@@ -44,6 +45,7 @@ class CountedContainer extends DocumentEditorContainer {
 }
 let calls: number[] = [];
 let serialMs: number[] = [];
+let savedArtifacts: any[] = [];
 const frame = () =>
   new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 const render = () =>
@@ -96,9 +98,9 @@ export const multiDocumentPerformanceHarness = {
   openOverflowDocuments(width: number) {
     root?.unmount();
     host?.remove();
-    host = document.createElement('div');
+    host = globalThis.document.createElement('div');
     host.style.cssText = `position:fixed;inset:0;width:${width}px;height:300px;background:white`;
-    document.body.appendChild(host);
+    globalThis.document.body.appendChild(host);
     root = createRoot(host);
     const tabs = Array.from({ length: 20 }, (_, i) => ({
       id: `${i}`,
@@ -116,22 +118,49 @@ export const multiDocumentPerformanceHarness = {
       );
     draw('0');
   },
-  async measureVersionSwitches(sfdt: string) {
+  async measureVersionSwitches(
+    sfdt: string,
+    withChanges = false,
+    changes: any = null
+  ) {
+    if (withChanges && !changes) {
+      const before = JSON.parse(sfdt);
+      before.sections[0].blocks.unshift({
+        inlines: [{ text: 'Earlier version text' }]
+      });
+      changes = await runHistoryTask('close', {
+        sessionId: 'preview-test',
+        snapshot: {
+          s0: JSON.stringify(before),
+          fStr: sfdt,
+          fAuthor: 'you',
+          slices: [],
+          slicesComplete: true,
+          robinRuns: [],
+          acceptance: null
+        }
+      }).then((result) => result.changes);
+      if (!changes?.hunks.length)
+        throw new Error('Expected generated change data');
+    }
     __clearVersionDocumentCache();
-    const previewHost = document.createElement('div');
+    const previewHost = globalThis.document.createElement('div');
     previewHost.style.cssText =
       'position:fixed;inset:0;width:1200px;height:800px;background:white';
-    document.body.appendChild(previewHost);
+    globalThis.document.body.appendChild(previewHost);
     let previewRoot = createRoot(previewHost);
     let fetches = 0;
     const history = {
-      fetchVersionFile: async () => {
+      fetchVersionFile: async (url: string) => {
         fetches++;
         await new Promise((resolve) => setTimeout(resolve, 150));
-        return new TextEncoder().encode(sfdt).buffer;
+        return new TextEncoder().encode(
+          url.startsWith('changes-') ? JSON.stringify(changes) : sfdt
+        ).buffer;
       }
     } as any;
     const rows: any[] = [];
+    let editor: any;
     try {
       for (const [index, key] of [
         'current',
@@ -146,6 +175,7 @@ export const multiDocumentPerformanceHarness = {
           previewRoot = createRoot(previewHost);
         }
         let displayed = false;
+        let meta: any;
         const started = performance.now();
         previewRoot.render(
           React.createElement(VersionViewer, {
@@ -153,21 +183,39 @@ export const multiDocumentPerformanceHarness = {
             version: {
               id: key,
               is_current: key === 'current',
-              final_sfdt: key
+              final_sfdt: key,
+              changes: withChanges ? `changes-${key}` : null,
+              change_count: withChanges ? changes.changeCount : null
             } as any,
+            onMeta: (value: any) => {
+              meta = value;
+            },
+            onViewerEditor: (value: any) => {
+              editor = value;
+            },
             onDisplayedVersion: (version: any) => {
               if (version.id === key) displayed = true;
             }
           })
         );
-        for (let n = 0; n < 600 && !displayed; n++) await frame();
+        for (let n = 0; n < 600; n++) {
+          if (displayed) break;
+          await frame();
+        }
         if (!displayed) throw new Error('Version never displayed');
         await frame();
         rows.push({
           selection: key,
           remounted: index === 4,
           ms: performance.now() - started,
-          fetches
+          fetches,
+          ...(withChanges
+            ? {
+                degraded: meta?.degraded,
+                editCount: meta?.editCount,
+                revisions: editor?.revisions?.changes?.length
+              }
+            : {})
         });
       }
       return rows;
@@ -258,10 +306,10 @@ export const multiDocumentPerformanceHarness = {
     (globalThis as any).scriptjsLoadPromise = Promise.resolve({
       default: (_urls: string[], done: () => void) => done()
     });
-    host = document.createElement('div');
+    host = globalThis.document.createElement('div');
     host.style.cssText =
       'position:fixed;inset:0;width:1200px;height:800px;background:white';
-    document.body.appendChild(host);
+    globalThis.document.body.appendChild(host);
     root = createRoot(host);
     active = 0;
     panel = null;
@@ -287,7 +335,15 @@ export const multiDocumentPerformanceHarness = {
             }
           ],
           fetchVersionFile: async () => new TextEncoder().encode(sfdt).buffer,
-          closeVersion: async () => null,
+          closeVersion: async (_id: string, payload: any) => {
+            savedArtifacts.push({
+              document: i,
+              changes: !!payload.changesJson,
+              count: payload.changeCount,
+              start: !!payload.startSha256
+            });
+            return null;
+          },
           restoreVersion: async () => undefined,
           renameVersion: async () => {
             throw new Error('unused');
@@ -318,6 +374,27 @@ export const multiDocumentPerformanceHarness = {
       openMs: performance.now() - start,
       pages: docs.map((doc) => doc.editor.pageCount)
     };
+  },
+  async measureSecondDocumentSave() {
+    active = 1;
+    panel = null;
+    savedArtifacts = [];
+    render();
+    for (let i = 0; i < 10; i++) await frame();
+    const editor = docs[1].editor;
+    editor.selection.moveToDocumentEnd();
+    editor.editor.insertText(' test change');
+    await frame();
+    const buttons = Array.from(host.querySelectorAll('button'));
+    const visible = buttons.filter((b) => b.textContent?.trim() === 'Save');
+    if (!visible[1])
+      throw new Error(
+        'Save button absent: ' + buttons.map((b) => b.textContent).join('|')
+      );
+    const began = performance.now();
+    visible[1].click();
+    for (let i = 0; i < 2400 && !savedArtifacts.length; i++) await frame();
+    return { ms: performance.now() - began, artifacts: savedArtifacts };
   },
   async measurePerformanceTyping() {
     panel = null;

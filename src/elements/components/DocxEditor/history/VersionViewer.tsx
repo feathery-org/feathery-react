@@ -353,7 +353,7 @@ export default function VersionViewer({
           setPhase('loading');
           let bytes: ArrayBuffer;
           try {
-            bytes = await host.fetchVersionFile(doc.docxUrl);
+            bytes = doc.docxBytes ?? (await host.fetchVersionFile(doc.docxUrl));
           } catch (error) {
             if (
               !host.getVersion ||
