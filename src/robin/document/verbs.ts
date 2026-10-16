@@ -790,9 +790,9 @@ export function prepareWrite(
           const placement = 'find' in t ? index.get(id) : locate(id, at);
           if (placement) nodes.push(placement.node);
         }
-        const kinds = new Map(nodes.map((n) => [n.kind, n.id]));
-        const problems = [...kinds].flatMap(([kind, id]) =>
-          propertyProblems(pack, kind, props, id)
+        const kinds = new Map(nodes.map((n) => [n.kind, n]));
+        const problems = [...kinds].flatMap(([kind, node]) =>
+          propertyProblems(pack, kind, props, node.id, node)
         );
         if (problems.length) {
           applyProblems.push(...problems);
