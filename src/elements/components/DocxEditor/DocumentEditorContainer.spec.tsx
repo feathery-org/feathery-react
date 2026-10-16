@@ -34,6 +34,7 @@ jest.mock('../../../utils/documentEditorPrimitives', () => ({
 const OPEN_STATE = { opened: false };
 const mockBeforeReplace = jest.fn().mockResolvedValue(undefined);
 let mockHistory: any;
+const mockEditorResize = jest.fn();
 
 // Exposes the terminal handlers as buttons so the container's outcome routing
 // can be driven the way the real toolbar drives it.
@@ -70,6 +71,7 @@ jest.mock('./index', () => {
     const editor = React.useMemo(
       () => ({
         sourceUrl: source?.url,
+        resize: mockEditorResize,
         // Stands in for the persisted revisions a saved file carries: absent
         // until the source document has actually been opened.
         get revisions() {
@@ -1149,6 +1151,32 @@ describe('document tab navigation', () => {
       }
     } finally {
       jest.useRealTimers();
+    }
+  });
+
+  it('switches to a document whose caret layout is not ready without forcing a resize', async () => {
+    const view = render(
+      <DocumentEditorContainer containerId={containerId} formId='tabs-form' />
+    );
+    await waitFor(() =>
+      expect(view.getByTestId('editor:a.editor.docx')).toBeTruthy()
+    );
+    mockEditorResize.mockImplementation(() => {
+      throw new TypeError(
+        "Cannot read properties of undefined (reading 'boundingRectangle')"
+      );
+    });
+    try {
+      fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+      await waitFor(() =>
+        expect(
+          view.getByRole('tab', { name: 'Schedule.docx' })
+        ).toHaveAttribute('aria-selected', 'true')
+      );
+      expect(view.getByTestId('editor:b.docx')).toBeTruthy();
+    } finally {
+      mockEditorResize.mockReset();
+      view.unmount();
     }
   });
 
