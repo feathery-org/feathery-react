@@ -629,15 +629,18 @@ function revisionIdsWithText(doc: any): Set<string> {
   return ids;
 }
 
-/** Count edit groups as the steppers visit them: formatting and blank-line
- *  groups excluded, unless blank lines are the only edits. */
-export function countEditGroups(displayDoc: any): number {
+/** Count edit groups; blank-line groups are excluded unless they are the only
+ *  edits. `includeFormatting` counts every stop the steppers visit. */
+export function countEditGroups(
+  displayDoc: any,
+  { includeFormatting = false }: { includeFormatting?: boolean } = {}
+): number {
   const textIds = revisionIdsWithText(displayDoc);
   const withContent = new Set<string>();
   const all = new Set<string>();
   for (const r of displayDoc?.revisions ?? []) {
     const author = String(r?.author ?? '');
-    if (author.startsWith(FMT_AUTHOR_PREFIX)) continue;
+    if (!includeFormatting && author.startsWith(FMT_AUTHOR_PREFIX)) continue;
     const key = editGroupKey(r);
     if (key == null) continue;
     all.add(key);

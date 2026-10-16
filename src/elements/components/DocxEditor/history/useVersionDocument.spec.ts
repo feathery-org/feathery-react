@@ -44,6 +44,8 @@ const version = (over: Partial<DocxVersion>): DocxVersion =>
     ...over
   } as DocxVersion);
 
+const bytes = () => new TextEncoder().encode('docx').buffer;
+
 const host = (over: Partial<DocxHistoryHost> = {}): DocxHistoryHost => ({
   listVersions: jest.fn(),
   closeVersion: jest.fn(),
@@ -410,6 +412,316 @@ describe('useVersionDocument', () => {
     expect(result.current.error).toBe(false);
     expect(result.current.degraded).toBe(false);
     expect(h.fetchVersionFile).not.toHaveBeenCalled();
+  });
+
+  it('shows every folded session, each in its own author', async () => {
+    const text = (t: string) => ({
+      sections: [{ blocks: [{ inlines: [{ text: t }] }] }]
+    });
+    const close = (sessionId: string, from: string, to: string) =>
+      registerLocalVersionArtifacts(sessionId, {
+        finalSfdt: JSON.stringify(text(to)),
+        changes: diffSession(
+          text(from),
+          [{ sfdt: text(to), author: 'you' }],
+          sessionId
+        )
+      });
+    close('fold-a', 'Hello', 'Hello Alice');
+    close('fold-b', 'Hello Alice', 'Hello Alice and Bob');
+    const baseline = version({
+      id: 'v0',
+      session_id: null,
+      seq: 0,
+      is_baseline: true,
+      file: 'original.docx'
+    });
+    const alice = version({
+      id: 'va',
+      session_id: 'fold-a',
+      seq: 1,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'alice@x.io'
+    });
+    const bob = version({
+      id: 'vb',
+      session_id: 'fold-b',
+      seq: 2,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'bob@x.io'
+    });
+    const authorsOf = (sfdt?: string) =>
+      Array.from(
+        new Set(JSON.parse(must(sfdt)).revisions.map((r: any) => r.author))
+      ).sort();
+    const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(bytes()) });
+    const convert = jest.fn().mockResolvedValue(text('Hello'));
+
+    const folded = renderHook(() =>
+      useVersionDocument(
+        h,
+        bob,
+        { earlier: [alice], preceding: baseline },
+        convert
+      )
+    );
+    await waitFor(() => expect(folded.result.current.loading).toBe(false));
+    expect(folded.result.current.degraded).toBe(false);
+    expect(authorsOf(folded.result.current.sfdt)).toEqual([
+      'alice@x.io',
+      'bob@x.io'
+    ]);
+
+    expect(h.fetchVersionFile).toHaveBeenCalledWith('original.docx');
+    expect(convert).toHaveBeenCalledTimes(1);
+
+    const alone = renderHook(() => useVersionDocument(h, bob));
+    await waitFor(() => expect(alone.result.current.loading).toBe(false));
+    expect(authorsOf(alone.result.current.sfdt)).toEqual(['you']);
+    clearLocalVersionArtifacts('fold-a', JSON.stringify(text('Hello Alice')));
+    clearLocalVersionArtifacts(
+      'fold-b',
+      JSON.stringify(text('Hello Alice and Bob'))
+    );
+  });
+
+  it('opens the row on its own when a folded session mixes a person and Robin', async () => {
+    const text = (t: string) => ({
+      sections: [{ blocks: [{ inlines: [{ text: t }] }] }]
+    });
+    const close = (sessionId: string, from: string, to: string) =>
+      registerLocalVersionArtifacts(sessionId, {
+        finalSfdt: JSON.stringify(text(to)),
+        changes: diffSession(
+          text(from),
+          [{ sfdt: text(to), author: 'you' }],
+          sessionId
+        )
+      });
+    close('mix-a', 'Hello', 'Hello Alice');
+    close('mix-b', 'Hello Alice', 'Hello Alice and Bob');
+    const mixed = version({
+      id: 'ma',
+      session_id: 'mix-a',
+      seq: 1,
+      authors: [
+        { kind: 'user', label: 'You' },
+        { kind: 'assistant', label: 'Robin' }
+      ],
+      actor_label: 'alice@x.io'
+    });
+    const head = version({
+      id: 'mb',
+      session_id: 'mix-b',
+      seq: 2,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'bob@x.io'
+    });
+
+    const h = host();
+    const { result } = renderHook(() =>
+      useVersionDocument(h, head, { earlier: [mixed], preceding: null })
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const authors = JSON.parse(must(result.current.sfdt)).revisions.map(
+      (r: any) => r.author
+    );
+    expect(Array.from(new Set(authors))).toEqual(['you']);
+    clearLocalVersionArtifacts('mix-a', JSON.stringify(text('Hello Alice')));
+    clearLocalVersionArtifacts(
+      'mix-b',
+      JSON.stringify(text('Hello Alice and Bob'))
+    );
+  });
+
+  it('counts the approved Robin edits of every folded session', async () => {
+    const text = (t: string) => ({
+      sections: [{ blocks: [{ inlines: [{ text: t }] }] }]
+    });
+    const accepted = diffSession(
+      text('Hello'),
+      [{ sfdt: text('Hello Robin'), author: 'robin' }],
+      'ok-a'
+    );
+    accepted.confirmed = true;
+    registerLocalVersionArtifacts('ok-a', {
+      finalSfdt: JSON.stringify(text('Hello Robin')),
+      changes: accepted
+    });
+    registerLocalVersionArtifacts('ok-b', {
+      finalSfdt: JSON.stringify(text('Hello Robin and Bob')),
+      changes: diffSession(
+        text('Hello Robin'),
+        [{ sfdt: text('Hello Robin and Bob'), author: 'you' }],
+        'ok-b'
+      )
+    });
+    const robin = version({
+      id: 'oa',
+      session_id: 'ok-a',
+      seq: 1,
+      authors: [{ kind: 'assistant', label: 'Robin' }]
+    });
+    const bob = version({
+      id: 'ob',
+      session_id: 'ok-b',
+      seq: 2,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'bob@x.io'
+    });
+
+    const original = version({
+      id: 'o0',
+      session_id: null,
+      seq: 0,
+      is_baseline: true,
+      file: 'original.docx'
+    });
+    const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(bytes()) });
+    const { result } = renderHook(() =>
+      useVersionDocument(
+        h,
+        bob,
+        { earlier: [robin], preceding: original },
+        jest.fn().mockResolvedValue(text('Hello'))
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.degraded).toBe(false);
+    expect(result.current.approvedCount).toBe(1);
+    clearLocalVersionArtifacts('ok-a', JSON.stringify(text('Hello Robin')));
+    clearLocalVersionArtifacts(
+      'ok-b',
+      JSON.stringify(text('Hello Robin and Bob'))
+    );
+  });
+
+  describe('a folded group right after the original upload', () => {
+    const text = (...inlines: any[]) => ({
+      sections: [{ blocks: [{ inlines }] }]
+    });
+    const bold = { text: 'Hello', characterFormat: { bold: true } };
+    const original = version({
+      id: 'up0',
+      session_id: null,
+      seq: 0,
+      is_baseline: true,
+      file: 'original.docx'
+    });
+    const person = (id: string, seq: number, label: string) =>
+      version({
+        id,
+        session_id: id,
+        seq,
+        authors: [{ kind: 'user', label: 'You' }],
+        actor_label: label
+      });
+    const alice = person('up-a', 1, 'alice@x.io');
+    const bob = person('up-b', 2, 'bob@x.io');
+
+    beforeEach(() => {
+      // Alice bolds "Hello"; Bob then adds a word.
+      registerLocalVersionArtifacts('up-a', {
+        finalSfdt: JSON.stringify(text(bold)),
+        changes: diffSession(
+          text({ text: 'Hello' }),
+          [{ sfdt: text(bold), author: 'you' }],
+          'up-a'
+        )
+      });
+      registerLocalVersionArtifacts('up-b', {
+        finalSfdt: JSON.stringify(text(bold, { text: ' world' })),
+        changes: diffSession(
+          text(bold),
+          [{ sfdt: text(bold, { text: ' world' }), author: 'you' }],
+          'up-b'
+        )
+      });
+    });
+    afterEach(() => __clearVersionDocumentCache());
+
+    const open = (h: DocxHistoryHost, convert?: jest.Mock) =>
+      renderHook(() =>
+        useVersionDocument(
+          h,
+          bob,
+          { earlier: [alice], preceding: original },
+          convert
+        )
+      );
+
+    it('keeps the oldest session’s formatting edit a formatting change', async () => {
+      const h = host({
+        fetchVersionFile: jest.fn().mockResolvedValue(bytes())
+      });
+      const convert = jest.fn().mockResolvedValue(text({ text: 'Hello' }));
+
+      const { result } = open(h, convert);
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(result.current.degraded).toBe(false);
+      expect(result.current.formatCount).toBe(1);
+      // The bar counts both stops the steppers visit.
+      expect(result.current.editCount).toBe(2);
+      // "Hello" was already there, so Alice's edit reads as formatting.
+      const display = JSON.parse(must(result.current.sfdt));
+      const authorById = new Map(
+        display.revisions.map((r: any) => [r.revisionId, r.author])
+      );
+      const runs = display.sections[0].blocks[0].inlines.map((i: any) => [
+        i.text,
+        authorById.get(i.revisionIds?.[0])
+      ]);
+      expect(runs).toEqual([
+        ['Hello', 'fmt:alice@x.io'],
+        [' world', 'bob@x.io']
+      ]);
+    });
+
+    it('converts the original once across reopens', async () => {
+      const h = host({
+        fetchVersionFile: jest.fn().mockResolvedValue(bytes())
+      });
+      const convert = jest.fn().mockResolvedValue(text({ text: 'Hello' }));
+
+      const first = open(h, convert);
+      await waitFor(() => expect(first.result.current.loading).toBe(false));
+      const second = open(h, convert);
+      await waitFor(() => expect(second.result.current.loading).toBe(false));
+
+      expect(convert).toHaveBeenCalledTimes(1);
+      expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['the conversion fails', jest.fn().mockRejectedValue(new Error('x'))],
+      ['no converter is available', undefined]
+    ])('shows the newest session alone when %s', async (_why, convert) => {
+      const h = host({
+        fetchVersionFile: jest.fn().mockResolvedValue(bytes())
+      });
+
+      const { result } = open(h, convert as jest.Mock | undefined);
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(result.current.error).toBe(false);
+      const authors = JSON.parse(must(result.current.sfdt)).revisions.map(
+        (r: any) => r.author
+      );
+      expect(Array.from(new Set(authors))).toEqual(['you']);
+    });
+  });
+
+  it('falls back to the row version when a folded session has no snapshot', async () => {
+    const h = host({ fetchVersionFile: jest.fn() });
+    const lost = version({ id: 'lost', session_id: 'lost', seq: 1 });
+    const own = version({ id: 'own', seq: 2, file: 'own.docx' });
+    const { result } = renderHook(() =>
+      useVersionDocument(h, own, { earlier: [lost], preceding: null })
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe(false);
+    expect(result.current.docxUrl).toBe('own.docx');
   });
 
   it('moves native tracked-row marks onto cell content in the plain view', async () => {

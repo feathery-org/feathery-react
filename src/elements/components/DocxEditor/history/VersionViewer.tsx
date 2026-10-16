@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { keyframes } from '@emotion/react';
 
 import { INK_3, PAPER } from '../TrackedChangeGroups/styles';
@@ -9,9 +9,14 @@ import {
   installRevisionHighlightRendering
 } from '../useDocxEditor';
 import { colorForRevisionAuthor } from './authorColors';
+import { hiddenEditorConverter } from './convertOriginal';
 import { populateVersionBindings } from './populateVersionBindings';
 import { normalizeForDiff } from './sfdtDiff';
-import { useVersionDocument, VersionDocument } from './useVersionDocument';
+import {
+  FoldedVersions,
+  useVersionDocument,
+  VersionDocument
+} from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
 import { withDocumentDeadline } from '../../../../utils/documentPersistence';
 
@@ -96,6 +101,8 @@ interface Props {
   /** Pre-resolved document that skips the fetch; used for the unsaved current
    *  version, which has no stored files. */
   liveDoc?: VersionDocument;
+  /** Sessions folded under this row: their edits are shown together. */
+  folded?: FoldedVersions | null;
   /** Reports the version's edit counts + whether highlights are available, so
    *  the version bar can label them. */
   onMeta?: (meta: VersionMeta) => void;
@@ -119,6 +126,7 @@ export default function VersionViewer({
   firstUserKey,
   highlightsOn = true,
   liveDoc,
+  folded,
   onMeta,
   onViewerEditor,
   zoomFactor,
@@ -134,7 +142,17 @@ export default function VersionViewer({
   // With a live document (the in-progress current version — no stored files),
   // use it directly and skip the fetch. It carries the applyHunks display SFDT,
   // so the normal highlight path renders it exactly like a stored version.
-  const fetched = useVersionDocument(host, liveDoc ? null : version);
+  // A folded group right after the original starts from the converted upload.
+  const convertDocx = useMemo(
+    () => (serviceUrl ? hiddenEditorConverter(serviceUrl, headers) : undefined),
+    [serviceUrl, headers]
+  );
+  const fetched = useVersionDocument(
+    host,
+    liveDoc ? null : version,
+    folded,
+    convertDocx
+  );
   const doc = liveDoc ?? fetched;
   // Restores establish a clean baseline; embedded suggestions are reviewable
   // in the live editor, not replayed as edits in the restored history row.
