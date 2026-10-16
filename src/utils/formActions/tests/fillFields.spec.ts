@@ -256,14 +256,14 @@ describe('fillFields value checks', () => {
   });
 
   it('refuses field types it has no check for', async () => {
-    makeState([{ key: 'grid', type: 'matrix', metadata: {} }], { grid: {} });
+    makeState([{ key: 'sig', type: 'signature', metadata: {} }], { sig: null });
 
     const result: any = await fillFields(formUuid, [
-      { key: 'grid', value: 'hello' }
+      { key: 'sig', value: 'hello' }
     ]);
 
     expect(result.rejected).toEqual([
-      expect.objectContaining({ key: 'grid', reason: 'unwritable_type' })
+      expect.objectContaining({ key: 'sig', reason: 'unwritable_type' })
     ]);
   });
 
@@ -366,6 +366,156 @@ describe('fillFields value checks', () => {
     expect(state.formActions.changeValue.mock.calls[0][0]).toBe(
       '2026-10-06T14:30:00Z'
     );
+  });
+
+  describe('matrix', () => {
+    const matrix = (metadata: Record<string, unknown> = {}) => ({
+      key: 'csat',
+      type: 'matrix',
+      metadata: {
+        options: ['Good', 'Bad'],
+        questions: [
+          { id: 'q1', label: 'Service' },
+          { id: 'q2', label: 'Price' }
+        ],
+        ...metadata
+      }
+    });
+
+    it('stores answers keyed by question the way a person selecting them does', async () => {
+      const state = makeState([matrix()], { csat: {} });
+
+      const result: any = await fillFields(formUuid, [
+        { key: 'csat', value: { q1: ['Good'], q2: ['Bad'] } }
+      ]);
+
+      expect(result.rejected).toEqual([]);
+      expect(state.formActions.changeValue).toHaveBeenCalledWith(
+        { q1: ['Good'], q2: ['Bad'] },
+        expect.objectContaining({ id: 'el-csat' }),
+        null
+      );
+    });
+
+    it('allows several answers to a question only when the matrix does', async () => {
+      makeState([matrix({ multiple: true })], { csat: {} });
+
+      const result: any = await fillFields(formUuid, [
+        { key: 'csat', value: { q1: ['Good', 'Bad'] } }
+      ]);
+
+      expect(result.applied.map((f: any) => f.value)).toEqual([
+        { q1: ['Good', 'Bad'] }
+      ]);
+    });
+
+    it.each([
+      ['an unknown question', { q9: ['Good'] }, "has no question 'q9'"],
+      [
+        'an answer outside the columns',
+        { q1: ['Great'] },
+        "Values not in allowed options for question 'q1': Great"
+      ],
+      [
+        'two answers to a single-answer question',
+        { q1: ['Good', 'Bad'] },
+        'allows one answer per question'
+      ],
+      ['answers that are not a list', { q1: 'Good' }, 'expects a string[]'],
+      ['a value that is not keyed by question', ['Good'], 'expects an object']
+    ])('rejects %s', async (_name, value, message) => {
+      const state = makeState([matrix()], { csat: {} });
+
+      const result: any = await fillFields(formUuid, [{ key: 'csat', value }]);
+
+      expect(result.rejected).toEqual([
+        expect.objectContaining({
+          key: 'csat',
+          reason: 'invalid_value',
+          message: expect.stringContaining(message)
+        })
+      ]);
+      expect(state.formActions.changeValue).not.toHaveBeenCalled();
+    });
+
+    it('keeps a read-only question on its configured answer', async () => {
+      const state = makeState(
+        [
+          matrix({
+            questions: [
+              { id: 'q1', label: 'Service' },
+              {
+                id: 'q2',
+                label: 'Price',
+                read_only: true,
+                default_value: 'Good'
+              }
+            ]
+          })
+        ],
+        { csat: { q1: ['Bad'], q2: ['Good'] } }
+      );
+
+      const result: any = await fillFields(formUuid, [
+        { key: 'csat', value: { q1: ['Good'], q2: ['Bad'] } },
+        { key: 'csat', value: { q1: ['Good'] } },
+        { key: 'csat', value: { q1: ['Good'], q2: ['Good'] } },
+        { key: 'csat', value: null }
+      ]);
+
+      expect(result.rejected.map((f: any) => f.reason)).toEqual([
+        'invalid_value',
+        'invalid_value'
+      ]);
+      expect(state.formActions.changeValue.mock.calls.map((c: any) => c[0])).toEqual([
+        { q1: ['Good'], q2: ['Good'] },
+        { q2: ['Good'] }
+      ]);
+    });
+
+    it('keeps the answer a read-only question shows, even when it differs from its default', async () => {
+      const state = makeState(
+        [
+          matrix({
+            questions: [
+              { id: 'q1', label: 'Service' },
+              {
+                id: 'q2',
+                label: 'Price',
+                read_only: true,
+                default_value: 'Good'
+              }
+            ]
+          })
+        ],
+        { csat: { q1: ['Good'], q2: ['Bad'] } }
+      );
+
+      const result: any = await fillFields(formUuid, [
+        { key: 'csat', value: { q1: ['Bad'], q2: ['Bad'] } },
+        { key: 'csat', value: { q1: ['Bad'], q2: ['Good'] } },
+        { key: 'csat', value: null }
+      ]);
+
+      expect(result.rejected).toEqual([
+        expect.objectContaining({ reason: 'invalid_value' })
+      ]);
+      expect(state.formActions.changeValue.mock.calls.map((c: any) => c[0])).toEqual([
+        { q1: ['Bad'], q2: ['Bad'] },
+        { q2: ['Bad'] }
+      ]);
+    });
+
+    it('clears every answer with an empty value', async () => {
+      const state = makeState([matrix()], { csat: { q1: ['Good'] } });
+
+      const result: any = await fillFields(formUuid, [
+        { key: 'csat', value: null }
+      ]);
+
+      expect(state.formActions.changeValue.mock.calls[0][0]).toEqual({});
+      expect(result.applied[0].priorValue).toEqual({ q1: ['Good'] });
+    });
   });
 });
 

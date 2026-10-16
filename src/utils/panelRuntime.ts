@@ -40,7 +40,7 @@ export type PanelRuntimeFieldEntry = {
   errorRows?: Record<string, string>;
   options?: Array<{ value: string; label: string }>;
   rowOptions?: Array<Array<{ value: string; label: string }> | null>;
-  questions?: Array<{ id: string; label: string }>;
+  questions?: Array<{ id: string; label: string; readOnly?: true }>;
   minLength?: number;
   maxLength?: number;
   format?: string;
@@ -458,7 +458,8 @@ export const getPanelRuntimeSnapshot = (
       ? rawQuestions
           .map((q: any) => ({
             id: String(q?.id ?? ''),
-            label: String(q?.label ?? '')
+            label: String(q?.label ?? ''),
+            ...(q?.read_only ? { readOnly: true as const } : {})
           }))
           .filter((q: { id: string; label: string }) => q.id || q.label)
       : undefined;
@@ -525,7 +526,9 @@ export const getPanelRuntimeSnapshot = (
       ...(servar.format ? { format: String(servar.format) } : {}),
       ...(fileTypes.length > 0 ? { fileTypes } : {}),
       ...(meta.multiple ? { multipleFiles: true } : {}),
-      ...(servar.type === 'button_group' ? { multiple: !!meta.multiple } : {}),
+      ...(servar.type === 'button_group' || servar.type === 'matrix'
+        ? { multiple: !!meta.multiple }
+        : {}),
       ...(sliderLabels ? { sliderLabels } : {}),
       ...(typeof meta.step_size === 'number'
         ? { stepSize: meta.step_size }

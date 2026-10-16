@@ -31,26 +31,6 @@ const UNSUPPORTED_TYPES = new Set([
 export const isUnsupportedType = (type: string): boolean =>
   UNSUPPORTED_TYPES.has(type);
 
-const isStringArray = (v: unknown): v is string[] =>
-  Array.isArray(v) && v.every((e) => typeof e === 'string');
-
-const checkMatrixValue = (servar: any, value: unknown): string | null => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    return `Field '${servar.key}' (matrix) expects an object of questionId -> string[].`;
-  const questionIds = new Set(
-    (servar.metadata?.questions ?? []).map((q: any) => q.id)
-  );
-  for (const [questionId, answers] of Object.entries(
-    value as Record<string, unknown>
-  )) {
-    if (!isStringArray(answers))
-      return `Field '${servar.key}' (matrix) question '${questionId}' expects a string[].`;
-    if (questionIds.size > 0 && !questionIds.has(questionId))
-      return `Field '${servar.key}' (matrix) has no question '${questionId}'.`;
-  }
-  return null;
-};
-
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 const ZONED_DATETIME_RE =
@@ -109,8 +89,8 @@ const normalizeDateSelector = (
   return { ok: true, value: formatDateString(date, meta) };
 };
 
-// Wraps checkValueAgainstField with the checks it lacks: 'select', 'matrix'
-// and time-aware date_selector
+// Wraps checkValueAgainstField with the checks it lacks: 'select' and
+// time-aware date_selector
 export const validateAndNormalizeForFill = (
   servar: any,
   rawValue: unknown,
@@ -119,16 +99,11 @@ export const validateAndNormalizeForFill = (
   fieldValue?: unknown
 ): { ok: true; value: unknown } | { ok: false; error: string } => {
   // An empty value clears the field, as fillFields does
-  if (servar.type !== 'matrix' && isEmptyValue(rawValue))
-    return { ok: true, value: emptyValueFor(servar) };
+  if (isEmptyValue(rawValue))
+    return { ok: true, value: emptyValueFor(servar, fieldValue, repeatIndex) };
 
   if (servar.type === 'date_selector')
     return normalizeDateSelector(servar, rawValue);
-
-  if (servar.type === 'matrix') {
-    const error = checkMatrixValue(servar, rawValue);
-    return error ? { ok: false, error } : { ok: true, value: rawValue };
-  }
 
   // The generic text check never verifies url format
   if (servar.type === 'url') {

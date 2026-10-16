@@ -691,6 +691,32 @@ describe('fillStepTool: typed fields', () => {
       'expects an object of questionId'
     ],
     [
+      'matrix answer outside the columns',
+      {
+        key: 'tier',
+        type: 'matrix',
+        metadata: {
+          questions: [{ id: 'q1', label: 'Service' }],
+          options: ['Good', 'Bad']
+        }
+      },
+      { q1: ['Great'] },
+      "Values not in allowed options for question 'q1': Great"
+    ],
+    [
+      'two answers to a single-answer matrix question',
+      {
+        key: 'tier',
+        type: 'matrix',
+        metadata: {
+          questions: [{ id: 'q1', label: 'Service' }],
+          options: ['Good', 'Bad']
+        }
+      },
+      { q1: ['Good', 'Bad'] },
+      'allows one answer per question'
+    ],
+    [
       'non-string url',
       { key: 'tier', type: 'url' },
       12345,
