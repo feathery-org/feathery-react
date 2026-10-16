@@ -214,6 +214,11 @@ describe('version history in the pinned real Chrome engine', () => {
     );
     expect(before.top).toBe(1400);
     try {
+      const remounted = await session.call('remountVersionPreview');
+      expect(remounted.after.top).toBe(remounted.before.top);
+      expect(remounted.after.left).toBe(remounted.before.left);
+      expect(remounted.after.zoom).toBe(remounted.before.zoom);
+      expect(remounted.after.ink).toBeGreaterThan(100);
       for (const highlightsOn of [false, true, false, true]) {
         const result = await session.call('toggleVersionPreview', highlightsOn);
         for (const frame of result.frames) {

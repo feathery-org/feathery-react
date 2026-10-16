@@ -645,7 +645,7 @@ describe('useDocxHistorySession', () => {
     expect(closePayload.changesJson).toBeInstanceOf(Blob);
     expect(closePayload.finalSfdtGz).toBeInstanceOf(Blob);
     expect(view.result.current.isSessionOpen()).toBe(false);
-    expect(view.result.current.previewSession()).toBeNull();
+    expect(await view.result.current.previewSession()).toBeNull();
     expect(view.result.current.savedAt).not.toBeNull();
   });
 
@@ -939,7 +939,7 @@ describe('useDocxHistorySession', () => {
     });
     act(() => view.result.current.onEdit({ assistant: false }));
 
-    const preview = view.result.current.previewSession();
+    const preview = await view.result.current.previewSession();
     expect(preview).not.toBeNull();
     expect(must(preview).editCount).toBeGreaterThan(0);
     // applyHunks baked synthetic revisions into the display document.
@@ -959,23 +959,25 @@ describe('useDocxHistorySession', () => {
     act(() => view.result.current.onEdit({ assistant: false }));
     text = 'hello human robin';
     act(() => view.result.current.onEdit({ assistant: true }));
-    expect(view.result.current.previewSession()?.authors).toEqual([
+    expect((await view.result.current.previewSession())?.authors).toEqual([
       YOU,
       { kind: 'assistant', key: 'robin', label: 'Robin' }
     ]);
     text = 'hello human';
     act(() => view.result.current.onEdit({ assistant: false }));
-    expect(view.result.current.previewSession()?.authors).toEqual([YOU]);
+    expect((await view.result.current.previewSession())?.authors).toEqual([
+      YOU
+    ]);
     text = 'hello';
     act(() => view.result.current.onEdit({ assistant: false }));
-    const preview = view.result.current.previewSession();
+    const preview = await view.result.current.previewSession();
     expect(preview?.authors).toEqual([]);
     expect(preview?.editCount).toBe(0);
   });
 
-  it('previewSession is null with no open session', () => {
+  it('previewSession is null with no open session', async () => {
     const { view } = setup();
-    expect(view.result.current.previewSession()).toBeNull();
+    expect(await view.result.current.previewSession()).toBeNull();
   });
 
   it('autosaves with the session id (no close flag) after the idle window', async () => {
@@ -1155,7 +1157,9 @@ describe('useDocxHistorySession', () => {
     doc = document('User paragraph human addition', ' robin addition');
     act(() => view.result.current.onEdit({ assistant: false }));
 
-    const preview = JSON.parse(must(view.result.current.previewSession()).sfdt);
+    const preview = JSON.parse(
+      must(await view.result.current.previewSession()).sfdt
+    );
     expect(preview.revisions.map((r: any) => r.author)).toEqual(
       expect.arrayContaining(['you', 'robin'])
     );
@@ -1260,7 +1264,7 @@ describe('useDocxHistorySession', () => {
     view.rerender({ openNonce: 1 });
     doc = document('Replacement edited');
     act(() => view.result.current.onEdit({ assistant: false }));
-    const preview = view.result.current.previewSession();
+    const preview = await view.result.current.previewSession();
     expect(preview).not.toBeNull();
     expect(must(preview).sfdt).not.toContain('Old document');
   });
@@ -1362,7 +1366,7 @@ describe('useDocxHistorySession', () => {
       text += ` edit${i}`;
       act(() => view.result.current.onEdit({ assistant: i % 2 === 0 }));
     }
-    expect(view.result.current.previewSession()).toBeNull();
+    expect(await view.result.current.previewSession()).toBeNull();
     await act(async () => {
       await view.result.current.save();
     });
@@ -1396,7 +1400,7 @@ describe('useDocxHistorySession', () => {
       now += 360_000;
       text += ' human';
       act(() => view.result.current.onEdit({ assistant: false }));
-      const preview = view.result.current.previewSession();
+      const preview = await view.result.current.previewSession();
       expect(preview).not.toBeNull();
       expect(
         JSON.parse(must(preview).sfdt).revisions.map((r: any) => r.author)
@@ -1502,7 +1506,7 @@ describe('useDocxHistorySession', () => {
     });
     act(() => view.result.current.onEdit({ assistant: false }));
 
-    const preview = view.result.current.previewSession();
+    const preview = await view.result.current.previewSession();
     expect(preview).toBeTruthy();
     const display = JSON.parse(must(preview).sfdt);
     const authors = (display.revisions ?? []).map((r: any) => r.author);

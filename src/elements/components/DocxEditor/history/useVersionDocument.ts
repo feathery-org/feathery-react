@@ -2,16 +2,8 @@
 // highlights; no change list opens plain (degraded); docx-only rows use docx.
 import { useEffect, useRef, useState } from 'react';
 
-import { populateVersionBindings } from './populateVersionBindings';
-import {
-  applyHunks,
-  ChangeList,
-  countEditGroups,
-  countPendingGroups,
-  demoteNativeRowRevisions,
-  contentHash,
-  normalizeForDiff
-} from './sfdtDiff/index';
+import { runHistoryTask } from './historyWorkerClient';
+import type { ChangeList } from './sfdtDiff/index';
 import { DocxHistoryHost, DocxVersion } from './types';
 import { parseChangeList } from './validation';
 
@@ -198,59 +190,6 @@ async function gunzip(buffer: ArrayBuffer): Promise<string> {
 
 /** Build the viewer document from a final SFDT and (optionally) its change
  *  list. `expectedSha256` guards fetched artifacts; local ones pass null. */
-function buildFromFinal(
-  finalSfdt: string,
-  changes: ChangeList | null,
-  expectedSha256: string | null
-): ResolvedVersion {
-  const finalDoc = JSON.parse(finalSfdt);
-
-  const plainSfdt = () => {
-    try {
-      // Native tracked-row marks flood whole table rows in the viewer; move
-      // them onto cell content so a plain view paints like a regular version.
-      const demoted = demoteNativeRowRevisions(finalDoc);
-      const populated = populateVersionBindings(finalDoc);
-      if (populated !== finalDoc) return JSON.stringify(populated);
-      return demoted ? JSON.stringify(finalDoc) : finalSfdt;
-    } catch {
-      return finalSfdt;
-    }
-  };
-
-  if (changes) {
-    try {
-      if (
-        changes.degraded?.includes('time-budget') ||
-        (changes.final_sha256 &&
-          (changes.final_sha256 !== contentHash(normalizeForDiff(finalDoc)) ||
-            (expectedSha256 && changes.final_sha256 !== expectedSha256)))
-      )
-        return { error: false, sfdt: plainSfdt(), degraded: true };
-      if (!changes.hunks?.length)
-        return { error: false, sfdt: plainSfdt(), degraded: true };
-      const display = applyHunks(finalDoc, changes);
-      let displaySfdt: string;
-      try {
-        displaySfdt = JSON.stringify(populateVersionBindings(display));
-      } catch {
-        displaySfdt = JSON.stringify(display);
-      }
-      return {
-        error: false,
-        sfdt: displaySfdt,
-        editCount: countEditGroups(display),
-        formatCount: changes.formatChangeCount,
-        pendingCount: countPendingGroups(display),
-        approvedCount: changes.confirmed ? countEditGroups(display) : 0,
-        degraded: false
-      };
-    } catch {
-      return { error: false, sfdt: plainSfdt(), degraded: true };
-    }
-  }
-  return { error: false, sfdt: plainSfdt(), degraded: true };
-}
 
 async function resolveVersionDocument(
   host: DocxHistoryHost,
@@ -280,7 +219,11 @@ async function resolveVersionDocument(
           changes = null;
         }
       }
-      return buildFromFinal(finalSfdt, changes, version.final_sha256 ?? null);
+      return await runHistoryTask('stored', {
+        finalSfdt,
+        changes,
+        expectedSha256: version.final_sha256 ?? null
+      });
     }
 
     const docxUrl = version.editor_file ?? version.file;
@@ -315,7 +258,11 @@ async function resolveAndCache(
   const local = localFor(version);
   if (local) {
     try {
-      return buildFromFinal(local.finalSfdt, local.changes ?? null, null);
+      return await runHistoryTask('stored', {
+        finalSfdt: local.finalSfdt,
+        changes: local.changes ?? null,
+        expectedSha256: null
+      });
     } catch {
       // Malformed local snapshot: fall through to the fetched/docx path.
     }

@@ -8,6 +8,7 @@ import {
 } from '@testing-library/react';
 
 import DocxEditor from './index';
+import * as historyWorker from './history/historyWorkerClient';
 import SharedDocumentRail from './SharedDocumentRail';
 import { featheryDoc } from '../../../utils/browser';
 import { AUTOSAVE_IDLE_MS } from './history/autosaveScheduler';
@@ -466,6 +467,49 @@ describe('version history experience', () => {
     highlights_pruned_at: null,
     created_at: '2026-09-17T12:00:00Z',
     ...over
+  });
+
+  it('ignores a pending live preview after switching away from its document', async () => {
+    const current = savedVersion({
+      id: 'current',
+      is_current: true,
+      final_sfdt: null
+    });
+    const host: DocxHistoryHost = {
+      listVersions: async () => [current],
+      closeVersion: async () => null,
+      restoreVersion: jest.fn(),
+      fetchVersionFile: jest.fn(),
+      renameVersion: jest.fn()
+    };
+    let resolvePreview: (value: null) => void = () => {};
+    const original = historyWorker.runHistoryTask;
+    const worker = jest
+      .spyOn(historyWorker, 'runHistoryTask')
+      .mockImplementation(((type: any, input: any) =>
+        type === 'preview'
+          ? new Promise((resolve) => {
+              resolvePreview = resolve;
+            })
+          : original(type, input)) as any);
+    const view = render(<DocxEditor history={host} />);
+    mockText = 'Original edited';
+    act(() => mockOnEdit({ assistant: false }));
+    fireEvent.click(view.getByRole('button', { name: 'History' }));
+    await waitFor(() =>
+      expect(worker).toHaveBeenCalledWith('preview', expect.anything())
+    );
+    view.rerender(<DocxEditor history={host} active={false} />);
+    await act(async () => {
+      resolvePreview(null);
+    });
+    expect(mockViewerConstruct).not.toHaveBeenCalled();
+    view.rerender(<DocxEditor history={host} active />);
+    expect(
+      view.queryByRole('button', { name: 'Back to current version' })
+    ).toBeNull();
+    view.unmount();
+    worker.mockRestore();
   });
 
   it('returns to the live editor when a Robin edit auto-opens Suggested changes', async () => {
