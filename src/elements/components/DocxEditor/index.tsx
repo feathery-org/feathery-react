@@ -1251,14 +1251,28 @@ function DocxEditor({
   return (
     <div
       className={className}
-      onKeyDownCapture={
-        restoring
-          ? (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }
-          : undefined
-      }
+      onKeyDownCapture={(event) => {
+        if (restoring) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        if (
+          active &&
+          !preview &&
+          !readOnly &&
+          onSave &&
+          !viewingVersion &&
+          (event.ctrlKey || event.metaKey) &&
+          !event.altKey &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === 's'
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleSave();
+        }
+      }}
       css={{
         display: 'flex',
         flexDirection: 'column',

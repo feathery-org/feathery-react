@@ -64,6 +64,21 @@ describe('DocxEditor save confirmation toast', () => {
     );
   });
 
+  it.each(['ctrlKey', 'metaKey'])(
+    'saves only the active document with %s+S from the toolbar',
+    async (modifier) => {
+      const onSave = jest.fn(async () => undefined);
+      const onSaveAll = jest.fn();
+      render(<DocxEditor onSave={onSave} onSaveAll={onSaveAll} />);
+      const button = screen.getByText('Save');
+      expect(fireEvent.keyDown(button, { key: 's', [modifier]: true })).toBe(
+        false
+      );
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+      expect(onSaveAll).not.toHaveBeenCalled();
+    }
+  );
+
   // A restore can bring back unreviewed tracked changes; handleChangesCount
   // toasts them with this message.
   describe('restoredSuggestionsMessage', () => {

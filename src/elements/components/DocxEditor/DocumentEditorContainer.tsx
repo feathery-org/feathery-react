@@ -182,13 +182,13 @@ export default function DocumentEditorContainer({
     [emit, packet.setOperationError]
   );
 
-  // Every destination is captured before the operation. Navigation is locked
-  // until it finishes, and errors retain the entire packet for a retry.
+  // Capture destinations before starting. Save runs in the background;
+  // download/sign still lock navigation until their terminal outcome finishes.
   const run = useCallback(
-    async (operation: () => Promise<void>) => {
+    async (operation: () => Promise<void>, background = false) => {
       if (busyRef.current) return;
       busyRef.current = true;
-      setBusy(true);
+      setBusy(!background);
       setFeedback('');
       packet.setOperationError(null);
       try {
@@ -233,7 +233,7 @@ export default function DocumentEditorContainer({
         const envelopes = await savePacket();
         await saved(envelopes);
         setFeedback('All documents saved');
-      }),
+      }, true),
     [run, savePacket, saved]
   );
   const downloadAll = useCallback(

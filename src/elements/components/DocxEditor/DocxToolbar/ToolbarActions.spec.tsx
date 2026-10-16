@@ -12,11 +12,16 @@ it('routes current and all document saves separately without submitting the form
     </form>
   );
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  fireEvent.click(screen.getByRole('button', { name: 'This document' }));
+  expect(
+    screen.queryByRole('button', { name: 'Save All Documents' })
+  ).toBeNull();
   expect(onSave).toHaveBeenCalledTimes(1);
   expect(onSaveAll).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  fireEvent.click(screen.getByRole('button', { name: 'All documents' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save options' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save this document' }));
+  expect(onSave).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Save options' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save All Documents' }));
   expect(onSaveAll).toHaveBeenCalledTimes(1);
   expect(submit).not.toHaveBeenCalled();
 });

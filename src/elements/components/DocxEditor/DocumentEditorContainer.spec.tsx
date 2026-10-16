@@ -1040,6 +1040,24 @@ describe('document tab navigation', () => {
     _clearDocxDirtyRegistry();
   });
 
+  it('saves all in the background without an overlay or blocking navigation', async () => {
+    let finish!: () => void;
+    mockBeforeReplace.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    const editor = await view.findByTestId('editor:a.editor.docx');
+    fireEvent.click(view.getByTestId('save-all:a.editor.docx'));
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(view.queryByText('Processing documents…')).toBeNull();
+    expect(editor.closest('[inert]')).toBeNull();
+    expect(view.getByRole('tab', { name: 'Schedule.docx' })).not.toBeDisabled();
+    finish();
+    await view.findByText('All documents saved');
+  });
   it('retains the same live editor after saving and switching without crossing envelope history', async () => {
     const view = render(
       <DocumentEditorContainer containerId={containerId} formId='tabs-form' />
