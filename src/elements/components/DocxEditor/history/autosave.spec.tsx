@@ -1,4 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
+import { featheryDoc } from '../../../../utils/browser';
 
 import { setAssistantSessionActive } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
 import { AUTOSAVE_IDLE_MS } from './autosaveScheduler';
@@ -76,6 +77,45 @@ const blobText = (b: Blob | undefined) =>
   });
 
 describe('useDocxHistorySession', () => {
+  it('keeps manual sessions local across idle, assistant turn end, and tab hiding until Save', async () => {
+    jest.useFakeTimers();
+    const { view, save, host, editor } = setup({ manualSave: true });
+    act(() => view.result.current.onEdit({ assistant: false }));
+    act(() => {
+      setAssistantSessionActive(editor, true);
+      setAssistantSessionActive(editor, false);
+      jest.advanceTimersByTime(10 * 60 * 1000);
+      featheryDoc().dispatchEvent(new Event('visibilitychange'));
+    });
+    await flush();
+    expect(save).not.toHaveBeenCalled();
+    expect(host.closeVersion).not.toHaveBeenCalled();
+    expect(view.result.current.isSessionOpen()).toBe(true);
+    await act(async () => {
+      await view.result.current.save();
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+    view.unmount();
+    jest.useRealTimers();
+  });
+
+  it('accepts tracked edits locally in manual mode without uploading another document', async () => {
+    const { view, save, host } = setup({ manualSave: true });
+    const accept = jest.fn();
+    await act(async () => {
+      await view.result.current.acceptTrackedChanges(
+        { beforeSfdt: SFDT, revisionIds: ['r1'] },
+        accept
+      );
+    });
+    expect(accept).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalled();
+    expect(host.closeVersion).not.toHaveBeenCalled();
+    expect(view.result.current.isSessionOpen()).toBe(true);
+    view.unmount();
+  });
+
   it.each([false, true])(
     'confirms only revisions actually removed by native acceptance (partial: %s)',
     async (partial) => {

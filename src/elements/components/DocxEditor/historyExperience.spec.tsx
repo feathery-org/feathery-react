@@ -8,6 +8,8 @@ import {
 } from '@testing-library/react';
 
 import DocxEditor from './index';
+import SharedDocumentRail from './SharedDocumentRail';
+import { featheryDoc } from '../../../utils/browser';
 import { AUTOSAVE_IDLE_MS } from './history/autosaveScheduler';
 import { DocxHistoryHost, DocxSaveMeta, DocxVersion } from './history/types';
 import { setAssistantSessionActive } from '../../../assistant/tools/docx/syncfusionDocumentOps';
@@ -124,6 +126,119 @@ describe('version history experience', () => {
     mockEditorListeners.clear();
   });
   afterEach(() => jest.useRealTimers());
+
+  it('keeps shared Changes open when empty and handles Escape only in the active editor', async () => {
+    const onRailPanelChange = jest.fn();
+    const view = render(
+      <DocxEditor
+        reviewChanges
+        railPanel='changes'
+        onRailPanelChange={onRailPanelChange}
+      />
+    );
+    expect(view.getByText('Suggested changes')).toBeInTheDocument();
+    expect(onRailPanelChange).not.toHaveBeenCalled();
+    view.rerender(
+      <DocxEditor
+        active={false}
+        reviewChanges
+        railPanel='history'
+        onRailPanelChange={onRailPanelChange}
+      />
+    );
+    fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
+    expect(onRailPanelChange).not.toHaveBeenCalled();
+    view.rerender(
+      <DocxEditor
+        reviewChanges
+        railPanel='changes'
+        onRailPanelChange={onRailPanelChange}
+      />
+    );
+    fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
+    expect(onRailPanelChange).toHaveBeenCalledWith(null);
+  });
+
+  it('keeps one rail frame mounted while switching cached document histories', async () => {
+    const hostA: DocxHistoryHost = {
+      listVersions: jest.fn().mockResolvedValue([]),
+      closeVersion: jest.fn(),
+      restoreVersion: jest.fn(),
+      fetchVersionFile: jest.fn(),
+      renameVersion: jest.fn()
+    };
+    const hostB = { ...hostA, listVersions: jest.fn().mockResolvedValue([]) };
+    const onRailPanelChange = jest.fn();
+    function Packet({ firstActive }: { firstActive: boolean }) {
+      return (
+        <SharedDocumentRail
+          enabled
+          activeId={firstActive ? 'a' : 'b'}
+          panel='history'
+          onPanelChange={onRailPanelChange}
+          showChanges
+        >
+          <DocxEditor
+            envelopeId='a'
+            active={firstActive}
+            history={hostA}
+            railPanel='history'
+            onRailPanelChange={onRailPanelChange}
+          />
+          <DocxEditor
+            envelopeId='b'
+            active={!firstActive}
+            history={hostB}
+            railPanel='history'
+            onRailPanelChange={onRailPanelChange}
+          />
+        </SharedDocumentRail>
+      );
+    }
+    const view = render(<Packet firstActive />);
+    await waitFor(() => expect(hostA.listVersions).toHaveBeenCalledTimes(1));
+    expect(hostB.listVersions).not.toHaveBeenCalled();
+    const frame = view.getByRole('complementary', { name: 'Document panel' });
+    const historyButton = view.getByRole('button', { name: 'History' });
+    view.rerender(<Packet firstActive={false} />);
+    await waitFor(() => expect(hostB.listVersions).toHaveBeenCalledTimes(1));
+    expect(hostA.listVersions).toHaveBeenCalledTimes(1);
+    expect(view.getByRole('complementary', { name: 'Document panel' })).toBe(
+      frame
+    );
+    expect(getComputedStyle(frame).transition).toBe('none');
+    expect(view.getByRole('button', { name: 'History' })).toBe(historyButton);
+    view.rerender(<Packet firstActive />);
+    await act(async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+    expect(hostA.listVersions).toHaveBeenCalledTimes(1);
+    expect(hostB.listVersions).toHaveBeenCalledTimes(1);
+    expect(view.getAllByRole('complementary')).toHaveLength(1);
+    expect(onRailPanelChange).not.toHaveBeenCalled();
+  });
+
+  it('retains the loaded History list when returning to a cached document', async () => {
+    const host: DocxHistoryHost = {
+      listVersions: jest.fn().mockResolvedValue([]),
+      closeVersion: jest.fn(),
+      restoreVersion: jest.fn(),
+      fetchVersionFile: jest.fn(),
+      renameVersion: jest.fn()
+    };
+    const view = render(
+      <DocxEditor active history={host} railPanel='history' />
+    );
+    await waitFor(() => expect(host.listVersions).toHaveBeenCalledTimes(1));
+    view.rerender(
+      <DocxEditor active={false} history={host} railPanel='history' />
+    );
+    view.rerender(<DocxEditor active history={host} railPanel='history' />);
+    await act(async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+    expect(host.listVersions).toHaveBeenCalledTimes(1);
+  });
 
   it('toggles highlights without rebuilding, flashing a loader, or moving the viewport', async () => {
     let savedMeta: DocxSaveMeta | undefined;
