@@ -24,15 +24,30 @@ it('offers separate current/all actions on the actual presentation toolbar', asy
       onDownloadAll={downloadAll}
     />
   );
-  const saveButton = await screen.findByRole('button', { name: /Save/ });
+  const saveButton = await screen.findByRole('button', { name: 'Save' });
   expect(screen.queryByText('All documents saved')).toBeNull();
   fireEvent.click(saveButton);
-  fireEvent.click(screen.getByRole('button', { name: 'This document' }));
+  expect(
+    screen.queryByRole('button', { name: 'Save All Documents' })
+  ).toBeNull();
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
   expect(save).toHaveBeenCalledTimes(1);
   expect(saveAll).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: /Save/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'All documents' }));
+  for (const modifier of ['ctrlKey', 'metaKey']) {
+    const count = saved.mock.calls.length;
+    expect(fireEvent.keyDown(saveButton, { key: 's', [modifier]: true })).toBe(
+      false
+    );
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(count + 1));
+    expect(saveAll).not.toHaveBeenCalled();
+    await waitFor(() => expect(saveButton).not.toBeDisabled());
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Save options' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save this document' }));
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(4));
+  await waitFor(() => expect(saveButton).not.toBeDisabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Save options' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save All Documents' }));
   expect(saveAll).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: /Download/ }));
   expect(
@@ -43,4 +58,40 @@ it('offers separate current/all actions on the actual presentation toolbar', asy
   ).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'All documents (ZIP)' }));
   expect(downloadAll).toHaveBeenCalledTimes(1);
+});
+
+it('persists edits made during a background save before marking the deck clean', async () => {
+  let finish!: () => void;
+  const onSave = jest.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  const onChange = jest.fn();
+  const bytes = sampleBytes();
+  render(
+    <PptxEditor
+      source={{
+        buffer: bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength
+        ) as ArrayBuffer
+      }}
+      onSave={onSave}
+      onChange={onChange}
+    />
+  );
+  const save = await screen.findByRole('button', { name: 'Save' });
+  fireEvent.click(save);
+  await waitFor(() => expect(finish).toBeDefined());
+  fireEvent.click(screen.getAllByRole('button', { name: 'New slide' })[0]);
+  await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(true));
+  finish();
+  await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+  expect(onChange).toHaveBeenLastCalledWith(true);
+  finish();
+  await waitFor(() => expect(save).not.toBeDisabled());
+  expect(onChange).toHaveBeenLastCalledWith(false);
+  expect(screen.queryByRole('status', { name: 'Unsaved changes' })).toBeNull();
 });

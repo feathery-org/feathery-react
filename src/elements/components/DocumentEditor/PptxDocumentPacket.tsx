@@ -219,11 +219,11 @@ export default function PptxDocumentPacket({
     [action, client]
   );
   const run = useCallback(
-    async (operation: () => Promise<void>) => {
+    async (operation: () => Promise<void>, background = false) => {
       if (busyRef.current) return;
       busyRef.current = true;
-      setBusy(true);
-      onBusy(true);
+      setBusy(!background);
+      onBusy(!background);
       onError(null);
       setFeedback('');
       try {
@@ -243,7 +243,7 @@ export default function PptxDocumentPacket({
       run(async () => {
         await saved(await savePacket());
         setFeedback('All documents saved');
-      }),
+      }, true),
     [run, saved, savePacket]
   );
   const downloadAll = useCallback(

@@ -391,13 +391,36 @@ function PptxEditorInner({
               >
                 <button
                   type='button'
-                  css={downloadBtn}
+                  css={{ ...downloadBtn, borderRadius: '6px 0 0 6px' }}
+                  disabled={saving}
+                  onClick={() => {
+                    setSaveMenuOpen(false);
+                    handleSave();
+                  }}
+                  title={withShortcut('Save this document', 'S')}
+                >
+                  {saving ? (
+                    <SpinnerIcon width={16} height={16} />
+                  ) : (
+                    <SaveIcon width={16} height={16} />
+                  )}
+                  Save
+                </button>
+                <button
+                  type='button'
+                  css={{
+                    ...downloadBtn,
+                    borderRadius: '0 6px 6px 0',
+                    borderLeft: 'none',
+                    padding: '0 6px'
+                  }}
                   disabled={saving}
                   onClick={() => setSaveMenuOpen((value) => !value)}
+                  aria-label='Save options'
                   aria-expanded={saveMenuOpen}
                   aria-haspopup='true'
                 >
-                  <SaveIcon width={16} height={16} /> Save ▾
+                  ▾
                 </button>
                 {saveMenuOpen && (
                   <div css={downloadMenu}>
@@ -409,7 +432,7 @@ function PptxEditorInner({
                         handleSave();
                       }}
                     >
-                      This document
+                      Save this document
                     </button>
                     <button
                       type='button'
@@ -419,7 +442,7 @@ function PptxEditorInner({
                         onSaveAll();
                       }}
                     >
-                      All documents
+                      Save All Documents
                     </button>
                   </div>
                 )}

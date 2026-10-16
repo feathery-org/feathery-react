@@ -249,6 +249,28 @@ describe('presentation document tabs', () => {
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
   });
 
+  it('saves all in the background without an overlay or blocking navigation', async () => {
+    let finish!: () => void;
+    mockBeforeReplace.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const view = render(<DocumentEditorContainer containerId={CONTAINER} />);
+    const editor = await view.findByTestId(
+      'pptx-editor:https://example.com/deck.pptx'
+    );
+    fireEvent.click(view.getByTestId('save-all:https://example.com/deck.pptx'));
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(view.queryByText('Processing documents…')).toBeNull();
+    expect(editor.closest('[inert]')).toBeNull();
+    expect(
+      view.getByRole('tab', { name: 'Financials.pptx' })
+    ).not.toBeDisabled();
+    finish();
+    await view.findByText('All documents saved');
+  });
   it('navigates in generation order and retains cached decks after saving', async () => {
     render(
       <DocumentEditorContainer containerId={CONTAINER} formId='pptx-tabs' />
