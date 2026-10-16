@@ -5,6 +5,7 @@
  * their type's display; each control whose text differs takes the engine's text: its first run
  * keeps its id and look, any other run goes, as the editor's own write does.
  */
+import type { FactDetail } from '../../../envelope';
 import type { Finalizer } from '../../../pack';
 import type { NfNode } from '../../../tree';
 import { KIND } from '../adapter/keys';
@@ -50,6 +51,24 @@ export function setControlText(control: NfNode, text: string): string[] {
   ];
 }
 
+/** The text a bound control reads now: its runs that are not pending deletion, in order. */
+function controlText(control: NfNode): string {
+  const host = Array.isArray(control.inlines)
+    ? control
+    : arr<NfNode>(control.blocks).find((b) => b.kind === KIND.paragraph);
+  return arr<NfNode>(host?.inlines)
+    .filter(
+      (i) =>
+        i.kind === KIND.run &&
+        !revisionsIn(i.pending).some((r) => r.kind === 'Deletion')
+    )
+    .map((i) => String(i.text ?? ''))
+    .join('');
+}
+
+/** At most this many values are named in the summary; the detail lists them all. */
+const NAMED_IN_SUMMARY = 6;
+
 export const formulasFinalizer: Finalizer = {
   name: 'formulas',
   run(after, { before }) {
@@ -59,28 +78,73 @@ export const formulasFinalizer: Finalizer = {
       bindingState(before.nf).result.values
     );
     const ids = new Set<string>();
-    let recomputed = 0;
+    // every control whose text this pass wrote: the value it derived, by node, before and after
+    const detail: FactDetail[] = [];
     for (const write of state.result.writes) {
       for (const occurrence of state.result.index.occurrences.filter(
         (o) => o.tag === write.tag
       )) {
         const control = state.nodeAt(occurrence.path);
         if (!control || control.kind !== KIND.control) continue;
+        const was = controlText(control);
         const changed = setControlText(control, write.text);
-        if (changed.length) recomputed += 1;
+        if (!changed.length) continue;
         changed.forEach((id) => ids.add(id));
+        const name = (control.binding as { name?: unknown } | undefined)?.name;
+        detail.push({
+          id: control.id,
+          ...(typeof name === 'string' ? { name } : {}),
+          before: was,
+          after: controlText(control)
+        });
       }
     }
+    // a formula the write itself created (a copied row's line total) is the engine's value too, even
+    // where the copy already read it
+    for (const occurrence of state.result.index.occurrences) {
+      const control = state.nodeAt(occurrence.path);
+      if (!control || control.kind !== KIND.control || before.get(control.id))
+        continue;
+      const binding = control.binding as
+        | { name?: unknown; expr?: unknown }
+        | undefined;
+      if (typeof binding?.expr !== 'string') continue;
+      if (detail.some((d) => d.id === control.id)) continue;
+      const text = controlText(control);
+      detail.push({
+        id: control.id,
+        ...(typeof binding.name === 'string' ? { name: binding.name } : {}),
+        before: text,
+        after: text
+      });
+    }
     const list = [...ids];
+    const named = detail
+      .slice(0, NAMED_IN_SUMMARY)
+      .map(
+        (d) =>
+          `${d.name ?? 'value'} ${d.id}: ${JSON.stringify(
+            d.before
+          )} to ${JSON.stringify(d.after)}`
+      );
+    const more =
+      detail.length > NAMED_IN_SUMMARY
+        ? `; and ${detail.length - NAMED_IN_SUMMARY} more in detail`
+        : '';
     return {
       ids: list,
-      facts: recomputed
+      facts: detail.length
         ? [
             {
               kind: 'finalizer',
               name: 'formulas',
               ids: list,
-              summary: `${recomputed} bound value(s) recomputed or carried to their other occurrences`
+              summary: `${
+                detail.length
+              } bound value(s) recomputed, carried or re-rendered: ${named.join(
+                '; '
+              )}${more}`,
+              detail
             }
           ]
         : []
