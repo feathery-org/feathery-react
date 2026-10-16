@@ -584,6 +584,31 @@ describe('fillFields file uploads', () => {
     ]);
   });
 
+  it('tells change rules which file changed, as an upload does', async () => {
+    const state = makeState({});
+
+    await fillFields(formUuid, [{ key: 'docs', value: [pdf()] }]);
+
+    expect(state.formActions.runFieldChangeLogic).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'el-docs' }),
+      null,
+      0
+    );
+  });
+
+  it('saves the files to the step they were filled on when a rule navigates', async () => {
+    const state = makeState({});
+    state.formActions.runFieldChangeLogic.mockImplementation(async () => {
+      state.currentStep = { ...state.currentStep, key: 'step-2' };
+    });
+
+    await fillFields(formUuid, [{ key: 'docs', value: [pdf()] }]);
+
+    expect(state.formActions.submitFiles).toHaveBeenCalledWith([
+      expect.objectContaining({ stepKey: 'step-1' })
+    ]);
+  });
+
   it.each([
     ['a value that is not files', 'id.pdf'],
     ['a type the field does not accept', [pdf()]],

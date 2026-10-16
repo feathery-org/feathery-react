@@ -19,7 +19,8 @@ export type FormActionHandlers = {
   changeValue: (value: any, field: any, index?: number | null) => boolean;
   runFieldChangeLogic: (
     field: any,
-    index: number | null
+    index: number | null,
+    valueRepeatIndex?: number
   ) => Promise<unknown> | undefined;
   submitFiles: FormToolsCallbacks['submitFiles'];
 };

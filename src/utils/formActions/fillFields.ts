@@ -585,6 +585,8 @@ export async function fillFields(
   let applied: AppliedField[] = [];
   const rejected: RejectedField[] = [];
   markInteraction();
+  // Saved files belong to the step they were filled on, even if a rule navigates
+  const stepKey = state.currentStep.key;
   const errorsBefore = snapshotInlineErrors(state);
   const changeLogicRuns: Promise<unknown>[] = [];
   const writtenFileServars = new Map<string, any>();
@@ -603,8 +605,14 @@ export async function fillFields(
         fieldForChange,
         index
       );
+      // A replaced file list reports its first file as the one that changed, as an upload does
       const changeLogic =
-        changed && handlers.runFieldChangeLogic(fieldForChange, index);
+        changed &&
+        handlers.runFieldChangeLogic(
+          fieldForChange,
+          index,
+          write.files ? 0 : undefined
+        );
       if (changeLogic) changeLogicRuns.push(changeLogic);
     } catch (err) {
       rejected.push({
@@ -647,7 +655,7 @@ export async function fillFields(
             [servar.type]: state.fields?.[key]?.value,
             repeated: Boolean(servar.repeated)
           },
-          stepKey: state.currentStep.key
+          stepKey
         }
       ]);
     } catch (err) {
