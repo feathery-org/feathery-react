@@ -12,7 +12,11 @@
 // with them — and note the AnnotationLayer contract is version-sensitive (5.x
 // takes linkService/annotationStorage in the constructor, not in render();
 // see DocumentCanvas.tsx).
-const PDFJS_VERSION = '5.4.296';
+// 6.x upgrade under test: 6.0 removed PDFDocumentProxy.destroy() (teardown now
+// goes through the loading task — see DocumentCanvas) and raised the minimum
+// supported browsers. If this pin ships, the dashboard editor and assistant
+// thumbnail pins must move with it.
+const PDFJS_VERSION = '6.3.289';
 export const PDFJS_PACKAGE_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}`;
 const PDFJS_CDN = `${PDFJS_PACKAGE_CDN}/build`;
 
