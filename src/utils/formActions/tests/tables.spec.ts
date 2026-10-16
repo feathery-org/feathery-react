@@ -242,6 +242,57 @@ describe('table form actions', () => {
     });
   });
 
+  describe('sensitive values', () => {
+    const SSN_ROWS = [{ name: 'Alice', ssn: '123456789' }];
+    const steps = {
+      'step-1': { servar_fields: [{ servar: { key: 'ssn', type: 'ssn' } }] }
+    };
+    const sensitiveHandlers = () =>
+      makeHandlers(liveState(), {
+        getRow: (rowIndex) => SSN_ROWS[rowIndex] ?? null,
+        getRows: jest.fn(() => ({
+          rowCount: 1,
+          rows: [{ rowIndex: 0, values: SSN_ROWS[0] }]
+        }))
+      });
+
+    it('masks sensitive cells in the rows it reads', () => {
+      makeState(sensitiveHandlers(), { steps });
+
+      expect(getTableRows(formUuid, TABLE)).toMatchObject({
+        rows: [{ rowIndex: 0, values: { name: 'Alice', ssn: '••••6789' } }]
+      });
+    });
+
+    it('refuses a masked value and masks the values it reports', () => {
+      const handlers = sensitiveHandlers();
+      makeState(handlers, { steps });
+
+      const result = setTableCells(formUuid, TABLE, [
+        { rowIndex: 0, fieldKey: 'ssn', value: '••••6789' },
+        { rowIndex: 0, fieldKey: 'ssn', value: '987654321' }
+      ]);
+
+      expect(handlers.editCells).toHaveBeenCalledWith([
+        { rowIndex: 0, fieldKey: 'ssn', value: '987654321' }
+      ]);
+      expect(result).toEqual({
+        ok: true,
+        applied: [
+          {
+            rowIndex: 0,
+            fieldKey: 'ssn',
+            value: '••••4321',
+            priorValue: '••••6789'
+          }
+        ],
+        rejected: [
+          expect.objectContaining({ fieldKey: 'ssn', reason: 'invalid_value' })
+        ]
+      });
+    });
+  });
+
   describe('addTableRow', () => {
     it('refuses when the grid does not allow it', () => {
       makeState(makeHandlers(liveState({ canAddRows: false })));

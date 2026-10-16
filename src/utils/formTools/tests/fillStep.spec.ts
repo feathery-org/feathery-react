@@ -382,6 +382,18 @@ describe('fillStepTool', () => {
     expect(result.fields.pw).toEqual({ status: 'filled', value: '••••' });
   });
 
+  it('rejects a masked value instead of writing it', async () => {
+    seed([field({ servar: { key: 'pw', type: 'password' } })]);
+
+    const result = await fillStepTool(FORM, { values: { pw: '••••' } });
+
+    expect(result.fields.pw).toEqual({
+      status: 'rejected',
+      message: expect.stringContaining('masked value')
+    });
+    expect(changeValueMock).not.toHaveBeenCalled();
+  });
+
   it('classifies an intentionally empty value as filled, not rejected', async () => {
     seed([field({ servar: { key: 'middle_name', type: 'text_field' } })]);
 

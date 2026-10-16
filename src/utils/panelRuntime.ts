@@ -13,6 +13,11 @@ import { ACTION_BACK, ACTION_NEXT } from './elementActions';
 import { getPrevStepKey, nextStepKey } from './stepHelperFunctions';
 import { isStepperStepReachable, isStepperStepVisible } from './stepper';
 import { sanitizeTransportValue } from './transportValue';
+import {
+  fieldTypesByKey,
+  maskFieldValue,
+  maskFieldValues
+} from './sensitiveFieldValues';
 import { getImageAltText } from './accessibility';
 import type { TableRowRead, TableSelection } from './formActions/tables';
 
@@ -148,15 +153,6 @@ const extractRawText = (props: Record<string, unknown>): string => {
     .map((op) => (typeof op?.insert === 'string' ? op.insert : ''))
     .join('')
     .trim();
-};
-
-const resolveText = (text: string, repeat?: number): string => {
-  if (!text) return '';
-  try {
-    return replaceTextVariables(text, repeat, true);
-  } catch {
-    return text;
-  }
 };
 
 export const getCurrentStepKey = (formId: string): string | undefined =>
@@ -329,10 +325,30 @@ const elementHasLogicRules = (
   });
 
 export const getPanelRuntimeSnapshot = (
-  formId: string
+  formId: string,
+  { masked = false }: { masked?: boolean } = {}
 ): PanelRuntimeSnapshot | null => {
   const state = internalState[formId];
   if (!state || !state.currentStep) return null;
+  // An agent's read hides sensitive values, the form's own reads keep them
+  const servarTypes = fieldTypesByKey(state.steps);
+  const shown = (type: string | undefined, value: unknown) =>
+    masked ? maskFieldValue(type, value) : value;
+  const resolveText = (text: string, repeat?: number): string => {
+    if (!text) return '';
+    try {
+      return replaceTextVariables(
+        text,
+        repeat,
+        true,
+        masked
+          ? (key, value) => maskFieldValue(servarTypes.get(key), value)
+          : undefined
+      );
+    } catch {
+      return text;
+    }
+  };
 
   const step = state.currentStep;
   const visiblePositions = state.visiblePositions ?? {};
@@ -485,7 +501,7 @@ export const getPanelRuntimeSnapshot = (
     return {
       key: servar.key,
       type: servar.type,
-      value: sanitizeRuntimeValue(value),
+      value: shown(servar.type, sanitizeRuntimeValue(value)),
       visible,
       disabled,
       required: !!servar.required,
@@ -517,15 +533,6 @@ export const getPanelRuntimeSnapshot = (
     };
   });
 
-  // Collect every servar key across the form
-  const servarKeys = new Set<string>();
-  for (const stepKey of Object.keys(state.steps ?? {})) {
-    const loopStep = (state.steps as any)[stepKey];
-    (loopStep?.servar_fields ?? []).forEach((f: any) => {
-      if (f?.servar?.key) servarKeys.add(f.servar.key);
-    });
-  }
-
   // Split values into servars and hidden fields at the transport source. Every
   // value is JSON-shaped here so File/Promise-like runtime objects become
   // explicit presence descriptors before any assistant context can retain the
@@ -536,8 +543,8 @@ export const getPanelRuntimeSnapshot = (
   const hiddenFieldsEmpty: string[] = [];
   for (const key of Object.keys(fieldsMap)) {
     const v = sanitizeRuntimeValue(fieldsMap[key]?.value ?? null);
-    if (servarKeys.has(key)) {
-      values[key] = v;
+    if (servarTypes.has(key)) {
+      values[key] = shown(servarTypes.get(key), v);
     } else if (isMeaningful(v)) {
       hiddenFieldValues[key] = v;
     } else {
@@ -726,7 +733,16 @@ export const getPanelRuntimeSnapshot = (
       ...(hubId ? { hubId } : {}),
       columns,
       rowCount,
-      ...(rows ? { rows } : {}),
+      ...(rows
+        ? {
+            rows: masked
+              ? rows.map((row) => ({
+                  ...row,
+                  values: maskFieldValues(row.values, servarTypes)
+                }))
+              : rows
+          }
+        : {}),
       ...(rowsOmitted > 0 ? { rowsOmitted } : {}),
       ...(actions.length > 0 && (liveState?.showsActions ?? true)
         ? { actions }
@@ -736,7 +752,20 @@ export const getPanelRuntimeSnapshot = (
       ...(liveState?.canEditCells ? { canEditCells: true } : {}),
       ...(liveState?.pending ? { pending: liveState.pending } : {}),
       // What the person has in front of them in a spreadsheet grid, this turn only
-      ...(liveState?.selection ? { selection: liveState.selection } : {}),
+      ...(liveState?.selection
+        ? {
+            selection: masked
+              ? {
+                  ...liveState.selection,
+                  value: maskFieldValue(
+                    servarTypes.get(liveState.selection.fieldKey),
+                    liveState.selection.value
+                  ),
+                  row: maskFieldValues(liveState.selection.row, servarTypes)
+                }
+              : liveState.selection
+          }
+        : {}),
       ...(liveState?.viewport ? { viewport: liveState.viewport } : {}),
       ...(liveState?.ruleErrors ? { ruleErrors: liveState.ruleErrors } : {}),
       ...(liveState?.findings ? { findings: liveState.findings } : {}),

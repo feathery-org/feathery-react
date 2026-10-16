@@ -133,7 +133,7 @@ export const getFormContext = (formUuid: string) => {
     },
     isTestForm: () => initState.isTestEnv,
     // What the person sees right now: current step, every field's value, hidden fields
-    snapshot: () => getPanelRuntimeSnapshot(formUuid),
+    snapshot: () => getPanelRuntimeSnapshot(formUuid, { masked: true }),
     // What a host sends with its own backend requests to act as this submission, read when the request is made
     requestIdentity: (): {
       fuserKey?: string;
