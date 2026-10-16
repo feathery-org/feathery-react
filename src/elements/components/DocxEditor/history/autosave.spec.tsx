@@ -20,6 +20,16 @@ const SFDT = JSON.stringify({
   sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
 });
 
+const EDITED_SFDT = JSON.stringify({
+  sections: [{ blocks: [{ inlines: [{ text: 'hello world' }] }] }]
+});
+// The first snapshot is the pristine document; every later one is edited, so
+// each session has a real change to save.
+const editedEditor = () => {
+  let snapshots = 0;
+  return { serialize: () => (snapshots++ ? EDITED_SFDT : SFDT) };
+};
+
 const makeHost = (): jest.Mocked<DocxHistoryHost> => ({
   listVersions: jest.fn().mockResolvedValue([]),
   closeVersion: jest.fn().mockResolvedValue(null),
@@ -30,7 +40,7 @@ const makeHost = (): jest.Mocked<DocxHistoryHost> => ({
 
 const setup = (
   over: Partial<UseDocxHistorySessionOptions> = {},
-  editor: any = { serialize: () => SFDT }
+  editor: any = editedEditor()
 ) => {
   const save = jest.fn().mockResolvedValue(undefined);
   const exportDoc = jest.fn().mockResolvedValue(new Blob(['docx']));
@@ -273,7 +283,7 @@ describe('useDocxHistorySession', () => {
 
   it('does not return an earlier envelope’s save result after document replacement', async () => {
     const host = makeHost();
-    const editor = { serialize: () => SFDT };
+    const editor = editedEditor();
     const view = renderHook(
       ({ envelopeId }) =>
         useDocxHistorySession({
@@ -378,6 +388,8 @@ describe('useDocxHistorySession', () => {
     );
     let first!: Promise<unknown>;
     let second!: Promise<unknown>;
+    const firstEdit = SFDT.replace('hello', 'first edit');
+    document = firstEdit;
     act(() => {
       view.result.current.onEdit({ assistant: false });
       first = view.result.current.save();
@@ -394,7 +406,10 @@ describe('useDocxHistorySession', () => {
     await act(async () => {
       await Promise.all([first, second]);
     });
-    expect(await Promise.all(written.map(blobText))).toEqual([SFDT, document]);
+    expect(await Promise.all(written.map(blobText))).toEqual([
+      firstEdit,
+      document
+    ]);
   });
 
   it('retries a failed closed snapshot and returns its actual save result', async () => {
@@ -596,12 +611,11 @@ describe('useDocxHistorySession', () => {
     expect(meta.sessionId).toBeTruthy();
     expect(meta.closeSession).toBe(true);
     expect(meta.authors).toEqual([{ kind: 'user', label: 'You' }]);
-    // The close uploads the final document and the diffed change list. S0 == F
-    // here (no real edits in the fake), so the diff finds zero changes.
+    // The close uploads the final document and the diffed change list.
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
     const closePayload = host.closeVersion.mock.calls[0][1];
     expect(host.closeVersion.mock.calls[0][0]).toBe(meta.sessionId);
-    expect(closePayload.changeCount).toBe(0);
+    expect(closePayload.changeCount).toBeGreaterThan(0);
     expect(closePayload.changesJson).toBeInstanceOf(Blob);
     expect(closePayload.finalSfdtGz).toBeInstanceOf(Blob);
     expect(view.result.current.isSessionOpen()).toBe(false);
@@ -936,6 +950,119 @@ describe('useDocxHistorySession', () => {
   it('previewSession is null with no open session', () => {
     const { view } = setup();
     expect(view.result.current.previewSession()).toBeNull();
+  });
+
+  it('does not save or version a session that changed nothing', async () => {
+    const onUnchanged = jest.fn();
+    const { view, save, host } = setup(
+      { onUnchanged },
+      { serialize: () => SFDT }
+    );
+
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+
+    expect(save).not.toHaveBeenCalled();
+    expect(host.closeVersion).not.toHaveBeenCalled();
+    expect(view.result.current.isSessionOpen()).toBe(false);
+    expect(view.result.current.status).toBe('saved');
+    // The editor clears its "Unsaved changes" mark from this.
+    expect(onUnchanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not autosave a session that still matches its start', async () => {
+    jest.useFakeTimers();
+    const onUnchanged = jest.fn();
+    const { view, save } = setup({ onUnchanged }, { serialize: () => SFDT });
+
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+
+    expect(save).not.toHaveBeenCalled();
+    expect(onUnchanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a session whose edit was undone before it ever saved', async () => {
+    let doc = SFDT;
+    const { view, save, host } = setup({}, { serialize: () => doc });
+
+    doc = EDITED_SFDT;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    doc = SFDT;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+
+    expect(save).not.toHaveBeenCalled();
+    expect(host.closeVersion).not.toHaveBeenCalled();
+  });
+
+  it('saves a session whose only change is accepting a suggestion', async () => {
+    // Accepting a tracked insertion leaves the same text, so a fingerprint that
+    // ignores revision marks would call it unchanged and lose the accept.
+    const pending = JSON.stringify({
+      sections: [
+        { blocks: [{ inlines: [{ text: 'Added', revisionIds: ['r1'] }] }] }
+      ],
+      revisions: [
+        { author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }
+      ]
+    });
+    const accepted = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'Added' }] }] }]
+    });
+    let doc = pending;
+    const { view, save } = setup({}, { serialize: () => doc });
+
+    doc = accepted;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][1].closeSession).toBe(true);
+  });
+
+  it('still closes a session that saved before its edits were undone', async () => {
+    jest.useFakeTimers();
+    let doc = SFDT;
+    const onUnchanged = jest.fn();
+    const { view, save, host } = setup(
+      { onUnchanged },
+      { serialize: () => doc }
+    );
+
+    doc = EDITED_SFDT;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+
+    // The undo must reach the live file, so the stored row is closed normally.
+    doc = SFDT;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+
+    expect(save).toHaveBeenCalledTimes(2);
+    const closing = save.mock.calls[1][1];
+    expect(closing.closeSession).toBe(true);
+    expect(host.closeVersion).toHaveBeenLastCalledWith(
+      closing.sessionId,
+      expect.anything()
+    );
+    // A real save clears the mark itself; this path must not claim it.
+    expect(onUnchanged).not.toHaveBeenCalled();
   });
 
   it('autosaves with the session id (no close flag) after the idle window', async () => {
@@ -1281,8 +1408,9 @@ describe('useDocxHistorySession', () => {
           ? [{ author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }]
           : []
       });
-    let doc = document('Human', true);
+    let doc = document('Draft', true);
     const { view, save, host } = setup({}, { serialize: () => doc });
+    doc = document('Human', true);
     act(() => view.result.current.onEdit({ assistant: true }));
     save.mockImplementationOnce(async () => {
       doc = document('Human types during save', true);

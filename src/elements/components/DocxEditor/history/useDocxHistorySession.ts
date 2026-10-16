@@ -67,6 +67,8 @@ export interface UseDocxHistorySessionOptions {
   save: (blob: Blob, meta: DocxSaveMeta) => Promise<unknown>;
   /** Extra gate (the binding soft-gate): autosave holds while it is false. */
   canSave?: () => boolean;
+  /** A skipped save found the document back at its start: nothing is unsaved. */
+  onUnchanged?: () => void;
 }
 
 /** The current session's live change list, as the viewer would render a stored
@@ -148,7 +150,8 @@ export function useDocxHistorySession(
     openNonce,
     exportDoc,
     save,
-    canSave
+    canSave,
+    onUnchanged
   } = opts;
 
   const mountedRef = useRef(true);
@@ -183,6 +186,8 @@ export function useDocxHistorySession(
   hostRef.current = host;
   const canSaveRef = useRef(canSave);
   canSaveRef.current = canSave;
+  const onUnchangedRef = useRef(onUnchanged);
+  onUnchangedRef.current = onUnchanged;
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
   // Diff baseline (S0): must predate the first edit, and contentChange fires
@@ -251,14 +256,27 @@ export function useDocxHistorySession(
       sent: { current: DocxSaveMeta },
       renew: (stale: DocxSaveMeta) => DocxSaveMeta
     ) => {
+      let result: Awaited<ReturnType<typeof saveDocument>>;
       try {
-        return await saveDocument(blob, sent.current);
+        result = await saveDocument(blob, sent.current);
       } catch (error) {
         if (!isSessionConflict(error)) throw error;
         sent.current = renew(sent.current);
-        return saveDocument(blob, sent.current);
+        result = await saveDocument(blob, sent.current);
       }
+      savedSessions.add(sent.current.sessionId);
+      return result;
     };
+    // Sessions with a stored save; only these have a backend version row.
+    const savedSessions = new Set<string>();
+    // An unsaved session whose document is exactly its start changed nothing,
+    // so it is never sent. Raw equality keeps accepting a suggestion a change.
+    const isUnsavedNoOp = (sessionId: string, current: string | null) =>
+      !savedSessions.has(sessionId) &&
+      !documentWrites.pending() &&
+      !acceptanceRef.current &&
+      !!s0Ref.current &&
+      current === s0Ref.current;
     // Close/checkpoint uploads mutate the same backend row. Keep them in one
     // FIFO so an older checkpoint can never complete after a newer final close.
     let closeQueue: Promise<void> = Promise.resolve();
@@ -465,6 +483,15 @@ export function useDocxHistorySession(
       } catch {
         fStr = null; // Serialize failed: the row keeps its docx pair only.
       }
+      if (isUnsavedNoOp(meta.sessionId, fStr)) {
+        slices.clear();
+        s0Ref.current = null;
+        robinRunsRef.current = [];
+        baselineRef.current = fStr;
+        onUnchangedRef.current?.();
+        setStatus(tracker.isOpen() ? 'dirty' : 'saved');
+        return undefined;
+      }
       const snap: CloseSnapshot = {
         host: hostRef.current,
         fStr,
@@ -553,6 +580,16 @@ export function useDocxHistorySession(
       save: async () => {
         const meta = tracker.currentMeta();
         if (!meta) return;
+        let current: string | null = null;
+        try {
+          current = editorRef.current?.serialize() ?? null;
+        } catch {
+          current = null;
+        }
+        if (isUnsavedNoOp(meta.sessionId, current)) {
+          onUnchangedRef.current?.();
+          return;
+        }
         const saveDocument = saveRef.current;
         const epoch = documentEpochRef.current;
         const checkpointRequest = requestedCheckpoint;
@@ -1036,8 +1073,8 @@ export function useDocxHistorySession(
         { sfdt: fDoc, author: currentAuthorRef.current }
       ];
       const startDoc = JSON.parse(s0Ref.current);
-      // The backend removes net-zero versions. Do not display intermediate
-      // author-boundary edits after the document has been fully undone.
+      // Do not display intermediate author-boundary edits after the document
+      // has been fully undone.
       const unchanged =
         contentHash(normalizeForDiff(startDoc)) ===
         contentHash(normalizeForDiff(fDoc));
