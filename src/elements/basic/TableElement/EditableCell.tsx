@@ -46,7 +46,11 @@ export function EditableCell({
   // Seed the draft value the moment this cell becomes the active editor, before
   // paint, so the textarea shows the right content on first render (no flash).
   const prevEditingRef = useRef(false);
-  if (isEditing && !prevEditingRef.current) setEditValue(displayValue);
+  if (isEditing && !prevEditingRef.current) {
+    setEditValue(displayValue);
+    skipBlurRef.current = false;
+    shouldSaveRef.current = true;
+  }
   prevEditingRef.current = isEditing;
 
   useEffect(() => {
