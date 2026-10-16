@@ -321,16 +321,45 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
         {onSave && onSaveAll ? (
           <Menu
             align='end'
-            trigger={({ toggle }) => (
-              <button
-                type='button'
-                css={terminalBtn(!!saving)}
-                disabled={saving}
-                onClick={toggle}
-              >
-                <SaveIcon width={16} height={16} /> Save{' '}
-                <ChevronDownIcon width={14} height={14} />
-              </button>
+            trigger={({ open, toggle }) => (
+              <div css={{ display: 'flex' }}>
+                <button
+                  type='button'
+                  css={{
+                    ...terminalBtn(!!saving),
+                    borderRadius: '6px 0 0 6px'
+                  }}
+                  disabled={saving}
+                  onClick={() => {
+                    if (open) toggle();
+                    onSave();
+                  }}
+                  title='Save this document (Ctrl/Cmd+S)'
+                >
+                  {saving ? (
+                    <SpinnerIcon width={16} height={16} />
+                  ) : (
+                    <SaveIcon width={16} height={16} />
+                  )}
+                  Save
+                </button>
+                <button
+                  type='button'
+                  css={{
+                    ...terminalBtn(!!saving),
+                    borderRadius: '0 6px 6px 0',
+                    padding: '0 6px',
+                    borderLeft: '1px solid rgba(255,255,255,.35)'
+                  }}
+                  disabled={saving}
+                  onClick={toggle}
+                  aria-label='Save options'
+                  aria-expanded={open}
+                  aria-haspopup='true'
+                >
+                  <ChevronDownIcon width={14} height={14} />
+                </button>
+              </div>
             )}
           >
             {(close) => (
@@ -343,7 +372,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                     close();
                   }}
                 >
-                  This document
+                  Save this document
                 </button>
                 <button
                   type='button'
@@ -353,7 +382,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                     close();
                   }}
                 >
-                  All documents
+                  Save All Documents
                 </button>
               </div>
             )}
