@@ -191,7 +191,8 @@ const api = {
     const live = session;
     registerCardResolver(editor, {
       owns: (id) => live.ownsCard(id),
-      resolve: (id, accept) => live.resolveCard(id, accept)
+      resolve: (id, accept) => live.resolveCard(id, accept),
+      settle: (resolve) => live.settle(resolve)
     });
     registerHistoryRoute(editor, { undo: () => live.undo(), redo: () => live.redo(), engineHas: (direction) => live.history.depth[direction] > 0 });
     installHistoryRouting(editor);
@@ -267,8 +268,9 @@ const api = {
   serialize: () => live().serialize(),
 
   /**
-   * The body paragraphs whose style is one of `styles`, with their text and the page the editor's
-   * layout puts them on (the editor's own page number, as a contents table shows it).
+   * The body paragraphs whose style is one of `styles`, with their text as accepted (no text pending
+   * deletion) and the page the editor's layout puts them on (its own page number, as a contents
+   * table shows it).
    */
   headingPages(styles: string[]): Array<{ text: string; page: number }> {
     const e = live() as any;
@@ -279,7 +281,7 @@ const api = {
       if (styles.includes(style)) {
         let text = '';
         for (const split of w.getSplitWidgets())
-          for (const line of split.childWidgets) for (const el of line.children) if (el instanceof TextElementBox) text += el.text;
+          for (const line of split.childWidgets) for (const el of line.children) if (el instanceof TextElementBox && !(el as any).revisions?.some((r: any) => r.revisionType === 'Deletion')) text += el.text;
         if (text.trim()) out.push({ text: text.trim(), page: e.editorModule.getPageNumber(w) });
       }
       w = e.selection.getNextParagraphBlock(w.getSplitWidgets().pop());
