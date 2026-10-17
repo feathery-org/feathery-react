@@ -29,6 +29,27 @@ export const historyOf = (editor: LiveEditor): Obj | undefined =>
   (editor.editorHistory ?? editor.editorHistoryModule) as Obj | undefined;
 
 /**
+ * `run` as the editor's one undo group (one `initComplexHistory`), unless a group is already open,
+ * whose part it then is: a change and the derived content refreshed after it undo together.
+ */
+export function inUndoGroup(editor: LiveEditor, run: () => void): void {
+  const module = editor.editorModule as Obj | undefined;
+  let complex = false;
+  if (
+    !historyOf(editor)?.currentHistoryInfo &&
+    typeof module?.initComplexHistory === 'function'
+  ) {
+    module.initComplexHistory('Grouping');
+    complex = true;
+  }
+  try {
+    run();
+  } finally {
+    if (complex) historyOf(editor)?.updateComplexHistory?.();
+  }
+}
+
+/**
  * The editor's export of a whole document, less `lastParagraphMarkCopied`: a flag for pasting a
  * selection (it says the copy ends with a paragraph mark) that the editor also writes on a whole
  * document once it has been reopened, when the document ends in a plain paragraph (troy-1,

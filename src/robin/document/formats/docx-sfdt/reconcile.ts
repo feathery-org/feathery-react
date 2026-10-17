@@ -21,7 +21,13 @@
  * have no revision in the native format and land untracked.
  */
 import type { Warning } from '../../envelope';
-import type { CommitPlan, DocumentView, PlanContext } from '../../pack';
+import type {
+  CommitPlan,
+  CommitStep,
+  DocumentView,
+  EditorHost,
+  PlanContext
+} from '../../pack';
 import { NfNode, NormalForm, canonicalJson, clone } from '../../tree';
 import {
   FEATURE_KEYS,
@@ -34,6 +40,9 @@ import { revisionsIn } from './adapter/revisions';
 import { fromNormalForm } from './adapter/fromNormalForm';
 import { ownText } from './outline';
 import { docxTree } from './tree';
+import type { DocxHost } from './host';
+import { inUndoGroup } from './host';
+import { tocField, tocSources } from './toc';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -705,7 +714,32 @@ const IMMEDIATE: Warning = {
     'Formatting and property changes are applied immediately and are not part of the review card; undo reverts them.'
 };
 
+/**
+ * The step that rebuilds the table of contents, when the document has a TOC field with something to
+ * list: last in every commit (any change can move a heading to another page) and after every card
+ * resolution.
+ */
+export function tocStep(
+  view: DocumentView,
+  history: 'editor' | 'engine'
+): CommitStep | null {
+  const toc = tocField(view.nf);
+  if (!toc || !tocSources(view.nf, toc).length) return null;
+  return { seam: 'toc', payload: { history } };
+}
+
+/** Several native steps as the editor's one undo group (the change and the contents it refreshes). */
+export function transaction(host: EditorHost, run: () => void): void {
+  inUndoGroup((host as DocxHost).editor, run);
+}
+
 export function plan(ctx: PlanContext): CommitPlan {
+  const out = changePlan(ctx);
+  const toc = out.steps.length ? tocStep(ctx.intended, out.history) : null;
+  return toc ? { ...out, steps: [...out.steps, toc] } : out;
+}
+
+function changePlan(ctx: PlanContext): CommitPlan {
   const native = nativePlan(ctx.before, ctx.intended);
   // a write that changes nothing the document holds lands nothing
   if (native && !native.text.length && !native.format.length)

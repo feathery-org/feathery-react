@@ -204,9 +204,11 @@ export interface ProofInput {
 function residueConserved(pack: Pack, input: ProofInput): string[] {
   const view = pack.projections.conservedResidue ?? ((entry: unknown) => entry);
   const live = indexTree(input.live.root, pack.tree);
+  const derived = pack.projections.derived?.(input.intended);
   const out: string[] = [];
   for (const [id, entry] of Object.entries(input.intendedResidue)) {
     if (id !== input.live.root.id && !live.has(id)) continue;
+    if (derived?.has(id)) continue;
     const want = canonicalJson(view(entry));
     const got = canonicalJson(view(input.liveResidue[id]));
     if (want !== got)

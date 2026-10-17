@@ -314,6 +314,11 @@ export interface Projections {
    */
   conservedResidue?(entry: unknown): unknown;
   /**
+   * The nodes whose content the editor itself rebuilds after a commit (a table of contents): a
+   * normalization admits their content, and the proof does not hold their residue either.
+   */
+  derived?(nf: NormalForm): ReadonlySet<string>;
+  /**
    * One change set's card accepted or rejected, every other pending change kept: what the engine
    * applies when it resolves a card itself.
    */
@@ -394,6 +399,18 @@ export interface PlanContext {
 
 export interface Reconcile {
   plan(ctx: PlanContext): CommitPlan;
+  /**
+   * Run an `editor`-history plan of more than one step as the editor's one undo group (a change
+   * and the derived content the editor refreshes after it), so one undo takes back both. Without
+   * it each step is its own undo group.
+   */
+  transaction?(host: EditorHost, run: () => void): void;
+  /**
+   * The step that brings what the editor derives from the document (a table of contents and its
+   * page numbers) up to date, or null when the document has none. A plan appends it to its own
+   * steps; the engine runs it after resolving a card and around the editor's own accept or reject.
+   */
+  refresh?(view: DocumentView, history: 'editor' | 'engine'): CommitStep | null;
 }
 
 // ---------------------------------------------------------------------------------------------

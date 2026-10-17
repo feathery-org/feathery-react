@@ -12,7 +12,9 @@
  * The proof admits exactly these differences:
  *
  *   N1  a computed field's cached result belongs to the editor: the editor rewrites a PAGE,
- *       NUMPAGES or SECTIONPAGES result on open, wherever the field sits
+ *       NUMPAGES or SECTIONPAGES result on open, wherever the field sits, and rebuilds a table of
+ *       contents after every change (its whole result: entries, HYPERLINK and PAGEREF results,
+ *       their formats, and the hidden `_Toc` bookmarks it anchors entries to)
  *   N2  created runs and marks get an empty character format (absorbed: the normal form never
  *       references an empty format, and this drops any reference to one)
  *   N3  `insertText` writes `bidi: false` into the character format
@@ -36,6 +38,7 @@ import {
   NATIVE_SETTERS
 } from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
+import { tocField } from './toc';
 import { docxTree } from './tree';
 import { arr } from './util';
 
@@ -426,11 +429,52 @@ function inlineOrder(paragraph: NfNode): NfNode[] {
   return out;
 }
 
+/**
+ * A table of contents as one placeholder paragraph, and no `_Toc` bookmark anywhere: the editor
+ * rebuilds the field's result from the headings (`seams/toc.ts`), entries, page numbers and the
+ * bookmarks the entries point at, and none of it is the write's to prove.
+ */
+function withoutToc(nf: NormalForm): NormalForm {
+  const toc = tocField(nf);
+  if (!toc) return nf;
+  const out = clone(nf);
+  const first = toc.paragraphs[0].id;
+  let done = false;
+  const rec = (n: NfNode) => {
+    for (const key of docxTree.childLists(n)) {
+      const list = listOf(n, key);
+      if (!Array.isArray(list)) continue;
+      const at = list.findIndex((c) => (c as NfNode)?.id === first);
+      if (
+        !done &&
+        at >= 0 &&
+        n.id === toc.container.id &&
+        key === toc.listKey
+      ) {
+        list.splice(at, toc.paragraphs.length, {
+          id: first,
+          kind: KIND.paragraph,
+          toc: 'refreshed by the editor'
+        });
+        done = true;
+      }
+      for (let k = list.length - 1; k >= 0; k -= 1) {
+        const c = list[k] as NfNode;
+        if (c?.kind === KIND.bookmark && /^_toc/i.test(String(c.name ?? '')))
+          list.splice(k, 1);
+        else if (c && typeof c === 'object') rec(c);
+      }
+    }
+  };
+  rec(out.root);
+  return out;
+}
+
 export const N1: Normalization = {
   name: 'N1',
   // a computed field's cached result belongs to the editor, wherever the field sits
-  apply: (nf) =>
-    eachNode(nf, (n) => {
+  apply: (input) =>
+    eachNode(withoutToc(input), (n) => {
       if (n.kind !== KIND.paragraph) return false;
       let changed = false;
       const open: Array<{ code: string; result: boolean }> = [];

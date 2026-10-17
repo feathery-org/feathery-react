@@ -80,13 +80,20 @@ export type ReconcileOutcome =
 export function reconcile(input: ReconcileInput): ReconcileOutcome {
   const { pack, host, history, before, intended } = input;
   /** Undo only the groups this commit added; a document replacement is undone by its snapshot. */
+  // whether the plan's steps ran as one undo group of the editor's (`Reconcile.transaction`)
+  let grouped = false;
   const restore = (
     planned: CommitPlan | null,
     seamsRun: number
   ): RollbackOutcome => {
     try {
       return rollback(host, before.native, {
-        undoLimit: planned?.history === 'editor' ? seamsRun : 0,
+        undoLimit:
+          planned?.history === 'editor'
+            ? grouped
+              ? Math.min(seamsRun, 1)
+              : seamsRun
+            : 0,
         equivalent: (now) => equivalentNative(pack, now, before.native),
         layoutOnly: (now) =>
           pack.adapter.layoutOnly?.(now, before.native) ?? false
@@ -130,21 +137,29 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
         : {}),
       ...(input.derived ? { derived: input.derived } : {})
     });
-    for (const step of plan.steps) {
-      const seam = pack.seams[step.seam];
-      if (!seam)
-        throw new Error(
-          `the plan names seam ${JSON.stringify(
-            step.seam
-          )}, which the pack does not have`
-        );
-      seams.push(step.seam);
-      seam.apply(host, step.payload, {
-        turnId: input.turnId,
-        intent: input.intent,
-        ...(input.title ? { title: input.title } : {})
-      });
-    }
+    const steps = (plan as CommitPlan).steps;
+    const runSteps = () => {
+      for (const step of steps) {
+        const seam = pack.seams[step.seam];
+        if (!seam)
+          throw new Error(
+            `the plan names seam ${JSON.stringify(
+              step.seam
+            )}, which the pack does not have`
+          );
+        seams.push(step.seam);
+        seam.apply(host, step.payload, {
+          turnId: input.turnId,
+          intent: input.intent,
+          ...(input.title ? { title: input.title } : {})
+        });
+      }
+    };
+    const transaction = pack.reconcile.transaction;
+    if (plan.history === 'editor' && steps.length > 1 && transaction) {
+      grouped = true;
+      transaction(host, runSteps);
+    } else runSteps();
   } catch (e) {
     return {
       outcome: 'apply-failed',

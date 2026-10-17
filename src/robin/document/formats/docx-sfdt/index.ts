@@ -40,7 +40,7 @@ import {
   resolveGroup,
   withoutGroup
 } from './projections';
-import { plan } from './reconcile';
+import { plan, tocStep, transaction } from './reconcile';
 import {
   FORMAT_SCHEMA,
   effective,
@@ -52,6 +52,10 @@ import {
 import { formatSeam } from './seams/format';
 import { spliceSeam } from './seams/splice';
 import { textSeam } from './seams/text';
+import { tocSeam } from './seams/toc';
+import { tocAnnotations, tocField } from './toc';
+import { tocFinalizer } from './finalizers/toc';
+import { derivedContent } from './invariants/derived';
 import { selectionOf } from './selection';
 import { docxTree } from './tree';
 import VOCABULARY from './vocabulary';
@@ -71,7 +75,7 @@ export const docxPack: Pack = {
   outline: { defaultDepth: 3, belowBlocks, detail, listLabel },
   text: ownText,
   features,
-  annotate: (view) => bindingAnnotations(view.nf),
+  annotate: (view) => tocAnnotations(view.nf, bindingAnnotations(view.nf)),
   properties: {
     schema: schemaFor,
     formatSchema: FORMAT_SCHEMA,
@@ -86,7 +90,8 @@ export const docxPack: Pack = {
     controlShape,
     bookmarkPairs,
     fieldTriplets,
-    styleReferences
+    styleReferences,
+    derivedContent
   ],
   // identity first (bookmarks, tables, rows): formulas read the rows; restripe over the settled rows;
   // column fit before width units, so a narrowed row still keeps one unit; the geometry report last,
@@ -99,7 +104,8 @@ export const docxPack: Pack = {
     restripeFinalizer,
     columnFitFinalizer,
     widthUnitsFinalizer,
-    tableGeometryReport
+    tableGeometryReport,
+    tocFinalizer
   ],
   projections: {
     accept,
@@ -111,10 +117,16 @@ export const docxPack: Pack = {
     conservedResidue,
     resolveGroup,
     ownsResolution,
-    othersOf: withoutGroup
+    othersOf: withoutGroup,
+    derived: (nf) => tocField(nf)?.ids ?? new Set<string>()
   },
-  reconcile: { plan },
-  seams: { text: textSeam, format: formatSeam, splice: spliceSeam },
+  reconcile: { plan, transaction, refresh: tocStep },
+  seams: {
+    text: textSeam,
+    format: formatSeam,
+    splice: spliceSeam,
+    toc: tocSeam
+  },
   featureKeys: FEATURE_KEYS,
   selection: selectionOf,
   // the server's card for how to edit a document (what it attached to these refusals on the rig)
