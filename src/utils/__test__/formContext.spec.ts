@@ -510,6 +510,39 @@ describe('feathery.runComputerAgent return shape', () => {
       getFormContext(uuid).runComputerAgent('agent_1')
     ).resolves.toEqual({ status: 'error', message: 'nope' });
   });
+  it('snapshots per-copy references before saving and rejects ambiguous merging', async () => {
+    const references = ['account-a', 'account-b'];
+    client.flushCustomFields.mockImplementation(async () => {
+      references[0] = 'changed';
+    });
+    await getFormContext(uuid).generateDocuments({
+      documentIds: [
+        { kind: 'template', document_id: 'tpl-1', references },
+        {
+          kind: 'quik',
+          forms: [{ id: 44252, fields: {}, reference: 'account-c' }]
+        }
+      ],
+      signMethod: 'docusign',
+      envelopeAction: 'open_in_editor',
+      repeatable: true,
+      toolbarActions: ['download', 'draft']
+    });
+    expect(flow.mock.calls[0][0].documents[0].references).toEqual([
+      'account-a',
+      'account-b'
+    ]);
+    expect(flow.mock.calls[0][0].documents[1].forms[0].reference).toBe(
+      'account-c'
+    );
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: [{ kind: 'template', document_id: 'tpl-1', references }],
+        signMethod: 'docusign',
+        merge: true
+      })
+    ).rejects.toThrow('cannot be merged');
+  });
 });
 
 describe('feathery.setFormCompletion', () => {
