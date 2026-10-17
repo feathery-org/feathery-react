@@ -119,7 +119,11 @@ export function mountRobinDocument({
   const unregister = registerCardResolver(editor, {
     owns: (changeSetId) => !!mounted.get()?.ownsCard(changeSetId),
     resolve: (changeSetId, accept) =>
-      !!mounted.get()?.resolveCard(changeSetId, accept)
+      !!mounted.get()?.resolveCard(changeSetId, accept),
+    settle: (resolve) => {
+      const session = mounted.get();
+      return session ? session.settle(resolve) : resolve();
+    }
   });
   return () => {
     guard?.dispose();

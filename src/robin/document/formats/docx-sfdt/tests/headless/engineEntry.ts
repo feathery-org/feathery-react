@@ -9,7 +9,8 @@ import {
   ImageResizer,
   Search,
   Selection,
-  SfdtExport
+  SfdtExport,
+  TextElementBox
 } from '@syncfusion/ej2-documenteditor';
 import {
   attachBindings,
@@ -190,7 +191,8 @@ const api = {
     const live = session;
     registerCardResolver(editor, {
       owns: (id) => live.ownsCard(id),
-      resolve: (id, accept) => live.resolveCard(id, accept)
+      resolve: (id, accept) => live.resolveCard(id, accept),
+      settle: (resolve) => live.settle(resolve)
     });
     registerHistoryRoute(editor, { undo: () => live.undo(), redo: () => live.redo(), engineHas: (direction) => live.history.depth[direction] > 0 });
     installHistoryRouting(editor);
@@ -224,6 +226,21 @@ const api = {
   /** Make the next engine open land something other than what was composed, so the proof fails. */
   injectFailure(): void {
     injectFailure = true;
+  },
+
+  /** Make the editor's next contents rebuild throw halfway, after it deleted the old contents. */
+  injectTocFailure(): void {
+    const module = (live() as any).editorModule;
+    const build = module.buildToc;
+    module.buildToc = () => {
+      module.buildToc = build;
+      throw new Error('injected: the contents rebuild failed');
+    };
+  },
+
+  /** Open complex undo groups in the editor, and whether it thinks a contents rebuild is running. */
+  historyState(): { open: number; insertingToc: boolean } {
+    return { open: history()?.historyInfoStack?.length ?? 0, insertingToc: !!(live() as any).editorModule?.isInsertingTOC };
   },
 
   /** Make the next text the editor inserts carry a stray letter, so a native commit fails its proof. */
@@ -264,6 +281,28 @@ const api = {
 
   settled,
   serialize: () => live().serialize(),
+
+  /**
+   * The body paragraphs whose style is one of `styles`, with their text as accepted (no text pending
+   * deletion) and the page the editor's layout puts them on (its own page number, as a contents
+   * table shows it).
+   */
+  headingPages(styles: string[]): Array<{ text: string; page: number }> {
+    const e = live() as any;
+    const out: Array<{ text: string; page: number }> = [];
+    let w = e.documentHelper.pages[0].bodyWidgets[0].childWidgets[0];
+    while (w) {
+      const style = w.paragraphFormat?.baseStyle?.name;
+      if (styles.includes(style)) {
+        let text = '';
+        for (const split of w.getSplitWidgets())
+          for (const line of split.childWidgets) for (const el of line.children) if (el instanceof TextElementBox && !(el as any).revisions?.some((r: any) => r.revisionType === 'Deletion')) text += el.text;
+        if (text.trim()) out.push({ text: text.trim(), page: e.editorModule.getPageNumber(w) });
+      }
+      w = e.selection.getNextParagraphBlock(w.getSplitWidgets().pop());
+    }
+    return out;
+  },
   errors: () => errors.slice(),
 
   /** The engine id of the node at a native-shaped path (`sections`, 4, `blocks`, 4, ...). */

@@ -5,7 +5,7 @@
  * restored afterwards, the user's track-changes setting included.
  */
 import type { LiveEditor } from '../host';
-import { historyOf } from '../host';
+import { closeUndoGroups, historyOf, openUndoGroups } from '../host';
 import { CardText, groupTag } from '../adapter/revisions';
 import { AUTHOR } from '../reconcile';
 
@@ -25,20 +25,18 @@ export function inGroup<T>(
   editor.enableTrackChanges = tracked;
   editor.currentUser = AUTHOR;
   if (settings) settings.customData = groupTag(turnId, card);
-  let complex = false;
   const module = editor.editorModule as Record<string, any> | undefined;
+  const depth = openUndoGroups(editor);
   if (
     !historyOf(editor)?.currentHistoryInfo &&
     typeof module?.initComplexHistory === 'function'
-  ) {
+  )
     module.initComplexHistory('Grouping');
-    complex = true;
-  }
   try {
     return work();
   } finally {
     try {
-      if (complex) historyOf(editor)?.updateComplexHistory?.();
+      closeUndoGroups(editor, depth);
     } finally {
       editor.enableTrackChanges = prior.track;
       editor.currentUser = prior.user;

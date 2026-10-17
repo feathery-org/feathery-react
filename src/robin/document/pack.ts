@@ -15,7 +15,8 @@
  *   text, features, annotate   what `find` matches and what `read` annotates
  *   properties   the property schema per kind and how overrides are written (architecture 5.1a)
  *   invariants   the pack's refusals, run on the virtual document before anything is committed
- *   finalizers   derived-value passes run after the changes, each declaring the ids it touched
+ *   finalizers   derived-value passes run after the changes, each reporting the ids it touched
+ *                (advisory: for facts and attribution; the engine diffs what they changed)
  *   projections  accept and reject views of a document, and the enumerated normalization list
  *   reconcile, seams   how a verified change set is written into the live editor
  *   vocabulary   words that name this format or its SDK; the core must never contain them
@@ -249,7 +250,11 @@ export interface FinalizerContext {
 }
 
 export interface FinalizerResult {
-  /** Every node id the finalizer changed: its declared scope. */
+  /**
+   * Every node id the finalizer changed. Advisory: it feeds the facts, `touched` and the attribution of
+   * `finalizerScope`; the engine derives what the finalizers changed by diff, and nothing here counts
+   * for or against the write's scope.
+   */
   ids: string[];
   facts?: Fact[];
   /** Things the model should know that are legal, not refusals (a ragged table, say). */
@@ -309,6 +314,11 @@ export interface Projections {
    */
   conservedResidue?(entry: unknown): unknown;
   /**
+   * The nodes whose content the editor itself rebuilds after a commit (a table of contents): a
+   * normalization admits their content, and the proof does not hold their residue either.
+   */
+  derived?(nf: NormalForm): ReadonlySet<string>;
+  /**
    * One change set's card accepted or rejected, every other pending change kept: what the engine
    * applies when it resolves a card itself.
    */
@@ -347,9 +357,22 @@ export interface SeamContext {
   title?: string;
 }
 
+/**
+ * What a step that refreshes derived content found on the live document (a contents table rebuilt,
+ * or why it was not), for the write's facts: only the live editor knows what it did.
+ */
+export interface SeamReport {
+  facts?: Fact[];
+  warnings?: Warning[];
+}
+
 export interface Seam {
   /** Apply one step to the live editor. Throws when the step cannot be placed. */
-  apply(host: EditorHost, payload: unknown, ctx: SeamContext): void;
+  apply(
+    host: EditorHost,
+    payload: unknown,
+    ctx: SeamContext
+  ): void | SeamReport;
 }
 
 export interface CommitStep {
@@ -367,6 +390,11 @@ export interface CommitPlan {
    * the document (the editor's history is cleared and the engine keeps the way back).
    */
   history: 'editor' | 'engine';
+  /**
+   * The steps are one change (the change and the derived content the editor refreshes after it):
+   * with `editor` history they run as the editor's one undo group (`Reconcile.transaction`).
+   */
+  grouped?: boolean;
   warnings?: Warning[];
 }
 
@@ -389,6 +417,18 @@ export interface PlanContext {
 
 export interface Reconcile {
   plan(ctx: PlanContext): CommitPlan;
+  /**
+   * Run the steps of a `grouped` plan with `editor` history as the editor's one undo group (a
+   * change and the derived content the editor refreshes after it), so one undo takes back both.
+   * Without it each step is its own undo group.
+   */
+  transaction?(host: EditorHost, run: () => void): void;
+  /**
+   * The step that brings what the editor derives from the document (a table of contents and its
+   * page numbers) up to date, or null when the document has none. A plan appends it to its own
+   * steps; the engine runs it after resolving a card and around the editor's own accept or reject.
+   */
+  refresh?(view: DocumentView, history: 'editor' | 'engine'): CommitStep | null;
 }
 
 // ---------------------------------------------------------------------------------------------

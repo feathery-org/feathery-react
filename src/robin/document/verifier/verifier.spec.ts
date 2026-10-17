@@ -358,7 +358,6 @@ describe('scope', () => {
       diff: diffTrees(s.view, after, s.pack),
       write: write({ scope: { ids } }),
       bulkHits: new Map(),
-      finalizerIds: new Set(),
       ...extra
     });
 
@@ -438,11 +437,10 @@ describe('scope', () => {
     expect(p.detail).toEqual([{ id: 'n1', removed: false }]);
   });
 
-  it('covers finalizer-declared nodes and bulk matches that scope.bulk repeats', () => {
+  it('covers bulk matches that scope.bulk repeats', () => {
     const after = edit((nf) => {
       blocks(nf)[2].text = 'Items: 3';
     });
-    expect(check(after, [], { finalizerIds: new Set(['n5']) })).toEqual([]);
     const bulkWrite = write({
       scope: { ids: [], bulk: [{ find: { kind: 'para' }, total: 4 }] },
       changes: [
@@ -457,8 +455,7 @@ describe('scope', () => {
       before: s.view,
       after,
       pack: s.pack,
-      diff: diffTrees(s.view, after, s.pack),
-      finalizerIds: new Set<string>()
+      diff: diffTrees(s.view, after, s.pack)
     };
     expect(
       scopeProblems({
@@ -494,8 +491,7 @@ describe('scope', () => {
       after: s.view,
       pack: s.pack,
       diff: diffTrees(s.view, s.view, s.pack),
-      bulkHits: new Map(),
-      finalizerIds: new Set<string>()
+      bulkHits: new Map()
     };
     expect(scopeProblems({ ...args, write: fw })[0].destroyed).toContain(
       'scope.formats does not acknowledge'

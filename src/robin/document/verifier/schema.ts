@@ -10,6 +10,7 @@
  */
 import type { RefusalProblem } from '../envelope';
 import type { Pack, PropertySpec } from '../pack';
+import type { NfNode } from '../tree';
 import { formatRefsIn } from '../ids';
 
 import { problem } from './index';
@@ -22,7 +23,9 @@ function checkProps(
   props: Record<string, unknown>,
   where: string,
   card: string,
-  invariant: string
+  invariant: string,
+  /** Names that are the node's content (its text, its children, a binding), not properties. */
+  content: ReadonlySet<string> = new Set()
 ): RefusalProblem[] {
   if (!specs)
     return [
@@ -57,6 +60,7 @@ function checkProps(
     }
   }
   if (!issues.length) return [];
+  const contentOffered = issues.some((i) => content.has(i.name));
   return [
     problem(
       invariant,
@@ -66,7 +70,11 @@ function checkProps(
       {
         detail: { issues, writable },
         read: [card],
-        hint: `Writable properties here: ${writable.join(', ') || 'none'}.`
+        hint: `Writable properties here: ${writable.join(', ') || 'none'}.${
+          contentOffered
+            ? ' To change what a node says or holds (its text, its children, a binding), replace the node; set changes properties only.'
+            : ''
+        }`
       }
     )
   ];
@@ -77,14 +85,31 @@ export function propertyProblems(
   pack: Pack,
   kind: string,
   props: Record<string, unknown>,
-  nodeId: string
+  nodeId: string,
+  node?: NfNode
 ): RefusalProblem[] {
+  // a name the node carries as content: a key it holds that is no property, a child list, a feature
+  const specs = new Set(
+    (pack.properties.schema(kind) ?? []).map((spec) => spec.name)
+  );
+  const content = new Set(
+    Object.keys(props).filter(
+      (name) =>
+        !specs.has(name) &&
+        ((node !== undefined &&
+          name !== 'id' &&
+          name !== 'kind' &&
+          (name in node || pack.tree.childLists(node).includes(name))) ||
+          (pack.featureKeys ?? []).includes(name))
+    )
+  );
   return checkProps(
     pack.properties.schema(kind),
     props,
     `${kind} ${nodeId}`,
     schemaCard(kind),
-    'property-invalid'
+    'property-invalid',
+    content
   );
 }
 

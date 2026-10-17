@@ -31,7 +31,7 @@ import { ENGINE_HISTORY_LIMIT, EngineHistory, HistoryOutcome } from './history';
 import { IdTable } from './ids';
 import { WriteJournal, journalKey } from './loop';
 import { renderOutline } from './outline';
-import type { EditorHost, Pack, Residue } from './pack';
+import type { CommitStep, EditorHost, Pack, Residue } from './pack';
 import { logDebug, logError, logWarn, truncatedDetail } from './log';
 import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
@@ -462,6 +462,8 @@ export class DocumentSession {
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
       ...common,
+      // with what the live editor reported of the commit (a contents table rebuilt, or not)
+      facts: [...prepared.facts, ...outcome.facts],
       warnings: [...prepared.warnings, ...outcome.warnings],
       trace: trace.build()
     };
@@ -510,6 +512,8 @@ export class DocumentSession {
             state.residue
           );
       this.host.open(target);
+      // the document is replaced, so what the editor derives is refreshed with it
+      this.runRefresh('engine');
     } catch {
       try {
         this.host.open(before);
@@ -529,6 +533,45 @@ export class DocumentSession {
     this.refresh();
     this.replaced('person');
     return true;
+  }
+
+  /**
+   * The editor's own accept or reject of a card (`resolve`), with what the editor derives from the
+   * document (a table of contents) refreshed after it in the same undo group.
+   */
+  settle<T>(resolve: () => T): T {
+    // the last installed state: this runs from the rail, where a re-read could land mid-change
+    const view = this.current?.view;
+    const step = view ? this.pack.reconcile.refresh?.(view, 'editor') : null;
+    if (!step) return resolve();
+    let out: T | undefined;
+    const run = () => {
+      out = resolve();
+      this.runStep(step);
+    };
+    const transaction = this.pack.reconcile.transaction;
+    if (transaction) transaction(this.host, run);
+    else run();
+    return out as T;
+  }
+
+  /** The pack's refresh step for the document as the editor now holds it, when it has one. */
+  private runRefresh(history: 'editor' | 'engine'): void {
+    const native = this.host.serialize();
+    const view = makeView(this.pack.adapter.toNormalForm(native).nf, this.pack);
+    const step = this.pack.reconcile.refresh?.(view, history);
+    if (step) this.runStep(step);
+  }
+
+  private runStep(step: CommitStep): void {
+    const seam = this.pack.seams[step.seam];
+    if (!seam)
+      throw new Error(
+        `the refresh names seam ${JSON.stringify(
+          step.seam
+        )}, which the pack does not have`
+      );
+    seam.apply(this.host, step.payload, { turnId: 'refresh', intent: '' });
   }
 
   /** The editing turn in flight: set by its first write, cleared by `finishTurn`. */
