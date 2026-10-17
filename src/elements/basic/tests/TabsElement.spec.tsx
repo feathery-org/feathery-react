@@ -1,5 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import TabsElement from '../TabsElement';
 import ResponsiveStyles from '../../styles';
 
@@ -17,7 +18,8 @@ const entries = [
 describe('native dashboard Tabs', () => {
   it.each(['vertical', 'horizontal'])(
     'renders saved %s tabs and selects the real step key',
-    (direction) => {
+    async (direction) => {
+      const user = userEvent.setup();
       const element = {
         id: 'underwriter-tabs',
         properties: { entries, direction, link_id: 'underwriter-navigation' },
@@ -41,7 +43,7 @@ describe('native dashboard Tabs', () => {
         'flex-direction': direction === 'vertical' ? 'column' : 'row',
         gap: '8px'
       });
-      fireEvent.click(summary);
+      await user.click(summary);
       expect(onTabClick).toHaveBeenCalledWith(entries[1], 1);
     }
   );
@@ -74,9 +76,9 @@ describe('native dashboard Tabs', () => {
       const claims = screen.getByRole('button', { name: 'Claims' });
       expect(claims).toHaveStyle({
         'padding-top': '8px',
-        'padding-right': '12px',
+        'padding-inline-end': '12px',
         'padding-bottom': '8px',
-        'padding-left': '12px',
+        'padding-inline-start': '12px',
         'text-align': 'left',
         background: '#E8ECF0',
         color: '#173B66'
@@ -84,7 +86,7 @@ describe('native dashboard Tabs', () => {
       expect(claims.parentElement).not.toHaveStyle({ 'padding-left': '12px' });
       expect(styles.getTarget('tab', false, true)).toMatchObject({
         paddingTop: '8px',
-        paddingLeft: '4px'
+        paddingInlineStart: '4px'
       });
     }
   );
@@ -98,12 +100,13 @@ describe('native dashboard Tabs', () => {
     const styles = new ResponsiveStyles(element, [], true);
     render(<TabsElement element={element} responsiveStyles={styles} />);
     expect(screen.getByRole('button', { name: 'Claims' })).toHaveStyle({
-      'padding-left': '0px'
+      'padding-inline-start': '0px'
     });
     expect(styles.getTarget('tab', true)).not.toHaveProperty('paddingTop');
   });
 
-  it('keeps editor clicks from navigating the form', () => {
+  it('keeps editor clicks from navigating the form', async () => {
+    const user = userEvent.setup();
     const element = { id: 'tabs', properties: { entries }, styles: {} };
     const onTabClick = jest.fn();
     render(
@@ -115,7 +118,27 @@ describe('native dashboard Tabs', () => {
         onTabClick={onTabClick}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Summary' }));
+    await user.click(screen.getByRole('button', { name: 'Summary' }));
     expect(onTabClick).not.toHaveBeenCalled();
+  });
+
+  it('uses logical inline sides for asymmetric padding in RTL forms', () => {
+    const element = {
+      id: 'rtl-tabs',
+      properties: { entries },
+      styles: { inner_padding_left: 4, inner_padding_right: 16 }
+    };
+    render(
+      <div dir='rtl'>
+        <TabsElement
+          element={element}
+          responsiveStyles={new ResponsiveStyles(element, [], true)}
+        />
+      </div>
+    );
+    expect(screen.getByRole('button', { name: 'Claims' })).toHaveStyle({
+      paddingInlineStart: '4px',
+      paddingInlineEnd: '16px'
+    });
   });
 });

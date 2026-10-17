@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 
 import { hoverStylesGuard } from '../../utils/browser';
+import { isNum } from '../../utils/primitives';
+import { INNER_PADDING_KEYS } from '../styles';
 
 type TabEntry = {
   id: string;
@@ -19,14 +21,18 @@ function applyTabsStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyCorners('tab');
   responsiveStyles.applyBoxShadow('tab');
   responsiveStyles.applyTextAlign('tab');
-  for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
-    responsiveStyles.apply(
-      'tab',
-      `inner_padding_${side.toLowerCase()}`,
-      (value: number | undefined) =>
-        value === undefined ? {} : { [`padding${side}`]: `${value}px` }
-    );
-  }
+  responsiveStyles.apply(
+    'tab',
+    INNER_PADDING_KEYS,
+    (top: unknown, right: unknown, bottom: unknown, left: unknown) => {
+      const padding: React.CSSProperties = {};
+      if (isNum(top)) padding.paddingTop = `${top}px`;
+      if (isNum(right)) padding.paddingInlineEnd = `${right}px`;
+      if (isNum(bottom)) padding.paddingBottom = `${bottom}px`;
+      if (isNum(left)) padding.paddingInlineStart = `${left}px`;
+      return padding;
+    }
+  );
   responsiveStyles.applyBorders({ target: 'tab' });
   responsiveStyles.applyFontStyles('tab', false, true);
 
