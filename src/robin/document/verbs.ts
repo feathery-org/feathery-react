@@ -937,8 +937,7 @@ export function prepareWrite(
       pack,
       diff: ofWrite,
       write,
-      bulkHits,
-      finalizerIds: new Set()
+      bulkHits
     })
   );
   runInvariants(runner, pack, {
