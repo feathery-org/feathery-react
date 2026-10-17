@@ -121,18 +121,46 @@ export const formulasFinalizer: Finalizer = {
       });
     }
     const list = [...ids];
-    const named = detail
-      .slice(0, NAMED_IN_SUMMARY)
-      .map(
-        (d) =>
-          `${d.name ?? 'value'} ${d.id}: ${JSON.stringify(
-            d.before
-          )} to ${JSON.stringify(d.after)}`
-      );
-    const more =
-      detail.length > NAMED_IN_SUMMARY
-        ? `; and ${detail.length - NAMED_IN_SUMMARY} more in detail`
-        : '';
+    // a value whose text is the same before and after was kept: the engine put back its own value
+    // over what the write left there (a model edit into a formula's run); it stays in the detail
+    const kept = detail.filter(
+      (d) => d.before !== undefined && d.before === d.after
+    );
+    const moved = detail.filter((d) => !kept.includes(d));
+    const quote = (v: unknown) => JSON.stringify(v);
+    const label = (d: FactDetail) => `${d.name ?? 'value'} ${d.id}`;
+    const named = (
+      entries: FactDetail[],
+      render: (d: FactDetail) => string
+    ): string =>
+      entries.slice(0, NAMED_IN_SUMMARY).map(render).join('; ') +
+      (entries.length > NAMED_IN_SUMMARY
+        ? `; and ${entries.length - NAMED_IN_SUMMARY} more in detail`
+        : '');
+    const summary = [
+      ...(moved.length
+        ? [
+            `${
+              moved.length
+            } bound value(s) recomputed, carried or re-rendered: ${named(
+              moved,
+              (d) =>
+                d.before === undefined
+                  ? `${label(d)}: ${quote(d.after)} (new)`
+                  : `${label(d)}: ${quote(d.before)} to ${quote(d.after)}`
+            )}`
+          ]
+        : []),
+      ...(kept.length
+        ? [
+            `${kept.length} bound value(s) kept: ${named(
+              kept,
+              (d) =>
+                `${label(d)}: kept at ${quote(d.after)} (the engine owns it)`
+            )}`
+          ]
+        : [])
+    ].join('. ');
     return {
       ids: list,
       facts: detail.length
@@ -141,11 +169,7 @@ export const formulasFinalizer: Finalizer = {
               kind: 'finalizer',
               name: 'formulas',
               ids: list,
-              summary: `${
-                detail.length
-              } bound value(s) recomputed, carried or re-rendered: ${named.join(
-                '; '
-              )}${more}`,
+              summary,
               detail
             }
           ]

@@ -339,7 +339,7 @@ describe('a content key offered to set points at replace', () => {
   });
 });
 
-describe('adversarial review of the rulings (findings 3 to 7)', () => {
+describe('adversarial review of the rulings (findings 3 to 8)', () => {
   it('3: a node the model changed is charged to its scope even when a finalizer then rewrites it', () => {
     const s = stateOf(withTrailingRuns());
     const [, second] = controlsNamed(s.view.nf.root, 'client_name');
@@ -478,12 +478,57 @@ describe('adversarial review of the rulings (findings 3 to 7)', () => {
       throw new Error(JSON.stringify(r).slice(0, 600));
     const fact = r.facts.find(
       (f) => f.kind === 'finalizer' && f.name === 'formulas'
-    ) as Fact & { detail: Array<{ id: string; before?: string }> };
+    ) as Fact & {
+      detail: Array<{
+        id: string;
+        name?: string;
+        before?: string;
+        after?: string;
+      }>;
+    };
     const created = fact.detail.filter((d) => !s.view.get(d.id));
     expect(created.length).toBeGreaterThan(0);
     for (const d of created) {
       expect(fact.ids).toContain(d.id);
       expect(d.before).toBeUndefined();
+      // the summary names a created value as new, never as `undefined to ...`
+      expect(fact.summary).toContain(
+        `${d.name} ${d.id}: ${JSON.stringify(d.after)} (new)`
+      );
     }
+    expect(fact.summary).not.toContain('undefined');
+  });
+
+  it("8: a model edit into a formula control's run that the engine puts back is reported as kept, not recomputed", () => {
+    const s = stateOf(flagship);
+    const total = s.view.get('n148') as NfNode;
+    expect((total.binding as { name?: string }).name).toBe('line_total');
+    const run = firstRun(total);
+    const value = String(run.text);
+    const r = prepareWrite(s, {
+      intent: 'x',
+      scope: { ids: [run.id] },
+      changes: [replaceText(run, '1')]
+    } as unknown as WriteInput);
+    if (r.outcome !== 'verified')
+      throw new Error(JSON.stringify(r).slice(0, 600));
+    const fact = r.facts.find(
+      (f) => f.kind === 'finalizer' && f.name === 'formulas'
+    ) as Fact;
+    // the detail still lists it, before and after equal
+    expect(formulasDetail(r.facts)).toEqual(
+      expect.arrayContaining([
+        { id: total.id, name: 'line_total', before: value, after: value }
+      ])
+    );
+    expect(fact.summary).toContain(
+      `line_total ${total.id}: kept at ${JSON.stringify(
+        value
+      )} (the engine owns it)`
+    );
+    expect(fact.summary).not.toContain(
+      `${JSON.stringify(value)} to ${JSON.stringify(value)}`
+    );
+    expect(fact.summary).not.toMatch(/recomputed/);
   });
 });
