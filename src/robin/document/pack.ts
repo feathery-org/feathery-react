@@ -357,9 +357,22 @@ export interface SeamContext {
   title?: string;
 }
 
+/**
+ * What a step that refreshes derived content found on the live document (a contents table rebuilt,
+ * or why it was not), for the write's facts: only the live editor knows what it did.
+ */
+export interface SeamReport {
+  facts?: Fact[];
+  warnings?: Warning[];
+}
+
 export interface Seam {
   /** Apply one step to the live editor. Throws when the step cannot be placed. */
-  apply(host: EditorHost, payload: unknown, ctx: SeamContext): void;
+  apply(
+    host: EditorHost,
+    payload: unknown,
+    ctx: SeamContext
+  ): void | SeamReport;
 }
 
 export interface CommitStep {
@@ -377,6 +390,11 @@ export interface CommitPlan {
    * the document (the editor's history is cleared and the engine keeps the way back).
    */
   history: 'editor' | 'engine';
+  /**
+   * The steps are one change (the change and the derived content the editor refreshes after it):
+   * with `editor` history they run as the editor's one undo group (`Reconcile.transaction`).
+   */
+  grouped?: boolean;
   warnings?: Warning[];
 }
 
@@ -400,9 +418,9 @@ export interface PlanContext {
 export interface Reconcile {
   plan(ctx: PlanContext): CommitPlan;
   /**
-   * Run an `editor`-history plan of more than one step as the editor's one undo group (a change
-   * and the derived content the editor refreshes after it), so one undo takes back both. Without
-   * it each step is its own undo group.
+   * Run the steps of a `grouped` plan with `editor` history as the editor's one undo group (a
+   * change and the derived content the editor refreshes after it), so one undo takes back both.
+   * Without it each step is its own undo group.
    */
   transaction?(host: EditorHost, run: () => void): void;
   /**

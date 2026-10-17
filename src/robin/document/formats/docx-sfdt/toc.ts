@@ -23,10 +23,21 @@ export interface TocField {
   listKey: string;
   /** The paragraphs from the one holding the field's begin to the one holding its end. */
   paragraphs: NfNode[];
-  /** Every node in those paragraphs, the paragraphs included. */
+  /**
+   * Where the field begins in the first paragraph's inlines and ends in the last one's: what is
+   * before the begin (a title) and after the end is the document's, not the field's.
+   */
+  beginAt: number;
+  endAt: number;
+  /**
+   * Every node strictly inside the field: its marks and everything between them, and the
+   * paragraphs between the first and the last whole.
+   */
   ids: Set<string>;
   /** The paragraph styles whose paragraphs it lists. */
   styles: Set<string>;
+  /** Whether the field sits in a content control (the editor's rebuild breaks the control). */
+  inControl: boolean;
   /** The entries it lists now, by their visible text. */
   entries: string[];
 }
@@ -118,27 +129,37 @@ export function viewToc(view: DocumentView): TocField | null {
 /** The document's table of contents field in the body, or null when it has none. */
 export function tocField(nf: NormalForm): TocField | null {
   // every body paragraph in reading order, with the list it sits in
-  const paragraphs: Array<{ node: NfNode; parent: NfNode; key: string }> = [];
-  const rec = (node: NfNode, inBody: boolean) => {
+  const paragraphs: Array<{
+    node: NfNode;
+    parent: NfNode;
+    key: string;
+    inControl: boolean;
+  }> = [];
+  const rec = (node: NfNode, inControl: boolean) => {
     for (const key of listKeys(node)) {
-      if (!(inBody && bodyList(key)) || key === 'inlines') continue;
+      if (!bodyList(key) || key === 'inlines') continue;
       for (const child of arr<NfNode>(listAt(node, key))) {
         if (child.kind === KIND.paragraph)
-          paragraphs.push({ node: child, parent: node, key });
-        rec(child, true);
+          paragraphs.push({ node: child, parent: node, key, inControl });
+        rec(child, inControl || child.kind === KIND.control);
       }
     }
   };
-  rec(nf.root, true);
+  rec(nf.root, false);
   // fields as a stack across paragraphs: the TOC field's begin and end paragraphs
-  const open: Array<{ code: string; result: boolean; at: number }> = [];
+  const open: Array<{
+    code: string;
+    result: boolean;
+    at: number;
+    mark: NfNode;
+  }> = [];
   let begin = -1;
   let code = '';
   for (let k = 0; k < paragraphs.length; k += 1) {
     for (const i of inlineOrder(paragraphs[k].node)) {
       const top = open[open.length - 1];
       if (i.kind === KIND.field && i.fieldType === 0)
-        open.push({ code: '', result: false, at: k });
+        open.push({ code: '', result: false, at: k, mark: i });
       else if (i.kind === KIND.field && i.fieldType === 2) {
         if (top) top.result = true;
       } else if (i.kind === KIND.field && i.fieldType === 1) {
@@ -146,7 +167,7 @@ export function tocField(nf: NormalForm): TocField | null {
         if (closed && fieldName(closed.code) === 'TOC' && begin < 0) {
           begin = closed.at;
           code = closed.code.trim();
-          return range(paragraphs.slice(begin, k + 1), code);
+          return range(paragraphs.slice(begin, k + 1), code, closed.mark, i);
         }
       } else if (i.kind === KIND.run && top && !top.result)
         top.code += String(i.text ?? '');
@@ -156,14 +177,27 @@ export function tocField(nf: NormalForm): TocField | null {
 }
 
 function range(
-  span: Array<{ node: NfNode; parent: NfNode; key: string }>,
-  code: string
+  span: Array<{
+    node: NfNode;
+    parent: NfNode;
+    key: string;
+    inControl: boolean;
+  }>,
+  code: string,
+  beginMark: NfNode,
+  endMark: NfNode
 ): TocField | null {
   const [first] = span;
-  // the field's paragraphs are one run of siblings in one list; anything else is not handled
+  const last = span[span.length - 1];
+  // the field's paragraphs are one run of siblings in one list, and its marks are among their own
+  // inlines (not inside an inline control); anything else is not handled
   const list = arr<NfNode>(listAt(first.parent, first.key));
   const at = list.indexOf(first.node);
+  const beginAt = arr<NfNode>(first.node.inlines).indexOf(beginMark);
+  const endAt = arr<NfNode>(last.node.inlines).indexOf(endMark);
   if (
+    beginAt < 0 ||
+    endAt < 0 ||
     span.some(
       (p, k) =>
         p.parent !== first.parent ||
@@ -172,6 +206,17 @@ function range(
     )
   )
     return null;
+  // each paragraph's part of the field: the first from the begin, the last to the end
+  const parts = span.map((p, k) => {
+    const inlines = arr<NfNode>(p.node.inlines);
+    const from = k === 0 ? beginAt : 0;
+    const to = k === span.length - 1 ? endAt + 1 : inlines.length;
+    return {
+      node: p.node,
+      inlines: inlines.slice(from, to),
+      whole: k > 0 && k < span.length - 1
+    };
+  });
   const ids = new Set<string>();
   const collect = (n: unknown) => {
     if (Array.isArray(n)) return n.forEach(collect);
@@ -180,16 +225,60 @@ function range(
     if (typeof o.id === 'string') ids.add(o.id);
     for (const [k, v] of Object.entries(o)) if (k !== 'pending') collect(v);
   };
-  span.forEach((p) => collect(p.node));
+  for (const part of parts) collect(part.whole ? part.node : part.inlines);
   return {
     code,
     container: first.parent,
     listKey: first.key,
     paragraphs: span.map((p) => p.node),
+    beginAt,
+    endAt,
     ids,
     styles: tocStyles(code),
-    entries: span.map((p) => visibleText(p.node)).filter(Boolean)
+    inControl: first.inControl,
+    entries: parts
+      .map((part) => visibleText({ ...part.node, inlines: part.inlines }))
+      .filter(Boolean)
   };
+}
+
+/** The switches of a contents field code, each with its argument (`\o "1-3"`, `\h`). */
+function switchesOf(code: string): Array<{ name: string; arg: string }> {
+  const out: Array<{ name: string; arg: string }> = [];
+  const re = /\\([a-zA-Z*])\s*(?:"([^"]*)"|([^\s\\]+))?/g;
+  for (let m = re.exec(code); m; m = re.exec(code))
+    out.push({ name: m[1].toLowerCase(), arg: m[2] ?? m[3] ?? '' });
+  return out;
+}
+
+/**
+ * The switches the editor's rebuild cannot reproduce, as they are written in the code. The editor
+ * models `\o "a-b"`, `\t`, `\h`, `\z`, `\u`, `\n` with no range and `\p " "`, and drops a
+ * `\* MERGEFORMAT`; anything else (a table of figures, `\c`; a bookmark range, `\b`; kept tabs,
+ * `\w`...) would be rebuilt as a different contents.
+ */
+export function unsupportedSwitches(code: string): string[] {
+  return switchesOf(code)
+    .filter(({ name, arg }) => {
+      switch (name) {
+        case 'o':
+          return !/^\d+-\d+$/.test(arg);
+        case 't':
+          return false;
+        case 'h':
+        case 'z':
+        case 'u':
+        case 'n':
+          return arg !== '';
+        case 'p':
+          return arg !== ' ' && arg !== '';
+        case '*':
+          return arg.toUpperCase() !== 'MERGEFORMAT';
+        default:
+          return true;
+      }
+    })
+    .map(({ name, arg }) => `\\${name}${arg ? ` ${arg}` : ''}`);
 }
 
 /** The paragraphs a contents table lists, in reading order, with their text: its headings. */
@@ -256,10 +345,10 @@ function listAt(node: NfNode, key: string): unknown {
 
 /** `derived: { source: "toc" }` on every paragraph of the table of contents, added to `annotations`. */
 export function tocAnnotations(
-  nf: NormalForm,
+  view: DocumentView,
   annotations: Map<string, Annotation>
 ): Map<string, Annotation> {
-  const toc = tocField(nf);
+  const toc = viewToc(view);
   for (const p of toc?.paragraphs ?? []) {
     const a = annotations.get(p.id) ?? {};
     annotations.set(p.id, { ...a, derived: { ...a.derived, source: 'toc' } });

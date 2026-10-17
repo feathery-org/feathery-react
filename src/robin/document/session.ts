@@ -462,6 +462,8 @@ export class DocumentSession {
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
       ...common,
+      // with what the live editor reported of the commit (a contents table rebuilt, or not)
+      facts: [...prepared.facts, ...outcome.facts],
       warnings: [...prepared.warnings, ...outcome.warnings],
       trace: trace.build()
     };

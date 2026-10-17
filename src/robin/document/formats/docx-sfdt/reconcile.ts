@@ -42,7 +42,7 @@ import { ownText } from './outline';
 import { docxTree } from './tree';
 import type { DocxHost } from './host';
 import { inUndoGroup } from './host';
-import { tocField, tocSources } from './toc';
+import { viewToc } from './toc';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -715,17 +715,24 @@ const IMMEDIATE: Warning = {
 };
 
 /**
- * The step that rebuilds the table of contents, when the document has a TOC field with something to
- * list: last in every commit (any change can move a heading to another page) and after every card
- * resolution.
+ * The step that rebuilds the table of contents, when the document has a TOC field: last in every
+ * commit (any change can move a heading to another page) and after every card resolution. The seam
+ * decides on the live document whether the editor can rebuild it, and reports what it did.
  */
 export function tocStep(
   view: DocumentView,
   history: 'editor' | 'engine'
 ): CommitStep | null {
-  const toc = tocField(view.nf);
-  if (!toc || !tocSources(view.nf, toc).length) return null;
-  return { seam: 'toc', payload: { history } };
+  const toc = viewToc(view);
+  if (!toc) return null;
+  return {
+    seam: 'toc',
+    payload: {
+      history,
+      ids: toc.paragraphs.map((p) => p.id),
+      ...(toc.inControl ? { inControl: true } : {})
+    }
+  };
 }
 
 /** Several native steps as the editor's one undo group (the change and the contents it refreshes). */
@@ -736,7 +743,8 @@ export function transaction(host: EditorHost, run: () => void): void {
 export function plan(ctx: PlanContext): CommitPlan {
   const out = changePlan(ctx);
   const toc = out.steps.length ? tocStep(ctx.intended, out.history) : null;
-  return toc ? { ...out, steps: [...out.steps, toc] } : out;
+  // the change and the contents rebuilt after it are one change: one undo takes back both
+  return toc ? { ...out, steps: [...out.steps, toc], grouped: true } : out;
 }
 
 function changePlan(ctx: PlanContext): CommitPlan {

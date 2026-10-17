@@ -1,18 +1,22 @@
 /**
  * Derived content: what the editor rebuilds after every change (a table of contents' entries and
- * page numbers) is never written. A change, removal or creation inside a TOC field's paragraphs is
- * refused; the model edits the headings, and the contents follows.
+ * page numbers) is never written. A change, removal or creation strictly inside a TOC field (between
+ * its begin and end marks) is refused; the model edits the headings, and the contents follows. A
+ * title before the field or text after it in the same paragraph is the document's to edit, and the
+ * whole field may go.
  */
 import type { Invariant } from '../../../pack';
-import { tocField } from '../toc';
+import { viewToc } from '../toc';
 import { refusal } from './common';
 
 export const derivedContent: Invariant = {
   name: 'derived-content',
   cards: ['field'],
   check({ before, after, changed, removed, created }) {
-    const was = tocField(before.nf);
-    const now = tocField(after.nf);
+    const was = viewToc(before);
+    const now = viewToc(after);
+    // the whole field removed: the document no longer has a contents, which is the model's to do
+    if (was && !now && [...was.ids].every((id) => !after.get(id))) return [];
     const hit = [
       ...[...changed, ...removed].filter((id) => was?.ids.has(id)),
       ...[...created].filter((id) => now?.ids.has(id))

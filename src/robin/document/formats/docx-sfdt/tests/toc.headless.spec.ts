@@ -348,7 +348,8 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
     turn += 1;
     await lane.call('open', withToc(shape, options));
     const native = await lane.call<string>('settled');
-    return { native, headings: listedHeadings(native, stylesOf(tocOf(native).code || (shape === 'levels' ? 'TOC \\o "1-1"' : 'TOC \\t "Heading 2,1"'))) };
+    const styles = stylesOf(tocOf(native).code);
+    return { native, headings: listedHeadings(native, styles.length ? styles : [shape === 'levels' ? 'Heading 1' : 'Heading 2']) };
   }
   const rename = async (h: { si: number; bi: number }, text: string) => {
     const pid = await at(['sections', h.si, 'blocks', h.bi]);
@@ -412,7 +413,7 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
     expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), native)).toBe(true);
   }, 120000);
 
-  it('M2: a title before the field in its first paragraph is the model\'s to edit, and the contents rebuilds after it', async () => {
+  it('M2: a title before the field in its first paragraph is the model\'s to edit; the contents is not rebuilt around it, and the fact says why', async () => {
     await open({ prefix: 'Contents of this proposal ' });
     const native = await lane.call<string>('settled');
     const doc = JSON.parse(native);
@@ -421,8 +422,11 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
     const run = (await read([pid]))[pid].inlines.find((i: any) => i.text === 'Contents of this proposal ');
     const r = await dispatch('write', { intent: 'Retitle.', scope: { ids: [run.id] }, changes: [{ kind: 'replace', id: run.id, base: run.base, node: { ...strip(run), text: 'In this proposal ' } }] });
     if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 1200));
-    expect(await lane.call<string>('settled')).toContain('In this proposal ');
-    await expectCurrent();
+    const now = await lane.call<string>('settled');
+    // the editor's rebuild would move the title into a paragraph of its own, drop its style and add
+    // an empty paragraph each time: such a contents is left as it is, and the fact says so
+    expect(tocOf(now)).toEqual(tocOf(native));
+    expect(JSON.stringify(r.facts)).toContain('table of contents not refreshed: text shares a paragraph with it');
   }, 120000);
 
   it('M2: the whole contents can be removed', async () => {
@@ -461,7 +465,7 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
   it('M5: a contents the editor will not touch (locked) is reported as not refreshed, never as refreshed', async () => {
     const { native, headings } = await open({ locked: true });
     const r = await rename(headings[1], 'Renamed Heading');
-    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 1200));
     expect(factsOf(r)).not.toContain('table of contents refreshed');
     expect(factsOf(r)).toContain('table of contents not refreshed');
     expect(tocOf(await lane.call<string>('settled')).entries).toEqual(tocOf(native).entries);

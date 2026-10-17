@@ -54,7 +54,6 @@ import { spliceSeam } from './seams/splice';
 import { textSeam } from './seams/text';
 import { tocSeam } from './seams/toc';
 import { tocAnnotations, tocField } from './toc';
-import { tocFinalizer } from './finalizers/toc';
 import { derivedContent } from './invariants/derived';
 import { selectionOf } from './selection';
 import { docxTree } from './tree';
@@ -75,7 +74,7 @@ export const docxPack: Pack = {
   outline: { defaultDepth: 3, belowBlocks, detail, listLabel },
   text: ownText,
   features,
-  annotate: (view) => tocAnnotations(view.nf, bindingAnnotations(view.nf)),
+  annotate: (view) => tocAnnotations(view, bindingAnnotations(view.nf)),
   properties: {
     schema: schemaFor,
     formatSchema: FORMAT_SCHEMA,
@@ -104,8 +103,7 @@ export const docxPack: Pack = {
     restripeFinalizer,
     columnFitFinalizer,
     widthUnitsFinalizer,
-    tableGeometryReport,
-    tocFinalizer
+    tableGeometryReport
   ],
   projections: {
     accept,

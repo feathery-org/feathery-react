@@ -108,7 +108,11 @@ function removedBy(node: NfNode, kind: string): boolean {
   }
   if (node.kind === KIND.paragraph) {
     const mark = isObject(node.pending) ? node.pending.mark : undefined;
-    const runs = runsUnder(node);
+    // an empty run with no change of its own is no run (N13): the editor adds one inside a nested
+    // field's result on open (a deleted contents' first entry), and it does not keep the paragraph
+    const runs = runsUnder(node).filter(
+      (r) => r.text !== '' || r.pending !== undefined
+    );
     return allOf(mark, kind) && runs.every((r) => allOf(r.pending, kind));
   }
   if (node.kind === KIND.control) {
@@ -430,7 +434,7 @@ function inlineOrder(paragraph: NfNode): NfNode[] {
 }
 
 /**
- * A table of contents as one placeholder paragraph, and no `_Toc` bookmark anywhere: the editor
+ * A table of contents field as one placeholder paragraph, and no `_Toc` bookmark anywhere: the editor
  * rebuilds the field's result from the headings (`seams/toc.ts`), entries, page numbers and the
  * bookmarks the entries point at, and none of it is the write's to prove.
  */
@@ -451,11 +455,19 @@ function withoutToc(nf: NormalForm): NormalForm {
         n.id === toc.container.id &&
         key === toc.listKey
       ) {
-        list.splice(at, toc.paragraphs.length, {
-          id: first,
-          kind: KIND.paragraph,
-          toc: 'refreshed by the editor'
-        });
+        // only the field is the editor's: a title before its begin and text after its end stay,
+        // in a paragraph of their own (the editor puts the rebuilt field in a paragraph of its own)
+        const head = list[at] as NfNode;
+        const tail = list[at + toc.paragraphs.length - 1] as NfNode;
+        const prefix = arr<NfNode>(head.inlines).slice(0, toc.beginAt);
+        const suffix = arr<NfNode>(tail.inlines).slice(toc.endAt + 1);
+        list.splice(
+          at,
+          toc.paragraphs.length,
+          ...(prefix.length ? [{ ...head, inlines: prefix }] : []),
+          { id: first, kind: KIND.paragraph, toc: 'refreshed by the editor' },
+          ...(suffix.length ? [{ ...tail, inlines: suffix }] : [])
+        );
         done = true;
       }
       for (let k = list.length - 1; k >= 0; k -= 1) {

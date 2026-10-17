@@ -10,7 +10,7 @@
  *     back as one history entry (decision D4), pushed only once the proof passed;
  *   - a plan that lands natively is the editor's own undoable group.
  */
-import type { Warning } from './envelope';
+import type { Fact, Warning } from './envelope';
 import type { EngineHistory } from './history';
 import type {
   CommitPlan,
@@ -61,6 +61,8 @@ export type ReconcileOutcome =
       proof: ProofOutcome;
       live: { native: string; nf: NormalForm; residue: Residue };
       warnings: Warning[];
+      /** What the steps reported of the live document (derived content refreshed, or not). */
+      facts: Fact[];
     }
   | {
       outcome: 'apply-failed';
@@ -124,6 +126,8 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
     return { outcome: 'unchanged' };
   let plan: CommitPlan | null = null;
   const seams: string[] = [];
+  const reported: Fact[] = [];
+  const reportedWarnings: Warning[] = [];
   try {
     plan = pack.reconcile.plan({
       turnId: input.turnId,
@@ -148,15 +152,19 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
             )}, which the pack does not have`
           );
         seams.push(step.seam);
-        seam.apply(host, step.payload, {
+        const report = seam.apply(host, step.payload, {
           turnId: input.turnId,
           intent: input.intent,
           ...(input.title ? { title: input.title } : {})
         });
+        if (report) {
+          reported.push(...(report.facts ?? []));
+          reportedWarnings.push(...(report.warnings ?? []));
+        }
       }
     };
     const transaction = pack.reconcile.transaction;
-    if (plan.history === 'editor' && steps.length > 1 && transaction) {
+    if (plan.history === 'editor' && plan.grouped && transaction) {
       grouped = true;
       transaction(host, runSteps);
     } else runSteps();
@@ -199,7 +207,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
   // A document replacement keeps the before snapshot in engine history, so its card reverts it
   // exactly; the editor's own one-by-one reject cannot represent every structural change (an
   // inserted cell or section has no revision of its own), and that is a disclosure, not a failure.
-  const warnings: Warning[] = [...(plan.warnings ?? [])];
+  const warnings: Warning[] = [...(plan.warnings ?? []), ...reportedWarnings];
   // only a card has a reject; a change that landed immediately must be reversible as it stands
   if (
     !proof.reversible &&
@@ -238,6 +246,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
     seams,
     proof,
     live: { native, nf: live.nf, residue: live.residue },
-    warnings
+    warnings,
+    facts: reported
   };
 }
