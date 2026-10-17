@@ -9,7 +9,8 @@ import {
   ImageResizer,
   Search,
   Selection,
-  SfdtExport
+  SfdtExport,
+  TextElementBox
 } from '@syncfusion/ej2-documenteditor';
 import {
   attachBindings,
@@ -264,6 +265,27 @@ const api = {
 
   settled,
   serialize: () => live().serialize(),
+
+  /**
+   * The body paragraphs whose style is one of `styles`, with their text and the page the editor's
+   * layout puts them on (the editor's own page number, as a contents table shows it).
+   */
+  headingPages(styles: string[]): Array<{ text: string; page: number }> {
+    const e = live() as any;
+    const out: Array<{ text: string; page: number }> = [];
+    let w = e.documentHelper.pages[0].bodyWidgets[0].childWidgets[0];
+    while (w) {
+      const style = w.paragraphFormat?.baseStyle?.name;
+      if (styles.includes(style)) {
+        let text = '';
+        for (const split of w.getSplitWidgets())
+          for (const line of split.childWidgets) for (const el of line.children) if (el instanceof TextElementBox) text += el.text;
+        if (text.trim()) out.push({ text: text.trim(), page: e.editorModule.getPageNumber(w) });
+      }
+      w = e.selection.getNextParagraphBlock(w.getSplitWidgets().pop());
+    }
+    return out;
+  },
   errors: () => errors.slice(),
 
   /** The engine id of the node at a native-shaped path (`sections`, 4, `blocks`, 4, ...). */
