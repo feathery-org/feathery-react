@@ -1,8 +1,8 @@
 /**
  * The table of contents as derived content, off the editor (the editor's rebuild itself is proved in
  * `toc.headless.spec.ts`): which paragraphs a TOC field holds and lists, the refusal of a write into
- * it (a true positive and a true negative), the fact that reports the rebuild, the plan's last
- * step, and N1 both ways (it admits what the rebuild changes and nothing outside the contents).
+ * it (a true positive and a true negative), the plan's last step (the live rebuild reports its own
+ * fact), and N1 both ways (it admits what the rebuild changes and nothing outside the contents).
  */
 import { WriteInput } from '../../../envelope';
 import { comparableText, toFixedPoint } from '../../../proof';
@@ -12,9 +12,9 @@ import { makeView } from '../../../view';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
 import { NORMALIZATIONS } from '../projections';
-import { tocField, tocSources } from '../toc';
+import { tocField, tocSources, unsupportedSwitches } from '../toc';
 import { docxTree } from '../tree';
-import { TocShape, withToc } from './tocFixture';
+import { TocShape, flagship, withToc } from './tocFixture';
 
 function stateOf(native: string) {
   let doc = native;
@@ -66,7 +66,9 @@ describe.each<[TocShape, string, number]>([
     const ok = write(native, { scope: { ids: [hr.id] }, changes: [{ kind: 'replace', id: hr.id, base: baseOf(hr), node: { kind: 'run', ...(hr.style ? { style: hr.style } : {}), text: 'Renamed Heading' } }] });
     expect(ok.outcome).toBe('verified');
     if (ok.outcome !== 'verified') return;
-    expect(ok.facts).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'toc', summary: `table of contents refreshed: ${listed} entries, 1 added, 1 removed` })]));
+    // what the rebuild did is the live editor's to report (the lane proves the fact): nothing is
+    // predicted here
+    expect(ok.facts.map((f) => f.name)).not.toContain('toc');
     // and the plan ends with the editor's rebuild
     expect(planOf(s, ok).steps.map((step) => step.seam).pop()).toBe('toc');
   });
@@ -91,7 +93,7 @@ describe.each<[TocShape, string, number]>([
   });
 });
 
-it('a contents table whose styles no paragraph is in is not rebuilt: the fact says so and the plan has no rebuild', () => {
+it('a contents table whose styles no paragraph is in still ends the plan with the rebuild, which finds nothing to list on the live document', () => {
   const native = withToc('styles').replace('\\\\t \\"Heading 2,1\\"', '\\\\t \\"No Such Style,1\\"');
   const s = stateOf(native);
   const toc = tocField(s.view.nf);
@@ -101,8 +103,8 @@ it('a contents table whose styles no paragraph is in is not rebuilt: the fact sa
   const r = write(native, { scope: { ids: [run.id] }, changes: [{ kind: 'replace', id: run.id, base: baseOf(run), node: { kind: 'run', text: 'Changed' } }] });
   expect(r.outcome).toBe('verified');
   if (r.outcome !== 'verified') return;
-  expect(r.facts).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'toc', summary: expect.stringContaining('table of contents not refreshed') })]));
-  expect(planOf(s, r).steps.map((step) => step.seam)).not.toContain('toc');
+  expect(r.facts.map((f) => f.name)).not.toContain('toc');
+  expect(planOf(s, r).steps.map((step) => step.seam).pop()).toBe('toc');
 });
 
 it('a contents table someone typed is not a field: no rebuild, no fact, nothing refused', () => {
@@ -116,4 +118,61 @@ it('a contents table someone typed is not a field: no rebuild, no fact, nothing 
   if (r.outcome !== 'verified') return;
   expect(r.facts.map((f) => f.name)).not.toContain('toc');
   expect(planOf(s, r).steps.map((step) => step.seam)).not.toContain('toc');
+});
+
+describe('review of the rebuild (PR 1956), off the editor', () => {
+  const invariantsOf = (r: ReturnType<typeof write>) => (r.outcome === 'refused' ? (r.refusal.problems ?? [r.refusal]).map((p) => p.invariant) : [r.outcome]);
+
+  it('M2: a title before the field in its first paragraph is not the field: editable, and kept by N1', () => {
+    const native = withToc('levels', { prefix: 'Contents of this proposal ' });
+    const s = stateOf(native);
+    const toc = tocField(s.view.nf) as NonNullable<ReturnType<typeof tocField>>;
+    const title = runs(toc.paragraphs[0]).find((r) => r.text === 'Contents of this proposal ') as NfNode;
+    expect(toc.ids.has(title.id)).toBe(false);
+    expect(toc.ids.has(toc.paragraphs[0].id)).toBe(false);
+    const r = write(native, { scope: { ids: [title.id] }, changes: [{ kind: 'replace', id: title.id, base: baseOf(title), node: { kind: 'run', text: 'In this proposal ' } }] });
+    expect(invariantsOf(r)).toEqual(['verified']);
+    // the title is outside what N1 admits: a changed title is a difference
+    const changed = copy(s.view.nf);
+    runs((tocField(changed) as NonNullable<ReturnType<typeof tocField>>).paragraphs[0]).find((x) => x.text === 'Contents of this proposal ')!.text = 'Other ';
+    expect(normalized(changed)).not.toBe(normalized(s.view.nf));
+  });
+
+  it('M2: removing the whole contents is allowed; removing part of it is not', () => {
+    const native = withToc('levels');
+    const s = stateOf(native);
+    const toc = tocField(s.view.nf) as NonNullable<ReturnType<typeof tocField>>;
+    const all = toc.paragraphs.map((p) => p.id);
+    const del = (ids: string[]) => write(native, { scope: { ids }, changes: ids.map((id) => ({ kind: 'delete', id, base: baseOf(s.view.get(id) as NfNode) })) });
+    expect(invariantsOf(del(all))).toEqual(['verified']);
+    expect(invariantsOf(del(all.slice(1, 3)))).toEqual(['derived-content']);
+  });
+
+  it('H2: a code with a switch the editor cannot rebuild is named; the ones it models are not', () => {
+    expect(unsupportedSwitches(' TOC \\c "Table" \\h ')).toEqual(['\\c Table']);
+    expect(unsupportedSwitches(' TOC \\o "1-1" \\b Section2 \\h ')).toEqual(['\\b Section2']);
+    expect(unsupportedSwitches(' TOC \\o "1-3" \\h \\z \\u \\t "Title,1" \\* MERGEFORMAT ')).toEqual([]);
+  });
+
+  it('M6: only a plan with the contents rebuild is one undo group; a document without contents gets no step', () => {
+    const plain = stateOf(flagship);
+    expect(tocField(plain.view.nf)).toBeNull();
+    const p = (plain.view.nf.root.sections as NfNode[])[1].blocks as NfNode[];
+    const run = runs(p[0])[0];
+    const r = prepareWrite(stateOf(flagship), { intent: 't', scope: { ids: [run.id] }, changes: [{ kind: 'replace', id: run.id, base: baseOf(run), node: { kind: 'run', text: 'Changed' } }] } as WriteInput);
+    if (r.outcome !== 'verified') throw new Error(r.outcome);
+    const planned = planOf(plain, r);
+    expect(planned.steps.map((x) => x.seam)).toEqual(['text']);
+    expect(planned.grouped).toBeUndefined();
+    const native = withToc('levels');
+    const s = stateOf(native);
+    const toc = tocField(s.view.nf) as NonNullable<ReturnType<typeof tocField>>;
+    const [heading] = tocSources(s.view.nf, toc);
+    const hr = runs(heading.node)[0];
+    const w = write(native, { scope: { ids: [hr.id] }, changes: [{ kind: 'replace', id: hr.id, base: baseOf(hr), node: { kind: 'run', text: 'Renamed' } }] });
+    if (w.outcome !== 'verified') throw new Error(w.outcome);
+    const withToc2 = planOf(s, w);
+    expect(withToc2.steps.map((x) => x.seam)).toEqual(['text', 'toc']);
+    expect(withToc2.grouped).toBe(true);
+  });
 });

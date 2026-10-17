@@ -12,7 +12,7 @@
 import fs from 'fs';
 import path from 'path';
 import { EngineLane, startEngineLane } from './headless/engineLane';
-import { withToc } from './tocFixture';
+import { SITE, TocOptions, withToc } from './tocFixture';
 
 const TOC_CODE = /"text":"\s*TOC\s[^"]*"/;
 const corpus = process.env.ROBIN_DOCUMENT_PRIVATE_CORPUS;
@@ -304,11 +304,14 @@ describe.each(SHAPES)('a table of contents is refreshed by the editor after ever
     expect((await state()).toc.entries.map((e) => e.text)).toContain('Service Team');
     await expectCurrent();
     const committed = await lane.call<string>('settled');
-    // one undo takes back the rename and the refreshed contents together
+    // one undo takes back the rename and the refreshed contents together (the entries are read, since
+    // the proof's equivalence leaves the contents out)
     await lane.call('pressInDocument', 'z');
     expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), pre)).toBe(true);
+    expect((await state()).toc.entries.map((e) => `${e.text} | ${e.page}`)).toEqual(tocOf(pre).entries.map((e) => `${e.text} | ${e.page}`));
     await lane.call('pressInDocument', 'y');
     expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), committed)).toBe(true);
+    expect((await state()).toc.entries.map((e) => `${e.text} | ${e.page}`)).toEqual(tocOf(committed).entries.map((e) => `${e.text} | ${e.page}`));
     // the editor's own reject, from the rail: the contents lists the old name again
     await lane.call('clickCard', 0, 'Reject');
     expect((await state()).toc.entries.map((e) => e.text)).not.toContain('Service Team');
@@ -336,5 +339,131 @@ describe.each(SHAPES)('a table of contents is refreshed by the editor after ever
     expect(outline.lines).toMatch(/toc \(refreshed by the editor\)/);
     const pid = await at(entryPath(native));
     expect((await read([pid]))[pid].derived).toEqual(expect.objectContaining({ source: 'toc' }));
+  }, 120000);
+});
+
+/** Review of the rebuild (PR 1956): shapes where the editor's own update does the wrong thing. */
+describe('the contents rebuild never rebuilds the wrong field, never fails the change, never piles up bookmarks', () => {
+  async function open(options: TocOptions, shape: 'levels' | 'styles' = 'levels') {
+    turn += 1;
+    await lane.call('open', withToc(shape, options));
+    const native = await lane.call<string>('settled');
+    return { native, headings: listedHeadings(native, stylesOf(tocOf(native).code || (shape === 'levels' ? 'TOC \\o "1-1"' : 'TOC \\t "Heading 2,1"'))) };
+  }
+  const rename = async (h: { si: number; bi: number }, text: string) => {
+    const pid = await at(['sections', h.si, 'blocks', h.bi]);
+    const run = textRuns((await read([pid]))[pid])[0];
+    return dispatch('write', { intent: 'Rename.', scope: { ids: [run.id] }, changes: [{ kind: 'replace', id: run.id, base: run.base, node: { ...strip(run), text } }] });
+  };
+  const factsOf = (r: any) => JSON.stringify(r.facts ?? []);
+  const links = (native: string) => native.split(`HYPERLINK \\"${SITE}\\"`).length - 1;
+
+  it('H1: a body hyperlink whose code holds "toc" is never rebuilt as the contents, on the first write or the second', async () => {
+    const { native, headings } = await open({ bodyLinks: true });
+    expect(links(native)).toBe(2);
+    for (const [k, text] of [[1, 'First Rename'], [2, 'Second Rename']] as Array<[number, string]>) {
+      const r = await rename(headings[k], text);
+      expect(r.ok).toBe(true);
+      const now = await lane.call<string>('settled');
+      expect(links(now)).toBe(2);
+      expect(tocOf(now).entries.map((e) => e.text)).toContain(text);
+      await expectCurrent();
+    }
+  }, 120000);
+
+  it.each([
+    ['\\c (a table of figures)', ' TOC \\c "Table" \\h ', '\\c'],
+    ['\\b (a bookmark range)', ' TOC \\o "1-1" \\b Section2 \\h ', '\\b']
+  ])('H2: a contents with %s is not rebuilt as a headings contents: the change lands, the contents stays, the fact names the switch', async (_n, code, sw) => {
+    const { native, headings } = await open({ code });
+    const r = await rename(headings[1], 'Renamed Heading');
+    expect(r.ok).toBe(true);
+    const now = await lane.call<string>('settled');
+    expect(tocOf(now)).toEqual(tocOf(native));
+    expect(factsOf(r)).toContain('table of contents not refreshed');
+    expect(factsOf(r)).toContain(JSON.stringify(sw).slice(1, -1));
+    expect(factsOf(r)).not.toContain('table of contents refreshed');
+  }, 120000);
+
+  it('M1: a code the editor cannot build (level 0) lands the change, keeps the contents and leaves undo working', async () => {
+    const { native, headings } = await open({ code: ' TOC \\t "Heading 2,0" ' }, 'styles');
+    const r = await rename(headings[1], 'Renamed Heading');
+    expect(r.ok).toBe(true);
+    expect(factsOf(r)).toContain('table of contents not refreshed');
+    expect(tocOf(await lane.call<string>('settled'))).toEqual(tocOf(native));
+    expect(await lane.call('historyState')).toEqual({ open: 0, insertingToc: false });
+    const edited = await lane.call<string>('userEdit', '0;0;0', 'U');
+    await lane.call('pressInDocument', 'z');
+    expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), edited)).toBe(false);
+  }, 120000);
+
+  it('M1: a rebuild that throws halfway rolls the whole change back and leaves no undo group open', async () => {
+    const { native, headings } = await open({});
+    await lane.call('injectTocFailure');
+    const r = await rename(headings[1], 'Renamed Heading');
+    expect(r.ok).toBe(false);
+    const now = await lane.call<string>('settled');
+    expect(await lane.call<boolean>('equivalent', now, native)).toBe(true);
+    expect(tocOf(now)).toEqual(tocOf(native));
+    expect(await lane.call('historyState')).toEqual({ open: 0, insertingToc: false });
+    // the person's own edit and undo still work
+    await lane.call<string>('userEdit', '0;0;0', 'U');
+    await lane.call('pressInDocument', 'z');
+    expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), native)).toBe(true);
+  }, 120000);
+
+  it('M2: a title before the field in its first paragraph is the model\'s to edit, and the contents rebuilds after it', async () => {
+    await open({ prefix: 'Contents of this proposal ' });
+    const native = await lane.call<string>('settled');
+    const doc = JSON.parse(native);
+    const bi = doc.sections[0].blocks.findIndex((b: any) => (b.inlines ?? []).some((i: any) => i.text === 'Contents of this proposal '));
+    const pid = await at(['sections', 0, 'blocks', bi]);
+    const run = (await read([pid]))[pid].inlines.find((i: any) => i.text === 'Contents of this proposal ');
+    const r = await dispatch('write', { intent: 'Retitle.', scope: { ids: [run.id] }, changes: [{ kind: 'replace', id: run.id, base: run.base, node: { ...strip(run), text: 'In this proposal ' } }] });
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 1200));
+    expect(await lane.call<string>('settled')).toContain('In this proposal ');
+    await expectCurrent();
+  }, 120000);
+
+  it('M2: the whole contents can be removed', async () => {
+    const { native } = await open({});
+    const doc = JSON.parse(native);
+    const first = doc.sections[0].blocks.findIndex((b: any) => (b.inlines ?? []).some((i: any) => typeof i.text === 'string' && /^\s*TOC\s/.test(i.text)));
+    const last = doc.sections[0].blocks.findIndex((b: any, k: number) => k > first && (b.inlines ?? []).length === 1 && b.inlines[0].fieldType === 1);
+    const ids: string[] = [];
+    for (let k = first; k <= last; k += 1) ids.push(await at(['sections', 0, 'blocks', k]));
+    const nodes = await read(ids, 'stubs');
+    const r = await dispatch('write', { intent: 'Remove the contents.', scope: { ids }, changes: ids.map((id) => ({ kind: 'delete', id, base: nodes[id].base })) });
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 1200));
+    await lane.call('acceptAllLive');
+    expect(tocOf(await lane.call<string>('settled')).entries).toEqual([]);
+  }, 120000);
+
+  it.each([...SHAPES, ['the flagship, a heading starting with a cross-reference bookmark', withToc('levels', { refFirst: true })]])('M4: _Toc bookmarks do not pile up across writes (%s)', async (_n, document) => {
+    turn += 1;
+    await lane.call('open', document);
+    const native = await lane.call<string>('settled');
+    const headings = listedHeadings(native, stylesOf(tocOf(native).code));
+    const count = async () => ((await lane.call<string>('settled')).match(/"name":"_Toc/gi) ?? []).length;
+    const pid = await at(['sections', headings[1].si, 'blocks', headings[1].bi]);
+    const run = textRuns((await read([pid]))[pid])[0];
+    // a tracked insertion at the heading's start, before its bookmark
+    await write({ intent: 'Prefix.', scope: { ids: [run.id] }, changes: [{ kind: 'replace', id: run.id, base: run.base, node: { ...strip(run), text: `Revised ${run.text}` } }] });
+    const once = await count();
+    await rename(headings[2], 'Second Rename');
+    await rename(headings[3], 'Third Rename');
+    const counts = [once, await count()];
+    await rename(headings[4] ?? headings[0], 'Fourth Rename');
+    counts.push(await count());
+    expect(counts).toEqual([once, once, once]);
+  }, 120000);
+
+  it('M5: a contents the editor will not touch (locked) is reported as not refreshed, never as refreshed', async () => {
+    const { native, headings } = await open({ locked: true });
+    const r = await rename(headings[1], 'Renamed Heading');
+    expect(r.ok).toBe(true);
+    expect(factsOf(r)).not.toContain('table of contents refreshed');
+    expect(factsOf(r)).toContain('table of contents not refreshed');
+    expect(tocOf(await lane.call<string>('settled')).entries).toEqual(tocOf(native).entries);
   }, 120000);
 });

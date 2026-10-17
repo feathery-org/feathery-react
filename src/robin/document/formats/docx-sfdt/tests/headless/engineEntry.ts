@@ -228,6 +228,21 @@ const api = {
     injectFailure = true;
   },
 
+  /** Make the editor's next contents rebuild throw halfway, after it deleted the old contents. */
+  injectTocFailure(): void {
+    const module = (live() as any).editorModule;
+    const build = module.buildToc;
+    module.buildToc = () => {
+      module.buildToc = build;
+      throw new Error('injected: the contents rebuild failed');
+    };
+  },
+
+  /** Open complex undo groups in the editor, and whether it thinks a contents rebuild is running. */
+  historyState(): { open: number; insertingToc: boolean } {
+    return { open: history()?.historyInfoStack?.length ?? 0, insertingToc: !!(live() as any).editorModule?.isInsertingTOC };
+  },
+
   /** Make the next text the editor inserts carry a stray letter, so a native commit fails its proof. */
   injectTypo(): void {
     const module = (live() as any).editorModule;
