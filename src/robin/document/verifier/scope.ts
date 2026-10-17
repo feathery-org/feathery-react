@@ -1,13 +1,14 @@
 /**
- * Declared scope (contract 6.4, architecture 5.3). One rule, no exceptions: every node the commit
- * touched, after the finalizers ran, is covered by a declaration.
+ * Declared scope (contract 6.4, architecture 5.3). One rule, no exceptions: every node the write's own
+ * changes touched is covered by a declaration. The check runs on the document after the changes and
+ * before the finalizers: what the finalizers then change is the engine's and never counts here, and a
+ * node the model changed counts even when a finalizer later rewrites it.
  *
  * What the commit touched comes from the two trees, not from the changes: a node is changed when
  * its own content changed (its fields, or which children it holds and in what order), when it
  * moved, or when it was removed; nodes the write created need no declaration. What covers a node:
  *
  *   - its id, or an ancestor's id, in `scope.ids` (declaring a node covers everything below it);
- *   - a finalizer that declared it;
  *   - a bulk `set` that matched it, when the bulk target is repeated in `scope.bulk`;
  *   - for a node whose only change is which children it holds: every child added, removed or
  *     reordered being itself created or covered.
@@ -127,26 +128,10 @@ export interface ScopeInputs {
   write: WriteInput;
   /** Ids each bulk `set` matched, by change index. */
   bulkHits: Map<number, string[]>;
-  finalizerIds: ReadonlySet<string>;
-}
-
-/** Ids every node the commit touched, for the result's `touched`. */
-export function touchedIds(
-  diff: TreeDiff,
-  finalizerIds: ReadonlySet<string>
-): string[] {
-  return [
-    ...new Set([
-      ...diff.changed,
-      ...diff.removed,
-      ...diff.created,
-      ...finalizerIds
-    ])
-  ];
 }
 
 export function scopeProblems(inputs: ScopeInputs): RefusalProblem[] {
-  const { before, after, pack, diff, write, bulkHits, finalizerIds } = inputs;
+  const { before, after, pack, diff, write, bulkHits } = inputs;
   const problems: RefusalProblem[] = [];
   const declared = new Set(write.scope.ids);
 
@@ -212,8 +197,7 @@ export function scopeProblems(inputs: ScopeInputs): RefusalProblem[] {
     const known = memo.get(id);
     if (known !== undefined) return known;
     memo.set(id, false); // cycles cannot cover themselves
-    let ok =
-      declaredOrAncestor(id) || finalizerIds.has(id) || bulkCovered.has(id);
+    let ok = declaredOrAncestor(id) || bulkCovered.has(id);
     if (!ok && diff.membershipOnly.has(id)) {
       const a = childIdLists(before.get(id) as NfNode, pack.tree);
       const b = childIdLists(after.get(id) as NfNode, pack.tree);

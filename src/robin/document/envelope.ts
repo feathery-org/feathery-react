@@ -879,17 +879,26 @@ export const CORE_WARNING_CODES = [
 ] as const;
 export type CoreWarningCode = typeof CORE_WARNING_CODES[number];
 
+/** One node a fact is about, by id, with what the fact says of it (a value's before and after). */
+const factDetailSchema = z.looseObject({ id: z.string().min(1) });
 const factSchema = z.looseObject({
   kind: z.string().min(1),
   ids: z.array(z.string()),
   summary: z.string(),
-  name: z.string().optional()
+  name: z.string().optional(),
+  detail: z.array(factDetailSchema).optional()
 });
+export type FactDetail = { id: string; [key: string]: unknown };
 export type Fact = {
   kind: string;
   ids: string[];
   summary: string;
   name?: string;
+  /**
+   * Per node, what the fact says of it: a derived value's binding `name` and the text it read
+   * `before` and reads `after` (protocol 2, additive).
+   */
+  detail?: FactDetail[];
 };
 
 const warningSchema = z.looseObject({

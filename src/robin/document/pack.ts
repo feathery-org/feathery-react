@@ -15,7 +15,8 @@
  *   text, features, annotate   what `find` matches and what `read` annotates
  *   properties   the property schema per kind and how overrides are written (architecture 5.1a)
  *   invariants   the pack's refusals, run on the virtual document before anything is committed
- *   finalizers   derived-value passes run after the changes, each declaring the ids it touched
+ *   finalizers   derived-value passes run after the changes, each reporting the ids it touched
+ *                (advisory: for facts and attribution; the engine diffs what they changed)
  *   projections  accept and reject views of a document, and the enumerated normalization list
  *   reconcile, seams   how a verified change set is written into the live editor
  *   vocabulary   words that name this format or its SDK; the core must never contain them
@@ -249,7 +250,11 @@ export interface FinalizerContext {
 }
 
 export interface FinalizerResult {
-  /** Every node id the finalizer changed: its declared scope. */
+  /**
+   * Every node id the finalizer changed. Advisory: it feeds the facts, `touched` and the attribution of
+   * `finalizerScope`; the engine derives what the finalizers changed by diff, and nothing here counts
+   * for or against the write's scope.
+   */
   ids: string[];
   facts?: Fact[];
   /** Things the model should know that are legal, not refusals (a ragged table, say). */
