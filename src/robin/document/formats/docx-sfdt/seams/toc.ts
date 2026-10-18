@@ -218,11 +218,21 @@ function hasHeadings(editor: LiveEditor, settings: Obj): boolean {
   const helper = editor.documentHelper as Obj;
   const selection = editor.selection as Obj;
   const styles = listedStyles(settings);
+  // with \u, an outline level counts only when the contents lists it (`Level1`..), as the editor's
+  // isOutlineLevelStyle reads it: an ordinary paragraph's level is `BodyText`
+  const levels = new Set<string>();
+  if (settings.includeOutlineLevels)
+    for (
+      let k = settings.startLevel ?? 1;
+      k <= (settings.endLevel ?? 3);
+      k += 1
+    )
+      levels.add(`Level${k}`);
   let w = helper.pages?.[0]?.bodyWidgets?.[0]?.childWidgets?.[0];
   while (w) {
     if (
       styles.has(w.paragraphFormat?.baseStyle?.name) ||
-      (settings.includeOutlineLevels && w.paragraphFormat?.outlineLevel)
+      levels.has(w.paragraphFormat?.outlineLevel)
     )
       if (headingText(w).trim()) return true;
     w = selection.getNextParagraphBlock(w.getSplitWidgets?.().pop() ?? w);
