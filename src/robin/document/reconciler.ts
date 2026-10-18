@@ -142,8 +142,9 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
       ...(input.derived ? { derived: input.derived } : {})
     });
     const steps = (plan as CommitPlan).steps;
-    const runSteps = () => {
-      for (const step of steps) {
+    let refreshFailed = -1;
+    const runSteps = (upTo = steps.length) => {
+      for (const [k, step] of steps.slice(0, upTo).entries()) {
         const seam = pack.seams[step.seam];
         if (!seam)
           throw new Error(
@@ -160,14 +161,33 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
         if (report) {
           reported.push(...(report.facts ?? []));
           reportedWarnings.push(...(report.warnings ?? []));
+          if (report.failed && refreshFailed < 0) refreshFailed = k;
         }
       }
     };
     const transaction = pack.reconcile.transaction;
     if (plan.history === 'editor' && plan.grouped && transaction) {
       grouped = true;
-      transaction(host, runSteps);
+      transaction(host, () => runSteps());
     } else runSteps();
+    if (refreshFailed >= 0) {
+      // a refresh failed partway: take back the whole change with what it left, then land the
+      // change's own steps without it (the refresh says why in its fact)
+      if (plan.history === 'editor') {
+        if (!grouped)
+          throw new Error(
+            'a refresh failed outside the change undo group, so its partial work cannot be taken back'
+          );
+        host.undo();
+        if (!equivalentNative(pack, host.serialize(), before.native))
+          throw new Error(
+            'a refresh failed, and undoing the change did not give back the document before it'
+          );
+        grouped = false;
+      }
+      seams.length = 0;
+      runSteps(refreshFailed);
+    }
   } catch (e) {
     return {
       outcome: 'apply-failed',

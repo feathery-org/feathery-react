@@ -364,6 +364,11 @@ export interface SeamContext {
 export interface SeamReport {
   facts?: Fact[];
   warnings?: Warning[];
+  /**
+   * A step that refreshes derived content failed partway: what it did is taken back (the plan's
+   * undo group undone, or the document replaced again) and the change lands without it.
+   */
+  failed?: boolean;
 }
 
 export interface Seam {
@@ -426,7 +431,8 @@ export interface Reconcile {
   /**
    * The step that brings what the editor derives from the document (a table of contents and its
    * page numbers) up to date, or null when the document has none. A plan appends it to its own
-   * steps; the engine runs it after resolving a card and around the editor's own accept or reject.
+   * steps; the engine runs it after resolving a card itself (the editor's own accept or reject
+   * refreshes in the editor code, for every reviewer).
    */
   refresh?(view: DocumentView, history: 'editor' | 'engine'): CommitStep | null;
 }
