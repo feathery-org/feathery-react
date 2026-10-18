@@ -51,19 +51,21 @@ export function setControlText(control: NfNode, text: string): string[] {
   ];
 }
 
-/** The text a bound control reads now: its runs that are not pending deletion, in order. */
+/**
+ * The text a bound control reads now, as the binding engine reads it (`ccText`): its own inlines, or
+ * every inline of its blocks, through nested controls, less what is pending deletion.
+ */
 function controlText(control: NfNode): string {
-  const host = Array.isArray(control.inlines)
-    ? control
-    : arr<NfNode>(control.blocks).find((b) => b.kind === KIND.paragraph);
-  return arr<NfNode>(host?.inlines)
-    .filter(
-      (i) =>
-        i.kind === KIND.run &&
-        !revisionsIn(i.pending).some((r) => r.kind === 'Deletion')
-    )
-    .map((i) => String(i.text ?? ''))
-    .join('');
+  const inlines = Array.isArray(control.inlines)
+    ? arr<NfNode>(control.inlines)
+    : arr<NfNode>(control.blocks).flatMap((b) => arr<NfNode>(b.inlines));
+  let out = '';
+  for (const i of inlines) {
+    if (revisionsIn(i.pending).some((r) => r.kind === 'Deletion')) continue;
+    if (i.kind === KIND.control) out += controlText(i);
+    else if (i.kind === KIND.run) out += String(i.text ?? '');
+  }
+  return out;
 }
 
 /** At most this many values are named in the summary; the detail lists them all. */
