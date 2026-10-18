@@ -165,7 +165,7 @@ const byText = (root: Element, selector: string, text: string): HTMLElement | nu
   ([...root.querySelectorAll(selector)] as HTMLElement[]).find((el) => (el.textContent ?? '').trim() === text || el.getAttribute('aria-label') === text || el.getAttribute('title') === text) ?? null;
 
 const api = {
-  async open(text: string): Promise<number> {
+  async open(text: string, options: { robin?: boolean } = {}): Promise<number> {
     try {
       attached?.dispose();
     } catch {
@@ -179,6 +179,12 @@ const api = {
     await frame();
     attached = attachBindings(editor as unknown as SyncfusionEditorLike, { convertTokensOnOpen: false });
     await frame();
+    if (options.robin === false) {
+      // the editor and its review rail with no Robin session mounted, as for a person reviewing alone
+      session = null;
+      renderReviewUi();
+      return (await settled()).length;
+    }
     session = new DocumentSession({
       pack: timedPack,
       host: timedHost(createHost(editor as unknown as LiveEditor)),
@@ -191,8 +197,7 @@ const api = {
     const live = session;
     registerCardResolver(editor, {
       owns: (id) => live.ownsCard(id),
-      resolve: (id, accept) => live.resolveCard(id, accept),
-      settle: (resolve) => live.settle(resolve)
+      resolve: (id, accept) => live.resolveCard(id, accept)
     });
     registerHistoryRoute(editor, { undo: () => live.undo(), redo: () => live.redo(), engineHas: (direction) => live.history.depth[direction] > 0 });
     installHistoryRouting(editor);
@@ -283,6 +288,17 @@ const api = {
   },
 
   /** The user's own untracked edit, so their undo stack is not empty when Robin commits. */
+  /** The person's own tracked edit (track changes on), as a reviewer's colleague makes one. */
+  async userTrackedEdit(at: string, text: string): Promise<string> {
+    const e = live() as any;
+    e.enableTrackChanges = true;
+    e.currentUser = 'Colleague';
+    e.selection.select(at, at);
+    e.editorModule.insertText(text);
+    e.enableTrackChanges = false;
+    return settled();
+  },
+
   async userEdit(at: string, text: string): Promise<string> {
     const e = live() as any;
     e.enableTrackChanges = false;

@@ -398,19 +398,36 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
     expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), edited)).toBe(false);
   }, 120000);
 
-  it('M1: a rebuild that throws halfway rolls the whole change back and leaves no undo group open', async () => {
+  it('M1: a rebuild that throws halfway during a write lands the write without it: its card, the contents as before, the fact says why', async () => {
     const { native, headings } = await open({});
     await lane.call('injectTocFailure');
     const r = await rename(headings[1], 'Renamed Heading');
-    expect(r.ok).toBe(false);
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 1200));
+    expect(r.landed).toBe('card');
+    expect(factsOf(r)).toContain("table of contents not refreshed: the editor's rebuild failed (injected: the contents rebuild failed)");
     const now = await lane.call<string>('settled');
-    expect(await lane.call<boolean>('equivalent', now, native)).toBe(true);
+    expect(now).toContain('Renamed Heading');
     expect(tocOf(now)).toEqual(tocOf(native));
+    expect((await lane.call<Array<{ title: string }>>('rail')).length).toBe(1);
     expect(await lane.call('historyState')).toEqual({ open: 0, insertingToc: false });
-    // the person's own edit and undo still work
-    await lane.call<string>('userEdit', '0;0;0', 'U');
+    // one undo takes the write back cleanly
     await lane.call('pressInDocument', 'z');
     expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), native)).toBe(true);
+    expect(await lane.call('rail')).toEqual([]);
+  }, 120000);
+
+  it('the review rail refreshes the contents on its own Accept, with no Robin session mounted', async () => {
+    turn += 1;
+    const native = withToc('levels');
+    await lane.call('open', native, { robin: false });
+    const doc = JSON.parse(await lane.call<string>('settled'));
+    const [h] = listedHeadings(JSON.stringify(doc), ['Heading 1']).slice(1);
+    await lane.call('userTrackedEdit', `${h.si};${h.bi};0`, 'New ');
+    expect((await lane.call<Array<{ title: string }>>('rail')).length).toBe(1);
+    await lane.call('clickCard', 0, 'Accept');
+    expect(await lane.call('rail')).toEqual([]);
+    expect(tocOf(await lane.call<string>('settled')).entries.map((e) => e.text).some((t) => t.startsWith('New '))).toBe(true);
+    await expectCurrent();
   }, 120000);
 
   it('M2: a title before the field in its first paragraph is the model\'s to edit; the contents is not rebuilt around it, and the fact says why', async () => {
@@ -521,7 +538,7 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
     const order = await lane.call<string[]>('fieldCodes');
     await lane.call('injectTocFailure', 'start');
     const r = await rename(headings[1], 'Renamed Heading');
-    expect(r.ok).toBe(false);
+    expect(r.ok).toBe(true);
     expect(await lane.call<string[]>('fieldCodes')).toEqual(order);
   }, 120000);
 

@@ -14,7 +14,7 @@ import { docxPack } from '../index';
 import { NORMALIZATIONS } from '../projections';
 import { tocField, tocSources, unsupportedSwitches } from '../toc';
 import { docxTree } from '../tree';
-import { refreshToc } from '../seams/toc';
+import { refreshTableOfContents } from '../../../../../elements/components/DocxEditor/toc/refreshToc';
 import { TocShape, flagship, withToc } from './tocFixture';
 
 function stateOf(native: string) {
@@ -203,7 +203,6 @@ describe('review of the rebuild (PR 1956), off the editor', () => {
       editorModule: { insertTableOfContents() {}, isHeadingStyle() {}, getTocSettings() {}, insertTocHyperlink() {} },
       selection: { getFieldCode: () => 'TOC' }
     };
-    const report = refreshToc(editor as never, false, ['n1']);
-    expect(report.facts?.[0]?.summary).toBe("table of contents not refreshed: the editor's rebuild is unavailable; it stays as it is");
+    expect(refreshTableOfContents(editor)).toEqual({ status: 'skipped', reason: "the editor's rebuild is unavailable" });
   });
 });
