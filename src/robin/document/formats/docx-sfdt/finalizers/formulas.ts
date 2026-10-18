@@ -5,6 +5,7 @@
  * their type's display; each control whose text differs takes the engine's text: its first run
  * keeps its id and look, any other run goes, as the editor's own write does.
  */
+import type { FactDetail } from '../../../envelope';
 import type { Finalizer } from '../../../pack';
 import type { NfNode } from '../../../tree';
 import { KIND } from '../adapter/keys';
@@ -50,6 +51,26 @@ export function setControlText(control: NfNode, text: string): string[] {
   ];
 }
 
+/**
+ * The text a bound control reads now, as the binding engine reads it (`ccText`): its own inlines, or
+ * every inline of its blocks, through nested controls, less what is pending deletion.
+ */
+function controlText(control: NfNode): string {
+  const inlines = Array.isArray(control.inlines)
+    ? arr<NfNode>(control.inlines)
+    : arr<NfNode>(control.blocks).flatMap((b) => arr<NfNode>(b.inlines));
+  let out = '';
+  for (const i of inlines) {
+    if (revisionsIn(i.pending).some((r) => r.kind === 'Deletion')) continue;
+    if (i.kind === KIND.control) out += controlText(i);
+    else if (i.kind === KIND.run) out += String(i.text ?? '');
+  }
+  return out;
+}
+
+/** At most this many values are named in the summary; the detail lists them all. */
+const NAMED_IN_SUMMARY = 6;
+
 export const formulasFinalizer: Finalizer = {
   name: 'formulas',
   run(after, { before }) {
@@ -59,7 +80,8 @@ export const formulasFinalizer: Finalizer = {
       bindingState(before.nf).result.values
     );
     const ids = new Set<string>();
-    let recomputed = 0;
+    // every control whose text this pass wrote: the value it derived, by node, before and after
+    const detail: FactDetail[] = [];
     for (const write of state.result.writes) {
       for (const occurrence of state.result.index.occurrences.filter(
         (o) => o.tag === write.tag
@@ -67,20 +89,90 @@ export const formulasFinalizer: Finalizer = {
         const control = state.nodeAt(occurrence.path);
         if (!control || control.kind !== KIND.control) continue;
         const changed = setControlText(control, write.text);
-        if (changed.length) recomputed += 1;
+        if (!changed.length) continue;
         changed.forEach((id) => ids.add(id));
+        const name = (control.binding as { name?: unknown } | undefined)?.name;
+        // before is what the control read before the write (review finding 5); a control the
+        // write created read nothing before
+        const was = before.get(control.id);
+        detail.push({
+          id: control.id,
+          ...(typeof name === 'string' ? { name } : {}),
+          ...(was ? { before: controlText(was) } : {}),
+          after: controlText(control)
+        });
       }
     }
+    // a formula the write itself created (a copied row's line total) is the engine's value too, even
+    // where the copy already read it
+    for (const occurrence of state.result.index.occurrences) {
+      const control = state.nodeAt(occurrence.path);
+      if (!control || control.kind !== KIND.control || before.get(control.id))
+        continue;
+      const binding = control.binding as
+        | { name?: unknown; expr?: unknown }
+        | undefined;
+      if (typeof binding?.expr !== 'string') continue;
+      if (detail.some((d) => d.id === control.id)) continue;
+      // in the fact's ids too, with no before (review finding 7)
+      ids.add(control.id);
+      detail.push({
+        id: control.id,
+        ...(typeof binding.name === 'string' ? { name: binding.name } : {}),
+        after: controlText(control)
+      });
+    }
     const list = [...ids];
+    // a value whose text is the same before and after was kept: the engine put back its own value
+    // over what the write left there (a model edit into a formula's run); it stays in the detail
+    const kept = detail.filter(
+      (d) => d.before !== undefined && d.before === d.after
+    );
+    const moved = detail.filter((d) => !kept.includes(d));
+    const quote = (v: unknown) => JSON.stringify(v);
+    const label = (d: FactDetail) => `${d.name ?? 'value'} ${d.id}`;
+    const named = (
+      entries: FactDetail[],
+      render: (d: FactDetail) => string
+    ): string =>
+      entries.slice(0, NAMED_IN_SUMMARY).map(render).join('; ') +
+      (entries.length > NAMED_IN_SUMMARY
+        ? `; and ${entries.length - NAMED_IN_SUMMARY} more in detail`
+        : '');
+    const summary = [
+      ...(moved.length
+        ? [
+            `${
+              moved.length
+            } bound value(s) recomputed, carried or re-rendered: ${named(
+              moved,
+              (d) =>
+                d.before === undefined
+                  ? `${label(d)}: ${quote(d.after)} (new)`
+                  : `${label(d)}: ${quote(d.before)} to ${quote(d.after)}`
+            )}`
+          ]
+        : []),
+      ...(kept.length
+        ? [
+            `${kept.length} bound value(s) kept: ${named(
+              kept,
+              (d) =>
+                `${label(d)}: kept at ${quote(d.after)} (the engine owns it)`
+            )}`
+          ]
+        : [])
+    ].join('. ');
     return {
       ids: list,
-      facts: recomputed
+      facts: detail.length
         ? [
             {
               kind: 'finalizer',
               name: 'formulas',
               ids: list,
-              summary: `${recomputed} bound value(s) recomputed or carried to their other occurrences`
+              summary,
+              detail
             }
           ]
         : []
