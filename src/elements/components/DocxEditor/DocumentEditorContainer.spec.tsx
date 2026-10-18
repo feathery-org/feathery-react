@@ -3,11 +3,6 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { fieldValues, initState } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { featheryWindow } from '../../../utils/browser';
-import {
-  _clearDocxEditors,
-  getActiveDocxEditorEnvelopeTarget,
-  getDocxEditor
-} from '../../../assistant/tools/docx/docxEditorRegistry';
 import { setFormInternalState } from '../../../utils/internalState';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
@@ -34,6 +29,7 @@ jest.mock('../../../utils/documentEditorPrimitives', () => ({
 const OPEN_STATE: { opened: boolean; native?: string } = { opened: false };
 const mockBeforeReplace = jest.fn().mockResolvedValue(undefined);
 let mockHistory: any;
+let mockLiveEditor: any;
 
 // Exposes the terminal handlers as buttons so the container's outcome routing
 // can be driven the way the real toolbar drives it.
@@ -79,7 +75,10 @@ jest.mock('./index', () => {
       }),
       [source?.url]
     );
-    React.useEffect(() => onEditorReady?.(editor), [editor, onEditorReady]);
+    React.useEffect(() => {
+      mockLiveEditor = editor;
+      onEditorReady?.(editor);
+    }, [editor, onEditorReady]);
     React.useEffect(() => {
       if (!source?.url) return;
       OPEN_STATE.opened = true;
@@ -210,9 +209,8 @@ const draftFor = (containerId: string) => ({
   ]
 });
 
-describe('DocumentEditorContainer registry lifecycle', () => {
+describe('DocumentEditorContainer lifecycle', () => {
   beforeEach(() => {
-    _clearDocxEditors();
     initState.formSchemas = {
       'form-key': schemaFor(['document-container-a', 'document-container-b'])
     };
@@ -223,7 +221,6 @@ describe('DocumentEditorContainer registry lifecycle', () => {
   });
 
   afterEach(() => {
-    _clearDocxEditors();
     initState.formSchemas = {};
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
     jest.restoreAllMocks();
@@ -240,138 +237,7 @@ describe('DocumentEditorContainer registry lifecycle', () => {
 
     const preview = getByTestId('editor:none');
     expect(preview).toHaveAttribute('data-preview', 'true');
-    expect(getDocxEditor('form-1')).toBeUndefined();
     expect(hasDirtyDocxEditors('form-1')).toBe(false);
-  });
-
-  it('keeps both same-step editors usable and silently selects one assistant target', async () => {
-    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const first = render(
-      <DocumentEditorContainer
-        containerId='document-container-b'
-        formId='form-1'
-        stepId='step-same'
-      />
-    );
-
-    await waitFor(() =>
-      expect(getDocxEditor('form-1')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-b.docx'
-      })
-    );
-
-    const second = render(
-      <DocumentEditorContainer
-        containerId='document-container-a'
-        formId='form-1'
-        stepId='step-same'
-      />
-    );
-
-    await waitFor(() => {
-      expect(
-        second.getByTestId(
-          'editor:https://example.com/document-container-a.docx'
-        )
-      ).toBeInTheDocument();
-      expect(
-        first.getByTestId(
-          'editor:https://example.com/document-container-b.docx'
-        )
-      ).toBeInTheDocument();
-      expect(getDocxEditor('form-1')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-a.docx'
-      });
-    });
-    expect(error).not.toHaveBeenCalled();
-    expect(getActiveDocxEditorEnvelopeTarget('form-1')).toEqual({
-      type: 'envelope',
-      id: 'envelope-document-container-a'
-    });
-
-    second.unmount();
-    expect(getDocxEditor('form-1')).toMatchObject({
-      sourceUrl: 'https://example.com/document-container-b.docx'
-    });
-    expect(getActiveDocxEditorEnvelopeTarget('form-1')?.id).toBe(
-      'envelope-document-container-b'
-    );
-
-    first.unmount();
-    expect(getDocxEditor('form-1')).toBeUndefined();
-  });
-
-  it('hands off to the next step before the previous step unmounts', async () => {
-    const outgoing = render(
-      <DocumentEditorContainer
-        containerId='document-container-a'
-        formId='form-1'
-        stepId='step-a'
-      />
-    );
-    await waitFor(() =>
-      expect(getDocxEditor('form-1')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-a.docx'
-      })
-    );
-
-    // This is React's real transition ordering: incoming mount first.
-    const incoming = render(
-      <DocumentEditorContainer
-        containerId='document-container-b'
-        formId='form-1'
-        stepId='step-b'
-      />
-    );
-    await waitFor(() =>
-      expect(getDocxEditor('form-1')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-b.docx'
-      })
-    );
-    expect(getActiveDocxEditorEnvelopeTarget('form-1')?.id).toBe(
-      'envelope-document-container-b'
-    );
-
-    // Then the outgoing cleanup arrives late.
-    outgoing.unmount();
-    expect(getDocxEditor('form-1')).toMatchObject({
-      sourceUrl: 'https://example.com/document-container-b.docx'
-    });
-    incoming.unmount();
-    expect(getDocxEditor('form-1')).toBeUndefined();
-  });
-
-  it('keeps editors mounted by different forms isolated', async () => {
-    const formA = render(
-      <DocumentEditorContainer
-        containerId='document-container-a'
-        formId='form-a'
-        stepId='step-a'
-      />
-    );
-    const formB = render(
-      <DocumentEditorContainer
-        containerId='document-container-b'
-        formId='form-b'
-        stepId='step-b'
-      />
-    );
-
-    await waitFor(() => {
-      expect(getDocxEditor('form-a')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-a.docx'
-      });
-      expect(getDocxEditor('form-b')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-b.docx'
-      });
-    });
-
-    formA.unmount();
-    expect(getDocxEditor('form-a')).toBeUndefined();
-    expect(getDocxEditor('form-b')).toMatchObject({
-      sourceUrl: 'https://example.com/document-container-b.docx'
-    });
-    formB.unmount();
   });
 
   describe('dirty state tracking', () => {
@@ -385,7 +251,6 @@ describe('DocumentEditorContainer registry lifecycle', () => {
         <DocumentEditorContainer
           containerId='document-container-a'
           formId='form-1'
-          stepId='step-a'
         />
       );
       await waitFor(() => getByTestId(`editor:${url}`));
@@ -403,7 +268,6 @@ describe('DocumentEditorContainer registry lifecycle', () => {
         <DocumentEditorContainer
           containerId='document-container-a'
           formId='form-1'
-          stepId='step-a'
         />
       );
       await waitFor(() => view.getByTestId(`editor:${url}`));
@@ -424,7 +288,6 @@ describe('DocumentEditorContainer registry lifecycle', () => {
         <DocumentEditorContainer
           containerId='document-container-a'
           formId='form-1'
-          stepId='step-a'
         />
       );
       await waitFor(() => getByTestId(`editor:${url}`));
@@ -440,7 +303,6 @@ describe('DocumentEditorContainer revision group binding', () => {
   let seenRevisionCounts: number[];
 
   beforeEach(() => {
-    _clearDocxEditors();
     jest.clearAllMocks();
     OPEN_STATE.opened = false;
     seenRevisionCounts = [];
@@ -461,7 +323,6 @@ describe('DocumentEditorContainer revision group binding', () => {
       <DocumentEditorContainer
         containerId='document-container-a'
         formId='form-1'
-        stepId='step-1'
         assistantEnabled
       />
     );
@@ -485,7 +346,6 @@ describe('DocumentEditorContainer revision group binding', () => {
       <DocumentEditorContainer
         containerId='document-container-a'
         formId='form-1'
-        stepId='step-1'
         assistantEnabled
       />
     );
@@ -530,7 +390,7 @@ describe('DocumentEditorContainer revision group binding', () => {
     view.unmount();
   });
 
-  it('survives a rebind failure without breaking registration', async () => {
+  it('survives a rebind failure without breaking the editor', async () => {
     (rebindRevisionGroups as jest.Mock).mockImplementation(() => {
       throw new Error('grouping exploded');
     });
@@ -539,16 +399,13 @@ describe('DocumentEditorContainer revision group binding', () => {
       <DocumentEditorContainer
         containerId='document-container-a'
         formId='form-1'
-        stepId='step-1'
         assistantEnabled
       />
     );
 
-    await waitFor(() => {
-      expect(getDocxEditor('form-1')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-a.docx'
-      });
-    });
+    await waitFor(() =>
+      view.getByTestId('editor:https://example.com/document-container-a.docx')
+    );
     view.unmount();
   });
 
@@ -557,7 +414,6 @@ describe('DocumentEditorContainer revision group binding', () => {
       <DocumentEditorContainer
         containerId='document-container-a'
         formId='form-1'
-        stepId='step-1'
       />
     );
     const assistantOffEditor = await assistantOff.findByTestId(
@@ -576,7 +432,6 @@ describe('DocumentEditorContainer revision group binding', () => {
       <DocumentEditorContainer
         containerId='document-container-a'
         formId='form-1'
-        stepId='step-1'
         assistantEnabled
       />
     );
@@ -623,16 +478,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
   };
 
   const mount = () =>
-    render(
-      <DocumentEditorContainer
-        containerId={CONTAINER}
-        formId='form-1'
-        stepId='step-0'
-      />
-    );
+    render(<DocumentEditorContainer containerId={CONTAINER} formId='form-1' />);
 
   beforeEach(() => {
-    _clearDocxEditors();
     mockFinalizeEnvelope.mockReset().mockResolvedValue({});
     mockFinalizeEnvelopeReview
       .mockReset()
@@ -642,7 +490,6 @@ describe('DocumentEditorContainer signing outcomes', () => {
   });
 
   afterEach(() => {
-    _clearDocxEditors();
     initState.formSchemas = {};
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
     jest.restoreAllMocks();
@@ -964,7 +811,7 @@ describe("DocumentEditorContainer: Robin's document session", () => {
     sections: [{ blocks: [{ inlines: [{ text: 'Proposal' }] }] }]
   });
   beforeEach(() => {
-    _clearDocxEditors();
+    mockLiveEditor = undefined;
     setRobinHost('form-robin', true);
     OPEN_STATE.native = native;
     initState.formSchemas = {
@@ -976,7 +823,6 @@ describe("DocumentEditorContainer: Robin's document session", () => {
     };
   });
   afterEach(() => {
-    _clearDocxEditors();
     setRobinHost('form-robin', false);
     delete OPEN_STATE.native;
     initState.formSchemas = {};
@@ -988,7 +834,6 @@ describe("DocumentEditorContainer: Robin's document session", () => {
       <DocumentEditorContainer
         containerId='document-container-a'
         formId='form-robin'
-        stepId='step-1'
         assistantEnabled
         {...props}
       />
@@ -1016,7 +861,7 @@ describe("DocumentEditorContainer: Robin's document session", () => {
     await waitFor(() =>
       expect(liveDocumentAccessor('form-robin').descriptor()).not.toBeNull()
     );
-    const editor = getDocxEditor('form-robin');
+    const editor = mockLiveEditor;
     expect(cardResolverFor(editor)).toBeDefined();
     expect(cardResolverFor(editor)?.owns('no-such-card')).toBe(false);
     expect(historyRouteFor(editor)).toBeDefined();
@@ -1104,8 +949,8 @@ describe("DocumentEditorContainer: Robin's document session", () => {
   it('with no Robin host on the form, mounts nothing for Robin: no session, no card resolver, no undo route (review)', async () => {
     setRobinHost('form-robin', false);
     const view = mount();
-    await waitFor(() => expect(getDocxEditor('form-robin')).toBeDefined());
-    const editor = getDocxEditor('form-robin');
+    await waitFor(() => expect(mockLiveEditor).toBeDefined());
+    const editor = mockLiveEditor;
     expect(cardResolverFor(editor)).toBeUndefined();
     expect(historyRouteFor(editor)).toBeUndefined();
     expect(liveDocumentAccessor('form-robin').descriptor()).toBeNull();
@@ -1118,13 +963,14 @@ describe("DocumentEditorContainer: Robin's document session", () => {
 
   it('creates no session where Robin is off, or when the editor cannot be read', async () => {
     const off = mount({ assistantEnabled: false });
-    await waitFor(() => expect(getDocxEditor('form-robin')).toBeDefined());
+    await waitFor(() => expect(mockLiveEditor).toBeDefined());
     expect(liveDocumentAccessor('form-robin').descriptor()).toBeNull();
     off.unmount();
     delete OPEN_STATE.native;
     const debug = jest.spyOn(console, 'debug').mockImplementation(() => {});
+    mockLiveEditor = undefined;
     const unreadable = mount();
-    await waitFor(() => expect(getDocxEditor('form-robin')).toBeDefined());
+    await waitFor(() => expect(mockLiveEditor).toBeDefined());
     // the session is created on first use; an unreadable editor leaves no document for Robin
     expect(liveDocumentAccessor('form-robin').descriptor()).toBeNull();
     expect(debug).toHaveBeenCalled();

@@ -4,7 +4,7 @@ import { getPositionKey } from '../hideAndRepeats';
 import { ACTION_NEXT } from '../elementActions';
 import { GetStepResult } from './types';
 
-// Mirrors dispatchClickElement's own hidden check (assistant/tools/clickElement.ts):
+// Mirrors clickElement's own hidden check (formActions/clickElement.ts):
 // a button hidden by a show_if rule must never be pressed on its behalf.
 export const isButtonVisible = (state: any, button: any): boolean => {
   const flags = (state.visiblePositions ?? {})[

@@ -21,10 +21,6 @@ import {
   isDocusignSignAction,
   signsViaDocusign
 } from '../../../utils/document';
-import {
-  registerDocxEditor,
-  unregisterDocxEditor
-} from '../../../assistant/tools/docx/docxEditorRegistry';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
 import { mountRobinDocument } from './robinDocument';
@@ -159,13 +155,11 @@ const wrap = {
 export default function DocumentEditorContainer({
   containerId,
   formId,
-  stepId,
   editMode,
   assistantEnabled
 }: {
   containerId?: string;
   formId?: string;
-  stepId?: string;
   editMode?: boolean;
   assistantEnabled?: boolean;
 }) {
@@ -621,10 +615,7 @@ export default function DocumentEditorContainer({
     [envelope, formId, targetAction, containerId]
   );
 
-  // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
-  // point. The schema container id is stable for this editor across renders;
-  // retain the editor object as well so cleanup can only remove this exact
-  // registration, never another mounted container's editor.
+  // DocxEditor exposes its live SyncFusion instance at this exact lifecycle point
   const registeredEditor = useRef<any>(undefined);
   // The live editor and a count of documents it has opened, as state, so Robin's document session
   // is created for each opened document (not the blank one at create) and follows a regenerate.
@@ -635,14 +626,8 @@ export default function DocumentEditorContainer({
       if (!containerId) return;
       registeredEditor.current = editor;
       setLiveEditor(editor);
-      registerDocxEditor(containerId, editor, {
-        formId,
-        stepId,
-        documentId: activeDocumentId,
-        envelopeId: envelope?.id
-      });
     },
-    [activeDocumentId, containerId, envelope?.id, formId, stepId]
+    [containerId]
   );
   // Runs after openAsync resolves — and again on every reload (openNonce), which
   // is the case that matters: the in-memory group wrappers die with the old
@@ -698,25 +683,9 @@ export default function DocumentEditorContainer({
     containerId,
     envelopeId
   ]);
-  // Envelope identity can settle after SyncFusion's created callback. Refresh
-  // only the assistant registration; the editor itself stays mounted.
-  useEffect(() => {
-    if (!containerId || !registeredEditor.current) return;
-    registerDocxEditor(containerId, registeredEditor.current, {
-      formId,
-      stepId,
-      documentId: activeDocumentId,
-      envelopeId: envelope?.id
-    });
-  }, [activeDocumentId, containerId, envelope?.id, formId, stepId]);
   useEffect(
     () => () => {
-      if (containerId) {
-        clearDocxEditorDirty(formId, containerId);
-        if (registeredEditor.current) {
-          unregisterDocxEditor(containerId, registeredEditor.current, formId);
-        }
-      }
+      if (containerId) clearDocxEditorDirty(formId, containerId);
     },
     [containerId, formId]
   );

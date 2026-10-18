@@ -20,7 +20,10 @@ import {
 } from '@syncfusion/ej2-documenteditor';
 import TrackedChangeGroups from './TrackedChangeGroups';
 import { RailErrorBoundary } from './index';
-import { applyDocumentEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import {
+  createEditorAdapter,
+  SyncfusionEditorLike
+} from './bindings/editorAdapter';
 import {
   installRevisionGroupIsolation,
   resolveLiveRevisionGroupsAsOneUndo,
@@ -152,6 +155,19 @@ function makeRealEditor(text = ''): DocumentEditor {
   );
   installRevisionGroupIsolation(editor as unknown as LiveEditor);
   return editor;
+}
+
+// Robin's tracked replacement of the premium in 'Premium: $5,200'
+function suggestPremiumChange(editor: DocumentEditor, changeSetId: string) {
+  createEditorAdapter(
+    editor as unknown as SyncfusionEditorLike
+  ).withAuthoredRevisions?.(
+    { author: 'Robin', changeSetId, group: 'update-premium' },
+    () => {
+      editor.selection.select('0;0;9', '0;0;15');
+      editor.editor.insertText('$5,500');
+    }
+  );
 }
 
 function destroyRealEditor(editor: DocumentEditor): void {
@@ -1467,7 +1483,7 @@ describe('TrackedChangeGroups', () => {
       );
       expect(screen.getByText('$6,000')).toBeInTheDocument();
 
-      // applyDocumentEdits sets this around the whole batch; contentChange
+      // Robin's writes set this around the whole batch; contentChange
       // fires once per op inside it.
       editor.__featheryAssistantWriting = true;
       act(() => editor.emit('contentChange'));
@@ -1792,23 +1808,11 @@ describe('RailErrorBoundary', () => {
     }
   });
 
-  it('real SDK: bridge-created group can be accepted again after undo', async () => {
+  it('real SDK: a Robin-authored group can be accepted again after undo', async () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
-      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-        changeSetId: 'bridge-cs',
-        edits: [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: '$5,200',
-            replace: '$5,500',
-            group: 'update-premium'
-          }
-        ]
-      });
-      expect(result.results[0]).toMatchObject({ ok: true });
+      suggestPremiumChange(editor, 'bridge-cs');
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       acceptAllGroups();
       await flushDeferredResolve();
@@ -1830,19 +1834,7 @@ describe('RailErrorBoundary', () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
-      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-        changeSetId: 'individual-button-cs',
-        edits: [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: '$5,200',
-            replace: '$5,500',
-            group: 'update-premium'
-          }
-        ]
-      });
-      expect(result.results[0]).toMatchObject({ ok: true });
+      suggestPremiumChange(editor, 'individual-button-cs');
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       fireEvent.click(
         screen.getByRole('button', { name: 'Expand Update premium' })
@@ -1866,19 +1858,7 @@ describe('RailErrorBoundary', () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
-      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-        changeSetId: 'individual-keyboard-cs',
-        edits: [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: '$5,200',
-            replace: '$5,500',
-            group: 'update-premium'
-          }
-        ]
-      });
-      expect(result.results[0]).toMatchObject({ ok: true });
+      suggestPremiumChange(editor, 'individual-keyboard-cs');
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       let panel = screen.getByLabelText('Assistant tracked changes');
       fireEvent.keyDown(panel, { key: 'j' });

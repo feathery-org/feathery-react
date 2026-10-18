@@ -1,11 +1,6 @@
 // Robin's activity on a mounted document editor, for the parts of the editor that must tell
 // Robin's changes from the person's: the review rail and the section panel (is Robin editing?),
 // and version history (was this change Robin's?).
-//
-// The marks live on the editor instance under the property names the assistant's operations path
-// (src/assistant/tools/docx/syncfusionDocumentOps.ts) also sets, so until that path is retired
-// both writers are honoured: a reader here sees either one's mark, and a turn listener here hears
-// either one's turn change.
 const WRITING_KEY = '__featheryAssistantWriting';
 const TURN_KEY = '__featheryAssistantSession';
 const TURN_LISTENERS_KEY = '__featheryAssistantSessionListeners';

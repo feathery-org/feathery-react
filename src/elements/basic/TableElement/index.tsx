@@ -126,7 +126,6 @@ function TableElement({
   submitCustom = () => {},
   editMode = false,
   buttonLoaders = {},
-  assistantClient,
   client
 }: any) {
   const styles = useMemo(
@@ -307,7 +306,7 @@ function TableElement({
   const showStandaloneUnverifyColumn = canUnverifyRows && !hasOverflowMenu;
 
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
-  // Findings the assistant has placed on this table (see `setIssues` below).
+  // Findings Robin has placed on this table (see `setFindings` below)
   const [assistantIssues, setAssistantIssues] = useState<TableIssue[]>([]);
   // The grid keeps an older copy of the edit handler, so it reads the current columns through a ref
   const issuesContextRef = useRef<ResolveIssuesContext | undefined>(undefined);
@@ -1176,27 +1175,6 @@ function TableElement({
     setFindings,
     focusCell,
     getIssues
-  ]);
-
-  // Lets the assistant invoke this table's mutations through the same handlers the user UI calls
-  useEffect(() => {
-    if (!assistantClient || !tableId) return;
-    assistantClient.registerTable(tableId, {
-      columns: elementForData.properties.columns,
-      handleCellEdit: wrappedHandleCellEdit,
-      handleAddRow: wrappedHandleAddRow,
-      handleDeleteRow: wrappedHandleDeleteRow,
-      setIssues: setAssistantIssues,
-      clearIssues: () => setAssistantIssues([])
-    });
-    return () => assistantClient.unregisterTable(tableId);
-  }, [
-    assistantClient,
-    tableId,
-    elementForData.properties.columns,
-    wrappedHandleCellEdit,
-    wrappedHandleAddRow,
-    wrappedHandleDeleteRow
   ]);
 
   const showEmptyState =

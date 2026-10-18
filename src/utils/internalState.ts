@@ -10,7 +10,6 @@ import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
 import { LogicRule, Subgrid } from '../types/Form';
-import AssistantClient from '../assistant/AssistantClient';
 import type { FormActionHandlers } from './formActions/utils';
 import type { FormToolsStepWrites } from './formTools/types';
 import type { TableHandlers } from './formActions/tables';
@@ -225,7 +224,6 @@ export interface FormInternalState {
   backNavMap?: Record<string, string>;
   visiblePositions: any;
   logicRules?: LogicRule[];
-  assistantClient?: AssistantClient;
   formActions?: FormActionHandlers;
   tables?: Map<string, TableHandlers>;
   formToolsCallbacks?: FormToolsCallbacks;

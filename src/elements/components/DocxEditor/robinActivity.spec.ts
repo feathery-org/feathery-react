@@ -1,9 +1,4 @@
 import {
-  isAssistantApplyingEdits,
-  isAssistantWriting,
-  setAssistantSessionActive
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
-import {
   isRobinEditing,
   isRobinWriting,
   onRobinTurnChange,
@@ -46,22 +41,5 @@ describe('robinActivity', () => {
     setRobinTurnActive(editor, true);
     expect(heard).toEqual([true, false]);
     expect(isRobinEditing(editor)).toBe(true);
-  });
-
-  // until the assistant's operations path is retired, both writers mark the same editor
-  it('honours the assistant operations path and is honoured by it', () => {
-    const editor: any = {};
-    const heard: boolean[] = [];
-    onRobinTurnChange(editor, (a) => heard.push(a));
-    setAssistantSessionActive(editor, true);
-    expect(isRobinEditing(editor)).toBe(true);
-    expect(heard).toEqual([true]);
-    setAssistantSessionActive(editor, false);
-    setRobinTurnActive(editor, true);
-    expect(isAssistantWriting(editor)).toBe(true);
-    whileRobinWrites(editor, () => {
-      expect(isAssistantApplyingEdits(editor)).toBe(true);
-    });
-    expect(isAssistantApplyingEdits(editor)).toBe(false);
   });
 });

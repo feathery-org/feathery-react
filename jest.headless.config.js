@@ -6,7 +6,7 @@ module.exports = {
     '<rootDir>/src/robin/document/tests/headless/headlessEnvironment.js',
   testMatch: ['<rootDir>/src/**/*.headless.spec.ts'],
   globalSetup:
-    '<rootDir>/src/robin/document/formats/docx-sfdt/tests/headless/globalSetup.ts',
+    '<rootDir>/src/robin/document/tests/headless/globalSetup.ts',
   // sweeps any lane Chrome a killed worker left behind (laneChrome.ts)
   globalTeardown:
     '<rootDir>/src/robin/document/tests/headless/globalTeardown.ts',

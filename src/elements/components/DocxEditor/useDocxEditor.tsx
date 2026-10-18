@@ -7,8 +7,7 @@ import {
   findReplaceCounterpart,
   installRevisionGroupIsolation,
   installTrackedContentControlDeletion,
-  preserveDocumentViewDuring,
-  registerWrappingDocumentEditorContainer
+  preserveDocumentViewDuring
 } from '../../../utils/documentEditorPrimitives';
 import { isRobinWriting, onDocumentReplaced } from './robinActivity';
 import { EJ2_SCRIPT_URL } from './constants';
@@ -1027,11 +1026,6 @@ export function useDocxEditor({
         if (!ed) {
           throw new Error('Document editor instance missing after create');
         }
-        // Assistant batches operate on the inner editor, but SyncFusion also
-        // caches track-changes on this wrapping container. Keep that ownership
-        // relationship available at the common batch boundary so both flags
-        // can always return to user-editing mode together.
-        registerWrappingDocumentEditorContainer(ed, instance);
         installDocumentTailInvariant(
           ed,
           ej.documenteditor.HelperMethods?.getSfdtDocument?.bind(
