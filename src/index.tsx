@@ -18,6 +18,7 @@ import useAuthClient from './auth/useAuthClient';
 import { resolveLabelStyle } from './elements/utils/labelStyleResolver';
 import { getImageAltText } from './utils/accessibility';
 import DocxEditor, { DocxEditorProps } from './elements/components/DocxEditor';
+import { createFormToolActions } from './robin/frontendToolBridge/handlers';
 import './utils/polyfills';
 
 const mountedForms: Record<string, Root> = {};
@@ -87,7 +88,8 @@ export {
   useAuthClient,
   Feathery,
   StyledContainer,
-  DocxEditor
+  DocxEditor,
+  createFormToolActions
 };
 
 export type { OPERATOR_CODE, FormContext, DocxEditorProps };
