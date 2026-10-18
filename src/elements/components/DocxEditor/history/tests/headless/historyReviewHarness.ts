@@ -6,12 +6,10 @@ import {
   DocumentEditorContainer,
   Toolbar
 } from '@syncfusion/ej2-documenteditor';
-import DocxEditor from '../../../../../elements/components/DocxEditor';
-import { rebindRevisionGroups } from '../../../../../utils/documentEditorPrimitives';
-import {
-  applyDocumentEdits,
-  setAssistantSessionActive
-} from '../../syncfusionDocumentOps';
+import DocxEditor from '../../..';
+import { rebindRevisionGroups } from '../../../../../../utils/documentEditorPrimitives';
+import { createEditorAdapter } from '../../../bindings/editorAdapter';
+import { setRobinTurnActive, whileRobinWrites } from '../../../robinActivity';
 
 let root: Root | undefined;
 let host: HTMLDivElement | undefined;
@@ -85,18 +83,26 @@ export const historyReviewHarness = {
     if (!ready) throw new Error(`Review editor not ready: ${host.textContent}`);
     for (let i = 0; i < 5; i++) await frame();
   },
-  async suggestHistoryReview(edits: any[]) {
-    setAssistantSessionActive(editor, true);
-    const result = applyDocumentEdits(editor, {
-      changeSetId: 'review-save',
-      edits
-    });
-    setAssistantSessionActive(editor, false);
+  async suggestHistoryReview(
+    start: string,
+    end: string,
+    text: string,
+    group: string
+  ) {
+    setRobinTurnActive(editor, true);
+    createEditorAdapter(editor).withAuthoredRevisions?.(
+      { author: 'Robin', changeSetId: 'review-save', group },
+      () =>
+        whileRobinWrites(editor, () => {
+          editor.selection.select(start, end);
+          editor.editor.insertText(text);
+        })
+    );
+    setRobinTurnActive(editor, false);
     for (let i = 0; i < 120; i++) {
       if (artifacts.length) break;
       await frame();
     }
-    return result;
   },
   async historyReviewState() {
     for (let i = 0; i < 12; i++) await frame();

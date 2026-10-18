@@ -1,5 +1,5 @@
 import internalState from './internalState';
-import { getCompletedStepKeys, initState, loadCompletedSteps } from './init';
+import { getCompletedStepKeys, initState } from './init';
 import { replaceTextVariables } from '../elements/components/TextNodes';
 import {
   availableRowOptions,
@@ -155,9 +155,6 @@ const extractRawText = (props: Record<string, unknown>): string => {
     .trim();
 };
 
-export const getCurrentStepKey = (formId: string): string | undefined =>
-  internalState[formId]?.currentStep?.key;
-
 const sanitizeRuntimeValue = (value: unknown): unknown =>
   sanitizeTransportValue(value);
 
@@ -166,15 +163,6 @@ const isMeaningful = (value: unknown): boolean => {
   if (typeof value === 'string' && value === '') return false;
   if (Array.isArray(value) && value.length === 0) return false;
   return true;
-};
-
-// Hydrate prior-session completed steps so a snapshot's stepper reachability is correct on the first turn
-export const ensureCompletedSteps = async (
-  formId: string | undefined
-): Promise<void> => {
-  if (!formId) return;
-  const client = internalState[formId]?.client;
-  if (client) await loadCompletedSteps(client);
 };
 
 const isElementVisible = (state: any, el: any): boolean => {
@@ -815,20 +803,4 @@ export const findClickableAncestorSubgrids = (
   }
   matches.sort((a, b) => b.position.length - a.position.length);
   return matches;
-};
-
-export const getTableCapabilities = (
-  table: any,
-  rowCount: number
-): { canEditCells: boolean; canAddRows: boolean; canDeleteRows: boolean } => {
-  const props = table?.properties ?? {};
-  // Hub rows are not carried in the live state, so no row index can address them
-  if (props.data_source === 'hub') {
-    return { canEditCells: false, canAddRows: false, canDeleteRows: false };
-  }
-  // A transpose table with zero rows renders un-transposed, so it stays editable
-  const canEditCells =
-    !!props.enable_editing && !(props.transpose && rowCount > 0);
-  const addDelete = canEditCells && !!props.add_delete_rows;
-  return { canEditCells, canAddRows: addDelete, canDeleteRows: addDelete };
 };

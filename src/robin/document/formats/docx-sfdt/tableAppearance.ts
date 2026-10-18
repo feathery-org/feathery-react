@@ -2,15 +2,11 @@
 // could not see.
 //
 // Everything here is pure: it reads SyncFusion's serialized SFDT and computes
-// over it. The live-editor writes that consume these facts (`set_cell_format`,
-// `set_row_format`, `copy_table_format`, `restripe_table`, and the banding
-// `insert_row`/`delete_row` preserve) live in `syncfusionDocumentOps.ts` beside
-// the rest of the apply engine, exactly as `cellFormula.ts` is pure while
-// `runFormulaCellWrite` is not.
+// over it. The engine's restripe finalizer (`finalizers/appearance.ts`)
+// consumes these facts.
 //
 // What SyncFusion 34.1.31 actually stores, established by probing a real
-// DocumentEditor (see tests/tableFormatOps.spec.ts, which re-asserts each of
-// these so the claims cannot rot):
+// DocumentEditor:
 //
 //   * cell appearance lives on the cell's `cellFormat` (optimized key `tcpr`):
 //     `shading`/`sd` -> `{ backgroundColor|bgc, foregroundColor|fgc, texture|t }`,
@@ -28,10 +24,7 @@
 //   * a colour is stored verbatim, with no normalisation. The read therefore
 //     upper-cases it so that reading a `#d9e2f3` source and writing it into a
 //     target produces a target that reads back equal to the source.
-import type {
-  AppearanceRestore,
-  TableLayoutFacts
-} from '../../../../utils/documentEditorPrimitives';
+import type { TableLayoutFacts } from '../../../../utils/documentEditorPrimitives';
 
 const OPTIMIZED_LINE_STYLES = [
   'Single',
@@ -160,42 +153,11 @@ export interface TableBanding {
   tailInBand?: boolean;
 }
 
-/** The model-facing account of what an appearance op did. */
-export interface AppearanceWriteReport {
-  cellsWritten: number;
-  rowsWritten: number;
-  /** Cells already carrying the requested appearance, so nothing was written. */
-  cellsUnchanged: number;
-  /** Rows a restripe left alone because their own cells carry different fills. */
-  rowsSkippedMixed?: number;
-  /** The stripe the engine detected in the table's existing rows and re-laid. */
-  banding?: TableBanding;
-  /** Set when no stripe could be proven, so the table was deliberately untouched. */
-  noBandingDetected?: true;
-  /**
-   * The source table's Word table style, copied with the rest of its sampled
-   * table-format facts and reported for observability.
-   */
-  sourceStyleName?: string;
-  /**
-   * Inherited appearance that did not read back as the source. Appearance is a
-   * preference, not integrity: the content stays and these are reported.
-   */
-  unresolved?: string[];
-}
-
-export interface AppearanceWriteOutcome {
-  report: AppearanceWriteReport;
-  restores: AppearanceRestore[];
-}
-
 // ---------------------------------------------------------------------------
 // SFDT reading
 // ---------------------------------------------------------------------------
 
-// The same optimized/full SFDT key tolerance as syncfusionDocumentOps' `pick`,
-// kept local so this module and the engine that consumes it have no import
-// cycle. Any key spelling added there for a table must be added here too.
+// Reads a key under either its optimized or full SFDT spelling
 function sfdtValue(obj: any, ...keys: string[]): any {
   if (!obj) return undefined;
   for (const key of keys) if (obj[key] !== undefined) return obj[key];
@@ -427,50 +389,6 @@ function readTableLayout(
   };
 }
 
-/** Scale one sibling layout to a target grid without inventing document values. */
-export function tableLayoutForTarget(
-  source: TableLayoutFacts | undefined,
-  targetColumns: number
-): TableLayoutFacts | undefined {
-  if (!source) return undefined;
-  const widths = source.columnWidths;
-  if (!widths?.length || targetColumns <= 0)
-    return { ...source, columnWidths: undefined, columnWidthType: undefined };
-  const total = widths.reduce((sum, width) => sum + width, 0);
-  const columnWidths =
-    widths.length === targetColumns
-      ? [...widths]
-      : Array.from({ length: targetColumns }, () => total / targetColumns);
-  return { ...source, columnWidths };
-}
-
-export function tableLayoutEquals(
-  a?: TableLayoutFacts,
-  b?: TableLayoutFacts,
-  tolerance = 0.01
-): boolean {
-  if (!a || !b) return !a && !b;
-  if (
-    Math.abs(a.preferredWidth - b.preferredWidth) > tolerance ||
-    a.preferredWidthType !== b.preferredWidthType ||
-    Math.abs(a.leftIndent - b.leftIndent) > tolerance ||
-    a.tableAlignment !== b.tableAlignment ||
-    a.allowAutoFit !== b.allowAutoFit
-  )
-    return false;
-  const ac = a.columnWidths;
-  const bc = b.columnWidths;
-  // An omitted sampled grid means the source did not state column
-  // proportions. SyncFusion may still materialize rendered widths after
-  // layout; those are not a competing inherited value.
-  if (!ac) return true;
-  if (!bc || a.columnWidthType !== b.columnWidthType) return false;
-  return (
-    ac.length === bc.length &&
-    ac.every((width, index) => Math.abs(width - bc[index]) <= tolerance)
-  );
-}
-
 function readAppearanceFrom(
   format: any,
   withAlignment: boolean,
@@ -535,60 +453,6 @@ export function appearanceEquals(
   return BORDER_SIDES.every((side) => sameBorder(as[side], bs[side]));
 }
 
-const OPPOSITE_SIDE: Record<BorderSide, BorderSide> = {
-  top: 'bottom',
-  bottom: 'top',
-  left: 'right',
-  right: 'left'
-};
-
-const NEIGHBOUR_OFFSET: Record<BorderSide, [number, number]> = {
-  top: [-1, 0],
-  bottom: [1, 0],
-  left: [0, -1],
-  right: [0, 1]
-};
-
-/**
- * One cell's appearance AS IT RENDERS, including the edges its neighbours draw.
- *
- * An interior edge belongs to two cells and is stored once, on whichever side
- * of the boundary the writer chose - so a side this cell does not state, whose
- * neighbour states it, is still a drawn border. Comparing the stored object
- * instead of the drawn result made the copy verifier refuse its own correct
- * write: the source declared `all`, SyncFusion materialized top/left/bottom and
- * left `right` to the next cell, and three identical borders read as a
- * mismatch.
- *
- * This does NOT weaken the check. The table PERIMETER has no neighbour to
- * borrow from, so a table that genuinely lost its borders still fails on its
- * outer cells, and shading, alignment and every stated side are compared
- * exactly as before.
- */
-export function effectiveCellAppearance(
-  cellAt: (row: number, column: number) => AppearanceFacts | undefined,
-  row: number,
-  column: number
-): AppearanceFacts | undefined {
-  const own = cellAt(row, column);
-  const sides = borderSides(own?.borders);
-  let borrowed = false;
-  for (const side of BORDER_SIDES) {
-    if (sides[side]) continue;
-    const [rowStep, columnStep] = NEIGHBOUR_OFFSET[side];
-    const shared = borderSides(
-      cellAt(row + rowStep, column + columnStep)?.borders
-    )[OPPOSITE_SIDE[side]];
-    if (!shared) continue;
-    sides[side] = shared;
-    borrowed = true;
-  }
-  if (!borrowed) return own;
-  const borders: BorderFactsBySide = {};
-  for (const side of BORDER_SIDES) if (sides[side]) borders[side] = sides[side];
-  return { ...own, borders };
-}
-
 /**
  * One table's appearance. `tableBlock` is the raw SFDT block; returns null when
  * it is not a table.
@@ -630,53 +494,6 @@ export function collectTableAppearance(
   };
 }
 
-/** True when nothing about this table's appearance has been set. */
-export function tableIsUnstyled(appearance: TableAppearance): boolean {
-  if (appearance.styleName || appearance.appearance) return false;
-  return appearance.rows.every(
-    (row) =>
-      !row.isHeader &&
-      !row.appearance &&
-      row.cells.every((cell) => cell === undefined)
-  );
-}
-
-/**
- * The appearance of one cell, resolved through its row: the row's shared
- * appearance unless that cell overrides it.
- */
-export function cellAppearanceAt(
-  appearance: TableAppearance,
-  row: number,
-  column: number
-): AppearanceFacts | undefined {
-  const rowFacts = appearance.rows[row];
-  if (!rowFacts) return undefined;
-  return rowFacts.cells[column] ?? rowFacts.appearance;
-}
-
-/**
- * One cell's rendered appearance after SyncFusion's table-level fallback.
- * The serializer keeps table borders at `tableFormat` even though the renderer
- * resolves them for every cell; copy comparisons must use that same resolved
- * view or they rewrite an already-correct table into redundant cell borders.
- */
-export function resolvedCellAppearanceAt(
-  appearance: TableAppearance,
-  row: number,
-  column: number
-): AppearanceFacts | undefined {
-  const table = appearance.appearance;
-  const cell = cellAppearanceAt(appearance, row, column);
-  if (!table) return cell;
-  if (!cell) return table;
-  return {
-    ...(table.shading ? { shading: table.shading } : {}),
-    ...(table.borders ? { borders: table.borders } : {}),
-    ...cell
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Banding
 //
@@ -712,30 +529,6 @@ export function rowShadings(appearance: TableAppearance): RowShading[] {
       ? first
       : undefined;
   });
-}
-
-/**
- * The one fill every data row of a table shares, or undefined when the table
- * cannot state that. A uniform body is a statement of the sibling's own look -
- * a new table copying that sibling replicates it instead of importing an
- * unrelated table's stripe.
- *
- * A single data row still counts here, deliberately: next to a sibling that
- * shows one white row and nothing else, a new table should be white, not
- * striped from some unrelated table across the document. What a lone row
- * CANNOT do is outrank the sibling FAMILY - see the banding derivation in the
- * creation resolver, which consults the family's other tables before it falls
- * back to this.
- */
-export function uniformDataRowShading(
-  appearance: TableAppearance
-): string | null | undefined {
-  // eslint-disable-next-line no-use-before-define
-  const body = rowShadings(appearance).slice(inferHeaderRows(appearance));
-  if (!body.length) return undefined;
-  const first = body[0];
-  if (first === undefined) return undefined;
-  return body.every((value) => value === first) ? first : undefined;
 }
 
 /**
@@ -846,133 +639,4 @@ export function bandedShadingForRow(
 ): string | null | undefined {
   if (row < banding.headerRows) return undefined;
   return banding.cycle[(row - banding.headerRows) % banding.period];
-}
-
-// ---------------------------------------------------------------------------
-// Copying one table's appearance onto another
-// ---------------------------------------------------------------------------
-
-/**
- * Which SOURCE row a given TARGET row copies from, when the two tables are
- * different sizes.
- *
- * The rule: header rows map one-to-one from the top; every body row maps
- * through the source's body CYCLICALLY, so a 20-row target inherits a 5-row
- * source's look without running out of rows. Extra source rows are simply not
- * used. Nothing throws on a size mismatch.
- */
-export function sourceRowForTarget(
-  source: TableAppearance,
-  headerRows: number,
-  targetRow: number
-): number {
-  if (targetRow < source.rows.length) return targetRow;
-  const bodyCount = source.rows.length - headerRows;
-  if (bodyCount <= 0) return source.rows.length - 1;
-  return headerRows + ((targetRow - headerRows) % bodyCount);
-}
-
-/**
- * Whether the row at `targetRow` belongs to the table's header band.
- *
- * Header-ness is ASSIGNED by the engine from the table's own shape, never
- * inherited from a donor row. That distinction is the whole rule, and it is
- * why this takes no source row: the header band is rows `0..headerRows-1`, so
- * a row lands in it if and only if it sits there, whatever row a caller
- * happened to anchor on or copy from.
- *
- * Deriving it from a donor instead looked equivalent and was not. A table
- * stripped down to its header row has NO data row to copy, so the only donor
- * available is a header - and a rule phrased as "inherit header-ness" then
- * faithfully reproduces a second header, navy and bold, on the data row a user
- * just asked for. A rule phrased as a position cannot: there is nothing to be
- * missing. `inferHeaderRows` remains the only definition of what a header is;
- * this is the only definition of who is one.
- */
-export function headerBandContains(
-  source: TableAppearance,
-  targetRow: number,
-  headerRows: number = inferHeaderRows(source)
-): boolean {
-  return targetRow < headerRows;
-}
-
-/**
- * Whether a row copying `sourceRow` should be flagged as a header.
- *
- * The flag is COPIED, never inferred: a document whose header row is merely
- * shaded like one, without Word's flag, must not acquire the flag by being
- * copied - `inferHeaderRows` recognises that banner for banding purposes, and
- * that is a different question from what the row IS.
- *
- * `undefined` - no source row at all - is `false`, and that is the case worth
- * naming. A data row inserted into a table stripped down to its header has no
- * data row to copy, and the honest answer to "is the row I could not copy a
- * header?" is no. Header-ness is only ever taken FROM a header; it is never
- * invented for a row that could not find one.
- */
-export function copiedRowIsHeader(
-  source: TableAppearance,
-  sourceRow: number | undefined
-): boolean {
-  return sourceRow == null ? false : !!source.rows[sourceRow]?.isHeader;
-}
-
-/**
- * The appearance one target cell should end up with when copying `source` onto
- * a table of `targetColumns` columns.
- *
- * Columns clamp: a target column the source does not have takes the source
- * row's LAST cell, so a wider target keeps the source's edge look instead of
- * being left half-styled. Side-specific perimeter borders remain perimeter
- * borders: clamping a source edge cell into an interior target position must
- * not duplicate its outer edge inside the target grid.
- *
- * The FILL, when the source is banded, comes from the detected cycle rather
- * than from the mapped row - cycling through an odd number of body rows would
- * otherwise flip the stripe's phase every lap.
- */
-export function copiedCellAppearance(
-  source: TableAppearance,
-  banding: TableBanding | null,
-  headerRows: number,
-  targetRow: number,
-  targetColumn: number,
-  targetSize: { rows: number; columns: number }
-): AppearanceFacts | undefined {
-  const sourceRow = sourceRowForTarget(source, headerRows, targetRow);
-  const rowFacts = source.rows[sourceRow];
-  if (!rowFacts) return undefined;
-  const columnCount = rowFacts.cells.length;
-  const sourceColumn =
-    columnCount > 0 ? Math.min(targetColumn, columnCount - 1) : 0;
-  const base = resolvedCellAppearanceAt(source, sourceRow, sourceColumn);
-  const mapped: AppearanceFacts = { ...(base ?? {}) };
-  if (base?.borders && !base.borders.all) {
-    const borders = { ...base.borders };
-    if (sourceRow === 0 && targetRow !== 0) delete borders.top;
-    if (
-      sourceRow === source.rows.length - 1 &&
-      targetRow !== targetSize.rows - 1
-    )
-      delete borders.bottom;
-    if (sourceColumn === 0 && targetColumn !== 0) delete borders.left;
-    if (
-      sourceColumn === columnCount - 1 &&
-      targetColumn !== targetSize.columns - 1
-    )
-      delete borders.right;
-    if (Object.keys(borders).length) mapped.borders = borders;
-    else delete mapped.borders;
-  }
-  const mappedBase = Object.keys(mapped).length ? mapped : undefined;
-  if (!banding || targetRow < headerRows) return mappedBase;
-  const shading = bandedShadingForRow(banding, targetRow);
-  if (shading === undefined) return mappedBase;
-  const withBand: AppearanceFacts = {
-    ...(mappedBase ?? {}),
-    ...(shading ? { shading } : {})
-  };
-  if (!shading) delete withBand.shading;
-  return Object.keys(withBand).length ? withBand : undefined;
 }

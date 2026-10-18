@@ -3,7 +3,7 @@
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { DocumentEditorContainer } from '@syncfusion/ej2-documenteditor';
-import VersionViewer from '../../../../../elements/components/DocxEditor/history/VersionViewer';
+import VersionViewer from '../../VersionViewer';
 
 let root: Root | undefined;
 let host: HTMLDivElement | undefined;

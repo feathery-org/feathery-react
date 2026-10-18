@@ -286,8 +286,6 @@ import { setUploadIndicatorEnabled } from '../utils/fileUploadProgress';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
-import type { AssistantStepSettings } from '../assistant/AssistantChat';
-import AssistantClient from '../assistant/AssistantClient';
 import { confirmLeavingUnsavedWork } from '../utils/unsavedWork';
 import {
   STEP_EVENT_BACK,
@@ -470,7 +468,6 @@ function Form({
   const [formId, setFormId] = useState(formIdProp);
   const clientRef = useRef<any>(undefined);
   const client = clientRef.current;
-  const assistantClientRef = useRef<AssistantClient | undefined>(undefined);
   const navigate = useNavigate();
   const location = useLocation();
   const session = initState.formSessions[formId];
@@ -514,10 +511,7 @@ function Form({
     completionBehavior: '',
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
-    assistantEnabled: false,
-    assistantColor: '#6b7280',
-    assistantWorkflowActions: [],
-    assistantStepSettings: {} as AssistantStepSettings
+    assistantEnabled: false
   });
   const trackHashes = useRef(false);
   const curLanguage = useRef<undefined | string>(undefined);
@@ -2647,8 +2641,8 @@ function Form({
       // when loaders are showing
       clearLoaders();
       // Set asynchronously since loaders need to unrender first. Publish the
-      // pending write on internalState so programmatic callers (assistant
-      // tools) can await it instead of racing the timer.
+      // pending write on internalState so programmatic callers (Robin form
+      // actions) can await it instead of racing the timer.
       const publication = new Promise<void>((resolve) => {
         setTimeout(() => {
           // Promise.resolve tolerates a non-promise return (e.g. a mocked
@@ -2671,7 +2665,7 @@ function Form({
           )
             .catch((err) => {
               // Still resolve so awaiters never hang, but leave a trail: a
-              // swallowed failure here means assistant tools snapshot inline
+              // swallowed failure here means Robin form actions snapshot inline
               // errors believing the write landed.
               console.warn('Failed to set button error', err);
             })
@@ -3944,12 +3938,6 @@ function Form({
         })
     };
     internalState[_internalId].formActions = callbacks;
-    if (assistantClientRef.current) {
-      assistantClientRef.current.updateCallbacks(callbacks);
-    } else {
-      assistantClientRef.current = new AssistantClient(callbacks);
-      internalState[_internalId].assistantClient = assistantClientRef.current;
-    }
     // Merged into one object: a running tool call holds the object it read at
     // its start, and still gets each later render's callbacks through it
     if (enableFormTools) {
@@ -4002,8 +3990,7 @@ function Form({
     setCardElement,
     visiblePositions,
     calendly: integrations?.calendly?.metadata,
-    featheryContext: getFormContext(_internalId),
-    assistantClient: internalState[_internalId]?.assistantClient
+    featheryContext: getFormContext(_internalId)
   };
 
   // If form was completed in a previous session and edits are disabled,

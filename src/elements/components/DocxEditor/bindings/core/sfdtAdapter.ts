@@ -102,16 +102,6 @@ export function formulaOccurrences(
   );
 }
 
-/** Logical formula identity, independent of where scanBindings stores it. */
-export function formulaScopeKey(occurrence: Occurrence): string {
-  if (occurrence.def.isGlobal) return `global:${occurrence.name}`;
-  if (occurrence.tableId && occurrence.rowId)
-    return `row:${occurrence.tableId}:${occurrence.rowId}:${occurrence.name}`;
-  return `document:${occurrence.name}`;
-}
-
-type ColumnExpressionKind = 'range' | 'table-column' | null;
-
 /** Does this node BY ITSELF yield a whole column - a bare range or aggregate? */
 /** Facts about a bare reference; each caller applies its own precedence. */
 interface RefFacts {
@@ -129,48 +119,6 @@ function refFacts(ref: string, index: BindingIndex): RefFacts {
     isDocName: index.fields.has(ref) || index.formulas.has(ref),
     isCellShaped: bareCellRef(ref) !== null
   };
-}
-
-function nodeColumnKind(ast: Ast, index: BindingIndex): ColumnExpressionKind {
-  if ('range' in ast) return 'range';
-  if (!('ref' in ast)) return null; // cell, literal, or a call (a scalar)
-  const facts = refFacts(ast.ref, index);
-  if (facts.dottedPrefix === null || facts.isDocName) return null;
-  return index.tables.has(facts.dottedPrefix) ? 'table-column' : null;
-}
-
-/**
- * The first place the expression uses a whole column where a value is required -
- * as the whole expression, or as an argument to anything but sum() - or null if
- * it can yield a value. `sum(costs.amount)` is fine; a bare `costs.amount`,
- * `mul(costs.amount, 2)`, or a bare range is not. Catches the case that would
- * otherwise pass create_binding and then fail every reconcile.
- */
-export function expressionResolvesToColumn(
-  index: BindingIndex,
-  expression: string
-): ColumnExpressionKind {
-  let ast: Ast;
-  try {
-    ast = parseExpression(expression);
-  } catch (thrown) {
-    if (!isFormulaError(thrown)) throw thrown;
-    return null;
-  }
-  const walk = (node: Ast): ColumnExpressionKind => {
-    if (!('op' in node)) return nodeColumnKind(node, index);
-    for (const arg of node.args) {
-      const argColumn = nodeColumnKind(arg, index);
-      if (argColumn) {
-        if (node.op !== 'sum') return argColumn; // mul/sub can't take a column
-      } else {
-        const nested = walk(arg); // a column misused deeper in, e.g. mul inside
-        if (nested) return nested;
-      }
-    }
-    return null; // a call yields a value
-  };
-  return walk(ast);
 }
 
 interface CellValue {
