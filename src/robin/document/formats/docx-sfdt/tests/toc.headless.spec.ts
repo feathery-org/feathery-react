@@ -462,6 +462,22 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
     expect(counts).toEqual([once, once, once]);
   }, 120000);
 
+  it('\\u: with no heading it lists, ordinary paragraphs (outline level BodyText) are not headings: no rebuild, no dialog, the change kept', async () => {
+    const { native } = await open({ code: ' TOC \\o "9-9" \\h \\z \\u ' });
+    const pre = await lane.call<string>('settled');
+    const r = await rename(listedHeadings(native, ['Heading 1'])[1], 'Renamed Heading');
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 1200));
+    const now = await lane.call<string>('settled');
+    expect(now).toContain('Renamed Heading');
+    expect(tocOf(now)).toEqual(tocOf(native));
+    expect(factsOf(r)).toContain('table of contents not refreshed: no paragraph in the styles it lists has text');
+    expect(await lane.call<number>('dialogs')).toBe(0);
+    expect(await lane.call('historyState')).toEqual({ open: 0, insertingToc: false });
+    // one undo takes back the rename, nothing else
+    await lane.call('pressInDocument', 'z');
+    expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), pre)).toBe(true);
+  }, 120000);
+
   it('M5: a contents the editor will not touch (locked) is reported as not refreshed, never as refreshed', async () => {
     const { native, headings } = await open({ locked: true });
     const r = await rename(headings[1], 'Renamed Heading');

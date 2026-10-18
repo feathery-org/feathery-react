@@ -175,4 +175,15 @@ describe('review of the rebuild (PR 1956), off the editor', () => {
     expect(withToc2.steps.map((x) => x.seam)).toEqual(['text', 'toc']);
     expect(withToc2.grouped).toBe(true);
   });
+
+  it.each([['levels'], ['styles']] as Array<[TocShape]>)('outline: every paragraph holding the contents is marked and read as derived, the first and last included (%s)', (shape) => {
+    for (const native of [withToc(shape), withToc(shape, { prefix: 'Contents ' })]) {
+      const s = stateOf(native);
+      const toc = tocField(s.view.nf) as NonNullable<ReturnType<typeof tocField>>;
+      for (const p of toc.paragraphs) {
+        expect(docxPack.outline.detail(p, s.view)).toContain('toc (refreshed by the editor)');
+        expect(s.view.annotation(p.id)?.derived).toEqual(expect.objectContaining({ source: 'toc' }));
+      }
+    }
+  });
 });

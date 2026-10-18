@@ -238,6 +238,9 @@ const api = {
     };
   },
 
+  /** The editor's alert dialogs on the page (its "No Headings" alert is one). */
+  dialogs: () => document.querySelectorAll('.e-dialog:not(.e-popup-close)').length,
+
   /** Open complex undo groups in the editor, and whether it thinks a contents rebuild is running. */
   historyState(): { open: number; insertingToc: boolean } {
     return { open: history()?.historyInfoStack?.length ?? 0, insertingToc: !!(live() as any).editorModule?.isInsertingTOC };
