@@ -512,8 +512,6 @@ export class DocumentSession {
             state.residue
           );
       this.host.open(target);
-      // the document is replaced, so what the editor derives is refreshed with it
-      this.runRefresh('engine');
     } catch {
       try {
         this.host.open(before);
@@ -522,6 +520,18 @@ export class DocumentSession {
       }
       this.refresh();
       return false;
+    }
+    // the document is replaced, so what the editor derives is refreshed with it; a refresh that
+    // fails leaves the resolution as it is, with the derived content as the resolution left it
+    try {
+      this.runRefresh('engine');
+    } catch (e) {
+      this.refreshFailed(changeSetId, e);
+      try {
+        this.host.open(target);
+      } catch {
+        // the editor is gone; nothing left to restore
+      }
     }
     this.history.push({
       turnId: changeSetId,
@@ -544,15 +554,43 @@ export class DocumentSession {
     const view = this.current?.view;
     const step = view ? this.pack.reconcile.refresh?.(view, 'editor') : null;
     if (!step) return resolve();
+    const before = this.host.serialize();
     let out: T | undefined;
+    let failed: { error: unknown } | null = null;
     const run = () => {
       out = resolve();
-      this.runStep(step);
+      try {
+        this.runStep(step);
+      } catch (error) {
+        failed = { error };
+      }
     };
     const transaction = this.pack.reconcile.transaction;
     if (transaction) transaction(this.host, run);
     else run();
+    if (failed && !transaction)
+      this.refreshFailed('settle', (failed as { error: unknown }).error);
+    else if (failed) {
+      // the refresh failed after the person's accept or reject: the resolution stands without it.
+      // What a failed refresh left half done is in the same undo group, so the group is undone and
+      // the resolution run again on its own; if undo does not give back the document before it,
+      // the group is redone and kept as it is
+      this.refreshFailed('settle', (failed as { error: unknown }).error);
+      this.host.undo();
+      if (equivalentNative(this.pack, this.host.serialize(), before))
+        out = resolve();
+      else this.host.redo();
+    }
     return out as T;
+  }
+
+  /** A refresh after a resolution that failed: reported, never fatal to the resolution. */
+  private refreshFailed(where: string, error: unknown): void {
+    logWarn({
+      verb: 'refresh',
+      where,
+      reason: error instanceof Error ? error.message : String(error)
+    });
   }
 
   /** The pack's refresh step for the document as the editor now holds it, when it has one. */
