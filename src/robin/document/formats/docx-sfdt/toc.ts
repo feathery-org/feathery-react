@@ -14,6 +14,12 @@ import type { NfNode, NormalForm } from '../../tree';
 import { HEADER_FOOTER, KIND, TEXT_FRAME } from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
 import { arr } from './util';
+import {
+  entryText,
+  unsupportedSwitches
+} from '../../../../elements/components/DocxEditor/toc/refreshToc';
+
+export { entryText, unsupportedSwitches };
 
 export interface TocField {
   /** The field code, trimmed (`TOC \h \z \t "Title,1"`). */
@@ -37,8 +43,6 @@ export interface TocField {
   ids: Set<string>;
   /** The paragraph styles whose paragraphs it lists. */
   styles: Set<string>;
-  /** Whether the field sits in a content control (the editor's rebuild breaks the control). */
-  inControl: boolean;
   /** The entries it lists now, by their visible text. */
   entries: string[];
 }
@@ -62,13 +66,6 @@ function inlineOrder(paragraph: NfNode): NfNode[] {
 
 const deleted = (n: NfNode) =>
   revisionsIn(n.pending).some((r) => r.kind === 'Deletion');
-
-/** Whitespace as an entry shows it: tabs and breaks as spaces, runs of spaces as one. */
-export const entryText = (s: string): string =>
-  s
-    .replace(/[\t\f\v\r\n]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 
 /**
  * A paragraph's visible text: its runs less field codes and PAGEREF results (a contents entry's
@@ -130,23 +127,18 @@ export function viewToc(view: DocumentView): TocField | null {
 /** The document's table of contents field in the body, or null when it has none. */
 export function tocField(nf: NormalForm): TocField | null {
   // every body paragraph in reading order, with the list it sits in
-  const paragraphs: Array<{
-    node: NfNode;
-    parent: NfNode;
-    key: string;
-    inControl: boolean;
-  }> = [];
-  const rec = (node: NfNode, inControl: boolean) => {
+  const paragraphs: Array<{ node: NfNode; parent: NfNode; key: string }> = [];
+  const rec = (node: NfNode) => {
     for (const key of listKeys(node)) {
       if (!bodyList(key) || key === 'inlines') continue;
       for (const child of arr<NfNode>(listAt(node, key))) {
         if (child.kind === KIND.paragraph)
-          paragraphs.push({ node: child, parent: node, key, inControl });
-        rec(child, inControl || child.kind === KIND.control);
+          paragraphs.push({ node: child, parent: node, key });
+        rec(child);
       }
     }
   };
-  rec(nf.root, false);
+  rec(nf.root);
   // fields as a stack across paragraphs: the TOC field's begin and end paragraphs
   const open: Array<{
     code: string;
@@ -178,12 +170,7 @@ export function tocField(nf: NormalForm): TocField | null {
 }
 
 function range(
-  span: Array<{
-    node: NfNode;
-    parent: NfNode;
-    key: string;
-    inControl: boolean;
-  }>,
+  span: Array<{ node: NfNode; parent: NfNode; key: string }>,
   code: string,
   beginMark: NfNode,
   endMark: NfNode
@@ -258,50 +245,10 @@ function range(
     endAt,
     ids,
     styles: tocStyles(code),
-    inControl: first.inControl,
     entries: parts
       .map((part) => visibleText({ ...part.node, inlines: part.inlines }))
       .filter(Boolean)
   };
-}
-
-/** The switches of a contents field code, each with its argument (`\o "1-3"`, `\h`). */
-function switchesOf(code: string): Array<{ name: string; arg: string }> {
-  const out: Array<{ name: string; arg: string }> = [];
-  const re = /\\([a-zA-Z*])\s*(?:"([^"]*)"|([^\s\\]+))?/g;
-  for (let m = re.exec(code); m; m = re.exec(code))
-    out.push({ name: m[1].toLowerCase(), arg: m[2] ?? m[3] ?? '' });
-  return out;
-}
-
-/**
- * The switches the editor's rebuild cannot reproduce, as they are written in the code. The editor
- * models `\o "a-b"`, `\t`, `\h`, `\z`, `\u`, `\n` with no range and `\p " "`, and drops a
- * `\* MERGEFORMAT`; anything else (a table of figures, `\c`; a bookmark range, `\b`; kept tabs,
- * `\w`...) would be rebuilt as a different contents.
- */
-export function unsupportedSwitches(code: string): string[] {
-  return switchesOf(code)
-    .filter(({ name, arg }) => {
-      switch (name) {
-        case 'o':
-          return !/^\d+-\d+$/.test(arg);
-        case 't':
-          return false;
-        case 'h':
-        case 'z':
-        case 'u':
-        case 'n':
-          return arg !== '';
-        case 'p':
-          return arg !== ' ' && arg !== '';
-        case '*':
-          return arg.toUpperCase() !== 'MERGEFORMAT';
-        default:
-          return true;
-      }
-    })
-    .map(({ name, arg }) => `\\${name}${arg ? ` ${arg}` : ''}`);
 }
 
 /** The paragraphs a contents table lists, in reading order, with their text: its headings. */

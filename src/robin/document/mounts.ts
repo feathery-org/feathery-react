@@ -283,11 +283,6 @@ export interface CardResolver {
   owns(changeSetId: string): boolean;
   /** Accept or reject the card; true when it was resolved. */
   resolve(changeSetId: string, accept: boolean): boolean;
-  /**
-   * Run the editor's own accept or reject of cards the engine does not own (`resolve`), so the
-   * engine refreshes what the editor derives from the document in the same undo group.
-   */
-  settle?<T>(resolve: () => T): T;
 }
 
 const resolvers = new WeakMap<object, CardResolver>();

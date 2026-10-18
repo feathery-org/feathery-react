@@ -31,7 +31,7 @@ import { ENGINE_HISTORY_LIMIT, EngineHistory, HistoryOutcome } from './history';
 import { IdTable } from './ids';
 import { WriteJournal, journalKey } from './loop';
 import { renderOutline } from './outline';
-import type { CommitStep, EditorHost, Pack, Residue } from './pack';
+import type { CommitStep, EditorHost, Pack, Residue, SeamReport } from './pack';
 import { logDebug, logError, logWarn, truncatedDetail } from './log';
 import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
@@ -545,45 +545,6 @@ export class DocumentSession {
     return true;
   }
 
-  /**
-   * The editor's own accept or reject of a card (`resolve`), with what the editor derives from the
-   * document (a table of contents) refreshed after it in the same undo group.
-   */
-  settle<T>(resolve: () => T): T {
-    // the last installed state: this runs from the rail, where a re-read could land mid-change
-    const view = this.current?.view;
-    const step = view ? this.pack.reconcile.refresh?.(view, 'editor') : null;
-    if (!step) return resolve();
-    const before = this.host.serialize();
-    let out: T | undefined;
-    let failed: { error: unknown } | null = null;
-    const run = () => {
-      out = resolve();
-      try {
-        this.runStep(step);
-      } catch (error) {
-        failed = { error };
-      }
-    };
-    const transaction = this.pack.reconcile.transaction;
-    if (transaction) transaction(this.host, run);
-    else run();
-    if (failed && !transaction)
-      this.refreshFailed('settle', (failed as { error: unknown }).error);
-    else if (failed) {
-      // the refresh failed after the person's accept or reject: the resolution stands without it.
-      // What a failed refresh left half done is in the same undo group, so the group is undone and
-      // the resolution run again on its own; if undo does not give back the document before it,
-      // the group is redone and kept as it is
-      this.refreshFailed('settle', (failed as { error: unknown }).error);
-      this.host.undo();
-      if (equivalentNative(this.pack, this.host.serialize(), before))
-        out = resolve();
-      else this.host.redo();
-    }
-    return out as T;
-  }
-
   /** A refresh after a resolution that failed: reported, never fatal to the resolution. */
   private refreshFailed(where: string, error: unknown): void {
     logWarn({
@@ -598,10 +559,16 @@ export class DocumentSession {
     const native = this.host.serialize();
     const view = makeView(this.pack.adapter.toNormalForm(native).nf, this.pack);
     const step = this.pack.reconcile.refresh?.(view, history);
-    if (step) this.runStep(step);
+    if (!step) return;
+    const report = this.runStep(step);
+    // a refresh that failed partway left the document half done: the caller takes it back
+    if (report?.failed)
+      throw new Error(
+        report.facts?.map((f) => f.summary).join('; ') || 'the refresh failed'
+      );
   }
 
-  private runStep(step: CommitStep): void {
+  private runStep(step: CommitStep): SeamReport | void {
     const seam = this.pack.seams[step.seam];
     if (!seam)
       throw new Error(
@@ -609,7 +576,10 @@ export class DocumentSession {
           step.seam
         )}, which the pack does not have`
       );
-    seam.apply(this.host, step.payload, { turnId: 'refresh', intent: '' });
+    return seam.apply(this.host, step.payload, {
+      turnId: 'refresh',
+      intent: ''
+    });
   }
 
   /** The editing turn in flight: set by its first write, cleared by `finishTurn`. */

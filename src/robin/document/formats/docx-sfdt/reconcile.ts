@@ -727,11 +727,7 @@ export function tocStep(
   if (!toc) return null;
   return {
     seam: 'toc',
-    payload: {
-      history,
-      ids: toc.paragraphs.map((p) => p.id),
-      ...(toc.inControl ? { inControl: true } : {})
-    }
+    payload: { history, ids: toc.paragraphs.map((p) => p.id) }
   };
 }
 

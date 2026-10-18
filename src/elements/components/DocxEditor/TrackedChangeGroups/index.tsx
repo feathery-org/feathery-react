@@ -14,6 +14,7 @@ import {
 import { isRobinEditing } from '../robinActivity';
 import { featheryWindow } from '../../../../utils/browser';
 import { cardResolverFor } from '../../../../robin/document/mounts';
+import { withTocRefresh } from '../toc/refreshToc';
 import { redoDocument, undoDocument } from '../historyRouting';
 import { isOpeningDocument, setActiveInlineRevisions } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
@@ -512,12 +513,9 @@ function TrackedChangeGroups({
   ) =>
     setStall(unresolved ? stallNotice(unresolved, resolved, isAccept) : null);
 
-  // The editor's own accept or reject, run through the document engine when one is mounted: it
-  // refreshes what the editor derives from the document (a table of contents) in the same undo.
-  const settled = <T,>(resolve: () => T): T => {
-    const resolver = cardResolverFor(editor);
-    return resolver?.settle ? resolver.settle(resolve) : resolve();
-  };
+  // The editor's own accept or reject, with the document's table of contents refreshed after it in
+  // the same undo, for every reviewer (a refresh that fails is logged and skipped).
+  const settled = <T,>(resolve: () => T): T => withTocRefresh(editor, resolve);
 
   // Non-cascading resolve (native accept/reject settles whatever is
   // CONTIGUOUS, not the group), wrapped as ONE undo step.
