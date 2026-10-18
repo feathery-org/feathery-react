@@ -4,6 +4,7 @@ import { act, render, waitFor } from '@testing-library/react';
 import { installRevisionHighlightRendering } from '../useDocxEditor';
 import VersionViewer from './VersionViewer';
 import { colorForAuthor } from './authorColors';
+import { applyHunks, diffSession } from './sfdtDiff';
 import { DocxHistoryHost, DocxVersion } from './types';
 
 // Drive the viewer against a fake ej global and a stubbed loader so no real
@@ -249,6 +250,88 @@ describe('VersionViewer', () => {
     await waitFor(() => expect(open).toHaveBeenCalledWith('{"live":true}'));
     // The live document bypasses the version-file fetch entirely.
     expect(h.fetchVersionFile).not.toHaveBeenCalled();
+  });
+
+  it('combines saved sessions with the live current session, ignoring its stale checkpoint', async () => {
+    const doc = (first: string, last: string) => ({
+      sections: [
+        {
+          blocks: [first, 'Unchanged middle', last].map((text) => ({
+            inlines: [{ text }]
+          }))
+        }
+      ]
+    });
+    const baseline = doc('First', 'Last');
+    const earlier = doc('First saved edit', 'Last');
+    const latest = doc('First saved edit', 'Last unsaved edit');
+    const changes = diffSession(
+      earlier,
+      [{ sfdt: latest, author: 'you' }],
+      'live'
+    );
+    const h = host({
+      fetchVersionFile: jest.fn(async (url: string) => {
+        const documents: Record<string, unknown> = { baseline, earlier };
+        if (!(url in documents))
+          throw new Error(`Unexpected stale fetch: ${url}`);
+        return new TextEncoder().encode(JSON.stringify(documents[url])).buffer;
+      })
+    });
+    const onMeta = jest.fn();
+    render(
+      <VersionViewer
+        host={h}
+        version={version({
+          id: 'current',
+          session_id: 'live',
+          seq: 2,
+          is_current: true,
+          final_sfdt: 'stale-checkpoint',
+          actor_label: 'Bob'
+        })}
+        folded={{
+          earlier: [
+            version({
+              id: 'earlier',
+              seq: 1,
+              final_sfdt: 'earlier',
+              actor_label: 'Alice'
+            })
+          ],
+          preceding: version({ id: 'baseline', seq: 0, final_sfdt: 'baseline' })
+        }}
+        liveDoc={{
+          loading: false,
+          error: false,
+          degraded: false,
+          sfdt: JSON.stringify(applyHunks(latest, changes)),
+          editCount: 1,
+          session: {
+            sessionId: 'live',
+            authors: [{ kind: 'user', key: 'you', label: 'You' }],
+            finalSfdt: JSON.stringify(latest),
+            changes
+          }
+        }}
+        onMeta={onMeta}
+      />
+    );
+    await waitFor(() => {
+      const rendered = JSON.parse(
+        open.mock.calls[open.mock.calls.length - 1]?.[0] ?? '{}'
+      );
+      expect(
+        new Set((rendered.revisions ?? []).map((r: any) => r.author))
+      ).toEqual(new Set(['Alice', 'Bob']));
+    });
+    expect(open.mock.calls[open.mock.calls.length - 1][0]).toContain(
+      'unsaved edit'
+    );
+    expect(h.fetchVersionFile).not.toHaveBeenCalledWith('stale-checkpoint');
+    expect(onMeta).toHaveBeenLastCalledWith(
+      expect.objectContaining({ editCount: 2 })
+    );
   });
 
   it('keeps the painted preview visible while the next version resolves', async () => {

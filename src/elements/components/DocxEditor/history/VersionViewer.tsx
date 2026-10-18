@@ -15,7 +15,7 @@ import { normalizeForDiff } from './sfdtDiff';
 import {
   FoldedVersions,
   useVersionDocument,
-  VersionDocument
+  LiveVersionDocument
 } from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
 import { withDocumentDeadline } from '../../../../utils/documentPersistence';
@@ -100,7 +100,7 @@ interface Props {
   highlightsOn?: boolean;
   /** Pre-resolved document that skips the fetch; used for the unsaved current
    *  version, which has no stored files. */
-  liveDoc?: VersionDocument;
+  liveDoc?: LiveVersionDocument;
   /** Sessions folded under this row: their edits are shown together. */
   folded?: FoldedVersions | null;
   /** Reports the version's edit counts + whether highlights are available, so
@@ -139,21 +139,14 @@ export default function VersionViewer({
   const zoomHandlerRef = useRef<((args: any) => void) | null>(null);
   const [editorReady, setEditorReady] = useState(false);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
-  // With a live document (the in-progress current version — no stored files),
-  // use it directly and skip the fetch. It carries the applyHunks display SFDT,
-  // so the normal highlight path renders it exactly like a stored version.
+  // Fold the raw live session into earlier versions when showing a group;
+  // its highlighted preview remains the fallback if the group cannot resolve.
   // A folded group right after the original starts from the converted upload.
   const convertDocx = useMemo(
     () => (serviceUrl ? hiddenEditorConverter(serviceUrl, headers) : undefined),
     [serviceUrl, headers]
   );
-  const fetched = useVersionDocument(
-    host,
-    liveDoc ? null : version,
-    folded,
-    convertDocx
-  );
-  const doc = liveDoc ?? fetched;
+  const doc = useVersionDocument(host, version, folded, convertDocx, liveDoc);
   // Restores establish a clean baseline; embedded suggestions are reviewable
   // in the live editor, not replayed as edits in the restored history row.
   const isRestored = !!(version.restored_from || version.restored_from_at);

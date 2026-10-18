@@ -30,7 +30,7 @@ import {
   prefetchVersionDocuments,
   retainVersionDocuments,
   versionDocumentKey,
-  VersionDocument
+  LiveVersionDocument
 } from './history/useVersionDocument';
 import VersionViewer from './history/VersionViewer';
 import { foldedUnder } from './history/versionGrouping';
@@ -291,7 +291,7 @@ function DocxEditor({
   // A live-diffed display document for the in-progress current version (no
   // stored files yet): highlights baked in, so the viewer renders it like any
   // stored version. Null for stored versions (they fetch their own files).
-  const [liveDoc, setLiveDoc] = useState<VersionDocument | null>(null);
+  const [liveDoc, setLiveDoc] = useState<LiveVersionDocument | null>(null);
   const [liveSessionAuthors, setLiveSessionAuthors] =
     useState<LiveSessionAuthors | null>(null);
   // The version list reported up by the History panel, for auto-selecting the
@@ -716,7 +716,7 @@ function DocxEditor({
   // files, like any older version.
   const selectVersion = useCallback(
     (version: DocxVersion) => {
-      let live: VersionDocument | null = null;
+      let live: LiveVersionDocument | null = null;
       // During an open session, autosave checkpoints can already be stale.
       // After Save/reload, the browser has no live diff baseline; the latest
       // saved change files are then the only source for user edit stepping.
@@ -732,6 +732,11 @@ function DocxEditor({
             loading: false,
             error: false,
             sfdt: preview.sfdt,
+            session: {
+              sessionId: preview.sessionId,
+              authors: preview.authors,
+              ...preview.artifacts
+            },
             degraded: false,
             editCount: preview.editCount,
             formatCount: preview.formatCount,

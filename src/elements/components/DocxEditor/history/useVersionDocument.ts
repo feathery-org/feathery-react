@@ -12,7 +12,7 @@ import {
   contentHash,
   normalizeForDiff
 } from './sfdtDiff/index';
-import { DocxHistoryHost, DocxVersion } from './types';
+import { DocxHistoryHost, DocxVersion, LiveSessionAuthors } from './types';
 import { parseChangeList } from './validation';
 import {
   approvedEditCount,
@@ -137,6 +137,11 @@ export function __clearVersionDocumentCache(): void {
 export interface LocalVersionArtifacts {
   finalSfdt: string;
   changes?: ChangeList;
+}
+
+/** A live preview keeps its raw snapshot separate from synthetic highlights. */
+export interface LiveVersionDocument extends VersionDocument {
+  session?: LiveSessionAuthors & LocalVersionArtifacts;
 }
 
 // The closing session's artifacts, kept in memory while their upload is in
@@ -420,14 +425,26 @@ async function resolveFolded(
   host: DocxHistoryHost,
   version: DocxVersion,
   folded: FoldedVersions,
-  convertDocx?: DocxToSfdt
+  convertDocx?: DocxToSfdt,
+  liveDoc?: LiveVersionDocument
 ): Promise<ResolvedVersion> {
+  const fallback = () => liveDoc ?? resolveAndCache(host, version);
+  const liveSession = liveDoc?.session;
   try {
-    const members = [...folded.earlier, version].sort((a, b) => a.seq - b.seq);
-    if (members.some(mixesPersonAndRobin))
-      return await resolveAndCache(host, version);
+    const current = liveSession
+      ? { ...version, authors: liveSession.authors }
+      : version;
+    const members = [...folded.earlier, current].sort((a, b) => a.seq - b.seq);
+    if (members.some(mixesPersonAndRobin)) return await fallback();
     const artifacts = await Promise.all(
-      members.map((member) => versionArtifacts(host, member))
+      members.map((member) =>
+        member.id === version.id && liveSession
+          ? {
+              finalSfdt: liveSession.finalSfdt,
+              changes: liveSession.changes ?? null
+            }
+          : versionArtifacts(host, member)
+      )
     );
     if (artifacts.every(Boolean)) {
       const sessions = artifacts.map((artifact, index) => ({
@@ -448,7 +465,7 @@ async function resolveFolded(
   } catch {
     // Fall through to the single-version view.
   }
-  return resolveAndCache(host, version);
+  return fallback();
 }
 
 /** Warm a small set of immutable historical versions after the rail opens. */
@@ -470,7 +487,8 @@ export function useVersionDocument(
   host: DocxHistoryHost | null | undefined,
   version: DocxVersion | null,
   folded?: FoldedVersions | null,
-  convertDocx?: DocxToSfdt
+  convertDocx?: DocxToSfdt,
+  liveDoc?: LiveVersionDocument
 ): VersionDocument {
   const [state, setState] = useState<VersionDocument>({
     loading: true,
@@ -498,6 +516,17 @@ export function useVersionDocument(
     const foldedVersions = latestFolded.current?.earlier.length
       ? latestFolded.current
       : null;
+    // Never replace a live preview with an older checkpoint, even if the
+    // group cannot be resolved or the preview has no reliable diff artifacts.
+    if (
+      liveDoc &&
+      (!foldedVersions ||
+        !liveDoc.session ||
+        liveDoc.session.sessionId !== version.session_id)
+    ) {
+      setState(liveDoc);
+      return;
+    }
     // Local artifacts outrank a cached resolution: a prefetch may have cached
     // the degraded docx fallback before the close registered its snapshot.
     const cached =
@@ -517,13 +546,19 @@ export function useVersionDocument(
     };
 
     (foldedVersions
-      ? resolveFolded(host, version, foldedVersions, latestConvert.current)
+      ? resolveFolded(
+          host,
+          version,
+          foldedVersions,
+          latestConvert.current,
+          liveDoc
+        )
       : resolveAndCache(host, version)
     ).then(done);
     return () => {
       reqId.current++;
     };
-  }, [host, documentKey]);
+  }, [host, documentKey, liveDoc]);
 
   return state;
 }

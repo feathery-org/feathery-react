@@ -2,6 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 
 import {
   __clearVersionDocumentCache,
+  LiveVersionDocument,
   clearLocalVersionArtifacts,
   prefetchVersionDocuments,
   registerLocalVersionArtifacts,
@@ -484,6 +485,56 @@ describe('useVersionDocument', () => {
       JSON.stringify(text('Hello Alice and Bob'))
     );
   });
+
+  it.each(['missing snapshot', 'mixed live authors'])(
+    'preserves the live preview when a group falls back because of %s',
+    async (reason) => {
+      const h = host({
+        fetchVersionFile: jest.fn().mockRejectedValue(new Error('unavailable'))
+      });
+      const live: LiveVersionDocument = {
+        loading: false,
+        error: false,
+        degraded: false,
+        sfdt: '{"unsaved":"latest"}',
+        editCount: 1,
+        session: {
+          sessionId: 'live',
+          finalSfdt: '{}',
+          authors:
+            reason === 'mixed live authors'
+              ? [
+                  { kind: 'user', key: 'you', label: 'You' },
+                  { kind: 'assistant', key: 'robin', label: 'Robin' }
+                ]
+              : [{ kind: 'user', key: 'you', label: 'You' }]
+        }
+      };
+      const row = version({
+        id: 'live',
+        session_id: 'live',
+        seq: 2,
+        is_current: true,
+        final_sfdt: 'stale',
+        authors: []
+      });
+      const folded = {
+        earlier: [version({ id: 'prior', seq: 1 })],
+        preceding: null
+      };
+      const { result, rerender } = renderHook(
+        ({ preview }) => useVersionDocument(h, row, folded, undefined, preview),
+        { initialProps: { preview: live } }
+      );
+      await waitFor(() => expect(result.current.sfdt).toBe(live.sfdt));
+      // Opening Current again must resolve a newer live preview even though
+      // the server's version key and checkpoint have not changed.
+      const newer = { ...live, sfdt: '{"unsaved":"newer"}' };
+      rerender({ preview: newer });
+      await waitFor(() => expect(result.current.sfdt).toBe(newer.sfdt));
+      expect(h.fetchVersionFile).not.toHaveBeenCalled();
+    }
+  );
 
   it('opens the row on its own when a folded session mixes a person and Robin', async () => {
     const text = (t: string) => ({
