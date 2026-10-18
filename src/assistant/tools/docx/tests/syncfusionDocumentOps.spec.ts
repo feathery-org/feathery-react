@@ -1214,6 +1214,50 @@ describe('applyDocumentEdits', () => {
 });
 
 describe('live occurrence search and scoped replacement', () => {
+  it.each(['lookup', 'accepted replacement'])(
+    'real SDK: internal %s leaves no yellow search overlay',
+    (operation) => {
+      const ed = makeRealDocumentEditor({
+        sections: [
+          {
+            blocks: [para('PR1927 History Grouping QA'), para('Unchanged body')]
+          }
+        ]
+      });
+      try {
+        ed.selection.select('0;1;0', '0;1;9');
+        if (operation === 'lookup') {
+          const found = findDocumentOccurrences(ed as unknown as LiveEditor, {
+            text: 'PR1927 History Grouping QA'
+          });
+          expect(found).toMatchObject({ ok: true, count: 1 });
+          expect(ed.selection.text).toBe('Unchanged');
+        } else {
+          const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+            edits: [
+              {
+                op: 'replace_text',
+                anchor: '0;0',
+                find: 'PR1927 History Grouping QA',
+                replace: 'PR 1927 testing'
+              }
+            ]
+          });
+          expect(result.results[0].ok).toBe(true);
+          expect(ed.revisions.length).toBeGreaterThan(0);
+          ed.revisions.acceptAll();
+          expect(flattenSfdt(JSON.parse(ed.serialize()))[0].text).toBe(
+            'PR 1927 testing'
+          );
+        }
+        expect((ed.search as any).searchHighlighters?.length ?? 0).toBe(0);
+        expect(ed.search.searchResults.length).toBe(0);
+      } finally {
+        destroyRealDocumentEditor(ed);
+      }
+    }
+  );
+
   it('real SDK: every background read class is visually silent', () => {
     const ed = makeRealDocumentEditor({
       sections: [

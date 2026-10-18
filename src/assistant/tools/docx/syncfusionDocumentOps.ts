@@ -4447,6 +4447,16 @@ function currentTextFrameText(sfdt: any, anchor: string): string | undefined {
   return undefined;
 }
 
+// Assistant searches resolve ranges internally; their yellow Find overlays
+// must not outlive the lookup or become stale after tracked edits are accepted.
+function clearInternalSearch(search: any): void {
+  try {
+    search.searchResults.clear?.();
+  } catch {
+    // A disposed view must not turn a completed edit into a failed operation.
+  }
+}
+
 // Search the current DocumentEditor model via SyncFusion's public Search API.
 // SearchResults#getTextSearchResultsOffset returns the actual hierarchical
 // selection offsets, including supported header/footer and note stories. Every
@@ -4611,6 +4621,8 @@ function findOneDocumentOccurrences(
       };
     } catch {
       return { ok: false, ...base, error: 'search_failed' };
+    } finally {
+      clearInternalSearch(search);
     }
   });
 }
@@ -5181,6 +5193,8 @@ function resolveLiveStoryTarget(
       'search_failed',
       `SyncFusion could not resolve the searched story range for "${find}".`
     );
+  } finally {
+    clearInternalSearch(search);
   }
 }
 
@@ -5206,53 +5220,59 @@ function verifyLiveStoryWrite(
       'search_unavailable',
       'Story post-write verification requires SyncFusion Search.'
     );
-  search.findAll(replacement, 'CaseSensitive');
-  const matches = (
-    search.searchResults.getTextSearchResultsOffset() ?? []
-  ).filter((result: any) => {
-    const start = offsetParts(String(result?.startOffset ?? ''));
-    const end = offsetParts(String(result?.endOffset ?? ''));
-    return start.anchor === target.anchor && end.anchor === target.anchor;
-  });
-  // A first tracked replace inserts at the deleted range's old end; replacing a
-  // still-pending insertion reuses its start. Both are also where a broken write
-  // can insert beside an untouched target, which reads as the right range and is
-  // not discriminable here - the accept projection is what refuses that write
-  // (`assertStoryTextFrameReplacement`).
-  const match = matches.find(
-    (result: any) =>
-      (String(result?.startOffset) === target.startOffset ||
-        String(result?.startOffset) === target.endOffset) &&
-      String(result?.endOffset) === writtenEndOffset
-  );
-  if (!match)
-    throw new OpError(
-      'text_verification_failed',
-      `Text verification failed at "${target.anchor}".`,
-      [
-        `expected: ${JSON.stringify(replacement)}`,
-        `expected range: ${target.startOffset} or ${target.endOffset} to ${writtenEndOffset}`,
-        `ranges returned for the replacement: ${
-          matches
-            .map(
-              (result: any) =>
-                `${String(result?.startOffset)} to ${String(result?.endOffset)}`
-            )
-            .join(', ') || 'none'
-        }`
-      ]
+  try {
+    search.findAll(replacement, 'CaseSensitive');
+    const matches = (
+      search.searchResults.getTextSearchResultsOffset() ?? []
+    ).filter((result: any) => {
+      const start = offsetParts(String(result?.startOffset ?? ''));
+      const end = offsetParts(String(result?.endOffset ?? ''));
+      return start.anchor === target.anchor && end.anchor === target.anchor;
+    });
+    // A first tracked replace inserts at the deleted range's old end; replacing a
+    // still-pending insertion reuses its start. Both are also where a broken write
+    // can insert beside an untouched target, which reads as the right range and is
+    // not discriminable here - the accept projection is what refuses that write
+    // (`assertStoryTextFrameReplacement`).
+    const match = matches.find(
+      (result: any) =>
+        (String(result?.startOffset) === target.startOffset ||
+          String(result?.startOffset) === target.endOffset) &&
+        String(result?.endOffset) === writtenEndOffset
     );
-  editor.selection.select(String(match.startOffset), String(match.endOffset));
-  const actual = String(editor.selection.text ?? '');
-  if (actual !== replacement)
-    throw new OpError(
-      'text_verification_failed',
-      `Text verification failed at "${target.anchor}".`,
-      [
-        `expected: ${JSON.stringify(replacement)}`,
-        `actual: ${JSON.stringify(actual)}`
-      ]
-    );
+    if (!match)
+      throw new OpError(
+        'text_verification_failed',
+        `Text verification failed at "${target.anchor}".`,
+        [
+          `expected: ${JSON.stringify(replacement)}`,
+          `expected range: ${target.startOffset} or ${target.endOffset} to ${writtenEndOffset}`,
+          `ranges returned for the replacement: ${
+            matches
+              .map(
+                (result: any) =>
+                  `${String(result?.startOffset)} to ${String(
+                    result?.endOffset
+                  )}`
+              )
+              .join(', ') || 'none'
+          }`
+        ]
+      );
+    editor.selection.select(String(match.startOffset), String(match.endOffset));
+    const actual = String(editor.selection.text ?? '');
+    if (actual !== replacement)
+      throw new OpError(
+        'text_verification_failed',
+        `Text verification failed at "${target.anchor}".`,
+        [
+          `expected: ${JSON.stringify(replacement)}`,
+          `actual: ${JSON.stringify(actual)}`
+        ]
+      );
+  } finally {
+    clearInternalSearch(search);
+  }
 }
 
 function applyLiveStoryTextOp(
@@ -5491,6 +5511,8 @@ function selectExactMatch(
       'search_failed',
       `SyncFusion could not resolve an exact selected range for "${find}".`
     );
+  } finally {
+    clearInternalSearch(search);
   }
 }
 
@@ -12650,12 +12672,16 @@ function applyReplaceAll(
   const search = editor.search;
   if (!search?.findAll)
     throw new OpError('unsupported_op', 'Search module unavailable.');
-  search.findAll(find);
-  const results = search.searchResults;
-  const count = results?.length ?? 0;
-  if (count > 0 && results?.replaceAll)
-    results.replaceAll(String(op.replace ?? ''));
-  return count;
+  try {
+    search.findAll(find);
+    const results = search.searchResults;
+    const count = results?.length ?? 0;
+    if (count > 0 && results?.replaceAll)
+      results.replaceAll(String(op.replace ?? ''));
+    return count;
+  } finally {
+    clearInternalSearch(search);
+  }
 }
 
 function callEditor(editor: LiveEditor, method: string, ...args: any[]): void {
