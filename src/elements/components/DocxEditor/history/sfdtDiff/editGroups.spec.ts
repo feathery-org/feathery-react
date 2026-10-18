@@ -325,3 +325,44 @@ describe('edit groups (version-bar count + steppers)', () => {
     ).toBeNull();
   });
 });
+
+describe('the version bar count with formatting changes', () => {
+  // One person bolds a word, another adds a word elsewhere.
+  const display = () => {
+    const bold = { text: 'Liability', characterFormat: { bold: true } };
+    const start = docWith(para(textRun('Premium')), para(textRun('Liability')));
+    const formatted = docWith(para(textRun('Premium')), para(bold));
+    const final = docWith(para(textRun('Premium Draft')), para(clone(bold)));
+    const changes = diffSession(
+      start,
+      [
+        { sfdt: formatted, author: 'alice' },
+        { sfdt: final, author: 'bob' }
+      ],
+      's'
+    );
+    return applyHunks(clone(final), changes);
+  };
+
+  it('counts formatting changes only when asked', () => {
+    expect(countEditGroups(display())).toBe(1);
+    expect(countEditGroups(display(), { includeFormatting: true })).toBe(2);
+  });
+
+  it('counts as many edits as the steppers visit', () => {
+    const doc = display();
+    const editor = makeRealDocumentEditor(doc);
+    try {
+      const stops = new Set(
+        stepperRevisions(editor).map(
+          (revision: any) => editGroupKey(revision) ?? revision.revisionId
+        )
+      );
+      expect(countEditGroups(doc, { includeFormatting: true })).toBe(
+        stops.size
+      );
+    } finally {
+      destroyRealDocumentEditor(editor);
+    }
+  });
+});

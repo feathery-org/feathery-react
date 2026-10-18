@@ -918,6 +918,9 @@ describe('useDocxHistorySession', () => {
     expect(must(preview).editCount).toBeGreaterThan(0);
     // applyHunks baked synthetic revisions into the display document.
     expect(must(preview).sfdt).toContain('revisionId');
+    expect(must(preview).artifacts.finalSfdt).toBe(doc);
+    expect(must(preview).artifacts.finalSfdt).not.toContain('revisionId');
+    expect(must(preview).artifacts.changes?.hunks.length).toBeGreaterThan(0);
     expect(must(preview).authors).toEqual([YOU]);
     expect(must(preview).sessionId).toBeTruthy();
   });
