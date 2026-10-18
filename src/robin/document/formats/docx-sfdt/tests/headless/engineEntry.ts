@@ -228,14 +228,24 @@ const api = {
     injectFailure = true;
   },
 
-  /** Make the editor's next contents rebuild throw halfway, after it deleted the old contents. */
-  injectTocFailure(): void {
+  /**
+   * Make the editor's next contents rebuild throw: halfway (after it deleted the old contents), or
+   * at once (before it changed anything).
+   */
+  injectTocFailure(at: 'halfway' | 'start' = 'halfway'): void {
     const module = (live() as any).editorModule;
-    const build = module.buildToc;
-    module.buildToc = () => {
-      module.buildToc = build;
+    const name = at === 'halfway' ? 'buildToc' : 'insertTableOfContents';
+    const original = module[name];
+    module[name] = () => {
+      module[name] = original;
       throw new Error('injected: the contents rebuild failed');
     };
+  },
+
+  /** The editor's own list of fields, by code, in its order. */
+  fieldCodes(): string[] {
+    const e = live() as any;
+    return e.documentHelper.fields.map((f: any) => String(e.selection.getFieldCode(f)).trim());
   },
 
   /** The editor's alert dialogs on the page (its "No Headings" alert is one). */

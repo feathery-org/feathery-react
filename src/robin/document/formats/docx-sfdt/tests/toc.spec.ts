@@ -14,6 +14,7 @@ import { docxPack } from '../index';
 import { NORMALIZATIONS } from '../projections';
 import { tocField, tocSources, unsupportedSwitches } from '../toc';
 import { docxTree } from '../tree';
+import { refreshToc } from '../seams/toc';
 import { TocShape, flagship, withToc } from './tocFixture';
 
 function stateOf(native: string) {
@@ -185,5 +186,24 @@ describe('review of the rebuild (PR 1956), off the editor', () => {
         expect(s.view.annotation(p.id)?.derived).toEqual(expect.objectContaining({ source: 'toc' }));
       }
     }
+  });
+
+  it('the field code is the model\'s to edit; the result is not', () => {
+    const native = withToc('levels');
+    const s = stateOf(native);
+    const toc = tocField(s.view.nf) as NonNullable<ReturnType<typeof tocField>>;
+    const code = runs(toc.paragraphs[0]).find((r) => /^\s*TOC\s/.test(String(r.text))) as NfNode;
+    expect(toc.ids.has(code.id)).toBe(false);
+    const r = write(native, { scope: { ids: [code.id] }, changes: [{ kind: 'replace', id: code.id, base: baseOf(code), node: { kind: 'run', text: ' TOC \\o "1-2" \\h \\z ' } }] });
+    expect(invariantsOf(r)).toEqual(['verified']);
+  });
+
+  it('an editor without a method the rebuild drives: the contents is left as it is, said so, and nothing throws', () => {
+    const editor = {
+      editorModule: { insertTableOfContents() {}, isHeadingStyle() {}, getTocSettings() {}, insertTocHyperlink() {} },
+      selection: { getFieldCode: () => 'TOC' }
+    };
+    const report = refreshToc(editor as never, false, ['n1']);
+    expect(report.facts?.[0]?.summary).toBe("table of contents not refreshed: the editor's rebuild is unavailable; it stays as it is");
   });
 });

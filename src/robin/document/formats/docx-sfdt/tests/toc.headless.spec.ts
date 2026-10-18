@@ -478,6 +478,68 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
     expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), pre)).toBe(true);
   }, 120000);
 
+  it('a refresh that fails after the editor\'s own accept leaves the accept standing, the rail settled and undo working', async () => {
+    const { headings } = await open({});
+    const before = tocOf(await lane.call<string>('settled'));
+    await rename(headings[1], 'Renamed Heading');
+    const committed = tocOf(await lane.call<string>('settled'));
+    expect(committed).not.toEqual(before);
+    expect((await lane.call<Array<{ title: string }>>('rail')).length).toBe(1);
+    await lane.call('injectTocFailure');
+    await lane.call('clickCard', 0, 'Accept');
+    expect(await lane.call('rail')).toEqual([]);
+    expect(await lane.call('revisions')).toEqual([]);
+    const now = await lane.call<string>('settled');
+    expect(now).toContain('Renamed Heading');
+    // the contents as the commit left it: the failed rebuild left nothing half done
+    expect(tocOf(now)).toEqual(committed);
+    expect(await lane.call('historyState')).toEqual({ open: 0, insertingToc: false });
+    await lane.call('pressInDocument', 'z');
+    expect((await lane.call<Array<{ title: string }>>('rail')).length).toBe(1);
+  }, 120000);
+
+  it('a refresh that fails after the engine resolves a card leaves the resolution standing', async () => {
+    const { native } = await open({});
+    const headings = listedHeadings(native, ['Heading 1']);
+    const secId = await at(['sections', headings[3].si]);
+    const sec = (await read([secId], 'stubs'))[secId];
+    const r = await dispatch('write', { intent: 'Remove it.', scope: { ids: [secId] }, changes: [{ kind: 'delete', id: secId, base: sec.base }] });
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 800));
+    const committed = tocOf(await lane.call<string>('settled'));
+    expect((await lane.call<Array<{ title: string }>>('rail')).length).toBe(1);
+    await lane.call('injectTocFailure');
+    await lane.call('clickCard', 0, 'Accept');
+    expect(await lane.call('rail')).toEqual([]);
+    const now = await lane.call<string>('settled');
+    expect(await lane.call('revisions')).toEqual([]);
+    expect(tocOf(now)).toEqual(committed);
+    expect(await lane.call('historyState')).toEqual({ open: 0, insertingToc: false });
+  }, 120000);
+
+  it('the editor\'s field list keeps its order when the contents is not rebuilt after the move', async () => {
+    const { headings } = await open({ bodyLinks: true });
+    const order = await lane.call<string[]>('fieldCodes');
+    await lane.call('injectTocFailure', 'start');
+    const r = await rename(headings[1], 'Renamed Heading');
+    expect(r.ok).toBe(false);
+    expect(await lane.call<string[]>('fieldCodes')).toEqual(order);
+  }, 120000);
+
+  it('the field code is the model\'s to edit: \\o "1-1" made \\o "1-2" lists two heading levels', async () => {
+    const { native } = await open({});
+    expect(tocOf(native).entries.length).toBe(5);
+    const doc = JSON.parse(native);
+    const bi = doc.sections[0].blocks.findIndex((b: any) => (b.inlines ?? []).some((i: any) => typeof i.text === 'string' && /^\s*TOC\s/.test(i.text)));
+    const pid = await at(['sections', 0, 'blocks', bi]);
+    const code = (await read([pid]))[pid].inlines.find((i: any) => typeof i.text === 'string' && /^\s*TOC\s/.test(i.text));
+    const r = await dispatch('write', { intent: 'List two levels.', scope: { ids: [code.id] }, changes: [{ kind: 'replace', id: code.id, base: code.base, node: { kind: 'run', text: code.text.replace('"1-1"', '"1-2"') } }] });
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 1200));
+    const now = tocOf(await lane.call<string>('settled'));
+    expect(now.code).toContain('\\o "1-2"');
+    expect(now.entries.length).toBe(listedHeadings(native, ['Heading 1', 'Heading 2']).length);
+    await expectCurrent();
+  }, 120000);
+
   it('M5: a contents the editor will not touch (locked) is reported as not refreshed, never as refreshed', async () => {
     const { native, headings } = await open({ locked: true });
     const r = await rename(headings[1], 'Renamed Heading');
