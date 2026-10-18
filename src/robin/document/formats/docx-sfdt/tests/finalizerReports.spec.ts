@@ -531,4 +531,60 @@ describe('adversarial review of the rulings (findings 3 to 8)', () => {
     );
     expect(fact.summary).not.toMatch(/recomputed/);
   });
+
+  it('9: a formula the write created reads its value through a nested control, as the binding engine reads it', () => {
+    const s = stateOf(flagship);
+    const table = s.view.get('n119') as NfNode;
+    const row = s.view.get('n169') as NfNode;
+    const strip = (v: unknown): unknown =>
+      Array.isArray(v)
+        ? v.map(strip)
+        : v && typeof v === 'object'
+        ? Object.fromEntries(
+            Object.entries(v as object)
+              .filter(
+                ([k]) =>
+                  !['id', 'base', 'shape', 'usedBy', 'derived'].includes(k)
+              )
+              .map(([k, x]) => [k, strip(x)])
+          )
+        : v;
+    const copy = strip(row) as NfNode;
+    // the copy's formula control, its value run moved inside a plain control of its own
+    let formula: NfNode | null = null;
+    let value = '';
+    walk(copy, docxTree, ({ node }) => {
+      const b = node.binding as { expr?: unknown } | undefined;
+      if (!formula && node.kind === 'control' && typeof b?.expr === 'string')
+        formula = node;
+    });
+    if (!formula) throw new Error('no formula in the row');
+    const f = formula as NfNode;
+    const run = firstRun(f);
+    value = String(run.text);
+    f.inlines = [
+      { kind: 'control', inlines: [{ ...run }] } as unknown as NfNode
+    ];
+    const r = prepareWrite(s, {
+      intent: 'x',
+      scope: { ids: [] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: row.id,
+          container: shapeOf(table, docxTree),
+          node: copy
+        }
+      ]
+    } as unknown as WriteInput);
+    if (r.outcome !== 'verified')
+      throw new Error(JSON.stringify(r).slice(0, 600));
+    const created = formulasDetail(r.facts).filter(
+      (d) => !s.view.get(d.id) && /line_total/.test(String(d.name))
+    );
+    expect(created.length).toBe(1);
+    expect(created[0].after).toBe(value);
+    // and the document reads that value: the nested run is still there
+    expect(JSON.stringify(r.intended.root)).toContain(JSON.stringify(value));
+  });
 });
