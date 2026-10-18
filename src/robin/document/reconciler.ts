@@ -10,7 +10,7 @@
  *     back as one history entry (decision D4), pushed only once the proof passed;
  *   - a plan that lands natively is the editor's own undoable group.
  */
-import type { Warning } from './envelope';
+import type { Fact, Warning } from './envelope';
 import type { EngineHistory } from './history';
 import type {
   CommitPlan,
@@ -61,6 +61,8 @@ export type ReconcileOutcome =
       proof: ProofOutcome;
       live: { native: string; nf: NormalForm; residue: Residue };
       warnings: Warning[];
+      /** What the steps reported of the live document (derived content refreshed, or not). */
+      facts: Fact[];
     }
   | {
       outcome: 'apply-failed';
@@ -80,13 +82,20 @@ export type ReconcileOutcome =
 export function reconcile(input: ReconcileInput): ReconcileOutcome {
   const { pack, host, history, before, intended } = input;
   /** Undo only the groups this commit added; a document replacement is undone by its snapshot. */
+  // whether the plan's steps ran as one undo group of the editor's (`Reconcile.transaction`)
+  let grouped = false;
   const restore = (
     planned: CommitPlan | null,
     seamsRun: number
   ): RollbackOutcome => {
     try {
       return rollback(host, before.native, {
-        undoLimit: planned?.history === 'editor' ? seamsRun : 0,
+        undoLimit:
+          planned?.history === 'editor'
+            ? grouped
+              ? Math.min(seamsRun, 1)
+              : seamsRun
+            : 0,
         equivalent: (now) => equivalentNative(pack, now, before.native),
         layoutOnly: (now) =>
           pack.adapter.layoutOnly?.(now, before.native) ?? false
@@ -117,6 +126,8 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
     return { outcome: 'unchanged' };
   let plan: CommitPlan | null = null;
   const seams: string[] = [];
+  const reported: Fact[] = [];
+  const reportedWarnings: Warning[] = [];
   try {
     plan = pack.reconcile.plan({
       turnId: input.turnId,
@@ -130,20 +141,52 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
         : {}),
       ...(input.derived ? { derived: input.derived } : {})
     });
-    for (const step of plan.steps) {
-      const seam = pack.seams[step.seam];
-      if (!seam)
-        throw new Error(
-          `the plan names seam ${JSON.stringify(
-            step.seam
-          )}, which the pack does not have`
-        );
-      seams.push(step.seam);
-      seam.apply(host, step.payload, {
-        turnId: input.turnId,
-        intent: input.intent,
-        ...(input.title ? { title: input.title } : {})
-      });
+    const steps = (plan as CommitPlan).steps;
+    let refreshFailed = -1;
+    const runSteps = (upTo = steps.length) => {
+      for (const [k, step] of steps.slice(0, upTo).entries()) {
+        const seam = pack.seams[step.seam];
+        if (!seam)
+          throw new Error(
+            `the plan names seam ${JSON.stringify(
+              step.seam
+            )}, which the pack does not have`
+          );
+        seams.push(step.seam);
+        const report = seam.apply(host, step.payload, {
+          turnId: input.turnId,
+          intent: input.intent,
+          ...(input.title ? { title: input.title } : {})
+        });
+        if (report) {
+          reported.push(...(report.facts ?? []));
+          reportedWarnings.push(...(report.warnings ?? []));
+          if (report.failed && refreshFailed < 0) refreshFailed = k;
+        }
+      }
+    };
+    const transaction = pack.reconcile.transaction;
+    if (plan.history === 'editor' && plan.grouped && transaction) {
+      grouped = true;
+      transaction(host, () => runSteps());
+    } else runSteps();
+    if (refreshFailed >= 0) {
+      // a refresh failed partway: take back the whole change with what it left, then land the
+      // change's own steps without it (the refresh says why in its fact)
+      if (plan.history === 'editor') {
+        if (!grouped)
+          throw new Error(
+            'a refresh failed outside the change undo group, so its partial work cannot be taken back'
+          );
+        host.undo();
+        if (!equivalentNative(pack, host.serialize(), before.native))
+          throw new Error(
+            'a refresh failed, and undoing the change did not give back the document before it'
+          );
+        grouped = false;
+      }
+      seams.length = 0;
+      runSteps(refreshFailed);
     }
   } catch (e) {
     return {
@@ -184,7 +227,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
   // A document replacement keeps the before snapshot in engine history, so its card reverts it
   // exactly; the editor's own one-by-one reject cannot represent every structural change (an
   // inserted cell or section has no revision of its own), and that is a disclosure, not a failure.
-  const warnings: Warning[] = [...(plan.warnings ?? [])];
+  const warnings: Warning[] = [...(plan.warnings ?? []), ...reportedWarnings];
   // only a card has a reject; a change that landed immediately must be reversible as it stands
   if (
     !proof.reversible &&
@@ -223,6 +266,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
     seams,
     proof,
     live: { native, nf: live.nf, residue: live.residue },
-    warnings
+    warnings,
+    facts: reported
   };
 }

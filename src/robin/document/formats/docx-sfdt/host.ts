@@ -6,6 +6,11 @@
 import type { SyncfusionEditorLike } from '../../../../elements/components/DocxEditor/bindings/editorAdapter';
 import type { EditorHost } from '../../pack';
 import { bindingCommandSurfaceFor } from '../../../../elements/components/DocxEditor/bindings/reconcileRegistry';
+import {
+  closeUndoGroups,
+  inUndoGroup,
+  openUndoGroups
+} from '../../../../elements/components/DocxEditor/undoGroups';
 
 type Obj = Record<string, any>;
 
@@ -27,6 +32,8 @@ export interface DocxHost extends EditorHost {
 
 export const historyOf = (editor: LiveEditor): Obj | undefined =>
   (editor.editorHistory ?? editor.editorHistoryModule) as Obj | undefined;
+
+export { closeUndoGroups, inUndoGroup, openUndoGroups };
 
 /**
  * The editor's export of a whole document, less `lastParagraphMarkCopied`: a flag for pasting a

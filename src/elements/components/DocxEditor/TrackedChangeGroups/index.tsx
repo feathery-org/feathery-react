@@ -14,6 +14,7 @@ import {
 import { isRobinEditing } from '../robinActivity';
 import { featheryWindow } from '../../../../utils/browser';
 import { cardResolverFor } from '../../../../robin/document/mounts';
+import { withTocRefresh } from '../toc/refreshToc';
 import { redoDocument, undoDocument } from '../historyRouting';
 import { isOpeningDocument, setActiveInlineRevisions } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
@@ -512,13 +513,19 @@ function TrackedChangeGroups({
   ) =>
     setStall(unresolved ? stallNotice(unresolved, resolved, isAccept) : null);
 
+  // The editor's own accept or reject, with the document's table of contents refreshed after it in
+  // the same undo, for every reviewer (a refresh that fails is logged and skipped).
+  const settled = <T,>(resolve: () => T): T => withTocRefresh(editor, resolve);
+
   // Non-cascading resolve (native accept/reject settles whatever is
   // CONTIGUOUS, not the group), wrapped as ONE undo step.
   const resolveChips = (chips: ChipView[], isAccept: boolean) => {
     if (!chips.length) return Promise.resolve();
     const revisions = chips.flatMap(chipRevisions).filter(Boolean);
     return resolveWithHistory(revisions, isAccept, () => {
-      const outcome = resolveRevisionsAsOneUndo(editor, revisions, isAccept);
+      const outcome = settled(() =>
+        resolveRevisionsAsOneUndo(editor, revisions, isAccept)
+      );
       reportStall(
         outcome?.unresolved?.length ?? 0,
         outcome?.length ?? 0,
@@ -544,7 +551,9 @@ function TrackedChangeGroups({
         if (!resolver?.resolve(g.changeSetId, isAccept))
           unresolvedOwned += g.chips.length;
       const outcome = native.length
-        ? resolveLiveRevisionGroupsAsOneUndo(editor, native, isAccept)
+        ? settled(() =>
+            resolveLiveRevisionGroupsAsOneUndo(editor, native, isAccept)
+          )
         : null;
       reportStall(
         (outcome?.unresolved?.length ?? 0) + unresolvedOwned,

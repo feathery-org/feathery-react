@@ -9,7 +9,8 @@ import {
   ImageResizer,
   Search,
   Selection,
-  SfdtExport
+  SfdtExport,
+  TextElementBox
 } from '@syncfusion/ej2-documenteditor';
 import {
   attachBindings,
@@ -164,7 +165,7 @@ const byText = (root: Element, selector: string, text: string): HTMLElement | nu
   ([...root.querySelectorAll(selector)] as HTMLElement[]).find((el) => (el.textContent ?? '').trim() === text || el.getAttribute('aria-label') === text || el.getAttribute('title') === text) ?? null;
 
 const api = {
-  async open(text: string): Promise<number> {
+  async open(text: string, options: { robin?: boolean } = {}): Promise<number> {
     try {
       attached?.dispose();
     } catch {
@@ -178,6 +179,12 @@ const api = {
     await frame();
     attached = attachBindings(editor as unknown as SyncfusionEditorLike, { convertTokensOnOpen: false });
     await frame();
+    if (options.robin === false) {
+      // the editor and its review rail with no Robin session mounted, as for a person reviewing alone
+      session = null;
+      renderReviewUi();
+      return (await settled()).length;
+    }
     session = new DocumentSession({
       pack: timedPack,
       host: timedHost(createHost(editor as unknown as LiveEditor)),
@@ -226,6 +233,34 @@ const api = {
     injectFailure = true;
   },
 
+  /**
+   * Make the editor's next contents rebuild throw: halfway (after it deleted the old contents), or
+   * at once (before it changed anything).
+   */
+  injectTocFailure(at: 'halfway' | 'start' = 'halfway'): void {
+    const module = (live() as any).editorModule;
+    const name = at === 'halfway' ? 'buildToc' : 'insertTableOfContents';
+    const original = module[name];
+    module[name] = () => {
+      module[name] = original;
+      throw new Error('injected: the contents rebuild failed');
+    };
+  },
+
+  /** The editor's own list of fields, by code, in its order. */
+  fieldCodes(): string[] {
+    const e = live() as any;
+    return e.documentHelper.fields.map((f: any) => String(e.selection.getFieldCode(f)).trim());
+  },
+
+  /** The editor's alert dialogs on the page (its "No Headings" alert is one). */
+  dialogs: () => document.querySelectorAll('.e-dialog:not(.e-popup-close)').length,
+
+  /** Open complex undo groups in the editor, and whether it thinks a contents rebuild is running. */
+  historyState(): { open: number; insertingToc: boolean } {
+    return { open: history()?.historyInfoStack?.length ?? 0, insertingToc: !!(live() as any).editorModule?.isInsertingTOC };
+  },
+
   /** Make the next text the editor inserts carry a stray letter, so a native commit fails its proof. */
   injectTypo(): void {
     const module = (live() as any).editorModule;
@@ -253,6 +288,17 @@ const api = {
   },
 
   /** The user's own untracked edit, so their undo stack is not empty when Robin commits. */
+  /** The person's own tracked edit (track changes on), as a reviewer's colleague makes one. */
+  async userTrackedEdit(at: string, text: string): Promise<string> {
+    const e = live() as any;
+    e.enableTrackChanges = true;
+    e.currentUser = 'Colleague';
+    e.selection.select(at, at);
+    e.editorModule.insertText(text);
+    e.enableTrackChanges = false;
+    return settled();
+  },
+
   async userEdit(at: string, text: string): Promise<string> {
     const e = live() as any;
     e.enableTrackChanges = false;
@@ -264,6 +310,28 @@ const api = {
 
   settled,
   serialize: () => live().serialize(),
+
+  /**
+   * The body paragraphs whose style is one of `styles`, with their text as accepted (no text pending
+   * deletion) and the page the editor's layout puts them on (its own page number, as a contents
+   * table shows it).
+   */
+  headingPages(styles: string[]): Array<{ text: string; page: number }> {
+    const e = live() as any;
+    const out: Array<{ text: string; page: number }> = [];
+    let w = e.documentHelper.pages[0].bodyWidgets[0].childWidgets[0];
+    while (w) {
+      const style = w.paragraphFormat?.baseStyle?.name;
+      if (styles.includes(style)) {
+        let text = '';
+        for (const split of w.getSplitWidgets())
+          for (const line of split.childWidgets) for (const el of line.children) if (el instanceof TextElementBox && !(el as any).revisions?.some((r: any) => r.revisionType === 'Deletion')) text += el.text;
+        if (text.trim()) out.push({ text: text.trim(), page: e.editorModule.getPageNumber(w) });
+      }
+      w = e.selection.getNextParagraphBlock(w.getSplitWidgets().pop());
+    }
+    return out;
+  },
   errors: () => errors.slice(),
 
   /** The engine id of the node at a native-shaped path (`sections`, 4, `blocks`, 4, ...). */

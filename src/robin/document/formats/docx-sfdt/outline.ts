@@ -10,6 +10,7 @@ import type { NfNode } from '../../tree';
 import { HEADER_FOOTER, INLINE_KINDS, KIND } from './adapter/keys';
 import { bindingMarks } from './features/formula';
 import { sectionMarkerMark } from './features/sectionMarker';
+import { viewToc } from './toc';
 import { arr } from './util';
 
 type Obj = Record<string, unknown>;
@@ -140,6 +141,10 @@ export function detail(node: NfNode, view: DocumentView): string {
     case KIND.paragraph: {
       const sn = styleName(node.style);
       const flags = inlineFlags(node);
+      // every paragraph holding the contents, the ones holding its begin and end included (a
+      // title before the begin stays the document's: the refusal covers only the field)
+      if (viewToc(view)?.paragraphs.includes(node))
+        flags.push('toc (refreshed by the editor)');
       const marks = sectionMarkerMark(node, ownText(node)).map(
         (m) => `section-marker ${m.value}`
       );

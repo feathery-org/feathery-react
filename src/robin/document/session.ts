@@ -31,7 +31,7 @@ import { ENGINE_HISTORY_LIMIT, EngineHistory, HistoryOutcome } from './history';
 import { IdTable } from './ids';
 import { WriteJournal, journalKey } from './loop';
 import { renderOutline } from './outline';
-import type { EditorHost, Pack, Residue } from './pack';
+import type { CommitStep, EditorHost, Pack, Residue, SeamReport } from './pack';
 import { logDebug, logError, logWarn, truncatedDetail } from './log';
 import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
@@ -462,6 +462,8 @@ export class DocumentSession {
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
       ...common,
+      // with what the live editor reported of the commit (a contents table rebuilt, or not)
+      facts: [...prepared.facts, ...outcome.facts],
       warnings: [...prepared.warnings, ...outcome.warnings],
       trace: trace.build()
     };
@@ -519,6 +521,18 @@ export class DocumentSession {
       this.refresh();
       return false;
     }
+    // the document is replaced, so what the editor derives is refreshed with it; a refresh that
+    // fails leaves the resolution as it is, with the derived content as the resolution left it
+    try {
+      this.runRefresh('engine');
+    } catch (e) {
+      this.refreshFailed(changeSetId, e);
+      try {
+        this.host.open(target);
+      } catch {
+        // the editor is gone; nothing left to restore
+      }
+    }
     this.history.push({
       turnId: changeSetId,
       kind: 'resolution',
@@ -529,6 +543,43 @@ export class DocumentSession {
     this.refresh();
     this.replaced('person');
     return true;
+  }
+
+  /** A refresh after a resolution that failed: reported, never fatal to the resolution. */
+  private refreshFailed(where: string, error: unknown): void {
+    logWarn({
+      verb: 'refresh',
+      where,
+      reason: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  /** The pack's refresh step for the document as the editor now holds it, when it has one. */
+  private runRefresh(history: 'editor' | 'engine'): void {
+    const native = this.host.serialize();
+    const view = makeView(this.pack.adapter.toNormalForm(native).nf, this.pack);
+    const step = this.pack.reconcile.refresh?.(view, history);
+    if (!step) return;
+    const report = this.runStep(step);
+    // a refresh that failed partway left the document half done: the caller takes it back
+    if (report?.failed)
+      throw new Error(
+        report.facts?.map((f) => f.summary).join('; ') || 'the refresh failed'
+      );
+  }
+
+  private runStep(step: CommitStep): SeamReport | void {
+    const seam = this.pack.seams[step.seam];
+    if (!seam)
+      throw new Error(
+        `the refresh names seam ${JSON.stringify(
+          step.seam
+        )}, which the pack does not have`
+      );
+    return seam.apply(this.host, step.payload, {
+      turnId: 'refresh',
+      intent: ''
+    });
   }
 
   /** The editing turn in flight: set by its first write, cleared by `finishTurn`. */
