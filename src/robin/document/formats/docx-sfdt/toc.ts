@@ -30,8 +30,9 @@ export interface TocField {
   beginAt: number;
   endAt: number;
   /**
-   * Every node strictly inside the field: its marks and everything between them, and the
-   * paragraphs between the first and the last whole.
+   * Every node of the field's result: from its separator to its end mark, and the paragraphs
+   * between the first and the last whole. The code before the separator is the document's: the
+   * rebuild reads it (`\o "1-2"` lists two levels).
    */
   ids: Set<string>;
   /** The paragraph styles whose paragraphs it lists. */
@@ -169,7 +170,7 @@ export function tocField(nf: NormalForm): TocField | null {
           code = closed.code.trim();
           return range(paragraphs.slice(begin, k + 1), code, closed.mark, i);
         }
-      } else if (i.kind === KIND.run && top && !top.result)
+      } else if (i.kind === KIND.run && top && !top.result && !deleted(i))
         top.code += String(i.text ?? '');
     }
   }
@@ -225,7 +226,29 @@ function range(
     if (typeof o.id === 'string') ids.add(o.id);
     for (const [k, v] of Object.entries(o)) if (k !== 'pending') collect(v);
   };
-  for (const part of parts) collect(part.whole ? part.node : part.inlines);
+  // the result starts at the field's own separator (the first at its depth after the begin); a code
+  // that runs past its first paragraph leaves the whole field derived
+  const head = arr<NfNode>(first.node.inlines);
+  let separatorAt = beginAt;
+  for (let k = beginAt, depth = 0; k < head.length; k += 1) {
+    const i = head[k];
+    if (i.kind !== KIND.field) continue;
+    if (i.fieldType === 0) depth += 1;
+    else if (i.fieldType === 1) depth -= 1;
+    else if (i.fieldType === 2 && depth === 1) {
+      separatorAt = k;
+      break;
+    }
+  }
+  parts.forEach((part, k) =>
+    collect(
+      part.whole
+        ? part.node
+        : k === 0
+        ? part.inlines.slice(separatorAt - beginAt)
+        : part.inlines
+    )
+  );
   return {
     code,
     container: first.parent,

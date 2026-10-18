@@ -36,6 +36,7 @@ import type { Fact } from '../../../envelope';
 import type { Seam, SeamReport } from '../../../pack';
 import type { DocxHost, LiveEditor } from '../host';
 import { closeUndoGroups, historyOf, openUndoGroups } from '../host';
+import { logWarn } from '../../../log';
 import { entryText, unsupportedSwitches } from '../toc';
 
 type Obj = Record<string, any>;
@@ -72,6 +73,31 @@ function before(a: string, b: string): boolean {
   return false;
 }
 
+/**
+ * A field's code as it reads once pending changes are accepted: the text between its begin and its
+ * separator less what is pending deletion (a tracked edit of the code reads as the new code; the
+ * editor's own `getFieldCode` reads both).
+ */
+function codeOf(editor: LiveEditor, field: Obj): string {
+  const elements = (field.paragraph?.getSplitWidgets?.() ?? [field.paragraph])
+    .flatMap((split: Obj) => split?.childWidgets ?? [])
+    .flatMap((line: Obj) => line?.children ?? []) as Obj[];
+  const from = elements.indexOf(field);
+  const to = elements.indexOf(field.fieldSeparator);
+  if (from < 0 || to < from)
+    return String((editor.selection as Obj).getFieldCode(field));
+  return elements
+    .slice(from + 1, to)
+    .filter(
+      (e) =>
+        typeof e.fieldType !== 'number' &&
+        typeof e.text === 'string' &&
+        !deletedElement(e)
+    )
+    .map((e) => e.text)
+    .join('');
+}
+
 /** The body's first field whose code is a TOC (not one that only mentions "toc"), or null. */
 function liveTocField(editor: LiveEditor): Obj | null {
   const helper = editor.documentHelper as Obj | undefined;
@@ -79,7 +105,7 @@ function liveTocField(editor: LiveEditor): Obj | null {
   let found: { field: Obj; at: string } | null = null;
   for (const f of (helper?.fields ?? []) as Obj[]) {
     if (f.fieldType !== 0 || f.paragraph?.isInHeaderFooter) continue;
-    if (fieldName(String(selection.getFieldCode(f))) !== 'TOC') continue;
+    if (fieldName(codeOf(editor, f)) !== 'TOC') continue;
     const at = String(selection.getHierarchicalIndex(f.paragraph, '0'));
     if (!found || before(at, found.at)) found = { field: f, at };
   }
@@ -280,16 +306,16 @@ export function refreshToc(
 ): SeamReport {
   const module = editor.editorModule as Obj;
   const selection = editor.selection as Obj;
-  const missing = NEEDED.filter((name) => typeof module?.[name] !== 'function');
-  if (missing.length || typeof selection?.getFieldCode !== 'function')
-    throw new Error(
-      `the editor cannot rebuild the table of contents (missing ${[
-        ...missing,
-        ...(typeof selection?.getFieldCode === 'function'
-          ? []
-          : ['getFieldCode'])
-      ].join(', ')})`
-    );
+  const missing = [
+    ...NEEDED.filter((name) => typeof module?.[name] !== 'function'),
+    ...(typeof selection?.getFieldCode === 'function' ? [] : ['getFieldCode'])
+  ];
+  if (missing.length) {
+    // an editor without the methods this step drives (a version that renamed them): the change
+    // still lands, and the contents is left as it is, said so
+    logWarn({ seam: 'toc', skipped: 'rebuild unavailable', missing });
+    return notRefreshed(ids, "the editor's rebuild is unavailable");
+  }
   // in a content control the editor's rebuild pastes the contents outside the control and breaks
   // it (measured, contents locked or not): such a contents is left as it is
   if (inControl)
@@ -304,7 +330,7 @@ export function refreshToc(
       ids,
       "text shares a paragraph with it, and the editor's rebuild would move that text and its paragraph's style"
     );
-  const code = String(selection.getFieldCode(field));
+  const code = codeOf(editor, field);
   const unsupported = unsupportedSwitches(code);
   if (unsupported.length)
     return notRefreshed(
@@ -331,15 +357,26 @@ export function refreshToc(
   // mentions "toc" ahead of it in the editor's list, this one is put first
   const fields = (editor.documentHelper as Obj).fields as Obj[];
   const pick = editorsPick(editor);
+  const was0 = fields.indexOf(field);
   if (pick !== field && pick) {
-    fields.splice(fields.indexOf(field), 1);
+    fields.splice(was0, 1);
     fields.splice(fields.indexOf(pick), 0, field);
   }
-  if (editorsPick(editor) !== field)
+  // the editor's list as it was, when the field it holds was not rebuilt (a rebuilt field leaves
+  // the list: the editor removes a deleted field's begin and appends the new one's)
+  const putBack = () => {
+    const now = fields.indexOf(field);
+    if (pick === field || !pick || now < 0) return;
+    fields.splice(now, 1);
+    fields.splice(Math.min(was0, fields.length), 0, field);
+  };
+  if (editorsPick(editor) !== field) {
+    putBack();
     return notRefreshed(
       ids,
       'the editor would rebuild another field in its place'
     );
+  }
   const prior = {
     track: editor.enableTrackChanges,
     start: selection.startOffset as string | undefined,
@@ -364,6 +401,7 @@ export function refreshToc(
     // person's name, so it is not done
     editor.enableTrackChanges = prior.track;
     restoreCaret(editor, prior, null);
+    putBack();
     return notRefreshed(ids, 'the document only takes tracked changes');
   }
   const was = liveEntries(editor, field);
@@ -442,6 +480,7 @@ export function refreshToc(
     // rebuilding: close it into the change's group and let the editor go on
     closeUndoGroups(editor, depth);
     module.isInsertingTOC = false;
+    putBack();
     editor.enableTrackChanges = prior.track;
     restoreCaret(editor, prior, rebuilt);
     if (prior.viewer && scroll) {

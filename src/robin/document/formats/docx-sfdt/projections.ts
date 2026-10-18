@@ -14,7 +14,8 @@
  *   N1  a computed field's cached result belongs to the editor: the editor rewrites a PAGE,
  *       NUMPAGES or SECTIONPAGES result on open, wherever the field sits, and rebuilds a table of
  *       contents after every change (its whole result: entries, HYPERLINK and PAGEREF results,
- *       their formats, and the hidden `_Toc` bookmarks it anchors entries to)
+ *       their formats, the hidden `_Toc` bookmarks it anchors entries to, and the `TOC n` styles
+ *       its levels need)
  *   N2  created runs and marks get an empty character format (absorbed: the normal form never
  *       references an empty format, and this drops any reference to one)
  *   N3  `insertText` writes `bidi: false` into the character format
@@ -479,6 +480,11 @@ function withoutToc(nf: NormalForm): NormalForm {
     }
   };
   rec(out.root);
+  // the TOC n paragraph styles are the contents' own: the rebuild adds the ones its levels need
+  if (Array.isArray(out.root.styles))
+    out.root.styles = (out.root.styles as Array<{ name?: unknown }>).filter(
+      (st) => !/^TOC \d$/.test(String(st?.name ?? ''))
+    );
   return out;
 }
 
