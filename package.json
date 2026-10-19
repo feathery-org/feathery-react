@@ -40,6 +40,7 @@
     "test": "jest",
     "test:ci": "jest --silent --maxWorkers=50% --ci",
     "test:headless": "jest -c jest.headless.config.js",
+    "test:pptx-fonts": "jest -c jest.pptx-fonts.config.js",
     "test:debug": "npm-run-all -p test:watch jest-preview",
     "test:watch": "jest --watchAll",
     "jest-preview": "jest-preview",

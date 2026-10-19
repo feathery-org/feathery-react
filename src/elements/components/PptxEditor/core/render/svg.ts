@@ -1151,12 +1151,14 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
           NATURAL_LINE *
           Math.max(0.1, (lineSpacing.valPct - lineSpaceReduction) / 100)
         : baseFontPx * NATURAL_LINE;
-    // Move expanded leading below the line and compressed leading above it;
-    // paired margins keep the line pitch unchanged.
+    // Expanded spacing belongs to the line box. Moving its top half into a
+    // negative margin lifts every line above PowerPoint's baseline. Keep the
+    // existing compressed-line treatment, without redistributing extra leading.
     const compressed =
       !!lineSpacing && lineHeightPx < baseFontPx * NATURAL_LINE;
-    const halfLeading = Math.abs(
-      (lineHeightPx - baseFontPx * NATURAL_LINE) / 2
+    const halfLeading = Math.max(
+      0,
+      (baseFontPx * NATURAL_LINE - lineHeightPx) / 2
     );
     const numPx = (v: string | undefined) => (v ? parseFloat(v) : 0);
     let marginTopPx =

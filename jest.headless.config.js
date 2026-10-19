@@ -5,6 +5,7 @@ module.exports = {
   testEnvironment:
     '<rootDir>/src/assistant/tools/docx/tests/headless/headlessEnvironment.js',
   testMatch: ['<rootDir>/src/**/*.headless.spec.ts'],
+  testPathIgnorePatterns: ['/PptxEditor/tests/font-parity/'],
   globalSetup:
     '<rootDir>/src/assistant/tools/docx/tests/headless/globalSetup.ts',
   testTimeout: 120000,

@@ -94,16 +94,15 @@ it('carries DrawingML autofit, paragraph spacing, tabs, and field identity into 
   // Percent spacing multiplies the ~1.2x natural line box, so 1.1 -> 1.2 * 1.1.
   const fontPx = ((18 * 96) / 72) * 0.8;
   const lineHeightPx = fontPx * 1.2 * 1.1;
-  // Extra leading is whatever exceeds the 1.2x natural line box, split and
-  // moved below the baseline (top margin = spaceBefore 12pt=16px minus it).
-  const halfLeading = Math.max(0, (lineHeightPx - fontPx * 1.2) / 2);
-  expect(Number.parseFloat(firstPara.style.lineHeight)).toBeCloseTo(lineHeightPx);
+  // Expanded line spacing stays inside the line box. Paragraph margins retain
+  // the explicit 12pt before / zero after spacing from the source.
+  expect(Number.parseFloat(firstPara.style.lineHeight)).toBeCloseTo(
+    lineHeightPx
+  );
   expect(Number.parseFloat(firstPara.style.marginTop)).toBeCloseTo(
-    (12 * 96) / 72 - halfLeading
+    (12 * 96) / 72
   );
-  expect(Number.parseFloat(firstPara.style.marginBottom)).toBeCloseTo(
-    halfLeading
-  );
+  expect(Number.parseFloat(firstPara.style.marginBottom)).toBeCloseTo(0);
   expect(Number.parseFloat(firstRun.style.fontSize)).toBeCloseTo(
     (((shape.text!.paragraphs[0].runs[0].sizePt ?? 18) * 96) / 72) * 0.8
   );

@@ -1,0 +1,33 @@
+Font-bearing companion to marketing-parity.pptx, from the same unmodified
+presentation-2.pptx (source SHA256 recorded in marketing-fonts.json).
+
+Retains all 28 slides, XML/relationships, and all 24 original compressed EOT
+font parts. Nunito Sans and Poppins provide 400/500/600/700 normal and italic
+faces (16 distinct faces; the package repeats bold variants). The manifest
+pins every original font binary's SHA256. Font binaries are not rewritten.
+Raster media is omitted: this is a text test fixture, not a complete visual
+presentation to upload or a replacement for the PowerPoint reference deck.
+
+PowerPoint is the source of truth. Source overlaps are not editor defects.
+Known weight/alignment/wrapping differences remain open. The browser tests
+verify actual embedded-face selection, not parity with native PowerPoint's
+rasterizer. Their layout.json and screenshots are diagnostic evidence, not
+approved visual goldens. Do not update expectations to bless a discrepancy.
+
+Run:
+  yarn test font-bearing-fixture --runInBand
+  yarn test:pptx-fonts --runInBand
+
+The second command requires Chrome (or CHROME_PATH), uses an isolated temporary
+profile, blocks HTTP(S) font fallback, checks all 16 faces before/after export,
+checks the actual faces used by every text run on all 28 slides, and verifies
+that the fontless companion fails the embedded-face condition. Measurements
+and selected screenshots are written to .headless-evidence/pptx-fonts/.
+
+Rebuild from the original source, without changing any retained bytes:
+  node src/elements/components/PptxEditor/tests/font-parity/make-fixture.cjs /path/to/presentation-2.pptx
+
+For native parity acceptance, compare the original deck in PowerPoint with
+the hosted editor at the same canvas dimensions. Check slide 6 regular/italic
+body weight, slide 12 headings/labels/baselines, and wraps on slides 7 and 14.
+Never treat CSS weight strings or passing font-load tests as visual approval.

@@ -1,0 +1,74 @@
+[
+  {
+    "slide": 6,
+    "file": "slide-6-body.png",
+    "rect": {
+      "x": 580,
+      "y": 220,
+      "width": 520,
+      "height": 240
+    },
+    "color": "white",
+    "sourceSha256": "46584f3901a0c9a92befabcee661804d6dd141e05b628fe12dd7c319f2c3e0d0"
+  },
+  {
+    "slide": 12,
+    "file": "slide-12-bullets.png",
+    "rect": {
+      "x": 40,
+      "y": 150,
+      "width": 340,
+      "height": 80
+    },
+    "color": "white",
+    "sourceSha256": "86566081fbd51a977827f4583f6291fcabaf1d28ff63c8059c54bcb7824e80aa"
+  },
+  {
+    "slide": 12,
+    "file": "slide-12-heading.png",
+    "rect": {
+      "x": 40,
+      "y": 110,
+      "width": 210,
+      "height": 35
+    },
+    "color": "blue",
+    "sourceSha256": "86566081fbd51a977827f4583f6291fcabaf1d28ff63c8059c54bcb7824e80aa"
+  },
+  {
+    "slide": 12,
+    "file": "slide-12-labels.png",
+    "rect": {
+      "x": 40,
+      "y": 290,
+      "width": 340,
+      "height": 22
+    },
+    "color": "white",
+    "sourceSha256": "86566081fbd51a977827f4583f6291fcabaf1d28ff63c8059c54bcb7824e80aa"
+  },
+  {
+    "slide": 14,
+    "file": "slide-14-body.png",
+    "rect": {
+      "x": 40,
+      "y": 490,
+      "width": 535,
+      "height": 100
+    },
+    "color": "white",
+    "sourceSha256": "f4acf135ec36899a79f1e89d345d5c13847bdc4f68f562b89984ef568a118cae"
+  },
+  {
+    "slide": 12,
+    "file": "slide-12-title.png",
+    "rect": {
+      "x": 38,
+      "y": 30,
+      "width": 462,
+      "height": 55
+    },
+    "color": "green",
+    "sourceSha256": "86566081fbd51a977827f4583f6291fcabaf1d28ff63c8059c54bcb7824e80aa"
+  }
+]
