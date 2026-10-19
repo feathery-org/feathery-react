@@ -172,7 +172,7 @@ export function registerLocalVersionArtifacts(
     );
   while (
     localArtifacts.size > LOCAL_ARTIFACTS_MAX ||
-    bytes() > CACHE_BYTES_MAX
+    bytes() > 16 * 1024 * 1024
   ) {
     const oldest = localArtifacts.keys().next().value as string | undefined;
     if (oldest !== undefined) localArtifacts.delete(oldest);
@@ -458,14 +458,19 @@ export async function prefetchVersionDocuments(
   if (original && !selected.includes(original)) selected.push(original);
   // Reserve the active set while keeping the global budget authoritative.
   activeKeys = new Set(selected.map((v) => cacheKey(host, v)));
-  // Original can require a service import; start it before walking the rest.
-  const ordered = original
-    ? [original, ...selected.filter((v) => v !== original)]
-    : selected;
-  for (const version of ordered) {
-    if (signal?.aborted) return;
-    await resolveAndCache(host, version, { background: true });
-  }
+  // Original's service request and recent snapshots are independent. At most
+  // two resolutions run in the background; recent snapshots stay sequential.
+  const prepareOriginal = original
+    ? resolveAndCache(host, original, { background: true })
+    : Promise.resolve();
+  const prepareRecent = async () => {
+    for (const version of selected) {
+      if (signal?.aborted) return;
+      if (version !== original)
+        await resolveAndCache(host, version, { background: true });
+    }
+  };
+  await Promise.all([prepareOriginal, prepareRecent()]);
 }
 
 export function useVersionDocument(
