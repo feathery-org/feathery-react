@@ -351,7 +351,12 @@ export const getFormContext = (formUuid: string) => {
       entryId,
       data,
       where,
-      verification
+      verification,
+      fields,
+      sort,
+      sortDirection,
+      limit,
+      relations
     }: HubActionOptions) => {
       // Create/update file a form file field from the server's copy, uploading
       // it first if unsubmitted. Other operations never file, so pass `data`.
@@ -376,7 +381,12 @@ export const getFormContext = (formUuid: string) => {
         entryId,
         data: refs.data,
         where,
-        verification
+        verification,
+        fields,
+        sort,
+        sortDirection,
+        limit,
+        relations
       });
     },
     generateDocuments: ({
