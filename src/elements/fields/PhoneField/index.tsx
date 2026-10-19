@@ -259,7 +259,14 @@ function PhoneField({
             if (countriesEnabled && !disabled) setShow(!show);
           }}
         >
-          {countryMap[curCountryCode].flag}
+          <span
+            css={{
+              display: 'inline-block',
+              ...responsiveStyles.getTarget('fieldFlag')
+            }}
+          >
+            {countryMap[curCountryCode].flag}
+          </span>
         </div>
         <Overlay
           key={`overlay-${curCountryCode}`}
