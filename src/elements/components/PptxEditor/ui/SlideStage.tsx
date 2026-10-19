@@ -33,6 +33,7 @@ import { readBodyProps } from '../core/model/textLayout';
 import { selectedTextRanges } from './textSelection';
 import { effectiveSlideSize } from '../core/model/slideSize';
 import type { TableEditOperation } from '../engine';
+import { canUngroup } from '../core/model/groups';
 
 interface OverlayBox {
   left: number;
@@ -2435,6 +2436,39 @@ export function SvgSlide({
               {label}
             </button>
           ))}
+          {slide?.shapes.find((shape) => shape.id === shapeMenu.shapeId)
+            ?.type === 'group' && (
+            <button
+              type='button'
+              disabled={
+                !canUngroup(
+                  slide.shapes.find((shape) => shape.id === shapeMenu.shapeId)
+                )
+              }
+              title='Separate this group into individual editable objects. Rotated or scaled groups are not supported yet.'
+              style={{
+                padding: '7px 10px',
+                border: 'none',
+                borderRadius: 6,
+                background: 'transparent',
+                color: '#3f3f46',
+                fontSize: 12.5,
+                textAlign: 'left',
+                cursor: 'pointer'
+              }}
+              onClick={() => {
+                const result = store.executeCommand({
+                  type: 'ungroup-shape',
+                  slideId: slide.path,
+                  shapeId: shapeMenu.shapeId
+                });
+                setShapeMenu(null);
+                if (result) store.selectMany(result.createdShapeIds);
+              }}
+            >
+              Ungroup
+            </button>
+          )}
           <button
             type='button'
             onClick={() => {

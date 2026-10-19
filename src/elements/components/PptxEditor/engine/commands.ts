@@ -147,6 +147,7 @@ export type EditorCommand =
   | { type: 'toggle-deck-slide-numbers'; enabled: boolean }
   | { type: 'set-shape-fill'; slideId: string; shapeId: string; color: string }
   | { type: 'delete-shapes'; slideId: string; shapeIds: string[] }
+  | { type: 'ungroup-shape'; slideId: string; shapeId: string }
   | {
       type: 'reorder-shape';
       slideId: string;

@@ -152,6 +152,7 @@
     "libphonenumber-js": "^1.12.38",
     "lodash.debounce": "^4.0.8",
     "lodash.throttle": "^4.1.1",
+    "mtx-decompressor": "1.8.0",
     "quill-delta": "^4.2.2",
     "react-datepicker": "7.6.0",
     "react-ga4": "^1.4.1",
@@ -191,6 +192,7 @@
       "\\.headless\\.spec\\."
     ],
     "moduleNameMapper": {
+      "^mtx-decompressor$": "<rootDir>/node_modules/mtx-decompressor/dist/index.js",
       "^@tanstack/(react-table|table-core)$": "<rootDir>/node_modules/@tanstack/$1/dist/index.js",
       "^@tanstack/(react-table|table-core)/(.+)$": "<rootDir>/node_modules/@tanstack/$1/dist/$2.js"
     },

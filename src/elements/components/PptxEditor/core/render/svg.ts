@@ -673,7 +673,7 @@ function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
   const parts = [
     `font-size:${ptToCssPx(r.sizePt ?? def?.sizePt ?? 18) * fontScale}px`,
     `color:#${resolveTextColor(r, def)}`,
-    `font-family:${cssFamilyList(family)}`
+    `font-family:${cssFamilyList(family, curDeck ?? undefined)}`
   ];
   // Bold wins; otherwise the typeface name's own weight (e.g. "… Medium").
   if (r.bold ?? def?.bold) parts.push('font-weight:700');
@@ -1088,10 +1088,11 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
           NATURAL_LINE *
           Math.max(0.1, (lineSpacing.valPct - lineSpaceReduction) / 100)
         : baseFontPx * NATURAL_LINE;
-    // PowerPoint puts line-spacing leading below the baseline; CSS splits it
-    // half/half, so shift the top half below (pitch preserved via margins).
-    const halfLeading = Math.max(
-      0,
+    // Move expanded leading below the line and compressed leading above it;
+    // paired margins keep the line pitch unchanged.
+    const compressed =
+      !!lineSpacing && lineHeightPx < baseFontPx * NATURAL_LINE;
+    const halfLeading = Math.abs(
       (lineHeightPx - baseFontPx * NATURAL_LINE) / 2
     );
     const numPx = (v: string | undefined) => (v ? parseFloat(v) : 0);
@@ -1104,9 +1105,11 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     );
     // Lift the first line of a top-anchored box by the web font's excess ascent
     // leading so it sits where PowerPoint (typographic ascent) does.
-    if (paragraphIndex === 0 && topAnchored) {
+    if (paragraphIndex === 0 && topAnchored && !compressed) {
       const wt = p.runs[0]?.bold ?? paraDef?.bold ? 700 : leadFont.weight;
-      marginTopPx -= excessTopLeadingRatio(leadFont.family, wt) * baseFontPx;
+      marginTopPx -=
+        excessTopLeadingRatio(leadFont.family, wt, curDeck ?? undefined) *
+        baseFontPx;
     }
     // Unitless 1 matches PowerPoint's single spacing (the font's content line),
     // tighter than CSS 'normal'; explicit percent/points keep the px value.
@@ -1114,7 +1117,8 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     // Size the line-box strut from the lead run; otherwise it inherits the
     // host's 16px font and sinks/loosens any text smaller than that.
     css += `font-size:${baseFontPx}px;font-family:${cssFamilyList(
-      leadFont.family
+      leadFont.family,
+      curDeck ?? undefined
     )};`;
     css += `margin-top:${marginTopPx}px;margin-bottom:${marginBottomPx}px;line-height:${cssLineHeight};`;
     pDiv.setAttribute('style', css);
@@ -1148,7 +1152,8 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     const markerStyle = `font-size:${ptToCssPx(
       markerSize
     )}px;line-height:${cssLineHeight};font-family:${cssFamilyList(
-      markerFamily
+      markerFamily,
+      curDeck ?? undefined
     )};color:#${markerColor};position:absolute;left:${marL + indent}px;${
       indent ? '' : 'transform:translateX(-100%);'
     }`;
@@ -1271,7 +1276,10 @@ function chartText(
   const resolvedSize = style?.sizePt ? style.sizePt * 12700 : size;
   text.setAttribute('font-size', String(resolvedSize / EMU_PER_PX));
   const chartFont = splitFontWeight(resolveFont(style?.font, svgThemeFonts));
-  text.setAttribute('font-family', cssFamilyList(chartFont.family));
+  text.setAttribute(
+    'font-family',
+    cssFamilyList(chartFont.family, curDeck ?? undefined)
+  );
   if (chartFont.weight !== 400)
     text.setAttribute('font-weight', String(chartFont.weight));
   text.setAttribute(
@@ -2939,7 +2947,9 @@ export function rerenderShape(
       svg.insertBefore(defs, svg.firstChild);
     }
     const newG = shapeGroup(slide.shapes[idx], deck.pkg, defs, idx);
-    const oldG = svg.querySelector(`[data-shape-id="${shapeId}"]`);
+    const oldG = [...svg.children].find(
+      (node) => (node as SVGGElement).dataset?.shapeId === shapeId
+    );
     if (oldG && newG) patchDomNode(oldG, newG);
     else if (oldG && !newG) oldG.remove();
     else if (newG) svg.appendChild(newG);

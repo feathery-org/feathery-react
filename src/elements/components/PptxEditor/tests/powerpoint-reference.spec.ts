@@ -23,6 +23,26 @@ it('uses master otherStyle for ordinary text boxes without explicit font sizes',
   expect(parseFloat(company.style.fontSize)).toBeCloseTo((14 * 96) / 72);
 });
 
+it('lifts compressed title lines above their rules without changing the line pitch', () => {
+  const deck = importDeck(
+    new Uint8Array(
+      readFileSync(resolve(__dirname, 'fixtures/template1-text-group.pptx'))
+    )
+  );
+  const svg = renderSlideSvg(deck, deck.slides[0]);
+  const paragraphs = Array.from(
+    svg.querySelectorAll('[data-source-paragraph]')
+  ).filter(
+    (node) => node.tagName.toLowerCase() === 'div' && !!node.textContent?.trim()
+  ) as HTMLElement[];
+  expect(paragraphs).toHaveLength(2);
+  for (const paragraph of paragraphs) {
+    expect(parseFloat(paragraph.style.lineHeight)).toBeCloseTo(67.2);
+    expect(parseFloat(paragraph.style.marginTop)).toBeCloseTo(-14.4);
+    expect(parseFloat(paragraph.style.marginBottom)).toBeCloseTo(14.4);
+  }
+});
+
 it('uses the master slide-number placeholder rather than the body placeholder', () => {
   const number = renderReference().find((run) => run.textContent === '1')!;
   expect(parseFloat(number.style.fontSize)).toBe(8); // 6pt
