@@ -685,8 +685,14 @@ function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
   ].filter(Boolean);
   if (decorations.length)
     parts.push(`text-decoration:${decorations.join(' ')}`);
-  if (r.highlight)
-    parts.push(`background-color:#${r.highlight.replace('#', '')}`);
+  // Google Slides exports highlights as theme colors. Keep the source node
+  // sparse and resolve through this slide's theme/color map just like text fill.
+  const highlight = r.highlight
+    ? `#${r.highlight.replace('#', '')}`
+    : curDeck && r.rPr
+    ? resolveColor(child(r.rPr, 'a:highlight'), curDeck.pkg)
+    : undefined;
+  if (highlight) parts.push(`background-color:${highlight}`);
   if (r.baselinePct) parts.push(`vertical-align:${r.baselinePct}%`);
   return parts.join(';');
 }
