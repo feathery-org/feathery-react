@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { featheryWindow } from '../../../utils/browser';
+import { featheryWindow } from '../utils/browser';
 
 // Whether the viewport is under the form's mobile breakpoint, live across
 // resizes -- for styles resolved in JS, so they switch to a mobile override

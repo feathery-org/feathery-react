@@ -498,7 +498,7 @@ function Form({
     autocomplete: 'on',
     autofocus: true,
     showBrand: false,
-    brandPosition: undefined,
+    brandPosition: undefined as string | undefined,
     autoscroll: 'top_of_form',
     rightToLeft: false,
     allowEdits: true,
@@ -655,6 +655,13 @@ function Form({
   const [viewport, setViewport] = useState(() =>
     getViewport(formSettings.mobileBreakpoint)
   );
+
+  // A bottom badge follows mobile content so it cannot cover the last action.
+  const inlineWatermark =
+    viewport === 'mobile' &&
+    formSettings.showBrand &&
+    (!formSettings.brandPosition ||
+      formSettings.brandPosition.startsWith('bottom'));
 
   const prevAuthId = usePrevious(authState.authId);
   const prevStepKey = usePrevious(stepKey);
@@ -4096,6 +4103,7 @@ function Form({
           ...style,
           position: 'relative',
           display: 'flex',
+          ...(inlineWatermark ? { flexDirection: 'column' } : {}),
           ...(popupOptions ? { borderRadius: '10px' } : {})
         }}
         dir={formSettings.rightToLeft ? 'rtl' : 'ltr'}
@@ -4184,6 +4192,7 @@ function Form({
         <Watermark
           show={formSettings.showBrand}
           brandPosition={formSettings.brandPosition}
+          inline={inlineWatermark}
         />
         <ActionToast
           ref={setActionToastRef}
