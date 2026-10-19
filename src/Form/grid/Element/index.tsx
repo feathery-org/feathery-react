@@ -590,6 +590,7 @@ const Element = ({ node, form }: any) => {
               const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
             }}
+            repeatIndex={index}
           />
         );
       case 'rating':

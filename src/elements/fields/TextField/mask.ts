@@ -1,3 +1,10 @@
+import {
+  movingBoundSides,
+  ResolvedNumberBounds,
+  resolveNumberBounds,
+  widenBoundsToValue
+} from '../../../utils/numberBounds';
+
 const DEFAULT_LENGTH = 1024; // Default limit on backend
 const MAX_FIELD_LENGTHS: Record<string, number> = {
   text_area: 16384, // Max storage limit on backend column
@@ -216,22 +223,23 @@ const SIGN_LITERAL = '{-}';
 
 // Whether a negative value is actually in range. imask derives a number
 // block's own allowNegative from its bounds, so a floor at or above zero means
-// there is no sign to render or accept.
-function allowsNegative(servar: any) {
+// there is no sign to render or accept. Reads the resolved bounds, so a dynamic
+// rule can open or close the floor the same way the column does.
+function allowsNegative(servar: any, bounds: ResolvedNumberBounds) {
   if (servar.metadata?.allow_negative !== true) return false;
-  return !(typeof servar.min_length === 'number' && servar.min_length >= 0);
+  return !(bounds.min !== null && bounds.min >= 0);
 }
 
 // Bounds for a number block that holds the whole signed value.
-function getValueBounds(servar: any) {
+function getValueBounds(servar: any, bounds: ResolvedNumberBounds) {
   return {
     // Larger numbers get converted to scientific notation when sent to backend
-    max: servar.max_length ?? Number.MAX_SAFE_INTEGER,
+    max: bounds.max ?? Number.MAX_SAFE_INTEGER,
     // A negative min is what enables imask's leading "-" (allowNegative is
     // derived from min < 0 || max < 0). `??` so a configured 0 is honored.
-    min: allowsNegative(servar)
-      ? servar.min_length ?? -Number.MAX_SAFE_INTEGER
-      : Math.max(0, servar.min_length ?? 0)
+    min: allowsNegative(servar, bounds)
+      ? bounds.min ?? -Number.MAX_SAFE_INTEGER
+      : Math.max(0, bounds.min ?? 0)
   };
 }
 
@@ -239,9 +247,9 @@ function getValueBounds(servar: any) {
 // leaving the block a magnitude. For the negative variant the value is -m, so
 // min <= -m <= max is the same as -max <= m <= -min: the bounds invert and
 // swap. Clamped at 0 because a magnitude is never negative.
-function getMagnitudeBounds(servar: any, negative: boolean) {
-  const low = servar.min_length ?? -Number.MAX_SAFE_INTEGER;
-  const high = servar.max_length ?? Number.MAX_SAFE_INTEGER;
+function getMagnitudeBounds(bounds: ResolvedNumberBounds, negative: boolean) {
+  const low = bounds.min ?? -Number.MAX_SAFE_INTEGER;
+  const high = bounds.max ?? Number.MAX_SAFE_INTEGER;
   const [min, max] = negative ? [-high, -low] : [low, high];
   return { min: Math.max(0, min), max: Math.max(0, max) };
 }
@@ -263,8 +271,17 @@ function isNegative(dynamicMasked: any, appended: string) {
   return String(dynamicMasked.unmaskedValue ?? '').includes('-');
 }
 
-export function getNumberMaskProps(servar: any, value: any, editing = false) {
+export function getNumberMaskProps(
+  servar: any,
+  value: any,
+  editing = false,
+  repeatIndex?: number | null
+) {
   const meta = servar.metadata ?? {};
+  let bounds = resolveNumberBounds(servar, repeatIndex);
+  // A tracked bound can move under a stored value; the mask must not rewrite
+  // it. Per side, so a static column keeps its clamp either way.
+  bounds = widenBoundsToValue(bounds, value, movingBoundSides(servar));
   const scale = getDecimalPlaces(servar);
   const entryScale = getEntryDecimalPlaces(servar);
   const affixes = getFormatAffixes(servar);
@@ -298,21 +315,21 @@ export function getNumberMaskProps(servar: any, value: any, editing = false) {
   // values meet, split the sign out as its own literal ahead of the prefix and
   // switch between the two patterns as the value's sign changes, so it reads
   // "-$100" the way money is written everywhere else.
-  if (prefix && allowsNegative(servar))
+  if (prefix && allowsNegative(servar, bounds))
     return {
       ...props,
       mask: [
         {
           mask: pattern,
           blocks: {
-            num: { ...numberBlock, ...getMagnitudeBounds(servar, false) }
+            num: { ...numberBlock, ...getMagnitudeBounds(bounds, false) }
           },
           lazy: false
         },
         {
           mask: `${SIGN_LITERAL}${pattern}`,
           blocks: {
-            num: { ...numberBlock, ...getMagnitudeBounds(servar, true) }
+            num: { ...numberBlock, ...getMagnitudeBounds(bounds, true) }
           },
           lazy: false
         }
@@ -327,6 +344,6 @@ export function getNumberMaskProps(servar: any, value: any, editing = false) {
   return {
     ...props,
     mask: pattern,
-    blocks: { num: { ...numberBlock, ...getValueBounds(servar) } }
+    blocks: { num: { ...numberBlock, ...getValueBounds(servar, bounds) } }
   };
 }

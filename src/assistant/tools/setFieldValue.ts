@@ -9,6 +9,10 @@ import { stateMap } from '../../elements/components/data/states';
 import { getRepeatedContainer } from '../../utils/repeat';
 import { getPositionKey } from '../../utils/hideAndRepeats';
 import { validateRepeatIndex } from './utils';
+import {
+  NUMBER_BOUND_TYPES,
+  resolveNumberBounds
+} from '../../utils/numberBounds';
 
 const UNWRITABLE_TYPES = new Set([
   'file_upload',
@@ -210,10 +214,15 @@ function checkValueAgainstField(
   const type = servar.type;
   const key = servar.key;
   const meta = servar.metadata ?? {};
-  const minLength =
+  let minLength =
     typeof servar.min_length === 'number' ? servar.min_length : undefined;
-  const maxLength =
+  let maxLength =
     typeof servar.max_length === 'number' ? servar.max_length : undefined;
+  if (NUMBER_BOUND_TYPES.has(type)) {
+    const bounds = resolveNumberBounds(servar, repeatIndex);
+    minLength = bounds.min ?? undefined;
+    maxLength = bounds.max ?? undefined;
+  }
 
   // Boolean field
   if (type === 'checkbox') {

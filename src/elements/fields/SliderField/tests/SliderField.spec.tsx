@@ -13,11 +13,44 @@ import {
 } from './test-utils';
 import { render, screen, fireEvent } from '@testing-library/react';
 import SliderField from '../index';
+import { fieldValues } from '../../../../utils/init';
 
 describe('SliderField - Base Functionality', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetMockFieldValue();
+  });
+
+  describe('Bounds that track a field', () => {
+    afterEach(() => {
+      delete fieldValues.budget;
+    });
+
+    it('takes its track from the referenced field and keeps room to move', () => {
+      Object.assign(fieldValues, { budget: 40 });
+      const element = createSliderElement('slider', {
+        min_value: 0,
+        max_value: 100
+      });
+      element.servar.metadata.bound_fields = {
+        min: null,
+        max: {
+          field_type: 'servar',
+          field_id: 'budget-id',
+          field_key: 'budget'
+        }
+      };
+      const { rerender } = render(
+        <SliderField {...createSliderProps(element)} />
+      );
+      expectSliderToHaveMin(0);
+      expectSliderToHaveMax(40);
+
+      // A max at or below the min would freeze the handle
+      Object.assign(fieldValues, { budget: -5 });
+      rerender(<SliderField {...createSliderProps(element)} />);
+      expectSliderToHaveMax(1);
+    });
   });
 
   describe('Basic Rendering', () => {
