@@ -12,9 +12,12 @@ import {
   envelopeSourceUrl
 } from '../DocumentEditor/documentPacket';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
-import { featheryWindow } from '../../../utils/browser';
+import SignedEnvelopeView from './SignedEnvelopeView';
+import { documentSigners } from './documentSigners';
+import useRefreshOnFocus from '../../../utils/useRefreshOnFocus';
+import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
-import { containerToolbarOutcomes } from '../../../utils/document';
+import { containerToolbarOutcomes, getSignUrl } from '../../../utils/document';
 import {
   registerDocxEditor,
   unregisterDocxEditor
@@ -58,6 +61,8 @@ export interface DocxDocumentSessionHandle {
   save: () => Promise<unknown>;
   envelope: () => Envelope;
   updateEnvelope: (value: Envelope) => void;
+  markFinalized: () => void;
+  showSent: (value: Envelope, signUrl?: string) => void;
 }
 
 export default function DocxDocumentSession({
@@ -68,6 +73,7 @@ export default function DocxDocumentSession({
   targetAction,
   client,
   initialEnvelope,
+  initialSigning,
   documentId,
   label,
   active,
@@ -90,6 +96,7 @@ export default function DocxDocumentSession({
   targetAction?: Record<string, any>;
   client: FeatheryClient;
   initialEnvelope: Envelope;
+  initialSigning?: { sent: boolean; signUrl?: string };
   documentId?: string;
   label: string;
   active: boolean;
@@ -110,7 +117,14 @@ export default function DocxDocumentSession({
 }) {
   const editMode = false;
   const [envelope, updateEnvelope] = useState(initialEnvelope);
-  const [initialType] = useState(initialEnvelope.type);
+  const [finalizedForSigning, setFinalizedForSigning] = useState(false);
+  const finalizedRef = useRef(false);
+  const [sentThisSession, setSentThisSession] = useState(
+    !!initialSigning?.sent
+  );
+  const [signUrl, setSignUrl] = useState(initialSigning?.signUrl);
+  const [openingSigningPage, setOpeningSigningPage] = useState(false);
+  const openingSigningPageRef = useRef(false);
   const envelopeRef = useRef(envelope);
   envelopeRef.current = envelope;
   const setEnvelope = useCallback(
@@ -138,16 +152,27 @@ export default function DocxDocumentSession({
   useEffect(() => {
     onSessionReady(initialEnvelope.id, {
       save: () => {
+        if (envelopeRef.current.type !== 'docx' || finalizedRef.current)
+          return Promise.resolve();
         if (!beforeReplaceRef.current)
           throw new Error(`${label} is still loading. Please retry.`);
         return beforeReplaceRef.current();
       },
       envelope: () => envelopeRef.current,
-      updateEnvelope: setEnvelope
+      updateEnvelope: setEnvelope,
+      markFinalized: () => {
+        finalizedRef.current = true;
+        setFinalizedForSigning(true);
+      },
+      showSent: (value, url) => {
+        setSentThisSession(true);
+        setSignUrl(url);
+        setEnvelope(value);
+      }
     });
     return () => onSessionReady(initialEnvelope.id, null);
   }, [initialEnvelope.id, label, onSessionReady, setEnvelope]);
-  const finalized = envelope.type !== 'docx';
+  const finalized = envelope.type !== 'docx' || finalizedForSigning;
 
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
   // featheryWindow() is {} so a mount-once memo freezes serviceUrl as
@@ -191,6 +216,76 @@ export default function DocxDocumentSession({
   const { terminalAction, offersDraft, offersDownload, savesToField } =
     containerToolbarOutcomes(targetAction ?? {});
   const reviewChanges = !!assistantEnabled && !readOnly;
+
+  const sentVia = envelope.sent ? envelope.sent_via ?? 'feathery' : undefined;
+  const awaitingFiller =
+    envelope.type === 'pdf' && !envelope.signed && sentVia === 'feathery';
+  const refreshSignedEnvelope = useCallback(async () => {
+    if (!activeDocumentId) return;
+    try {
+      const fresh = await client.getCurrentEnvelope(activeDocumentId);
+      if (fresh?.id === envelopeRef.current.id) setEnvelope(fresh);
+    } catch {
+      // A failed background refresh keeps the currently displayed PDF.
+    }
+  }, [activeDocumentId, client, setEnvelope]);
+  useRefreshOnFocus(refreshSignedEnvelope, active && awaitingFiller);
+
+  // Signing can overwrite a plain URL; a changed signed state must reload it.
+  const pdfView = useRef({
+    key: '',
+    raw: null as string | null,
+    url: null as string | null,
+    version: 0
+  });
+  const pdfKey = `${envelope.file?.split('?')[0] ?? ''}|${!!envelope.signed}`;
+  if (pdfView.current.key !== pdfKey) {
+    const raw = envelope.file;
+    const version = pdfView.current.version + 1;
+    const reused = !!raw && raw === pdfView.current.raw && !raw.includes('?');
+    pdfView.current = {
+      key: pdfKey,
+      raw,
+      version,
+      url: reused ? `${raw}?v=${version}` : raw
+    };
+  }
+
+  const reopenSigningPage = useCallback(async () => {
+    if (openingSigningPageRef.current) return;
+    openingSigningPageRef.current = true;
+    setOpeningSigningPage(true);
+    try {
+      setOperationError(null);
+      const result = await client.finalizeEnvelope(
+        envelope.id,
+        documentSigners(targetAction, activeDocumentId, fieldValues),
+        'feathery'
+      );
+      if (!result?.signer_id) {
+        setOperationError('This document is waiting on another signer.');
+        return;
+      }
+      const url = getSignUrl(result.signer_id, targetAction?.redirect);
+      setSignUrl(url);
+      if (targetAction?.redirect) featheryWindow().location.href = url;
+      else openTab(url);
+    } catch (error: any) {
+      const fresh = activeDocumentId
+        ? await client.getCurrentEnvelope(activeDocumentId).catch(() => null)
+        : null;
+      if (fresh?.id === envelope.id && fresh.signed) {
+        setEnvelope(fresh);
+        return;
+      }
+      setOperationError(
+        `The signing page could not be opened. ${error?.message ?? ''}`.trim()
+      );
+    } finally {
+      openingSigningPageRef.current = false;
+      setOpeningSigningPage(false);
+    }
+  }, [client, envelope.id, activeDocumentId, targetAction, setEnvelope]);
 
   // Opt-in, and off unless a host asks for it: window.featherySyncfusion.bindings
   // rides the same config object that already carries serviceUrl and licenseKey,
@@ -362,7 +457,7 @@ export default function DocxDocumentSession({
   // only the assistant registration; the editor itself stays mounted.
   useEffect(() => {
     if (!containerId || !registeredEditor.current) return;
-    if (!active) {
+    if (!active || finalized) {
       unregisterDocxEditor(containerId, registeredEditor.current, formId);
       return;
     }
@@ -375,7 +470,15 @@ export default function DocxDocumentSession({
       documentId: activeDocumentId,
       envelopeId: envelope?.id
     });
-  }, [active, activeDocumentId, containerId, envelope?.id, formId, stepId]);
+  }, [
+    active,
+    finalized,
+    activeDocumentId,
+    containerId,
+    envelope?.id,
+    formId,
+    stepId
+  ]);
   useEffect(() => {
     const ownerId = envelope?.id;
     return () => {
@@ -393,8 +496,45 @@ export default function DocxDocumentSession({
     };
   }, [containerId, formId, envelope?.id]);
 
-  if (initialType !== 'docx')
-    return <div>{`Editing ${initialType} documents isn't supported yet.`}</div>;
+  if (envelope.type === 'pdf' && envelope.file) {
+    return (
+      <div css={wrap}>
+        {operationError && (
+          <div role='alert' css={{ color: '#b42318', padding: 8 }}>
+            {operationError}
+          </div>
+        )}
+        <SignedEnvelopeView
+          pdfUrl={pdfView.current.url ?? envelope.file}
+          downloadUrl={
+            envelope.file.includes('?')
+              ? envelope.file
+              : pdfView.current.url ?? envelope.file
+          }
+          signUrl={awaitingFiller ? signUrl : undefined}
+          openingSigningPage={openingSigningPage}
+          onOpenSigningPage={
+            awaitingFiller && !sentThisSession && terminalAction === 'sign'
+              ? reopenSigningPage
+              : undefined
+          }
+          status={
+            envelope.signed
+              ? 'signed'
+              : sentVia === 'docusign'
+              ? 'docusign'
+              : sentVia
+              ? 'awaiting'
+              : null
+          }
+        />
+      </div>
+    );
+  }
+  if (envelope.type !== 'docx')
+    return (
+      <div>{`Editing ${envelope.type} documents isn't supported yet.`}</div>
+    );
 
   return (
     <div css={wrap}>

@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState
 } from 'react';
+import { documentSigners } from './documentSigners';
 import DocxEditor from './index';
 import DocxDocumentSession, {
   DocxDocumentSessionHandle
@@ -85,6 +86,9 @@ export default function DocumentEditorContainer({
   );
   const client = useMemo(() => new FeatheryClient(formKey ?? ''), [formKey]);
   const sessions = useRef(new Map<string, DocxDocumentSessionHandle>());
+  const preparedForSigning = useRef(
+    new Map<string, EditorEnvelope & { signer_id?: string }>()
+  );
   const registerSession = useCallback(
     (id: string, handle: DocxDocumentSessionHandle | null) => {
       if (handle) sessions.current.set(id, handle);
@@ -115,6 +119,9 @@ export default function DocumentEditorContainer({
     updateTabEnvelope,
     resolveEnvelopes
   } = packet;
+  useEffect(() => {
+    preparedForSigning.current.clear();
+  }, [reloadKey]);
   const [visited, setVisited] = useState<string[]>(activeId ? [activeId] : []);
   useEffect(() => {
     if (activeId)
@@ -255,47 +262,47 @@ export default function DocumentEditorContainer({
         // All local edits are durable before the first irreversible conversion.
         const envelopes = await savePacket();
         const viaDocusign = isDocusignSignAction(action ?? {}, 'sign');
-        const signerKey = viaDocusign ? '' : action?.envelope_signer_field_key;
-        const fillerEmail = signerKey
-          ? fieldValues[signerKey]?.toString() ?? ''
-          : '';
         const finalized: Record<string, any>[] = [];
         for (const envelope of envelopes) {
           if (envelope.signed) {
             finalized.push(envelope);
             continue;
           }
-          const documentId = envelope.document;
-          const roleSigners = (action?.envelope_signers ?? [])
-            .filter((entry: any) => entry.document_id === documentId)
-            .map((entry: any) => {
-              const email = fieldValues[entry.field_key]?.toString() ?? '';
-              return {
-                document_id: documentId,
-                role_id: entry.role_id,
-                email,
-                filler:
-                  !!fillerEmail &&
-                  email.toLowerCase() === fillerEmail.toLowerCase()
-              };
-            });
-          const signers = (
-            roleSigners.length || !documentId
-              ? roleSigners
-              : [{ document_id: documentId, email: fillerEmail, filler: true }]
-          ).filter((entry: any) => entry.email);
-          const result = await client.finalizeEnvelope(
-            envelope.id,
-            signers,
-            action?.sign_method
-          );
+          const result =
+            preparedForSigning.current.get(envelope.id) ??
+            (await client.finalizeEnvelope(
+              envelope.id,
+              documentSigners(action, envelope.document, fieldValues),
+              action?.sign_method
+            ));
           if (!result?.file)
             throw new Error(
               'Could not prepare all documents for signing. Please retry.'
             );
-          const next = { ...envelope, ...result, type: 'pdf' };
-          sessions.current.get(envelope.id)?.updateEnvelope(next);
-          updateTabEnvelope(next);
+          const next = {
+            ...envelope,
+            ...result,
+            editor_file: result.editor_file ?? null,
+            type: 'pdf'
+          };
+          preparedForSigning.current.set(envelope.id, next);
+          const session = sessions.current.get(envelope.id);
+          session?.markFinalized();
+          // An unvisited document has no retained editor after conversion.
+          if (!session) updateTabEnvelope(next);
+          if (!viaDocusign && (result.signer_id || result.invited)) {
+            const sent = { ...next, sent: true, sent_via: 'feathery' as const };
+            preparedForSigning.current.set(envelope.id, sent);
+            sessions.current
+              .get(envelope.id)
+              ?.showSent(
+                sent,
+                result.signer_id
+                  ? getSignUrl(result.signer_id, action?.redirect)
+                  : undefined
+              );
+            updateTabEnvelope(sent);
+          }
           finalized.push(next);
         }
         let result: Record<string, any> = {
@@ -312,6 +319,19 @@ export default function DocumentEditorContainer({
               response?.message ?? 'Failed to send the documents to DocuSign'
             );
           result = response;
+          if (!draft) {
+            for (const value of finalized) {
+              if (value.signed) continue;
+              const sent = {
+                ...value,
+                sent: true,
+                sent_via: 'docusign' as const
+              } as EditorEnvelope;
+              preparedForSigning.current.set(value.id, sent);
+              sessions.current.get(value.id)?.showSent(sent);
+              updateTabEnvelope(sent);
+            }
+          }
         }
         await emit(envelopes, 'sign', result, draft);
         const announce = internalState[formId ?? '']?.showEnvelopeOutcome;
@@ -368,6 +388,7 @@ export default function DocumentEditorContainer({
         <SharedDocumentRail
           key={reloadKey}
           enabled={tabs.length > 1}
+          visible={packet.envelope?.type === 'docx'}
           activeId={packet.envelope?.id}
           panel={railPanel}
           onPanelChange={setRailPanel}
@@ -390,6 +411,7 @@ export default function DocumentEditorContainer({
               const envelope = tab.envelope;
               if (!envelope) return null;
               const active = tab.id === activeId;
+              const prepared = preparedForSigning.current.get(envelope.id);
               return (
                 <div
                   key={`${reloadKey}:${envelope.id}`}
@@ -413,6 +435,16 @@ export default function DocumentEditorContainer({
                     targetAction={action}
                     client={client}
                     initialEnvelope={envelope}
+                    initialSigning={
+                      prepared?.sent
+                        ? {
+                            sent: true,
+                            signUrl: prepared.signer_id
+                              ? getSignUrl(prepared.signer_id, action?.redirect)
+                              : undefined
+                          }
+                        : undefined
+                    }
                     documentId={tab.documentId}
                     label={tab.label}
                     active={active}

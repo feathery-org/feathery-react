@@ -1844,6 +1844,35 @@ describe('document tab navigation', () => {
     );
   });
 
+  it('hides the DOCX rail on a PDF without remounting the cached draft', async () => {
+    const packet = (featheryWindow() as any)[PENDING_DRAFTS_KEY][containerId];
+    packet.envelopes[1] = {
+      ...second,
+      type: 'pdf',
+      file: 'b.pdf',
+      editor_file: null,
+      signed: true
+    };
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    const editor = await view.findByTestId('editor:a.editor.docx');
+    fireEvent.change(view.getByLabelText('local:a.editor.docx'), {
+      target: { value: 'Unsaved draft' }
+    });
+    fireEvent.click(view.getByTestId('panel:a.editor.docx:history'));
+    const rail = view.getByText('Loading document…');
+    expect(rail).toBeVisible();
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    await view.findByTestId('signed-view:b.pdf');
+    expect(rail).not.toBeVisible();
+    fireEvent.click(view.getByRole('tab', { name: 'Agreement.docx' }));
+    expect(view.getByTestId('editor:a.editor.docx')).toBe(editor);
+    expect(view.getByLabelText('local:a.editor.docx')).toHaveValue(
+      'Unsaved draft'
+    );
+    expect(editor).toHaveAttribute('data-rail-panel', 'history');
+    await waitFor(() => expect(rail).toBeVisible());
+  });
+
   it('reports failed Save all without losing either local editor and retries', async () => {
     const view = render(<DocumentEditorContainer containerId={containerId} />);
     await view.findByTestId('editor:a.editor.docx');
@@ -2004,6 +2033,106 @@ describe('document tab navigation', () => {
       { envelopeId: 'env-a' },
       { envelopeId: 'env-b' }
     ]);
-    expect(view.getByTestId('editor:a.editor.docx')).toBeInTheDocument();
+    expect(view.queryByTestId('editor:a.editor.docx')).toBeNull();
+    expect(view.getByTestId('signed-view:env-a.pdf')).toHaveAttribute(
+      'data-status',
+      'docusign'
+    );
+    expect(view.getByTestId('signed-view:env-b.pdf')).toHaveAttribute(
+      'data-status',
+      'docusign'
+    );
+  });
+
+  it('keeps both cached editors after a failed packet send and retries without reconverting', async () => {
+    const action = (initState.formSchemas as any)['form-key'].steps[0]
+      .buttons[0].properties.actions[0];
+    action.editor_toolbar_actions = ['sign'];
+    action.sign_method = 'docusign';
+    mockFinalizeEnvelope
+      .mockReset()
+      .mockImplementation(async (id) => ({ file: id + '.pdf' }));
+    mockFinalizeEnvelopeReview
+      .mockReset()
+      .mockRejectedValueOnce(new Error('Send failed'))
+      .mockResolvedValueOnce({ status: 'sent' });
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    const firstEditor = await view.findByTestId('editor:a.editor.docx');
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    const secondEditor = await view.findByTestId('editor:b.docx');
+    fireEvent.click(
+      secondEditor.querySelector('[data-testid="terminal:sign"]')!
+    );
+    expect(await view.findByRole('alert')).toHaveTextContent('Send failed');
+    expect(view.getByTestId('editor:a.editor.docx')).toBe(firstEditor);
+    expect(view.getByTestId('editor:b.docx')).toBe(secondEditor);
+    fireEvent.click(
+      secondEditor.querySelector('[data-testid="terminal:sign"]')!
+    );
+    await view.findByTestId('signed-view:env-b.pdf');
+    expect(mockFinalizeEnvelope).toHaveBeenCalledTimes(2);
+    expect(mockFinalizeEnvelopeReview).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes only the selected signed document without replacing another tab', async () => {
+    const packet = (featheryWindow() as any)[PENDING_DRAFTS_KEY][containerId];
+    packet.envelopes = [first, second].map((env) => ({
+      ...env,
+      type: 'pdf',
+      file: env.id + '.pdf',
+      editor_file: null,
+      sent: true,
+      sent_via: 'feathery'
+    }));
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    await view.findByTestId('signed-view:env-a.pdf');
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    await view.findByTestId('signed-view:env-b.pdf');
+    mockGetCurrentEnvelope.mockClear().mockResolvedValue({
+      ...packet.envelopes[1],
+      file: 'b-signed.pdf',
+      signed: true
+    });
+    await act(async () => {
+      featheryWindow().dispatchEvent(new Event('focus'));
+    });
+    await view.findByTestId('signed-view:b-signed.pdf');
+    expect(mockGetCurrentEnvelope).toHaveBeenCalledTimes(1);
+    expect(mockGetCurrentEnvelope).toHaveBeenCalledWith('doc-b');
+    expect(view.getByTestId('signed-view:env-a.pdf')).toHaveAttribute(
+      'data-status',
+      'awaiting'
+    );
+    expect(view.getByTestId('signed-view:b-signed.pdf')).toHaveAttribute(
+      'data-status',
+      'signed'
+    );
+    fireEvent.click(view.getByRole('tab', { name: 'Agreement.docx' }));
+    expect(view.getByTestId('signed-view:env-a.pdf')).toHaveAttribute(
+      'data-status',
+      'awaiting'
+    );
+  });
+  it('opens a previously unvisited document as a sent PDF without claiming it needs a signing link', async () => {
+    const action = (initState.formSchemas as any)['form-key'].steps[0]
+      .buttons[0].properties.actions[0];
+    action.editor_toolbar_actions = ['sign'];
+    action.sign_method = 'feathery';
+    mockFinalizeEnvelope
+      .mockReset()
+      .mockImplementation(async (id) => ({ file: id + '.pdf', invited: true }));
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    const firstEditor = await view.findByTestId('editor:a.editor.docx');
+    fireEvent.click(
+      firstEditor.querySelector('[data-testid="terminal:sign"]')!
+    );
+    await view.findByTestId('signed-view:env-a.pdf');
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    expect(await view.findByTestId('signed-view:env-b.pdf')).toHaveAttribute(
+      'data-status',
+      'awaiting'
+    );
+    expect(view.queryByTestId('editor:b.docx')).toBeNull();
+    expect(view.queryByTestId('open-signing-page')).toBeNull();
   });
 });

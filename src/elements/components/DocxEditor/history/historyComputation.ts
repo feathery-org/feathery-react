@@ -12,6 +12,11 @@ import {
 } from './sfdtDiff';
 import type { ChangeList, RevisionRun, Slice } from './sfdtDiff';
 import { parseChangeList } from './validation';
+import {
+  approvedEditCount,
+  diffFoldedSessions,
+  FoldedSession
+} from './foldedSessions';
 import { populateVersionBindings } from './populateVersionBindings';
 import type { VersionAuthor } from './types';
 import type {
@@ -35,6 +40,14 @@ export interface HistorySnapshot {
   acceptance: TrackedChangeAcceptance | null;
 }
 export interface HistoryTasks {
+  artifacts: {
+    input: { finalBuffer: ArrayBuffer; changesBuffer: ArrayBuffer | null };
+    result: Omit<FoldedSession, 'author'>;
+  };
+  folded: {
+    input: { startSfdt: string; sessions: FoldedSession[] };
+    result: ResolvedVersion | null;
+  };
   storedFiles: {
     input: {
       finalBuffer: ArrayBuffer;
@@ -279,6 +292,20 @@ export function computeHistoryTask<K extends keyof HistoryTasks>(
   input: HistoryTasks[K]['input']
 ): HistoryTasks[K]['result'] {
   switch (type) {
+    case 'folded': {
+      const args = input as HistoryTasks['folded']['input'];
+      const changes = diffFoldedSessions(
+        JSON.parse(args.startSfdt),
+        args.sessions
+      );
+      if (!changes || !args.sessions.length) return null;
+      const combined = buildFromFinal(
+        args.sessions[args.sessions.length - 1].finalSfdt,
+        changes,
+        null
+      );
+      return { ...combined, approvedCount: approvedEditCount(args.sessions) };
+    }
     case 'close': {
       const args = input as HistoryTasks['close']['input'];
       return closeHistory(args.sessionId, args.snapshot);
@@ -311,7 +338,8 @@ export async function executeHistoryTask<K extends keyof HistoryTasks>(
   type: K,
   input: HistoryTasks[K]['input']
 ): Promise<HistoryTasks[K]['result']> {
-  if (type !== 'storedFiles') return computeHistoryTask(type, input);
+  if (type !== 'storedFiles' && type !== 'artifacts')
+    return computeHistoryTask(type, input);
   const args = input as HistoryTasks['storedFiles']['input'];
   const [finalSfdt, changesText] = await Promise.all([
     decodeFile(args.finalBuffer),
@@ -323,6 +351,8 @@ export async function executeHistoryTask<K extends keyof HistoryTasks>(
   } catch {
     /* Plain fallback remains retryable. */
   }
+  if (type === 'artifacts')
+    return { finalSfdt, changes } as HistoryTasks[K]['result'];
   return buildFromFinal(
     finalSfdt,
     changes,

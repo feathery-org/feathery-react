@@ -32,6 +32,7 @@ export default function SharedDocumentRail({
   panel,
   onPanelChange,
   enabled,
+  visible = true,
   showChanges
 }: {
   children: React.ReactNode;
@@ -39,6 +40,8 @@ export default function SharedDocumentRail({
   panel: ActivePanel;
   onPanelChange: (panel: ActivePanel) => void;
   enabled: boolean;
+  /** Hide the rail for PDFs without unmounting cached DOCX sessions. */
+  visible?: boolean;
   showChanges: boolean;
 }) {
   const [sessions, setSessions] = useState<Record<string, DocumentRailSession>>(
@@ -62,15 +65,19 @@ export default function SharedDocumentRail({
     <RailContext.Provider value={context}>
       {children}
       <div
+        aria-hidden={!visible}
         ref={(node) => {
-          node?.toggleAttribute('inert', !!current?.panel.restoring);
+          node?.toggleAttribute(
+            'inert',
+            !visible || !!current?.panel.restoring
+          );
         }}
         css={{
           position: 'absolute',
           top: current?.toolbarHeight ?? TOOLBAR_HEIGHT,
           bottom: 0,
           right: 0,
-          display: 'flex',
+          display: visible ? 'flex' : 'none',
           zIndex: 1
         }}
       >
@@ -95,7 +102,7 @@ export default function SharedDocumentRail({
                 {...session.panel}
                 open={panel !== null}
                 tab={panel ?? 'sections'}
-                active={id === activeId}
+                active={visible && id === activeId}
               />
             </div>
           ))}

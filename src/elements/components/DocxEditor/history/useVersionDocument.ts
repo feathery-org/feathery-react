@@ -5,10 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { runHistoryTask } from './historyWorkerClient';
 import type { ChangeList } from './sfdtDiff/index';
 import { DocxHistoryHost, DocxVersion, LiveSessionAuthors } from './types';
-import { parseChangeList } from './validation';
 import {
-  approvedEditCount,
-  diffFoldedSessions,
   FoldedSession,
   mixesPersonAndRobin,
   sessionAuthorKey
@@ -338,41 +335,37 @@ async function versionArtifacts(
   if (local)
     return { finalSfdt: local.finalSfdt, changes: local.changes ?? null };
   if (!version.final_sfdt) return null;
-  const finalSfdt = await gunzip(
-    await host.fetchVersionFile(version.final_sfdt)
-  );
-  let changes: ChangeList | null = null;
-  if (version.changes && version.change_count != null) {
-    try {
-      changes = parseChangeList(
-        JSON.parse(await gunzip(await host.fetchVersionFile(version.changes)))
-      );
-    } catch {
-      changes = null;
-    }
-  }
-  return { finalSfdt, changes };
+  const [finalBuffer, changesBuffer] = await Promise.all([
+    host.fetchVersionFile(version.final_sfdt),
+    version.changes && version.change_count != null
+      ? host.fetchVersionFile(version.changes).catch(() => null)
+      : null
+  ]);
+  return runHistoryTask('artifacts', { finalBuffer, changesBuffer });
 }
 
 // Docx-only rows (the original upload) converted to SFDT, a few at a time.
 const CONVERTED_MAX = 2;
-const convertedStarts = new Map<string, Promise<any>>();
+const convertedStarts = new Map<string, Promise<string>>();
 
 /** The document before the folded sessions, or null when it can't be had. */
 async function foldedStart(
   host: DocxHistoryHost,
   preceding: DocxVersion | null,
   convertDocx?: DocxToSfdt
-): Promise<any | null> {
+): Promise<string | null> {
   if (!preceding) return null;
   const before = await versionArtifacts(host, preceding);
-  if (before) return JSON.parse(before.finalSfdt);
+  if (before) return before.finalSfdt;
   const docxUrl = preceding.editor_file ?? preceding.file;
   if (!docxUrl || !convertDocx) return null;
   const key = cacheKey(host, preceding);
   let pending = convertedStarts.get(key);
   if (!pending) {
-    pending = host.fetchVersionFile(docxUrl).then(convertDocx);
+    pending = host
+      .fetchVersionFile(docxUrl)
+      .then(convertDocx)
+      .then(JSON.stringify);
     pending.catch(() => convertedStarts.delete(key));
     convertedStarts.set(key, pending);
     while (convertedStarts.size > CONVERTED_MAX) {
@@ -416,14 +409,12 @@ async function resolveFolded(
         author: sessionAuthorKey(members[index])
       }));
       const start = await foldedStart(host, folded.preceding, convertDocx);
-      const changes = start && diffFoldedSessions(start, sessions);
-      if (changes) {
-        const combined = await runHistoryTask('stored', {
-          finalSfdt: sessions[sessions.length - 1].finalSfdt,
-          changes,
-          expectedSha256: null
+      if (start) {
+        const combined = await runHistoryTask('folded', {
+          startSfdt: start,
+          sessions
         });
-        return { ...combined, approvedCount: approvedEditCount(sessions) };
+        if (combined) return combined;
       }
     }
   } catch {
