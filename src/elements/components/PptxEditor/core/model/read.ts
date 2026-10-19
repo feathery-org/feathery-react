@@ -73,8 +73,14 @@ function readRun(rNode: ONode): Run {
             .map((c) => c['#text'] ?? '')
             .join('')
         : '',
-    bold: rPr ? getAttr(rPr, 'b') === '1' : undefined,
-    italic: rPr ? getAttr(rPr, 'i') === '1' : undefined,
+    bold:
+      rPr && getAttr(rPr, 'b') !== undefined
+        ? getAttr(rPr, 'b') === '1'
+        : undefined,
+    italic:
+      rPr && getAttr(rPr, 'i') !== undefined
+        ? getAttr(rPr, 'i') === '1'
+        : undefined,
     underline: rPr
       ? getAttr(rPr, 'u') !== undefined && getAttr(rPr, 'u') !== 'none'
       : undefined,

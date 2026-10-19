@@ -93,8 +93,14 @@ function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
       font: latin ? getAttr(latin, 'typeface') : undefined,
       color: srgb ? getAttr(srgb, 'val') : undefined,
       colorScheme: scheme ? getAttr(scheme, 'val') : undefined,
-      bold: getAttr(defRPr, 'b') === '1' || undefined,
-      italic: getAttr(defRPr, 'i') === '1' || undefined
+      bold:
+        getAttr(defRPr, 'b') === undefined
+          ? undefined
+          : getAttr(defRPr, 'b') === '1',
+      italic:
+        getAttr(defRPr, 'i') === undefined
+          ? undefined
+          : getAttr(defRPr, 'i') === '1'
     };
   }
   return Object.keys(out).length ? out : null;
@@ -123,6 +129,16 @@ function findPlaceholder(
     const ph = descendant(sp, 'p:ph');
     return !!ph && (getAttr(ph, 'type') || 'body') === phType;
   });
+  // Missing idx means index zero, not any styled placeholder of this type.
+  // Google Slides also emits a distinct sentinel for genuinely unindexed
+  // duplicates; retain the existing type fallback for those.
+  if (phIdx === '') {
+    const unindexed = typeMatches.find((sp) => {
+      const ph = descendant(sp, 'p:ph')!;
+      return !getAttr(ph, 'idx') || getAttr(ph, 'idx') === '0';
+    });
+    if (unindexed) return unindexed;
+  }
   const styled = typeMatches.find((sp) => {
     const lst = descendant(sp, 'a:lstStyle');
     const dr = lst && descendant(lst, 'a:defRPr');

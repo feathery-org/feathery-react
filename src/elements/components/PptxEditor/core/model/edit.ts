@@ -534,7 +534,7 @@ function ensureRPr(runNode: ONode): ONode {
 
 function applyRunStyle(rPr: ONode, s: TextStyle): void {
   const bool = (name: string, v: boolean) =>
-    v ? setAttr(rPr, name, '1') : removeAttr(rPr, name);
+    setAttr(rPr, name, v ? '1' : '0');
   if (s.bold !== undefined) bool('b', s.bold);
   if (s.italic !== undefined) bool('i', s.italic);
   if (s.underline !== undefined)

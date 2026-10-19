@@ -198,6 +198,37 @@ function geometryEl(
       e.setAttribute('rx', String((Math.min(w, h) * adj) / 100000));
       break;
     }
+    case 'round2SameRect': {
+      const side = Math.min(w, h);
+      const top = Math.min(
+        side / 2,
+        Math.max(0, ((shape.geomAdj?.adj1 ?? 16667) * side) / 100000)
+      );
+      const bottom = Math.min(
+        side / 2,
+        Math.max(0, ((shape.geomAdj?.adj2 ?? 0) * side) / 100000)
+      );
+      e = mk('path');
+      e.setAttribute(
+        'd',
+        `M ${top} 0 L ${w - top} 0 A ${top} ${top} 0 0 1 ${w} ${top} L ${w} ${
+          h - bottom
+        } A ${bottom} ${bottom} 0 0 1 ${
+          w - bottom
+        } ${h} L ${bottom} ${h} A ${bottom} ${bottom} 0 0 1 0 ${
+          h - bottom
+        } L 0 ${top} A ${top} ${top} 0 0 1 ${top} 0 Z`
+      );
+      break;
+    }
+    case 'bentConnector3': {
+      e = mk('path');
+      // Adjustment is intentionally unbounded: near-vertical Google Slides
+      // connectors use a large adj1 to put the elbow outside their narrow box.
+      const elbow = (w * (shape.geomAdj?.adj1 ?? 50000)) / 100000;
+      e.setAttribute('d', `M 0 0 L ${elbow} 0 L ${elbow} ${h} L ${w} ${h}`);
+      break;
+    }
     case 'pie':
     case 'arc': {
       // A pie slice / arc of the bounding ellipse between two angles (adj1/adj2
@@ -377,7 +408,11 @@ function gradientPaint(
   const gsLst = child(grad, 'a:gsLst');
   const lin = child(grad, 'a:lin');
   const ang = lin ? Number(getAttr(lin, 'ang')) / 60000 : 90;
-  const grEl = featheryDoc().createElementNS(SVGNS, 'linearGradient');
+  const path = child(grad, 'a:path');
+  const grEl = featheryDoc().createElementNS(
+    SVGNS,
+    path ? 'radialGradient' : 'linearGradient'
+  );
   const id = defsIdPrefix(defs) + (stableId || `grad-${gradSeq++}`);
   grEl.setAttribute('id', id);
   grEl.setAttribute('gradientUnits', 'objectBoundingBox');
@@ -386,6 +421,28 @@ function gradientPaint(
   grEl.setAttribute('y1', String(0.5 - Math.sin(rad) / 2));
   grEl.setAttribute('x2', String(0.5 + Math.cos(rad) / 2));
   grEl.setAttribute('y2', String(0.5 + Math.sin(rad) / 2));
+  if (path) {
+    const rect = child(path, 'a:fillToRect');
+    const fraction = (node: ONode | undefined, name: string) => {
+      const value = node && getAttr(node, name);
+      return value?.endsWith('%')
+        ? parseFloat(value) / 100
+        : Number(value || 0) / 100000;
+    };
+    const cx = (fraction(rect, 'l') + 1 - fraction(rect, 'r')) / 2;
+    const cy = (fraction(rect, 't') + 1 - fraction(rect, 'b')) / 2;
+    const tile = child(grad, 'a:tileRect');
+    const radius =
+      Math.max(
+        1 - fraction(tile, 'l') - fraction(tile, 'r'),
+        1 - fraction(tile, 't') - fraction(tile, 'b')
+      ) / 2;
+    grEl.setAttribute('cx', String(cx));
+    grEl.setAttribute('cy', String(cy));
+    grEl.setAttribute('r', String(radius));
+    grEl.setAttribute('fx', String(cx));
+    grEl.setAttribute('fy', String(cy));
+  }
   for (const gs of children(gsLst || grad, 'a:gs')) {
     const stop = featheryDoc().createElementNS(SVGNS, 'stop');
     stop.setAttribute(
@@ -551,7 +608,7 @@ function applyLineStyle(
     if (!type || type === 'none') return;
     const id = `${defsIdPrefix(defs)}line-${key}-${where}`;
     const m = featheryDoc().createElementNS(SVGNS, 'marker');
-    const scale = end?.width === 'sm' ? 3.2 : end?.width === 'lg' ? 5.4 : 4.2;
+    const scale = end?.width === 'sm' ? 5 : end?.width === 'lg' ? 9 : 7;
     const length =
       end?.length === 'sm' ? 0.72 : end?.length === 'lg' ? 1.35 : 1;
     m.setAttribute('id', id);
@@ -2524,7 +2581,8 @@ function shapeGroup(
   shape: Shape,
   pkg: OPCPackage,
   defs: SVGDefsElement,
-  idx: number | string
+  idx: number | string,
+  groupScale = 1
 ): SVGGElement | null {
   if (!shape.xfrm) return null;
   const { x, y, cx, cy, rot, flipH, flipV } = shape.xfrm;
@@ -2585,6 +2643,9 @@ function shapeGroup(
   ) {
     const fill = shapeFill(shape, pkg, defs, `${shape.id}-${idx}`);
     const st = shapeStroke(shape, pkg);
+    // DrawingML group coordinates scale geometry, while line widths remain
+    // slide-space lengths. Cancel that scale for nested strokes.
+    st.width /= groupScale;
     if (fill !== 'none' || st.color) {
       const geometry = geometryEl(shape, cx, cy, fill, st.color, st.width);
       const opacity = shapeFillOpacity(shape);
@@ -2635,7 +2696,8 @@ function shapeGroup(
         nested,
         pkg,
         defs,
-        `${idx}-${childIndex++}`
+        `${idx}-${childIndex++}`,
+        groupScale * Math.sqrt(Math.abs((cx / childW) * (cy / childH)))
       );
       if (nestedGroup) content.appendChild(nestedGroup);
     }
