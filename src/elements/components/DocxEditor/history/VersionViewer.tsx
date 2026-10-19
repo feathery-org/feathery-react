@@ -341,7 +341,11 @@ export default function VersionViewer({
         let loaded: Promise<boolean>;
         if (doc.sfdt) {
           loaded = waitForDocumentLoad(viewer);
-          const sfdt = showHighlights ? doc.sfdt : acceptedSfdt(doc.sfdt);
+          if (doc.needsBindingPopulation) setPhase('loading');
+          const sfdt =
+            showHighlights || doc.needsBindingPopulation
+              ? doc.sfdt
+              : acceptedSfdt(doc.sfdt);
           if (displayedVersionIdRef.current === version.id) {
             preservePreviewViewport(viewer, () => viewer.open(sfdt));
           } else {
@@ -405,7 +409,7 @@ export default function VersionViewer({
         // The docx fallback still holds raw [[field]] / {{ jinja }} tokens; the
         // SFDT path was already populated in useVersionDocument.
         let populated = true;
-        if (doc.docxUrl) {
+        if (doc.docxUrl || doc.needsBindingPopulation) {
           try {
             const parsed = JSON.parse(viewer.serialize());
             const populatedSfdt = populateVersionBindings(parsed);

@@ -11,6 +11,7 @@ import {
   demoteNativeRowRevisions
 } from './sfdtDiff';
 import type { ChangeList, RevisionRun, Slice } from './sfdtDiff';
+import { parseChangeList } from './validation';
 import { populateVersionBindings } from './populateVersionBindings';
 import type { VersionAuthor } from './types';
 import type {
@@ -34,6 +35,14 @@ export interface HistorySnapshot {
   acceptance: TrackedChangeAcceptance | null;
 }
 export interface HistoryTasks {
+  storedFiles: {
+    input: {
+      finalBuffer: ArrayBuffer;
+      changesBuffer: ArrayBuffer | null;
+      expectedSha256: string | null;
+    };
+    result: ResolvedVersion;
+  };
   close: {
     input: { sessionId: string; snapshot: HistorySnapshot };
     result: { finalSha256: string; startSha256: string; changes?: ChangeList };
@@ -210,6 +219,13 @@ export function buildFromFinal(
   expectedSha256: string | null
 ): ResolvedVersion {
   const finalDoc = JSON.parse(finalSfdt);
+  if (finalDoc.optimizeSfdt && Array.isArray(finalDoc.sec))
+    return {
+      error: false,
+      sfdt: finalSfdt,
+      degraded: true,
+      needsBindingPopulation: true
+    };
 
   const plainSfdt = () => {
     try {
@@ -278,4 +294,38 @@ export function computeHistoryTask<K extends keyof HistoryTasks>(
     default:
       throw new Error('Unknown history task');
   }
+}
+
+async function decodeFile(buffer: ArrayBuffer): Promise<string> {
+  const bytes = new Uint8Array(buffer);
+  if (bytes[0] !== 0x1f || bytes[1] !== 0x8b)
+    return new TextDecoder().decode(bytes);
+  const DS = (globalThis as any).DecompressionStream;
+  if (!DS) throw new Error('gzip decompression unavailable');
+  return new Response(
+    new Blob([bytes]).stream().pipeThrough(new DS('gzip'))
+  ).text();
+}
+
+export async function executeHistoryTask<K extends keyof HistoryTasks>(
+  type: K,
+  input: HistoryTasks[K]['input']
+): Promise<HistoryTasks[K]['result']> {
+  if (type !== 'storedFiles') return computeHistoryTask(type, input);
+  const args = input as HistoryTasks['storedFiles']['input'];
+  const [finalSfdt, changesText] = await Promise.all([
+    decodeFile(args.finalBuffer),
+    args.changesBuffer ? decodeFile(args.changesBuffer).catch(() => null) : null
+  ]);
+  let changes: ChangeList | null = null;
+  try {
+    if (changesText) changes = parseChangeList(JSON.parse(changesText));
+  } catch {
+    /* Plain fallback remains retryable. */
+  }
+  return buildFromFinal(
+    finalSfdt,
+    changes,
+    args.expectedSha256
+  ) as HistoryTasks[K]['result'];
 }

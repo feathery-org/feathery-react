@@ -44,6 +44,31 @@ describe('shared history worker', () => {
     jest.advanceTimersByTime(30_000);
     expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
+  it('runs selected versions ahead of queued background versions', async () => {
+    jest.useFakeTimers();
+    const worker: any = { postMessage: jest.fn(), terminate: jest.fn() };
+    const run = createHistoryExecutor(() => worker);
+    const first = run('stored', input('running'), { background: true });
+    const background = run('stored', input('background'), { background: true });
+    const selected = run('stored', input('selected'));
+    const finish = async () => {
+      const job = worker.postMessage.mock.calls.at(-1)[0];
+      worker.onmessage({
+        data: { id: job.id, result: computeHistoryTask(job.type, job.input) }
+      });
+      await tick();
+    };
+    await finish();
+    await first;
+    expect(worker.postMessage.mock.calls[1][0].input.finalSfdt).toContain(
+      'selected'
+    );
+    await finish();
+    await selected;
+    await finish();
+    await background;
+    jest.runOnlyPendingTimers();
+  });
   it('preserves results if worker creation is blocked', async () => {
     const run = createHistoryExecutor(() => {
       throw new Error('CSP');

@@ -35,13 +35,16 @@ export interface VersionDocument {
   /** True when detailed per-author highlights are unavailable (no change list,
    *  pruned highlights, or a hash mismatch) — the document still opens plain. */
   degraded: boolean;
+  /** Service snapshots use compact keys; populate bindings after native parsing. */
+  needsBindingPopulation?: boolean;
 }
 
 // Cache resolved snapshots, including Current. The artifact key changes when
 // a checkpoint/save replaces its content; live session artifacts take precedence.
 type ResolvedVersion = Omit<VersionDocument, 'loading'>;
-const CACHE_MAX = 8;
-const CACHE_BYTES_MAX = 16 * 1024 * 1024;
+const CACHE_MAX = 16;
+const CACHE_BYTES_MAX = 48 * 1024 * 1024;
+let activeKeys = new Set<string>();
 const versionCache = new Map<string, ResolvedVersion>();
 const resolveInFlight = new Map<string, Promise<ResolvedVersion>>();
 const hostScopes = new WeakMap<
@@ -107,6 +110,9 @@ function cacheGet(key: string): ResolvedVersion | undefined {
   return hit;
 }
 function cacheSet(key: string, value: ResolvedVersion): void {
+  const size =
+    (value.sfdt?.length ?? 0) * 2 + (value.docxBytes?.byteLength ?? 0);
+  if (size > 16 * 1024 * 1024) return;
   versionCache.delete(key);
   versionCache.set(key, value);
   const bytes = () =>
@@ -118,7 +124,9 @@ function cacheSet(key: string, value: ResolvedVersion): void {
       0
     );
   while (versionCache.size > CACHE_MAX || bytes() > CACHE_BYTES_MAX) {
-    const oldest = versionCache.keys().next().value as string | undefined;
+    const oldest =
+      [...versionCache.keys()].find((key) => !activeKeys.has(key)) ??
+      (versionCache.keys().next().value as string | undefined);
     if (oldest !== undefined) versionCache.delete(oldest);
   }
 }
@@ -126,6 +134,7 @@ function cacheSet(key: string, value: ResolvedVersion): void {
 /** Test-only: drop the module-level cache so cases don't bleed into each other. */
 export function __clearVersionDocumentCache(): void {
   versionCache.clear();
+  activeKeys.clear();
   resolveInFlight.clear();
   localArtifacts.clear();
   convertedStarts.clear();
@@ -199,37 +208,19 @@ function localFor(version: DocxVersion): LocalVersionArtifacts | undefined {
   return entry;
 }
 
-async function gunzip(buffer: ArrayBuffer): Promise<string> {
-  const bytes = new Uint8Array(buffer);
-  const isGz = bytes[0] === 0x1f && bytes[1] === 0x8b;
-  if (!isGz) return new TextDecoder().decode(bytes);
-  const DS = (globalThis as any).DecompressionStream;
-  if (!DS) throw new Error('gzip decompression unavailable');
-  const stream = new Blob([bytes]).stream().pipeThrough(new DS('gzip'));
-  return new Response(stream).text();
-}
-
-/** Build the viewer document from a final SFDT and (optionally) its change
- *  list. `expectedSha256` guards fetched artifacts; local ones pass null. */
-
 async function resolveVersionDocument(
   host: DocxHistoryHost,
   version: DocxVersion,
-  refreshed = false
+  refreshed = false,
+  options: { background?: boolean; signal?: AbortSignal } = {}
 ): Promise<ResolvedVersion> {
   try {
     if (version.final_sfdt) {
-      const finalSfdtPromise = host
-        .fetchVersionFile(version.final_sfdt)
-        .then(gunzip);
-      const changesPromise = (async (): Promise<ChangeList | null> => {
+      const finalPromise = host.fetchVersionFile(version.final_sfdt);
+      const changesPromise = (async () => {
         if (!version.changes || version.change_count == null) return null;
         try {
-          return parseChangeList(
-            JSON.parse(
-              await gunzip(await host.fetchVersionFile(version.changes))
-            )
-          );
+          return await host.fetchVersionFile(version.changes);
         } catch (error) {
           if (
             !refreshed &&
@@ -240,15 +231,28 @@ async function resolveVersionDocument(
           return null;
         }
       })();
-      const [finalSfdt, changes] = await Promise.all([
-        finalSfdtPromise,
+      const [finalBuffer, changesBuffer] = await Promise.all([
+        finalPromise,
         changesPromise
       ]);
-      return await runHistoryTask('stored', {
-        finalSfdt,
-        changes,
-        expectedSha256: version.final_sha256 ?? null
-      });
+      return await runHistoryTask(
+        'storedFiles',
+        {
+          finalBuffer,
+          changesBuffer,
+          expectedSha256: version.final_sha256 ?? null
+        },
+        options
+      );
+    }
+
+    if (version.is_baseline && host.prepareVersion) {
+      // The server converts its immutable bytes and persists the snapshot.
+      // Never send the mutable editor contents as Original.
+      const prepared = await host.prepareVersion(version.id);
+      if (!prepared.final_sfdt)
+        throw new Error('Original snapshot is unavailable');
+      return await resolveVersionDocument(host, prepared, refreshed, options);
     }
 
     const docxUrl = version.editor_file ?? version.file;
@@ -265,7 +269,8 @@ async function resolveVersionDocument(
         return await resolveVersionDocument(
           host,
           await host.getVersion(version.id),
-          true
+          true,
+          options
         );
       } catch {
         /* one recovery attempt only */
@@ -277,7 +282,8 @@ async function resolveVersionDocument(
 
 async function resolveAndCache(
   host: DocxHistoryHost,
-  version: DocxVersion
+  version: DocxVersion,
+  options: { background?: boolean; signal?: AbortSignal } = {}
 ): Promise<ResolvedVersion> {
   // A close still uploading (or failed) serves from memory, uncached: the row's
   // artifact URLs appear on a later list refresh and take over naturally.
@@ -300,18 +306,20 @@ async function resolveAndCache(
   if (cached) return cached;
   const pending = resolveInFlight.get(key);
   if (pending) return pending;
-  const resolve = resolveVersionDocument(host, version).then((result) => {
-    resolveInFlight.delete(key);
-    // A failed diff fetch is retryable. Caching the plain fallback would make
-    // one network error hide authors/highlights for the rest of the page visit.
-    if (
-      scope.epoch === epoch &&
-      !result.error &&
-      (!result.degraded || !version.changes)
-    )
-      cacheSet(key, result);
-    return result;
-  });
+  const resolve = resolveVersionDocument(host, version, false, options).then(
+    (result) => {
+      resolveInFlight.delete(key);
+      // A failed diff fetch is retryable. Caching the plain fallback would make
+      // one network error hide authors/highlights for the rest of the page visit.
+      if (
+        scope.epoch === epoch &&
+        !result.error &&
+        (!result.degraded || !version.changes)
+      )
+        cacheSet(key, result);
+      return result;
+    }
+  );
   resolveInFlight.set(key, resolve);
   return resolve;
 }
@@ -430,23 +438,34 @@ export function cacheImportedVersion(
   version: DocxVersion,
   sfdt: string
 ): void {
-  if (!version.final_sfdt && !localFor(version))
+  if ((!version.final_sfdt || !version.changes) && !localFor(version))
     cacheSet(cacheKey(host, version), { error: false, degraded: true, sfdt });
 }
 
-/** Warm a small set of immutable historical versions after the rail opens. */
-export function prefetchVersionDocuments(
+/** Prepare recent saved versions plus Original, one background job at a time. */
+export async function prefetchVersionDocuments(
   host: DocxHistoryHost | null | undefined,
   versions: DocxVersion[],
-  limit = CACHE_MAX
+  limit = 5,
+  signal?: AbortSignal
 ): Promise<void> {
-  if (!host) return Promise.resolve();
-  return Promise.all(
-    versions
-      .filter((version) => !version.is_current)
-      .slice(0, limit)
-      .map((version) => resolveAndCache(host, version))
-  ).then(() => undefined);
+  if (!host || signal?.aborted) return;
+  const saved = [...versions]
+    .filter((v) => v.final_sfdt || v.editor_file || v.file)
+    .sort((a, b) => b.seq - a.seq);
+  const selected = saved.slice(0, limit);
+  const original = saved.find((v) => v.is_baseline);
+  if (original && !selected.includes(original)) selected.push(original);
+  // Reserve the active set while keeping the global budget authoritative.
+  activeKeys = new Set(selected.map((v) => cacheKey(host, v)));
+  // Original can require a service import; start it before walking the rest.
+  const ordered = original
+    ? [original, ...selected.filter((v) => v !== original)]
+    : selected;
+  for (const version of ordered) {
+    if (signal?.aborted) return;
+    await resolveAndCache(host, version, { background: true });
+  }
 }
 
 export function useVersionDocument(

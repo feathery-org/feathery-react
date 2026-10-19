@@ -58,6 +58,51 @@ const host = (over: Partial<DocxHistoryHost> = {}): DocxHistoryHost => ({
 });
 
 describe('useVersionDocument', () => {
+  it('prepares Original before selection and shares the prepared result', async () => {
+    const original = version({
+      id: 'original',
+      is_baseline: true,
+      file: 'original.docx'
+    });
+    const prepared = { ...original, final_sfdt: 'original.sfdt' };
+    const h = host({
+      prepareVersion: jest.fn().mockResolvedValue(prepared),
+      fetchVersionFile: jest
+        .fn()
+        .mockResolvedValue(new TextEncoder().encode('{"sections":[]}').buffer)
+    });
+    await prefetchVersionDocuments(h, [original], 5);
+    expect(h.prepareVersion).toHaveBeenCalledWith('original');
+    const view = renderHook(() => useVersionDocument(h, original));
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(view.result.current.sfdt).toBe('{"sections":[]}');
+    expect(view.result.current.docxBytes).toBeUndefined();
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps five large saved versions including Current ready after prefetch', async () => {
+    const rows = Array.from({ length: 5 }, (_, i) =>
+      version({
+        id: `large-${i}`,
+        seq: 5 - i,
+        is_current: i === 0,
+        final_sfdt: `large-${i}.sfdt`
+      })
+    );
+    const data = new TextEncoder().encode(
+      JSON.stringify({ sections: [], padding: 'x'.repeat(2500000) })
+    ).buffer;
+    const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(data) });
+    await prefetchVersionDocuments(h, rows, 5);
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(5);
+    for (const row of rows) {
+      const view = renderHook(() => useVersionDocument(h, row));
+      await waitFor(() => expect(view.result.current.loading).toBe(false));
+      view.unmount();
+    }
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(5);
+  });
+
   it('downloads a DOCX fallback once during prefetch, then retains its converted preview', async () => {
     const bytes = new Uint8Array([1, 2, 3]).buffer;
     const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(bytes) });

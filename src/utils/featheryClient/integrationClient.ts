@@ -991,6 +991,18 @@ export default class IntegrationClient {
     );
   }
 
+  async prepareEnvelopeVersion(envelopeId: string, versionId: string) {
+    const body = new FormData();
+    body.append('fuser_key', initInfo().userId ?? '');
+    body.append('form_key', this.formKey);
+    return parseDocxVersion(
+      await this.documentRequest(
+        `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/prepare/`,
+        { method: 'POST', body }
+      )
+    );
+  }
+
   // Close a session, uploading the final SFDT (gzipped) and its anchored change
   // list. 204 → the session was eliminated as unchanged (no row). Returns the
   // version row otherwise.

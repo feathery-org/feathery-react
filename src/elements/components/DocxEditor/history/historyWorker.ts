@@ -1,10 +1,10 @@
-import { computeHistoryTask } from './historyComputation';
+import { executeHistoryTask } from './historyComputation';
 
 // Dedicated worker entry: no React, editor instance, credentials or network I/O.
-self.onmessage = (event: MessageEvent) => {
+self.onmessage = async (event: MessageEvent) => {
   const { id, type, input } = event.data;
   try {
-    self.postMessage({ id, result: computeHistoryTask(type, input) });
+    self.postMessage({ id, result: await executeHistoryTask(type, input) });
   } catch (error) {
     self.postMessage({
       id,

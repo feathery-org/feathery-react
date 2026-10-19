@@ -597,3 +597,17 @@ describe('VersionViewer', () => {
     }
   );
 });
+
+it('opens compact Original before applying verbose-key binding transforms', async () => {
+  const compact = JSON.stringify({ optimizeSfdt: true, sec: [{ b: [] }] });
+  const row = version({ is_baseline: true, final_sfdt: 'original.sfdt' });
+  const h = host({
+    fetchVersionFile: jest
+      .fn()
+      .mockResolvedValue(new TextEncoder().encode(compact).buffer)
+  });
+  render(<VersionViewer host={h} version={row} highlightsOn={false} />);
+  await waitFor(() => expect(open).toHaveBeenCalled());
+  expect(open.mock.calls[0][0]).toBe(compact);
+  expect(openAsync).not.toHaveBeenCalled();
+});

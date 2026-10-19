@@ -1,3 +1,4 @@
+import { loadVersionList } from './versionList';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -451,7 +452,7 @@ export default function HistoryPanel({
     const id = ++reqId.current;
     setError(false);
     try {
-      const rows = await host.listVersions();
+      const rows = await loadVersionList(host, refreshKey);
       if (id === reqId.current) {
         setVersions(rows);
         loaded.current = { host, refreshKey };

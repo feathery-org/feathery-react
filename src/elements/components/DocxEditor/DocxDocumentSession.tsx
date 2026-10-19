@@ -270,6 +270,8 @@ export default function DocxDocumentSession({
       listVersions: () => client.listEnvelopeVersions(envelopeId),
       getVersion: (versionId) =>
         client.getEnvelopeVersion(envelopeId, versionId),
+      prepareVersion: (versionId) =>
+        client.prepareEnvelopeVersion(envelopeId, versionId),
       closeVersion: (sessionId, payload) =>
         client.closeEnvelopeVersion(envelopeId, sessionId, payload),
       fetchVersionFile: fetchDocumentBytes,

@@ -32,6 +32,7 @@ import { editGroupKey } from './history/sfdtDiff/index';
 import { stepperRevisions } from './history/stepperRevisions';
 import { firstUserActorKey } from './history/authorColors';
 import { useDocxHistorySession } from './history/useDocxHistorySession';
+import { loadVersionList } from './history/versionList';
 import {
   prefetchVersionDocuments,
   retainVersionDocuments,
@@ -716,13 +717,27 @@ function DocxEditor({
     return onAssistantSessionChange(editor, setAssistantWriting);
   }, [editor]);
 
-  // Opening the history rail is a good idle point to resolve its recent,
-  // immutable snapshots. This cache only contains rendered preview data; live
-  // restores continue to fetch the current editor file without caching.
+  const historyRefreshKey = `${
+    historySession.savedAt?.getTime() ?? 0
+  }:${restoreRefreshKey}`;
   useEffect(() => {
-    if (active && activePanel === 'history')
-      prefetchVersionDocuments(history ?? null, historyVersions, 2);
-  }, [active, activePanel, history, historyVersions]);
+    if (!active || !history || loading || error) return;
+    const controller = new AbortController();
+    // Let the newly selected draft paint before speculative history work.
+    const timer = setTimeout(() => {
+      loadVersionList(history, historyRefreshKey)
+        .then((rows) =>
+          prefetchVersionDocuments(history, rows, 5, controller.signal)
+        )
+        .catch(() => {
+          /* The panel offers retry; background failure is non-blocking. */
+        });
+    }, 100);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [active, history, loading, error, historyRefreshKey]);
 
   // Both DocumentEditorContainers expose the same zoom footer. Keep the
   // editing and read-only containers at one zoom level when moving between
@@ -1245,9 +1260,7 @@ function DocxEditor({
     onAcceptTrackedChanges: history
       ? historySession.acceptTrackedChanges
       : undefined,
-    historyRefreshKey: `${
-      historySession.savedAt?.getTime() ?? 0
-    }:${restoreRefreshKey}`
+    historyRefreshKey
   };
   const railProps: PanelRailProps = {
     activePanel,

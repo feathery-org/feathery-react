@@ -1,5 +1,5 @@
 import source from './historyWorkerSource';
-import { computeHistoryTask, HistoryTasks } from './historyComputation';
+import { executeHistoryTask, HistoryTasks } from './historyComputation';
 
 type WorkerFactory = () => Worker | null;
 const createWorker: WorkerFactory = () => {
@@ -14,13 +14,24 @@ const createWorker: WorkerFactory = () => {
   }
 };
 
-/** One shared FIFO: only one snapshot is copied into the worker at a time.
+/** One shared worker: interactive jobs run ahead of queued background jobs.
  * Save ordering remains owned by each document's existing persistence queue. */
 export function createHistoryExecutor(factory: WorkerFactory = createWorker) {
   let worker: Worker | null = null;
   let unavailable = false;
   let nextId = 0;
-  let queue: Promise<unknown> = Promise.resolve();
+  const queue: Array<{ background: boolean; start: () => Promise<void> }> = [];
+  let running = false;
+  const drain = async () => {
+    if (running) return;
+    running = true;
+    while (queue.length) {
+      const selected = queue.findIndex((job) => !job.background);
+      const [job] = queue.splice(selected < 0 ? 0 : selected, 1);
+      await job.start();
+    }
+    running = false;
+  };
   let idle: ReturnType<typeof setTimeout> | undefined;
   const stop = () => {
     worker?.terminate();
@@ -40,7 +51,7 @@ export function createHistoryExecutor(factory: WorkerFactory = createWorker) {
       }
     }
     // Blocked workers (e.g. an embedding site's CSP) must not lose saves.
-    if (!worker) return computeHistoryTask(type, input);
+    if (!worker) return executeHistoryTask(type, input);
     const current = worker;
     const id = ++nextId;
     try {
@@ -78,22 +89,29 @@ export function createHistoryExecutor(factory: WorkerFactory = createWorker) {
     } catch (error) {
       // Retry only a transport failure; deterministic computation errors stay errors.
       if (!unavailable) throw error;
-      return computeHistoryTask(type, input);
+      return executeHistoryTask(type, input);
     } finally {
       idle = setTimeout(stop, 30_000);
     }
   };
   return <K extends keyof HistoryTasks>(
     type: K,
-    input: HistoryTasks[K]['input']
-  ): Promise<HistoryTasks[K]['result']> => {
-    const task = queue.then(() => execute(type, input));
-    queue = task.then(
-      () => undefined,
-      () => undefined
-    );
-    return task;
-  };
+    input: HistoryTasks[K]['input'],
+    options: { background?: boolean } = {}
+  ): Promise<HistoryTasks[K]['result']> =>
+    new Promise((resolve, reject) => {
+      queue.push({
+        background: !!options.background,
+        start: async () => {
+          try {
+            resolve(await execute(type, input));
+          } catch (error) {
+            reject(error);
+          }
+        }
+      });
+      drain();
+    });
 }
 
 export const runHistoryTask = createHistoryExecutor();
