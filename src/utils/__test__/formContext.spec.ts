@@ -369,9 +369,13 @@ describe('feathery.dataHubAction form file references', () => {
     await context.dataHubAction({
       hubId: 'hub-1',
       operation: 'update',
-      data: { docs: upload }
-    });
+      data: { docs: upload },
+      relations: { owner: { add: ['e1'] } }
+    } as any);
     expect(client.submitFiles).toHaveBeenCalledTimes(1);
+    expect(client.dataHubAction.mock.calls[0][0].relations).toEqual({
+      owner: { add: ['e1'] }
+    });
     expect(client.dataHubAction.mock.calls[0][0].data).toEqual({
       docs: [{ form_field: 'uploads' }]
     });
