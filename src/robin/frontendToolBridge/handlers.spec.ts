@@ -25,7 +25,7 @@ function liveDocument() {
 function formContext(overrides: Record<string, unknown> = {}) {
   return {
     snapshot: jest.fn(() => ({ currentStep: { id: 'step-1' } })),
-    fillFields: jest.fn(async () => ({ ok: true })),
+    fillFields: jest.fn(async () => ({ ok: true, rejected: [] })),
     navigateToStep: jest.fn(async () => ({ ok: true })),
     clickElement: jest.fn(async () => ({ ok: true })),
     runLogicRule: jest.fn(async () => ({ ok: true })),
@@ -38,7 +38,11 @@ function formContext(overrides: Record<string, unknown> = {}) {
 }
 
 const actionsFor = (context: FormContext | null) =>
-  createFormToolActions({ getContext: () => context, fail });
+  createFormToolActions({
+    getContext: () => context,
+    fail,
+    downloadAttachment: jest.fn()
+  });
 
 const payload = {
   turnId: 't'.repeat(64),
@@ -111,6 +115,107 @@ describe('form actions', () => {
       { rowIndex: 0 },
       'Approve'
     );
+  });
+});
+
+describe('attached files', () => {
+  const download = (files: Record<string, string>) =>
+    jest.fn(async (attachmentId: string) => {
+      if (!(attachmentId in files)) throw new Error('HTTP 404');
+      return {
+        blob: new Blob(['bytes']),
+        mediaType: 'application/pdf',
+        filename: files[attachmentId]
+      };
+    });
+
+  const fillWith = (
+    context: FormContext,
+    downloadAttachment: ReturnType<typeof download>,
+    fields: unknown[]
+  ) =>
+    createFormToolActions({
+      getContext: () => context,
+      fail,
+      downloadAttachment
+    }).set_field_values.run({ fields });
+
+  test('enters attached files as files and leaves other values as they are', async () => {
+    const fillFields = jest.fn(async () => ({
+      ok: true,
+      applied: [],
+      rejected: []
+    }));
+
+    await fillWith(
+      formContext({ fillFields }),
+      download({ a1: 'id.pdf', a2: 'w2.pdf' }),
+      [
+        { key: 'name', value: 'Ada' },
+        { key: 'docs', value: { attachmentIds: ['a1', 'a2'] }, repeatIndex: 1 }
+      ]
+    );
+
+    const [name, docs] = (fillFields.mock.calls[0] as any[])[0];
+    expect(name).toEqual({ key: 'name', value: 'Ada' });
+    expect(docs.repeatIndex).toBe(1);
+    expect(
+      docs.value.map((file: File) => [
+        file instanceof File,
+        file.name,
+        file.type
+      ])
+    ).toEqual([
+      [true, 'id.pdf', 'application/pdf'],
+      [true, 'w2.pdf', 'application/pdf']
+    ]);
+  });
+
+  test('rejects only the field whose attachment cannot be loaded', async () => {
+    const fillFields = jest.fn(async () => ({
+      ok: true,
+      applied: [{ key: 'name', value: 'Ada', priorValue: '' }],
+      rejected: []
+    }));
+
+    const result = await fillWith(
+      formContext({ fillFields }),
+      download({ a1: 'id.pdf' }),
+      [
+        { key: 'name', value: 'Ada' },
+        { key: 'docs', value: { attachmentIds: ['a1', 'missing'] } }
+      ]
+    );
+
+    expect((fillFields.mock.calls[0] as any[])[0]).toEqual([
+      { key: 'name', value: 'Ada' }
+    ]);
+    expect(result).toMatchObject({
+      applied: [{ key: 'name' }],
+      rejected: [
+        {
+          key: 'docs',
+          reason: 'attachment_unavailable',
+          message: expect.stringContaining('HTTP 404')
+        }
+      ]
+    });
+  });
+
+  test('returns the form refusal as it is', async () => {
+    const notLoaded = {
+      ok: false,
+      reason: 'not_loaded',
+      message: 'Not loaded.'
+    };
+
+    await expect(
+      fillWith(
+        formContext({ fillFields: jest.fn(async () => notLoaded) }),
+        download({}),
+        [{ key: 'docs', value: { attachmentIds: ['missing'] } }]
+      )
+    ).resolves.toEqual(notLoaded);
   });
 });
 

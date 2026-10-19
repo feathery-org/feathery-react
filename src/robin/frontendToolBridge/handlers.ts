@@ -13,9 +13,12 @@ const FORM_NOT_LOADED = {
   message: 'The form has not loaded yet.'
 };
 
+type AttachmentDownload = { blob: Blob; mediaType: string; filename?: string };
+
 export interface FormToolHandlerDeps {
   getContext: () => FormContext | null;
   fail: (code: string, result: { message: string }) => Error;
+  downloadAttachment: (attachmentId: string) => Promise<AttachmentDownload>;
 }
 
 export interface FormToolAction {
@@ -25,7 +28,70 @@ export interface FormToolAction {
 
 type DocumentVerb = 'outline' | 'read' | 'find' | 'write';
 
-function createFormToolHandlers({ getContext, fail }: FormToolHandlerDeps) {
+const attachmentIdsOf = (value: unknown): string[] | null =>
+  typeof value === 'object' &&
+  value !== null &&
+  'attachmentIds' in value &&
+  Array.isArray(value.attachmentIds)
+    ? value.attachmentIds
+    : null;
+
+// Robin names files by the person's chat attachment ids, the form needs the files themselves
+async function fillFieldsWithAttachedFiles(
+  context: FormContext,
+  fields: FillFieldInput[],
+  downloadAttachment: (attachmentId: string) => Promise<AttachmentDownload>
+) {
+  const unavailable: Array<{
+    key: string;
+    repeatIndex?: number;
+    reason: string;
+    message: string;
+  }> = [];
+
+  const resolvedFields = await Promise.all(
+    fields.map(async (field) => {
+      const attachmentIds = attachmentIdsOf(field.value);
+      if (!attachmentIds) return field;
+      try {
+        const files = await Promise.all(
+          attachmentIds.map(async (attachmentId) => {
+            const { blob, mediaType, filename } = await downloadAttachment(
+              attachmentId
+            );
+            return new File([blob], filename ?? attachmentId, {
+              type: mediaType
+            });
+          })
+        );
+        return { ...field, value: files };
+      } catch (error) {
+        unavailable.push({
+          key: field.key,
+          repeatIndex: field.repeatIndex,
+          reason: 'attachment_unavailable',
+          message: `The attached file could not be loaded: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        });
+        return null;
+      }
+    })
+  );
+
+  const result = await context.fillFields(
+    resolvedFields.filter((field): field is FillFieldInput => field !== null)
+  );
+  return result.ok
+    ? { ...result, rejected: [...unavailable, ...result.rejected] }
+    : result;
+}
+
+function createFormToolHandlers({
+  getContext,
+  fail,
+  downloadAttachment
+}: FormToolHandlerDeps) {
   const withForm = async (act: (context: FormContext) => unknown) => {
     const context = getContext();
     return context ? act(context) : FORM_NOT_LOADED;
@@ -53,9 +119,10 @@ function createFormToolHandlers({ getContext, fail }: FormToolHandlerDeps) {
   return {
     get_form_state: async () => getContext()?.snapshot() ?? { loaded: false },
     set_field_values: (payload: Record<string, unknown>) =>
-      withForm((context) =>
-        context.fillFields(payload.fields as FillFieldInput[])
-      ),
+      withForm((context) => {
+        const fields = payload.fields as FillFieldInput[];
+        return fillFieldsWithAttachedFiles(context, fields, downloadAttachment);
+      }),
     navigate_to_step: (payload: Record<string, unknown>) =>
       withForm((context) => context.navigateToStep(payload.stepKey as string)),
     click_element: (payload: Record<string, unknown>) =>

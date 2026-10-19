@@ -3937,12 +3937,19 @@ function Form({
       runElementActions,
       tableOnClick,
       changeValue,
-      runFieldChangeLogic: (field: any, index: number | null) =>
+      runFieldChangeLogic: (
+        field: any,
+        index: number | null,
+        valueRepeatIndex?: number
+      ) =>
         runFieldChangeLogic({
           fieldKey: field.servar.key,
           servarId: field.servar.id,
-          elementRepeatIndex: index ?? 0
-        })
+          elementRepeatIndex: index ?? 0,
+          valueRepeatIndex: valueRepeatIndex ?? null
+        }),
+      submitFiles: (fileEntries: { servar: any; stepKey: string }[]) =>
+        client.submitFiles(fileEntries)
     };
     internalState[_internalId].formActions = callbacks;
     // Merged into one object: a running tool call holds the object it read at
