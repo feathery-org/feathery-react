@@ -271,6 +271,8 @@ function validateFill(
   }
 
   if (type === 'file_upload') {
+    if (isEmptyValue(rawValue))
+      return { ok: true, field: found, servar, value: [] };
     const fileError = checkFilesAgainstField(
       servar,
       rawValue,
@@ -684,13 +686,13 @@ export async function fillFields(
         fieldForChange,
         index
       );
-      // A replaced file list reports its first file as the one that changed, as an upload does
+      // Report the changed file as the picker does, the first new file or -1 for a clear
       const changeLogic =
         changed &&
         handlers.runFieldChangeLogic(
           fieldForChange,
           index,
-          write.files ? 0 : undefined
+          write.files ? (write.files.length ? 0 : -1) : undefined
         );
       if (changeLogic) changeLogicRuns.push(changeLogic);
     } catch (err) {

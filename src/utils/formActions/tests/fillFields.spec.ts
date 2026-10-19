@@ -817,6 +817,30 @@ describe('fillFields file uploads', () => {
     ]);
   });
 
+  it.each([null, []])(
+    'clears the field and saves the clear for %p, as the clear button does',
+    async (value) => {
+      const state = makeState({});
+
+      const result: any = await fillFields(formUuid, [{ key: 'docs', value }]);
+
+      expect(state.formActions.changeValue.mock.calls[0][0]).toEqual([]);
+      expect(state.formActions.runFieldChangeLogic).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'el-docs' }),
+        null,
+        -1
+      );
+      expect(state.formActions.submitFiles).toHaveBeenCalledWith([
+        expect.objectContaining({
+          servar: { key: 'docs', file_upload: [], repeated: false }
+        })
+      ]);
+      expect(result.applied).toEqual([
+        expect.objectContaining({ key: 'docs', value: [] })
+      ]);
+    }
+  );
+
   it.each([
     ['a value that is not files', 'id.pdf'],
     ['a type the field does not accept', [pdf()]],
