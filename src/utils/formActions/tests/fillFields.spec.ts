@@ -524,6 +524,46 @@ describe('fillFields value checks', () => {
       });
     });
 
+    it.each([
+      ['filling', { q1: ['Bad'] }, { q1: ['Bad'], q2: [] }],
+      ['clearing', null, { q2: [] }]
+    ])(
+      'leaves a read-only answer blank when %s a repeated row that shows it blank',
+      async (_name, value, written) => {
+        const state = makeState(
+          [
+            {
+              ...matrix({
+                questions: [
+                  { id: 'q1', label: 'Service' },
+                  {
+                    id: 'q2',
+                    label: 'Price',
+                    read_only: true,
+                    default_value: 'Good'
+                  }
+                ]
+              }),
+              repeated: true
+            }
+          ],
+          { csat: [{ q1: ['Good'], q2: ['Good'] }, ''] }
+        );
+        state.currentStep.subgrids = [
+          { id: 'sg', position: [0], repeated: true }
+        ];
+        state.currentStep.servar_fields[0].position = [0, 0];
+        state.visiblePositions = { '0': [true, true], '0,0': [true, true] };
+
+        const result: any = await fillFields(formUuid, [
+          { key: 'csat', value, repeatIndex: 1 }
+        ]);
+
+        expect(result.rejected).toEqual([]);
+        expect(state.formActions.changeValue.mock.calls[0][0]).toEqual(written);
+      }
+    );
+
     it('clears every answer with an empty value', async () => {
       const state = makeState([matrix()], { csat: { q1: ['Good'] } });
 

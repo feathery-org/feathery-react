@@ -88,10 +88,10 @@ export function readOnlyMatrixAnswers(
     typeof repeatIndex === 'number' && Array.isArray(fieldValue)
       ? fieldValue[repeatIndex]
       : fieldValue;
-  const answers =
-    shown && typeof shown === 'object' && !Array.isArray(shown)
-      ? (shown as Record<string, unknown>)
-      : getDefaultFieldValue({ servar });
+  let answers: Record<string, unknown> = {};
+  if (shown == null) answers = getDefaultFieldValue({ servar });
+  else if (typeof shown === 'object' && !Array.isArray(shown))
+    answers = shown as Record<string, unknown>;
   return Object.fromEntries(
     readOnlyQuestions.map((q: any) => [
       q.id,
