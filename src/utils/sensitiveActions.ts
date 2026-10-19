@@ -44,6 +44,16 @@ export const getPrivateActions = (formUuid: string) => {
       ]);
       return client.sendEmail(templateId);
     },
+    _runSlantActions: async (actionIds: string | string[]) => {
+      const { client } = internalState[formUuid];
+      await Promise.all([
+        client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
+      // Ordered: the rule decides which household a later action attaches to.
+      const ids = Array.isArray(actionIds) ? actionIds : [actionIds];
+      return client.runSlantAction(ids);
+    },
     _sendEmailOTP: async (emailAddress: string) => {
       const { client } = internalState[formUuid];
       await Promise.all([

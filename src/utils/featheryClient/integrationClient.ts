@@ -1901,6 +1901,27 @@ export default class IntegrationClient {
     else return { ok: false, error: (await res?.text()) ?? '' };
   }
 
+  async runSlantAction(actionIds: string[]) {
+    const { userId } = initInfo();
+    // The backend reads the mapped field values back off the submission, so
+    // anything still pending here has to land before the actions run.
+    await this.submitQueue;
+    const url = `${API_URL}slant/logic-rule/`;
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        action_ids: actionIds,
+        form_key: this.formKey,
+        fuser_key: userId
+      })
+    };
+    const res = await this._fetch(url, reqOptions, false);
+    if (res && res.status === 201)
+      return { ok: true, payload: await res.json() };
+    else return { ok: false, error: (await res?.text()) ?? '' };
+  }
+
   async customRolloutAction(
     automationIds: IntegrationActionIds,
     options: IntegrationActionOptions
