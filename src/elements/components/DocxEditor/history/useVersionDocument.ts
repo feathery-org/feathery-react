@@ -12,8 +12,16 @@ import {
   contentHash,
   normalizeForDiff
 } from './sfdtDiff/index';
-import { DocxHistoryHost, DocxVersion } from './types';
+import { DocxHistoryHost, DocxVersion, LiveSessionAuthors } from './types';
 import { parseChangeList } from './validation';
+import {
+  approvedEditCount,
+  diffFoldedSessions,
+  FoldedSession,
+  mixesPersonAndRobin,
+  sessionAuthorKey
+} from './foldedSessions';
+import { DocxToSfdt } from './convertOriginal';
 
 export interface VersionDocument {
   loading: boolean;
@@ -67,6 +75,8 @@ export function retainVersionDocuments(host: DocxHistoryHost): () => void {
       if (key.startsWith(`${scope.id}:`)) versionCache.delete(key);
     for (const key of resolveInFlight.keys())
       if (key.startsWith(`${scope.id}:`)) resolveInFlight.delete(key);
+    for (const key of convertedStarts.keys())
+      if (key.startsWith(`${scope.id}:`)) convertedStarts.delete(key);
   };
 }
 
@@ -121,11 +131,17 @@ export function __clearVersionDocumentCache(): void {
   versionCache.clear();
   resolveInFlight.clear();
   localArtifacts.clear();
+  convertedStarts.clear();
 }
 
 export interface LocalVersionArtifacts {
   finalSfdt: string;
   changes?: ChangeList;
+}
+
+/** A live preview keeps its raw snapshot separate from synthetic highlights. */
+export interface LiveVersionDocument extends VersionDocument {
+  session?: LiveSessionAuthors & LocalVersionArtifacts;
 }
 
 // The closing session's artifacts, kept in memory while their upload is in
@@ -239,7 +255,7 @@ function buildFromFinal(
       return {
         error: false,
         sfdt: displaySfdt,
-        editCount: countEditGroups(display),
+        editCount: countEditGroups(display, { includeFormatting: true }),
         formatCount: changes.formatChangeCount,
         pendingCount: countPendingGroups(display),
         approvedCount: changes.confirmed ? countEditGroups(display) : 0,
@@ -344,6 +360,114 @@ async function resolveAndCache(
   return resolve;
 }
 
+/** The sessions folded under a History row, and the version just before them. */
+export interface FoldedVersions {
+  earlier: DocxVersion[];
+  preceding: DocxVersion | null;
+}
+
+async function versionArtifacts(
+  host: DocxHistoryHost,
+  version: DocxVersion
+): Promise<Omit<FoldedSession, 'author'> | null> {
+  const local = localFor(version);
+  if (local)
+    return { finalSfdt: local.finalSfdt, changes: local.changes ?? null };
+  if (!version.final_sfdt) return null;
+  const finalSfdt = await gunzip(
+    await host.fetchVersionFile(version.final_sfdt)
+  );
+  let changes: ChangeList | null = null;
+  if (version.changes && version.change_count != null) {
+    try {
+      changes = parseChangeList(
+        JSON.parse(await gunzip(await host.fetchVersionFile(version.changes)))
+      );
+    } catch {
+      changes = null;
+    }
+  }
+  return { finalSfdt, changes };
+}
+
+// Docx-only rows (the original upload) converted to SFDT, a few at a time.
+const CONVERTED_MAX = 2;
+const convertedStarts = new Map<string, Promise<any>>();
+
+/** The document before the folded sessions, or null when it can't be had. */
+async function foldedStart(
+  host: DocxHistoryHost,
+  preceding: DocxVersion | null,
+  convertDocx?: DocxToSfdt
+): Promise<any | null> {
+  if (!preceding) return null;
+  const before = await versionArtifacts(host, preceding);
+  if (before) return JSON.parse(before.finalSfdt);
+  const docxUrl = preceding.editor_file ?? preceding.file;
+  if (!docxUrl || !convertDocx) return null;
+  const key = cacheKey(host, preceding);
+  let pending = convertedStarts.get(key);
+  if (!pending) {
+    pending = host.fetchVersionFile(docxUrl).then(convertDocx);
+    pending.catch(() => convertedStarts.delete(key));
+    convertedStarts.set(key, pending);
+    while (convertedStarts.size > CONVERTED_MAX) {
+      const oldest = convertedStarts.keys().next().value as string | undefined;
+      if (oldest !== undefined) convertedStarts.delete(oldest);
+    }
+  }
+  return pending;
+}
+
+// A folded row shows every folded session's edits; anything missing falls
+// back to the row's own version.
+async function resolveFolded(
+  host: DocxHistoryHost,
+  version: DocxVersion,
+  folded: FoldedVersions,
+  convertDocx?: DocxToSfdt,
+  liveDoc?: LiveVersionDocument
+): Promise<ResolvedVersion> {
+  const fallback = () => liveDoc ?? resolveAndCache(host, version);
+  const liveSession = liveDoc?.session;
+  try {
+    const current = liveSession
+      ? { ...version, authors: liveSession.authors }
+      : version;
+    const members = [...folded.earlier, current].sort((a, b) => a.seq - b.seq);
+    if (members.some(mixesPersonAndRobin)) return await fallback();
+    const artifacts = await Promise.all(
+      members.map((member) =>
+        member.id === version.id && liveSession
+          ? {
+              finalSfdt: liveSession.finalSfdt,
+              changes: liveSession.changes ?? null
+            }
+          : versionArtifacts(host, member)
+      )
+    );
+    if (artifacts.every(Boolean)) {
+      const sessions = artifacts.map((artifact, index) => ({
+        ...(artifact as Omit<FoldedSession, 'author'>),
+        author: sessionAuthorKey(members[index])
+      }));
+      const start = await foldedStart(host, folded.preceding, convertDocx);
+      const changes = start && diffFoldedSessions(start, sessions);
+      if (changes) {
+        const combined = buildFromFinal(
+          sessions[sessions.length - 1].finalSfdt,
+          changes,
+          null
+        );
+        return { ...combined, approvedCount: approvedEditCount(sessions) };
+      }
+    }
+  } catch {
+    // Fall through to the single-version view.
+  }
+  return fallback();
+}
+
 /** Warm a small set of immutable historical versions after the rail opens. */
 export function prefetchVersionDocuments(
   host: DocxHistoryHost | null | undefined,
@@ -361,7 +485,10 @@ export function prefetchVersionDocuments(
 
 export function useVersionDocument(
   host: DocxHistoryHost | null | undefined,
-  version: DocxVersion | null
+  version: DocxVersion | null,
+  folded?: FoldedVersions | null,
+  convertDocx?: DocxToSfdt,
+  liveDoc?: LiveVersionDocument
 ): VersionDocument {
   const [state, setState] = useState<VersionDocument>({
     loading: true,
@@ -371,7 +498,13 @@ export function useVersionDocument(
   const reqId = useRef(0);
   const latestVersion = useRef(version);
   latestVersion.current = version;
-  const documentKey = version ? versionDocumentKey(version) : '';
+  const latestFolded = useRef(folded);
+  latestFolded.current = folded;
+  const latestConvert = useRef(convertDocx);
+  latestConvert.current = convertDocx;
+  const documentKey = version
+    ? [version, ...(folded?.earlier ?? [])].map(versionDocumentKey).join(',')
+    : '';
 
   useEffect(() => {
     const version = latestVersion.current;
@@ -380,10 +513,24 @@ export function useVersionDocument(
       setState({ loading: false, error: false, degraded: true });
       return;
     }
+    const foldedVersions = latestFolded.current?.earlier.length
+      ? latestFolded.current
+      : null;
+    // Never replace a live preview with an older checkpoint, even if the
+    // group cannot be resolved or the preview has no reliable diff artifacts.
+    if (
+      liveDoc &&
+      (!foldedVersions ||
+        !liveDoc.session ||
+        liveDoc.session.sessionId !== version.session_id)
+    ) {
+      setState(liveDoc);
+      return;
+    }
     // Local artifacts outrank a cached resolution: a prefetch may have cached
     // the degraded docx fallback before the close registered its snapshot.
     const cached =
-      version.is_current || localFor(version)
+      foldedVersions || version.is_current || localFor(version)
         ? undefined
         : cacheGet(cacheKey(host, version));
     if (cached) {
@@ -398,11 +545,20 @@ export function useVersionDocument(
       setState({ loading: false, ...next });
     };
 
-    resolveAndCache(host, version).then(done);
+    (foldedVersions
+      ? resolveFolded(
+          host,
+          version,
+          foldedVersions,
+          latestConvert.current,
+          liveDoc
+        )
+      : resolveAndCache(host, version)
+    ).then(done);
     return () => {
       reqId.current++;
     };
-  }, [host, documentKey]);
+  }, [host, documentKey, liveDoc]);
 
   return state;
 }

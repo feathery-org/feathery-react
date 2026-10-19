@@ -33,6 +33,7 @@ import {
 import {
   clearLocalVersionArtifacts,
   localVersionArtifactsFor,
+  LocalVersionArtifacts,
   registerLocalVersionArtifacts
 } from './useVersionDocument';
 
@@ -71,6 +72,7 @@ export interface UseDocxHistorySessionOptions {
 /** The current session's live change list, as the viewer would render a stored
  *  version: `sfdt` is the applyHunks display document (highlights baked in). */
 export interface SessionPreview extends LiveSessionAuthors {
+  artifacts: LocalVersionArtifacts;
   sfdt: string;
   editCount: number;
   formatCount: number;
@@ -1094,9 +1096,10 @@ export function useDocxHistorySession(
         authors: trackedAuthorKeys(display).map((key) =>
           key === ROBIN.key ? ROBIN : { ...currentUserRef.current, key }
         ),
+        artifacts: { finalSfdt: JSON.stringify(fDoc), changes },
         sfdt: JSON.stringify(display),
         // Same grouping as the steppers: a Robin turn counts as one edit.
-        editCount: countEditGroups(display),
+        editCount: countEditGroups(display, { includeFormatting: true }),
         formatCount: changes.formatChangeCount,
         pendingCount: countPendingGroups(display)
       };
