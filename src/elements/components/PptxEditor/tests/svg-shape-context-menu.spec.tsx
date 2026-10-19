@@ -98,7 +98,11 @@ it('ungroups the RACI diagram into editable text boxes and supports undo', async
   await act(async () => store.setActiveSlide(1));
   const slide = store.getState().deck!.slides[1];
   const group = slide.shapes.find((shape) => shape.type === 'group')!;
-  await rightClick(host.querySelector(`[data-shape-id="${group.id}"]`)!);
+  await rightClick(
+    Array.from(host.querySelectorAll('[data-source-run]')).find(
+      (node) => node.textContent === 'Responsible'
+    )!
+  );
   const ungroup = Array.from(host.querySelectorAll('button')).find(
     (b) => b.textContent === 'Ungroup'
   );
