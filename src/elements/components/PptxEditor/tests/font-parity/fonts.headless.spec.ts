@@ -188,6 +188,67 @@ const nativeRegions = JSON.parse(
   )
 );
 
+it.each([1, 2])(
+  'keeps slide text weight independent of host smoothing at DPR %s',
+  async (deviceScaleFactor) => {
+    await call('open', fixture());
+    await page.setViewport({ width: 1280, height: 800, deviceScaleFactor });
+    await call('slide', 6, 900);
+    const screenshots: Buffer[] = [];
+    try {
+      for (const smoothing of ['auto', 'antialiased']) {
+        await page.evaluate((value) => {
+          document.body.style.setProperty('-webkit-font-smoothing', value);
+        }, smoothing);
+        screenshots.push(
+          Buffer.from(
+            await page.screenshot({
+              clip: { x: 0, y: 0, width: 900, height: 506 }
+            })
+          )
+        );
+      }
+      fs.writeFileSync(
+        path.join(evidence, `weight-host-auto-${deviceScaleFactor}.png`),
+        screenshots[0]
+      );
+      fs.writeFileSync(
+        path.join(evidence, `weight-host-antialiased-${deviceScaleFactor}.png`),
+        screenshots[1]
+      );
+      // Compare painted text coverage, allowing subpixel rounding at SVG edges.
+      // Before isolation, the host's antialiased mode removes ~23% of body ink.
+      for (const color of ['white', 'green']) {
+        const baseline = (
+          await call('inkRows', screenshots[0].toString('base64'), color)
+        ).reduce((sum: number, value: number) => sum + value, 0);
+        const actual = (
+          await call('inkRows', screenshots[1].toString('base64'), color)
+        ).reduce((sum: number, value: number) => sum + value, 0);
+        expect(baseline).toBeGreaterThan(0);
+        expect(actual / baseline).toBeCloseTo(1, 3);
+      }
+      // The renderer must isolate itself without changing the surrounding form UI.
+      expect(
+        await page.evaluate(() =>
+          getComputedStyle(document.body).getPropertyValue(
+            '-webkit-font-smoothing'
+          )
+        )
+      ).toBe('antialiased');
+    } finally {
+      await page.evaluate(() =>
+        document.body.style.removeProperty('-webkit-font-smoothing')
+      );
+      await page.setViewport({
+        width: 1280,
+        height: 800,
+        deviceScaleFactor: 1
+      });
+    }
+  }
+);
+
 function lineCenters(rows: number[]): number[] {
   const threshold = Math.max(...rows) * 0.08;
   const groups: number[][] = [];

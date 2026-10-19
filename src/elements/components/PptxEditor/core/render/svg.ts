@@ -2891,6 +2891,10 @@ export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.style.background = '#ffffff';
     svg.style.display = 'block';
+    // Host UI smoothing can thin the deck's text on macOS even with the right
+    // embedded face and weight. Keep document text on the browser's native mode.
+    svg.style.setProperty('-webkit-font-smoothing', 'auto');
+    svg.style.setProperty('-moz-osx-font-smoothing', 'auto');
     const defs = featheryDoc().createElementNS(SVGNS, 'defs') as SVGDefsElement;
     svg.appendChild(defs);
     const bg = renderBackground(deck, slide, defs);
