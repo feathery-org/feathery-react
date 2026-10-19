@@ -103,6 +103,33 @@ describe('useVersionDocument', () => {
     expect(h.fetchVersionFile).toHaveBeenCalledTimes(5);
   });
 
+  it('never renders previous bytes as a newly selected pending version', async () => {
+    const h = host({
+      fetchVersionFile: jest
+        .fn()
+        .mockResolvedValueOnce(
+          new TextEncoder().encode('{"sections":[]}').buffer
+        )
+        .mockImplementation(() => new Promise(() => {}))
+    });
+    const seen: Array<{ id: string; sfdt?: string; loading: boolean }> = [];
+    const view = renderHook(
+      ({ row }) => {
+        const doc = useVersionDocument(h, row);
+        seen.push({ id: row.id, sfdt: doc.sfdt, loading: doc.loading });
+        return doc;
+      },
+      { initialProps: { row: version({ id: 'first', final_sfdt: 'first' }) } }
+    );
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    view.rerender({ row: version({ id: 'pending', final_sfdt: 'pending' }) });
+    expect(
+      seen
+        .filter((entry) => entry.id === 'pending')
+        .every((entry) => entry.loading && !entry.sfdt)
+    ).toBe(true);
+  });
+
   it('downloads a DOCX fallback once during prefetch, then retains its converted preview', async () => {
     const bytes = new Uint8Array([1, 2, 3]).buffer;
     const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(bytes) });

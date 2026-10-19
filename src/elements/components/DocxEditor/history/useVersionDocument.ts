@@ -480,6 +480,7 @@ export function useVersionDocument(
     error: false,
     degraded: true
   });
+  const resolvedFor = useRef<{ host: typeof host; key: string } | null>(null);
   const reqId = useRef(0);
   const latestVersion = useRef(version);
   latestVersion.current = version;
@@ -494,6 +495,7 @@ export function useVersionDocument(
   useEffect(() => {
     const version = latestVersion.current;
     const id = ++reqId.current;
+    resolvedFor.current = { host, key: documentKey };
     if (!host || !version) {
       setState({ loading: false, error: false, degraded: true });
       return;
@@ -545,5 +547,10 @@ export function useVersionDocument(
     };
   }, [host, documentKey, liveDoc]);
 
-  return state;
+  // A parent can render the new selection before this hook's effect runs.
+  // Never expose the previous version's bytes under the new version identity.
+  return resolvedFor.current?.host === host &&
+    resolvedFor.current?.key === documentKey
+    ? state
+    : { loading: true, error: false, degraded: true };
 }

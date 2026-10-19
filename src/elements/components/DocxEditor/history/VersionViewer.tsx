@@ -294,6 +294,10 @@ export default function VersionViewer({
     containerRef.current?.statusBar?.updateZoomContent?.();
   }, [editorReady, zoomFactor]);
 
+  useLayoutEffect(() => {
+    setPhase('loading');
+  }, [host, version.id]);
+
   // Opens run one at a time: openAsync can't be aborted, so a slow stale open
   // would otherwise paint over the newer version.
   const openSeqRef = useRef(0);
@@ -465,7 +469,12 @@ export default function VersionViewer({
   ]);
 
   return (
-    <div css={{ position: 'absolute', inset: 0, background: PAPER, zIndex: 2 }}>
+    <div
+      data-docx-version-id={version.id}
+      data-docx-version-state={doc.loading ? 'loading' : phase}
+      aria-busy={doc.loading || phase === 'loading'}
+      css={{ position: 'absolute', inset: 0, background: PAPER, zIndex: 2 }}
+    >
       {/* A normal block filling the overlay (not absolute) so the editor's
           height:100% resolves against it — mirrors the live editor's host.
           Kept invisible until the document has painted so the bare editor
@@ -476,11 +485,11 @@ export default function VersionViewer({
         css={{
           width: '100%',
           height: '100%',
-          opacity: phase === 'ready' ? 1 : 0,
+          opacity: !doc.loading && phase === 'ready' ? 1 : 0,
           transition: 'opacity 120ms ease'
         }}
       />
-      {phase !== 'ready' && (
+      {(doc.loading || phase !== 'ready') && (
         <div
           css={{
             position: 'absolute',

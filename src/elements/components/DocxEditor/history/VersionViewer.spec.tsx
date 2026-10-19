@@ -355,7 +355,7 @@ describe('VersionViewer', () => {
     );
   });
 
-  it('keeps the painted preview visible while the next version resolves', async () => {
+  it('shows loading without reopening stale bytes while the next version resolves', async () => {
     let resolveSecond: ((value: ArrayBuffer) => void) | undefined;
     const h = host({
       fetchVersionFile: jest.fn((url: string) => {
@@ -382,7 +382,7 @@ describe('VersionViewer', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(view.queryByText('Loading version…')).toBeNull();
+    expect(view.queryByText('Loading version…')).not.toBeNull();
     expect(open).toHaveBeenCalledTimes(1);
 
     resolveSecond?.(new TextEncoder().encode('{"sfdt":"second"}').buffer);
