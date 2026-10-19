@@ -1,12 +1,21 @@
 import React from 'react';
 import { MODAL_Z_INDEX } from '../../utils/styles';
 
+type WatermarkProps = {
+  show: boolean;
+  brandPosition?: string;
+  width?: number;
+  height?: number;
+  inline?: boolean;
+};
+
 export default function Watermark({
   show,
   brandPosition = 'bottom_right',
   width = 150,
-  height = 35
-}: any) {
+  height = 35,
+  inline = false
+}: WatermarkProps) {
   // A host chat panel docked on the right declares how much edge it takes
   const horizontalAlignment = brandPosition.endsWith('right')
     ? { right: 'calc(15px + var(--feathery-fixed-inset-right, 0px))' }
@@ -34,12 +43,23 @@ export default function Watermark({
   return show ? (
     <div
       style={{
-        position: 'fixed',
-        zIndex: MODAL_Z_INDEX + 1,
+        ...(inline
+          ? {
+              flexShrink: 0,
+              alignSelf: brandPosition.endsWith('right')
+                ? 'flex-end'
+                : 'flex-start',
+              margin: '15px',
+              marginBottom: 'calc(15px + env(safe-area-inset-bottom, 0px))'
+            }
+          : {
+              position: 'fixed',
+              zIndex: MODAL_Z_INDEX + 1,
+              ...horizontalAlignment,
+              ...verticalAlignment
+            }),
         transition:
-          'right var(--feathery-fixed-inset-duration, 220ms) cubic-bezier(0.2, 0.75, 0.2, 1)',
-        ...horizontalAlignment,
-        ...verticalAlignment
+          'right var(--feathery-fixed-inset-duration, 220ms) cubic-bezier(0.2, 0.75, 0.2, 1)'
       }}
     >
       {anchorWrap(
