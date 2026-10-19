@@ -117,6 +117,62 @@ it('labels choice options with what the person sees, falling back to the value',
   ]);
 });
 
+it('shows what a matrix lets the person answer', () => {
+  const currentStep = {
+    id: 'step-1',
+    key: 'survey',
+    subgrids: [],
+    texts: [],
+    images: [],
+    buttons: [],
+    tables: [],
+    tabs: [],
+    progress_bars: [],
+    next_conditions: [],
+    servar_fields: [
+      {
+        servar: {
+          id: 'field-1',
+          key: 'csat',
+          type: 'matrix',
+          metadata: {
+            multiple: false,
+            options: ['Good', 'Bad'],
+            questions: [
+              { id: 'q1', label: 'Service' },
+              { id: 'q2', label: 'Price', read_only: true }
+            ]
+          }
+        },
+        properties: {},
+        position: []
+      }
+    ]
+  };
+  (internalState as any)[FORM] = {
+    currentStep,
+    steps: { survey: currentStep },
+    fields: { csat: { value: {} } },
+    visiblePositions: {},
+    inlineErrors: {},
+    logicRules: []
+  };
+
+  const snapshot = getPanelRuntimeSnapshot(FORM);
+
+  expect(snapshot?.currentStepFields[0]).toMatchObject({
+    multiple: false,
+    options: [
+      { value: 'Good', label: 'Good' },
+      { value: 'Bad', label: 'Bad' }
+    ],
+    questions: [
+      { id: 'q1', label: 'Service' },
+      { id: 'q2', label: 'Price', readOnly: true }
+    ]
+  });
+});
+
 describe('tables in the snapshot', () => {
   const stepWithTables = (tables: any[]) => ({
     id: 'step-1',
