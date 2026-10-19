@@ -9,6 +9,54 @@ describe('multiple cached document performance', () => {
   afterAll(async () => {
     await session?.close();
   });
+  it('normalizes compact Original before grouped history and reuses it across selections', async () => {
+    const original = JSON.stringify({
+      optimizeSfdt: true,
+      sec: [
+        {
+          b: Array.from({ length: 20 }, (_, i) => ({
+            i: [{ tlp: `Unchanged paragraph ${i}` }]
+          }))
+        }
+      ]
+    });
+    const requests: string[] = [];
+    const requested = (request: any) => {
+      if (request.url().includes('unused.invalid'))
+        requests.push(request.url());
+    };
+    session.page.on('request', requested);
+    try {
+      const result = await session.call(
+        'measureCompactOriginalGroup',
+        original
+      );
+      const grouped = result.rows.filter(
+        (row: any) => row.version !== 'compact-original'
+      );
+      expect(grouped).toHaveLength(2);
+      for (const row of grouped) {
+        expect(row.degraded).toBe(false);
+        expect(row.editCount).toBeLessThanOrEqual(3);
+        expect(row.highlightedCharacters).toBeLessThanOrEqual(10);
+        expect(row.activeContainers).toBe(1);
+      }
+      for (const row of result.rows) {
+        expect(row.events).toEqual([
+          expect.objectContaining({
+            id: row.version,
+            degraded: row.degraded
+          })
+        ]);
+      }
+      expect(grouped[1].constructions).toBe(grouped[0].constructions);
+      expect(result.originalFetches).toBe(1);
+      expect(result.remainingContainers).toBe(0);
+      expect(requests).toHaveLength(0);
+    } finally {
+      session.page.off('request', requested);
+    }
+  });
   it('keeps only the active history preview engine while retaining draft editors', async () => {
     const sfdt = JSON.stringify({
       sections: [

@@ -5,6 +5,7 @@ import VersionViewer from '../../../../../elements/components/DocxEditor/history
 import { __clearVersionDocumentCache } from '../../../../../elements/components/DocxEditor/history/useVersionDocument';
 import { computeHistoryTask } from '../../../../../elements/components/DocxEditor/history/historyComputation';
 import { runHistoryTask } from '../../../../../elements/components/DocxEditor/history/historyWorkerClient';
+import { hiddenEditorConverter } from '../../../../../elements/components/DocxEditor/history/convertOriginal';
 import { createRoot, Root } from 'react-dom/client';
 import { registerLicense } from '@syncfusion/ej2-base';
 import {
@@ -20,6 +21,7 @@ let active = 0;
 let panel: 'history' | null = null;
 let docs: any[] = [];
 let instances = 0;
+let constructions = 0;
 let workerConstructions = 0;
 const NativeWorker = globalThis.Worker;
 (globalThis as any).Worker = class extends NativeWorker {
@@ -33,6 +35,7 @@ class CountedContainer extends DocumentEditorContainer {
   constructor(options: any) {
     super(options);
     instances++;
+    constructions++;
   }
 
   destroy() {
@@ -95,6 +98,136 @@ const render = () =>
   );
 
 export const multiDocumentPerformanceHarness = {
+  async measureCompactOriginalGroup(
+    originalSfdt: string,
+    saved: string[] = [],
+    changes: any[] = []
+  ) {
+    (globalThis as any).ej = {
+      base: { registerLicense },
+      documenteditor: { DocumentEditorContainer: CountedContainer, Toolbar }
+    };
+    (globalThis as any).scriptjsLoadPromise = Promise.resolve({
+      default: (_urls: string[], done: () => void) => done()
+    });
+    __clearVersionDocumentCache();
+    if (!saved.length) {
+      const original = await hiddenEditorConverter('')(originalSfdt);
+      saved = ['v1', 'v2'].map((value) => {
+        const copy = JSON.parse(JSON.stringify(original));
+        const blocks = copy.sections[0].blocks;
+        blocks[blocks.length - 1].inlines[0].text += ` ${value}`;
+        return JSON.stringify(copy);
+      });
+    }
+    const original = {
+      id: 'compact-original',
+      seq: 0,
+      is_baseline: true,
+      final_sfdt: 'original',
+      changes: null,
+      session_id: null
+    } as any;
+    const versions = saved.map((_, index) => ({
+      id: `saved-${index}`,
+      session_id: `saved-${index}`,
+      seq: index + 1,
+      is_current: index === saved.length - 1,
+      final_sfdt: `final-${index}`,
+      changes: changes[index] ? `changes-${index}` : null,
+      change_count: changes[index]?.changeCount ?? null,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'you'
+    })) as any[];
+    const current = versions[versions.length - 1];
+    const fetches: string[] = [];
+    const history = {
+      fetchVersionFile: async (key: string) => {
+        fetches.push(key);
+        const index = Number(key.split('-')[1]);
+        const value =
+          key === 'original'
+            ? originalSfdt
+            : key.startsWith('final-')
+            ? saved[index]
+            : JSON.stringify(changes[index]);
+        return new TextEncoder().encode(value).buffer;
+      }
+    } as any;
+    const previewHost = document.createElement('div');
+    previewHost.style.cssText =
+      'position:fixed;inset:0;width:1200px;height:800px';
+    document.body.appendChild(previewHost);
+    const previewRoot = createRoot(previewHost);
+    const initialInstances = instances;
+    const initialConstructions = constructions;
+    let editor: any;
+    const rows: any[] = [];
+    try {
+      for (const version of [current, original, current]) {
+        let displayed = false;
+        let meta: any;
+        const events: any[] = [];
+        const started = performance.now();
+        previewRoot.render(
+          React.createElement(VersionViewer, {
+            host: history,
+            version,
+            folded:
+              version === current
+                ? { earlier: versions.slice(0, -1), preceding: original }
+                : undefined,
+            serviceUrl: 'https://unused.invalid/',
+            onMeta: (value: any) => {
+              meta = value;
+            },
+            onViewerEditor: (value: any) => {
+              editor = value;
+            },
+            onDisplayedVersion: (value: any) => {
+              events.push({ id: value.id, ...meta });
+              if (value.id === version.id) displayed = true;
+            }
+          })
+        );
+        for (let n = 0; n < 600 && !displayed; n++) await frame();
+        if (!displayed) throw new Error('Grouped version never displayed');
+        let highlightedCharacters = 0;
+        const highlightedSections: number[] = [];
+        JSON.parse(editor.serialize()).sections.forEach(
+          (section: any, index: number) => {
+            JSON.stringify(section, (key, value) => {
+              if (value?.text && value.revisionIds?.length) {
+                highlightedCharacters += value.text.length;
+                if (!highlightedSections.includes(index))
+                  highlightedSections.push(index);
+              }
+              return value;
+            });
+          }
+        );
+        rows.push({
+          version: version.id,
+          milliseconds: performance.now() - started,
+          editCount: meta?.editCount,
+          degraded: meta?.degraded,
+          highlightedCharacters,
+          highlightedSections,
+          events,
+          constructions: constructions - initialConstructions,
+          activeContainers: instances - initialInstances
+        });
+      }
+    } finally {
+      previewRoot.unmount();
+      previewHost.remove();
+    }
+    return {
+      rows,
+      originalFetches: fetches.filter((key) => key === 'original').length,
+      remainingContainers: instances - initialInstances
+    };
+  },
   openOverflowDocuments(width: number) {
     root?.unmount();
     host?.remove();

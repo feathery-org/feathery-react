@@ -1,3 +1,4 @@
+import { useLayoutEffect, useState } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 
 import {
@@ -116,6 +117,9 @@ describe('useVersionDocument', () => {
     const view = renderHook(
       ({ row }) => {
         const doc = useVersionDocument(h, row);
+        // VersionViewer updates its loading phase in a layout effect on selection.
+        const [, setSelected] = useState(row.id);
+        useLayoutEffect(() => setSelected(row.id), [row.id]);
         seen.push({ id: row.id, sfdt: doc.sfdt, loading: doc.loading });
         return doc;
       },
@@ -881,6 +885,63 @@ describe('useVersionDocument', () => {
 
       expect(convert).toHaveBeenCalledTimes(1);
       expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('normalizes a prepared compact Original once before comparing grouped edits', async () => {
+      const compact = JSON.stringify({ optimizeSfdt: true, sec: [{}] });
+      const prepared = { ...original, final_sfdt: 'original.sfdt' };
+      const h = host({
+        fetchVersionFile: jest
+          .fn()
+          .mockResolvedValue(new TextEncoder().encode(compact).buffer)
+      });
+      const convert = jest.fn().mockResolvedValue(text({ text: 'Hello' }));
+      const openPrepared = () =>
+        renderHook(() =>
+          useVersionDocument(
+            h,
+            bob,
+            { earlier: [alice], preceding: prepared },
+            convert
+          )
+        );
+
+      const first = openPrepared();
+      await waitFor(() => expect(first.result.current.loading).toBe(false));
+      expect(first.result.current.formatCount).toBe(1);
+      expect(first.result.current.editCount).toBe(2);
+      expect(convert).toHaveBeenCalledWith(compact);
+      const second = openPrepared();
+      await waitFor(() => expect(second.result.current.loading).toBe(false));
+      expect(convert).toHaveBeenCalledTimes(1);
+      expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+
+      const baseline = renderHook(() => useVersionDocument(h, prepared));
+      await waitFor(() => expect(baseline.result.current.loading).toBe(false));
+      expect(baseline.result.current.sfdt).toBe(
+        JSON.stringify(text({ text: 'Hello' }))
+      );
+      expect(baseline.result.current.needsBindingPopulation).toBeFalsy();
+    });
+
+    it('shows the newest session alone if a compact Original cannot be normalized', async () => {
+      const prepared = { ...original, final_sfdt: 'original.sfdt' };
+      const h = host({
+        fetchVersionFile: jest
+          .fn()
+          .mockResolvedValue(
+            new TextEncoder().encode('{"optimizeSfdt":true,"sec":[{}]}').buffer
+          )
+      });
+      const { result } = renderHook(() =>
+        useVersionDocument(h, bob, { earlier: [alice], preceding: prepared })
+      );
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      const display = JSON.parse(must(result.current.sfdt));
+      expect(
+        display.sections[0].blocks[0].inlines[0].revisionIds
+      ).toBeUndefined();
+      expect(result.current.editCount).toBe(1);
     });
 
     it.each([

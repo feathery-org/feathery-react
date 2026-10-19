@@ -344,7 +344,7 @@ async function versionArtifacts(
   return runHistoryTask('artifacts', { finalBuffer, changesBuffer });
 }
 
-// Docx-only rows (the original upload) converted to SFDT, a few at a time.
+// Original normalized to the editor's expanded SFDT, a few at a time.
 const CONVERTED_MAX = 2;
 const convertedStarts = new Map<string, Promise<string>>();
 
@@ -355,17 +355,39 @@ async function foldedStart(
   convertDocx?: DocxToSfdt
 ): Promise<string | null> {
   if (!preceding) return null;
-  const before = await versionArtifacts(host, preceding);
-  if (before) return before.finalSfdt;
+  // Prepared Original uses compact service keys (sec/b/i), while saved edits
+  // use expanded keys (sections/blocks/inlines). Reuse its prefetched bytes and
+  // let the native parser expand them before diffing; compact is not empty.
+  const original = preceding.is_baseline
+    ? await resolveAndCache(host, preceding)
+    : null;
+  if (original?.sfdt && !original.needsBindingPopulation) return original.sfdt;
+  if (!preceding.is_baseline) {
+    const before = await versionArtifacts(host, preceding);
+    if (before) return before.finalSfdt;
+  }
   const docxUrl = preceding.editor_file ?? preceding.file;
-  if (!docxUrl || !convertDocx) return null;
+  if (!convertDocx || (!original?.sfdt && !original?.docxBytes && !docxUrl))
+    return null;
   const key = cacheKey(host, preceding);
   let pending = convertedStarts.get(key);
   if (!pending) {
-    pending = host
-      .fetchVersionFile(docxUrl)
+    const epoch = scopeFor(host).epoch;
+    const source = original?.sfdt ?? original?.docxBytes;
+    pending = (
+      source
+        ? Promise.resolve(source)
+        : host.fetchVersionFile(docxUrl as string)
+    )
       .then(convertDocx)
-      .then(JSON.stringify);
+      .then((doc) => {
+        if (!Array.isArray(doc?.sections))
+          throw new Error('Original snapshot could not be normalized');
+        const sfdt = JSON.stringify(doc);
+        if (preceding.is_baseline && scopeFor(host).epoch === epoch)
+          cacheImportedVersion(host, preceding, sfdt);
+        return sfdt;
+      });
     pending.catch(() => convertedStarts.delete(key));
     convertedStarts.set(key, pending);
     while (convertedStarts.size > CONVERTED_MAX) {
@@ -471,12 +493,13 @@ export function useVersionDocument(
   convertDocx?: DocxToSfdt,
   liveDoc?: LiveVersionDocument
 ): VersionDocument {
-  const [state, setState] = useState<VersionDocument>({
-    loading: true,
-    error: false,
-    degraded: true
-  });
-  const resolvedFor = useRef<{ host: typeof host; key: string } | null>(null);
+  // Keep the identity and bytes in one state update. A layout effect in the
+  // viewer can rerender between passive effects and their queued state updates.
+  const [state, setState] = useState<{
+    host: typeof host;
+    key: string;
+    document: VersionDocument;
+  } | null>(null);
   const reqId = useRef(0);
   const latestVersion = useRef(version);
   latestVersion.current = version;
@@ -491,9 +514,10 @@ export function useVersionDocument(
   useEffect(() => {
     const version = latestVersion.current;
     const id = ++reqId.current;
-    resolvedFor.current = { host, key: documentKey };
+    const publish = (document: VersionDocument) =>
+      setState({ host, key: documentKey, document });
     if (!host || !version) {
-      setState({ loading: false, error: false, degraded: true });
+      publish({ loading: false, error: false, degraded: true });
       return;
     }
     const foldedVersions = latestFolded.current?.earlier.length
@@ -507,7 +531,7 @@ export function useVersionDocument(
         !liveDoc.session ||
         liveDoc.session.sessionId !== version.session_id)
     ) {
-      setState(liveDoc);
+      publish(liveDoc);
       return;
     }
     // Local artifacts outrank a cached resolution: a prefetch may have cached
@@ -517,15 +541,15 @@ export function useVersionDocument(
         ? undefined
         : cacheGet(cacheKey(host, version));
     if (cached) {
-      setState({ loading: false, ...cached });
+      publish({ loading: false, ...cached });
       return;
     }
-    setState({ loading: true, error: false, degraded: true });
+    publish({ loading: true, error: false, degraded: true });
 
     const done = (next: Omit<VersionDocument, 'loading'>) => {
       if (id !== reqId.current) return;
       // Cache successful resolutions only — an error should be retried later.
-      setState({ loading: false, ...next });
+      publish({ loading: false, ...next });
     };
 
     (foldedVersions
@@ -545,8 +569,7 @@ export function useVersionDocument(
 
   // A parent can render the new selection before this hook's effect runs.
   // Never expose the previous version's bytes under the new version identity.
-  return resolvedFor.current?.host === host &&
-    resolvedFor.current?.key === documentKey
-    ? state
+  return state?.host === host && state?.key === documentKey
+    ? state.document
     : { loading: true, error: false, degraded: true };
 }
