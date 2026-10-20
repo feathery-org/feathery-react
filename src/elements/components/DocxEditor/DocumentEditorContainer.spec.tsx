@@ -1826,37 +1826,63 @@ describe('document tab navigation', () => {
     }
   });
 
-  it('keeps local edits mounted across tab switches without saving', async () => {
-    const view = render(
-      <DocumentEditorContainer containerId={containerId} formId='tabs-form' />
-    );
-    const firstEditor = await view.findByTestId('editor:a.editor.docx');
-    fireEvent.change(view.getByLabelText('local:a.editor.docx'), {
-      target: { value: 'Unsaved A edit' }
-    });
-    fireEvent.click(view.getByTestId('dirty:a.editor.docx'));
-    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
-    await view.findByTestId('editor:b.docx');
-    fireEvent.change(view.getByLabelText('local:b.docx'), {
-      target: { value: 'Unsaved B edit' }
-    });
-    fireEvent.click(view.getByTestId('clean:b.docx'));
-    expect(hasDirtyDocxEditors('tabs-form')).toBe(true);
-    expect(getDocxEditor('tabs-form')).toMatchObject({ sourceUrl: 'b.docx' });
-    fireEvent.click(view.getByRole('tab', { name: 'Agreement.docx' }));
-    expect(view.getByTestId('editor:a.editor.docx')).toBe(firstEditor);
-    expect(view.getByLabelText('local:a.editor.docx')).toHaveValue(
-      'Unsaved A edit'
-    );
-    expect(view.getByLabelText('local:b.docx')).toHaveValue('Unsaved B edit');
-    expect(mockBeforeReplace).not.toHaveBeenCalled();
-    expect(mockSaveEnvelopeFile).not.toHaveBeenCalled();
-    await waitFor(() =>
-      expect(getDocxEditor('tabs-form')).toMatchObject({
-        sourceUrl: 'a.editor.docx'
-      })
-    );
-  });
+  it.each(['normal', 'yielding'])(
+    'keeps local edits mounted across tab switches without saving (%s rendering)',
+    async (rendering) => {
+      // Advance React's render clock so concurrent work yields consistently,
+      // reproducing the passive-effect timing seen on slower CI runners.
+      let renderTime = performance.now();
+      const renderClock =
+        rendering === 'yielding'
+          ? jest
+              .spyOn(performance, 'now')
+              .mockImplementation(() => (renderTime += 1))
+          : undefined;
+      try {
+        const view = render(
+          <DocumentEditorContainer
+            containerId={containerId}
+            formId='tabs-form'
+          />
+        );
+        const firstEditor = await view.findByTestId('editor:a.editor.docx');
+        fireEvent.change(view.getByLabelText('local:a.editor.docx'), {
+          target: { value: 'Unsaved A edit' }
+        });
+        fireEvent.click(view.getByTestId('dirty:a.editor.docx'));
+        fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+        await view.findByTestId('editor:b.docx');
+        fireEvent.change(view.getByLabelText('local:b.docx'), {
+          target: { value: 'Unsaved B edit' }
+        });
+        fireEvent.click(view.getByTestId('clean:b.docx'));
+        expect(hasDirtyDocxEditors('tabs-form')).toBe(true);
+        // The editor DOM can commit before its registration effect runs.
+        await waitFor(() =>
+          expect(getDocxEditor('tabs-form')).toMatchObject({
+            sourceUrl: 'b.docx'
+          })
+        );
+        fireEvent.click(view.getByRole('tab', { name: 'Agreement.docx' }));
+        expect(view.getByTestId('editor:a.editor.docx')).toBe(firstEditor);
+        expect(view.getByLabelText('local:a.editor.docx')).toHaveValue(
+          'Unsaved A edit'
+        );
+        expect(view.getByLabelText('local:b.docx')).toHaveValue(
+          'Unsaved B edit'
+        );
+        expect(mockBeforeReplace).not.toHaveBeenCalled();
+        expect(mockSaveEnvelopeFile).not.toHaveBeenCalled();
+        await waitFor(() =>
+          expect(getDocxEditor('tabs-form')).toMatchObject({
+            sourceUrl: 'a.editor.docx'
+          })
+        );
+      } finally {
+        renderClock?.mockRestore();
+      }
+    }
+  );
 
   it('hides the DOCX rail on a PDF without remounting the cached draft', async () => {
     const packet = (featheryWindow() as any)[PENDING_DRAFTS_KEY][containerId];
