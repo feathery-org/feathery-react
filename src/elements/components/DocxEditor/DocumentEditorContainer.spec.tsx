@@ -43,6 +43,7 @@ jest.mock('./index', () => {
 
   return function MockDocxEditor({
     source,
+    manualSave,
     openNonce,
     onEditorReady,
     onChange,
@@ -91,6 +92,7 @@ jest.mock('./index', () => {
       {
         'data-testid': `editor:${source?.url ?? 'none'}`,
         'data-preview': String(!!preview),
+        'data-manual-save': String(!!manualSave),
         'data-rail-panel': railPanel ?? 'closed',
         'data-review-changes': String(!!reviewChanges)
       },
@@ -1727,6 +1729,18 @@ describe('document tab navigation', () => {
         'true'
       )
     );
+  });
+
+  it('enables autosave for each retained document session', async () => {
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    const firstEditor = await view.findByTestId('editor:a.editor.docx');
+    expect(firstEditor).toHaveAttribute('data-manual-save', 'false');
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    expect(await view.findByTestId('editor:b.docx')).toHaveAttribute(
+      'data-manual-save',
+      'false'
+    );
+    expect(view.getByTestId('editor:a.editor.docx')).toBe(firstEditor);
   });
 
   it('shares the rail selection, including closed, across cached document tabs', async () => {

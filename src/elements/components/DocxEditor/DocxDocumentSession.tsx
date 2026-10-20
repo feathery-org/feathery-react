@@ -554,7 +554,6 @@ export default function DocxDocumentSession({
         reviewChanges={reviewChanges}
         openNonce={reloadKey}
         fileName={label}
-        manualSave
         active={active}
         railPanel={railPanel}
         onRailPanelChange={onRailPanelChange}
