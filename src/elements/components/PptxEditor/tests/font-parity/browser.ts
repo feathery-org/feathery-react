@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-globals -- Browser-only test entry, never used by SSR. */
 import { importDeck } from '../../core/model/import';
 import { exportDeckBytes } from '../../core/model/export';
-import { renderSlideSvg } from '../../core/render/svg';
+import { renderSlideSvg, reconcileSlideSvg } from '../../core/render/svg';
 import { ensureDeckFontsLoaded, cssFamilyList } from '../../core/render/fonts';
 import { releaseEmbeddedFonts } from '../../core/render/embeddedFonts';
 import type { Deck } from '../../core/model/types';
@@ -58,6 +58,15 @@ let deck: Deck;
         };
       });
   },
+  refresh(number: number) {
+    const svg = document.querySelector('svg');
+    if (!svg) throw new Error('Render a slide before refreshing');
+    reconcileSlideSvg(deck, deck.slides[number - 1], svg, {
+      fullContent: true,
+      structure: true,
+      background: true
+    });
+  },
   async probe(family: string, weight: number, italic: boolean) {
     const node = document.createElement('span');
     node.id = 'probe';
@@ -73,6 +82,28 @@ let deck: Deck;
   },
   release() {
     releaseEmbeddedFonts(deck.pkg);
+  },
+  async pixelDifference(a: string, b: string) {
+    async function pixels(s: string) {
+      const im = new Image();
+      im.src = 'data:image/png;base64,' + s;
+      await im.decode();
+      const c = document.createElement('canvas');
+      c.width = im.width;
+      c.height = im.height;
+      const ctx = c.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      ctx.drawImage(im, 0, 0);
+      return ctx.getImageData(0, 0, c.width, c.height).data;
+    }
+    const [x, y] = await Promise.all([pixels(a), pixels(b)]);
+    let diff = 0;
+    for (let i = 0; i < x.length; i += 4)
+      diff +=
+        Math.abs(x[i] - y[i]) +
+        Math.abs(x[i + 1] - y[i + 1]) +
+        Math.abs(x[i + 2] - y[i + 2]);
+    return diff / ((x.length / 4) * 3 * 255);
   },
   async inkRows(base64: string, color: string) {
     const image = new Image();

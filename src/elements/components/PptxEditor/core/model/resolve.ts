@@ -185,6 +185,34 @@ function masterPhType(type: string): string {
   return 'body';
 }
 
+/** A missing fill inherits as a unit; an explicit noFill stops the cascade. */
+export function resolveShapeFill(
+  deck: Deck,
+  slide: Slide,
+  shape: Shape
+): ONode | undefined {
+  const hasFill = (spPr: ONode | undefined) =>
+    spPr &&
+    ['noFill', 'solidFill', 'gradFill', 'blipFill', 'pattFill', 'grpFill'].some(
+      (tag) => child(spPr, `a:${tag}`)
+    );
+  if (hasFill(shape.spPr)) return shape.spPr;
+  const ph = placeholderOf(shape);
+  if (!ph) return undefined;
+  const layout = deck.pkg.layoutFor(slide.path);
+  const master = layout && deck.pkg.masterFor(layout);
+  for (const [part, type, idx] of [
+    [layout, ph.type, ph.idx],
+    [master, masterPhType(ph.type), '']
+  ] as const) {
+    if (!part || !deck.pkg.hasPart(part)) continue;
+    const inherited = findPlaceholder(xmlRoot(deck.pkg.tree(part)), type, idx);
+    const spPr = inherited && child(inherited, 'p:spPr');
+    if (hasFill(spPr)) return spPr;
+  }
+  return undefined;
+}
+
 /** Resolve the list/bullet/default-run props a placeholder paragraph inherits at a level. */
 export function resolveListProps(
   deck: Deck,

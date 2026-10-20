@@ -36,6 +36,7 @@ import { readSlide } from '../model/import';
 import {
   PH_NO_IDX,
   resolveListProps,
+  resolveShapeFill,
   type ResolvedRunDefaults
 } from '../model/resolve';
 import {
@@ -218,6 +219,72 @@ function geometryEl(
         } ${h} L ${bottom} ${h} A ${bottom} ${bottom} 0 0 1 0 ${
           h - bottom
         } L 0 ${top} A ${top} ${top} 0 0 1 ${top} 0 Z`
+      );
+      break;
+    }
+    case 'round1Rect': {
+      const radius =
+        (Math.min(w, h) *
+          Math.max(0, Math.min(50000, shape.geomAdj?.adj ?? 16667))) /
+        100000;
+      e = mk('path');
+      e.setAttribute(
+        'd',
+        `M 0 0 L ${
+          w - radius
+        } 0 A ${radius} ${radius} 0 0 1 ${w} ${radius} L ${w} ${h} L 0 ${h} Z`
+      );
+      break;
+    }
+    case 'teardrop': {
+      const adj = Math.max(0, Math.min(200000, shape.geomAdj?.adj ?? 100000));
+      const rx = w / 2;
+      const ry = h / 2;
+      const tipX = rx + (rx * adj) / 100000;
+      const tipY = ry - (ry * adj) / 100000;
+      e = mk('path');
+      e.setAttribute(
+        'd',
+        `M 0 ${ry} A ${rx} ${ry} 0 0 1 ${rx} 0 Q ${
+          (rx + tipX) / 2
+        } 0 ${tipX} ${tipY} Q ${w} ${
+          (ry + tipY) / 2
+        } ${w} ${ry} A ${rx} ${ry} 0 0 1 ${rx} ${h} A ${rx} ${ry} 0 0 1 0 ${ry} Z`
+      );
+      break;
+    }
+    case 'leftBracket':
+    case 'rightBracket': {
+      const radius = Math.min(
+        h / 2,
+        (Math.min(w, h) * Math.max(0, shape.geomAdj?.adj ?? 8333)) / 100000
+      );
+      e = mk('path');
+      e.setAttribute(
+        'd',
+        `M ${w} ${h} A ${w} ${radius} 0 0 1 0 ${
+          h - radius
+        } L 0 ${radius} A ${w} ${radius} 0 0 1 ${w} 0`
+      );
+      if (prst === 'rightBracket')
+        e.setAttribute('transform', `translate(${w} 0) scale(-1 1)`);
+      break;
+    }
+    case 'plaque': {
+      const radius =
+        (Math.min(w, h) *
+          Math.max(0, Math.min(50000, shape.geomAdj?.adj ?? 16667))) /
+        100000;
+      e = mk('path');
+      e.setAttribute(
+        'd',
+        `M 0 ${radius} A ${radius} ${radius} 0 0 0 ${radius} 0 L ${
+          w - radius
+        } 0 A ${radius} ${radius} 0 0 0 ${w} ${radius} L ${w} ${
+          h - radius
+        } A ${radius} ${radius} 0 0 0 ${
+          w - radius
+        } ${h} L ${radius} ${h} A ${radius} ${radius} 0 0 0 0 ${h - radius} Z`
       );
       break;
     }
@@ -501,9 +568,20 @@ function shapeFill(
   defs: SVGDefsElement,
   key: string
 ): string {
-  return fillPaint(shape.spPr, pkg, defs, undefined, `shape-gradient-${key}`);
+  return fillPaint(
+    shapeFillProperties(shape),
+    pkg,
+    defs,
+    undefined,
+    `shape-gradient-${key}`
+  );
 }
 
+function shapeFillProperties(shape: Shape): ONode | undefined {
+  return curDeck && curSlide
+    ? resolveShapeFill(curDeck, curSlide, shape)
+    : shape.spPr;
+}
 interface LineEnd {
   type?: string;
   width?: string;
@@ -538,7 +616,8 @@ function colorOpacity(container: ONode | undefined): number | undefined {
 }
 
 function shapeFillOpacity(shape: Shape): number | undefined {
-  return colorOpacity(shape.spPr && child(shape.spPr, 'a:solidFill'));
+  const spPr = shapeFillProperties(shape);
+  return colorOpacity(spPr && child(spPr, 'a:solidFill'));
 }
 
 function shapeStroke(shape: Shape, pkg: OPCPackage): ShapeStroke {
@@ -651,6 +730,32 @@ function applyLineStyle(
   };
   marker('head', style.head);
   marker('tail', style.tail);
+}
+
+/** Chromium distorts thin ellipse outlines at EMU-sized radii. Keep the
+ * primitive in CSS pixels, with its parent restoring document coordinates.
+ * Stroke lengths must use the same units; gradients use objectBoundingBox. */
+function normalizeEllipseGeometry(geometry: SVGElement): SVGElement {
+  if (geometry.localName !== 'ellipse') return geometry;
+  const unit = 9525;
+  for (const name of ['cx', 'cy', 'rx', 'ry', 'stroke-width']) {
+    const value = geometry.getAttribute(name);
+    if (value !== null)
+      geometry.setAttribute(name, String(Number(value) / unit));
+  }
+  const dash = geometry.getAttribute('stroke-dasharray');
+  if (dash)
+    geometry.setAttribute(
+      'stroke-dasharray',
+      dash
+        .split(/[ ,]+/)
+        .map((value) => Number(value) / unit)
+        .join(' ')
+    );
+  geometry.setAttribute('transform', `scale(${unit})`);
+  const wrapper = featheryDoc().createElementNS(SVGNS, 'g');
+  wrapper.appendChild(geometry);
+  return wrapper;
 }
 
 function applyOuterShadow(
@@ -964,9 +1069,8 @@ export function bulletGlyph(
   // symbol-font bullets: map the few common ones, default everything else to a bullet
   if (/wingding|webding|symbol/i.test(font || ''))
     return SYMBOL_BULLET[ch] || '•';
-  // otherwise only keep a known bullet glyph; any other codepoint (a symbol char
-  // like "§", or an emoji) would render as itself, so normalize it to "•"
-  return SAFE_BULLETS.has(ch) ? ch : '•';
+  // Unicode bullets are document content, not a restricted menu of symbols.
+  return ch;
 }
 
 function alphaNumber(value: number, upper: boolean): string {
@@ -2604,7 +2708,11 @@ function shapeGroup(
     const clip = featheryDoc().createElementNS(SVGNS, 'clipPath');
     const clipId = `${defsIdPrefix(defs)}picture-clip-${shape.id}-${idx}`;
     clip.setAttribute('id', clipId);
-    clip.appendChild(geometryEl(shape, cx, cy, '#ffffff', undefined, 0));
+    clip.appendChild(
+      normalizeEllipseGeometry(
+        geometryEl(shape, cx, cy, '#ffffff', undefined, 0)
+      )
+    );
     // Keep the referenced definition mounted while changing crop geometry. A
     // remove/append cycle can briefly invalidate url(#clipId) in the browser.
     upsertDefinition(defs, clip);
@@ -2654,8 +2762,9 @@ function shapeGroup(
       if (opacity !== undefined)
         geometry.setAttribute('fill-opacity', String(opacity));
       applyLineStyle(geometry, st, defs, `${shape.id}-${idx}`);
-      applyOuterShadow(geometry, shape, pkg, defs, `${shape.id}-${idx}`);
-      g.appendChild(geometry);
+      const paintedGeometry = normalizeEllipseGeometry(geometry);
+      applyOuterShadow(paintedGeometry, shape, pkg, defs, `${shape.id}-${idx}`);
+      g.appendChild(paintedGeometry);
     }
     const fo = textForeign(shape, cx, cy);
     if (fo) {
@@ -3062,7 +3171,9 @@ export function syncShapeOrder(slide: Slide, svg: SVGSVGElement): void {
       if (!ids.has((g as SVGGElement).dataset.shapeId || '')) g.remove();
     });
   let previous: Element =
-    svg.querySelector('[data-slide-background]') || svg.querySelector('defs')!;
+    svg.querySelector('[data-slide-chrome]') ||
+    svg.querySelector('[data-slide-background]') ||
+    svg.querySelector('defs')!;
   for (const shape of slide.shapes) {
     const g = [...svg.children].find(
       (el) => (el as SVGGElement).dataset?.shapeId === shape.id
