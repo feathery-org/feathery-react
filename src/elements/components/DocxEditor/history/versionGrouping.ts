@@ -85,13 +85,16 @@ function sectionFor(ended: Date, now: Date): { key: string; label: string } {
   return { key: `${ended.getFullYear()}-${ended.getMonth()}`, label };
 }
 
-// Current, named, restored and baseline versions keep their own visible row:
-// they may head a cluster but are never folded under another one.
+const isRestored = (version: DocxVersion): boolean =>
+  Boolean(version.restored_from_at || version.restored_from);
+
+// Current, named and baseline versions may head a cluster but never fold under
+// another row. Restores are standalone checkpoints and cannot head a group.
 const keepsOwnRow = (version: DocxVersion, currentSeq: number): boolean =>
   version.is_current ||
   version.seq === currentSeq ||
   Boolean(version.name) ||
-  Boolean(version.restored_from_at || version.restored_from) ||
+  isRestored(version) ||
   version.is_baseline;
 
 /** Group versions (newest-first) into Today + month sections of 15-minute
@@ -124,7 +127,12 @@ export function groupVersions(
         ended.getTime() <=
         CLUSTER_GAP_MS;
 
-    if (cluster && withinGap && !keepsOwnRow(version, currentSeq)) {
+    if (
+      cluster &&
+      withinGap &&
+      !isRestored(cluster.primary) &&
+      !keepsOwnRow(version, currentSeq)
+    ) {
       cluster.earlier.push(version);
     } else {
       cluster = { primary: version, earlier: [], authors: [] };

@@ -72,6 +72,32 @@ beforeEach(() => {
 });
 
 describe('HistoryPanel', () => {
+  it('shows a zero-edit restore and the preceding edit as separate selectable rows', async () => {
+    const prior = v({
+      seq: 1,
+      ended_at: '2026-09-02T11:59:00',
+      change_count: 1,
+      changes: '/changes.gz'
+    });
+    const restored = v({
+      seq: 2,
+      is_current: true,
+      restored_from: 'original',
+      restored_from_at: '2026-09-02T11:58:00',
+      change_count: 0
+    });
+    const onSelect = jest.fn();
+    const { findByText, queryByRole } = renderPanel(
+      makeHost([restored, prior]),
+      onSelect
+    );
+    fireEvent.click(await findByText(/^Restored from /));
+    expect(onSelect).toHaveBeenLastCalledWith(restored);
+    expect(queryByRole('button', { name: /earlier version/ })).toBeNull();
+    fireEvent.click(await findByText('You'));
+    expect(onSelect).toHaveBeenLastCalledWith(prior);
+  });
+
   it('shows the empty state when there are no versions', async () => {
     const { findByText } = renderPanel(makeHost([]));
     expect(await findByText('No versions yet.')).toBeTruthy();
