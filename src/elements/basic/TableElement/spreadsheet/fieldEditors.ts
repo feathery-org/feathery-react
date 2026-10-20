@@ -48,6 +48,15 @@ export function choicesFor(rule?: CellRule): string[] | null {
   return null;
 }
 
+/** What a `select` column shows for one of its choices: its label, else itself. */
+export function choiceLabel(
+  rule: CellRule | undefined,
+  choice: string
+): string {
+  const index = rule?.options?.indexOf(choice) ?? -1;
+  return (index >= 0 && rule?.optionLabels?.[index]) || choice;
+}
+
 /**
  * What typing a printable character on a selected cell should do.
  *
@@ -224,6 +233,9 @@ export function formatCellDisplay(value: CellValue, rule?: CellRule): string {
   }
 
   if (rule?.type === 'file') return formatFileValue(value);
+
+  // A choice shows as its label; the cell still holds (and copies) the value.
+  if (rule?.optionLabels) return choiceLabel(rule, formatCellValue(value));
 
   if (rule?.type === 'date' || rule?.type === 'datetime') {
     return formatDateValue(String(value), rule.type);

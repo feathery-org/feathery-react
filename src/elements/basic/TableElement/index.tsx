@@ -47,11 +47,12 @@ import {
 import {
   CellErrors,
   cellErrorKey,
-  fieldCellRules,
   mergeCellErrors,
   parseCellErrorKey,
   validateGrid
 } from './spreadsheet/validation';
+import { useFieldCellRules } from './useFieldCellRules';
+import { editorKindFor, formatCellDisplay } from './spreadsheet/fieldEditors';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
 import { STATUS_HUB_FIELD_ID, UNVERIFY_ACTION_LABEL } from './hubStatus';
@@ -553,14 +554,20 @@ function TableElement({
   }, [activeFieldValues, buffersEdits, pendingEdits.writes]);
 
   /**
-   * The column rules the spreadsheet validates against. A Hub owns its own
-   * field schema; a field-backed table has only each column's form field type,
-   * so it can check formats but not the field's own required/length settings —
-   * those are enforced when the step is submitted.
+   * The column rules that shape each cell's editor and, in spreadsheet mode,
+   * its validation. A Hub owns its own field schema; a field-backed table reads
+   * each column's form field off the form (its type, options, date shape), so
+   * it can offer the right control and check formats but not the field's own
+   * required/length settings — those are enforced when the step is submitted.
    */
+  const fieldRules = useFieldCellRules(
+    baseColumns,
+    formId,
+    !isHub && !editMode
+  );
   const cellRules = useMemo(
-    () => (isHub ? hub.cellRules : fieldCellRules(columns)),
-    [isHub, hub.cellRules, columns]
+    () => (isHub ? hub.cellRules : fieldRules),
+    [isHub, hub.cellRules, fieldRules]
   );
 
   /**
@@ -1492,6 +1499,19 @@ function TableElement({
                       const cellFieldKey = isTransposed
                         ? baseColumns[rowIndex]?.field_key
                         : column.field_key;
+                      // The rule of the field this cell shows a value OF. The
+                      // transposed header cell shows a field's NAME, which no
+                      // rule should format.
+                      const cellRule =
+                        cellFieldKey && !isFirstColInTranspose
+                          ? cellRules[cellFieldKey]
+                          : undefined;
+                      const isCellReadOnly =
+                        (isHub && hub.readOnlyKeys.has(column.field_key)) ||
+                        editorKindFor(cellRule) === 'readonly';
+                      const cellText = cellRule
+                        ? formatCellDisplay(cellValue, cellRule)
+                        : stringifyWithNull(cellValue) ?? '';
 
                       return (
                         <CellElement
@@ -1521,14 +1541,12 @@ function TableElement({
                                 />
                               </span>
                             </div>
-                          ) : canEdit &&
-                            !(
-                              isHub && hub.readOnlyKeys.has(column.field_key)
-                            ) ? (
+                          ) : canEdit && !isCellReadOnly ? (
                             <EditableCell
                               value={cellValue}
                               fieldKey={column.field_key}
                               rowIndex={rowIndex}
+                              rule={cellRule}
                               isEditing={
                                 editingCell?.rowIndex === rowIndex &&
                                 editingCell?.colIndex === colIndex
@@ -1543,7 +1561,7 @@ function TableElement({
                               }
                             />
                           ) : (
-                            stringifyWithNull(cellValue) ?? ''
+                            cellText
                           )}
                         </CellElement>
                       );

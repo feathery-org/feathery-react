@@ -41,6 +41,8 @@ export type CellRule = {
   /** Checked against the other loaded rows only; the hub owns the real check. */
   unique?: boolean;
   options?: string[];
+  /** What each option is shown as, parallel to `options`. Absent: the values. */
+  optionLabels?: string[];
   minLength?: number;
   maxLength?: number;
   minValue?: number;
@@ -402,39 +404,5 @@ export function hubCellRules(
     };
   });
 
-  return rules;
-}
-
-// Form field types whose value has a format a spreadsheet cell can get wrong,
-// or a storage type other than text. Anything absent (text, select, …) accepts
-// whatever is typed and stores it as text. Upload fields hold file references,
-// which the grid can show but never edit.
-const FIELD_TYPES: Record<string, CellValueType> = {
-  email: 'email',
-  phone_number: 'phone_number',
-  url: 'url',
-  integer_field: 'number',
-  rating: 'number',
-  slider: 'number',
-  checkbox: 'boolean',
-  ssn: 'tax_id',
-  file_upload: 'file',
-  signature: 'file',
-  audio_recording: 'file'
-};
-
-/**
- * Rules for a field-backed table. The element stores only each column's form
- * field type, so these are format checks — the field's own required/length
- * settings live on the servar and are enforced when the step is submitted.
- */
-export function fieldCellRules(
-  columns: Array<{ field_key: string; name: string; field_type?: string }>
-): CellRules {
-  const rules: CellRules = {};
-  columns.forEach((column) => {
-    const type = FIELD_TYPES[column.field_type ?? ''];
-    if (type) rules[column.field_key] = { label: column.name, type };
-  });
   return rules;
 }

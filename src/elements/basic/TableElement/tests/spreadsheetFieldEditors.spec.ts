@@ -1,5 +1,6 @@
 import {
   acceptsNumericInput,
+  choiceLabel,
   choicesFor,
   editorKindFor,
   formatCellDisplay,
@@ -267,5 +268,30 @@ describe('seedActionFor', () => {
       seedActionFor({ label: 'Tier', type: 'text', options: ['Gold'] }, 'G')
     ).toBe('seed');
     expect(seedActionFor(undefined, 'A')).toBe('seed');
+  });
+});
+
+describe('option labels', () => {
+  const rule = {
+    label: 'Status',
+    type: 'text' as const,
+    options: ['o', 'c'],
+    optionLabels: ['Open', 'Closed']
+  };
+
+  test('a choice shows as its label, anything else as itself', () => {
+    expect(choiceLabel(rule, 'o')).toBe('Open');
+    expect(choiceLabel(rule, 'zz')).toBe('zz');
+    expect(choiceLabel({ label: 'x', type: 'text', options: ['o'] }, 'o')).toBe(
+      'o'
+    );
+  });
+
+  test('the cell at rest shows the label while holding the value', () => {
+    expect(formatCellDisplay('c', rule)).toBe('Closed');
+    // A value that is no longer an option still shows, so it can be fixed.
+    expect(formatCellDisplay('gone', rule)).toBe('gone');
+    // Choices are offered by value; the menu labels them itself.
+    expect(choicesFor(rule)).toEqual(['o', 'c']);
   });
 });

@@ -424,6 +424,13 @@ export const cellInputStyle = {
   lineHeight: 1.5
 } as const;
 
+// A choice list drawn like the text box, with the browser's own arrow.
+export const cellSelectStyle = {
+  height: '100%',
+  cursor: 'pointer',
+  backgroundColor: 'white'
+} as const;
+
 export const editableCellContentStyle = {
   display: 'flex',
   alignItems: 'flex-start',

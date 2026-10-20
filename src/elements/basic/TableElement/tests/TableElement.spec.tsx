@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
+import internalState from '../../../../utils/internalState';
 
 const COLUMNS = [
   { name: 'Name', field_id: 'f1', field_type: 'text', field_key: 'name_key' },
@@ -448,5 +449,111 @@ describe('TableElement - Data Hub chosen by hidden field', () => {
     );
     await waitFor(() => expect(getHubSchemas).not.toHaveBeenCalled());
     expect(dataHubAction).not.toHaveBeenCalled();
+  });
+});
+
+describe('TableElement - classic table typed cells', () => {
+  const FORM_ID = 'typed-cells-form';
+
+  beforeEach(() => {
+    Object.assign(fieldValues, {
+      status_key: ['open', 'closed'],
+      count_key: [1, 2]
+    });
+    (internalState as any)[FORM_ID] = {
+      steps: {
+        step1: {
+          servar_fields: [
+            {
+              servar: {
+                key: 'status_key',
+                type: 'dropdown',
+                metadata: {
+                  options: ['open', 'closed'],
+                  option_labels: ['Open', 'Closed']
+                }
+              }
+            }
+          ]
+        }
+      },
+      hiddenFields: { count_key: 'number_value' }
+    };
+  });
+
+  afterEach(() => {
+    delete (fieldValues as any).status_key;
+    delete (fieldValues as any).count_key;
+    delete (internalState as any)[FORM_ID];
+    jest.clearAllMocks();
+    sessionStorage.clear();
+  });
+
+  const columns = [
+    {
+      name: 'Status',
+      field_id: 's1',
+      field_type: 'servar',
+      field_key: 'status_key'
+    },
+    {
+      name: 'Count',
+      field_id: 'h1',
+      field_type: 'hidden',
+      field_key: 'count_key'
+    }
+  ];
+
+  it('shows option labels and opens a dropdown column as a list', () => {
+    const submitCustom = jest.fn();
+    render(
+      <TableElement
+        element={makeElement({ columns, enable_editing: true })}
+        responsiveStyles={mockStyles()}
+        formId={FORM_ID}
+        submitCustom={submitCustom}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Closed'));
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    expect(select.value).toBe('closed');
+    fireEvent.change(select, { target: { value: 'open' } });
+
+    expect(submitCustom).toHaveBeenCalledWith({
+      status_key: ['open', 'open']
+    });
+  });
+
+  it('types a hidden number field so an edit stores a number', () => {
+    const submitCustom = jest.fn();
+    render(
+      <TableElement
+        element={makeElement({ columns, enable_editing: true })}
+        responsiveStyles={mockStyles()}
+        formId={FORM_ID}
+        submitCustom={submitCustom}
+      />
+    );
+
+    fireEvent.click(screen.getByText('2'));
+    const input = screen.getByLabelText('Edit Count') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '7' } });
+    fireEvent.blur(input);
+
+    expect(submitCustom).toHaveBeenCalledWith({ count_key: [1, 7] });
+  });
+
+  it('leaves columns alone in the builder, which has no form state', () => {
+    render(
+      <TableElement
+        element={makeElement({ columns, enable_editing: true })}
+        responsiveStyles={mockStyles()}
+        formId={FORM_ID}
+        editMode
+      />
+    );
+    // Example data is shown verbatim; no label mapping, no list editor.
+    expect(screen.queryByText('Closed')).toBeNull();
   });
 });
