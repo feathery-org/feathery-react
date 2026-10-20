@@ -277,6 +277,8 @@ import {
   runServerSideLogic
 } from './logic';
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
+import { useHubEntrySync } from './hooks/useHubEntrySync';
+import { resolveTableRowClick } from './hubRowClick';
 import ActionToast from './components/ActionToast';
 import FileUploadToast from './components/FileUploadToast';
 import {
@@ -2679,6 +2681,26 @@ function Form({
     setUserLogicRunning
   } = useCheckButtonAction(setButtonLoader, clearLoaders);
 
+  // Data-driven containers: load the Data Hub entry each one points at into
+  // its bound fields, and write edits to those fields back to the Hub.
+  const hubEntrySync = useHubEntrySync({
+    step: activeStep,
+    client,
+    updateFieldValues,
+    servarTypeByKey: (fieldKey) => servarByKey.get(fieldKey)?.type,
+    onWriteError: (fieldKey, message) =>
+      setFormElementError({
+        formRef,
+        fieldKey,
+        message,
+        servarType: servarByKey.get(fieldKey)?.type ?? '',
+        errorType: formSettings.errorType,
+        inlineErrors: internalState[_internalId]?.inlineErrors,
+        setInlineErrors,
+        triggerErrors: true
+      })
+  });
+
   const buttonOnClick = async (button: ClickActionElement) => {
     // Opened synchronously within the click's user-gesture call stack, before
     // any await, so the browser doesn't treat the popup as unsolicited.
@@ -2787,9 +2809,19 @@ function Form({
         }
       }));
     }
+    // A row click on a Data Hub table may hand the row's entry id to a form
+    // field and jump to a step (a details page); the field is set first so
+    // the next step's data-driven container finds it.
+    const rowClick = resolveTableRowClick(table, payload, steps);
+    if (rowClick.entryFieldKey) {
+      updateFieldValues({ [rowClick.entryFieldKey]: rowClick.entryId });
+      client.submitCustom({ [rowClick.entryFieldKey]: rowClick.entryId });
+    }
     try {
       await runElementActions({
-        actions: [],
+        actions: rowClick.nextStepKey
+          ? [{ type: ACTION_NEXT, next_step_key: rowClick.nextStepKey }]
+          : [],
         element: table,
         elementType: 'table',
         triggerPayload: payload
@@ -3896,6 +3928,7 @@ function Form({
       // Multi-file upload is not a repeated row but a repeated field
       valueRepeatIndex = null
     } = {}) => {
+      hubEntrySync.onFieldChange(fieldKey);
       if (eventHasUserLogic('change')) {
         callbackRef.current.addCallback(
           runUserLogic('change', () => ({
