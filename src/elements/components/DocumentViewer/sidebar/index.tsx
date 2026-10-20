@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ViewerDocument } from '../index';
 import PageThumbnails from './PageThumbnails';
-import DocumentsPanel from './DocumentsPanel';
+import DocumentsPanel, { PacketEditor } from './DocumentsPanel';
 import { color, fontSize, shadow } from '../tokens';
 import { iconButtonCss } from '../buttonStyles';
 import { MenuIcon, CloseIcon } from '../icons';
@@ -15,6 +15,7 @@ interface ViewerSidebarProps {
   activeKey: string;
   onNavigate: (pdfUrl: string, pageIndex: number) => void;
   isNarrow: boolean;
+  packetEditor?: PacketEditor;
 }
 
 export default function ViewerSidebar({
@@ -23,9 +24,13 @@ export default function ViewerSidebar({
   pdfProxies,
   activeKey,
   onNavigate,
-  isNarrow
+  isNarrow,
+  packetEditor
 }: ViewerSidebarProps) {
-  const [tab, setTab] = useState<'pages' | 'documents'>('pages');
+  // Open on the tab where the packet is edited, when it can be.
+  const [tab, setTab] = useState<'pages' | 'documents'>(
+    packetEditor ? 'documents' : 'pages'
+  );
   const [collapsed, setCollapsed] = useState(true);
   const expanded = !isNarrow || !collapsed;
 
@@ -114,7 +119,11 @@ export default function ViewerSidebar({
                 onNavigate={onNavigate}
               />
             ) : (
-              <DocumentsPanel documents={documents} onNavigate={onNavigate} />
+              <DocumentsPanel
+                documents={documents}
+                onNavigate={onNavigate}
+                packetEditor={packetEditor}
+              />
             )}
           </div>
         </aside>

@@ -4312,6 +4312,8 @@ function Form({
         {reviewViewerPayload && (
           <React.Suspense fallback={null}>
             <DocumentViewer
+              // A new packet starts a fresh viewer: its document list is state.
+              key={reviewViewerPayload.payload?.expires_at}
               payload={reviewViewerPayload.payload}
               action={reviewViewerPayload.action}
               setShow={(show: boolean) => {
@@ -4325,6 +4327,9 @@ function Form({
               }}
               onComplete={reviewViewerPayload.onComplete}
               onFinalize={reviewViewerPayload.onFinalize}
+              onUploadAttachment={(file: File) =>
+                clientRef.current.uploadReviewAttachment(file)
+              }
               // Persists PDFs whose fields the filler edited in the viewer.
               // The generic envelope file endpoint validates the extension
               // against the envelope type, so name the upload as a pdf.
