@@ -1,5 +1,11 @@
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  waitFor,
+  within
+} from '@testing-library/react';
 import { fieldValues, initState } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { featheryWindow } from '../../../utils/browser';
@@ -2064,9 +2070,7 @@ describe('document tab navigation', () => {
     await view.findByTestId('editor:a.editor.docx');
     fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
     const secondEditor = await view.findByTestId('editor:b.docx');
-    fireEvent.click(
-      secondEditor.querySelector('[data-testid="terminal:sign"]')!
-    );
+    fireEvent.click(within(secondEditor).getByTestId('terminal:sign'));
     await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
     expect(order).toEqual(['save', 'save', 'env-a', 'env-b']);
     expect(mockFinalizeEnvelopeReview.mock.calls[0][1].envelopes).toEqual([
@@ -2100,15 +2104,11 @@ describe('document tab navigation', () => {
     const firstEditor = await view.findByTestId('editor:a.editor.docx');
     fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
     const secondEditor = await view.findByTestId('editor:b.docx');
-    fireEvent.click(
-      secondEditor.querySelector('[data-testid="terminal:sign"]')!
-    );
+    fireEvent.click(within(secondEditor).getByTestId('terminal:sign'));
     expect(await view.findByRole('alert')).toHaveTextContent('Send failed');
     expect(view.getByTestId('editor:a.editor.docx')).toBe(firstEditor);
     expect(view.getByTestId('editor:b.docx')).toBe(secondEditor);
-    fireEvent.click(
-      secondEditor.querySelector('[data-testid="terminal:sign"]')!
-    );
+    fireEvent.click(within(secondEditor).getByTestId('terminal:sign'));
     await view.findByTestId('signed-view:env-b.pdf');
     expect(mockFinalizeEnvelope).toHaveBeenCalledTimes(2);
     expect(mockFinalizeEnvelopeReview).toHaveBeenCalledTimes(2);
@@ -2163,9 +2163,7 @@ describe('document tab navigation', () => {
       .mockImplementation(async (id) => ({ file: id + '.pdf', invited: true }));
     const view = render(<DocumentEditorContainer containerId={containerId} />);
     const firstEditor = await view.findByTestId('editor:a.editor.docx');
-    fireEvent.click(
-      firstEditor.querySelector('[data-testid="terminal:sign"]')!
-    );
+    fireEvent.click(within(firstEditor).getByTestId('terminal:sign'));
     await view.findByTestId('signed-view:env-a.pdf');
     fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
     expect(await view.findByTestId('signed-view:env-b.pdf')).toHaveAttribute(
