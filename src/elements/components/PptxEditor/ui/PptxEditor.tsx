@@ -6,6 +6,7 @@ import {
 } from '../state/PptxEditorContext';
 import { SvgSlide, ZOOM_MAX, ZOOM_MIN } from './SlideStage';
 import { Toolbar } from './PptxToolbar';
+import DocumentSaveStatus from '../../DocumentEditor/DocumentSaveStatus';
 import InstantTooltips from './InstantTooltips';
 import { SlideNavigator } from './SlideNavigator';
 import { JsonPanel } from './JsonPanel';
@@ -38,6 +39,7 @@ import {
   SpinnerIcon
 } from '../../DocxEditor/icons';
 import type { PptxEditorProps } from '../types';
+import { savePresentation } from '../persistence';
 import { withShortcut } from './shortcuts';
 import { onFontMetricsSettled } from '../core/render/fonts';
 
@@ -67,6 +69,10 @@ function PptxEditorInner({
   onChange,
   onError,
   onSave,
+  onSaved,
+  onSaveAll,
+  onDownloadAll,
+  onBeforeReplaceReady,
   onExportPdf,
   historyHost,
   devJsonPanel = false
@@ -77,6 +83,8 @@ function PptxEditorInner({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
+  const saveMenuRef = useRef<HTMLSpanElement>(null);
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const downloadMenuRef = useRef<HTMLSpanElement>(null);
   const [activePanel, setActivePanel] = useState<PptxPanelKind | null>(null);
@@ -139,23 +147,49 @@ function PptxEditorInner({
   useEffect(() => onFontMetricsSettled(() => store.refreshRender()), [store]);
 
   // ---- save / download ----
-  const handleSave = useCallback(async () => {
-    if (!onSave || !state.deck || saving) return;
-    // Flush any in-flight contenteditable edit before exporting.
-    store.commitSvgTextEdit?.({ render: false });
+  const pendingSave = useRef<Promise<void> | null>(null);
+  const saveCurrent = useCallback((): Promise<void> => {
+    if (pendingSave.current) return pendingSave.current;
+    if (readOnly) return Promise.resolve();
+    if (!store.getState().deck || !onSave)
+      return Promise.reject(
+        new Error('The presentation is not ready to save.')
+      );
     setSaving(true);
-    try {
-      const blob = store.engine.exportPptx();
-      await onSave(blob);
-      store.markSaved();
+    const save = async () => {
+      await savePresentation(store, onSave);
       dirtyRef.current = false;
       onChange?.(false);
+    };
+    pendingSave.current = save().finally(() => {
+      pendingSave.current = null;
+      setSaving(false);
+    });
+    return pendingSave.current;
+  }, [onSave, readOnly, store, onChange]);
+
+  const beforeReplaceRef = useRef<() => Promise<unknown>>(() =>
+    Promise.resolve()
+  );
+  beforeReplaceRef.current = async () => {
+    if (readOnly) return;
+    if (pendingSave.current) await pendingSave.current;
+    store.commitSvgTextEdit?.({ render: false });
+    if (store.engine.isDirty()) await saveCurrent();
+  };
+  useEffect(() => {
+    onBeforeReplaceReady?.(() => beforeReplaceRef.current());
+    return () => onBeforeReplaceReady?.(null);
+  }, [onBeforeReplaceReady]);
+
+  const handleSave = useCallback(async () => {
+    try {
+      await saveCurrent();
+      await onSaved?.();
     } catch (err: any) {
       onError?.(err?.message || 'Saving the presentation failed.');
-    } finally {
-      setSaving(false);
     }
-  }, [onSave, state.deck, saving, store, onChange, onError]);
+  }, [saveCurrent, onError, onSaved]);
 
   const handleDownload = useCallback(() => {
     if (!state.deck) return;
@@ -177,11 +211,7 @@ function PptxEditorInner({
       // reported as a save error, distinct from a conversion failure.
       if (onSave) {
         try {
-          store.commitSvgTextEdit?.({ render: false });
-          await onSave(store.engine.exportPptx());
-          store.markSaved();
-          dirtyRef.current = false;
-          onChange?.(false);
+          await saveCurrent();
         } catch (err: any) {
           onError?.(err?.message || 'Saving the presentation failed.');
           return;
@@ -199,12 +229,18 @@ function PptxEditorInner({
     } finally {
       setDownloadingPdf(false);
     }
-  }, [onExportPdf, downloadingPdf, onSave, store, onChange, onError, fileName]);
+  }, [onExportPdf, downloadingPdf, onSave, saveCurrent, onError, fileName]);
 
   useOutsideClose(
     downloadMenuOpen,
     () => setDownloadMenuOpen(false),
     (t) => !!downloadMenuRef.current?.contains(t)
+  );
+
+  useOutsideClose(
+    saveMenuOpen,
+    () => setSaveMenuOpen(false),
+    (t) => !!saveMenuRef.current?.contains(t)
   );
 
   // ---- keyboard shortcuts, scoped to this editor instance ----
@@ -262,6 +298,8 @@ function PptxEditorInner({
         maxHeight: '100%',
         minHeight: 0,
         background: PAPER,
+        containerType: 'inline-size',
+        containerName: 'document-editor',
         overflow: 'hidden'
       }}
     >
@@ -269,37 +307,8 @@ function PptxEditorInner({
       {(() => {
         const hostActions = (
           <>
-            {/* Mirrors DocxToolbar's ToolbarActions: the dot is always rendered
-              and only toggles visibility so the row never shifts. */}
-            {!readOnly && (
-              <span
-                css={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontSize: 13,
-                  color: ZINC[500],
-                  whiteSpace: 'nowrap',
-                  visibility: dirty ? 'visible' : 'hidden'
-                }}
-                aria-hidden={!dirty}
-                title={dirty ? 'You have unsaved changes' : undefined}
-                style={{ marginRight: 8 }}
-              >
-                <span
-                  css={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: FEATHERY_RED,
-                    flex: '0 0 auto'
-                  }}
-                />
-                Unsaved changes
-              </span>
-            )}
             {!hideDownload &&
-              (onExportPdf ? (
+              (onExportPdf || onDownloadAll ? (
                 <span
                   ref={downloadMenuRef}
                   css={{ position: 'relative', display: 'inline-flex' }}
@@ -330,18 +339,36 @@ function PptxEditorInner({
                           handleDownload();
                         }}
                       >
-                        Download as PPTX
+                        {onDownloadAll
+                          ? 'This document as PPTX'
+                          : 'Download as PPTX'}
                       </button>
-                      <button
-                        type='button'
-                        css={downloadMenuItem}
-                        onClick={() => {
-                          setDownloadMenuOpen(false);
-                          handleDownloadPdf();
-                        }}
-                      >
-                        Download as PDF
-                      </button>
+                      {onExportPdf && (
+                        <button
+                          type='button'
+                          css={downloadMenuItem}
+                          onClick={() => {
+                            setDownloadMenuOpen(false);
+                            handleDownloadPdf();
+                          }}
+                        >
+                          {onDownloadAll
+                            ? 'This document as PDF'
+                            : 'Download as PDF'}
+                        </button>
+                      )}
+                      {onDownloadAll && (
+                        <button
+                          type='button'
+                          css={downloadMenuItem}
+                          onClick={() => {
+                            setDownloadMenuOpen(false);
+                            onDownloadAll();
+                          }}
+                        >
+                          All documents (ZIP)
+                        </button>
+                      )}
                     </div>
                   )}
                 </span>
@@ -356,37 +383,104 @@ function PptxEditorInner({
                   Download
                 </button>
               ))}
-            {onSave && !readOnly && (
-              <button
-                type='button'
-                css={{
-                  display: 'flex',
-                  height: 32,
-                  alignItems: 'center',
-                  gap: 6,
-                  borderRadius: 6,
-                  border: 'none',
-                  background: FEATHERY_RED,
-                  padding: '0 12px',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: '#fff',
-                  cursor: saving ? 'default' : 'pointer',
-                  '&:hover': {
-                    background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
-                  }
-                }}
-                disabled={saving}
-                onClick={handleSave}
-                title={withShortcut('Save', 'S')}
+            {!readOnly && <DocumentSaveStatus dirty={dirty} />}
+            {onSave && !readOnly && onSaveAll ? (
+              <span
+                ref={saveMenuRef}
+                css={{ position: 'relative', display: 'inline-flex' }}
               >
-                {saving ? (
-                  <SpinnerIcon width={16} height={16} />
-                ) : (
-                  <SaveIcon width={16} height={16} />
+                <button
+                  type='button'
+                  css={{ ...downloadBtn, borderRadius: '6px 0 0 6px' }}
+                  disabled={saving}
+                  onClick={() => {
+                    setSaveMenuOpen(false);
+                    handleSave();
+                  }}
+                  title={withShortcut('Save this document', 'S')}
+                >
+                  {saving ? (
+                    <SpinnerIcon width={16} height={16} />
+                  ) : (
+                    <SaveIcon width={16} height={16} />
+                  )}
+                  Save
+                </button>
+                <button
+                  type='button'
+                  css={{
+                    ...downloadBtn,
+                    borderRadius: '0 6px 6px 0',
+                    borderLeft: 'none',
+                    padding: '0 6px'
+                  }}
+                  disabled={saving}
+                  onClick={() => setSaveMenuOpen((value) => !value)}
+                  aria-label='Save options'
+                  aria-expanded={saveMenuOpen}
+                  aria-haspopup='true'
+                >
+                  ▾
+                </button>
+                {saveMenuOpen && (
+                  <div css={downloadMenu}>
+                    <button
+                      type='button'
+                      css={downloadMenuItem}
+                      onClick={() => {
+                        setSaveMenuOpen(false);
+                        handleSave();
+                      }}
+                    >
+                      Save this document
+                    </button>
+                    <button
+                      type='button'
+                      css={downloadMenuItem}
+                      onClick={() => {
+                        setSaveMenuOpen(false);
+                        onSaveAll();
+                      }}
+                    >
+                      Save All Documents
+                    </button>
+                  </div>
                 )}
-                Save
-              </button>
+              </span>
+            ) : (
+              onSave &&
+              !readOnly && (
+                <button
+                  type='button'
+                  css={{
+                    display: 'flex',
+                    height: 32,
+                    alignItems: 'center',
+                    gap: 6,
+                    borderRadius: 6,
+                    border: 'none',
+                    background: FEATHERY_RED,
+                    padding: '0 12px',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: '#fff',
+                    cursor: saving ? 'default' : 'pointer',
+                    '&:hover': {
+                      background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
+                    }
+                  }}
+                  disabled={saving}
+                  onClick={handleSave}
+                  title={withShortcut('Save', 'S')}
+                >
+                  {saving ? (
+                    <SpinnerIcon width={16} height={16} />
+                  ) : (
+                    <SaveIcon width={16} height={16} />
+                  )}
+                  Save
+                </button>
+              )
             )}
           </>
         );
