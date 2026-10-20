@@ -60,6 +60,8 @@ it.each([false, true])(
     );
     expect(view.queryByText('All documents saved')).toBeNull();
     expect(view.queryByRole('status')).toBeNull();
+    // A visually hidden status still takes up space in the action row.
+    expect(view.container.querySelector('[role="status"]')).toBeNull();
     view.rerender(
       <ToolbarActions compact={compact} dirty onSave={() => undefined} />
     );

@@ -1,6 +1,6 @@
 import React from 'react';
 
-/** A stable status slot immediately before Save. Container queries respond to
+/** Unsaved status immediately before Save. Container queries respond to
  * embedded editor width, including when the surrounding page stays wide. */
 export default function DocumentSaveStatus({
   dirty,
@@ -9,13 +9,13 @@ export default function DocumentSaveStatus({
   dirty?: boolean;
   compact?: boolean;
 }) {
-  const label = dirty ? 'Unsaved changes' : undefined;
+  if (!dirty) return null;
+  const label = 'Unsaved changes';
   return (
     <span
       role='status'
       aria-live='polite'
       aria-label={label}
-      aria-hidden={!label}
       title={label}
       css={{
         display: 'inline-flex',
@@ -23,11 +23,10 @@ export default function DocumentSaveStatus({
         justifyContent: 'flex-end',
         gap: 6,
         flex: '0 0 auto',
-        width: compact ? 14 : 140,
+        width: compact ? 14 : 'auto',
         fontSize: 12,
-        color: dirty ? '#71717a' : '#15803d',
+        color: '#71717a',
         whiteSpace: 'nowrap',
-        visibility: label ? 'inherit' : 'hidden',
         '@container document-editor (max-width: 560px)': {
           width: 14,
           '& .document-status-label': { display: 'none' }
@@ -39,14 +38,14 @@ export default function DocumentSaveStatus({
         css={{
           width: 14,
           textAlign: 'center',
-          color: dirty ? '#e63b54' : 'inherit'
+          color: '#e63b54'
         }}
       >
-        {dirty ? '●' : '✓'}
+        ●
       </span>
       {!compact && (
         <span className='document-status-label' aria-hidden='true'>
-          {label || 'Unsaved changes'}
+          {label}
         </span>
       )}
     </span>

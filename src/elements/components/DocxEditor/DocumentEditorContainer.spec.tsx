@@ -2153,6 +2153,61 @@ describe('document tab navigation', () => {
       'awaiting'
     );
   });
+  it('keeps each signing link after returning without signing, then removes only the completed document link', async () => {
+    const action = (initState.formSchemas as any)['form-key'].steps[0]
+      .buttons[0].properties.actions[0];
+    action.editor_toolbar_actions = ['sign'];
+    action.sign_method = 'feathery';
+    jest.spyOn(featheryWindow(), 'open').mockImplementation(() => null);
+    mockFinalizeEnvelope.mockReset().mockImplementation(async (id) => ({
+      file: id + '.pdf',
+      signer_id: 'signer-' + id
+    }));
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    await view.findByTestId('editor:a.editor.docx');
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    const editor = await view.findByTestId('editor:b.docx');
+    fireEvent.click(within(editor).getByTestId('terminal:sign'));
+    await view.findByTestId('signed-view:env-b.pdf');
+
+    // The current-envelope endpoint returns file/type/signed, without the
+    // client-side sent/provider metadata supplied by the signing action.
+    mockGetCurrentEnvelope.mockReset().mockImplementation(async (id) => ({
+      id: id === 'doc-a' ? 'env-a' : 'env-b',
+      file: id === 'doc-a' ? 'env-a.pdf' : 'env-b.pdf',
+      editor_file: null,
+      type: 'pdf',
+      signed: false
+    }));
+    for (const name of ['Schedule.docx', 'Agreement.docx', 'Schedule.docx']) {
+      fireEvent.click(view.getByRole('tab', { name }));
+      await act(async () => {
+        featheryWindow().dispatchEvent(new Event('focus'));
+      });
+      for (const id of ['env-a', 'env-b']) {
+        const pdf = view.getByTestId(`signed-view:${id}.pdf`);
+        expect(pdf).toHaveAttribute('data-status', 'awaiting');
+        expect(pdf.getAttribute('data-sign-url')).toContain('signer-' + id);
+      }
+    }
+    expect(mockGetCurrentEnvelope).toHaveBeenCalledTimes(3);
+    mockGetCurrentEnvelope.mockResolvedValue({
+      id: 'env-b',
+      file: 'b-completed.pdf',
+      editor_file: null,
+      type: 'pdf',
+      signed: true
+    });
+    await act(async () => {
+      featheryWindow().dispatchEvent(new Event('focus'));
+    });
+    const completed = await view.findByTestId('signed-view:b-completed.pdf');
+    expect(completed).toHaveAttribute('data-status', 'signed');
+    expect(completed).toHaveAttribute('data-sign-url', '');
+    expect(
+      view.getByTestId('signed-view:env-a.pdf').getAttribute('data-sign-url')
+    ).toContain('signer-env-a');
+  });
   it('opens a previously unvisited document as a sent PDF without claiming it needs a signing link', async () => {
     const action = (initState.formSchemas as any)['form-key'].steps[0]
       .buttons[0].properties.actions[0];

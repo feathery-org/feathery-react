@@ -224,7 +224,12 @@ export default function DocxDocumentSession({
     if (!activeDocumentId) return;
     try {
       const fresh = await client.getCurrentEnvelope(activeDocumentId);
-      if (fresh?.id === envelopeRef.current.id) setEnvelope(fresh);
+      if (fresh?.id === envelopeRef.current.id) {
+        // The current-envelope response may omit sent/provider metadata.
+        // Keep what finalize established while accepting fresh file/signature
+        // state; returning from the signing page does not itself complete it.
+        setEnvelope((current) => ({ ...current, ...fresh }));
+      }
     } catch {
       // A failed background refresh keeps the currently displayed PDF.
     }
