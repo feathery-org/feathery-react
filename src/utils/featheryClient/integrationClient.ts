@@ -1078,7 +1078,8 @@ export default class IntegrationClient {
   finalizeEnvelope(
     envelopeId: string,
     signers: Record<string, any>[] = [],
-    signMethod?: string
+    signMethod?: string,
+    signingOptions?: { individualSigning?: boolean }
   ) {
     const { userId } = initInfo();
     const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
@@ -1088,7 +1089,10 @@ export default class IntegrationClient {
       body: JSON.stringify({
         fuser_key: userId ?? '',
         signers,
-        ...(signMethod ? { sign_method: signMethod } : {})
+        ...(signMethod ? { sign_method: signMethod } : {}),
+        ...(signingOptions?.individualSigning
+          ? { individual_signing: true }
+          : {})
       }),
       keepalive: false
     };

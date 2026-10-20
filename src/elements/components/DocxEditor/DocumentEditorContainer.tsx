@@ -117,7 +117,8 @@ export default function DocumentEditorContainer({
     reloadKey,
     selectTab,
     updateTabEnvelope,
-    resolveEnvelopes
+    resolveEnvelopes,
+    filesForSave
   } = packet;
   useEffect(() => {
     preparedForSigning.current.clear();
@@ -165,12 +166,12 @@ export default function DocumentEditorContainer({
     [action, containerId, formId]
   );
   const saved = useCallback(
-    async (envelopes: EditorEnvelope[]) => {
+    async (envelopes: EditorEnvelope[], fieldFiles?: string | string[]) => {
       const files = envelopes.map((env) => env.file).filter(Boolean);
       if (savesToField && action?.save_document_field_key) {
         const values = {
           [action.save_document_field_key]:
-            files.length === 1 ? files[0] : files
+            fieldFiles ?? (files.length === 1 ? files[0] : files)
         };
         setFieldValues(values, true, true);
         await client.submitCustom(values);
@@ -179,7 +180,13 @@ export default function DocumentEditorContainer({
     },
     [action, client, emit, savesToField]
   );
-  const savedOne = useCallback((env: EditorEnvelope) => saved([env]), [saved]);
+  const savedOne = useCallback(
+    async (env: EditorEnvelope) => {
+      if (savesToField && action?.save_document_field_key)
+        await saved([env], await filesForSave(env));
+    },
+    [action?.save_document_field_key, filesForSave, saved, savesToField]
+  );
   const downloadedOne = useCallback(
     (env: EditorEnvelope) => {
       emit([env], 'download', { files: [env.file] }).catch((err) =>
@@ -256,98 +263,78 @@ export default function DocumentEditorContainer({
       }),
     [run, savePacket, action, emit]
   );
-  const signPacket = useCallback(
-    (draft: boolean) =>
+  const signDocument = useCallback(
+    (envelopeId: string, draft: boolean) =>
       run(async () => {
-        // All local edits are durable before the first irreversible conversion.
-        const envelopes = await savePacket();
+        const session = sessions.current.get(envelopeId);
+        if (!session) throw new Error('Please wait for the document to load.');
+        // Capture the initiating session. Other tabs keep their local edits.
+        await session.save();
+        const envelope = session.envelope();
+        if (envelope.signed) return;
         const viaDocusign = isDocusignSignAction(action ?? {}, 'sign');
-        const finalized: Record<string, any>[] = [];
-        for (const envelope of envelopes) {
-          if (envelope.signed) {
-            finalized.push(envelope);
-            continue;
-          }
-          const result =
-            preparedForSigning.current.get(envelope.id) ??
-            (await client.finalizeEnvelope(
-              envelope.id,
-              documentSigners(action, envelope.document, fieldValues),
-              action?.sign_method
-            ));
-          if (!result?.file)
-            throw new Error(
-              'Could not prepare all documents for signing. Please retry.'
-            );
-          const next = {
-            ...envelope,
-            ...result,
-            editor_file: result.editor_file ?? null,
-            type: 'pdf'
-          };
-          preparedForSigning.current.set(envelope.id, next);
-          const session = sessions.current.get(envelope.id);
-          session?.markFinalized();
-          // An unvisited document has no retained editor after conversion.
-          if (!session) updateTabEnvelope(next);
-          if (!viaDocusign && (result.signer_id || result.invited)) {
-            const sent = { ...next, sent: true, sent_via: 'feathery' as const };
-            preparedForSigning.current.set(envelope.id, sent);
-            sessions.current
-              .get(envelope.id)
-              ?.showSent(
-                sent,
-                result.signer_id
-                  ? getSignUrl(result.signer_id, action?.redirect)
-                  : undefined
-              );
-            updateTabEnvelope(sent);
-          }
-          finalized.push(next);
-        }
-        let result: Record<string, any> = {
-          files: finalized.map((env) => env.file)
-        };
+        const finalized =
+          preparedForSigning.current.get(envelope.id) ??
+          (await client.finalizeEnvelope(
+            envelope.id,
+            documentSigners(action, envelope.document, fieldValues),
+            action?.sign_method,
+            { individualSigning: !viaDocusign }
+          ));
+        if (!finalized?.file)
+          throw new Error(
+            'Could not prepare the document for signing. Please retry.'
+          );
+        const next = {
+          ...envelope,
+          ...finalized,
+          editor_file: finalized.editor_file ?? null,
+          type: 'pdf'
+        } as EditorEnvelope & { signer_id?: string; invited?: boolean };
+        preparedForSigning.current.set(envelope.id, next);
+        session.markFinalized();
+        let result: Record<string, any> = { files: [next.file] };
         if (viaDocusign) {
-          const response = await client.finalizeEnvelopeReview(action ?? {}, {
-            envelopes: envelopes.map((env) => ({ envelopeId: env.id })),
+          result = await client.finalizeEnvelopeReview(action ?? {}, {
+            envelopes: [{ envelopeId: envelope.id }],
             envelopeAction: 'sign',
             draft
           });
-          if (!response || response.status === 'error')
+          if (!result || result.status === 'error')
             throw new Error(
-              response?.message ?? 'Failed to send the documents to DocuSign'
+              result?.message ?? 'Failed to send the document to DocuSign'
             );
-          result = response;
           if (!draft) {
-            for (const value of finalized) {
-              if (value.signed) continue;
-              const sent = {
-                ...value,
-                sent: true,
-                sent_via: 'docusign' as const
-              } as EditorEnvelope;
-              preparedForSigning.current.set(value.id, sent);
-              sessions.current.get(value.id)?.showSent(sent);
-              updateTabEnvelope(sent);
-            }
+            const sent = { ...next, sent: true, sent_via: 'docusign' as const };
+            preparedForSigning.current.set(envelope.id, sent);
+            session.showSent(sent);
+            updateTabEnvelope(sent);
           }
+        } else if (next.signer_id || next.invited) {
+          const sent = { ...next, sent: true, sent_via: 'feathery' as const };
+          preparedForSigning.current.set(envelope.id, sent);
+          session.showSent(
+            sent,
+            next.signer_id
+              ? getSignUrl(next.signer_id, action?.redirect)
+              : undefined
+          );
+          updateTabEnvelope(sent);
         }
-        await emit(envelopes, 'sign', result, draft);
+        await emit([envelope], 'sign', result, draft);
         const announce = internalState[formId ?? '']?.showEnvelopeOutcome;
-        if (viaDocusign || finalized.some((env) => env.invited))
+        if (viaDocusign || next.invited)
           announce?.(
             draft ? 'Saved as Draft' : 'Sent for Signature',
-            action?.documents
+            envelope.document ? [envelope.document] : undefined
           );
-        const signer = !viaDocusign && finalized.find((env) => env.signer_id);
-        if (signer) {
-          const url = getSignUrl(signer.signer_id, action?.redirect);
+        if (!viaDocusign && next.signer_id) {
+          const url = getSignUrl(next.signer_id, action?.redirect);
           if (action?.redirect) featheryWindow().location.href = url;
           else openTab(url);
         }
       }),
-    [run, savePacket, action, client, updateTabEnvelope, emit, formId]
+    [run, action, client, updateTabEnvelope, emit, formId]
   );
 
   if (editMode) return <DocxEditor preview hideDownload />;
@@ -458,7 +445,7 @@ export default function DocumentEditorContainer({
                     onSessionReady={registerSession}
                     onSaveAll={saveAll}
                     onDownloadAll={downloadAll}
-                    onPacketSign={signPacket}
+                    onDocumentSign={signDocument}
                     onDocumentSaved={savedOne}
                     onDocumentDownloaded={downloadedOne}
                   />

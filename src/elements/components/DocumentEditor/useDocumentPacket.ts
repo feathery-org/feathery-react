@@ -242,10 +242,12 @@ export function useDocumentPacket({
   const filesForSave = useCallback(async (saved: EditorEnvelope) => {
     const values = await Promise.all(
       current.current.tabs.map(async (tab) => {
-        if (tab.id === current.current.activeId) return saved.file;
-        const value = await resolveTab(tab);
+        // Save may finish after the user selects another tab. Identify its
+        // destination by envelope, never by the currently selected tab.
+        const value =
+          tab.envelope?.id === saved.id ? saved : await resolveTab(tab);
         if (!value?.file) throw new Error(`No generated file for ${tab.label}`);
-        return value.file;
+        return value.id === saved.id && saved.file ? saved.file : value.file;
       })
     );
     return values.length === 1 ? values[0] : values;

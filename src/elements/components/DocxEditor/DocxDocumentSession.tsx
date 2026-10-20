@@ -85,7 +85,7 @@ export default function DocxDocumentSession({
   onSessionReady,
   onSaveAll,
   onDownloadAll,
-  onPacketSign,
+  onDocumentSign,
   onDocumentSaved,
   onDocumentDownloaded
 }: {
@@ -111,7 +111,7 @@ export default function DocxDocumentSession({
   ) => void;
   onSaveAll?: () => Promise<void>;
   onDownloadAll?: () => Promise<void>;
-  onPacketSign: (draft: boolean) => Promise<void>;
+  onDocumentSign: (envelopeId: string, draft: boolean) => Promise<void>;
   onDocumentSaved: (value: Envelope) => Promise<void>;
   onDocumentDownloaded: (value: Envelope) => void;
 }) {
@@ -265,7 +265,8 @@ export default function DocxDocumentSession({
       const result = await client.finalizeEnvelope(
         envelope.id,
         documentSigners(targetAction, activeDocumentId, fieldValues),
-        'feathery'
+        'feathery',
+        { individualSigning: true }
       );
       if (!result?.signer_id) {
         setOperationError('This document is waiting on another signer.');
@@ -412,12 +413,12 @@ export default function DocxDocumentSession({
   }, [client, envelopeId, editMode]);
 
   const runTerminalAction = useCallback(
-    () => onPacketSign(terminalAction === 'draft'),
-    [onPacketSign, terminalAction]
+    () => onDocumentSign(envelopeRef.current.id, terminalAction === 'draft'),
+    [onDocumentSign, terminalAction]
   );
   const runTerminalActionDraft = useCallback(
-    () => onPacketSign(true),
-    [onPacketSign]
+    () => onDocumentSign(envelopeRef.current.id, true),
+    [onDocumentSign]
   );
 
   // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
