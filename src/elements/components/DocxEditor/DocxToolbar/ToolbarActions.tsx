@@ -44,6 +44,51 @@ export interface ToolbarActionsProps {
   compact?: boolean;
 }
 
+function DownloadMenuItems({
+  onDownload,
+  onDownloadPdf,
+  onDownloadAll,
+  close
+}: Pick<ToolbarActionsProps, 'onDownloadPdf' | 'onDownloadAll'> & {
+  onDownload: () => void;
+  close: () => void;
+}) {
+  const options = [
+    {
+      label: onDownloadAll ? 'This document as DOCX' : 'Download as DOCX',
+      run: onDownload
+    },
+    ...(onDownloadPdf
+      ? [
+          {
+            label: onDownloadAll ? 'This document as PDF' : 'Download as PDF',
+            run: onDownloadPdf
+          }
+        ]
+      : []),
+    ...(onDownloadAll
+      ? [{ label: 'All documents (ZIP)', run: onDownloadAll }]
+      : [])
+  ];
+  return (
+    <div css={{ width: 200 }}>
+      {options.map(({ label, run }) => (
+        <button
+          key={label}
+          type='button'
+          css={menuItem()}
+          onClick={() => {
+            run();
+            close();
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // Save / Download / Sign — pinned to the toolbar's right edge. The forwarded
 // ref is measured by useToolbarOverflow so the centered tool cluster gets
 // symmetric clearance on both sides.
@@ -114,42 +159,12 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
             )}
           >
             {(close) => (
-              <div css={{ width: 200 }}>
-                <button
-                  type='button'
-                  css={menuItem()}
-                  onClick={() => {
-                    onDownload();
-                    close();
-                  }}
-                >
-                  {onDownloadAll ? 'This document as DOCX' : 'Download as DOCX'}
-                </button>
-                {onDownloadPdf && (
-                  <button
-                    type='button'
-                    css={menuItem()}
-                    onClick={() => {
-                      onDownloadPdf?.();
-                      close();
-                    }}
-                  >
-                    {onDownloadAll ? 'This document as PDF' : 'Download as PDF'}
-                  </button>
-                )}
-                {onDownloadAll && (
-                  <button
-                    type='button'
-                    css={menuItem()}
-                    onClick={() => {
-                      onDownloadAll();
-                      close();
-                    }}
-                  >
-                    All documents (ZIP)
-                  </button>
-                )}
-              </div>
+              <DownloadMenuItems
+                onDownload={onDownload}
+                onDownloadPdf={onDownloadPdf}
+                onDownloadAll={onDownloadAll}
+                close={close}
+              />
             )}
           </Menu>
         ) : onDownload ? (
@@ -195,46 +210,12 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
               )}
             >
               {(close) => (
-                <div css={{ width: 200 }}>
-                  <button
-                    type='button'
-                    css={menuItem()}
-                    onClick={() => {
-                      onTerminalAction();
-                      close();
-                    }}
-                  >
-                    {onDownloadAll
-                      ? 'This document as DOCX'
-                      : 'Download as DOCX'}
-                  </button>
-                  {onTerminalActionPdf && (
-                    <button
-                      type='button'
-                      css={menuItem()}
-                      onClick={() => {
-                        onTerminalActionPdf?.();
-                        close();
-                      }}
-                    >
-                      {onDownloadAll
-                        ? 'This document as PDF'
-                        : 'Download as PDF'}
-                    </button>
-                  )}
-                  {onDownloadAll && (
-                    <button
-                      type='button'
-                      css={menuItem()}
-                      onClick={() => {
-                        onDownloadAll();
-                        close();
-                      }}
-                    >
-                      All documents (ZIP)
-                    </button>
-                  )}
-                </div>
+                <DownloadMenuItems
+                  onDownload={onTerminalAction}
+                  onDownloadPdf={onTerminalActionPdf}
+                  onDownloadAll={onDownloadAll}
+                  close={close}
+                />
               )}
             </Menu>
           ) : terminalAction === 'sign' && onTerminalActionDraft ? (

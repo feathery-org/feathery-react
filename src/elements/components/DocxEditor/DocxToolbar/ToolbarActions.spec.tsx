@@ -26,9 +26,14 @@ it('routes current and all document saves separately without submitting the form
   expect(submit).not.toHaveBeenCalled();
 });
 
-it.each([false, true])(
-  'routes download scopes with terminal=%s',
-  (terminal) => {
+it.each([
+  { terminal: false, multiple: false },
+  { terminal: false, multiple: true },
+  { terminal: true, multiple: false },
+  { terminal: true, multiple: true }
+])(
+  'routes download scopes with terminal=$terminal, multiple=$multiple',
+  ({ terminal, multiple }) => {
     const onDownload = jest.fn();
     const onDownloadPdf = jest.fn();
     const onDownloadAll = jest.fn();
@@ -39,15 +44,25 @@ it.each([false, true])(
           onTerminalActionPdf: onDownloadPdf
         }
       : { onDownload, onDownloadPdf };
-    render(<ToolbarActions {...props} onDownloadAll={onDownloadAll} />);
+    render(
+      <ToolbarActions
+        {...props}
+        onDownloadAll={multiple ? onDownloadAll : undefined}
+      />
+    );
     for (const [name, callback] of [
-      ['This document as DOCX', onDownload],
-      ['This document as PDF', onDownloadPdf],
+      [multiple ? 'This document as DOCX' : 'Download as DOCX', onDownload],
+      [multiple ? 'This document as PDF' : 'Download as PDF', onDownloadPdf],
       ['All documents (ZIP)', onDownloadAll]
     ] as const) {
       fireEvent.click(screen.getByRole('button', { name: 'Download' }));
-      fireEvent.click(screen.getByRole('button', { name }));
-      expect(callback).toHaveBeenCalledTimes(1);
+      if (!multiple && callback === onDownloadAll) {
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      } else {
+        fireEvent.click(screen.getByRole('button', { name }));
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      }
     }
   }
 );

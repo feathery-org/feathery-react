@@ -2117,6 +2117,101 @@ describe('document tab navigation', () => {
     expect(view.queryByTestId('editor:b.docx')).toBeNull();
   });
 
+  it('reconciles restored URLs after resolving unvisited documents', async () => {
+    initState.sdkKey = 'test-sdk-key';
+    const action = (initState.formSchemas as any)['form-key'].steps[0]
+      .buttons[0].properties.actions[0];
+    action.editor_toolbar_actions = ['save'];
+    action.save_document_field_key = 'packet-files';
+    action.documents.push('doc-c');
+    delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
+    let releaseLookup: (() => void) | undefined;
+    const third = { ...second, id: 'env-c', document: 'doc-c', file: 'c.docx' };
+    mockGetCurrentEnvelope.mockImplementation(async (id) => {
+      if (id === 'doc-a') return first;
+      if (id === 'doc-b') return second;
+      await new Promise<void>((resolve) => {
+        releaseLookup = resolve;
+      });
+      return third;
+    });
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    const a = await view.findByTestId('editor:a.editor.docx');
+    fireEvent.click(view.getByRole('tab', { name: 'Document 2' }));
+    const b = await view.findByTestId('editor:b.docx');
+    fireEvent.click(view.getByRole('tab', { name: 'Document 1' }));
+    fireEvent.click(within(a).getByTestId('saved'));
+    await waitFor(() => expect(releaseLookup).toBeDefined());
+    fireEvent.click(view.getByRole('tab', { name: 'Document 2' }));
+    mockRestoreEnvelopeVersion.mockResolvedValueOnce({
+      file: 'restore-b.docx',
+      version: { id: 'restored-b' }
+    });
+    fireEvent.click(within(b).getByTestId('restore:b.docx'));
+    await view.findByTestId('editor:restore-b.docx');
+    await act(async () => {
+      releaseLookup?.();
+    });
+    await waitFor(() =>
+      expect(mockSubmitCustom).toHaveBeenCalledWith({
+        'packet-files': ['a.docx', 'restore-b.docx', 'c.docx']
+      })
+    );
+    expect(mockSubmitCustom).toHaveBeenCalledTimes(1);
+    expect(view.queryByTestId('editor:c.docx')).toBeNull();
+  });
+
+  it.each(['save', 'save-all', 'retry-after-failure'])(
+    'serializes field submissions and reads current URLs for %s',
+    async (outcome) => {
+      initState.sdkKey = 'test-sdk-key';
+      const action = (initState.formSchemas as any)['form-key'].steps[0]
+        .buttons[0].properties.actions[0];
+      action.editor_toolbar_actions = ['save'];
+      action.save_document_field_key = 'packet-files';
+      let finishFirst: (() => void) | undefined;
+      mockSubmitCustom.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            finishFirst = () =>
+              outcome === 'retry-after-failure'
+                ? reject(new Error('Field save failed'))
+                : resolve();
+          })
+      );
+      const view = render(
+        <DocumentEditorContainer containerId={containerId} />
+      );
+      const a = await view.findByTestId('editor:a.editor.docx');
+      fireEvent.click(within(a).getByTestId('saved'));
+      await waitFor(() => expect(mockSubmitCustom).toHaveBeenCalledTimes(1));
+      fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+      const b = await view.findByTestId('editor:b.docx');
+      mockRestoreEnvelopeVersion.mockResolvedValueOnce({
+        file: 'restore-b.docx',
+        version: { id: 'restored-b' }
+      });
+      fireEvent.click(within(b).getByTestId('restore:b.docx'));
+      const restoredB = await view.findByTestId('editor:restore-b.docx');
+      await act(async () => {
+        fireEvent.click(
+          within(restoredB).getByTestId(
+            outcome === 'save-all' ? 'save-all:restore-b.docx' : 'saved'
+          )
+        );
+      });
+      expect(mockSubmitCustom).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        finishFirst?.();
+      });
+      await waitFor(() => expect(mockSubmitCustom).toHaveBeenCalledTimes(2));
+      expect(mockSubmitCustom).toHaveBeenLastCalledWith({
+        'packet-files': ['a.docx', 'restore-b.docx']
+      });
+      if (outcome === 'save-all') await view.findByText('All documents saved');
+    }
+  );
+
   it('saves and sends only the active document to DocuSign while retaining the other editor', async () => {
     const action = (initState.formSchemas as any)['form-key'].steps[0]
       .buttons[0].properties.actions[0];

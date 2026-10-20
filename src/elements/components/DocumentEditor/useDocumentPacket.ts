@@ -239,17 +239,33 @@ export function useDocumentPacket({
     return resolved;
   }, []);
 
-  const filesForSave = useCallback(async (saved: EditorEnvelope) => {
-    const values = await Promise.all(
-      current.current.tabs.map(async (tab) => {
-        // Save may finish after the user selects another tab. Identify its
-        // destination by envelope, never by the currently selected tab.
-        const value =
-          tab.envelope?.id === saved.id ? saved : await resolveTab(tab);
-        if (!value?.file) throw new Error(`No generated file for ${tab.label}`);
-        return value.id === saved.id && saved.file ? saved.file : value.file;
+  const filesForSave = useCallback(async (saved: EditorEnvelope[]) => {
+    const tabs = current.current.tabs;
+    const resolved = await Promise.all(
+      tabs.map((tab) => {
+        const snapshot = saved.find((env) =>
+          tab.envelope
+            ? env.id === tab.envelope.id
+            : env.document === tab.documentId
+        );
+        return snapshot ?? resolveTab(tab);
       })
     );
+    const latest = current.current.tabs;
+    if (
+      latest.length !== tabs.length ||
+      tabs.some((tab, index) => tab.id !== latest[index]?.id)
+    )
+      throw new Error(
+        'Documents changed before saving completed. Please save again.'
+      );
+    // A restore or signing action can replace a file while an unvisited tab
+    // resolves. Read loaded envelopes again instead of publishing stale URLs.
+    const values = latest.map((tab, index) => {
+      const value = tab.envelope ?? resolved[index];
+      if (!value?.file) throw new Error(`No generated file for ${tab.label}`);
+      return value.file;
+    });
     return values.length === 1 ? values[0] : values;
   }, []);
 

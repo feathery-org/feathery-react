@@ -165,28 +165,26 @@ export default function DocumentEditorContainer({
     },
     [action, containerId, formId]
   );
+  const fieldSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const saved = useCallback(
-    async (envelopes: EditorEnvelope[], fieldFiles?: string | string[]) => {
+    async (envelopes: EditorEnvelope[]) => {
       const files = envelopes.map((env) => env.file).filter(Boolean);
       if (savesToField && action?.save_document_field_key) {
-        const values = {
-          [action.save_document_field_key]:
-            fieldFiles ?? (files.length === 1 ? files[0] : files)
-        };
-        setFieldValues(values, true, true);
-        await client.submitCustom(values);
+        const fieldKey = action.save_document_field_key;
+        const submission = fieldSaveQueue.current.then(async () => {
+          const values = { [fieldKey]: await filesForSave(envelopes) };
+          setFieldValues(values, true, true);
+          await client.submitCustom(values);
+        });
+        // Save and Save All share ordering; a failed write must not poison it.
+        fieldSaveQueue.current = submission.catch(() => undefined);
+        await submission;
         await emit(envelopes, 'save', { files });
       }
     },
-    [action, client, emit, savesToField]
+    [action, client, emit, filesForSave, savesToField]
   );
-  const savedOne = useCallback(
-    async (env: EditorEnvelope) => {
-      if (savesToField && action?.save_document_field_key)
-        await saved([env], await filesForSave(env));
-    },
-    [action?.save_document_field_key, filesForSave, saved, savesToField]
-  );
+  const savedOne = useCallback((env: EditorEnvelope) => saved([env]), [saved]);
   const downloadedOne = useCallback(
     (env: EditorEnvelope) => {
       emit([env], 'download', { files: [env.file] }).catch((err) =>
