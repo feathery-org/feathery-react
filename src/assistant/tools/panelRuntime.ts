@@ -22,7 +22,7 @@ import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
 import { sanitizeTransportValue } from '../../utils/transportValue';
 import { getImageAltText } from '../../utils/accessibility';
 
-export type PanelRuntimeFieldEntry = {
+type PanelRuntimeFieldEntry = {
   key: string;
   type: string;
   value: unknown;
@@ -52,7 +52,7 @@ export type PanelRuntimeFieldEntry = {
   stepSize?: number;
 };
 
-export type PanelRuntimeElementEntry =
+type PanelRuntimeElementEntry =
   | {
       type: 'text';
       id?: string;
@@ -92,7 +92,7 @@ export type PanelRuntimeElementEntry =
       repeatContainerId?: string;
     };
 
-export type PanelRuntimeNavigationSurface = {
+type PanelRuntimeNavigationSurface = {
   surface: 'stepper' | 'tab';
   id: string;
   submitsCurrentStep: boolean;
@@ -105,7 +105,7 @@ export type PanelRuntimeNavigationSurface = {
   }>;
 };
 
-export type PanelRuntimeTableEntry = {
+type PanelRuntimeTableEntry = {
   id: string;
   hubId?: string;
   columns: Array<{ name: string; fieldKey: string }>;
@@ -118,7 +118,7 @@ export type PanelRuntimeTableEntry = {
   visible: boolean;
 };
 
-export type PanelRuntimeSnapshot = {
+type PanelRuntimeSnapshot = {
   currentStep: { id: string; key: string };
   previousStepName?: string;
   activeStepKey: string;
@@ -149,7 +149,7 @@ const extractRawText = (props: Record<string, unknown>): string => {
 const resolveText = (text: string, repeat?: number): string => {
   if (!text) return '';
   try {
-    return replaceTextVariables(text, repeat);
+    return replaceTextVariables(text, repeat, true);
   } catch {
     return text;
   }
@@ -231,7 +231,7 @@ export const collectNavigableSteps = (
   return out;
 };
 
-export const collectNavigationSurfaces = (
+const collectNavigationSurfaces = (
   state: any
 ): PanelRuntimeNavigationSurface[] => {
   const step = state?.currentStep;

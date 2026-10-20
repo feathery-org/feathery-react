@@ -71,6 +71,7 @@ import {
   getThreadList
 } from './utils';
 import { initInfo } from '../utils/init';
+import { withLinkRequestHeaders } from '../utils/accessLinkRequest';
 import { featheryDoc, featheryWindow, getCookie } from '../utils/browser';
 import {
   ensureCompletedSteps,
@@ -94,9 +95,9 @@ import {
 import { handleAssistantToolCall } from './tools/handleAssistantToolCall';
 import {
   createDocxEditorBridge,
-  readDocxSelection,
-  setAssistantSessionActive
+  readDocxSelection
 } from './tools/docx/docxEditorBridge';
+import { useAssistantSessionClear } from './turnSessionGuard';
 import { getDocxEditor } from './tools/docx/docxEditorRegistry';
 import {
   ENVELOPE_TARGET_TYPE,
@@ -580,14 +581,18 @@ const AssistantChat = ({
             pendingAudioRef.current = null;
           }
           if (formKey) form.append('form_key', formKey);
-          res = await fetch(`${baseUrl}voice/turn/`, {
-            method: 'POST',
-            headers: headers(),
-            body: form,
-            signal: init?.signal
-          });
+          const voiceUrl = `${baseUrl}voice/turn/`;
+          res = await fetch(
+            voiceUrl,
+            withLinkRequestHeaders(voiceUrl, {
+              method: 'POST',
+              headers: headers(),
+              body: form,
+              signal: init?.signal
+            })
+          );
         } else {
-          res = await fetch(url, init);
+          res = await fetch(url, withLinkRequestHeaders(url, init));
         }
         const threadId = res.headers.get('X-Thread-Id');
         if (threadId && !resolvedThreadId) {
@@ -999,13 +1004,9 @@ const AssistantChat = ({
   );
   const workingPhrase = useWorkingPhrase(turnRunning, userTurnCount);
 
-  // The docx bridge raises the session flag on a turn's first document write;
-  // this owns the CLEAR, at turn end and unmount. Resolving the editor fresh
-  // each time (not captured) so a mid-turn recreation still gets cleared.
-  useEffect(() => {
-    if (!isLoading) setAssistantSessionActive(getDocxEditor(instanceId), false);
-    return () => setAssistantSessionActive(getDocxEditor(instanceId), false);
-  }, [isLoading, instanceId]);
+  // Clears the docx session flag at turn end — keyed on the latch, not raw
+  // isLoading, so a mid-turn status dip can't drop the rail's writing guard.
+  useAssistantSessionClear(turnRunning, instanceId);
 
   const composerButtonCss = {
     // Fixed height + border-box so buttons and the input line up exactly,

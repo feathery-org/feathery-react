@@ -86,12 +86,18 @@ jest.mock('../../utils/init', () => {
     renderCallbacks: {},
     redirectCallbacks: {},
     remountCallbacks: {},
-    defaultErrors: {}
+    defaultErrors: {},
+    userId: '',
+    collaboratorId: '',
+    overrideUserId: false,
+    linkToken: '',
+    linkSecret: ''
   };
   return {
     defaultClient: { flushCustomFields: jest.fn() },
     FieldValues: {} as any,
     fieldValues: {} as any,
+    fileRetryStatus: {} as any,
     initState,
     initInfo: jest.fn(() => ({
       userId: '',
@@ -102,6 +108,7 @@ jest.mock('../../utils/init', () => {
       remountCallbacks: {},
       defaultErrors: {}
     })),
+    adoptLinkRedemption: jest.fn(),
     updateUserId: jest.fn()
   };
 });
@@ -114,9 +121,12 @@ jest.mock('../../utils/formHelperFunctions', () => ({
   httpHelpers: () => ({}),
   isElementInViewport: () => true,
   lookUpTrigger: () => ({}),
-  mapFormSettingsResponse: () => ({}),
+  mapFormSettingsResponse: (res: any) => ({
+    authSensitiveActionsOnly: res.auth_sensitive_actions_only ?? false
+  }),
   prioritizeActions: (a: any) => a,
   registerRenderCallback: () => {},
+  remountAllForms: jest.fn(),
   rerenderAllForms: () => {},
   setFormElementError: jest.fn(),
   updateCustomCSS: () => {},
@@ -153,7 +163,7 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   getInitialStep: ({ initialStepId }: any) => initialStepId || 'step-1',
   getNewStepUrl: (k: string) => `/#${k}`,
   getOrigin: () => ({ key: 'origin' }),
-  getPrevStepKey: () => '',
+  getPrevStepKey: jest.fn(() => ''),
   getUrlHash: () => '',
   isStepTerminal: () => false,
   isValidFieldIdentifier: () => true,
@@ -234,18 +244,24 @@ jest.mock('../../utils/browser', () => {
   const state = {
     confirm: jest.fn(),
     open: jest.fn(),
+    dispatchEvent: jest.fn(),
     history,
-    location: { href: 'https://example.com/', pathname: '/', search: '' }
+    location: { href: 'https://example.com/', pathname: '/', search: '' },
+    getCookie: jest.fn(),
+    setCookie: jest.fn()
   };
   return {
     downloadAllFileUrls: jest.fn(),
     featheryDoc: () => globalThis.document,
+    getCookie: state.getCookie,
+    setCookie: state.setCookie,
     featheryWindow: () => ({
       addEventListener: jest.fn(),
       removeEventListener: jest.fn(),
       scrollTo: jest.fn(),
       confirm: state.confirm,
       open: state.open,
+      dispatchEvent: state.dispatchEvent,
       history: state.history,
       location: state.location
     }),
@@ -338,7 +354,7 @@ jest.mock('../../utils/document', () => ({
 // Poll hook
 jest.mock('../../hooks/usePollFuserData', () => ({
   __esModule: true,
-  default: () => {}
+  default: jest.fn()
 }));
 
 // FeatheryClient mock with a REAL step so activeStep renders and Grid appears
@@ -346,11 +362,25 @@ jest.mock('../../utils/featheryClient', () => {
   const inviteCollaboratorSpy = jest
     .fn()
     .mockResolvedValue({ ok: true, payload: { collaborators: [] } });
+  const redeemLinkSpy = jest.fn();
+  const registerEventSpy = jest.fn().mockResolvedValue(undefined);
+  // Lets a test answer the session fetch with something other than a loadable
+  // step (e.g. the access link flags that carry no form data), turn the form
+  // off, or fail the session outright.
+  const state = {
+    session: null as any,
+    sessionError: null as any,
+    formOff: false,
+    authSensitiveActionsOnly: false,
+    // Lets a test give the single step its own elements (e.g. a button whose
+    // action gates the step) instead of the empty default.
+    steps: null as any[] | null
+  };
 
   class MockClient {
     // Return one step so getNewStep can set activeStep and render Grid
     fetchForm = async () => ({
-      steps: [
+      steps: state.steps ?? [
         {
           key: 'step-1',
           id: 's1',
@@ -360,42 +390,53 @@ jest.mock('../../utils/featheryClient', () => {
         }
       ],
       form_name: 'Test Form',
+      auth_sensitive_actions_only: state.authSensitiveActionsOnly,
       completion_behavior: '',
-      formOff: false,
+      formOff: state.formOff,
       logic_rules: [],
       shared_codes: [],
       track_hashes: false
     });
 
-    fetchSession = async () => [
-      {
-        current_step_key: 'step-1',
-        collaborator: {},
-        integrations: null,
-        back_nav_map: {},
-        servars: [],
-        hidden_fields: {},
-        production: false,
-        track_location: false
-      },
-      {}
-    ];
+    fetchSession = async () => {
+      if (state.sessionError) throw state.sessionError;
+      return [
+        state.session ?? {
+          current_step_key: 'step-1',
+          collaborator: {},
+          integrations: null,
+          back_nav_map: {},
+          servars: [],
+          hidden_fields: {},
+          production: false,
+          track_location: false
+        },
+        {}
+      ];
+    };
 
     submitStep = jest.fn();
-    registerEvent = jest.fn().mockResolvedValue(undefined);
+    registerEvent = registerEventSpy;
     runAIExtraction = jest.fn();
     forwardInboxEmail = jest.fn();
     flushCustomFields = jest.fn();
+    listAccountCredentials = jest.fn().mockResolvedValue(null);
     startAccountConnect = jest.fn();
     getAccountConnectStatus = jest.fn();
     inviteCollaborator = inviteCollaboratorSpy;
+    redeemLink = redeemLinkSpy;
     offlineRequestHandler = { dbHasRequest: async () => false };
   }
 
   return {
     __esModule: true,
     default: MockClient,
-    _spies: { inviteCollaborator: inviteCollaboratorSpy }
+    _spies: {
+      inviteCollaborator: inviteCollaboratorSpy,
+      redeemLink: redeemLinkSpy,
+      registerEvent: registerEventSpy,
+      state
+    }
   };
 });
 
@@ -513,3 +554,15 @@ export const FormHelperMod: any = jest.requireMock(
 // Exposes the mocked client's collaborator invite call for assertions.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ClientMod: any = jest.requireMock('../../utils/featheryClient');
+
+// Exposes the mocked fuser data poll so tests can assert when polling is on.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const PollFuserDataMod: any = jest.requireMock(
+  '../../hooks/usePollFuserData'
+);
+
+// Lets tests control the step Back navigates to.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const StepHelperMod: any = jest.requireMock(
+  '../../utils/stepHelperFunctions'
+);

@@ -30,7 +30,8 @@ export function getPopupFeatures() {
 export async function runOAuthPopup(
   client: any,
   provider: string,
-  popup: Window | null
+  popup: Window | null,
+  saveCredential = false
 ): Promise<Record<string, any>> {
   if (!popup) {
     throw new Error('Please allow pop-ups to connect your account.');
@@ -40,7 +41,8 @@ export async function runOAuthPopup(
   try {
     authorization = await client.startAccountConnect(
       provider,
-      featheryWindow().location.origin
+      featheryWindow().location.origin,
+      saveCredential
     );
   } catch (error) {
     popup.close();

@@ -12,7 +12,7 @@ import { probeMicAvailable, VoiceMic } from './voiceMic';
 
 const nonWhitespace = (text: string): number => text.replace(/\s/g, '').length;
 
-export type VoiceState =
+type VoiceState =
   | 'idle'
   | 'loading'
   | 'listening'

@@ -5,20 +5,42 @@ import useTextEdit from './useTextEdit';
 import { fieldValues, initInfo, initState } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
 import { formatNumberValue } from '../fields/TextField/mask';
+import { getOptionLabel } from '../../utils/optionLabels';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
 /**
  * Renders one interpolated value. Number fields that opted into showing their
- * format carry their units and precision here; everything else stringifies
- * exactly as it always has.
+ * format carry their units and precision here, option fields render the label
+ * their value stands for, and everything else stringifies exactly as it always
+ * has.
  */
-function renderValue(key: string, value: any) {
+function renderValue(
+  key: string,
+  value: any,
+  repeat?: number,
+  useOptionLabels?: boolean
+) {
   const servar = initState.textVariableFormats[key];
-  return servar ? formatNumberValue(servar, value) : stringifyWithNull(value);
+  if (servar) return formatNumberValue(servar, value);
+  const label = useOptionLabels
+    ? getOptionLabel(key, value, repeat)
+    : undefined;
+  return label ?? stringifyWithNull(value);
 }
 
-export function replaceTextVariables(text: string, repeat?: any) {
+/**
+ * `useOptionLabels` is opt-in because this function serves two audiences. Text
+ * a user reads should show an option's label, but the same interpolation builds
+ * redirect URLs, iframe sources and envelope file names, where the stored value
+ * is usually a code that another system expects verbatim. Display call sites
+ * pass true; those machine-facing ones leave it off.
+ */
+export function replaceTextVariables(
+  text: string,
+  repeat?: any,
+  useOptionLabels = false
+) {
   if (!text) return '';
 
   return text.replace(TEXT_VARIABLE_PATTERN, (pattern: any) => {
@@ -30,13 +52,17 @@ export function replaceTextVariables(text: string, repeat?: any) {
         if (pVal.length === 0) {
           return '';
         } else if (isNaN(repeat)) {
-          return pVal.map((entry) => renderValue(pStr, entry)).join(', ');
+          // Each entry's position is its repeat index, which is what selects
+          // per-index options for a repeating field.
+          return pVal
+            .map((entry, i) => renderValue(pStr, entry, i, useOptionLabels))
+            .join(', ');
         } else if (repeat >= pVal.length) {
-          return renderValue(pStr, pVal[0]);
+          return renderValue(pStr, pVal[0], 0, useOptionLabels);
         } else {
-          return renderValue(pStr, pVal[repeat]);
+          return renderValue(pStr, pVal[repeat], repeat, useOptionLabels);
         }
-      } else return renderValue(pStr, pVal);
+      } else return renderValue(pStr, pVal, undefined, useOptionLabels);
     }
     // A real field the user hasn't filled renders empty, while a name that
     // matches no field stays literal so authors see what they typed.
@@ -100,6 +126,7 @@ function TextNodes({
   disabled = false,
   focused = false,
   textSpanOnClick = () => {},
+  hasClickLogic = false,
   textCallbacks = {},
   featheryContext = {},
   expand = true
@@ -136,7 +163,10 @@ function TextNodes({
           delta = applyNewDelta(delta, start, end);
         }
       });
-    } else if (actions.length > 0) delta = applyNewDelta(delta);
+    } else if (actions.length > 0 || hasClickLogic) {
+      // Text with no click actions is still clickable if a logic rule runs on click
+      delta = applyNewDelta(delta);
+    }
 
     // If text_mode property is set to 'data', then we don't want to render the text_formatted
     // property, instead we the text from the data element specified in the text_source property
@@ -162,7 +192,14 @@ function TextNodes({
         {textIsFromData ? (
           <TextNode
             index={0}
-            cursor='inherit'
+            {...(hasClickLogic && !editMode && !disabled
+              ? {
+                  // Data-sourced text has no spans, so the whole text is the
+                  // click target for its logic rule
+                  onClick: () => textSpanOnClick(undefined, undefined),
+                  cursor: 'pointer'
+                }
+              : { cursor: 'inherit' })}
             fontStyles={responsiveStyles.getRichFontStyles(
               element.properties?.text_formatted[0]?.attributes ?? {}
             )}
@@ -192,7 +229,11 @@ function TextNodes({
 
               const text = editMode
                 ? (op.insert as string)
-                : replaceTextVariables(op.insert as string, element.repeat);
+                : replaceTextVariables(
+                    op.insert as string,
+                    element.repeat,
+                    true
+                  );
 
               return (
                 <TextNode
@@ -210,7 +251,7 @@ function TextNodes({
         )}
       </span>
     );
-  }, [element, responsiveStyles, editableProps]);
+  }, [element, responsiveStyles, editableProps, hasClickLogic]);
 }
 
 export default TextNodes;

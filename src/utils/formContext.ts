@@ -1,3 +1,5 @@
+import type { GenerateDocumentRef } from './featheryClient/integrationClient';
+import Field from './entities/Field';
 import { featheryWindow } from './browser';
 import { getAllElements } from './formHelperFunctions';
 import { changeStep } from './stepHelperFunctions';
@@ -24,6 +26,8 @@ import internalState, {
   setFormInternalState
 } from './internalState';
 import { validateElements } from './validation';
+import { STEP_EVENT_SKIP } from './stepEvents';
+import { AnswersPendingError } from './offlineRequestHandler';
 import {
   FillQuikParams,
   ForwardInboxEmailOptions,
@@ -32,6 +36,17 @@ import {
   IntegrationActionOptions,
   PageSelectionInput
 } from '@feathery/client-utils';
+
+const uploadFieldIdByKey = (steps: any, fieldKey: string): string | null => {
+  for (const step of Object.values(steps ?? {}) as any[]) {
+    const match = (step?.servar_fields ?? []).find(
+      ({ servar }: any) =>
+        servar.key === fieldKey && servar.type === 'file_upload'
+    );
+    if (match) return match.servar.id;
+  }
+  return null;
+};
 
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
@@ -62,12 +77,21 @@ export const getFormContext = (formUuid: string) => {
     collaborator: formState.collaborator,
     setFormCompletion: () => {
       const { client, currentStep } = formState;
-      return client.registerEvent({
-        step_key: currentStep.key,
-        next_step_key: '',
-        event: 'skip',
-        completed: true
-      });
+      return client
+        .registerEvent({
+          step_key: currentStep.key,
+          next_step_key: '',
+          event: STEP_EVENT_SKIP,
+          completed: true
+        })
+        .catch((error: unknown) => {
+          // Completion is refused while answers are still being saved. Tell
+          // the user, and reject so the calling logic does not carry on as if
+          // the form were complete.
+          if (error instanceof AnswersPendingError)
+            featheryWindow().alert(error.message);
+          throw error;
+        });
     },
     setProgress: (val: any) => formState.setUserProgress(val),
     openDataMapping: ({ hubs }: { hubs: any[] }) =>
@@ -241,11 +265,15 @@ export const getFormContext = (formUuid: string) => {
         verification
       }),
     generateDocuments: ({
-      documentIds,
+      documentIds: documentSources,
       signers,
       envelopeAction,
       signMethod,
+      draft,
       toolbarActions,
+      emailSubject,
+      emailBlurb,
+      customFields,
       repeatable,
       download,
       merge,
@@ -254,26 +282,51 @@ export const getFormContext = (formUuid: string) => {
       saveDocumentFieldKey,
       redirect
     }: {
-      // A plain template UUID string, or a source object such as the Quik item
-      // `{ kind: 'quik' }` — mirroring the action config's `documents` array.
-      documentIds: (string | { kind: string; [key: string]: any })[];
+      // A plain template UUID string, a file upload field itself (e.g.
+      // `FileUpload1`), or a source object such as the Quik item
+      // `{ kind: 'quik' }` — mirroring the action config.
+      documentIds: (GenerateDocumentRef | Field)[];
       // Per-document, per-role signer emails; a document with no entry here
       // gets no signer. `roleId` targets one of the document's signer roles,
       // or is left off to cover every role of that document. `filler` marks
       // whoever signs inline in the form rather than being emailed a link —
       // only their signing token comes back.
+      // `phone` challenges that recipient by SMS before the envelope opens
+      // (DocuSign only). Give it in E.164 form, e.g. '+15555555555'; a number
+      // with no country code is taken as +1. Omit it to send without a
+      // challenge.
+      // `repeatIndex` targets a zero-based PDF copy when repeatable=true.
+      // It requires roleId. Omit it to apply that role to every copy; a
+      // copy-specific entry overrides the default for the same role.
       signers?: {
         documentId: string;
         roleId?: string;
+        repeatIndex?: number;
+        // DocuSign-only identity across documents; omit for email grouping.
+        signerId?: string;
         email: string;
+        name?: string;
+        phone?: string;
         filler?: boolean;
       }[];
       envelopeAction?: 'sign' | 'fill' | 'download' | 'save' | 'open_in_editor';
       signMethod?: 'feathery' | 'docusign';
+      // Create a DocuSign draft without opening the editor or emailing signers.
+      // Requires signMethod 'docusign'; envelopeAction defaults to 'sign'.
+      draft?: boolean;
       // Only for envelopeAction 'open_in_editor': which buttons the editor
       // toolbar offers. 'draft' is DocuSign-only (it finalizes as a sign with
       // draft=true).
       toolbarActions?: ('sign' | 'download' | 'save' | 'draft')[];
+      // Only for signMethod 'docusign': the subject and body of the envelope's
+      // signing email, as sendDocusignEnvelope takes them.
+      emailSubject?: string;
+      emailBlurb?: string;
+      // DocuSign envelope metadata (not PDF fields), e.g. account_submission_id.
+      customFields?: Record<
+        string,
+        string | { listItems: string[]; value?: string }
+      >;
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
@@ -283,15 +336,122 @@ export const getFormContext = (formUuid: string) => {
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
     }) => {
+      if (customFields !== undefined && signMethod !== 'docusign') {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: customFields require signMethod 'docusign'"
+          )
+        );
+      }
+      // Capture before pending field saves or document review can yield.
+      customFields =
+        customFields === undefined
+          ? undefined
+          : Object.fromEntries(
+              Object.entries(customFields).map(([name, value]) => [
+                name,
+                typeof value === 'string'
+                  ? value
+                  : { ...value, listItems: [...value.listItems] }
+              ])
+            );
+      signers = signers?.map((signer) => ({ ...signer }));
+      if (
+        signMethod !== 'docusign' &&
+        (signers?.some((signer) => signer.signerId?.trim()) ||
+          documentSources.some(
+            (doc) =>
+              !(doc instanceof Field) &&
+              typeof doc !== 'string' &&
+              doc.kind === 'quik' &&
+              doc.forms?.some(
+                (form) => Object.keys(form.signerIds ?? {}).length
+              )
+          ))
+      ) {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: signer IDs require signMethod 'docusign'"
+          )
+        );
+      }
+      if (draft) {
+        if (
+          signMethod !== 'docusign' ||
+          (envelopeAction && envelopeAction !== 'sign') ||
+          download ||
+          toolbarActions?.length
+        ) {
+          return Promise.reject(
+            new Error(
+              "generateDocuments: draft requires signMethod 'docusign' and " +
+                "envelopeAction 'sign' (or omitted), without download or toolbarActions"
+            )
+          );
+        }
+        if (!formState.generateEnvelopeFlow) {
+          return Promise.reject(
+            new Error('generateDocuments: draft requires a mounted <Form />')
+          );
+        }
+        envelopeAction = 'sign';
+      }
+      // A field passed as-is is named by key, resolved to its id below.
+      let documentIds: GenerateDocumentRef[] = documentSources.map((doc) =>
+        doc instanceof Field ? { kind: 'file_upload', field_key: doc.id } : doc
+      );
       const usesRichOptions =
         !!signMethod ||
         !!signers?.length ||
         !!envelopeAction ||
         !!toolbarActions?.length ||
         !!repeatable ||
-        documentIds.some(
-          (doc) => typeof doc === 'object' && doc.kind === 'quik'
+        documentIds.some((doc) => typeof doc !== 'string');
+      // Capture explicit Quik inputs before awaiting saves or opening review.
+      // Caller edits to the original object must not change this request.
+      documentIds = documentIds.map((doc) =>
+        typeof doc !== 'string' && doc.kind === 'quik' && doc.forms
+          ? {
+              ...doc,
+              forms: doc.forms.map((form) => ({
+                ...form,
+                fields: { ...form.fields },
+                ...(form.signerIds ? { signerIds: { ...form.signerIds } } : {})
+              }))
+            }
+          : doc
+      );
+      const unknownUploadKeys: string[] = [];
+      let missingUploadField = false;
+      documentIds = documentIds.map((doc) => {
+        if (typeof doc === 'string' || doc.kind !== 'file_upload') return doc;
+        // Headless forms have no steps; the mounted-<Form /> error below applies.
+        if (!formState.generateEnvelopeFlow) return doc;
+        if (doc.field_id) return doc;
+        if (!doc.field_key) {
+          missingUploadField = true;
+          return doc;
+        }
+        const fieldId = uploadFieldIdByKey(formState.steps, doc.field_key);
+        if (!fieldId) unknownUploadKeys.push(doc.field_key);
+        return { kind: 'file_upload', field_id: fieldId ?? '' };
+      });
+      if (missingUploadField) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: a file upload source needs its field, e.g. ' +
+              'documentIds: [templateId, FileUpload1]'
+          )
         );
+      }
+      if (unknownUploadKeys.length) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: no file upload field with key ' +
+              unknownUploadKeys.join(', ')
+          )
+        );
+      }
       // Document generation reads whatever the fuser has on file, so pending
       // field edits have to land before it runs or it fills/signs stale data.
       const flushFields = () =>
@@ -299,7 +459,7 @@ export const getFormContext = (formUuid: string) => {
           formState.client.flushCustomFields(),
           defaultClient.flushCustomFields()
         ]);
-      // Quik sources, DocuSign, signers, the editor, and the sign/save
+      // Source objects, DocuSign, signers, the editor, and the sign/save
       // envelope actions all need the same endpoint + editor flow the Generate
       // Documents action uses, so route through the <Form />-registered flow
       // when any are requested. Otherwise keep the simple, backward-compatible
@@ -309,20 +469,50 @@ export const getFormContext = (formUuid: string) => {
           formState.generateEnvelopeFlow!({
             type: 'open_fuser_envelopes',
             documents: documentIds,
-            envelope_action: envelopeAction,
+            // The flow has no separate download flag; it's an envelope action,
+            // unless the call already asks to sign.
+            envelope_action:
+              envelopeAction ??
+              (download &&
+              !signMethod &&
+              !signers?.length &&
+              !toolbarActions?.length &&
+              !redirect
+                ? 'download'
+                : undefined),
             sign_method: signMethod,
+            ...(draft !== undefined ? { draft } : {}),
             // Omitted rather than nulled: the backend's role_id rejects an
             // explicit null, and leaving it off spreads the email across
-            // every role of that document.
+            // every role of that document. A phone is omitted the same way,
+            // since a present one is the request to challenge that recipient.
             envelope_signers: signers?.map(
-              ({ documentId, roleId, email, filler }) => ({
+              ({
+                documentId,
+                roleId,
+                repeatIndex,
+                signerId,
+                email,
+                name,
+                phone,
+                filler
+              }) => ({
                 document_id: documentId,
                 ...(roleId ? { role_id: roleId } : {}),
+                ...(repeatIndex !== undefined
+                  ? { repeat_index: repeatIndex }
+                  : {}),
                 email,
+                ...(signerId?.trim() ? { signer_id: signerId.trim() } : {}),
+                ...(name ? { name } : {}),
+                ...(phone ? { phone } : {}),
                 filler: !!filler
               })
             ),
             editor_toolbar_actions: toolbarActions,
+            email_subject: emailSubject,
+            email_blurb: emailBlurb,
+            custom_fields: customFields,
             repeatable,
             merge_docs: merge,
             merged_file_name: mergedFileName,

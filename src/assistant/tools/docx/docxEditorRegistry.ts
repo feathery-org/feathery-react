@@ -12,7 +12,7 @@ export type DocxEditorRegistration = {
   order: number;
 };
 
-export type DocxEditorContext = {
+type DocxEditorContext = {
   formId?: string;
   stepId?: string;
   documentId?: string;

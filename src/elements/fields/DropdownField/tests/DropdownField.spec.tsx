@@ -1,23 +1,5 @@
-import {
-  createDropdownElement,
-  createDropdownProps,
-  createStatefulOnChange,
-  createOptionsMetadata,
-  createRepeatOptionsMetadata,
-  getMockFieldValue,
-  resetMockFieldValue,
-  getSelectElement,
-  getOptionElements,
-  getOptionByValue,
-  getOptionByText,
-  expectOptionToHaveTooltip,
-  expectSelectToHaveValue,
-  expectSelectToHaveOptionCount,
-  expectFieldToBeDisabled,
-  expectFieldToBeRequired,
-  expectFieldToHaveAriaLabel
-} from './test-utils';
 import React from 'react';
+import { createDropdownElement, createDropdownProps, createStatefulOnChange, createOptionsMetadata, getMockFieldValue, resetMockFieldValue, getOptionByValue, expectOptionToHaveTooltip, expectSelectToHaveValue, expectSelectToHaveOptionCount, expectFieldToBeDisabled } from './test-utils';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import DropdownField from '../index';
 
@@ -27,6 +9,23 @@ describe('DropdownField - Base Functionality', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetMockFieldValue();
+  });
+
+  it('keeps Brazilian state selections after their values are converted to ASCII', () => {
+    const props = createDropdownProps(createDropdownElement('gmap_state'), {
+      formSettings: { asciiOnly: true },
+      countryCode: 'BR'
+    });
+    const { rerender } = render(<DropdownField {...props} />);
+    fireEvent.change(dropdown(), { target: { value: 'Sao Paulo' } });
+    expect(props.onChange).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <DropdownField {...props} fieldVal='Sao Paulo' countryCode='br' />
+    );
+    expect(dropdown().value).toBe('Sao Paulo');
+    expect(dropdown().selectedOptions[0].textContent).toBe('São Paulo');
+    expect(props.onChange).toHaveBeenCalledTimes(1);
   });
 
   describe('Basic Rendering', () => {

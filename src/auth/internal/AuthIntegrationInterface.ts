@@ -8,18 +8,9 @@ import {
   firebaseSignInPopup,
   getCurrentSession
 } from '../../integrations/firebase';
-import {
-  stytchLoginOnLoad,
-  stytchOauthRedirect,
-  stytchSendMagicLink,
-  stytchSendSms,
-  stytchVerifySms,
-  setStytchDomainCookie
-} from '../../integrations/stytch';
 import FeatheryClient from '../../utils/featheryClient';
-import { isAuthStytch } from './utils';
-import { featheryWindow, getCookie, getStytchJwt } from '../../utils/browser';
-import { defaultClient, initState } from '../../utils/init';
+import { featheryWindow, getCookie } from '../../utils/browser';
+import { initState } from '../../utils/init';
 
 // All code that needs to do something different based on the auth integration should go in this file
 
@@ -27,43 +18,29 @@ let nativeOtpCount = 0;
 let nativeOtpTimeSent = 0;
 
 function isHrefMagicLink(): boolean {
-  return (
-    featheryWindow().location.search.includes('stytch_token_type') ||
-    isHrefFirebaseMagicLink()
-  );
+  return isHrefFirebaseMagicLink();
 }
 
 function inferLoginOnLoad(featheryClient: FeatheryClient) {
-  const queryParams = new URLSearchParams(featheryWindow().location.search);
-  const type = queryParams.get('stytch_token_type');
-  const token = queryParams.get('token');
-  if (authState.authType === 'stytch' || (type && token))
-    return stytchLoginOnLoad(featheryClient);
-  else if (authState.authType === 'firebase')
+  if (authState.authType === 'firebase')
     return firebaseLoginOnLoad(featheryClient);
 }
 
 function isThereAnExistingSession(): boolean {
-  return !!(getStytchJwt() || getCookie('featheryFirebaseRedirect'));
+  return !!getCookie('featheryFirebaseRedirect');
 }
 
 async function inferAuthLogout() {
   if (!authState.client) return;
 
-  if (isAuthStytch()) {
-    await authState.client.session.revoke();
-  } else if (global.firebase) {
-    await authState.client.auth().signOut();
-  }
+  if (global.firebase) await authState.client.auth().signOut();
 
   authState.onLogout();
   authState.setAuthId('');
 }
 
 function sendSms(phoneNum: string, featheryClient: any) {
-  if (authState.authType === 'stytch')
-    return stytchSendSms({ fieldVal: phoneNum });
-  else if (authState.authType === 'firebase')
+  if (authState.authType === 'firebase')
     return firebaseSendSms({ fieldVal: phoneNum, servar: null });
   else {
     if (nativeOtpCount < 10) nativeOtpCount++;
@@ -87,15 +64,12 @@ function verifySMSOTP(params: {
   fieldVal: string;
   featheryClient: any;
 }): Promise<any> {
-  if (authState.authType === 'stytch') return stytchVerifySms(params);
-  else if (authState.authType === 'firebase') return firebaseVerifySms(params);
+  if (authState.authType === 'firebase') return firebaseVerifySms(params);
   else return params.featheryClient.verifyOTP(params.fieldVal, 'sms-otp');
 }
 
 function sendMagicLink(email: string) {
-  if (authState.authType === 'stytch')
-    return stytchSendMagicLink({ fieldVal: email });
-  else if (authState.authType === 'firebase')
+  if (authState.authType === 'firebase')
     return firebaseSendMagicLink({
       fieldVal: email,
       servar: null
@@ -103,32 +77,13 @@ function sendMagicLink(email: string) {
 }
 
 function oauthRedirect(oauthType: string, client?: any) {
-  if (isAuthStytch()) stytchOauthRedirect(oauthType);
-  else return firebaseSignInPopup(oauthType as any, client);
+  return firebaseSignInPopup(oauthType as any, client);
 }
 
 function initializeAuthClientListeners() {
   if (!authState.client) return;
 
-  if (isAuthStytch()) {
-    if (getStytchJwt() && authState._featheryHosted) setStytchDomainCookie();
-
-    const unsubSession = authState.client.session.onChange(
-      (newSession: any) => {
-        if (newSession) {
-          // [Hosted Login] When logging in via re-direct we need to set the authId once the user object has initialized
-          defaultClient.submitAuthInfo({ authId: newSession.user_id });
-          // [Hosted Login] Once the stytch user has initialized, we need to set the cookie to enable multi-domain SSO
-          if (authState._featheryHosted) setStytchDomainCookie();
-        } else {
-          authState.setAuthId('');
-        }
-      }
-    );
-    featheryWindow().addEventListener('beforeunload', () => {
-      unsubSession && unsubSession();
-    });
-  } else if (global.firebase) {
+  if (global.firebase) {
     const unsubSession = authState.client
       .auth()
       .onAuthStateChanged((user: any) => !user && authState.setAuthId(''));
@@ -143,11 +98,7 @@ function initializeAuthClientListeners() {
  * session or performs logout actions
  */
 async function idleTimerAction(hasAuthed: boolean, logoutActions: () => void) {
-  if (isAuthStytch() && authState.client.session.getSync()) {
-    authState.client.session.authenticate({
-      session_duration_minutes: 1440
-    });
-  } else if (global.firebase && (await getCurrentSession())) {
+  if (global.firebase && (await getCurrentSession())) {
     // firebase session is active, no action needed.
   } else if (hasAuthed) {
     // There is no session, so need to revoke it

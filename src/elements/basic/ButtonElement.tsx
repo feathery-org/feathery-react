@@ -171,6 +171,7 @@ function ButtonElement({
   editMode,
   focused = false,
   disabled = false,
+  hasClickLogic = false,
   active = null,
   textCallbacks = {},
   onClick = () => {},
@@ -206,7 +207,9 @@ function ButtonElement({
   );
 
   const actions = element.properties.actions ?? [];
-  const noActions = actions.length === 0 && !element.properties.submit;
+  // A button with no click actions stays enabled if a logic rule runs on click
+  const noActions =
+    actions.length === 0 && !element.properties.submit && !hasClickLogic;
 
   // A Feathery-managed Connect Account label is computed, so it replaces the
   // builder's label on the canvas too - and can't be edited in place there.

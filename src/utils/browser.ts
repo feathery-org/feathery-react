@@ -19,7 +19,7 @@ export function featheryWindow() {
   return runningInClient() ? window : ({} as any);
 }
 
-export const isHoverDevice = () =>
+const isHoverDevice = () =>
   featheryWindow().matchMedia('(hover: hover)').matches;
 
 export const isTouchDevice = () =>
@@ -38,7 +38,7 @@ export const isIOS = () => {
   return /iPad|iPhone|iPod/.test(userAgentString);
 };
 
-export const isAndroid = () => {
+const isAndroid = () => {
   return /(android)/i.test(navigator.userAgent);
 };
 
@@ -58,33 +58,59 @@ export function getCookie(key: string) {
     .map((c: string) => c.split('=')[1])[0];
 }
 
-export function setCookie(key: string, val: string) {
-  featheryDoc().cookie = `${key}=${val}; max-age=31536000; SameSite=strict; path=/;`;
+const ONE_YEAR_SECONDS = 31536000;
+
+/**
+ * @param maxAge how long the cookie lives, in seconds. Defaults to a year,
+ * which is what every identity cookie the SDK writes has always used.
+ */
+export function setCookie(key: string, val: string, maxAge = ONE_YEAR_SECONDS) {
+  featheryDoc().cookie = `${key}=${val}; max-age=${maxAge}; SameSite=strict; path=/;`;
 }
 
 export function deleteCookie(key: string) {
   featheryDoc().cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
 }
 
-export function getStytchJwt() {
-  return getCookie('stytch_session_jwt');
-}
-
 export const openTab = (url: any) =>
   featheryWindow().open(url, '_blank', 'noopener');
 
+// Long enough that a download the host defers behind a prompt still finds the
+// blob, short enough that the bytes are not pinned in memory for the session.
+// FileSaver.js holds its blob URLs for 40s for the same reason.
+const BLOB_URL_LIFETIME = 60000;
+
+/**
+ * Save a file to the user's device via a blob: URL on a detached anchor.
+ *
+ * The anchor is never put in the document. Salesforce's Visualforce container
+ * watches for link clicks from a listener on the document and, on seeing one,
+ * cancels the click and re-opens the href itself outside the iframe, where a
+ * blob: URL minted here no longer resolves. A detached anchor's click event
+ * propagates to nothing, so no delegated listener sees it.
+ *
+ * The blob: URL is revoked on a timer rather than on the next line. Browsers
+ * hand a download to the download manager asynchronously, so an immediate
+ * revoke races it. This is independent of the Salesforce fix and matches what
+ * FileSaver.js has always done.
+ *
+ * Linking straight at the stored S3 URL would need `Content-Disposition:
+ * attachment` signed into the presigned URL, since the `download` attribute
+ * is ignored cross-origin. That is a backend change tracked separately.
+ */
 export function downloadFile(file: File) {
-  const element = featheryDoc().createElement('a');
-  element.style.display = 'none';
   const href = featheryWindow().URL.createObjectURL(file);
+
+  const element = featheryDoc().createElement('a');
   element.href = href;
   element.download = file.name;
-  featheryDoc().body.appendChild(element);
 
   element.click();
 
-  featheryWindow().URL.revokeObjectURL(href);
-  featheryDoc().body.removeChild(element);
+  featheryWindow().setTimeout(
+    () => featheryWindow().URL.revokeObjectURL(href),
+    BLOB_URL_LIFETIME
+  );
 }
 
 async function getFileData(url: string) {

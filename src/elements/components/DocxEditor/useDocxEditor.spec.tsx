@@ -5,10 +5,12 @@ import {
   installRevisionGroupIsolation
 } from '../../../utils/documentEditorPrimitives';
 import { dynamicImport } from '../../../integrations/utils';
+import { featheryDoc } from '../../../utils/browser';
 import {
   configureTrackedChangeReview,
   resizeDocxEditor,
-  useDocxEditor
+  useDocxEditor,
+  washFor
 } from './useDocxEditor';
 
 jest.mock('../../../utils/documentEditorPrimitives', () => ({
@@ -24,37 +26,69 @@ jest.mock('../../../integrations/utils', () => ({
   dynamicImport: jest.fn()
 }));
 
+describe('washFor (selected edit keeps the base wash, others mute)', () => {
+  const a = { id: 'a' };
+  const b = { id: 'b' };
+
+  it('uses the plain base wash at full opacity when nothing is selected', () => {
+    const add = washFor(null, 'add', a);
+    expect(add.alpha).toBe(1);
+    expect(add.fillStyle).toBe('rgba(219, 235, 228, 0.6)');
+    expect(washFor(new Set(), 'del', a).alpha).toBe(1);
+    expect(washFor(undefined, 'add', a).alpha).toBe(1);
+  });
+
+  it('gives the selected edit the SAME base wash a group selection shows', () => {
+    const sel = washFor(new Set([a]), 'add', a);
+    expect(sel.alpha).toBe(1);
+    expect(sel.fillStyle).toBe('rgba(219, 235, 228, 0.6)');
+    expect(washFor(new Set([a]), 'del', a).fillStyle).toBe(
+      'rgba(176, 48, 43, 0.15)'
+    );
+  });
+
+  it('counts a replace counterpart as part of the selection', () => {
+    // Either half of a replace passed in stays at full opacity.
+    expect(washFor(new Set([a]), 'add', null, a).alpha).toBe(1);
+  });
+
+  it('hides edits that are not the selection (alpha 0 = not painted)', () => {
+    expect(washFor(new Set([a]), 'add', b).alpha).toBe(0);
+  });
+});
+
 describe('configureTrackedChangeReview', () => {
+  const PANE_STYLE_ID = 'feathery-hide-de-review-pane';
   beforeEach(() => jest.clearAllMocks());
+  afterEach(() => featheryDoc().getElementById(PANE_STYLE_ID)?.remove());
 
   it('leaves a gated-off editor fully native', () => {
-    const editor = {
-      showRevisions: true,
-      enableTrackChanges: true,
-      commentReviewPane: { isUserClosed: false }
-    };
+    const editor = { showRevisions: true, enableTrackChanges: true };
 
     configureTrackedChangeReview(editor, false);
 
     expect(editor.showRevisions).toBe(true);
     expect(editor.enableTrackChanges).toBe(true);
-    expect(editor.commentReviewPane.isUserClosed).toBe(false);
+    // No native-pane suppression style is injected for a gated-off editor.
+    expect(featheryDoc().getElementById(PANE_STYLE_ID)).toBeNull();
     expect(installRevisionGroupIsolation).not.toHaveBeenCalled();
     expect(disableUserTrackChanges).not.toHaveBeenCalled();
   });
 
   it('installs review behavior only when the rail is enabled', () => {
-    const editor = {
-      showRevisions: true,
-      enableTrackChanges: true,
-      commentReviewPane: { isUserClosed: false }
-    };
+    const editor = { showRevisions: true, enableTrackChanges: true };
 
     configureTrackedChangeReview(editor, true);
 
     expect(editor.showRevisions).toBe(false);
     expect(editor.enableTrackChanges).toBe(false);
-    expect(editor.commentReviewPane.isUserClosed).toBe(true);
+    // The native Changes/Comments pane and the Restrict Editing pane (which
+    // Syncfusion auto-opens on click in a read-only editor) are hidden via an
+    // injected stylesheet rule.
+    const style = featheryDoc().getElementById(PANE_STYLE_ID);
+    expect(style).toBeTruthy();
+    expect(style?.textContent).toContain('.e-de-review-pane');
+    expect(style?.textContent).toContain('.e-de-restrict-pane');
     expect(installRevisionGroupIsolation).toHaveBeenCalledWith(editor);
     expect(disableUserTrackChanges).toHaveBeenCalledWith(editor);
   });
@@ -216,15 +250,20 @@ describe('useDocxEditor across a review-gate flip', () => {
   // hook's ref before its create effect runs, exactly as in the real component.
   const Harness = ({
     reviewChanges,
-    url = 'https://example.test/pre-save.docx'
+    url = 'https://example.test/pre-save.docx',
+    sfdt,
+    openNonce = 0
   }: {
     reviewChanges: boolean;
     url?: string;
+    sfdt?: string;
+    openNonce?: number;
   }) => {
     const api = useDocxEditor({
-      source: { url },
+      source: sfdt ? { sfdt } : { url },
       serviceUrl: 'https://example.test/service/',
       reviewChanges,
+      openNonce,
       licenseKey: 'test-key'
     });
     return <div ref={api.containerRef} />;
@@ -253,6 +292,36 @@ describe('useDocxEditor across a review-gate flip', () => {
     expect(editors[0].serialize).toHaveBeenCalled();
     expect(editors[1].open).toHaveBeenCalledWith(CARRIED);
     expect(editors[1].openAsync).not.toHaveBeenCalled();
+  });
+
+  it('bypasses the browser cache when reopening a restored document URL', async () => {
+    const view = render(<Harness reviewChanges={false} openNonce={0} />);
+    await settle();
+
+    view.rerender(<Harness reviewChanges={false} openNonce={1} />);
+    await settle();
+
+    expect(fetchCalls).toBe(2);
+    expect((globalThis as any).fetch).toHaveBeenNthCalledWith(
+      1,
+      'https://example.test/pre-save.docx',
+      { cache: 'no-store' }
+    );
+    expect((globalThis as any).fetch).toHaveBeenNthCalledWith(
+      2,
+      'https://example.test/pre-save.docx',
+      { cache: 'no-store' }
+    );
+  });
+
+  it('opens a restored SFDT directly without DOCX fetch or conversion', async () => {
+    const restored = '{"sfdt":"restored clean baseline"}';
+    render(<Harness reviewChanges={false} sfdt={restored} />);
+    await settle();
+
+    expect(fetchCalls).toBe(0);
+    expect(editors[0].open).toHaveBeenCalledWith(restored);
+    expect(editors[0].openAsync).not.toHaveBeenCalled();
   });
 
   it('waits for documentChange before reporting the document ready', async () => {
@@ -320,5 +389,96 @@ describe('useDocxEditor across a review-gate flip', () => {
     expect(fetchCalls).toBeGreaterThan(1);
     expect(editors[1].openAsync).toHaveBeenCalled();
     expect(editors[1].open).not.toHaveBeenCalledWith(CARRIED);
+  });
+
+  it('fires onEdit per content change, tagged with assistant authorship', async () => {
+    const onEdit = jest.fn();
+    const Edited = () => {
+      const api = useDocxEditor({
+        source: { url: 'https://example.test/doc.docx' },
+        serviceUrl: 'https://example.test/service/',
+        reviewChanges: false,
+        licenseKey: 'test-key',
+        onEdit
+      });
+      return <div ref={api.containerRef} />;
+    };
+
+    render(<Edited />);
+    await settle();
+
+    const ed = editors[0] as any;
+    const registration = ed.addEventListener.mock.calls.find(
+      ([name]: [string]) => name === 'contentChange'
+    );
+    expect(registration).toBeTruthy();
+    const fireContentChange = registration[1];
+
+    // A human edit: the assistant session flag is not set on the instance.
+    await act(async () => fireContentChange());
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: false });
+
+    // Between tool calls, human input stays human while the turn is active.
+    ed.__featheryAssistantSession = true;
+    await act(async () => fireContentChange());
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: false });
+
+    ed.__featheryAssistantWriting = true;
+    await act(async () => fireContentChange());
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: true });
+
+    ed.__featheryAssistantWriting = false;
+    await act(async () => fireContentChange());
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: false });
+    expect(onEdit).toHaveBeenCalledTimes(4);
+  });
+
+  it('routes Ctrl/Cmd+S to onSaveShortcut and blocks the default SFDT download', async () => {
+    const onSaveShortcut = jest.fn();
+    const Edited = () => {
+      const api = useDocxEditor({
+        source: { url: 'https://example.test/doc.docx' },
+        serviceUrl: 'https://example.test/service/',
+        reviewChanges: false,
+        licenseKey: 'test-key',
+        onSaveShortcut
+      });
+      return <div ref={api.containerRef} />;
+    };
+
+    render(<Edited />);
+    await settle();
+
+    const ed = editors[0] as any;
+    const registration = ed.addEventListener.mock.calls.find(
+      ([name]: [string]) => name === 'keyDown'
+    );
+    expect(registration).toBeTruthy();
+    const fireKeyDown = registration[1];
+
+    // Ctrl+S: handled + default prevented + routed to the host save.
+    const preventDefault = jest.fn();
+    const args = {
+      isHandled: false,
+      event: { ctrlKey: true, key: 's', keyCode: 83, preventDefault }
+    };
+    await act(async () => fireKeyDown(args));
+    expect(args.isHandled).toBe(true);
+    expect(preventDefault).toHaveBeenCalled();
+    expect(onSaveShortcut).toHaveBeenCalledTimes(1);
+
+    // A plain keystroke is left alone.
+    const plain = {
+      isHandled: false,
+      event: {
+        ctrlKey: false,
+        key: 'a',
+        keyCode: 65,
+        preventDefault: jest.fn()
+      }
+    };
+    await act(async () => fireKeyDown(plain));
+    expect(plain.isHandled).toBe(false);
+    expect(onSaveShortcut).toHaveBeenCalledTimes(1);
   });
 });

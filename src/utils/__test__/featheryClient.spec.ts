@@ -389,10 +389,6 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
     };
 
     try {
-      await mockOfflineRequestHandler.clearFailedRequestByUrl(url, {
-        fieldKey: servar.key
-      });
-
       const result = await mockOfflineRequestHandler.runOrSaveRequest(
         () => mockFetch(url, options),
         url,
@@ -423,7 +419,6 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
 
     // Mock offlineRequestHandler
     mockOfflineRequestHandler = {
-      clearFailedRequestByUrl: jest.fn().mockResolvedValue(undefined),
       runOrSaveRequest: jest.fn(async (fetchFn) => {
         return await fetchFn();
       })
@@ -456,12 +451,6 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
 
     // Should make request with file
     expect(mockOfflineRequestHandler.runOrSaveRequest).toHaveBeenCalled();
-    expect(
-      mockOfflineRequestHandler.clearFailedRequestByUrl
-    ).toHaveBeenCalledWith(
-      expect.stringContaining('api/panel/step/submit/file'),
-      { fieldKey: 'FileUpload12' }
-    );
   });
 
   it('should make clear request when previously filled field is emptied', async () => {
@@ -476,7 +465,6 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
 
     // Reset mocks
     mockOfflineRequestHandler.runOrSaveRequest.mockClear();
-    mockOfflineRequestHandler.clearFailedRequestByUrl.mockClear();
 
     // Second submission with empty field (file removed)
     await submitFileData(servar, 'Step 1', null);
@@ -519,12 +507,6 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
     // Should make exactly ONE request (for the field with file)
     // This currently FAILS because empty field also makes a request
     expect(mockOfflineRequestHandler.runOrSaveRequest).toHaveBeenCalledTimes(1);
-    expect(
-      mockOfflineRequestHandler.clearFailedRequestByUrl
-    ).toHaveBeenCalledWith(
-      expect.stringContaining('api/panel/step/submit/file'),
-      { fieldKey: 'FileUpload12' }
-    );
   });
 });
 
@@ -955,7 +937,6 @@ describe('FeatheryClient - _submitFileData upload progress', () => {
   const stubHandler = (run: (onQueued: () => void) => Promise<any>) => {
     (featheryClient as any).offlineRequestHandler = {
       resetRetryAttemptsByUrl: jest.fn().mockResolvedValue(undefined),
-      clearFailedRequestByUrl: jest.fn().mockResolvedValue(undefined),
       runOrSaveRequest: jest.fn(
         (_run, _url, _options, _type, _stepKey, _metadata, onQueued) => {
           onQueuedArg = onQueued;

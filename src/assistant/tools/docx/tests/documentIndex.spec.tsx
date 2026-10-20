@@ -238,11 +238,20 @@ describe('postDocumentIndex', () => {
 });
 
 describe('document-index delta protocol', () => {
+  let pendingDigests: Promise<ArrayBuffer>[];
   let originalCrypto: PropertyDescriptor | undefined;
   let originalTextEncoder: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     jest.useFakeTimers();
+    pendingDigests = [];
+    const crypto = require('crypto').webcrypto;
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    jest.spyOn(crypto.subtle, 'digest').mockImplementation((...args: any[]) => {
+      const pending = digest(...args);
+      pendingDigests.push(pending);
+      return pending;
+    });
     originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
     originalTextEncoder = Object.getOwnPropertyDescriptor(
       globalThis,
@@ -250,7 +259,7 @@ describe('document-index delta protocol', () => {
     );
     Object.defineProperty(globalThis, 'crypto', {
       configurable: true,
-      value: require('crypto').webcrypto
+      value: crypto
     });
     Object.defineProperty(globalThis, 'TextEncoder', {
       configurable: true,
@@ -310,22 +319,15 @@ describe('document-index delta protocol', () => {
   const settleIndexing = async (ms: number) => {
     await act(async () => {
       jest.advanceTimersByTime(ms);
-      // Wait for native Web Crypto work as well as the promise chain that
-      // sends and confirms the request it unlocks.
-      //
-      // Iterated to a FIXED POINT rather than once, because one turn is not a
-      // property of the code - it is a guess about how many links the chain
-      // has. Real `crypto.subtle.digest` resolves off the microtask queue and
-      // each hash it unlocks can start another, so under load the assertion
-      // could run before the POST had been issued at all: that is the
-      // `indexPosts()[1] is undefined` face of this spec's flake. Draining a
-      // bounded number of turns is deterministic - no sleeps, no timing
-      // assumption - and settles in the first turn or two when idle.
-      for (let turn = 0; turn < 10; turn++) {
-        await _hashDocumentIndexBlockText('flush');
-        await Promise.resolve();
-      }
     });
+    // Fake timers do not control native Web Crypto. Await the hashes this
+    // index started, then let act settle the POST and any queued follow-up.
+    while (pendingDigests.length) {
+      const digests = pendingDigests.splice(0);
+      await act(async () => {
+        await Promise.all(digests);
+      });
+    }
   };
 
   const paragraphs = (count: number) =>

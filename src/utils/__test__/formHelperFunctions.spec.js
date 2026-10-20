@@ -357,6 +357,14 @@ describe('formHelperFunctions', () => {
   });
 
   describe('mapFormSettingsResponse', () => {
+    it('maps sensitive-action authentication and defaults it to disabled', () => {
+      expect(mapFormSettingsResponse({}).authSensitiveActionsOnly).toBe(false);
+      expect(
+        mapFormSettingsResponse({ auth_sensitive_actions_only: true })
+          .authSensitiveActionsOnly
+      ).toBe(true);
+    });
+
     it('defaults showFileUploadProgress to true when absent', () => {
       expect(mapFormSettingsResponse({}).showFileUploadProgress).toBe(true);
     });

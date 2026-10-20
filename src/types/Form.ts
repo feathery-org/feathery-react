@@ -65,6 +65,38 @@ export interface ContextOnAction extends FormContext {
   actionData: ActionData[];
 }
 
+// Toolbar buttons on the Generate Documents review screen. `draft` is
+// DocuSign's Create Draft (a sign that is saved, not sent); `fill` is the lone
+// Continue an unconfigured toolbar shows.
+export type DocumentReviewAction =
+  | 'sign'
+  | 'draft'
+  | 'download'
+  | 'save'
+  | 'fill';
+
+export type DocumentReviewTrigger = {
+  // The Generate Documents button (or document-editor container) behind the
+  // review screen, or '' when a logic rule opened it via
+  // feathery.generateDocuments.
+  id: string;
+  type: 'document_review';
+  action: DocumentReviewAction;
+  // Envelopes the action finalized, in review order.
+  envelopeIds: string[];
+  // The action's document sources: template ids, or source objects such as
+  // the Quik item.
+  documentIds: (string | Record<string, any>)[];
+  // Generated file URLs when the action produced files (download / save).
+  files?: string[];
+  // DocuSign envelope id when the action sent (or drafted) through DocuSign.
+  docusignEnvelopeId?: string;
+};
+
+export interface ContextOnDocumentReview extends FormContext {
+  trigger: DocumentReviewTrigger;
+}
+
 export interface ContextOnSubmit extends FormContext {
   // Need to figure out how to better convey the possible Plaid information in submitFields
   submitFields: FieldData;

@@ -1,34 +1,5 @@
-import {
-  createMatrixElement,
-  createMatrixProps,
-  createStatefulOnChange,
-  createOptionsMetadata,
-  createQuestionsMetadata,
-  createMultipleMatrixElement,
-  createSingleMatrixElement,
-  getMockFieldValue,
-  resetMockFieldValue,
-  setMockFieldValue,
-  getMatrixInputs,
-  getMatrixInput,
-  getQuestionInputs,
-  getColumnHeaders,
-  getQuestionRows,
-  getQuestionLabel,
-  expectMatrixInputToBeChecked,
-  expectMatrixInputToBeUnchecked,
-  expectMatrixInputType,
-  expectMatrixInputToBeDisabled,
-  expectMatrixInputToBeEnabled,
-  expectMatrixToHaveQuestionCount,
-  expectMatrixToHaveOptionCount,
-  expectQuestionToHaveTooltip,
-  expectQuestionToHaveHighlightColor,
-  expectMatrixToHaveValues,
-  expectFieldToBeDisabled,
-  expectFieldToHaveAriaLabel
-} from './test-utils';
 import React from 'react';
+import { createMatrixElement, createMatrixProps, createStatefulOnChange, createOptionsMetadata, createQuestionsMetadata, createMultipleMatrixElement, createSingleMatrixElement, resetMockFieldValue, setMockFieldValue, getMatrixInputs, getMatrixInput, getColumnHeaders, getQuestionLabel, expectMatrixInputToBeChecked, expectMatrixInputToBeUnchecked, expectMatrixInputType, expectMatrixInputToBeDisabled, expectMatrixInputToBeEnabled, expectMatrixToHaveQuestionCount, expectMatrixToHaveOptionCount, expectQuestionToHaveTooltip, expectQuestionToHaveHighlightColor, expectMatrixToHaveValues, expectFieldToBeDisabled } from './test-utils';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import MatrixField from '../index';
 

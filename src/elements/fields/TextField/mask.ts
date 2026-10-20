@@ -80,7 +80,7 @@ const FALLBACK_CURRENCY_SYMBOL = '$';
  * stored at. Only ever wider than the configured precision, and only for
  * whole-number fields — see MIN_ENTRY_SCALE.
  */
-export function getEntryDecimalPlaces(servar: any) {
+function getEntryDecimalPlaces(servar: any) {
   // Only whole-number fields are widened, and only by the one place needed to
   // make the radix typeable. Fields that already accept decimals keep their
   // exact entry behaviour, so this change cannot alter them.

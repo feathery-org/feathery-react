@@ -1,5 +1,4 @@
 import React from 'react';
-
 function SegmentBar({ styles, percent, numSegments, vertical = false }: any) {
   const mainDim = vertical ? 'height' : 'width';
   const crossDim = vertical ? 'width' : 'height';

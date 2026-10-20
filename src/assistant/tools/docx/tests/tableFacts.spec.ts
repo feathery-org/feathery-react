@@ -24,7 +24,12 @@ import { runFormula } from './formulaHarness';
 
 const cell = (
   text: string,
-  options: { bold?: boolean; columnSpan?: number; rowSpan?: number } = {}
+  options: {
+    bold?: boolean;
+    fontColor?: string;
+    columnSpan?: number;
+    rowSpan?: number;
+  } = {}
 ) => ({
   cellFormat: {
     ...(options.columnSpan ? { columnSpan: options.columnSpan } : {}),
@@ -33,7 +38,19 @@ const cell = (
   blocks: [
     {
       inlines: [
-        { text, ...(options.bold ? { characterFormat: { bold: true } } : {}) }
+        {
+          text,
+          ...(options.bold || options.fontColor
+            ? {
+                characterFormat: {
+                  ...(options.bold ? { bold: true } : {}),
+                  ...(options.fontColor
+                    ? { fontColor: options.fontColor }
+                    : {})
+                }
+              }
+            : {})
+        }
       ]
     }
   ]
@@ -184,6 +201,19 @@ describe('table_facts reports layout facts', () => {
       'hasMergedCells',
       'row'
     ]);
+  });
+
+  it('reports text colour as a cell fact for model-authored formatting ops', () => {
+    const sfdt = irregularSfdt();
+    sfdt.sections[0].blocks[1].rows[1].cells[2] = cell('Premium', {
+      bold: true,
+      fontColor: '#FFFFFFFF'
+    });
+    const table = collectTableFacts(flattenSfdt(sfdt), sfdt, '0;1');
+    expect(table?.rows[1].cells[2]).toMatchObject({
+      bold: true,
+      fontColor: '#FFFFFFFF'
+    });
   });
 
   it('reports blank rows and per-row fill counts', () => {

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { asciiOption } from '../utils/asciiOptions';
 import FeatheryClient from '../utils/featheryClient';
+import { registerDynamicOptionLabels } from '../utils/optionLabels';
 
 type SalesforceOption = {
   value: string;
@@ -7,11 +9,13 @@ type SalesforceOption = {
 };
 
 export default function useSalesforceSync(
-  salesforceSync: any,
-  editMode: boolean
+  servar: any,
+  editMode: boolean,
+  asciiOnly = false
 ) {
   const [dynamicOptions, setDynamicOptions] = useState<SalesforceOption[]>([]);
   const [loadingDynamicOptions, setLoadingDynamicOptions] = useState(false);
+  const salesforceSync = servar?.metadata?.salesforce_sync;
   const shouldSalesforceSync = !editMode && salesforceSync;
 
   useEffect(() => {
@@ -26,17 +30,30 @@ export default function useSalesforceSync(
           salesforceSync.field_name,
           salesforceSync.credential_key
         );
-        setDynamicOptions(data.options || []);
+        const rawOptions = data.options || [];
+        const options = asciiOnly ? rawOptions.map(asciiOption) : rawOptions;
+        setDynamicOptions(options);
+        // These options replace the schema's in the field, so text variables
+        // have to resolve labels against them too - nothing else registers
+        // them, since they never reach servar.metadata.
+        registerDynamicOptionLabels(servar.key, options);
       } catch (error) {
         console.error('Failed to fetch Salesforce options:', error);
         setDynamicOptions([]);
+        // Release the key rather than leave a stale fetch's labels behind; the
+        // field falls back to its schema options, and so should text variables.
+        registerDynamicOptionLabels(servar.key, []);
       } finally {
         setLoadingDynamicOptions(false);
       }
     };
 
     fetchSalesforceOptions();
-  }, [salesforceSync]);
+  }, [salesforceSync, asciiOnly]);
 
-  return { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync };
+  return {
+    dynamicOptions,
+    loadingDynamicOptions,
+    shouldSalesforceSync
+  };
 }

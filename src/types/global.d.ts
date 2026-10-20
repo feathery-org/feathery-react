@@ -8,7 +8,6 @@ declare global {
 
   var Argyle: any;
   var Plaid: any;
-  var Stytch: any;
   var alloy: any;
   var FeatheryInterface: any;
 

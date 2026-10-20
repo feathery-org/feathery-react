@@ -10,6 +10,7 @@ import React, {
 } from 'react';
 
 import debounce from 'lodash.debounce';
+import { normalizeAsciiFieldValues } from '../utils/ascii';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import { FeatheryCacheProvider } from '../utils/emotionCache';
@@ -22,6 +23,7 @@ import {
   prioritizeActions,
   processFileValues,
   registerRenderCallback,
+  remountAllForms,
   removeFilePathMapEntry,
   rerenderAllForms,
   setFormElementError,
@@ -72,12 +74,14 @@ import {
   getVisiblePositions
 } from '../utils/hideAndRepeats';
 import {
+  ensurePhoneValidator,
   isFieldValueEmpty,
   validateElements,
   validators
 } from '../utils/validation';
 import {
   defaultClient,
+  adoptLinkRedemption,
   FieldValues,
   fieldValues,
   fileRetryStatus,
@@ -122,8 +126,12 @@ import FormOff, {
   COLLAB_COMPLETED,
   COLLAB_DIRECT_DISABLED,
   FILLED_OUT,
+  LINK_REQUIRED,
   NO_BUSINESS_EMAIL
 } from '../elements/components/FormOff';
+import LinkContinue from '../elements/components/LinkContinue';
+import { canPersistLinkSecret } from '../utils/accessLink';
+import type { LinkConfirmOutcome, LinkRedemption } from '../utils/accessLink';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
@@ -131,6 +139,8 @@ import { preloadStepFields } from '../elements/fields';
 import { DEFAULT_MOBILE_BREAKPOINT, getViewport } from '../elements/styles';
 import {
   ContextOnAction,
+  ContextOnDocumentReview,
+  DocumentReviewTrigger,
   ContextOnChange,
   ContextOnError,
   ContextOnSubmit,
@@ -231,9 +241,13 @@ import {
 } from '../utils/error';
 import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
-import ConnectAccountModal from '../integrations/connectAccount/ConnectAccountModal';
+import ConnectAccountModal, {
+  SavedAccountCredential
+} from '../integrations/connectAccount/ConnectAccountModal';
 import {
   CONFIG_COMPONENTS,
+  PROVIDER_LABELS,
+  configFieldKey,
   connectionFieldKey,
   hasEmailIdentity
 } from '../integrations/connectAccount/providers';
@@ -244,9 +258,11 @@ import {
 } from '../integrations/connectAccount/oauthPopup';
 import { isNum } from '../utils/primitives';
 import {
+  documentSourceUploadFields,
   editorContainerId,
   getSignUrl,
-  isDocusignSignAction
+  isDocusignSignAction,
+  buildDocumentReviewTrigger
 } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
@@ -282,6 +298,12 @@ import {
   getActiveDocxEditorTarget
 } from '../assistant/tools/docx/docxEditorRegistry';
 import { confirmLeavingUnsavedWork } from '../utils/unsavedWork';
+import {
+  STEP_EVENT_BACK,
+  STEP_EVENT_LOAD,
+  STEP_EVENT_SKIP,
+  STEP_EVENT_SUBMIT
+} from '../utils/stepEvents';
 
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
@@ -292,6 +314,13 @@ const DocumentViewer = React.lazy(
 const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
 const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
 
+// Shown instead of the closed-form copy when the session request itself fails
+// while an access link is open. A token this device kept for the form makes
+// that path reachable on an ordinary connectivity failure, where the form is
+// not closed at all and a reload is all the user needs.
+const LINK_SESSION_FAILED_MESSAGE =
+  "We couldn't load this form. Please refresh the page.";
+
 // Bottom-right overlays stack rather than overlap: each one clears the boxes
 // already sitting below it, plus a gap. An absent box contributes nothing.
 const BOTTOM_RIGHT_STACK_GAP = 10;
@@ -299,7 +328,6 @@ const stackAbove = (height: number) =>
   height > 0 ? height + BOTTOM_RIGHT_STACK_GAP : 0;
 
 export * from './grid/StyledContainer';
-export type { StyledContainerProps } from './grid/StyledContainer';
 
 export interface Props {
   formId: string;
@@ -311,6 +339,11 @@ export interface Props {
   onError?: null | ((context: ContextOnError) => Promise<any> | void);
   onView?: null | ((context: ContextOnView) => Promise<any> | void);
   onAction?: null | ((context: ContextOnAction) => Promise<any> | void);
+  // Runs after a toolbar action (Sign / Create Draft / Download / Save /
+  // Continue) on the Generate Documents review screen has completed.
+  onDocumentReview?:
+    | null
+    | ((context: ContextOnDocumentReview) => Promise<any> | void);
   onViewElements?: string[];
   saveUrlParams?: boolean;
   initialValues?: FieldValues;
@@ -358,6 +391,24 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
   windows.forEach((win) => win?.close());
 }
 
+type RequiredFlowAction = {
+  type: keyof typeof REQUIRED_FLOW_ACTIONS;
+  provider?: string;
+};
+
+// A step's connect_account requirement is met by the submission's existing,
+// fully configured connection, not only by a flow run in this tab. A
+// collaborator continuing a submission whose owner already connected has the
+// connection fields but has never run the flow themselves, and must still be
+// able to move on. An account that is attached but not yet configured (no Box
+// folder chosen) does not count: uploads would have nowhere to go.
+function isRequiredFlowSatisfied(action: RequiredFlowAction) {
+  if (action.type !== ACTION_CONNECT_ACCOUNT || !action.provider) return false;
+  if (!fieldValues[connectionFieldKey(action.provider)]) return false;
+  const configKey = configFieldKey(action.provider);
+  return !configKey || !!fieldValues[configKey];
+}
+
 // Pre-open windows synchronously within the user-gesture call stack.
 // Connect Account always needs its popup opened this way since the OAuth
 // start call is async; iOS Safari additionally blocks window.open() for any
@@ -366,7 +417,7 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
 function preOpenActionWindows(actions: any[]) {
   const windows = new Map<number, Window | null>();
   actions.forEach((action, idx) => {
-    if (action.type === ACTION_CONNECT_ACCOUNT) {
+    if (action.type === ACTION_CONNECT_ACCOUNT && action.provider !== 'box') {
       windows.set(
         idx,
         featheryWindow().open(
@@ -401,6 +452,7 @@ function Form({
   onError = null,
   onView = null,
   onAction = null,
+  onDocumentReview = null,
   onViewElements = [],
   saveUrlParams = false,
   hideTestUI = false,
@@ -441,8 +493,15 @@ function Form({
   const [maxDepth, setMaxDepth] = useState(0);
   // No state since off reason is set in two locations almost simultaneously
   const formOffReason = useRef('');
+  // Copy for a blocked state the reason alone doesn't describe well enough.
+  // Empty leaves FormOff on the standard message for the reason.
+  const formOffMessage = useRef('');
+  // A single-use access link that this device hasn't claimed yet: the form
+  // stays behind the Continue screen until the user redeems it.
+  const [linkConfirmRequired, setLinkConfirmRequired] = useState(false);
   const [formSettings, setFormSettings] = useState({
     readOnly,
+    authSensitiveActionsOnly: false,
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
@@ -454,6 +513,7 @@ function Form({
     saveUrlParams: false,
     saveHideIfFields: false,
     clearHideIfFields: false,
+    asciiOnly: false,
     showFileUploadProgress: true,
     showDocumentProgress: true,
     completionBehavior: '',
@@ -489,9 +549,8 @@ function Form({
     null
   );
   const flowCompleted = useRef(false);
-  const [requiredStepAction, setRequiredStepAction] = useState<
-    keyof typeof REQUIRED_FLOW_ACTIONS | ''
-  >('');
+  const [requiredStepAction, setRequiredStepAction] =
+    useState<RequiredFlowAction | null>(null);
   const formLoadRan = useRef(false);
 
   // Lookup utility to find a servar (server field definition) by its key.
@@ -546,15 +605,28 @@ function Form({
       const { servar, step } = found;
       if (!FILE_FIELD_TYPES.includes(servar.type)) continue;
       if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
-      fileEntries.push({
-        servar: {
-          key: servar.key,
-          [servar.type]: fieldValues[fieldKey],
-          repeated: Boolean(servar.repeated)
-        },
-        stepKey: step.key
-      });
+      fileEntries.push(fileSubmitEntry(servar, step));
     }
+    if (fileEntries.length) await client.submitFiles(fileEntries);
+  };
+
+  const fileSubmitEntry = (servar: any, step: any) => ({
+    servar: {
+      key: servar.key,
+      [servar.type]: fieldValues[servar.key],
+      repeated: Boolean(servar.repeated)
+    },
+    stepKey: step.key
+  });
+
+  // Force-submit the file upload fields a Generate Documents action includes,
+  // regardless of the button's submit toggle, so the backend has the files.
+  const submitDocumentSourceFiles = async (action: Record<string, any>) => {
+    // A container rejects upload sources, so there's nothing to send.
+    if (editorContainerId(action)) return;
+    const fileEntries = documentSourceUploadFields(action.documents, steps).map(
+      ({ servar, step }) => fileSubmitEntry(servar, step)
+    );
     if (fileEntries.length) await client.submitFiles(fileEntries);
   };
 
@@ -610,6 +682,12 @@ function Form({
   const [reviewViewerPayload, setReviewViewerPayload] = useState<any>(null);
   type ConnectAccountModalState = {
     provider: string;
+    credentials?: SavedAccountCredential[];
+    chooseCredential?: boolean;
+    canSaveCredential?: boolean;
+    // The submission's connection belongs to another signed-in user; this
+    // user may only replace it with their own, not browse or reconfigure it.
+    lockedByOwner?: boolean;
     // Captured from the triggering runElementActions call: advances the
     // action chain past this action, and ends the button/action's loading
     // state. Each is a closure local to that call, not reachable from here
@@ -879,13 +957,6 @@ function Form({
     }
   }, [language]);
 
-  useEffect(() => {
-    if (!clientRef.current) return;
-    clientRef.current.offlineRequestHandler
-      .clearFailedFileUploadRequests()
-      .catch(() => {});
-  }, []);
-
   // Logic to run every time step changes
   useEffect(() => {
     if (!activeStep) return;
@@ -902,11 +973,11 @@ function Form({
       focusRef.current = 'already focused';
     }
 
-    let requiredStepAction: any = '';
+    let requiredStepAction: RequiredFlowAction | null = null;
     activeStep.buttons.forEach((b: any) =>
       (b.properties.actions ?? []).forEach((action: any) => {
         if (action.type in REQUIRED_FLOW_ACTIONS) {
-          requiredStepAction = action.type;
+          requiredStepAction = action;
         }
       })
     );
@@ -1001,7 +1072,7 @@ function Form({
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
         ...val,
-        getDefaultFieldValue(field)
+        getDefaultFieldValue(field, formSettings.asciiOnly)
       ];
     };
     updateRepeatValues(repeatContainer, getNewVal);
@@ -1046,7 +1117,9 @@ function Form({
         removeFilePathMapEntry(field.servar.key, curIndex);
 
       const newRepeatedValues = justRemove(vals, curIndex);
-      const defaultValue = [getDefaultFieldValue(field)];
+      const defaultValue = [
+        getDefaultFieldValue(field, formSettings.asciiOnly)
+      ];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
     updateRepeatValues(curRepeatContainer, getNewVal);
@@ -1166,6 +1239,11 @@ function Form({
     { rerender = true, clearErrors = true, triggerErrors = true } = {}
   ) => {
     if (clearErrors) clearBrowserErrors(formRef);
+    newFieldValues = normalizeAsciiFieldValues(
+      newFieldValues,
+      servarByKey,
+      formSettings.asciiOnly
+    );
     const entries = Object.entries(newFieldValues);
     if (entries.every(([key, val]) => fieldValues[key] === val)) return false;
 
@@ -1217,7 +1295,13 @@ function Form({
 
   // For audio AI only right now
   const [pollFuserData, setPollFuserData] = useState(_pollFuserData);
-  usePollFuserData(pollFuserData, client, updateFieldValues);
+  // An access link leaves the user id empty until the session (or a redeem)
+  // resolves it, and polling without one would fetch a different submission
+  usePollFuserData(
+    pollFuserData && !!initState.userId,
+    client,
+    updateFieldValues
+  );
 
   const eventCallbackMap: Record<string, any> = {
     change: onChange,
@@ -1227,7 +1311,8 @@ function Form({
     submit: onSubmit,
     error: onError,
     view: onView,
-    action: onAction
+    action: onAction,
+    document_review: onDocumentReview
   };
 
   const eventHasUserLogic = (event: string) => {
@@ -1352,6 +1437,13 @@ function Form({
 
     return logicRan;
   };
+
+  // Fires the `document_review` rules (and onDocumentReview) once a
+  // review-screen toolbar action has finalized and run its outcome, so a rule
+  // can react to what the filler chose - e.g. mark a record as sent for
+  // signature when they press Sign.
+  const runDocumentReviewLogic = (trigger: DocumentReviewTrigger) =>
+    runUserLogic('document_review', () => ({ trigger }));
 
   const getErrorCallback =
     (props1 = {}) =>
@@ -1489,6 +1581,7 @@ function Form({
                 );
             }
           };
+          await submitDocumentSourceFiles(action);
           const data = await client.generateEnvelopes(action);
           if (!data) throw new Error('Document generation failed');
           if (data.status === 'error') throw new Error(data.message);
@@ -1516,7 +1609,22 @@ function Form({
                   }
                   if (result.status === 'error') return result;
                   await runEnvelopeAction(result, envelopeAction, draft);
-                  finalized = result;
+                  await runDocumentReviewLogic(
+                    buildDocumentReviewTrigger({
+                      action,
+                      elementId: '',
+                      envelopes,
+                      envelopeAction,
+                      draft,
+                      result
+                    })
+                  );
+                  // The toolbar action that produced this outcome rides along
+                  // so the awaiting rule can branch on it.
+                  finalized = {
+                    ...result,
+                    reviewAction: draft ? 'draft' : envelopeAction
+                  };
                   return result;
                 },
                 onComplete: () => {
@@ -1533,13 +1641,15 @@ function Form({
               });
             });
           }
-          await runEnvelopeAction(data);
+          await runEnvelopeAction(data, undefined, action.draft === true);
           return data;
         },
         // Lets a document-editor container, which runs its own signing action
         // outside this flow, report the outcome through the same toast.
         showEnvelopeOutcome: (label: string, documents?: string[]) =>
           showEnvelopeOutcome(ENVELOPE_CONTAINER_TOAST_ID, label, documents),
+        // Same for the document_review rules its signing action fires.
+        runDocumentReviewLogic,
         fields,
         products: Object.seal(
           getSimplifiedProducts(integrations?.stripe, updateFieldValues, client)
@@ -1797,7 +1907,7 @@ function Form({
     // Hydrate field descriptions
     newStep.servar_fields.forEach((field: any) => {
       const servar = field.servar;
-      servar.name = replaceTextVariables(servar.name, field.repeat);
+      servar.name = replaceTextVariables(servar.name, field.repeat, true);
       const disabled = !fieldAllowedFromList(allowLists, servar.key);
       const props = field.properties;
       props.disabled = props.disabled || disabled;
@@ -1811,7 +1921,7 @@ function Form({
     client
       .registerEvent({
         step_key: newStep.key,
-        event: 'load',
+        event: STEP_EVENT_LOAD,
         previous_step_key: oldKey
       })
       .catch(() => {});
@@ -1835,7 +1945,7 @@ function Form({
         if (isRepeated) {
           const currentVal = fieldValues[sf.servar.key];
           if (!Array.isArray(currentVal)) return;
-          const defaultVal = getDefaultFieldValue(sf);
+          const defaultVal = getDefaultFieldValue(sf, formSettings.asciiOnly);
           const defaultJson = JSON.stringify(defaultVal);
           let changed = false;
           const newArray = currentVal.map((val: any, i: number) => {
@@ -1851,7 +1961,7 @@ function Form({
           });
           if (changed) newFieldVals[sf.servar.key] = newArray;
         } else if (!flags[0]) {
-          const newVal = getDefaultFormFieldValue(sf);
+          const newVal = getDefaultFormFieldValue(sf, formSettings.asciiOnly);
           if (
             JSON.stringify(newVal) !== JSON.stringify(getFieldValue(sf).value)
           ) {
@@ -1962,8 +2072,15 @@ function Form({
     newClient
       .fetchSession(formPromise, true)
       .then(([session, steps]: any) => {
+        // A single-use link carries no form data until this device claims it
+        if (session?.link?.confirm) {
+          setLinkConfirmRequired(true);
+          return;
+        }
+
         if (!session || session.collaborator?.invalid)
           formOffReason.current = CLOSED;
+        else if (session.link?.required) formOffReason.current = LINK_REQUIRED;
         else if (session.collaborator?.completed)
           formOffReason.current = COLLAB_COMPLETED;
         else if (session.collaborator?.direct_submission_disabled)
@@ -2011,6 +2128,7 @@ function Form({
           initialStepId,
           steps,
           sessionCurrentStep: session.current_step_key,
+          collaboratorStartStep: session.collaborator?.start_step_key,
           formId: _internalId
         });
         if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
@@ -2018,6 +2136,15 @@ function Form({
       })
       .catch(async (error: any) => {
         console.warn(error);
+        // Only the session resolves which submission an access link opens, so
+        // without one there is no user id to write against. Block instead of
+        // opening the origin step on an empty submission.
+        if (initState.linkToken) {
+          formOffReason.current = CLOSED;
+          formOffMessage.current = LINK_SESSION_FAILED_MESSAGE;
+          setRender((render) => ({ ...render }));
+          return;
+        }
         // Go to first step if origin fails
         const [data] = await formPromise;
         const newKey = (getOrigin as any)(data).key;
@@ -2069,7 +2196,7 @@ function Form({
     const servar = field.servar;
     let repeatContainer: Subgrid | undefined;
     if (servar.repeat_trigger === 'set_value') {
-      const defaultValue = getDefaultFieldValue(field);
+      const defaultValue = getDefaultFieldValue(field, formSettings.asciiOnly);
       const { value: previousValue, valueList } = getFieldValue(field);
 
       // Auto-add row when user fills the last field from empty state.
@@ -2361,7 +2488,7 @@ function Form({
   }: any) {
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
-      event: submitData ? 'complete' : 'skip'
+      event: submitData ? STEP_EVENT_SUBMIT : STEP_EVENT_SKIP
     };
 
     eventData = { ...eventData, next_step_key: redirectKey };
@@ -2390,10 +2517,9 @@ function Form({
             );
           }
 
-          // Note: We don't check dbHasRequest() here because:
-          // 1. If submitPromise succeeded, the requests were already handled
-          // 2. If submitPromise failed, we threw an error above and won't reach here
-          // 3. Checking dbHasRequest() here would block manual retries after fixing network
+          // The completion event replays answers still queued from earlier
+          // steps and is refused while any remain. The refusal rejects here,
+          // so the message reaches the button and the form is not finished.
 
           eventData.completed = true;
           await client.registerEvent(eventData).then(() => {
@@ -2465,6 +2591,14 @@ function Form({
     await callbackRef.current.all();
     const prevStepKey = getPrevStepKey(activeStep, backNavMap);
     if (prevStepKey) {
+      // Analytics only; a failed request must never block back navigation
+      client
+        .registerEvent({
+          step_key: activeStep.key,
+          next_step_key: prevStepKey,
+          event: STEP_EVENT_BACK
+        })
+        .catch(() => {});
       if (internalState[_internalId])
         internalState[_internalId].latestStepName = prevStepKey;
       pendingScrollRef.current = false;
@@ -2743,9 +2877,10 @@ function Form({
       if (
         !hasFlowActions(actions) &&
         requiredStepAction &&
-        !flowCompleted.current
+        !flowCompleted.current &&
+        !isRequiredFlowSatisfied(requiredStepAction)
       ) {
-        setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
+        setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction.type]);
         elementClicks[id] = false;
         clearButtonActionState();
 
@@ -3009,8 +3144,46 @@ function Form({
 
         const alreadyConnected = !!fieldValues[connectionKey];
         let connected = false;
+        let credentials: SavedAccountCredential[] = [];
+        let chooseCredential = false;
+        let canSaveCredential = false;
+        let lockedByOwner = false;
         try {
-          if (alreadyConnected) {
+          if (provider === 'box') {
+            // Listing saved accounts is optional; a throttle or temporary outage
+            // must not prevent the existing OAuth or change-account flow.
+            const saved = await client
+              .listAccountCredentials(provider)
+              .catch(() => undefined);
+            if (saved === null && formSettings.authSensitiveActionsOnly) {
+              // Hosted forms can provide an inline login surface for optional
+              // form auth. Ask that host to show it before reporting the
+              // sensitive action as unavailable to a guest.
+              const formWindow = featheryWindow();
+              if (typeof formWindow.dispatchEvent === 'function') {
+                formWindow.dispatchEvent(
+                  new CustomEvent('feathery:request-login')
+                );
+              }
+              const label = PROVIDER_LABELS[provider] ?? provider;
+              // A connection made by a signed-in user is locked to them; a
+              // guest cannot open its settings, only sign in as that user.
+              throw new Error(
+                alreadyConnected
+                  ? `This ${label} connection was set up by a signed-in user. Sign in as that user to change it.`
+                  : `Please sign in to connect your ${label} account.`
+              );
+            }
+            credentials = saved?.credentials ?? [];
+            canSaveCredential = !!saved;
+            lockedByOwner =
+              alreadyConnected && saved?.attached?.owner === false;
+            // Always open Box's picker first. If the saved-account lookup is
+            // unavailable, the picker still offers an explicit new-account
+            // action instead of pre-opening and dismissing an OAuth window.
+            chooseCredential = !alreadyConnected;
+          }
+          if (alreadyConnected || chooseCredential) {
             popup?.close();
           } else {
             const result = await runOAuthPopup(client, provider, popup);
@@ -3022,6 +3195,7 @@ function Form({
           }
           connected = true;
         } catch (error) {
+          popup?.close();
           elementClicks[id] = false;
           clearButtonActionState();
           setElementError(
@@ -3048,6 +3222,10 @@ function Form({
             // finished configuring the account yet.
             openConnectAccountModal({
               provider,
+              credentials,
+              chooseCredential,
+              canSaveCredential,
+              lockedByOwner,
               onFlowSuccess: flowOnSuccess(i),
               onAsyncEnd
             });
@@ -3074,7 +3252,7 @@ function Form({
           const eventData: Record<string, any> = {
             step_key: activeStep.key,
             next_step_key: '',
-            event: submit ? 'complete' : 'skip',
+            event: submit ? STEP_EVENT_SUBMIT : STEP_EVENT_SKIP,
             completed: true
           };
           await client.registerEvent(eventData);
@@ -3082,6 +3260,7 @@ function Form({
         }
       } else if (type === ACTION_SEND_SMS_MESSAGE) {
         const phoneNum = fieldValues[action.phone_target_field_key] as string;
+        await ensurePhoneValidator();
         if (validators.phone(phoneNum)) {
           try {
             await client.sendSMSMessage(phoneNum, action.sms_message);
@@ -3095,6 +3274,7 @@ function Form({
         }
       } else if (type === ACTION_SEND_SMS_CODE) {
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
+        await ensurePhoneValidator();
         if (validators.phone(phoneNum)) {
           try {
             await Auth.sendSms(phoneNum, client);
@@ -3210,7 +3390,10 @@ function Form({
             typeof invitee === 'string' ? invitee.trim() : invitee
           )
           .filter(Boolean);
-        if (!invitees.length) {
+        // With no email field wired up, this role relies on its configured
+        // default invitees (an email or user group), which the backend
+        // resolves - so only require a value here when a field is configured.
+        if (action.email_field_key && !invitees.length) {
           setElementError('Collaborators required');
           break;
         }
@@ -3385,7 +3568,7 @@ function Form({
               const eventData: Record<string, any> = {
                 step_key: activeStep.key,
                 next_step_key: '',
-                event: submit ? 'complete' : 'skip',
+                event: submit ? STEP_EVENT_SUBMIT : STEP_EVENT_SKIP,
                 completed: true
               };
               await client.registerEvent(eventData);
@@ -3406,6 +3589,7 @@ function Form({
           }
         };
         try {
+          await submitDocumentSourceFiles(action);
           const data = await client.generateEnvelopes(action);
           // A missing response is a failure, not a success: _fetch resolves
           // undefined on a network blip / 403 / 409, and reading .status off it
@@ -3478,6 +3662,16 @@ function Form({
                   };
                 if (result.status === 'error') return result;
                 await runEnvelopeAction(result, envelopeAction, draft);
+                await runDocumentReviewLogic(
+                  buildDocumentReviewTrigger({
+                    action,
+                    elementId: element.id,
+                    envelopes,
+                    envelopeAction,
+                    draft,
+                    result
+                  })
+                );
                 return result;
               },
               onComplete: () => {
@@ -3561,7 +3755,9 @@ function Form({
           action.toggle && JSON.stringify(destVal) === JSON.stringify(val);
         if (setToDefaultValue) {
           // could be a hidden field
-          val = servar ? getDefaultFieldValue({ servar }) : '';
+          val = servar
+            ? getDefaultFieldValue({ servar }, formSettings.asciiOnly)
+            : '';
         }
 
         if (servar?.repeated) {
@@ -3570,7 +3766,10 @@ function Form({
           // Repeat index already set via click if retain_click_value
           if (!action.retain_click_value) destVal[curIndex] = val;
           if (action.repeat_single) {
-            const defaultVal = getDefaultFieldValue({ servar });
+            const defaultVal = getDefaultFieldValue(
+              { servar },
+              formSettings.asciiOnly
+            );
             for (let i = 0; i < destVal.length; i++) {
               if (i !== curIndex) destVal[i] = defaultVal;
             }
@@ -3789,6 +3988,7 @@ function Form({
     tableOnClick,
     fieldOnChange,
     buttonLoaders,
+    logicRules,
     inlineErrors,
     setInlineErrors,
     changeValue,
@@ -3830,6 +4030,38 @@ function Form({
     handleFormComplete().then(redirectForm);
   }, [anyFinished]);
 
+  // Claim a single-use access link for this device, then restart the load so
+  // the session fetch runs again against the submission the link opens.
+  const confirmAccessLink = async (): Promise<LinkConfirmOutcome> => {
+    const { linkToken } = initState;
+    if (!linkToken || !client) return 'failed';
+
+    // Fail safe: redeeming burns the one opening the link has, so a device that
+    // cannot keep the device secret must not touch the server at all. The link
+    // stays unredeemed and the user can open it somewhere that can store it.
+    if (!canPersistLinkSecret()) return 'storage_blocked';
+
+    let redemption: LinkRedemption | undefined;
+    try {
+      redemption = await client.redeemLink(linkToken);
+    } catch (e) {
+      // A rate limit or server error leaves the link unredeemed, so the user
+      // can simply ask again
+      return 'failed';
+    }
+
+    // A rejected link (expired, used on another device, revoked) answers 403,
+    // which the client has already turned into the blocked form state
+    if (initState.authenticationError) return 'blocked';
+    // Anything else empty is a network failure or a response we can't open the
+    // submission with, both of which are worth retrying
+    if (!redemption?.fuser_key || !redemption.device_secret) return 'failed';
+
+    adoptLinkRedemption(linkToken, redemption);
+    remountAllForms();
+    return 'adopted';
+  };
+
   // Form authentication error (403)
   if (initState.authenticationError) {
     return (
@@ -3842,13 +4074,25 @@ function Form({
   }
   // Form is turned off
   if (formOffReason.current === CLOSED)
-    return <FormOff showCTA={formSettings.showBrand} />;
+    return (
+      <FormOff
+        showCTA={formSettings.showBrand}
+        message={formOffMessage.current}
+      />
+    );
   else if (
-    [COLLAB_COMPLETED, COLLAB_DIRECT_DISABLED, NO_BUSINESS_EMAIL].includes(
-      formOffReason.current
-    )
+    [
+      COLLAB_COMPLETED,
+      COLLAB_DIRECT_DISABLED,
+      LINK_REQUIRED,
+      NO_BUSINESS_EMAIL
+    ].includes(formOffReason.current)
   )
     return <FormOff reason={formOffReason.current} showCTA={false} />;
+  // Checked after the off states so a turned off form never offers to burn the
+  // one opening a single-use link has
+  else if (linkConfirmRequired)
+    return <LinkContinue onContinue={confirmAccessLink} />;
   else if (anyFinished) {
     return formSettings.completionBehavior === 'show_completed_screen' ? (
       <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
@@ -3987,6 +4231,12 @@ function Form({
           <ConnectAccountModal
             show
             provider={connectAccountModal.provider}
+            credentials={connectAccountModal.credentials}
+            chooseCredential={connectAccountModal.chooseCredential}
+            canSaveCredential={connectAccountModal.canSaveCredential}
+            lockedByOwner={connectAccountModal.lockedByOwner}
+            onCredentialSelected={updateFieldValues}
+            onDisconnected={updateFieldValues}
             client={client}
             accountEmail={
               hasEmailIdentity(connectAccountModal.provider)
@@ -3995,7 +4245,7 @@ function Form({
                   ] as string)
                 : ''
             }
-            onChangeAccount={async () => {
+            onChangeAccount={async (saveCredential = false) => {
               // window.open must stay the first statement: the modal's
               // button handler invokes this synchronously from a real click,
               // and any await ahead of it would break the user-gesture chain
@@ -4013,7 +4263,8 @@ function Form({
                 const result = await runOAuthPopup(
                   client,
                   connectAccountModal.provider,
-                  popup
+                  popup,
+                  saveCredential
                 );
                 updateFieldValues({
                   [connectionFieldKey(connectAccountModal.provider)]:

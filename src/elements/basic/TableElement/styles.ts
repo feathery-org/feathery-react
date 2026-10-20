@@ -195,7 +195,7 @@ export const paginationListStyle = {
   margin: 0
 } as const;
 
-export const buttonStyle = {
+const buttonStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -464,6 +464,31 @@ export const editingCellInputStyle = {
 export const deleteColumnStyle = {
   width: '40px',
   padding: '0 8px'
+} as const;
+
+// The "mark as unvalidated" icon, laid out like the delete icon but without
+// its destructive red: the row is kept, only sent back for review.
+export const unverifyIconStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '28px',
+  height: '28px',
+  borderRadius: '4px',
+  border: 'none',
+  backgroundColor: 'transparent',
+  color: colors.gray400,
+  cursor: 'pointer',
+  opacity: 0,
+  transition: 'opacity 0.15s',
+  padding: 0,
+  'tr:hover &': {
+    opacity: 1
+  },
+  '&:hover': {
+    backgroundColor: colors.gray100,
+    color: colors.gray700
+  }
 } as const;
 
 export const deleteIconStyle = {

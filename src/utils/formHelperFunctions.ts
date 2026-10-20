@@ -12,7 +12,9 @@ import {
   fileRetryStatus,
   initInfo,
   initState,
-  setFieldValues
+  restoredFileKeys,
+  setFieldValues,
+  normalizeKnownAsciiValues
 } from './init';
 import throttle from 'lodash.throttle';
 import { ACTION_EXECUTION_ORDER, ACTION_STORE_FIELD } from './elementActions';
@@ -149,7 +151,7 @@ export const lookUpTrigger = (
 };
 
 /** Update the fieldValues cache with a backend session */
-export function updateSessionValues(session: any) {
+export function updateSessionValues(session: any, formKey?: string) {
   processFileValues(session.file_values);
 
   const replaceNullInServarArrays = (
@@ -175,7 +177,10 @@ export function updateSessionValues(session: any) {
     (key) => delete transformedFieldValues[key]
   );
 
-  Object.assign(fieldValues, transformedFieldValues);
+  Object.assign(
+    fieldValues,
+    normalizeKnownAsciiValues(transformedFieldValues, formKey)
+  );
 }
 
 /**
@@ -314,7 +319,7 @@ export function clearBrowserErrors(formRef: React.MutableRefObject<any>) {
   clearBrowserErrorsDebounced(formRef);
 }
 
-export function objectMap(obj: any, transform: any) {
+function objectMap(obj: any, transform: any) {
   return Object.entries(obj).reduce((newObj, [key, val]) => {
     return { ...newObj, [key]: transform(val) };
   }, {});
@@ -356,6 +361,7 @@ export function processFileValues(fileValues: Record<string, any>) {
 
   Object.assign(fieldValues, filePromises);
   Object.assign(filePathMap, newFilePathMap);
+  Object.keys(fileValues).forEach((key) => restoredFileKeys.add(key));
 }
 
 // Drop one repeat row's entry so the remaining paths stay aligned with their
@@ -430,6 +436,8 @@ export function prioritizeActions(actions: any[]) {
 
 export function mapFormSettingsResponse(res: any) {
   return {
+    asciiOnly: res.ascii_only ?? false,
+    authSensitiveActionsOnly: res.auth_sensitive_actions_only ?? false,
     errorType: res.error_type,
     autocomplete: res.autocomplete ? 'on' : 'off',
     autofocus: res.autofocus,
