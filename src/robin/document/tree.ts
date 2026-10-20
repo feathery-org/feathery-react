@@ -192,6 +192,16 @@ export function walk(
   rec({ node: root, parent: null, key: null, index: 0, depth: 0 });
 }
 
+/** Whether any node below this one carries a pending change */
+export function hasPendingInside(node: NfNode, shape: TreeShape): boolean {
+  let found = false;
+  walk(node, shape, (p) => {
+    if (found) return false;
+    if (p.node !== node && p.node.pending !== undefined) found = true;
+  });
+  return found;
+}
+
 /** id -> placement over a whole tree. */
 export function indexTree(
   root: NfNode,

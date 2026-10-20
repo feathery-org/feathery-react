@@ -7,10 +7,12 @@
  */
 import type { DocumentView, FeatureMark } from '../../pack';
 import type { NfNode } from '../../tree';
+import { hasPendingInside } from '../../tree';
 import { HEADER_FOOTER, INLINE_KINDS, KIND } from './adapter/keys';
 import { bindingMarks } from './features/formula';
 import { sectionMarkerMark } from './features/sectionMarker';
 import { viewToc } from './toc';
+import { docxTree } from './tree';
 import { arr } from './util';
 
 type Obj = Record<string, unknown>;
@@ -145,6 +147,8 @@ export function detail(node: NfNode, view: DocumentView): string {
       // title before the begin stays the document's: the refusal covers only the field)
       if (viewToc(view)?.paragraphs.includes(node))
         flags.push('toc (refreshed by the editor)');
+      if (hasPendingInside(node, docxTree))
+        flags.push('tracked changes inside');
       const marks = sectionMarkerMark(node, ownText(node)).map(
         (m) => `section-marker ${m.value}`
       );
@@ -177,11 +181,17 @@ export function detail(node: NfNode, view: DocumentView): string {
         for (const v of Object.values(n)) rec(v);
       };
       rec(node.cells);
-      const header =
-        typeof node.style === 'string' && formats[node.style]?.isHeader === true
-          ? ' (header)'
-          : '';
-      return `"${cells}"${header}${pendingTag(node)}${
+      const rowFlags: string[] = [];
+      if (
+        typeof node.style === 'string' &&
+        formats[node.style]?.isHeader === true
+      )
+        rowFlags.push('header');
+      if (hasPendingInside(node, docxTree))
+        rowFlags.push('tracked changes inside');
+      return `"${cells}"${
+        rowFlags.length ? ` (${rowFlags.join('; ')})` : ''
+      }${pendingTag(node)}${
         bs.length ? `  {${key ? `row=${key}; ` : ''}${bs.join('; ')}}` : ''
       }`;
     }

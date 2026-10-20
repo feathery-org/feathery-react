@@ -332,7 +332,10 @@ const findHitSchema = z.looseObject({
   kind: z.string().min(1),
   within: z.array(nodeIdSchema.or(z.literal(ROOT_ID))).max(FIND_WITHIN_MAX),
   snippet: z.string().max(FIND_SNIPPET_MAX),
-  span: z.looseObject({ start: z.int().min(0), end: z.int().min(0) }).optional()
+  span: z
+    .looseObject({ start: z.int().min(0), end: z.int().min(0) })
+    .optional(),
+  trackedChangesInside: z.literal(true).optional()
 });
 export type FindHit = z.output<typeof findHitSchema>;
 

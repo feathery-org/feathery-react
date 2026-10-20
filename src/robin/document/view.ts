@@ -14,6 +14,7 @@ import {
   ancestorsOf,
   baseOf,
   clone,
+  hasPendingInside,
   indexTree,
   isPlainObject,
   listAt,
@@ -151,7 +152,10 @@ export function matchQuery(
       kind: node.kind,
       within: ancestors.slice(0, FIND_WITHIN_MAX),
       snippet: clip(own, span?.start ?? 0, span?.end ?? 0),
-      ...(span ? { span } : {})
+      ...(span ? { span } : {}),
+      ...(text !== null && hasPendingInside(node, pack.tree)
+        ? { trackedChangesInside: true as const }
+        : {})
     });
   }
   return hits;
