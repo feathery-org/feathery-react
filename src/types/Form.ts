@@ -32,6 +32,8 @@ export type Trigger = {
   rowIndex?: number;
   action?: string;
   rowData?: Record<string, any>;
+  // Data Hub tables: the clicked row's entry id (absent for unsaved rows)
+  entryId?: string;
   // Set for data-cell clicks; absent for row-level/action clicks
   columnIndex?: number;
   columnKey?: string;

@@ -450,3 +450,43 @@ describe('TableElement - Data Hub chosen by hidden field', () => {
     expect(dataHubAction).not.toHaveBeenCalled();
   });
 });
+
+describe('TableElement - Data Hub row click', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+  });
+
+  const twoEntries = ({ operation }: any) =>
+    Promise.resolve(
+      operation === 'get'
+        ? [
+            { id: 'entry1', data: { name: 'Alice', email: 'a@test.com' } },
+            { id: 'entry2', data: { name: 'Bob', email: 'b@test.com' } }
+          ]
+        : { updated: 1 }
+    );
+
+  it('puts the clicked row entry id on row and cell click payloads', async () => {
+    const onClick = jest.fn();
+    render(
+      <TableElement
+        element={makeHubElement({
+          enable_editing: false,
+          add_delete_rows: false,
+          row_click_step: 'step-details'
+        })}
+        responsiveStyles={mockStyles()}
+        client={{ dataHubAction: jest.fn(twoEntries) }}
+        onClick={onClick}
+      />
+    );
+
+    fireEvent.click(await screen.findByText('Bob'));
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onClick).toHaveBeenCalledWith(
+      expect.objectContaining({ rowIndex: 1, entryId: 'entry2' })
+    );
+  });
+});

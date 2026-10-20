@@ -257,6 +257,20 @@ function TableElement({
 
   const isSpreadsheet = wantsSpreadsheet;
   const canEdit = enableEditing && !isTransposed && !(isHub && hub.loading);
+  // Data Hub rows carry their entry id on click payloads so a row click can
+  // hand the entry to a data-driven container; unsaved rows have none yet.
+  const entryIdPayload = (rowIndex: number) => {
+    const entryId = isHub ? hub.entryIds[rowIndex] : null;
+    return entryId ? { entryId } : {};
+  };
+  const rowsClickable =
+    isHub &&
+    !canEdit &&
+    !isTransposed &&
+    !!(
+      element.properties?.row_click_entry_field_key ||
+      element.properties?.row_click_step
+    );
   const canAddRows = canEdit && enableAddDeleteRows;
   // The spreadsheet has its own trailing "add row" strip and a row-header
   // context menu, so the toolbar button would be a second way to do the same
@@ -958,7 +972,8 @@ function TableElement({
                   if (!isTransposed && !canEdit) {
                     onClick({
                       rowIndex,
-                      rowData
+                      rowData,
+                      ...entryIdPayload(rowIndex)
                     });
                   }
                 };
@@ -967,7 +982,11 @@ function TableElement({
                   <tr
                     key={rowIndex}
                     className={TABLE_CLASS.row}
-                    css={{ ...rowStyle, ...styles.getTarget('tr') }}
+                    css={{
+                      ...rowStyle,
+                      ...(rowsClickable ? { cursor: 'pointer' } : {}),
+                      ...styles.getTarget('tr')
+                    }}
                     onClick={handleRowClick}
                   >
                     {columns.map((column, colIndex) => {
@@ -1039,7 +1058,8 @@ function TableElement({
                             rowData: originalRowData,
                             columnIndex: rowIndex,
                             columnKey: originalColumn?.field_key,
-                            columnName: originalColumn?.name
+                            columnName: originalColumn?.name,
+                            ...entryIdPayload(originalRowIndex)
                           });
                         } else if (!isTransposed && !canEdit) {
                           e.stopPropagation();
@@ -1048,7 +1068,8 @@ function TableElement({
                             rowData,
                             columnIndex: colIndex,
                             columnKey: column.field_key,
-                            columnName: column.name
+                            columnName: column.name,
+                            ...entryIdPayload(rowIndex)
                           });
                         }
                       };
