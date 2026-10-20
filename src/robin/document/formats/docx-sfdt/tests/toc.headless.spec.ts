@@ -28,6 +28,7 @@ const privateDocument = (() => {
 const SHAPES: Array<[string, string]> = [
   ...(privateDocument ? [['a private proposal, by style with hyperlinks', privateDocument] as [string, string]] : []),
   ['the flagship, by heading level with hyperlinks', withToc('levels')],
+  ['the flagship, by heading level and outline level as Word inserts it', withToc('levels', { code: ' TOC \\o "1-1" \\h \\z \\u ' })],
   ['the flagship, by style with no hyperlinks', withToc('styles')]
 ];
 
