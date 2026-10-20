@@ -9,12 +9,21 @@ import {
   runningInClient,
   setCookie
 } from './browser';
+import {
+  getLinkTokenFromUrl,
+  getStoredLinkSecret,
+  LINK_TOKEN_PARAM,
+  storeLinkSecret,
+  type LinkRedemption
+} from './accessLink';
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 import { parseUserVal } from './entities/Field';
 import { authState } from '../auth/LoginForm';
 // mask.ts imports nothing, so this stays free of the import cycles the rest of
 // the elements tree would introduce here.
 import { showsFormatInText } from '../elements/fields/TextField/mask';
+import { registerOptionLabels } from './optionLabels';
+import { normalizeAsciiFieldValues } from './ascii';
 
 export type FeatheryFieldTypes =
   | null
@@ -41,6 +50,9 @@ type InitOptions = {
   language?: string;
   theme?: string;
   noSave?: boolean;
+  // Token from a one-time or expiring access link. Read from the `_lt` URL
+  // param when not passed.
+  linkToken?: string;
   _enterpriseRegion?: string;
 };
 
@@ -61,6 +73,10 @@ type InitState = {
   initNoSave: boolean;
   _internalUserId: string;
   authenticationError?: string;
+  // Device secret this browser received when it redeemed `linkToken`. Empty
+  // until the link's Continue screen is confirmed, and for expiring links,
+  // which are not single use and so never need redeeming.
+  linkSecret: string;
   // Step keys the user has completed (i.e. submitted), loaded lazily when a
   // stepper renders and updated as the user advances. Used to render stepper
   // completion so a step skipped over (navigated past without submitting)
@@ -91,6 +107,8 @@ const initState: InitState = {
   collaboratorId: '',
   collaboratorReview: '',
   overrideUserId: false,
+  linkToken: '',
+  linkSecret: '',
   language: '',
   formSchemas: {},
   formSessions: {},
@@ -116,6 +134,8 @@ let filePathMap: Record<string, null | string | (string | null)[]> = {};
 export const fileDeduplicationCount: Record<string, string> = {};
 // Tracks last submission result (true=success, false=failed, undefined=never tried)
 export const fileRetryStatus: Record<string, boolean> = {};
+// File fields whose values were restored from the server, not uploaded here
+export const restoredFileKeys = new Set<string>();
 
 function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (!sdkKey || typeof sdkKey !== 'string') {
@@ -151,6 +171,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (options.userTracking) initState.userTracking = options.userTracking;
   if (options.theme) initState.theme = options.theme;
   if (options.collaboratorId) initState.collaboratorId = options.collaboratorId;
+  if (options.linkToken) initState.linkToken = options.linkToken;
   if (options.collaboratorReview)
     initState.collaboratorReview = options.collaboratorReview;
   if (options.language) {
@@ -165,7 +186,18 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
       /* webpackChunkName: "scriptjs" */ 'scriptjs'
     );
 
-    // Client-side tracking logic
+    // An explicit option wins over the URL so a host page can pass a token it
+    // resolved itself.
+    if (!initState.linkToken) initState.linkToken = getLinkTokenFromUrl();
+    if (initState.linkToken)
+      initState.linkSecret = getStoredLinkSecret(initState.linkToken);
+
+    // Client-side tracking logic. A link token does not suppress this: the link
+    // only decides the submission once the backend accepts it, and a token
+    // minted for another form is ignored there. The session endpoint overrides
+    // `fuser_key` whenever a link resolves and answers with `new_user_id`, so
+    // sending the tracked id alongside the header costs nothing and keeps every
+    // form on the page that the link does not open working normally.
     if (initState.userTracking === 'cookie') {
       const cookieKey = `feathery-user-id-${sdkKey}`;
       const cookieId = getCookie(cookieKey) || uuidv4();
@@ -202,7 +234,7 @@ function _fetchFormData(formIds: string[]) {
     const formClient = new FeatheryClient(key);
     formClient.fetchCacheForm().then((stepsResponse: any) => {
       initState.formSchemas[key] = stepsResponse;
-      registerTextVariableFormats(stepsResponse);
+      registerTextVariableFields(stepsResponse);
     });
   });
 }
@@ -224,7 +256,12 @@ function handleNewUserSearchParams(newUserId: string) {
     if (key === '_id') {
       hadIdParam = true;
     }
-    if (key.charAt(0) === '_' && !['_slug', '_locale'].includes(key)) {
+    // The access link token outlives a user-id rewrite: the device that
+    // redeemed the link keeps reopening the form through it.
+    if (
+      key.charAt(0) === '_' &&
+      !['_slug', '_locale', LINK_TOKEN_PARAM].includes(key)
+    ) {
       paramsToDelete.push(key);
     }
   });
@@ -243,6 +280,19 @@ function handleNewUserSearchParams(newUserId: string) {
   featheryWindow().history.replaceState({}, '', newUrl);
 }
 
+/**
+ * Drop everything scoped to the submission being filled out. Called whenever
+ * the SDK switches to a different submission, so the previous one's values,
+ * files, and cached sessions can't bleed into the new one.
+ */
+function resetSubmissionState(): void {
+  fieldValues = {};
+  filePathMap = {};
+  restoredFileKeys.clear();
+  initState.formSessions = {};
+  initState.fieldValuesInitialized = false;
+}
+
 async function updateUserId(newUserId?: string, merge = false): Promise<void> {
   if (!newUserId) newUserId = uuidv4();
   if (merge) await defaultClient.updateUserId(newUserId, true);
@@ -251,10 +301,7 @@ async function updateUserId(newUserId?: string, merge = false): Promise<void> {
     setCookie(`feathery-user-id-${initState.sdkKey}`, newUserId);
   }
   if (!merge) {
-    fieldValues = {};
-    filePathMap = {};
-    initState.formSessions = {};
-    initState.fieldValuesInitialized = false;
+    resetSubmissionState();
     // Clear URL hash on new session if not tracking location
     handleNewUserSearchParams(newUserId);
     // Need to fully reload page if auth since LoginForm isn't yet accounted
@@ -264,16 +311,56 @@ async function updateUserId(newUserId?: string, merge = false): Promise<void> {
   }
 }
 
+/**
+ * Point the SDK at the submission a redeemed access link opens. Like a user id
+ * change this switches submissions mid-session, so it clears the previous one's
+ * values, files, and cached sessions.
+ *
+ * `overrideUserId` marks the submission as preassigned rather than tracked. The
+ * session endpoint reads it as "this form tracks users" (so a reopened link
+ * comes back with its saved step, back nav, and completion state), and AB
+ * variant assignment skips a preassigned submission since it is already bound
+ * to the form the link was minted against.
+ */
+function adoptLinkRedemption(token: string, redemption: LinkRedemption): void {
+  initState.linkSecret = redemption.device_secret;
+  storeLinkSecret(token, redemption.device_secret);
+
+  initState.userId = redemption.fuser_key;
+  initState.overrideUserId = true;
+  // Always assigned: a link outside a collaborative form redeems to null, and
+  // that has to clear any collaborator the page was opened with.
+  initState.collaboratorId = redemption.collaborator_id ?? '';
+
+  resetSubmissionState();
+}
+
 async function updateTheme(newTheme = '') {
   initState.theme = newTheme;
   await remountAllForms(true);
 }
 
-/**
- * If customers provide files through setFieldValues
- * we need to explicitly convert any files to file Promises
- * since they may not have done so
- */
+export function normalizeKnownAsciiValues<T extends Record<string, any>>(
+  values: T,
+  formKey?: string
+): T {
+  const fields = new Map<string, { type: string }>();
+  Object.entries(initState.formSchemas).forEach(([key, schema]) => {
+    if (
+      !schema.ascii_only ||
+      (formKey && key !== formKey && schema.new_form_id !== formKey)
+    )
+      return;
+    Object.values(schema.steps ?? {}).forEach((step: any) => {
+      (step.servar_fields ?? []).forEach(({ servar }: any) =>
+        fields.set(servar.key, servar)
+      );
+    });
+  });
+  return normalizeAsciiFieldValues(values, fields, fields.size > 0);
+}
+
+/** Convert user-provided files to the promises expected by file fields. */
 function setFieldValues(
   userVals: FieldValues,
   rerender = true,
@@ -312,18 +399,26 @@ function registerKnownFieldKeys(session: any) {
 }
 
 /**
- * Record which number fields render their format inside text variables. Driven
- * off the form schema rather than the session, since only the schema carries
- * servar metadata, and re-run per schema load so toggling the option in the
- * builder takes effect on the next fetch.
+ * Record what a field's value renders as inside a text variable: the number
+ * format it opted into, and the labels its options display as. Driven off the
+ * form schema rather than the session, since only the schema carries servar
+ * metadata, and re-run per schema load so a change in the builder — or a
+ * language switch, which reloads the schema with translated labels — takes
+ * effect on the next fetch.
  */
-function registerTextVariableFormats(schema: any) {
+function registerTextVariableFields(schema: any) {
   // Steps arrive keyed by step id from the API and as an array when a form is
   // off; Object.values covers both.
   Object.values(schema?.steps ?? {}).forEach((step: any) => {
     (step?.servar_fields ?? []).forEach((field: any) => {
       const servar = field?.servar;
-      if (servar?.type !== 'integer_field' || !servar.key) return;
+      if (!servar?.key) return;
+      registerOptionLabels(
+        servar,
+        field.properties,
+        schema.ascii_only === true
+      );
+      if (servar.type !== 'integer_field') return;
       // Drop rather than skip, so turning the option off releases a key that an
       // earlier load registered.
       if (showsFormatInText(servar))
@@ -378,10 +473,11 @@ export {
   setFieldValues,
   getFieldValues,
   registerKnownFieldKeys,
-  registerTextVariableFormats,
+  registerTextVariableFields,
   getCompletedStepKeys,
   markStepCompleted,
   loadCompletedSteps,
+  adoptLinkRedemption,
   initState,
   initFormsPromise,
   fieldValues,

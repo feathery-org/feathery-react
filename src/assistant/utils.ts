@@ -1,4 +1,5 @@
 import { Chat } from '@ai-sdk/react';
+import { withLinkRequestHeaders } from '../utils/accessLinkRequest';
 
 export type AssistantHeaders = () => Record<string, string>;
 
@@ -31,9 +32,11 @@ export const getThreadList = async (
   headers: AssistantHeaders,
   formKey?: string
 ): Promise<AssistantThreadDetail[] | null> => {
-  const res = await fetch(withFormKey(threadsBase(baseUrl), formKey), {
-    headers: headers()
-  });
+  const url = withFormKey(threadsBase(baseUrl), formKey);
+  const res = await fetch(
+    url,
+    withLinkRequestHeaders(url, { headers: headers() })
+  );
   if (!res.ok) return null;
   return res.json();
 };
@@ -44,11 +47,10 @@ export const getThreadDetail = async (
   threadId: string,
   formKey?: string
 ): Promise<AssistantThreadDetail | null> => {
+  const url = withFormKey(`${threadsBase(baseUrl)}${threadId}/`, formKey);
   const res = await fetch(
-    withFormKey(`${threadsBase(baseUrl)}${threadId}/`, formKey),
-    {
-      headers: headers()
-    }
+    url,
+    withLinkRequestHeaders(url, { headers: headers() })
   );
   if (!res.ok) return null;
   return res.json();
@@ -65,9 +67,10 @@ export const generateThreadTitle = async (
   },
   formKey?: string
 ): Promise<string | null> => {
+  const url = withFormKey(`${threadsBase(baseUrl)}title/`, formKey);
   const res = await fetch(
-    withFormKey(`${threadsBase(baseUrl)}title/`, formKey),
-    {
+    url,
+    withLinkRequestHeaders(url, {
       method: 'POST',
       headers: { ...headers(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -75,7 +78,7 @@ export const generateThreadTitle = async (
         thread_id: threadId ?? undefined,
         ...(context ?? {})
       })
-    }
+    })
   );
   if (!res.ok) return null;
   const data = await res.json();
@@ -88,8 +91,9 @@ export const deleteThread = async (
   threadId: string,
   formKey?: string
 ): Promise<void> => {
-  await fetch(withFormKey(`${threadsBase(baseUrl)}${threadId}/`, formKey), {
-    method: 'DELETE',
-    headers: headers()
-  });
+  const url = withFormKey(`${threadsBase(baseUrl)}${threadId}/`, formKey);
+  await fetch(
+    url,
+    withLinkRequestHeaders(url, { method: 'DELETE', headers: headers() })
+  );
 };

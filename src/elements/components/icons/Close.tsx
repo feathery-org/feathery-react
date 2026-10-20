@@ -1,5 +1,4 @@
 import React from 'react';
-
 export default function CloseIcon({
   width = 24,
   height = 24,

@@ -12,13 +12,13 @@ const Svg = (props: SVGProps<SVGSVGElement>) => (
   />
 );
 
-// Green "saved" tick — matches the task-view completion check in the assistant
-// (stroked polyline, emerald). Not the fill-based toolbar Svg helper.
+// Stroked check / ✕ for the save toast and the tracked-changes accept/reject
+// actions. Both use currentColor so the caller sets the color.
 export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg width='14' height='14' viewBox='0 0 24 24' fill='none' {...p}>
     <polyline
       points='20 6 9 17 4 12'
-      stroke='#10b981'
+      stroke='currentColor'
       strokeWidth='2'
       strokeLinecap='round'
       strokeLinejoin='round'
@@ -26,19 +26,10 @@ export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-// "✕" — matches the task-view error mark in the assistant (stroked, uses
-// currentColor so the caller sets the red).
 export const CloseIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg width='14' height='14' viewBox='0 0 24 24' fill='none' {...p}>
     <path
-      d='M18 6 6 18'
-      stroke='currentColor'
-      strokeWidth='2'
-      strokeLinecap='round'
-      strokeLinejoin='round'
-    />
-    <path
-      d='m6 6 12 12'
+      d='M18 6 6 18M6 6l12 12'
       stroke='currentColor'
       strokeWidth='2'
       strokeLinecap='round'
@@ -56,52 +47,6 @@ export const UndoIcon = (p: SVGProps<SVGSVGElement>) => (
 export const RedoIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path d='M15.707 2.293a1 1 0 1 0-1.414 1.414L17.586 7H9.5a6.5 6.5 0 1 0 0 13H13a1 1 0 1 0 0-2H9.5a4.5 4.5 0 1 1 0-9h8.086l-3.293 3.293a1 1 0 0 0 1.414 1.414l5-5a1 1 0 0 0 0-1.414l-5-5Z' />
-  </Svg>
-);
-
-export const MinusIcon = (p: SVGProps<SVGSVGElement>) => (
-  <Svg {...p}>
-    <path
-      fillRule='evenodd'
-      clipRule='evenodd'
-      d='M4 12C4 11.4477 4.44772 11 5 11H19C19.5523 11 20 11.4477 20 12C20 12.5523 19.5523 13 19 13H5C4.44772 13 4 12.5523 4 12Z'
-    />
-  </Svg>
-);
-
-export const PlusIcon = (p: SVGProps<SVGSVGElement>) => (
-  <Svg {...p}>
-    <path d='M13 5C13 4.44772 12.5523 4 12 4C11.4477 4 11 4.44772 11 5V11H5C4.44772 11 4 11.4477 4 12C4 12.5523 4.44772 13 5 13H11V19C11 19.5523 11.4477 20 12 20C12.5523 20 13 19.5523 13 19V13H19C19.5523 13 20 12.5523 20 12C20 11.4477 19.5523 11 19 11H13V5Z' />
-  </Svg>
-);
-
-export const FitToPageIcon = (p: SVGProps<SVGSVGElement>) => (
-  <Svg {...p}>
-    <path
-      fillRule='evenodd'
-      clipRule='evenodd'
-      d='M5 4C4.73478 4 4.48043 4.10536 4.29289 4.29289C4.10536 4.48043 4 4.73478 4 5V7C4 7.55228 3.55228 8 3 8C2.44772 8 2 7.55228 2 7V5C2 4.20435 2.31607 3.44129 2.87868 2.87868C3.44129 2.31607 4.20435 2 5 2H7C7.55228 2 8 2.44772 8 3C8 3.55228 7.55228 4 7 4H5Z'
-    />
-    <path
-      fillRule='evenodd'
-      clipRule='evenodd'
-      d='M16 3C16 2.44772 16.4477 2 17 2H19C19.7957 2 20.5587 2.31607 21.1213 2.87868C21.6839 3.44129 22 4.20435 22 5V7C22 7.55228 21.5523 8 21 8C20.4477 8 20 7.55228 20 7V5C20 4.73478 19.8946 4.48043 19.7071 4.29289C19.5196 4.10536 19.2652 4 19 4H17C16.4477 4 16 3.55228 16 3Z'
-    />
-    <path
-      fillRule='evenodd'
-      clipRule='evenodd'
-      d='M21 16C21.5523 16 22 16.4477 22 17V19C22 19.7957 21.6839 20.5587 21.1213 21.1213C20.5587 21.6839 19.7957 22 19 22H17C16.4477 22 16 21.5523 16 21C16 20.4477 16.4477 20 17 20H19C19.2652 20 19.5196 19.8946 19.7071 19.7071C19.8946 19.5196 20 19.2652 20 19V17C20 16.4477 20.4477 16 21 16Z'
-    />
-    <path
-      fillRule='evenodd'
-      clipRule='evenodd'
-      d='M3 16C3.55228 16 4 16.4477 4 17V19C4 19.2652 4.10536 19.5196 4.29289 19.7071C4.48043 19.8946 4.73478 20 5 20H7C7.55228 20 8 20.4477 8 21C8 21.5523 7.55228 22 7 22H5C4.20435 22 3.44129 21.6839 2.87868 21.1213C2.31607 20.5587 2 19.7957 2 19V17C2 16.4477 2.44772 16 3 16Z'
-    />
-    <path
-      fillRule='evenodd'
-      clipRule='evenodd'
-      d='M6 9C6 7.89543 6.89543 7 8 7H16C17.1046 7 18 7.89543 18 9V15C18 16.1046 17.1046 17 16 17H8C6.89543 17 6 16.1046 6 15V9ZM16 9H8V15H16V9Z'
-    />
   </Svg>
 );
 
@@ -234,26 +179,6 @@ export const InsertColumnIcon = (p: SVGProps<SVGSVGElement>) => (
       <line x1='13' y1='12' x2='20' y2='12' />
       <line x1='3' y1='12' x2='9' y2='12' />
       <line x1='6' y1='9' x2='6' y2='15' />
-    </g>
-  </Svg>
-);
-
-export const DeleteRowIcon = (p: SVGProps<SVGSVGElement>) => (
-  <Svg {...p}>
-    <g fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round'>
-      <rect x='3' y='9' width='12' height='6' rx='1' />
-      <line x1='17.5' y1='10' x2='21.5' y2='14' />
-      <line x1='21.5' y1='10' x2='17.5' y2='14' />
-    </g>
-  </Svg>
-);
-
-export const DeleteColumnIcon = (p: SVGProps<SVGSVGElement>) => (
-  <Svg {...p}>
-    <g fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round'>
-      <rect x='9' y='3' width='6' height='12' rx='1' />
-      <line x1='10' y1='17.5' x2='14' y2='21.5' />
-      <line x1='14' y1='17.5' x2='10' y2='21.5' />
     </g>
   </Svg>
 );
@@ -543,16 +468,6 @@ export const SaveIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
-// Stacked blocks — the reorderable "sections" list. Placeholder glyph; freely
-// swappable for the reference artifact's icon.
-export const SectionsIcon = (p: SVGProps<SVGSVGElement>) => (
-  <Svg {...p}>
-    <rect x='4' y='4' width='16' height='4' rx='1.5' />
-    <rect x='4' y='10' width='16' height='4' rx='1.5' />
-    <rect x='4' y='16' width='11' height='4' rx='1.5' />
-  </Svg>
-);
-
 // Notebook — the reorderable document "sections".
 export const NotebookIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
@@ -579,5 +494,66 @@ export const ChangesIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path d='M4 6a1 1 0 0 1 1-1h9a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5a1 1 0 0 1 1-1h5a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z' />
     <path d='M18 9.5a1 1 0 0 1 1 1V13h2.5a1 1 0 1 1 0 2H19v2.5a1 1 0 1 1-2 0V15h-2.5a1 1 0 1 1 0-2H17v-2.5a1 1 0 0 1 1-1Z' />
+  </Svg>
+);
+
+// Version history: a clock with a counter-clockwise "rewind" arrow. Outline
+// style (fill:none + stroke) to match the Sections NotebookIcon weight so the
+// two rail buttons read as one set.
+export const HistoryIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <g
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='1.7'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    >
+      <path d='M3 12a9 9 0 1 0 3-6.7L3 8' />
+      <path d='M3 3v5h5' />
+      <path d='M12 7.5v5l3.5 2' />
+    </g>
+  </Svg>
+);
+
+// Robin's bird logo (mirrors feathery-frontend RobinIcon). Own 28x28 viewBox
+// and currentColor fills so it inherits the avatar's colour.
+export const RobinIcon = ({
+  width = 24,
+  height = 24,
+  ...p
+}: SVGProps<SVGSVGElement>) => (
+  <svg
+    width={width}
+    height={height}
+    viewBox='0 0 28 28'
+    fill='none'
+    overflow='visible'
+    xmlns='http://www.w3.org/2000/svg'
+    {...p}
+  >
+    <path
+      d='M17.7512 18.1346C17.7512 21.5246 15.003 24.2795 11.6129 24.2795C11.0312 24.2795 10.4629 24.1993 9.92793 24.0455C9.91456 24.0388 9.90118 24.0388 9.88781 24.0321C9.70059 23.9719 9.51336 23.9118 9.32614 23.8382C9.31945 23.8382 9.31277 23.8315 9.30608 23.8315C7.43384 23.1161 5.82906 21.8456 4.69903 20.2208C4.04375 19.2846 3.54894 18.2282 3.24805 17.0915C3.20124 16.9176 3.38178 16.7772 3.54226 16.8641C3.83647 17.0246 4.13736 17.1784 4.44494 17.3255C4.77927 17.486 5.12697 17.6331 5.47468 17.7668C6.23694 18.061 7.03265 18.3017 7.84841 18.4823C8.65748 18.6561 9.48662 18.7698 10.3358 18.8233C10.3759 18.8233 10.4027 18.83 10.5097 18.7363C10.5431 18.7029 10.5698 18.6628 10.5698 18.616C10.5698 18.5224 10.5097 18.4421 10.4227 18.4087C10.416 18.4087 10.4027 18.402 10.396 18.402C8.67085 17.9875 7.11957 17.1182 5.87587 15.928C5.59503 15.6605 5.33426 15.3797 5.09354 15.0855C4.30453 14.136 3.68936 13.0394 3.29485 11.8425C2.9739 10.8663 2.80005 9.82314 2.80005 8.73992C2.80005 8.51257 2.80674 8.28523 2.82011 8.05789C2.83348 7.89072 3.03408 7.81048 3.15444 7.92416C3.60244 8.33204 4.0705 8.71318 4.55862 9.06757C5.95611 10.0772 7.52077 10.8729 9.20578 11.3945C9.82763 11.5884 10.4629 11.7422 11.1115 11.8559C11.4658 11.9227 11.8202 11.9695 12.1813 12.0097C12.2348 12.0163 12.295 12.023 12.3485 12.0297C14.8359 12.3306 16.8619 14.1159 17.5172 16.4763C17.5974 16.7571 17.6576 17.0513 17.691 17.3455C17.6977 17.399 17.7044 17.4525 17.7111 17.506C17.7445 17.72 17.7512 17.9273 17.7512 18.1346Z'
+      fill='currentColor'
+    />
+    <path
+      d='M25.0931 7.68961C25.0864 7.68292 25.073 7.67623 25.0663 7.66955C24.4913 7.30179 23.8092 7.08782 23.0737 7.08113H22.9734C22.8129 7.07444 22.6591 7.0477 22.5187 6.9942C22.2914 6.90728 22.0841 6.76686 21.9303 6.58632C21.9036 6.55289 21.8768 6.51277 21.8434 6.47934C20.72 5.08853 18.9949 4.19922 17.0692 4.19922C16.1732 4.19922 15.324 4.39313 14.555 4.73414C12.4153 5.69701 10.9309 7.8434 10.9309 10.3375C10.9309 10.4378 10.9309 10.5381 10.9376 10.6317C10.9443 10.7253 11.0111 10.8055 11.1048 10.8256C11.4993 10.8858 12.4755 11.0329 12.4755 11.0329C13.8864 11.2001 15.2036 11.7885 16.2868 12.7179C17.3567 13.6407 18.119 14.8442 18.4934 16.2016C18.587 16.5292 18.6539 16.8703 18.694 17.2113C18.7007 17.2514 18.7074 17.2915 18.7074 17.3383C18.7341 17.5991 18.7475 17.8599 18.7475 18.1273C18.7475 20.2069 17.8582 22.0791 16.4406 23.383C16.2735 23.5368 16.4473 23.8042 16.6546 23.7173C20.2186 22.2396 22.7394 18.7492 22.7929 14.6637C22.7929 14.6169 22.7929 14.5768 22.7929 14.53C22.7929 14.3561 22.7862 14.1756 22.7795 14.0017C22.7594 13.6273 22.7193 13.2595 22.6591 12.8918C22.6458 12.7981 22.6257 12.7045 22.6057 12.6109C22.5722 12.4906 22.5455 12.3702 22.5254 12.2498C22.492 12.0492 22.4786 11.8487 22.4786 11.6414C22.4786 10.839 22.726 10.0968 23.1473 9.48829C23.3546 9.18071 23.6086 8.91325 23.9028 8.67922C23.9162 8.67253 23.9296 8.65916 23.943 8.64579C24.2706 8.3917 24.6451 8.18441 25.0463 8.04399C25.2 7.9905 25.2268 7.78322 25.0931 7.68961ZM19.697 8.03731C19.6168 8.3382 19.3694 8.58561 19.0685 8.66585C18.4065 8.84638 17.7913 8.23791 17.9719 7.56925C18.0521 7.26167 18.2995 7.02095 18.6004 6.93402C19.2624 6.76017 19.8775 7.37534 19.697 8.03731Z'
+      fill='currentColor'
+    />
+  </svg>
+);
+
+// Back arrow (version viewer exit on an older version).
+export const ArrowLeftIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d='M10.7 5.3a1 1 0 0 1 0 1.4L6.4 11H19a1 1 0 1 1 0 2H6.4l4.3 4.3a1 1 0 1 1-1.4 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.4 0Z' />
+  </Svg>
+);
+
+// Restore: a rewind arrow onto a document.
+export const RestoreIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d='M6 3h7l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm7 1.5V8h3.5L13 4.5Z' />
+    <path d='M9 12.5a3 3 0 1 1 .9 2.1.75.75 0 0 1 1-1.1 1.5 1.5 0 1 0-.4-1.5H11a.6.6 0 0 1 .5 1l-1.4 1.6a.6.6 0 0 1-.9 0l-1.4-1.6a.6.6 0 0 1 .5-1H9Z' />
   </Svg>
 );

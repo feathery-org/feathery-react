@@ -1,5 +1,4 @@
 import React from 'react';
-
 export default function RatingStar(props: any) {
   return (
     <svg

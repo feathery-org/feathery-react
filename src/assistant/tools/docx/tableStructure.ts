@@ -133,11 +133,40 @@ export function deriveTableStructure(input: {
     }
   }
   const localReferences = new Set([...localFormulaReferences.values()].flat());
+  // A formula over values held in at least two of this table's other rows
+  // totals those rows; one reference is a rate or a parameter, not a total.
+  const rowOfName = new Map<string, number>();
+  parsedRows.forEach((defs, index) =>
+    defs.forEach((d) => d.kind !== 'table' && rowOfName.set(d.name, index))
+  );
+  const totalsOtherRows = (expression: string, index: number): boolean => {
+    try {
+      const rows = new Set(
+        collectRefs(parseExpression(expression))
+          .map((ref) => rowOfName.get(ref))
+          .filter((row) => row !== undefined && row !== index)
+      );
+      return rows.size >= 2;
+    } catch {
+      return false;
+    }
+  };
 
   const out: TableRowRole[] = rows.map((_row, index) => {
     if (index < headerRows) return { index, role: 'header' as TableRole };
 
     const defs = parsedRows[index];
+
+    const totals = defs
+      .filter(
+        (d) =>
+          d.kind === 'formula' &&
+          d.options?.row === undefined &&
+          totalsOtherRows(d.expression, index)
+      )
+      .map((d) => d.name);
+    if (totals.length)
+      return { index, role: 'aggregate' as TableRole, aggregates: totals };
 
     if (tableId) {
       const aggregates = defs

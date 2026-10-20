@@ -160,7 +160,8 @@ describe('DocumentEditorContainer pptx dispatch', () => {
       expect(mockSaveEnvelopeFile).toHaveBeenCalledWith(
         'envelope-1',
         expect.any(Blob),
-        'document.pptx'
+        'document.pptx',
+        undefined
       )
     );
   });

@@ -112,7 +112,10 @@ import {
   renderDisplay
 } from '../../../elements/components/DocxEditor/bindings/core/valueTypes';
 import {
+  bareCellRef,
+  collectPositional,
   collectRefs,
+  isFormulaError,
   parseExpression
 } from '../../../elements/components/DocxEditor/bindings/core/formula';
 import { applyRules } from '../../../elements/components/DocxEditor/bindings/core/engine';
@@ -120,9 +123,11 @@ import type { Diagnostic } from '../../../elements/components/DocxEditor/binding
 import { analyzeBindingOrphans } from '../../../elements/components/DocxEditor/bindings/core/tableDeleteImpact';
 import {
   addLineItem,
+  expressionResolvesToColumn,
   formulaOccurrences,
   formulaScopeKey,
   getAt,
+  isPathPrefix,
   removeLineItem,
   rewriteRowClone,
   scanBindings,
@@ -212,7 +217,7 @@ import type {
 export type { LiveEditor } from '../../../utils/documentEditorPrimitives';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
-export const SELECTION_TEXT_LIMIT = 500;
+const SELECTION_TEXT_LIMIT = 500;
 export const ASSISTANT_DOCUMENT_AUTHOR = 'Robin';
 
 // Syncfusion layers pending edits by author. Invisible suffixes isolate
@@ -277,7 +282,7 @@ export interface DocFormat {
  * What a read tells the model about one binding: enough to see that a figure is
  * computed rather than typed, and which field to change instead.
  */
-export interface BindingFact {
+interface BindingFact {
   /** The binding's name, i.e. what a formula refers to it by. */
   field: string;
   /** Explicit wire identity; equal field labels do not imply global scope. */
@@ -338,18 +343,18 @@ export interface IndexBlock {
   format?: DocFormat;
 }
 
-export interface SectionPatternConfidence {
+interface SectionPatternConfidence {
   matches: number;
   sampled: number;
   level: 'high' | 'medium' | 'low';
 }
 
-export interface SectionPatternValue<T> {
+interface SectionPatternValue<T> {
   value: T;
   confidence: SectionPatternConfidence;
 }
 
-export interface SectionPatternSequenceElement {
+interface SectionPatternSequenceElement {
   role:
     | 'section_heading'
     | 'intro_paragraph'
@@ -361,14 +366,14 @@ export interface SectionPatternSequenceElement {
   confidence: SectionPatternConfidence;
 }
 
-export interface SectionPatternRoleFormat {
+interface SectionPatternRoleFormat {
   styleName?: string;
   characterFormat?: FormatBag;
   paragraphFormat?: FormatBag;
   confidence: SectionPatternConfidence;
 }
 
-export interface SectionPatternTable {
+interface SectionPatternTable {
   ordinal: number;
   columns: SectionPatternValue<number>;
   headerRow: SectionPatternValue<boolean>;
@@ -380,9 +385,9 @@ export interface SectionPatternTable {
   styleName?: SectionPatternValue<string>;
 }
 
-export type SectionBoundaryElement = 'empty_paragraph' | 'page_break';
+type SectionBoundaryElement = 'empty_paragraph' | 'page_break';
 
-export interface SectionPatternBoundary {
+interface SectionPatternBoundary {
   /** Ordered paragraph-level separator observed between sibling sections. */
   separator: SectionPatternValue<SectionBoundaryElement[]>;
   /** Paragraph spacing is reported separately because it does not add blocks. */
@@ -390,7 +395,7 @@ export interface SectionPatternBoundary {
   endingParagraphAfterSpacing?: SectionPatternValue<number>;
 }
 
-export interface SectionPatternResult {
+interface SectionPatternResult {
   ok: true;
   pattern: {
     sectionLevel?: SectionPatternValue<number>;
@@ -414,13 +419,13 @@ export interface SectionPatternResult {
 // retry only after performing the named remedy, 'modified_input' means the
 // input itself was wrong. Every refusal this module returns must carry one -
 // a refusal without a remedy is an invitation to resend the identical call.
-export interface InventoryRemedy {
+interface InventoryRemedy {
   action: string;
   tool: string;
   input?: Record<string, unknown>;
 }
 
-export interface InventoryRefusal {
+interface InventoryRefusal {
   error: string;
   message: string;
   remedy?: InventoryRemedy;
@@ -477,7 +482,7 @@ export interface DocumentStructure {
 // The completeness contract for capped reads: a clipped list must say how
 // many of how many, in data. A partial read that looks complete is how a
 // 94-row table got summed from 60 rows and an anchor got guessed.
-export interface InventoryTruncation {
+interface InventoryTruncation {
   returned: number;
   total: number;
   message: string;
@@ -487,7 +492,7 @@ export interface InventoryTruncation {
 // (the writable locator) and its verbatim text. `text: null` with no anchor
 // means the row has no cell at that column (short/merged row) - reported,
 // never silently skipped.
-export interface TableColumnCell {
+interface TableColumnCell {
   row: number;
   anchor?: string;
   text: string | null;
@@ -495,7 +500,7 @@ export interface TableColumnCell {
 
 // A whole table column returned as data. `rowCount` is the table's true row
 // count; `returned` and `truncated` make any capped read visibly partial.
-export interface TableColumnRead {
+interface TableColumnRead {
   tableAnchor: string;
   column: number;
   columns: number;
@@ -528,7 +533,7 @@ export interface TableColumnRead {
 /** Per-cell text is bounded so one prose-heavy table cannot blow the turn. */
 export const TABLE_FACTS_CELL_TEXT_CHARS = 200;
 
-export interface TableCellFact {
+interface TableCellFact {
   row: number;
   column: number;
   /** Anchor of the cell's first paragraph - the anchor a formula references. */
@@ -558,6 +563,8 @@ export interface TableCellFact {
   rowSpan?: number;
   bold?: true;
   italic?: true;
+  /** Direct text colour, when the cell's first paragraph declares one. */
+  fontColor?: string;
   styleName?: string;
   /**
    * How the CELL looks - fill, borders, vertical alignment. Present only where
@@ -648,7 +655,7 @@ export interface TableFacts {
   truncated: false;
 }
 
-export type InventoryResult =
+type InventoryResult =
   | { sections: OutlineSection[]; truncation?: InventoryTruncation }
   | { structure: DocumentStructure; truncation?: InventoryTruncation }
   | { inventory: InventoryEntry[]; truncation?: InventoryTruncation }
@@ -733,7 +740,7 @@ function observeMutationGuardBoundary(
  * text that was read, because for `[cell] * 1.13` the only way to see that the
  * engine read the WRONG cell is to see what it read.
  */
-export type FormulaResolvedTerm =
+type FormulaResolvedTerm =
   | {
       kind: 'cell';
       reference: string;
@@ -759,7 +766,7 @@ export type FormulaResolvedTerm =
       description: string;
     };
 
-export interface FormulaCellReport {
+interface FormulaCellReport {
   /** The formula as the model sent it, verbatim. */
   formula: string;
   /**
@@ -796,7 +803,7 @@ export interface FormulaCellReport {
 }
 
 /** One row's outcome in a column-wide recompute. */
-export interface ColumnRowOutcome {
+interface ColumnRowOutcome {
   row: number;
   anchor: string;
   /**
@@ -823,7 +830,7 @@ export interface ColumnRowOutcome {
  * a bulk operation that reports only its writes hides the far more important
  * number, which is how many rows it looked at.
  */
-export interface ColumnFormulaReport {
+interface ColumnFormulaReport {
   /** The per-row formula template as the model sent it, verbatim. */
   formula: string;
   /** The model's own description of what the column holds. */
@@ -849,11 +856,10 @@ export interface ColumnFormulaReport {
 
 /**
  * A numeric `set_cell_text` the engine re-rendered in its column's own number
- * format, so the bytes written are not the bytes sent. Recorded beside the
- * provenance: the reviewer sees the figure as the model supplied it and as the
- * document dressed it.
+ * format, so the bytes written are not the bytes sent. The guard carries both
+ * forms long enough to describe an unsafe write precisely.
  */
-export interface ColumnFormatRender {
+interface ColumnFormatRender {
   /** The figure exactly as the op supplied it. */
   asSent: string;
   /** The bytes actually written, in the column's own format. */
@@ -863,52 +869,24 @@ export interface ColumnFormatRender {
 }
 
 /**
- * A numeric `set_cell_text` that got through the model-authored-number gate by
- * declaring where the figure came from. Recorded on the result so the exception
- * is auditable in the change set instead of being indistinguishable from a
- * computed write.
- */
-/**
  * A style the engine resolved from the document where the model had asked for
  * a different one, on a paragraph this change set created. Reported in BOTH
  * directions - it is how a wrong resolver stays visible instead of silently
  * imposed.
  */
-export interface ComposedStyleDisagreement {
+interface ComposedStyleDisagreement {
   requested: string;
   resolved: string;
   from: string;
 }
 
 /** The record a creation path leaves when the document could not answer. */
-export interface CreationGap {
+interface CreationGap {
   /** The component that could not inherit. */
   what: string;
   reason: string;
   /** Everywhere the resolver looked, in order. */
   searched: string[];
-}
-
-export interface LiteralNumberWrite {
-  text: string;
-  /** What the cell held before, when it held a number. */
-  previousText: string;
-  /**
-   * The declared provenance. `user_stated` is `literal: true` - a figure the
-   * user dictated in conversation. `attachment` is `quotedFrom`/`quotedText` -
-   * a figure quoted verbatim out of a document the user supplied, whose
-   * excerpt the engine checked actually contains it.
-   */
-  source: 'user_stated' | 'attachment' | 'document';
-  /** `document` only: the bound value the figure was read out of. */
-  copiedFrom?: string;
-  /** `attachment` only: the attachment the figure was read out of. */
-  quotedFrom?: string;
-  /** `attachment` only: the verbatim excerpt the figure was quoted from. */
-  quotedText?: string;
-  /** Set when the written bytes differ from the bytes sent. */
-  rendered?: ColumnFormatRender;
-  note: string;
 }
 
 /**
@@ -918,7 +896,7 @@ export interface LiteralNumberWrite {
  * rather than in the appearance of the output - a fallback that reads exactly
  * like a success is how a wrong family survived a day of testing.
  */
-export interface ComposedSectionInheritance {
+interface ComposedSectionInheritance {
   /** The block whose sibling family every inherited format came from. */
   familyAnchor: string;
   /** That family's outline level, and how many siblings it was derived from. */
@@ -980,10 +958,6 @@ export interface EditResult {
   // Present on a successful `set_cell_formula`: the formula, the references it
   // resolved, where it rounded, and the receipt line to relay.
   formula?: FormulaCellReport;
-  // Present on a `set_cell_text` that wrote a number verbatim under the
-  // user-dictated exception: the engine's record that this number was NOT
-  // engine-computed, so a reviewer can see which is which.
-  literalNumber?: LiteralNumberWrite;
   // Present on a successful `set_column_formula`: coverage (how many rows were
   // recomputed) and what actually moved.
   column?: ColumnFormulaReport;
@@ -1092,7 +1066,7 @@ export interface ApplyEditsResult {
   };
 }
 
-export interface SelectionContext {
+interface SelectionContext {
   anchor: string;
   text: string;
   isCollapsed: boolean;
@@ -1114,7 +1088,7 @@ export interface SelectionContext {
   spansBlocks: boolean;
 }
 
-export interface DocumentOccurrence {
+interface DocumentOccurrence {
   anchor: string;
   kind: string;
   blockText: string;
@@ -1123,7 +1097,7 @@ export interface DocumentOccurrence {
   end: number;
 }
 
-export interface FindDocumentOccurrencesResult {
+interface FindDocumentOccurrencesResult {
   ok: boolean;
   query: { text: string; matchCase: boolean; wholeWord: boolean };
   count: number;
@@ -1150,7 +1124,7 @@ export interface FindDocumentOccurrencesResult {
   error?: string;
 }
 
-export interface FindDocumentOccurrencesBatchResult {
+interface FindDocumentOccurrencesBatchResult {
   ok: boolean;
   results: FindDocumentOccurrencesResult[];
   truncated: boolean;
@@ -1194,16 +1168,19 @@ interface FlatBlock {
   bindingRanges?: Array<{ tag: string; start: number; end: number }>;
   /**
    * Set when this block shares a paragraph with a BINDING content control, or
-   * sits inside one. SyncFusion's live offsets count a control's boundary markers
-   * as positions while this walker counts only characters, so an anchored write
-   * here lands off by however many markers precede it. Ops refuse rather than
-   * write into a range they cannot address exactly.
+   * hosts the start marker of a binding wrapper (see `leadingMarkers`).
+   * SyncFusion's live offsets count a control's boundary markers as positions
+   * while this walker counts only characters, so a ranged write here lands off
+   * by however many markers precede it. Ops refuse rather than write into a
+   * range they cannot address exactly.
    *
    * Only tags in the binding grammar count. A document carrying ordinary Word
    * structured document tags is not a bound document and keeps the write
    * behaviour it had before bindings existed.
    */
   offsetsUntrusted?: true;
+  /** Binding start markers SyncFusion counts before this block's first character. */
+  leadingMarkers?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1733,11 +1710,14 @@ function bindingDefinitionOf(node: any): Definition | null {
 // marker, its own selection offsets still report the table as block 2, not the
 // wrapper. Leaving the wrapper opaque made every configured table flatten to an
 // empty paragraph, i.e. invisible.
+// `leadingMarkers`: binding start markers SyncFusion places before a block's
+// first character; only a wrapper's first block hosts them (measured).
 function expandBlockContentControls(
   blocks: any[],
-  insideControl = false
-): Array<{ block: any; insideControl: boolean }> {
-  const out: Array<{ block: any; insideControl: boolean }> = [];
+  leadingMarkers = 0
+): Array<{ block: any; leadingMarkers: number }> {
+  const out: Array<{ block: any; leadingMarkers: number }> = [];
+  let pending = leadingMarkers;
   for (const block of blocks) {
     const isWrapper =
       block &&
@@ -1745,17 +1725,20 @@ function expandBlockContentControls(
       Array.isArray(pick(block, 'blocks', 'b')) &&
       !getRows(block) &&
       !pick(block, 'inlines', 'i');
-    if (isWrapper)
-      out.push(
-        ...expandBlockContentControls(
-          getBlocks(block),
-          // A foreign wrapper is transparent for ADDRESSING but says nothing
-          // about offsets: only a binding marker makes the content inside it
-          // unaddressable.
-          insideControl || bindingDefinitionOf(block) !== null
-        )
+    if (isWrapper) {
+      const inner = expandBlockContentControls(
+        getBlocks(block),
+        // A foreign wrapper is transparent for ADDRESSING but says nothing
+        // about offsets: only a binding marker is counted.
+        pending + (bindingDefinitionOf(block) !== null ? 1 : 0)
       );
-    else out.push({ block, insideControl });
+      out.push(...inner);
+      if (inner.length) pending = 0;
+      else pending += bindingDefinitionOf(block) !== null ? 1 : 0;
+    } else {
+      out.push({ block, leadingMarkers: pending });
+      pending = 0;
+    }
   }
   return out;
 }
@@ -2292,7 +2275,7 @@ export function flattenSfdt(
 
   sections.forEach((section, si) => {
     expandBlockContentControls(getBlocks(section)).forEach((entry, bi) => {
-      const { block, insideControl } = entry;
+      const { block } = entry;
       const rows = getRows(block);
       if (rows) {
         // Table: descend into each cell's blocks.
@@ -2309,9 +2292,13 @@ export function flattenSfdt(
                   getInlines(cb),
                   deletedIds
                 );
+                const cellLeadingMarkers =
+                  cellEntry.leadingMarkers +
+                  (ri === 0 && ci === 0 && cbi === 0
+                    ? entry.leadingMarkers
+                    : 0);
                 const cellOffsetsUntrusted =
-                  insideControl ||
-                  cellEntry.insideControl ||
+                  cellLeadingMarkers > 0 ||
                   hasBindingContentControl(getInlines(cb));
                 const cellAnchor = `${si};${bi};${ri};${ci};${cbi}`;
                 out.push({
@@ -2327,7 +2314,10 @@ export function flattenSfdt(
                   ...(cellBindingRanges.length
                     ? { bindingRanges: cellBindingRanges }
                     : {}),
-                  ...(cellOffsetsUntrusted ? { offsetsUntrusted: true } : {})
+                  ...(cellOffsetsUntrusted ? { offsetsUntrusted: true } : {}),
+                  ...(cellLeadingMarkers
+                    ? { leadingMarkers: cellLeadingMarkers }
+                    : {})
                 });
                 out.push(...textFrameBlocksOf(cb, cellAnchor, deletedIds));
                 paragraphs.push({
@@ -2355,7 +2345,8 @@ export function flattenSfdt(
           deletedIds
         );
         const blockOffsetsUntrusted =
-          insideControl || hasBindingContentControl(getInlines(block));
+          entry.leadingMarkers > 0 ||
+          hasBindingContentControl(getInlines(block));
         const flat: FlatBlock = {
           anchor: `${si};${bi}`,
           kind: 'paragraph',
@@ -2471,6 +2462,8 @@ interface TableContainerRef {
 interface PlainTablePromotion {
   anchor: string;
   tableId: string;
+  /** Input names this change set binds in more than one place: one value. */
+  sharedNames?: Set<string>;
 }
 
 function liveTableMarkerProperties(tableId: string): Record<string, unknown> {
@@ -2774,7 +2767,7 @@ function collectSectionBoundaries(
  * computation, so what the model reads and what the engine sums are the same
  * cells by construction. Returns null when no table answers to `tableAnchor`.
  */
-export function collectTableColumnCells(
+function collectTableColumnCells(
   blocks: FlatBlock[],
   tableAnchor: string,
   column: number
@@ -2905,6 +2898,10 @@ export function collectTableFacts(
         ...(Number.isFinite(rowSpan) && rowSpan > 1 ? { rowSpan } : {}),
         ...(first?.characterFormat?.bold ? { bold: true as const } : {}),
         ...(first?.characterFormat?.italic ? { italic: true as const } : {}),
+        ...(typeof first?.characterFormat?.fontColor === 'string' &&
+        first.characterFormat.fontColor
+          ? { fontColor: first.characterFormat.fontColor }
+          : {}),
         ...(first?.format?.styleName
           ? { styleName: first.format.styleName }
           : {}),
@@ -4265,8 +4262,8 @@ export function buildIndexBlocks(editor: LiveEditor): IndexBlock[] {
   return buildIndexBlocksFromBlocks(flattenSfdt(serializeSfdt(editor)));
 }
 
-export const MAX_LIVE_OCCURRENCE_QUERIES = 20;
-export const MAX_LIVE_OCCURRENCES_PER_QUERY = 200;
+const MAX_LIVE_OCCURRENCE_QUERIES = 20;
+const MAX_LIVE_OCCURRENCES_PER_QUERY = 200;
 
 function findOption(matchCase: boolean, wholeWord: boolean): string {
   if (matchCase && wholeWord) return 'CaseSensitiveWholeWord';
@@ -4450,6 +4447,16 @@ function currentTextFrameText(sfdt: any, anchor: string): string | undefined {
   return undefined;
 }
 
+// Assistant searches resolve ranges internally; their yellow Find overlays
+// must not outlive the lookup or become stale after tracked edits are accepted.
+function clearInternalSearch(search: any): void {
+  try {
+    search.searchResults.clear?.();
+  } catch {
+    // A disposed view must not turn a completed edit into a failed operation.
+  }
+}
+
 // Search the current DocumentEditor model via SyncFusion's public Search API.
 // SearchResults#getTextSearchResultsOffset returns the actual hierarchical
 // selection offsets, including supported header/footer and note stories. Every
@@ -4614,6 +4621,8 @@ function findOneDocumentOccurrences(
       };
     } catch {
       return { ok: false, ...base, error: 'search_failed' };
+    } finally {
+      clearInternalSearch(search);
     }
   });
 }
@@ -4874,10 +4883,25 @@ function staleAnchorDetails(expected: unknown, live: string): string[] {
 }
 
 // Selects the whole block described by a FlatBlock and returns the live text.
+/**
+ * The block's whole live text, tracked deletions included: its own length
+ * excludes them and would leave part of the old text behind.
+ */
+function selectWholeLiveText(
+  editor: LiveEditor,
+  block: FlatBlock,
+  sfdt: any = serializeSfdt(editor)
+): void {
+  const lead = block.leadingMarkers ?? 0;
+  const live = inlineText(getInlines(resolveAnchoredNode(sfdt, block.anchor)));
+  selectRange(editor, block.anchor, lead, lead + live.length);
+}
+
 function selectBlock(editor: LiveEditor, block: FlatBlock): string {
+  const lead = block.leadingMarkers ?? 0;
   editor.selection.select(
-    `${block.anchor};0`,
-    `${block.anchor};${block.length}`
+    `${block.anchor};${lead}`,
+    `${block.anchor};${lead + block.length}`
   );
   return editor.selection.text ?? '';
 }
@@ -5169,6 +5193,8 @@ function resolveLiveStoryTarget(
       'search_failed',
       `SyncFusion could not resolve the searched story range for "${find}".`
     );
+  } finally {
+    clearInternalSearch(search);
   }
 }
 
@@ -5194,53 +5220,59 @@ function verifyLiveStoryWrite(
       'search_unavailable',
       'Story post-write verification requires SyncFusion Search.'
     );
-  search.findAll(replacement, 'CaseSensitive');
-  const matches = (
-    search.searchResults.getTextSearchResultsOffset() ?? []
-  ).filter((result: any) => {
-    const start = offsetParts(String(result?.startOffset ?? ''));
-    const end = offsetParts(String(result?.endOffset ?? ''));
-    return start.anchor === target.anchor && end.anchor === target.anchor;
-  });
-  // A first tracked replace inserts at the deleted range's old end; replacing a
-  // still-pending insertion reuses its start. Both are also where a broken write
-  // can insert beside an untouched target, which reads as the right range and is
-  // not discriminable here - the accept projection is what refuses that write
-  // (`assertStoryTextFrameReplacement`).
-  const match = matches.find(
-    (result: any) =>
-      (String(result?.startOffset) === target.startOffset ||
-        String(result?.startOffset) === target.endOffset) &&
-      String(result?.endOffset) === writtenEndOffset
-  );
-  if (!match)
-    throw new OpError(
-      'text_verification_failed',
-      `Text verification failed at "${target.anchor}".`,
-      [
-        `expected: ${JSON.stringify(replacement)}`,
-        `expected range: ${target.startOffset} or ${target.endOffset} to ${writtenEndOffset}`,
-        `ranges returned for the replacement: ${
-          matches
-            .map(
-              (result: any) =>
-                `${String(result?.startOffset)} to ${String(result?.endOffset)}`
-            )
-            .join(', ') || 'none'
-        }`
-      ]
+  try {
+    search.findAll(replacement, 'CaseSensitive');
+    const matches = (
+      search.searchResults.getTextSearchResultsOffset() ?? []
+    ).filter((result: any) => {
+      const start = offsetParts(String(result?.startOffset ?? ''));
+      const end = offsetParts(String(result?.endOffset ?? ''));
+      return start.anchor === target.anchor && end.anchor === target.anchor;
+    });
+    // A first tracked replace inserts at the deleted range's old end; replacing a
+    // still-pending insertion reuses its start. Both are also where a broken write
+    // can insert beside an untouched target, which reads as the right range and is
+    // not discriminable here - the accept projection is what refuses that write
+    // (`assertStoryTextFrameReplacement`).
+    const match = matches.find(
+      (result: any) =>
+        (String(result?.startOffset) === target.startOffset ||
+          String(result?.startOffset) === target.endOffset) &&
+        String(result?.endOffset) === writtenEndOffset
     );
-  editor.selection.select(String(match.startOffset), String(match.endOffset));
-  const actual = String(editor.selection.text ?? '');
-  if (actual !== replacement)
-    throw new OpError(
-      'text_verification_failed',
-      `Text verification failed at "${target.anchor}".`,
-      [
-        `expected: ${JSON.stringify(replacement)}`,
-        `actual: ${JSON.stringify(actual)}`
-      ]
-    );
+    if (!match)
+      throw new OpError(
+        'text_verification_failed',
+        `Text verification failed at "${target.anchor}".`,
+        [
+          `expected: ${JSON.stringify(replacement)}`,
+          `expected range: ${target.startOffset} or ${target.endOffset} to ${writtenEndOffset}`,
+          `ranges returned for the replacement: ${
+            matches
+              .map(
+                (result: any) =>
+                  `${String(result?.startOffset)} to ${String(
+                    result?.endOffset
+                  )}`
+              )
+              .join(', ') || 'none'
+          }`
+        ]
+      );
+    editor.selection.select(String(match.startOffset), String(match.endOffset));
+    const actual = String(editor.selection.text ?? '');
+    if (actual !== replacement)
+      throw new OpError(
+        'text_verification_failed',
+        `Text verification failed at "${target.anchor}".`,
+        [
+          `expected: ${JSON.stringify(replacement)}`,
+          `actual: ${JSON.stringify(actual)}`
+        ]
+      );
+  } finally {
+    clearInternalSearch(search);
+  }
 }
 
 function applyLiveStoryTextOp(
@@ -5479,6 +5511,8 @@ function selectExactMatch(
       'search_failed',
       `SyncFusion could not resolve an exact selected range for "${find}".`
     );
+  } finally {
+    clearInternalSearch(search);
   }
 }
 
@@ -6134,7 +6168,7 @@ type ToleratedFields<K extends AdvertisedDocumentOp> =
   K extends keyof RuntimeToleratedFields ? RuntimeToleratedFields[K] : unknown;
 
 /** One op as its registry entry declares it, plus the reserved fields. */
-export type TypedEditOp<K extends AdvertisedDocumentOp> = {
+type TypedEditOp<K extends AdvertisedDocumentOp> = {
   op: K;
 } & OpParams<K> &
   ToleratedFields<K> &
@@ -6186,7 +6220,6 @@ interface OpSuccessExtras {
   details?: string[];
   formula?: FormulaCellReport;
   column?: ColumnFormulaReport;
-  literalNumber?: LiteralNumberWrite;
   /**
    * Set when the op wrote nothing because the value was already there. The
    * executor reads this field to skip the tracked-mutation assertion (there IS
@@ -7164,15 +7197,6 @@ function resolveQuantityCellFormat(
   };
 }
 
-const LITERAL_NUMBER_NOTE =
-  'Written verbatim as a literal figure (literal: true), NOT computed by the engine. Only valid for a figure the user stated; anything derived from other cells must go through set_cell_formula.';
-
-const DOCUMENT_NUMBER_NOTE =
-  'Copied verbatim from a value the document already holds in the same column (the engine verified the match and records the source), NOT computed by the engine. Anything derived from other cells must go through set_cell_formula.';
-
-const QUOTED_NUMBER_NOTE =
-  'Quoted verbatim from an attachment the user supplied (quotedFrom / quotedText), NOT computed by the engine. The engine verified the figure appears in the quoted excerpt; it cannot verify the excerpt came from that attachment, so the citation is recorded for review. Anything derived from other cells must go through set_cell_formula.';
-
 /**
  * What the engine can and cannot check about "this figure came out of the
  * user's document".
@@ -7354,13 +7378,16 @@ function bindingTagForOp(op: EditOp, block: FlatBlock): string | undefined {
 }
 
 function refuseBoundWrite(op: EditOp, block: FlatBlock): void {
-  if (block.offsetsUntrusted && !block.boundTag) {
-    // Not a binding itself, but sharing a paragraph or a container with one.
-    // SyncFusion counts a control's boundary markers as offset positions while
-    // this walker counts characters, so the range this op would select is off by
-    // however many markers precede it - measured: a write to a header cell of a
-    // bound table replaced three of its four characters. Refuse until the offset
-    // model accounts for markers exactly; reading these blocks is unaffected.
+  if (
+    block.offsetsUntrusted &&
+    !block.boundTag &&
+    !isExactWholeCellRewrite(op, block)
+  ) {
+    // Not a binding itself, but sharing a paragraph with one or hosting a
+    // wrapper's start marker. SyncFusion counts boundary markers as offset
+    // positions while this walker counts characters, so a ranged write is off by
+    // the markers before it (measured: "Item" became "Line itemm"). A whole-cell
+    // rewrite shifts past the marker and is exempt; reading is unaffected.
     throw new OpError(
       'unaddressable_in_bound_document',
       `${op.op} cannot write ${block.anchor}: it sits alongside a document binding, and this engine cannot yet address that text exactly. Reading it is reliable; writing it is not. Re-read the nearby bound fields and target an editable binding value instead, or ask for a plain-text rewrite outside the bound container.`,
@@ -7402,34 +7429,26 @@ function guardModelAuthoredNumber(
   block: FlatBlock,
   byAnchor: Map<string, FlatBlock>,
   rendered?: ColumnFormatRender
-): LiteralNumberWrite | undefined {
+): void {
   const text = modelAuthoredCellText(op);
-  if (text === undefined) return undefined;
+  if (text === undefined) return;
   // Before the numeric-provenance gate, and before the table-cell narrowing:
   // prose bindings are just as destroyable as cell ones.
   refuseBoundWrite(op, block);
-  if (block.kind !== 'table_cell') return undefined;
-  const { record, citationFailure } =
+  if (block.kind !== 'table_cell') return;
+  const { valid, citationFailure } =
     op.op === 'set_cell_text' || op.op === 'create_binding'
-      ? resolveNumberProvenance(op, text.trim(), block.text.trim())
-      : { record: undefined, citationFailure: '' };
-  // `literal: true` is an auditable claim even outside a quantity-formatted
-  // column. The change-set boundary uses these records to enforce the
-  // single-use licence for a user-stated figure.
-  const userStatedRecord =
-    record?.source === 'user_stated' && classifyNumericText(text).numeric
-      ? { ...record, ...(rendered ? { rendered } : {}) }
-      : undefined;
-  if (!isQuantityText(text)) return userStatedRecord;
+      ? verifyNumberProvenance(op, text.trim())
+      : { valid: false, citationFailure: '' };
+  if (!isQuantityText(text)) return;
   // A QUANTITY SLOT IN A QUANTITY COLUMN: either the cell already holds a
   // quantity, or it is empty and sits in a column that plainly holds them - the
   // freshly-inserted Total cell, which is exactly where a fabricated total
   // lands, so leaving the empty case open would leave the gate open.
   const existing = block.text.trim();
   const existingIsQuantity = existing !== '' && isQuantityText(existing);
-  if (!resolveQuantityCellFormat(Array.from(byAnchor.values()), block))
-    return userStatedRecord;
-  if (record) return { ...record, ...(rendered ? { rendered } : {}) };
+  if (!resolveQuantityCellFormat(Array.from(byAnchor.values()), block)) return;
+  if (valid) return;
   throw new OpError(
     'model_authored_number',
     `Refusing to write the number ${JSON.stringify(text.trim())}${
@@ -7451,27 +7470,21 @@ function guardModelAuthoredNumber(
 }
 
 /**
- * The sanctioned provenances for a figure the engine did not compute, and the
- * audit record each one leaves. Anything else is refused by the gate above.
+ * Verify the declared provenance for a figure the engine did not compute.
+ * Anything else is refused by the gate above.
  *
  * `citationFailure` is the sentence the refusal appends when a citation WAS
  * offered and did not hold up. Falling silently back to the generic refusal
  * would read as "attachments are not supported" and send the model round the
  * same loop it was already stuck in.
  */
-function resolveNumberProvenance(
+function verifyNumberProvenance(
   op: EditOp,
-  text: string,
-  previousText: string
-): { record?: LiteralNumberWrite; citationFailure: string } {
+  text: string
+): { valid: boolean; citationFailure: string } {
   if (op.literal === true) {
     return {
-      record: {
-        text,
-        previousText,
-        source: 'user_stated',
-        note: LITERAL_NUMBER_NOTE
-      },
+      valid: true,
       citationFailure: ''
     };
   }
@@ -7479,29 +7492,24 @@ function resolveNumberProvenance(
     typeof op.quotedFrom === 'string' ? op.quotedFrom.trim() : '';
   const quotedText =
     typeof op.quotedText === 'string' ? op.quotedText.trim() : '';
-  if (!quotedFrom && !quotedText) return { citationFailure: '' };
+  if (!quotedFrom && !quotedText) return { valid: false, citationFailure: '' };
   if (!quotedFrom || !quotedText) {
     return {
+      valid: false,
       citationFailure:
         ' `quotedFrom` and `quotedText` must BOTH be sent: the attachment the figure was read out of, and the verbatim excerpt containing it.'
     };
   }
   if (!quotedExcerptContains(quotedText, text)) {
     return {
+      valid: false,
       citationFailure: ` The excerpt sent as \`quotedText\` (${JSON.stringify(
         quotedText
       )}) does not contain this figure, so the citation does not support it.`
     };
   }
   return {
-    record: {
-      text,
-      previousText,
-      source: 'attachment',
-      quotedFrom,
-      quotedText,
-      note: QUOTED_NUMBER_NOTE
-    },
+    valid: true,
     citationFailure: ''
   };
 }
@@ -9045,7 +9053,7 @@ export const ANCHORED_OP_HANDLERS: {
     replacePlainTableColumn(editor, op, block, byAnchor),
   delete_column: ({ editor, op, block, byAnchor }) =>
     replacePlainTableColumn(editor, op, block, byAnchor),
-  create_binding: ({ editor, op, block, liveText }) => {
+  create_binding: ({ editor, op, block }) => {
     if (op.kind !== 'input')
       throw new OpError(
         'formula_binding_requires_engine_target',
@@ -9062,6 +9070,19 @@ export const ANCHORED_OP_HANDLERS: {
       String(op.valueType ?? 'text'),
       `create_binding:${name}`
     );
+    const restated =
+      op.initial === undefined && !op.find
+        ? restatedBinding(block, name, 'input')
+        : null;
+    if (
+      restated &&
+      restated.kind === 'field' &&
+      (op.valueType === undefined || restated.fieldType.kind === fieldType.kind)
+    )
+      return {
+        postWriteSfdt: serializeSfdt(editor),
+        details: [`binding: ${name}`, 'already bound here; nothing changed']
+      };
     let definition: Extract<Definition, { kind: 'field' }> = {
       version: 2,
       kind: 'field',
@@ -9074,49 +9095,35 @@ export const ANCHORED_OP_HANDLERS: {
     };
     const sfdt = serializeSfdt(editor);
     const bindingIndex = scanBindings(sfdt);
-    const sameName = [
-      ...(bindingIndex.fields.get(name) ?? []),
-      ...(bindingIndex.formulas.get(name) ?? [])
-    ];
-    if (sameName.length && op.global !== true)
-      throw new OpError(
-        'binding_name_conflict',
-        `Binding "${name}" already exists. Reuse that global identity explicitly or choose a unique name. Nothing was written.`
-      );
-    if (
-      sameName.some(
-        (occurrence) =>
-          !occurrence.def.isGlobal ||
-          occurrence.def.kind !== 'field' ||
-          JSON.stringify(occurrence.def.fieldType) !== JSON.stringify(fieldType)
-      )
-    )
-      throw new OpError(
-        'global_binding_identity_conflict',
-        `Binding "${name}" does not consistently use the requested global input type. Nothing was written.`
-      );
-    if (sameName.length)
-      definition = sameName[0].def as Extract<Definition, { kind: 'field' }>;
+    // Same law as createBindingInCell: a document-level name is one value.
+    const joined = joinedDocumentBinding(
+      bindingIndex,
+      name,
+      'input',
+      fieldType
+    );
+    if (joined)
+      definition = joined.def as Extract<Definition, { kind: 'field' }>;
 
     const requestedPhrase =
       typeof op.find === 'string' && op.find ? String(op.find) : '';
-    let canonical =
-      sameName.length > 0
-        ? parseDisplay(sameName[0].def.fieldType, sameName[0].text)
-        : parseDisplay(
-            fieldType,
-            String(op.initial ?? (requestedPhrase || liveText))
-          );
-    if (sameName.length && op.initial !== undefined) {
-      const requested = parseDisplay(fieldType, String(op.initial));
-      if (requested !== canonical)
-        throw new OpError(
-          'global_binding_initial_conflict',
-          `Global binding "${name}" already has a different value. Change the existing binding value or omit initial. Nothing was written.`
-        );
-      canonical = requested;
-    }
-    const value = renderDisplay(fieldType, canonical);
+    // The cell's text as an accept would leave it, never tracked-deleted text.
+    const shown = requestedPhrase || block.text.trim();
+    const canonical =
+      op.initial !== undefined
+        ? parseDisplay(definition.fieldType, String(op.initial))
+        : shown
+        ? adoptedCellValue(definition.fieldType, shown, op)
+        : joined
+        ? parseDisplay(joined.def.fieldType, joined.text)
+        : defaultValue(definition);
+    if (joined)
+      assertJoinedValue(
+        joined,
+        canonical,
+        op.initial !== undefined ? String(op.initial) : shown
+      );
+    const value = renderDisplay(definition.fieldType, canonical);
     const liveEditor = editor as any;
     const layoutWasOn = editor.enableLayout === true;
     if (!layoutWasOn) liveEditor.setProperties?.({ enableLayout: true }, true);
@@ -9138,8 +9145,22 @@ export const ANCHORED_OP_HANDLERS: {
         selectExactMatch(editor, block, requestedPhrase, index, op);
       } else {
         assertNoForeignPendingRevisions(editor, block, op);
-        selectBlock(editor, block);
+        selectWholeLiveText(editor, block, sfdt);
       }
+      // insertContentControl drops the replaced text's resolved font
+      // (measured: Calibri beside Arial siblings); the value gets it back.
+      const look = readSelectionFormat(
+        editor.selection?.characterFormat,
+        CHARACTER_FORMAT_KEYS
+      );
+      // A joined value shares its tag with controls that already exist, so
+      // the new control is the one that was not there before the insert.
+      const tag = formatTag(definition);
+      const controlsWithTag = (): any[] =>
+        (liveEditor.documentHelper?.contentControlCollection ?? []).filter(
+          (cc: any) => cc?.contentControlProperties?.tag === tag
+        );
+      const existingControls = new Set(controlsWithTag());
       editor.editor.delete();
       inserted = liveEditor.editorModule?.insertContentControl?.({
         type: 'Text',
@@ -9149,6 +9170,20 @@ export const ANCHORED_OP_HANDLERS: {
         canDelete: definition.isDeletable,
         canEdit: definition.isEditable
       });
+
+      const control = controlsWithTag().find(
+        (cc: any) => !existingControls.has(cc)
+      );
+      if (control && liveEditor.selection?.selectContentControlInternal) {
+        liveEditor.selection.selectContentControlInternal(control);
+        for (const [key, wanted] of Object.entries(look))
+          if (isMeaningfulInheritedFormatValue(key, wanted))
+            writeFormatPropIfDifferent(
+              editor.selection.characterFormat,
+              key,
+              normalizeInheritedCharValue(key, wanted)
+            );
+      }
       liveEditor.documentHelper?.layout?.layoutWholeDocument?.();
     } finally {
       if (!layoutWasOn)
@@ -9167,7 +9202,9 @@ export const ANCHORED_OP_HANDLERS: {
         ...(displayName && displayName !== name
           ? [`binding label: ${displayName}`]
           : []),
-        `scope: ${definition.isGlobal ? 'global' : 'independent'}`
+        `scope: ${
+          joined ? 'shared' : definition.isGlobal ? 'global' : 'independent'
+        }`
       ]
     };
   },
@@ -9624,8 +9661,8 @@ export const ANCHORED_OP_HANDLERS: {
   },
   set_cell_text: ({ editor, op, block }) => {
     assertNoForeignPendingRevisions(editor, block, op);
-    // Overwrite the (cell) block's content.
-    selectBlock(editor, block);
+    // Overwrite the cell's whole live text, tracked deletions included.
+    selectWholeLiveText(editor, block);
     const replacement = String(op.text ?? '');
     replaceSelectedText(editor, replacement);
     return {
@@ -10412,7 +10449,7 @@ function applyAnchoredOp(
   // The engine, not an individual handler, keeps model arithmetic out of
   // numeric cells. Every registered anchored op crosses this point before its
   // handler can write.
-  const literalNumber = guardModelAuthoredNumber(op, block, byAnchor, rendered);
+  guardModelAuthoredNumber(op, block, byAnchor, rendered);
 
   const handler = ANCHORED_OP_HANDLERS[op.op as AnchoredDocumentOp];
   if (!handler)
@@ -10434,7 +10471,7 @@ function applyAnchoredOp(
       liveText: string;
     }) => OpSuccessExtras | void
   )({ editor, op, block, byAnchor, liveText });
-  return literalNumber ? { ...(extras ?? {}), literalNumber } : extras;
+  return extras;
 }
 
 function applyAnchorlessOp(editor: LiveEditor, op: EditOp): void {
@@ -10688,10 +10725,15 @@ function applyResolvedInheritedFormat(
 
   selectParagraph(editor, target);
   const pf = editor.selection.paragraphFormat;
+  const paragraph = (editor as any).selection?.start?.paragraph;
   for (const [prop, value] of Object.entries(inherited.paragraphFormat ?? {})) {
     if (!isMeaningfulInheritedFormatValue(prop, value)) continue;
     if (prop === 'styleName') continue;
-    writeFormatPropIfDifferent(pf, prop, value);
+    // SyncFusion's selection setter drops keepWithNext (measured), so write it
+    // on the paragraph itself.
+    if (prop === 'keepWithNext' && paragraph?.paragraphFormat)
+      writeFormatPropIfDifferent(paragraph.paragraphFormat, prop, value);
+    else writeFormatPropIfDifferent(pf, prop, value);
   }
 
   verifyInheritedFormat(editor, source, target, inherited);
@@ -11377,6 +11419,29 @@ function writeAppearance(
   }
 }
 
+/**
+ * SyncFusion's `NoBorder` on a cell also clears its neighbours' touching sides,
+ * so apply every clear first and every drawn side after (measured).
+ */
+function writeCellAppearances(
+  editor: LiveEditor,
+  writes: Array<{ cellAnchor: string; write: AppearanceWrite }>
+): void {
+  const isClear = (border: BorderWrite) => border.type === 'NoBorder';
+  for (const { cellAnchor, write } of writes)
+    writeAppearance(
+      editor,
+      cellAnchor,
+      { ...write, borders: write.borders?.filter(isClear) },
+      'cell'
+    );
+  for (const { cellAnchor, write } of writes) {
+    const sides = write.borders?.filter((border) => !isClear(border));
+    if (sides?.length)
+      writeAppearance(editor, cellAnchor, { borders: sides }, 'cell');
+  }
+}
+
 const TABLE_BORDER_MEMBERS = [
   ['top', 'TopBorder'],
   ['bottom', 'BottomBorder'],
@@ -12010,10 +12075,19 @@ function finalizeTableAppearance(
         })[0]
       : undefined;
     const address = boundAnchor ? undefined : sequence[footprint.sequenceIndex];
+    const sequenceAnchor = address
+      ? `${address.section};${address.block}`
+      : undefined;
+    const exactUnboundAnchor = !footprint.tableId
+      ? [sequenceAnchor, footprint.anchor].find(
+          (candidate): candidate is string =>
+            !!candidate &&
+            tableShapeFingerprint(sfdt, candidate, footprint.headerRows) ===
+              footprint.shapeFingerprint
+        )
+      : undefined;
     const anchor =
-      exactBoundAnchor ??
-      boundAnchor ??
-      (address ? `${address.section};${address.block}` : undefined);
+      exactBoundAnchor ?? boundAnchor ?? exactUnboundAnchor ?? sequenceAnchor;
     if (!anchor) {
       warnings.push(
         `Table appearance not finalized for ${footprint.anchor}: nothing is at ` +
@@ -12344,6 +12418,8 @@ function applyCopiedTableAppearance(
     return Object.keys(rest).length ? rest : undefined;
   };
   const transaction = runAppearanceTransaction(editor, (record) => {
+    const cellWrites: Array<{ cellAnchor: string; write: AppearanceWrite }> =
+      [];
     if (copyProperties) {
       record({
         cellAnchor: cellAnchorOf(targetAnchor, 0, 0),
@@ -12418,12 +12494,13 @@ function applyCopiedTableAppearance(
           borders: !uniformAllBorder
         });
         record(appearanceRestoreFor(editor, cellAnchor, before, write));
-        writeAppearance(editor, cellAnchor, write, 'cell');
+        cellWrites.push({ cellAnchor, write });
         report.cellsWritten++;
         rowTouched = true;
       }
       if (rowTouched) report.rowsWritten++;
     });
+    writeCellAppearances(editor, cellWrites);
     if (normalizeTableBorders && uniformAllBorder) {
       writeTableBorders(editor, targetAnchor, [
         {
@@ -12550,12 +12627,7 @@ function applyCopiedTableAppearance(
           );
       }
     });
-    if (mismatches.length)
-      throw new OpError(
-        'inherited_appearance_mismatch',
-        `Table appearance from ${sourceAnchor} did not resolve at ${targetAnchor}.`,
-        mismatches
-      );
+    if (mismatches.length) report.unresolved = mismatches;
     return postWriteSfdt;
   });
   return {
@@ -12600,12 +12672,16 @@ function applyReplaceAll(
   const search = editor.search;
   if (!search?.findAll)
     throw new OpError('unsupported_op', 'Search module unavailable.');
-  search.findAll(find);
-  const results = search.searchResults;
-  const count = results?.length ?? 0;
-  if (count > 0 && results?.replaceAll)
-    results.replaceAll(String(op.replace ?? ''));
-  return count;
+  try {
+    search.findAll(find);
+    const results = search.searchResults;
+    const count = results?.length ?? 0;
+    if (count > 0 && results?.replaceAll)
+      results.replaceAll(String(op.replace ?? ''));
+    return count;
+  } finally {
+    clearInternalSearch(search);
+  }
 }
 
 function callEditor(editor: LiveEditor, method: string, ...args: any[]): void {
@@ -13191,7 +13267,7 @@ const FORMAT_OPS = new Set([
 // the preflight retargets it to the table's first cell before resolving it -
 // naming the table the way the read names it must not be an error (see
 // retargetTableScopedAnchor).
-export const TABLE_SCOPED_OPS = new Set([
+const TABLE_SCOPED_OPS = new Set([
   'copy_table_format',
   'restripe_table',
   'duplicate_table'
@@ -13585,13 +13661,6 @@ interface EngineMutationPlan {
   index: number;
   op: EditOp;
   anchor?: string;
-  /**
-   * Every figure this plan writes on the strength of a declared provenance, with
-   * the cell each one licenses. Carried on the PLAN rather than on the result
-   * so the single-use licence for a user-stated figure is judged before the
-   * all-or-nothing engine transaction runs.
-   */
-  literalNumbers?: Array<{ where: string; write: LiteralNumberWrite }>;
   /** Lets the batch collapse repeated writes to one explicit global identity. */
   bindingWrite?: {
     identity: BindingWireIdentity;
@@ -13624,7 +13693,6 @@ interface BoundDuplicateRowValue {
   field: string;
   canonical: string;
   display: string;
-  literalNumber?: LiteralNumberWrite;
 }
 
 interface BoundDuplicateRowPlan {
@@ -13832,26 +13900,70 @@ function bandingForAcceptedTableProjection(
         source: projectedAppearance
       })
     : 0;
+  // A trailing totals row is not a band: read the stripe from the item rows.
+  const index = tableBlock ? scanBindings(sfdt) : undefined;
+  const tableId = index
+    ? [...index.tables.values()].find(
+        (table) => boundTableAnchor(sfdt, table) === tableAnchor
+      )?.tableId ?? null
+    : null;
+  const roles =
+    tableBlock && index
+      ? deriveTableStructure({
+          tableBlock,
+          headerRows,
+          tableId,
+          documentFormulas: documentFormulaMap(index)
+        }).rows
+      : [];
+  let items = roles.length;
+  while (items > headerRows && roles[items - 1]?.role === 'aggregate') items--;
+  // Roles are read on the physical table; the projection drops rows pending
+  // deletion, so trim it by the trailing totals rows that survive an accept.
+  const deleted = deletedRevisionIds(sfdt);
+  const physicalRows = getRows(tableBlock) ?? [];
+  const survivingTotals = physicalRows
+    .slice(items)
+    .filter(
+      (row: any) => !anyRevisionIdIn(rowRevisionIds(row), deleted)
+    ).length;
+  const itemRows = (
+    appearance: TableAppearance,
+    trailingTotals: number
+  ): TableAppearance =>
+    trailingTotals > 0 && trailingTotals < appearance.rows.length
+      ? {
+          ...appearance,
+          rows: appearance.rows.slice(
+            0,
+            appearance.rows.length - trailingTotals
+          )
+        }
+      : appearance;
   const physicalBanding = physicalAppearance
     ? detectTableBanding(physicalAppearance) ??
-      shortInsertBanding(physicalAppearance)
+      shortInsertBanding(
+        itemRows(physicalAppearance, physicalRows.length - items)
+      )
     : null;
   const projectedBody = projectedAppearance
     ? rowShadings(projectedAppearance).slice(headerRows)
     : [];
+  const withTail = (read: TableBanding): TableBanding => ({
+    ...read,
+    tailInBand:
+      projectedBody.length > 0 &&
+      projectedBody[projectedBody.length - 1] ===
+        read.cycle[(projectedBody.length - 1) % read.period]
+  });
+  const projectedItemBanding = projectedAppearance
+    ? shortInsertBanding(itemRows(projectedAppearance, survivingTotals))
+    : null;
   const banding = physicalBanding
-    ? {
-        ...physicalBanding,
-        tailInBand:
-          projectedBody.length > 0 &&
-          projectedBody[projectedBody.length - 1] ===
-            physicalBanding.cycle[
-              (projectedBody.length - 1) % physicalBanding.period
-            ]
-      }
+    ? withTail(physicalBanding)
     : projectedAppearance
     ? detectTableBanding(projectedAppearance) ??
-      shortInsertBanding(projectedAppearance) ??
+      (projectedItemBanding ? withTail(projectedItemBanding) : null) ??
       documentInsertBanding(sfdt, tableAnchor, projectedAppearance) ??
       undefined
     : undefined;
@@ -13956,9 +14068,36 @@ function plannedPlainTablePromotions(
     const anchor = boundTableAnchor(sfdt, table);
     if (anchor) boundAnchors.add(anchor);
   }
+  // A request naming a field the target cell already holds updates or
+  // re-states that field; it is not a reason to make the table live.
+  const targetHoldsName = (op: EditOp): boolean => {
+    const parts = String(op.anchor ?? '')
+      .split(';')
+      .map(Number);
+    if (parts.length < 4 || parts.some((part) => !Number.isInteger(part)))
+      return false;
+    const [section, block, row, column] = parts;
+    const rowPath = ['sections', section, 'blocks', block, 'rows', row];
+    // A wrapped table's anchor does not walk to rows; such a table is
+    // already live, so it is never a promotion root anyway.
+    const rowNode = rowPath.reduce<any>((node, key) => node?.[key], sfdt);
+    if (!rowNode) return false;
+    // Inventory anchors count physical cells; accept the logical reading too.
+    const cells = new Set([column, physicalCellIndexAt(rowNode, column)]);
+    const name = canonicalBindingName(String(op.name ?? '').trim());
+    return [...cells].some(
+      (cell) =>
+        cell != null &&
+        index.occurrences.some(
+          (occurrence) =>
+            occurrence.name === name &&
+            isPathPrefix([...rowPath, 'cells', cell], occurrence.path)
+        )
+    );
+  };
   const roots = new Set<string>();
   for (const op of edits) {
-    if (op?.op !== 'create_binding') continue;
+    if (op?.op !== 'create_binding' || targetHoldsName(op)) continue;
     const anchor = editTableRoot(op, creators);
     const createdEarlier = anchor
       ? edits.some(
@@ -13974,15 +14113,44 @@ function plannedPlainTablePromotions(
     )
       roots.add(anchor);
   }
+  // A column never spans tables, so an input name bound in two places of one
+  // change set is one shared value, not a row field of each table.
+  // A name bound in two or more cells of one table is a column there and is
+  // never shared.
+  const placesByName = new Map<string, Map<string, number>>();
+  for (const op of edits) {
+    if (op?.op !== 'create_binding' || op.kind !== 'input') continue;
+    const name = canonicalBindingName(String(op.name ?? '').trim());
+    const place = editTableRoot(op, creators) ?? `outside:${String(op.anchor)}`;
+    const places = placesByName.get(name) ?? new Map<string, number>();
+    places.set(place, (places.get(place) ?? 0) + 1);
+    placesByName.set(name, places);
+  }
+  const sharedNames = new Set(
+    [...placesByName]
+      .filter(
+        ([, places]) =>
+          places.size > 1 && [...places.values()].every((cells) => cells === 1)
+      )
+      .map(([name]) => name)
+  );
   const used = new Set(index.tables.keys());
   const promotions = new Map<string, PlainTablePromotion>();
-  for (const anchor of roots) {
+  // Bottom-up: each tracked replacement keeps the source table as a pending
+  // deletion beside its successor, shifting every later block by one, so a
+  // promotion must never run above one still waiting at its planned anchor.
+  // Roots are always "section;block" (normalizeTableAnchor).
+  const below = (a: string, b: string): number => {
+    const [[sa, ba], [sb, bb]] = [a, b].map((x) => x.split(';').map(Number));
+    return sb - sa || bb - ba;
+  };
+  for (const anchor of [...roots].sort(below)) {
     const base = `table_${anchor.replace(/[^A-Za-z0-9_]/g, '_')}`;
     let tableId = base;
     let suffix = 2;
     while (used.has(tableId)) tableId = `${base}_${suffix++}`;
     used.add(tableId);
-    promotions.set(anchor, { anchor, tableId });
+    promotions.set(anchor, { anchor, tableId, sharedNames });
   }
   return promotions;
 }
@@ -14103,6 +14271,13 @@ function formulaRedirect(op: EditOp, occurrence: Occurrence): OpError {
   );
 }
 
+/** selectBlock shifts past a leading marker, so a whole-cell rewrite is exact. */
+const isExactWholeCellRewrite = (op: EditOp, block: FlatBlock): boolean =>
+  op.op === 'set_cell_text' &&
+  !!block.leadingMarkers &&
+  !block.boundTag &&
+  !block.bindingRanges?.length;
+
 function retryableBoundNeighborRefusal(op: EditOp, block: FlatBlock): OpError {
   return new OpError(
     'unaddressable_in_bound_document',
@@ -14142,45 +14317,26 @@ function boundNumericWriteNeedsProvenance(
 }
 
 /**
- * Refuse a bound numeric write with no declared provenance, and hand back the
- * audit record when there is one.
- *
- * The record is the caller's to keep: `literal: true` is a ONE-CELL licence
- * within a change set, and the plan that carries the record is what lets the
- * boundary see a figure being spent twice.
- */
-/**
  * Accept an exact same-column document value as provenance for a row this
  * change set creates. Existing-row writes still require an explicit source.
  */
-function documentProvenanceFor(
+function hasDocumentProvenance(
   candidates: Occurrence[] | undefined,
   occurrence: Occurrence,
   value: string
-): LiteralNumberWrite | undefined {
-  if (!candidates?.length) return undefined;
+): boolean {
+  if (!candidates?.length) return false;
   const wanted = value.trim();
-  if (!wanted) return undefined;
+  if (!wanted) return false;
   // The row being copied may itself be the template the created row was typed
   // from, so identity is no exclusion; a live value of the same field showing
   // exactly this text is the whole test.
-  const match = candidates.find(
+  return candidates.some(
     (candidate) =>
       candidate.name === occurrence.name &&
       candidate.def.kind === 'field' &&
       candidate.text.trim() === wanted
   );
-  if (!match) return undefined;
-  const where = match.tableId
-    ? `${match.tableId}${match.rowId ? ` row ${match.rowId}` : ''}`
-    : 'document';
-  return {
-    text: wanted,
-    previousText: occurrence.text,
-    source: 'document',
-    copiedFrom: `${match.name} in ${where}`,
-    note: DOCUMENT_NUMBER_NOTE
-  };
 }
 
 function guardBoundNumericReplacement(
@@ -14189,16 +14345,14 @@ function guardBoundNumericReplacement(
   value: string,
   /** Bound values a copied figure may be verified against; only for rows this change set creates. */
   createdRowCandidates?: Occurrence[]
-): LiteralNumberWrite | undefined {
-  if (!boundNumericWriteNeedsProvenance(occurrence, value)) return undefined;
-  const { record, citationFailure } = resolveNumberProvenance(
+): void {
+  if (!boundNumericWriteNeedsProvenance(occurrence, value)) return;
+  const { valid, citationFailure } = verifyNumberProvenance(
     { ...op, op: 'set_cell_text', text: value } as TypedEditOp<'set_cell_text'>,
-    value.trim(),
-    occurrence.text
+    value.trim()
   );
-  if (record) return record;
-  const copied = documentProvenanceFor(createdRowCandidates, occurrence, value);
-  if (copied) return copied;
+  if (valid) return;
+  if (hasDocumentProvenance(createdRowCandidates, occurrence, value)) return;
   throw new OpError(
     'model_authored_number',
     `Refusing to write the numeric value ${JSON.stringify(
@@ -14673,11 +14827,7 @@ function boundInputTextPlan(
         });
     }
   const reviewIdentity = [...pendingReviewIdentities.values()][0];
-  const literalNumber = guardBoundNumericReplacement(
-    op,
-    selectedOccurrence,
-    desired
-  );
+  guardBoundNumericReplacement(op, selectedOccurrence, desired);
   let canonical: string;
   try {
     canonical = parseDisplay(selectedOccurrence.def.fieldType, desired);
@@ -14691,9 +14841,6 @@ function boundInputTextPlan(
     index,
     op,
     anchor: block.anchor,
-    ...(literalNumber
-      ? { literalNumbers: [{ where: block.anchor, write: literalNumber }] }
-      : {}),
     bindingWrite: {
       identity: { id: occurrence.name, global: occurrence.def.isGlobal },
       canonical
@@ -15649,7 +15796,7 @@ function validateBoundDuplicateRows(
       const display = String(rawValue ?? '');
       // A replacement row is a row this change set creates; a copied figure is
       // verified against this table's own column.
-      const literalNumber = guardBoundNumericReplacement(
+      guardBoundNumericReplacement(
         op,
         occurrence,
         display,
@@ -15666,37 +15813,11 @@ function validateBoundDuplicateRows(
       values.push({
         field,
         canonical,
-        display,
-        ...(literalNumber ? { literalNumber } : {})
+        display
       });
     }
     return { values };
   });
-}
-
-/**
- * One accounting entry per figure a `duplicate_table` payload writes.
- *
- * `literal: true` on the op is not a blanket licence for every number in every
- * row: the same single-use rule the cell-by-cell path enforces applies here, one
- * cell at a time, so the boundary can see a stated figure being spent twice.
- */
-function duplicateRowLiteralNumbers(
-  op: EditOp,
-  rows: BoundDuplicateRowPlan[] | null
-): Array<{ where: string; write: LiteralNumberWrite }> {
-  if (!rows) return [];
-  const out: Array<{ where: string; write: LiteralNumberWrite }> = [];
-  rows.forEach((row, rowIndex) => {
-    for (const value of row.values) {
-      if (!value.literalNumber) continue;
-      out.push({
-        where: `${op.anchor ?? ''} rows[${rowIndex}].${value.field}`,
-        write: value.literalNumber
-      });
-    }
-  });
-  return out;
 }
 
 /**
@@ -15923,13 +16044,11 @@ function boundDuplicateTablePlan(
 ): EngineMutationPlan {
   const copyRows = op.rows === undefined || op.rows === 'copy';
   const replacementRows = validateBoundDuplicateRows(op, tableRoute);
-  const literalNumbers = duplicateRowLiteralNumbers(op, replacementRows);
   return {
     route: 'engine',
     index,
     op,
     anchor: block.anchor,
-    ...(literalNumbers.length ? { literalNumbers } : {}),
     execute(state) {
       const {
         liveTable,
@@ -16147,6 +16266,11 @@ function blankColumnCell(source: any): any {
   stripRevisionIds(cell);
   delete cell.contentControlProperties;
   delete cell.ccp;
+  cell.cellFormat = {
+    ...(cell.cellFormat ?? {}),
+    columnSpan: 1,
+    rowSpan: 1
+  };
   const blocks = Array.isArray(cell.blocks) ? cell.blocks : [];
   const paragraph = cloneJson(blocks[0] ?? { inlines: [] });
   delete paragraph.contentControlProperties;
@@ -16163,6 +16287,14 @@ function insertColumnIntoTable(table: any, columnIndex: number): void {
     throw new OpError(
       'insert_column_unroutable',
       'insert_column could not read any rows from the target table. Nothing was written.'
+    );
+  const grid = Array.isArray(table?.grid) ? table.grid : undefined;
+  const sourceColumn = columnIndex === 0 ? 0 : columnIndex - 1;
+  const sourceWidth = grid ? Number(grid[sourceColumn]) : undefined;
+  if (grid && !Number.isFinite(sourceWidth))
+    throw new OpError(
+      'insert_column_unroutable',
+      `insert_column cannot copy logical column ${sourceColumn}: its table grid width is missing or invalid. Nothing was written.`
     );
   for (const row of rows) {
     const cells = Array.isArray(row?.cells) ? row.cells : undefined;
@@ -16216,6 +16348,9 @@ function insertColumnIntoTable(table: any, columnIndex: number): void {
     });
     row.cells = next;
   }
+  if (grid) grid.splice(columnIndex, 0, sourceWidth);
+  if (Number.isFinite(Number(table?.columnCount)))
+    table.columnCount = Number(table.columnCount) + 1;
 }
 
 function deleteColumnFromTable(table: any, columnIndex: number): void {
@@ -16566,6 +16701,212 @@ function setCellContent(
   return setAt(sfdt, cellPath, { ...cell, blocks });
 }
 
+const CURRENCY_SYMBOLS: Record<string, string[]> = {
+  $: ['USD', 'CAD', 'AUD', 'NZD', 'SGD', 'HKD', 'MXN'],
+  '€': ['EUR'],
+  '£': ['GBP'],
+  '¥': ['JPY', 'CNY'],
+  '₹': ['INR']
+};
+
+/**
+ * Whether adopting `text` as `canonical` keeps what the cell says: no other
+ * currency's symbol or code, and no digit lost to rounding.
+ */
+function adoptsCellTextExactly(
+  fieldType: FieldType,
+  text: string,
+  canonical: string
+): boolean {
+  if (fieldType.kind === 'currency') {
+    const code = fieldType.currency.toUpperCase();
+    for (const [symbol, codes] of Object.entries(CURRENCY_SYMBOLS))
+      if (text.includes(symbol) && !codes.includes(code)) return false;
+    const named = /\b([A-Z]{3})\b/.exec(text)?.[1];
+    if (named && named !== code) return false;
+  }
+  if (!['integer', 'decimal', 'currency'].includes(fieldType.kind)) return true;
+  // Magnitudes: the sign may be written as "-" or as accounting parentheses.
+  const written = text.replace(/[^\d.]/g, '');
+  return Number(written) === Math.abs(Number(canonical));
+}
+
+/** The cell's own text as the new input's value, or an actionable refusal. */
+function adoptedCellValue(
+  fieldType: FieldType,
+  text: string,
+  op: EditOp
+): string {
+  let canonical = '';
+  try {
+    canonical = parseDisplay(fieldType, text);
+  } catch (err) {
+    if (!isValueError(err)) throw err;
+  }
+  if (!canonical || !adoptsCellTextExactly(fieldType, text, canonical))
+    throw new OpError(
+      'binding_cell_text_unparsed',
+      `create_binding cannot read the cell's current text ${JSON.stringify(
+        text
+      )} as ${String(
+        op.valueType ?? 'text'
+      )} without changing it. Pass \`initial\`, or fix the cell text first. Nothing was written.`
+    );
+  return canonical;
+}
+
+// Op-layer wrapper: translate the core's column-expression verdict into an
+// OpError so create_binding rejects a permanently-erroring binding at creation.
+export function assertExpressionYieldsValue(
+  expression: string,
+  bindingIndex: BindingIndex,
+  target?: Occurrence
+): void {
+  const kind = expressionResolvesToColumn(bindingIndex, expression);
+  if (kind) {
+    const what =
+      kind === 'range' ? 'is a whole range' : 'names a whole table column';
+    throw new OpError(
+      'binding_expression_whole_column',
+      `Expression ${JSON.stringify(
+        expression
+      )} ${what}. Wrap it in sum(...) to produce a value. Nothing was written.`
+    );
+  }
+  if (!target) return; // New bindings on this route already have a table cell.
+  const hasOwningTable = [...bindingIndex.tables.values()].some(
+    (table) => table.tablePath && isPathPrefix(table.tablePath, target.path)
+  );
+  if (hasOwningTable) return;
+  let ast;
+  try {
+    ast = parseExpression(expression);
+  } catch (thrown) {
+    if (!isFormulaError(thrown)) throw thrown;
+    return; // The caller reports syntax errors separately.
+  }
+  const positional = collectPositional(ast);
+  const hasUnqualified =
+    positional.cells.some((cell) => cell.table === null) ||
+    positional.ranges.some((range) => range.table === null) ||
+    collectRefs(ast).some(
+      (ref) =>
+        bareCellRef(ref) !== null &&
+        !bindingIndex.fields.has(ref) &&
+        !bindingIndex.formulas.has(ref)
+    );
+  if (hasUnqualified)
+    throw new OpError(
+      'binding_expression_outside_table',
+      `Expression ${JSON.stringify(
+        expression
+      )} uses an unqualified cell or range outside a table. Qualify it with a table ID. Nothing was written.`
+    );
+}
+
+/**
+ * The binding of this name and kind the block already holds. Asking for it
+ * again (as a batch that links several places at once does) is satisfied, not
+ * refused or duplicated.
+ */
+type SfdtPathLike = Array<string | number>;
+
+/** Whether the block already holds a binding with this name, of any kind. */
+function blockHoldsBindingName(block: FlatBlock, requested: string): boolean {
+  const name = canonicalBindingName(requested.trim());
+  return [
+    block.boundTag,
+    ...(block.bindingRanges ?? []).map((range) => range.tag)
+  ].some((tag) => {
+    if (!tag) return false;
+    try {
+      const def = parseTag(tag);
+      return !!def && def.kind !== 'table' && def.name === name;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function restatedBinding(
+  block: FlatBlock,
+  name: string,
+  kind: 'input' | 'formula'
+): Definition | null {
+  const tags = [
+    block.boundTag,
+    ...(block.bindingRanges ?? []).map((range) => range.tag)
+  ];
+  for (const tag of tags) {
+    if (!tag) continue;
+    let def: Definition | null = null;
+    try {
+      def = parseTag(tag) ?? null;
+    } catch {
+      continue;
+    }
+    const wanted = kind === 'input' ? 'field' : 'formula';
+    if (def && def.kind === wanted && def.name === name) return def;
+  }
+  return null;
+}
+
+/**
+ * A document-level name is one value wherever it appears (the engine fans it
+ * out by name). A create_binding that reuses such a name joins it, inheriting
+ * its definition, instead of minting a row variable that only shares the name.
+ * Joining is refused when the request contradicts the value it would join.
+ */
+function joinedDocumentBinding(
+  index: BindingIndex,
+  name: string,
+  kind: 'input' | 'formula',
+  fieldType: FieldType,
+  targetPaths: SfdtPathLike[] = []
+): Occurrence | null {
+  // index.fields/formulas hold document-level occurrences only (scanBindings).
+  // An occurrence in the target cell is the value being updated, not one
+  // elsewhere.
+  const shared = [
+    ...(index.fields.get(name) ?? []),
+    ...(index.formulas.get(name) ?? [])
+  ].filter(
+    (occurrence) =>
+      !targetPaths.some((path) => isPathPrefix(path, occurrence.path))
+  );
+  if (!shared.length) return null;
+  const existing = shared[0];
+  if (
+    kind !== 'input' ||
+    existing.def.kind !== 'field' ||
+    existing.def.fieldType.kind !== fieldType.kind
+  )
+    throw new OpError(
+      'binding_identity_type_conflict',
+      existing.def.kind === 'formula'
+        ? `"${name}" already names a formula elsewhere in the document, and a formula cannot be placed twice. To show its value here, create a formula with a different name whose expression references "${name}". Nothing was written.`
+        : `"${name}" already names a ${existing.def.fieldType.kind} input elsewhere in the document. Reuse it as a ${existing.def.fieldType.kind} input to show the same value, or choose a different name. Nothing was written.`
+    );
+  return existing;
+}
+
+/** Refuse joining a value the cell (or `initial`) contradicts. */
+function assertJoinedValue(
+  joined: Occurrence,
+  canonical: string,
+  shown: string
+): void {
+  const existing = parseDisplay(joined.def.fieldType, joined.text);
+  if (canonical !== existing)
+    throw new OpError(
+      'binding_value_conflict',
+      `"${joined.name}" already holds ${renderDisplay(
+        joined.def.fieldType,
+        existing
+      )} elsewhere in the document, but this cell shows ${shown}. Use a different name for a different value, or correct the cell first. Nothing was written.`
+    );
+}
+
 function createBindingInCell(
   state: EngineMutationState,
   op: EditOp,
@@ -16591,7 +16932,26 @@ function createBindingInCell(
     (entry) =>
       entry.path && Number(entry.path[entry.path.length - 1]) === rowIndex
   );
-  const rowId = row?.rowId ?? promotedRowId ?? null;
+  // The cell being written, read as a physical cell (inventory anchors) and
+  // as a logical column; whatever it already holds is updated, not joined.
+  const tablePath = table.tablePath;
+  const targetRow = tablePath
+    ? getAt(state.sfdt, [...tablePath, 'rows', rowIndex])
+    : undefined;
+  const targetPaths = tablePath
+    ? [columnIndex, physicalCellIndexAt(targetRow, columnIndex)]
+        .filter((cell): cell is number => cell != null)
+        .map((cell) => [...tablePath, 'rows', rowIndex, 'cells', cell])
+    : [];
+  const joined = joinedDocumentBinding(
+    state.index,
+    name,
+    kind,
+    fieldType,
+    targetPaths
+  );
+
+  const rowId = joined ? null : row?.rowId ?? promotedRowId ?? null;
   if (op.global === true && rowId)
     throw new OpError(
       'global_row_binding_invalid',
@@ -16608,8 +16968,9 @@ function createBindingInCell(
         'A formula binding requires an expression. Nothing was written.'
       );
     parseExpression(expression);
+    assertExpressionYieldsValue(expression, state.index);
   }
-  const definition: Definition =
+  const requested: Definition =
     kind === 'formula'
       ? {
           version: 2,
@@ -16632,16 +16993,20 @@ function createBindingInCell(
           isGlobal: op.global === true,
           options: rowId ? { row: rowId } : {}
         };
+  const definition = joined ? joined.def : requested;
   const templateOccurrence = row
     ? [...row.bindings.values()][0]
     : [...table.rows.flatMap((entry) => [...entry.bindings.values()])][0];
   const template = templateOccurrence
     ? getAt(state.sfdt, templateOccurrence.path)?.contentControlProperties
     : undefined;
-  let canonical = defaultValue(definition);
-  if (kind === 'input' && op.initial !== undefined)
-    canonical = parseDisplay(fieldType, String(op.initial));
-  const text = renderDisplay(fieldType, canonical);
+  let canonical = joined
+    ? parseDisplay(joined.def.fieldType, joined.text)
+    : defaultValue(definition);
+  if (kind === 'input' && op.initial !== undefined) {
+    canonical = parseDisplay(definition.fieldType, String(op.initial));
+    if (joined) assertJoinedValue(joined, canonical, String(op.initial));
+  }
   const rowNode = table.tablePath
     ? getAt(state.sfdt, [...table.tablePath, 'rows', rowIndex])
     : undefined;
@@ -16659,6 +17024,21 @@ function createBindingInCell(
   const characterFormat = firstTextRun(
     Array.isArray(cell?.blocks) ? cell.blocks[paragraphIndex] : undefined
   )?.characterFormat;
+  // An input over text the cell already shows takes that text as its value;
+  // defaulting would silently replace it (a written "$700" became "$0.00").
+  // Read as an accept would leave it, the same projection flattenSfdt reads.
+  const existing =
+    kind === 'input' && op.initial === undefined
+      ? inlineText(
+          getInlines(cell?.blocks?.[paragraphIndex]),
+          deletedRevisionIds(state.sfdt)
+        ).trim()
+      : '';
+  if (existing) {
+    canonical = adoptedCellValue(definition.fieldType, existing, op);
+    if (joined) assertJoinedValue(joined, canonical, existing);
+  }
+  const text = renderDisplay(definition.fieldType, canonical);
   return setCellContent(
     state.sfdt,
     table,
@@ -16691,6 +17071,29 @@ function redefineBoundFormulaPlan(
   occurrence: Occurrence
 ): EngineMutationPlan {
   const requestedName = canonicalBindingName(String(op.name ?? ''));
+  if (
+    op.kind === 'input' &&
+    op.initial === undefined &&
+    occurrence.def.kind === 'field' &&
+    requestedName === occurrence.name &&
+    (op.valueType === undefined ||
+      parseType(String(op.valueType), `create_binding:${requestedName}`)
+        .kind === occurrence.def.fieldType.kind)
+  )
+    return {
+      route: 'engine',
+      index,
+      op,
+      anchor: block.anchor,
+      execute: (state) => ({
+        sfdt: state.sfdt,
+        anchor: block.anchor,
+        details: [
+          `binding: ${occurrence.name}`,
+          'already bound here; nothing changed'
+        ]
+      })
+    };
   if (op.kind !== 'formula' || occurrence.def.kind !== 'formula')
     throw new OpError(
       'binding_redefinition_kind_mismatch',
@@ -16738,6 +17141,8 @@ function redefineBoundFormulaPlan(
           `Formula "${occurrence.name}" resolved to ${targets.length} matching controls. Nothing was written.`,
           targets.map((candidate) => `candidate: ${candidate.path.join('/')}`)
         );
+      for (const target of targets)
+        assertExpressionYieldsValue(expression, state.index, target);
       let sfdt = state.sfdt;
       let toTag = '';
       for (const target of targets) {
@@ -16844,24 +17249,42 @@ function promotedPlainTablePlan(
           new RegExp(
             `\\b${promotion.tableId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.`
           ).test(expression));
+      // A formula that reads no cells of its own table (only document values
+      // or literals) has no row to belong to. Scoping it to one would let
+      // reconcile adopt the table's other rows from it and fill them with
+      // values nobody asked for. Row-local and positional formulas keep row
+      // scope; adoption of genuine line items is unchanged.
+      const documentOnly =
+        op.kind === 'formula' &&
+        (() => {
+          const ast = parseExpression(expression);
+          const positional = collectPositional(ast);
+          return (
+            !positional.cells.length &&
+            !positional.ranges.length &&
+            collectRefs(ast).every(
+              (ref) =>
+                promoted.index.fields.has(ref) ||
+                promoted.index.formulas.has(ref)
+            )
+          );
+        })();
+      const sharedInput =
+        op.kind === 'input' &&
+        !!promotion.sharedNames?.has(
+          canonicalBindingName(String(op.name ?? '').trim())
+        );
       const rowId =
-        op.global === true || aggregate
+        op.global === true || aggregate || documentOnly || sharedInput
           ? null
           : `${promotion.tableId}_r${rowIndex}`;
       const liveTableAnchor = boundTableAnchor(promoted.sfdt, table);
       const liveCellAnchor = liveTableAnchor
         ? `${liveTableAnchor};${rowIndex};${columnIndex};${paragraphIndex}`
         : block.anchor;
-      const current = flattenSfdt(promoted.sfdt).find(
-        (candidate) => candidate.anchor === liveCellAnchor
-      );
-      const bindingOp =
-        op.kind === 'input' && op.initial === undefined
-          ? { ...op, initial: current?.text ?? block.text }
-          : op;
       const next = createBindingInCell(
         promoted,
-        bindingOp,
+        op,
         table,
         rowIndex,
         columnIndex,
@@ -16889,7 +17312,6 @@ function stableTableReferencePlan(
 ): EngineMutationPlan {
   const parsedRef = stableResourceAnchor(op.anchor);
   const ref = parsedRef?.ref ?? String(op.anchor);
-  let literalNumbers: EngineMutationPlan['literalNumbers'];
   if (
     op.op === 'create_binding' &&
     op.kind === 'input' &&
@@ -16906,12 +17328,8 @@ function stableTableReferencePlan(
       fieldType.kind !== 'boolean' &&
       classifyNumericText(initial).numeric
     ) {
-      const { record, citationFailure } = resolveNumberProvenance(
-        op,
-        initial,
-        ''
-      );
-      if (!record)
+      const { valid, citationFailure } = verifyNumberProvenance(op, initial);
+      if (!valid)
         throw new OpError(
           'model_authored_number',
           `Refusing to create numeric binding ${JSON.stringify(
@@ -16920,18 +17338,16 @@ function stableTableReferencePlan(
             initial
           )}: the engine did not compute it, so the request must say where it came from. Add \`literal: true\` if the user stated this exact value, or provide both \`quotedFrom\` and \`quotedText\` for attachment provenance.${citationFailure}`
         );
-      literalNumbers = [{ where: String(op.anchor ?? ''), write: record }];
     }
   }
   let resolvedPlan: EngineMutationPlan | undefined;
   return {
     route: 'engine',
-    ...(op.op === 'set_column_layout'
+    ...(op.op === 'set_column_layout' || op.op === 'set_char_format'
       ? { resultRoute: 'editor' as const }
       : {}),
     index,
     op,
-    ...(literalNumbers ? { literalNumbers } : {}),
     collectBookmarkClamps: () => resolvedPlan?.collectBookmarkClamps?.() ?? [],
     execute(state) {
       const resource = state.refs.get(ref);
@@ -16977,7 +17393,7 @@ function stableTableReferencePlan(
             'Column references currently address the first paragraph in a cell. Nothing was written.'
           );
         const anchor = `${tableAnchor};${rowIndex};${resource.columnIndex};0`;
-        if (op.op === 'set_column_layout')
+        if (op.op === 'set_column_layout' || op.op === 'set_char_format')
           return {
             sfdt: state.sfdt,
             anchor,
@@ -17204,7 +17620,7 @@ function planCreatedBoundRowWrite(
     );
   const display = String(op.text ?? '');
   // The target row is one this change set is creating (see the guard above).
-  const literalNumber = guardBoundNumericReplacement(
+  guardBoundNumericReplacement(
     op,
     templateOccurrence,
     display,
@@ -17223,13 +17639,6 @@ function planCreatedBoundRowWrite(
     index,
     op,
     anchor: String(op.anchor ?? ''),
-    ...(literalNumber
-      ? {
-          literalNumbers: [
-            { where: String(op.anchor ?? ''), write: literalNumber }
-          ]
-        }
-      : {}),
     execute(state) {
       const rowId = created.plan.createdRowIds[created.offset];
       if (!rowId)
@@ -17375,7 +17784,12 @@ function planBindingRoutedOp(
     if (op.op === 'delete_column')
       return boundDeleteColumnPlan(index, op, target, tableRoute);
   }
-  if (target.offsetsUntrusted && !target.boundTag && BOUND_WRITE_OPS.has(op.op))
+  if (
+    target.offsetsUntrusted &&
+    !target.boundTag &&
+    BOUND_WRITE_OPS.has(op.op) &&
+    !isExactWholeCellRewrite(op, target)
+  )
     throw retryableBoundNeighborRefusal(op, target);
   if (!target.boundTag) return null;
   const runtime =
@@ -17436,128 +17850,6 @@ function collectOpExtras(
     ...rest,
     ...(appearanceWrite ? { appearance: appearanceWrite.report } : {})
   };
-}
-
-function userStatedFigureKey(write: LiteralNumberWrite): string | null {
-  const parsed = parseNumericCell(write.rendered?.asSent ?? write.text);
-  if (!parsed) return null;
-  let { units, scale } = parsed.value;
-  while (scale > 0 && units % 10 === 0) {
-    units /= 10;
-    scale--;
-  }
-  return `${units}:${scale}`;
-}
-
-/**
- * A user-stated figure is a one-cell licence within a change set. Successful
- * writes already carry the common-boundary audit record, so enforce the batch
- * invariant over those records instead of re-interpreting model-authored ops.
- */
-function refuseReusedUserStatedFigures(
-  results: Array<EditResult | undefined>
-): void {
-  const firstUse = new Map<string, { anchor: string; text: string }>();
-  results.forEach((result, index) => {
-    if (!result?.ok) return;
-    const write = result.literalNumber;
-    if (!write || write.source !== 'user_stated') return;
-    const key = userStatedFigureKey(write);
-    if (!key) return;
-    const anchor = result.anchor ?? '(unknown cell)';
-    const first = firstUse.get(key);
-    if (!first) {
-      firstUse.set(key, { anchor, text: write.rendered?.asSent ?? write.text });
-      return;
-    }
-    if (first.anchor === anchor) return;
-    results[index] = {
-      ...result,
-      ok: false,
-      error: 'user_stated_figure_reused',
-      message:
-        `The user-stated figure ${JSON.stringify(
-          first.text
-        )} already licenses cell "${
-          first.anchor
-        }" and cannot also license cell "${anchor}" in the same change set. ` +
-        `If "${anchor}" depends on the first cell, derive it with set_cell_formula. Otherwise ask the user which cell the figure belongs in. Nothing was written.`,
-      details: [
-        `first literal cell: ${first.anchor}`,
-        `reused literal cell: ${anchor}`
-      ]
-    };
-  });
-}
-
-function reusedUserStatedFigureRefusal(
-  first: { where: string; text: string },
-  where: string
-): OpError {
-  return new OpError(
-    'user_stated_figure_reused',
-    `The user-stated figure ${JSON.stringify(
-      first.text
-    )} already licenses cell "${
-      first.where
-    }" and cannot also license cell "${where}" in the same change set. ` +
-      `If "${where}" depends on the first cell, derive it with set_cell_formula. Otherwise ask the user which cell the figure belongs in. Nothing was written.`,
-    [`first literal cell: ${first.where}`, `reused literal cell: ${where}`],
-    'never'
-  );
-}
-
-/**
- * The same one-cell licence, judged BEFORE the engine transaction runs.
- *
- * The post-hoc pass above can afford to fail an editor result and let rollback
- * reject that group's native revisions. The engine transaction authors and opens
- * its complete grouped SFDT change set atomically, so a post-hoc refusal would
- * still report failure over a write that landed. Engine plans therefore declare
- * their figures up front and are checked here, against each other and against
- * whatever the editor phase already spent, while the transaction can still be
- * skipped entirely.
- */
-function findReusedUserStatedFigureInPlans(
-  results: Array<EditResult | undefined>,
-  enginePlans: EngineMutationPlan[]
-): { plan: EngineMutationPlan; error: OpError } | null {
-  const firstUse = new Map<string, { where: string; text: string }>();
-  const remember = (
-    where: string,
-    write: LiteralNumberWrite
-  ): string | null => {
-    if (write.source !== 'user_stated') return null;
-    const key = userStatedFigureKey(write);
-    if (!key) return null;
-    const first = firstUse.get(key);
-    if (!first) {
-      firstUse.set(key, { where, text: write.rendered?.asSent ?? write.text });
-      return null;
-    }
-    return first.where === where ? null : key;
-  };
-  for (const result of results) {
-    if (!result?.ok || !result.literalNumber) continue;
-    remember(result.anchor ?? '(unknown cell)', result.literalNumber);
-  }
-  for (const plan of enginePlans) {
-    for (const { where, write } of plan.literalNumbers ?? []) {
-      const logicalWhere = plan.bindingWrite?.identity.global
-        ? `global binding ${plan.bindingWrite.identity.id}`
-        : where;
-      const collided = remember(logicalWhere, write);
-      if (!collided) continue;
-      return {
-        plan,
-        error: reusedUserStatedFigureRefusal(
-          firstUse.get(collided) as { where: string; text: string },
-          logicalWhere
-        )
-      };
-    }
-  }
-  return null;
 }
 
 function mayShiftAnchors(op: EditOp): boolean {
@@ -17851,6 +18143,81 @@ function resolveChangeSetBlock(
       `matching blocks: ${matches.map((match) => match.anchor).join(', ')}`
     ]
   );
+}
+
+function anchorAfterTopLevelPastes(
+  baseline: FlatBlock | undefined,
+  originalSequence: Array<{ section: number; block: number }>,
+  liveSequence: Array<{ section: number; block: number }>,
+  shifts: PasteEffect[]
+): string | undefined {
+  if (!baseline || !shifts.length) return undefined;
+  const parts = baseline.anchor.split(';');
+  if (parts.length < 2) return undefined;
+  let index = sequenceIndexOf(
+    originalSequence,
+    topLevelAddress(baseline.anchor)
+  );
+  if (index < 0) return undefined;
+  for (const shift of shifts) if (shift.at <= index) index += shift.blocks;
+  const address = liveSequence[index];
+  if (!address) return undefined;
+  return [address.section, address.block, ...parts.slice(2)].join(';');
+}
+
+function measuredTopLevelInsertShift(
+  op: EditOp,
+  before: Array<{ section: number; block: number }>,
+  after: Array<{ section: number; block: number }>
+): PasteEffect | null {
+  const blocks = after.length - before.length;
+  if (op.op !== 'insert_text' || blocks <= 0) return null;
+  const anchor = String(op.anchor ?? '');
+  if (anchor.split(';').length !== 2) return null;
+  const target = sequenceIndexOf(before, topLevelAddress(anchor));
+  if (target < 0) return null;
+  const position = String(op.position ?? '').toLowerCase();
+  const startsAtBeginning =
+    position === 'before' ||
+    position === 'start' ||
+    (!position && !(Number(op.offset) > 0));
+  return { at: target + (startsAtBeginning ? 0 : 1), blocks };
+}
+
+function rebaseCreatedEditorRefsAfterShift(
+  refs: Map<string, NonNullable<EditResult['createdRef']>>,
+  shift: PasteEffect,
+  before: Array<{ section: number; block: number }>,
+  after: Array<{ section: number; block: number }>,
+  sfdt: any
+): boolean {
+  const updates: Array<[NonNullable<EditResult['createdRef']>, string]> = [];
+  for (const resource of refs.values()) {
+    const tableAnchor = normalizeTableAnchor(resource.id);
+    if (!tableAnchor) return false;
+    const previousIndex = sequenceIndexOf(before, topLevelAddress(tableAnchor));
+    if (previousIndex < 0) return false;
+    const nextIndex =
+      shift.at <= previousIndex ? previousIndex + shift.blocks : previousIndex;
+    const address = after[nextIndex];
+    if (!address) return false;
+    const nextAnchor = `${address.section};${address.block}`;
+    if (!tableBlockAt(sfdt, nextAnchor)) return false;
+    updates.push([resource, nextAnchor]);
+  }
+  for (const [resource, anchor] of updates) resource.id = anchor;
+  return true;
+}
+
+function topLevelTopologyKey(sfdt: any): string {
+  return topLevelSequence(sfdt)
+    .map(({ section, block }) => {
+      const node = rawSectionBlocks(sfdt, section)[block];
+      return `${section};${block}:${
+        firstTableBlockIn(node) ? 'table' : 'body'
+      }`;
+    })
+    .join('|');
 }
 
 function resolveSectionBoundary(
@@ -18453,13 +18820,23 @@ function creationAppearance(
         };
       // Widen to the document: a family of one that has never carried this
       // role yet still sits in a document that shows it elsewhere.
-      searched.push('every heading in the document at that level');
+      // Body text widens to the document's body paragraphs, never a heading.
+      const bodyRole =
+        role === 'intro_paragraph' || role === 'subsection_paragraph';
+      searched.push(
+        bodyRole
+          ? 'every body paragraph in the document'
+          : 'every heading in the document at that level'
+      );
       const level = options.level ?? family?.level;
       const wider = blocks.filter(
         (block) =>
-          block.isHeading &&
           !!block.text.replace(/\f/g, '').trim() &&
-          (level === undefined || block.level === level)
+          (bodyRole
+            ? block.kind === 'paragraph' &&
+              !block.boundTag &&
+              !isHeadingLikeBlock(block)
+            : block.isHeading && (level === undefined || block.level === level))
       );
       const chosen = modal(wider.map(roleFormat));
       const key = chosen ? JSON.stringify(chosen.value) : undefined;
@@ -18784,7 +19161,9 @@ function planTableInsertInheritance(
   sfdt: any,
   explicitSource?: FlatBlock
 ): PlannedInsertInheritance[] | undefined {
-  const targetTableAnchor = resultingInsertedTableAnchor(op);
+  // Formatting runs as soon as the table lands, so read it where it lands now;
+  // `after` composes in reverse, so that is not yet its final address.
+  const targetTableAnchor = immediateInsertedTableAnchor(op);
   if (!targetTableAnchor) return undefined;
   // The family at the insertion point, derived here rather than handed down,
   // so a table inserted by the composer and one inserted by a model driving
@@ -18960,11 +19339,11 @@ function rebasePlannedInsertInheritance(
   if (!planned || requestedOp.anchor === writtenOp.anchor) return planned;
   const oldTableAnchor =
     requestedOp.op === 'insert_table'
-      ? resultingInsertedTableAnchor(requestedOp)
+      ? immediateInsertedTableAnchor(requestedOp)
       : tableAnchorFromCellAnchor(requestedOp.anchor);
   const newTableAnchor =
     writtenOp.op === 'insert_table'
-      ? resultingInsertedTableAnchor(writtenOp)
+      ? immediateInsertedTableAnchor(writtenOp)
       : tableAnchorFromCellAnchor(writtenOp.anchor);
   if (!oldTableAnchor || !newTableAnchor || oldTableAnchor === newTableAnchor)
     return planned;
@@ -19184,10 +19563,14 @@ function planInsertInheritance(
   const planned: PlannedInsertInheritance[] = boundary
     ? [{ anchor: target.anchor, sectionBoundary: boundary }]
     : [];
+  // A blank paragraph split off a heading must not stay a heading: it takes
+  // the style the document's own separator paragraphs wear.
+  const separatorStyle =
+    blocks.find((block) => !isHeadingLikeBlock(block) && boundaryElement(block))
+      ?.format?.styleName || 'Normal';
   segments.forEach((segment, index) => {
     // The current-text projection drops tab inlines, so compare without them.
     const expectedText = segment.replace(/\t/g, '');
-    if (!expectedText.trim()) return;
     // Only paragraphs consisting solely of inserted content are formatted; a
     // paragraph that merges with existing text keeps that text's format.
     const hasLeadingExistingText =
@@ -19195,6 +19578,15 @@ function planInsertInheritance(
     const hasTrailingExistingText =
       index === lastIndex && offset < target.length;
     if (hasLeadingExistingText || hasTrailingExistingText) return;
+    if (!expectedText.trim()) {
+      if (isHeadingLikeBlock(target) && isBodyTarget && !explicit)
+        planned.push({
+          anchor: [...anchorParts, blockIndexBase + index].join(';'),
+          expectedText,
+          fallbackStyleName: separatorStyle
+        });
+      return;
+    }
     const anchor = [...anchorParts, blockIndexBase + index].join(';');
 
     if (explicit) {
@@ -19414,19 +19806,29 @@ function applyInsertInheritance(
             readEffectiveSourceFormat(editor, paragraph.source)
         );
       } else if (paragraph.fallbackStyleName) {
-        selectParagraph(editor, target);
-        callEditor(editor, 'applyStyle', paragraph.fallbackStyleName);
-        selectParagraph(editor, target);
-        const resolved = comparableFormatValue(
-          editor.selection?.paragraphFormat?.styleName
-        );
-        if (resolved !== paragraph.fallbackStyleName)
+        const applyFallback = (styleName: string) => {
+          selectParagraph(editor, target);
+          callEditor(editor, 'applyStyle', styleName);
+          selectParagraph(editor, target);
+          return comparableFormatValue(
+            editor.selection?.paragraphFormat?.styleName
+          );
+        };
+        let wanted = paragraph.fallbackStyleName;
+        let resolved = applyFallback(wanted);
+        // A borrowed separator style that does not resolve falls back to the
+        // document default rather than failing the insert.
+        if (resolved !== wanted && wanted !== 'Normal') {
+          wanted = 'Normal';
+          resolved = applyFallback(wanted);
+        }
+        if (resolved !== wanted)
           throw new OpError(
             'inherited_format_mismatch',
             `The document-default fallback style did not resolve at ${paragraph.anchor}.`,
             [
               `paragraphFormat.styleName: expected ${JSON.stringify(
-                paragraph.fallbackStyleName
+                wanted
               )}, got ${JSON.stringify(resolved)}`
             ]
           );
@@ -19455,6 +19857,11 @@ function applyInsertInheritance(
           ? { sourceStyleName: outcome.report.sourceStyleName }
           : combined.sourceStyleName
           ? { sourceStyleName: combined.sourceStyleName }
+          : {}),
+        ...(outcome.report.unresolved
+          ? { unresolved: outcome.report.unresolved }
+          : combined.unresolved
+          ? { unresolved: combined.unresolved }
           : {})
       }),
       emptyAppearanceReport()
@@ -19757,7 +20164,8 @@ const STABLE_REF_TARGET_OPS = new Set([
   'set_cell_text',
   'create_binding',
   'delete_column',
-  'set_column_layout'
+  'set_column_layout',
+  'set_char_format'
 ]);
 
 function stableResourceRef(value: unknown): string | null {
@@ -20036,7 +20444,7 @@ function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
       )
         return;
     }
-    const resultingAnchor = resultingInsertedTableAnchor(op);
+    const resultingAnchor = immediateInsertedTableAnchor(op);
     const followingCellWriteAnchors = cellWriteTableAnchorsFollowingInsert(
       edits,
       index
@@ -20869,25 +21277,20 @@ function missingSectionSuffix(
   return desired.slice(0, desired.length - shared);
 }
 
-function adjacentSectionSeparators(
+/** The separator paragraphs running from `index` (inclusive) in `direction`. */
+function sectionSeparatorRun(
   blocks: FlatBlock[],
-  target: FlatBlock,
+  index: number,
   direction: -1 | 1
 ): SectionBoundaryElement[] {
-  const start = blocks.findIndex((block) => block.anchor === target.anchor);
-  const separators: SectionBoundaryElement[] = [];
-  if (start < 0) return separators;
-  for (
-    let index = start + direction;
-    index >= 0 && index < blocks.length;
-    index += direction
-  ) {
-    const element = boundaryElement(blocks[index]);
+  const run: SectionBoundaryElement[] = [];
+  for (let at = index; at >= 0 && at < blocks.length; at += direction) {
+    const element = boundaryElement(blocks[at]);
     if (!element) break;
-    if (direction < 0) separators.unshift(element);
-    else separators.push(element);
+    if (direction < 0) run.unshift(element);
+    else run.push(element);
   }
-  return separators;
+  return run;
 }
 
 /** Text which inserts exactly these paragraph-level separators at a boundary. */
@@ -21914,13 +22317,31 @@ function compileSectionComposer(
     familyBoundary.confidence.level !== 'low'
       ? familyBoundary.value
       : [];
-  const beforeExisting = adjacentSectionSeparators(blocks, resolvedTarget, -1);
-  const afterExisting = adjacentSectionSeparators(blocks, resolvedTarget, 1);
+  // The separators already on each side of the insertion GAP, which for
+  // `before` lies ahead of the target and for `after` behind it.
+  const targetIndex = blocks.findIndex(
+    (block) => block.anchor === resolvedTarget.anchor
+  );
+  const gapLeft =
+    boundary.position === 'before' ? targetIndex - 1 : targetIndex;
+  const beforeExisting =
+    targetIndex < 0 ? [] : sectionSeparatorRun(blocks, gapLeft, -1);
+  const afterExisting =
+    targetIndex < 0 ? [] : sectionSeparatorRun(blocks, gapLeft + 1, 1);
   // Separators are decorations around the insertion point, never mutation
   // anchors. Mirror only the missing part of the sibling convention on each
   // side; an existing page boundary may be longer than that convention.
-  const leadingBoundary = missingSectionSuffix(desiredBoundary, beforeExisting);
-  let trailingBoundary = missingSectionPrefix(desiredBoundary, afterExisting);
+  // Without a confident sibling convention, the separator already standing on
+  // one side of the gap IS the convention: bracket the new section with it.
+  const bracket = desiredBoundary.length
+    ? desiredBoundary
+    : !afterExisting.length
+    ? beforeExisting
+    : !beforeExisting.length
+    ? afterExisting
+    : [];
+  const leadingBoundary = missingSectionSuffix(bracket, beforeExisting);
+  let trailingBoundary = missingSectionPrefix(bracket, afterExisting);
   if (
     needsSeedAnchor &&
     trailingBoundary[trailingBoundary.length - 1] === 'empty_paragraph'
@@ -22584,6 +23005,12 @@ const ASSISTANT_WRITING_KEY = '__featheryAssistantWriting';
 // Guards the gaps BETWEEN tool calls in one editing turn: set by the docx
 // bridge on the first write of a turn, cleared by AssistantChat at turn end.
 const ASSISTANT_SESSION_KEY = '__featheryAssistantSession';
+// Edge-triggered listeners for that flag, stored per editor instance. The
+// version-history session tracker reads a turn end (true → false) as a slice
+// boundary, so only transitions are delivered, never repeated same-value sets.
+const ASSISTANT_SESSION_LISTENERS_KEY = '__featheryAssistantSessionListeners';
+
+type AssistantSessionListener = (active: boolean) => void;
 const DOCUMENT_EDIT_TRACE_HOOK = '__featheryDocumentEditTrace';
 
 function emitDocumentEditTrace(entry: Record<string, unknown>): void {
@@ -22629,6 +23056,13 @@ export function isAssistantWriting(
   return !!ed?.[ASSISTANT_WRITING_KEY] || !!ed?.[ASSISTANT_SESSION_KEY];
 }
 
+/** Attribution follows actual mutations; humans can type between tool calls. */
+export function isAssistantApplyingEdits(
+  editor: LiveEditor | null | undefined
+): boolean {
+  return !!(editor as any)?.[ASSISTANT_WRITING_KEY];
+}
+
 /** Mark the assistant editing turn driving this editor as in flight. The docx
  *  bridge sets it on the first document write of a turn; AssistantChat clears
  *  it when the turn settles. */
@@ -22637,7 +23071,30 @@ export function setAssistantSessionActive(
   active: boolean
 ): void {
   if (!editor) return;
-  (editor as any)[ASSISTANT_SESSION_KEY] = active;
+  const ed = editor as any;
+  const next = !!active;
+  if (!!ed[ASSISTANT_SESSION_KEY] === next) return; // edge-only
+  ed[ASSISTANT_SESSION_KEY] = next;
+  const listeners: Set<AssistantSessionListener> | undefined =
+    ed[ASSISTANT_SESSION_LISTENERS_KEY];
+  if (listeners) listeners.forEach((cb) => cb(next));
+}
+
+/** Subscribe to assistant-session active/inactive EDGES on this editor. The
+ *  callback fires only when the flag transitions. Returns an unsubscribe. */
+export function onAssistantSessionChange(
+  editor: LiveEditor | null | undefined,
+  cb: AssistantSessionListener
+): () => void {
+  if (!editor) return () => undefined;
+  const ed = editor as any;
+  const listeners: Set<AssistantSessionListener> =
+    ed[ASSISTANT_SESSION_LISTENERS_KEY] ??
+    (ed[ASSISTANT_SESSION_LISTENERS_KEY] = new Set());
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
 }
 
 // Applies a logical change set in deterministic phases. We preflight only the
@@ -22864,6 +23321,7 @@ function applyDocumentEditsMeasured(
     string,
     NonNullable<EditResult['createdRef']>
   >();
+  const createdEditorRefGroups = new Map<string, string>();
   const createdBoundRows = new Map<string, CreatedBoundRowTarget>();
   const routeByIndex = new Map<number, DocxEditRoute>();
   const routeForIndex = (index: number): DocxEditRoute =>
@@ -22961,15 +23419,39 @@ function applyDocumentEditsMeasured(
   // Edit order is preserved because the finalizer keeps the latest footprint
   // for a table touched more than once.
   const tableFootprints: TableFootprint[] = [];
+  const topLevelPasteShifts: PasteEffect[] = [];
+  let topLevelShiftLedgerValid = true;
+  const invalidateTopLevelShiftLedger = () => {
+    topLevelShiftLedgerValid = false;
+    topLevelPasteShifts.splice(0);
+    createdEditorRefs.clear();
+    createdEditorRefGroups.clear();
+  };
   // Existing positions shift before post-paste footprints are appended.
   const recordTableFootprints = (
     footprints: TableFootprint[],
-    shift?: PasteEffect
+    shift?: PasteEffect,
+    sequenceBeforeShift?: Array<{ section: number; block: number }>
   ) => {
     if (shift) {
       for (const footprint of tableFootprints)
         if (shift.at <= footprint.sequenceIndex)
           footprint.sequenceIndex += shift.blocks;
+      const sequenceAfterShift = topLevelSequence(liveSfdt);
+      if (
+        !sequenceBeforeShift ||
+        sequenceAfterShift.length - sequenceBeforeShift.length !==
+          shift.blocks ||
+        !rebaseCreatedEditorRefsAfterShift(
+          createdEditorRefs,
+          shift,
+          sequenceBeforeShift,
+          sequenceAfterShift,
+          liveSfdt
+        )
+      )
+        invalidateTopLevelShiftLedger();
+      else if (topLevelShiftLedgerValid) topLevelPasteShifts.push(shift);
     }
     tableFootprints.push(...footprints);
   };
@@ -23014,6 +23496,28 @@ function applyDocumentEditsMeasured(
   let documentShifted = false;
   const shiftedTables = new Set<string>();
   const preservedTableAnchors = new Set<string>();
+  const anchorShiftEvents: Array<
+    | { groupId: string; kind: 'table'; tableAnchor: string }
+    | {
+        groupId: string;
+        kind: 'document';
+        preservedTableAnchor?: string;
+      }
+  > = [];
+  const rebuildAnchorShiftState = () => {
+    documentShifted = false;
+    shiftedTables.clear();
+    preservedTableAnchors.clear();
+    for (const event of anchorShiftEvents) {
+      if (event.kind === 'table') shiftedTables.add(event.tableAnchor);
+      else {
+        documentShifted = true;
+        if (event.preservedTableAnchor)
+          preservedTableAnchors.add(event.preservedTableAnchor);
+        else preservedTableAnchors.clear();
+      }
+    }
+  };
   const anchorMayHaveShifted = (anchor: unknown): boolean => {
     const tableAnchor = String(anchor ?? '')
       .split(';')
@@ -23033,6 +23537,44 @@ function applyDocumentEditsMeasured(
     acceptStream = acceptProjectionStream(sfdt);
   };
   refresh();
+  const originalTopLevelSequence = topLevelSequence(liveSfdt);
+  const originalTopLevelTopology = topLevelTopologyKey(liveSfdt);
+  const resolvePlannedBlock = (
+    anchor: string,
+    baseline: FlatBlock | undefined,
+    anchorsMayHaveShifted: boolean,
+    preferEquivalentDirect = false
+  ): FlatBlock => {
+    const rebasedAnchor = anchorAfterTopLevelPastes(
+      baseline,
+      originalTopLevelSequence,
+      topLevelSequence(liveSfdt),
+      topLevelShiftLedgerValid ? topLevelPasteShifts : []
+    );
+    const rebasedTableAnchor = normalizeTableAnchor(rebasedAnchor);
+    const plannedTableAnchor = normalizeTableAnchor(anchor);
+    if (
+      rebasedAnchor &&
+      baseline &&
+      (!plannedTableAnchor || !shiftedTables.has(plannedTableAnchor)) &&
+      (!rebasedTableAnchor || !shiftedTables.has(rebasedTableAnchor))
+    ) {
+      const direct = byAnchor.get(rebasedAnchor);
+      if (
+        direct &&
+        direct.kind === baseline.kind &&
+        direct.text === baseline.text
+      )
+        return direct;
+    }
+    return resolveChangeSetBlock(
+      blocks,
+      anchor,
+      baseline,
+      anchorsMayHaveShifted,
+      preferEquivalentDirect
+    );
+  };
   const stableRefCreators = new Map<string, EditOp>();
   for (const edit of edits) {
     const ref = stableResourceRef(edit?.resultRef);
@@ -23102,6 +23644,7 @@ function applyDocumentEditsMeasured(
     });
   };
   const rollbackGroup = (groupId: string) => {
+    const topologyBeforeRollback = topLevelTopologyKey(liveSfdt);
     const rollbackErrors: string[] = [];
     const attempt = (work: () => void) => {
       try {
@@ -23141,6 +23684,22 @@ function applyDocumentEditsMeasured(
     if (revisions.length) attempt(() => rejectRevisions(revisions));
     revisionsByAppliedGroup.delete(groupId);
     attempt(() => refresh());
+    for (const [ref, owner] of createdEditorRefGroups)
+      if (owner === groupId) {
+        createdEditorRefs.delete(ref);
+        createdEditorRefGroups.delete(ref);
+      }
+    const topologyAfterRollback = topLevelTopologyKey(liveSfdt);
+    for (let index = anchorShiftEvents.length - 1; index >= 0; index--)
+      if (anchorShiftEvents[index].groupId === groupId)
+        anchorShiftEvents.splice(index, 1);
+    rebuildAnchorShiftState();
+    if (topologyAfterRollback !== topologyBeforeRollback) {
+      if (topologyAfterRollback === originalTopLevelTopology) {
+        topLevelPasteShifts.splice(0);
+        topLevelShiftLedgerValid = true;
+      } else invalidateTopLevelShiftLedger();
+    }
     const withdrawn = plans
       .filter((plan) => opGroupId(plan.op, changeSetId) === groupId)
       .reduce(
@@ -23606,9 +24165,17 @@ function applyDocumentEditsMeasured(
               level: -1
             } as FlatBlock)
           : undefined);
+      // A field the target cell already holds is updated or re-stated where
+      // it lives, even when another op in this batch promotes its table.
+      const updatesHeldField =
+        op.op === 'create_binding' &&
+        !!target &&
+        !isLiveStoryTarget(target) &&
+        blockHoldsBindingName(target, String(op.name ?? ''));
       const routed =
         promotion &&
         promotionTarget &&
+        !updatesHeldField &&
         !isLiveStoryTarget(promotionTarget) &&
         (['create_binding', 'insert_column', 'delete_column'].includes(op.op) ||
           (op.op === 'insert_row' && op.shape === 'blank'))
@@ -23673,7 +24240,11 @@ function applyDocumentEditsMeasured(
     // Refuse a meaningless reference before anything writes: an empty
     // paragraph accepted as a source restyles real content down to document
     // defaults (verified live: a heading silently became Normal/Calibri 11).
-    if (source && !source.text.trim()) {
+    // A table cell named by insert_table stands for its table, so an empty
+    // cell (a blank corner header) is still a valid appearance donor.
+    const namesTable =
+      op.op === 'insert_table' && source?.kind === 'table_cell';
+    if (source && !source.text.trim() && !namesTable) {
       results[index] = {
         ok: false,
         op: name,
@@ -23686,9 +24257,17 @@ function applyDocumentEditsMeasured(
       return;
     }
     try {
-      const inherited = source
+      const read = source
         ? readEffectiveSourceFormat(editor, source)
         : undefined;
+      // A heading the section composer creates keeps with the block it heads.
+      const inherited =
+        read && source?.isHeading && op.__sectionCreatorId
+          ? {
+              ...read,
+              paragraphFormat: { ...read.paragraphFormat, keepWithNext: true }
+            }
+          : read;
       const insertInheritance =
         target &&
         !isLiveStoryTarget(target) &&
@@ -23821,6 +24400,9 @@ function applyDocumentEditsMeasured(
           continue;
         stampRevisionGroup(editor, changeSetId, op);
         const revisionsBeforeOp = snapshotRevisions(editor);
+        const topLevelSequenceBeforeOp = topLevelSequence(liveSfdt);
+        const topLevelTopologyBeforeOp = topLevelTopologyKey(liveSfdt);
+        const anchorsBeforeOp = blocks.map((block) => block.anchor).join('|');
         let writtenOp = op;
         let appliedRelocation = plan.relocated;
         let priorRejectStream: string | undefined;
@@ -23887,8 +24469,7 @@ function applyDocumentEditsMeasured(
                     // content on either side, is the identity contract.
                     undefined
                   )
-                : resolveChangeSetBlock(
-                    blocks,
+                : resolvePlannedBlock(
                     requestedAnchor,
                     plan.target,
                     anchorMayHaveShifted(requestedAnchor)
@@ -23939,8 +24520,7 @@ function applyDocumentEditsMeasured(
               }
               if (op.op === 'insert_text' && !insertInheritance) {
                 const explicitSource = plan.source
-                  ? resolveChangeSetBlock(
-                      blocks,
+                  ? resolvePlannedBlock(
                       String(op.inheritFormatFrom),
                       plan.source,
                       anchorMayHaveShifted(op.inheritFormatFrom),
@@ -24027,8 +24607,37 @@ function applyDocumentEditsMeasured(
             priorAcceptStream
           );
           refresh(postWriteSfdt);
-          if (mayShiftAnchors(op)) {
-            const rowOpTable =
+          const topLevelSequenceAfterOp = topLevelSequence(liveSfdt);
+          const reportedPasteEffect = (opExtras as OpSuccessExtras | undefined)
+            ?.pasteEffect;
+          if (
+            !reportedPasteEffect &&
+            topLevelTopologyKey(liveSfdt) !== topLevelTopologyBeforeOp
+          ) {
+            const measuredShift = measuredTopLevelInsertShift(
+              writtenOp,
+              topLevelSequenceBeforeOp,
+              topLevelSequenceAfterOp
+            );
+            if (measuredShift)
+              recordTableFootprints(
+                [],
+                measuredShift,
+                topLevelSequenceBeforeOp
+              );
+            else invalidateTopLevelShiftLedger();
+          }
+          // A binding wraps text in place: when it left every block where it
+          // was, it shifted nothing (a reorder elsewhere can keep the same
+          // anchor list while moving content, so only bindings are exempt).
+          if (
+            mayShiftAnchors(op) &&
+            !(
+              op.op === 'create_binding' &&
+              blocks.map((block) => block.anchor).join('|') === anchorsBeforeOp
+            )
+          ) {
+            const liveRowOpTable =
               op.op === 'insert_row' || op.op === 'delete_row'
                 ? String(writtenOp.anchor ?? '')
                     .split(';')
@@ -24036,16 +24645,28 @@ function applyDocumentEditsMeasured(
                     .join(';')
                 : '';
             const tableKept = blocks.some((block) =>
-              block.anchor.startsWith(`${rowOpTable};`)
+              block.anchor.startsWith(`${liveRowOpTable};`)
             );
-            if (rowOpTable && tableKept) shiftedTables.add(rowOpTable);
+            const plannedRowOpTable = normalizeTableAnchor(op.anchor);
+            if (liveRowOpTable && tableKept)
+              anchorShiftEvents.push({
+                groupId,
+                kind: 'table',
+                tableAnchor: plannedRowOpTable ?? liveRowOpTable
+              });
             else {
-              documentShifted = true;
-              if (op.op === 'duplicate_table') {
-                const sourceTable = normalizeTableAnchor(writtenOp.anchor);
-                if (sourceTable) preservedTableAnchors.add(sourceTable);
-              } else preservedTableAnchors.clear();
+              const preservedTableAnchor =
+                op.op === 'duplicate_table'
+                  ? normalizeTableAnchor(op.anchor) ??
+                    normalizeTableAnchor(writtenOp.anchor)
+                  : null;
+              anchorShiftEvents.push({
+                groupId,
+                kind: 'document',
+                ...(preservedTableAnchor ? { preservedTableAnchor } : {})
+              });
             }
+            rebuildAnchorShiftState();
           }
           assertInsertedTableIsAddressable(
             writtenOp,
@@ -24124,7 +24745,12 @@ function applyDocumentEditsMeasured(
           const reportedExtras = collectOpExtras(
             opExtras,
             (restores) => recordAppearanceRestores(op, restores),
-            recordTableFootprints,
+            (footprints, shift) =>
+              recordTableFootprints(
+                footprints,
+                shift,
+                topLevelSequenceBeforeOp
+              ),
             (clamps) => recordBookmarkClamps(op, clamps)
           );
           results[index] = {
@@ -24153,6 +24779,8 @@ function applyDocumentEditsMeasured(
               reportedExtras.createdRef.ref,
               reportedExtras.createdRef
             );
+          if (reportedExtras.createdRef)
+            createdEditorRefGroups.set(reportedExtras.createdRef.ref, groupId);
         } catch (err) {
           fail(index, op, err);
           if (appliedRelocation)
@@ -24185,12 +24813,10 @@ function applyDocumentEditsMeasured(
         const revisionsBeforeOp = snapshotRevisions(editor);
         let appliedRelocation = plan.relocated;
         try {
-          const requestedAnchor = plan.deferredStableRef
-            ? editorStableRefAnchor(
-                op,
-                plan.deferredStableRef,
-                createdEditorRefs
-              )
+          const stableRef =
+            plan.deferredStableRef ?? stableResourceAnchor(op.anchor);
+          const requestedAnchor = stableRef
+            ? editorStableRefAnchor(op, stableRef, createdEditorRefs)
             : op.anchor;
           if (!requestedAnchor)
             throw new OpError(
@@ -24203,9 +24829,11 @@ function applyDocumentEditsMeasured(
             plan.target && !isLiveStoryTarget(plan.target)
               ? plan.target
               : undefined;
-          let target: FlatBlock;
+          let target!: FlatBlock;
           let createdTarget: FlatBlock | undefined;
-          if (!baselineTarget && op.expect != null) {
+          if (stableRef) {
+            target = resolvePlannedBlock(requestedAnchor, undefined, false);
+          } else if (!baselineTarget && op.expect != null) {
             if (op.__sectionFinalAnchor) {
               const planned = byAnchor.get(op.__sectionFinalAnchor);
               if (!planned || !expectTextMatches(op.expect, planned.text))
@@ -24259,7 +24887,9 @@ function applyDocumentEditsMeasured(
               }
             }
           }
-          if (createdTarget) {
+          if (stableRef) {
+            // Already resolved to the exact cell created in this change set.
+          } else if (createdTarget) {
             target = createdTarget;
           } else if (
             !baselineTarget &&
@@ -24286,8 +24916,7 @@ function applyDocumentEditsMeasured(
               );
             }
           } else {
-            target = resolveChangeSetBlock(
-              blocks,
+            target = resolvePlannedBlock(
               requestedAnchor,
               baselineTarget,
               anchorMayHaveShifted(requestedAnchor) &&
@@ -24302,8 +24931,7 @@ function applyDocumentEditsMeasured(
                 }
               : plan.relocated;
           const source = plan.source
-            ? resolveChangeSetBlock(
-                blocks,
+            ? resolvePlannedBlock(
                 String(op.inheritFormatFrom),
                 plan.source,
                 anchorMayHaveShifted(op.inheritFormatFrom),
@@ -24392,22 +25020,7 @@ function applyDocumentEditsMeasured(
       }
 
       if (enginePlans.length) {
-        // Judged here, not in the post-write pass: a licence violation must stop
-        // the all-or-nothing transaction rather than be reported over a write
-        // that already landed.
-        const reusedFigure = findReusedUserStatedFigureInPlans(
-          results,
-          enginePlans
-        );
-        if (reusedFigure)
-          fail(
-            reusedFigure.plan.index,
-            reusedFigure.plan.op,
-            reusedFigure.error
-          );
-        const abortReason = reusedFigure
-          ? 'a user-stated figure would license two cells in one change set'
-          : results.some((result) => result && !result.ok)
+        const abortReason = results.some((result) => result && !result.ok)
           ? 'an editor-routed edit failed before the engine transaction'
           : '';
         if (abortReason) {
@@ -24557,6 +25170,7 @@ function applyDocumentEditsMeasured(
                       `The calculated table "${promotion.tableId}" is no longer present. Nothing was written.`
                     );
                   const marker = getAt(calculated.sfdt, table.markerPath);
+                  const sequenceBeforePromotion = topLevelSequence(liveSfdt);
                   const promoted = promotePlainTableInEditor(
                     editor,
                     promotion,
@@ -24565,7 +25179,11 @@ function applyDocumentEditsMeasured(
                   );
                   promotion.anchor = promoted.anchor;
                   refresh(promoted.postWriteSfdt);
-                  recordTableFootprints([], promoted.paste);
+                  recordTableFootprints(
+                    [],
+                    promoted.paste,
+                    sequenceBeforePromotion
+                  );
                 }
               } finally {
                 rememberGroupRevisions(
@@ -24768,7 +25386,6 @@ function applyDocumentEditsMeasured(
     }
   }
 
-  refuseReusedUserStatedFigures(results);
   if (!batchRefusal) {
     results.forEach((result, index) => {
       if (
@@ -24885,6 +25502,14 @@ function applyDocumentEditsMeasured(
       };
     }
   );
+  // Appearance is a preference, not integrity: report it, keep the content.
+  for (const result of materializedResults)
+    if (result.ok && result.appearance?.unresolved)
+      warnings.push(
+        `appearance_not_fully_inherited: ${result.op} at ${
+          result.anchor
+        }; ${result.appearance.unresolved.join('; ')}`
+      );
   const hasFailure =
     materializedResults.some((result) => !result.ok) ||
     grouping.unresolvable > 0;

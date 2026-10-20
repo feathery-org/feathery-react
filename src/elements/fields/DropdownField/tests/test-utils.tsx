@@ -1,15 +1,4 @@
-import {
-  createBaseElement,
-  createFieldProps,
-  createStatefulTextOnChange,
-  mockResponsiveStyles,
-  setMockFieldValue,
-  getMockFieldValue,
-  resetMockFieldValue,
-  expectFieldToBeDisabled,
-  expectFieldToBeRequired,
-  expectFieldToHaveAriaLabel
-} from '../../shared/tests/field-test-utils';
+import { createBaseElement, createFieldProps, mockResponsiveStyles, setMockFieldValue, getMockFieldValue, resetMockFieldValue, expectFieldToBeDisabled, expectFieldToBeRequired, expectFieldToHaveAriaLabel } from '../../shared/tests/field-test-utils';
 
 export {
   mockResponsiveStyles,

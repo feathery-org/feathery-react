@@ -330,3 +330,123 @@ describe('TableElement - Data Hub autosave', () => {
     expect(screen.getByText('alice@test.com')).toBeInTheDocument();
   });
 });
+
+describe('TableElement - Data Hub chosen by hidden field', () => {
+  const hubField = (id: string, key: string) => ({
+    id,
+    key,
+    type: 'text',
+    required: false,
+    unique: false
+  });
+  const HUBS = [
+    {
+      id: 'hub-people',
+      key: 'people',
+      fields: [hubField('hf1', 'name')]
+    },
+    {
+      id: 'hub-orgs',
+      key: 'orgs',
+      fields: [hubField('hf9', 'org_name')]
+    }
+  ];
+  const getHubSchemas = jest.fn((ids: string[], keys: string[] = []) =>
+    Promise.resolve({
+      hubs: HUBS.filter((h) => ids.includes(h.id) || keys.includes(h.key))
+    })
+  );
+  const dataHubAction = jest.fn(({ hubId, operation }: any) => {
+    if (operation !== 'get') return Promise.resolve({ updated: 1 });
+    return Promise.resolve(
+      hubId === 'hub-people'
+        ? [{ id: 'e1', data: { name: 'Alice' } }]
+        : [{ id: 'e2', data: { org_name: 'Acme' } }]
+    );
+  });
+  const dynamicElement = () =>
+    makeHubElement({
+      columns: [],
+      hub_id: '',
+      hub_dynamic: true,
+      hub_id_field_key: 'which_hub'
+    });
+
+  afterEach(() => {
+    delete (fieldValues as any).which_hub;
+    getHubSchemas.mockClear();
+    dataHubAction.mockClear();
+  });
+
+  it('resolves the hub by key from the hidden field and writes to its id', async () => {
+    (fieldValues as any).which_hub = 'orgs';
+    render(
+      <TableElement
+        element={dynamicElement()}
+        responsiveStyles={mockStyles()}
+        client={{ dataHubAction, getHubSchemas }}
+      />
+    );
+
+    expect(await screen.findByText('Acme')).toBeInTheDocument();
+    expect(screen.getByText('org_name')).toBeInTheDocument();
+    expect(getHubSchemas).toHaveBeenCalledWith(['orgs'], ['orgs']);
+    expect(dataHubAction).toHaveBeenCalledWith({
+      hubId: 'hub-orgs',
+      operation: 'get',
+      verification: 'verified'
+    });
+
+    fireEvent.click(screen.getByText('Acme'));
+    const input = await screen.findByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Acme Inc' } });
+    fireEvent.blur(input);
+    await waitFor(() =>
+      expect(dataHubAction).toHaveBeenCalledWith({
+        hubId: 'hub-orgs',
+        operation: 'update',
+        where: [{ entryId: 'e2' }],
+        data: { org_name: 'Acme Inc' }
+      })
+    );
+  });
+
+  it('accepts a hub id in the hidden field too', async () => {
+    (fieldValues as any).which_hub = 'hub-people';
+    render(
+      <TableElement
+        element={dynamicElement()}
+        responsiveStyles={mockStyles()}
+        client={{ dataHubAction, getHubSchemas }}
+      />
+    );
+    expect(await screen.findByText('Alice')).toBeInTheDocument();
+  });
+
+  it('reports a hidden field value that matches no hub', async () => {
+    (fieldValues as any).which_hub = 'nope';
+    render(
+      <TableElement
+        element={dynamicElement()}
+        responsiveStyles={mockStyles()}
+        client={{ dataHubAction, getHubSchemas }}
+      />
+    );
+    expect(
+      await screen.findByText('No Data Hub matches "nope"')
+    ).toBeInTheDocument();
+    expect(dataHubAction).not.toHaveBeenCalled();
+  });
+
+  it('loads nothing when the hidden field is empty', async () => {
+    render(
+      <TableElement
+        element={dynamicElement()}
+        responsiveStyles={mockStyles()}
+        client={{ dataHubAction, getHubSchemas }}
+      />
+    );
+    await waitFor(() => expect(getHubSchemas).not.toHaveBeenCalled());
+    expect(dataHubAction).not.toHaveBeenCalled();
+  });
+});

@@ -47,4 +47,29 @@ describe('StepperBar', () => {
       expect.objectContaining({ step_key: 'review' })
     );
   });
+
+  it('shows a spinner on the pending step and blocks other clicks', () => {
+    const onStepClick = jest.fn();
+    const styles = { getTarget: () => ({}) };
+    const stepConfigs = [
+      { label: 'One', step_key: 'one' },
+      { label: 'Two', step_key: 'two' },
+      { label: 'Three', step_key: 'three' }
+    ];
+    const { getByRole, getByText, queryByText } = render(
+      <StepperBar
+        styles={styles}
+        stepConfigs={stepConfigs}
+        stepKey='one'
+        onStepClick={onStepClick}
+        pendingStepKey='three'
+        allowAllNavigation
+      />
+    );
+
+    expect(getByRole('status')).toBeTruthy();
+    expect(queryByText('3')).toBeNull();
+    fireEvent.click(getByText('2'));
+    expect(onStepClick).not.toHaveBeenCalled();
+  });
 });

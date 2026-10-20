@@ -99,7 +99,7 @@ const sortByFocusDistance = (a: CameraDetails, b: CameraDetails) => {
   return aFocus - bFocus;
 };
 
-export async function getVideoCamerasAndCapabilities() {
+async function getVideoCamerasAndCapabilities() {
   try {
     // Get the list of media devices
     const devices = await fetchDeviceList();

@@ -10,14 +10,14 @@ import { stringifyWithNull } from '../../../utils/primitives';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
 import { Pagination } from './Pagination';
-import { ActionButtons } from './Actions';
+import { ActionButtons, UnverifyIcon } from './Actions';
 import { EmptyState } from './EmptyState';
 import { EditableCell } from './EditableCell';
 import { getNextEditableCell } from './utils';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
-import { useHubTableSource } from './useHubTableSource';
+import { entryIdsShifted, useHubTableSource } from './useHubTableSource';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
 import {
@@ -30,11 +30,12 @@ import {
   CellErrors,
   cellErrorKey,
   fieldCellRules,
+  mergeCellErrors,
   validateGrid
 } from './spreadsheet/validation';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
-import { STATUS_HUB_FIELD_ID } from './hubStatus';
+import { STATUS_HUB_FIELD_ID, UNVERIFY_ACTION_LABEL } from './hubStatus';
 import { TrashIcon } from '../../components/icons';
 import { clearUnsavedWork, setUnsavedWork } from '../../../utils/unsavedWork';
 import {
@@ -52,7 +53,8 @@ import {
   addRowButtonStyle,
   errorBannerStyle,
   deleteColumnStyle,
-  deleteIconStyle
+  deleteIconStyle,
+  unverifyIconStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
 
@@ -68,6 +70,24 @@ function applyTableStyles(responsiveStyles: any) {
       unit === 'px' && height ? { height: `${height}px` } : {}
   );
   return responsiveStyles;
+}
+
+// The table renders inside the form's <form>, where Enter in a text input
+// submits implicitly — clicking the step's submit button, or with no button
+// submitting the whole form. No input in the table means that: the cell
+// editor, the search and find boxes and the filter popover handle Enter
+// themselves. React events bubble through portals, so this covers the
+// table's popovers wherever they mount. An Enter that confirms an IME
+// composition is left alone: it submits nothing, and is the IME's to handle.
+function preventEnterSubmit(event: React.KeyboardEvent<HTMLElement>) {
+  const target = event.target as HTMLElement;
+  if (
+    event.key === 'Enter' &&
+    !event.nativeEvent.isComposing &&
+    target.tagName === 'INPUT'
+  ) {
+    event.preventDefault();
+  }
 }
 
 // Warns before a step transition, a browser back/forward, or a page exit
@@ -99,7 +119,9 @@ function TableElement({
   // the builder keeps rendering example data).
   const isHub =
     element.properties?.data_source === 'hub' &&
-    !!element.properties?.hub_id &&
+    (element.properties?.hub_dynamic
+      ? !!element.properties?.hub_id_field_key
+      : !!element.properties?.hub_id) &&
     !editMode;
 
   const wantsSpreadsheet = element.properties?.display_mode === 'spreadsheet';
@@ -130,12 +152,13 @@ function TableElement({
       // rather than cleared off the element, so switching back to the classic
       // table restores whatever the builder had configured.
       //   pagination — every row is virtualized, so paging only hides rows.
-      //   search/sort — the grid has no affordance for either; a header click
-      //     selects the column, Excel-style.
+      //   search — the grid finds with Mod+F instead of a filter box.
+      //   sort — always on: the grid sorts from the column header's menu, so
+      //     the classic table's toggle does not gate it.
       //   transpose — one field per row has no (row, column) coordinates for
       //     selection, fill or the clipboard to work against.
       ...(wantsSpreadsheet
-        ? { pagination: 0, search: false, sort: false, transpose: false }
+        ? { pagination: 0, search: false, sort: true, transpose: false }
         : {})
     };
     return { ...element, properties };
@@ -153,6 +176,7 @@ function TableElement({
     sortDirection,
     sortedColumnIndex,
     handleSort,
+    setSort,
     handleTransposedSort,
 
     // pagination
@@ -192,6 +216,7 @@ function TableElement({
 
   const fieldMutations = useTableMutations({
     columns: baseColumns,
+    rowDefaults: element.properties?.row_defaults,
     updateFieldValues,
     submitCustom,
     editMode,
@@ -240,6 +265,21 @@ function TableElement({
   const canDeleteRows = canEdit && enableAddDeleteRows;
   const hasOverflowMenu = actions.length > 1;
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
+  // Sending a Hub row back for review lives where delete does: in the
+  // overflow menu, or in its own icon column when there is no menu. Only a
+  // validated row with an entry qualifies, so the check is per row. Like
+  // delete it waits out a load (a landing refetch would overwrite the flip)
+  // and a flipped table, whose rows are fields rather than entries.
+  const canUnverifyRows =
+    isHub && hub.canUnverify && !isTransposed && !hub.loading;
+  const canUnverifyRow = useCallback(
+    (rowIndex: number) =>
+      canUnverifyRows &&
+      hub.rowVerified[rowIndex] === true &&
+      hub.entryIds[rowIndex] != null,
+    [canUnverifyRows, hub.rowVerified, hub.entryIds]
+  );
+  const showStandaloneUnverifyColumn = canUnverifyRows && !hasOverflowMenu;
 
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
   // Findings the assistant has placed on this table (see `setIssues` below).
@@ -249,16 +289,21 @@ function TableElement({
 
   const wrappedHandleCellEdit = useCallback(
     (fieldKey: string, rowIndex: number, newValue: any) => {
-      if (pendingAddRowsRef.current.has(rowIndex)) {
-        setPendingAddRows((prev) => {
-          const next = new Set(prev);
-          next.delete(rowIndex);
-          return next;
-        });
+      if (!pendingAddRowsRef.current.has(rowIndex)) {
+        handleCellEdit(fieldKey, rowIndex, newValue);
+        return;
       }
-      handleCellEdit(fieldKey, rowIndex, newValue);
+      setPendingAddRows((prev) => {
+        const next = new Set(prev);
+        next.delete(rowIndex);
+        return next;
+      });
+      // The first edit commits the provisional row, default cells included.
+      handleCellsEdit([{ fieldKey, rowIndex, value: newValue }], {
+        submitAllColumns: true
+      });
     },
-    [handleCellEdit]
+    [handleCellEdit, handleCellsEdit]
   );
 
   const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
@@ -297,14 +342,23 @@ function TableElement({
   const deleteIconRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const actionCellRefs = useRef<Map<number, HTMLTableCellElement>>(new Map());
 
-  // Adding or deleting a row renumbers the rows below it. The spreadsheet's
-  // undo history is keyed by row index, so it is dropped when this changes
-  // rather than replayed onto the wrong rows.
+  // Inserting before existing rows or deleting a row changes row identities.
+  // The spreadsheet's undo history is keyed by row index, so it is dropped
+  // when this changes rather than replayed onto the wrong rows.
   const [rowIdentityVersion, setRowIdentityVersion] = useState(0);
   const bumpRowIdentity = useCallback(
     () => setRowIdentityVersion((version) => version + 1),
     []
   );
+  // A Hub resync renumbers rows too: entries the grid has not seen (another
+  // user's new rows) land at the top, and one deleted elsewhere closes its gap.
+  // Bumped in the same render the rows move in, not in an effect after it, so
+  // nothing keyed to the old indices shows against the new rows for a frame.
+  const [seenEntryIds, setSeenEntryIds] = useState(hub.entryIds);
+  if (seenEntryIds !== hub.entryIds) {
+    setSeenEntryIds(hub.entryIds);
+    if (entryIdsShifted(seenEntryIds, hub.entryIds)) bumpRowIdentity();
+  }
 
   const wrappedHandleAddRow = useCallback(() => {
     setDeleteRowIndex(null);
@@ -344,7 +398,9 @@ function TableElement({
   const spreadsheetInsertRow = useCallback(
     (atIndex: number) => {
       setDeleteRowIndex(null);
-      bumpRowIdentity();
+      // Appending preserves every existing row index and its edit history.
+      // Use the source count, which still includes pending deleted rows.
+      if (atIndex < totalRows) bumpRowIdentity();
       handleInsertRow(atIndex);
       // The row lands in the source data straight away, so every buffered edit
       // at or below it now belongs to a different row index.
@@ -362,6 +418,7 @@ function TableElement({
     [
       handleInsertRow,
       bumpRowIdentity,
+      totalRows,
       isHub,
       searchQuery,
       setSearchQuery,
@@ -400,16 +457,17 @@ function TableElement({
         return;
       }
       const touched = new Set(writes.map((write) => write.rowIndex));
-      if (
-        [...touched].some((rowIndex) => pendingAddRowsRef.current.has(rowIndex))
-      ) {
+      const commitsProvisional = [...touched].some((rowIndex) =>
+        pendingAddRowsRef.current.has(rowIndex)
+      );
+      if (commitsProvisional) {
         setPendingAddRows((prev) => {
           const next = new Set(prev);
           touched.forEach((rowIndex) => next.delete(rowIndex));
           return next;
         });
       }
-      handleCellsEdit(writes);
+      handleCellsEdit(writes, { submitAllColumns: commitsProvisional });
     },
     [handleCellsEdit, buffersEdits, pendingEdits]
   );
@@ -482,11 +540,21 @@ function TableElement({
         pendingEdits.peek(rowIndex, fieldKey) !== undefined ||
         (isHub ? hub.entryIds[rowIndex] == null : pendingAddRows.has(rowIndex))
     });
-    return isHub ? { ...hub.cellErrors, ...validated } : validated;
+    return isHub
+      ? mergeCellErrors(
+          hub.cellErrors,
+          validated,
+          cellRules,
+          (rowIndex, fieldKey) =>
+            pendingEdits.peek(rowIndex, fieldKey) !== undefined,
+          hub.cellErrorConstraints
+        )
+      : validated;
   }, [
     isSpreadsheet,
     isHub,
     hub.cellErrors,
+    hub.cellErrorConstraints,
     hub.rowVerified,
     hub.entryIds,
     pendingEdits.peek,
@@ -595,14 +663,19 @@ function TableElement({
     const { writes, deletedRows } = pendingEdits;
     if (!writes.length && !deletedRows.length) return;
     pendingEdits.clear();
-    if (writes.length) handleCellsEdit(writes);
+    // With rows added since the last save, the edits go up with every column
+    // in full so those rows' default and blank cells are saved too. A row
+    // deletion already submits every column.
+    if (writes.length)
+      handleCellsEdit(writes, {
+        submitAllColumns: pendingAddRowsRef.current.size > 0
+      });
     if (deletedRows.length) {
       bumpRowIdentity();
       deletedRows.forEach((rowIndex) => handleDeleteRow(rowIndex));
     }
-    // Saving submits every column in full, blank rows included, so nothing
-    // is provisional any more (a Hub row still without an entry is tracked by
-    // the Hub source itself).
+    // Nothing is provisional any more (a Hub row still without an entry is
+    // tracked by the Hub source itself).
     setPendingAddRows(new Set());
   }, [pendingEdits, handleCellsEdit, handleDeleteRow, bumpRowIdentity]);
 
@@ -672,7 +745,9 @@ function TableElement({
     wrappedHandleDeleteRow
   ]);
 
-  const showEmptyState = !hasData || !hasSearchResults;
+  const showEmptyState =
+    (!hasData || !hasSearchResults) &&
+    !(isSpreadsheet && canAddRows && columns.length > 0);
   const showToolbar = enableSearch || showAddRow;
 
   // Column sizing: 'equal' uses a fixed table layout so data columns share the
@@ -728,6 +803,7 @@ function TableElement({
           : {}),
         ...styles.getTarget('container')
       }}
+      onKeyDown={preventEnterSubmit}
     >
       {showToolbar && (
         <div className={TABLE_CLASS.toolbar} css={toolbarStyle}>
@@ -770,6 +846,8 @@ function TableElement({
           onAddColumn={handleAddColumn}
           onInsertRow={canAddRows ? spreadsheetInsertRow : undefined}
           onDeleteRow={canDeleteRows ? spreadsheetDeleteRow : undefined}
+          onUnverifyRows={canUnverifyRows ? hub.handleUnverifyRows : undefined}
+          canUnverifyRow={canUnverifyRow}
           getCellShading={getCellShading}
           cellRules={cellRules}
           rowIdentityVersion={rowIdentityVersion}
@@ -785,6 +863,11 @@ function TableElement({
           }
           cellIssues={cellIssues}
           readOnlyFieldKeys={isHub ? hub.readOnlyKeys : undefined}
+          sort={{
+            column: sortColumn,
+            direction: sortDirection,
+            onSort: setSort
+          }}
         />
       ) : (
         <div css={{ overflowX: 'auto' }}>
@@ -801,6 +884,9 @@ function TableElement({
                   <col key={col.field_key} />
                 ))}
                 {actions.length > 0 && <col css={utilityColStyle('80px')} />}
+                {showStandaloneUnverifyColumn && (
+                  <col css={utilityColStyle('40px')} />
+                )}
                 {showStandaloneDeleteColumn && (
                   <col css={utilityColStyle('40px')} />
                 )}
@@ -829,6 +915,17 @@ function TableElement({
                     >
                       {/* Empty header for actions column */}
                     </th>
+                  )}
+                  {showStandaloneUnverifyColumn && (
+                    <th
+                      scope='col'
+                      className={TABLE_CLASS.headerCell}
+                      css={{
+                        ...thStyle,
+                        ...deleteColumnStyle,
+                        ...styles.getTarget('th')
+                      }}
+                    />
                   )}
                   {showStandaloneDeleteColumn && (
                     <th
@@ -1041,6 +1138,10 @@ function TableElement({
                           buttonLoaders={buttonLoaders}
                           canDeleteRows={canDeleteRows && hasOverflowMenu}
                           onDeleteRow={(ri) => setDeleteRowIndex(ri)}
+                          canUnverifyRow={
+                            hasOverflowMenu && canUnverifyRow(rowIndex)
+                          }
+                          onUnverifyRow={(ri) => hub.handleUnverifyRows([ri])}
                         />
                         {hasOverflowMenu &&
                           canDeleteRows &&
@@ -1053,6 +1154,31 @@ function TableElement({
                               onCancel={handleCancelDelete}
                             />
                           )}
+                      </td>
+                    )}
+                    {showStandaloneUnverifyColumn && (
+                      <td
+                        className={TABLE_CLASS.cell}
+                        css={{
+                          ...deleteColumnStyle,
+                          ...styles.getTarget('td')
+                        }}
+                      >
+                        {canUnverifyRow(rowIndex) && (
+                          <button
+                            type='button'
+                            className={TABLE_CLASS.unverifyButton}
+                            css={unverifyIconStyle}
+                            title={UNVERIFY_ACTION_LABEL}
+                            aria-label={UNVERIFY_ACTION_LABEL}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              hub.handleUnverifyRows([rowIndex]);
+                            }}
+                          >
+                            <UnverifyIcon />
+                          </button>
+                        )}
                       </td>
                     )}
                     {showStandaloneDeleteColumn && (

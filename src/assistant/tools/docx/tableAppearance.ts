@@ -177,6 +177,11 @@ export interface AppearanceWriteReport {
    * table-format facts and reported for observability.
    */
   sourceStyleName?: string;
+  /**
+   * Inherited appearance that did not read back as the source. Appearance is a
+   * preference, not integrity: the content stays and these are reported.
+   */
+  unresolved?: string[];
 }
 
 export interface AppearanceWriteOutcome {
@@ -503,7 +508,7 @@ function readCellAppearance(cell: any): AppearanceFacts | undefined {
  * incidental facts about the cell. Every comparison goes through here, so no
  * caller can accidentally compare the spelling instead of the border.
  */
-export function borderSides(
+function borderSides(
   borders?: BorderFactsBySide
 ): Record<BorderSide, BorderFacts | undefined> {
   const all = borders?.all;

@@ -2,7 +2,7 @@
  * Event queue for holding events before user interaction
  */
 
-export interface QueuedEvent {
+interface QueuedEvent {
   eventData: any;
   timestamp: number;
   resolve: (value: any) => void;
@@ -17,7 +17,7 @@ export class EventQueue {
     return new Promise((resolve, reject) => {
       this.queue.push({
         eventData,
-        timestamp: Date.now(), // TODO: pass UTC timestamp to BE
+        timestamp: Date.now(),
         resolve,
         reject
       });

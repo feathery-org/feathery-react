@@ -19,6 +19,7 @@ import RailHead from './RailHead';
 import GroupCard from './GroupCard';
 import { ChipView, GroupView } from './types';
 import { ACCENT_LINE, INK, PANEL } from './styles';
+import type { TrackedChangeAcceptance } from '../history/useDocxHistorySession';
 
 // Review rail for pending tracked changes: one card per assistant change set
 // (plus one per human author), expanding to −/+ diff "chips" with
@@ -37,6 +38,11 @@ interface Props {
   onHiddenChange?: (hidden: boolean) => void;
   /** Reports the pending tracked-change count whenever it changes. */
   onPendingCountChange?: (count: number) => void;
+  /** Persists an accept operation as a distinct confirmed history version. */
+  onAcceptTrackedChanges?: (
+    acceptance: TrackedChangeAcceptance,
+    accept: () => void
+  ) => Promise<void>;
 }
 
 // contentChange fires once per keystroke; one trailing refresh after typing
@@ -74,11 +80,16 @@ function afterNextPaint(fn: () => void): void {
 // here rather than being swallowed at its call site. Contained errors log at
 // the browser's verbose/debug level: teardown noise stays out of production
 // logs, but a RECURRING failure - a real regression - stays visible.
-const handleEditorEvent = (fn: () => void) => {
+const reportEditorEventError = (error: unknown) =>
+  console.debug('Feathery: tracked-changes rail editor call failed.', error);
+
+const handleEditorEvent = (fn: () => void | Promise<void>) => {
   try {
-    fn();
+    const result = fn();
+    if (result && typeof result.catch === 'function')
+      result.catch(reportEditorEventError);
   } catch (error) {
-    console.debug('Feathery: tracked-changes rail editor call failed.', error);
+    reportEditorEventError(error);
   }
 };
 
@@ -147,7 +158,8 @@ function TrackedChangeGroups({
   editor,
   hidden,
   onHiddenChange,
-  onPendingCountChange
+  onPendingCountChange,
+  onAcceptTrackedChanges
 }: Props) {
   // Only live (pending) revisions render; a resolved edit disappears from
   // the rail and reappears if the resolution is undone.
@@ -166,10 +178,17 @@ function TrackedChangeGroups({
   // every arrow press skip an edit.
   const activeRevisionRef = useRef<any>(null);
   const ignoreSelectionRef = useRef(false);
+  const resolvingRef = useRef(false);
   // Survives the refresh that follows the resolve, and only that: the next
   // resolve replaces it, and a clean one clears it.
   const [stall, setStall] = useState<string | null>(null);
   const rowRefs = useRef(new Map<any, HTMLDivElement>());
+  // Group card elements, keyed by group.key — the scroll effect aligns to a
+  // card's TOP (header included) instead of its first chip's row.
+  const groupRefs = useRef(new Map<string, HTMLDivElement>());
+  // The primary revision the rail last scrolled to; lets the scroll effect
+  // no-op on renders that didn't change the selection (e.g. expand/collapse).
+  const lastScrolledPrimaryRef = useRef<any>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollBoxRef = useRef<HTMLDivElement>(null);
 
@@ -225,6 +244,9 @@ function TrackedChangeGroups({
         // A human view's "group" IS the author name; keep it verbatim.
         title: view.untagged ? view.group : humanizeGroupId(view.group),
         untagged: view.untagged,
+        // Shown once in the group header instead of on every chip. Untagged
+        // groups already show it as the title, so leave theirs unset.
+        author: view.untagged ? undefined : view.items[0]?.author,
         derivedChanges: view.derivedChanges,
         chips: view.items.map((item) => ({
           revision: item.revision,
@@ -348,18 +370,36 @@ function TrackedChangeGroups({
 
   // Scroll only the rail's own scrollbox: scrollIntoView walks every
   // scrollable ancestor and would yank the whole form viewport.
+  //
+  // This effect has no dep array (it must run after the DOM settles), so it
+  // fires on EVERY render — including a plain expand/collapse, which changes no
+  // selection. Gate on the primary revision actually changing so toggling a
+  // group open/closed leaves the rail scroll exactly where it was.
   useEffect(() => {
     const primary = activeRevisions[0];
+    if (primary === lastScrolledPrimaryRef.current) return;
+    lastScrolledPrimaryRef.current = primary ?? null;
     if (!primary) return;
     const row = rowRefs.current.get(primary);
     const box = scrollBoxRef.current;
     if (!row || !box || box.scrollHeight <= box.clientHeight) return;
-    const rowTop =
-      row.getBoundingClientRect().top -
+    const offsetTop = (el: HTMLElement) =>
+      el.getBoundingClientRect().top -
       box.getBoundingClientRect().top +
       box.scrollTop;
-    const rowBottom = rowTop + row.offsetHeight;
-    if (rowTop < box.scrollTop) box.scrollTop = rowTop;
+    // When the active chip is its group's FIRST, scrolling the chip row to the
+    // top hides the group header just above it. Align to the card's top so the
+    // heading of the change you clicked stays in view.
+    const ownerGroup = groups.find(
+      (mem) =>
+        mem.chips[0] &&
+        (mem.chips[0].revision === primary || mem.chips[0].partner === primary)
+    );
+    const card = ownerGroup && groupRefs.current.get(ownerGroup.key);
+    const topTarget = card ?? row;
+    const revealTop = offsetTop(topTarget);
+    const rowBottom = offsetTop(row) + row.offsetHeight;
+    if (revealTop < box.scrollTop) box.scrollTop = revealTop;
     else if (rowBottom > box.scrollTop + box.clientHeight)
       box.scrollTop = rowBottom - box.clientHeight;
   });
@@ -377,6 +417,74 @@ function TrackedChangeGroups({
     }
   };
 
+  const revisionIdsForAcceptance = (
+    revisions: any[],
+    beforeSfdt: string
+  ): string[] => {
+    const ids = revisions
+      .map((revision) => revision?.revisionID ?? revision?.revisionId)
+      .filter((id): id is string => typeof id === 'string' && !!id);
+    if (ids.length) return Array.from(new Set(ids));
+
+    // Older Syncfusion builds did not expose revisionID on the live wrapper.
+    // Match the SFDT metadata in that case so confirmation versions still work.
+    const keys = new Set(
+      revisions.map((revision) =>
+        JSON.stringify([
+          revision?.author ?? '',
+          revision?.revisionType ?? '',
+          revision?.customData ?? ''
+        ])
+      )
+    );
+    const doc = JSON.parse(beforeSfdt);
+    return Array.from(
+      new Set<string>(
+        (doc.revisions ?? [])
+          .filter((revision: any) =>
+            keys.has(
+              JSON.stringify([
+                revision?.author ?? '',
+                revision?.revisionType ?? '',
+                revision?.customData ?? ''
+              ])
+            )
+          )
+          .map((revision: any) => String(revision.revisionId ?? ''))
+          .filter(Boolean)
+      )
+    );
+  };
+
+  const resolveWithHistory = async (
+    revisions: any[],
+    isAccept: boolean,
+    resolve: () => void
+  ) => {
+    if (resolvingRef.current) return;
+    resolvingRef.current = true;
+    try {
+      if (isAccept && onAcceptTrackedChanges) {
+        const beforeSfdt = editor.serialize();
+        await onAcceptTrackedChanges(
+          {
+            beforeSfdt,
+            revisionIds: revisionIdsForAcceptance(revisions, beforeSfdt)
+          },
+          () => suppressingSelectionEcho(resolve)
+        );
+      } else {
+        suppressingSelectionEcho(resolve);
+      }
+      refresh();
+      // Resolving the last edit unmounts the rail — focus would land on
+      // <body>, where nobody sees the next ⌘Z.
+      if (listRevisionGroups(editor).length) refocusPanel();
+      else editor?.focusIn?.();
+    } finally {
+      resolvingRef.current = false;
+    }
+  };
   // Every resolve path reports through here, so a stall can never be surfaced
   // by one entry point and swallowed by another.
   const reportStall = (
@@ -389,35 +497,34 @@ function TrackedChangeGroups({
   // Non-cascading resolve (native accept/reject settles whatever is
   // CONTIGUOUS, not the group), wrapped as ONE undo step.
   const resolveChips = (chips: ChipView[], isAccept: boolean) => {
-    if (!chips.length) return;
+    if (!chips.length) return Promise.resolve();
     const revisions = chips.flatMap(chipRevisions).filter(Boolean);
-    const outcome = suppressingSelectionEcho(() =>
-      resolveRevisionsAsOneUndo(editor, revisions, isAccept)
-    );
-    reportStall(
-      outcome?.unresolved?.length ?? 0,
-      outcome?.length ?? 0,
-      isAccept
-    );
-    refresh();
-    // Resolving the last edit unmounts the rail — focus would land on
-    // <body>, where nobody sees the next ⌘Z.
-    if (listRevisionGroups(editor).length) refocusPanel();
-    else editor?.focusIn?.();
+    return resolveWithHistory(revisions, isAccept, () => {
+      const outcome = resolveRevisionsAsOneUndo(editor, revisions, isAccept);
+      reportStall(
+        outcome?.unresolved?.length ?? 0,
+        outcome?.length ?? 0,
+        isAccept
+      );
+    });
   };
 
   const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
-    const outcome = suppressingSelectionEcho(() =>
-      resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept)
+    const revisions = groupViews.flatMap((group) =>
+      group.chips.flatMap(chipRevisions)
     );
-    reportStall(
-      outcome?.unresolved?.length ?? 0,
-      outcome?.length ?? 0,
-      isAccept
-    );
-    refresh();
-    if (listRevisionGroups(editor).length) refocusPanel();
-    else editor?.focusIn?.();
+    return resolveWithHistory(revisions, isAccept, () => {
+      const outcome = resolveLiveRevisionGroupsAsOneUndo(
+        editor,
+        groupViews,
+        isAccept
+      );
+      reportStall(
+        outcome?.unresolved?.length ?? 0,
+        outcome?.length ?? 0,
+        isAccept
+      );
+    });
   };
 
   // Accept all / Reject all: the same resolve, but a big batch blocks long
@@ -429,8 +536,9 @@ function TrackedChangeGroups({
     if (resolvingAll) return;
     setResolvingAll(isAccept ? 'accept' : 'reject');
     afterNextPaint(() => {
-      handleEditorEvent(() => resolveGroups(groupViews, isAccept));
-      setResolvingAll(null);
+      resolveGroups(groupViews, isAccept)
+        .catch(reportEditorEventError)
+        .finally(() => setResolvingAll(null));
     });
   };
 
@@ -444,12 +552,22 @@ function TrackedChangeGroups({
       if (typeof selection?.selectRevision === 'function') {
         selection.selectRevision(revision, undefined, undefined, true);
         // Explicit scroll too: some host/layout combos suppress the implicit
-        // one while focus stays in the rail.
-        if (selection.start && selection.end) {
+        // one while focus stays in the rail. Scroll to the START of the edit
+        // (both args = start) so a long edit lands with its beginning in view,
+        // not its tail.
+        if (selection.start) {
           editor.documentHelper?.scrollToPosition?.(
             selection.start,
-            selection.end
+            selection.start
           );
+        }
+        // selectRevision leaves the whole edit SELECTED, so Syncfusion paints
+        // its selection shading over our revision wash and it reads darker than
+        // the same edit clicked in the document (a caret, no range). Collapse
+        // to the start so only our wash shows — matching an in-document click.
+        const at = selection.startOffset;
+        if (typeof at === 'string' && typeof selection.select === 'function') {
+          selection.select(at, at);
         }
       } else {
         revision?.select?.();
@@ -611,6 +729,10 @@ function TrackedChangeGroups({
               <GroupCard
                 key={mem.key}
                 group={mem}
+                cardRef={(el) => {
+                  if (el) groupRefs.current.set(mem.key, el);
+                  else groupRefs.current.delete(mem.key);
+                }}
                 isOpen={!!expanded[mem.key]}
                 onToggle={() =>
                   setExpanded((prev) => ({

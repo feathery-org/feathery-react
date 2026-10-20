@@ -212,11 +212,17 @@ export function attachBindings(
   // the interceptor adopts and recomputes in the same turn. Replay during
   // undo/redo must not flush: that inserts content controls mid-history and
   // leaves redo unable to delete the row.
-  const unwatchRowCommands = watchRowCommands(editor, () => {
+  const unwatchRowCommands = watchRowCommands(editor, (insertedRows) => {
+    // An insert says which rows it created, so adoption re-adopts exactly
+    // those; any other row command clears the hint before indices go stale.
+    // Fires during undo/redo replay too (a redone insert needs its hint);
+    // the replay check below is what keeps flushes out of the history stream.
+    controller.noteInsertedRows(insertedRows ?? null);
     if (controller.phase !== 'idle') return;
     const history = editor.editorHistoryModule;
     if (history?.isUndoing || history?.isRedoing) return;
-    controller.flush({ mode: 'self-heal' });
+    if (!triggers.onRowCommandComplete())
+      controller.flush({ mode: 'self-heal' });
   });
 
   const eventful = editor as EventfulEditor;
@@ -365,14 +371,15 @@ export function attachBindings(
       // Set first: removing a listener can itself fire an event, and any stray
       // timer that fires after this point must find the handlers inert.
       disposed = true;
-      // React runs the host's instance.destroy() cleanup BEFORE this one, so by
-      // the time dispose runs the editor is often already torn down. Calling
-      // removeEventListener (and the un-patch helpers) on a destroyed Syncfusion
-      // instance can dereference its null internals and throw "Cannot convert
-      // undefined or null to object". dispose runs inside React's unmount commit,
-      // where a throw is caught by the nearest error boundary and takes the form
-      // down - so every step is isolated and a failure is logged, never thrown.
-      const step = (label: string, fn: () => void): void => {
+      // The host's destroy() often ran first; touching a destroyed editor
+      // throws, so skip those steps. Steps log, never throw (unmount commit).
+      const editorGone = !!(editor as { isDestroyed?: boolean }).isDestroyed;
+      const step = (
+        label: string,
+        fn: () => void,
+        touchesEditor = false
+      ): void => {
+        if (touchesEditor && editorGone) return;
         try {
           fn();
         } catch (error) {
@@ -386,25 +393,34 @@ export function attachBindings(
       step('recomputeHook', () => {
         delete (editor as any).__robinRecomputeAfterResolve;
       });
-      step('contentChange', () =>
-        eventful.removeEventListener?.('contentChange', onContentChange)
+      step(
+        'contentChange',
+        () => eventful.removeEventListener?.('contentChange', onContentChange),
+        true
       );
-      step('selectionChange', () =>
-        eventful.removeEventListener?.('selectionChange', onSelectionChange)
+      step(
+        'selectionChange',
+        () =>
+          eventful.removeEventListener?.('selectionChange', onSelectionChange),
+        true
       );
-      step('keyDown', () =>
-        eventful.removeEventListener?.('keyDown', onKeyDown)
+      step(
+        'keyDown',
+        () => eventful.removeEventListener?.('keyDown', onKeyDown),
+        true
       );
-      step('contentControl', () =>
-        eventful.removeEventListener?.('contentControl', onLockedControl)
+      step(
+        'contentControl',
+        () => eventful.removeEventListener?.('contentControl', onLockedControl),
+        true
       );
       step('lockedHintTimer', () => {
         if (lockedHintTimer !== null) cancelTimeout(lockedHintTimer);
       });
       step('blur', () => editableDiv?.removeEventListener?.('blur', onBlur));
-      step('guard', () => uninstallGuard());
-      step('rowCommands', () => unwatchRowCommands());
-      step('tableDelete', () => uninstallTableDelete());
+      step('guard', () => uninstallGuard(), true);
+      step('rowCommands', () => unwatchRowCommands(), true);
+      step('tableDelete', () => uninstallTableDelete(), true);
       step('triggers', () => triggers.dispose());
       // Cancels the deferred view restore, which would otherwise read
       // editor.selection ~60ms after the editor was destroyed.

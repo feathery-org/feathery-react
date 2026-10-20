@@ -516,7 +516,7 @@ describe('Data Hub verification filter', () => {
 
   test('defaults to verified, matching the Hub API default', async () => {
     const dataHubAction = jest.fn(() => Promise.resolve([]));
-    const { result } = setup(dataHubAction);
+    setup(dataHubAction);
     await waitFor(() => expect(dataHubAction).toHaveBeenCalled());
 
     expect(dataHubAction).toHaveBeenCalledWith({
@@ -696,7 +696,6 @@ describe('Data Hub verification filter', () => {
     expect(result.current.entryIds).toEqual(['entry1']);
   });
 });
-
 
 describe('usePendingEdits', () => {
   test('holds one entry per cell, not per keystroke', () => {

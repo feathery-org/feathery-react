@@ -2,7 +2,6 @@ import { installPlaid } from './plaid';
 import { installFirebase } from './firebase';
 import { initializeTagManager } from './googleTagManager';
 import { installSegment } from './segment';
-import { installStytch } from './stytch';
 import { installStripe } from './stripe';
 import TagManager from 'react-gtm-module';
 import {
@@ -84,7 +83,6 @@ export async function initializeIntegrations(
     installArgyle(!!integs.argyle),
     installPlaid(!!integs.plaid),
     installFirebase(integs.firebase),
-    installStytch(integs.stytch),
     installStripe(integs.stripe),
     installSegment(integs.segment),
     installGoogleAnalytics(integs['google-analytics']),
@@ -100,7 +98,7 @@ export async function initializeIntegrations(
 
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
-  if (integs.firebase || integs.stytch) {
+  if (integs.firebase) {
     authState.authFormKey = featheryClient.formKey;
     return Auth.inferLoginOnLoad(featheryClient);
   }

@@ -22,6 +22,7 @@ import {
   FULL_INVENTORY_BLOCK_LIMIT,
   isAssistantAuthor,
   isAssistantWriting,
+  isAssistantApplyingEdits,
   partitionBindingDiagnostics,
   setAssistantSessionActive,
   LiveEditor
@@ -571,6 +572,7 @@ describe('applyDocumentEdits', () => {
     const origInsert = ed.editor.insertText;
     ed.editor.insertText = (t: string) => {
       seen.push(isAssistantWriting(ed));
+      expect(isAssistantApplyingEdits(ed)).toBe(true);
       origInsert(t);
     };
     applyDocumentEdits(ed, {
@@ -590,6 +592,7 @@ describe('applyDocumentEdits', () => {
     // The docx bridge raises this on the turn's first write.
     setAssistantSessionActive(ed, true);
     expect(isAssistantWriting(ed)).toBe(true);
+    expect(isAssistantApplyingEdits(ed)).toBe(false);
 
     applyDocumentEdits(ed, {
       edits: [
@@ -599,6 +602,10 @@ describe('applyDocumentEdits', () => {
     // The per-call flag cleared with the call; the session alone holds it
     // through the LLM round-trip before the next tool call.
     expect(isAssistantWriting(ed)).toBe(true);
+
+    // Human input in the gap belongs to the user even though autosave and
+    // selection handling still need the whole-turn guard.
+    expect(isAssistantApplyingEdits(ed)).toBe(false);
 
     // The turn actually finishes.
     setAssistantSessionActive(ed, false);
@@ -1207,6 +1214,50 @@ describe('applyDocumentEdits', () => {
 });
 
 describe('live occurrence search and scoped replacement', () => {
+  it.each(['lookup', 'accepted replacement'])(
+    'real SDK: internal %s leaves no yellow search overlay',
+    (operation) => {
+      const ed = makeRealDocumentEditor({
+        sections: [
+          {
+            blocks: [para('PR1927 History Grouping QA'), para('Unchanged body')]
+          }
+        ]
+      });
+      try {
+        ed.selection.select('0;1;0', '0;1;9');
+        if (operation === 'lookup') {
+          const found = findDocumentOccurrences(ed as unknown as LiveEditor, {
+            text: 'PR1927 History Grouping QA'
+          });
+          expect(found).toMatchObject({ ok: true, count: 1 });
+          expect(ed.selection.text).toBe('Unchanged');
+        } else {
+          const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+            edits: [
+              {
+                op: 'replace_text',
+                anchor: '0;0',
+                find: 'PR1927 History Grouping QA',
+                replace: 'PR 1927 testing'
+              }
+            ]
+          });
+          expect(result.results[0].ok).toBe(true);
+          expect(ed.revisions.length).toBeGreaterThan(0);
+          ed.revisions.acceptAll();
+          expect(flattenSfdt(JSON.parse(ed.serialize()))[0].text).toBe(
+            'PR 1927 testing'
+          );
+        }
+        expect((ed.search as any).searchHighlighters?.length ?? 0).toBe(0);
+        expect(ed.search.searchResults.length).toBe(0);
+      } finally {
+        destroyRealDocumentEditor(ed);
+      }
+    }
+  );
+
   it('real SDK: every background read class is visually silent', () => {
     const ed = makeRealDocumentEditor({
       sections: [

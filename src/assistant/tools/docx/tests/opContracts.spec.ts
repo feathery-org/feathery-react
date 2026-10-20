@@ -1538,7 +1538,7 @@ const PARAMETER_VARIANTS: Array<[string, string, ContractCase]> = [
   ],
   [
     'set_cell_text',
-    'a user-dictated figure writes verbatim under `literal: true` and is recorded as such',
+    'a user-dictated figure writes verbatim under `literal: true`',
     {
       fixture: premiumTableFixture,
       edits: [
@@ -1549,15 +1549,8 @@ const PARAMETER_VARIANTS: Array<[string, string, ContractCase]> = [
           literal: true
         }
       ],
-      verify: (ed, result) => {
+      verify: (ed) => {
         expect(blockTexts(ed)).toContain('$13,000');
-        expect(result.results[0].literalNumber).toMatchObject({
-          text: '$13,000',
-          previousText: '$36,803'
-        });
-        expect(result.results[0].literalNumber?.note).toContain(
-          'NOT computed by the engine'
-        );
       }
     }
   ],

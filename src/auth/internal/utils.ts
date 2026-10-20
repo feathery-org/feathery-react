@@ -1,18 +1,11 @@
+import { LINK_TOKEN_PARAM } from '../../utils/accessLink';
 import { featheryWindow } from '../../utils/browser';
 import { authState } from '../LoginForm';
-
-export function isAuthStytch() {
-  if (authState.client) {
-    return Object.getOwnPropertySymbols(authState.client)
-      .map((symbol) => symbol.toString())
-      .includes('Symbol(stytch__internal_b2c)');
-  }
-}
 
 export function getAuthIntegrationMetadata(
   integrations: null | Record<string, any>
 ): undefined | any {
-  return integrations?.stytch?.metadata ?? integrations?.firebase?.metadata;
+  return integrations?.firebase?.metadata;
 }
 
 /**
@@ -59,12 +52,18 @@ export function getRedirectUrl() {
     }
   }
 
+  // The access link token has to survive the login round trip, or the form
+  // comes back without the credential that opens it. So does its language.
+  const keptParams = ['_slug', '_locale', LINK_TOKEN_PARAM];
   queryParams.forEach((value, key) => {
-    if (!['_slug'].includes(key)) queryParams.delete(key);
+    if (!keptParams.includes(key)) queryParams.delete(key);
   });
 
   // Strip the /to/<slug> segment
   const cleanPathname = pathname.replace(/\/to\/[^/]+/, '');
-  const queryString = queryParams.has('_slug') ? `?${queryParams}` : '';
+  const queryString =
+    queryParams.has('_slug') || queryParams.has(LINK_TOKEN_PARAM)
+      ? `?${queryParams}`
+      : '';
   return `${origin}${cleanPathname}${queryString}${hash}`;
 }
