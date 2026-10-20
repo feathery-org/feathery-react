@@ -149,6 +149,36 @@ describe('the format pack', () => {
     expect((call('find', { feature: { name: 'binding' } }) as { total: number }).total).toBe(3);
   });
 
+  it('flags a paragraph or row holding tracked changes in the outline and on find hits, since its text joins both sides', () => {
+    const doc = JSON.stringify({
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'About ' }, { text: 'Hilb Group', revisionIds: ['d1'] }, { text: 'Hilb', revisionIds: ['i1'] }] },
+            { inlines: [{ text: 'Untouched' }] },
+            { rows: [{ cells: [{ blocks: [{ inlines: [{ text: 'Premium ' }, { text: '$1,000', revisionIds: ['i1'] }] }] }] }] }
+          ]
+        }
+      ],
+      revisions: [
+        { author: 'Robin', date: '2026-10-19T00:00:00Z', revisionType: 'Deletion', revisionId: 'd1' },
+        { author: 'Robin', date: '2026-10-19T00:00:00Z', revisionType: 'Insertion', revisionId: 'i1' }
+      ]
+    });
+    const { call } = mount(doc);
+    const lines = (call('outline', {}) as { lines: string }).lines.split('\n');
+    expect(lines.find((l) => l.includes('"About Hilb GroupHilb"'))).toMatch(/tracked changes inside/);
+    expect(lines.find((l) => / row /.test(l))).toMatch(/tracked changes inside/);
+    expect(lines.find((l) => l.includes('Untouched'))).not.toMatch(/tracked changes/);
+    const hits = (text: string) => (call('find', { text }) as { hits: Array<{ trackedChangesInside?: boolean }> }).hits;
+    expect(hits('Hilb').map((h) => h.trackedChangesInside)).toEqual([true]);
+    expect(hits('Untouched').map((h) => h.trackedChangesInside)).toEqual([undefined]);
+    const shallow = (call('outline', { depth: 3 }) as { lines: string }).lines.split('\n');
+    expect(shallow.find((l) => / cell /.test(l))).toMatch(/"Premium \$1,000" \(tracked changes inside\)/);
+    const sections = (call('find', { kind: 'section' }) as { hits: Array<{ trackedChangesInside?: boolean }> }).hits;
+    expect(sections.map((h) => h.trackedChangesInside)).toEqual([undefined]);
+  });
+
   const williams = path.join(process.env.ROBIN_DOCUMENT_PRIVATE_CORPUS ?? '/nonexistent', 'hilb-williams.sfdt.json');
   (fs.existsSync(williams) ? it : it.skip)('refuses the captain\'s table split, which deleted rows and reused their ids in the new table, as ambiguous-move (private corpus only)', () => {
     const { call } = mount(fs.readFileSync(williams, 'utf8'));
