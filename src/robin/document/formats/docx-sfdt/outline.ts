@@ -76,6 +76,9 @@ const pendingTag = (n: NfNode): string => {
   }]`;
 };
 
+const trackedTag = (n: NfNode): string =>
+  hasPendingInside(n, docxTree) ? ' (tracked changes inside)' : '';
+
 function bindingsIn(node: NfNode, view: DocumentView): string[] {
   const out: string[] = [];
   const rec = (n: unknown) => {
@@ -196,7 +199,7 @@ export function detail(node: NfNode, view: DocumentView): string {
       }`;
     }
     case KIND.cell:
-      return `"${clip(cellText(node))}"${pendingTag(node)}`;
+      return `"${clip(cellText(node))}"${pendingTag(node)}${trackedTag(node)}`;
     case KIND.control: {
       const b = isObject(node.binding) ? node.binding : null;
       const what = b
@@ -204,9 +207,11 @@ export function detail(node: NfNode, view: DocumentView): string {
           ? `(bound table "${b.table}")`
           : `(binding ${b.name}${b.expr ? `=${b.expr}` : ''})`
         : '';
-      return `${Array.isArray(node.blocks) ? 'block ' : ''}${preview(
-        controlText(node)
-      )}${what}${usedBy}${pendingTag(node)}`.trim();
+      return (
+        `${Array.isArray(node.blocks) ? 'block ' : ''}${preview(
+          controlText(node)
+        )}${what}${usedBy}${pendingTag(node)}`.trim() + trackedTag(node)
+      );
     }
     case KIND.run:
       return `"${clip(String(node.text ?? ''))}"${pendingTag(node)}`;
@@ -223,7 +228,10 @@ export function detail(node: NfNode, view: DocumentView): string {
     case KIND.image:
       return `${node.width ?? '?'} x ${node.height ?? '?'}${pendingTag(node)}`;
     case KIND.shape:
-      return `text box ${preview(frameText(node))}${pendingTag(node)}`.trim();
+      return (
+        `text box ${preview(frameText(node))}${pendingTag(node)}`.trim() +
+        trackedTag(node)
+      );
     default:
       return pendingTag(node).trim();
   }
