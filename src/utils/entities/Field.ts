@@ -18,6 +18,7 @@ import {
 } from '../logic';
 import { dataURLToFile, isBase64Image } from '../image';
 import internalState from '../internalState';
+import { isSameFieldValue } from '../fieldValueEquality';
 
 /**
  * Represents a field in a form.  Part of the SDK coding model.
@@ -62,18 +63,28 @@ export default class Field {
     });
   }
 
+  // Store a new value and queue it for submission, unless it matches what the
+  // field already holds: a rule that writes the current value back (common
+  // for rules that run on every change) must not generate network traffic.
+  _setValue(newVal: any) {
+    if (isSameFieldValue(fieldValues[this._fieldKey], newVal)) return;
+    fieldValues[this._fieldKey] = newVal;
+    this._runFieldUpdate();
+  }
+
   clear() {
     let newVal = null;
     if (!this._hiddenField) {
       const field = this._getSourceField();
       newVal = getDefaultFormFieldValue(field);
     }
-    fieldValues[this._fieldKey] = parseUserVal(
-      newVal,
-      this._fieldKey,
-      internalState[this._formUuid]?.client.formKey
+    this._setValue(
+      parseUserVal(
+        newVal,
+        this._fieldKey,
+        internalState[this._formUuid]?.client.formKey
+      )
     );
-    this._runFieldUpdate();
   }
 
   // raw field value
@@ -87,11 +98,13 @@ export default class Field {
     )
       return new Proxy(fieldVal as object, {
         set: (target: any, property: any, value) => {
-          target[property] = parseUserVal(
+          const parsed = parseUserVal(
             value,
             this._fieldKey,
             internalState[this._formUuid]?.client.formKey
           );
+          if (isSameFieldValue(target[property], parsed)) return true;
+          target[property] = parsed;
           this._runFieldUpdate();
           return true;
         }
@@ -101,21 +114,12 @@ export default class Field {
 
   // set raw field value
   set value(val: FeatheryFieldTypes) {
-    if (Array.isArray(val))
-      fieldValues[this._fieldKey] = val.map((entry) =>
-        parseUserVal(
-          entry,
-          this._fieldKey,
-          internalState[this._formUuid]?.client.formKey
-        )
-      );
-    else
-      fieldValues[this._fieldKey] = parseUserVal(
-        val,
-        this._fieldKey,
-        internalState[this._formUuid]?.client.formKey
-      );
-    this._runFieldUpdate();
+    const formKey = internalState[this._formUuid]?.client.formKey;
+    this._setValue(
+      Array.isArray(val)
+        ? val.map((entry) => parseUserVal(entry, this._fieldKey, formKey))
+        : parseUserVal(val, this._fieldKey, formKey)
+    );
   }
 
   _getFormSpecificProps(): {
