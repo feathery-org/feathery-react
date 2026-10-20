@@ -20,6 +20,31 @@ describe('version history in the pinned real Chrome engine', () => {
     await session?.close();
   });
 
+  const resolveReview = async (action: string) => {
+    const rail = 'button[aria-label="Suggested changes"]';
+    if (
+      (await session.page.$eval(rail, (el) =>
+        el.getAttribute('aria-pressed')
+      )) !== 'true'
+    )
+      await session.page.click(rail);
+    const panel = '[aria-label="Assistant tracked changes"]';
+    await session.page.waitForSelector(panel);
+    // Syncfusion also keeps hidden native Accept/Reject buttons in the DOM.
+    // Exercise Feathery's visible review action and its persistence callback.
+    await session.page.$eval(
+      panel,
+      (el, action) => {
+        const button = Array.from(el.querySelectorAll('button')).find(
+          (button) => button.textContent?.trim() === action
+        );
+        if (!button) throw new Error(`${action} button not found`);
+        button.click();
+      },
+      action
+    );
+  };
+
   it.each(['Accept', 'Reject'])(
     '%s resolves an untagged Robin revision after a DOCX round trip',
     async (action) => {
@@ -50,23 +75,18 @@ describe('version history in the pinned real Chrome engine', () => {
       try {
         const before = await session.call('historyReviewState');
         expect(before.revisions).toBe(1);
-        await session.page.evaluate((action) => {
-          const button = Array.from(
-            globalThis.document.querySelectorAll('button')
-          ).find((button) =>
-            new RegExp(`^${action}$`).test(button.textContent?.trim() ?? '')
-          );
-          if (!button) throw new Error(`${action} button not found`);
-          button.click();
-        }, action);
+        await resolveReview(action);
         const after = await session.call('historyReviewState');
         expect(after.revisions).toBe(0);
         expect(JSON.parse(after.sfdt).revisions ?? []).toHaveLength(0);
         const groupButtons = await session.page.evaluate(
           () =>
-            Array.from(globalThis.document.querySelectorAll('button')).filter(
-              (button) =>
-                /^(Accept|Reject)$/.test(button.textContent?.trim() ?? '')
+            Array.from(
+              globalThis.document.querySelectorAll(
+                '[aria-label="Assistant tracked changes"] button'
+              )
+            ).filter((button) =>
+              /^(Accept|Reject)$/.test(button.textContent?.trim() ?? '')
             ).length
         );
         expect(groupButtons).toBe(0);
@@ -118,13 +138,7 @@ describe('version history in the pinned real Chrome engine', () => {
       const before = await session.call('historyReviewState');
       expect(before.revisions).toBeGreaterThan(0);
       expect(before.artifacts).toHaveLength(1);
-      await session.page.evaluate(() => {
-        const button = Array.from(
-          globalThis.document.querySelectorAll('button')
-        ).find((button) => /^Accept$/.test(button.textContent?.trim() ?? ''));
-        if (!button) throw new Error('Accept button not found');
-        button.click();
-      });
+      await resolveReview('Accept');
       const after = await session.call('historyReviewState');
       expect(after.revisions).toBe(0);
       expect(JSON.parse(after.sfdt).revisions ?? []).toHaveLength(0);
@@ -154,15 +168,10 @@ describe('version history in the pinned real Chrome engine', () => {
       const before = await session.call('historyReviewState');
       expect(before.revisions).toBeGreaterThan(0);
       expect(before.artifacts).toHaveLength(1);
-      await session.page.evaluate(() => {
-        const button = Array.from(
-          globalThis.document.querySelectorAll('button')
-        ).find((button) => /^Accept$/.test(button.textContent?.trim() ?? ''));
-        if (!button) throw new Error('Accept button not found');
-        button.click();
-      });
+      await resolveReview('Accept');
       const after = await session.call('historyReviewState');
       expect(after.revisions).toBe(0);
+      expect(after.saves).toBeGreaterThan(before.saves);
       expect(after.ink).toBeGreaterThan(before.ink * 0.5);
       expect(after.text).not.toContain('Update premium');
       expect(JSON.parse(after.sfdt).revisions ?? []).toHaveLength(0);
@@ -214,6 +223,11 @@ describe('version history in the pinned real Chrome engine', () => {
     );
     expect(before.top).toBe(1400);
     try {
+      const remounted = await session.call('remountVersionPreview');
+      expect(remounted.after.top).toBe(remounted.before.top);
+      expect(remounted.after.left).toBe(remounted.before.left);
+      expect(remounted.after.zoom).toBe(remounted.before.zoom);
+      expect(remounted.after.ink).toBeGreaterThan(100);
       for (const highlightsOn of [false, true, false, true]) {
         const result = await session.call('toggleVersionPreview', highlightsOn);
         for (const frame of result.frames) {

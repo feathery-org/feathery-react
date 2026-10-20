@@ -991,6 +991,18 @@ export default class IntegrationClient {
     );
   }
 
+  async prepareEnvelopeVersion(envelopeId: string, versionId: string) {
+    const body = new FormData();
+    body.append('fuser_key', initInfo().userId ?? '');
+    body.append('form_key', this.formKey);
+    return parseDocxVersion(
+      await this.documentRequest(
+        `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/prepare/`,
+        { method: 'POST', body }
+      )
+    );
+  }
+
   // Close a session, uploading the final SFDT (gzipped) and its anchored change
   // list. 204 → the session was eliminated as unchanged (no row). Returns the
   // version row otherwise.
@@ -1066,7 +1078,8 @@ export default class IntegrationClient {
   finalizeEnvelope(
     envelopeId: string,
     signers: Record<string, any>[] = [],
-    signMethod?: string
+    signMethod?: string,
+    signingOptions?: { individualSigning?: boolean }
   ) {
     const { userId } = initInfo();
     const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
@@ -1076,7 +1089,10 @@ export default class IntegrationClient {
       body: JSON.stringify({
         fuser_key: userId ?? '',
         signers,
-        ...(signMethod ? { sign_method: signMethod } : {})
+        ...(signMethod ? { sign_method: signMethod } : {}),
+        ...(signingOptions?.individualSigning
+          ? { individual_signing: true }
+          : {})
       }),
       keepalive: false
     };

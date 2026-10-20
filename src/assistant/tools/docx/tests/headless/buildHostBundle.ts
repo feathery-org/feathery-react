@@ -32,6 +32,14 @@ export async function buildHostBundle(): Promise<string> {
     module: {
       rules: [
         {
+          test: /historyWorkerSource\.ts$/,
+          enforce: 'pre',
+          use: path.resolve(
+            __dirname,
+            '../../../../../../scripts/history-worker-loader.cjs'
+          )
+        },
+        {
           test: /\.(ts|tsx|js|jsx)$/,
           exclude: /node_modules/,
           use: { loader: 'babel-loader', options: { envName: 'test' } }

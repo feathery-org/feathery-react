@@ -249,14 +249,20 @@ export function installRevisionHighlightRendering(
       : false;
     let box: { x: number; y: number; w: number; h: number } | undefined;
     if (info) {
+      // Text (including a leading space) can be split into adjacent runs.
+      // Snap their shared endpoints identically: padding/rounding each width
+      // independently double-paints the seam and darkens the translucent wash.
+      const start = left + (elementBox.margin?.left ?? 0);
+      const x = Math.round(renderer.getScaledValue(start, 1));
+      const right = Math.round(
+        renderer.getScaledValue(start + elementBox.width, 1)
+      );
       box = {
-        x: Math.floor(
-          renderer.getScaledValue(left + (elementBox.margin?.left ?? 0), 1)
-        ),
+        x,
         y: Math.floor(
           renderer.getScaledValue(top + (elementBox.margin?.top ?? 0), 2) - 1
         ),
-        w: Math.ceil(renderer.getScaledValue(elementBox.width) + 1),
+        w: Math.max(0, right - x),
         h: Math.ceil(renderer.getScaledValue(elementBox.height) + 1)
       };
       try {

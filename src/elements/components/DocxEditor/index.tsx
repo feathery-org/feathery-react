@@ -2,20 +2,26 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useLayoutEffect,
   useRef,
   useState
 } from 'react';
 import { createPortal } from 'react-dom';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
-import { CheckIcon, CloseIcon, SpinnerIcon } from './icons';
+import DocumentToast from '../DocumentEditor/DocumentToast';
+import { SpinnerIcon } from './icons';
 import { FEATHERY_RED, TOOLBAR_HEIGHT } from './DocxToolbar/styles';
-import DocumentPanel from './DocumentPanel';
+import DocumentPanel, {
+  DocumentPanelProps,
+  PANEL_WIDTH
+} from './DocumentPanel';
+import { useSharedDocumentRail } from './SharedDocumentRail';
 import {
   ActivePanel,
   useReviewPanelPresentation
 } from './reviewPanelPresentation';
-import PanelRail from './PanelRail';
+import PanelRail, { PanelRailProps, PANEL_RAIL_WIDTH } from './PanelRail';
 import {
   DocxBindingsConfig,
   setActiveInlineRevisions,
@@ -26,6 +32,7 @@ import { editGroupKey } from './history/sfdtDiff/index';
 import { stepperRevisions } from './history/stepperRevisions';
 import { firstUserActorKey } from './history/authorColors';
 import { useDocxHistorySession } from './history/useDocxHistorySession';
+import { loadVersionList } from './history/versionList';
 import {
   prefetchVersionDocuments,
   retainVersionDocuments,
@@ -109,8 +116,17 @@ export interface DocxEditorProps {
   reviewChanges?: boolean;
   /** Controlled reveal. When explicitly false the editor is unmounted. */
   visible?: boolean;
+  /** Whether this cached document owns keyboard-driven panels. */
+  active?: boolean;
+  /** Packet-wide rail choice; history and edits still belong to this editor. */
+  railPanel?: ActivePanel;
+  onRailPanelChange?: (panel: ActivePanel) => void;
   /** Hide the local Download button (shown by default). */
   hideDownload?: boolean;
+  /** Keep editing sessions local until an explicit persistence action. */
+  manualSave?: boolean;
+  onSaveAll?: () => Promise<void>;
+  onDownloadAll?: () => Promise<void>;
   /** URL of the document's public copy (content controls stripped). When set,
    *  Download saves current edits, then serves this copy (or the fresher one
    *  from the save result) — never the raw editor bytes. */
@@ -208,7 +224,13 @@ function DocxEditor({
   preview = false,
   reviewChanges = false,
   visible = true,
+  active = true,
+  railPanel,
+  onRailPanelChange,
   hideDownload,
+  manualSave = false,
+  onSaveAll,
+  onDownloadAll,
   downloadUrl,
   onExportPdf,
   terminalAction,
@@ -231,6 +253,9 @@ function DocxEditor({
   currentUser,
   bindings
 }: DocxEditorProps) {
+  const sharedRail = useSharedDocumentRail();
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(TOOLBAR_HEIGHT);
   const dirtyRef = useRef(false);
   const editRevisionRef = useRef(0);
   const snapshotRevisions = useRef(new WeakMap<Blob, number>());
@@ -277,9 +302,24 @@ function DocxEditor({
   const [downloading, setDownloading] = useState(false);
   // The single right-rail slot shows at most one panel, toggled from the
   // toolbar's two buttons (Changes / Sections).
-  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const [localPanel, setLocalPanel] = useState<ActivePanel>(null);
+  // Inactive cached editors do not load panel data or own the shared choice.
+  const activePanel = railPanel !== undefined ? railPanel : localPanel;
+  const setActivePanel = useCallback(
+    (panel: ActivePanel) => {
+      if (!active) return;
+      if (onRailPanelChange) onRailPanelChange(panel);
+      else setLocalPanel(panel);
+    },
+    [active, onRailPanelChange]
+  );
   // A selected older version, shown read-only over the live editor. The live
   // editor keeps autosaving underneath while it is open.
+  const previewViewportRef = useRef<{
+    versionId: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const [viewingVersion, setViewingVersion] = useState<DocxVersion | null>(
     null
   );
@@ -473,6 +513,9 @@ function DocxEditor({
   // to be missing, which left a landed change set invisible behind whichever
   // panel the user had open.
   useReviewPanelPresentation({
+    // A packet's explicit navigation choice stays stable even for documents
+    // with no pending edits, or when a cached editor reports a new count.
+    enabled: active && railPanel === undefined,
     activePanel,
     count: changesCount,
     reviewChanges:
@@ -484,7 +527,7 @@ function DocxEditor({
   // Escape backs out one layer at a time: first the version viewer, then the
   // side panel.
   useEffect(() => {
-    if (!viewingVersion && activePanel === null) return undefined;
+    if (!active || (!viewingVersion && activePanel === null)) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (restoreInFlightRef.current) return;
       if (e.key !== 'Escape') return;
@@ -497,7 +540,7 @@ function DocxEditor({
     const doc = featheryDoc();
     doc.addEventListener('keydown', onKey);
     return () => doc.removeEventListener('keydown', onKey);
-  }, [viewingVersion, activePanel]);
+  }, [viewingVersion, activePanel, active, setActivePanel]);
 
   /**
    * Reconcile anything uncommitted before bytes leave the editor and report the
@@ -625,6 +668,7 @@ function DocxEditor({
     loading,
     readOnly,
     host: history ?? null,
+    manualSave,
     currentUser: currentUser ?? DEFAULT_CURRENT_USER,
     envelopeId,
     openNonce,
@@ -673,12 +717,27 @@ function DocxEditor({
     return onAssistantSessionChange(editor, setAssistantWriting);
   }, [editor]);
 
-  // Opening the history rail is a good idle point to resolve its recent,
-  // immutable snapshots. This cache only contains rendered preview data; live
-  // restores continue to fetch the current editor file without caching.
+  const historyRefreshKey = `${
+    historySession.savedAt?.getTime() ?? 0
+  }:${restoreRefreshKey}`;
   useEffect(() => {
-    prefetchVersionDocuments(history ?? null, historyVersions);
-  }, [history, historyVersions]);
+    if (!active || !history || loading || error) return;
+    const controller = new AbortController();
+    // Let the newly selected draft paint before speculative history work.
+    const timer = setTimeout(() => {
+      loadVersionList(history, historyRefreshKey)
+        .then((rows) =>
+          prefetchVersionDocuments(history, rows, 5, controller.signal)
+        )
+        .catch(() => {
+          /* The panel offers retry; background failure is non-blocking. */
+        });
+    }, 100);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [active, history, loading, error, historyRefreshKey]);
 
   // Both DocumentEditorContainers expose the same zoom footer. Keep the
   // editing and read-only containers at one zoom level when moving between
@@ -714,14 +773,31 @@ function DocxEditor({
   // Open a version read-only in the viewer. An in-progress session previews
   // live edits; a saved Current row with no open session reads its stored change
   // files, like any older version.
+  const previewRequestRef = useRef(0);
+  useLayoutEffect(() => {
+    previewRequestRef.current++;
+  }, [active, activePanel, envelopeId, openNonce]);
+  useEffect(
+    () => () => {
+      previewRequestRef.current++;
+    },
+    []
+  );
   const selectVersion = useCallback(
-    (version: DocxVersion) => {
+    async (version: DocxVersion) => {
+      const request = ++previewRequestRef.current;
+      const revision = editRevisionRef.current;
       let live: LiveVersionDocument | null = null;
       // During an open session, autosave checkpoints can already be stale.
       // After Save/reload, the browser has no live diff baseline; the latest
       // saved change files are then the only source for user edit stepping.
       if (version.is_current) {
-        const preview = historySession.previewSession();
+        const preview = await historySession.previewSession();
+        if (
+          request !== previewRequestRef.current ||
+          revision !== editRevisionRef.current
+        )
+          return;
         setLiveSessionAuthors(
           preview
             ? { sessionId: preview.sessionId, authors: preview.authors }
@@ -769,7 +845,7 @@ function DocxEditor({
       // Do not use the previous opening's rows here: a save can turn that old
       // Current row into latest-1 before the user opens history again. The
       // callback's payload is the fresh list that the panel is displaying.
-      if (activePanel !== 'history') return;
+      if (!active || activePanel !== 'history') return;
       if (restoreInFlightRef.current) return;
       if (historyAutoSelectedRef.current && !viewingVersion?.is_current) return;
       const current = versions.find((version) => version.is_current);
@@ -777,7 +853,7 @@ function DocxEditor({
       historyAutoSelectedRef.current = true;
       selectVersion(current);
     },
-    [activePanel, selectVersion, viewingVersion?.is_current]
+    [active, activePanel, selectVersion, viewingVersion?.is_current]
   );
 
   // Save can finish while Current is already selected. Once its refreshed row
@@ -805,6 +881,7 @@ function DocxEditor({
   // Back to the live editor (its toolbar returns because viewingVersion clears).
   const exitVersionView = useCallback(() => {
     if (restoreInFlightRef.current) return;
+    previewRequestRef.current++;
     setViewingVersion(null);
     setDisplayedVersion(null);
     setLiveDoc(null);
@@ -1061,6 +1138,7 @@ function DocxEditor({
           (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
         if (url) triggerDownload(await fetchDownloadBlob(url));
         else triggerDownload(blob);
+        onDownloaded?.();
       } else {
         await onTerminalAction?.(saveResult);
       }
@@ -1150,19 +1228,106 @@ function DocxEditor({
     });
   };
 
+  const panelProps: DocumentPanelProps = {
+    editor,
+    active,
+    open: activePanel !== null,
+    tab: activePanel ?? 'sections',
+    onClose: () => {
+      setActivePanel(null);
+      exitVersionView();
+    },
+    reviewChanges: !!reviewChanges,
+    onChangesCount: handleChangesCount,
+    markDirty,
+    boundaryKey: `${railGeneration}:${openNonce ?? 0}`,
+    history,
+    currentUser: currentUser ?? DEFAULT_CURRENT_USER,
+    onSelectVersion: restoring ? undefined : selectVersion,
+    onVersionsLoaded: handleHistoryVersionsLoaded,
+    onRestoreVersion: restoreViewingVersion,
+    versionSelected: !!viewingVersion,
+    restoreDisabled: !!viewingVersion?.is_current || !!restoreBlockedReason(),
+    restoreDisabledReason: viewingVersion?.is_current
+      ? 'This is the current version'
+      : restoreBlockedReason() ?? undefined,
+    restoring,
+    selectedVersionId: viewingVersion?.id ?? null,
+    currentPendingCount: viewingVersion?.is_current
+      ? versionMeta?.pendingCount
+      : undefined,
+    liveSessionAuthors,
+    onAcceptTrackedChanges: history
+      ? historySession.acceptTrackedChanges
+      : undefined,
+    historyRefreshKey
+  };
+  const railProps: PanelRailProps = {
+    activePanel,
+    showChanges: !!reviewChanges,
+    changesCount,
+    showHistory: !!history,
+    onToggle: (panel) => {
+      const next = activePanel === panel ? null : panel;
+      if (activePanel === 'history' && next !== 'history') exitVersionView();
+      setActivePanel(next);
+    }
+  };
+  useLayoutEffect(() => {
+    if (sharedRail && envelopeId && editor && !preview)
+      sharedRail.register(envelopeId, {
+        panel: panelProps,
+        rail: railProps,
+        toolbarHeight
+      });
+  });
+  useLayoutEffect(
+    () => () => {
+      if (sharedRail && envelopeId) sharedRail.register(envelopeId, null);
+    },
+    [sharedRail, envelopeId]
+  );
+  useLayoutEffect(() => {
+    const node = toolbarRef.current;
+    if (!node) return;
+    const measure = () =>
+      setToolbarHeight(node.offsetTop + node.offsetHeight || TOOLBAR_HEIGHT);
+    measure();
+    const observer =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(measure);
+    observer?.observe(node);
+    return () => observer?.disconnect();
+  }, [visible, editor, viewingVersion, historySession.error]);
+
   if (!visible) return null;
 
   return (
     <div
       className={className}
-      onKeyDownCapture={
-        restoring
-          ? (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }
-          : undefined
-      }
+      onKeyDownCapture={(event) => {
+        if (restoring) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        if (
+          active &&
+          !preview &&
+          !readOnly &&
+          onSave &&
+          !viewingVersion &&
+          (event.ctrlKey || event.metaKey) &&
+          !event.altKey &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === 's'
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleSave();
+        }
+      }}
       css={{
         display: 'flex',
         flexDirection: 'column',
@@ -1171,6 +1336,8 @@ function DocxEditor({
         overflow: 'hidden',
         position: 'relative',
         background: '#fff',
+        containerType: 'inline-size',
+        containerName: 'document-editor',
         pointerEvents: preview ? 'none' : undefined
       }}
     >
@@ -1190,69 +1357,75 @@ function DocxEditor({
           </button>
         </div>
       )}
-      {/* Reserve the toolbar's space until it mounts (it needs `editor`), so its
+      <div ref={toolbarRef} css={{ flex: '0 0 auto' }}>
+        {/* Reserve the toolbar's space until it mounts (it needs `editor`), so its
           arrival doesn't shrink the editor pane mid-load. */}
-      {!editor && <div css={{ height: TOOLBAR_HEIGHT, flex: '0 0 auto' }} />}
-      {editor && viewingVersion && (
-        <VersionBar
-          version={displayedVersion ?? viewingVersion}
-          onExit={exitVersionView}
-          editCount={versionMeta?.editCount}
-          formatCount={versionMeta?.formatCount}
-          pendingCount={versionMeta?.pendingCount}
-          approvedCount={versionMeta?.approvedCount}
-          highlightsAvailable={!!versionMeta && !versionMeta.degraded}
-          highlightsOn={highlightsOn}
-          onToggleHighlights={setHighlightsOn}
-          onPrevChange={() => stepChange(-1)}
-          onNextChange={() => stepChange(1)}
-        />
-      )}
-      {editor && !viewingVersion && (
-        <DocxToolbar
-          editor={editor}
-          // Save stays visible even alongside a terminal action so users can
-          // persist edits without committing to download/sign. Arrow-wrapped:
-          // handleSave takes a force flag a raw click event must not satisfy.
-          onSave={onSave ? () => handleSave() : undefined}
-          // Secondary Download hides only when the terminal button IS the
-          // download (one Download, not two) — beside Sign/Draft it stays, so
-          // configuring Sign + Download shows both. Arrow-wrapped: the handlers
-          // take a `force` flag a raw DOM click event would truthily satisfy.
-          onDownload={
-            hideDownload || terminalAction === 'download'
-              ? undefined
-              : () => handleDownload()
-          }
-          onDownloadPdf={
-            hideDownload || terminalAction === 'download' || !onExportPdf
-              ? undefined
-              : () => handleDownloadPdf()
-          }
-          downloadBusy={exportingPdf || downloading}
-          terminalAction={terminalAction}
-          onTerminalAction={
-            onTerminalAction ? () => handleTerminalAction() : undefined
-          }
-          onTerminalActionPdf={
-            terminalAction === 'download' && onExportPdf
-              ? handleTerminalActionPdf
-              : undefined
-          }
-          onTerminalActionDraft={
-            terminalAction === 'sign' && onTerminalActionDraft
-              ? handleTerminalActionDraft
-              : undefined
-          }
-          terminalActionDisabled={
-            !!terminalActionDisabled || saving || terminalRunning
-          }
-          terminalActionLoading={!!terminalActionLoading || terminalRunning}
-          saving={saving}
-          dirty={dirty}
-          readOnly={preview || readOnly}
-        />
-      )}
+        {!editor && <div css={{ height: TOOLBAR_HEIGHT, flex: '0 0 auto' }} />}
+        {editor && viewingVersion && (
+          <VersionBar
+            version={displayedVersion ?? viewingVersion}
+            onExit={exitVersionView}
+            editCount={versionMeta?.editCount}
+            formatCount={versionMeta?.formatCount}
+            pendingCount={versionMeta?.pendingCount}
+            approvedCount={versionMeta?.approvedCount}
+            highlightsAvailable={
+              versionMeta ? !versionMeta.degraded : undefined
+            }
+            highlightsOn={highlightsOn}
+            onToggleHighlights={setHighlightsOn}
+            onPrevChange={() => stepChange(-1)}
+            onNextChange={() => stepChange(1)}
+          />
+        )}
+        {editor && !viewingVersion && (
+          <DocxToolbar
+            editor={editor}
+            // Save stays visible even alongside a terminal action so users can
+            // persist edits without committing to download/sign. Arrow-wrapped:
+            // handleSave takes a force flag a raw click event must not satisfy.
+            onSave={onSave ? () => handleSave() : undefined}
+            onSaveAll={onSaveAll}
+            onDownloadAll={onDownloadAll}
+            // Secondary Download hides only when the terminal button IS the
+            // download (one Download, not two) — beside Sign/Draft it stays, so
+            // configuring Sign + Download shows both. Arrow-wrapped: the handlers
+            // take a `force` flag a raw DOM click event would truthily satisfy.
+            onDownload={
+              hideDownload || terminalAction === 'download'
+                ? undefined
+                : () => handleDownload()
+            }
+            onDownloadPdf={
+              hideDownload || terminalAction === 'download' || !onExportPdf
+                ? undefined
+                : () => handleDownloadPdf()
+            }
+            downloadBusy={exportingPdf || downloading}
+            terminalAction={terminalAction}
+            onTerminalAction={
+              onTerminalAction ? () => handleTerminalAction() : undefined
+            }
+            onTerminalActionPdf={
+              terminalAction === 'download' && onExportPdf
+                ? handleTerminalActionPdf
+                : undefined
+            }
+            onTerminalActionDraft={
+              terminalAction === 'sign' && onTerminalActionDraft
+                ? handleTerminalActionDraft
+                : undefined
+            }
+            terminalActionDisabled={
+              !!terminalActionDisabled || saving || terminalRunning
+            }
+            terminalActionLoading={!!terminalActionLoading || terminalRunning}
+            saving={saving}
+            dirty={dirty}
+            readOnly={preview || readOnly}
+          />
+        )}
+      </div>
       <div css={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <div css={{ flex: 1, minWidth: 0, position: 'relative' }}>
           {/* Syncfusion mounts its editor into this element. */}
@@ -1299,9 +1472,10 @@ function DocxEditor({
           />
           {loading && !error && <div css={overlay}>Loading document…</div>}
           {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
-          {history && viewingVersion && (
+          {active && history && viewingVersion && (
             <VersionViewer
               host={history}
+              viewportRef={previewViewportRef}
               version={viewingVersion}
               firstUserKey={firstUserKey}
               serviceUrl={serviceUrl}
@@ -1323,80 +1497,22 @@ function DocxEditor({
             />
           )}
         </div>
-        {/* Shared side panel; its title follows the rail icon that opened it
-            (Suggested changes · Sections). Stays mounted while review is on so
-            its pending count keeps the edge-rail badge live; collapses to zero
-            width when no panel is open. */}
-        {editor && !preview && (
-          <DocumentPanel
-            editor={editor}
-            open={activePanel !== null}
-            tab={activePanel ?? 'sections'}
-            // Closing the panel (its X) returns to the live editor: clear the
-            // version view so the editing toolbar comes back.
-            onClose={() => {
-              setActivePanel(null);
-              exitVersionView();
-            }}
-            reviewChanges={!!reviewChanges}
-            onChangesCount={handleChangesCount}
-            markDirty={markDirty}
-            boundaryKey={`${railGeneration}:${openNonce ?? 0}`}
-            history={history}
-            currentUser={currentUser ?? DEFAULT_CURRENT_USER}
-            // Every version opens read-only in the viewer with highlights; the
-            // in-progress current version is diffed live inside selectVersion.
-            onSelectVersion={restoring ? undefined : selectVersion}
-            // Report the loaded list up so the panel can auto-select the latest.
-            onVersionsLoaded={handleHistoryVersionsLoaded}
-            // Footer actions: Restore the open version; enabled while viewing,
-            // but never for the current version (already the live document).
-            onRestoreVersion={restoreViewingVersion}
-            versionSelected={!!viewingVersion}
-            restoreDisabled={
-              !!viewingVersion?.is_current || !!restoreBlockedReason()
-            }
-            restoreDisabledReason={
-              viewingVersion?.is_current
-                ? 'This is the current version'
-                : restoreBlockedReason() ?? undefined
-            }
-            restoring={restoring}
-            selectedVersionId={viewingVersion?.id ?? null}
-            // Unapproved Robin edits still tracked in the in-progress current
-            // version — surfaced on its row while it's the one being viewed.
-            currentPendingCount={
-              viewingVersion?.is_current ? versionMeta?.pendingCount : undefined
-            }
-            liveSessionAuthors={liveSessionAuthors}
-            onAcceptTrackedChanges={
-              history ? historySession.acceptTrackedChanges : undefined
-            }
-            // Reload the list whenever a save lands so a new version and the
-            // "Current" tag stay fresh while the panel is open.
-            historyRefreshKey={`${
-              historySession.savedAt?.getTime() ?? 0
-            }:${restoreRefreshKey}`}
-          />
-        )}
-        {/* Slim edge rail on the far right: one icon per side panel. Always
-            present so a panel is one click away and future panels can slot in. */}
-        {editor && !preview && (
-          <PanelRail
-            activePanel={activePanel}
-            showChanges={!!reviewChanges}
-            changesCount={changesCount}
-            showHistory={!!history}
-            onToggle={(panel) =>
-              setActivePanel((p) => {
-                const next = p === panel ? null : panel;
-                // Leaving the History panel returns to the live editor.
-                if (p === 'history' && next !== 'history') exitVersionView();
-                return next;
-              })
-            }
-          />
-        )}
+        {editor &&
+          !preview &&
+          (sharedRail && envelopeId ? (
+            <div
+              aria-hidden='true'
+              css={{
+                flex: '0 0 auto',
+                width: PANEL_RAIL_WIDTH + (activePanel ? PANEL_WIDTH : 0)
+              }}
+            />
+          ) : (
+            <>
+              <DocumentPanel {...panelProps} />
+              <PanelRail {...railProps} />
+            </>
+          ))}
       </div>
       {restoring && (
         <div
@@ -1554,65 +1670,7 @@ function DocxEditor({
           auto-dismissed. Styled to match the Feathery dashboard toast: white
           surface, thin zinc border, dark text, fixed width. The tick sits at
           the far left (task-view style) while the copy stays centered. */}
-      {saveToast && (
-        <div
-          role='status'
-          aria-live={saveToast.type === 'error' ? 'assertive' : 'polite'}
-          css={{
-            position: 'absolute',
-            bottom: 40,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: 356,
-            maxWidth: 'calc(100% - 32px)',
-            boxSizing: 'border-box',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            textAlign: 'center',
-            padding: 12,
-            borderRadius: 6,
-            background: '#fff',
-            color: '#27272a',
-            border: '1px solid #e4e4e7',
-            fontSize: 14,
-            fontWeight: 400,
-            lineHeight: 1.4,
-            boxShadow:
-              '0 0 0 1px rgb(0 9 50 / 3%), 0 12px 32px -16px rgb(0 9 50 / 12%)',
-            zIndex: 20,
-            pointerEvents: 'none'
-          }}
-        >
-          {saveToast.type === 'success' && (
-            <CheckIcon
-              width={16}
-              height={16}
-              css={{
-                position: 'absolute',
-                left: 12,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: '#10b981'
-              }}
-            />
-          )}
-          {saveToast.type === 'error' && (
-            <CloseIcon
-              width={16}
-              height={16}
-              css={{
-                position: 'absolute',
-                left: 12,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: '#ef4444'
-              }}
-            />
-          )}
-          {saveToast.message}
-        </div>
-      )}
+      {saveToast && <DocumentToast {...saveToast} />}
     </div>
   );
 }
