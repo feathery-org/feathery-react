@@ -7,7 +7,8 @@ import {
   ColumnFilters,
   EMPTY_FILTER,
   filterRows,
-  isFilterActive
+  isFilterActive,
+  valueSearchTexts
 } from './columnFilters';
 
 /**
@@ -25,18 +26,23 @@ export type SpreadsheetFilters = {
   clearAll: () => void;
   /** The values a column's popover lists (see `candidateValues`). */
   candidates: (fieldKey: string) => string[];
+  /** Each listed value's search text, by `valueKey` (see `valueSearchTexts`). */
+  searchTexts: (fieldKey: string) => Map<string, string> | undefined;
 };
 
 type UseColumnFiltersOptions<R> = {
   rows: R[];
   columns: Column[];
   textOf: CellTextOf<R>;
+  /** What the text search matches beyond the displayed text; defaults to it. */
+  searchTextOf?: CellTextOf<R>;
 };
 
 export function useColumnFilters<R>({
   rows,
   columns,
-  textOf
+  textOf,
+  searchTextOf
 }: UseColumnFiltersOptions<R>) {
   const [stored, setStored] = useState<ColumnFilters>({});
 
@@ -50,8 +56,8 @@ export function useColumnFilters<R>({
   }, [stored, columns]);
 
   const visibleRows = useMemo(
-    () => filterRows(rows, filters, textOf),
-    [rows, filters, textOf]
+    () => filterRows(rows, filters, textOf, undefined, searchTextOf),
+    [rows, filters, textOf, searchTextOf]
   );
 
   const set = useCallback((fieldKey: string, filter: ColumnFilter) => {
@@ -75,9 +81,14 @@ export function useColumnFilters<R>({
       set,
       clear: (fieldKey) => set(fieldKey, EMPTY_FILTER),
       clearAll: () => setStored({}),
-      candidates: (fieldKey) => candidateValues(rows, fieldKey, filters, textOf)
+      candidates: (fieldKey) =>
+        candidateValues(rows, fieldKey, filters, textOf, searchTextOf),
+      searchTexts: (fieldKey) =>
+        searchTextOf
+          ? valueSearchTexts(rows, fieldKey, textOf, searchTextOf)
+          : undefined
     }),
-    [filters, rows, textOf, set]
+    [filters, rows, textOf, searchTextOf, set]
   );
 
   return { filters: api, visibleRows };

@@ -17,6 +17,7 @@ import {
   parseTsv,
   serializeTsv
 } from './model';
+import { matchChoice } from './fieldEditors';
 import type { SeedAction } from './fieldEditors';
 import { choiceRows } from './ChoiceMenu';
 import type { SpreadsheetTable } from './table';
@@ -77,7 +78,13 @@ type GridInteractionOptions = {
    * through a menu the grid drives from the keyboard, so focus never leaves.
    */
   choicesFor?: (fieldKey: string) => string[] | null;
+  /** Display names for those choices, index for index, when the column has them. */
+  choiceLabelsFor?: (fieldKey: string) => string[] | null;
 };
+
+// How long a pause ends a type-ahead run in a choice menu, as in a native
+// select: `c`,`a`,`l` in quick succession finds California, not Louisiana.
+const TYPEAHEAD_RESET_MS = 1000;
 
 export function useGridInteractions(options: GridInteractionOptions) {
   const {
@@ -94,9 +101,11 @@ export function useGridInteractions(options: GridInteractionOptions) {
     seedAction,
     isReadOnly,
     parseValue,
-    choicesFor
+    choicesFor,
+    choiceLabelsFor
   } = options;
   const [editing, setEditing] = React.useState<EditingCell | null>(null);
+  const typeahead = React.useRef({ text: '', at: 0 });
   const pendingRowFocus = React.useRef<{
     rowIndex: number;
     columnId: string;
@@ -714,17 +723,33 @@ export function useGridInteractions(options: GridInteractionOptions) {
         default: {
           if (event.metaKey || event.ctrlKey || event.altKey) return false;
           if (event.key.length !== 1) return false;
-          const prefix = event.key.toLowerCase();
-          const match = choices.find((choice) =>
-            choice.toLowerCase().startsWith(prefix)
-          );
+          // Keys typed in quick succession build one query, matched against
+          // the choice or its name; a key that extends nothing starts over.
+          const now = Date.now();
+          const run = typeahead.current;
+          const text =
+            now - run.at > TYPEAHEAD_RESET_MS
+              ? event.key
+              : `${run.text}${event.key}`;
+          typeahead.current = { text, at: now };
+          const labels = choiceLabelsFor?.(editing.columnId);
+          const match =
+            matchChoice(choices, labels, text) ??
+            matchChoice(choices, labels, event.key);
           if (match) setEditingDraft(match);
         }
       }
       event.preventDefault();
       return true;
     },
-    [cancelEditing, choicesFor, commitEditing, editing, setEditingDraft]
+    [
+      cancelEditing,
+      choiceLabelsFor,
+      choicesFor,
+      commitEditing,
+      editing,
+      setEditingDraft
+    ]
   );
 
   const handleGridKeyDown = React.useCallback(

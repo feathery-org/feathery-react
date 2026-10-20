@@ -492,6 +492,38 @@ export const cellEditorStyle = {
   WebkitUserSelect: 'text'
 } as const;
 
+// A formatted number's `$` / `%` while its raw value is edited. Drawn over
+// the input's padding (see CellEditor), above it and deaf to the pointer.
+export const cellEditorAdornmentStyle = (side: 'start' | 'end') =>
+  ({
+    position: 'absolute',
+    zIndex: 11,
+    top: 0,
+    bottom: 0,
+    [side === 'start' ? 'insetInlineStart' : 'insetInlineEnd']: `${
+      CELL_HORIZONTAL_PADDING / 2 + 1
+    }px`,
+    display: 'flex',
+    alignItems: 'center',
+    color: colors.gray500,
+    fontSize: `${FONT_SIZE}px`,
+    pointerEvents: 'none'
+  } as const);
+
+// The editor's padding widened past its adornments, so typing never runs
+// under a `$` or `%`.
+const ADORNMENT_GAP = 4;
+export const cellEditorAdornedPadding = (prefix: string, suffix: string) => {
+  const room = (affix: string) =>
+    `calc(${CELL_HORIZONTAL_PADDING / 2}px + ${
+      affix.length
+    }ch + ${ADORNMENT_GAP}px)`;
+  return {
+    ...(prefix ? { paddingInlineStart: room(prefix) } : {}),
+    ...(suffix ? { paddingInlineEnd: room(suffix) } : {})
+  };
+};
+
 // The menu under a dropdown cell. Inside the cell (so it scrolls with the
 // grid) and above the rows beneath, which the focused row's z-index allows.
 export const choiceMenuStyle = (above: boolean) =>

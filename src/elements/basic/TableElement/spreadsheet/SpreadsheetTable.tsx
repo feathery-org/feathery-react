@@ -11,8 +11,10 @@ import type { CellSelectionState } from '@tanstack/react-table';
 import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
 import {
+  choiceLabelsFor,
   choicesFor,
   editorKindFor,
+  cellSearchText,
   formatCellDisplay,
   parseCellInput,
   seedActionFor
@@ -162,8 +164,8 @@ export function SpreadsheetTable({
     [rows]
   );
 
-  // Column filters match what the cell shows, so a date column filters on the
-  // formatted date the user sees rather than the stored string.
+  // Column filters list what the cell shows, so a date column lists the
+  // formatted date the user sees; the text search also matches stored values.
   const cellText = useCallback(
     (row: SpreadsheetRow, fieldKey: string) =>
       formatCellDisplay(
@@ -172,10 +174,16 @@ export function SpreadsheetTable({
       ),
     [cellRules]
   );
+  const cellSearch = useCallback(
+    (row: SpreadsheetRow, fieldKey: string) =>
+      cellSearchText(row.cells[fieldKey] as CellValue, cellRules?.[fieldKey]),
+    [cellRules]
+  );
   const { filters, visibleRows } = useColumnFilters({
     rows,
     columns,
-    textOf: cellText
+    textOf: cellText,
+    searchTextOf: cellSearch
   });
 
   // Rows pinned to the top, in pin order. Kept as data order rather than as
@@ -309,6 +317,10 @@ export function SpreadsheetTable({
     (fieldKey: string) => choicesFor(cellRules?.[fieldKey]),
     [cellRules]
   );
+  const columnChoiceLabels = useCallback(
+    (fieldKey: string) => choiceLabelsFor(cellRules?.[fieldKey]),
+    [cellRules]
+  );
 
   // Failing cells in reading order — down the rows, left to right — grouped
   // by how much they matter: what holds the save back first, then the other
@@ -363,7 +375,8 @@ export function SpreadsheetTable({
     seedAction,
     isReadOnly,
     parseValue,
-    choicesFor: columnChoices
+    choicesFor: columnChoices,
+    choiceLabelsFor: columnChoiceLabels
   });
 
   const visibleRowIds = useMemo(

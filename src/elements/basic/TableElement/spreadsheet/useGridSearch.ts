@@ -2,7 +2,7 @@ import React from 'react';
 import type { Column } from '../types';
 import type { CellValue } from './model';
 import type { SpreadsheetRow } from './table';
-import { formatCellDisplay } from './fieldEditors';
+import { cellSearchText } from './fieldEditors';
 import type { CellRules } from './validation';
 
 type SearchMatch = {
@@ -18,7 +18,8 @@ const searchMatchKey = (rowIndex: number, fieldKey: string) =>
 
 type SearchableCell = SearchMatch & { text: string };
 
-/** Every cell's displayed (formatted) text, lowercased, in reading order.
+/** Every cell's search text (displayed and stored, see `cellSearchText`),
+ * lowercased, in reading order.
  * Built once per data change so a keystroke only scans strings. */
 export function indexCells(
   rows: SpreadsheetRow[],
@@ -32,7 +33,7 @@ export function indexCells(
         rowId: row.id,
         rowIndex: row.rowIndex,
         columnId: column.field_key,
-        text: formatCellDisplay(
+        text: cellSearchText(
           row.cells[column.field_key] as CellValue,
           cellRules?.[column.field_key]
         ).toLowerCase()

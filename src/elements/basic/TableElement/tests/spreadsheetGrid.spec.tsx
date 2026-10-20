@@ -616,6 +616,86 @@ describe('row insertion and deletion', () => {
     }
   );
 
+  describe('labelled choices', () => {
+    const labelledProps = (
+      overrides: Partial<React.ComponentProps<typeof SpreadsheetTable>> = {}
+    ) =>
+      dropdownProps({
+        cellRules: {
+          city_key: {
+            label: 'City',
+            type: 'text' as const,
+            format: 'us_state' as const,
+            options: ['CA', 'CO', 'NY'],
+            optionLabels: ['California', 'Colorado', 'New York']
+          }
+        },
+        ...overrides
+      });
+
+    beforeEach(() => {
+      Object.assign(fieldValues, { city_key: ['CA', 'CO', 'NY'] });
+    });
+
+    test('the menu reads code and name; the chip only the code', () => {
+      render(<SpreadsheetTable {...labelledProps()} />);
+      expect(cell('NY')).toBeInTheDocument();
+      fireEvent.doubleClick(cell('NY'));
+      expect(
+        within(screen.getByRole('listbox'))
+          .getAllByRole('option')
+          .map((row) => row.textContent)
+      ).toEqual([
+        '(empty)',
+        'CA · California',
+        'CO · Colorado',
+        'NY · New York'
+      ]);
+      expect(option('NY · New York')).toHaveAttribute('aria-selected', 'true');
+    });
+
+    test('type-ahead matches a code or a name, and picking stores the code', () => {
+      const onCellsEdit = jest.fn();
+      render(<SpreadsheetTable {...labelledProps({ onCellsEdit })} />);
+      fireEvent.doubleClick(cell('CA'));
+      ['c', 'o', 'l'].forEach((key) => fireEvent.keyDown(grid(), { key }));
+      // "col" is no code, but it starts Colorado.
+      expect(option('CO · Colorado')).toHaveAttribute('aria-selected', 'true');
+      fireEvent.keyDown(grid(), { key: 'Enter', shiftKey: true });
+      expect(onCellsEdit).toHaveBeenCalledWith([
+        { rowIndex: 0, fieldKey: 'city_key', value: 'CO' }
+      ]);
+    });
+
+    test('typing a name on a closed cell opens the menu on its code', () => {
+      render(<SpreadsheetTable {...labelledProps()} />);
+      fireEvent.mouseDown(cell('CA'));
+      fireEvent.keyDown(grid(), { key: 'n' });
+      expect(option('NY · New York')).toHaveAttribute('aria-selected', 'true');
+    });
+  });
+
+  test('a currency cell shows its format and edits the raw number beside a $', () => {
+    Object.assign(fieldValues, { age_key: [1234.5, 40, 50] });
+    render(
+      <SpreadsheetTable
+        {...dropdownProps({
+          cellRules: {
+            age_key: {
+              label: 'Age',
+              type: 'number' as const,
+              format: 'currency' as const
+            }
+          }
+        })}
+      />
+    );
+    fireEvent.doubleClick(cell('$1,234.50'));
+    const editor = screen.getByRole('textbox', { name: 'Edit Age row 1' });
+    expect(editor).toHaveValue('1234.5');
+    expect(editor.parentElement).toHaveTextContent('$');
+  });
+
   test('only pinning in the row menu, and no add strip, when adding and deleting are off', () => {
     renderTable({ add_delete_rows: false });
     openRowMenu(2);

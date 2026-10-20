@@ -287,3 +287,101 @@ describe('listChoices via option rules', () => {
     expect(validateCellValue('x', rule(['A', 'B', 'C']))).toBe('Must be A, B, or C');
   });
 });
+
+describe('hub field formats', () => {
+  test('a ZIP must be five digits or ZIP+4', () => {
+    const rule = {
+      label: 'ZIP',
+      type: 'text' as const,
+      format: 'us_zip' as const
+    };
+    const message = 'Must be a 5-digit ZIP or ZIP+4 (12345-6789)';
+    expect(validateCellValue('02134', rule)).toBeNull();
+    expect(validateCellValue('12345-6789', rule)).toBeNull();
+    expect(validateCellValue('1234', rule)).toBe(message);
+    expect(validateCellValue('12345 6789', rule)).toBe(message);
+    expect(validateCellValue('abcde', rule)).toBe(message);
+  });
+
+  test('states and countries fail with their own message, not the list', () => {
+    const state = {
+      label: 'State',
+      type: 'text' as const,
+      format: 'us_state' as const,
+      options: ['CA', 'NY', 'TX']
+    };
+    const country = {
+      label: 'Country',
+      type: 'text' as const,
+      format: 'country' as const,
+      options: ['US', 'CA']
+    };
+    expect(validateCellValue('CA', state)).toBeNull();
+    expect(validateCellValue('ca', state)).toBe(
+      'Must be a valid US state code'
+    );
+    expect(validateCellValue('US', country)).toBeNull();
+    expect(validateCellValue('XX', country)).toBe(
+      'Must be a valid country code'
+    );
+  });
+
+  test('formatted numbers keep the ordinary number checks', () => {
+    const rule = {
+      label: 'Price',
+      type: 'number' as const,
+      format: 'currency' as const,
+      decimalDigits: 2,
+      minValue: 0
+    };
+    expect(validateCellValue(12.5, rule)).toBeNull();
+    expect(validateCellValue(1.234, rule)).toBe('Up to 2 decimal places');
+    expect(validateCellValue(-1, rule)).toBe('Must be at least 0');
+    expect(validateCellValue('$5', rule)).toBe('Must be a number');
+  });
+
+  test('hub metadata carries the format, currency and option labels', () => {
+    const rules = hubCellRules(
+      [
+        { field_key: 'p', name: 'Price', hub_field_key: 'price' },
+        { field_key: 's', name: 'State', hub_field_key: 'state' },
+        { field_key: 'x', name: 'Odd', hub_field_key: 'odd' }
+      ],
+      [
+        {
+          key: 'price',
+          type: 'number',
+          metadata: { format: 'currency', currency: 'EUR' }
+        },
+        {
+          key: 'state',
+          type: 'text',
+          metadata: {
+            format: 'us_state',
+            options: ['CA', 'NY'],
+            option_labels: ['California', 'New York']
+          }
+        },
+        {
+          key: 'odd',
+          type: 'text',
+          // Mismatched labels and an unknown format are dropped.
+          metadata: {
+            format: 'emoji',
+            options: ['a', 'b'],
+            option_labels: ['A']
+          }
+        }
+      ]
+    );
+    expect(rules.p).toMatchObject({ format: 'currency', currency: 'EUR' });
+    expect(rules.s).toMatchObject({
+      format: 'us_state',
+      options: ['CA', 'NY'],
+      optionLabels: ['California', 'New York']
+    });
+    expect(rules.x.format).toBeUndefined();
+    expect(rules.x.optionLabels).toBeUndefined();
+    expect(rules.x.options).toEqual(['a', 'b']);
+  });
+});

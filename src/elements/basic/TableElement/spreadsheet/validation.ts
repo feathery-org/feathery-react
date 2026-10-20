@@ -33,6 +33,18 @@ export type CellValueType =
   | 'url'
   | 'uuid';
 
+/**
+ * A hub field's display/entry format (`metadata.format`). Number fields take
+ * `currency` / `percentage`; text fields take the rest. The value stored is
+ * the same either way — a plain number, or the code / ZIP text.
+ */
+export type CellFormat =
+  | 'currency'
+  | 'percentage'
+  | 'us_zip'
+  | 'us_state'
+  | 'country';
+
 export type CellRule = {
   /** Column name, used in messages. */
   label: string;
@@ -41,6 +53,14 @@ export type CellRule = {
   /** Checked against the other loaded rows only; the hub owns the real check. */
   unique?: boolean;
   options?: string[];
+  /**
+   * Display names for `options`, index for index (`CA` -> `California`).
+   * The hub expands these for `us_state` / `country` fields.
+   */
+  optionLabels?: string[];
+  format?: CellFormat;
+  /** ISO 4217 code for a `currency` format; USD when absent. */
+  currency?: string;
   minLength?: number;
   maxLength?: number;
   minValue?: number;
@@ -108,6 +128,14 @@ const UUID_PATTERN =
 // Exactly the hub's `_PHONE_RE`: digits only, no punctuation and no leading
 // `+`. Anything looser here shows a cell as clean that the hub then rejects.
 const PHONE_PATTERN = /^\d{7,15}$/;
+const ZIP_PATTERN = /^\d{5}(-\d{4})?$/;
+
+// A value outside a format's option set reads as what it should be, not as a
+// list of 50 or 249 codes.
+const FORMAT_OPTION_MESSAGES: Partial<Record<CellFormat, string>> = {
+  us_state: 'Must be a valid US state code',
+  country: 'Must be a valid country code'
+};
 
 function isEmpty(value: CellValue): boolean {
   return value === null || value === undefined || value === '';
@@ -189,8 +217,14 @@ export function validateCellValue(
 
   switch (rule.type) {
     case 'text':
+      if (rule.format === 'us_zip' && !ZIP_PATTERN.test(text)) {
+        return 'Must be a 5-digit ZIP or ZIP+4 (12345-6789)';
+      }
       if (rule.options?.length && !rule.options.includes(text)) {
-        return `Must be ${listChoices(rule.options)}`;
+        return (
+          (rule.format && FORMAT_OPTION_MESSAGES[rule.format]) ||
+          `Must be ${listChoices(rule.options)}`
+        );
       }
       if (rule.minLength != null && text.length < rule.minLength) {
         return `At least ${rule.minLength} characters`;
@@ -352,6 +386,14 @@ const HUB_TYPES: Record<string, CellValueType> = {
   uuid: 'uuid'
 };
 
+const FORMATS = new Set<CellFormat>([
+  'currency',
+  'percentage',
+  'us_zip',
+  'us_state',
+  'country'
+]);
+
 /**
  * Rules for Hub-backed columns, keyed by the synthetic storage key the grid
  * renders. `any` fields carry no client-checkable rule beyond required; `file`
@@ -377,12 +419,22 @@ export function hubCellRules(
       : undefined;
     if (!field) return;
     const metadata = field.metadata ?? {};
+    const options: string[] | undefined = metadata.options;
+    const labels: string[] | undefined = metadata.option_labels;
     rules[column.field_key] = {
       label: column.name,
       type: HUB_TYPES[field.type] ?? 'any',
       required: field.required,
       unique: field.unique,
-      options: metadata.options,
+      options,
+      // Labels only pair up with a list of the same length; anything else
+      // would put the wrong name next to a code.
+      optionLabels:
+        Array.isArray(labels) && labels.length === options?.length
+          ? labels
+          : undefined,
+      format: FORMATS.has(metadata.format) ? metadata.format : undefined,
+      currency: metadata.currency || undefined,
       minLength: metadata.min_length,
       maxLength: metadata.max_length,
       minValue: metadata.min_value,

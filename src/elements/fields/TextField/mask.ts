@@ -133,7 +133,7 @@ export function showsFormatInText(servar: any) {
  * The literal text a format wraps around the number. Returned unescaped —
  * callers building an imask pattern escape them for the mask grammar.
  */
-function getFormatAffixes(servar: any) {
+export function getFormatAffixes(servar: any) {
   const meta = servar?.metadata ?? {};
   switch (servar?.format) {
     case 'currency':
