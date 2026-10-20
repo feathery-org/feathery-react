@@ -92,6 +92,7 @@ export function unsupportedSwitches(code: string): string[] {
 const NEEDED = [
   'insertTableOfContents',
   'isHeadingStyle',
+  'isOutlineLevelStyle',
   'getTocSettings',
   'insertTocHyperlink',
   'insertTocPageNumber'
@@ -458,10 +459,17 @@ export function refreshTableOfContents(
   const hyperlink = module.insertTocHyperlink;
   const pageNumber = module.insertTocPageNumber;
   const headingStyle = module.isHeadingStyle;
+  const outlineLevelStyle = module.isOutlineLevelStyle;
   // a heading whose text is all pending deletion is gone once the change is accepted: no entry
   module.isHeadingStyle = function listed(paragraph: Obj) {
     return (
       headingStyle.call(module, paragraph) && !!headingText(paragraph).trim()
+    );
+  };
+  module.isOutlineLevelStyle = function listedLevel(paragraph: Obj) {
+    return (
+      outlineLevelStyle.call(module, paragraph) &&
+      !!headingText(paragraph).trim()
     );
   };
   // an entry's text span: the heading as accepted (not its pending deletions beside its
@@ -526,6 +534,7 @@ export function refreshTableOfContents(
     module.insertTocHyperlink = hyperlink;
     module.insertTocPageNumber = pageNumber;
     module.isHeadingStyle = headingStyle;
+    module.isOutlineLevelStyle = outlineLevelStyle;
     // a rebuild that threw leaves its undo group open and the editor thinking it is still
     // rebuilding: close it into the change's group and let the editor go on
     closeUndoGroups(editor, depth);
