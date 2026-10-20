@@ -1225,6 +1225,27 @@ export default class IntegrationClient {
     );
   }
 
+  // Upload a file the filler attaches in the review viewer. Resolves to the
+  // viewer document entry; finalize then takes its envelope id like any other.
+  async uploadReviewAttachment(file: File) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('form_key', this.formKey);
+    // Omitted when unset: the backend rejects a blank key.
+    if (userId) formData.append('fuser_key', userId);
+    formData.append('file', file, file.name);
+    const url = `${getApiUrl()}document/form/attachment/`;
+    const response = await this._fetch(
+      url,
+      { method: 'POST', body: formData, keepalive: false },
+      false
+    );
+    if (!response) throw new Error('Upload failed');
+    const data = await response.json();
+    if (!response.ok) throw new Error(parseAPIError(data));
+    return data;
+  }
+
   FINALIZE_CHECK_INTERVAL = 2000;
   FINALIZE_MAX_TIME = 3 * 60 * 1000;
 

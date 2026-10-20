@@ -77,21 +77,46 @@ const TOOLBAR_ACTION_ENVELOPE_ACTION: Record<
   draft: 'sign'
 };
 
+/** `items` with the entry at `from` moved to `to`; out-of-range is a no-op. */
+export const moveItem = <T,>(items: T[], from: number, to: number): T[] => {
+  const inRange = (i: number) => i >= 0 && i < items.length;
+  if (from === to || !inRange(from) || !inRange(to)) return items;
+  const next = items.filter((_, i) => i !== from);
+  next.splice(to, 0, items[from]);
+  return next;
+};
+
 const MAX_PAGE_WIDTH = 900;
 const CONTAINER_PADDING = 48;
 const VIEWER_TITLE = 'Review Your Forms';
 
-/** One entry of the review payload's `documents` array, exactly as the
- * backend's build_envelope_viewer_payload emits it. */
+/** One entry of the review payload's `documents` array, as the backend's
+ * build_envelope_viewer_payload emits it, or an attachment the filler added
+ * (build_attachment_viewer_document). */
 export interface ViewerDocument {
-  type: 'form';
-  pdf_url: string;
+  type: 'form' | 'attachment';
+  // Absent for an attachment the viewer can't render: it shows as a file card.
+  pdf_url?: string;
   // The id finalize acts on.
   envelope_id?: string;
   // The filler's own signing token, present only when they sign this one.
   signer_id?: string | null;
   name?: string;
+  // Attachments only.
+  file_url?: string;
+  file_name?: string;
+  size?: number;
 }
+
+/** The URL a document's pages (or its single file card) are keyed by. */
+export const documentUrl = (doc: ViewerDocument) =>
+  doc.pdf_url ?? doc.file_url ?? '';
+
+/** Pages a document occupies in the viewer: a file card counts as one. */
+export const documentPageCount = (
+  doc: ViewerDocument,
+  pageCounts: Record<string, number>
+) => (doc.pdf_url ? pageCounts[doc.pdf_url] ?? 0 : 1);
 
 export interface DocumentViewerPayload {
   documents: ViewerDocument[];
@@ -113,6 +138,9 @@ interface DocumentViewerProps {
     // DocuSign sign only: save the envelope as a draft instead of sending it.
     draft: boolean;
   }) => Promise<{ status?: string; message?: string } | void>;
+  // Upload a file the filler attaches (`editor_allow_attachments`), resolving
+  // to its viewer entry. Absent = attaching is off whatever the action says.
+  onUploadAttachment?: (file: File) => Promise<ViewerDocument>;
   // Persist a PDF the filler edited in the viewer back to its envelope.
   // Called before finalize for every document with unsaved field edits, so
   // whatever outcome finalize runs (download, sign, ...) acts on the edited
@@ -126,6 +154,7 @@ export default function DocumentViewer({
   setShow,
   onComplete,
   onFinalize,
+  onUploadAttachment,
   onSaveEnvelopeFile
 }: DocumentViewerProps) {
   const loadedDocs = useRef<Record<string, any>>({});
@@ -155,6 +184,11 @@ export default function DocumentViewer({
   // A read-only editor shows the documents without the live form layer:
   // nothing is editable, so nothing dirties and nothing is saved back.
   const readOnly = !!action.editor_read_only;
+  // The filler may add attachments and reorder the packet; finalize acts on
+  // `documents` in the order shown.
+  const canEditPacket =
+    !!action.editor_allow_attachments && !!onUploadAttachment;
+  const [documents, setDocuments] = useState(payload.documents);
   // Read by the once-bound Escape handler, which must see the live value.
   const busyKeyRef = useRef(busyKey);
   busyKeyRef.current = busyKey;
@@ -170,14 +204,14 @@ export default function DocumentViewer({
 
   const pageEntries = useMemo(
     () =>
-      payload.documents.flatMap((doc) =>
-        Array.from({ length: pageCounts[doc.pdf_url] ?? 0 }, (_, i) => ({
-          pdfUrl: doc.pdf_url,
+      documents.flatMap((doc) =>
+        Array.from({ length: documentPageCount(doc, pageCounts) }, (_, i) => ({
+          pdfUrl: documentUrl(doc),
           pageIndex: i,
-          key: pageKey(doc.pdf_url, i)
+          key: pageKey(documentUrl(doc), i)
         }))
       ),
-    [payload.documents, pageCounts]
+    [documents, pageCounts]
   );
   const pageOrder = useMemo(() => pageEntries.map((p) => p.key), [pageEntries]);
   const { activeKey, observePage } = useActivePage(
@@ -272,13 +306,13 @@ export default function DocumentViewer({
     // once and always calls the latest setShow.
   }, []);
 
-  // The envelopes finalize acts on: every reviewed form document, in order.
-  // Read straight off the payload rather than out of the rendered PDFs;
-  // edited field values are persisted separately (saveEditedDocuments) before
-  // finalize runs.
+  // The envelopes finalize acts on: every reviewed document and attachment,
+  // in the order shown. Read off the document list rather than out of the
+  // rendered PDFs; edited field values are persisted separately
+  // (saveEditedDocuments) before finalize runs.
   const reviewedEnvelopes = useMemo(
     () =>
-      payload.documents
+      documents
         .filter((doc) => doc.envelope_id)
         // The signer id comes back only for a document the filler signs
         // themselves. Finalize needs it to open that one inline instead of
@@ -287,7 +321,7 @@ export default function DocumentViewer({
           envelopeId: doc.envelope_id as string,
           signerId: doc.signer_id ?? undefined
         })),
-    [payload.documents]
+    [documents]
   );
 
   // Documents with field edits not yet saved to their envelope. Tracked via
@@ -313,8 +347,13 @@ export default function DocumentViewer({
   // modified flag, which clears the doc from dirtyDocs via onResetModified.
   const saveEditedDocuments = async () => {
     if (!onSaveEnvelopeFile || readOnly) return;
-    for (const doc of payload.documents) {
-      if (!doc.envelope_id || !dirtyDocs.current.has(doc.pdf_url)) continue;
+    for (const doc of documents) {
+      if (
+        !doc.envelope_id ||
+        !doc.pdf_url ||
+        !dirtyDocs.current.has(doc.pdf_url)
+      )
+        continue;
       const pdfProxy = loadedDocs.current[doc.pdf_url];
       if (!pdfProxy) continue;
       try {
@@ -351,6 +390,33 @@ export default function DocumentViewer({
     ).matches;
     el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
   }, []);
+
+  // Uploads hold the toolbar (via busyKey) so finalize can't run without them.
+  const addAttachments = async (files: File[]) => {
+    if (!onUploadAttachment || !files.length) return;
+    setBusyKey('attachment');
+    setError('');
+    // Each file stands alone: one failing doesn't drop the rest.
+    const failures: string[] = [];
+    for (const file of files) {
+      try {
+        const attachment = await onUploadAttachment(file);
+        setDocuments((prev) => [...prev, attachment]);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : 'Upload failed';
+        failures.push(`${file.name}: ${reason}`);
+      }
+    }
+    if (failures.length) setError(`Couldn't attach ${failures.join('; ')}`);
+    setBusyKey(null);
+  };
+
+  const moveDocument = (from: number, to: number) =>
+    setDocuments((prev) => moveItem(prev, from, to));
+
+  // The upload's envelope is left behind; finalize prunes unsent ones.
+  const removeAttachment = (index: number) =>
+    setDocuments((prev) => prev.filter((_, i) => i !== index));
 
   // The toolbar is configured on the action: `editor_toolbar_actions` lists
   // which outcomes the filler may choose. Each button finalizes with its own
@@ -450,19 +516,29 @@ export default function DocumentViewer({
       {error && <AlertBanner message={error} onDismiss={() => setError('')} />}
       <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <ViewerSidebar
-          documents={payload.documents}
+          documents={documents}
           pageCounts={pageCounts}
           pdfProxies={loadedDocs.current}
           activeKey={activeKey}
           onNavigate={onNavigate}
           isNarrow={isNarrow}
+          packetEditor={
+            canEditPacket
+              ? {
+                  disabled: busyKey !== null,
+                  onAddFiles: addAttachments,
+                  onMove: moveDocument,
+                  onRemove: removeAttachment
+                }
+              : undefined
+          }
         />
         <div
           ref={scrollContainerRef}
           css={{ flex: 1, overflow: 'auto', padding: 24 }}
         >
           <DocumentCanvas
-            documents={payload.documents}
+            documents={documents}
             pageWidth={pageWidth}
             onDocLoad={onDocLoad}
             registerPageRef={registerPageRef}
