@@ -4,6 +4,7 @@ import { authState } from '../LoginForm';
 import { getUrlHash, setUrlStepHash } from '../../utils/stepHelperFunctions';
 import { getAuthIntegrationMetadata, hasAuthGatedSteps } from './utils';
 import { initState } from '../../utils/init';
+import { STEP_EVENT_SUBMIT } from '../../utils/stepEvents';
 
 const useFormAuth = ({
   initialStep,
@@ -42,7 +43,7 @@ const useFormAuth = ({
         // This is only guaranteed to happen for OAuth - both magic link & SMS have potential to set completed via goToNewStep
         client.registerEvent({
           step_key: initialStep,
-          event: 'complete'
+          event: STEP_EVENT_SUBMIT
         });
         const redirect = initState.redirectCallbacks[_internalId];
         if (redirect) redirect();
@@ -50,17 +51,10 @@ const useFormAuth = ({
     }
   }, [authState.redirectAfterLogin, steps, integrations, authState.authId]);
 
-  // This hook is needed to prevent a bug on localhost. Cookies can't be
-  // distinguished by port and stytch uses cookie to expose JWT. So, if one is
-  // logged into the dashboard locally and tries to load a form with local
-  // hosted forms, the form sees the JWT for dashboard and will set the full
-  // page loader. Unfortunately, integration info is not available at that time
-  // so we can't prevent the loader from being set for this edge case. Instead
-  // we need to wait until integrations have been loaded and clear the loader if
-  // there are no auth integrations.
+  // The loader is set on mount from URL/cookie hints, before integration info
+  // is available. Once integrations load, clear it if the form has no auth
+  // integration so a stray hint can't leave the page stuck on the loader.
   useEffect(() => {
-    // We can't just check to see if there is no stytch because that would
-    // improperly clear the loaders when stytch isn't configured but firebase is
     const metadata = getAuthIntegrationMetadata(integrations);
     if (authState.redirectAfterLogin && integrations && !metadata) {
       authState.redirectAfterLogin = false;

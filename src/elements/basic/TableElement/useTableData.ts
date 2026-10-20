@@ -143,8 +143,17 @@ type UseTableDataReturn = {
 
   // Handlers
   handleSort: (columnName: string) => void;
+  /** Sets the sort outright; `null` clears it. */
+  setSort: (columnName: string | null, direction?: 'asc' | 'desc') => void;
   handleTransposedSort: (rowIndex: number) => void;
 };
+
+/**
+ * What a sort is keyed by. The storage key is unique per column where a display
+ * name is not; a column without one falls back to its position.
+ */
+export const columnSortKey = (fieldKey: string, index: number): string =>
+  fieldKey || `#${index}`;
 
 export function useTableData({
   element,
@@ -197,6 +206,7 @@ export function useTableData({
 
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Keyed by `columnSortKey`, not display name: two columns may share a name.
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
@@ -370,7 +380,9 @@ export function useTableData({
 
     if (!enableSort || !sortColumn) return filteredRowIndices;
 
-    const column = columns.find((col) => col.name === sortColumn);
+    const column = columns.find(
+      (col, index) => columnSortKey(col.field_key, index) === sortColumn
+    );
 
     if (!column) return filteredRowIndices;
 
@@ -458,10 +470,19 @@ export function useTableData({
     }
   }, [totalPages]);
 
-  const handleSort = (columnName: string) => {
+  const setSort = (
+    columnKey: string | null,
+    direction: 'asc' | 'desc' = 'asc'
+  ) => {
+    if (!enableSort) return;
+    setSortColumn(columnKey);
+    setSortDirection(direction);
+  };
+
+  const handleSort = (columnKey: string) => {
     if (!enableSort) return;
 
-    if (sortColumn === columnName) {
+    if (sortColumn === columnKey) {
       // Cycle through: asc → desc → none
       if (sortDirection === 'asc') {
         setSortDirection('desc');
@@ -470,7 +491,7 @@ export function useTableData({
         setSortDirection('asc');
       }
     } else {
-      setSortColumn(columnName);
+      setSortColumn(columnKey);
       setSortDirection('asc');
     }
   };
@@ -509,6 +530,7 @@ export function useTableData({
     sortDirection,
     sortedColumnIndex,
     handleSort,
+    setSort,
     handleTransposedSort,
 
     enablePagination,

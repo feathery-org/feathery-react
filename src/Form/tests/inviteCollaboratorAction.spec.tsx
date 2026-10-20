@@ -97,6 +97,27 @@ describe('invite_collaborator action', () => {
     expect(ClientMod._spies.inviteCollaborator).not.toHaveBeenCalled();
   });
 
+  // A role mapped to a default user group has no email field configured in
+  // the builder, so the action carries no email_field_key. The backend
+  // resolves the role's default invitees, so the button must still call it
+  // instead of failing closed on an empty invitee list.
+  it('calls through with no invitees when the role has no email field configured', async () => {
+    GridMod._spies.actions = [
+      { type: 'invite_collaborator', template_id: 't1' }
+    ];
+
+    render(<JSForm formId='f1' _internalId='iid-invite-no-field' />);
+    await clickTrigger();
+
+    await waitFor(() =>
+      expect(ClientMod._spies.inviteCollaborator).toHaveBeenCalled()
+    );
+    expect(invitees()).toEqual([]);
+    expect(FormHelperMod.setFormElementError).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Collaborators required' })
+    );
+  });
+
   it('stops the action chain when there is nobody to invite', async () => {
     (fieldValues as any)[INVITEE_KEY] = [''];
     GridMod._spies.actions = [

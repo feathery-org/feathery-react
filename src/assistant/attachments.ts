@@ -2,12 +2,13 @@ import type { FileUIPart } from 'ai';
 import { Chat } from '@ai-sdk/react';
 import { featheryDoc } from '../utils/browser';
 import { AssistantHeaders, withFormKey } from './utils';
+import { withLinkRequestHeaders } from '../utils/accessLinkRequest';
 
-export const MAX_DIMENSION = 1568;
+const MAX_DIMENSION = 1568;
 export const MAX_FILE_SIZE = 25 * 1024 * 1024;
 export const MAX_ATTACHMENTS = 5;
 
-export const IMAGE_MEDIA_TYPES = new Set([
+const IMAGE_MEDIA_TYPES = new Set([
   'image/png',
   'image/jpeg',
   'image/gif',
@@ -16,7 +17,7 @@ export const IMAGE_MEDIA_TYPES = new Set([
 
 // Mirrors MEDIA_TYPE_TO_EXTENSION on the ai-services side
 // (src/modules/robin/attachment/mediaTypes.ts), keep in sync
-export const DOC_MEDIA_TYPES = new Set([
+const DOC_MEDIA_TYPES = new Set([
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -91,7 +92,7 @@ export interface AssistantAttachment {
 
 // Attachment endpoints are the /agent/attachment/ sibling of the chat base,
 // same origin (threadsBase precedent in utils.ts)
-export const attachmentBase = (baseUrl: string) =>
+const attachmentBase = (baseUrl: string) =>
   new URL('/agent/attachment/', baseUrl).href;
 
 // The thread id doubles as the attachment session key (builder convention:
@@ -137,7 +138,7 @@ export async function compressImage(file: File): Promise<File> {
   }
 }
 
-export type UploadedAttachment = {
+type UploadedAttachment = {
   id: string;
   url: string;
   filename: string;
@@ -156,12 +157,16 @@ export async function uploadAttachment(
 ): Promise<UploadedAttachment> {
   const form = new FormData();
   form.append('file', file);
-  const response = await fetch(withFormKey(attachmentBase(baseUrl), formKey), {
-    method: 'POST',
-    headers: { ...headers(), 'X-Session-ID': sessionId },
-    body: form,
-    signal
-  });
+  const url = withFormKey(attachmentBase(baseUrl), formKey);
+  const response = await fetch(
+    url,
+    withLinkRequestHeaders(url, {
+      method: 'POST',
+      headers: { ...headers(), 'X-Session-ID': sessionId },
+      body: form,
+      signal
+    })
+  );
   if (!response.ok) {
     let message = `Upload failed (${response.status})`;
     try {
@@ -209,18 +214,21 @@ export async function pollAttachmentStatus(
   formKey?: string
 ): Promise<UploadedAttachment> {
   const id = encodeURIComponent(attachmentId);
+  const url = withFormKey(`${attachmentBase(baseUrl)}${id}/url/`, formKey);
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   // eslint-disable-next-line no-constant-condition
   while (true) {
     let resp: Response | null = null;
     try {
+      // Wrapped per poll rather than once: a link redeemed mid-upload hands
+      // back the device secret the later polls have to send.
       resp = await fetch(
-        withFormKey(`${attachmentBase(baseUrl)}${id}/url/`, formKey),
-        {
+        url,
+        withLinkRequestHeaders(url, {
           method: 'GET',
           headers: { ...headers(), 'X-Session-ID': sessionId },
           signal
-        }
+        })
       );
     } catch (err) {
       // Network blips retry until the deadline, aborts exit the loop

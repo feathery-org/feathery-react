@@ -1,6 +1,12 @@
 import React from 'react';
 import { SvgSlide } from '../ui/SlideStage';
-import { act, mountEditor, sampleBytes, type Mounted } from './harness';
+import {
+  act,
+  mountEditor,
+  sampleBytes,
+  fixtureBytes,
+  type Mounted
+} from './harness';
 
 let mounted: Mounted | null = null;
 
@@ -47,9 +53,12 @@ it('opens a z-ordering menu on right-click and brings a shape to front', async (
   const labels = Array.from(host.querySelectorAll('button'))
     .map((b) => b.textContent)
     .filter((t) =>
-      ['Bring to front', 'Bring forward', 'Send backward', 'Send to back'].includes(
-        t || ''
-      )
+      [
+        'Bring to front',
+        'Bring forward',
+        'Send backward',
+        'Send to back'
+      ].includes(t || '')
     );
   expect(labels).toEqual([
     'Bring to front',
@@ -78,4 +87,57 @@ it('right-clicking empty space opens no menu', async () => {
     (b) => b.textContent === 'Bring to front'
   );
   expect(hasMenu).toBe(false);
+});
+
+it('ungroups the RACI diagram into editable text boxes and supports undo', async () => {
+  mounted = await mountEditor(<SvgSlide />);
+  const { host, store } = mounted;
+  await act(async () =>
+    store.loadFile(fixtureBytes('template1-text-group.pptx'), 'template.pptx')
+  );
+  await act(async () => store.setActiveSlide(1));
+  const slide = store.getState().deck!.slides[1];
+  const group = slide.shapes.find((shape) => shape.type === 'group')!;
+  await rightClick(
+    Array.from(host.querySelectorAll('[data-source-run]')).find(
+      (node) => node.textContent === 'Responsible'
+    )!
+  );
+  const ungroup = Array.from(host.querySelectorAll('button')).find(
+    (b) => b.textContent === 'Ungroup'
+  );
+  expect(ungroup).toBeTruthy();
+  await act(async () => ungroup!.click());
+  expect(
+    store
+      .getState()
+      .deck!.slides[1].shapes.some((shape) => shape.id === group.id)
+  ).toBe(false);
+  const responsible = store
+    .getState()
+    .deck!.slides[1].shapes.find(
+      (shape) => shape.text?.paragraphs[0].runs[0]?.text === 'Responsible'
+    )!;
+  expect(responsible).toBeTruthy();
+  await act(async () =>
+    host
+      .querySelector(`[data-shape-id="${responsible.id}"] [data-textbody]`)!
+      .dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  );
+  expect(host.querySelector('[contenteditable="true"]')).toBeTruthy();
+  await act(async () =>
+    host
+      .querySelector('[contenteditable="true"]')!
+      .dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+      )
+  );
+  await act(async () => store.undo());
+  expect(
+    store
+      .getState()
+      .deck!.slides[1].shapes.some(
+        (shape) => shape.id === group.id && shape.type === 'group'
+      )
+  ).toBe(true);
 });

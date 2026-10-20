@@ -1,6 +1,6 @@
+import React from 'react';
 import { isObjectEmpty } from './primitives';
 import FeatherySpinner from '../elements/components/Spinner';
-import React from 'react';
 
 export default class CallbackQueue {
   awaiting: any;

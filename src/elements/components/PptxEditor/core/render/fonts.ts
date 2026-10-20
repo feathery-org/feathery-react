@@ -2,6 +2,7 @@ import { featheryDoc } from '../../../../../utils/browser';
 import { themeFonts } from '../model/theme';
 import { resolveListProps } from '../model/resolve';
 import type { Deck } from '../model/types';
+import { embeddedFontFamily, loadEmbeddedFonts } from './embeddedFonts';
 
 // A trailing weight word is a style, not part of the family name: Google serves
 // one family with a weight axis (e.g. "DM Sans Medium" = DM Sans @ 500).
@@ -57,9 +58,12 @@ export const substituteFamily = (family: string): string | undefined =>
 
 /** CSS family list for a resolved PowerPoint face: the face itself, its metric
  * clone when one exists, then the generic fallbacks. */
-export function cssFamilyList(family: string): string {
+export function cssFamilyList(family: string, deck?: Deck): string {
   const sub = substituteFamily(family);
-  return `'${family}',${sub ? `'${sub}',` : ''}Helvetica,Arial,sans-serif`;
+  const embedded = embeddedFontFamily(deck, family);
+  return `${embedded ? `'${embedded}',` : ''}'${family}',${
+    sub ? `'${sub}',` : ''
+  }Helvetica,Arial,sans-serif`;
 }
 
 // Em ratio of the web font's ascent above cap height beyond PowerPoint's
@@ -69,6 +73,10 @@ const topLeadingCache = new Map<string, number>();
 // First-render measurements run before injected webfonts finish loading, so
 // they capture fallback metrics; flush them (and re-render) once fonts settle.
 const fontSettleListeners = new Set<() => void>();
+function notifyFontsSettled(): void {
+  topLeadingCache.clear();
+  fontSettleListeners.forEach((listener) => listener());
+}
 let fontSettleArmed = false;
 function armFontSettle(): void {
   if (fontSettleArmed) return;
@@ -76,8 +84,7 @@ function armFontSettle(): void {
   if (!fonts?.addEventListener) return;
   fontSettleArmed = true;
   fonts.addEventListener('loadingdone', () => {
-    topLeadingCache.clear();
-    fontSettleListeners.forEach((listener) => listener());
+    notifyFontsSettled();
   });
 }
 
@@ -88,8 +95,13 @@ export function onFontMetricsSettled(listener: () => void): () => void {
   return () => fontSettleListeners.delete(listener);
 }
 
-export function excessTopLeadingRatio(family: string, weight: number): number {
-  const key = `${family}|${weight}`;
+export function excessTopLeadingRatio(
+  family: string,
+  weight: number,
+  deck?: Deck
+): number {
+  const stack = cssFamilyList(family, deck);
+  const key = `${stack}|${weight}`;
   const cached = topLeadingCache.get(key);
   if (cached !== undefined) return cached;
   let ratio = 0;
@@ -99,7 +111,7 @@ export function excessTopLeadingRatio(family: string, weight: number): number {
       const EM = 100;
       // Measure through the same stack the text renders with, so a metric
       // clone (Carlito for Calibri) is what gets measured once it loads.
-      ctx.font = `${weight} ${EM}px ${cssFamilyList(family)}`;
+      ctx.font = `${weight} ${EM}px ${stack}`;
       const metrics = ctx.measureText('Hg');
       const ascent = metrics.fontBoundingBoxAscent;
       const descent = metrics.fontBoundingBoxDescent;
@@ -197,7 +209,7 @@ const injected = new Set<string>();
 
 // Inject Google Fonts <link>s per family the deck uses; an unknown family
 // just fails its stylesheet load, so this never blocks rendering.
-export function ensureDeckFontsLoaded(deck: Deck): void {
+export async function ensureDeckFontsLoaded(deck: Deck): Promise<void> {
   let doc: Document;
   try {
     doc = featheryDoc();
@@ -206,16 +218,27 @@ export function ensureDeckFontsLoaded(deck: Deck): void {
   }
   armFontSettle();
   if (!doc?.head) return;
-  for (const [family, weights] of collectFamilyWeights(deck)) {
-    if (injected.has(family)) continue;
-    injected.add(family);
-    if (doc.querySelector(`link[data-pptx-font="${family}"]`)) continue;
-    for (const italic of [false, true]) {
-      const link = doc.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = googleFontHref(family, [...weights], italic);
-      link.dataset.pptxFont = family;
-      doc.head.appendChild(link);
+  const embeddedReady = loadEmbeddedFonts(
+    deck,
+    splitFontWeight,
+    notifyFontsSettled
+  );
+  const injectWebFonts = () => {
+    for (const [family, weights] of collectFamilyWeights(deck)) {
+      if (embeddedFontFamily(deck, family)) continue;
+      if (injected.has(family)) continue;
+      injected.add(family);
+      if (doc.querySelector(`link[data-pptx-font="${family}"]`)) continue;
+      for (const italic of [false, true]) {
+        const link = doc.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = googleFontHref(family, [...weights], italic);
+        link.dataset.pptxFont = family;
+        doc.head.appendChild(link);
+      }
     }
-  }
+  };
+  injectWebFonts();
+  await embeddedReady;
+  injectWebFonts();
 }

@@ -1,5 +1,6 @@
 import { findCountryByID } from '../elements/components/data/countries';
 import { formatDateString } from '../elements/fields/DateSelectorField/utils';
+import { LINK_TOKEN_PARAM } from './accessLink';
 import { featheryWindow } from './browser';
 import Field from './entities/Field';
 import FeatheryClient from './featheryClient';
@@ -7,6 +8,8 @@ import { getVisibleElements } from './hideAndRepeats';
 import { toBase64 } from './image';
 import { fieldValues } from './init';
 import { isObjectEmpty } from './primitives';
+import { registerOptionLabels } from './optionLabels';
+import { isAsciiTextField, normalizeAsciiValue } from './ascii';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -147,7 +150,14 @@ export function isValidFieldIdentifier(str: string) {
   );
 }
 
-export function getDefaultFieldValue(field: any) {
+export function getDefaultFieldValue(field: any, asciiOnly = false) {
+  const value = getRawDefaultFieldValue(field);
+  return asciiOnly && isAsciiTextField(field.servar.type)
+    ? normalizeAsciiValue(value)
+    : value;
+}
+
+function getRawDefaultFieldValue(field: any) {
   const servar = field.servar;
   const meta = servar.metadata;
   if (meta.default_value) {
@@ -250,12 +260,12 @@ export function stripEmptyRepeatEntries(value: any[], servar?: any) {
   return value.filter((v) => ![null, undefined].includes(v));
 }
 
-export function getDefaultFormFieldValue(field: any) {
+export function getDefaultFormFieldValue(field: any, asciiOnly = false) {
   // Default value is null for file_upload, but value should always be an
   // array regardless if repeated or not
   if (field.servar.type === 'file_upload') return [];
 
-  const val = getDefaultFieldValue(field);
+  const val = getDefaultFieldValue(field, asciiOnly);
   return field.servar.repeated ? [val] : val;
 }
 
@@ -293,6 +303,11 @@ export function updateStepFieldOptions(
           servar.metadata.repeat_options[repeatIndex] = options;
         }
       }
+      // Options just changed, so the labels text variables resolve against have
+      // to change with them. This is the single choke point for dynamic options
+      // (Salesforce sync and the public setFieldOptions), which is why the
+      // registry is keyed on options rather than on values.
+      registerOptionLabels(servar, field.properties);
     }
   });
 }
@@ -492,7 +507,7 @@ export function castHiddenVal(hfType: string, val: any) {
   return newVal;
 }
 
-export function getServarAttrMap(steps: any) {
+function getServarAttrMap(steps: any) {
   const servarKeyToTypeMap: Record<
     string,
     { type: string; repeated: boolean }
@@ -543,7 +558,8 @@ export function saveInitialValuesAndUrlParams({
   const params = new URLSearchParams(featheryWindow().location.search);
   if (saveUrlParams) {
     params.forEach((value, key) => {
-      if (key === '_slug') return;
+      // The access link token is a credential, not submitted data
+      if (['_slug', LINK_TOKEN_PARAM].includes(key)) return;
       valuesToSubmit[key] = value;
     });
   }

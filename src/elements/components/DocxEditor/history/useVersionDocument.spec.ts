@@ -1,0 +1,888 @@
+import { renderHook, waitFor } from '@testing-library/react';
+
+import {
+  __clearVersionDocumentCache,
+  LiveVersionDocument,
+  clearLocalVersionArtifacts,
+  prefetchVersionDocuments,
+  registerLocalVersionArtifacts,
+  retainVersionDocuments,
+  useVersionDocument
+} from './useVersionDocument';
+import { DocxHistoryHost, DocxVersion } from './types';
+import { contentHash, diffSession, normalizeForDiff } from './sfdtDiff';
+
+const must = <T>(value: T | null | undefined): T => {
+  if (value == null) throw new Error('Expected a value');
+  return value;
+};
+
+const version = (over: Partial<DocxVersion>): DocxVersion =>
+  ({
+    id: 'v1',
+    session_id: 's1',
+    seq: 1,
+    is_baseline: false,
+    is_current: false,
+    name: '',
+    started_at: '',
+    ended_at: '',
+    closed_at: '',
+    authors: [],
+    actor_label: '',
+    actor_name: '',
+    restored_from: null,
+    restored_from_at: null,
+    editor_file: null,
+    file: null,
+    final_sfdt: null,
+    changes: null,
+    change_count: null,
+    format_change_count: null,
+    final_sha256: '',
+    highlights_pruned_at: null,
+    created_at: '',
+    ...over
+  } as DocxVersion);
+
+const bytes = () => new TextEncoder().encode('docx').buffer;
+
+const host = (over: Partial<DocxHistoryHost> = {}): DocxHistoryHost => ({
+  listVersions: jest.fn(),
+  closeVersion: jest.fn(),
+  fetchVersionFile: jest.fn(),
+  restoreVersion: jest.fn(),
+  renameVersion: jest.fn(),
+  ...over
+});
+
+describe('useVersionDocument', () => {
+  it('does not refetch Current when only row object identity and signatures change', async () => {
+    const h = host({
+      fetchVersionFile: jest
+        .fn()
+        .mockResolvedValue(new TextEncoder().encode('{}').buffer)
+    });
+    const row = version({
+      is_current: true,
+      final_sfdt: 'https://files.test/current?signature=one'
+    });
+    const view = renderHook(({ selected }) => useVersionDocument(h, selected), {
+      initialProps: { selected: row }
+    });
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    view.rerender({
+      selected: {
+        ...row,
+        final_sfdt: 'https://files.test/current?signature=two'
+      }
+    });
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases one editor’s cache without clearing another editor’s versions', async () => {
+    const bytes = new TextEncoder().encode('{}').buffer;
+    const first = host({
+      fetchVersionFile: jest.fn().mockResolvedValue(bytes)
+    });
+    const second = host({
+      fetchVersionFile: jest.fn().mockResolvedValue(bytes)
+    });
+    const releaseFirst = retainVersionDocuments(first);
+    const releaseSecond = retainVersionDocuments(second);
+    const row = version({ final_sfdt: 'file' });
+    await prefetchVersionDocuments(first, [row]);
+    await prefetchVersionDocuments(second, [row]);
+    releaseFirst();
+    await prefetchVersionDocuments(first, [row]);
+    await prefetchVersionDocuments(second, [row]);
+    expect(first.fetchVersionFile).toHaveBeenCalledTimes(2);
+    expect(second.fetchVersionFile).toHaveBeenCalledTimes(1);
+    releaseSecond();
+  });
+
+  it('does not retain a single preview larger than the byte budget', async () => {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({ text: 'x'.repeat(9 * 1024 * 1024) })
+    ).buffer;
+    const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(bytes) });
+    const row = version({ final_sfdt: 'large' });
+    await prefetchVersionDocuments(h, [row]);
+    await prefetchVersionDocuments(h, [row]);
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(2);
+  });
+  it('refreshes an expired artifact URL once through the version detail endpoint', async () => {
+    const stale = version({ final_sfdt: 'expired' });
+    const getVersion = jest
+      .fn()
+      .mockResolvedValue({ ...stale, final_sfdt: 'fresh' });
+    const fetchVersionFile = jest
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Expired'), { status: 403 })
+      )
+      .mockResolvedValue(new TextEncoder().encode('{"sfdt":"fresh"}').buffer);
+    const h = host({ getVersion, fetchVersionFile });
+    const { result } = renderHook(() => useVersionDocument(h, stale));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.sfdt).toBe('{"sfdt":"fresh"}');
+    expect(getVersion).toHaveBeenCalledTimes(1);
+    expect(fetchVersionFile).toHaveBeenLastCalledWith('fresh');
+  });
+  // Resolved versions are cached module-wide; clear it so each case starts from
+  // a real fetch rather than a prior case's result.
+  beforeEach(() => __clearVersionDocumentCache());
+
+  // The host and version MUST be stable identities across renders — the hook
+  // keys its fetch effect on them. Create them once per test, never inside the
+  // renderHook callback (that would re-fetch every render, an infinite loop).
+  it('fetches and inflates the final SFDT when present', async () => {
+    const sfdt = '{"sfdt":"hello"}';
+    const fetchVersionFile = jest
+      .fn()
+      .mockResolvedValue(new TextEncoder().encode(sfdt).buffer);
+    const h = host({ fetchVersionFile });
+    const ver = version({ final_sfdt: 'u' });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(fetchVersionFile).toHaveBeenCalledWith('u');
+    expect(result.current.sfdt).toBe(sfdt);
+    expect(result.current.error).toBe(false);
+  });
+
+  it('serves a re-opened version from cache without re-fetching', async () => {
+    const sfdt = '{"sfdt":"cached"}';
+    const fetchVersionFile = jest
+      .fn()
+      .mockResolvedValue(new TextEncoder().encode(sfdt).buffer);
+    const h = host({ fetchVersionFile });
+    const ver = version({ id: 'cachial', final_sfdt: 'u' });
+
+    const first = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    expect(fetchVersionFile).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    // Re-opening the same version resolves from cache — no second fetch.
+    const second = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
+    expect(second.result.current.sfdt).toBe(sfdt);
+    expect(fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('warms immutable previews before they are selected', async () => {
+    const fetchVersionFile = jest
+      .fn()
+      .mockResolvedValue(new TextEncoder().encode('{"sfdt":"warm"}').buffer);
+    const h = host({ fetchVersionFile });
+    const ver = version({ id: 'warm', final_sfdt: 'warm-file' });
+
+    await prefetchVersionDocuments(h, [ver]);
+    const selected = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(selected.result.current.loading).toBe(false));
+    expect(selected.result.current.sfdt).toBe('{"sfdt":"warm"}');
+    expect(fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reuse an artifact cache entry after a same-id payload refresh', async () => {
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(new TextEncoder().encode(`{"sfdt":"${url}"}`).buffer)
+    );
+    const h = host({ fetchVersionFile });
+    const firstVersion = version({ id: 'refreshed', final_sfdt: 'first' });
+    const first = renderHook(() => useVersionDocument(h, firstVersion));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    first.unmount();
+
+    const refreshed = version({ id: 'refreshed', final_sfdt: 'second' });
+    const second = renderHook(() => useVersionDocument(h, refreshed));
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
+    expect(second.result.current.sfdt).toContain('second');
+    expect(fetchVersionFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-fetches a Current row when its saved document changes at the same id', async () => {
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(new TextEncoder().encode(`{"sfdt":"${url}"}`).buffer)
+    );
+    const h = host({ fetchVersionFile });
+    const checkpoint = version({ is_current: true, final_sfdt: 'checkpoint' });
+    const first = renderHook(() => useVersionDocument(h, checkpoint));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    expect(first.result.current.sfdt).toContain('checkpoint');
+    first.unmount();
+
+    const saved = version({ is_current: true, final_sfdt: 'closed' });
+    const closed = renderHook(() => useVersionDocument(h, saved));
+    await waitFor(() => expect(closed.result.current.loading).toBe(false));
+    expect(closed.result.current.sfdt).toContain('closed');
+    expect(fetchVersionFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to the version’s docx URL when there is no final SFDT', async () => {
+    const h = host();
+    const ver = version({ editor_file: 'editor.docx', file: 'public.docx' });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    // The control-bearing editor copy is preferred.
+    expect(result.current.docxUrl).toBe('editor.docx');
+    expect(result.current.sfdt).toBeUndefined();
+  });
+
+  it('reports an error when a version has no document at all', async () => {
+    const h = host();
+    const ver = version({});
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe(true);
+  });
+
+  it('reports an error when the fetch fails', async () => {
+    const fetchVersionFile = jest.fn().mockRejectedValue(new Error('network'));
+    const h = host({ fetchVersionFile });
+    const ver = version({ final_sfdt: 'u' });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe(true);
+  });
+
+  const buf = (s: string) => new TextEncoder().encode(s).buffer;
+  const FINAL = JSON.stringify({
+    sections: [{ blocks: [{ inlines: [{ text: 'hi' }] }] }]
+  });
+
+  it('applies hunks and reports highlights available when a change list is present', async () => {
+    const changes = JSON.stringify({
+      v: 1,
+      sessionId: 's',
+      final_sha256: '',
+      // A real inline insertion over "hi" (sections[0].blocks[0], offset 0..2).
+      hunks: [
+        {
+          id: 1,
+          author: 'you',
+          type: 'ins',
+          at: { block: [0, 'blocks', 0], offset: 0, length: 2 }
+        }
+      ],
+      changeCount: 2,
+      formatChangeCount: 1,
+      authors: ['you'],
+      confirmed: true
+    });
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(buf(url === 'chg' ? changes : FINAL))
+    );
+    const h = host({ fetchVersionFile });
+    const ver = version({ final_sfdt: 'fin', changes: 'chg', change_count: 2 });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.degraded).toBe(false);
+    // editCount counts EDIT GROUPS in the display document (one hunk here),
+    // not the stored changeCount — a replace or a whole Robin turn counts once.
+    expect(result.current.editCount).toBe(1);
+    expect(result.current.formatCount).toBe(1);
+    expect(result.current.approvedCount).toBe(1);
+    expect(result.current.sfdt).toContain('sections');
+    // The applied hunk produced a synthetic revision to render.
+    expect(result.current.sfdt).toContain('revisionId');
+  });
+
+  it('degrades to the plain document when the change list has no hunks', async () => {
+    const changes = JSON.stringify({
+      v: 1,
+      sessionId: 's',
+      final_sha256: '',
+      hunks: [],
+      changeCount: 0,
+      formatChangeCount: 0,
+      authors: ['you']
+    });
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(buf(url === 'chg' ? changes : FINAL))
+    );
+    const h = host({ fetchVersionFile });
+    const ver = version({ final_sfdt: 'fin', changes: 'chg', change_count: 0 });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    // No hunks → nothing to highlight → plain, degraded view (not a false
+    // "highlights on" that paints nothing).
+    expect(result.current.degraded).toBe(true);
+    expect(result.current.sfdt).toContain('sections');
+  });
+
+  it('degrades to the plain document on a change-list hash mismatch', async () => {
+    const changes = JSON.stringify({
+      v: 1,
+      sessionId: 's',
+      final_sha256: 'AAA',
+      hunks: [],
+      changeCount: 1,
+      formatChangeCount: 0,
+      authors: ['you']
+    });
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(buf(url === 'chg' ? changes : FINAL))
+    );
+    const h = host({ fetchVersionFile });
+    const ver = version({
+      final_sfdt: 'fin',
+      changes: 'chg',
+      change_count: 1,
+      final_sha256: 'BBB' // != the change list's hash
+    });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.degraded).toBe(true);
+    expect(result.current.sfdt).toBe(FINAL);
+  });
+
+  it('checks the fetched document itself even when metadata hashes agree', async () => {
+    const original = JSON.parse(FINAL);
+    const changes = diffSession(
+      { sections: [] },
+      [{ sfdt: original, author: 'robin' }],
+      's'
+    );
+    const different = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'Different document' }] }] }]
+    });
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(buf(url === 'chg' ? JSON.stringify(changes) : different))
+    );
+    const h = host({ fetchVersionFile });
+    const ver = version({
+      final_sfdt: 'fin',
+      changes: 'chg',
+      change_count: 1,
+      final_sha256: contentHash(normalizeForDiff(original))
+    });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.degraded).toBe(true);
+    expect(result.current.sfdt).toBe(different);
+    expect(result.current.editCount).toBeUndefined();
+  });
+
+  it('retries a temporarily unavailable change list when a version is reopened', async () => {
+    const changes = diffSession(
+      { sections: [] },
+      [{ sfdt: JSON.parse(FINAL), author: 'you' }],
+      's'
+    );
+    let fail = true;
+    const fetchVersionFile = jest.fn((url: string) =>
+      url === 'chg' && fail
+        ? Promise.reject(new Error('temporary failure'))
+        : Promise.resolve(buf(url === 'chg' ? JSON.stringify(changes) : FINAL))
+    );
+    const h = host({ fetchVersionFile });
+    const ver = version({ final_sfdt: 'fin', changes: 'chg', change_count: 1 });
+    const first = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    expect(first.result.current.degraded).toBe(true);
+    first.unmount();
+    fail = false;
+    const second = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
+    expect(second.result.current.degraded).toBe(false);
+  });
+
+  it('uses the local closing snapshot even if the row already has older checkpoint artifacts', async () => {
+    const ver = version({
+      session_id: 'local-close',
+      final_sfdt: 'older-final',
+      changes: 'older-changes',
+      change_count: 1
+    });
+    const final = JSON.parse(FINAL);
+    const changes = diffSession(
+      { sections: [] },
+      [{ sfdt: final, author: 'you' }],
+      'local-close'
+    );
+    registerLocalVersionArtifacts('local-close', { finalSfdt: FINAL, changes });
+    const h = host();
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe(false);
+    expect(result.current.degraded).toBe(false);
+    expect(h.fetchVersionFile).not.toHaveBeenCalled();
+  });
+
+  it('shows every folded session, each in its own author', async () => {
+    const text = (t: string) => ({
+      sections: [{ blocks: [{ inlines: [{ text: t }] }] }]
+    });
+    const close = (sessionId: string, from: string, to: string) =>
+      registerLocalVersionArtifacts(sessionId, {
+        finalSfdt: JSON.stringify(text(to)),
+        changes: diffSession(
+          text(from),
+          [{ sfdt: text(to), author: 'you' }],
+          sessionId
+        )
+      });
+    close('fold-a', 'Hello', 'Hello Alice');
+    close('fold-b', 'Hello Alice', 'Hello Alice and Bob');
+    const baseline = version({
+      id: 'v0',
+      session_id: null,
+      seq: 0,
+      is_baseline: true,
+      file: 'original.docx'
+    });
+    const alice = version({
+      id: 'va',
+      session_id: 'fold-a',
+      seq: 1,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'alice@x.io'
+    });
+    const bob = version({
+      id: 'vb',
+      session_id: 'fold-b',
+      seq: 2,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'bob@x.io'
+    });
+    const authorsOf = (sfdt?: string) =>
+      Array.from(
+        new Set(JSON.parse(must(sfdt)).revisions.map((r: any) => r.author))
+      ).sort();
+    const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(bytes()) });
+    const convert = jest.fn().mockResolvedValue(text('Hello'));
+
+    const folded = renderHook(() =>
+      useVersionDocument(
+        h,
+        bob,
+        { earlier: [alice], preceding: baseline },
+        convert
+      )
+    );
+    await waitFor(() => expect(folded.result.current.loading).toBe(false));
+    expect(folded.result.current.degraded).toBe(false);
+    expect(authorsOf(folded.result.current.sfdt)).toEqual([
+      'alice@x.io',
+      'bob@x.io'
+    ]);
+
+    expect(h.fetchVersionFile).toHaveBeenCalledWith('original.docx');
+    expect(convert).toHaveBeenCalledTimes(1);
+
+    const alone = renderHook(() => useVersionDocument(h, bob));
+    await waitFor(() => expect(alone.result.current.loading).toBe(false));
+    expect(authorsOf(alone.result.current.sfdt)).toEqual(['you']);
+    clearLocalVersionArtifacts('fold-a', JSON.stringify(text('Hello Alice')));
+    clearLocalVersionArtifacts(
+      'fold-b',
+      JSON.stringify(text('Hello Alice and Bob'))
+    );
+  });
+
+  it.each(['missing snapshot', 'mixed live authors'])(
+    'preserves the live preview when a group falls back because of %s',
+    async (reason) => {
+      const h = host({
+        fetchVersionFile: jest.fn().mockRejectedValue(new Error('unavailable'))
+      });
+      const live: LiveVersionDocument = {
+        loading: false,
+        error: false,
+        degraded: false,
+        sfdt: '{"unsaved":"latest"}',
+        editCount: 1,
+        session: {
+          sessionId: 'live',
+          finalSfdt: '{}',
+          authors:
+            reason === 'mixed live authors'
+              ? [
+                  { kind: 'user', key: 'you', label: 'You' },
+                  { kind: 'assistant', key: 'robin', label: 'Robin' }
+                ]
+              : [{ kind: 'user', key: 'you', label: 'You' }]
+        }
+      };
+      const row = version({
+        id: 'live',
+        session_id: 'live',
+        seq: 2,
+        is_current: true,
+        final_sfdt: 'stale',
+        authors: []
+      });
+      const folded = {
+        earlier: [version({ id: 'prior', seq: 1 })],
+        preceding: null
+      };
+      const { result, rerender } = renderHook(
+        ({ preview }) => useVersionDocument(h, row, folded, undefined, preview),
+        { initialProps: { preview: live } }
+      );
+      await waitFor(() => expect(result.current.sfdt).toBe(live.sfdt));
+      // Opening Current again must resolve a newer live preview even though
+      // the server's version key and checkpoint have not changed.
+      const newer = { ...live, sfdt: '{"unsaved":"newer"}' };
+      rerender({ preview: newer });
+      await waitFor(() => expect(result.current.sfdt).toBe(newer.sfdt));
+      expect(h.fetchVersionFile).not.toHaveBeenCalled();
+    }
+  );
+
+  it('opens the row on its own when a folded session mixes a person and Robin', async () => {
+    const text = (t: string) => ({
+      sections: [{ blocks: [{ inlines: [{ text: t }] }] }]
+    });
+    const close = (sessionId: string, from: string, to: string) =>
+      registerLocalVersionArtifacts(sessionId, {
+        finalSfdt: JSON.stringify(text(to)),
+        changes: diffSession(
+          text(from),
+          [{ sfdt: text(to), author: 'you' }],
+          sessionId
+        )
+      });
+    close('mix-a', 'Hello', 'Hello Alice');
+    close('mix-b', 'Hello Alice', 'Hello Alice and Bob');
+    const mixed = version({
+      id: 'ma',
+      session_id: 'mix-a',
+      seq: 1,
+      authors: [
+        { kind: 'user', label: 'You' },
+        { kind: 'assistant', label: 'Robin' }
+      ],
+      actor_label: 'alice@x.io'
+    });
+    const head = version({
+      id: 'mb',
+      session_id: 'mix-b',
+      seq: 2,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'bob@x.io'
+    });
+
+    const h = host();
+    const { result } = renderHook(() =>
+      useVersionDocument(h, head, { earlier: [mixed], preceding: null })
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const authors = JSON.parse(must(result.current.sfdt)).revisions.map(
+      (r: any) => r.author
+    );
+    expect(Array.from(new Set(authors))).toEqual(['you']);
+    clearLocalVersionArtifacts('mix-a', JSON.stringify(text('Hello Alice')));
+    clearLocalVersionArtifacts(
+      'mix-b',
+      JSON.stringify(text('Hello Alice and Bob'))
+    );
+  });
+
+  it('counts the approved Robin edits of every folded session', async () => {
+    const text = (t: string) => ({
+      sections: [{ blocks: [{ inlines: [{ text: t }] }] }]
+    });
+    const accepted = diffSession(
+      text('Hello'),
+      [{ sfdt: text('Hello Robin'), author: 'robin' }],
+      'ok-a'
+    );
+    accepted.confirmed = true;
+    registerLocalVersionArtifacts('ok-a', {
+      finalSfdt: JSON.stringify(text('Hello Robin')),
+      changes: accepted
+    });
+    registerLocalVersionArtifacts('ok-b', {
+      finalSfdt: JSON.stringify(text('Hello Robin and Bob')),
+      changes: diffSession(
+        text('Hello Robin'),
+        [{ sfdt: text('Hello Robin and Bob'), author: 'you' }],
+        'ok-b'
+      )
+    });
+    const robin = version({
+      id: 'oa',
+      session_id: 'ok-a',
+      seq: 1,
+      authors: [{ kind: 'assistant', label: 'Robin' }]
+    });
+    const bob = version({
+      id: 'ob',
+      session_id: 'ok-b',
+      seq: 2,
+      authors: [{ kind: 'user', label: 'You' }],
+      actor_label: 'bob@x.io'
+    });
+
+    const original = version({
+      id: 'o0',
+      session_id: null,
+      seq: 0,
+      is_baseline: true,
+      file: 'original.docx'
+    });
+    const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(bytes()) });
+    const { result } = renderHook(() =>
+      useVersionDocument(
+        h,
+        bob,
+        { earlier: [robin], preceding: original },
+        jest.fn().mockResolvedValue(text('Hello'))
+      )
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.degraded).toBe(false);
+    expect(result.current.approvedCount).toBe(1);
+    clearLocalVersionArtifacts('ok-a', JSON.stringify(text('Hello Robin')));
+    clearLocalVersionArtifacts(
+      'ok-b',
+      JSON.stringify(text('Hello Robin and Bob'))
+    );
+  });
+
+  describe('a folded group right after the original upload', () => {
+    const text = (...inlines: any[]) => ({
+      sections: [{ blocks: [{ inlines }] }]
+    });
+    const bold = { text: 'Hello', characterFormat: { bold: true } };
+    const original = version({
+      id: 'up0',
+      session_id: null,
+      seq: 0,
+      is_baseline: true,
+      file: 'original.docx'
+    });
+    const person = (id: string, seq: number, label: string) =>
+      version({
+        id,
+        session_id: id,
+        seq,
+        authors: [{ kind: 'user', label: 'You' }],
+        actor_label: label
+      });
+    const alice = person('up-a', 1, 'alice@x.io');
+    const bob = person('up-b', 2, 'bob@x.io');
+
+    beforeEach(() => {
+      // Alice bolds "Hello"; Bob then adds a word.
+      registerLocalVersionArtifacts('up-a', {
+        finalSfdt: JSON.stringify(text(bold)),
+        changes: diffSession(
+          text({ text: 'Hello' }),
+          [{ sfdt: text(bold), author: 'you' }],
+          'up-a'
+        )
+      });
+      registerLocalVersionArtifacts('up-b', {
+        finalSfdt: JSON.stringify(text(bold, { text: ' world' })),
+        changes: diffSession(
+          text(bold),
+          [{ sfdt: text(bold, { text: ' world' }), author: 'you' }],
+          'up-b'
+        )
+      });
+    });
+    afterEach(() => __clearVersionDocumentCache());
+
+    const open = (h: DocxHistoryHost, convert?: jest.Mock) =>
+      renderHook(() =>
+        useVersionDocument(
+          h,
+          bob,
+          { earlier: [alice], preceding: original },
+          convert
+        )
+      );
+
+    it('keeps the oldest session’s formatting edit a formatting change', async () => {
+      const h = host({
+        fetchVersionFile: jest.fn().mockResolvedValue(bytes())
+      });
+      const convert = jest.fn().mockResolvedValue(text({ text: 'Hello' }));
+
+      const { result } = open(h, convert);
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(result.current.degraded).toBe(false);
+      expect(result.current.formatCount).toBe(1);
+      // The bar counts both stops the steppers visit.
+      expect(result.current.editCount).toBe(2);
+      // "Hello" was already there, so Alice's edit reads as formatting.
+      const display = JSON.parse(must(result.current.sfdt));
+      const authorById = new Map(
+        display.revisions.map((r: any) => [r.revisionId, r.author])
+      );
+      const runs = display.sections[0].blocks[0].inlines.map((i: any) => [
+        i.text,
+        authorById.get(i.revisionIds?.[0])
+      ]);
+      expect(runs).toEqual([
+        ['Hello', 'fmt:alice@x.io'],
+        [' world', 'bob@x.io']
+      ]);
+    });
+
+    it('converts the original once across reopens', async () => {
+      const h = host({
+        fetchVersionFile: jest.fn().mockResolvedValue(bytes())
+      });
+      const convert = jest.fn().mockResolvedValue(text({ text: 'Hello' }));
+
+      const first = open(h, convert);
+      await waitFor(() => expect(first.result.current.loading).toBe(false));
+      const second = open(h, convert);
+      await waitFor(() => expect(second.result.current.loading).toBe(false));
+
+      expect(convert).toHaveBeenCalledTimes(1);
+      expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['the conversion fails', jest.fn().mockRejectedValue(new Error('x'))],
+      ['no converter is available', undefined]
+    ])('shows the newest session alone when %s', async (_why, convert) => {
+      const h = host({
+        fetchVersionFile: jest.fn().mockResolvedValue(bytes())
+      });
+
+      const { result } = open(h, convert as jest.Mock | undefined);
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(result.current.error).toBe(false);
+      const authors = JSON.parse(must(result.current.sfdt)).revisions.map(
+        (r: any) => r.author
+      );
+      expect(Array.from(new Set(authors))).toEqual(['you']);
+    });
+  });
+
+  it('falls back to the row version when a folded session has no snapshot', async () => {
+    const h = host({ fetchVersionFile: jest.fn() });
+    const lost = version({ id: 'lost', session_id: 'lost', seq: 1 });
+    const own = version({ id: 'own', seq: 2, file: 'own.docx' });
+    const { result } = renderHook(() =>
+      useVersionDocument(h, own, { earlier: [lost], preceding: null })
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe(false);
+    expect(result.current.docxUrl).toBe('own.docx');
+  });
+
+  it('moves native tracked-row marks onto cell content in the plain view', async () => {
+    // A restored version's SFDT can carry a live tracked table insert. Row-level
+    // marks paint a wash across whole rows; the plain view must repaint them as
+    // cell-content marks like a regular version.
+    const finalSfdt = JSON.stringify({
+      sections: [
+        {
+          blocks: [
+            {
+              tableFormat: {},
+              rows: [
+                {
+                  rowFormat: { revisionIds: ['sync-1'] },
+                  cells: [
+                    {
+                      cellFormat: {},
+                      blocks: [{ inlines: [{ text: 'Cell text' }] }]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      revisions: [
+        {
+          revisionId: 'sync-1',
+          revisionType: 'Insertion',
+          author: 'Robin',
+          customData: JSON.stringify({ source: 'robin', group: 'g1' })
+        }
+      ]
+    });
+    const fetchVersionFile = jest
+      .fn()
+      .mockResolvedValue(new TextEncoder().encode(finalSfdt).buffer);
+    const h = host({ fetchVersionFile });
+    const ver = version({ final_sfdt: 'restored' });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const doc = JSON.parse(must(result.current.sfdt));
+    const tableRow = doc.sections[0].blocks[0].rows[0];
+    expect(tableRow.rowFormat.revisionIds).toBeUndefined();
+    const cellPara = tableRow.cells[0].blocks[0];
+    expect(cellPara.inlines[0].revisionIds).toEqual(['sync-1']);
+    expect(cellPara.characterFormat.revisionIds).toContain('sync-1');
+    // The revision record itself survives, so the renderer still colors it.
+    expect(doc.revisions[0].revisionId).toBe('sync-1');
+  });
+
+  // A close whose artifact upload is deferred (restore) or still in flight has
+  // no final_sfdt on the backend row yet. The registered in-memory snapshot
+  // must serve the viewer instead of the raw control-bearing docx fallback.
+  it('serves registered local artifacts instead of the docx fallback', async () => {
+    const changes = {
+      v: 1,
+      sessionId: 's1',
+      final_sha256: '',
+      hunks: [
+        {
+          id: 1,
+          author: 'you',
+          type: 'ins',
+          at: { block: [0, 'blocks', 0], offset: 0, length: 2 }
+        }
+      ],
+      changeCount: 1,
+      formatChangeCount: 0,
+      authors: ['you']
+    } as any;
+    registerLocalVersionArtifacts('s1', { finalSfdt: FINAL, changes });
+    const h = host();
+    const ver = version({ editor_file: 'editor.docx', file: 'public.docx' });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.docxUrl).toBeUndefined();
+    expect(result.current.degraded).toBe(false);
+    expect(result.current.sfdt).toContain('revisionId');
+    expect(h.fetchVersionFile).not.toHaveBeenCalled();
+  });
+
+  it('outranks a cached degraded prefetch and clears only a matching snapshot', async () => {
+    const h = host();
+    const ver = version({ editor_file: 'editor.docx' });
+    // Prefetch caches the degraded docx fallback before the close registers.
+    await prefetchVersionDocuments(h, [ver]);
+    registerLocalVersionArtifacts('s1', { finalSfdt: FINAL });
+
+    const local = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(local.result.current.loading).toBe(false));
+    expect(local.result.current.sfdt).toBe(FINAL);
+    local.unmount();
+
+    // A different snapshot's clear (an older checkpoint completing) is ignored.
+    clearLocalVersionArtifacts('s1', '{"other":1}');
+    const kept = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(kept.result.current.loading).toBe(false));
+    expect(kept.result.current.sfdt).toBe(FINAL);
+    kept.unmount();
+
+    // The matching clear (this close's upload landed) releases it: the row is
+    // resolved normally again (here, back to its docx fallback).
+    clearLocalVersionArtifacts('s1', FINAL);
+    const released = renderHook(() => useVersionDocument(h, ver));
+    await waitFor(() => expect(released.result.current.loading).toBe(false));
+    expect(released.result.current.docxUrl).toBe('editor.docx');
+  });
+});

@@ -171,3 +171,41 @@ describe('canRunAction', () => {
     });
   });
 });
+
+describe('canRunAction document review rules', () => {
+  const STEP_ID = 'step-1';
+  const reviewRule = (reviewActions?: string[]) => ({
+    trigger_event: 'document_review',
+    steps: [],
+    elements: [],
+    metadata: reviewActions ? { review_actions: reviewActions } : {}
+  });
+  const props = (action: string) => ({
+    trigger: { id: '', type: 'document_review', action }
+  });
+
+  it('runs for every toolbar action when no filter is set', () => {
+    for (const action of ['sign', 'draft', 'download', 'save', 'fill']) {
+      expect(
+        canRunAction(reviewRule(), STEP_ID, props(action), undefined)
+      ).toBe(true);
+      expect(
+        canRunAction(reviewRule([]), STEP_ID, props(action), undefined)
+      ).toBe(true);
+    }
+  });
+
+  it('runs only for the configured actions', () => {
+    const rule = reviewRule(['sign', 'draft']);
+    expect(canRunAction(rule, STEP_ID, props('sign'), undefined)).toBe(true);
+    expect(canRunAction(rule, STEP_ID, props('draft'), undefined)).toBe(true);
+    expect(canRunAction(rule, STEP_ID, props('download'), undefined)).toBe(
+      false
+    );
+  });
+
+  it('tolerates a rule saved without metadata', () => {
+    const rule = { trigger_event: 'document_review', steps: [], elements: [] };
+    expect(canRunAction(rule, STEP_ID, props('save'), undefined)).toBe(true);
+  });
+});

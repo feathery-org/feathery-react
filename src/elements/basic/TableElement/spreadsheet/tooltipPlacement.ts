@@ -1,7 +1,7 @@
 /** Breathing room left between the bubble and the edge of the window. */
-export const TOOLTIP_MARGIN = 8;
+const TOOLTIP_MARGIN = 8;
 
-export type TooltipPlacementInput = {
+type TooltipPlacementInput = {
   /** The owning cell's position in the viewport. */
   cellTop: number;
   cellBottom: number;
@@ -9,7 +9,7 @@ export type TooltipPlacementInput = {
   viewportHeight: number;
 };
 
-export type TooltipPlacement = {
+type TooltipPlacement = {
   /** Render above the cell rather than below it. */
   above: boolean;
   /** Pixels to scroll the page by so cell and bubble are both readable. */

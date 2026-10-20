@@ -25,6 +25,10 @@ import {
   listRevisionGroups,
   resolveLiveRevisionGroupsAsOneUndo
 } from '../../../../../utils/documentEditorPrimitives';
+import { installRevisionHighlightRendering } from '../../../../../elements/components/DocxEditor/useDocxEditor';
+import { colorForRevisionAuthor } from '../../../../../elements/components/DocxEditor/history/authorColors';
+import { versionPreviewHarness } from './versionPreviewHarness';
+import { historyReviewHarness } from './historyReviewHarness';
 
 declare const __SYNCFUSION_LICENSE_KEY__: string;
 
@@ -142,7 +146,13 @@ function inventoryEntryHolding(find: string) {
 }
 
 const api = {
-  async open(sfdt: string, headerRowsHint = 1): Promise<void> {
+  ...versionPreviewHarness,
+  ...historyReviewHarness,
+  async open(
+    sfdt: string,
+    headerRowsHint = 1,
+    convertTokensOnOpen = false
+  ): Promise<void> {
     void headerRowsHint;
     api.close();
     (globalThis as any).__featheryDocumentEditTraceLog = [];
@@ -171,7 +181,7 @@ const api = {
     await frame();
     await frame();
     attached = attachBindings(instance as unknown as SyncfusionEditorLike, {
-      convertTokensOnOpen: false
+      convertTokensOnOpen
     });
     await frame();
   },
@@ -298,7 +308,57 @@ const api = {
     return String((instance.selection as any).characterFormat?.fontColor ?? '');
   },
 
+  resolvedRunLook(find: string): {
+    fontFamily?: string;
+    bold?: boolean;
+    fontSize?: number;
+  } {
+    const entry = api.inventory().find((candidate) => candidate.text === find);
+    if (!entry)
+      throw new Error(`no inventory entry reads ${JSON.stringify(find)}`);
+    // Interior characters only, so a content control's boundary markers at
+    // either end never make the selection read as mixed formatting.
+    const instance = live();
+    instance.selection.select(
+      `${entry.anchor};1`,
+      `${entry.anchor};${Math.max(1, entry.text.length - 1)}`
+    );
+    const format: any = (instance.selection as any).characterFormat;
+    return {
+      fontFamily: format?.fontFamily,
+      bold: format?.bold,
+      fontSize: format?.fontSize
+    };
+  },
+
   serialize: (): string => live().serialize(),
+
+  async verifyHistoryRenderer(): Promise<boolean> {
+    const instance = live() as any;
+    installRevisionHighlightRendering(instance, colorForRevisionAuthor);
+    const renderer = instance.documentHelper.render;
+    const check = renderer.checkRevisionType;
+    instance.showRevisions = true;
+    instance.resize();
+    await frame();
+    await frame();
+    return renderer.checkRevisionType === check;
+  },
+
+  async observeHistoryEdit(text: string): Promise<string[]> {
+    const snapshots: string[] = [];
+    const instance = live();
+    const changed = () => snapshots.push(instance.serialize());
+    instance.addEventListener('contentChange', changed);
+    try {
+      instance.selection.moveToDocumentEnd();
+      instance.editor.insertText(text);
+      await frame();
+      return snapshots;
+    } finally {
+      instance.removeEventListener('contentChange', changed);
+    }
+  },
 
   formulaValues: (): Record<string, string> => {
     const out: Record<string, string> = {};

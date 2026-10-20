@@ -60,7 +60,7 @@ export const TOOLTIP_TRIGGER_INSET = 10;
 // chevron, and the chips stop this much further in, so a full row can never
 // slide under the glyph. The defaults compose the same way -- 10 + 18 is the
 // 28px inset an untouched multiselect always had.
-export const MULTISELECT_CHEVRON_CLEARANCE =
+const MULTISELECT_CHEVRON_CLEARANCE =
   MULTISELECT_CHEVRON_RESERVE - DEFAULT_CHEVRON_GAP;
 
 // The same strip for a single dropdown: its value stops at the reserved inline
@@ -101,12 +101,12 @@ export const inputBoxAttrs = (type: string) =>
 // file_upload dropzone, button_group buttons) and horizontal_align /
 // vertical_align are pinned to center/center by level_2 `field` for every
 // field, so neither could ever express "unset" here.
-export const INNER_PADDING_TOP = 'inner_padding_top';
+const INNER_PADDING_TOP = 'inner_padding_top';
 export const INNER_PADDING_RIGHT = 'inner_padding_right';
-export const INNER_PADDING_BOTTOM = 'inner_padding_bottom';
+const INNER_PADDING_BOTTOM = 'inner_padding_bottom';
 export const INNER_PADDING_LEFT = 'inner_padding_left';
-export const CONTENT_HORIZONTAL_ALIGN = 'content_horizontal_align';
-export const CONTENT_VERTICAL_ALIGN = 'content_vertical_align';
+const CONTENT_HORIZONTAL_ALIGN = 'content_horizontal_align';
+const CONTENT_VERTICAL_ALIGN = 'content_vertical_align';
 
 export const INNER_PADDING_KEYS = [
   INNER_PADDING_TOP,
@@ -437,13 +437,6 @@ export const INPUT_BOX_FIELDS = [
   'gmap_zip'
 ];
 
-export const borderWidthProps = [
-  'border_top_width',
-  'border_right_width',
-  'border_bottom_width',
-  'border_left_width'
-];
-
 export const borderColorProps = [
   'border_top_color',
   'border_right_color',
@@ -759,6 +752,20 @@ export default class ResponsiveStyles {
         }
         return style;
       }
+    );
+  }
+
+  // Falls back to the caller's default object-fit when unset
+  applyObjectFit(target: string, prefix = '') {
+    this.apply(target, `${prefix}object_fit`, (a: any) =>
+      a ? { objectFit: a } : {}
+    );
+  }
+
+  // Leaves the browser default (center) when unset
+  applyObjectPosition(target: string, prefix = '') {
+    this.apply(target, `${prefix}object_position`, (a: any) =>
+      a ? { objectPosition: a } : {}
     );
   }
 

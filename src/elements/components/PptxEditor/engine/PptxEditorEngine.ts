@@ -1,3 +1,5 @@
+import { releaseEmbeddedFonts } from '../core/render/embeddedFonts';
+import { ungroupShape } from '../core/model/groups';
 import { applySlideJSON } from '../core/model/applyJson';
 import { deepClone } from '../core/opc/deepClone';
 import { exportDeckBytes } from '../core/model/export';
@@ -145,7 +147,10 @@ export class PptxEditorEngine {
 
   /** Adopt an already-imported deck, replacing any current document. */
   adopt(deck: Deck): void {
-    if (this.deck && this.deck !== deck) releaseObjectUrls(this.deck.pkg);
+    if (this.deck && this.deck !== deck) {
+      releaseObjectUrls(this.deck.pkg);
+      releaseEmbeddedFonts(this.deck.pkg);
+    }
     this.deck = deck;
     this.resetHistory();
     this.revision += 1;
@@ -514,6 +519,20 @@ export class PptxEditorEngine {
           : 'Remove slide numbers';
         break;
       }
+      case 'ungroup-shape': {
+        const slide = this.requireSlide(command.slideId);
+        const group = this.requireShape(slide, command.shapeId);
+        createdShapeIds.push(...ungroupShape(deck, slide, group));
+        invalidations = [
+          {
+            kind: 'structure',
+            slideId: slide.path,
+            shapeIds: [group.id, ...createdShapeIds]
+          }
+        ];
+        defaultLabel = 'Ungroup';
+        break;
+      }
       case 'delete-shapes': {
         const slide = this.requireSlide(command.slideId);
         const shapes = [...new Set(command.shapeIds)].map((shapeId) =>
@@ -804,7 +823,10 @@ export class PptxEditorEngine {
 
   dispose(): void {
     this.listeners.clear();
-    if (this.deck) releaseObjectUrls(this.deck.pkg);
+    if (this.deck) {
+      releaseObjectUrls(this.deck.pkg);
+      releaseEmbeddedFonts(this.deck.pkg);
+    }
     this.changeLog = [];
     this.shelvedRecords.clear();
     this.deck = null;

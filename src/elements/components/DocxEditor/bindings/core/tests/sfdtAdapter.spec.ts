@@ -141,6 +141,50 @@ describe('row operations', () => {
     expect(scanBindings(doc).tables.get('costs')!.rows).toHaveLength(2);
   });
 
+  it('copies an authored default but not the source row value', () => {
+    const doc = JSON.parse(
+      JSON.stringify(buildCostsFixture()).replace(
+        '[[name=quantity|type=integer|row=r-1]]',
+        '[[name=quantity|type=integer|value=9|default=12|row=r-1]]'
+      )
+    );
+    const { sfdt: next } = addLineItem(
+      doc,
+      'costs',
+      'r-1',
+      scanBindings(doc),
+      'r-new'
+    );
+    const quantity = scanBindings(next)
+      .tables.get('costs')!
+      .rows[1].bindings.get('quantity')!;
+    expect(quantity.text).toBe('12');
+    expect(quantity.def.options.default).toBe('12');
+    expect(quantity.def.options.value).toBeUndefined();
+  });
+
+  it('starts from the type default when a generated row has only value', () => {
+    const doc = JSON.parse(
+      JSON.stringify(buildCostsFixture()).replace(
+        '[[name=quantity|type=integer|row=r-1]]',
+        '[[name=quantity|type=integer|value=9|row=r-1]]'
+      )
+    );
+    const { sfdt: next } = addLineItem(
+      doc,
+      'costs',
+      'r-1',
+      scanBindings(doc),
+      'r-new'
+    );
+    const quantity = scanBindings(next)
+      .tables.get('costs')!
+      .rows[1].bindings.get('quantity')!;
+    expect(quantity.text).toBe('0');
+    expect(quantity.def.options.value).toBeUndefined();
+    expect(quantity.def.options.default).toBeUndefined();
+  });
+
   it('preserves unknown content-control properties when cloning a row', () => {
     const doc = buildCostsFixture();
     const sourceQuantity = scanBindings(doc)
@@ -224,7 +268,8 @@ describe('validateSfdt', () => {
     const diagnostics = validateSfdt(doc);
     expect(
       diagnostics.some(
-        (entry) => entry.code === 'invalid-input' && /quantity/.test(entry.message)
+        (entry) =>
+          entry.code === 'invalid-input' && /quantity/.test(entry.message)
       )
     ).toBe(true);
     expect(diagnostics.some((entry) => entry.code === 'malformed-tag')).toBe(

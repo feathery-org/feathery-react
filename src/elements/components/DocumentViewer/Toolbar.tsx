@@ -15,7 +15,7 @@ export interface ToolbarAction {
   onClick: () => void;
 }
 
-export interface ToolbarProps {
+interface ToolbarProps {
   title: string;
   onBack: () => void;
   // Right-aligned actions, rendered in order (primary last / rightmost). The

@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   createCheckboxElement,
   createCheckboxProps,
@@ -13,7 +14,6 @@ import {
   expectFieldToBeDisabled,
   expectFieldToHaveAriaLabel
 } from './test-utils';
-import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import ResponsiveStyles from '../../../styles';
 import CheckboxField, { applyCheckableInputStyles } from '../index';

@@ -20,6 +20,7 @@ import {
 } from '../opc/xml';
 import { szToPt } from './units';
 import { readBulletSize, readXfrm } from './read';
+import { readParagraphPr, type Spacing } from './textLayout';
 import type { Deck, Slide, Shape, Bullet, Xfrm } from './types';
 
 /** "No index" sentinel some exporters emit on <p:ph idx>; treat as unset. */
@@ -37,6 +38,7 @@ export interface ResolvedRunDefaults {
 
 export interface ResolvedListProps {
   bullet?: Bullet;
+  lineSpacing?: Spacing;
   marLEmu?: number;
   indentEmu?: number;
   defRPr?: ResolvedRunDefaults;
@@ -52,6 +54,8 @@ function placeholderOf(shape: Shape): { type: string; idx: string } | null {
 function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
   if (!pPr) return null;
   const out: ResolvedListProps = {};
+  const lineSpacing = readParagraphPr(pPr).lineSpacing;
+  if (lineSpacing) out.lineSpacing = lineSpacing;
   const buFont = child(pPr, 'a:buFont');
   const buSize = readBulletSize(pPr);
   if (child(pPr, 'a:buNone')) out.bullet = { kind: 'none' };
@@ -89,8 +93,14 @@ function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
       font: latin ? getAttr(latin, 'typeface') : undefined,
       color: srgb ? getAttr(srgb, 'val') : undefined,
       colorScheme: scheme ? getAttr(scheme, 'val') : undefined,
-      bold: getAttr(defRPr, 'b') === '1' || undefined,
-      italic: getAttr(defRPr, 'i') === '1' || undefined
+      bold:
+        getAttr(defRPr, 'b') === undefined
+          ? undefined
+          : getAttr(defRPr, 'b') === '1',
+      italic:
+        getAttr(defRPr, 'i') === undefined
+          ? undefined
+          : getAttr(defRPr, 'i') === '1'
     };
   }
   return Object.keys(out).length ? out : null;
@@ -119,6 +129,16 @@ function findPlaceholder(
     const ph = descendant(sp, 'p:ph');
     return !!ph && (getAttr(ph, 'type') || 'body') === phType;
   });
+  // Missing idx means index zero, not any styled placeholder of this type.
+  // Google Slides also emits a distinct sentinel for genuinely unindexed
+  // duplicates; retain the existing type fallback for those.
+  if (phIdx === '') {
+    const unindexed = typeMatches.find((sp) => {
+      const ph = descendant(sp, 'p:ph')!;
+      return !getAttr(ph, 'idx') || getAttr(ph, 'idx') === '0';
+    });
+    if (unindexed) return unindexed;
+  }
   const styled = typeMatches.find((sp) => {
     const lst = descendant(sp, 'a:lstStyle');
     const dr = lst && descendant(lst, 'a:defRPr');
@@ -157,10 +177,40 @@ const TXSTYLE_FOR_PH: Record<string, string> = {
   obj: 'p:bodyStyle'
 };
 
-// Masters only have title/body placeholders, keyed by type: titles inherit
-// from the master title, every other type from the master body.
+// Content placeholders inherit from the master body. Footer/date/slide-number
+// placeholders have their own master styles and must retain their type.
 function masterPhType(type: string): string {
-  return type === 'title' || type === 'ctrTitle' ? 'title' : 'body';
+  if (type === 'title' || type === 'ctrTitle') return 'title';
+  if (['sldNum', 'dt', 'ftr', 'hdr'].includes(type)) return type;
+  return 'body';
+}
+
+/** A missing fill inherits as a unit; an explicit noFill stops the cascade. */
+export function resolveShapeFill(
+  deck: Deck,
+  slide: Slide,
+  shape: Shape
+): ONode | undefined {
+  const hasFill = (spPr: ONode | undefined) =>
+    spPr &&
+    ['noFill', 'solidFill', 'gradFill', 'blipFill', 'pattFill', 'grpFill'].some(
+      (tag) => child(spPr, `a:${tag}`)
+    );
+  if (hasFill(shape.spPr)) return shape.spPr;
+  const ph = placeholderOf(shape);
+  if (!ph) return undefined;
+  const layout = deck.pkg.layoutFor(slide.path);
+  const master = layout && deck.pkg.masterFor(layout);
+  for (const [part, type, idx] of [
+    [layout, ph.type, ph.idx],
+    [master, masterPhType(ph.type), '']
+  ] as const) {
+    if (!part || !deck.pkg.hasPart(part)) continue;
+    const inherited = findPlaceholder(xmlRoot(deck.pkg.tree(part)), type, idx);
+    const spPr = inherited && child(inherited, 'p:spPr');
+    if (hasFill(spPr)) return spPr;
+  }
+  return undefined;
 }
 
 /** Resolve the list/bullet/default-run props a placeholder paragraph inherits at a level. */
@@ -171,7 +221,6 @@ export function resolveListProps(
   level: number
 ): ResolvedListProps {
   const ph = placeholderOf(shape);
-  if (!ph) return {};
   const pkg = deck.pkg;
   const lvlTag = `a:lvl${level + 1}pPr`;
   const layoutPart = pkg.layoutFor(slide.path);
@@ -183,6 +232,8 @@ export function resolveListProps(
   const mergeIn = (r: ResolvedListProps | null) => {
     if (!r) return;
     if (merged.bullet === undefined && r.bullet) merged.bullet = r.bullet;
+    if (merged.lineSpacing === undefined && r.lineSpacing)
+      merged.lineSpacing = r.lineSpacing;
     if (merged.marLEmu === undefined && r.marLEmu !== undefined)
       merged.marLEmu = r.marLEmu;
     if (merged.indentEmu === undefined && r.indentEmu !== undefined)
@@ -211,7 +262,7 @@ export function resolveListProps(
   };
 
   // 1. layout placeholder lstStyle
-  if (layoutPart && pkg.hasPart(layoutPart)) {
+  if (ph && layoutPart && pkg.hasPart(layoutPart)) {
     mergeIn(
       lvlOf(findPlaceholder(xmlRoot(pkg.tree(layoutPart)), ph.type, ph.idx))
     );
@@ -220,10 +271,10 @@ export function resolveListProps(
   // for the placeholder's type.
   if (masterPart && pkg.hasPart(masterPart)) {
     const mRoot = xmlRoot(pkg.tree(masterPart));
-    mergeIn(lvlOf(findPlaceholder(mRoot, masterPhType(ph.type), '')));
+    if (ph) mergeIn(lvlOf(findPlaceholder(mRoot, masterPhType(ph.type), '')));
     const txStyles = child(mRoot, 'p:txStyles');
     const styleEl = txStyles
-      ? child(txStyles, TXSTYLE_FOR_PH[ph.type] || 'p:otherStyle')
+      ? child(txStyles, (ph && TXSTYLE_FOR_PH[ph.type]) || 'p:otherStyle')
       : undefined;
     mergeIn(readLvlPr(styleEl ? child(styleEl, lvlTag) : undefined));
   }

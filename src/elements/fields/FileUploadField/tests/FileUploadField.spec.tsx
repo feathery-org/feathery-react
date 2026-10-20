@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   createFileUploadElement,
   createFileUploadProps,
@@ -10,7 +11,6 @@ import {
   createFileInputChangeEvent,
   createDragEvent
 } from './test-utils';
-import React from 'react';
 import {
   render,
   screen,

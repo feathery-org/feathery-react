@@ -6,6 +6,8 @@ export interface EditorEnvelope {
   key?: string;
   type: string;
   signed: boolean;
+  sent?: boolean;
+  sent_via?: 'feathery' | 'docusign' | null;
 }
 
 export interface DocumentPacket {

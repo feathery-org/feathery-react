@@ -36,6 +36,7 @@ import { readSlide } from '../model/import';
 import {
   PH_NO_IDX,
   resolveListProps,
+  resolveShapeFill,
   type ResolvedRunDefaults
 } from '../model/resolve';
 import {
@@ -196,6 +197,103 @@ function geometryEl(
       // preset default, but a deck can set 0 for square corners.
       const adj = shape.geomAdj?.adj ?? 16667;
       e.setAttribute('rx', String((Math.min(w, h) * adj) / 100000));
+      break;
+    }
+    case 'round2SameRect': {
+      const side = Math.min(w, h);
+      const top = Math.min(
+        side / 2,
+        Math.max(0, ((shape.geomAdj?.adj1 ?? 16667) * side) / 100000)
+      );
+      const bottom = Math.min(
+        side / 2,
+        Math.max(0, ((shape.geomAdj?.adj2 ?? 0) * side) / 100000)
+      );
+      e = mk('path');
+      e.setAttribute(
+        'd',
+        `M ${top} 0 L ${w - top} 0 A ${top} ${top} 0 0 1 ${w} ${top} L ${w} ${
+          h - bottom
+        } A ${bottom} ${bottom} 0 0 1 ${
+          w - bottom
+        } ${h} L ${bottom} ${h} A ${bottom} ${bottom} 0 0 1 0 ${
+          h - bottom
+        } L 0 ${top} A ${top} ${top} 0 0 1 ${top} 0 Z`
+      );
+      break;
+    }
+    case 'round1Rect': {
+      const radius =
+        (Math.min(w, h) *
+          Math.max(0, Math.min(50000, shape.geomAdj?.adj ?? 16667))) /
+        100000;
+      e = mk('path');
+      e.setAttribute(
+        'd',
+        `M 0 0 L ${
+          w - radius
+        } 0 A ${radius} ${radius} 0 0 1 ${w} ${radius} L ${w} ${h} L 0 ${h} Z`
+      );
+      break;
+    }
+    case 'teardrop': {
+      const adj = Math.max(0, Math.min(200000, shape.geomAdj?.adj ?? 100000));
+      const rx = w / 2;
+      const ry = h / 2;
+      const tipX = rx + (rx * adj) / 100000;
+      const tipY = ry - (ry * adj) / 100000;
+      e = mk('path');
+      e.setAttribute(
+        'd',
+        `M 0 ${ry} A ${rx} ${ry} 0 0 1 ${rx} 0 Q ${
+          (rx + tipX) / 2
+        } 0 ${tipX} ${tipY} Q ${w} ${
+          (ry + tipY) / 2
+        } ${w} ${ry} A ${rx} ${ry} 0 0 1 ${rx} ${h} A ${rx} ${ry} 0 0 1 0 ${ry} Z`
+      );
+      break;
+    }
+    case 'leftBracket':
+    case 'rightBracket': {
+      const radius = Math.min(
+        h / 2,
+        (Math.min(w, h) * Math.max(0, shape.geomAdj?.adj ?? 8333)) / 100000
+      );
+      e = mk('path');
+      e.setAttribute(
+        'd',
+        `M ${w} ${h} A ${w} ${radius} 0 0 1 0 ${
+          h - radius
+        } L 0 ${radius} A ${w} ${radius} 0 0 1 ${w} 0`
+      );
+      if (prst === 'rightBracket')
+        e.setAttribute('transform', `translate(${w} 0) scale(-1 1)`);
+      break;
+    }
+    case 'plaque': {
+      const radius =
+        (Math.min(w, h) *
+          Math.max(0, Math.min(50000, shape.geomAdj?.adj ?? 16667))) /
+        100000;
+      e = mk('path');
+      e.setAttribute(
+        'd',
+        `M 0 ${radius} A ${radius} ${radius} 0 0 0 ${radius} 0 L ${
+          w - radius
+        } 0 A ${radius} ${radius} 0 0 0 ${w} ${radius} L ${w} ${
+          h - radius
+        } A ${radius} ${radius} 0 0 0 ${
+          w - radius
+        } ${h} L ${radius} ${h} A ${radius} ${radius} 0 0 0 0 ${h - radius} Z`
+      );
+      break;
+    }
+    case 'bentConnector3': {
+      e = mk('path');
+      // Adjustment is intentionally unbounded: near-vertical Google Slides
+      // connectors use a large adj1 to put the elbow outside their narrow box.
+      const elbow = (w * (shape.geomAdj?.adj1 ?? 50000)) / 100000;
+      e.setAttribute('d', `M 0 0 L ${elbow} 0 L ${elbow} ${h} L ${w} ${h}`);
       break;
     }
     case 'pie':
@@ -377,7 +475,11 @@ function gradientPaint(
   const gsLst = child(grad, 'a:gsLst');
   const lin = child(grad, 'a:lin');
   const ang = lin ? Number(getAttr(lin, 'ang')) / 60000 : 90;
-  const grEl = featheryDoc().createElementNS(SVGNS, 'linearGradient');
+  const path = child(grad, 'a:path');
+  const grEl = featheryDoc().createElementNS(
+    SVGNS,
+    path ? 'radialGradient' : 'linearGradient'
+  );
   const id = defsIdPrefix(defs) + (stableId || `grad-${gradSeq++}`);
   grEl.setAttribute('id', id);
   grEl.setAttribute('gradientUnits', 'objectBoundingBox');
@@ -386,6 +488,28 @@ function gradientPaint(
   grEl.setAttribute('y1', String(0.5 - Math.sin(rad) / 2));
   grEl.setAttribute('x2', String(0.5 + Math.cos(rad) / 2));
   grEl.setAttribute('y2', String(0.5 + Math.sin(rad) / 2));
+  if (path) {
+    const rect = child(path, 'a:fillToRect');
+    const fraction = (node: ONode | undefined, name: string) => {
+      const value = node && getAttr(node, name);
+      return value?.endsWith('%')
+        ? parseFloat(value) / 100
+        : Number(value || 0) / 100000;
+    };
+    const cx = (fraction(rect, 'l') + 1 - fraction(rect, 'r')) / 2;
+    const cy = (fraction(rect, 't') + 1 - fraction(rect, 'b')) / 2;
+    const tile = child(grad, 'a:tileRect');
+    const radius =
+      Math.max(
+        1 - fraction(tile, 'l') - fraction(tile, 'r'),
+        1 - fraction(tile, 't') - fraction(tile, 'b')
+      ) / 2;
+    grEl.setAttribute('cx', String(cx));
+    grEl.setAttribute('cy', String(cy));
+    grEl.setAttribute('r', String(radius));
+    grEl.setAttribute('fx', String(cx));
+    grEl.setAttribute('fy', String(cy));
+  }
   for (const gs of children(gsLst || grad, 'a:gs')) {
     const stop = featheryDoc().createElementNS(SVGNS, 'stop');
     stop.setAttribute(
@@ -444,9 +568,20 @@ function shapeFill(
   defs: SVGDefsElement,
   key: string
 ): string {
-  return fillPaint(shape.spPr, pkg, defs, undefined, `shape-gradient-${key}`);
+  return fillPaint(
+    shapeFillProperties(shape),
+    pkg,
+    defs,
+    undefined,
+    `shape-gradient-${key}`
+  );
 }
 
+function shapeFillProperties(shape: Shape): ONode | undefined {
+  return curDeck && curSlide
+    ? resolveShapeFill(curDeck, curSlide, shape)
+    : shape.spPr;
+}
 interface LineEnd {
   type?: string;
   width?: string;
@@ -481,7 +616,8 @@ function colorOpacity(container: ONode | undefined): number | undefined {
 }
 
 function shapeFillOpacity(shape: Shape): number | undefined {
-  return colorOpacity(shape.spPr && child(shape.spPr, 'a:solidFill'));
+  const spPr = shapeFillProperties(shape);
+  return colorOpacity(spPr && child(spPr, 'a:solidFill'));
 }
 
 function shapeStroke(shape: Shape, pkg: OPCPackage): ShapeStroke {
@@ -551,7 +687,7 @@ function applyLineStyle(
     if (!type || type === 'none') return;
     const id = `${defsIdPrefix(defs)}line-${key}-${where}`;
     const m = featheryDoc().createElementNS(SVGNS, 'marker');
-    const scale = end?.width === 'sm' ? 3.2 : end?.width === 'lg' ? 5.4 : 4.2;
+    const scale = end?.width === 'sm' ? 5 : end?.width === 'lg' ? 9 : 7;
     const length =
       end?.length === 'sm' ? 0.72 : end?.length === 'lg' ? 1.35 : 1;
     m.setAttribute('id', id);
@@ -594,6 +730,32 @@ function applyLineStyle(
   };
   marker('head', style.head);
   marker('tail', style.tail);
+}
+
+/** Chromium distorts thin ellipse outlines at EMU-sized radii. Keep the
+ * primitive in CSS pixels, with its parent restoring document coordinates.
+ * Stroke lengths must use the same units; gradients use objectBoundingBox. */
+function normalizeEllipseGeometry(geometry: SVGElement): SVGElement {
+  if (geometry.localName !== 'ellipse') return geometry;
+  const unit = 9525;
+  for (const name of ['cx', 'cy', 'rx', 'ry', 'stroke-width']) {
+    const value = geometry.getAttribute(name);
+    if (value !== null)
+      geometry.setAttribute(name, String(Number(value) / unit));
+  }
+  const dash = geometry.getAttribute('stroke-dasharray');
+  if (dash)
+    geometry.setAttribute(
+      'stroke-dasharray',
+      dash
+        .split(/[ ,]+/)
+        .map((value) => Number(value) / unit)
+        .join(' ')
+    );
+  geometry.setAttribute('transform', `scale(${unit})`);
+  const wrapper = featheryDoc().createElementNS(SVGNS, 'g');
+  wrapper.appendChild(geometry);
+  return wrapper;
 }
 
 function applyOuterShadow(
@@ -673,7 +835,7 @@ function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
   const parts = [
     `font-size:${ptToCssPx(r.sizePt ?? def?.sizePt ?? 18) * fontScale}px`,
     `color:#${resolveTextColor(r, def)}`,
-    `font-family:${cssFamilyList(family)}`
+    `font-family:${cssFamilyList(family, curDeck ?? undefined)}`
   ];
   // Bold wins; otherwise the typeface name's own weight (e.g. "… Medium").
   if (r.bold ?? def?.bold) parts.push('font-weight:700');
@@ -685,8 +847,14 @@ function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
   ].filter(Boolean);
   if (decorations.length)
     parts.push(`text-decoration:${decorations.join(' ')}`);
-  if (r.highlight)
-    parts.push(`background-color:#${r.highlight.replace('#', '')}`);
+  // Google Slides exports highlights as theme colors. Keep the source node
+  // sparse and resolve through this slide's theme/color map just like text fill.
+  const highlight = r.highlight
+    ? `#${r.highlight.replace('#', '')}`
+    : curDeck && r.rPr
+    ? resolveColor(child(r.rPr, 'a:highlight'), curDeck.pkg)
+    : undefined;
+  if (highlight) parts.push(`background-color:${highlight}`);
   if (r.baselinePct) parts.push(`vertical-align:${r.baselinePct}%`);
   return parts.join(';');
 }
@@ -901,9 +1069,8 @@ export function bulletGlyph(
   // symbol-font bullets: map the few common ones, default everything else to a bullet
   if (/wingding|webding|symbol/i.test(font || ''))
     return SYMBOL_BULLET[ch] || '•';
-  // otherwise only keep a known bullet glyph; any other codepoint (a symbol char
-  // like "§", or an emoji) would render as itself, so normalize it to "•"
-  return SAFE_BULLETS.has(ch) ? ch : '•';
+  // Unicode bullets are document content, not a restricted menu of symbols.
+  return ch;
 }
 
 function alphaNumber(value: number, upper: boolean): string {
@@ -1028,6 +1195,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
         ? resolveListProps(curDeck, curSlide, shape, p.level ?? 0)
         : {};
     const paraProps = readParagraphProps(p.node);
+    const lineSpacing = paraProps.lineSpacing ?? inherited.lineSpacing;
     const bullet = p.bullet ?? inherited.bullet;
     const paraDef = inherited.defRPr;
 
@@ -1054,6 +1222,7 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     let css = `flex-shrink:0;text-align:${align};white-space:${
       body.wrap === 'none' ? 'pre' : 'pre-wrap'
     };`;
+    if (body.wrap !== 'none') css += 'overflow-wrap:break-word;';
     if (bullet && bullet.kind !== 'none') {
       // The marker hangs beside the text. Both the first text line and any
       // Shift+Enter/wrapped lines start at the same padding edge.
@@ -1079,21 +1248,21 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     // the size), not the bare em, so 150% = 1.5 x 1.2 x size (rules expect this).
     const NATURAL_LINE = 1.2;
     const lineHeightPx =
-      paraProps.lineSpacing?.kind === 'points'
-        ? ptToCssPx(paraProps.lineSpacing.valPt)
-        : paraProps.lineSpacing?.kind === 'percent'
+      lineSpacing?.kind === 'points'
+        ? ptToCssPx(lineSpacing.valPt)
+        : lineSpacing?.kind === 'percent'
         ? baseFontPx *
           NATURAL_LINE *
-          Math.max(
-            0.1,
-            (paraProps.lineSpacing.valPct - lineSpaceReduction) / 100
-          )
+          Math.max(0.1, (lineSpacing.valPct - lineSpaceReduction) / 100)
         : baseFontPx * NATURAL_LINE;
-    // PowerPoint puts line-spacing leading below the baseline; CSS splits it
-    // half/half, so shift the top half below (pitch preserved via margins).
+    // Expanded spacing belongs to the line box. Moving its top half into a
+    // negative margin lifts every line above PowerPoint's baseline. Keep the
+    // existing compressed-line treatment, without redistributing extra leading.
+    const compressed =
+      !!lineSpacing && lineHeightPx < baseFontPx * NATURAL_LINE;
     const halfLeading = Math.max(
       0,
-      (lineHeightPx - baseFontPx * NATURAL_LINE) / 2
+      (baseFontPx * NATURAL_LINE - lineHeightPx) / 2
     );
     const numPx = (v: string | undefined) => (v ? parseFloat(v) : 0);
     let marginTopPx =
@@ -1105,17 +1274,20 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     );
     // Lift the first line of a top-anchored box by the web font's excess ascent
     // leading so it sits where PowerPoint (typographic ascent) does.
-    if (paragraphIndex === 0 && topAnchored) {
+    if (paragraphIndex === 0 && topAnchored && !compressed) {
       const wt = p.runs[0]?.bold ?? paraDef?.bold ? 700 : leadFont.weight;
-      marginTopPx -= excessTopLeadingRatio(leadFont.family, wt) * baseFontPx;
+      marginTopPx -=
+        excessTopLeadingRatio(leadFont.family, wt, curDeck ?? undefined) *
+        baseFontPx;
     }
     // Unitless 1 matches PowerPoint's single spacing (the font's content line),
     // tighter than CSS 'normal'; explicit percent/points keep the px value.
-    const cssLineHeight = paraProps.lineSpacing ? `${lineHeightPx}px` : '1';
+    const cssLineHeight = lineSpacing ? `${lineHeightPx}px` : '1';
     // Size the line-box strut from the lead run; otherwise it inherits the
     // host's 16px font and sinks/loosens any text smaller than that.
     css += `font-size:${baseFontPx}px;font-family:${cssFamilyList(
-      leadFont.family
+      leadFont.family,
+      curDeck ?? undefined
     )};`;
     css += `margin-top:${marginTopPx}px;margin-bottom:${marginBottomPx}px;line-height:${cssLineHeight};`;
     pDiv.setAttribute('style', css);
@@ -1149,7 +1321,8 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     const markerStyle = `font-size:${ptToCssPx(
       markerSize
     )}px;line-height:${cssLineHeight};font-family:${cssFamilyList(
-      markerFamily
+      markerFamily,
+      curDeck ?? undefined
     )};color:#${markerColor};position:absolute;left:${marL + indent}px;${
       indent ? '' : 'transform:translateX(-100%);'
     }`;
@@ -1272,7 +1445,10 @@ function chartText(
   const resolvedSize = style?.sizePt ? style.sizePt * 12700 : size;
   text.setAttribute('font-size', String(resolvedSize / EMU_PER_PX));
   const chartFont = splitFontWeight(resolveFont(style?.font, svgThemeFonts));
-  text.setAttribute('font-family', cssFamilyList(chartFont.family));
+  text.setAttribute(
+    'font-family',
+    cssFamilyList(chartFont.family, curDeck ?? undefined)
+  );
   if (chartFont.weight !== 400)
     text.setAttribute('font-weight', String(chartFont.weight));
   text.setAttribute(
@@ -2511,7 +2687,8 @@ function shapeGroup(
   shape: Shape,
   pkg: OPCPackage,
   defs: SVGDefsElement,
-  idx: number | string
+  idx: number | string,
+  groupScale = 1
 ): SVGGElement | null {
   if (!shape.xfrm) return null;
   const { x, y, cx, cy, rot, flipH, flipV } = shape.xfrm;
@@ -2531,7 +2708,11 @@ function shapeGroup(
     const clip = featheryDoc().createElementNS(SVGNS, 'clipPath');
     const clipId = `${defsIdPrefix(defs)}picture-clip-${shape.id}-${idx}`;
     clip.setAttribute('id', clipId);
-    clip.appendChild(geometryEl(shape, cx, cy, '#ffffff', undefined, 0));
+    clip.appendChild(
+      normalizeEllipseGeometry(
+        geometryEl(shape, cx, cy, '#ffffff', undefined, 0)
+      )
+    );
     // Keep the referenced definition mounted while changing crop geometry. A
     // remove/append cycle can briefly invalidate url(#clipId) in the browser.
     upsertDefinition(defs, clip);
@@ -2572,14 +2753,18 @@ function shapeGroup(
   ) {
     const fill = shapeFill(shape, pkg, defs, `${shape.id}-${idx}`);
     const st = shapeStroke(shape, pkg);
+    // DrawingML group coordinates scale geometry, while line widths remain
+    // slide-space lengths. Cancel that scale for nested strokes.
+    st.width /= groupScale;
     if (fill !== 'none' || st.color) {
       const geometry = geometryEl(shape, cx, cy, fill, st.color, st.width);
       const opacity = shapeFillOpacity(shape);
       if (opacity !== undefined)
         geometry.setAttribute('fill-opacity', String(opacity));
       applyLineStyle(geometry, st, defs, `${shape.id}-${idx}`);
-      applyOuterShadow(geometry, shape, pkg, defs, `${shape.id}-${idx}`);
-      g.appendChild(geometry);
+      const paintedGeometry = normalizeEllipseGeometry(geometry);
+      applyOuterShadow(paintedGeometry, shape, pkg, defs, `${shape.id}-${idx}`);
+      g.appendChild(paintedGeometry);
     }
     const fo = textForeign(shape, cx, cy);
     if (fo) {
@@ -2622,7 +2807,8 @@ function shapeGroup(
         nested,
         pkg,
         defs,
-        `${idx}-${childIndex++}`
+        `${idx}-${childIndex++}`,
+        groupScale * Math.sqrt(Math.abs((cx / childW) * (cy / childH)))
       );
       if (nestedGroup) content.appendChild(nestedGroup);
     }
@@ -2814,6 +3000,10 @@ export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.style.background = '#ffffff';
     svg.style.display = 'block';
+    // Host UI smoothing can thin the deck's text on macOS even with the right
+    // embedded face and weight. Keep document text on the browser's native mode.
+    svg.style.setProperty('-webkit-font-smoothing', 'auto');
+    svg.style.setProperty('-moz-osx-font-smoothing', 'auto');
     const defs = featheryDoc().createElementNS(SVGNS, 'defs') as SVGDefsElement;
     svg.appendChild(defs);
     const bg = renderBackground(deck, slide, defs);
@@ -2940,7 +3130,9 @@ export function rerenderShape(
       svg.insertBefore(defs, svg.firstChild);
     }
     const newG = shapeGroup(slide.shapes[idx], deck.pkg, defs, idx);
-    const oldG = svg.querySelector(`[data-shape-id="${shapeId}"]`);
+    const oldG = [...svg.children].find(
+      (node) => (node as SVGGElement).dataset?.shapeId === shapeId
+    );
     if (oldG && newG) patchDomNode(oldG, newG);
     else if (oldG && !newG) oldG.remove();
     else if (newG) svg.appendChild(newG);
@@ -2979,7 +3171,9 @@ export function syncShapeOrder(slide: Slide, svg: SVGSVGElement): void {
       if (!ids.has((g as SVGGElement).dataset.shapeId || '')) g.remove();
     });
   let previous: Element =
-    svg.querySelector('[data-slide-background]') || svg.querySelector('defs')!;
+    svg.querySelector('[data-slide-chrome]') ||
+    svg.querySelector('[data-slide-background]') ||
+    svg.querySelector('defs')!;
   for (const shape of slide.shapes) {
     const g = [...svg.children].find(
       (el) => (el as SVGGElement).dataset?.shapeId === shape.id

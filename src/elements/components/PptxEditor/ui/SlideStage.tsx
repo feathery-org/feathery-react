@@ -23,7 +23,7 @@ import {
   tableRows
 } from '../core/model/table';
 import { getAttr } from '../core/opc/xml';
-import type { Deck, Shape } from '../core/model/types';
+import type { Deck, Shape, Slide } from '../core/model/types';
 import {
   usePptxEditorState,
   usePptxEditorStore
@@ -33,6 +33,21 @@ import { readBodyProps } from '../core/model/textLayout';
 import { selectedTextRanges } from './textSelection';
 import { effectiveSlideSize } from '../core/model/slideSize';
 import type { TableEditOperation } from '../engine';
+import { canUngroup } from '../core/model/groups';
+
+function slideShapeElement(
+  target: Element,
+  slide: Slide | undefined
+): HTMLElement | null {
+  let node = target.closest?.('[data-shape-id]') as HTMLElement | null;
+  while (
+    node &&
+    !slide?.shapes.some((shape) => shape.id === node?.dataset.shapeId)
+  ) {
+    node = node.parentElement?.closest('[data-shape-id]') as HTMLElement | null;
+  }
+  return node || null;
+}
 
 interface OverlayBox {
   left: number;
@@ -1814,7 +1829,7 @@ export function SvgSlide({
     if (t.closest?.('[data-hyperlink]')) return;
     store.setTextSelection(null);
     if (t.closest?.('[data-overlay]')) return; // overlay/handles drive editing
-    const g = t.closest?.('[data-shape-id]') as HTMLElement | null;
+    const g = slideShapeElement(t, slide);
     const id = g?.dataset.shapeId;
     if (id) {
       const wasSelected = selectedIds.includes(id);
@@ -1887,7 +1902,7 @@ export function SvgSlide({
     const cell = (e.target as HTMLElement).closest?.(
       '[data-table-cell], [data-table-cell-bg]'
     ) as HTMLElement | null;
-    const shapeG = cell?.closest?.('[data-shape-id]') as HTMLElement | null;
+    const shapeG = cell && slideShapeElement(cell, slide);
     const shapeId = shapeG?.dataset.shapeId;
     const row = Number(cell?.dataset.row);
     const col = Number(cell?.dataset.col);
@@ -1896,12 +1911,20 @@ export function SvgSlide({
     const localY = (rect?: DOMRect | null) =>
       e.clientY - (rect?.top ?? 0) + (hostRef.current?.scrollTop ?? 0);
     const hostRect = hostRef.current?.getBoundingClientRect();
-    if (!cell || !shapeId || !Number.isInteger(row) || !Number.isInteger(col)) {
+    if (
+      !cell ||
+      !shapeId ||
+      !Number.isInteger(row) ||
+      !Number.isInteger(col) ||
+      slide?.shapes.find((shape) => shape.id === shapeId)?.type !== 'table'
+    ) {
       // Not a table cell: offer the z-ordering menu for any other shape.
-      const anyShapeG = (e.target as HTMLElement).closest?.(
-        '[data-shape-id]'
-      ) as HTMLElement | null;
-      const anyShapeId = anyShapeG?.dataset.shapeId;
+      const anyShapeG = slideShapeElement(e.target as HTMLElement, slide);
+      const anyShapeId =
+        anyShapeG?.dataset.shapeId ||
+        ((e.target as Element).closest?.('[data-overlay]')
+          ? selectedId
+          : undefined);
       setTableMenu(null);
       if (!anyShapeId) {
         setShapeMenu(null);
@@ -2006,11 +2029,13 @@ export function SvgSlide({
     const t = e.target as HTMLElement;
     const cell = t.closest?.('[data-table-cell]') as HTMLElement | null;
     if (cell) {
-      const g = cell.closest?.('[data-shape-id]') as HTMLElement | null;
+      const g = slideShapeElement(cell, slide);
       const row = Number(cell.dataset.row);
       const col = Number(cell.dataset.col);
       if (
         g?.dataset.shapeId &&
+        slide?.shapes.find((shape) => shape.id === g.dataset.shapeId)?.type ===
+          'table' &&
         Number.isInteger(row) &&
         Number.isInteger(col)
       ) {
@@ -2034,10 +2059,13 @@ export function SvgSlide({
           selectAll: true
         });
       }
-      return;
+      if (
+        slide?.shapes.find((shape) => shape.id === g?.dataset.shapeId)?.type ===
+        'table'
+      )
+        return;
     }
-    let id = (t.closest?.('[data-shape-id]') as HTMLElement | null)?.dataset
-      .shapeId;
+    let id = slideShapeElement(t, slide)?.dataset.shapeId;
     if (!id && t.closest?.('[data-overlay]')) id = selectedId ?? undefined; // dbl-click the overlay of the selected shape
     const target = slide?.shapes.find((sh) => sh.id === id);
     if (target?.type === 'pic') {
@@ -2435,6 +2463,39 @@ export function SvgSlide({
               {label}
             </button>
           ))}
+          {slide?.shapes.find((shape) => shape.id === shapeMenu.shapeId)
+            ?.type === 'group' && (
+            <button
+              type='button'
+              disabled={
+                !canUngroup(
+                  slide.shapes.find((shape) => shape.id === shapeMenu.shapeId)
+                )
+              }
+              title='Separate this group into individual editable objects. Rotated or scaled groups are not supported yet.'
+              style={{
+                padding: '7px 10px',
+                border: 'none',
+                borderRadius: 6,
+                background: 'transparent',
+                color: '#3f3f46',
+                fontSize: 12.5,
+                textAlign: 'left',
+                cursor: 'pointer'
+              }}
+              onClick={() => {
+                store.executeCommand({
+                  type: 'ungroup-shape',
+                  slideId: slide.path,
+                  shapeId: shapeMenu.shapeId
+                });
+                setShapeMenu(null);
+                select(null);
+              }}
+            >
+              Ungroup
+            </button>
+          )}
           <button
             type='button'
             onClick={() => {

@@ -38,24 +38,28 @@ describe('ConnectAccountModal', () => {
     onClose: jest.fn()
   };
 
-  it('shows the connected account email', () => {
-    render(<ConnectAccountModal {...baseProps} />);
-    expect(screen.getByText('respondent@example.com')).toBeTruthy();
+  it('shows the connected account email on the account menu trigger', () => {
+    render(<ConnectAccountModal {...baseProps} canSaveCredential />);
+    expect(
+      screen.getByRole('button', { name: 'Saved Box accounts' })
+    ).toHaveTextContent('respondent@example.com');
   });
 
-  it('confirms the connection when the provider reports no account', () => {
-    // Schwab exposes no account identity, so the line would otherwise be blank.
+  it('names the current connection when the provider reports no account', () => {
+    // Schwab exposes no account identity, so the trigger would otherwise be
+    // blank.
     render(
       <ConnectAccountModal
         {...baseProps}
         provider='charles-schwab'
         accountEmail=''
+        canSaveCredential
       />
     );
 
     expect(
-      screen.getByText('Your Charles Schwab account is connected')
-    ).toBeTruthy();
+      screen.getByRole('button', { name: 'Saved Charles Schwab accounts' })
+    ).toHaveTextContent('Current Charles Schwab account');
   });
 
   it('calls onChangeAccount when Change account is clicked', async () => {
@@ -94,6 +98,15 @@ describe('ConnectAccountModal', () => {
     fireEvent.click(screen.getByLabelText('Close'));
 
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('does not dismiss when the dialog content is clicked', () => {
+    const onClose = jest.fn();
+    render(<ConnectAccountModal {...baseProps} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole('dialog'));
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('clears a config error on Change account and does not carry it across a reopen', async () => {

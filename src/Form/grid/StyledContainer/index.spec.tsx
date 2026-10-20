@@ -1,5 +1,19 @@
 import { render } from '@testing-library/react';
 import { StyledContainer } from '.';
+import { fieldValues, setFieldValues } from '../../../utils/init';
+import { featheryWindow } from '../../../utils/browser';
+
+jest.mock('../../../elements/components/DocxEditor', () => {
+  const React = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: ({ preview }: { preview?: boolean }) =>
+      React.createElement('div', {
+        'data-testid': 'blank-document-preview',
+        'data-preview': String(!!preview)
+      })
+  };
+});
 
 const baseNode = {
   id: 'container-1',
@@ -20,6 +34,85 @@ const baseNode = {
 };
 
 describe('StyledContainer iframe embeds', () => {
+  afterEach(() => {
+    delete fieldValues.extraction_review_url;
+  });
+
+  it.each([
+    '{{extraction_review_url}}',
+    '/review/{{submission_id}}',
+    `${featheryWindow().location.origin}/review/{{submission_id}}`,
+    ''
+  ])(
+    'skips an unresolved same-origin or empty editor embed URL: %s',
+    (source) => {
+      const { container } = render(
+        <StyledContainer
+          node={{ ...baseNode, properties: { iframe_url: source } }}
+          breakpoint={480}
+          editMode
+        >
+          <span>Container contents</span>
+        </StyledContainer>
+      );
+
+      expect(container.querySelector('iframe')).toBeNull();
+      expect(container).toHaveTextContent('Container contents');
+    }
+  );
+
+  it.each([
+    'https://calendly.com/team/demo?email={{email}}',
+    '//calendly.com/team/demo?email={{email}}'
+  ])(
+    'preserves an external editor embed with unresolved parameters: %s',
+    (source) => {
+      const { container } = render(
+        <StyledContainer
+          node={{ ...baseNode, properties: { iframe_url: source } }}
+          breakpoint={480}
+          editMode
+        />
+      );
+
+      expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+    }
+  );
+
+  it('preserves unresolved live-form embeds', () => {
+    const source = '{{extraction_review_url}}';
+    const { container } = render(
+      <StyledContainer
+        node={{ ...baseNode, properties: { iframe_url: source } }}
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+  });
+
+  it('renders an editor embed once its field resolves to a nonempty URL', () => {
+    const props = {
+      node: {
+        ...baseNode,
+        properties: { iframe_url: '{{extraction_review_url}}' }
+      },
+      breakpoint: 480,
+      editMode: true
+    };
+    const { container, rerender } = render(<StyledContainer {...props} />);
+    expect(container.querySelector('iframe')).toBeNull();
+
+    const url = 'https://example.com/review/submission-1';
+    setFieldValues({ extraction_review_url: url }, false, true);
+    rerender(<StyledContainer {...props} />);
+    expect(container.querySelector('iframe')).toHaveAttribute('src', url);
+
+    setFieldValues({ extraction_review_url: '' }, false, true);
+    rerender(<StyledContainer {...props} />);
+    expect(container.querySelector('iframe')).toBeNull();
+  });
+
   it('renders iframe URL containers with auto-scrolling iframe viewport styles', () => {
     const { container } = render(
       <StyledContainer
@@ -105,8 +198,8 @@ describe('StyledContainer alignment', () => {
 });
 
 describe('StyledContainer document editor', () => {
-  it('mounts the document editor placeholder when document_editor is set', () => {
-    const { getByText } = render(
+  it('mounts the document editor preview when document_editor is set', () => {
+    const { getByTestId } = render(
       <StyledContainer
         node={{
           ...baseNode,
@@ -117,15 +210,18 @@ describe('StyledContainer document editor', () => {
       />
     );
 
-    expect(getByText('Document editor')).toBeTruthy();
+    expect(getByTestId('blank-document-preview')).toHaveAttribute(
+      'data-preview',
+      'true'
+    );
   });
 
   it('does not mount the document editor when document_editor is unset', () => {
-    const { queryByText } = render(
+    const { queryByTestId } = render(
       <StyledContainer node={baseNode} editMode breakpoint={480} />
     );
 
-    expect(queryByText('Document editor')).toBeNull();
+    expect(queryByTestId('blank-document-preview')).toBeNull();
   });
 });
 

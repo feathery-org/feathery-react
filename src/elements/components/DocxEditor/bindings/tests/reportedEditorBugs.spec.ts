@@ -22,6 +22,7 @@ import { convertTemplateTokens } from '../core/templateImport';
 import { applyRules } from '../core/engine';
 import { adoptUnboundRows, getAt, scanBindings } from '../core/sfdtAdapter';
 import { SfdtDocument } from '../core/sfdtTypes';
+import { applyNativeStructuralMutations } from '../nativeStructuralAdapter';
 
 type AnyEditor = any;
 
@@ -235,7 +236,7 @@ describe('row adoption stays inside the data block', () => {
     const result = adoptUnboundRows(doc, 'costs');
 
     expect(result.adopted).toHaveLength(1);
-    // Defaults from the template's own tags.
+    // A new row uses authored defaults, not the current row's edited values.
     expect(rowTexts(result.sfdt)[1]).toEqual([
       'Design work',
       '12',
@@ -256,6 +257,40 @@ describe('row adoption stays inside the data block', () => {
 
     expect(result.adopted).toHaveLength(1);
     expect(rowTexts(result.sfdt)[5][3]).toBe('…');
+    // The native formatter must copy the data row, not the adjacent Total row.
+    expect(result.mutations[0].styleSourceRowIndex).toBe(1);
+  });
+
+  it('styles a bottom-inserted input row from the data row, not the total', () => {
+    const doc = boundDoc();
+    const rows = firstTable(doc).rows;
+    rows[1].cells.forEach((entry: any) => {
+      entry.cellFormat.shading = {
+        texture: 'TextureNone',
+        backgroundColor: '#EEF6EE',
+        foregroundColor: 'empty'
+      };
+    });
+    rows[4].cells.forEach((entry: any) => {
+      entry.cellFormat.shading = {
+        texture: 'TextureNone',
+        backgroundColor: '#1F3864',
+        foregroundColor: 'empty'
+      };
+    });
+    rows.push({
+      rowFormat: {},
+      cells: [cell(''), cell(''), cell(''), cell('')]
+    });
+    const mutation = adoptUnboundRows(doc, 'costs').mutations[0];
+    const editor: AnyEditor = makeRealDocumentEditor(doc);
+    try {
+      expect(applyNativeStructuralMutations(editor, [mutation])).toBe(true);
+      expect(firstTable(JSON.parse(editor.serialize())).rows[5].cells[1]
+        .cellFormat.shading.backgroundColor).toBe('#EEF6EE');
+    } finally {
+      destroyRealDocumentEditor(editor);
+    }
   });
 
   it('counts a bottom-appended row in the totals', () => {

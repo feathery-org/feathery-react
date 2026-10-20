@@ -2086,10 +2086,11 @@ describe('appearance writes stay reversible', () => {
     }
   });
 
-  it('restores the exact baseline when post-write verification fails', () => {
+  it('keeps the write and reports it when post-write verification disagrees', () => {
+    // Appearance fidelity is a preference, not integrity: a read-back that does
+    // not match is reported to the caller instead of rolling the group back.
     const ed = makeEditor(twoTables());
     try {
-      const before = appearanceSnapshot(ed, '0;2');
       const staleSnapshot = ed.serialize();
       const serialize = ed.serialize.bind(ed);
       let calls = 0;
@@ -2111,11 +2112,15 @@ describe('appearance writes stay reversible', () => {
       );
 
       expect(calls).toBeGreaterThanOrEqual(3);
-      expect(result.results[0]).toMatchObject({
-        ok: false,
-        error: 'inherited_appearance_mismatch'
-      });
-      expect(appearanceSnapshot(ed, '0;2')).toEqual(before);
+      expect(result.results[0]).toMatchObject({ ok: true });
+      expect(
+        result.results[0].appearance?.unresolved?.length
+      ).toBeGreaterThan(0);
+      expect(result.warnings).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/^appearance_not_fully_inherited: copy_table_format/)
+        ])
+      );
     } finally {
       destroyEditor(ed);
     }
