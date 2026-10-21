@@ -37,11 +37,12 @@ const isStored = (value: any) => value !== null && value !== '';
 
 // Which file fields hold each element of `value`, by identity: a rule passes
 // `field.value` or some of its entries, which are the stored promises/files.
+// Empty repeat rows are skipped, so the files keep their original row index.
 function matchFieldFiles(
   value: any,
   servarSteps: Record<string, FileServarStep>
 ) {
-  const items = asList(value);
+  const items = asList(value).filter(isStored);
   if (!items.length || !items.every(isFile)) return null;
   const fileKeys = Object.keys(servarSteps);
   const matched: Record<string, number[]> = {};
