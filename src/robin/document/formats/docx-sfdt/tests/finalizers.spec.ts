@@ -53,6 +53,26 @@ describe('restripe finalizer', () => {
       for (const cell of arr<NfNode>(x.cells)) expect(restriped.has(cell.id)).toBe(false);
     expect(restriped.size).toBeGreaterThan(0);
   });
+
+  it('reordering item rows of a bound table leaves its subtotal row\'s fill alone', () => {
+    const s = state();
+    const control = arr<NfNode>(arr<NfNode>(s.view.nf.root.sections).flatMap((x) => arr<NfNode>(x.blocks))).find(
+      (b) => (b.binding as { table?: string } | undefined)?.table === 'property_premium'
+    ) as NfNode;
+    const table = arr<NfNode>(control.blocks)[0];
+    const rows = arr<NfNode>(table.rows);
+    const subtotal = rows[rows.length - 1];
+    const r = prepareWrite(s, {
+      intent: 'Swap the first two items.',
+      scope: { ids: [rows[1].id] },
+      changes: [{ kind: 'move', id: rows[1].id, shape: shapeOf(rows[1], docxTree), anchor: rows[2].id, container: shapeOf(table, docxTree), position: 'after' }]
+    } as WriteInput);
+    expect(r.outcome).toBe('verified');
+    if (r.outcome !== 'verified') return;
+    const restriped = new Set(r.facts.filter((f) => f.kind === 'finalizer' && f.name === 'restripe').flatMap((f) => f.ids));
+    expect(restriped.size).toBeGreaterThan(0);
+    for (const cell of arr<NfNode>(subtotal.cells)) expect(restriped.has(cell.id)).toBe(false);
+  });
 });
 
 describe('a new table takes the look of the document\'s tables (Codex review D5)', () => {

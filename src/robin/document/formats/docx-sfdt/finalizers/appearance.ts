@@ -194,7 +194,11 @@ export const restripeFinalizer: Finalizer = {
     if (!work.length) return { ids: [], facts: [] };
     // the document before is a settled view, its binding state cached; the working copy is read
     // once, before any cell is restriped
-    const beforeNative = bindingState(before.nf).native;
+    const { native: beforeNative, result } = bindingState(before.nf);
+    const documentFormulas = new Map<string, string>();
+    for (const [name, [first]] of result.index.formulas)
+      if (first?.def.kind === 'formula')
+        documentFormulas.set(name, first.def.expression);
     // the working copy's native blocks only, for row roles: no binding engine pass needed
     const afterNative = JSON.parse(fromNormalForm(after, {}));
     // positions in the working document, for the native block of each table
@@ -253,10 +257,17 @@ export const restripeFinalizer: Finalizer = {
           const colour = fillKey(shading);
           if (!exemplars.has(colour)) exemplars.set(colour, shading);
         }
+      const control = working.placement(table.id)?.parent;
       const roles = deriveTableStructure({
         tableBlock: block,
         headerRows: banding.headerRows,
-        tableId: null
+        tableId:
+          control &&
+          isObject(control.binding) &&
+          typeof control.binding.table === 'string'
+            ? control.binding.table
+            : null,
+        documentFormulas
       }).rows;
       arr<NfNode>(table.rows).forEach((row, i) => {
         const had = new Set(
