@@ -374,7 +374,7 @@ export function removeFilePathMapEntry(key: any, index: number) {
 
 // Update the map we maintain to track files that have already been uploaded to S3
 // This means nulling the existing mapping because the user uploaded a new file
-export function clearFilePathMapEntry(key: any, index = null) {
+export function clearFilePathMapEntry(key: any, index: number | null = null) {
   if (index !== null) {
     if (!filePathMap[key]) filePathMap[key] = [];
     // @ts-ignore
@@ -457,12 +457,7 @@ export function mapFormSettingsResponse(res: any) {
     showFileUploadProgress: res.show_file_upload_progress ?? true,
     showDocumentProgress: res.show_document_progress ?? true,
     mobileBreakpoint: res.mobile_breakpoint ?? DEFAULT_MOBILE_BREAKPOINT,
-    assistantEnabled: res.ai_assistant_settings?.enabled,
-    assistantColor: res.ai_assistant_settings?.color
-      ? `#${res.ai_assistant_settings.color}`
-      : '#6b7280',
-    assistantWorkflowActions: res.ai_assistant_settings?.workflow_actions ?? [],
-    assistantStepSettings: res.ai_assistant_settings?.step_settings ?? {}
+    assistantEnabled: res.ai_assistant_settings?.enabled
   };
 }
 

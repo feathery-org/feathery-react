@@ -1,6 +1,8 @@
 import React, {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState
@@ -8,6 +10,7 @@ import React, {
 import { useCreateAtom } from '@tanstack/react-store';
 import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
+import type { ScrollToOptions } from '@tanstack/react-virtual';
 import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
 import {
@@ -106,26 +109,50 @@ type SpreadsheetTableProps = {
   sort?: SpreadsheetSort;
 };
 
-export function SpreadsheetTable({
-  columns,
-  rowIndices,
-  fieldValues,
-  canEdit,
-  heightUnit,
-  onCellsEdit,
-  onAddColumn,
-  onInsertRow,
-  onDeleteRow,
-  onUnverifyRows,
-  canUnverifyRow,
-  getCellShading,
-  cellRules,
-  rowIdentityVersion = 0,
-  pending,
-  cellIssues,
-  readOnlyFieldKeys,
-  sort
-}: SpreadsheetTableProps) {
+export type SpreadsheetTableHandle = {
+  /** False when the row is not in the grid right now */
+  focusCell: (rowIndex: number, fieldKey?: string) => boolean;
+  /** The outlined cell, flagged when the selection extends beyond it */
+  getSelection: () => {
+    rowIndex: number;
+    fieldKey: string;
+    extended?: true;
+  } | null;
+  getVisibleRowIndexes: () => number[];
+};
+
+// Assistant-driven focus glides to the row instead of jumping
+const ASSISTANT_SCROLL: ScrollToOptions = {
+  align: 'center',
+  behavior: 'smooth'
+};
+
+export const SpreadsheetTable = forwardRef<
+  SpreadsheetTableHandle,
+  SpreadsheetTableProps
+>(function SpreadsheetTable(
+  {
+    columns,
+    rowIndices,
+    fieldValues,
+    canEdit,
+    heightUnit,
+    onCellsEdit,
+    onAddColumn,
+    onInsertRow,
+    onDeleteRow,
+    onUnverifyRows,
+    canUnverifyRow,
+    getCellShading,
+    cellRules,
+    rowIdentityVersion = 0,
+    pending,
+    cellIssues,
+    readOnlyFieldKeys,
+    sort
+  },
+  ref
+) {
   const getValue = useCallback(
     (rowIndex: number, fieldKey: string): CellValue => {
       const value = fieldValues[fieldKey];
@@ -284,8 +311,8 @@ export function SpreadsheetTable({
 
   const gridRef = useRef<SpreadsheetGridHandle>(null);
   const scrollToCell = useCallback(
-    (rowId: string, columnId: string) =>
-      gridRef.current?.scrollToCell(rowId, columnId),
+    (rowId: string, columnId?: string, scroll?: ScrollToOptions) =>
+      gridRef.current?.scrollToCell(rowId, columnId, scroll),
     []
   );
   const restoreFocus = useCallback(() => gridRef.current?.restoreFocus(), []);
@@ -447,6 +474,39 @@ export function SpreadsheetTable({
     gridRef.current?.focus();
   }, [search]);
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusCell(rowIndex, fieldKey) {
+        const rowId = `r${rowIndex}`;
+        if (!visibleRowIds.has(rowId)) return false;
+        // Keeps what the user was typing, as clicking another cell would
+        interactions.commitEditing();
+        if (fieldKey) interactions.focusCell(rowId, fieldKey, ASSISTANT_SCROLL);
+        else interactions.focusRow(rowId, ASSISTANT_SCROLL);
+        return true;
+      },
+      getSelection() {
+        const regions = cellSelectionAtom.get();
+        const active = regions.at(-1);
+        // The grid outlines the anchor, the cell the person started from
+        const rowIndex = active && rowIndexById.get(active.anchorRowId);
+        if (!active || rowIndex === undefined) return null;
+        const extended =
+          regions.length > 1 ||
+          active.anchorRowId !== active.focusRowId ||
+          active.anchorColumnId !== active.focusColumnId;
+        return {
+          rowIndex,
+          fieldKey: active.anchorColumnId,
+          ...(extended ? { extended: true } : {})
+        };
+      },
+      getVisibleRowIndexes: () => gridRef.current?.getVisibleRowIndexes() ?? []
+    }),
+    [visibleRowIds, interactions, cellSelectionAtom, rowIndexById]
+  );
+
   const counts = useMemo(() => countIssues(cellIssues ?? {}), [cellIssues]);
   const issueCount = counts.blocking + counts.errors + counts.warnings;
   // The bar also stays up while a save is in flight, so the write has somewhere
@@ -544,4 +604,4 @@ export function SpreadsheetTable({
       />
     </div>
   );
-}
+});

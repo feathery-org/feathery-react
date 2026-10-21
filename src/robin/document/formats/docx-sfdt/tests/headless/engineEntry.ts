@@ -1,0 +1,609 @@
+// In-page bridge for the engine's headless lane: the real document editor with the product's
+// bindings attached, one engine session over it, and the editor's own accept and reject for
+// cross-checking the engine's projections. Test-only; never part of the product bundle.
+import { registerLicense } from '@syncfusion/ej2-base';
+import {
+  DocumentEditor,
+  Editor,
+  EditorHistory,
+  ImageResizer,
+  Search,
+  Selection,
+  SfdtExport,
+  TextElementBox
+} from '@syncfusion/ej2-documenteditor';
+import {
+  attachBindings,
+  AttachedBindings
+} from '../../../../../../elements/components/DocxEditor/bindings/attachBindings';
+import { SyncfusionEditorLike } from '../../../../../../elements/components/DocxEditor/bindings/editorAdapter';
+import { comparable, differences, equivalentNative } from '../../../../proof';
+import { DocumentSession } from '../../../../session';
+import type { Verb } from '../../../../envelope';
+import { canonicalJson, NfNode, NormalForm } from '../../../../tree';
+import { createHost, docxPack, LiveEditor } from '../../index';
+import React from 'react';
+import { createRoot, Root } from 'react-dom/client';
+import TrackedChangeGroups from '../../../../../../elements/components/DocxEditor/TrackedChangeGroups';
+import HistoryGroup from '../../../../../../elements/components/DocxEditor/DocxToolbar/groups/HistoryGroup';
+import { installHistoryRouting } from '../../../../../../elements/components/DocxEditor/historyRouting';
+import { registerCardResolver, registerHistoryRoute } from '../../../../mounts';
+import { robinMarks } from '../../../../../../elements/components/DocxEditor/robinDocument';
+import { isRobinWriting, onDocumentReplaced } from '../../../../../../elements/components/DocxEditor/robinActivity';
+
+declare const __SYNCFUSION_LICENSE_KEY__: string;
+if (__SYNCFUSION_LICENSE_KEY__) registerLicense(__SYNCFUSION_LICENSE_KEY__);
+
+DocumentEditor.Inject(Editor, Selection, SfdtExport, EditorHistory, ImageResizer, Search);
+
+let editor: DocumentEditor | null = null;
+let scratch: DocumentEditor | null = null;
+let attached: AttachedBindings | null = null;
+let session: DocumentSession | null = null;
+const errors: string[] = [];
+const changes: string[] = [];
+
+/**
+ * Time spent inside the editor (host calls and seam applications) during a dispatch, so per-verb
+ * cost splits into the editor's own work and the engine's.
+ */
+let editorMs = 0;
+let timedDepth = 0;
+function timedCall<A extends unknown[], R>(f: (...a: A) => R): (...a: A) => R {
+  return (...a: A): R => {
+    // a host call inside a timed seam (the splice's open) is counted once, by the outer call
+    if (timedDepth) return f(...a);
+    timedDepth += 1;
+    const t0 = performance.now();
+    try {
+      return f(...a);
+    } finally {
+      timedDepth -= 1;
+      editorMs += performance.now() - t0;
+    }
+  };
+}
+const timedPack: typeof docxPack = {
+  ...docxPack,
+  seams: Object.fromEntries(
+    Object.entries(docxPack.seams).map(([name, seam]) => [name, { ...seam, apply: timedCall(seam.apply) }])
+  )
+};
+/** When set, the next engine open lands a document that differs from the one composed (one run's text). */
+let injectFailure = false;
+const corrupt = (native: string): string => native.replace(/"text":"([^"\\]{3,})"/, '"text":"$1 (not as composed)"');
+
+function timedHost(h: ReturnType<typeof createHost>): ReturnType<typeof createHost> {
+  return {
+    ...h,
+    serialize: timedCall(h.serialize),
+    open: timedCall((native: string) => {
+      if (injectFailure) {
+        injectFailure = false;
+        return h.open(corrupt(native));
+      }
+      return h.open(native);
+    }),
+    undo: timedCall(h.undo),
+    redo: timedCall(h.redo)
+  };
+}
+window.addEventListener('error', (e) => errors.push(String(e.message)));
+
+const frame = (): Promise<void> =>
+  new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    requestAnimationFrame(finish);
+    setTimeout(finish, 50);
+  });
+
+function makeEditor(id: string): DocumentEditor {
+  const host = document.createElement('div');
+  host.id = id;
+  host.style.width = '900px';
+  host.style.height = '700px';
+  document.body.appendChild(host);
+  const instance = new DocumentEditor({
+    isReadOnly: false,
+    enableEditor: true,
+    enableSelection: true,
+    enableImageResizer: true,
+    enableSearch: true,
+    enableSfdtExport: true,
+    enableEditorHistory: true,
+    documentEditorSettings: { optimizeSfdt: false }
+  });
+  instance.appendTo(host);
+  return instance;
+}
+
+const live = (): DocumentEditor => {
+  if (!editor) throw new Error('no document is open');
+  return editor;
+};
+const history = () => ((live() as any).editorHistory ?? (live() as any).editorHistoryModule) as any;
+
+/** Serialize until two reads agree: the PAGE field's cached text settles after layout (N1). */
+async function settled(max = 40): Promise<string> {
+  let prev = live().serialize();
+  for (let k = 0; k < max; k += 1) {
+    await frame();
+    const now = live().serialize();
+    if (now === prev) return now;
+    prev = now;
+  }
+  return prev;
+}
+
+// The product's review rail and toolbar history buttons, rendered over the live editor.
+let uiRoot: Root | null = null;
+function renderReviewUi(): void {
+  let host = document.getElementById('fm-review');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'fm-review';
+    host.style.cssText = 'position:fixed;right:0;top:0;width:360px;height:900px;';
+    document.body.appendChild(host);
+  }
+  uiRoot ??= createRoot(host);
+  uiRoot.render(
+    React.createElement(
+      'div',
+      { style: { display: 'flex', flexDirection: 'column', height: '100%' } },
+      React.createElement('div', { id: 'fm-history' }, React.createElement(HistoryGroup, { editor })),
+      React.createElement('div', { style: { position: 'relative', flex: 1, display: 'flex' } }, React.createElement(TrackedChangeGroups, { editor, key: Math.random() }))
+    )
+  );
+}
+
+const byText = (root: Element, selector: string, text: string): HTMLElement | null =>
+  ([...root.querySelectorAll(selector)] as HTMLElement[]).find((el) => (el.textContent ?? '').trim() === text || el.getAttribute('aria-label') === text || el.getAttribute('title') === text) ?? null;
+
+const api = {
+  async open(text: string, options: { robin?: boolean } = {}): Promise<number> {
+    try {
+      attached?.dispose();
+    } catch {
+      // a disposed editor has nothing left to release
+    }
+    editor?.destroy();
+    document.getElementById('fm-editor')?.remove();
+    editor = makeEditor('fm-editor');
+    editor.open(text);
+    await frame();
+    await frame();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, { convertTokensOnOpen: false });
+    await frame();
+    if (options.robin === false) {
+      // the editor and its review rail with no Robin session mounted, as for a person reviewing alone
+      session = null;
+      renderReviewUi();
+      return (await settled()).length;
+    }
+    session = new DocumentSession({
+      pack: timedPack,
+      host: timedHost(createHost(editor as unknown as LiveEditor)),
+      target: { type: 'envelope', id: 'env' },
+      editorId: 'ed',
+      // Robin's marks and replaced-document reports, as the product wires them
+      ...robinMarks(editor as unknown as LiveEditor)
+    });
+    // as the product mounts it (robinDocument.ts): the rail's resolver, the undo route, the keys
+    const live = session;
+    registerCardResolver(editor, {
+      owns: (id) => live.ownsCard(id),
+      resolve: (ids, accept, alongside) => live.resolveCards(ids, accept, alongside)
+    });
+    registerHistoryRoute(editor, { undo: () => live.undo(), redo: () => live.redo(), engineHas: (direction) => live.history.depth[direction] > 0 });
+    installHistoryRouting(editor);
+    // the editor's change events and the engine's replaced-document reports, with whose they were
+    changes.length = 0;
+    const ed = editor;
+    const whose = () => (isRobinWriting(ed) ? 'robin' : 'person');
+    ed.addEventListener('contentChange', () => changes.push(`content:${whose()}`));
+    onDocumentReplaced(ed, () => changes.push(`replaced:${whose()}`));
+    renderReviewUi();
+    return (await settled()).length;
+  },
+
+  /**
+   * Replace the document in the mounted editor, as a person loading another file does (the rig's
+   * matrix loads its fixtures this way): the session continues, numbering the new document's
+   * nodes after the old one's.
+   */
+  async editorOpen(text: string): Promise<number> {
+    live().open(text);
+    await frame();
+    await frame();
+    return (await settled()).length;
+  },
+
+  /** The change events since the last call: `content:` from the editor, `replaced:` from the engine. */
+  changeEvents(): string[] {
+    return changes.splice(0);
+  },
+
+  /** Make the next engine open land something other than what was composed, so the proof fails. */
+  injectFailure(): void {
+    injectFailure = true;
+  },
+
+  /**
+   * Make the editor's next contents rebuild throw: halfway (after it deleted the old contents), or
+   * at once (before it changed anything).
+   */
+  injectTocFailure(at: 'halfway' | 'start' = 'halfway'): void {
+    const module = (live() as any).editorModule;
+    const name = at === 'halfway' ? 'buildToc' : 'insertTableOfContents';
+    const original = module[name];
+    module[name] = () => {
+      module[name] = original;
+      throw new Error('injected: the contents rebuild failed');
+    };
+  },
+
+  /** The editor's own list of fields, by code, in its order. */
+  fieldCodes(): string[] {
+    const e = live() as any;
+    return e.documentHelper.fields.map((f: any) => String(e.selection.getFieldCode(f)).trim());
+  },
+
+  /** The editor's alert dialogs on the page (its "No Headings" alert is one). */
+  dialogs: () => document.querySelectorAll('.e-dialog:not(.e-popup-close)').length,
+
+  /** Open complex undo groups in the editor, and whether it thinks a contents rebuild is running. */
+  historyState(): { open: number; insertingToc: boolean } {
+    return { open: history()?.historyInfoStack?.length ?? 0, insertingToc: !!(live() as any).editorModule?.isInsertingTOC };
+  },
+
+  /** Make the next text the editor inserts carry a stray letter, so a native commit fails its proof. */
+  injectTypo(): void {
+    const module = (live() as any).editorModule;
+    const insert = module.insertText.bind(module);
+    module.insertText = (text: string, ...rest: unknown[]) => {
+      module.insertText = insert;
+      return insert(`${text}X`, ...rest);
+    };
+  },
+
+  /** The user starts an edit of their own that is still one open undo group when Robin writes. */
+  async openUserGroup(at: string, text: string): Promise<string> {
+    const e = live() as any;
+    e.enableTrackChanges = false;
+    e.currentUser = 'User';
+    e.selection.select(at, at);
+    e.editorModule.initComplexHistory('Grouping');
+    e.editorModule.insertText(text);
+    return settled();
+  },
+
+  /** The user's open undo group, closed as the editor closes it. */
+  closeUserGroup(): void {
+    ((live() as any).editorHistory ?? (live() as any).editorHistoryModule)?.updateComplexHistory?.();
+  },
+
+  /** The user's own untracked edit, so their undo stack is not empty when Robin commits. */
+  /** The person's own tracked edit (track changes on), as a reviewer's colleague makes one. */
+  async userTrackedEdit(at: string, text: string): Promise<string> {
+    const e = live() as any;
+    e.enableTrackChanges = true;
+    e.currentUser = 'Colleague';
+    e.selection.select(at, at);
+    e.editorModule.insertText(text);
+    e.enableTrackChanges = false;
+    return settled();
+  },
+
+  async userEdit(at: string, text: string): Promise<string> {
+    const e = live() as any;
+    e.enableTrackChanges = false;
+    e.currentUser = 'User';
+    e.selection.select(at, at);
+    e.editorModule.insertText(text);
+    return settled();
+  },
+
+  settled,
+  serialize: () => live().serialize(),
+
+  /**
+   * The body paragraphs whose style is one of `styles`, with their text as accepted (no text pending
+   * deletion) and the page the editor's layout puts them on (its own page number, as a contents
+   * table shows it).
+   */
+  headingPages(styles: string[]): Array<{ text: string; page: number }> {
+    const e = live() as any;
+    const out: Array<{ text: string; page: number }> = [];
+    let w = e.documentHelper.pages[0].bodyWidgets[0].childWidgets[0];
+    while (w) {
+      const style = w.paragraphFormat?.baseStyle?.name;
+      if (styles.includes(style)) {
+        let text = '';
+        for (const split of w.getSplitWidgets())
+          for (const line of split.childWidgets) for (const el of line.children) if (el instanceof TextElementBox && !(el as any).revisions?.some((r: any) => r.revisionType === 'Deletion')) text += el.text;
+        if (text.trim()) out.push({ text: text.trim(), page: e.editorModule.getPageNumber(w) });
+      }
+      w = e.selection.getNextParagraphBlock(w.getSplitWidgets().pop());
+    }
+    return out;
+  },
+  errors: () => errors.slice(),
+
+  /** The engine id of the node at a native-shaped path (`sections`, 4, `blocks`, 4, ...). */
+  idAt(path: Array<string | number>): string | null {
+    if (!session) return null;
+    let cur: any = session.state.view.nf.root;
+    for (const t of path) cur = cur?.[t as any];
+    return cur && typeof (cur as NfNode).id === 'string' ? (cur as NfNode).id : null;
+  },
+
+  dispatch(verb: Verb, payload: unknown) {
+    if (!session) throw new Error('no session');
+    try {
+      return session.dispatch(verb, payload);
+    } finally {
+      // an injected failure is for this one dispatch only
+      injectFailure = false;
+    }
+  },
+
+  /** One dispatch timed in the page, in milliseconds (per-verb cost, measured without the bridge). */
+  timedDispatch(verb: Verb, payload: unknown): { ms: number; editorMs: number; result: unknown } {
+    if (!session) throw new Error('no session');
+    editorMs = 0;
+    const t0 = performance.now();
+    const result = session.dispatch(verb, payload);
+    return { ms: performance.now() - t0, editorMs, result };
+  },
+
+  /** The pieces every verb pays on the live document, timed in the page, in milliseconds. */
+  costs(): Record<string, number> {
+    const time = (f: () => unknown) => {
+      const t0 = performance.now();
+      f();
+      return performance.now() - t0;
+    };
+    const native = live().serialize();
+    const read = docxPack.adapter.toNormalForm(native);
+    return {
+      serialize: time(() => live().serialize()),
+      toNormalForm: time(() => docxPack.adapter.toNormalForm(native)),
+      fromNormalForm: time(() => docxPack.adapter.fromNormalForm(read.nf, read.residue)),
+      bytes: native.length
+    };
+  },
+
+  /** Test support: select the first occurrence of a text through the editor's own search; the selection's native positions. */
+  selectFound(text: string): { start: string; end: string; text: string } {
+    const ed: any = live();
+    ed.search.find(text, 'None');
+    const sel = ed.selection;
+    return { start: sel.startOffset, end: sel.endOffset, text: String(sel.text ?? '') };
+  },
+
+  /** Test support: the person bolds what is selected, as the toolbar's Bold does. */
+  boldSelection(): void {
+    (live() as any).selection.characterFormat.bold = true;
+  },
+
+  /** The descriptor the form would send now (section 9), the selection read from the editor. */
+  descriptor() {
+    if (!session) throw new Error('no session');
+    return session.descriptor();
+  },
+
+  /** Test support: the text the editor selects between two hierarchical offsets. */
+  selectText(start: string, end: string): string {
+    const selection = (live() as any).selection;
+    selection.select(start, end);
+    return String(selection.text ?? '');
+  },
+
+  /** Binding names the bindings' controller indexes now, and the binding tags the document holds. */
+  bindingNames(): { indexed: string[]; tags: string[] } {
+    const index = attached?.controller.index as any;
+    const indexed = new Set<string>();
+    for (const o of index?.occurrences ?? []) if (o?.def?.name) indexed.add(String(o.def.name));
+    for (const name of index?.fields?.keys?.() ?? []) indexed.add(String(name));
+    const tags: string[] = [];
+    const walk = (n: unknown) => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!n || typeof n !== 'object') return;
+      const tag = (n as any).contentControlProperties?.tag;
+      if (typeof tag === 'string') tags.push(tag);
+      Object.values(n).forEach(walk);
+    };
+    walk(JSON.parse(live().serialize()));
+    return { indexed: [...indexed].sort(), tags: tags.sort() };
+  },
+
+  /** How many occurrences of a binding name the bindings' index holds. */
+  bindingOccurrences(name: string): number {
+    const index = attached?.controller.index as any;
+    return (index?.occurrences ?? []).filter((o: any) => o?.def?.name === name).length;
+  },
+
+  /** Rows the bindings' controller indexes for a bound table, and how many times it was attached. */
+  bindingRows(tableId: string): number {
+    return attached?.controller.index?.tables.get(tableId)?.rows.length ?? -1;
+  },
+
+  /** The review rail as a person sees it: each card's title, count line and per-edit buttons. */
+  async rail(): Promise<Array<{ title: string; perEditButtons: number }>> {
+    // past the rail's own refresh debounce (150 ms), as a person looking at it would be
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await frame();
+    const host = document.getElementById('fm-review');
+    if (!host) return [];
+    const cards = [...host.querySelectorAll('button[aria-label^="Go to "]')] as HTMLElement[];
+    return cards.map((title) => {
+      const card = title.closest('div[css], div') as HTMLElement;
+      let box: HTMLElement | null = title;
+      while (box && !(box.querySelector('button') && [...box.querySelectorAll('button')].some((b) => b.textContent === 'Accept'))) box = box.parentElement;
+      return {
+        title: (title.textContent ?? '').trim(),
+        perEditButtons: box ? box.querySelectorAll('button[aria-label="Accept this edit"]').length : -1
+      };
+    });
+  },
+
+  /** Expand card `index` and click Accept or Reject on it, as a person does. */
+  async clickCard(index: number, action: 'Accept' | 'Reject'): Promise<void> {
+    const host = document.getElementById('fm-review') as HTMLElement;
+    const titles = [...host.querySelectorAll('button[aria-label^="Go to "]')] as HTMLElement[];
+    let box: HTMLElement | null = titles[index];
+    while (box && !byText(box, 'button', action)) box = box.parentElement;
+    const button = box && byText(box, 'button', action);
+    if (!button) throw new Error(`no ${action} button on card ${index}`);
+    button.click();
+    await frame();
+    await frame();
+  },
+
+  /** Click card `index`'s title ("Go to ..."), as a person does to find the change. */
+  async clickTitle(index: number): Promise<void> {
+    const host = document.getElementById('fm-review') as HTMLElement;
+    const titles = [...host.querySelectorAll('button[aria-label^="Go to "]')] as HTMLElement[];
+    titles[index].click();
+    await frame();
+    await frame();
+  },
+
+  /** The text of the paragraph the caret is in. */
+  caretParagraphText(): string {
+    const selection = (live() as any).selection;
+    const start = selection.startOffset as string;
+    selection.selectParagraph?.();
+    if (!selection.text) {
+      // older builds: extend from the paragraph start to its end
+      selection.moveToParagraphStart?.();
+      selection.extendToParagraphEnd?.();
+    }
+    const text = String(selection.text ?? '');
+    selection.select(start, start);
+    return text;
+  },
+
+  /** The document viewer's scroll offset, or set it (as a person scrolling to a place). */
+  async viewerScroll(top?: number): Promise<number> {
+    const viewer = (live() as any).documentHelper?.viewerContainer as HTMLElement;
+    if (top !== undefined) {
+      viewer.scrollTop = top;
+      viewer.dispatchEvent(new Event('scroll'));
+      await frame();
+      await frame();
+    }
+    return viewer.scrollTop;
+  },
+
+  /** Click the toolbar's Undo or Redo button. */
+  async clickToolbar(which: 'Undo' | 'Redo'): Promise<void> {
+    const button = byText(document.getElementById('fm-history') as HTMLElement, 'button', which);
+    if (!button) throw new Error(`no ${which} button`);
+    button.click();
+    await frame();
+    await frame();
+  },
+
+  /** Press Ctrl+Z or Ctrl+Y in the document, as the keyboard does. */
+  async pressInDocument(key: 'z' | 'y'): Promise<void> {
+    const div = (live() as any).documentHelper?.editableDiv as HTMLElement;
+    div.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true, cancelable: true }));
+    await frame();
+    await frame();
+  },
+
+  undoDepth(): number {
+    const h = history();
+    const stack = h?.undoStackIn ?? h?.undoStack;
+    return Array.isArray(stack) ? stack.length : -1;
+  },
+  canUndo: () => !!history()?.canUndo?.(),
+  /** Accept every pending change in the live editor, as Accept all in the rail does. */
+  async acceptAllLive(): Promise<void> {
+    (live() as any).revisions.acceptAll();
+    await frame();
+  },
+
+  /** Test support: open bytes through the engine's host, as a rollback does. */
+  hostOpen(native: string): string {
+    if (!session) throw new Error('no session');
+    session.host.open(native);
+    // what a synchronous caller (the rollback) reads straight after the open
+    return session.host.serialize();
+  },
+
+  /** The form's Robin turn settled (the hosted handler calls liveDocument.finishTurn()). */
+  finishTurn() {
+    session?.finishTurn();
+  },
+
+  sessionUndo() {
+    if (!session) throw new Error('no session');
+    return session.undo();
+  },
+  equivalent: (a: string, b: string) => equivalentNative(docxPack, a, b),
+
+  /** The live document's revisions, by type, group and the card title their tag carries. */
+  revisions(): Array<{ type: string; author: string; group: string | null; title: string | null }> {
+    const doc = JSON.parse(live().serialize());
+    return (doc.revisions ?? []).map((r: any) => {
+      let tag: any = null;
+      try {
+        tag = JSON.parse(r.customData ?? 'null');
+      } catch {
+        tag = null;
+      }
+      return { type: r.revisionType, author: r.author, group: tag?.changeSetId ?? null, title: tag?.title ?? null };
+    });
+  },
+
+  /**
+   * The editor's own accept-all and reject-all of the live document, compared with the engine's
+   * projections of it under the measured normalizations (the proof's assumption, checked).
+   */
+  async crossCheck(): Promise<{ accept: boolean; reject: boolean; acceptDiff: string[]; rejectDiff: string[] }> {
+    const post = live().serialize();
+    const native = await api.nativeProjections(post);
+    const nf = (text: string) => docxPack.adapter.toNormalForm(text).nf;
+    const canon = (doc: NormalForm) => {
+      let d = doc;
+      for (const n of docxPack.projections.normalizations) d = n.apply(d);
+      return comparable(docxPack, d);
+    };
+    const a1 = canon(docxPack.projections.accept(nf(post)));
+    const a2 = canon(nf(native.accepted));
+    const r1 = canon(docxPack.projections.reject(nf(post)));
+    const r2 = canon(nf(native.rejected));
+    return {
+      accept: canonicalJson(a1) === canonicalJson(a2),
+      reject: canonicalJson(r1) === canonicalJson(r2),
+      acceptDiff: differences(a1, a2),
+      rejectDiff: differences(r1, r2)
+    };
+  },
+
+  /** The editor's own accept-all and reject-all of a document, on a scratch editor. */
+  async nativeProjections(text: string): Promise<{ accepted: string; rejected: string }> {
+    if (!scratch) scratch = makeEditor('fm-scratch');
+    scratch.open(text);
+    await frame();
+    (scratch as any).revisions.acceptAll();
+    await frame();
+    const accepted = scratch.serialize();
+    scratch.open(text);
+    await frame();
+    (scratch as any).revisions.rejectAll();
+    await frame();
+    const rejected = scratch.serialize();
+    return { accepted, rejected };
+  }
+};
+
+(window as any).fmEngine = api;
+(window as any).fmEngineReady = true;

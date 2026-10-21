@@ -98,8 +98,7 @@ const ThumbnailRenderer = ({
     setCardElement: noop,
     visiblePositions,
     calendly: undefined,
-    featheryContext: { formId },
-    assistantClient: undefined
+    featheryContext: { formId }
   };
 
   return (

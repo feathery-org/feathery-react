@@ -1,6 +1,7 @@
 import React from 'react';
 import { RedoIcon, UndoIcon } from '../../icons';
 import { iconBtn } from '../styles';
+import { redoDocument, undoDocument } from '../../historyRouting';
 
 export default function HistoryGroup({
   editor,
@@ -15,7 +16,7 @@ export default function HistoryGroup({
         type='button'
         css={iconBtn(false, readOnly)}
         disabled={readOnly}
-        onClick={() => editor.editorHistory.undo()}
+        onClick={() => undoDocument(editor)}
         title='Undo'
       >
         <UndoIcon width={16} height={16} />
@@ -24,7 +25,7 @@ export default function HistoryGroup({
         type='button'
         css={iconBtn(false, readOnly)}
         disabled={readOnly}
-        onClick={() => editor.editorHistory.redo()}
+        onClick={() => redoDocument(editor)}
         title='Redo'
       >
         <RedoIcon width={16} height={16} />

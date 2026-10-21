@@ -184,6 +184,13 @@ export function attachBindings(
   // bindings; this is how its batches get reconciled.
   registerBindingReconciler(editor, {
     flush: () => controller.flush(),
+    // the document engine's splice replaced the document: re-read the content controls and
+    // adopt the new document, no dispose and re-attach
+    reopened: () => {
+      if ((editor as { isDestroyed?: boolean }).isDestroyed) return;
+      refreshContentControlCollection(editor);
+      controller.notifyReopened();
+    },
     runCommands: (commands, options) =>
       controller.runCommands(commands, options)
   });
