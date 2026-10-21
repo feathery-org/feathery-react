@@ -38,7 +38,10 @@ export interface PptxEditorProps {
   openNonce?: number;
   onReady?: () => void;
   onChange?: (dirty: boolean) => void;
+  /** A failed operation (save) on a document that stays open and editable. */
   onError?: (message: string) => void;
+  /** The document could not be opened at all; falls back to onError. */
+  onLoadError?: (message: string) => void;
   onSave?: (blob: Blob) => unknown | Promise<unknown>;
   /** Convert the saved presentation to PDF (host calls the backend). When set,
    * the editor offers "Download as PDF" alongside the native .pptx download. */

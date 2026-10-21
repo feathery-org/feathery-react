@@ -851,46 +851,59 @@ export default function DocumentEditorContainer({
       </div>
     );
   }
+  const operationAlert = operationError && (
+    <div role='alert' css={{ color: '#b42318', padding: 8 }}>
+      {operationError}
+    </div>
+  );
   if (envelope.type === 'pptx') {
     return box(
       <React.Suspense fallback={<div css={placeholder}>Loading document…</div>}>
         {/* Absolute fill inside the container's relative box: the editor is
             bounded by the container's dimensions and scrolls internally,
             never growing the hosting page. */}
-        <div css={{ position: 'absolute', inset: 0 }}>
-          <PptxEditor
-            source={source}
-            readOnly={readOnly}
-            reviewChanges={reviewChanges}
-            openNonce={reloadKey}
-            fileName='document.pptx'
-            // Signing stays docx-only (no pptx signature flow); PDF export is
-            // supported server-side via the shared conversion endpoint.
-            hideDownload={savesToField || !offersDownload}
-            onExportPdf={
-              envelope.id
-                ? () => client.downloadEnvelopePdf(envelope.id)
-                : undefined
-            }
-            onError={setError}
-            onSave={saveEnvelope}
-            onChange={
-              !readOnly && containerId
-                ? (dirty: boolean) =>
-                    setDocxEditorDirty(formId, containerId, dirty)
-                : undefined
-            }
-          />
+        <div
+          css={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          {operationAlert}
+          <div css={{ flex: 1, minHeight: 0 }}>
+            <PptxEditor
+              source={source}
+              readOnly={readOnly}
+              reviewChanges={reviewChanges}
+              openNonce={reloadKey}
+              fileName='document.pptx'
+              // Signing stays docx-only (no pptx signature flow); PDF export is
+              // supported server-side via the shared conversion endpoint.
+              hideDownload={savesToField || !offersDownload}
+              onExportPdf={
+                envelope.id
+                  ? () => client.downloadEnvelopePdf(envelope.id)
+                  : undefined
+              }
+              // Only an unopenable document replaces the editor. A failed save
+              // must keep it mounted: the unsaved deck and history live there.
+              onLoadError={setError}
+              onError={setOperationError}
+              onSave={saveEnvelope}
+              onChange={
+                !readOnly && containerId
+                  ? (dirty: boolean) =>
+                      setDocxEditorDirty(formId, containerId, dirty)
+                  : undefined
+              }
+            />
+          </div>
         </div>
       </React.Suspense>,
       editorWrap
     );
   }
-  const operationAlert = operationError && (
-    <div role='alert' css={{ color: '#b42318', padding: 8 }}>
-      {operationError}
-    </div>
-  );
   // A PDF has no editable docx to open, so show it read-only. Its status is
   // only claimed when it was sent (this session or per the backend) or signed.
   if (envelope.type === 'pdf') {

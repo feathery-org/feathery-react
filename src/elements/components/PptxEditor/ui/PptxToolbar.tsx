@@ -18,10 +18,7 @@ import { child, descendant, getAttr } from '../core/opc/xml';
 import { selectedTextRanges } from './textSelection';
 import { shortcutHint, withShortcut } from './shortcuts';
 import InstantTooltips from './InstantTooltips';
-import {
-  effectiveSlideSize,
-  SLIDE_SIZE_PRESETS
-} from '../core/model/slideSize';
+import { SLIDE_SIZE_PRESETS } from '../core/model/slideSize';
 import { FEATHERY_RED, ZINC } from '../../DocxEditor/DocxToolbar/styles';
 import {
   AlignCenterIcon,
@@ -80,8 +77,7 @@ export function Toolbar({
   const { svgRoot, commitSvgTextEdit } = store;
 
   const slide = deck?.slides[activeSlide];
-  const currentSlideSize =
-    deck && slide ? effectiveSlideSize(deck, slide) : undefined;
+  const currentSlideSize = deck?.size;
   const currentPreset = currentSlideSize
     ? Object.entries(SLIDE_SIZE_PRESETS).find(
         ([, preset]) =>
@@ -209,11 +205,8 @@ export function Toolbar({
     'solid' | 'gradient' | 'image'
   >('solid');
   const resizeSlide = (cx: number, cy: number) => {
-    if (!deck || !slide) return;
-    executeCommand(
-      { type: 'set-slide-size', slideId: slide.path, cx, cy },
-      'Resize slide'
-    );
+    if (!deck) return;
+    executeCommand({ type: 'set-presentation-size', cx, cy }, 'Resize slides');
   };
   const editTable = (
     operations: TableEditOperation[],
@@ -734,8 +727,8 @@ export function Toolbar({
                       if (preset) resizeSlide(preset.cx, preset.cy);
                     }}
                     css={{ ...styles.select, width: '100%' }}
-                    title='Size preset for this slide'
-                    aria-label='Size preset for this slide'
+                    title='Slide size preset (applies to every slide)'
+                    aria-label='Slide size preset (applies to every slide)'
                   >
                     {Object.entries(SLIDE_SIZE_PRESETS).map(([key, preset]) => (
                       <option key={key} value={key}>

@@ -66,6 +66,7 @@ function PptxEditorInner({
   onReady,
   onChange,
   onError,
+  onLoadError,
   onSave,
   onExportPdf,
   historyHost,
@@ -115,7 +116,7 @@ function PptxEditorInner({
         setLoading(false);
         const message = err?.message || 'Failed to open the presentation.';
         setLoadError(message);
-        onError?.(message);
+        (onLoadError ?? onError)?.(message);
       }
     })();
     return () => {
@@ -144,12 +145,18 @@ function PptxEditorInner({
     // Flush any in-flight contenteditable edit before exporting.
     store.commitSvgTextEdit?.({ render: false });
     setSaving(true);
+    const loaded = loadSeq.current;
     try {
+      // Editing stays open while the host request runs, so only the exported
+      // state becomes clean; anything typed meanwhile is still unsaved.
+      const savePoint = store.engine.savePoint();
       const blob = store.engine.exportPptx();
       await onSave(blob);
-      store.markSaved();
-      dirtyRef.current = false;
-      onChange?.(false);
+      if (loaded !== loadSeq.current) return; // another document was opened
+      store.markSaved(savePoint);
+      const dirty = store.engine.isDirty();
+      dirtyRef.current = dirty;
+      onChange?.(dirty);
     } catch (err: any) {
       onError?.(err?.message || 'Saving the presentation failed.');
     } finally {

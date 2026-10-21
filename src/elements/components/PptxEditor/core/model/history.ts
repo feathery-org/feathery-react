@@ -1,6 +1,7 @@
 import { applySlideJSON } from './applyJson';
 import { deckToJSON, slideToJSON, type DeckJSON, type SlideJSON } from './json';
 import { refreshSlideModel, rebuildSlides } from './import';
+import { setPresentationSize } from './slideSize';
 import type { Deck } from './types';
 import type { OTree } from '../opc/xml';
 import { deepClone } from '../opc/deepClone';
@@ -60,6 +61,8 @@ export interface HistoryRestoreResult {
   slides: HistorySlideChange[];
   /** The slide set/order changed (add/delete/duplicate); redraw the deck. */
   deck?: boolean;
+  /** The presentation-wide slide size changed (every slide re-renders). */
+  size: boolean;
 }
 
 const clone = <T>(value: T): T => deepClone(value);
@@ -131,11 +134,17 @@ export function captureHistorySnapshot(
   const sourceSlides: Record<string, OTree> = {};
   const slideSeqs: Record<string, number> = {};
   const slides: SlideJSON[] = [];
+  // Slide JSON mirrors the presentation size, so a resize invalidates every
+  // slide's projection even though no slide part was touched.
+  const sameSize =
+    !!previous &&
+    previous.document.sizeEMU.cx === deck.size.cx &&
+    previous.document.sizeEMU.cy === deck.size.cy;
   deck.slides.forEach((slide, i) => {
     const seq = deck.pkg.mutationSeq(slide.path);
     slideSeqs[slide.path] = seq;
     const previousSlide =
-      previous && previous.slideSeqs[slide.path] === seq
+      previous && sameSize && previous.slideSeqs[slide.path] === seq
         ? previous.document.slides.find(
             (candidate) => candidate.path === slide.path
           )
@@ -253,6 +262,9 @@ export function restoreHistorySnapshot(
       (slide, i) => slide.path !== target.document.slides[i]?.path
     );
   if (structural) reconcileManifest(deck, target);
+  const size = target.document.sizeEMU;
+  const sizeChanged = size.cx !== deck.size.cx || size.cy !== deck.size.cy;
+  if (sizeChanged) setPresentationSize(deck, size.cx, size.cy);
   const current = deckToJSON(deck);
   const changes: HistorySlideChange[] = [];
   for (const slide of deck.slides) {
@@ -281,5 +293,5 @@ export function restoreHistorySnapshot(
     }
     changes.push(change);
   }
-  return { slides: changes, deck: structural };
+  return { slides: changes, deck: structural, size: sizeChanged };
 }

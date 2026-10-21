@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { initState } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
@@ -34,7 +34,9 @@ jest.mock('../PptxEditor', () => {
       readOnly,
       hideDownload,
       onSave,
-      onChange
+      onChange,
+      onError,
+      onLoadError
     }: any) {
       return ReactActual.createElement(
         'div',
@@ -47,7 +49,18 @@ jest.mock('../PptxEditor', () => {
           ReactActual.createElement('button', {
             key: 'save',
             'data-testid': 'pptx-save',
-            onClick: () => onSave(new Blob(['pptx-bytes']))
+            // The real editor catches a rejected save and reports it as a
+            // non-fatal operation error.
+            onClick: () =>
+              Promise.resolve(onSave(new Blob(['pptx-bytes']))).catch(
+                (err: Error) => onError?.(err.message)
+              )
+          }),
+        onLoadError &&
+          ReactActual.createElement('button', {
+            key: 'load-fail',
+            'data-testid': 'pptx-load-fail',
+            onClick: () => onLoadError('Could not open the deck')
           }),
         onChange &&
           ReactActual.createElement('button', {
@@ -164,6 +177,34 @@ describe('DocumentEditorContainer pptx dispatch', () => {
         undefined
       )
     );
+  });
+
+  it('keeps the editor mounted and shows an alert when a save fails', async () => {
+    stashEnvelope();
+    mockSaveEnvelopeFile.mockRejectedValueOnce(new Error('Upload rejected'));
+    render(<DocumentEditorContainer containerId={CONTAINER} formId='form-1' />);
+    (await screen.findByTestId('pptx-save')).click();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Upload rejected'
+    );
+    // The unsaved deck and its history live in this instance: it must survive.
+    expect(
+      screen.getByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('pptx-save')).toBeInTheDocument();
+  });
+
+  it('replaces the editor only when the document cannot be opened', async () => {
+    stashEnvelope();
+    render(<DocumentEditorContainer containerId={CONTAINER} formId='form-1' />);
+    const failLoad = await screen.findByTestId('pptx-load-fail');
+    await act(async () => failLoad.click());
+    expect(
+      await screen.findByText('Could not open the deck')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).toBeNull();
   });
 
   it('registers and clears unsaved-changes protection', async () => {

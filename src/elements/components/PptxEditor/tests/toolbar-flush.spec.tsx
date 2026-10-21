@@ -124,7 +124,7 @@ it('commits a pending table-cell edit before formatting cells from the toolbar',
   expect(bold.disabled).toBe(false);
   await act(async () => bold.click());
 
-  const cell = tableCell(table, 0, 0);
+  const cell = tableCell(table, 0, 0)!;
   expect(tableCellText(cell)).toBe('Typed');
   expect(descendant(cell, 'a:rPr')?.[':@']?.['@_b']).toBe('1');
 });
