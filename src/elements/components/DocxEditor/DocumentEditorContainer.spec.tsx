@@ -72,7 +72,7 @@ jest.mock('./index', () => {
   }: any) {
     mockHistory = history;
     React.useEffect(() => {
-      onBeforeReplaceReady?.(mockBeforeReplace);
+      onBeforeReplaceReady?.(() => mockBeforeReplace(source?.url));
       return () => onBeforeReplaceReady?.(null);
     }, [onBeforeReplaceReady]);
     const editor = React.useMemo(
@@ -1953,6 +1953,39 @@ describe('document tab navigation', () => {
       'doc-a',
       'doc-b',
       'doc-b'
+    ]);
+  });
+
+  it('saves a document edited while a later one was flushing before replacing the packet', async () => {
+    const view = render(<DocumentEditorContainer containerId={containerId} />);
+    await view.findByTestId('editor:a.editor.docx');
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    await view.findByTestId('editor:b.docx');
+    mockBeforeReplace.mockImplementation(async (url: string) => {
+      // The user edits A while B is saving; the next pass must save A again
+      const call = mockBeforeReplace.mock.calls.length;
+      if (call === 2) fireEvent.click(view.getByTestId('dirty:a.editor.docx'));
+      if (call === 3 && url === 'a.editor.docx')
+        fireEvent.click(view.getByTestId('clean:a.editor.docx'));
+    });
+    await act(async () =>
+      featheryWindow().dispatchEvent(
+        new CustomEvent('feathery-docx-editor-refresh', {
+          detail: {
+            containerId,
+            envelopes: [
+              { ...second, id: 'replacement', file: 'replacement.docx' }
+            ]
+          }
+        })
+      )
+    );
+    await view.findByTestId('editor:replacement.docx');
+    expect(mockBeforeReplace.mock.calls.map(([url]) => url)).toEqual([
+      'a.editor.docx',
+      'b.docx',
+      'a.editor.docx',
+      'b.docx'
     ]);
   });
 

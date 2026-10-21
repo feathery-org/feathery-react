@@ -101,7 +101,7 @@ export default function DocxDocumentSession({
   label: string;
   active: boolean;
   multiple: boolean;
-  onDirty: (dirty: boolean) => void;
+  onDirty: (id: string, dirty: boolean) => void;
   railPanel?: DocxEditorProps['railPanel'];
   onRailPanelChange?: DocxEditorProps['onRailPanelChange'];
   onEnvelopeChange: (value: Envelope) => void;
@@ -612,7 +612,7 @@ export default function DocxDocumentSession({
           readOnly
             ? undefined
             : (dirty: boolean) => {
-                onDirty(dirty);
+                onDirty(initialEnvelope.id, dirty);
                 if (containerId)
                   setDocxEditorDirty(
                     formId,

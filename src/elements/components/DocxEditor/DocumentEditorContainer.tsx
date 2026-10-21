@@ -89,10 +89,14 @@ export default function DocumentEditorContainer({
   const preparedForSigning = useRef(
     new Map<string, EditorEnvelope & { signer_id?: string }>()
   );
+  const dirtyIds = useRef(new Set<string>());
   const registerSession = useCallback(
     (id: string, handle: DocxDocumentSessionHandle | null) => {
       if (handle) sessions.current.set(id, handle);
-      else sessions.current.delete(id);
+      else {
+        sessions.current.delete(id);
+        dirtyIds.current.delete(id);
+      }
     },
     []
   );
@@ -101,7 +105,11 @@ export default function DocumentEditorContainer({
     [client]
   );
   const flushLoaded = useCallback(async () => {
-    for (const session of sessions.current.values()) await session.save();
+    // Editors stay live while later ones save, so a saved document can be
+    // edited again mid-flush; keep passing until a pass leaves nothing dirty
+    do {
+      for (const session of sessions.current.values()) await session.save();
+    } while (dirtyIds.current.size);
   }, []);
   const packet = useDocumentPacket({
     containerId,
@@ -132,8 +140,11 @@ export default function DocumentEditorContainer({
   const busyRef = useRef(false);
   const [feedback, setFeedback] = useState('');
   const [railPanel, setRailPanel] = useState<ActivePanel>(null);
-  const clearFeedbackOnEdit = useCallback((dirty: boolean) => {
-    if (dirty) setFeedback('');
+  const trackDirty = useCallback((id: string, dirty: boolean) => {
+    if (dirty) {
+      dirtyIds.current.add(id);
+      setFeedback('');
+    } else dirtyIds.current.delete(id);
   }, []);
   useEffect(() => setFeedback(''), [reloadKey]);
   useEffect(() => {
@@ -433,7 +444,7 @@ export default function DocumentEditorContainer({
                     documentId={tab.documentId}
                     label={tab.label}
                     active={active}
-                    onDirty={clearFeedbackOnEdit}
+                    onDirty={trackDirty}
                     railPanel={tabs.length > 1 ? railPanel : undefined}
                     onRailPanelChange={
                       tabs.length > 1 ? setRailPanel : undefined
