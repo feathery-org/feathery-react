@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 
-import { setAssistantSessionActive } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { setRobinTurnActive } from '../robinActivity';
 import { AUTOSAVE_IDLE_MS } from './autosaveScheduler';
 import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
 import { applyHunks } from './sfdtDiff';
@@ -155,12 +155,12 @@ describe('useDocxHistorySession', () => {
     });
     const { view } = setup({ host, save }, editor);
 
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello Robin' }] }] }]
     });
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
 
     expect(view.result.current.error).toBeNull();
@@ -184,10 +184,10 @@ describe('useDocxHistorySession', () => {
       },
       editor
     );
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = SFDT.replace('hello', 'hello Robin');
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
     expect(host.closeVersion).not.toHaveBeenCalled();
 
@@ -212,10 +212,10 @@ describe('useDocxHistorySession', () => {
     );
 
     for (const text of ['first Robin edit', 'second Robin edit']) {
-      act(() => setAssistantSessionActive(editor, true));
+      act(() => setRobinTurnActive(editor, true));
       doc = SFDT.replace('hello', text);
       act(() => view.result.current.onEdit({ assistant: true }));
-      act(() => setAssistantSessionActive(editor, false));
+      act(() => setRobinTurnActive(editor, false));
       await flush();
       if (text === 'first Robin edit')
         expect(view.result.current.error).toContain('version details');
@@ -232,9 +232,9 @@ describe('useDocxHistorySession', () => {
         throw new Error('Document upload failed');
       }
     });
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
 
     expect(host.closeVersion).not.toHaveBeenCalled();
@@ -257,10 +257,10 @@ describe('useDocxHistorySession', () => {
       .mockResolvedValue(undefined);
     const { view, host } = setup({ save }, editor);
     for (const text of ['first Robin edit', 'second Robin edit']) {
-      act(() => setAssistantSessionActive(editor, true));
+      act(() => setRobinTurnActive(editor, true));
       doc = SFDT.replace('hello', text);
       act(() => view.result.current.onEdit({ assistant: true }));
-      act(() => setAssistantSessionActive(editor, false));
+      act(() => setRobinTurnActive(editor, false));
       await flush();
     }
     expect(host.closeVersion).not.toHaveBeenCalled();
@@ -1120,9 +1120,9 @@ describe('useDocxHistorySession', () => {
   it('checkpoints (uploads redlines) on assistant turn end WITHOUT closing the session', async () => {
     const { view, editor, save, host } = setup();
 
-    setAssistantSessionActive(editor, true); // a turn is under way
+    setRobinTurnActive(editor, true); // a turn is under way
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false)); // turn ends
+    act(() => setRobinTurnActive(editor, false)); // turn ends
     await flush();
 
     // The turn's redlines are uploaded (durable) via the close endpoint...
@@ -1157,9 +1157,9 @@ describe('useDocxHistorySession', () => {
         })
     );
 
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
     const documentSavedAt = view.result.current.savedAt;
@@ -1191,12 +1191,12 @@ describe('useDocxHistorySession', () => {
     act(() => view.result.current.onEdit({ assistant: false }));
 
     // Robin's turn starts (snapshot taken), THEN its first op applies.
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello user robin' }] }] }]
     });
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false)); // turn end → close
+    act(() => setRobinTurnActive(editor, false)); // turn end → close
     await flush();
 
     const payload = host.closeVersion.mock.calls[0][1];
@@ -1237,10 +1237,10 @@ describe('useDocxHistorySession', () => {
     const editor: any = { serialize: () => doc };
     const { view, host } = setup({}, editor);
     await flush();
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = document('User paragraph', ' robin addition');
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
     doc = document('User paragraph human addition', ' robin addition');
     act(() => view.result.current.onEdit({ assistant: false }));
@@ -1286,13 +1286,13 @@ describe('useDocxHistorySession', () => {
     await flush();
     doc = document('same words', '', false);
     act(() => view.result.current.onEdit({ assistant: false }));
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = document('same words', 'same words', true);
     act(() => view.result.current.onEdit({ assistant: true }));
     // Human input between tool calls, while the turn remains active.
     doc = document('same words typed later', 'same words', true);
     act(() => view.result.current.onEdit({ assistant: false }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
     const pending = doc;
     await act(async () => {
@@ -1509,7 +1509,7 @@ describe('useDocxHistorySession', () => {
     const { view, host } = setup({}, editor);
     await flush(); // pristine baseline
 
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     // Robin inserts " world" as a LIVE tracked revision.
     doc = JSON.stringify({
       sections: [
@@ -1539,7 +1539,7 @@ describe('useDocxHistorySession', () => {
       ]
     });
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false)); // turn end → close
+    act(() => setRobinTurnActive(editor, false)); // turn end → close
     await flush();
 
     const payload = host.closeVersion.mock.calls[0][1];
@@ -1620,7 +1620,7 @@ describe('useDocxHistorySession', () => {
     const { view, host, save } = setup({}, editor);
     await flush();
 
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello robin' }] }] }]
     });
@@ -1633,7 +1633,7 @@ describe('useDocxHistorySession', () => {
       });
       view.result.current.onEdit({ assistant: false });
     });
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
 
     const payload = host.closeVersion.mock.calls[0][1];

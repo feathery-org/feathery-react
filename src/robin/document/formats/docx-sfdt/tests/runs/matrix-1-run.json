@@ -1,0 +1,604 @@
+{
+ "source": "rig79 evidence/matrix-1 (2026-10-12): the model's committed write per task, product engine",
+ "writes": [
+  {
+   "task": "T3",
+   "fixture": "flagship-v4d.sfdt.json",
+   "input": {
+    "intent": "Add a live \"Premium tax\" column at the end of the Property premium detail table, computing each row's line total times the tax rate.",
+    "scope": {
+     "ids": [
+      "n120",
+      "n130",
+      "n133",
+      "n146",
+      "n150",
+      "n165",
+      "n169",
+      "n183",
+      "n187",
+      "n200",
+      "n204",
+      "n218",
+      "n222",
+      "n226"
+     ]
+    },
+    "formats": {},
+    "changes": [
+     {
+      "kind": "insert_after",
+      "anchor": "n130",
+      "container": "0e6c3a8e37ccc934",
+      "node": {
+       "kind": "cell",
+       "style": "f28",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "run",
+           "text": "Premium tax"
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n146",
+      "container": "06e4e5c7a5e14b2c",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r1"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n165",
+      "container": "4a9b4476be0e7e51",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r2"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n183",
+      "container": "d463836ddb4e3e19",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r3"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n200",
+      "container": "fc35b06454f32209",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r4"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n218",
+      "container": "85f11240550759d2",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r5"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n226",
+      "container": "0dd99febfdb75ffd",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": []
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "task": "T4",
+   "fixture": "flagship-v4d.sfdt.json",
+   "input": {
+    "intent": "Split the Property premium detail table: move Business interruption and Machinery breakdown into a new bound table below with its own subtotal, and make the premium summary add both Property subtotals.",
+    "scope": {
+     "ids": [
+      "n118",
+      "n187",
+      "n204",
+      "n854",
+      "n878",
+      "n35",
+      "n119"
+     ]
+    },
+    "formats": {},
+    "changes": [
+     {
+      "kind": "insert_after",
+      "anchor": "n118",
+      "container": "ac891f8f",
+      "node": {
+       "kind": "paragraph",
+       "style": "f6",
+       "inlines": []
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n118",
+      "container": "ac891f8f",
+      "node": {
+       "id": "tmp:ctl",
+       "kind": "control",
+       "binding": {
+        "table": "property_premium_2"
+       },
+       "blocks": [
+        {
+         "id": "tmp:tbl",
+         "kind": "table",
+         "style": "f17",
+         "rows": [
+          {
+           "id": "tmp:hdr",
+           "kind": "row",
+           "style": "f12",
+           "cells": [
+            {
+             "kind": "cell",
+             "style": "f25",
+             "blocks": [
+              {
+               "kind": "paragraph",
+               "style": "f6",
+               "inlines": [
+                {
+                 "kind": "run",
+                 "text": "Item"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "kind": "cell",
+             "style": "f26",
+             "blocks": [
+              {
+               "kind": "paragraph",
+               "style": "f6",
+               "inlines": [
+                {
+                 "kind": "run",
+                 "text": "Units"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "kind": "cell",
+             "style": "f27",
+             "blocks": [
+              {
+               "kind": "paragraph",
+               "style": "f6",
+               "inlines": [
+                {
+                 "kind": "run",
+                 "text": "Rate"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "kind": "cell",
+             "style": "f28",
+             "blocks": [
+              {
+               "kind": "paragraph",
+               "style": "f6",
+               "inlines": [
+                {
+                 "kind": "run",
+                 "text": "Line total"
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          },
+          {
+           "id": "tmp:sub",
+           "kind": "row",
+           "style": "f12",
+           "cells": [
+            {
+             "kind": "cell",
+             "style": "f37",
+             "blocks": [
+              {
+               "kind": "paragraph",
+               "style": "f6",
+               "inlines": [
+                {
+                 "kind": "run",
+                 "text": "Subsection subtotal"
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "kind": "cell",
+             "style": "f32",
+             "blocks": [
+              {
+               "kind": "paragraph",
+               "style": "f6",
+               "inlines": [
+                {
+                 "kind": "control",
+                 "binding": {
+                  "name": "property_premium_2_subtotal",
+                  "type": "currency",
+                  "expr": "sum(property_premium_2.line_total)"
+                 },
+                 "inlines": [
+                  {
+                   "kind": "run",
+                   "text": "$0.00"
+                  }
+                 ]
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "move",
+      "id": "n187",
+      "shape": "fc35b06454f32209",
+      "anchor": "tmp:hdr",
+      "position": "after"
+     },
+     {
+      "kind": "move",
+      "id": "n204",
+      "shape": "85f11240550759d2",
+      "anchor": "tmp:sub",
+      "position": "before"
+     },
+     {
+      "kind": "replace",
+      "id": "n854",
+      "base": "2167b1cb04e6d147",
+      "node": {
+       "id": "n854",
+       "kind": "control",
+       "binding": {
+        "name": "summary_property",
+        "type": "currency",
+        "expr": "sum(property_premium_subtotal,property_premium_2_subtotal)"
+       },
+       "inlines": [
+        {
+         "id": "n855",
+         "kind": "run",
+         "text": "$22,054.40"
+        }
+       ]
+      }
+     },
+     {
+      "kind": "replace",
+      "id": "n878",
+      "base": "223b76de45cb11fe",
+      "node": {
+       "id": "n878",
+       "kind": "control",
+       "binding": {
+        "name": "summary_subtotal",
+        "type": "currency",
+        "expr": "sum(property_premium_subtotal,property_premium_2_subtotal,liability_premium_subtotal,motor_premium_subtotal)"
+       },
+       "inlines": [
+        {
+         "id": "n879",
+         "kind": "run",
+         "text": "$75,667.35"
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "task": "T11",
+   "fixture": "wp2-flagship-ayesha.sfdt.json",
+   "input": {
+    "intent": "Add a live \"Premium tax\" column as the last column of the Property premium detail table, computing each row's line total times the tax rate.",
+    "scope": {
+     "ids": [
+      "n120",
+      "n130",
+      "n133",
+      "n146",
+      "n150",
+      "n165",
+      "n187",
+      "n200",
+      "n204",
+      "n218",
+      "n222",
+      "n226"
+     ]
+    },
+    "formats": {},
+    "changes": [
+     {
+      "kind": "insert_after",
+      "anchor": "n130",
+      "container": "0e6c3a8e37ccc934",
+      "node": {
+       "kind": "cell",
+       "style": "f28",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "run",
+           "text": "Premium tax"
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n146",
+      "container": "06e4e5c7a5e14b2c",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r1"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n165",
+      "container": "4a9b4476be0e7e51",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r2"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n200",
+      "container": "fc35b06454f32209",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r4"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n218",
+      "container": "85f11240550759d2",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r5"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n226",
+      "container": "0dd99febfdb75ffd",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": []
+        }
+       ]
+      }
+     }
+    ]
+   }
+  }
+ ]
+}
