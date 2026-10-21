@@ -270,7 +270,7 @@ export function composeTracked(
           // like a move, the bookmarks it holds stay with the new copy. The editor keeps no
           // revision on a control's own markers through open(), so its piecewise accept or reject
           // leaves the other control as an empty shell: such a card resolves through the engine's
-          // projections (`featureReplacements` names it), never natively
+          // projections (`ownsResolution` names it), never natively
           const gone = clone(old);
           markSubtree(gone, del);
           markSubtree(kid, ins);

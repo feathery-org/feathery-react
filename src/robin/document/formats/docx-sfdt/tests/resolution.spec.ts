@@ -112,6 +112,32 @@ describe('a bookmarked move rejected after a reload (review item 3)', () => {
   });
 });
 
+describe('a replaced formula rejected after a reload', () => {
+  it('the card is the engine\'s after a reload, and its reject leaves the original formula with no extra control', () => {
+    const m = mount();
+    const control = m.session.state.view.nodes().find((n) => n.kind === 'control' && typeof (n.binding as { expr?: unknown } | undefined)?.expr === 'string' && Array.isArray(n.inlines)) as NfNode;
+    const { name, expr } = control.binding as { name: string; expr: string };
+    const formulasNamed = (session: DocumentSession) =>
+      session.state.view.nodes().filter((n) => (n.binding as { name?: string } | undefined)?.name === name).map((n) => (n.binding as { expr: string }).expr);
+    const original = formulasNamed(m.session);
+    const read = m.session.dispatch('read', { turnId: 'turn-r', editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { ids: [control.id] } });
+    if (read.status !== 'ok') throw new Error(JSON.stringify(read).slice(0, 600));
+    const base = (read.result as { nodes: Array<{ id: string; base: string }> }).nodes.find((n) => n.id === control.id)?.base;
+    const node = JSON.parse(JSON.stringify(control, (k, v) => (['id', 'pending'].includes(k) ? undefined : v)));
+    node.binding = { ...node.binding, expr: `mul(${expr},1)` };
+    const out = m.session.dispatch('write', { turnId: 'turn-f', editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { intent: 'Write the formula out.', scope: { ids: [control.id] }, changes: [{ kind: 'replace', id: control.id, base, node }] } });
+    if (out.status !== 'ok' || !out.result.ok) throw new Error(JSON.stringify(out).slice(0, 600));
+    // a reload: a new session over the saved bytes, no snapshot, ids minted afresh
+    let doc = m.doc();
+    const host = { serialize: () => doc, open: (x: string) => { doc = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const reloaded = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' }, editorId: 'ed' });
+    expect(reloaded.ownsCard('turn-f')).toBe(true);
+    expect(reloaded.resolveCard('turn-f', false)).toBe(true);
+    expect(formulasNamed(reloaded)).toEqual(original);
+    expect(JSON.stringify(JSON.parse(doc).revisions ?? [])).not.toContain('turn-f');
+  });
+});
+
 describe('move pairs are the moves a change set recorded, never equal content (review regression)', () => {
   const para = (name: string, text = 'Same') => ({ inlines: [{ bookmarkType: 0, name }, { text }, { bookmarkType: 1, name }] });
   const mountDoc = (blocks: unknown[]) => {

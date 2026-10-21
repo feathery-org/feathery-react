@@ -324,14 +324,6 @@ function carryBookmarks(to: NfNode, from: NfNode): void {
 }
 
 /**
- * Whether change set `group` holds a move whose bookmarks only the engine can carry back on a
- * reject (the editor's own reject restores the deleted copy, which holds none).
- */
-export function bookmarkedMoves(nf: NormalForm, group: string): boolean {
-  return movesOf(nf, group).some(({ placed }) => hasBookmarks(placed));
-}
-
-/**
  * One change set's card resolved, every other pending change left as it is: what the engine
  * applies when it owns a card's accept or reject (a structural card, a feature replacement the
  * editor's own resolution would leave as an empty control, or a bookmarked move, whose reject
@@ -890,13 +882,24 @@ export function conservedResidue(entry: unknown): unknown {
 
 /**
  * Whether the editor's own accept or reject cannot settle change set `group`, so the engine
- * resolves its card: a node it carries twice (a feature replacement keeps the old control beside
- * the new one, and the editor keeps no revision on a control's own markers, so its resolution
- * leaves an empty control), or a revision in a header or footer, whose native reject does not
- * restore the story (architecture 7.5, probe P1b).
+ * resolves its card: a node it carries twice or a move pair whose copies differ in a feature (a
+ * feature replacement keeps the old control beside the new one, and the editor keeps no revision
+ * on a control's own markers, so its resolution leaves an empty control), or a revision in a
+ * header or footer, whose native reject does not restore the story (architecture 7.5, probe P1b).
  */
 export function ownsResolution(nf: NormalForm, group: string): boolean {
-  if (bookmarkedMoves(nf, group)) return true;
+  if (
+    movesOf(nf, group).some(
+      ({ removed, placed }) =>
+        hasBookmarks(placed) ||
+        FEATURE_KEYS.some(
+          (k) =>
+            canonicalJson(removed[k] ?? null) !==
+            canonicalJson(placed[k] ?? null)
+        )
+    )
+  )
+    return true;
   const seen = new Map<string, number>();
   let story = false;
   const ours = (n: NfNode) =>
