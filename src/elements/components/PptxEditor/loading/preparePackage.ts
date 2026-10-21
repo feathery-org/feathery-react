@@ -13,9 +13,16 @@ export function preparePackage(bytes: Uint8Array): PreparedPackage {
   const trees = new Map<string, OTree>();
   let estimatedBytes = 0;
   for (const [path, text] of parts.text) {
-    const tree = parseXml(text);
-    trees.set(path, tree);
-    estimatedBytes += text.length * 2 + JSON.stringify(tree).length * 2;
+    estimatedBytes += text.length * 2;
+    try {
+      const tree = parseXml(text);
+      trees.set(path, tree);
+      estimatedBytes += JSON.stringify(tree).length * 2;
+    } catch {
+      // Preserve the importer's lazy error semantics. Opaque/unused XML parts
+      // must round-trip unchanged; a required part still fails when tree()
+      // reads it while constructing the editable deck.
+    }
   }
   for (const bytes of parts.binary.values()) estimatedBytes += bytes.byteLength;
   return { parts, trees, estimatedBytes };

@@ -3,7 +3,7 @@ import { preparePackage } from '../loading/preparePackage';
 import { OPCPackage } from '../core/opc/package';
 import { importDeck, importPreparedDeck } from '../core/model/import';
 import { createPptxEditorStore } from '../state/PptxEditorStore';
-import { unzipPptx } from '../core/opc/zip';
+import { unzipPptx, zipPptx } from '../core/opc/zip';
 
 it('preserves prepared raw XML identity through edit, undo, redo and export', () => {
   const bytes = fixtureBytes('sample.pptx');
@@ -38,4 +38,19 @@ it('preserves prepared raw XML identity through edit, undo, redo and export', ()
   expect(unzipPptx(output).binary).toEqual(unzipPptx(bytes).binary);
   expect(reopened.slides).toHaveLength(deck.slides.length);
   store.dispose();
+});
+
+it('preserves unused XML verbatim instead of failing an otherwise readable deck', () => {
+  const parts = unzipPptx(fixtureBytes('sample.pptx'));
+  const path = 'customXml/opaque.xml';
+  const original = '<custom value="unterminated';
+  parts.text.set(path, original);
+  parts.order.push(path);
+  const prepared = preparePackage(zipPptx(parts));
+  expect(prepared.trees.has(path)).toBe(false);
+  const deck = importPreparedDeck(
+    new OPCPackage(prepared.parts, prepared.trees)
+  );
+  expect(deck.slides).toHaveLength(9);
+  expect(unzipPptx(deck.pkg.toBytes()).text.get(path)).toBe(original);
 });
