@@ -364,7 +364,7 @@ describe('locked-edit hint when clicking away from a locked Total', () => {
   /** A mouse click in Syncfusion's mouse-up order (viewer.js): lock check on
    *  the old selection, move the caret, lock check on the new selection. */
   const click = (offset: string) => {
-    while (pendingTimers.length) pendingTimers.shift()!();
+    for (const run of pendingTimers.splice(0)) run();
     calls = [];
     const selection = (editor as any).selection;
     selection.checkContentControlLocked();

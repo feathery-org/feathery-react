@@ -29,24 +29,30 @@ jest.mock('./useDocxEditor', () => ({
 
 const NOTICE = "This content is locked and can't be edited here.";
 
+function fire(name: keyof typeof mockBindings): void {
+  const callback = mockBindings[name];
+  if (!callback) throw new Error(`DocxEditor did not pass ${name}`);
+  callback();
+}
+
 describe('DocxEditor locked-content notice', () => {
   it('hides when the caret leaves, even if the show lands in the same batch', () => {
     render(<DocxEditor bindings={{ enabled: true }} />);
 
     // Caret on the locked Total cell.
-    act(() => mockBindings.onLockedEdit!());
+    act(() => fire('onLockedEdit'));
     expect(screen.getByText(NOTICE)).toBeInTheDocument();
 
     // Focus leaves the editor.
-    act(() => mockBindings.onLockedEditResolved!());
+    act(() => fire('onLockedEditResolved'));
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
 
     // Clicking back in on another cell: Syncfusion fires a stale
     // 'contentControl' for Total, then selectionChange lands on the editable
     // cell - one batch, show then resolve. The notice must not survive it.
     act(() => {
-      mockBindings.onLockedEdit!();
-      mockBindings.onLockedEditResolved!();
+      fire('onLockedEdit');
+      fire('onLockedEditResolved');
     });
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
   });
