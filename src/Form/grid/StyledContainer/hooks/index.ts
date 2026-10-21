@@ -126,11 +126,13 @@ export const useNodeType = (node: any, rawNode: any, viewport: any) => {
 
     const widthValue = getStyle(targetNode, 'width', fieldPrefix) || '';
     const widthUnit = getStyle(targetNode, 'width_unit', fieldPrefix) || '';
-    const width = `${widthValue}${widthUnit}`;
 
-    if (isPx(width)) type = `px-${type}`;
-    else if (isFit(width)) type = `fit-${type}`;
-    else if (isFill(width)) type = `fill-${type}`;
+    // Containers carry fit/fill in both width and width_unit, elements only in
+    // width_unit, so the keyword must be matched per key rather than on the
+    // concatenated string (which would read 'fitfit').
+    if (isFit(widthValue) || isFit(widthUnit)) type = `fit-${type}`;
+    else if (isFill(widthValue) || isFill(widthUnit)) type = `fill-${type}`;
+    else if (isPx(`${widthValue}${widthUnit}`)) type = `px-${type}`;
 
     return type;
   }, [node, rawNode, viewport]);
