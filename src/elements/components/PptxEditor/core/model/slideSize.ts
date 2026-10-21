@@ -1,16 +1,15 @@
 import {
   child,
   childrenOf,
-  descendant,
   el,
   getAttr,
+  removeAttr,
   root,
-  setAttr,
-  type OTree
+  setAttr
 } from '../opc/xml';
-import type { Deck, Slide } from './types';
+import type { Deck } from './types';
 
-const EXT_URI = '{A728E168-4A95-49C8-86A0-7C58F3F01001}';
+const PRESENTATION_PART = 'ppt/presentation.xml';
 
 export const SLIDE_SIZE_PRESETS = {
   wide: { label: 'Widescreen 16:9', cx: 12192000, cy: 6858000 },
@@ -19,51 +18,26 @@ export const SLIDE_SIZE_PRESETS = {
   a4Portrait: { label: 'A4 portrait', cx: 7560072, cy: 10689336 }
 } as const;
 
-export function readEditorSlideSize(
-  raw: OTree
-): { cx: number; cy: number } | undefined {
-  const size = descendant(root(raw), 'fe:slideSize');
-  const cx = Number(size && getAttr(size, 'cx'));
-  const cy = Number(size && getAttr(size, 'cy'));
-  return cx > 0 && cy > 0 ? { cx, cy } : undefined;
-}
-
-export function effectiveSlideSize(
-  deck: Deck,
-  slide: Slide
-): { cx: number; cy: number } {
-  return slide.size || deck.size;
-}
-
-export function setSlideSize(
-  deck: Deck,
-  slide: Slide,
-  cx: number,
-  cy: number
-): void {
-  slide.size = {
+/** Resize every slide: PPTX has one presentation-wide size (p:sldSz). */
+export function setPresentationSize(deck: Deck, cx: number, cy: number): void {
+  const size = {
     cx: Math.max(914400, Math.round(cx)),
     cy: Math.max(914400, Math.round(cy))
   };
-  const sld = root(slide.raw);
-  let extLst = child(sld, 'p:extLst');
-  if (!extLst) {
-    extLst = el('p:extLst');
-    childrenOf(sld).push(extLst);
+  const pres = root(deck.pkg.tree(PRESENTATION_PART));
+  let sldSz = child(pres, 'p:sldSz');
+  if (!sldSz) {
+    sldSz = el('p:sldSz');
+    const siblings = childrenOf(pres);
+    const notesSz = child(pres, 'p:notesSz');
+    const at = notesSz ? siblings.indexOf(notesSz) : -1;
+    if (at >= 0) siblings.splice(at, 0, sldSz);
+    else siblings.push(sldSz);
   }
-  let ext = childrenOf(extLst).find((node) => getAttr(node, 'uri') === EXT_URI);
-  if (!ext) {
-    ext = el('p:ext', { uri: EXT_URI });
-    childrenOf(extLst).push(ext);
-  }
-  let size = child(ext, 'fe:slideSize');
-  if (!size) {
-    size = el('fe:slideSize', {
-      'xmlns:fe': 'https://feathery.io/pptx-editor'
-    });
-    childrenOf(ext).push(size);
-  }
-  setAttr(size, 'cx', String(slide.size.cx));
-  setAttr(size, 'cy', String(slide.size.cy));
-  deck.pkg.markDirty(slide.path);
+  setAttr(sldSz, 'cx', String(size.cx));
+  setAttr(sldSz, 'cy', String(size.cy));
+  // The preset name (screen16x9, A4, ...) no longer describes the dimensions.
+  if (getAttr(sldSz, 'type') !== undefined) removeAttr(sldSz, 'type');
+  deck.pkg.markDirty(PRESENTATION_PART);
+  deck.size = size;
 }

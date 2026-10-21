@@ -567,7 +567,7 @@ it('routes slide-size toolbar edits through engine history without remounting SV
   expect(deckToJSON(deck).slides[0].sizeEMU.cx).toBe(before.cx + 914400);
   expect(
     store.getState().undoStack[store.getState().undoStack.length - 1]?.label
-  ).toBe('Resize slide');
+  ).toBe('Resize slides');
   expect(host.querySelector('svg')).toBe(svg);
 
   await act(async () => store.undo());

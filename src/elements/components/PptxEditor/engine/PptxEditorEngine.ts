@@ -12,7 +12,7 @@ import {
 } from '../core/model/history';
 import { importDeck } from '../core/model/import';
 import { deckToJSON, type DeckJSON } from '../core/model/json';
-import { setSlideSize } from '../core/model/slideSize';
+import { setPresentationSize } from '../core/model/slideSize';
 import {
   addAutoShape,
   addTableColumn,
@@ -54,6 +54,9 @@ import { deriveChangeRecord, type PptxChangeRecord } from './changes';
 
 const HISTORY_LIMIT = 100;
 
+/** Opaque state handle: taken with savePoint(), consumed by markSaved(). */
+export type PptxSavePoint = PptxHistorySnapshot;
+
 export interface EditorSnapshot {
   document: DeckJSON | null;
   dirty: boolean;
@@ -82,6 +85,7 @@ export interface EditorEvent {
 export type EditorListener = (event: EditorEvent) => void;
 
 function historyInvalidations(result: HistoryRestoreResult): Invalidation[] {
+  if (result.size) return [{ kind: 'deck' }];
   const invalidations: Invalidation[] = [];
   for (const change of result.slides) {
     if (change.fullContent || change.structure || change.slideSize) {
@@ -104,7 +108,7 @@ function jsonInvalidations(
   slideId: string,
   result: ReturnType<typeof applySlideJSON>
 ): Invalidation[] {
-  if (result.slideSize) return [{ kind: 'slide', slideId }];
+  if (result.slideSize) return [{ kind: 'deck' }];
   const invalidations: Invalidation[] = [];
   if (result.background) invalidations.push({ kind: 'background', slideId });
   if (result.shapeIds.length)
@@ -139,7 +143,13 @@ export class PptxEditorEngine {
 
   /** Adopt an already-imported deck, replacing any current document. */
   adopt(deck: Deck): void {
-    if (this.deck && this.deck !== deck) releaseObjectUrls(this.deck.pkg);
+    if (this.deck !== deck) {
+      if (this.deck) releaseObjectUrls(this.deck.pkg);
+      // Snapshot reuse keys on slide paths + mutation sequence, which fresh
+      // imports share; a previous document's snapshot must never seed it.
+      this.present = null;
+      this.baseline = null;
+    }
     this.deck = deck;
     this.resetHistory();
     this.revision += 1;
@@ -177,11 +187,10 @@ export class PptxEditorEngine {
     let defaultLabel: string;
     let createdShapeIds: string[] = [];
     switch (command.type) {
-      case 'set-slide-size': {
-        const slide = this.requireSlide(command.slideId);
-        setSlideSize(deck, slide, command.cx, command.cy);
-        invalidations = [{ kind: 'slide', slideId: slide.path }];
-        defaultLabel = 'Resize slide';
+      case 'set-presentation-size': {
+        setPresentationSize(deck, command.cx, command.cy);
+        invalidations = [{ kind: 'deck' }];
+        defaultLabel = 'Resize slides';
         break;
       }
       case 'set-slide-background': {
@@ -706,10 +715,18 @@ export class PptxEditorEngine {
     );
   }
 
-  /** Mark the current state as the saved baseline; undo/redo stays intact. */
-  markSaved(): void {
+  /** Handle to the current state, to pass to markSaved once an export of it
+   *  has been persisted (edits made meanwhile stay dirty). */
+  savePoint(): PptxSavePoint | null {
+    return this.present;
+  }
+
+  /** Mark the save point (default: current state) as the saved baseline;
+   *  undo/redo stays intact. */
+  markSaved(savePoint?: PptxSavePoint | null): void {
     if (!this.deck) return;
-    this.baseline = this.present ?? captureHistorySnapshot(this.deck);
+    this.baseline =
+      savePoint ?? this.present ?? captureHistorySnapshot(this.deck);
     this.revision += 1;
   }
 

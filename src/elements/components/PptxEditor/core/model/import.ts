@@ -14,7 +14,6 @@ import {
 import { readShapeNode } from './read';
 import { resolveXfrm } from './resolve';
 import type { Deck, Slide, Shape } from './types';
-import { readEditorSlideSize } from './slideSize';
 
 function imageUrl(
   pkg: OPCPackage,
@@ -75,7 +74,7 @@ function readSlide(
       if (shape) shapes.push(shape);
     }
   }
-  return { path, spTree: spTree!, shapes, raw, size: readEditorSlideSize(raw) };
+  return { path, spTree: spTree!, shapes, raw };
 }
 
 /** Rebuild the typed slide view after its raw JSON-form XML tree is restored. */
@@ -103,7 +102,6 @@ export function refreshSlideModel(deck: Deck, slide: Slide): void {
   }
   slide.spTree = refreshed.spTree;
   slide.shapes = refreshed.shapes;
-  slide.size = refreshed.size;
   for (const shape of slide.shapes) {
     if (!shape.xfrm) {
       const x = resolveXfrm(deck, slide, shape);

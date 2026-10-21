@@ -85,7 +85,6 @@ export interface Slide {
   spTree: ONode; // the p:spTree node (mutate its children to add/remove shapes)
   shapes: Shape[];
   raw: OTree; // the whole parsed slide document
-  size?: { cx: number; cy: number }; // editor-specific per-slide viewport; PPTX itself has one global size
 }
 
 export interface Deck {

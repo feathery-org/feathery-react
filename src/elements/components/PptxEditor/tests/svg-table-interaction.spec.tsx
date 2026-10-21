@@ -243,6 +243,36 @@ it('selects a cell on one click, places a caret on the next click, and selects i
   expect(window.getSelection()?.toString()).toBe('First');
 });
 
+it('flushes an in-progress cell edit through the store commit hook, as keyboard save does', async () => {
+  const { deck, table, host, store } = await mountTable();
+  const first = host.querySelector(
+    '[data-table-cell][data-row="0"][data-col="0"]'
+  ) as HTMLElement;
+  for (let i = 0; i < 2; i++) {
+    await act(async () =>
+      first.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, clientX: 100, clientY: 100 })
+      )
+    );
+    await act(async () =>
+      window.dispatchEvent(
+        new MouseEvent('mouseup', { clientX: 100, clientY: 100 })
+      )
+    );
+  }
+  expect(first.getAttribute('contenteditable')).toBe('true');
+  expect(store.commitSvgTextEdit).not.toBeNull();
+  first.textContent = 'Typed';
+  // No blur: Ctrl/Cmd+S commits through the store before exporting.
+  await act(async () => store.commitSvgTextEdit?.({ render: false }));
+  expect(tableCellText(tableCell(table, 0, 0))).toBe('Typed');
+  const exported = importDeck(exportDeckBytes(deck)).slides[0].shapes.find(
+    (shape) => shape.id === table.id
+  )!;
+  expect(tableCellText(tableCell(exported, 0, 0))).toBe('Typed');
+  expect(store.commitSvgTextEdit).toBeNull();
+});
+
 it('tabs past a merged continuation into the next editable cell on the second row', async () => {
   const { slide, table, host, store } = await mountTable();
   await act(async () =>

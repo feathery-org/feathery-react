@@ -45,7 +45,6 @@ import {
   type ChartSeries,
   type ChartTextStyle
 } from '../model/chart';
-import { effectiveSlideSize } from '../model/slideSize';
 import { readShapeNode } from '../model/read';
 
 let svgThemeFonts: ThemeFonts = { major: 'Helvetica', minor: 'Helvetica' };
@@ -2577,7 +2576,7 @@ function renderBackground(
   if (!found) return null;
   const { bg, part } = found;
   const pkg = deck.pkg;
-  const { cx: w, cy: h } = effectiveSlideSize(deck, slide);
+  const { cx: w, cy: h } = deck.size;
   const rect = (paint: string) => {
     const r = featheryDoc().createElementNS(SVGNS, 'rect');
     r.setAttribute('x', '0');
@@ -2661,7 +2660,7 @@ export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
   try {
     const svg = featheryDoc().createElementNS(SVGNS, 'svg') as SVGSVGElement;
     svg.dataset.svgUid = `p${svgSeq++}-`;
-    const size = effectiveSlideSize(deck, slide);
+    const size = deck.size;
     svg.setAttribute('viewBox', `0 0 ${size.cx} ${size.cy}`);
     svg.setAttribute('width', '100%');
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -2829,7 +2828,7 @@ export function reconcileSlideSvg(
   change: SvgSlideReconcileOptions
 ): void {
   if (change.slideSize) {
-    const size = effectiveSlideSize(deck, slide);
+    const size = deck.size;
     svg.setAttribute('viewBox', `0 0 ${size.cx} ${size.cy}`);
   }
   if (change.background || change.fullContent)

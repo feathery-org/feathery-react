@@ -92,7 +92,7 @@ export type TableEditOperation =
   | { kind: 'set-geometry'; geometry: Partial<Xfrm> };
 
 export type EditorCommand =
-  | { type: 'set-slide-size'; slideId: string; cx: number; cy: number }
+  | { type: 'set-presentation-size'; cx: number; cy: number }
   | {
       type: 'set-slide-background';
       slideId: string;

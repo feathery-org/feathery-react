@@ -38,7 +38,10 @@ export interface PptxEditorProps {
   openNonce?: number;
   onReady?: () => void;
   onChange?: (dirty: boolean) => void;
+  /** A failed operation (save) on a document that stays open and editable. */
   onError?: (message: string) => void;
+  /** The document could not be opened at all; falls back to onError. */
+  onLoadError?: (message: string) => void;
   onSave?: (blob: Blob) => unknown | Promise<unknown>;
   historyHost?: PptxHistoryHost;
   /** Developer flag: show the live JSON side panel toggle. */

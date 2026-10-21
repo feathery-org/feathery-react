@@ -839,11 +839,17 @@ export default function DocumentEditorContainer({
       </div>
     );
   }
+  const operationAlert = operationError && (
+    <div role='alert' css={{ color: '#b42318', padding: 8 }}>
+      {operationError}
+    </div>
+  );
   if (envelope.type === 'pptx') {
     return box(
       <React.Suspense
         fallback={<div css={placeholder}>Loading presentation editor…</div>}
       >
+        {operationAlert}
         <PptxEditor
           source={source}
           readOnly={readOnly}
@@ -853,7 +859,10 @@ export default function DocumentEditorContainer({
           // Signing and PDF conversion stay docx-only until the backend
           // defines the PPTX flow; the terminal-action props are not passed.
           hideDownload={savesToField || !offersDownload}
-          onError={setError}
+          // Only an unopenable document replaces the editor. A failed save must
+          // keep it mounted: the unsaved deck and history live in that instance.
+          onLoadError={setError}
+          onError={setOperationError}
           onSave={saveEnvelope}
           onChange={
             !readOnly && containerId
@@ -865,11 +874,6 @@ export default function DocumentEditorContainer({
       </React.Suspense>
     );
   }
-  const operationAlert = operationError && (
-    <div role='alert' css={{ color: '#b42318', padding: 8 }}>
-      {operationError}
-    </div>
-  );
   // A PDF has no editable docx to open, so show it read-only. Its status is
   // only claimed when it was sent (this session or per the backend) or signed.
   if (envelope.type === 'pdf') {

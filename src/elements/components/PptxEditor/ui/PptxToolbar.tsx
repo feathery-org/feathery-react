@@ -17,10 +17,7 @@ import {
 } from '../core/model/table';
 import { child, descendant, getAttr } from '../core/opc/xml';
 import { selectedTextRanges } from './textSelection';
-import {
-  effectiveSlideSize,
-  SLIDE_SIZE_PRESETS
-} from '../core/model/slideSize';
+import { SLIDE_SIZE_PRESETS } from '../core/model/slideSize';
 import type { ShapeInsertion, TableEditOperation } from '../engine';
 
 const FONTS = [
@@ -150,8 +147,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
   const { svgRoot, commitSvgTextEdit } = store;
 
   const slide = deck?.slides[activeSlide];
-  const currentSlideSize =
-    deck && slide ? effectiveSlideSize(deck, slide) : undefined;
+  const currentSlideSize = deck?.size;
   const currentPreset = currentSlideSize
     ? Object.entries(SLIDE_SIZE_PRESETS).find(
         ([, preset]) =>
@@ -253,12 +249,10 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
   const [backgroundColor1, setBackgroundColor1] = useState('#1F4E79');
   const [backgroundColor2, setBackgroundColor2] = useState('#C0143C');
   const [backgroundAngle, setBackgroundAngle] = useState(90);
+  // PPTX has one presentation-wide size: this resizes every slide.
   const resizeSlide = (cx: number, cy: number) => {
-    if (!deck || !slide) return;
-    executeCommand(
-      { type: 'set-slide-size', slideId: slide.path, cx, cy },
-      'Resize slide'
-    );
+    if (!deck) return;
+    executeCommand({ type: 'set-presentation-size', cx, cy }, 'Resize slides');
   };
   const editTable = (
     operations: TableEditOperation[],
@@ -567,7 +561,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
             if (preset) resizeSlide(preset.cx, preset.cy);
           }}
           style={s.sel}
-          title='Size preset for this slide'
+          title='Slide size preset (applies to every slide)'
         >
           {Object.entries(SLIDE_SIZE_PRESETS).map(([key, preset]) => (
             <option key={key} value={key}>
@@ -578,7 +572,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
         </select>
         <input
           disabled={!slide}
-          key={`sw-${activeSlide}-${currentSlideSize?.cx}`}
+          key={`sw-${currentSlideSize?.cx}`}
           type='number'
           min='1'
           step='0.1'
@@ -595,7 +589,7 @@ export function Toolbar({ devJson = false }: { devJson?: boolean }) {
         <span style={s.lbl}>×</span>
         <input
           disabled={!slide}
-          key={`sh-${activeSlide}-${currentSlideSize?.cy}`}
+          key={`sh-${currentSlideSize?.cy}`}
           type='number'
           min='1'
           step='0.1'

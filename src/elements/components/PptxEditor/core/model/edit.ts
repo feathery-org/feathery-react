@@ -28,7 +28,6 @@ import {
   tableNode,
   tableRows
 } from './table';
-import { effectiveSlideSize } from './slideSize';
 import { deepClone } from '../opc/deepClone';
 
 const SHAPE_TAGS = new Set([
@@ -1682,7 +1681,7 @@ export function insertSlideNumber(
   const id = nextShapeId(slide);
   const cx = 900000;
   const cy = 400000;
-  const size = effectiveSlideSize(deck, slide);
+  const size = deck.size;
   const x = size.cx - cx - 300000;
   const y = size.cy - cy - 200000;
   const node = el('p:sp', undefined, [
