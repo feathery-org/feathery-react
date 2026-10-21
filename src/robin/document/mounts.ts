@@ -281,8 +281,12 @@ export function onRobinHostChange(
  */
 export interface CardResolver {
   owns(changeSetId: string): boolean;
-  /** Accept or reject the cards as one undo step; true when they were resolved. */
-  resolve(changeSetIds: string[], accept: boolean): boolean;
+  /** Accept or reject the cards with what `alongside` resolves as one undo step; true when resolved. */
+  resolve(
+    changeSetIds: string[],
+    accept: boolean,
+    alongside?: () => void
+  ): boolean;
 }
 
 const resolvers = new WeakMap<object, CardResolver>();

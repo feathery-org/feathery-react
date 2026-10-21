@@ -197,7 +197,7 @@ const api = {
     const live = session;
     registerCardResolver(editor, {
       owns: (id) => live.ownsCard(id),
-      resolve: (ids, accept) => live.resolveCards(ids, accept)
+      resolve: (ids, accept, alongside) => live.resolveCards(ids, accept, alongside)
     });
     registerHistoryRoute(editor, { undo: () => live.undo(), redo: () => live.redo(), engineHas: (direction) => live.history.depth[direction] > 0 });
     installHistoryRouting(editor);

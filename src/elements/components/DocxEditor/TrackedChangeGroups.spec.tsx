@@ -344,9 +344,48 @@ describe('TrackedChangeGroups', () => {
     });
     const { container } = render(<TrackedChangeGroups editor={editor} />);
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
-    expect(resolve).toHaveBeenCalledWith(['turn-5'], false);
+    expect(resolve).toHaveBeenCalledWith(['turn-5'], false, undefined);
     for (const r of [makeRevision()]) expect(r.reject).not.toHaveBeenCalled();
     expect(container).toBeEmptyDOMElement();
+    off();
+  });
+
+  it('Accept all resolves native cards inside the engine resolution, as one undo step', async () => {
+    const engineTag = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'turn-5',
+      group: 'robin',
+      title: 'Moved a table'
+    });
+    const deletion = makeRevision({ revisionType: 'Deletion' });
+    const revisions = [makeRevision({ customData: engineTag }), deletion];
+    deletion.accept.mockImplementation(() =>
+      revisions.splice(revisions.indexOf(deletion), 1)
+    );
+    const editor = makeEditor(revisions);
+    const resolve = jest.fn(
+      (ids: string[], accept: boolean, alongside?: () => void) => {
+        expect(deletion.accept).not.toHaveBeenCalled();
+        alongside?.();
+        revisions.splice(0, 1);
+        return true;
+      }
+    );
+    const off = registerCardResolver(editor, {
+      owns: (id) => id === 'turn-5',
+      resolve
+    });
+    render(<TrackedChangeGroups editor={editor} />);
+    acceptAllGroups();
+    await flushDeferredResolve();
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith(
+      ['turn-5'],
+      true,
+      expect.any(Function)
+    );
+    expect(deletion.accept).toHaveBeenCalledTimes(1);
     off();
   });
 

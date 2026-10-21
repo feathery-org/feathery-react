@@ -546,20 +546,26 @@ function TrackedChangeGroups({
         (g) => !g.untagged && resolver?.owns(g.changeSetId)
       );
       const native = groupViews.filter((g) => !owned.includes(g));
-      const ownedResolved =
-        !owned.length ||
-        !!resolver?.resolve(
-          owned.map((g) => g.changeSetId),
-          isAccept
+      let outcome = null as ReturnType<
+        typeof resolveLiveRevisionGroupsAsOneUndo
+      > | null;
+      const resolveNative = () => {
+        outcome = settled(() =>
+          resolveLiveRevisionGroupsAsOneUndo(editor, native, isAccept)
         );
+      };
+      let ownedResolved = true;
+      // A batch with engine-owned cards resolves the rest alongside them, as one undo step
+      if (owned.length)
+        ownedResolved = !!resolver?.resolve(
+          owned.map((g) => g.changeSetId),
+          isAccept,
+          native.length ? resolveNative : undefined
+        );
+      else if (native.length) resolveNative();
       const unresolvedOwned = ownedResolved
         ? 0
-        : owned.reduce((n, g) => n + g.chips.length, 0);
-      const outcome = native.length
-        ? settled(() =>
-            resolveLiveRevisionGroupsAsOneUndo(editor, native, isAccept)
-          )
-        : null;
+        : groupViews.reduce((n, g) => n + g.chips.length, 0);
       reportStall(
         (outcome?.unresolved?.length ?? 0) + unresolvedOwned,
         outcome?.length ?? 0,

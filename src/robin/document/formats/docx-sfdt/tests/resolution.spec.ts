@@ -93,6 +93,45 @@ describe('engine-owned card resolution', () => {
   });
 });
 
+describe('an Accept all mixing engine-owned and native cards', () => {
+  it('is one undo step, and its redo brings back the native resolution too', () => {
+    // An editor whose own history a reopen clears, as the real one does
+    let doc = flagship;
+    const undos: string[] = [];
+    const redos: string[] = [];
+    const host = {
+      serialize: () => doc,
+      open: (s: string) => { doc = s; undos.length = 0; redos.length = 0; },
+      canUndo: () => undos.length > 0,
+      undo: () => { redos.push(doc); doc = undos.pop() as string; },
+      canRedo: () => redos.length > 0,
+      redo: () => { undos.push(doc); doc = redos.pop() as string; },
+      readOnly: () => false
+    };
+    const session = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' }, editorId: 'ed' });
+    const table = arr<NfNode>(arr<NfNode>(arr<NfNode>(session.state.view.nf.root.sections)[3].blocks)[10].blocks)[0];
+    const row = arr<NfNode>(table.rows)[2];
+    const out = session.dispatch('write', { turnId: 'turn-1', editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { intent: 'Remove a line.', scope: { ids: [row.id] }, changes: [{ kind: 'delete', id: row.id, base: baseOf(row) }] } });
+    if (out.status !== 'ok' || !out.result.ok) throw new Error(JSON.stringify(out).slice(0, 600));
+    const committed = doc;
+    // The editor's own resolution of a native card, one entry in its history
+    const nativeResolve = () => {
+      undos.push(doc);
+      doc = doc.replace('"optimizeSfdt":false', '"optimizeSfdt":false,"nativeResolved":true');
+    };
+
+    expect(session.resolveCards(['turn-1'], true, nativeResolve)).toBe(true);
+    const resolved = doc;
+    expect(resolved).toContain('nativeResolved');
+    expect(host.canUndo()).toBe(false);
+
+    expect(session.undo().via).toBe('engine');
+    expect(doc).toBe(committed);
+    expect(session.redo().via).toBe('engine');
+    expect(doc).toBe(resolved);
+  });
+});
+
 describe('a bookmarked move rejected after a reload (review item 3)', () => {
   const bookmarks = (native: string) => {
     const out: string[] = [];

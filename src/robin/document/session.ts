@@ -492,11 +492,16 @@ export class DocumentSession {
   /**
    * Accept or reject cards through the engine: a reject of the last change set alone, with the
    * document still as it left it, restores the snapshot byte for byte; otherwise the pack's group
-   * projection of the live document is opened for every card at once. The resolution is one engine
+   * projection of the live document is opened for every card at once. `alongside` is the editor's
+   * own resolution of the batch's other cards, run in the same step. The resolution is one engine
    * history entry, so one Ctrl+Z brings the cards back. False, and the document as it was, when it
    * cannot be done.
    */
-  resolveCards(changeSetIds: string[], accept: boolean): boolean {
+  resolveCards(
+    changeSetIds: string[],
+    accept: boolean,
+    alongside?: () => void
+  ): boolean {
     const resolveGroup = this.pack.projections.resolveGroup;
     if (!resolveGroup) return false;
     const state = this.state;
@@ -517,6 +522,12 @@ export class DocumentSession {
             state.residue
           );
       this.host.open(target);
+      if (alongside) {
+        alongside();
+        // Reopened so the editor's own resolution joins this one undo step
+        target = this.host.serialize();
+        this.host.open(target);
+      }
     } catch {
       try {
         this.host.open(before);
