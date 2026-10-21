@@ -19,6 +19,7 @@ import {
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 import internalState from './internalState';
 import { parseUserVal } from './entities/Field';
+import { isSameFieldValue } from './fieldValueEquality';
 import { authState } from '../auth/LoginForm';
 // mask.ts imports nothing, so this stays free of the import cycles the rest of
 // the elements tree would introduce here.
@@ -374,15 +375,19 @@ function setFieldValues(
   rerender = true,
   skipServerSubmit = false
 ): void {
+  // Only keys whose value actually changes are stored and submitted, so
+  // writing a field's current value back doesn't trigger a network flush.
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
-    if (Array.isArray(value))
-      result[key] = value.map((entry) => parseUserVal(entry, key));
-    else result[key] = parseUserVal(value, key);
+    const parsed = Array.isArray(value)
+      ? value.map((entry) => parseUserVal(entry, key))
+      : parseUserVal(value, key);
+    if (!isSameFieldValue(fieldValues[key], parsed)) result[key] = parsed;
   });
 
   Object.assign(fieldValues, result);
-  if (!skipServerSubmit) defaultClient.submitCustom(result);
+  if (!skipServerSubmit && Object.keys(result).length)
+    defaultClient.submitCustom(result);
 
   if (rerender) rerenderAllForms();
 }
