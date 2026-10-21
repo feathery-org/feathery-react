@@ -319,6 +319,87 @@ describe('attaching bindings to a tokenized template', () => {
   });
 });
 
+// Clicking away from a locked Total: Syncfusion's mouse-up runs its lock check
+// on the OLD selection before it moves the caret, so every click out of the
+// Total re-fires 'contentControl' for it. The hint must end resolved after the
+// click, and the show and the resolve arrive in the same synchronous turn -
+// which is why the host has to resolve against pending state (see
+// lockedEditNotice.spec.tsx).
+describe('locked-edit hint when clicking away from a locked Total', () => {
+  let editor: DocumentEditor;
+  let attached: AttachedBindings;
+  let showing: boolean;
+  let calls: string[];
+  const pendingTimers: Array<() => void> = [];
+
+  // Costs table (block 2): row 5 is "Total | <Grand total formula>".
+  const TOTAL = '0;2;5;1;0;1';
+
+  beforeEach(() => {
+    showing = false;
+    calls = [];
+    editor = makeEditor(buildCostsFixture());
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false,
+      onLockedEdit: () => {
+        showing = true;
+        calls.push('show');
+      },
+      onLockedEditResolved: () => {
+        showing = false;
+        calls.push('resolve');
+      },
+      // The hint's 600ms debounce: run it down between clicks, as real time would.
+      setTimeoutFn: (fn) => pendingTimers.push(fn),
+      clearTimeoutFn: () => undefined
+    });
+  });
+
+  afterEach(() => {
+    attached.dispose();
+    destroy(editor);
+    pendingTimers.length = 0;
+  });
+
+  /** A mouse click in Syncfusion's mouse-up order (viewer.js): lock check on
+   *  the old selection, move the caret, lock check on the new selection. */
+  const click = (offset: string) => {
+    while (pendingTimers.length) pendingTimers.shift()!();
+    calls = [];
+    const selection = (editor as any).selection;
+    selection.checkContentControlLocked();
+    selection.select(offset, offset);
+    selection.checkContentControlLocked();
+  };
+
+  const caretTitle = () =>
+    (editor as any).selection.currentContentControl?.contentControlProperties
+      ?.title;
+
+  it('shows the hint on the Total itself', () => {
+    click(TOTAL);
+    expect(caretTitle()).toBe('Grand total');
+    expect(showing).toBe(true);
+  });
+
+  it.each([
+    ['an editable field (Qty)', '0;2;1;1;0;1'],
+    ['a plain header cell (Item)', '0;2;0;0;0;1'],
+    ['the "Total" label beside it', '0;2;5;0;0;1'],
+    ['a paragraph outside the table', '0;0;0']
+  ])('resolves the hint when the next click lands on %s', (_label, offset) => {
+    click(TOTAL);
+    expect(showing).toBe(true);
+
+    click(offset);
+    expect(caretTitle()).not.toBe('Grand total');
+    expect(showing).toBe(false);
+    // The stale re-show for the cell being left, then the resolve - both in
+    // the one click.
+    expect(calls).toEqual(['show', 'resolve']);
+  });
+});
+
 describe('save gating', () => {
   let editor: DocumentEditor;
   let attached: AttachedBindings;
