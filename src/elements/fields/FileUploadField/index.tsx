@@ -6,6 +6,7 @@ import {
   DownloadIcon,
   FileUploadIcon
 } from '../../components/icons';
+import { hasIconGlyph, IconGlyph } from '../../components/icons/iconGlyph';
 import { imgMaxSizeStyles } from '../../styles';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
@@ -144,22 +145,46 @@ function FileUploadField({
     ...imgMaxSizeStyles,
     ...responsiveStyles.getTarget('img')
   };
-  const icon = element.properties.icon ? (
-    <img
-      src={element.properties.icon}
-      style={{ ...imgStyles, maxWidth: '100%', height: 'auto' }}
-      alt=''
-    />
-  ) : (
-    <FileUploadIcon
-      width={
-        imgStyles.width && imgStyles.width !== 'px'
-          ? imgStyles.width
-          : undefined
-      }
-      style={{ maxHeight: '100%' }}
-    />
-  );
+  let icon;
+  if (hasIconGlyph(element.properties.icon_glyph)) {
+    icon = (
+      <span
+        css={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          ...imgStyles,
+          maxWidth: '100%'
+        }}
+      >
+        <IconGlyph
+          glyph={element.properties.icon_glyph}
+          // Unset widths are emitted as a bare unit, so use the default icon size.
+          size={
+            Number.isFinite(parseFloat(imgStyles.width as any)) ? '100%' : 32
+          }
+        />
+      </span>
+    );
+  } else if (element.properties.icon) {
+    icon = (
+      <img
+        src={element.properties.icon}
+        style={{ ...imgStyles, maxWidth: '100%', height: 'auto' }}
+        alt=''
+      />
+    );
+  } else {
+    icon = (
+      <FileUploadIcon
+        width={
+          imgStyles.width && imgStyles.width !== 'px'
+            ? imgStyles.width
+            : undefined
+        }
+        style={{ maxHeight: '100%' }}
+      />
+    );
+  }
 
   return (
     <div
