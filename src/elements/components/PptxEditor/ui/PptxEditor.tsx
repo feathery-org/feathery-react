@@ -26,11 +26,14 @@ import { featheryDoc } from '../../../../utils/browser';
 import { useOutsideClose } from './useOutsideClose';
 import {
   downloadBtn,
+  menuItem,
+  terminalBtn,
   FEATHERY_RED,
   FEATHERY_RED_HOVER,
   ZINC
 } from '../../DocxEditor/DocxToolbar/styles';
 import {
+  ChevronDownIcon,
   DownloadIcon,
   FitToPageIcon,
   MinusIcon,
@@ -324,7 +327,7 @@ function PptxEditorInner({
                   >
                     <DownloadIcon width={16} height={16} />
                     {downloadingPdf ? 'Preparing…' : 'Download'}
-                    <span css={{ fontSize: 9 }}>▾</span>
+                    <ChevronDownIcon width={14} height={14} />
                   </button>
                   {downloadMenuOpen && (
                     <div
@@ -391,7 +394,10 @@ function PptxEditorInner({
               >
                 <button
                   type='button'
-                  css={{ ...downloadBtn, borderRadius: '6px 0 0 6px' }}
+                  css={{
+                    ...terminalBtn(saving),
+                    borderRadius: '6px 0 0 6px'
+                  }}
                   disabled={saving}
                   onClick={() => {
                     setSaveMenuOpen(false);
@@ -409,9 +415,9 @@ function PptxEditorInner({
                 <button
                   type='button'
                   css={{
-                    ...downloadBtn,
+                    ...terminalBtn(saving),
                     borderRadius: '0 6px 6px 0',
-                    borderLeft: 'none',
+                    borderLeft: '1px solid rgba(255,255,255,.35)',
                     padding: '0 6px'
                   }}
                   disabled={saving}
@@ -420,7 +426,7 @@ function PptxEditorInner({
                   aria-expanded={saveMenuOpen}
                   aria-haspopup='true'
                 >
-                  ▾
+                  <ChevronDownIcon width={14} height={14} />
                 </button>
                 {saveMenuOpen && (
                   <div css={downloadMenu}>
@@ -667,19 +673,7 @@ const downloadMenu = {
   flexDirection: 'column' as const
 };
 
-const downloadMenuItem = {
-  display: 'block',
-  width: '100%',
-  padding: '7px 10px',
-  border: 'none',
-  borderRadius: 6,
-  background: 'transparent',
-  color: ZINC[700],
-  fontSize: 13,
-  textAlign: 'left' as const,
-  cursor: 'pointer',
-  '&:hover': { background: ZINC[100] }
-};
+const downloadMenuItem = menuItem();
 
 const statusButton = {
   height: 24,
