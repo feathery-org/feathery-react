@@ -66,6 +66,23 @@ describe('buildHubFileRefs', () => {
   it('names the repeat rows of a partial selection by their index', () => {
     const whole = buildHubFileRefs({ docs: [fileA, fileB] }, steps);
     expect(whole.data).toEqual({ docs: [{ form_field: 'uploads' }] });
+    // A repeated field's own value carries null for its empty rows.
+    const holed = buildHubFileRefs({ docs: fieldValues.uploads }, steps);
+    expect(holed.data).toEqual({ docs: [{ form_field: 'uploads' }] });
+    expect(holed.submissions).toEqual([
+      {
+        servar: {
+          key: 'uploads',
+          file_upload: [fileA, null, fileB],
+          repeated: true
+        },
+        stepKey: 'docs_step'
+      }
+    ]);
+    const holedSome = buildHubFileRefs({ docs: [null, null, fileB] }, steps);
+    expect(holedSome.data).toEqual({
+      docs: [{ form_field: 'uploads', indices: [2] }]
+    });
 
     const some = buildHubFileRefs({ docs: [fileB] }, steps);
     expect(some.data).toEqual({
@@ -87,8 +104,10 @@ describe('buildHubFileRefs', () => {
     const stray = Promise.resolve(new File(['x'], 'x.pdf'));
     const items = [{ url: 'https://x', path: 'p' }];
     const rows = [{ docs: new Field('uploads', 'form') }];
-    expect(buildHubFileRefs({ docs: [stray], other: items }, steps)).toEqual({
-      data: { docs: [stray], other: items },
+    expect(
+      buildHubFileRefs({ docs: [stray], other: items, empty: [null] }, steps)
+    ).toEqual({
+      data: { docs: [stray], other: items, empty: [null] },
       submissions: [],
       fields: []
     });
