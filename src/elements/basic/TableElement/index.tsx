@@ -35,7 +35,11 @@ import {
   SpreadsheetTableHandle
 } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
-import { editorKindFor, parseCellInput } from './spreadsheet/fieldEditors';
+import {
+  editorKindFor,
+  formatCellDisplay,
+  parseCellInput
+} from './spreadsheet/fieldEditors';
 import {
   buildCellIssues,
   CellIssues,
@@ -52,7 +56,6 @@ import {
   validateGrid
 } from './spreadsheet/validation';
 import { useFieldCellRules } from './useFieldCellRules';
-import { editorKindFor, formatCellDisplay } from './spreadsheet/fieldEditors';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
 import { STATUS_HUB_FIELD_ID, UNVERIFY_ACTION_LABEL } from './hubStatus';
@@ -1506,9 +1509,6 @@ function TableElement({
                         cellFieldKey && !isFirstColInTranspose
                           ? cellRules[cellFieldKey]
                           : undefined;
-                      const isCellReadOnly =
-                        (isHub && hub.readOnlyKeys.has(column.field_key)) ||
-                        editorKindFor(cellRule) === 'readonly';
                       const cellText = cellRule
                         ? formatCellDisplay(cellValue, cellRule)
                         : stringifyWithNull(cellValue) ?? '';
@@ -1541,7 +1541,7 @@ function TableElement({
                                 />
                               </span>
                             </div>
-                          ) : canEdit && !isCellReadOnly ? (
+                          ) : canEdit && !isColumnReadOnly(column.field_key) ? (
                             <EditableCell
                               value={cellValue}
                               fieldKey={column.field_key}

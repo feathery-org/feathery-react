@@ -11,7 +11,6 @@ import TableElement from '../index';
 import internalState from '../../../../utils/internalState';
 import type { TableHandlers } from '../../../../utils/formActions/tables';
 import { fieldValues } from '../../../../utils/init';
-import internalState from '../../../../utils/internalState';
 import { featheryWindow } from '../../../../utils/browser';
 import {
   hasUnsavedWork,
@@ -161,7 +160,8 @@ const editCell = (from: string, to: string) => {
 };
 
 beforeEach(() => {
-  (internalState as any)[FORM_ID] = FORM_STATE;
+  // A fresh object per test: the table registers its handlers onto it.
+  (internalState as any)[FORM_ID] = { ...FORM_STATE };
   stubLayout();
   Object.assign(fieldValues, {
     name_key: ['Alice', 'Bob'],

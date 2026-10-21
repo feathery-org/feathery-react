@@ -158,6 +158,11 @@ export function EditableCell({
       shouldSaveRef.current = false;
       inputRef.current?.blur();
     } else if (e.key === 'Tab') {
+      // A date picker is several fields (month, day, year, hour...) and Tab
+      // is how the keyboard moves between them, so it stays with the picker.
+      // Tabbing out of the last field leaves the input, and that blur
+      // commits like any other.
+      if (kind === 'date' || kind === 'datetime') return;
       e.preventDefault();
       skipBlurRef.current = true;
       saveValue();
@@ -198,6 +203,10 @@ export function EditableCell({
       // the row was written) stays pickable, so opening the cell never
       // silently changes it.
       const stale = storedText && !choices.includes(storedText);
+      // A boolean has no blank: a checkbox is true or false, so once set it
+      // cannot be cleared to a value the field never holds. A cell that was
+      // never set still shows its blank as the current state.
+      const offersEmpty = rule?.type !== 'boolean' || storedText === '';
       return (
         <select
           {...editorProps}
@@ -210,7 +219,7 @@ export function EditableCell({
           }}
           css={{ ...cellInputStyle, ...cellSelectStyle }}
         >
-          <option value=''>{EMPTY_CHOICE_LABEL}</option>
+          {offersEmpty && <option value=''>{EMPTY_CHOICE_LABEL}</option>}
           {stale && <option value={storedText}>{storedText}</option>}
           {choices.map((choice) => (
             <option key={choice} value={choice}>

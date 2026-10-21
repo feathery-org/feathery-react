@@ -298,10 +298,55 @@ describe('EditableCell - typed editors', () => {
       rule: { label: 'Active', type: 'boolean' }
     });
     fireEvent.click(screen.getByText('FALSE'));
-    fireEvent.change(screen.getByRole('combobox'), {
-      target: { value: 'true' }
-    });
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    // A set checkbox cannot be cleared to a value it never holds.
+    expect(Array.from(select.options).map((o) => o.value)).toEqual([
+      'true',
+      'false'
+    ]);
+    fireEvent.change(select, { target: { value: 'true' } });
     expect(onEdit).toHaveBeenCalledWith('field1', 0, true);
+  });
+
+  it('a never-set boolean cell still shows its blank as the current state', () => {
+    renderCell({ value: '', rule: { label: 'Active', type: 'boolean' } });
+    fireEvent.click(screen.getByText('Click to edit'));
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    expect(select.value).toBe('');
+    expect(Array.from(select.options).map((o) => o.value)).toEqual([
+      '',
+      'true',
+      'false'
+    ]);
+  });
+
+  it('Escape after arrowing through choices discards the draft', () => {
+    const { onEdit } = renderCell({
+      value: 'a',
+      rule: { label: 'Status', type: 'text', options: ['a', 'b'] }
+    });
+    fireEvent.click(screen.getByText('a'));
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    fireEvent.keyDown(select, { key: 'ArrowDown' });
+    fireEvent.change(select, { target: { value: 'b' } });
+    fireEvent.keyDown(select, { key: 'Escape' });
+    fireEvent.blur(select);
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('Tab on a choice list commits the keyboard draft and moves on', () => {
+    const { onEdit, onNavigate } = renderCell({
+      value: 'a',
+      rule: { label: 'Status', type: 'text', options: ['a', 'b'] }
+    });
+    fireEvent.click(screen.getByText('a'));
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    fireEvent.keyDown(select, { key: 'ArrowDown' });
+    fireEvent.change(select, { target: { value: 'b' } });
+    fireEvent.keyDown(select, { key: 'Tab' });
+    expect(onEdit).toHaveBeenCalledWith('field1', 0, 'b');
+    expect(onNavigate).toHaveBeenCalledWith(false);
   });
 
   it('a date column opens the native date picker on the stored day', () => {
@@ -316,6 +361,29 @@ describe('EditableCell - typed editors', () => {
 
     fireEvent.change(input, { target: { value: '2024-04-06' } });
     fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onEdit).toHaveBeenCalledWith('field1', 0, '2024-04-06');
+  });
+
+  it('Tab inside a date picker moves between its fields, not cells', () => {
+    const { onEdit, onNavigate } = renderCell({
+      value: '2024-03-05',
+      rule: { label: 'Birthday', type: 'date' }
+    });
+    fireEvent.click(screen.getByText('Mar 5, 2024'));
+    const input = screen.getByLabelText('Edit Birthday') as HTMLInputElement;
+    // A half-edited picker reports an empty value until every field is set.
+    fireEvent.change(input, { target: { value: '' } });
+    const tab = fireEvent.keyDown(input, { key: 'Tab' });
+
+    // Not prevented, not navigated, and nothing written for the blank.
+    expect(tab).toBe(true);
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Edit Birthday')).toBeInTheDocument();
+
+    // Leaving the picker with a whole date is what commits.
+    fireEvent.change(input, { target: { value: '2024-04-06' } });
+    fireEvent.blur(input);
     expect(onEdit).toHaveBeenCalledWith('field1', 0, '2024-04-06');
   });
 
