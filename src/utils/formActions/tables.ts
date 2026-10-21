@@ -5,6 +5,7 @@ import {
   diffInlineErrorSnapshots,
   getLiveStepKey,
   InlineErrorReport,
+  markInteraction,
   NOT_LOADED_MESSAGE,
   snapshotInlineErrors
 } from './utils';
@@ -406,6 +407,7 @@ export function setTableCells(
     writeCells.push(index);
   });
 
+  markInteraction();
   // One grid call for the whole batch, each accepted cell takes the value the grid stored
   handlers.editCells(writes).forEach((outcome, writeIndex) => {
     const index = writeCells[writeIndex];
@@ -441,6 +443,7 @@ export function addTableRow(
   if (!found.ok) return found;
   const { handlers, live } = found;
   if (!live.canAddRows) return notAllowed(tableId, 'adding rows');
+  markInteraction();
   const rowIndex = handlers.addRow();
   return {
     ok: true,
@@ -463,6 +466,7 @@ export function deleteTableRow(
   const row = resolveRow(target, live);
   if (!row.ok) return row;
   if (!handlers.getRow(row.rowIndex)) return rowDeleted(row.rowIndex);
+  markInteraction();
   handlers.deleteRow(row.rowIndex);
   // A buffered deletion keeps its slot in the source until the person saves
   return {
@@ -508,6 +512,7 @@ export async function triggerTableAction(
   if (!row.ok) return row;
   if (!handlers.getRow(row.rowIndex)) return rowDeleted(row.rowIndex);
 
+  markInteraction();
   const fromStepKey = getLiveStepKey(state) ?? '';
   const errorsBefore = snapshotInlineErrors(state);
   try {

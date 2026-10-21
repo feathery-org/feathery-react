@@ -12,6 +12,7 @@ import {
   TableLiveState,
   triggerTableAction
 } from '../tables';
+import * as formActionUtils from '../utils';
 
 // The dispatchers gate on the mounted grid's live state and shape its answers, the grid itself is stubbed
 describe('table form actions', () => {
@@ -88,8 +89,51 @@ describe('table form actions', () => {
     return state;
   };
 
+  let markInteraction: jest.SpyInstance;
+  beforeEach(() => {
+    markInteraction = jest
+      .spyOn(formActionUtils, 'markInteraction')
+      .mockImplementation(() => {});
+  });
+
   afterEach(() => {
     delete (internalState as any)[formUuid];
+    markInteraction.mockRestore();
+  });
+
+  describe('first interaction', () => {
+    it('counts every table write as the person interacting with the form', async () => {
+      makeState(makeHandlers());
+
+      setTableCells(formUuid, TABLE, [
+        { rowIndex: 0, fieldKey: 'name', value: 'Al' }
+      ]);
+      addTableRow(formUuid, TABLE);
+      deleteTableRow(formUuid, TABLE, { rowIndex: 1 });
+      await triggerTableAction(formUuid, TABLE, { rowIndex: 0 }, 'Send');
+
+      expect(markInteraction).toHaveBeenCalledTimes(4);
+    });
+
+    it('does not count a write the table refuses', () => {
+      makeState(
+        makeHandlers(
+          liveState({
+            canEditCells: false,
+            canAddRows: false,
+            canDeleteRows: false
+          })
+        )
+      );
+
+      setTableCells(formUuid, TABLE, [
+        { rowIndex: 0, fieldKey: 'name', value: 'Al' }
+      ]);
+      addTableRow(formUuid, TABLE);
+      deleteTableRow(formUuid, TABLE, { rowIndex: 0 });
+
+      expect(markInteraction).not.toHaveBeenCalled();
+    });
   });
 
   describe('finding the table', () => {
