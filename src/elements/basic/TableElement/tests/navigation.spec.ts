@@ -64,3 +64,51 @@ describe('getNextEditableCell - edge cases', () => {
     ).toBeNull();
   });
 });
+
+describe('getNextEditableCell - read-only columns', () => {
+  // Column 1 of 3 cannot be edited.
+  const editable = (col: number) => col !== 1;
+
+  it('skips a read-only column on the way forward', () => {
+    expect(
+      getNextEditableCell(
+        ROWS,
+        3,
+        { rowIndex: 0, colIndex: 0 },
+        false,
+        editable
+      )
+    ).toEqual({ rowIndex: 0, colIndex: 2 });
+  });
+
+  it('skips it on the way back, wrapping rows as needed', () => {
+    expect(
+      getNextEditableCell(ROWS, 3, { rowIndex: 1, colIndex: 2 }, true, editable)
+    ).toEqual({ rowIndex: 1, colIndex: 0 });
+    expect(
+      getNextEditableCell(ROWS, 3, { rowIndex: 1, colIndex: 0 }, true, editable)
+    ).toEqual({ rowIndex: 0, colIndex: 2 });
+  });
+
+  it('ends the walk when only read-only cells remain', () => {
+    // Column 2 is the only editable one; past the last row there is nothing.
+    expect(
+      getNextEditableCell(
+        ROWS,
+        3,
+        { rowIndex: 2, colIndex: 2 },
+        false,
+        (col) => col === 2
+      )
+    ).toBeNull();
+    expect(
+      getNextEditableCell(
+        ROWS,
+        3,
+        { rowIndex: 0, colIndex: 0 },
+        false,
+        () => false
+      )
+    ).toBeNull();
+  });
+});

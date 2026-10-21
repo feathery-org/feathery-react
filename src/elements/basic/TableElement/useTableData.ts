@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fieldValues } from '../../../utils/init';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Action, Column } from './types';
 import { compareSortableValues, parseSortableValue } from './utils';
 import { generateExampleData } from './exampleData';
+import { CellRules } from './spreadsheet/validation';
+import { formatCellDisplay } from './spreadsheet/fieldEditors';
 
 /**
  * Transpose table data: columns become rows, rows become columns
@@ -107,6 +109,9 @@ type UseTableDataProps = {
   // When set (Data Hub-backed table), rows come from this map instead of the
   // global form `fieldValues`.
   externalFieldValues?: Record<string, any>;
+  // Column rules, so a search matches what a cell SHOWS (an option's label, a
+  // readable date) as well as what it stores.
+  cellRules?: CellRules;
 };
 
 type UseTableDataReturn = {
@@ -163,7 +168,8 @@ export function useTableData({
   editMode = false,
   exampleRows,
   dataVersion = 0,
-  externalFieldValues
+  externalFieldValues,
+  cellRules
 }: UseTableDataProps): UseTableDataReturn {
   const userColumns: Column[] = element.properties?.columns || [];
   const actions: Action[] = (element.properties?.actions || []).filter(
@@ -265,6 +271,22 @@ export function useTableData({
     enableSort
   ]);
 
+  // A search hits a cell by what it stores or by what it shows: "Jul" finds a
+  // date shown as "Jul 19, 1982", "Open" a status stored as "o".
+  const matchesSearch = useCallback(
+    (cellValue: any, fieldKey: string) => {
+      const needle = searchQuery.toLowerCase().trim();
+      const stored = stringifyWithNull(cellValue) ?? '';
+      if (stored.toLowerCase().includes(needle)) return true;
+      const rule = cellRules?.[fieldKey];
+      return (
+        !!rule &&
+        formatCellDisplay(cellValue, rule).toLowerCase().includes(needle)
+      );
+    },
+    [searchQuery, cellRules]
+  );
+
   const filteredBaseRowIndices = useMemo(() => {
     if (!enableTranspose || !enableSearch || !searchQuery.trim()) {
       return sortedBaseRowIndices;
@@ -276,10 +298,7 @@ export function useTableData({
         const cellValue = Array.isArray(fieldValue)
           ? fieldValue[baseRowIdx]
           : fieldValue;
-        const stringValue = stringifyWithNull(cellValue) ?? '';
-        return stringValue
-          .toLowerCase()
-          .includes(searchQuery.toLowerCase().trim());
+        return matchesSearch(cellValue, column.field_key);
       });
     });
   }, [
@@ -395,10 +414,7 @@ export function useTableData({
         const cellValue = Array.isArray(fieldValue)
           ? fieldValue[rowIndex]
           : fieldValue;
-        const stringValue = stringifyWithNull(cellValue) ?? '';
-        return stringValue
-          .toLowerCase()
-          .includes(searchQuery.toLowerCase().trim());
+        return matchesSearch(cellValue, column.field_key);
       });
     });
   }, [
