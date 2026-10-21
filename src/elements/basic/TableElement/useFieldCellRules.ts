@@ -4,14 +4,23 @@ import { CellRules } from './spreadsheet/validation';
 import { Column } from './types';
 import { ColumnField, fieldCellRules } from './fieldRules';
 
+// One servar index per steps object. Steps are replaced wholesale when they
+// change membership (`setSteps`), and only mutated in place for metadata such
+// as options — which the index does not copy, so it stays current either way.
+const servarIndex = new WeakMap<object, Map<string, any>>();
+
 /** Every servar on the form, by key — the lookup a column's `field_key` needs. */
 function servarsByKey(steps: Record<string, any> | undefined) {
+  if (!steps) return new Map<string, any>();
+  const cached = servarIndex.get(steps);
+  if (cached) return cached;
   const byKey = new Map<string, any>();
-  Object.values(steps ?? {}).forEach((step: any) => {
+  Object.values(steps).forEach((step: any) => {
     (step?.servar_fields ?? []).forEach(({ servar }: any) => {
       if (servar?.key) byKey.set(servar.key, servar);
     });
   });
+  servarIndex.set(steps, byKey);
   return byKey;
 }
 
@@ -23,6 +32,8 @@ const RULE_METADATA = [
   'creatable_options',
   'repeat_options',
   'choose_time',
+  'min_date',
+  'max_date',
   'save_mask'
 ];
 

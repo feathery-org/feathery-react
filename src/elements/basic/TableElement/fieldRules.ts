@@ -87,7 +87,15 @@ export function servarCellRule(
     case 'date_selector':
       // `formatDateString`: a date is `yyyy-MM-dd`, a date with a time is a
       // UTC instant — exactly the two shapes the date editors read and write.
-      return { label, type: metadata.choose_time ? 'datetime' : 'date' };
+      // The field's own day limits come along; its time-of-day limits
+      // (`min_time`/`max_time`) and weekday rules do not, since the cell has
+      // no way to clamp the way the picker does.
+      return {
+        label,
+        type: metadata.choose_time ? 'datetime' : 'date',
+        ...(metadata.min_date ? { minDate: metadata.min_date } : {}),
+        ...(metadata.max_date ? { maxDate: metadata.max_date } : {})
+      };
     case 'ssn':
       // Only when stored as bare digits. With `save_mask` the value keeps its
       // separators, which the nine-digit rule (and its masking) would mangle.

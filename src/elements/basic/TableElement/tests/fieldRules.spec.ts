@@ -18,6 +18,25 @@ describe('servarCellRule', () => {
     ).toEqual({ label: 'When', type: 'datetime' });
   });
 
+  test('a date field brings its day limits, not its time-of-day ones', () => {
+    expect(
+      servarCellRule('When', {
+        type: 'date_selector',
+        metadata: {
+          min_date: '2024-01-01',
+          max_date: '2024-12-31',
+          min_time: '09:00',
+          max_time: '17:00'
+        }
+      })
+    ).toEqual({
+      label: 'When',
+      type: 'date',
+      minDate: '2024-01-01',
+      maxDate: '2024-12-31'
+    });
+  });
+
   test('a choice field fixes the cell to its options', () => {
     expect(
       servarCellRule('Status', {

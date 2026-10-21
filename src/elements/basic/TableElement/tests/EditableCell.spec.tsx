@@ -299,10 +299,15 @@ describe('EditableCell - typed editors', () => {
     });
     fireEvent.click(screen.getByText('FALSE'));
     const select = screen.getByRole('combobox') as HTMLSelectElement;
-    // A set checkbox cannot be cleared to a value it never holds.
+    // A set checkbox cannot be cleared to a value it never holds, and the
+    // list reads the way the cell does at rest.
     expect(Array.from(select.options).map((o) => o.value)).toEqual([
       'true',
       'false'
+    ]);
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual([
+      'TRUE',
+      'FALSE'
     ]);
     fireEvent.change(select, { target: { value: 'true' } });
     expect(onEdit).toHaveBeenCalledWith('field1', 0, true);
@@ -385,6 +390,18 @@ describe('EditableCell - typed editors', () => {
     fireEvent.change(input, { target: { value: '2024-04-06' } });
     fireEvent.blur(input);
     expect(onEdit).toHaveBeenCalledWith('field1', 0, '2024-04-06');
+  });
+
+  it('leaving a date picker blank clears the date, like any blank on blur', () => {
+    const { onEdit } = renderCell({
+      value: '2024-03-05',
+      rule: { label: 'Birthday', type: 'date' }
+    });
+    fireEvent.click(screen.getByText('Mar 5, 2024'));
+    const input = screen.getByLabelText('Edit Birthday') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    expect(onEdit).toHaveBeenCalledWith('field1', 0, null);
   });
 
   it('a number column refuses letters and stores a number', () => {

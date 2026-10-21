@@ -96,9 +96,13 @@ describe('toEditorValue', () => {
     expect(toEditorValue(withMillis, 'datetime')).toBe(
       `${localPicker(new Date(withMillis))}:45.250`
     );
+    // Whole seconds come back without the `.000` the hub may have written.
     expect(
       fromEditorValue(toEditorValue(withSeconds, 'datetime'), 'datetime')
-    ).toBe(withSeconds);
+    ).toBe('2024-03-05T11:30:45Z');
+    expect(
+      fromEditorValue(toEditorValue(withMillis, 'datetime'), 'datetime')
+    ).toBe(withMillis);
   });
 
   test('a datetime with no zone is read as UTC, the way the hub reads it', () => {
@@ -124,13 +128,15 @@ describe('fromEditorValue', () => {
   test('a picked local datetime is stored as the UTC instant', () => {
     // Local 09:15 on the 5th, whatever zone the test runs in.
     const picked = new Date(2024, 2, 5, 9, 15);
+    // In the date field's own shape (`yyyy-MM-ddTHH:mm:ssZ`, no millis), so
+    // a value the table wrote and one the field wrote compare equal.
     expect(fromEditorValue(localPicker(picked), 'datetime')).toBe(
-      picked.toISOString()
+      picked.toISOString().replace('.000Z', 'Z')
     );
   });
 
   test('round-trips through the picker without drifting', () => {
-    const stored = '2024-03-05T11:30:00.000Z';
+    const stored = '2024-03-05T11:30:00Z';
     expect(
       fromEditorValue(toEditorValue(stored, 'datetime'), 'datetime')
     ).toBe(stored);
@@ -281,6 +287,9 @@ describe('option labels', () => {
 
   test('a choice shows as its label, anything else as itself', () => {
     expect(choiceLabel(rule, 'o')).toBe('Open');
+    // A boolean is listed the way the cell shows it at rest.
+    expect(choiceLabel({ label: 'On', type: 'boolean' }, 'true')).toBe('TRUE');
+    expect(choiceLabel({ label: 'On', type: 'boolean' }, '')).toBe('');
     expect(choiceLabel(rule, 'zz')).toBe('zz');
     expect(choiceLabel({ label: 'x', type: 'text', options: ['o'] }, 'o')).toBe(
       'o'

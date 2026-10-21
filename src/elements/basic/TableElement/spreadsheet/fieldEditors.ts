@@ -53,6 +53,8 @@ export function choiceLabel(
   rule: CellRule | undefined,
   choice: string
 ): string {
+  // A boolean is listed the way the cell shows it at rest (TRUE / FALSE).
+  if (rule?.type === 'boolean' && choice) return choice.toUpperCase();
   const index = rule?.options?.indexOf(choice) ?? -1;
   return (index >= 0 && rule?.optionLabels?.[index]) || choice;
 }
@@ -181,7 +183,12 @@ export function fromEditorValue(input: string, kind: EditorKind): string {
   if (kind !== 'datetime' || !input) return input;
   // No zone, so `Date` reads it as local — which is exactly what it is.
   const local = new Date(input);
-  return Number.isNaN(local.getTime()) ? input : local.toISOString();
+  if (Number.isNaN(local.getTime())) return input;
+  // Milliseconds only when there are any: the date field writes
+  // `yyyy-MM-ddTHH:mm:ssZ`, so a whole-second instant takes that same shape
+  // (and re-picking it is no change), while a hub value that carried
+  // milliseconds keeps them.
+  return local.toISOString().replace(/\.000Z$/, 'Z');
 }
 
 /**

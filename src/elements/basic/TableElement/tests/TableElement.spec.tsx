@@ -544,6 +544,26 @@ describe('TableElement - classic table typed cells', () => {
     expect(submitCustom).toHaveBeenCalledWith({ count_key: [1, 7] });
   });
 
+  it('searches by what a cell shows as well as what it stores', () => {
+    render(
+      <TableElement
+        element={makeElement({ columns, search: true })}
+        responsiveStyles={mockStyles()}
+        formId={FORM_ID}
+      />
+    );
+    expect(screen.getByText('Open')).toBeInTheDocument();
+    expect(screen.getByText('Closed')).toBeInTheDocument();
+
+    // "Closed" is shown for the stored value "closed"; a label-only search
+    // like "Clos" and a value-only search both find it.
+    fireEvent.change(screen.getByPlaceholderText('Search'), {
+      target: { value: 'Clos' }
+    });
+    expect(screen.queryByText('Open')).toBeNull();
+    expect(screen.getByText('Closed')).toBeInTheDocument();
+  });
+
   it('leaves columns alone in the builder, which has no form state', () => {
     render(
       <TableElement
