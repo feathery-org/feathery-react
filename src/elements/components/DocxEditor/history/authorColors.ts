@@ -84,8 +84,7 @@ export function colorForRevisionAuthor(
 ): string {
   let key = author || '';
   if (key.startsWith(FMT_PREFIX)) key = key.slice(FMT_PREFIX.length);
-  // Diffs use 'robin' but live tracked changes use 'Robin'
-  // (ASSISTANT_DOCUMENT_AUTHOR), so match case-insensitively.
+  // Diffs use 'robin' but live tracked changes use 'Robin', so match case-insensitively
   const kind = key.toLowerCase() === 'robin' ? 'assistant' : 'user';
   if (kind === 'user' && key.toLowerCase() === 'you' && versionActorKey) {
     key = versionActorKey;

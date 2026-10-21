@@ -8,7 +8,8 @@ import {
   within
 } from '@testing-library/react';
 import TableElement from '../index';
-import AssistantClient from '../../../../assistant/AssistantClient';
+import internalState from '../../../../utils/internalState';
+import type { TableHandlers } from '../../../../utils/formActions/tables';
 import { fieldValues } from '../../../../utils/init';
 import { featheryWindow } from '../../../../utils/browser';
 import {
@@ -1536,7 +1537,16 @@ describe('read-only Data Hub columns', () => {
   });
 });
 
-describe('assistant issues', () => {
+describe('Robin findings', () => {
+  const FORM = 'spreadsheet-findings-form';
+  const handlers = (): TableHandlers =>
+    (internalState as any)[FORM].tables.get('table1');
+  beforeEach(() => {
+    (internalState as any)[FORM] = {};
+  });
+  afterEach(() => {
+    delete (internalState as any)[FORM];
+  });
   const HUB_COLUMNS = [
     {
       name: 'Name',
@@ -1563,16 +1573,7 @@ describe('assistant issues', () => {
       operation === 'get' ? Promise.resolve(entries) : Promise.resolve({})
     )
   });
-  const assistant = () =>
-    new AssistantClient({
-      buttonOnClick: jest.fn(),
-      runElementActions: jest.fn(),
-      tableOnClick: jest.fn(),
-      changeValue: jest.fn()
-    });
-
-  test('the assistant can flag a cell by entry id and hub field key; it is an orange warning that never blocks', async () => {
-    const assistantClient = assistant();
+  test('Robin can flag a cell by hub field key; it is an orange warning that never blocks', async () => {
     renderTable(
       {
         columns: HUB_COLUMNS,
@@ -1588,20 +1589,17 @@ describe('assistant issues', () => {
             data: { name: 'Alice', email: 'alice@x.co' }
           }
         ]),
-        assistantClient
+        formId: FORM
       }
     );
     await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
 
     act(() => {
       expect(
-        assistantClient.setTableIssues('table1', [
-          {
-            target: { kind: 'cell', row: { entryId: 'e1' }, field: 'email' },
-            message: 'Bounced last week'
-          }
+        handlers().setFindings([
+          { rowIndex: 0, fieldKey: 'email', message: 'Bounced last week' }
         ])
-      ).toBe(true);
+      ).toEqual([]);
     });
 
     expect(status()).toHaveTextContent('1 warning');
@@ -1614,13 +1612,12 @@ describe('assistant issues', () => {
     await waitFor(() => expect(saveButton()).toBeEnabled());
 
     act(() => {
-      assistantClient.clearTableIssues('table1');
+      handlers().setFindings([]);
     });
     expect(status()).not.toHaveTextContent('warning');
   });
 
   test('a hub field named like the status column is still reachable by that name', async () => {
-    const assistantClient = assistant();
     const STATUS_FIELD = {
       id: 'hf9',
       key: 'Status',
@@ -1659,7 +1656,7 @@ describe('assistant issues', () => {
               : Promise.resolve({})
           )
         },
-        assistantClient
+        formId: FORM
       }
     );
     await waitFor(() =>
@@ -1670,11 +1667,8 @@ describe('assistant issues', () => {
     ).toEqual(['Status', 'Status']);
 
     act(() => {
-      assistantClient.setTableIssues('table1', [
-        {
-          target: { kind: 'cell', row: { entryId: 'e1' }, field: 'Status' },
-          message: 'Stale'
-        }
+      handlers().setFindings([
+        { rowIndex: 0, fieldKey: 'Status', message: 'Stale' }
       ]);
     });
     // The hub's own field takes the flag; the synthetic status column stays clean.
@@ -1682,8 +1676,7 @@ describe('assistant issues', () => {
     expect(cell('Unvalidated')).not.toHaveAttribute('title');
   });
 
-  test('row and range targets cover every cell they name', async () => {
-    const assistantClient = assistant();
+  test('a row finding covers every cell in its row', async () => {
     renderTable(
       { columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1' },
       {
@@ -1692,25 +1685,16 @@ describe('assistant issues', () => {
           { id: 'e2', data: { name: 'Bob', email: 'b@x.co' } },
           { id: 'e3', data: { name: 'Cy', email: 'c@x.co' } }
         ]),
-        assistantClient
+        formId: FORM
       }
     );
     await waitFor(() => expect(screen.getByText('Cy')).toBeInTheDocument());
 
     act(() => {
-      assistantClient.setTableIssues('table1', [
-        {
-          target: { kind: 'row', row: { rowIndex: 0 } },
-          message: 'Duplicate of row 4'
-        },
-        {
-          target: {
-            kind: 'range',
-            from: { row: { entryId: 'e2' }, field: 'name' },
-            to: { row: { entryId: 'e3' }, field: 'email' }
-          },
-          message: 'Imported from the wrong sheet'
-        }
+      handlers().setFindings([
+        { rowIndex: 0, message: 'Duplicate of row 4' },
+        { rowIndex: 1, message: 'Imported from the wrong sheet' },
+        { rowIndex: 2, message: 'Imported from the wrong sheet' }
       ]);
     });
 
@@ -1727,7 +1711,6 @@ describe('assistant issues', () => {
   });
 
   test('a hub rule error on the same cell wins, and the bar counts the categories apart', async () => {
-    const assistantClient = assistant();
     renderTable(
       {
         columns: HUB_COLUMNS,
@@ -1740,21 +1723,15 @@ describe('assistant issues', () => {
           { id: 'e1', verified: true, data: { name: 'Alice', email: 'bad' } },
           { id: 'e2', verified: false, data: { name: 'Bob', email: 'worse' } }
         ]),
-        assistantClient
+        formId: FORM
       }
     );
     await waitFor(() => expect(screen.getByText('worse')).toBeInTheDocument());
 
     act(() => {
-      assistantClient.setTableIssues('table1', [
-        {
-          target: { kind: 'cell', row: { entryId: 'e1' }, field: 'email' },
-          message: 'Bounced'
-        },
-        {
-          target: { kind: 'cell', row: { entryId: 'e1' }, field: 'name' },
-          message: 'Nickname?'
-        }
+      handlers().setFindings([
+        { rowIndex: 0, fieldKey: 'email', message: 'Bounced' },
+        { rowIndex: 0, fieldKey: 'name', message: 'Nickname?' }
       ]);
     });
 

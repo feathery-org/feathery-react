@@ -44,7 +44,6 @@ describe('Container document editor wiring', () => {
         viewport='desktop'
         form={{
           formInstanceId: 'internal-form-id',
-          activeStep: { id: 'step-1' },
           formSettings: { mobileBreakpoint: 480 }
         }}
       />
@@ -67,7 +66,6 @@ describe('Container DOM naming', () => {
         viewport='desktop'
         form={{
           formInstanceId: 'internal-form-id',
-          activeStep: { id: 'step-1' },
           formSettings: { mobileBreakpoint: 480 }
         }}
       />
