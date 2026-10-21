@@ -19,9 +19,9 @@ import {
   settleWrite
 } from './renderTick';
 import { getPositionKey } from '../hideAndRepeats';
+import { isButtonDisabled } from '../button';
 import {
   findAddRowButtonAction,
-  getContainerById,
   getRepeatedContainer,
   isNestedRepeat
 } from '../repeat';
@@ -31,8 +31,7 @@ import {
   FillFieldResult,
   FillStepResult,
   FormToolsStepWrites,
-  RepeatedWrite,
-  RowResult
+  RepeatedWrite
 } from './types';
 
 // fillStepTool checks the form is mounted on entry, and it stays mounted for the call
@@ -90,6 +89,11 @@ type WriteOutcome =
   | { status: 'unchanged' }
   | { status: 'rejected'; message: string }
   | { status: 'written' };
+
+type RepeatedFill = RepeatedWrite & {
+  nextRow: number;
+  writtenFileRows: number[];
+};
 
 // Writes through the form's own changeValue/fieldOnChange, then settles the
 // change rules. The navigation guard runs against the live post-write value
@@ -189,10 +193,11 @@ export async function fillStepTool(
   const intendedValues: Record<string, unknown> = {};
   // Repeated rows written, classified in the final pass with the scalar fields
   const repeatedWrites: Record<string, RepeatedWrite> = {};
+  const repeatedFills: Record<string, RepeatedFill> = {};
 
   // Each pass writes every visible, enabled, not-yet-attempted field in
-  // on-screen order; a field revealed by a later write is picked up in this
-  // or the next pass. Every field is attempted at most once, so passes end.
+  // on-screen order. A later write can reveal a field or enable an Add button;
+  // completed fields and rows are never replayed when a pass resumes.
   let progressed = true;
   while (progressed) {
     progressed = false;
@@ -214,9 +219,8 @@ export async function fillStepTool(
       // Left pending; final classification reports not_shown/disabled
       if (!entry || !entry.visible || entry.disabled) continue;
 
-      progressed = true;
-
       if (isUnsupportedType(entry.type)) {
+        progressed = true;
         resolved[fieldKey] = { status: 'unsupported' };
         continue;
       }
@@ -226,6 +230,7 @@ export async function fillStepTool(
 
       // No single container to add/address rows against
       if (servar.repeated && isNestedRepeat(state.currentStep, rawField)) {
+        progressed = true;
         resolved[fieldKey] = {
           status: 'unsupported',
           message: 'Nested repeated sections are not supported.'
@@ -235,6 +240,7 @@ export async function fillStepTool(
 
       const autosubmit = rawField.properties?.submit_trigger === 'auto';
       if (autosubmit) {
+        progressed = true;
         resolved[fieldKey] = {
           status: 'left_for_user',
           message: LEFT_FOR_USER_MESSAGE
@@ -243,20 +249,40 @@ export async function fillStepTool(
       }
 
       if (servar.repeated) {
-        const repeated = await fillRepeatedField(
+        const requested = values[fieldKey];
+        if (!Array.isArray(requested)) {
+          progressed = true;
+          resolved[fieldKey] = {
+            status: 'rejected',
+            message: `Field '${fieldKey}' (repeated) expects an array, one entry per row.`
+          };
+          continue;
+        }
+        const fill = (repeatedFills[fieldKey] ??= {
+          servar,
+          rows: [],
+          writtenRows: [],
+          intendedValues: {},
+          nextRow: 0,
+          writtenFileRows: []
+        });
+        const beforeRow = fill.nextRow;
+        await fillRepeatedField(
           formUuid,
           state,
           callbacks,
           rawField,
           fieldKey,
-          entry,
-          values[fieldKey]
+          requested,
+          fill
         );
-        resolved[fieldKey] = repeated.result;
-        if (repeated.written) repeatedWrites[fieldKey] = repeated.written;
+        if (fill.nextRow > beforeRow) progressed = true;
+        if (fill.nextRow === requested.length)
+          resolved[fieldKey] = { status: 'repeated', rows: fill.rows };
         continue;
       }
 
+      progressed = true;
       if (servar.type === 'file_upload') {
         const decoded = decodeAndValidateFiles(servar, values[fieldKey]);
         if (!decoded.ok) {
@@ -368,6 +394,61 @@ export async function fillStepTool(
     }
   }
 
+  for (const [fieldKey, fill] of Object.entries(repeatedFills)) {
+    const requested = values[fieldKey] as unknown[];
+    const entry = currentSnapshot(formUuid).currentStepFields.find(
+      (f) => f.key === fieldKey
+    );
+    const growth = repeatRowGrowth(state, entry?.repeatContainerId ?? '');
+    for (let row = fill.nextRow; row < requested.length; row++) {
+      if (isAbsent(requested[row])) fill.rows[row] = { status: 'skipped' };
+      else if (!entry?.visible) fill.rows[row] = { status: 'hidden' };
+      else if (entry.disabled)
+        fill.rows[row] = {
+          status: 'rejected',
+          message: 'Field is disabled and was left unfilled.'
+        };
+      else if (growth.disabled)
+        fill.rows[row] = {
+          status: 'rejected',
+          message: `Row ${row} needs a new row, but this container's Add button is disabled. Complete the required fields or selections first.`
+        };
+      else
+        fill.rows[row] = {
+          status: 'max_repeats_exceeded',
+          message: growth.canAddRows
+            ? `Row ${row} is past this container's row limit.`
+            : `Row ${row} needs a new row, and this container has no way to add one.`
+        };
+    }
+
+    // Upload the whole array once, including rows unblocked by later fields.
+    if (fill.writtenFileRows.length > 0) {
+      try {
+        await callbacks.submitFiles([
+          {
+            servar: {
+              key: fieldKey,
+              [fill.servar.type]:
+                internalState[formUuid]?.fields?.[fieldKey]?.value,
+              repeated: true
+            },
+            stepKey: state.currentStep.key
+          }
+        ]);
+      } catch (e: any) {
+        const message = e?.message ?? 'Failed to save the uploaded file.';
+        for (const row of fill.writtenFileRows)
+          fill.rows[row] = { status: 'rejected', message };
+      }
+    }
+    resolved[fieldKey] = { status: 'repeated', rows: fill.rows };
+    if (fill.writtenRows.length > 0) {
+      const { servar, rows, writtenRows, intendedValues } = fill;
+      repeatedWrites[fieldKey] = { servar, rows, writtenRows, intendedValues };
+    }
+  }
+
   // Classify from one final snapshot so a later field's rule rewriting an
   // earlier field's value shows up as 'changed'
   const finalSnapshot = currentSnapshot(formUuid);
@@ -457,6 +538,34 @@ export async function fillStepTool(
 
 const isAbsent = (value: unknown) => value === null || value === undefined;
 
+function repeatRowGrowth(state: any, containerId: string) {
+  const visibleButtons = (state.currentStep.buttons ?? []).filter((b: any) =>
+    isButtonVisible(state, b)
+  );
+  const addAction = findAddRowButtonAction(
+    {
+      buttons: visibleButtons.filter(
+        (b: any) =>
+          !isButtonDisabled(b, state.currentStep, state.visiblePositions, false)
+      )
+    },
+    containerId
+  );
+  const automatic = (state.currentStep.servar_fields ?? []).some(
+    (f: any) =>
+      f.servar?.repeat_trigger === 'set_value' &&
+      getRepeatedContainer(state.currentStep, f)?.id === containerId
+  );
+  const canAddRows = !!addAction || automatic;
+  return {
+    addAction,
+    canAddRows,
+    disabled:
+      !canAddRows &&
+      !!findAddRowButtonAction({ buttons: visibleButtons }, containerId)
+  };
+}
+
 // values[key] is an array, one entry per row. Missing rows are added like a
 // click on "Add another", then each row is written on its own; a row's outcome
 // never affects its siblings.
@@ -466,85 +575,39 @@ async function fillRepeatedField(
   callbacks: any,
   rawField: any,
   fieldKey: string,
-  entry: PanelRuntimeFieldEntry,
-  rawValue: unknown
-): Promise<{ result: FillFieldResult; written?: RepeatedWrite }> {
-  if (!Array.isArray(rawValue))
-    return {
-      result: {
-        status: 'rejected',
-        message: `Field '${fieldKey}' (repeated) expects an array, one entry per row.`
-      }
-    };
-
+  requested: unknown[],
+  fill: RepeatedFill
+): Promise<void> {
   const servar = rawField.servar;
-  const containerId = entry.repeatContainerId as string;
-  const requested = rawValue as unknown[];
-  let rowCount = entry.rowCount ?? 0;
-  // Trailing nulls add no rows
-  const neededRows = requested.reduce<number>(
-    (needed, value, row) => (isAbsent(value) ? needed : row + 1),
-    0
-  );
-
-  // A person adds rows with the container's visible add-row button, or by
-  // filling the last row of a field that adds one when set
-  const addAction = findAddRowButtonAction(
-    {
-      buttons: (state.currentStep.buttons ?? []).filter((b: any) =>
-        isButtonVisible(state, b)
-      )
-    },
-    containerId
-  );
-  const canAddRows =
-    !!addAction ||
-    (state.currentStep.servar_fields ?? []).some(
-      (f: any) =>
-        f.servar?.repeat_trigger === 'set_value' &&
-        getRepeatedContainer(state.currentStep, f)?.id === containerId
-    );
-  if (canAddRows && neededRows > rowCount) {
-    const container = getContainerById(state.currentStep, containerId);
-    const maxRepeats = addAction?.max_repeats ?? null;
-    // Growth is checked on the raw array, not a commit: max_repeats makes
-    // the write a no-op that never re-renders
-    const rawRowLength = () => {
-      const v = internalState[formUuid]?.fields?.[fieldKey]?.value;
-      return Array.isArray(v) ? v.length : 0;
-    };
-    const tick = captureRenderTick(formUuid);
-    let addedAny = false;
-    while (rowCount < neededRows) {
-      const before = rawRowLength();
-      callbacks.addRepeatedRow(container, maxRepeats);
-      if (rawRowLength() <= before) break; // max_repeats reached
-      rowCount++;
-      addedAny = true;
-    }
-    // visiblePositions only covers added rows after a re-render
-    if (addedAny) await waitForNextCommit(formUuid, tick);
-  }
-
+  const container = getRepeatedContainer(state.currentStep, rawField);
+  const containerId = container?.id ?? '';
   const positionKey = getPositionKey(rawField);
-  const rows: RowResult[] = [];
-  const writtenRows: number[] = [];
-  const writtenFileRows: number[] = [];
-  const intendedValues: Record<number, unknown> = {};
+  const { rows, writtenRows, writtenFileRows, intendedValues } = fill;
+  const rowCountNow = () =>
+    currentSnapshot(formUuid).currentStepFields.find((f) => f.key === fieldKey)
+      ?.rowCount ?? 0;
 
-  for (let row = 0; row < requested.length; row++) {
+  for (; fill.nextRow < requested.length; fill.nextRow++) {
+    const row = fill.nextRow;
     if (isAbsent(requested[row])) {
       rows[row] = { status: 'skipped' };
       continue;
     }
-    if (row >= rowCount) {
-      rows[row] = {
-        status: 'max_repeats_exceeded',
-        message: canAddRows
-          ? `Row ${row} is past this container's row limit.`
-          : `Row ${row} needs a new row, and this container has no way to add one.`
-      };
-      continue;
+    let rowCount = rowCountNow();
+    while (row >= rowCount) {
+      const { addAction, canAddRows } = repeatRowGrowth(state, containerId);
+      if (!canAddRows) return;
+      const beforeValue = internalState[formUuid]?.fields?.[fieldKey]?.value;
+      const beforeLength = Array.isArray(beforeValue) ? beforeValue.length : 0;
+      const tick = captureRenderTick(formUuid);
+      callbacks.addRepeatedRow(container, addAction?.max_repeats ?? null);
+      const afterValue = internalState[formUuid]?.fields?.[fieldKey]?.value;
+      if (!Array.isArray(afterValue) || afterValue.length <= beforeLength)
+        return;
+      await waitForNextCommit(formUuid, tick);
+      const afterCount = rowCountNow();
+      if (afterCount <= rowCount) return;
+      rowCount = afterCount;
     }
 
     const flags = state.visiblePositions?.[positionKey];
@@ -583,7 +646,8 @@ async function fillRepeatedField(
           status: 'left_for_user',
           message: LEFT_FOR_USER_MESSAGE
         };
-        break;
+        fill.nextRow = requested.length;
+        return;
       }
       if (outcome.status === 'rejected') {
         rows[row] = outcome;
@@ -642,7 +706,8 @@ async function fillRepeatedField(
         status: 'left_for_user',
         message: LEFT_FOR_USER_MESSAGE
       };
-      break;
+      fill.nextRow = requested.length;
+      return;
     }
     if (outcome.status === 'rejected') {
       rows[row] = outcome;
@@ -652,32 +717,6 @@ async function fillRepeatedField(
     writtenRows.push(row);
     intendedValues[row] = normalized;
   }
-
-  // Once per field: the entry carries the whole array, so per-row calls
-  // would resend earlier rows' bytes
-  if (writtenFileRows.length > 0) {
-    try {
-      await callbacks.submitFiles([
-        {
-          servar: {
-            key: servar.key,
-            [servar.type]: internalState[formUuid]?.fields?.[fieldKey]?.value,
-            repeated: true
-          },
-          stepKey: state.currentStep.key
-        }
-      ]);
-    } catch (e: any) {
-      const message = e?.message ?? 'Failed to save the uploaded file.';
-      for (const row of writtenFileRows)
-        rows[row] = { status: 'rejected', message };
-    }
-  }
-
-  const result: FillFieldResult = { status: 'repeated', rows };
-  return writtenRows.length > 0
-    ? { result, written: { servar, rows, writtenRows, intendedValues } }
-    : { result };
 }
 
 // A step can take several fill_step calls; this call's record starts over once
