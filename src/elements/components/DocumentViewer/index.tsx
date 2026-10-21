@@ -414,7 +414,7 @@ export default function DocumentViewer({
   const moveDocument = (from: number, to: number) =>
     setDocuments((prev) => moveItem(prev, from, to));
 
-  // The upload's envelope is left behind; finalize prunes unsent ones.
+  // The upload's envelope is left behind in storage.
   const removeAttachment = (index: number) =>
     setDocuments((prev) => prev.filter((_, i) => i !== index));
 
