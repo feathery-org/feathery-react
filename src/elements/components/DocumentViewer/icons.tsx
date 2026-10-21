@@ -56,6 +56,50 @@ export const AlertIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const ChevronUpIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <polyline points='18 15 12 9 6 15' />
+  </Svg>
+);
+
+export const ChevronDownIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <polyline points='6 9 12 15 18 9' />
+  </Svg>
+);
+
+export const GripIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx='9' cy='6' r='1' />
+    <circle cx='15' cy='6' r='1' />
+    <circle cx='9' cy='12' r='1' />
+    <circle cx='15' cy='12' r='1' />
+    <circle cx='9' cy='18' r='1' />
+    <circle cx='15' cy='18' r='1' />
+  </Svg>
+);
+
+export const PaperclipIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d='M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48' />
+  </Svg>
+);
+
+export const FileIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' />
+    <polyline points='14 2 14 8 20 8' />
+  </Svg>
+);
+
+export const DownloadIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' />
+    <polyline points='7 10 12 15 17 10' />
+    <line x1='12' y1='15' x2='12' y2='3' />
+  </Svg>
+);
+
 const spin = keyframes({
   from: { transform: 'rotate(0deg)' },
   to: { transform: 'rotate(360deg)' }
