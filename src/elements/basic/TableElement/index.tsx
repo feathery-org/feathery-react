@@ -483,18 +483,18 @@ function TableElement({
 
   const spreadsheetCellsEdit = useCallback(
     (writes: CellWrite[]) => {
-      // A finding described the old value, so editing the cell clears it
+      // A finding described the old values, so editing any cell it covers clears it
       const edited = new Set(
         writes.map(({ rowIndex, fieldKey }) => cellErrorKey(rowIndex, fieldKey))
       );
       setAssistantIssues((issues) =>
         issues.filter((issue) => {
           const context = issuesContextRef.current;
-          if (issue.target.kind !== 'cell' || !context) return true;
-          const [cellKey] = Object.keys(
+          if (!context) return true;
+          const covered = Object.keys(
             resolveTableIssues([issue], context).cells
           );
-          return !cellKey || !edited.has(cellKey);
+          return !covered.some((cellKey) => edited.has(cellKey));
         })
       );
       // A pending "provisional" row stops being provisional as soon as any of

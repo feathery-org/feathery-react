@@ -505,6 +505,32 @@ describe('a hub spreadsheet table', () => {
     });
   });
 
+  it('clears a row finding when any cell in its row is edited, and keeps findings elsewhere', async () => {
+    await renderHubTable();
+
+    act(() => {
+      handlers().setFindings([
+        { rowIndex: 1, message: 'Duplicate of row 1' },
+        { rowIndex: 0, fieldKey: 'email', message: 'Check this email' }
+      ]);
+    });
+    await waitFor(() =>
+      expect(cell('Bob')).toHaveAttribute('title', 'Duplicate of row 1')
+    );
+
+    act(() => {
+      handlers().editCells([
+        { rowIndex: 1, fieldKey: 'name', value: 'Robert' }
+      ]);
+    });
+    await waitFor(() =>
+      expect(cell('bob@test.com')).not.toHaveAttribute('title')
+    );
+    expect(cell('Robert')).not.toHaveAttribute('title');
+    expect(cell('alice@test.com')).toHaveAttribute('title', 'Check this email');
+    expect(handlers().getLiveState()).toMatchObject({ findings: 1 });
+  });
+
   it('rejects a finding on a row the grid is not showing or an unknown column, and keeps the rest', async () => {
     await renderHubTable();
     act(() => {
