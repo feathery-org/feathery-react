@@ -1,4 +1,5 @@
 import DocumentToast from './DocumentToast';
+import { PresentationLoader } from '../PptxEditor/loading/PresentationLoader';
 import React, {
   useCallback,
   useEffect,
@@ -37,8 +38,12 @@ function PresentationSession({
   onSaveAll,
   onDownloadAll,
   onError,
-  onDirty
+  onDirty,
+  loader,
+  onReady
 }: {
+  loader: PresentationLoader;
+  onReady: (id: string) => void;
   envelope: EditorEnvelope;
   active: boolean;
   busy: boolean;
@@ -58,6 +63,10 @@ function PresentationSession({
 }) {
   const current = useRef(initial);
   const [source] = useState(() => ({ url: envelopeSourceUrl(initial) ?? '' }));
+  const prepareSource = useCallback(
+    (signal: AbortSignal) => loader.load(initial.id, source.url, signal),
+    [loader, initial.id, source.url]
+  );
   const saveRef = useRef<(() => Promise<unknown>) | null>(null);
   const registerSave = useCallback((save: (() => Promise<unknown>) | null) => {
     saveRef.current = save;
@@ -109,6 +118,9 @@ function PresentationSession({
       <React.Suspense fallback={<div>Loading document…</div>}>
         <PptxEditor
           source={source}
+          visible={active}
+          prepareSource={prepareSource}
+          onReady={() => onReady(initial.id)}
           fileName={tab.label.replace(/\.pptx$/i, '') + '.pptx'}
           readOnly={readOnly || initial.signed}
           hideDownload={!offersDownload}
@@ -166,7 +178,17 @@ export default function PptxDocumentPacket({
   onError: (message: string | null) => void;
 }) {
   const sessions = useRef(new Map<string, Handle>());
+  const selectedId = useRef(activeId);
+  selectedId.current = activeId;
+  const loader = useMemo(() => new PresentationLoader(), [reloadKey]);
+  useEffect(() => () => loader.dispose(), [loader]);
+  const [ready, setReady] = useState<Set<string>>(() => new Set());
+  useEffect(() => setReady(new Set()), [loader]);
+  const markReady = useCallback((id: string) => {
+    setReady((ids) => new Set([...ids, id]));
+  }, []);
   const [visited, setVisited] = useState<string[]>(activeId ? [activeId] : []);
+  useEffect(() => setVisited(activeId ? [activeId] : []), [loader]);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [feedback, setFeedback] = useState('');
@@ -187,6 +209,32 @@ export default function PptxDocumentPacket({
     if (activeId)
       setVisited((ids) => (ids.includes(activeId) ? ids : [...ids, activeId]));
   }, [activeId]);
+  useEffect(() => {
+    if (!activeId || !ready.has(activeId)) return;
+    const controller = new AbortController();
+    // Let the active slide paint before preparing at most two likely next tabs.
+    const timer = setTimeout(async () => {
+      const start = tabs.findIndex((tab) => tab.id === activeId);
+      const candidates = [...tabs.slice(start + 1), ...tabs.slice(0, start)]
+        .filter((tab) => tab.envelope && !visited.includes(tab.id))
+        .slice(0, 2);
+      for (const tab of candidates) {
+        if (controller.signal.aborted) return;
+        const url = envelopeSourceUrl(tab.envelope);
+        if (url)
+          await loader.prefetch(
+            tab.envelope?.id ?? tab.id,
+            url,
+            controller.signal
+          );
+      }
+    }, 100);
+    return () => {
+      clearTimeout(timer);
+      loader.prioritize(selectedId.current);
+      controller.abort();
+    };
+  }, [activeId, ready, tabs, visited, loader]);
   const savePacket = useCallback(async () => {
     const envelopes = await resolveEnvelopes();
     const result = [];
@@ -277,6 +325,8 @@ export default function PptxDocumentPacket({
           <PresentationSession
             key={`${reloadKey}:${envelope.id}`}
             envelope={envelope}
+            loader={loader}
+            onReady={markReady}
             active={tab.id === activeId}
             busy={busy}
             tab={tab}

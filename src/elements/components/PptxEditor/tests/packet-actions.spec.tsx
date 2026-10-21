@@ -95,3 +95,28 @@ it('persists edits made during a background save before marking the deck clean',
   expect(onChange).toHaveBeenLastCalledWith(false);
   expect(screen.queryByRole('status', { name: 'Unsaved changes' })).toBeNull();
 });
+
+it('retains edits and undo history when a loaded editor is hidden and shown again', async () => {
+  const ready = jest.fn();
+  const bytes = sampleBytes();
+  const source = {
+    buffer: bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength
+    ) as ArrayBuffer
+  };
+  const { rerender } = render(<PptxEditor source={source} onReady={ready} />);
+  await waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
+  const newSlide = screen.getAllByRole('button', { name: 'New slide' })[0];
+  fireEvent.click(newSlide);
+  expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
+  rerender(<PptxEditor source={source} onReady={ready} visible={false} />);
+  rerender(<PptxEditor source={source} onReady={ready} visible />);
+  expect(ready).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
+  fireEvent.keyDown(screen.getAllByRole('button', { name: 'New slide' })[0], {
+    key: 'z',
+    ctrlKey: true
+  });
+  expect(screen.queryByRole('button', { name: 'Slide 10' })).toBeNull();
+});
