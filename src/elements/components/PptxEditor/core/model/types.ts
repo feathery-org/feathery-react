@@ -81,6 +81,7 @@ export interface Shape {
   geom?: string; // prstGeom preset (rect, ellipse, ...)
   geomAdj?: Record<string, number>; // avLst adjustments by name (roundRect "adj"; pie "adj1"/"adj2")
   extKey?: string; // future binding anchor from extLst (parsed, preserved)
+  ownerPart?: string; // part whose relationships resolve this shape's references (unset: the slide)
   node: ONode; // the raw p:sp / p:pic / p:graphicFrame / ... node
   spPr?: ONode; // the p:spPr node (geometry/fill), when applicable
 }

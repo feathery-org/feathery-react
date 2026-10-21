@@ -2794,7 +2794,7 @@ function shapeGroup(
       'transform',
       `scale(${cx / childW} ${cy / childH}) translate(${-childX} ${-childY})`
     );
-    const ownerPart = curSlide?.path || '';
+    const ownerPart = shape.ownerPart || curSlide?.path || '';
     let childIndex = 0;
     for (const node of childrenOf(shape.node)) {
       const nested = readShapeNode(node, {
@@ -2803,6 +2803,7 @@ function shapeGroup(
           pkg.relTarget(ownerPart, relationshipId)
       });
       if (!nested) continue;
+      if (shape.ownerPart) nested.ownerPart = shape.ownerPart;
       const nestedGroup = shapeGroup(
         nested,
         pkg,
@@ -2965,7 +2966,10 @@ function inheritedChromeShapes(deck: Deck, slide: Slide): Shape[] {
   const layout = pkg.layoutFor(slide.path);
   if (!layout) return [];
   const master = pkg.masterFor(layout);
-  const key = `${master || ''}|${layout}`;
+  // Master visibility is per slide (showMasterSp), so slides sharing a layout
+  // must not share one entry.
+  const slideShowsMaster = showsMaster(pkg, slide.path);
+  const key = `${master || ''}|${layout}|${slideShowsMaster ? 'm' : '-'}`;
   const inner = pkgCache(chromeCache, pkg);
   const hit = inner.get(key);
   if (hit) return hit;
@@ -2977,11 +2981,11 @@ function inheritedChromeShapes(deck: Deck, slide: Slide): Shape[] {
     for (const s of readSlide(pkg, part).shapes) {
       if (!s.xfrm || descendant(s.node, 'p:ph')) continue;
       s.id = `chrome-${tag}-${n++}`; // never collide with a slide shape id
+      s.ownerPart = part; // its r:ids belong to the master/layout, not the slide
       result.push(s);
     }
   };
-  if (showsMaster(pkg, slide.path) && showsMaster(pkg, layout))
-    collect(master, 'm');
+  if (slideShowsMaster && showsMaster(pkg, layout)) collect(master, 'm');
   collect(layout, 'l');
   inner.set(key, result);
   return result;

@@ -220,6 +220,9 @@ export function Toolbar({
     label = 'Edit table'
   ) => {
     if (!slide || !sh || sh.type !== 'table') return undefined;
+    // Toolbar clicks keep focus (no blur), so an active cell edit is flushed
+    // here or its typed text is replaced by the rerender.
+    store.commitSvgTextEdit?.();
     return executeCommand(
       { type: 'edit-table', slideId: slide.path, shapeId: sh.id, operations },
       label
@@ -350,6 +353,7 @@ export function Toolbar({
   };
   const applyBullet = (value: string) => {
     if (!deck || !slide || !sh?.text) return;
+    store.commitSvgTextEdit?.();
     const paragraphIndexes = selectedRange
       ? [selectedRange.paragraph]
       : undefined;
