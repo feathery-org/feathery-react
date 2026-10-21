@@ -40,6 +40,7 @@
     "test": "jest",
     "test:ci": "jest --silent --maxWorkers=50% --ci",
     "test:headless": "jest -c jest.headless.config.js",
+    "test:pptx-fonts": "jest -c jest.pptx-fonts.config.js",
     "test:debug": "npm-run-all -p test:watch jest-preview",
     "test:watch": "jest --watchAll",
     "jest-preview": "jest-preview",
@@ -146,6 +147,7 @@
     "libphonenumber-js": "^1.12.38",
     "lodash.debounce": "^4.0.8",
     "lodash.throttle": "^4.1.1",
+    "mtx-decompressor": "1.8.0",
     "quill-delta": "^4.2.2",
     "react-datepicker": "7.6.0",
     "react-ga4": "^1.4.1",
@@ -184,6 +186,7 @@
       "\\.headless\\.spec\\."
     ],
     "moduleNameMapper": {
+      "^mtx-decompressor$": "<rootDir>/node_modules/mtx-decompressor/dist/index.js",
       "^@tanstack/(react-table|table-core)$": "<rootDir>/node_modules/@tanstack/$1/dist/index.js",
       "^@tanstack/(react-table|table-core)/(.+)$": "<rootDir>/node_modules/@tanstack/$1/dist/$2.js"
     },

@@ -67,6 +67,41 @@ it('renders and serializes highlight, superscript, and subscript run formatting'
   ).toBe('-40%');
 });
 
+it('renders theme-based run highlights after import and preserves them on export', () => {
+  const deck = fixture();
+  const slide = deck.slides[0];
+  const shape = addTextBox(
+    deck,
+    slide,
+    100000,
+    100000,
+    2000000,
+    500000,
+    'Accountable'
+  );
+  const run = shape.text!.paragraphs[0].runs[0];
+  childrenOf(run.rPr!).push(
+    el('a:highlight', undefined, [el('a:schemeClr', { val: 'accent1' })])
+  );
+  // Re-import through the real package reader, matching Google Slides exports.
+  const imported = importDeck(exportDeckBytes(deck));
+  const rendered = renderSlideSvg(imported, imported.slides[0]);
+  const span = Array.from(rendered.querySelectorAll('[data-source-run]')).find(
+    (node) => node.textContent === 'Accountable'
+  ) as HTMLElement;
+  expect(span.style.backgroundColor).toBe('rgb(0, 162, 255)');
+  const reopened = importDeck(exportDeckBytes(imported));
+  const restored = reopened.slides[0].shapes.find(
+    (node) => node.id === shape.id
+  )!;
+  expect(
+    child(
+      child(restored.text!.paragraphs[0].runs[0].rPr!, 'a:highlight')!,
+      'a:schemeClr'
+    )
+  ).toBeDefined();
+});
+
 it('supports arrow, dash, lower-alpha, and lower-roman bullets', () => {
   expect(bulletGlyph('➤', undefined)).toBe('➤');
   expect(bulletGlyph('–', undefined)).toBe('–');
