@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import DocxEditor from '../DocxEditor';
+import EditorPreview from './EditorPreview';
 import DocumentTabs from './DocumentTabs';
 import PptxDocumentPacket from './PptxDocumentPacket';
 import { useDocumentPacket } from './useDocumentPacket';
@@ -142,12 +143,14 @@ export default function DocumentEditorContainer({
   formId,
   stepId,
   editMode,
+  previewType,
   assistantEnabled
 }: {
   containerId?: string;
   formId?: string;
   stepId?: string;
   editMode?: boolean;
+  previewType?: 'docx' | 'pptx' | 'generic';
   assistantEnabled?: boolean;
 }) {
   const { action: targetAction, formKey } = useMemo(
@@ -751,7 +754,11 @@ export default function DocumentEditorContainer({
     </div>
   );
 
-  if (editMode) return box(<DocxEditor preview hideDownload />);
+  if (editMode) {
+    if (!previewType || previewType === 'docx')
+      return box(<DocxEditor preview hideDownload />);
+    return box(<EditorPreview type={previewType} />);
+  }
   if (!activeDocumentId && !envelope) {
     return box(
       <div css={placeholder}>

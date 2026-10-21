@@ -174,6 +174,22 @@ describe('DocumentEditorContainer pptx dispatch', () => {
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
   });
 
+  it('shows a PowerPoint preview in the designer without loading a document', () => {
+    render(
+      <DocumentEditorContainer
+        {...{
+          containerId: CONTAINER,
+          editMode: true,
+          previewType: 'pptx' as const
+        }}
+      />
+    );
+    expect(
+      screen.getByLabelText('PowerPoint editor preview')
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('docx-editor:none')).not.toBeInTheDocument();
+  });
+
   it('lazy-loads the PptxEditor for a pptx envelope', async () => {
     stashEnvelope();
     render(<DocumentEditorContainer containerId={CONTAINER} formId='form-1' />);

@@ -35,6 +35,7 @@ export type StyledContainerProps = PropsWithChildren & {
   [key: string]: any;
   viewportOnly?: boolean;
   breakpoint: number;
+  documentEditorPreviewType?: 'docx' | 'pptx' | 'generic';
 };
 
 /**
@@ -63,6 +64,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       formId,
       stepId,
       assistantEnabled,
+      documentEditorPreviewType,
       ...props
     },
     ref
@@ -149,6 +151,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           formId={formId}
           stepId={stepId}
           editMode={editMode}
+          previewType={documentEditorPreviewType}
           assistantEnabled={assistantEnabled}
         />
       );
