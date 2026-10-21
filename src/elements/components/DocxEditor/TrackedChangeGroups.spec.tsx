@@ -333,8 +333,8 @@ describe('TrackedChangeGroups', () => {
       makeRevision({ customData: engineTag, revisionType: 'Deletion' })
     ];
     const editor = makeEditor(revisions);
-    const resolve = jest.fn((changeSetId: string) => {
-      expect(changeSetId).toBe('turn-5');
+    const resolve = jest.fn((changeSetIds: string[]) => {
+      expect(changeSetIds).toEqual(['turn-5']);
       revisions.splice(0, revisions.length);
       return true;
     });
@@ -344,7 +344,7 @@ describe('TrackedChangeGroups', () => {
     });
     const { container } = render(<TrackedChangeGroups editor={editor} />);
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
-    expect(resolve).toHaveBeenCalledWith('turn-5', false);
+    expect(resolve).toHaveBeenCalledWith(['turn-5'], false);
     for (const r of [makeRevision()]) expect(r.reject).not.toHaveBeenCalled();
     expect(container).toBeEmptyDOMElement();
     off();

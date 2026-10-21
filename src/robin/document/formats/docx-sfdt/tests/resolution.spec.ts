@@ -37,7 +37,7 @@ describe('engine-owned card resolution', () => {
     m.deleteRow('turn-1', 10, 2);
     const committed = m.doc();
     expect(m.session.ownsCard('turn-1')).toBe(true);
-    expect(m.session.resolveCard('turn-1', false)).toBe(true);
+    expect(m.session.resolveCards(['turn-1'], false)).toBe(true);
     expect(m.doc()).toBe(flagship);
     expect(m.session.undo().via).toBe('engine');
     expect(m.doc()).toBe(committed);
@@ -47,7 +47,7 @@ describe('engine-owned card resolution', () => {
   it('accepting applies the group projection: the row is gone and no record of the card is left', () => {
     const m = mount();
     m.deleteRow('turn-1', 10, 2);
-    expect(m.session.resolveCard('turn-1', true)).toBe(true);
+    expect(m.session.resolveCards(['turn-1'], true)).toBe(true);
     expect(m.groupsIn()).toEqual([]);
     const table = arr<NfNode>(arr<NfNode>(arr<NfNode>(m.session.state.view.nf.root.sections)[3].blocks)[10].blocks)[0];
     const before = arr<NfNode>(arr<NfNode>(arr<NfNode>(new DocumentSession({ pack: docxPack, host: { serialize: () => flagship, open: () => {}, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false }, target: { type: 'envelope', id: 'x' } }).state.view.nf.root.sections)[3].blocks)[10].blocks)[0];
@@ -59,8 +59,20 @@ describe('engine-owned card resolution', () => {
     const m = mount();
     m.deleteRow('turn-1', 10, 2);
     m.deleteRow('turn-2', 10, 4);
-    expect(m.session.resolveCard('turn-1', true)).toBe(true);
+    expect(m.session.resolveCards(['turn-1'], true)).toBe(true);
     expect(m.groupsIn()).toEqual(['turn-2']);
+  });
+
+  it('resolving several cards at once is one Ctrl+Z that brings them all back', () => {
+    const m = mount();
+    const turns = ['turn-1', 'turn-2', 'turn-3'];
+    turns.forEach((turn, i) => m.deleteRow(turn, 10, i + 1));
+    const committed = m.doc();
+    expect(m.groupsIn().sort()).toEqual(turns);
+    expect(m.session.resolveCards(turns, false)).toBe(true);
+    expect(m.groupsIn()).toEqual([]);
+    expect(m.session.undo().via).toBe('engine');
+    expect(m.doc()).toBe(committed);
   });
 
   it("a replaced feature is the engine's to resolve even after a reload; a plain row delete is not", () => {
@@ -106,7 +118,7 @@ describe('a bookmarked move rejected after a reload (review item 3)', () => {
     const host = { serialize: () => doc, open: (x: string) => { doc = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
     const reloaded = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' }, editorId: 'ed' });
     expect(reloaded.ownsCard('turn-m')).toBe(true);
-    expect(reloaded.resolveCard('turn-m', false)).toBe(true);
+    expect(reloaded.resolveCards(['turn-m'], false)).toBe(true);
     expect(bookmarks(doc)).toEqual(bookmarks(flagship));
     expect(JSON.stringify(JSON.parse(doc).revisions ?? [])).not.toContain('turn-m');
   });
@@ -132,7 +144,7 @@ describe('a replaced formula rejected after a reload', () => {
     const host = { serialize: () => doc, open: (x: string) => { doc = x; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
     const reloaded = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' }, editorId: 'ed' });
     expect(reloaded.ownsCard('turn-f')).toBe(true);
-    expect(reloaded.resolveCard('turn-f', false)).toBe(true);
+    expect(reloaded.resolveCards(['turn-f'], false)).toBe(true);
     expect(formulasNamed(reloaded)).toEqual(original);
     expect(JSON.stringify(JSON.parse(doc).revisions ?? [])).not.toContain('turn-f');
   });

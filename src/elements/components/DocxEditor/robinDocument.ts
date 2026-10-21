@@ -118,8 +118,8 @@ export function mountRobinDocument({
   // the rail asks the engine first about Robin's cards, for the ones it must resolve itself
   const unregister = registerCardResolver(editor, {
     owns: (changeSetId) => !!mounted.get()?.ownsCard(changeSetId),
-    resolve: (changeSetId, accept) =>
-      !!mounted.get()?.resolveCard(changeSetId, accept)
+    resolve: (changeSetIds, accept) =>
+      !!mounted.get()?.resolveCards(changeSetIds, accept)
   });
   return () => {
     guard?.dispose();

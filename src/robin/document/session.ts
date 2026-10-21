@@ -490,25 +490,30 @@ export class DocumentSession {
   }
 
   /**
-   * Accept or reject one card through the engine: a reject of the last change set, with the
+   * Accept or reject cards through the engine: a reject of the last change set alone, with the
    * document still as it left it, restores the snapshot byte for byte; otherwise the pack's group
-   * projection of the live document is opened. The resolution is one engine history entry, so
-   * Ctrl+Z brings the card back. False, and the document as it was, when it cannot be done.
+   * projection of the live document is opened for every card at once. The resolution is one engine
+   * history entry, so one Ctrl+Z brings the cards back. False, and the document as it was, when it
+   * cannot be done.
    */
-  resolveCard(changeSetId: string, accept: boolean): boolean {
+  resolveCards(changeSetIds: string[], accept: boolean): boolean {
     const resolveGroup = this.pack.projections.resolveGroup;
     if (!resolveGroup) return false;
     const state = this.state;
     const before = this.native;
-    const snapshot = accept
-      ? undefined
-      : this.history.restorable(changeSetId, before);
+    const snapshot =
+      accept || changeSetIds.length !== 1
+        ? undefined
+        : this.history.restorable(changeSetIds[0], before);
     let target: string;
     try {
       target = snapshot
         ? snapshot.before
         : this.pack.adapter.fromNormalForm(
-            resolveGroup(state.view.nf, changeSetId, accept),
+            changeSetIds.reduce(
+              (nf, changeSetId) => resolveGroup(nf, changeSetId, accept),
+              state.view.nf
+            ),
             state.residue
           );
       this.host.open(target);
@@ -526,7 +531,7 @@ export class DocumentSession {
     try {
       this.runRefresh('engine');
     } catch (e) {
-      this.refreshFailed(changeSetId, e);
+      this.refreshFailed(changeSetIds.join(','), e);
       try {
         this.host.open(target);
       } catch {
@@ -534,12 +539,12 @@ export class DocumentSession {
       }
     }
     this.history.push({
-      turnId: changeSetId,
+      turnId: changeSetIds.join(','),
       kind: 'resolution',
       before,
       after: this.host.serialize()
     });
-    this.structural.delete(changeSetId);
+    for (const changeSetId of changeSetIds) this.structural.delete(changeSetId);
     this.refresh();
     this.replaced('person');
     return true;

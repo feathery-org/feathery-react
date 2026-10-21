@@ -546,10 +546,15 @@ function TrackedChangeGroups({
         (g) => !g.untagged && resolver?.owns(g.changeSetId)
       );
       const native = groupViews.filter((g) => !owned.includes(g));
-      let unresolvedOwned = 0;
-      for (const g of owned)
-        if (!resolver?.resolve(g.changeSetId, isAccept))
-          unresolvedOwned += g.chips.length;
+      const ownedResolved =
+        !owned.length ||
+        !!resolver?.resolve(
+          owned.map((g) => g.changeSetId),
+          isAccept
+        );
+      const unresolvedOwned = ownedResolved
+        ? 0
+        : owned.reduce((n, g) => n + g.chips.length, 0);
       const outcome = native.length
         ? settled(() =>
             resolveLiveRevisionGroupsAsOneUndo(editor, native, isAccept)
