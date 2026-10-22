@@ -205,7 +205,9 @@ export interface DocumentViewerPayload {
   documents: ViewerDocument[];
   // The packet's DocuSign recipients, named by position in `signing_tags`.
   signers?: SigningRecipient[];
-  expires_at: string;
+  // Absent for an embedded viewer: its envelope has no review session to
+  // expire.
+  expires_at?: string;
 }
 
 interface DocumentViewerProps {
@@ -213,10 +215,14 @@ interface DocumentViewerProps {
   // The Generate Documents action: `editor_toolbar_actions` configures the
   // toolbar, `editor_read_only` locks the PDFs' form fields.
   action: Record<string, any>;
-  setShow: (show: boolean) => void;
+  // Renders inline, filling its parent (a Document Editor container), instead
+  // of as a full-screen modal: no portal, no Back, no focus or key trapping,
+  // and nothing closes.
+  embedded?: boolean;
+  setShow?: (show: boolean) => void;
   // May return the flow it continues, so a kept-open close can recover when
   // that flow fails.
-  onComplete: () => void | Promise<unknown>;
+  onComplete?: () => void | Promise<unknown>;
   // The toolbar exposes a single Continue action (label varies by
   // `envelope_action`) that calls this to finalize the reviewed envelopes.
   onFinalize?: (params: {
@@ -236,15 +242,23 @@ interface DocumentViewerProps {
   // whatever outcome finalize runs (download, sign, ...) acts on the edited
   // file. Absent = fields still render but edits are never persisted.
   onSaveEnvelopeFile?: (envelopeId: string, file: Blob) => Promise<any>;
+  // Whether any document has field edits not yet saved to its envelope.
+  onDirtyChange?: (dirty: boolean) => void;
+  // Hands the host a save for unsaved edits, run before it replaces the
+  // documents (regenerate, tab switch); null once unmounted.
+  onBeforeReplaceReady?: (save: (() => Promise<unknown>) | null) => void;
 }
 
 export default function DocumentViewer({
   payload,
   action,
-  setShow,
-  onComplete,
+  embedded = false,
+  setShow = () => {},
+  onComplete = () => {},
   onFinalize,
-  onSaveEnvelopeFile
+  onSaveEnvelopeFile,
+  onDirtyChange,
+  onBeforeReplaceReady
 }: DocumentViewerProps) {
   const loadedDocs = useRef<Record<string, any>>({});
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -254,7 +268,7 @@ export default function DocumentViewer({
   // rest of the page can be made `inert` while it is open (see the portal
   // effect below).
   const portalElRef = useRef<HTMLElement | null>(null);
-  if (portalElRef.current === null && runningInClient()) {
+  if (portalElRef.current === null && !embedded && runningInClient()) {
     portalElRef.current = featheryDoc().createElement('div');
   }
   // Key of the toolbar action currently running (spinner + disable-all), or
@@ -297,7 +311,9 @@ export default function DocumentViewer({
   const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
 
   const isExpired = useMemo(
-    () => new Date(payload.expires_at).getTime() < Date.now(),
+    () =>
+      !!payload.expires_at &&
+      new Date(payload.expires_at).getTime() < Date.now(),
     [payload.expires_at]
   );
   const [expiredBanner, setExpiredBanner] = useState(isExpired);
@@ -342,7 +358,7 @@ export default function DocumentViewer({
   // Tab trap alone doesn't constrain a screen reader's virtual cursor.
   useEffect(() => {
     const node = portalElRef.current;
-    if (!node) return undefined;
+    if (!node || embedded) return undefined;
     const body = featheryDoc().body;
     body.appendChild(node);
     const siblings = Array.from(body.children).filter(
@@ -359,6 +375,9 @@ export default function DocumentViewer({
   }, []);
 
   useEffect(() => {
+    // An embedded viewer is part of the page: it takes no focus and owns no
+    // keys.
+    if (embedded) return undefined;
     // Restore focus to whatever was focused before the viewer opened when it
     // closes, so keyboard/SR users don't get dropped onto <body>.
     const previouslyFocused = featheryDoc().activeElement as HTMLElement | null;
@@ -429,6 +448,9 @@ export default function DocumentViewer({
   // cleared by saveDocument()/resetModified() — so a doc saved once and then
   // edited again goes dirty again.
   const dirtyDocs = useRef<Set<string>>(new Set());
+  // Read by the once-bound storage callbacks below.
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
 
   const signingTags = useMemo(
     () => payload.documents.flatMap((doc) => doc.signing_tags ?? []),
@@ -455,8 +477,13 @@ export default function DocumentViewer({
     loadedDocs.current[pdfUrl] = pdfProxy;
     const storage = pdfProxy.annotationStorage;
     if (storage) {
+      // Not reported as dirty here: pdf.js also writes storage while
+      // rendering. onUserEdit reports the filler's own edits.
       storage.onSetModified = () => dirtyDocs.current.add(pdfUrl);
-      storage.onResetModified = () => dirtyDocs.current.delete(pdfUrl);
+      storage.onResetModified = () => {
+        dirtyDocs.current.delete(pdfUrl);
+        onDirtyChangeRef.current?.(dirtyDocs.current.size > 0);
+      };
     }
     setPageCounts((prev) => ({ ...prev, [pdfUrl]: pdfProxy.numPages }));
   }, []);
@@ -485,15 +512,30 @@ export default function DocumentViewer({
         // so retrying the toolbar action re-saves it instead of skipping it
         // and finalizing the unedited file.
         dirtyDocs.current.add(doc.pdf_url);
+        onDirtyChangeRef.current?.(true);
         throw e;
       }
     }
   };
 
-  const onUserEdit = useCallback(
-    () => setSession((s) => ({ ...s, editRevision: s.editRevision + 1 })),
-    []
-  );
+  // The host re-saves through this before replacing the documents, so its
+  // regenerate or tab switch doesn't drop edits (and aborts if the save fails).
+  const saveEditedDocumentsRef = useRef(saveEditedDocuments);
+  saveEditedDocumentsRef.current = saveEditedDocuments;
+  useEffect(() => {
+    onBeforeReplaceReady?.(() => saveEditedDocumentsRef.current());
+    return () => {
+      onBeforeReplaceReady?.(null);
+      // Unsaved edits die with this viewer; don't leave the host's leave
+      // prompt guarding them.
+      onDirtyChangeRef.current?.(false);
+    };
+  }, [onBeforeReplaceReady]);
+
+  const onUserEdit = useCallback(() => {
+    setSession((s) => ({ ...s, editRevision: s.editRevision + 1 }));
+    onDirtyChangeRef.current?.(true);
+  }, []);
 
   const registerPageRef = useCallback(
     (pdfUrl: string, pageIndex: number, el: HTMLDivElement | null) => {
@@ -517,6 +559,8 @@ export default function DocumentViewer({
   // envelope action, so one editor session can offer e.g. Sign and Download.
   // An unconfigured editor still gets a way forward: Continue finalizes with
   // `fill`, which just returns the generated files and resumes the flow.
+  // Embedded, nothing is left to resume, so the same button reads Save: the
+  // edits are persisted before any finalize runs.
   const configuredToolbarActions: EditorToolbarAction[] = (
     action.editor_toolbar_actions ?? []
   ).filter((a: string) =>
@@ -588,33 +632,17 @@ export default function DocumentViewer({
     : [
         {
           key: 'primary',
-          label: 'Continue',
+          label: embedded ? 'Save' : 'Continue',
           variant: 'primary',
           onClick: () => finalizeWith('fill', 'primary')
         }
       ];
 
-  if (!portalElRef.current) return null;
-  return createPortal(
-    <div
-      ref={containerRef}
-      role='dialog'
-      aria-modal='true'
-      aria-label={VIEWER_TITLE}
-      tabIndex={-1}
-      css={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        display: 'flex',
-        flexDirection: 'column',
-        backgroundColor: '#f4f5f8',
-        outline: 'none'
-      }}
-    >
+  const content = (
+    <>
       <Toolbar
-        title={VIEWER_TITLE}
-        onBack={close}
+        title={embedded ? undefined : VIEWER_TITLE}
+        onBack={embedded ? undefined : close}
         actions={toolbarActions}
         busyKey={busyKey}
       />
@@ -661,6 +689,33 @@ export default function DocumentViewer({
           </div>
         </div>
       </div>
+    </>
+  );
+  const surfaceCss = {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    backgroundColor: '#f4f5f8',
+    outline: 'none'
+  };
+
+  if (embedded) {
+    return (
+      <div css={{ ...surfaceCss, width: '100%', height: '100%', minHeight: 0 }}>
+        {content}
+      </div>
+    );
+  }
+  if (!portalElRef.current) return null;
+  return createPortal(
+    <div
+      ref={containerRef}
+      role='dialog'
+      aria-modal='true'
+      aria-label={VIEWER_TITLE}
+      tabIndex={-1}
+      css={{ ...surfaceCss, position: 'fixed', inset: 0, zIndex: 100 }}
+    >
+      {content}
     </div>,
     portalElRef.current
   );

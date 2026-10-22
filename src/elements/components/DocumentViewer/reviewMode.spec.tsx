@@ -527,7 +527,84 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       fireEvent.click(button('Back'));
 
       expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('embedded', () => {
+    it('renders inline with no dialog, Back or title, and leaves the page live', () => {
+      const { container } = render(
+        <DocumentViewer
+          embedded
+          payload={{ documents: basePayload.documents }}
+          action={{ editor_toolbar_actions: ['sign'] }}
+        />
+      );
+
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+      expect(screen.queryByText('Review Your Forms')).toBeNull();
+      expect(container.firstChild).toBeTruthy();
+      expect(container.hasAttribute('inert')).toBe(false);
+      // No review session to expire.
+      expect(screen.queryByText(/session has expired/)).toBeNull();
+    });
+
+    it('offers Save, not Continue, for an unconfigured toolbar', async () => {
+      const onFinalize = jest.fn().mockResolvedValue(undefined);
+      render(
+        <DocumentViewer
+          embedded
+          payload={{ documents: basePayload.documents }}
+          action={{}}
+          onFinalize={onFinalize}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(onFinalize).toHaveBeenCalledWith(
+          expect.objectContaining({ envelopeAction: 'fill' })
+        )
+      );
+    });
+
+    it('ignores Escape', () => {
+      const setShow = jest.fn();
+      render(
+        <DocumentViewer
+          embedded
+          payload={{ documents: basePayload.documents }}
+          action={{}}
+          setShow={setShow}
+        />
+      );
+
+      fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
+
       expect(setShow).not.toHaveBeenCalled();
+    });
+
+    it('registers a pre-replace save and clears dirty state on unmount', () => {
+      const onBeforeReplaceReady = jest.fn();
+      const onDirtyChange = jest.fn();
+      const { unmount } = render(
+        <DocumentViewer
+          embedded
+          payload={{ documents: basePayload.documents }}
+          action={{}}
+          onBeforeReplaceReady={onBeforeReplaceReady}
+          onDirtyChange={onDirtyChange}
+        />
+      );
+      expect(onBeforeReplaceReady).toHaveBeenLastCalledWith(
+        expect.any(Function)
+      );
+
+      unmount();
+
+      expect(onBeforeReplaceReady).toHaveBeenLastCalledWith(null);
+      expect(onDirtyChange).toHaveBeenLastCalledWith(false);
     });
   });
 
