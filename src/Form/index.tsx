@@ -286,6 +286,11 @@ import { setUploadIndicatorEnabled } from '../utils/fileUploadProgress';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
+import { isInteractionDetected } from '../utils/interactionState';
+import {
+  isRetryableSessionError,
+  SESSION_RETRY_DELAYS_MS
+} from '../utils/featheryClient/utils';
 import { confirmLeavingUnsavedWork } from '../utils/unsavedWork';
 import {
   STEP_EVENT_BACK,
@@ -2026,71 +2031,88 @@ function Form({
     // fetch values separately because this request
     // goes to Feathery origin, while the previous
     // request goes to our CDN
+    const applySession = ([session, steps]: any) => {
+      // A single-use link carries no form data until this device claims it
+      if (session?.link?.confirm) {
+        setLinkConfirmRequired(true);
+        return;
+      }
+
+      if (!session || session.collaborator?.invalid)
+        formOffReason.current = CLOSED;
+      else if (session.link?.required) formOffReason.current = LINK_REQUIRED;
+      else if (session.collaborator?.completed)
+        formOffReason.current = COLLAB_COMPLETED;
+      else if (session.collaborator?.direct_submission_disabled)
+        formOffReason.current = COLLAB_DIRECT_DISABLED;
+      else if (session.no_business_email)
+        formOffReason.current = NO_BUSINESS_EMAIL;
+      if (formOffReason.current) {
+        setRender((render) => ({ ...render }));
+        return;
+      }
+
+      if (!session.track_location && trackHashes.current) {
+        // Clear URL hash on new session if not tracking location
+        navigate(
+          featheryWindow().location.pathname + featheryWindow().location.search,
+          {
+            replace: true
+          }
+        );
+      }
+      updateBackNavMap(session.back_nav_map);
+      setIntegrations(session.integrations);
+
+      setFieldKeys(session.servars);
+      setHiddenFields(session.hidden_fields);
+      setAllowLists([
+        session.collaborator?.whitelist,
+        session.collaborator?.blacklist
+      ]);
+      saveInitialValuesAndUrlParams({
+        updateFieldValues,
+        client: newClient,
+        saveUrlParams: saveUrlParams || saveUrlParamsFormSetting,
+        initialValues,
+        steps,
+        hiddenFields: session.hidden_fields
+      });
+
+      // User is authenticating. auth hook will set the initial stepKey once auth has finished
+      if (authState.redirectAfterLogin || authState.hasRedirected || stepKey)
+        return;
+
+      const newKey = getInitialStep({
+        initialStepId,
+        steps,
+        sessionCurrentStep: session.current_step_key,
+        collaboratorStartStep: session.collaborator?.start_step_key,
+        formId: _internalId
+      });
+      if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
+      setStepKey(newKey);
+    };
+    // The origin step is already showing, so retry quietly and adopt the
+    // session only while the user hasn't touched the form, since it loads
+    // saved values and can move to the step they left off on
+    const retrySession = (attempt = 0) => {
+      if (attempt >= SESSION_RETRY_DELAYS_MS.length) return;
+      setTimeout(() => {
+        if (isInteractionDetected() || hasRedirected.current) return;
+        newClient
+          .fetchSession(formPromise, true, true)
+          .then((result: any) => {
+            if (result) applySession(result);
+          })
+          .catch((error: any) => {
+            if (isRetryableSessionError(error)) retrySession(attempt + 1);
+          });
+      }, SESSION_RETRY_DELAYS_MS[attempt]);
+    };
     newClient
       .fetchSession(formPromise, true)
-      .then(([session, steps]: any) => {
-        // A single-use link carries no form data until this device claims it
-        if (session?.link?.confirm) {
-          setLinkConfirmRequired(true);
-          return;
-        }
-
-        if (!session || session.collaborator?.invalid)
-          formOffReason.current = CLOSED;
-        else if (session.link?.required) formOffReason.current = LINK_REQUIRED;
-        else if (session.collaborator?.completed)
-          formOffReason.current = COLLAB_COMPLETED;
-        else if (session.collaborator?.direct_submission_disabled)
-          formOffReason.current = COLLAB_DIRECT_DISABLED;
-        else if (session.no_business_email)
-          formOffReason.current = NO_BUSINESS_EMAIL;
-        if (formOffReason.current) {
-          setRender((render) => ({ ...render }));
-          return;
-        }
-
-        if (!session.track_location && trackHashes.current) {
-          // Clear URL hash on new session if not tracking location
-          navigate(
-            featheryWindow().location.pathname +
-              featheryWindow().location.search,
-            {
-              replace: true
-            }
-          );
-        }
-        updateBackNavMap(session.back_nav_map);
-        setIntegrations(session.integrations);
-
-        setFieldKeys(session.servars);
-        setHiddenFields(session.hidden_fields);
-        setAllowLists([
-          session.collaborator?.whitelist,
-          session.collaborator?.blacklist
-        ]);
-        saveInitialValuesAndUrlParams({
-          updateFieldValues,
-          client: newClient,
-          saveUrlParams: saveUrlParams || saveUrlParamsFormSetting,
-          initialValues,
-          steps,
-          hiddenFields: session.hidden_fields
-        });
-
-        // User is authenticating. auth hook will set the initial stepKey once auth has finished
-        if (authState.redirectAfterLogin || authState.hasRedirected || stepKey)
-          return;
-
-        const newKey = getInitialStep({
-          initialStepId,
-          steps,
-          sessionCurrentStep: session.current_step_key,
-          collaboratorStartStep: session.collaborator?.start_step_key,
-          formId: _internalId
-        });
-        if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
-        setStepKey(newKey);
-      })
+      .then(applySession)
       .catch(async (error: any) => {
         console.warn(error);
         // The session can fail before the form payload sets sessionGated
@@ -2104,13 +2126,19 @@ function Form({
           setRender((render) => ({ ...render }));
           return;
         }
-        // Same guard as the success path: the auth hook picks the step
-        if (authState.redirectAfterLogin || authState.hasRedirected || stepKey)
-          return;
-        // Go to first step if origin fails
-        const newKey = (getOrigin as any)(data).key;
-        if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
-        setStepKey(newKey);
+        // Same guard as the success path: the auth hook picks the step. The
+        // retry still runs, since a loaded session is what hands it integrations
+        if (
+          !authState.redirectAfterLogin &&
+          !authState.hasRedirected &&
+          !stepKey
+        ) {
+          // Go to first step if origin fails
+          const newKey = (getOrigin as any)(data).key;
+          if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
+          setStepKey(newKey);
+        }
+        if (isRetryableSessionError(error)) retrySession();
       });
   }, [activeStep, setSteps, updateFieldValues]);
 
