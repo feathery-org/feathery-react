@@ -48,6 +48,14 @@ export function useDocumentPacket({
   const [reloadKey, setReloadKey] = useState(0);
   const busy = useRef(false);
   const generation = useRef(0);
+  // A background lookup and a later tab selection must use the same envelope
+  // (including its presigned file URL) for the prepared presentation to match.
+  const unresolved = useRef(
+    new Map<
+      string,
+      { documentId: string; promise: Promise<EditorEnvelope | null> }
+    >()
+  );
   const current = useRef({
     tabs,
     activeId,
@@ -65,18 +73,27 @@ export function useDocumentPacket({
     saveOnSwitch
   };
 
-  const resolveTab = async (tab?: DocumentTab) => {
+  const resolveTab = useCallback(async (tab?: DocumentTab) => {
     if (tab?.envelope) return tab.envelope;
     if (!tab?.documentId) return null;
-    const value = await current.current.load(tab.documentId);
-    if (!value) throw new Error(`Could not load ${tab.label}. Please retry.`);
-    return value?.id
-      ? ({
-          ...value,
-          document: value.document ?? tab.documentId
-        } as EditorEnvelope)
-      : null;
-  };
+    const previous = unresolved.current.get(tab.id);
+    if (previous?.documentId === tab.documentId) return previous.promise;
+    const promise = current.current.load(tab.documentId).then((value) => {
+      if (!value) throw new Error(`Could not load ${tab.label}. Please retry.`);
+      return value?.id
+        ? ({
+            ...value,
+            document: value.document ?? tab.documentId
+          } as EditorEnvelope)
+        : null;
+    });
+    unresolved.current.set(tab.id, { documentId: tab.documentId, promise });
+    promise.catch(() => {
+      if (unresolved.current.get(tab.id)?.promise === promise)
+        unresolved.current.delete(tab.id);
+    });
+    return promise;
+  }, []);
 
   const open = (tab: DocumentTab | undefined, value: EditorEnvelope | null) => {
     updateEnvelope(value);
@@ -94,6 +111,7 @@ export function useDocumentPacket({
 
   useEffect(() => {
     if (editMode) return;
+    unresolved.current.clear();
     const sequence = ++generation.current;
     resolveTab(current.current.tabs[0])
       .then((value) => {
@@ -152,6 +170,7 @@ export function useDocumentPacket({
       setSwitching(true);
       try {
         await current.current.beforeReplace();
+        unresolved.current.clear();
         const nextTabs = packetTabs(
           detail.envelopes?.length
             ? detail
@@ -270,6 +289,7 @@ export function useDocumentPacket({
     selectTab,
     filesForSave,
     updateTabEnvelope,
-    resolveEnvelopes
+    resolveEnvelopes,
+    resolveTabEnvelope: resolveTab
   };
 }

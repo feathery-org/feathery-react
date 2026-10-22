@@ -1,4 +1,5 @@
 import React from 'react';
+import { waitFor } from '@testing-library/react';
 import { SlideNavigator } from '../ui/SlideNavigator';
 import { act, mountEditor, sampleBytes, type Mounted } from './harness';
 
@@ -30,6 +31,36 @@ it('adds a slide from the New slide button after the active slide', async () => 
   expect(slideCount(mounted!)).toBe(before + 1);
   // New slide is inserted at index 1 and becomes active.
   expect(store.getState().activeSlide).toBe(1);
+});
+
+it('keeps visible thumbnails painted while undo and redo queue refreshed previews', async () => {
+  const { host, store } = await mountNav();
+  const thumbnail = host.querySelector('button[aria-label="Slide 1"]')!;
+  await waitFor(() => expect(thumbnail.querySelector('svg')).not.toBeNull());
+  const slide = store.getState().deck!.slides[0];
+  const shape = slide.shapes.find((candidate) => candidate.xfrm)!;
+  await act(async () =>
+    store.executeCommand(
+      {
+        type: 'set-shape-geometries',
+        slideId: slide.path,
+        updates: [
+          { shapeId: shape.id, geometry: { x: shape.xfrm!.x + 100000 } }
+        ]
+      },
+      'Move shape'
+    )
+  );
+  await waitFor(() => expect(thumbnail.querySelector('svg')).not.toBeNull());
+  const beforeUndo = thumbnail.querySelector('svg');
+  await act(async () => store.undo());
+  expect(thumbnail.querySelector('svg')).toBe(beforeUndo);
+  await waitFor(() =>
+    expect(thumbnail.querySelector('svg')).not.toBe(beforeUndo)
+  );
+  const beforeRedo = thumbnail.querySelector('svg');
+  await act(async () => store.redo());
+  expect(thumbnail.querySelector('svg')).toBe(beforeRedo);
 });
 
 it('walks slides with Up/Down from a focused thumbnail, even read-only', async () => {

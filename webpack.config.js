@@ -25,6 +25,11 @@ module.exports = {
   module: {
     rules: [
       {
+        test: /pptxWorkerSource\.ts$/,
+        enforce: 'pre',
+        use: require.resolve('./scripts/pptx-worker-loader.cjs')
+      },
+      {
         // .d.ts files get matched by ts
         test: /\.(ts|tsx)?$/,
         exclude: /node_modules/,
