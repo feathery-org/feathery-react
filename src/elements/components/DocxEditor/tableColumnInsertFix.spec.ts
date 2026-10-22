@@ -1,200 +1,237 @@
 // "Insert column" drops the new cells' fill and borders in Syncfusion 34.1.31
 // (see installTableColumnInsertFix). These tests run the REAL Editor from the
 // node_modules mirror (same version production loads from the CDN —
-// constants.spec.ts enforces the lockstep) on a table styled like the proposal
-// templates: a navy header row with a green bottom border, plain body rows.
-import 'jest-canvas-mock';
+// constants.spec.ts enforces the lockstep) on tables styled like the proposal
+// templates: navy header cells with a green bottom rule, plain body cells.
 import {
-  DocumentEditor,
-  Editor,
-  EditorHistory,
-  SfdtExport,
-  Selection
-} from '@syncfusion/ej2-documenteditor';
-import { randomFillSync } from 'crypto';
-import { featheryDoc, featheryWindow } from '../../../utils/browser';
+  cell,
+  cellText,
+  destroyRealDocumentEditor,
+  docWith,
+  makeRealDocumentEditor,
+  para,
+  row,
+  table,
+  textRun
+} from './bindings/tests/realEditorHarness';
 import { installTableColumnInsertFix } from './tableColumnInsertFix';
 
-DocumentEditor.Inject(Editor, Selection, EditorHistory, SfdtExport);
+const NAVY = '#001B49';
+const RULE = '#A9B533';
+const RED = '#C00000';
 
-const win: any = featheryWindow();
-
-if (!win.crypto?.getRandomValues) {
-  Object.defineProperty(win, 'crypto', {
-    value: {
-      getRandomValues: (array: Uint8Array) => randomFillSync(array)
-    }
-  });
-}
-
-// jsdom throws on getComputedStyle's pseudo-element argument; drop it.
-const jsdomGetComputedStyle = win.getComputedStyle.bind(win);
-win.getComputedStyle = (elt: Element) => jsdomGetComputedStyle(elt);
-
-if (!win.SVGElement.prototype.getBBox) {
-  win.SVGElement.prototype.getBBox = () =>
-    ({ x: 0, y: 0, width: 0, height: 0 } as DOMRect);
-}
-
-const HEADER_FILL = '#001B49';
-const HEADER_RULE = '#A9B533';
-
-function styledTableSfdt() {
-  const header = (text: string) => ({
-    cellFormat: {
-      shading: { backgroundColor: HEADER_FILL, textureStyle: 'TextureNone' },
-      borders: {
-        bottom: { lineStyle: 'Single', lineWidth: 1.5, color: HEADER_RULE }
-      }
-    },
-    blocks: [{ inlines: [{ text, characterFormat: { fontColor: '#FFFFFF' } }] }]
-  });
-  const body = (text: string) => ({
-    cellFormat: {},
-    blocks: [{ inlines: [{ text }] }]
-  });
-  return {
-    sections: [
-      {
-        blocks: [
-          { inlines: [{ text: 'Heading' }] },
-          {
-            tableFormat: {},
-            rows: [
-              { rowFormat: {}, cells: [header('Coverage'), header('Limit')] },
-              { rowFormat: {}, cells: [body('Each Claim'), body('$1,000,000')] }
-            ]
-          },
-          { inlines: [{ text: 'End' }] }
-        ]
-      }
-    ]
-  };
-}
-
-function makeRealDocumentEditor(sfdt: any): DocumentEditor {
-  const host = featheryDoc().createElement('div');
-  host.style.width = '900px';
-  host.style.height = '700px';
-  featheryDoc().body.appendChild(host);
-  const editor = new DocumentEditor({
-    isReadOnly: false,
-    enableEditor: true,
-    enableSelection: true,
-    enableEditorHistory: true,
-    enableSfdtExport: true,
-    // Same as production: full SFDT keys (`sections`, not `sec`).
-    documentEditorSettings: { optimizeSfdt: false }
-  });
-  editor.appendTo(host);
-  editor.open(JSON.stringify(sfdt));
-  return editor;
-}
-
-/** Caret in the given cell of the table (block 1 of section 0). */
-function selectCell(ed: any, row: number, cell: number) {
-  const offset = `0;1;${row};${cell};0;0`;
-  ed.selection.select(offset, offset);
-}
-
-// jsdom's mocked text metrics can push the table onto a later page — search
-// every page rather than assuming page 0.
-function getFirstTable(ed: any) {
-  for (const page of ed.documentHelper.pages) {
-    for (const body of page.bodyWidgets ?? []) {
-      const table = (body.childWidgets ?? []).find((w: any) => w.tableFormat);
-      if (table) return table;
-    }
-  }
-  return undefined;
-}
-
-function tableRows(ed: any): any[] {
-  return JSON.parse(ed.serialize()).sections[0].blocks[1].rows;
-}
-
-const fillOf = (cell: any) => cell.cellFormat?.shading?.backgroundColor;
-const bottomRuleOf = (cell: any) => cell.cellFormat?.borders?.bottom?.color;
-
-jest.setTimeout(120000);
-
-let ed: any;
-
-afterEach(() => {
-  if (ed) {
-    const element = ed.element;
-    ed.destroy();
-    element?.remove();
-    ed = undefined;
+/** A cell with a fill and a bottom rule, as the templates style headers. */
+const styled = (text: string, fill: string, extra: object = {}) => ({
+  ...cell(para(textRun(text))),
+  cellFormat: {
+    shading: { backgroundColor: fill, textureStyle: 'TextureNone' },
+    borders: { bottom: { lineStyle: 'Single', lineWidth: 1.5, color: RULE } },
+    ...extra
   }
 });
 
-describe('installTableColumnInsertFix', () => {
-  it('documents the upstream bug: unpatched, a new header cell loses its fill and border', () => {
-    ed = makeRealDocumentEditor(styledTableSfdt());
-    selectCell(ed, 0, 1);
-    ed.editor.insertColumn(false, 1);
+const docWithTable = (...rows: unknown[]) =>
+  docWith(para(textRun('Heading')), table(...rows), para(textRun('End')));
 
-    const [headerRow] = tableRows(ed);
-    expect(headerRow.cells).toHaveLength(3);
-    expect(fillOf(headerRow.cells[2])).not.toBe(HEADER_FILL);
-    expect(bottomRuleOf(headerRow.cells[2])).not.toBe(HEADER_RULE);
+// Header row of styled cells over one plain body row.
+const headerTable = () =>
+  docWithTable(
+    row(styled('Coverage', NAVY), styled('Limit', NAVY)),
+    row(cellText('Each Claim'), cellText('$1,000,000'))
+  );
+
+/** Caret in `cell` (its position in the row) of `row` of the table. */
+function selectCell(ed: any, rowIndex: number, cellIndex: number) {
+  const offset = `0;1;${rowIndex};${cellIndex};0;0`;
+  ed.selection.select(offset, offset);
+}
+
+const tableRows = (ed: any): any[] =>
+  JSON.parse(ed.serialize()).sections[0].blocks[1].rows;
+// A cloned unshaded fill serializes Syncfusion's "no color" value, 'empty'.
+const fills = (r: any) =>
+  r.cells.map((c: any) => {
+    const fill = c.cellFormat?.shading?.backgroundColor;
+    return fill && fill !== 'empty' ? fill : null;
   });
+const rules = (r: any) =>
+  r.cells.map((c: any) => c.cellFormat?.borders?.bottom?.color ?? null);
+const texts = (r: any) =>
+  r.cells.map((c: any) =>
+    (c.blocks?.[0]?.inlines ?? []).map((i: any) => i.text).join('')
+  );
+
+// The live widget table, for checks the serializer can't show (object identity).
+function liveTable(ed: any) {
+  for (const page of ed.documentHelper.pages) {
+    for (const body of page.bodyWidgets ?? []) {
+      const found = (body.childWidgets ?? []).find((w: any) => w.tableFormat);
+      if (found) return found;
+    }
+  }
+  throw new Error('no table rendered');
+}
+
+jest.setTimeout(120000);
+
+describe('installTableColumnInsertFix', () => {
+  // One editor for every behavior case: booting Syncfusion in jsdom dominates
+  // the runtime. The patch lives on editorModule, which open() keeps.
+  let ed: any;
+  beforeAll(() => {
+    ed = makeRealDocumentEditor(headerTable());
+    installTableColumnInsertFix(ed);
+  });
+  afterAll(() => destroyRealDocumentEditor(ed));
 
   it.each([
     ['right of the last column', 1, false, 2],
     ['left of the first column', 0, true, 0]
   ])(
-    'copies the neighbour cell fill and borders when inserting %s',
+    'copies the header fill and rule when inserting %s',
     (_label, fromCell, left, newIndex) => {
-      ed = makeRealDocumentEditor(styledTableSfdt());
-      installTableColumnInsertFix(ed);
+      ed.open(JSON.stringify(headerTable()));
       selectCell(ed, 0, fromCell);
       ed.editor.insertColumn(left, 1);
 
-      const [headerRow, bodyRow] = tableRows(ed);
-      expect(headerRow.cells).toHaveLength(3);
-      expect(fillOf(headerRow.cells[newIndex])).toBe(HEADER_FILL);
-      expect(bottomRuleOf(headerRow.cells[newIndex])).toBe(HEADER_RULE);
-      // Body cells stay unfilled, and the original cells are untouched.
-      expect(fillOf(bodyRow.cells[newIndex])).not.toBe(HEADER_FILL);
-      for (const cell of headerRow.cells)
-        expect(fillOf(cell)).toBe(HEADER_FILL);
+      const [header, body] = tableRows(ed);
+      expect(fills(header)).toEqual([NAVY, NAVY, NAVY]);
+      expect(rules(header)[newIndex]).toBe(RULE);
+      expect(fills(body)[newIndex]).not.toBe(NAVY);
     }
   );
 
-  it('does not recolor the table itself', () => {
-    ed = makeRealDocumentEditor(styledTableSfdt());
-    installTableColumnInsertFix(ed);
-    const table = getFirstTable(ed);
-    const tableFillBefore = table.tableFormat.shading.backgroundColor;
-    selectCell(ed, 0, 1);
+  it('styles a mid-row insert from the column it was inserted from', () => {
+    // Column 0 is a navy label column; columns 1 and 2 are plain.
+    const labelTable = () =>
+      docWithTable(
+        row(styled('Policy', NAVY), cellText('A'), cellText('B')),
+        row(styled('Premium', NAVY), cellText('C'), cellText('D'))
+      );
+
+    // Insert right of the label column: the new column is a label column.
+    ed.open(JSON.stringify(labelTable()));
+    selectCell(ed, 1, 0);
+    ed.editor.insertColumn(false, 1);
+    for (const r of tableRows(ed))
+      expect(fills(r)).toEqual([NAVY, NAVY, null, null]);
+
+    // Insert left of a plain column: the new column is plain, even though the
+    // label column sits on its other side.
+    ed.open(JSON.stringify(labelTable()));
+    selectCell(ed, 1, 1);
+    ed.editor.insertColumn(true, 1);
+    for (const r of tableRows(ed))
+      expect(fills(r)).toEqual([NAVY, null, null, null]);
+  });
+
+  it('finds the new cell by identity in a row with a merged cell', () => {
+    // Row 0 = [A, B (spans 2), C]; row 1 = [D, E, F, G]. Caret in F, insert
+    // right: insertColumn passes column index 3, but in row 0 the new cell
+    // lands at position 2 - between B and C - so cells[3] is C.
+    ed.open(
+      JSON.stringify(
+        docWithTable(
+          row(
+            styled('A', NAVY),
+            styled('B', NAVY, { columnSpan: 2 }),
+            styled('C', RED)
+          ),
+          row(cellText('D'), cellText('E'), cellText('F'), cellText('G'))
+        )
+      )
+    );
+    selectCell(ed, 1, 2);
     ed.editor.insertColumn(false, 1);
 
-    expect(table.tableFormat.shading.backgroundColor).toBe(tableFillBefore);
-    expect(fillOf(tableRows(ed)[1].cells[2])).not.toBe(HEADER_FILL);
+    const [header, body] = tableRows(ed);
+    expect(texts(header)).toEqual(['A', 'B', '', 'C']);
+    // C keeps its own fill and rule; the new cell takes B's (its left).
+    expect(fills(header)).toEqual([NAVY, NAVY, NAVY, RED]);
+    expect(rules(header)).toEqual([RULE, RULE, RULE, RULE]);
+    expect(texts(body)).toEqual(['D', 'E', 'F', '', 'G']);
+    expect(fills(body)).toEqual([null, null, null, null, null]);
+  });
+
+  it('never leaves a new cell sharing the table shading object', () => {
+    // Row 0 = [A, B (spans 3)], row 1 = [D, E, F, G]. Insert right of G:
+    // column index 4 is past the end of row 0, where the new cell is at
+    // position 2 - an index-based lookup finds nothing there and leaves the
+    // new cell aliasing the table's shading.
+    ed.open(
+      JSON.stringify(
+        docWithTable(
+          row(cellText('A'), {
+            ...cellText('B'),
+            cellFormat: { columnSpan: 3 }
+          }),
+          row(cellText('D'), cellText('E'), cellText('F'), cellText('G'))
+        )
+      )
+    );
+    selectCell(ed, 1, 3);
+    ed.editor.insertColumn(false, 1);
+
+    const live = liveTable(ed);
+    const tableShading = live.tableFormat.shading;
+    const newCells = [
+      live.childWidgets[0].childWidgets[2],
+      live.childWidgets[1].childWidgets[4]
+    ];
+    for (const newCell of newCells) {
+      expect(newCell.cellFormat.shading).not.toBe(tableShading);
+      // Shading the new cell (right-click > cell shading) must not leak into
+      // the table or the other cells.
+      newCell.cellFormat.shading.backgroundColor = '#00FF00';
+    }
+    expect(tableShading.backgroundColor).not.toBe('#00FF00');
+    expect(fills(tableRows(ed)[1])).toEqual([
+      null,
+      null,
+      null,
+      null,
+      '#00FF00'
+    ]);
   });
 
   it('undo removes the column and leaves the original styling', () => {
-    ed = makeRealDocumentEditor(styledTableSfdt());
-    installTableColumnInsertFix(ed);
+    ed.open(JSON.stringify(headerTable()));
     selectCell(ed, 0, 1);
     ed.editor.insertColumn(false, 1);
     ed.editorHistory.undo();
 
-    const [headerRow] = tableRows(ed);
-    expect(headerRow.cells).toHaveLength(2);
-    for (const cell of headerRow.cells) {
-      expect(fillOf(cell)).toBe(HEADER_FILL);
-      expect(bottomRuleOf(cell)).toBe(HEADER_RULE);
-    }
+    const [header] = tableRows(ed);
+    expect(fills(header)).toEqual([NAVY, NAVY]);
+    expect(rules(header)).toEqual([RULE, RULE]);
+  });
+});
+
+describe('installTableColumnInsertFix on a fresh editor', () => {
+  let ed: any;
+  beforeAll(() => {
+    ed = makeRealDocumentEditor(headerTable());
+  });
+  afterAll(() => destroyRealDocumentEditor(ed));
+
+  it('documents the upstream bug: unpatched, a new header cell loses its fill and rule', () => {
+    selectCell(ed, 0, 1);
+    ed.editor.insertColumn(false, 1);
+
+    const [header] = tableRows(ed);
+    expect(fills(header)[2]).not.toBe(NAVY);
+    expect(rules(header)[2]).not.toBe(RULE);
   });
 
   it('installs once', () => {
-    ed = makeRealDocumentEditor(styledTableSfdt());
     installTableColumnInsertFix(ed);
-    const patched = ed.editorModule.copyCellFormats;
+    const patched = {
+      insertColumn: ed.editorModule.insertColumn,
+      createColumn: ed.editorModule.createColumn,
+      copyCellFormats: ed.editorModule.copyCellFormats
+    };
     installTableColumnInsertFix(ed);
-    expect(ed.editorModule.copyCellFormats).toBe(patched);
+    expect(ed.editorModule.insertColumn).toBe(patched.insertColumn);
+    expect(ed.editorModule.createColumn).toBe(patched.createColumn);
+    expect(ed.editorModule.copyCellFormats).toBe(patched.copyCellFormats);
   });
 });
