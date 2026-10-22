@@ -17,6 +17,12 @@ const tabStyle = {
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
   boxSizing: 'border-box',
+  '@media (hover: hover)': {
+    '&:not(:disabled):not([aria-disabled="true"]):hover': {
+      background: '#e4e4e7',
+      color: '#18181b'
+    }
+  },
   '&:focus-visible': { outline: '2px solid #ef4444', outlineOffset: -2 }
 } as const;
 
