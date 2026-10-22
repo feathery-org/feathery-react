@@ -2098,10 +2098,10 @@ function Form({
           return;
         }
         // Go to first step if origin fails
-        const [data] = await formPromise;
+        const data = await formPromise;
         const newKey = (getOrigin as any)(data).key;
-        if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
-        else setStepKey(newKey);
+        if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
+        setStepKey(newKey);
       });
   }, [activeStep, setSteps, updateFieldValues]);
 
