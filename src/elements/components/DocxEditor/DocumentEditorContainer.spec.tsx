@@ -2421,7 +2421,8 @@ describe('document tab navigation', () => {
     });
     await view.findByTestId('signed-view:b-signed.pdf');
     expect(mockGetCurrentEnvelope).toHaveBeenCalledTimes(1);
-    expect(mockGetCurrentEnvelope).toHaveBeenCalledWith('doc-b');
+    // Named by envelope: two envelopes from one template share a document
+    expect(mockGetCurrentEnvelope).toHaveBeenCalledWith('doc-b', 'env-b');
     expect(view.getByTestId('signed-view:env-a.pdf')).toHaveAttribute(
       'data-status',
       'awaiting'

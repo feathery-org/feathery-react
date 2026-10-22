@@ -1127,12 +1127,14 @@ export default class IntegrationClient {
   // The newest envelope for this submission + document, loaded by the in-form
   // document editor container. Returns {id, file, editor_file, type, signed}
   // or {} — the editor opens editor_file (controls intact) when present.
-  getCurrentEnvelope(documentId: string) {
+  getCurrentEnvelope(documentId: string, envelopeId?: string) {
     const { userId } = initInfo();
-    // The form key scopes the lookup to envelopes this form generated.
+    // The form key scopes the lookup to envelopes this form generated. An
+    // envelope id pins one of several envelopes sharing a document.
     const params = encodeGetParams({
       fuser_key: userId,
       document_id: documentId,
+      ...(envelopeId ? { envelope_id: envelopeId } : {}),
       ...(this.formKey ? { form_key: this.formKey } : {})
     });
     const url = `${API_URL}document/current-envelope/?${params}`;

@@ -223,7 +223,10 @@ export default function DocxDocumentSession({
   const refreshSignedEnvelope = useCallback(async () => {
     if (!activeDocumentId) return;
     try {
-      const fresh = await client.getCurrentEnvelope(activeDocumentId);
+      const fresh = await client.getCurrentEnvelope(
+        activeDocumentId,
+        envelopeRef.current.id
+      );
       if (fresh?.id === envelopeRef.current.id) {
         // The current-envelope response may omit sent/provider metadata.
         // Keep what finalize established while accepting fresh file/signature
@@ -278,7 +281,9 @@ export default function DocxDocumentSession({
       else openTab(url);
     } catch (error: any) {
       const fresh = activeDocumentId
-        ? await client.getCurrentEnvelope(activeDocumentId).catch(() => null)
+        ? await client
+            .getCurrentEnvelope(activeDocumentId, envelope.id)
+            .catch(() => null)
         : null;
       if (fresh?.id === envelope.id && fresh.signed) {
         setEnvelope(fresh);
