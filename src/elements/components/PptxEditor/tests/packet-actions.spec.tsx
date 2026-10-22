@@ -115,9 +115,11 @@ it('retains edits and undo history when a loaded editor is hidden and shown agai
   };
   const { rerender } = render(<PptxEditor source={source} onReady={ready} />);
   await waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
-  const newSlide = (await screen.findAllByRole('button', {
-    name: 'New slide'
-  }))[0];
+  const newSlide = (
+    await screen.findAllByRole('button', {
+      name: 'New slide'
+    })
+  )[0];
   fireEvent.click(newSlide);
   expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
   rerender(<PptxEditor source={source} onReady={ready} visible={false} />);
@@ -128,5 +130,61 @@ it('retains edits and undo history when a loaded editor is hidden and shown agai
     key: 'z',
     ctrlKey: true
   });
+  expect(screen.queryByRole('button', { name: 'Slide 10' })).toBeNull();
+});
+
+it('uses the active presentation shortcuts while its document tab has focus', async () => {
+  const bytes = sampleBytes();
+  render(
+    <>
+      <div role='tablist' aria-label='Documents'>
+        <button
+          role='tab'
+          aria-selected='true'
+          aria-controls='pptx-panel'
+          type='button'
+        >
+          presentation.pptx
+        </button>
+        <button
+          role='tab'
+          aria-selected='false'
+          aria-controls='pptx-panel'
+          type='button'
+        >
+          other.pptx
+        </button>
+      </div>
+      <div role='tabpanel' id='pptx-panel'>
+        <PptxEditor
+          source={{
+            buffer: bytes.buffer.slice(
+              bytes.byteOffset,
+              bytes.byteOffset + bytes.byteLength
+            ) as ArrayBuffer
+          }}
+        />
+      </div>
+    </>
+  );
+  const tab = screen.getByRole('tab', { name: 'presentation.pptx' });
+  const newSlide = await screen.findByRole('button', { name: 'New slide' });
+  fireEvent.click(newSlide);
+  expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
+  expect(
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'other.pptx' }), {
+      key: 'z',
+      ctrlKey: true
+    })
+  ).toBe(true);
+  expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
+  fireEvent.click(tab);
+  expect(fireEvent.keyDown(tab, { key: 'z', ctrlKey: true })).toBe(false);
+  expect(screen.queryByRole('button', { name: 'Slide 10' })).toBeNull();
+  expect(
+    fireEvent.keyDown(tab, { key: 'z', ctrlKey: true, shiftKey: true })
+  ).toBe(false);
+  expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
+  expect(fireEvent.keyDown(tab, { key: 'z', metaKey: true })).toBe(false);
   expect(screen.queryByRole('button', { name: 'Slide 10' })).toBeNull();
 });

@@ -290,26 +290,49 @@ function PptxEditorInner({
   );
 
   // ---- keyboard shortcuts, scoped to this editor instance ----
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (readOnly) return;
-    const meta = e.metaKey || e.ctrlKey;
-    if (!meta) return;
-    const inTextEdit = (e.target as HTMLElement).closest?.(
-      '[contenteditable="true"]'
-    );
-    const keyName = e.key.toLowerCase();
-    if (keyName === 'z' && !inTextEdit) {
-      e.preventDefault();
-      if (e.shiftKey) store.redo();
-      else store.undo();
-    } else if (keyName === 'y' && !inTextEdit) {
-      e.preventDefault();
-      store.redo();
-    } else if (keyName === 's' && onSave) {
-      e.preventDefault();
-      handleSave();
-    }
-  };
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent | KeyboardEvent) => {
+      if (readOnly) return;
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta) return;
+      const inTextEdit = (e.target as HTMLElement).closest?.(
+        '[contenteditable="true"]'
+      );
+      const keyName = e.key.toLowerCase();
+      if (keyName === 'z' && !inTextEdit) {
+        e.preventDefault();
+        if (e.shiftKey) store.redo();
+        else store.undo();
+      } else if (keyName === 'y' && !inTextEdit) {
+        e.preventDefault();
+        store.redo();
+      } else if (keyName === 's' && onSave) {
+        e.preventDefault();
+        handleSave();
+      }
+    },
+    [readOnly, store, onSave, handleSave]
+  );
+
+  useEffect(() => {
+    if (!visible || readOnly) return;
+    // Document tabs are siblings of the editor, so their key events never
+    // reach the editor wrapper. Only the selected tab for this panel may act.
+    const panel = wrapRef.current?.closest<HTMLElement>('[role="tabpanel"]');
+    if (!panel?.id) return;
+    const doc = panel.ownerDocument;
+    const onTabKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      const tab = target?.closest?.<HTMLElement>('[role="tab"]');
+      if (
+        tab?.getAttribute('aria-selected') === 'true' &&
+        tab.getAttribute('aria-controls') === panel.id
+      )
+        onKeyDown(event);
+    };
+    doc.addEventListener('keydown', onTabKeyDown);
+    return () => doc.removeEventListener('keydown', onTabKeyDown);
+  }, [visible, readOnly, onKeyDown, state.deck, loading]);
 
   const dirty = state.rev >= 0 ? store.engine.isDirty() : false;
   const historyEnabled = !!historyHost;
