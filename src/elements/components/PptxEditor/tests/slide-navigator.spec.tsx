@@ -52,11 +52,15 @@ it('keeps visible thumbnails painted while undo and redo queue refreshed preview
     )
   );
   await waitFor(() => expect(thumbnail.querySelector('svg')).not.toBeNull());
+  const beforeUndo = thumbnail.querySelector('svg');
   await act(async () => store.undo());
-  expect(thumbnail.querySelector('svg')).not.toBeNull();
-  await waitFor(() => expect(thumbnail.querySelector('svg')).not.toBeNull());
+  expect(thumbnail.querySelector('svg')).toBe(beforeUndo);
+  await waitFor(() =>
+    expect(thumbnail.querySelector('svg')).not.toBe(beforeUndo)
+  );
+  const beforeRedo = thumbnail.querySelector('svg');
   await act(async () => store.redo());
-  expect(thumbnail.querySelector('svg')).not.toBeNull();
+  expect(thumbnail.querySelector('svg')).toBe(beforeRedo);
 });
 
 it('walks slides with Up/Down from a focused thumbnail, even read-only', async () => {
