@@ -353,6 +353,7 @@ function PptxEditorInner({
       {(() => {
         const hostActions = (
           <>
+            {!readOnly && <DocumentSaveStatus dirty={dirty} />}
             {!hideDownload &&
               (onExportPdf || onDownloadAll ? (
                 <span
@@ -429,7 +430,6 @@ function PptxEditorInner({
                   Download
                 </button>
               ))}
-            {!readOnly && <DocumentSaveStatus dirty={dirty} />}
             {onSave && !readOnly && onSaveAll ? (
               <span
                 ref={saveMenuRef}

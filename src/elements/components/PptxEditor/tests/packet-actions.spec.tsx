@@ -25,6 +25,14 @@ it('offers separate current/all actions on the actual presentation toolbar', asy
     />
   );
   const saveButton = await screen.findByRole('button', { name: 'Save' });
+  const downloadButton = screen.getByRole('button', { name: 'Download' });
+  const saveStatus = screen.getByRole('status', { hidden: true });
+  // The status may reserve room before Download, but must not separate the
+  // adjacent Download and Save actions when the deck is clean.
+  expect(
+    saveStatus.compareDocumentPosition(downloadButton) &
+      Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
   expect(screen.queryByText('All documents saved')).toBeNull();
   fireEvent.click(saveButton);
   expect(
@@ -107,7 +115,9 @@ it('retains edits and undo history when a loaded editor is hidden and shown agai
   };
   const { rerender } = render(<PptxEditor source={source} onReady={ready} />);
   await waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
-  const newSlide = screen.getAllByRole('button', { name: 'New slide' })[0];
+  const newSlide = (await screen.findAllByRole('button', {
+    name: 'New slide'
+  }))[0];
   fireEvent.click(newSlide);
   expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
   rerender(<PptxEditor source={source} onReady={ready} visible={false} />);

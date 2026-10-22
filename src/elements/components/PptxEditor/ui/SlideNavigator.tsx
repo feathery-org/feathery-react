@@ -3,6 +3,7 @@ import { featheryDoc } from '../../../../utils/browser';
 import { renderSlideSvg } from '../core/render/svg';
 import { cachedThumbnail, cacheThumbnail } from '../loading/thumbnailCache';
 import { schedulePreview } from '../loading/previewScheduler';
+import type { Deck } from '../core/model/types';
 import { useOutsideClose } from './useOutsideClose';
 import {
   INK,
@@ -33,6 +34,10 @@ function SlideThumbnail({
 }) {
   const store = usePptxEditorStore();
   const hostRef = useRef<HTMLDivElement>(null);
+  const mountedSourceRef = useRef<{
+    deck: Deck;
+    path: string;
+  } | null>(null);
   const [inViewport, setInViewport] = useState(slideIndex < 3);
   const deck = store.getState().deck;
   const slide = deck?.slides[slideIndex];
@@ -51,12 +56,26 @@ function SlideThumbnail({
   }, [active]);
   useEffect(() => {
     const host = hostRef.current;
-    if (!host || !deck || !slide || !active || (!selected && !inViewport))
+    if (!host) return;
+    if (
+      !deck ||
+      !slide ||
+      !active ||
+      (!selected && !inViewport) ||
+      (mountedSourceRef.current &&
+        (mountedSourceRef.current.deck !== deck ||
+          mountedSourceRef.current.path !== slide.path))
+    )
+      host.replaceChildren();
+    if (!deck || !slide || !active || (!selected && !inViewport)) {
+      mountedSourceRef.current = null;
       return;
+    }
+    mountedSourceRef.current = { deck, path: slide.path };
     const mount = (svg: SVGSVGElement) => {
       svg.setAttribute('width', '100%');
       svg.style.pointerEvents = 'none';
-      host.replaceChildren(svg);
+      if (host.firstChild !== svg) host.replaceChildren(svg);
     };
     const cached = cachedThumbnail(deck.pkg, slide.path, rev);
     let cancel = () => {};
@@ -74,7 +93,9 @@ function SlideThumbnail({
       });
     return () => {
       cancel();
-      host.replaceChildren();
+      // Keep the previous preview painted until the replacement is ready.
+      // Clearing here left every visible thumbnail blank for a task on each
+      // undo/redo (and on unrelated state revisions).
     };
   }, [store, deck, slide, rev, active, selected, inViewport]);
   return (
