@@ -116,3 +116,71 @@ it('prepares upcoming documents after reopening tabs with unresolved envelopes',
     expect(requests).toHaveBeenCalledWith('/2.pptx', expect.anything())
   );
 });
+
+it('hands an in-flight reopened-tab prefetch to the selected editor', async () => {
+  const envelopes = ['1', '2'].map((id) => ({
+    id: `envelope-${id}`,
+    document: `document-${id}`,
+    file: `/${id}.pptx`,
+    type: 'pptx',
+    signed: false
+  }));
+  const tabs = envelopes.map((envelope, index) => ({
+    id: `document-${index + 1}:${index}`,
+    documentId: envelope.document,
+    label: `Deck ${index + 1}`,
+    envelope: index === 0 ? envelope : undefined
+  }));
+  const response = () => ({
+    ok: true,
+    arrayBuffer: async () => sampleBytes().buffer
+  });
+  let finishSecond: ((value: unknown) => void) | undefined;
+  let secondSignal: AbortSignal | undefined;
+  const requests = jest.fn(
+    (url: string, { signal }: { signal: AbortSignal }) => {
+      if (url !== '/2.pptx') return Promise.resolve(response());
+      if (finishSecond) return Promise.resolve(response());
+      secondSignal = signal;
+      return new Promise((resolve, reject) => {
+        finishSecond = resolve;
+        signal.addEventListener('abort', () =>
+          reject(new DOMException('Aborted', 'AbortError'))
+        );
+      });
+    }
+  );
+  global.fetch = requests as unknown as typeof fetch;
+  const props = {
+    reloadKey: 0,
+    client: {} as FeatheryClient,
+    updateEnvelope: jest.fn(),
+    resolveTabEnvelope: async (tab: DocumentTab) =>
+      envelopes.find((envelope) => envelope.document === tab.documentId) ??
+      null,
+    resolveEnvelopes: async () => envelopes,
+    registerBeforeReplace: jest.fn(),
+    onBusy: jest.fn(),
+    onError: jest.fn()
+  };
+  const { rerender } = render(
+    <PptxDocumentPacket {...props} tabs={tabs} activeId={tabs[0].id} />
+  );
+  await screen.findByRole('button', { name: 'Slide 9' });
+  await waitFor(() => expect(finishSecond).toBeDefined());
+
+  rerender(
+    <PptxDocumentPacket
+      {...props}
+      tabs={[tabs[0], { ...tabs[1], envelope: envelopes[1] }]}
+      activeId={tabs[1].id}
+    />
+  );
+  await act(async () => finishSecond?.(response()));
+  await screen.findByRole('button', { name: 'Slide 9' });
+  expect(secondSignal?.aborted).toBe(false);
+  expect(requests.mock.calls.filter(([url]) => url === '/2.pptx')).toHaveLength(
+    1
+  );
+  expect(props.onError).not.toHaveBeenCalled();
+});

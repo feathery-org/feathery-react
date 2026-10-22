@@ -214,6 +214,7 @@ export default function PptxDocumentPacket({
   useEffect(() => {
     if (!activeId || !ready.has(activeId)) return;
     const controller = new AbortController();
+    const preparedIdByTab = new Map<string, string>();
     // Let the active slide paint before preparing at most two likely next tabs.
     const timer = setTimeout(async () => {
       const start = tabs.findIndex((tab) => tab.id === activeId);
@@ -228,8 +229,10 @@ export default function PptxDocumentPacket({
           const envelope = tab.envelope ?? (await resolveTabEnvelope(tab));
           if (controller.signal.aborted) return;
           const url = envelopeSourceUrl(envelope);
-          if (envelope?.type === 'pptx' && url)
+          if (envelope?.type === 'pptx' && url) {
+            preparedIdByTab.set(tab.id, envelope.id);
             await loader.prefetch(envelope.id, url, controller.signal);
+          }
         } catch {
           // Speculative failures should not block the active document or the
           // next candidate; selecting the tab surfaces the real error.
@@ -238,7 +241,9 @@ export default function PptxDocumentPacket({
     }, 100);
     return () => {
       clearTimeout(timer);
-      loader.prioritize(selectedId.current);
+      // Reopened tabs use document-based tab IDs, while the loader keys jobs
+      // by envelope ID. Preserve the selected job before cancelling the rest.
+      loader.prioritize(preparedIdByTab.get(selectedId.current ?? ''));
       controller.abort();
     };
   }, [activeId, ready, tabs, visited, loader, resolveTabEnvelope]);
