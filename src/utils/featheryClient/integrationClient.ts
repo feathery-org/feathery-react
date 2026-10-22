@@ -12,6 +12,7 @@ import {
   UploadFileToEgnyteParams
 } from '../internalState';
 import { featheryWindow } from '../browser';
+import { isFetchNetworkError } from '../error';
 import { PROVIDER_LABELS } from '../../integrations/connectAccount/providers';
 import {
   apiFetch,
@@ -99,13 +100,6 @@ const documentRefCacheKey = (doc: GenerateDocumentRef) => {
   if (doc.kind === 'file_upload') return `file_upload:${doc.field_id}`;
   return String(doc.document_id);
 };
-
-const TYPE_MESSAGES_TO_IGNORE = [
-  // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
-  'Failed to fetch',
-  // e.g. https://sentry.io/organizations/feathery-forms/issues/3529742129/
-  'Load failed'
-];
 
 const QUIK_DYNAMIC_ATTACHMENTS_OPTION = '__quik_dynamic_attachments__';
 // Backend 400s meaning another tab closed, superseded or finalized the session.
@@ -259,8 +253,7 @@ export default class IntegrationClient {
       // Ignore TypeErrors if form has redirected because `fetch` in
       // Safari will error after redirect
       const ignore =
-        this.ignoreNetworkErrors?.current ||
-        TYPE_MESSAGES_TO_IGNORE.includes(e.message);
+        this.ignoreNetworkErrors?.current || isFetchNetworkError(e);
       if (ignore && !propagateNetworkErrors && e instanceof TypeError) return;
       throw e;
     });

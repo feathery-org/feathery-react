@@ -239,6 +239,7 @@ import {
   verifyConnectivity
 } from '../utils/offlineRequestHandler';
 import {
+  isFetchNetworkError,
   removeCustomErrorHandler,
   setCustomErrorHandler
 } from '../utils/error';
@@ -370,7 +371,7 @@ export interface ClickActionElement {
 }
 
 const getSubmissionErrorMessage = (error: unknown): string => {
-  if (error instanceof TypeError && error.message === 'Failed to fetch') {
+  if (isFetchNetworkError(error)) {
     return 'Unable to upload files. Please check your connection and try again.';
   }
   if (error instanceof Error) {
