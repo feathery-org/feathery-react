@@ -1,4 +1,9 @@
-import { ClientMod, FormHelperMod, PollFuserDataMod } from './testMocks';
+import {
+  ClientMod,
+  FormHelperMod,
+  PollFuserDataMod,
+  StepHelperMod
+} from './testMocks';
 import {
   act,
   cleanup,
@@ -18,6 +23,7 @@ jest.mock('../../utils/accessLink', () => ({
 
 const InitMod: any = jest.requireMock('../../utils/init');
 const AccessLinkMod: any = jest.requireMock('../../utils/accessLink');
+const LoginFormMod: any = jest.requireMock('../../auth/LoginForm');
 
 const CONTINUE_COPY = 'This form link can only be opened on one device.';
 const BLOCKED_COPY = 'Please open this form from your personal link.';
@@ -197,5 +203,66 @@ describe('access link session flags', () => {
     PollFuserDataMod.default.mock.calls.forEach((call: any[]) =>
       expect(call[0]).toBe(false)
     );
+  });
+});
+
+describe('session request failure without a link', () => {
+  const originStep = {
+    key: 'origin',
+    id: 's-origin',
+    servar_fields: [],
+    buttons: [],
+    next_conditions: []
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Object.assign(InitMod.initState, {
+      linkToken: '',
+      linkSecret: '',
+      authenticationError: undefined
+    });
+    ClientMod._spies.state.steps = [originStep];
+    ClientMod._spies.state.sessionError = new TypeError('Failed to fetch');
+  });
+
+  afterEach(() => {
+    cleanup();
+    ClientMod._spies.state.steps = null;
+    ClientMod._spies.state.sessionError = null;
+    LoginFormMod.authState.hasRedirected = false;
+  });
+
+  it.each([true, false])(
+    'opens the origin step with hash navigation %s',
+    async (hashNavigation) => {
+      render(
+        <JSForm
+          formId='f1'
+          _internalId={`iid-session-fail-${hashNavigation}`}
+          hashNavigation={hashNavigation}
+        />
+      );
+
+      expect(await screen.findByTestId('btn')).toBeInTheDocument();
+      if (hashNavigation)
+        expect(StepHelperMod.setUrlStepHash).toHaveBeenCalledWith(
+          expect.anything(),
+          { origin: originStep },
+          'origin'
+        );
+      else expect(StepHelperMod.setUrlStepHash).not.toHaveBeenCalled();
+    }
+  );
+
+  it('leaves the step to the auth hook after a login redirect', async () => {
+    LoginFormMod.authState.hasRedirected = true;
+
+    render(<JSForm formId='f1' _internalId='iid-session-fail-auth' />);
+
+    // Let the rejected session settle before checking nothing navigated
+    await act(async () => {});
+    expect(screen.queryByTestId('btn')).not.toBeInTheDocument();
+    expect(StepHelperMod.setUrlStepHash).not.toHaveBeenCalled();
   });
 });

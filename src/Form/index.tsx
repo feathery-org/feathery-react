@@ -2097,6 +2097,9 @@ function Form({
           setRender((render) => ({ ...render }));
           return;
         }
+        // Same guard as the success path: the auth hook picks the step
+        if (authState.redirectAfterLogin || authState.hasRedirected || stepKey)
+          return;
         // Go to first step if origin fails
         const data = await formPromise;
         const newKey = (getOrigin as any)(data).key;
