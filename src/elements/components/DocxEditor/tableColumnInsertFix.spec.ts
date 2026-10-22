@@ -72,7 +72,8 @@ function liveTable(ed: any) {
   throw new Error('no table rendered');
 }
 
-jest.setTimeout(120000);
+// Only booting Syncfusion in jsdom is slow; the tests themselves are quick.
+const BOOT_TIMEOUT = 30000;
 
 describe('installTableColumnInsertFix', () => {
   // One editor for every behavior case: booting Syncfusion in jsdom dominates
@@ -81,8 +82,9 @@ describe('installTableColumnInsertFix', () => {
   beforeAll(() => {
     ed = makeRealDocumentEditor(headerTable());
     installTableColumnInsertFix(ed);
-  });
+  }, BOOT_TIMEOUT);
   afterAll(() => destroyRealDocumentEditor(ed));
+  beforeEach(() => ed.open(JSON.stringify(headerTable())));
 
   it.each([
     ['right of the last column', 1, false, 2],
@@ -90,7 +92,6 @@ describe('installTableColumnInsertFix', () => {
   ])(
     'copies the header fill and rule when inserting %s',
     (_label, fromCell, left, newIndex) => {
-      ed.open(JSON.stringify(headerTable()));
       selectCell(ed, 0, fromCell);
       ed.editor.insertColumn(left, 1);
 
@@ -195,7 +196,6 @@ describe('installTableColumnInsertFix', () => {
   });
 
   it('undo removes the column and leaves the original styling', () => {
-    ed.open(JSON.stringify(headerTable()));
     selectCell(ed, 0, 1);
     ed.editor.insertColumn(false, 1);
     ed.editorHistory.undo();
@@ -210,7 +210,7 @@ describe('installTableColumnInsertFix on a fresh editor', () => {
   let ed: any;
   beforeAll(() => {
     ed = makeRealDocumentEditor(headerTable());
-  });
+  }, BOOT_TIMEOUT);
   afterAll(() => destroyRealDocumentEditor(ed));
 
   it('documents the upstream bug: unpatched, a new header cell loses its fill and rule', () => {
