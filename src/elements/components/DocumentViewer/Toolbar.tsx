@@ -16,8 +16,9 @@ export interface ToolbarAction {
 }
 
 interface ToolbarProps {
-  title: string;
-  onBack: () => void;
+  // Both absent for an embedded viewer, which has nothing to name or close.
+  title?: string;
+  onBack?: () => void;
   // Right-aligned actions, rendered in order (primary last / rightmost). The
   // Generate Documents review flow supplies Sign / Save as Draft / Download /
   // Continue / Save depending on the action config.
@@ -56,32 +57,36 @@ export default function Toolbar({
           minWidth: 0
         }}
       >
-        <button
-          type='button'
-          aria-label='Back'
-          // Closing mid-action would hide the viewer while the action's side
-          // effect (save/sign/send) still completes in the background —
-          // invisibly, and after the surrounding flow was told the review was
-          // cancelled. Block every close path until the action settles (the
-          // Escape handler in index.tsx applies the same gate).
-          disabled={busy}
-          onClick={onBack}
-          css={iconButtonCss}
-        >
-          <ChevronLeftIcon size={20} />
-        </button>
-        <span
-          css={{
-            fontWeight: 600,
-            fontSize: fontSize.lg,
-            color: color.text,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          }}
-        >
-          {title}
-        </span>
+        {onBack && (
+          <button
+            type='button'
+            aria-label='Back'
+            // Closing mid-action would hide the viewer while the action's side
+            // effect (save/sign/send) still completes in the background —
+            // invisibly, and after the surrounding flow was told the review was
+            // cancelled. Block every close path until the action settles (the
+            // Escape handler in index.tsx applies the same gate).
+            disabled={busy}
+            onClick={onBack}
+            css={iconButtonCss}
+          >
+            <ChevronLeftIcon size={20} />
+          </button>
+        )}
+        {title && (
+          <span
+            css={{
+              fontWeight: 600,
+              fontSize: fontSize.lg,
+              color: color.text,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}
+          >
+            {title}
+          </span>
+        )}
       </div>
       <div
         css={{

@@ -8,9 +8,17 @@ import React, {
 import { v4 as uuidv4 } from 'uuid';
 import DocxEditor from './index';
 import SignedEnvelopeView from './SignedEnvelopeView';
+import DocumentViewer, {
+  DocumentViewerPayload,
+  ReviewEnvelopeAction
+} from '../DocumentViewer';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { documentRefTemplateId } from '../../../utils/featheryClient/integrationClient';
-import { featheryWindow, openTab } from '../../../utils/browser';
+import {
+  downloadAllFileUrls,
+  featheryWindow,
+  openTab
+} from '../../../utils/browser';
 import useRefreshOnFocus from '../../../utils/useRefreshOnFocus';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import internalState from '../../../utils/internalState';
@@ -169,9 +177,9 @@ const wrap = {
 
 // A container whose content is a document editor bound to a Document template.
 // At runtime it loads the submission's current envelope for that document and
-// (for docx) renders the reusable DocxEditor; saving overwrites the envelope in
-// place. The renderer is chosen by envelope type so other types (csv/pdf) can
-// be added without changing this wiring.
+// renders the reusable DocxEditor (docx) or the fillable PDF viewer (pdf);
+// saving overwrites the envelope in place. The renderer is chosen by envelope
+// type.
 export default function DocumentEditorContainer({
   containerId,
   formId,
@@ -587,8 +595,12 @@ export default function DocumentEditorContainer({
       // Both backends need a PDF carrying signature fields, and generation
       // skipped that conversion to keep the docx editable. One-way: this draft
       // stops being editable. Throws so nothing is sent unfinalized. It's also
-      // what hands back the signer to open as.
-      if (envelope.type === 'docx' && !envelope.signed) {
+      // what hands back the signer to open as. A PDF needs no conversion, but
+      // its signer rows were held back at generation too.
+      if (
+        (envelope.type === 'docx' || envelope.type === 'pdf') &&
+        !envelope.signed
+      ) {
         const signers = signerEntries();
         finalized = await client.finalizeEnvelope(
           envelope.id,
@@ -752,6 +764,69 @@ export default function DocumentEditorContainer({
     [envelope, formId, targetAction, containerId]
   );
 
+  // The PDF viewer's save refreshes the envelope's file URL, and its toolbar
+  // outcomes run straight after that save, before a re-render could hand them
+  // the new envelope.
+  const pdfFileRef = useRef<string | null>(null);
+  pdfFileRef.current = envelope?.file ?? null;
+  const savePdfEnvelopeFile = useCallback(
+    async (id: string, file: Blob) => {
+      const updated = await client.saveEnvelopeFile(id, file, 'document.pdf');
+      if (updated?.file) {
+        pdfFileRef.current = updated.file;
+        setEnvelope((current) =>
+          current?.id === id ? { ...current, file: updated.file } : current
+        );
+      }
+      return updated;
+    },
+    [client]
+  );
+  // The PDF viewer's toolbar, run against this container's one envelope: the
+  // same outcomes the docx toolbar offers. Its edits are already saved.
+  const finalizePdfReview = useCallback(
+    async ({
+      envelopeAction,
+      draft
+    }: {
+      envelopeAction: ReviewEnvelopeAction;
+      draft: boolean;
+    }) => {
+      const file = pdfFileRef.current;
+      if (envelopeAction === 'sign') {
+        await runSigningAction(draft);
+      } else if (envelopeAction === 'download' && file) {
+        await downloadAllFileUrls([file]);
+        fireReviewAction('download', { files: [file] });
+      } else if (envelopeAction === 'save' && file) {
+        const fieldKey = targetAction?.save_document_field_key;
+        if (fieldKey) {
+          setFieldValues({ [fieldKey]: file }, true, true);
+          await client.submitCustom({ [fieldKey]: file });
+        }
+        fireReviewAction('save', { files: [file] });
+      }
+    },
+    [client, runSigningAction, fireReviewAction, targetAction]
+  );
+  const pdfPayload = useMemo<DocumentViewerPayload | null>(
+    () =>
+      envelopeId && sourceUrl
+        ? {
+            documents: [
+              { type: 'form', pdf_url: sourceUrl, envelope_id: envelopeId }
+            ]
+          }
+        : null,
+    [envelopeId, sourceUrl]
+  );
+  const onPdfDirtyChange = useCallback(
+    (dirty: boolean) => {
+      if (containerId) setDocxEditorDirty(formId, containerId, dirty);
+    },
+    [formId, containerId]
+  );
+
   // DocxEditor exposes its live SyncFusion instance at this exact lifecycle point
   const registeredEditor = useRef<any>(undefined);
   // The live editor and a count of documents it has opened, as state, so Robin's document session
@@ -853,8 +928,36 @@ export default function DocumentEditorContainer({
       {operationError}
     </div>
   );
-  // A PDF has no editable docx to open, so show it read-only. Its status is
-  // only claimed when it was sent (this session or per the backend) or signed.
+  // A PDF not yet sent or signed opens in the fillable PDF viewer, with the
+  // same toolbar outcomes as the docx editor. Its URL is the one loaded, not
+  // the one a save refreshes, so saving doesn't reload the document.
+  if (
+    envelope.type === 'pdf' &&
+    !envelope.signed &&
+    !sentMethod(envelope, sentVia) &&
+    pdfPayload
+  ) {
+    return box(
+      <DocumentViewer
+        embedded
+        // A regenerate reloads it; a save leaves it be.
+        key={`${envelope.id}:${reloadKey}`}
+        payload={pdfPayload}
+        // A finalized envelope has its signers, so edits would change a
+        // document that may already be out (e.g. as a DocuSign draft).
+        action={
+          finalized
+            ? { ...targetAction, editor_read_only: true }
+            : targetAction ?? {}
+        }
+        onFinalize={finalizePdfReview}
+        onSaveEnvelopeFile={readOnly ? undefined : savePdfEnvelopeFile}
+        onDirtyChange={readOnly ? undefined : onPdfDirtyChange}
+      />
+    );
+  }
+  // Otherwise it was sent (this session or per the backend) or signed: show it
+  // read-only with that status.
   if (envelope.type === 'pdf') {
     const via = sentMethod(envelope, sentVia);
     const awaitingFiller = !envelope.signed && via === 'feathery';
