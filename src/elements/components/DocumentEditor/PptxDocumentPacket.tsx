@@ -120,7 +120,7 @@ function PresentationSession({
           source={source}
           visible={active}
           prepareSource={prepareSource}
-          onReady={() => onReady(initial.id)}
+          onReady={() => onReady(tab.id)}
           fileName={tab.label.replace(/\.pptx$/i, '') + '.pptx'}
           readOnly={readOnly || initial.signed}
           hideDownload={!offersDownload}
@@ -159,6 +159,7 @@ export default function PptxDocumentPacket({
   containerId,
   formId,
   updateEnvelope,
+  resolveTabEnvelope,
   resolveEnvelopes,
   registerBeforeReplace,
   onBusy,
@@ -172,6 +173,7 @@ export default function PptxDocumentPacket({
   containerId?: string;
   formId?: string;
   updateEnvelope: (value: EditorEnvelope) => void;
+  resolveTabEnvelope: (tab: DocumentTab) => Promise<EditorEnvelope | null>;
   resolveEnvelopes: () => Promise<EditorEnvelope[]>;
   registerBeforeReplace: (save: (() => Promise<unknown>) | null) => void;
   onBusy: (busy: boolean) => void;
@@ -216,17 +218,22 @@ export default function PptxDocumentPacket({
     const timer = setTimeout(async () => {
       const start = tabs.findIndex((tab) => tab.id === activeId);
       const candidates = [...tabs.slice(start + 1), ...tabs.slice(0, start)]
-        .filter((tab) => tab.envelope && !visited.includes(tab.id))
+        .filter(
+          (tab) => (tab.envelope || tab.documentId) && !visited.includes(tab.id)
+        )
         .slice(0, 2);
       for (const tab of candidates) {
         if (controller.signal.aborted) return;
-        const url = envelopeSourceUrl(tab.envelope);
-        if (url)
-          await loader.prefetch(
-            tab.envelope?.id ?? tab.id,
-            url,
-            controller.signal
-          );
+        try {
+          const envelope = tab.envelope ?? (await resolveTabEnvelope(tab));
+          if (controller.signal.aborted) return;
+          const url = envelopeSourceUrl(envelope);
+          if (envelope?.type === 'pptx' && url)
+            await loader.prefetch(envelope.id, url, controller.signal);
+        } catch {
+          // Speculative failures should not block the active document or the
+          // next candidate; selecting the tab surfaces the real error.
+        }
       }
     }, 100);
     return () => {
@@ -234,7 +241,7 @@ export default function PptxDocumentPacket({
       loader.prioritize(selectedId.current);
       controller.abort();
     };
-  }, [activeId, ready, tabs, visited, loader]);
+  }, [activeId, ready, tabs, visited, loader, resolveTabEnvelope]);
   const savePacket = useCallback(async () => {
     const envelopes = await resolveEnvelopes();
     const result = [];

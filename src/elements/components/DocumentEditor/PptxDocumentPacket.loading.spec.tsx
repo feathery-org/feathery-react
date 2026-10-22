@@ -7,6 +7,7 @@ import {
   waitFor
 } from '@testing-library/react';
 import PptxDocumentPacket from './PptxDocumentPacket';
+import type { DocumentTab } from './documentPacket';
 import type FeatheryClient from '../../../utils/featheryClient';
 import { sampleBytes } from '../PptxEditor/tests/harness';
 
@@ -39,6 +40,7 @@ it('promotes the next tab prefetch while retaining the first tab’s edits and h
     reloadKey: 0,
     client: {} as FeatheryClient,
     updateEnvelope: jest.fn(),
+    resolveTabEnvelope: async (tab: DocumentTab) => tab.envelope ?? null,
     resolveEnvelopes: async () => tabs.map((tab) => tab.envelope),
     registerBeforeReplace: jest.fn(),
     onBusy: jest.fn(),
@@ -69,4 +71,48 @@ it('promotes the next tab prefetch while retaining the first tab’s edits and h
     1
   );
   expect(props.onError).not.toHaveBeenCalled();
+});
+
+it('prepares upcoming documents after reopening tabs with unresolved envelopes', async () => {
+  const envelopes = ['1', '2', '3'].map((id) => ({
+    id: `envelope-${id}`,
+    document: `document-${id}`,
+    file: `/${id}.pptx`,
+    type: 'pptx',
+    signed: false
+  }));
+  const tabs = envelopes.map((envelope, index) => ({
+    id: `document-${index + 1}:${index}`,
+    documentId: envelope.document,
+    label: `Deck ${index + 1}`,
+    envelope: index === 0 ? envelope : undefined
+  }));
+  const requests = jest.fn(async () => ({
+    ok: true,
+    arrayBuffer: async () => sampleBytes().buffer
+  }));
+  global.fetch = requests as unknown as typeof fetch;
+  const resolveTabEnvelope = jest.fn(
+    async (tab: DocumentTab) =>
+      envelopes.find((envelope) => envelope.document === tab.documentId) ?? null
+  );
+  render(
+    <PptxDocumentPacket
+      tabs={tabs}
+      activeId={tabs[0].id}
+      reloadKey={0}
+      client={{} as FeatheryClient}
+      updateEnvelope={jest.fn()}
+      resolveTabEnvelope={resolveTabEnvelope}
+      resolveEnvelopes={async () => envelopes}
+      registerBeforeReplace={jest.fn()}
+      onBusy={jest.fn()}
+      onError={jest.fn()}
+    />
+  );
+  await screen.findByRole('button', { name: 'Slide 9' });
+  await waitFor(() => expect(resolveTabEnvelope).toHaveBeenCalledWith(tabs[1]));
+  await waitFor(() =>
+    expect(requests).toHaveBeenCalledWith('/2.pptx', expect.anything())
+  );
 });
