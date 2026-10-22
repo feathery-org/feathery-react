@@ -737,7 +737,11 @@ export default class FeatheryClient extends IntegrationClient {
     }
   }
 
-  async fetchSession(formPromise = null, block = false) {
+  async fetchSession(
+    formPromise = null,
+    block = false,
+    abandonOnInteraction = false
+  ) {
     // Block if there's a chance user id isn't available yet
     await (block ? initFormsPromise : Promise.resolve());
 
@@ -789,13 +793,23 @@ export default class FeatheryClient extends IntegrationClient {
     // `_fetch` sends nothing once any form on the page is blocked, and the error
     // it leaves is page-wide, so only this request's own token can be at fault
     const sentToken = initState.authenticationError ? '' : initState.linkToken;
-    // Network errors propagate so the form falls back to its origin step,
-    // rather than reading a missing session as a closed form
-    const response = await this._fetch(url, options, true, true);
+    // Network errors propagate so the form falls back to its origin step and
+    // retries, rather than reading a missing session as a closed form
+    const response = await this._fetch(url, options, true, true).catch((e) => {
+      // Nothing loaded, so the retry still has to ask for the values
+      if (!noData) initState.fieldValuesInitialized = false;
+      throw e;
+    });
     if (!response) {
       if (sentToken && isRejectedLinkMessage(initState.authenticationError))
         this.forgetRejectedLink(sentToken);
       return [];
+    }
+    // A background retry lands after the form is showing, and its values would
+    // overwrite whatever the user has entered since
+    if (abandonOnInteraction && isInteractionDetected()) {
+      if (!noData) initState.fieldValuesInitialized = false;
+      return null;
     }
 
     const session = await response.json().catch((reason) => {
