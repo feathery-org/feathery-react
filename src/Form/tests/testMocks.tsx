@@ -372,6 +372,8 @@ jest.mock('../../utils/featheryClient', () => {
     sessionError: null as any,
     formOff: false,
     authSensitiveActionsOnly: false,
+    // undefined mimics a payload from before the backend sent the flag
+    sessionGated: false as boolean | undefined,
     // Lets a test give the single step its own elements (e.g. a button whose
     // action gates the step) instead of the empty default.
     steps: null as any[] | null
@@ -391,6 +393,7 @@ jest.mock('../../utils/featheryClient', () => {
       ],
       form_name: 'Test Form',
       auth_sensitive_actions_only: state.authSensitiveActionsOnly,
+      session_gated: state.sessionGated,
       completion_behavior: '',
       formOff: state.formOff,
       logic_rules: [],
