@@ -171,7 +171,7 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   mapFormSettingsResponse: () => ({ shared_codes: [] }),
   nextStepKey: () => undefined,
   recurseProgressDepth: () => [0, 1],
-  setUrlStepHash: () => {}
+  setUrlStepHash: jest.fn()
 }));
 
 // Grid mock: no out of scope captures, only uses props
