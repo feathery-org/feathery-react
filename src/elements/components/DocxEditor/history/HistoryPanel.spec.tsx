@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
 import HistoryPanel from './HistoryPanel';
 import {
@@ -425,6 +425,33 @@ describe('HistoryPanel', () => {
 
     await findByText('Current one');
     expect(onVersionsLoaded).toHaveBeenCalledWith(rows);
+  });
+
+  it('refetches behind the cached rows when reopened with the same refresh key', async () => {
+    const host = makeHost([v({ name: 'Stale', seq: 1 })]);
+    const panel = (active: boolean) => (
+      <HistoryPanel
+        host={host}
+        currentUser={YOU}
+        active={active}
+        refreshKey='k'
+      />
+    );
+    const view = render(panel(true));
+    await view.findByText('Stale');
+    view.rerender(panel(false));
+    host.listVersions.mockRejectedValueOnce(new Error('offline'));
+    view.rerender(panel(true));
+    // A failed revalidation keeps the cached rows instead of the error state
+    await waitFor(() => expect(host.listVersions).toHaveBeenCalledTimes(2));
+    await act(async () => {}); // let the rejection settle
+    expect(view.getByText('Stale')).toBeTruthy();
+    expect(view.queryByText('Couldn’t load version history.')).toBeNull();
+    host.listVersions.mockResolvedValueOnce([v({ name: 'Fresh', seq: 2 })]);
+    view.rerender(panel(false));
+    view.rerender(panel(true));
+    expect(await view.findByText('Fresh')).toBeTruthy();
+    expect(view.queryByText('Stale')).toBeNull();
   });
 
   it('shows a retry on load failure', async () => {

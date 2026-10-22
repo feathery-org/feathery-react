@@ -1,4 +1,5 @@
 import { loadVersionList } from './versionList';
+import useRefreshOnFocus from '../../../../utils/useRefreshOnFocus';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -442,28 +443,33 @@ export default function HistoryPanel({
   const onVersionsLoadedRef = useRef(onVersionsLoaded);
   onVersionsLoadedRef.current = onVersionsLoaded;
 
-  const load = useCallback(async () => {
-    if (
-      inFlight.current?.host === host &&
-      inFlight.current?.refreshKey === refreshKey
-    )
-      return;
-    inFlight.current = { host, refreshKey };
-    const id = ++reqId.current;
-    setError(false);
-    try {
-      const rows = await loadVersionList(host, refreshKey);
-      if (id === reqId.current) {
-        setVersions(rows);
-        loaded.current = { host, refreshKey };
-        if (activeRef.current) onVersionsLoadedRef.current?.(rows);
+  // revalidate: bypass the cached list but keep showing it until fresh rows
+  // land (another tab or collaborator may have saved since it was fetched)
+  const load = useCallback(
+    async (revalidate = false) => {
+      if (
+        inFlight.current?.host === host &&
+        inFlight.current?.refreshKey === refreshKey
+      )
+        return;
+      inFlight.current = { host, refreshKey };
+      const id = ++reqId.current;
+      setError(false);
+      try {
+        const rows = await loadVersionList(host, refreshKey, revalidate);
+        if (id === reqId.current) {
+          setVersions(rows);
+          loaded.current = { host, refreshKey };
+          if (activeRef.current) onVersionsLoadedRef.current?.(rows);
+        }
+      } catch {
+        if (id === reqId.current && !revalidate) setError(true);
+      } finally {
+        if (id === reqId.current) inFlight.current = null;
       }
-    } catch {
-      if (id === reqId.current) setError(true);
-    } finally {
-      if (id === reqId.current) inFlight.current = null;
-    }
-  }, [host, refreshKey]);
+    },
+    [host, refreshKey]
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -472,8 +478,12 @@ export default function HistoryPanel({
       loaded.current?.refreshKey !== refreshKey
     )
       load();
-    else if (versions) onVersionsLoadedRef.current?.(versions);
+    else {
+      if (versions) onVersionsLoadedRef.current?.(versions);
+      load(true);
+    }
   }, [active, load]);
+  useRefreshOnFocus(() => load(true), active);
 
   useEffect(
     () => () => {
@@ -489,7 +499,7 @@ export default function HistoryPanel({
         <div>Couldn’t load version history.</div>
         <button
           type='button'
-          onClick={load}
+          onClick={() => load(true)}
           css={{
             marginTop: 8,
             border: `1px solid ${LINE}`,
