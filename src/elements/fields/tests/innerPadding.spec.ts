@@ -848,16 +848,56 @@ describe('input box content alignment', () => {
       ).top
     ).toBe(0);
 
-    // Top-aligned, the value sits at the raw 6px top padding -- overlapping
-    // the label's ink is allowed by design.
+    // Top-aligned with no stored top padding, the value stops at the reserve
+    // the pinned label needs rather than at the raw 6px: an alignment is not a
+    // statement about padding, so it cannot cancel the room the label occupies.
+    // Running the value under the label's ink stays available -- but only by
+    // storing inner_padding_top explicitly, which the test above covers.
+    const reserve = 60 / 3;
     const topAligned = { ...styles, content_vertical_align: 'flex-start' };
     expect(placeholderTarget('text_field', topAligned).top).toBe(
-      `${6 + 19.2 / 2}px`
+      `${reserve + 19.2 / 2}px`
     );
+    const topField = fieldTarget('text_field', topAligned, {
+      placeholder: 'Name'
+    });
+    // Both sides, so the reserve that places the value is pinned directly and
+    // not merely inferred from what is left below it.
+    expect(topField.paddingTop).toBe(`${reserve}px`);
+    expect(topField.paddingBottom).toBe(`${60 - reserve - 19.2}px`);
+  });
+
+  it('leaves an untouched floating-label field where centring finds it', () => {
+    // The bug this rule exists for. A floating-label field renders its value a
+    // little below the box midline, because the pinned label needs the room
+    // above it -- and that offset is the placement, not an accident. Choosing
+    // 'middle' therefore has to be a no-op on a field whose padding nobody
+    // touched; otherwise it re-centres the value into the label and no option
+    // in the panel can put it back.
+    const base = { ...SIZED, placeholder_transition: 'shrink_top' };
+    const untouchedField = fieldTarget('text_field', base, {
+      placeholder: 'Name'
+    });
+    const centred = fieldTarget(
+      'text_field',
+      { ...base, content_vertical_align: 'center' },
+      { placeholder: 'Name' }
+    );
+    expect(centred.paddingTop).toBe(untouchedField.paddingTop);
+    expect(centred.paddingTop).toBe(`${60 / 3}px`);
+
+    // ...and so does the resting label. The reserve moves the value, never the
+    // label: untouched, nothing is emitted and Placeholder's own inline 50%
+    // stands; centred, the same 50% is emitted explicitly so a mobile override
+    // can undo a synthesized offset. Different declarations, identical pixels
+    // -- which is the point, since the label is what the user is looking at.
+    expect(placeholderTarget('text_field', base)).not.toHaveProperty('top');
     expect(
-      fieldTarget('text_field', topAligned, { placeholder: 'Name' })
-        .paddingBottom
-    ).toBe(`${60 - 6 - 19.2}px`);
+      placeholderTarget('text_field', {
+        ...base,
+        content_vertical_align: 'center'
+      }).top
+    ).toBe('50%');
   });
 
   it('keeps the production label offsets outside a unit', () => {
@@ -1065,6 +1105,71 @@ describe('multiselect content alignment', () => {
 });
 
 describe('input box minimum height', () => {
+  it.each(['center', 'flex-start', 'flex-end'])(
+    'fits a floating-label reserve and raised bottom padding when aligned %s',
+    (align) => {
+      const styles = targets(
+        'text_field',
+        shrinkUntouched(60, {
+          inner_padding_bottom: 40,
+          content_vertical_align: align
+        }),
+        { placeholder: 'Name' }
+      );
+      const field = styles.getTarget('field', true);
+      const box = styles.getTarget('sub-fc', true);
+
+      expect(parseFloat(field.paddingTop)).toBeCloseTo(20);
+      expect(parseFloat(field.paddingBottom)).toBeCloseTo(40);
+      expect(parseFloat(box.minHeight)).toBeCloseTo(79.2);
+      expect(
+        parseFloat(box.minHeight) -
+          parseFloat(field.paddingTop) -
+          parseFloat(field.paddingBottom)
+      ).toBeCloseTo(19.2);
+    }
+  );
+
+  it.each([0, 8])(
+    'respects an explicit floating-label top padding of %spx',
+    (top) => {
+      const styles = targets(
+        'text_field',
+        shrinkUntouched(60, {
+          inner_padding_top: top,
+          inner_padding_bottom: 40,
+          content_vertical_align: 'center'
+        }),
+        { placeholder: 'Name' }
+      );
+
+      expect(styles.getTarget('field', true).paddingTop).toBe(`${top}px`);
+      expect(
+        parseFloat(styles.getTarget('sub-fc', true).minHeight)
+      ).toBeCloseTo(top + 40 + 19.2);
+    }
+  );
+
+  it('recomputes the floating-label floor for a mobile height override', () => {
+    const styles = targets(
+      'text_field',
+      shrinkUntouched(60, {
+        inner_padding_bottom: 40,
+        content_vertical_align: 'center'
+      }),
+      { placeholder: 'Name' },
+      { height: 90 }
+    );
+
+    const mobileKey = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
+    expect(
+      parseFloat(styles.getTarget('field')[mobileKey].paddingTop)
+    ).toBeCloseTo(30);
+    expect(
+      parseFloat(styles.getTarget('sub-fc')[mobileKey].minHeight)
+    ).toBeCloseTo(89.2);
+  });
+
   it('grows the box to fit its padding and a line of text', () => {
     expect(
       boxTarget('text_field', {
@@ -1940,5 +2045,60 @@ describe('a mobile alignment override can return a field to the default', () => 
 
     expect(block.alignItems).toBe('center');
     expect(block.alignContent).toBe('center');
+  });
+});
+
+describe('which fields count as carrying a pinned label', () => {
+  // phone_number and payment_method render their placeholder chrome whatever
+  // the theme stores, so a shrink_top phone has a pinned label -- and the
+  // reserve behind it -- with no placeholder text at all. Gating the floor on
+  // the text alone left "middle" dropping the reserve for exactly that config,
+  // which is the bug this whole rule exists to stop.
+  it('treats a phone with no placeholder text as having a pinned label', () => {
+    const base = { ...SIZED, placeholder_transition: 'shrink_top' };
+    const untouchedPhone = fieldTarget('phone_number', base);
+    const centredPhone = fieldTarget('phone_number', {
+      ...base,
+      content_vertical_align: 'center'
+    });
+    expect(centredPhone.paddingTop).toBe(untouchedPhone.paddingTop);
+    expect(centredPhone.paddingTop).toBe(`${60 / 3}px`);
+  });
+
+  // The reserve on a multiselect is not something an alignment can take over:
+  // applyInputBoxAlignment places an input's value by padding this target, but
+  // a multiselect's chips are laid out by flexbox on its value container. If
+  // the reserve stands down for it, nothing holds the chips clear of the label.
+  it('keeps a multiselect reserve when an alignment is set', () => {
+    const styles = {
+      ...SIZED,
+      placeholder_transition: 'shrink_top'
+    };
+    const untouched = fieldTarget('dropdown_multi', styles, {
+      placeholder: 'Pick'
+    });
+    const centred = fieldTarget(
+      'dropdown_multi',
+      { ...styles, content_vertical_align: 'center' },
+      { placeholder: 'Pick' }
+    );
+    expect(untouched.paddingTop).toBe(`${60 / 3}px`);
+    expect(centred.paddingTop).toBe(untouched.paddingTop);
+  });
+
+  // A multiselect places its chips with flexbox through applyMultiselectLayout,
+  // which knows nothing of the reserve. Handing the floor to its chevron alone
+  // would drop the glyph off the line its chips sit on.
+  it('leaves a multiselect chevron on the line its chips sit on', () => {
+    const centred = targets(
+      MULTISELECT_FIELD,
+      {
+        ...SIZED,
+        placeholder_transition: 'shrink_top',
+        content_vertical_align: 'center'
+      },
+      { placeholder: 'Pick' }
+    ).getTarget('field', true);
+    expect(centred.backgroundPositionY).toBe('center');
   });
 });
