@@ -2126,13 +2126,18 @@ function Form({
           setRender((render) => ({ ...render }));
           return;
         }
-        // Same guard as the success path: the auth hook picks the step
-        if (authState.redirectAfterLogin || authState.hasRedirected || stepKey)
-          return;
-        // Go to first step if origin fails
-        const newKey = (getOrigin as any)(data).key;
-        if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
-        setStepKey(newKey);
+        // Same guard as the success path: the auth hook picks the step. The
+        // retry still runs, since a loaded session is what hands it integrations
+        if (
+          !authState.redirectAfterLogin &&
+          !authState.hasRedirected &&
+          !stepKey
+        ) {
+          // Go to first step if origin fails
+          const newKey = (getOrigin as any)(data).key;
+          if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
+          setStepKey(newKey);
+        }
         if (isRetryableSessionError(error)) retrySession();
       });
   }, [activeStep, setSteps, updateFieldValues]);
