@@ -230,7 +230,23 @@ describe('session request failure without a link', () => {
     cleanup();
     ClientMod._spies.state.steps = null;
     ClientMod._spies.state.sessionError = null;
+    ClientMod._spies.state.sessionGated = false;
     LoginFormMod.authState.hasRedirected = false;
+  });
+
+  // Link required, collaboration or business email: only the session can say
+  // whether the form opens, so it has to stay closed rather than skip the check
+  it.each([
+    ['a session-gated form', true],
+    ['a payload without the flag', undefined]
+  ])('asks for a refresh on %s', async (_, sessionGated) => {
+    ClientMod._spies.state.sessionGated = sessionGated;
+
+    render(<JSForm formId='f1' _internalId={`iid-session-gated-${_}`} />);
+
+    expect(await screen.findByText(LOAD_FAILED_COPY)).toBeInTheDocument();
+    expect(screen.queryByTestId('btn')).not.toBeInTheDocument();
+    expect(StepHelperMod.setUrlStepHash).not.toHaveBeenCalled();
   });
 
   it.each([true, false])(

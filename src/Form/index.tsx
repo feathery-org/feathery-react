@@ -304,10 +304,10 @@ const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
 const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
 
 // Shown instead of the closed-form copy when the session request itself fails
-// while an access link is open. A token this device kept for the form makes
-// that path reachable on an ordinary connectivity failure, where the form is
-// not closed at all and a reload is all the user needs.
-const LINK_SESSION_FAILED_MESSAGE =
+// on a form only the session can open (an access link, or a session-gated
+// form). That path is reachable on an ordinary connectivity failure, where the
+// form is not closed at all and a reload is all the user needs.
+const SESSION_FAILED_MESSAGE =
   "We couldn't load this form. Please refresh the page.";
 
 // Bottom-right overlays stack rather than overlap: each one clears the boxes
@@ -531,6 +531,9 @@ function Form({
   const extractionFileFields = useRef<Record<string, Record<string, string[]>>>(
     {}
   );
+  // Whether only the session decides if this form may open (link required,
+  // collaboration, business email). Gated until the form payload says otherwise
+  const sessionGated = useRef(true);
   const [inlineErrors, setInlineErrors] = useState<InlineErrors>({});
   const [, setRepeatChanged] = useState(false);
 
@@ -1992,6 +1995,8 @@ function Form({
         setLogicRules(res.logic_rules);
         setSharedCodes((prev) => res.shared_codes || prev);
         extractionFileFields.current = res.extraction_file_fields || {};
+        // A payload from before the flag existed can't vouch for the form
+        sessionGated.current = res.session_gated ?? true;
         trackHashes.current =
           hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 
@@ -2088,12 +2093,14 @@ function Form({
       })
       .catch(async (error: any) => {
         console.warn(error);
-        // Only the session resolves which submission an access link opens, so
-        // without one there is no user id to write against. Block instead of
-        // opening the origin step on an empty submission.
-        if (initState.linkToken) {
+        // The session can fail before the form payload sets sessionGated
+        const data = await formPromise;
+        // Only the session resolves which submission an access link opens, and
+        // whether a gated form may open at all. Block instead of opening the
+        // origin step past checks that never ran.
+        if (initState.linkToken || sessionGated.current) {
           formOffReason.current = CLOSED;
-          formOffMessage.current = LINK_SESSION_FAILED_MESSAGE;
+          formOffMessage.current = SESSION_FAILED_MESSAGE;
           setRender((render) => ({ ...render }));
           return;
         }
@@ -2101,7 +2108,6 @@ function Form({
         if (authState.redirectAfterLogin || authState.hasRedirected || stepKey)
           return;
         // Go to first step if origin fails
-        const data = await formPromise;
         const newKey = (getOrigin as any)(data).key;
         if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
         setStepKey(newKey);
