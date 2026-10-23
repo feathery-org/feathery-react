@@ -2204,7 +2204,7 @@ function Form({
     repeat: number | undefined,
     hasNext: boolean
   ): Promise<[Promise<any>] | undefined> => {
-    const formattedFields = formatStepFields(
+    let formattedFields = formatStepFields(
       activeStep,
       formSettings.saveHideIfFields ? null : visiblePositions,
       false
@@ -2272,6 +2272,14 @@ function Form({
 
     let invalid = await customSubmitCode(true);
     if (invalid) return;
+
+    // Submit logic can update fields, including through a server-side rule.
+    // Re-snapshot after it resolves so this step persists those latest values.
+    formattedFields = formatStepFields(
+      activeStep,
+      formSettings.saveHideIfFields ? null : visiblePositions,
+      false
+    );
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       const servar = servarByKey.get(key);

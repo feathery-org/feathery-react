@@ -2,6 +2,7 @@ import {
   BrowserMod,
   CheckButtonActionMod,
   ClientMod,
+  FieldHelperMod,
   FormHelperMod,
   GridMod,
   ValidationMod
@@ -41,6 +42,8 @@ afterEach(() => {
   GridMod._spies.actions = [];
   GridMod._spies.submit = false;
   GridMod._spies.form = null;
+  FieldHelperMod._spies.formattedFields = {};
+  ClientMod._spies.state.steps = null;
   ValidationMod._spies.invalid = false;
   BrowserMod._spies.confirm.mockReset();
   BrowserMod._spies.history.state = null;
@@ -52,6 +55,72 @@ afterEach(() => {
 
   // Restore FeatheryClient prototype if a test overrode it
   FeatheryClient.prototype.fetchForm = originalFetchForm;
+});
+
+describe('submit field snapshot', () => {
+  it('persists field updates made by awaited before-submit logic', async () => {
+    ClientMod._spies.state.steps = [
+      {
+        key: 'step-1',
+        id: 's1',
+        servar_fields: [
+          {
+            id: 'field-1',
+            position: [0],
+            properties: {},
+            servar: {
+              id: 'servar-1',
+              key: 'TextField',
+              type: 'text_field',
+              metadata: {}
+            }
+          }
+        ],
+        buttons: [],
+        next_conditions: []
+      }
+    ];
+    FieldHelperMod._spies.formattedFields = {
+      TextField: {
+        value: 'before-rule',
+        type: 'text_field',
+        displayText: 'Text field',
+        position: [0]
+      }
+    };
+    GridMod._spies.submit = true;
+    (internalState as any)['iid-submit-refresh'] = { inlineErrors: {} };
+    const onSubmit = jest.fn(async () => {
+      FieldHelperMod._spies.formattedFields.TextField.value = 'after-rule';
+    });
+
+    render(
+      <JSForm
+        formId='f1'
+        _internalId='iid-submit-refresh'
+        onSubmit={onSubmit}
+      />
+    );
+    await screen.findByTestId('btn');
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    await waitFor(() =>
+      expect(ClientMod._spies.submitStep).toHaveBeenCalledWith(
+        [{ key: 'TextField', text_field: 'after-rule' }],
+        expect.objectContaining({ id: 's1' }),
+        false
+      )
+    );
+    delete (internalState as any)['iid-submit-refresh'];
+  });
 });
 
 describe('docx discard navigation boundary', () => {

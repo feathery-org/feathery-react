@@ -135,19 +135,33 @@ jest.mock('../../utils/formHelperFunctions', () => ({
 
 // Field helper functions
 jest.mock('../../utils/fieldHelperFunctions', () => ({
+  _spies: {
+    formattedFields: {} as Record<string, any>
+  },
   castHiddenVal: (_: any, v: any) => v,
   castServarVal: (_: any, v: any) => v,
   FieldOptions: {},
   FieldProperties: {},
   FieldStyles: {},
-  formatStepFields: () => ({}),
+  FILE_FIELD_TYPES: [],
+  formatStepFields: jest.fn(() => {
+    const { _spies } = jest.requireMock('../../utils/fieldHelperFunctions');
+    return Object.fromEntries(
+      Object.entries(_spies.formattedFields).map(([key, value]: any) => [
+        key,
+        { ...value }
+      ])
+    );
+  }),
   formatAllFormFields: () => ({}),
   getAllFields: () => ({}),
   getDefaultFieldValue: () => '',
   getDefaultFormFieldValue: () => '',
   getFieldValue: () => ({ value: '', valueList: undefined }),
   isValidFieldIdentifier: () => true,
+  normalizeRepeatArrayValue: (value: any) => value,
   saveInitialValuesAndUrlParams: () => {},
+  stripEmptyRepeatEntries: (value: any) => value,
   updateStepFieldOptions: () => {},
   updateStepFieldProperties: () => {},
   updateStepFieldStyles: () => {}
@@ -364,6 +378,7 @@ jest.mock('../../utils/featheryClient', () => {
     .mockResolvedValue({ ok: true, payload: { collaborators: [] } });
   const redeemLinkSpy = jest.fn();
   const registerEventSpy = jest.fn().mockResolvedValue(undefined);
+  const submitStepSpy = jest.fn().mockResolvedValue(undefined);
   // Lets a test answer the session fetch with something other than a loadable
   // step (e.g. the access link flags that carry no form data), turn the form
   // off, or fail the session outright.
@@ -415,7 +430,7 @@ jest.mock('../../utils/featheryClient', () => {
       ];
     };
 
-    submitStep = jest.fn();
+    submitStep = submitStepSpy;
     registerEvent = registerEventSpy;
     runAIExtraction = jest.fn();
     forwardInboxEmail = jest.fn();
@@ -435,6 +450,7 @@ jest.mock('../../utils/featheryClient', () => {
       inviteCollaborator: inviteCollaboratorSpy,
       redeemLink: redeemLinkSpy,
       registerEvent: registerEventSpy,
+      submitStep: submitStepSpy,
       state
     }
   };
@@ -549,6 +565,12 @@ export const ValidationMod: any = jest.requireMock('../../utils/validation');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const FormHelperMod: any = jest.requireMock(
   '../../utils/formHelperFunctions'
+);
+
+// Controls the field snapshot that submitStep receives.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const FieldHelperMod: any = jest.requireMock(
+  '../../utils/fieldHelperFunctions'
 );
 
 // Exposes the mocked client's collaborator invite call for assertions.
