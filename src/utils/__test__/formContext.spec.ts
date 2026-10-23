@@ -462,24 +462,7 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     ).rejects.toThrow(/per-role signers require a mounted <Form \/>/);
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
-});
 
-describe('feathery.runComputerAgent return shape', () => {
-  const uuid = 'formContext-computer-agent';
-  const payload = { run_id: 'run_1', run_url: 'https://app/runs/run_1' };
-  let runComputerAgent: jest.Mock;
-
-  beforeEach(() => {
-    runComputerAgent = jest.fn().mockResolvedValue({ ok: true, payload });
-    setFormInternalState(uuid, { fields: {}, runComputerAgent } as any);
-  });
-
-  it('returns the poll error shape when the trigger fails', async () => {
-    runComputerAgent.mockResolvedValue({ ok: false, error: 'nope' });
-    await expect(
-      getFormContext(uuid).runComputerAgent('agent_1')
-    ).resolves.toEqual({ status: 'error', message: 'nope' });
-  });
   it('snapshots per-copy references before saving and rejects ambiguous merging', async () => {
     const references = ['account-a', 'account-b'];
     client.flushCustomFields.mockImplementation(async () => {
@@ -512,5 +495,23 @@ describe('feathery.runComputerAgent return shape', () => {
         merge: true
       })
     ).rejects.toThrow('cannot be merged');
+  });
+});
+
+describe('feathery.runComputerAgent return shape', () => {
+  const uuid = 'formContext-computer-agent';
+  const payload = { run_id: 'run_1', run_url: 'https://app/runs/run_1' };
+  let runComputerAgent: jest.Mock;
+
+  beforeEach(() => {
+    runComputerAgent = jest.fn().mockResolvedValue({ ok: true, payload });
+    setFormInternalState(uuid, { fields: {}, runComputerAgent } as any);
+  });
+
+  it('returns the poll error shape when the trigger fails', async () => {
+    runComputerAgent.mockResolvedValue({ ok: false, error: 'nope' });
+    await expect(
+      getFormContext(uuid).runComputerAgent('agent_1')
+    ).resolves.toEqual({ status: 'error', message: 'nope' });
   });
 });
