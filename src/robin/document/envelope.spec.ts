@@ -426,23 +426,34 @@ describe('section 6 write envelope', () => {
       ]);
   });
 
-  it('refuses a change on an engine id without its base, and an insert without container', () => {
+  it('refuses a replace on an engine id without its base', () => {
     const noBase = parseVerbInput(
       'write',
-      write({ changes: [{ kind: 'delete', id: 'n13' }] })
+      write({
+        changes: [
+          {
+            kind: 'replace',
+            id: 'n13',
+            node: { kind: 'paragraph', inlines: [] }
+          }
+        ]
+      })
     );
     expect(noBase.ok).toBe(false);
     if (!noBase.ok) {
       expect(noBase.refusal.invariant).toBe('envelope');
       expect(noBase.refusal.destroyed).toContain('changes[0].base');
     }
-    const noContainer = parseVerbInput(
-      'write',
-      write({ changes: [{ kind: 'insert_before', anchor: 'n13', node: {} }] })
-    );
-    expect(noContainer.ok).toBe(false);
-    if (!noContainer.ok)
-      expect(noContainer.refusal.destroyed).toContain('changes[0].container');
+  });
+
+  it.each([
+    ['a delete without its base', { kind: 'delete', id: 'n13' }],
+    [
+      'an insert without container',
+      { kind: 'insert_before', anchor: 'n13', node: {} }
+    ]
+  ])('accepts %s', (_label, change) => {
+    expect(parseVerbInput('write', write({ changes: [change] })).ok).toBe(true);
   });
 
   it('refuses an ids target whose base map does not match its ids', () => {
@@ -494,10 +505,8 @@ describe('section 6 write envelope', () => {
     if (!none.ok) expect(none.refusal.invariant).toBe('placeholder-call');
   });
 
-  it('refuses an empty change list as placeholder-call', () => {
-    const empty = parseVerbInput('write', write({ changes: [] }));
-    expect(empty.ok).toBe(false);
-    if (!empty.ok) expect(empty.refusal.invariant).toBe('placeholder-call');
+  it('accepts an empty change list, a request to rebuild the derived content', () => {
+    expect(parseVerbInput('write', write({ changes: [] })).ok).toBe(true);
   });
 
   it('never judges the wording of the intent: real changes under any intent are accepted', () => {

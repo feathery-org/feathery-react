@@ -62,6 +62,11 @@ describe('pack invariants', () => {
     expect(invariants(run({ scope: { ids: ['n9'] }, changes: [{ kind: 'insert_after', anchor: 'n9', container: sh('n8'), node: plain }] }))).toEqual(['verified']);
   });
 
+  it('control: a paragraph without inlines is refused; an empty one is not', () => {
+    expect(invariants(run({ scope: { ids: ['n119'] }, changes: [{ kind: 'insert_after', anchor: 'n119', container: sh('n118'), node: { kind: 'paragraph' } }] }))).toContain('control');
+    expect(invariants(run({ scope: { ids: ['n119'] }, changes: [{ kind: 'insert_after', anchor: 'n119', container: sh('n118'), node: { kind: 'paragraph', inlines: [] } }] }))).toEqual(['verified']);
+  });
+
   it('binding: a malformed formula is refused; a valid rewrite is not', () => {
     const control = copy(node('n148'));
     control.binding = { ...(control.binding as object), expr: 'mul(units' };
