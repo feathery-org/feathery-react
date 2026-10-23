@@ -14,6 +14,7 @@ import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
 import ErrorInput from '../components/ErrorInput';
 import { managedConnectAccountElement } from '../../integrations/connectAccount/providers';
+import useDelayedLoader from '../../hooks/useDelayedLoader';
 
 // Space left between a scaled-down loader and the button's edge, per side. Not
 // taken from the button's padding on purpose: that would tie the loader's size
@@ -162,7 +163,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
 function ButtonElement({
   element,
   responsiveStyles,
-  loader = null,
+  loader: requestedLoader = null,
   editMode,
   focused = false,
   disabled = false,
@@ -175,6 +176,7 @@ function ButtonElement({
   children,
   featheryContext
 }: any) {
+  const { loader, isLoading } = useDelayedLoader(requestedLoader);
   const styles = useMemo(
     () => applyButtonStyles(element, responsiveStyles),
     [responsiveStyles]
@@ -314,7 +316,9 @@ function ButtonElement({
   const buttonDisabled = !editMode && (noActions || loader || disabled);
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (buttonDisabled) {
+    // A pending loader blocks clicks before it's drawn, so a fast double click
+    // can't run the actions twice
+    if (buttonDisabled || (!editMode && isLoading)) {
       e.preventDefault();
       return;
     }
@@ -362,6 +366,7 @@ function ButtonElement({
       }}
       // Use aria-disabled instead of disabled since disabled elements cannot display html errors
       aria-disabled={buttonDisabled}
+      aria-busy={isLoading || undefined}
       onClick={handleClick}
       aria-label={element.properties.aria_label}
       {...elementProps}
