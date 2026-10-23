@@ -2585,7 +2585,9 @@ function Form({
     setLoaders((loaders: Record<string, any>) => ({
       ...loaders,
       [button.id]: {
-        showOn: 'on_button',
+        // Every button loads on itself unless it opts into covering the step
+        showOn:
+          bp.show_loading_icon === 'full_page' ? 'full_page' : 'on_button',
         loader,
         type: bp.loading_icon ? bp.loading_file_type : 'default',
         repeat: button.repeat
