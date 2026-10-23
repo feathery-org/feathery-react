@@ -231,6 +231,7 @@ describe('session request failure without a link', () => {
     ClientMod._spies.state.steps = null;
     ClientMod._spies.state.sessionError = null;
     ClientMod._spies.state.sessionGated = false;
+    ClientMod._spies.state.formError = null;
     LoginFormMod.authState.hasRedirected = false;
   });
 
@@ -271,14 +272,26 @@ describe('session request failure without a link', () => {
     }
   );
 
-  it('leaves the step to the auth hook after a login redirect', async () => {
+  // The auth hook only picks a step once a loaded session hands it
+  // integrations, so returning here would leave the form with no step at all
+  it('asks for a refresh after a login redirect', async () => {
     LoginFormMod.authState.hasRedirected = true;
 
     render(<JSForm formId='f1' _internalId='iid-session-fail-auth' />);
 
-    // Let the rejected session settle before checking nothing navigated
-    await act(async () => {});
+    expect(await screen.findByText(LOAD_FAILED_COPY)).toBeInTheDocument();
     expect(screen.queryByTestId('btn')).not.toBeInTheDocument();
+    expect(StepHelperMod.setUrlStepHash).not.toHaveBeenCalled();
+  });
+
+  // An origin outage can fail the form payload too. Without it the form can't
+  // vouch for being ungated, so it must not render blank.
+  it('asks for a refresh when the form payload also fails', async () => {
+    ClientMod._spies.state.formError = new Error('502 Bad Gateway');
+
+    render(<JSForm formId='f1' _internalId='iid-session-fail-form' />);
+
+    expect(await screen.findByText(LOAD_FAILED_COPY)).toBeInTheDocument();
     expect(StepHelperMod.setUrlStepHash).not.toHaveBeenCalled();
   });
 });

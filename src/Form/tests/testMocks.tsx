@@ -370,6 +370,7 @@ jest.mock('../../utils/featheryClient', () => {
   const state = {
     session: null as any,
     sessionError: null as any,
+    formError: null as any,
     formOff: false,
     authSensitiveActionsOnly: false,
     // undefined mimics a payload from before the backend sent the flag
@@ -381,25 +382,28 @@ jest.mock('../../utils/featheryClient', () => {
 
   class MockClient {
     // Return one step so getNewStep can set activeStep and render Grid
-    fetchForm = async () => ({
-      steps: state.steps ?? [
-        {
-          key: 'step-1',
-          id: 's1',
-          servar_fields: [],
-          buttons: [],
-          next_conditions: []
-        }
-      ],
-      form_name: 'Test Form',
-      auth_sensitive_actions_only: state.authSensitiveActionsOnly,
-      session_gated: state.sessionGated,
-      completion_behavior: '',
-      formOff: state.formOff,
-      logic_rules: [],
-      shared_codes: [],
-      track_hashes: false
-    });
+    fetchForm = async () => {
+      if (state.formError) throw state.formError;
+      return {
+        steps: state.steps ?? [
+          {
+            key: 'step-1',
+            id: 's1',
+            servar_fields: [],
+            buttons: [],
+            next_conditions: []
+          }
+        ],
+        form_name: 'Test Form',
+        auth_sensitive_actions_only: state.authSensitiveActionsOnly,
+        session_gated: state.sessionGated,
+        completion_behavior: '',
+        formOff: state.formOff,
+        logic_rules: [],
+        shared_codes: [],
+        track_hashes: false
+      };
+    };
 
     fetchSession = async () => {
       if (state.sessionError) throw state.sessionError;

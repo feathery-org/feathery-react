@@ -2093,20 +2093,27 @@ function Form({
       })
       .catch(async (error: any) => {
         console.warn(error);
-        // The session can fail before the form payload sets sessionGated
-        const data = await formPromise;
+        // The session can fail before the form payload sets sessionGated. An
+        // origin outage can fail both, and a missing payload is treated as gated.
+        const data = await formPromise.catch(() => null);
         // Only the session resolves which submission an access link opens, and
         // whether a gated form may open at all. Block instead of opening the
-        // origin step past checks that never ran.
-        if (initState.linkToken || sessionGated.current) {
+        // origin step past checks that never ran. After a login redirect the
+        // auth hook picks the step, but it waits on integrations that only a
+        // loaded session provides, so it would never pick one.
+        if (
+          !data ||
+          initState.linkToken ||
+          sessionGated.current ||
+          authState.redirectAfterLogin ||
+          authState.hasRedirected
+        ) {
           formOffReason.current = CLOSED;
           formOffMessage.current = SESSION_FAILED_MESSAGE;
           setRender((render) => ({ ...render }));
           return;
         }
-        // Same guard as the success path: the auth hook picks the step
-        if (authState.redirectAfterLogin || authState.hasRedirected || stepKey)
-          return;
+        if (stepKey) return;
         // Go to first step if origin fails
         const newKey = (getOrigin as any)(data).key;
         if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
