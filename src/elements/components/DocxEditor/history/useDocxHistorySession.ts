@@ -5,10 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
 import { featheryDoc } from '../../../../utils/browser';
 
-import {
-  isAssistantWriting,
-  onAssistantSessionChange
-} from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinEditing, onRobinTurnChange } from '../robinActivity';
 import { isOpeningDocument } from '../useDocxEditor';
 import { createAutosaveScheduler } from './autosaveScheduler';
 import { createDocumentSaveQueue } from './documentSaveQueue';
@@ -36,6 +33,7 @@ import {
 import {
   clearLocalVersionArtifacts,
   localVersionArtifactsFor,
+  LocalVersionArtifacts,
   registerLocalVersionArtifacts
 } from './useVersionDocument';
 
@@ -67,11 +65,14 @@ export interface UseDocxHistorySessionOptions {
   save: (blob: Blob, meta: DocxSaveMeta) => Promise<unknown>;
   /** Extra gate (the binding soft-gate): autosave holds while it is false. */
   canSave?: () => boolean;
+  /** A skipped save found the document back at its start: nothing is unsaved. */
+  onUnchanged?: () => void;
 }
 
 /** The current session's live change list, as the viewer would render a stored
  *  version: `sfdt` is the applyHunks display document (highlights baked in). */
 export interface SessionPreview extends LiveSessionAuthors {
+  artifacts: LocalVersionArtifacts;
   sfdt: string;
   editCount: number;
   formatCount: number;
@@ -148,7 +149,8 @@ export function useDocxHistorySession(
     openNonce,
     exportDoc,
     save,
-    canSave
+    canSave,
+    onUnchanged
   } = opts;
 
   const mountedRef = useRef(true);
@@ -183,6 +185,8 @@ export function useDocxHistorySession(
   hostRef.current = host;
   const canSaveRef = useRef(canSave);
   canSaveRef.current = canSave;
+  const onUnchangedRef = useRef(onUnchanged);
+  onUnchangedRef.current = onUnchanged;
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
   // Diff baseline (S0): must predate the first edit, and contentChange fires
@@ -233,7 +237,7 @@ export function useDocxHistorySession(
         !loadingRef.current &&
         !readOnlyRef.current &&
         !isOpeningDocument(ed) &&
-        !isAssistantWriting(ed)
+        !isRobinEditing(ed)
       );
     };
     const isSessionConflict = (error: unknown) =>
@@ -251,14 +255,27 @@ export function useDocxHistorySession(
       sent: { current: DocxSaveMeta },
       renew: (stale: DocxSaveMeta) => DocxSaveMeta
     ) => {
+      let result: Awaited<ReturnType<typeof saveDocument>>;
       try {
-        return await saveDocument(blob, sent.current);
+        result = await saveDocument(blob, sent.current);
       } catch (error) {
         if (!isSessionConflict(error)) throw error;
         sent.current = renew(sent.current);
-        return saveDocument(blob, sent.current);
+        result = await saveDocument(blob, sent.current);
       }
+      savedSessions.add(sent.current.sessionId);
+      return result;
     };
+    // Sessions with a stored save; only these have a backend version row.
+    const savedSessions = new Set<string>();
+    // An unsaved session whose document is exactly its start changed nothing,
+    // so it is never sent. Raw equality keeps accepting a suggestion a change.
+    const isUnsavedNoOp = (sessionId: string, current: string | null) =>
+      !savedSessions.has(sessionId) &&
+      !documentWrites.pending() &&
+      !acceptanceRef.current &&
+      !!s0Ref.current &&
+      current === s0Ref.current;
     // Close/checkpoint uploads mutate the same backend row. Keep them in one
     // FIFO so an older checkpoint can never complete after a newer final close.
     let closeQueue: Promise<void> = Promise.resolve();
@@ -465,6 +482,15 @@ export function useDocxHistorySession(
       } catch {
         fStr = null; // Serialize failed: the row keeps its docx pair only.
       }
+      if (isUnsavedNoOp(meta.sessionId, fStr)) {
+        slices.clear();
+        s0Ref.current = null;
+        robinRunsRef.current = [];
+        baselineRef.current = fStr;
+        onUnchangedRef.current?.();
+        setStatus(tracker.isOpen() ? 'dirty' : 'saved');
+        return undefined;
+      }
       const snap: CloseSnapshot = {
         host: hostRef.current,
         fStr,
@@ -553,6 +579,16 @@ export function useDocxHistorySession(
       save: async () => {
         const meta = tracker.currentMeta();
         if (!meta) return;
+        let current: string | null = null;
+        try {
+          current = editorRef.current?.serialize() ?? null;
+        } catch {
+          current = null;
+        }
+        if (isUnsavedNoOp(meta.sessionId, current)) {
+          onUnchangedRef.current?.();
+          return;
+        }
         const saveDocument = saveRef.current;
         const epoch = documentEpochRef.current;
         const checkpointRequest = requestedCheckpoint;
@@ -837,7 +873,7 @@ export function useDocxHistorySession(
   // leaves the session open so user + assistant edits share it.
   useEffect(() => {
     if (!editor || !host || readOnly) return undefined;
-    return onAssistantSessionChange(editor, (active) => {
+    return onRobinTurnChange(editor, (active) => {
       if (active) {
         try {
           lastSnapshotRef.current = editor.serialize();
@@ -1036,8 +1072,8 @@ export function useDocxHistorySession(
         { sfdt: fDoc, author: currentAuthorRef.current }
       ];
       const startDoc = JSON.parse(s0Ref.current);
-      // The backend removes net-zero versions. Do not display intermediate
-      // author-boundary edits after the document has been fully undone.
+      // Do not display intermediate author-boundary edits after the document
+      // has been fully undone.
       const unchanged =
         contentHash(normalizeForDiff(startDoc)) ===
         contentHash(normalizeForDiff(fDoc));
@@ -1060,9 +1096,10 @@ export function useDocxHistorySession(
         authors: trackedAuthorKeys(display).map((key) =>
           key === ROBIN.key ? ROBIN : { ...currentUserRef.current, key }
         ),
+        artifacts: { finalSfdt: JSON.stringify(fDoc), changes },
         sfdt: JSON.stringify(display),
         // Same grouping as the steppers: a Robin turn counts as one edit.
-        editCount: countEditGroups(display),
+        editCount: countEditGroups(display, { includeFormatting: true }),
         formatCount: changes.formatChangeCount,
         pendingCount: countPendingGroups(display)
       };

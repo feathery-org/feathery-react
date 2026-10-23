@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { createPortal } from 'react-dom';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
@@ -24,9 +30,10 @@ import {
   prefetchVersionDocuments,
   retainVersionDocuments,
   versionDocumentKey,
-  VersionDocument
+  LiveVersionDocument
 } from './history/useVersionDocument';
 import VersionViewer from './history/VersionViewer';
+import { foldedUnder } from './history/versionGrouping';
 import VersionBar from './history/VersionBar';
 import {
   DocxHistoryHost,
@@ -36,10 +43,7 @@ import {
   VersionAuthor
 } from './history/types';
 import { DocxSource } from './types';
-import {
-  isAssistantWriting,
-  onAssistantSessionChange
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinEditing, onRobinTurnChange } from './robinActivity';
 
 const DEFAULT_CURRENT_USER: VersionAuthor = {
   kind: 'user',
@@ -284,7 +288,7 @@ function DocxEditor({
   // A live-diffed display document for the in-progress current version (no
   // stored files yet): highlights baked in, so the viewer renders it like any
   // stored version. Null for stored versions (they fetch their own files).
-  const [liveDoc, setLiveDoc] = useState<VersionDocument | null>(null);
+  const [liveDoc, setLiveDoc] = useState<LiveVersionDocument | null>(null);
   const [liveSessionAuthors, setLiveSessionAuthors] =
     useState<LiveSessionAuthors | null>(null);
   // The version list reported up by the History panel, for auto-selecting the
@@ -294,6 +298,12 @@ function DocxEditor({
   // completed list request is allowed to choose the initial Current version.
   const historyAutoSelectedRef = useRef(false);
   const firstUserKey = firstUserActorKey(historyVersions);
+  // A folded History row opens with every session folded under it.
+  const foldedVersions = useMemo(
+    () =>
+      viewingVersion ? foldedUnder(historyVersions, viewingVersion.id) : null,
+    [historyVersions, viewingVersion]
+  );
   // Highlight-changes toggle (version bar). Toggling remounts the viewer.
   const [highlightsOn, setHighlightsOn] = useState(true);
   const [sharedZoomFactor, setSharedZoomFactor] = useState<number | undefined>(
@@ -617,6 +627,11 @@ function DocxEditor({
     openNonce,
     exportDoc,
     save: saveCurrentDocument,
+    onUnchanged: () => {
+      dirtyRef.current = false;
+      setDirty(false);
+      onChange?.(false);
+    },
     canSave: () =>
       !bindings?.enabled ||
       (bindingsState.ready && bindingsState.commitForSave())
@@ -651,8 +666,8 @@ function DocxEditor({
   }, [onBeforeReplaceReady]);
 
   useEffect(() => {
-    setAssistantWriting(isAssistantWriting(editor));
-    return onAssistantSessionChange(editor, setAssistantWriting);
+    setAssistantWriting(isRobinEditing(editor));
+    return onRobinTurnChange(editor, setAssistantWriting);
   }, [editor]);
 
   // Opening the history rail is a good idle point to resolve its recent,
@@ -698,7 +713,7 @@ function DocxEditor({
   // files, like any older version.
   const selectVersion = useCallback(
     (version: DocxVersion) => {
-      let live: VersionDocument | null = null;
+      let live: LiveVersionDocument | null = null;
       // During an open session, autosave checkpoints can already be stale.
       // After Save/reload, the browser has no live diff baseline; the latest
       // saved change files are then the only source for user edit stepping.
@@ -714,6 +729,11 @@ function DocxEditor({
             loading: false,
             error: false,
             sfdt: preview.sfdt,
+            session: {
+              sessionId: preview.sessionId,
+              authors: preview.authors,
+              ...preview.artifacts
+            },
             degraded: false,
             editCount: preview.editCount,
             formatCount: preview.formatCount,
@@ -1064,7 +1084,7 @@ function DocxEditor({
   const restoreBlockedReason = () =>
     readOnly
       ? "Signed or read-only documents can't be restored"
-      : assistantWriting || isAssistantWriting(editor)
+      : assistantWriting || isRobinEditing(editor)
       ? 'Wait for Robin to finish'
       : null;
 
@@ -1287,6 +1307,7 @@ function DocxEditor({
               // Present only for the in-progress current version: a live-diffed
               // display document to open directly (no stored files exist).
               liveDoc={liveDoc ?? undefined}
+              folded={foldedVersions}
               onMeta={setVersionMeta}
               zoomFactor={sharedZoomFactor}
               onZoomFactorChange={setSharedZoomFactor}

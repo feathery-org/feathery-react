@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 
-import { setAssistantSessionActive } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { setRobinTurnActive } from '../robinActivity';
 import { AUTOSAVE_IDLE_MS } from './autosaveScheduler';
 import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
 import { applyHunks } from './sfdtDiff';
@@ -20,6 +20,16 @@ const SFDT = JSON.stringify({
   sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
 });
 
+const EDITED_SFDT = JSON.stringify({
+  sections: [{ blocks: [{ inlines: [{ text: 'hello world' }] }] }]
+});
+// The first snapshot is the pristine document; every later one is edited, so
+// each session has a real change to save.
+const editedEditor = () => {
+  let snapshots = 0;
+  return { serialize: () => (snapshots++ ? EDITED_SFDT : SFDT) };
+};
+
 const makeHost = (): jest.Mocked<DocxHistoryHost> => ({
   listVersions: jest.fn().mockResolvedValue([]),
   closeVersion: jest.fn().mockResolvedValue(null),
@@ -30,7 +40,7 @@ const makeHost = (): jest.Mocked<DocxHistoryHost> => ({
 
 const setup = (
   over: Partial<UseDocxHistorySessionOptions> = {},
-  editor: any = { serialize: () => SFDT }
+  editor: any = editedEditor()
 ) => {
   const save = jest.fn().mockResolvedValue(undefined);
   const exportDoc = jest.fn().mockResolvedValue(new Blob(['docx']));
@@ -145,12 +155,12 @@ describe('useDocxHistorySession', () => {
     });
     const { view } = setup({ host, save }, editor);
 
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello Robin' }] }] }]
     });
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
 
     expect(view.result.current.error).toBeNull();
@@ -174,10 +184,10 @@ describe('useDocxHistorySession', () => {
       },
       editor
     );
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = SFDT.replace('hello', 'hello Robin');
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
     expect(host.closeVersion).not.toHaveBeenCalled();
 
@@ -202,10 +212,10 @@ describe('useDocxHistorySession', () => {
     );
 
     for (const text of ['first Robin edit', 'second Robin edit']) {
-      act(() => setAssistantSessionActive(editor, true));
+      act(() => setRobinTurnActive(editor, true));
       doc = SFDT.replace('hello', text);
       act(() => view.result.current.onEdit({ assistant: true }));
-      act(() => setAssistantSessionActive(editor, false));
+      act(() => setRobinTurnActive(editor, false));
       await flush();
       if (text === 'first Robin edit')
         expect(view.result.current.error).toContain('version details');
@@ -222,9 +232,9 @@ describe('useDocxHistorySession', () => {
         throw new Error('Document upload failed');
       }
     });
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
 
     expect(host.closeVersion).not.toHaveBeenCalled();
@@ -247,10 +257,10 @@ describe('useDocxHistorySession', () => {
       .mockResolvedValue(undefined);
     const { view, host } = setup({ save }, editor);
     for (const text of ['first Robin edit', 'second Robin edit']) {
-      act(() => setAssistantSessionActive(editor, true));
+      act(() => setRobinTurnActive(editor, true));
       doc = SFDT.replace('hello', text);
       act(() => view.result.current.onEdit({ assistant: true }));
-      act(() => setAssistantSessionActive(editor, false));
+      act(() => setRobinTurnActive(editor, false));
       await flush();
     }
     expect(host.closeVersion).not.toHaveBeenCalled();
@@ -273,7 +283,7 @@ describe('useDocxHistorySession', () => {
 
   it('does not return an earlier envelope’s save result after document replacement', async () => {
     const host = makeHost();
-    const editor = { serialize: () => SFDT };
+    const editor = editedEditor();
     const view = renderHook(
       ({ envelopeId }) =>
         useDocxHistorySession({
@@ -378,6 +388,8 @@ describe('useDocxHistorySession', () => {
     );
     let first!: Promise<unknown>;
     let second!: Promise<unknown>;
+    const firstEdit = SFDT.replace('hello', 'first edit');
+    document = firstEdit;
     act(() => {
       view.result.current.onEdit({ assistant: false });
       first = view.result.current.save();
@@ -394,7 +406,10 @@ describe('useDocxHistorySession', () => {
     await act(async () => {
       await Promise.all([first, second]);
     });
-    expect(await Promise.all(written.map(blobText))).toEqual([SFDT, document]);
+    expect(await Promise.all(written.map(blobText))).toEqual([
+      firstEdit,
+      document
+    ]);
   });
 
   it('retries a failed closed snapshot and returns its actual save result', async () => {
@@ -596,12 +611,11 @@ describe('useDocxHistorySession', () => {
     expect(meta.sessionId).toBeTruthy();
     expect(meta.closeSession).toBe(true);
     expect(meta.authors).toEqual([{ kind: 'user', label: 'You' }]);
-    // The close uploads the final document and the diffed change list. S0 == F
-    // here (no real edits in the fake), so the diff finds zero changes.
+    // The close uploads the final document and the diffed change list.
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
     const closePayload = host.closeVersion.mock.calls[0][1];
     expect(host.closeVersion.mock.calls[0][0]).toBe(meta.sessionId);
-    expect(closePayload.changeCount).toBe(0);
+    expect(closePayload.changeCount).toBeGreaterThan(0);
     expect(closePayload.changesJson).toBeInstanceOf(Blob);
     expect(closePayload.finalSfdtGz).toBeInstanceOf(Blob);
     expect(view.result.current.isSessionOpen()).toBe(false);
@@ -904,6 +918,9 @@ describe('useDocxHistorySession', () => {
     expect(must(preview).editCount).toBeGreaterThan(0);
     // applyHunks baked synthetic revisions into the display document.
     expect(must(preview).sfdt).toContain('revisionId');
+    expect(must(preview).artifacts.finalSfdt).toBe(doc);
+    expect(must(preview).artifacts.finalSfdt).not.toContain('revisionId');
+    expect(must(preview).artifacts.changes?.hunks.length).toBeGreaterThan(0);
     expect(must(preview).authors).toEqual([YOU]);
     expect(must(preview).sessionId).toBeTruthy();
   });
@@ -936,6 +953,119 @@ describe('useDocxHistorySession', () => {
   it('previewSession is null with no open session', () => {
     const { view } = setup();
     expect(view.result.current.previewSession()).toBeNull();
+  });
+
+  it('does not save or version a session that changed nothing', async () => {
+    const onUnchanged = jest.fn();
+    const { view, save, host } = setup(
+      { onUnchanged },
+      { serialize: () => SFDT }
+    );
+
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+
+    expect(save).not.toHaveBeenCalled();
+    expect(host.closeVersion).not.toHaveBeenCalled();
+    expect(view.result.current.isSessionOpen()).toBe(false);
+    expect(view.result.current.status).toBe('saved');
+    // The editor clears its "Unsaved changes" mark from this.
+    expect(onUnchanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not autosave a session that still matches its start', async () => {
+    jest.useFakeTimers();
+    const onUnchanged = jest.fn();
+    const { view, save } = setup({ onUnchanged }, { serialize: () => SFDT });
+
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+
+    expect(save).not.toHaveBeenCalled();
+    expect(onUnchanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a session whose edit was undone before it ever saved', async () => {
+    let doc = SFDT;
+    const { view, save, host } = setup({}, { serialize: () => doc });
+
+    doc = EDITED_SFDT;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    doc = SFDT;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+
+    expect(save).not.toHaveBeenCalled();
+    expect(host.closeVersion).not.toHaveBeenCalled();
+  });
+
+  it('saves a session whose only change is accepting a suggestion', async () => {
+    // Accepting a tracked insertion leaves the same text, so a fingerprint that
+    // ignores revision marks would call it unchanged and lose the accept.
+    const pending = JSON.stringify({
+      sections: [
+        { blocks: [{ inlines: [{ text: 'Added', revisionIds: ['r1'] }] }] }
+      ],
+      revisions: [
+        { author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }
+      ]
+    });
+    const accepted = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'Added' }] }] }]
+    });
+    let doc = pending;
+    const { view, save } = setup({}, { serialize: () => doc });
+
+    doc = accepted;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][1].closeSession).toBe(true);
+  });
+
+  it('still closes a session that saved before its edits were undone', async () => {
+    jest.useFakeTimers();
+    let doc = SFDT;
+    const onUnchanged = jest.fn();
+    const { view, save, host } = setup(
+      { onUnchanged },
+      { serialize: () => doc }
+    );
+
+    doc = EDITED_SFDT;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+
+    // The undo must reach the live file, so the stored row is closed normally.
+    doc = SFDT;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+
+    expect(save).toHaveBeenCalledTimes(2);
+    const closing = save.mock.calls[1][1];
+    expect(closing.closeSession).toBe(true);
+    expect(host.closeVersion).toHaveBeenLastCalledWith(
+      closing.sessionId,
+      expect.anything()
+    );
+    // A real save clears the mark itself; this path must not claim it.
+    expect(onUnchanged).not.toHaveBeenCalled();
   });
 
   it('autosaves with the session id (no close flag) after the idle window', async () => {
@@ -990,9 +1120,9 @@ describe('useDocxHistorySession', () => {
   it('checkpoints (uploads redlines) on assistant turn end WITHOUT closing the session', async () => {
     const { view, editor, save, host } = setup();
 
-    setAssistantSessionActive(editor, true); // a turn is under way
+    setRobinTurnActive(editor, true); // a turn is under way
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false)); // turn ends
+    act(() => setRobinTurnActive(editor, false)); // turn ends
     await flush();
 
     // The turn's redlines are uploaded (durable) via the close endpoint...
@@ -1027,9 +1157,9 @@ describe('useDocxHistorySession', () => {
         })
     );
 
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
     const documentSavedAt = view.result.current.savedAt;
@@ -1061,12 +1191,12 @@ describe('useDocxHistorySession', () => {
     act(() => view.result.current.onEdit({ assistant: false }));
 
     // Robin's turn starts (snapshot taken), THEN its first op applies.
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello user robin' }] }] }]
     });
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false)); // turn end → close
+    act(() => setRobinTurnActive(editor, false)); // turn end → close
     await flush();
 
     const payload = host.closeVersion.mock.calls[0][1];
@@ -1107,10 +1237,10 @@ describe('useDocxHistorySession', () => {
     const editor: any = { serialize: () => doc };
     const { view, host } = setup({}, editor);
     await flush();
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = document('User paragraph', ' robin addition');
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
     doc = document('User paragraph human addition', ' robin addition');
     act(() => view.result.current.onEdit({ assistant: false }));
@@ -1156,13 +1286,13 @@ describe('useDocxHistorySession', () => {
     await flush();
     doc = document('same words', '', false);
     act(() => view.result.current.onEdit({ assistant: false }));
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = document('same words', 'same words', true);
     act(() => view.result.current.onEdit({ assistant: true }));
     // Human input between tool calls, while the turn remains active.
     doc = document('same words typed later', 'same words', true);
     act(() => view.result.current.onEdit({ assistant: false }));
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
     const pending = doc;
     await act(async () => {
@@ -1281,8 +1411,9 @@ describe('useDocxHistorySession', () => {
           ? [{ author: 'Robin', revisionType: 'Insertion', revisionId: 'r1' }]
           : []
       });
-    let doc = document('Human', true);
+    let doc = document('Draft', true);
     const { view, save, host } = setup({}, { serialize: () => doc });
+    doc = document('Human', true);
     act(() => view.result.current.onEdit({ assistant: true }));
     save.mockImplementationOnce(async () => {
       doc = document('Human types during save', true);
@@ -1378,7 +1509,7 @@ describe('useDocxHistorySession', () => {
     const { view, host } = setup({}, editor);
     await flush(); // pristine baseline
 
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     // Robin inserts " world" as a LIVE tracked revision.
     doc = JSON.stringify({
       sections: [
@@ -1408,7 +1539,7 @@ describe('useDocxHistorySession', () => {
       ]
     });
     act(() => view.result.current.onEdit({ assistant: true }));
-    act(() => setAssistantSessionActive(editor, false)); // turn end → close
+    act(() => setRobinTurnActive(editor, false)); // turn end → close
     await flush();
 
     const payload = host.closeVersion.mock.calls[0][1];
@@ -1489,7 +1620,7 @@ describe('useDocxHistorySession', () => {
     const { view, host, save } = setup({}, editor);
     await flush();
 
-    act(() => setAssistantSessionActive(editor, true));
+    act(() => setRobinTurnActive(editor, true));
     doc = JSON.stringify({
       sections: [{ blocks: [{ inlines: [{ text: 'hello robin' }] }] }]
     });
@@ -1502,7 +1633,7 @@ describe('useDocxHistorySession', () => {
       });
       view.result.current.onEdit({ assistant: false });
     });
-    act(() => setAssistantSessionActive(editor, false));
+    act(() => setRobinTurnActive(editor, false));
     await flush();
 
     const payload = host.closeVersion.mock.calls[0][1];

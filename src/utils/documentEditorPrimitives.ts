@@ -313,16 +313,6 @@ const liveRevisionsRaw = (editor: LiveEditor): LiveRevision[] => {
   return snapshotRevisions(editor);
 };
 
-export function createdRevisions(
-  editor: LiveEditor,
-  before: LiveRevision[]
-): LiveRevision[] {
-  const existing = new Set(before);
-  return snapshotRevisions(editor).filter(
-    (revision) => !existing.has(revision)
-  );
-}
-
 const REVISION_GROUP_TAG_VERSION = 1;
 const PERSISTED_BORDER_TYPES = new Set([
   'AllBorders',
@@ -343,6 +333,9 @@ interface PersistedBookmarkClamp {
 interface RevisionGroupTag {
   changeSetId: string;
   group: string;
+  /** The card title the document engine composed, and the write's intent. */
+  title?: string;
+  intent?: string;
   appearanceRestores?: AppearanceRestore[];
   paragraphStyles?: ParagraphStyleRestore[];
   bookmarkClamps?: PersistedBookmarkClamp[];
@@ -754,6 +747,12 @@ export function parseRevisionGroupTag(
       return {
         changeSetId: parsed.changeSetId,
         group: parsed.group,
+        ...(typeof parsed.title === 'string' && parsed.title
+          ? { title: parsed.title }
+          : {}),
+        ...(typeof parsed.intent === 'string' && parsed.intent
+          ? { intent: parsed.intent }
+          : {}),
         ...(appearanceRestores ? { appearanceRestores } : {}),
         ...(paragraphStyles ? { paragraphStyles } : {}),
         ...(bookmarkClamps ? { bookmarkClamps } : {}),
@@ -768,10 +767,9 @@ export function parseRevisionGroupTag(
 }
 
 /**
- * User typing is never tracked. Assist turns SyncFusion's global
- * `enableTrackChanges` on only inside a synchronous `applyDocumentEdits`
- * batch; this is the steady state the host starts from and the batch must
- * leave behind. Pass the wrapping DocumentEditorContainer when you have it:
+ * User typing is never tracked. Robin turns SyncFusion's global
+ * `enableTrackChanges` on only inside its authored-revision batch, this is the
+ * steady state the host starts from and the batch must leave behind. Pass the wrapping DocumentEditorContainer when you have it:
  * its flag can drift from the inner editor on `documentChange` and would
  * otherwise push tracking back on.
  */
@@ -784,26 +782,6 @@ export function disableUserTrackChanges(
 ): void {
   editor.enableTrackChanges = false;
   if (container && container !== editor) container.enableTrackChanges = false;
-}
-
-const wrappingDocumentEditorContainers = new WeakMap<
-  object,
-  { enableTrackChanges?: boolean }
->();
-
-/** Remember the outer SyncFusion container that owns one live editor. */
-export function registerWrappingDocumentEditorContainer(
-  editor: object,
-  container: { enableTrackChanges?: boolean }
-): void {
-  wrappingDocumentEditorContainers.set(editor, container);
-}
-
-/** The outer container whose track-changes flag mirrors this editor's flag. */
-export function wrappingDocumentEditorContainer(
-  editor: object
-): { enableTrackChanges?: boolean } | undefined {
-  return wrappingDocumentEditorContainers.get(editor);
 }
 
 const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
@@ -2354,6 +2332,8 @@ const revisionParagraph = (revision: LiveRevision): unknown => {
 interface RevisionGroupView {
   changeSetId: string;
   group: string;
+  title?: string;
+  intent?: string;
   untagged?: boolean;
   derivedChanges?: DerivedValueChange[];
   items: RevisionGroupItem[];
@@ -2458,6 +2438,8 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
         ? {
             changeSetId: tag.changeSetId,
             group: tag.group,
+            ...(tag.title ? { title: tag.title } : {}),
+            ...(tag.intent ? { intent: tag.intent } : {}),
             items: []
           }
         : { changeSetId: '', group: author, untagged: true, items: [] };

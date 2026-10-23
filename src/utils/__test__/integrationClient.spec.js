@@ -963,11 +963,15 @@ describe('IntegrationClient', () => {
         run_async: false,
         sign_method: 'docusign',
         email_subject: 'Please sign this',
-        email_blurb: 'Two signatures needed.'
+        email_blurb: 'Two signatures needed.',
+        custom_fields: { account_submission_id: 'account-123' }
       });
       let body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBe('Please sign this');
       expect(body.email_blurb).toBe('Two signatures needed.');
+      expect(body.custom_fields).toEqual({
+        account_submission_id: 'account-123'
+      });
 
       // Omitted rather than sent empty, so the backend's default subject wins
       global.fetch.mockClear();
@@ -979,6 +983,7 @@ describe('IntegrationClient', () => {
       body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBeUndefined();
       expect(body.email_blurb).toBeUndefined();
+      expect(body.custom_fields).toBeUndefined();
     });
 
     it('ignores the form signer field for a docusign sign, keeping the role mappings', async () => {
@@ -1334,7 +1339,8 @@ describe('IntegrationClient', () => {
           run_async: false,
           sign_method: 'docusign',
           email_subject: 'Signed, sealed',
-          email_blurb: 'Last step.'
+          email_blurb: 'Last step.',
+          custom_fields: { account_submission_id: 'account-123' }
         },
         { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
       );
@@ -1342,6 +1348,9 @@ describe('IntegrationClient', () => {
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBe('Signed, sealed');
       expect(body.email_blurb).toBe('Last step.');
+      expect(body.custom_fields).toEqual({
+        account_submission_id: 'account-123'
+      });
     });
 
     it('polls until complete when finalize runs async', async () => {

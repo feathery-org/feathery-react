@@ -1,6 +1,9 @@
 import React, { useMemo } from 'react';
 
+import useMobileViewport from '../../hooks/useMobileViewport';
 import { hoverStylesGuard } from '../../utils/browser';
+import { isNum } from '../../utils/primitives';
+import { INNER_PADDING_KEYS } from '../styles';
 
 type TabEntry = {
   id: string;
@@ -19,6 +22,18 @@ function applyTabsStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyCorners('tab');
   responsiveStyles.applyBoxShadow('tab');
   responsiveStyles.applyTextAlign('tab');
+  responsiveStyles.apply(
+    'tab',
+    INNER_PADDING_KEYS,
+    (top: unknown, right: unknown, bottom: unknown, left: unknown) => {
+      const padding: React.CSSProperties = {};
+      if (isNum(top)) padding.paddingTop = `${top}px`;
+      if (isNum(right)) padding.paddingInlineEnd = `${right}px`;
+      if (isNum(bottom)) padding.paddingBottom = `${bottom}px`;
+      if (isNum(left)) padding.paddingInlineStart = `${left}px`;
+      return padding;
+    }
+  );
   responsiveStyles.applyBorders({ target: 'tab' });
   responsiveStyles.applyFontStyles('tab', false, true);
 
@@ -47,6 +62,7 @@ function TabsElement({
   editMode,
   onTabClick,
   stepKey,
+  viewport,
   elementProps = {}
 }: any) {
   const styles = useMemo(
@@ -54,6 +70,13 @@ function TabsElement({
     [responsiveStyles]
   );
 
+  const isMobileViewport = useMobileViewport(styles.getMobileBreakpoint());
+  // The editor previews a viewport inside a desktop browser window.
+  const isMobile = viewport ? viewport === 'mobile' : isMobileViewport;
+  const presentation =
+    (isMobile && element.properties.mobile_presentation) ||
+    element.properties.presentation ||
+    'tabs';
   const entries: TabEntry[] = element.properties.entries ?? [];
   const direction =
     element.properties.direction === 'vertical' ? 'column' : 'row';
@@ -62,6 +85,55 @@ function TabsElement({
   const baseTabStyles = styles.getTarget('tab');
   const activeStyles = styles.getTarget('tabActive');
   const hoverStyles = hoverStylesGuard(styles.getTarget('tabHover'));
+
+  if (presentation === 'menu') {
+    const hasActiveEntry = entries.some((entry) => entry.step_key === stepKey);
+    return (
+      <div
+        id={element.id}
+        css={{ width: '100%', minWidth: 0 }}
+        {...elementProps}
+      >
+        <select
+          aria-label={element.properties.aria_label || 'Workspace navigation'}
+          value={hasActiveEntry ? stepKey : ''}
+          disabled={!!editMode || entries.length === 0}
+          css={{
+            width: '100%',
+            minWidth: 0,
+            minHeight: 44,
+            boxSizing: 'border-box',
+            border: '1px solid #c0c4cc',
+            borderRadius: 4,
+            padding: '8px 12px',
+            background: '#fff',
+            font: 'inherit',
+            color: 'inherit',
+            ...baseTabStyles
+          }}
+          onChange={(event) => {
+            if (editMode) return;
+            const index = entries.findIndex(
+              (entry) => entry.step_key === event.target.value
+            );
+            if (index < 0 || !entries[index].step_key) return;
+            onTabClick?.(entries[index], index);
+          }}
+        >
+          {!hasActiveEntry && (
+            <option value='' disabled>
+              {element.properties.aria_label || 'Choose a section'}
+            </option>
+          )}
+          {entries.map((entry) => (
+            <option key={entry.id} value={entry.step_key}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
 
   return (
     <div
