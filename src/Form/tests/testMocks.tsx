@@ -60,18 +60,25 @@ jest.mock('../../utils/repeat', () => ({
 }));
 
 // Hide and repeats
-jest.mock('../../utils/hideAndRepeats', () => ({
-  getHideIfReferences: () => new Set(),
-  getTextVariableReferences: () => new Set(),
-  getPositionKey: () => 'k',
-  getVisiblePositions: () => ({})
-}));
+jest.mock('../../utils/hideAndRepeats', () => {
+  const state = { visiblePositions: {} as Record<string, boolean[]> };
+  return {
+    getHideIfReferences: () => new Set(),
+    getTextVariableReferences: () => new Set(),
+    getPositionKey: () => 'k',
+    getVisiblePositions: jest.fn(() => state.visiblePositions),
+    _spies: state
+  };
+});
 
 // Validation
 jest.mock('../../utils/validation', () => {
   const state = { invalid: false };
   return {
-    validateElements: () => ({ invalid: state.invalid, inlineErrors: {} }),
+    validateElements: jest.fn(() => ({
+      invalid: state.invalid,
+      inlineErrors: {}
+    })),
     validators: { phone: () => true, email: () => true },
     _spies: state
   };
@@ -559,6 +566,12 @@ export const BrowserMod: any = jest.requireMock('../../utils/browser');
 // Lets tests force step validation to fail.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ValidationMod: any = jest.requireMock('../../utils/validation');
+
+// Controls the visibility snapshot returned before and after awaited logic.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const HideAndRepeatsMod: any = jest.requireMock(
+  '../../utils/hideAndRepeats'
+);
 
 // Exposes the mocked setFormElementError spy for assertions on surfaced
 // element errors (e.g. a connect_account popup-blocked/OAuth failure).

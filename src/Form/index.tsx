@@ -2209,13 +2209,15 @@ function Form({
       formSettings.saveHideIfFields ? null : visiblePositions,
       false
     );
-    const trigger = lookUpTrigger(
-      activeStep,
-      metadata.elementIDs[0],
-      metadata.elementType
-    );
-    // Legacy callback contract is numeric, so fall back to 0 here only.
-    trigger.repeatIndex = repeat ?? 0;
+    const trigger = {
+      ...lookUpTrigger(
+        activeStep,
+        metadata.elementIDs[0],
+        metadata.elementType
+      ),
+      // Legacy callback contract is numeric, so fall back to 0 here only.
+      repeatIndex: repeat ?? 0
+    } as Trigger;
 
     if (
       activeStep.servar_fields.find(
@@ -2249,13 +2251,12 @@ function Form({
     const customSubmitCode = async (beforeSubmit: boolean) => {
       let invalid = false;
       // Execute user-provided onSubmit function or submit rules if present
-      if (
-        await runUserLogic('submit', () => ({
-          submitFields: formattedFields,
-          trigger,
-          beforeSubmit
-        }))
-      ) {
+      const logicRan = await runUserLogic('submit', () => ({
+        submitFields: formattedFields,
+        trigger,
+        beforeSubmit
+      }));
+      if (logicRan) {
         // do validation check in case user has manually invalidated the step
         invalid = await setFormElementError({
           formRef,
@@ -2267,19 +2268,39 @@ function Form({
           triggerErrors: true
         });
       }
-      return invalid;
+      return { invalid, logicRan };
     };
 
-    let invalid = await customSubmitCode(true);
+    let { invalid, logicRan } = await customSubmitCode(true);
     if (invalid) return;
 
-    // Submit logic can update fields, including through a server-side rule.
-    // Re-snapshot after it resolves so this step persists those latest values.
-    formattedFields = formatStepFields(
-      activeStep,
-      formSettings.saveHideIfFields ? null : visiblePositions,
-      false
-    );
+    if (logicRan) {
+      // Submit logic can update field values and hide-if state. Validate and
+      // snapshot both from the completed rule's state before persisting it.
+      const latestVisiblePositions = getVisiblePositions(
+        activeStep,
+        _internalId
+      );
+      const { invalid: latestValuesInvalid } = validateElements({
+        step: activeStep,
+        visiblePositions: latestVisiblePositions,
+        triggerErrors: true,
+        errorType: formSettings.errorType,
+        formRef,
+        errorCallback: getErrorCallback({ trigger }),
+        setInlineErrors,
+        trigger
+      });
+      if (latestValuesInvalid) {
+        setAutoValidate(true);
+        return;
+      }
+      formattedFields = formatStepFields(
+        activeStep,
+        formSettings.saveHideIfFields ? null : latestVisiblePositions,
+        false
+      );
+    }
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       const servar = servarByKey.get(key);
@@ -2342,7 +2363,7 @@ function Form({
       // If running submit logic rule after, must finish
       // submit data first
       await stepPromise;
-      invalid = await customSubmitCode(false);
+      ({ invalid } = await customSubmitCode(false));
       if (invalid) return;
     }
 

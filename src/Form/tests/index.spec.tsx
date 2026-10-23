@@ -5,6 +5,7 @@ import {
   FieldHelperMod,
   FormHelperMod,
   GridMod,
+  HideAndRepeatsMod,
   ValidationMod
 } from './testMocks';
 import {
@@ -43,6 +44,14 @@ afterEach(() => {
   GridMod._spies.submit = false;
   GridMod._spies.form = null;
   FieldHelperMod._spies.formattedFields = {};
+  FieldHelperMod.formatStepFields.mockImplementation(() =>
+    Object.fromEntries(
+      Object.entries(FieldHelperMod._spies.formattedFields).map(
+        ([key, value]: any) => [key, { ...value }]
+      )
+    )
+  );
+  HideAndRepeatsMod._spies.visiblePositions = {};
   ClientMod._spies.state.steps = null;
   ValidationMod._spies.invalid = false;
   BrowserMod._spies.confirm.mockReset();
@@ -58,35 +67,39 @@ afterEach(() => {
 });
 
 describe('submit field snapshot', () => {
-  it('persists field updates made by awaited before-submit logic', async () => {
+  const setSubmitFields = (fieldKeys: string[]) => {
     ClientMod._spies.state.steps = [
       {
         key: 'step-1',
         id: 's1',
-        servar_fields: [
-          {
-            id: 'field-1',
-            position: [0],
-            properties: {},
-            servar: {
-              id: 'servar-1',
-              key: 'TextField',
-              type: 'text_field',
-              metadata: {}
-            }
+        servar_fields: fieldKeys.map((key, index) => ({
+          id: `field-${index}`,
+          position: [index],
+          properties: {},
+          servar: {
+            id: `servar-${index}`,
+            key,
+            type: 'text_field',
+            metadata: {}
           }
-        ],
+        })),
         buttons: [],
         next_conditions: []
       }
     ];
+  };
+
+  const formattedField = (value: string, displayText: string, index = 0) => ({
+    value,
+    type: 'text_field',
+    displayText,
+    position: [index]
+  });
+
+  it('persists field updates made by awaited before-submit logic', async () => {
+    setSubmitFields(['TextField']);
     FieldHelperMod._spies.formattedFields = {
-      TextField: {
-        value: 'before-rule',
-        type: 'text_field',
-        displayText: 'Text field',
-        position: [0]
-      }
+      TextField: formattedField('before-rule', 'Text field')
     };
     GridMod._spies.submit = true;
     (internalState as any)['iid-submit-refresh'] = { inlineErrors: {} };
@@ -120,6 +133,119 @@ describe('submit field snapshot', () => {
       )
     );
     delete (internalState as any)['iid-submit-refresh'];
+  });
+
+  it('uses visibility recomputed after awaited submit logic', async () => {
+    setSubmitFields(['FieldA', 'FieldB']);
+    const beforeLogicVisibility = { before: [true] };
+    const afterLogicVisibility = { after: [true] };
+    HideAndRepeatsMod._spies.visiblePositions = beforeLogicVisibility;
+    FieldHelperMod.formatStepFields.mockImplementation(
+      (_step: any, currentVisibility: any) =>
+        currentVisibility === afterLogicVisibility
+          ? {
+              FieldA: formattedField('a', 'Field A'),
+              FieldB: formattedField('b', 'Field B', 1)
+            }
+          : {
+              FieldA: formattedField('a', 'Field A')
+            }
+    );
+    GridMod._spies.submit = true;
+    (internalState as any)['iid-submit-visibility'] = { inlineErrors: {} };
+    const onSubmit = jest.fn(async () => {
+      HideAndRepeatsMod._spies.visiblePositions = afterLogicVisibility;
+    });
+
+    render(
+      <JSForm
+        formId='f1'
+        _internalId='iid-submit-visibility'
+        onSubmit={onSubmit}
+      />
+    );
+    await screen.findByTestId('btn');
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
+    expect(FieldHelperMod.formatStepFields).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      afterLogicVisibility,
+      false
+    );
+    expect(ValidationMod.validateElements).toHaveBeenLastCalledWith(
+      expect.objectContaining({ visiblePositions: afterLogicVisibility })
+    );
+    expect(ClientMod._spies.submitStep).toHaveBeenCalledWith(
+      [
+        { key: 'FieldA', text_field: 'a' },
+        { key: 'FieldB', text_field: 'b' }
+      ],
+      expect.objectContaining({ id: 's1' }),
+      false
+    );
+    delete (internalState as any)['iid-submit-visibility'];
+  });
+
+  it('revalidates values changed while submit logic is awaited', async () => {
+    setSubmitFields(['TextField']);
+    FieldHelperMod._spies.formattedFields = {
+      TextField: formattedField('valid-before-rule', 'Text field')
+    };
+    GridMod._spies.submit = true;
+    (internalState as any)['iid-submit-revalidate'] = { inlineErrors: {} };
+    const onSubmit = jest.fn(async () => {
+      ValidationMod._spies.invalid = true;
+    });
+
+    render(
+      <JSForm
+        formId='f1'
+        _internalId='iid-submit-revalidate'
+        onSubmit={onSubmit}
+      />
+    );
+    await screen.findByTestId('btn');
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
+    expect(ValidationMod.validateElements).toHaveBeenCalledTimes(2);
+    expect(ClientMod._spies.submitStep).not.toHaveBeenCalled();
+    delete (internalState as any)['iid-submit-revalidate'];
+  });
+
+  it('does not take a second snapshot when no submit logic runs', async () => {
+    setSubmitFields(['TextField']);
+    FieldHelperMod._spies.formattedFields = {
+      TextField: formattedField('unchanged', 'Text field')
+    };
+    GridMod._spies.submit = true;
+
+    render(<JSForm formId='f1' _internalId='iid-submit-no-logic' />);
+    await screen.findByTestId('btn');
+    const snapshotsBeforeClick =
+      FieldHelperMod.formatStepFields.mock.calls.length;
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
+    expect(
+      FieldHelperMod.formatStepFields.mock.calls.length - snapshotsBeforeClick
+    ).toBe(1);
   });
 });
 
