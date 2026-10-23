@@ -352,6 +352,19 @@ export const getContainerStyles = (
         if (!hasChildren) {
           s.minHeight = `${DEFAULT_MIN_SIZE}px`;
         }
+
+        if (node.properties?.document_editor) {
+          // The document editor owns scrolling inside its viewport. Its slide
+          // stage must not give a fill-height container an intrinsic minimum
+          // that stretches the form beyond the available parent height.
+          s.height = '100%';
+          s.minHeight = 0;
+          s.overflow = 'hidden';
+          if (parentAxis === 'row') {
+            s.flexShrink = 1;
+            s.flexBasis = 0;
+          }
+        }
       }
 
       if (yTotalMargin && s.height === '100%' && heightUnit !== 'px') {
@@ -517,6 +530,15 @@ export const getInnerContainerStyles = (
         s.minHeight = node.properties?.document_editor
           ? 0
           : `${height - (pt ?? 0) - (pb ?? 0)}${heightUnit}`;
+      }
+
+      if (
+        node.properties?.document_editor &&
+        (isFill(height) || isFill(heightUnit))
+      ) {
+        s.minHeight = 0;
+        s.maxHeight = '100%';
+        s.overflow = 'hidden';
       }
 
       return s;
