@@ -319,6 +319,115 @@ describe('attaching bindings to a tokenized template', () => {
   });
 });
 
+// Each click away from a locked cell re-fires 'contentControl' for it first,
+// so show and resolve land in one turn (the host side: savedToast.spec.tsx).
+describe('locked-edit hint when clicking away from a locked Total', () => {
+  let editor: DocumentEditor;
+  let attached: AttachedBindings;
+  let showing: boolean;
+  let calls: string[];
+
+  // Costs table (block 2): row 5 is "Total | <Grand total formula>".
+  const TOTAL = '0;2;5;1;0;1';
+  const QTY = '0;2;1;1;0;1';
+  const HINT_DEBOUNCE_MS = 600;
+
+  // Only the hint's debounce timer is held here, so a test decides whether a
+  // click comes inside it; every other bindings timer runs for real.
+  const hintTimers = new Map<number, () => void>();
+  let nextHintTimer = 0;
+  const elapseHintDebounce = () => {
+    const due = [...hintTimers.values()];
+    hintTimers.clear();
+    for (const run of due) run();
+  };
+
+  beforeEach(() => {
+    showing = false;
+    calls = [];
+    editor = makeEditor(buildCostsFixture());
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false,
+      onLockedEdit: () => {
+        showing = true;
+        calls.push('show');
+      },
+      onLockedEditResolved: () => {
+        showing = false;
+        calls.push('resolve');
+      },
+      setTimeoutFn: (fn, ms) => {
+        if (ms !== HINT_DEBOUNCE_MS) return setTimeout(fn, ms);
+        const id = --nextHintTimer;
+        hintTimers.set(id, fn);
+        return id;
+      },
+      clearTimeoutFn: (id) => {
+        if (hintTimers.delete(id as number)) return;
+        clearTimeout(id as ReturnType<typeof setTimeout>);
+      }
+    });
+  });
+
+  afterEach(() => {
+    attached.dispose();
+    destroy(editor);
+    hintTimers.clear();
+  });
+
+  /** A mouse click in Syncfusion's mouse-up order (viewer.js): lock check on
+   *  the old selection, move the caret, lock check on the new selection. By
+   *  default the click comes after the hint debounce has run out. */
+  const click = (offset: string, { quick = false } = {}) => {
+    if (!quick) elapseHintDebounce();
+    calls = [];
+    const selection = (editor as any).selection;
+    selection.checkContentControlLocked();
+    selection.select(offset, offset);
+    selection.checkContentControlLocked();
+  };
+
+  const caretTitle = () =>
+    (editor as any).selection.currentContentControl?.contentControlProperties
+      ?.title;
+
+  it('shows the hint on the Total itself', () => {
+    click(TOTAL);
+    expect(caretTitle()).toBe('Grand total');
+    expect(showing).toBe(true);
+  });
+
+  it('shows the hint again on a quick click back onto the Total', () => {
+    // All inside the 600ms debounce: the stale re-show while leaving must not
+    // swallow the next real show.
+    click(TOTAL);
+    click(QTY, { quick: true });
+    expect(showing).toBe(false);
+
+    click(TOTAL, { quick: true });
+    expect(caretTitle()).toBe('Grand total');
+    expect(showing).toBe(true);
+    expect(calls).toEqual(['show']);
+  });
+
+  it.each([
+    ['an editable field (Qty)', QTY],
+    ['a plain header cell (Item)', '0;2;0;0;0;1'],
+    ['the "Total" label beside it', '0;2;5;0;0;1'],
+    ['a paragraph outside the table', '0;0;0']
+  ])('resolves the hint when the next click lands on %s', (_label, offset) => {
+    click(TOTAL);
+    expect(showing).toBe(true);
+
+    click(offset);
+    expect(caretTitle()).not.toBe('Grand total');
+    expect(showing).toBe(false);
+    // The stale re-show for the cell being left, then the resolve - both in
+    // the one click.
+    expect(calls).toEqual(['show', 'resolve']);
+  });
+});
+
 describe('save gating', () => {
   let editor: DocumentEditor;
   let attached: AttachedBindings;
