@@ -389,11 +389,7 @@ function DocxEditor({
     });
   }, []);
 
-  // The caret left the locked spot: hide the hint now, but never clobber a save
-  // success/error toast that happens to be showing. Decide against the pending
-  // state, not the last render: Syncfusion fires a stale 'contentControl' for
-  // the control the caret is leaving, so the show and this resolve can land in
-  // one batch, before the show has rendered.
+  // Show and resolve can land in one batch: decide on pending state, never clobber a save toast.
   const handleLockedEditResolved = useCallback(() => {
     setSaveToast((toast) => (toast?.type === 'info' ? null : toast));
   }, []);

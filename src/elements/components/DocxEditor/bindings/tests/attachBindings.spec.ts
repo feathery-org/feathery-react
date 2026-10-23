@@ -319,21 +319,28 @@ describe('attaching bindings to a tokenized template', () => {
   });
 });
 
-// Clicking away from a locked Total: Syncfusion's mouse-up runs its lock check
-// on the OLD selection before it moves the caret, so every click out of the
-// Total re-fires 'contentControl' for it. The hint must end resolved after the
-// click, and the show and the resolve arrive in the same synchronous turn -
-// which is why the host has to resolve against pending state (see
-// lockedEditNotice.spec.tsx).
+// Each click away from a locked cell re-fires 'contentControl' for it first,
+// so show and resolve land in one turn (the host side: savedToast.spec.tsx).
 describe('locked-edit hint when clicking away from a locked Total', () => {
   let editor: DocumentEditor;
   let attached: AttachedBindings;
   let showing: boolean;
   let calls: string[];
-  const pendingTimers: Array<() => void> = [];
 
   // Costs table (block 2): row 5 is "Total | <Grand total formula>".
   const TOTAL = '0;2;5;1;0;1';
+  const QTY = '0;2;1;1;0;1';
+  const HINT_DEBOUNCE_MS = 600;
+
+  // Only the hint's debounce timer is held here, so a test decides whether a
+  // click comes inside it; every other bindings timer runs for real.
+  const hintTimers = new Map<number, () => void>();
+  let nextHintTimer = 0;
+  const elapseHintDebounce = () => {
+    const due = [...hintTimers.values()];
+    hintTimers.clear();
+    for (const run of due) run();
+  };
 
   beforeEach(() => {
     showing = false;
@@ -349,22 +356,30 @@ describe('locked-edit hint when clicking away from a locked Total', () => {
         showing = false;
         calls.push('resolve');
       },
-      // The hint's 600ms debounce: run it down between clicks, as real time would.
-      setTimeoutFn: (fn) => pendingTimers.push(fn),
-      clearTimeoutFn: () => undefined
+      setTimeoutFn: (fn, ms) => {
+        if (ms !== HINT_DEBOUNCE_MS) return setTimeout(fn, ms);
+        const id = --nextHintTimer;
+        hintTimers.set(id, fn);
+        return id;
+      },
+      clearTimeoutFn: (id) => {
+        if (hintTimers.delete(id as number)) return;
+        clearTimeout(id as ReturnType<typeof setTimeout>);
+      }
     });
   });
 
   afterEach(() => {
     attached.dispose();
     destroy(editor);
-    pendingTimers.length = 0;
+    hintTimers.clear();
   });
 
   /** A mouse click in Syncfusion's mouse-up order (viewer.js): lock check on
-   *  the old selection, move the caret, lock check on the new selection. */
-  const click = (offset: string) => {
-    for (const run of pendingTimers.splice(0)) run();
+   *  the old selection, move the caret, lock check on the new selection. By
+   *  default the click comes after the hint debounce has run out. */
+  const click = (offset: string, { quick = false } = {}) => {
+    if (!quick) elapseHintDebounce();
     calls = [];
     const selection = (editor as any).selection;
     selection.checkContentControlLocked();
@@ -382,8 +397,21 @@ describe('locked-edit hint when clicking away from a locked Total', () => {
     expect(showing).toBe(true);
   });
 
+  it('shows the hint again on a quick click back onto the Total', () => {
+    // All inside the 600ms debounce: the stale re-show while leaving must not
+    // swallow the next real show.
+    click(TOTAL);
+    click(QTY, { quick: true });
+    expect(showing).toBe(false);
+
+    click(TOTAL, { quick: true });
+    expect(caretTitle()).toBe('Grand total');
+    expect(showing).toBe(true);
+    expect(calls).toEqual(['show']);
+  });
+
   it.each([
-    ['an editable field (Qty)', '0;2;1;1;0;1'],
+    ['an editable field (Qty)', QTY],
     ['a plain header cell (Item)', '0;2;0;0;0;1'],
     ['the "Total" label beside it', '0;2;5;0;0;1'],
     ['a paragraph outside the table', '0;0;0']
