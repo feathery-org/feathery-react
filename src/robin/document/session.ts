@@ -12,6 +12,7 @@ import {
   Descriptor,
   DispatchOutcome,
   ERROR_CODES,
+  Fact,
   HostTarget,
   PROTOCOL_VERSION,
   SELECTION_TEXT_MAX,
@@ -376,22 +377,41 @@ export class DocumentSession {
     });
     if (outcome.outcome === 'unchanged') {
       trace.committed('skipped', [], 0);
+      // A write with no changes asks only for the derived content, such as the table of contents
+      const rebuilt = write.changes.length ? null : this.rebuildDerived();
+      if (rebuilt?.failed)
+        return refusedResult(
+          makeRefusal([
+            problem(
+              'refresh-failed',
+              'The table of contents and other derived content could not be rebuilt, so nothing was applied.',
+              {
+                read: [...(this.pack.methodCards ?? [])],
+                retry: 'do_not_retry'
+              }
+            )
+          ]),
+          trace.build()
+        );
       return {
         ok: true,
-        committed: false,
+        committed: !!rebuilt?.changed,
         dryRun: false,
         cardId: null,
-        landed: 'none',
-        outlineHash: before.outlineHash,
+        landed: rebuilt?.changed ? 'immediate' : 'none',
+        outlineHash: rebuilt ? this.state.outlineHash : before.outlineHash,
         ...common,
-        warnings: [
-          ...prepared.warnings,
-          {
-            code: 'no-change',
-            message:
-              'Nothing was applied: the document already reads as this write would leave it.'
-          }
-        ],
+        facts: [...common.facts, ...(rebuilt?.facts ?? [])],
+        warnings: rebuilt?.changed
+          ? prepared.warnings
+          : [
+              ...prepared.warnings,
+              {
+                code: 'no-change',
+                message:
+                  'Nothing was applied: the document already reads as this write would leave it.'
+              }
+            ],
         trace: trace.build()
       };
     }
@@ -570,8 +590,30 @@ export class DocumentSession {
     });
   }
 
+  /** The derived content rebuilt on its own, one editor undo step */
+  private rebuildDerived(): {
+    facts: Fact[];
+    changed: boolean;
+    failed: boolean;
+  } {
+    const native = this.native;
+    let facts: Fact[] = [];
+    try {
+      facts = this.writing(() => this.runRefresh('editor'))?.facts ?? [];
+    } catch (e) {
+      this.refreshFailed('write', e);
+      try {
+        this.host.open(native);
+      } catch {
+        // The editor is gone, nothing left to restore
+      }
+      return { facts, changed: false, failed: true };
+    }
+    return { facts, changed: this.host.serialize() !== native, failed: false };
+  }
+
   /** The pack's refresh step for the document as the editor now holds it, when it has one. */
-  private runRefresh(history: 'editor' | 'engine'): void {
+  private runRefresh(history: 'editor' | 'engine'): SeamReport | void {
     const native = this.host.serialize();
     const view = makeView(this.pack.adapter.toNormalForm(native).nf, this.pack);
     const step = this.pack.reconcile.refresh?.(view, history);
@@ -582,6 +624,7 @@ export class DocumentSession {
       throw new Error(
         report.facts?.map((f) => f.summary).join('; ') || 'the refresh failed'
       );
+    return report;
   }
 
   private runStep(step: CommitStep): SeamReport | void {

@@ -653,7 +653,7 @@ describe('write: conflicts', () => {
     );
   });
 
-  it("refuses a container that is the shape of another node, naming the right one (the captain's split: a sibling section's @ value)", () => {
+  it("places by the anchor when the container is another node's shape, neither refused nor a conflict", () => {
     const s = fresh();
     const r = prepareWrite(
       s,
@@ -670,11 +670,7 @@ describe('write: conflicts', () => {
         ]
       })
     );
-    expect(r.outcome).toBe('refused');
-    if (r.outcome !== 'refused') return;
-    expect(r.refusal.invariant).toBe('envelope');
-    expect(r.refusal.destroyed).toMatch(/is the shape of root, not of n2/);
-    expect(r.refusal.hint).toContain(sh(s, 'n2').slice(0, 8));
+    expect(r.outcome).toBe('verified');
   });
 });
 
