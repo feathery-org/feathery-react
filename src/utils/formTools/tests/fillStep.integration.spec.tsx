@@ -111,7 +111,7 @@ const TestFormHost = () => {
   const [, setRender] = useState(0);
   const queueRef = useRef<CallbackQueue | undefined>(undefined);
   if (!queueRef.current)
-    queueRef.current = new CallbackQueue({ buttons: [] }, () => {});
+    queueRef.current = new CallbackQueue(() => {});
 
   // What rerenderAllForms (a rule write's debounced rerender) reaches
   useLayoutEffect(() => {

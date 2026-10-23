@@ -747,7 +747,6 @@ function Form({
   const showCompletionLoader = useCallback(
     (button?: ClickActionElement) => {
       setLoaders((loaders: Record<string, any>) => {
-        if (button?.properties?.show_loading_icon === 'none') return loaders;
         if (button?.id) {
           completionLoaderButtonIdRef.current = button.id;
           // Ensure the custom loader from designer is encapsulated inside the submit step button
@@ -853,7 +852,7 @@ function Form({
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
   // Tracks the execution of user-provided callback functions
-  const callbackRef = useRef<any>(new CallbackQueue(null, setLoaders));
+  const callbackRef = useRef<any>(new CallbackQueue(setLoaders));
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
@@ -1845,7 +1844,7 @@ function Form({
 
     trackEvent(integrations, 'FeatheryStepLoad', newKey, formName);
 
-    callbackRef.current = new CallbackQueue(newStep, setLoaders);
+    callbackRef.current = new CallbackQueue(setLoaders);
     focusRef.current = null;
     // Hydrate field descriptions
     newStep.servar_fields.forEach((field: any) => {
@@ -2586,7 +2585,7 @@ function Form({
     setLoaders((loaders: Record<string, any>) => ({
       ...loaders,
       [button.id]: {
-        showOn: bp.show_loading_icon,
+        showOn: 'on_button',
         loader,
         type: bp.loading_icon ? bp.loading_file_type : 'default',
         repeat: button.repeat
