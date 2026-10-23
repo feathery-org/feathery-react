@@ -202,6 +202,10 @@ export const getContainerStyles = (
         s.minWidth = 'fit-content !important';
       }
 
+      // The document editor owns its internal scrolling and must be able to
+      // shrink with a configured container, even when its toolbar is wider.
+      if (node.properties?.document_editor) s.minWidth = 0;
+
       return s;
     }
   );
@@ -302,6 +306,12 @@ export const getContainerStyles = (
       if (heightUnit === 'px') {
         s.minHeight = `${height}${heightUnit}`;
         s.maxHeight = `max-content`;
+
+        if (node.properties?.document_editor) {
+          s.height = `${height}${heightUnit}`;
+          s.maxHeight = `${height}${heightUnit}`;
+          s.overflow = 'hidden';
+        }
 
         if (!node.uuid && overflow) {
           if (overflow === 'scroll') overflow = 'auto';
@@ -504,7 +514,9 @@ export const getInnerContainerStyles = (
       const s: any = {};
 
       if (heightUnit === 'px') {
-        s.minHeight = `${height - (pt ?? 0) - (pb ?? 0)}${heightUnit}`;
+        s.minHeight = node.properties?.document_editor
+          ? 0
+          : `${height - (pt ?? 0) - (pb ?? 0)}${heightUnit}`;
       }
 
       return s;

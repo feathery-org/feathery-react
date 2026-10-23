@@ -198,6 +198,37 @@ describe('StyledContainer alignment', () => {
 });
 
 describe('StyledContainer document editor', () => {
+  it('keeps a document editor inside its configured pixel dimensions', () => {
+    const { container } = render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          width: '640px',
+          height: '360px',
+          children: [{}],
+          properties: { document_editor: true },
+          styles: {
+            ...baseNode.styles,
+            width: 640,
+            width_unit: 'px',
+            height: 360
+          }
+        }}
+        editMode
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      minWidth: '0',
+      height: '360px',
+      maxHeight: '360px'
+    });
+    expect(container.querySelector('.inner-container')).toHaveStyle({
+      minHeight: '0'
+    });
+  });
+
   it('mounts the document editor preview when document_editor is set', () => {
     const { getByTestId } = render(
       <StyledContainer
