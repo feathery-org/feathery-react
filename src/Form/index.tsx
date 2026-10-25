@@ -732,6 +732,7 @@ function Form({
     newNavs && setBackNavMap({ ...backNavMap, ...newNavs });
 
   const formRef = useRef<any>(null);
+  const testControlsRef = useRef<HTMLDivElement>(null);
 
   const { clearLoaders, stepLoader, buttonLoaders, setLoaders } = useLoader({
     initialLoader,
@@ -897,7 +898,13 @@ function Form({
     return () => featheryWindow().removeEventListener('resize', handleResize);
   }, [formSettings]);
 
-  useTrackUserInteraction(formRef, activeStep, stepKey, formName);
+  useTrackUserInteraction(
+    formRef,
+    activeStep,
+    stepKey,
+    formName,
+    testControlsRef
+  );
 
   useEffect(() => {
     const oldLanguage = curLanguage.current;
@@ -984,7 +991,10 @@ function Form({
 
     const scroll =
       autoscroll === 'top_of_form'
-        ? () => formRef.current?.scrollIntoView({ behavior: 'smooth' })
+        ? () =>
+            (testControlsRef.current ?? formRef.current)?.scrollIntoView({
+              behavior: 'smooth'
+            })
         : () => win.scrollTo({ top: 0, behavior: 'smooth' });
     win.requestAnimationFrame(scroll);
   }, [stepKey, shouldScrollToTop, formSettings.autoscroll]);
@@ -4128,6 +4138,21 @@ function Form({
 
   return (
     <ReactPortal options={popupOptions}>
+      {initState.isTestEnv && (
+        <div ref={testControlsRef}>
+          <DevNavBar
+            allSteps={steps}
+            curStep={activeStep}
+            changeStep={(stepKey: string) => {
+              if (trackHashes.current) navigate(getNewStepUrl(stepKey));
+              else setStepKey(stepKey);
+            }}
+            formName={formName}
+            draft={_draft}
+            visible={!hideTestUI}
+          />
+        </div>
+      )}
       <form
         {...formProps}
         autoComplete={formSettings.autocomplete}
@@ -4204,19 +4229,6 @@ function Form({
               cursor: 'pointer'
             }}
             onClick={() => popupOptions.onHide && popupOptions.onHide()}
-          />
-        )}
-        {initState.isTestEnv && (
-          <DevNavBar
-            allSteps={steps}
-            curStep={activeStep}
-            changeStep={(stepKey: string) => {
-              if (trackHashes.current) navigate(getNewStepUrl(stepKey));
-              else setStepKey(stepKey);
-            }}
-            formName={formName}
-            draft={_draft}
-            visible={!hideTestUI}
           />
         )}
         {global.firebase && (

@@ -11,12 +11,13 @@ export function useTrackUserInteraction(
   formRef: RefObject<any>,
   activeStep: string,
   stepKey: string,
-  formName: string
+  formName: string,
+  additionalRef?: RefObject<HTMLElement | null>
 ) {
   useEffect(() => {
     if (isInteractionDetected()) return;
-    const formElement = formRef.current;
-    if (!formElement) return;
+    const elements = [formRef.current, additionalRef?.current].filter(Boolean);
+    if (!elements.length) return;
 
     const handleInteraction = () => {
       if (isInteractionDetected()) return;
@@ -29,18 +30,24 @@ export function useTrackUserInteraction(
       featheryWindow().dispatchEvent(event);
 
       INTERACTION_EVENT_TYPES.forEach((eventType) => {
-        formElement.removeEventListener(eventType, handleInteraction, true);
+        elements.forEach((element) =>
+          element.removeEventListener(eventType, handleInteraction, true)
+        );
       });
     };
 
     INTERACTION_EVENT_TYPES.forEach((eventType) => {
-      formElement.addEventListener(eventType, handleInteraction, true);
+      elements.forEach((element) =>
+        element.addEventListener(eventType, handleInteraction, true)
+      );
     });
 
     return () => {
       INTERACTION_EVENT_TYPES.forEach((eventType) => {
-        formElement.removeEventListener(eventType, handleInteraction, true);
+        elements.forEach((element) =>
+          element.removeEventListener(eventType, handleInteraction, true)
+        );
       });
     };
-  }, [activeStep, stepKey, formName]);
+  }, [formRef, additionalRef, activeStep, stepKey, formName]);
 }
