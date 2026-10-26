@@ -24,6 +24,7 @@
  *   N6  runs are re-split at layout boundaries while pending
  *   N8  an over-wide table's cellWidth and grid are scaled to the page (absorbed: both live in
  *       the residue, which the proof compares without geometry)
+ *   N14 a run property written explicitly as the value it inherits is the same as absent
  *
  * and, only where an undo is compared with the document it should restore:
  *
@@ -31,7 +32,7 @@
  */
 import type { Normalization } from '../../pack';
 import type { FormatEntry, NfNode, NormalForm } from '../../tree';
-import { canonicalJson } from '../../tree';
+import { canonicalJson, hash64 } from '../../tree';
 import {
   FEATURE_KEYS,
   HEADER_FOOTER,
@@ -364,15 +365,21 @@ export const resolveGroup = (
  */
 function eachNode(
   nf: NormalForm,
-  edit: (node: NfNode, inStory: boolean, out: NormalForm) => boolean | void
+  edit: (
+    node: NfNode,
+    inStory: boolean,
+    out: NormalForm,
+    paragraph: NfNode | undefined
+  ) => boolean | void
 ): NormalForm {
   const out = clone(nf);
   let changed = false;
-  const rec = (n: NfNode, inStory: boolean) => {
-    if (edit(n, inStory, out)) changed = true;
+  const rec = (n: NfNode, inStory: boolean, paragraph?: NfNode) => {
+    const enclosing = n.kind === KIND.paragraph ? n : paragraph;
+    if (edit(n, inStory, out, enclosing)) changed = true;
     for (const key of docxTree.childLists(n))
       for (const c of arr<NfNode>(listOf(n, key)))
-        rec(c, inStory || key.startsWith(`${HEADER_FOOTER}/`));
+        rec(c, inStory || key.startsWith(`${HEADER_FOOTER}/`), enclosing);
   };
   rec(out.root, false);
   return changed ? out : nf;
@@ -394,7 +401,7 @@ function rewriteRef(
     delete n[key];
     return true;
   }
-  const id = `${ref}~n`;
+  const id = `${ref}~${hash64(canonicalJson(next))}`;
   out.formats[id] = next;
   n[key] = id;
   return true;
@@ -782,6 +789,56 @@ export const N9: Normalization = {
   }
 };
 
+/**
+ * N14: a run property written explicitly with the value it inherits (its character style, then its
+ * paragraph's named style through `basedOn`, then the document default) is the same as absent
+ */
+export const N14: Normalization = {
+  name: 'N14',
+  apply: (nf) => {
+    const styles = new Map(
+      arr<Obj>(nf.root.styles).map((s) => [String(s.name), s] as const)
+    );
+    const documentDefault = entryOf(nf, nf.root.characterFormat) ?? {};
+    const inherited = (styleNames: unknown[], key: string): unknown => {
+      for (const name of styleNames) {
+        const seen = new Set<string>();
+        let style = styles.get(String(name));
+        while (style && !seen.has(String(style.name))) {
+          seen.add(String(style.name));
+          const cf = entryOf(nf, style.characterFormat);
+          if (cf && key in cf) return cf[key];
+          style = styles.get(String(style.basedOn));
+        }
+      }
+      return documentDefault[key];
+    };
+    return eachNode(nf, (n, _s, out, paragraph) => {
+      if (n.kind !== KIND.run || typeof n.style !== 'string') return false;
+      const entry = out.formats[n.style];
+      if (!entry) return false;
+      const paragraphStyle =
+        typeof paragraph?.style === 'string'
+          ? out.formats[paragraph.style]?.styleName
+          : undefined;
+      const styleNames = [entry.styleName, paragraphStyle ?? 'Normal'].filter(
+        (name) => name !== undefined
+      );
+      const drop = Object.keys(entry).filter(
+        (k) =>
+          k !== 'styleName' &&
+          inherited(styleNames, k) !== undefined &&
+          JSON.stringify(entry[k]) === JSON.stringify(inherited(styleNames, k))
+      );
+      if (!drop.length) return false;
+      return rewriteRef(out, n, 'style', (e) => {
+        for (const k of drop) delete e[k];
+        return e;
+      });
+    });
+  }
+};
+
 export const NORMALIZATIONS: readonly Normalization[] = [
   N1,
   N2,
@@ -791,7 +848,8 @@ export const NORMALIZATIONS: readonly Normalization[] = [
   N6,
   N11,
   N12,
-  N13
+  N13,
+  N14
 ];
 export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7, N9];
 
