@@ -5,7 +5,7 @@ import {
   usePptxEditorStore
 } from '../state/PptxEditorContext';
 import { readPictureCrop, type TextStyle } from '../core/model/edit';
-import { solidFillHex } from '../core/model/read';
+import { resolveColorAt } from '../core/render/color';
 import { resolveListProps } from '../core/model/resolve';
 import {
   tableCell,
@@ -192,8 +192,14 @@ export function Toolbar({
     (sh?.type === 'shape' &&
       !!sh.geom &&
       (sh.geom === 'line' || /Connector/i.test(sh.geom)));
+  // Resolve the stroke the same way the renderer draws it (theme/scheme colors
+  // included) so the swatch matches the line instead of showing the black
+  // fallback whenever the stroke isn't a plain srgbClr.
+  const lineLn = isLine && sh?.spPr ? child(sh.spPr, 'a:ln') : undefined;
   const lineColor =
-    isLine && sh?.spPr ? solidFillHex(child(sh.spPr, 'a:ln')) : undefined;
+    lineLn && deck
+      ? resolveColorAt(child(lineLn, 'a:solidFill'), deck.pkg, slide?.path)
+      : undefined;
   // Hide the text/fill cluster when it does not apply: a picture (crop tools
   // only) or a table with no cell context. Font editing appears for a table
   // only once a cell is clicked into or its content is selected.

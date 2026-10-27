@@ -854,17 +854,17 @@ function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
     ? resolveColor(child(r.rPr, 'a:highlight'), curDeck.pkg)
     : undefined;
   if (highlight)
-    // Paint the highlight as a gradient band clamped to the line box. At our
-    // tight (PowerPoint) line spacing a plain background-color spans the font's
-    // ~1.2em content box and bleeds into the next wrapped line; clamping to
-    // `1lh` keeps each line's highlight in its own line, and the small gap
-    // matches Google Slides. Browsers without `lh` support drop background-size
-    // and fall back to the full-box fill (today's behavior).
+    // Paint the highlight as a gradient band a hair shorter than the line box.
+    // At our tight (PowerPoint) line spacing a plain background-color spans the
+    // font's ~1.2em content box and bleeds into the next wrapped line; the
+    // 0.18em cut leaves a clean per-line gap that scales with the font, like
+    // Google Slides. Browsers without `lh` support drop background-size and fall
+    // back to the full-box fill (today's behavior).
     parts.push(
       `background-image:linear-gradient(${highlight},${highlight})`,
       'background-repeat:no-repeat',
       'background-position:0 50%',
-      'background-size:100% calc(1lh - 2px)'
+      'background-size:100% calc(1lh - 0.18em)'
     );
   if (r.baselinePct) parts.push(`vertical-align:${r.baselinePct}%`);
   return parts.join(';');

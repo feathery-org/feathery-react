@@ -29,10 +29,23 @@ export function B(props: {
       data-history-action={props.historyAction ? '' : undefined}
       css={{
         ...styles.btn(props.on, props.disabled),
+        // Toolbar buttons are borderless, so squaring corners alone is
+        // invisible; drop the touching-side padding/min-width too so the pair
+        // reads as one split control instead of two spaced buttons.
         ...(props.attached === 'left'
-          ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 }
+          ? {
+              borderTopRightRadius: 0,
+              borderBottomRightRadius: 0,
+              minWidth: 'auto',
+              padding: '0 2px 0 7px'
+            }
           : props.attached === 'right'
-          ? { borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }
+          ? {
+              borderTopLeftRadius: 0,
+              borderBottomLeftRadius: 0,
+              minWidth: 'auto',
+              padding: '0 7px 0 2px'
+            }
           : {})
       }}
     >
