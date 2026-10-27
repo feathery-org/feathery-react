@@ -18,6 +18,8 @@ export function MenuButton(props: {
   disabled?: boolean;
   width?: number;
   amber?: boolean;
+  /** Fuse to a neighbor as a caret-only split button (squared inner corners). */
+  attached?: 'left' | 'right';
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -54,7 +56,17 @@ export function MenuButton(props: {
         }}
         css={{
           ...styles.btn(open, props.disabled),
-          ...(props.amber ? { color: AMBER } : {})
+          ...(props.amber ? { color: AMBER } : {}),
+          ...(props.attached === 'right'
+            ? {
+                borderTopLeftRadius: 0,
+                borderBottomLeftRadius: 0,
+                minWidth: 'auto',
+                padding: '0 5px'
+              }
+            : props.attached === 'left'
+            ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 }
+            : {})
         }}
       >
         {props.label}

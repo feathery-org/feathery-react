@@ -666,6 +666,31 @@ export function setShapeFillColor(
   markDirty(deck, slide);
 }
 
+/** Recolor a line/connector: its color is the stroke (`a:ln`), not a fill.
+ *  Template lines already carry an `a:ln`; the fill is its first child. */
+export function setShapeLineColor(
+  deck: Deck,
+  slide: Slide,
+  shape: Shape,
+  color: string
+): void {
+  const spPr = shape.spPr || ensureChild(shape.node, 'p:spPr');
+  const ln = child(spPr, 'a:ln') || ensureChild(spPr, 'a:ln');
+  const kids = childrenOf(ln);
+  const fillTags = new Set([
+    'a:noFill',
+    'a:solidFill',
+    'a:gradFill',
+    'a:pattFill'
+  ]);
+  for (let i = kids.length - 1; i >= 0; i--)
+    if (fillTags.has(tagOf(kids[i]) || '')) kids.splice(i, 1);
+  // Per the schema the line fill is the first child of a:ln.
+  kids.unshift(el('a:solidFill', undefined, [el('a:srgbClr', { val: color })]));
+  shape.spPr = spPr;
+  markDirty(deck, slide);
+}
+
 function cloneRunText(runNode: ONode, value: string): ONode {
   const copy = deepClone(runNode);
   const t = child(copy, 'a:t') || ensureChild(copy, 'a:t');

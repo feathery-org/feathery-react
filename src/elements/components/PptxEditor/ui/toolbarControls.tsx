@@ -10,6 +10,8 @@ export function B(props: {
   children: React.ReactNode;
   title?: string;
   historyAction?: boolean;
+  /** Fuse to a neighbor by squaring the touching corners (split control). */
+  attached?: 'left' | 'right';
 }) {
   return (
     <button
@@ -25,7 +27,14 @@ export function B(props: {
       // scroll-to-focus and the stage's text selection survives.
       onMouseDown={(e) => e.preventDefault()}
       data-history-action={props.historyAction ? '' : undefined}
-      css={styles.btn(props.on, props.disabled)}
+      css={{
+        ...styles.btn(props.on, props.disabled),
+        ...(props.attached === 'left'
+          ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 }
+          : props.attached === 'right'
+          ? { borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }
+          : {})
+      }}
     >
       {props.children}
     </button>

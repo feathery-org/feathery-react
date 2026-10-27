@@ -5,6 +5,7 @@ import {
   usePptxEditorStore
 } from '../state/PptxEditorContext';
 import { readPictureCrop, type TextStyle } from '../core/model/edit';
+import { solidFillHex } from '../core/model/read';
 import { resolveListProps } from '../core/model/resolve';
 import {
   tableCell,
@@ -183,6 +184,16 @@ export function Toolbar({
   const canFillShape = sh?.type === 'shape' || sh?.type === 'text';
   const isTable = sh?.type === 'table';
   const isPicture = sh?.type === 'pic';
+  // Lines/connectors are colored by their stroke (a:ln), not a shape fill, so
+  // the color control recolors the line instead. A line is a connector or an
+  // sp whose geometry is a line/connector preset.
+  const isLine =
+    sh?.type === 'connector' ||
+    (sh?.type === 'shape' &&
+      !!sh.geom &&
+      (sh.geom === 'line' || /Connector/i.test(sh.geom)));
+  const lineColor =
+    isLine && sh?.spPr ? solidFillHex(child(sh.spPr, 'a:ln')) : undefined;
   // Hide the text/fill cluster when it does not apply: a picture (crop tools
   // only) or a table with no cell context. Font editing appears for a table
   // only once a cell is clicked into or its content is selected.
@@ -370,25 +381,6 @@ export function Toolbar({
         paragraphIndexes
       },
       'Change bullets'
-    );
-  };
-
-  const reorder = (op: 'front' | 'back' | 'forward' | 'backward') => {
-    if (!slide || !sh) return;
-    const labels = {
-      front: 'Bring shape to front',
-      back: 'Send shape to back',
-      forward: 'Bring shape forward',
-      backward: 'Send shape backward'
-    };
-    executeCommand(
-      {
-        type: 'reorder-shape',
-        slideId: slide.path,
-        shapeId: sh.id,
-        operation: op
-      },
-      labels[op]
     );
   };
 
@@ -712,7 +704,7 @@ export function Toolbar({
             )}
           </MenuButton>
           <MenuButton title='Slide' label='Slide' disabled={!slide} width={250}>
-            {(close) => (
+            {() => (
               <>
                 <span css={styles.tableLabel}>Dimensions</span>
                 <div css={styles.menuRow}>
@@ -883,7 +875,6 @@ export function Toolbar({
                         ? 'Remove slide numbers'
                         : 'Add slide numbers'
                     );
-                    close();
                   }}
                 >
                   <span
@@ -992,12 +983,23 @@ export function Toolbar({
                 ))}
               </select>
               <input
+                // Uncontrolled + commit on blur/Enter: each size change runs a
+                // full shape re-render, so committing per keystroke made typing
+                // lag. `key` resets the field when the resolved size changes.
+                key={`size-${sh?.id ?? 'none'}-${effectiveSize}`}
                 disabled={!isText}
                 type='number'
                 min={6}
                 max={200}
-                value={effectiveSize}
-                onChange={(e) => applyText({ sizePt: Number(e.target.value) })}
+                defaultValue={effectiveSize}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                }}
+                onBlur={(e) => {
+                  const next = Number(e.target.value);
+                  if (next && next !== effectiveSize)
+                    applyText({ sizePt: next });
+                }}
                 css={styles.num()}
                 title='Size'
                 aria-label='Size'
@@ -1199,164 +1201,156 @@ export function Toolbar({
                 <AlignJustifyIcon width={16} height={16} />
               </B>
               <span css={styles.sep} />
-              <B
-                disabled={!sh?.text}
-                on={bulletValue.startsWith('char:')}
-                onClick={() =>
-                  applyBullet(
-                    bulletValue.startsWith('char:') ? 'none' : 'char:•'
-                  )
-                }
-                title='Bullets'
-              >
-                <BulletListIcon width={16} height={16} />
-              </B>
-              <MenuButton
-                title='Bullet style'
-                label=''
-                disabled={!sh?.text}
-                width={176}
-              >
-                {(close) => (
-                  <>
-                    <div css={styles.menuHeading}>Bullets</div>
-                    <div css={styles.bulletGrid}>
-                      {BULLET_CHARS.map((c) => (
-                        <button
-                          key={c}
-                          type='button'
-                          title={`Bullet ${c}`}
-                          css={styles.bulletCell(bulletValue === `char:${c}`)}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => {
-                            applyBullet(`char:${c}`);
-                            close();
-                          }}
-                        >
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                    <div css={styles.menuDivider} />
-                    <button
-                      type='button'
-                      css={styles.menuItem}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        applyBullet('none');
-                        close();
-                      }}
-                    >
-                      No bullet
-                    </button>
-                  </>
-                )}
-              </MenuButton>
-              <B
-                disabled={!sh?.text}
-                on={bulletValue.startsWith('auto:')}
-                onClick={() =>
-                  applyBullet(
-                    bulletValue.startsWith('auto:')
-                      ? 'none'
-                      : 'auto:arabicPeriod'
-                  )
-                }
-                title='Numbering'
-              >
-                <NumberListIcon width={16} height={16} />
-              </B>
-              <MenuButton
-                title='Numbering style'
-                label=''
-                disabled={!sh?.text}
-                width={200}
-              >
-                {(close) => (
-                  <>
-                    <div css={styles.menuHeading}>Numbering</div>
-                    {NUMBER_SCHEMES.map((n) => (
+              <span css={{ display: 'inline-flex', alignItems: 'stretch' }}>
+                <B
+                  attached='left'
+                  disabled={!sh?.text}
+                  on={bulletValue.startsWith('char:')}
+                  onClick={() =>
+                    applyBullet(
+                      bulletValue.startsWith('char:') ? 'none' : 'char:•'
+                    )
+                  }
+                  title='Bullets'
+                >
+                  <BulletListIcon width={16} height={16} />
+                </B>
+                <MenuButton
+                  attached='right'
+                  title='Bullet style'
+                  label=''
+                  disabled={!sh?.text}
+                  width={176}
+                >
+                  {(close) => (
+                    <>
+                      <div css={styles.menuHeading}>Bullets</div>
+                      <div css={styles.bulletGrid}>
+                        {BULLET_CHARS.map((c) => (
+                          <button
+                            key={c}
+                            type='button'
+                            title={`Bullet ${c}`}
+                            css={styles.bulletCell(bulletValue === `char:${c}`)}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              applyBullet(`char:${c}`);
+                              close();
+                            }}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                      <div css={styles.menuDivider} />
                       <button
-                        key={n.scheme}
                         type='button'
-                        title={n.label}
-                        css={styles.numItem(bulletValue === `auto:${n.scheme}`)}
+                        css={styles.menuItem}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
-                          applyBullet(`auto:${n.scheme}`);
+                          applyBullet('none');
                           close();
                         }}
                       >
-                        <span css={styles.numPreview}>{n.sample}</span>
-                        <span>{n.label}</span>
+                        No bullet
                       </button>
-                    ))}
-                    <div css={styles.menuDivider} />
-                    <button
-                      type='button'
-                      css={styles.menuItem}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        applyBullet('none');
-                        close();
-                      }}
-                    >
-                      No numbering
-                    </button>
-                  </>
-                )}
-              </MenuButton>
+                    </>
+                  )}
+                </MenuButton>
+              </span>
+              <span css={{ display: 'inline-flex', alignItems: 'stretch' }}>
+                <B
+                  attached='left'
+                  disabled={!sh?.text}
+                  on={bulletValue.startsWith('auto:')}
+                  onClick={() =>
+                    applyBullet(
+                      bulletValue.startsWith('auto:')
+                        ? 'none'
+                        : 'auto:arabicPeriod'
+                    )
+                  }
+                  title='Numbering'
+                >
+                  <NumberListIcon width={16} height={16} />
+                </B>
+                <MenuButton
+                  attached='right'
+                  title='Numbering style'
+                  label=''
+                  disabled={!sh?.text}
+                  width={200}
+                >
+                  {(close) => (
+                    <>
+                      <div css={styles.menuHeading}>Numbering</div>
+                      {NUMBER_SCHEMES.map((n) => (
+                        <button
+                          key={n.scheme}
+                          type='button'
+                          title={n.label}
+                          css={styles.numItem(
+                            bulletValue === `auto:${n.scheme}`
+                          )}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            applyBullet(`auto:${n.scheme}`);
+                            close();
+                          }}
+                        >
+                          <span css={styles.numPreview}>{n.sample}</span>
+                          <span>{n.label}</span>
+                        </button>
+                      ))}
+                      <div css={styles.menuDivider} />
+                      <button
+                        type='button'
+                        css={styles.menuItem}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          applyBullet('none');
+                          close();
+                        }}
+                      >
+                        No numbering
+                      </button>
+                    </>
+                  )}
+                </MenuButton>
+              </span>
               <span css={styles.sep} />
               <ColorControl
-                disabled={!canFillShape}
-                value={`#${sh?.fillColor || 'FFFFFF'}`}
+                disabled={!canFillShape && !isLine}
+                value={`#${
+                  isLine ? lineColor || '000000' : sh?.fillColor || 'FFFFFF'
+                }`}
                 onCommit={(value) => {
                   if (!slide || !sh) return;
+                  const color = value.replace('#', '').toUpperCase();
                   executeCommand(
-                    {
-                      type: 'set-shape-fill',
-                      slideId: slide.path,
-                      shapeId: sh.id,
-                      color: value.replace('#', '').toUpperCase()
-                    },
-                    'Change fill color'
+                    isLine
+                      ? {
+                          type: 'set-line-color',
+                          slideId: slide.path,
+                          shapeId: sh.id,
+                          color
+                        }
+                      : {
+                          type: 'set-shape-fill',
+                          slideId: slide.path,
+                          shapeId: sh.id,
+                          color
+                        },
+                    isLine ? 'Change line color' : 'Change fill color'
                   );
                 }}
-                title='Shape fill color'
+                title={isLine ? 'Line color' : 'Shape fill color'}
               >
                 <ShadingIcon width={14} height={14} />
               </ColorControl>
               <span css={styles.sep} />
             </>
           )}
-          <B
-            disabled={!hasSel}
-            onClick={() => reorder('front')}
-            title='Bring to front'
-          >
-            ⤒
-          </B>
-          <B
-            disabled={!hasSel}
-            onClick={() => reorder('forward')}
-            title='Forward'
-          >
-            ↑
-          </B>
-          <B
-            disabled={!hasSel}
-            onClick={() => reorder('backward')}
-            title='Backward'
-          >
-            ↓
-          </B>
-          <B
-            disabled={!hasSel}
-            onClick={() => reorder('back')}
-            title='Send to back'
-          >
-            ⤓
-          </B>
           {sh?.type === 'pic' && pictureCrop && (
             <>
               <span css={styles.sep} />
