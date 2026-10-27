@@ -19,6 +19,8 @@ describe('formHelperFunctions', () => {
       variant_logic_rules: 'variant-logic-rules',
       variant_shared_codes: 'variant-shared-codes',
       variant_connector_fields: 'variant-connector-fields',
+      session_gated: false,
+      variant_session_gated: true,
       form_name: 'Form Name',
       data: 'data'
     });
@@ -87,6 +89,9 @@ describe('formHelperFunctions', () => {
       expect(variantAResult.steps).toEqual('variant-b-data');
       expect(variantBResult.form_name).toEqual('Variant B');
       expect(variantBResult.steps).toEqual('variant-b-data');
+      expect(variantAResult.session_gated).toBe(true);
+      expect(variantBResult.session_gated).toBe(false);
+      expect(variantAResult.variant_session_gated).toBeUndefined();
       expect(variantAResult.ab_test_id).toBeUndefined();
       expect(variantAResult.ab_test_variant_a_weight).toBeUndefined();
       expect(variantAResult.ab_test_data_variant).toBeUndefined();
@@ -106,6 +111,7 @@ describe('formHelperFunctions', () => {
 
       expect(actual.form_name).toEqual('Form Name');
       expect(actual.steps).toEqual('data');
+      expect(actual.session_gated).toBe(false);
       expect(actual.ab_test_data_weight).toBeUndefined();
     });
   });
