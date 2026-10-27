@@ -1,5 +1,6 @@
 import React from 'react';
 import BoxFolderPicker from './BoxFolderPicker';
+import SalesforceConnection from './SalesforceConnection';
 import { fieldValues } from '../../utils/init';
 import { ACTION_CONNECT_ACCOUNT } from '../../utils/elementActions';
 
@@ -33,11 +34,13 @@ export const CONFIG_COMPONENTS: Record<
   string,
   React.ComponentType<ProviderConfigProps>
 > = {
-  box: BoxFolderPicker
+  box: BoxFolderPicker,
+  'salesforce-client-credentials': SalesforceConnection
 };
 
 export const PROVIDER_LABELS: Record<string, string> = {
   box: 'Box',
+  'salesforce-client-credentials': 'Salesforce',
   'charles-schwab': 'Charles Schwab'
 };
 

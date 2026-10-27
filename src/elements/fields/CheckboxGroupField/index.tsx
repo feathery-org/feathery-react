@@ -36,7 +36,7 @@ function CheckboxGroupField({
   const asciiOnly = formSettings?.asciiOnly ?? false;
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode, asciiOnly);
+    useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
   const otherChecked = fieldVal.includes(otherVal);
   const otherLabel = servar.metadata.other_label ?? 'Other';
   const selectAllLabel = servar.metadata.select_all_label || 'Select All';

@@ -322,6 +322,25 @@ export default class IntegrationClient {
     );
   }
 
+  async listSalesforceDocumentSync() {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId,
+      provider: 'salesforce-client-credentials'
+    });
+    const response = await this._fetch(
+      `${API_URL}account-connect/salesforce-sync/?${params}`,
+      undefined,
+      false
+    );
+    if (!response) throw new Error('Unable to load Salesforce document sync.');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(parseAPIError(payload));
+    return payload;
+  }
+
   async listAccountCredentials(provider: string) {
     await initFormsPromise;
     const { userId } = initInfo();
@@ -425,6 +444,18 @@ export default class IntegrationClient {
     );
   }
 
+  async completeAccountConnect(
+    provider: string,
+    state: string,
+    completionSecret: string
+  ) {
+    return this._accountConnectPost('complete', {
+      provider,
+      state,
+      completion_secret: completionSecret
+    });
+  }
+
   async browseAccountResources(
     provider: string,
     parent: string,
@@ -462,7 +493,17 @@ export default class IntegrationClient {
     if (!response) throw new Error('Unable to reach the connected account.');
 
     const payload = await response.json();
-    if (response.status === 200) return payload;
+    if (response.status === 200) {
+      if (
+        body.provider === 'salesforce-client-credentials' &&
+        ['complete', 'select', 'disconnect'].includes(path)
+      ) {
+        featheryWindow().dispatchEvent(
+          new CustomEvent('feathery:salesforce-connection-changed')
+        );
+      }
+      return payload;
+    }
     throw new Error(
       parseAPIError(payload) || 'Unable to reach the connected account.'
     );
@@ -1920,13 +1961,17 @@ export default class IntegrationClient {
   async fetchSalesforcePicklistOptions(
     objectName: string,
     fieldName: string,
-    credentialKey: string
+    credentialKey: string,
+    authSource = 'rollout'
   ) {
     const url = `${API_URL}salesforce/field/options/`;
     const params = new URLSearchParams({
       object_name: objectName,
       field_name: fieldName,
-      credential_key: credentialKey
+      credential_key: credentialKey || '',
+      auth_source: authSource,
+      form_key: this.formKey,
+      fuser_key: initInfo().userId || ''
     }).toString();
     const response = await this._fetch(`${url}?${params}`);
     if (response && response.ok) {
