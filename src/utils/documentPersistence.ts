@@ -14,12 +14,24 @@ export class DocumentPersistenceError extends Error {
     public readonly retryAfterMs?: number
   ) {
     super(message);
+    // The es5 build otherwise returns a plain Error, so instanceof is false
+    Object.setPrototypeOf(this, DocumentPersistenceError.prototype);
     this.name = 'DocumentPersistenceError';
   }
 }
 
+// Matches by name too, so a downlevelled build cannot reclassify a persistence failure
+export function isDocumentPersistenceError(
+  error: unknown
+): error is DocumentPersistenceError {
+  return (
+    error instanceof DocumentPersistenceError ||
+    (!!error && (error as Error).name === 'DocumentPersistenceError')
+  );
+}
+
 export function canRetryDocumentError(error: unknown): boolean {
-  if (error instanceof DocumentPersistenceError)
+  if (isDocumentPersistenceError(error))
     return error.kind === 'network' || error.kind === 'timeout';
   const status = (error as { status?: number })?.status;
   return status == null || status === 408 || status === 429 || status >= 500;
