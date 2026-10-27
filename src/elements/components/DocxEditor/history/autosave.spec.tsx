@@ -9,6 +9,7 @@ import {
   UseDocxHistorySessionOptions
 } from './useDocxHistorySession';
 import { DocxHistoryHost, VersionAuthor } from './types';
+import { localVersionArtifactsFor } from './useVersionDocument';
 
 const must = <T,>(value: T | null | undefined): T => {
   if (value == null) throw new Error('Expected a value');
@@ -583,6 +584,9 @@ describe('useDocxHistorySession', () => {
       await view.result.current.save();
     });
     expect(view.result.current.error).toBeNull();
+    expect(
+      localVersionArtifactsFor(host.closeVersion.mock.calls[0][0])
+    ).toBeUndefined();
     await act(async () => {
       await view.result.current.save();
     });

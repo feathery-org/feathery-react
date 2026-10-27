@@ -300,6 +300,7 @@ export function useDocxHistorySession(
       } catch (error) {
         // Another tab closed or finalized this row; its highlights are gone.
         if (isSessionConflict(error)) {
+          clearLocalVersionArtifacts(sessionId, finalSfdt);
           failedArtifacts.delete(sessionId);
           return;
         }
