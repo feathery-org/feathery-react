@@ -517,6 +517,28 @@ describe('useDocxHistorySession', () => {
     });
   });
 
+  it('drops the superseded session snapshot when a closing save moves to a fresh id', async () => {
+    const save = jest
+      .fn()
+      .mockRejectedValueOnce(
+        new DocumentPersistenceError(
+          'Session is no longer current',
+          'conflict',
+          400
+        )
+      )
+      .mockResolvedValue(undefined);
+    const { view } = setup({ save });
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+    const stale = save.mock.calls[0][1].sessionId;
+    const renewed = save.mock.calls[1][1].sessionId;
+    expect(renewed).not.toBe(stale);
+    expect(localVersionArtifactsFor(stale)).toBeUndefined();
+  });
+
   it('does not wedge later saves when the fresh-session retry also fails', async () => {
     const conflict = () =>
       new DocumentPersistenceError(

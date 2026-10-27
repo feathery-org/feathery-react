@@ -548,6 +548,7 @@ export function useDocxHistorySession(
           const { sessionId } = sent.current;
           if (sessionId !== meta.sessionId) {
             ownedSessions.current.add(sessionId);
+            if (fStr) clearLocalVersionArtifacts(meta.sessionId, fStr);
             if (fStr && mountedRef.current)
               registerLocalVersionArtifacts(sessionId, { finalSfdt: fStr });
           }
