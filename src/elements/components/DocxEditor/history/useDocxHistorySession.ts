@@ -2,7 +2,10 @@
 // DocumentEditor: editor signals in, autosave and version-close uploads out.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
+import {
+  DocumentPersistenceError,
+  isDocumentPersistenceError
+} from '../../../../utils/documentPersistence';
 import { featheryDoc } from '../../../../utils/browser';
 
 import { isRobinEditing, onRobinTurnChange } from '../robinActivity';
@@ -241,7 +244,7 @@ export function useDocxHistorySession(
       );
     };
     const isSessionConflict = (error: unknown) =>
-      error instanceof DocumentPersistenceError && error.kind === 'conflict';
+      isDocumentPersistenceError(error) && error.kind === 'conflict';
     const freshSession = (meta: DocxSaveMeta): DocxSaveMeta => ({
       ...meta,
       sessionId: uuidv4(),

@@ -568,6 +568,27 @@ describe('useDocxHistorySession', () => {
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
   });
 
+  it('drops a finalized conflict whose error class did not survive compilation', async () => {
+    const { view, host } = setup();
+    // What the es5 build throws: the right name and kind on a plain Error
+    host.closeVersion.mockRejectedValue(
+      Object.assign(new Error('Version artifacts are already finalized'), {
+        name: 'DocumentPersistenceError',
+        kind: 'conflict',
+        status: 400
+      })
+    );
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+    expect(view.result.current.error).toBeNull();
+    await act(async () => {
+      await view.result.current.save();
+    });
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+  });
+
   it('waits for an already-closing document before allowing restore', async () => {
     let finish!: () => void;
     const { view } = setup({
