@@ -271,7 +271,8 @@ function ConnectAccountModal({
   // picker opens for a fresh connection; any other choice is the user's to
   // make explicitly.
   useEffect(() => {
-    if (!show || connected || !chooseCredential || changingAccount) return;
+    if (!show || connected || locked || !chooseCredential || changingAccount)
+      return;
     const credentialId = credentials.find(
       (credential) => credential.preferred
     )?.id;
@@ -285,6 +286,7 @@ function ConnectAccountModal({
     changingAccount,
     chooseCredential,
     connected,
+    locked,
     credentials,
     show,
     selectedCredential
