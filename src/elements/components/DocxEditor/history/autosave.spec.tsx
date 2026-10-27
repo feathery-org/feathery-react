@@ -559,6 +559,9 @@ describe('useDocxHistorySession', () => {
       });
     });
     expect(view.result.current.error).toBe('Session is already closed');
+    expect(
+      localVersionArtifactsFor(save.mock.calls[0][1].sessionId)
+    ).toBeUndefined();
     act(() => view.result.current.onEdit({ assistant: false }));
     await act(async () => {
       await view.result.current.save();

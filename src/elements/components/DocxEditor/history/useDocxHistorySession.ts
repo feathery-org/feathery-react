@@ -537,18 +537,22 @@ export function useDocxHistorySession(
             closeSession: true
           } as DocxSaveMeta
         };
+        // The abandoned session can never receive this snapshot, so stop previewing it
+        const renewClose = (stale: DocxSaveMeta) => {
+          if (fStr) clearLocalVersionArtifacts(stale.sessionId, fStr);
+          return freshSession(stale);
+        };
         const result = await documentWrites.submit(async () => {
           const blob = await exported;
           const result = await saveInSession(
             saveSnapshot,
             blob,
             sent,
-            freshSession
+            renewClose
           );
           const { sessionId } = sent.current;
           if (sessionId !== meta.sessionId) {
             ownedSessions.current.add(sessionId);
-            if (fStr) clearLocalVersionArtifacts(meta.sessionId, fStr);
             if (fStr && mountedRef.current)
               registerLocalVersionArtifacts(sessionId, { finalSfdt: fStr });
           }
