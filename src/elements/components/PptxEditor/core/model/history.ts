@@ -1,7 +1,7 @@
 import { applySlideJSON } from './applyJson';
 import { deckToJSON, slideToJSON, type DeckJSON, type SlideJSON } from './json';
 import { refreshSlideModel, rebuildSlides } from './import';
-import { setPresentationSize } from './slideSize';
+import { presentationSizeType, setPresentationSize } from './slideSize';
 import type { Deck } from './types';
 import type { OTree } from '../opc/xml';
 import { deepClone } from '../opc/deepClone';
@@ -26,6 +26,7 @@ export interface PptxSlideManifest {
  */
 export interface PptxHistorySnapshot {
   document: DeckJSON;
+  presentationSizeType?: string;
   sourceSlides: Record<string, OTree>;
   /**
    * Per-slide OPCPackage.mutationSeq at capture time. Lets the next capture
@@ -172,6 +173,7 @@ export function captureHistorySnapshot(
       ? previous.manifest
       : captureManifest(deck);
   return {
+    presentationSizeType: presentationSizeType(deck),
     document: {
       sizeEMU: { cx: deck.size.cx, cy: deck.size.cy },
       sizeInches: {
@@ -193,6 +195,7 @@ export function sameHistoryDocument(
   b: PptxHistorySnapshot
 ): boolean {
   if (a === b) return true;
+  if (a.presentationSizeType !== b.presentationSizeType) return false;
   const docA = a.document;
   const docB = b.document;
   if (docA.slideCount !== docB.slideCount) return false;
@@ -264,7 +267,8 @@ export function restoreHistorySnapshot(
   if (structural) reconcileManifest(deck, target);
   const size = target.document.sizeEMU;
   const sizeChanged = size.cx !== deck.size.cx || size.cy !== deck.size.cy;
-  if (sizeChanged) setPresentationSize(deck, size.cx, size.cy);
+  if (sizeChanged || presentationSizeType(deck) !== target.presentationSizeType)
+    setPresentationSize(deck, size.cx, size.cy, target.presentationSizeType);
   const current = deckToJSON(deck);
   const changes: HistorySlideChange[] = [];
   for (const slide of deck.slides) {
