@@ -484,10 +484,34 @@ export function Toolbar({
           }
         }}
       >
-        {/* Top row: history, the Insert / Slide menus, host actions. The
-          styling row below stays persistent, so a just-inserted element can
-          be styled immediately. */}
-        <div css={styles.topRow} role='toolbar' aria-label='Editor actions'>
+        {/* One combined toolbar: a fixed left group (add slide, history,
+          insert) then a contextual middle that shows slide settings when
+          nothing is selected and shape settings otherwise. The text-selection
+          capture (moved off the old styling row) stays so styling a live text
+          selection still works. */}
+        <div
+          css={styles.bar}
+          role='toolbar'
+          aria-label='Editor actions'
+          onMouseDownCapture={captureTextRangeForToolbar}
+          onMouseUpCapture={(e) => {
+            if (
+              (e.target as HTMLElement).matches('input[type="color"], select')
+            )
+              return;
+            store.setTextToolbarPointer(false);
+          }}
+        >
+          <B
+            disabled={!deck}
+            onClick={() => store.addSlide(activeSlide + 1)}
+            title='Add slide after the current one'
+          >
+            <span css={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span css={{ fontSize: 15, lineHeight: 1 }}>+</span>Slide
+            </span>
+          </B>
+          <span css={styles.sep} />
           <B
             historyAction
             disabled={!undoStack.length && !commitSvgTextEdit}
@@ -709,264 +733,13 @@ export function Toolbar({
               </>
             )}
           </MenuButton>
-          <MenuButton title='Slide' label='Slide' disabled={!slide} width={250}>
-            {() => (
+          <span css={styles.sep} />
+          <div css={styles.contextual}>
+            {hasSel ? (
               <>
-                <span css={styles.tableLabel}>Dimensions</span>
-                <div css={styles.menuRow}>
-                  <select
-                    disabled={!slide}
-                    value={currentPreset}
-                    onChange={(e) => {
-                      const preset =
-                        SLIDE_SIZE_PRESETS[
-                          e.target.value as keyof typeof SLIDE_SIZE_PRESETS
-                        ];
-                      if (preset) resizeSlide(preset.cx, preset.cy);
-                    }}
-                    css={{ ...styles.select, width: '100%' }}
-                    title='Slide size preset (applies to every slide)'
-                    aria-label='Slide size preset (applies to every slide)'
-                  >
-                    {Object.entries(SLIDE_SIZE_PRESETS).map(([key, preset]) => (
-                      <option key={key} value={key}>
-                        {preset.label}
-                      </option>
-                    ))}
-                    <option value='custom'>Custom</option>
-                  </select>
-                </div>
-                <div css={styles.menuDivider} />
-                <span css={styles.tableLabel}>Background</span>
-                <div css={styles.menuRow}>
-                  <select
-                    value={backgroundMode}
-                    onChange={(event) =>
-                      setBackgroundMode(
-                        event.target.value as 'solid' | 'gradient' | 'image'
-                      )
-                    }
-                    css={styles.select}
-                    title='Background type'
-                    aria-label='Background type'
-                  >
-                    <option value='solid'>Solid</option>
-                    <option value='gradient'>Gradient</option>
-                    <option value='image'>Image</option>
-                  </select>
-                  {backgroundMode === 'solid' && (
-                    <ColorControl
-                      value={backgroundColor1}
-                      onCommit={setSolidBg}
-                      title='Solid background color'
-                    >
-                      <span
-                        css={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: 2,
-                          background: backgroundColor1,
-                          boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
-                        }}
-                      />
-                    </ColorControl>
-                  )}
-                  {backgroundMode === 'image' && (
-                    <B
-                      disabled={!slide}
-                      onClick={() => bgImgRef.current?.click()}
-                      title='Choose background image'
-                    >
-                      Choose image…
-                    </B>
-                  )}
-                </div>
-                {backgroundMode === 'gradient' && (
-                  <div css={styles.menuRow}>
-                    {/* Figma-style gradient editor: a live preview bar with a
-                      color stop at each end; picking a stop's color applies
-                      at once. */}
-                    <span
-                      css={{
-                        position: 'relative',
-                        width: 118,
-                        height: 24,
-                        flex: '0 0 auto',
-                        borderRadius: 12,
-                        // CSS 0deg points up; the deck's 0deg points right.
-                        background: `linear-gradient(${
-                          backgroundAngle + 90
-                        }deg, ${backgroundColor1}, ${backgroundColor2})`,
-                        boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
-                      }}
-                    >
-                      {(
-                        [
-                          ['start', backgroundColor1, { left: 3 }],
-                          ['end', backgroundColor2, { right: 3 }]
-                        ] as const
-                      ).map(([stop, color, pos]) => (
-                        <span
-                          key={stop}
-                          css={{
-                            position: 'absolute',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            boxSizing: 'border-box',
-                            width: 18,
-                            height: 18,
-                            borderRadius: '50%',
-                            background: color,
-                            border: '2px solid #fff',
-                            boxShadow: '0 0 0 1px rgba(23,26,28,.35)',
-                            ...pos
-                          }}
-                        >
-                          <CommitColorInput
-                            value={color}
-                            onCommit={(value) => {
-                              if (stop === 'start') {
-                                setBackgroundColor1(value);
-                                setGradientBg({ color1: value });
-                              } else {
-                                setBackgroundColor2(value);
-                                setGradientBg({ color2: value });
-                              }
-                            }}
-                            title={
-                              stop === 'start'
-                                ? 'Gradient start color'
-                                : 'Gradient end color'
-                            }
-                            bare
-                          />
-                        </span>
-                      ))}
-                    </span>
-                    <select
-                      value={backgroundAngle}
-                      onChange={(event) => {
-                        const angleDeg = Number(event.target.value);
-                        setBackgroundAngle(angleDeg);
-                        setGradientBg({ angleDeg });
-                      }}
-                      css={styles.select}
-                      title='Gradient direction'
-                      aria-label='Gradient direction'
-                    >
-                      <option value='0'>→</option>
-                      <option value='45'>↘</option>
-                      <option value='90'>↓</option>
-                      <option value='135'>↙</option>
-                      <option value='270'>↑</option>
-                    </select>
-                  </div>
-                )}
-                <div css={styles.menuDivider} />
-                <button
-                  type='button'
-                  css={styles.menuItem}
-                  title={
-                    slideNumberShape
-                      ? 'Remove slide numbers from every slide'
-                      : 'Add slide numbers to every slide (delete the box on a slide to opt just that slide out)'
-                  }
-                  onClick={() => {
-                    executeCommand(
-                      {
-                        type: 'toggle-deck-slide-numbers',
-                        enabled: !slideNumberShape
-                      },
-                      slideNumberShape
-                        ? 'Remove slide numbers'
-                        : 'Add slide numbers'
-                    );
-                  }}
-                >
-                  <span
-                    css={{
-                      width: 18,
-                      textAlign: 'center',
-                      fontWeight: 600,
-                      flex: '0 0 auto'
-                    }}
-                  >
-                    #
-                  </span>
-                  Slide numbers
-                  {/* On/off switch, Feathery red when enabled. */}
-                  <span
-                    aria-hidden='true'
-                    css={{
-                      marginLeft: 'auto',
-                      flex: '0 0 auto',
-                      position: 'relative',
-                      width: 30,
-                      height: 16,
-                      borderRadius: 999,
-                      background: slideNumberShape ? FEATHERY_RED : ZINC[300],
-                      transition: 'background .15s'
-                    }}
-                  >
-                    <span
-                      css={{
-                        position: 'absolute',
-                        top: 2,
-                        left: slideNumberShape ? 16 : 2,
-                        width: 12,
-                        height: 12,
-                        borderRadius: '50%',
-                        background: '#fff',
-                        transition: 'left .15s',
-                        boxShadow: '0 1px 2px rgba(23,26,28,.35)'
-                      }}
-                    />
-                  </span>
-                </button>
-              </>
-            )}
-          </MenuButton>
-          <span css={{ flex: 1 }} />
-          {devJson && (
-            <B on={showJson} onClick={toggleJson} title='Live JSON panel'>
-              {'{ }'}
-            </B>
-          )}
-          {rightActions}
-        </div>
-        {/* Hidden file inputs live outside the menus: closing a menu must not
-          unmount the input while the OS file dialog is still open. */}
-        <input
-          ref={imgRef}
-          type='file'
-          accept='image/*'
-          hidden
-          onChange={onImage}
-        />
-        <input
-          ref={bgImgRef}
-          type='file'
-          accept='image/*'
-          hidden
-          onChange={onBgImage}
-        />
-
-        {/* Persistent styling row. */}
-        <div
-          css={styles.pane}
-          role='toolbar'
-          aria-label='Text formatting'
-          onMouseDownCapture={captureTextRangeForToolbar}
-          onMouseUpCapture={(e) => {
-            if (
-              (e.target as HTMLElement).matches('input[type="color"], select')
-            )
-              return;
-            store.setTextToolbarPointer(false);
-          }}
-        >
-          {/* The text/fill cluster is hidden when it does not apply (a picture,
-            or a table with no active cell) so the contextual tools have room. */}
+                {/* Shape settings: the text/fill cluster (hidden for a
+                  picture or an inactive table) plus the contextual shape
+                  tools below. */}
           {!hideTextCluster && (
             <>
               <select
@@ -1724,7 +1497,204 @@ export function Toolbar({
               </B>
             </>
           )}
+              </>
+            ) : (
+              <>
+                {/* Slide settings: shown when nothing is selected. */}
+                <select
+                  disabled={!slide}
+                  value={currentPreset}
+                  onChange={(e) => {
+                    const preset =
+                      SLIDE_SIZE_PRESETS[
+                        e.target.value as keyof typeof SLIDE_SIZE_PRESETS
+                      ];
+                    if (preset) resizeSlide(preset.cx, preset.cy);
+                  }}
+                  css={styles.select}
+                  title='Slide size (applies to every slide)'
+                  aria-label='Slide size (applies to every slide)'
+                >
+                  {Object.entries(SLIDE_SIZE_PRESETS).map(([key, preset]) => (
+                    <option key={key} value={key}>
+                      {preset.label}
+                    </option>
+                  ))}
+                  <option value='custom'>Custom</option>
+                </select>
+                <span css={styles.sep} />
+                <select
+                  disabled={!slide}
+                  value={backgroundMode}
+                  onChange={(event) =>
+                    setBackgroundMode(
+                      event.target.value as 'solid' | 'gradient' | 'image'
+                    )
+                  }
+                  css={styles.select}
+                  title='Slide background type'
+                  aria-label='Slide background type'
+                >
+                  <option value='solid'>Background</option>
+                  <option value='gradient'>Gradient</option>
+                  <option value='image'>Image</option>
+                </select>
+                {backgroundMode === 'solid' && (
+                  <ColorControl
+                    value={backgroundColor1}
+                    onCommit={setSolidBg}
+                    title='Solid background color'
+                  >
+                    <span
+                      css={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 2,
+                        background: backgroundColor1,
+                        boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
+                      }}
+                    />
+                  </ColorControl>
+                )}
+                {backgroundMode === 'image' && (
+                  <B
+                    disabled={!slide}
+                    onClick={() => bgImgRef.current?.click()}
+                    title='Choose background image'
+                  >
+                    Choose image…
+                  </B>
+                )}
+                {backgroundMode === 'gradient' && (
+                  <>
+                    {/* Figma-style gradient editor: a live preview bar with a
+                      color stop at each end; picking a stop's color applies at
+                      once. */}
+                    <span
+                      css={{
+                        position: 'relative',
+                        width: 118,
+                        height: 24,
+                        flex: '0 0 auto',
+                        borderRadius: 12,
+                        background: `linear-gradient(${
+                          backgroundAngle + 90
+                        }deg, ${backgroundColor1}, ${backgroundColor2})`,
+                        boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
+                      }}
+                    >
+                      {(
+                        [
+                          ['start', backgroundColor1, { left: 3 }],
+                          ['end', backgroundColor2, { right: 3 }]
+                        ] as const
+                      ).map(([stop, color, pos]) => (
+                        <span
+                          key={stop}
+                          css={{
+                            position: 'absolute',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            boxSizing: 'border-box',
+                            width: 18,
+                            height: 18,
+                            borderRadius: '50%',
+                            background: color,
+                            border: '2px solid #fff',
+                            boxShadow: '0 0 0 1px rgba(23,26,28,.35)',
+                            ...pos
+                          }}
+                        >
+                          <CommitColorInput
+                            value={color}
+                            onCommit={(value) => {
+                              if (stop === 'start') {
+                                setBackgroundColor1(value);
+                                setGradientBg({ color1: value });
+                              } else {
+                                setBackgroundColor2(value);
+                                setGradientBg({ color2: value });
+                              }
+                            }}
+                            title={
+                              stop === 'start'
+                                ? 'Gradient start color'
+                                : 'Gradient end color'
+                            }
+                            bare
+                          />
+                        </span>
+                      ))}
+                    </span>
+                    <select
+                      value={backgroundAngle}
+                      onChange={(event) => {
+                        const angleDeg = Number(event.target.value);
+                        setBackgroundAngle(angleDeg);
+                        setGradientBg({ angleDeg });
+                      }}
+                      css={styles.select}
+                      title='Gradient direction'
+                      aria-label='Gradient direction'
+                    >
+                      <option value='0'>→</option>
+                      <option value='45'>↘</option>
+                      <option value='90'>↓</option>
+                      <option value='135'>↙</option>
+                      <option value='270'>↑</option>
+                    </select>
+                  </>
+                )}
+                <span css={styles.sep} />
+                <B
+                  on={!!slideNumberShape}
+                  disabled={!slide}
+                  onClick={() =>
+                    executeCommand(
+                      {
+                        type: 'toggle-deck-slide-numbers',
+                        enabled: !slideNumberShape
+                      },
+                      slideNumberShape
+                        ? 'Remove slide numbers'
+                        : 'Add slide numbers'
+                    )
+                  }
+                  title={
+                    slideNumberShape
+                      ? 'Remove slide numbers from every slide'
+                      : 'Add slide numbers to every slide (delete the box on a slide to opt just that slide out)'
+                  }
+                >
+                  # Numbers
+                </B>
+              </>
+            )}
+          </div>
+          <span css={{ flex: 1 }} />
+          {devJson && (
+            <B on={showJson} onClick={toggleJson} title='Live JSON panel'>
+              {'{ }'}
+            </B>
+          )}
+          {rightActions}
         </div>
+        {/* Hidden file inputs live outside the menus: closing a menu must
+          not unmount the input while the OS file dialog is still open. */}
+        <input
+          ref={imgRef}
+          type='file'
+          accept='image/*'
+          hidden
+          onChange={onImage}
+        />
+        <input
+          ref={bgImgRef}
+          type='file'
+          accept='image/*'
+          hidden
+          onChange={onBgImage}
+        />
       </div>
     </InstantTooltips>
   );
