@@ -737,6 +737,44 @@ export function Toolbar({
           <div css={styles.contextual}>
             {hasSel ? (
               <>
+                {/* Delete leads the shape controls, in a fixed spot for every
+                  selection; a divider sets it off from the formatting tools. */}
+                <B
+                  disabled={!hasSel}
+                  onClick={() => {
+                    if (slide && selectedIds.length) {
+                      executeCommand(
+                        {
+                          type: 'delete-shapes',
+                          slideId: slide.path,
+                          shapeIds: selectedIds
+                        },
+                        selectedIds.length > 1 ? 'Delete shapes' : 'Delete shape'
+                      );
+                      select(null);
+                    }
+                  }}
+                  title='Delete (Del)'
+                >
+                  <svg
+                    viewBox='0 0 24 24'
+                    width={16}
+                    height={16}
+                    css={{
+                      fill: 'none',
+                      stroke: 'currentColor',
+                      strokeWidth: 1.8,
+                      strokeLinecap: 'round',
+                      strokeLinejoin: 'round'
+                    }}
+                  >
+                    <path d='M4 7h16' />
+                    <path d='M10 7V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2' />
+                    <path d='M6 7l1 12a2 2 0 0 0 2 1.8h6A2 2 0 0 0 17 19l1-12' />
+                    <path d='M10 11v6M14 11v6' />
+                  </svg>
+                </B>
+                <span css={styles.sep} />
                 {/* Shape settings: the text/fill cluster (hidden for a
                   picture or an inactive table) plus the contextual shape
                   tools below. */}
@@ -1455,48 +1493,6 @@ export function Toolbar({
                 </>
               );
             })()}
-          {/* Delete is pinned to the end of the row, after any contextual
-            tools, so it stays in a predictable place for every selection. */}
-          {hasSel && (
-            <>
-              <span css={{ flex: 1, minWidth: 8 }} />
-              <B
-                disabled={!hasSel}
-                onClick={() => {
-                  if (slide && selectedIds.length) {
-                    executeCommand(
-                      {
-                        type: 'delete-shapes',
-                        slideId: slide.path,
-                        shapeIds: selectedIds
-                      },
-                      selectedIds.length > 1 ? 'Delete shapes' : 'Delete shape'
-                    );
-                    select(null);
-                  }
-                }}
-                title='Delete (Del)'
-              >
-                <svg
-                  viewBox='0 0 24 24'
-                  width={16}
-                  height={16}
-                  css={{
-                    fill: 'none',
-                    stroke: 'currentColor',
-                    strokeWidth: 1.8,
-                    strokeLinecap: 'round',
-                    strokeLinejoin: 'round'
-                  }}
-                >
-                  <path d='M4 7h16' />
-                  <path d='M10 7V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2' />
-                  <path d='M6 7l1 12a2 2 0 0 0 2 1.8h6A2 2 0 0 0 17 19l1-12' />
-                  <path d='M10 11v6M14 11v6' />
-                </svg>
-              </B>
-            </>
-          )}
               </>
             ) : (
               <>
