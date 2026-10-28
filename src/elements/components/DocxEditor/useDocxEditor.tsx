@@ -14,6 +14,7 @@ import { EJ2_SCRIPT_URL } from './constants';
 import { loadStyles, waitForDocumentLoad, waitForEj } from './ejLoader';
 import { stampMissingContentControlColors } from './contentControlSafety';
 import { installDocumentTailInvariant } from './documentTailInvariant';
+import { installTableColumnInsertFix } from './tableColumnInsertFix';
 import { DocxSource } from './types';
 import {
   DocxBindingsState,
@@ -1093,6 +1094,7 @@ export function useDocxEditor({
           // Engine-level fixes to the editing surface itself, not review
           // customizations: every host gets them, gated or not.
           installTableRowResizeFix(ed);
+          installTableColumnInsertFix(ed);
           // Ctrl+Z / Ctrl+Y through Robin's undo routing where a document session is mounted
           installHistoryRouting(ed);
           installTrackedContentControlDeletion(ed);
