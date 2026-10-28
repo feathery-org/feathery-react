@@ -432,12 +432,11 @@ function extractJsElements(code: string): {
 export function extractExportedCodeInfoArray(
   sharedCodeInfoArray: SharedCodeInfo[]
 ): ExtractedSharedCodeInfo[] {
-  return sharedCodeInfoArray
-    .filter((codeInfo) => codeInfo.valid)
-    .map((codeInfo) => ({
-      key: codeInfo.key,
-      ...extractJsElements(codeInfo.code)
-    }));
+  // valid is a builder lint result, not a runtime gate (rules run regardless).
+  return sharedCodeInfoArray.map((codeInfo) => ({
+    key: codeInfo.key,
+    ...extractJsElements(codeInfo.code)
+  }));
 }
 
 function replaceImportsWithDefinitions(
