@@ -413,3 +413,48 @@ describe('StyledContainer table elements', () => {
     }
   );
 });
+
+describe('StyledContainer node type classes', () => {
+  const containerClasses = (
+    node: Record<string, unknown>,
+    viewport: 'desktop' | 'mobile' = 'desktop'
+  ) => {
+    const { container } = render(
+      <StyledContainer
+        node={{ ...baseNode, styles: { axis: 'column' }, ...node }}
+        viewport={viewport}
+        breakpoint={480}
+      />
+    );
+    return Array.from(
+      container.querySelector('.styled-container')?.classList ?? []
+    );
+  };
+
+  it('tags a fit-width container', () => {
+    expect(containerClasses({ width: 'fit', height: 'fill' })).toContain(
+      'fit-container'
+    );
+  });
+
+  it('tags a fill-width container', () => {
+    expect(containerClasses({ width: 'fill', height: 'fit' })).toContain(
+      'fill-container'
+    );
+  });
+
+  it('tags a pixel-width container', () => {
+    expect(containerClasses({ width: '184px', height: 'fit' })).toContain(
+      'px-container'
+    );
+  });
+
+  it('tags an older Robin mobile fill width stored only in mobile_styles', () => {
+    const node = {
+      width: '184px',
+      height: 'fit',
+      mobile_styles: { width_unit: 'fill' }
+    };
+    expect(containerClasses(node, 'mobile')).toContain('fill-container');
+  });
+});

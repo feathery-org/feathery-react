@@ -1,3 +1,8 @@
+import {
+  documentRefTemplateId,
+  type GenerateDocumentRef
+} from '../../../utils/featheryClient/integrationClient';
+
 export interface EditorEnvelope {
   id: string;
   file: string | null;
@@ -12,7 +17,7 @@ export interface EditorEnvelope {
 
 export interface DocumentPacket {
   containerId?: string;
-  documents?: (string | { kind: string; document_id?: string })[];
+  documents?: GenerateDocumentRef[];
   envelopes?: EditorEnvelope[];
 }
 
@@ -34,7 +39,7 @@ export function packetTabs(packet: DocumentPacket): DocumentTab[] {
     }));
   }
   return (packet.documents ?? []).flatMap((ref, index) => {
-    const documentId = typeof ref === 'string' ? ref : ref.document_id;
+    const documentId = documentRefTemplateId(ref);
     return documentId
       ? [
           {

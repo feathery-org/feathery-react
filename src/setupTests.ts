@@ -13,19 +13,6 @@ if (typeof (global as any).TextDecoder === 'undefined') {
   (global as any).TextDecoder = TextDecoder;
 }
 
-jest.mock('@ai-sdk/react', () => ({
-  useChat: () => ({
-    messages: [],
-    sendMessage: jest.fn(),
-    status: 'ready',
-    error: null
-  })
-}));
-
-jest.mock('ai', () => ({
-  DefaultChatTransport: jest.fn()
-}));
-
 configure({
   testIdAttribute: 'data-testid',
   asyncUtilTimeout: 2000

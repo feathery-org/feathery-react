@@ -31,7 +31,6 @@ import {
 import { snapMove, type Guide } from './snap';
 import { readBodyProps } from '../core/model/textLayout';
 import { selectedTextRanges } from './textSelection';
-import { effectiveSlideSize } from '../core/model/slideSize';
 import type { TableEditOperation } from '../engine';
 import { canUngroup } from '../core/model/groups';
 
@@ -487,7 +486,8 @@ function extractRichText(
   return paras.length ? paras : [{ runs: [] }];
 }
 
-export const ZOOM_MIN = 50;
+// Fit can go below 50% in short containers; manual controls share its range.
+export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 400;
 
 // At 100%, the slide frame spans the stage's content width. Leave the same
@@ -503,7 +503,7 @@ export function fitSlideZoom(
   if (width <= 0 || height <= 0 || slideWidth <= 0 || slideHeight <= 0)
     return null;
   return Math.max(
-    1,
+    ZOOM_MIN,
     Math.min(
       100,
       Math.floor((100 * height * slideWidth) / (width * slideHeight))
@@ -622,7 +622,7 @@ export function SvgSlide({
         if (!fitToContainer || !deck || !onFitZoomChange) return;
         const slide = deck.slides[activeSlide];
         if (!slide) return;
-        const size = effectiveSlideSize(deck, slide);
+        const size = deck.size;
         const fitted = fitSlideZoom(
           host.clientWidth,
           host.clientHeight,
@@ -681,8 +681,7 @@ export function SvgSlide({
   const dblPointRef = useRef<{ x: number; y: number } | null>(null); // last double-click point (caret placement)
 
   const slide = deck?.slides[activeSlide];
-  const slideSize =
-    deck && slide ? effectiveSlideSize(deck, slide) : deck?.size;
+  const slideSize = deck?.size;
   const shape = slide?.shapes.find((s) => s.id === selectedId);
   const selectedShapes = (slide?.shapes ?? []).filter(
     (s) => selectedIds.includes(s.id) && s.xfrm
@@ -1158,6 +1157,10 @@ export function SvgSlide({
         );
       setEditingCell(null);
     };
+    // Keyboard save, undo/redo and toolbar commands flush the active edit
+    // through the store, exactly like a shape text body.
+    const commitFromStore = () => commit();
+    store.setCommitSvgTextEdit(commitFromStore);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -1202,6 +1205,8 @@ export function SvgSlide({
     div.addEventListener('blur', commit);
     div.addEventListener('keydown', onKey);
     return () => {
+      if (store.commitSvgTextEdit === commitFromStore)
+        store.setCommitSvgTextEdit(null);
       div.removeEventListener('blur', commit);
       div.removeEventListener('keydown', onKey);
       div.removeAttribute('contenteditable');
@@ -1249,7 +1254,7 @@ export function SvgSlide({
             origin.y + (x.y + x.cy) * scale
           );
         }
-        const size = effectiveSlideSize(deck, slide);
+        const size = deck.size;
         snapX.push(
           origin.x,
           origin.x + (size.cx / 2) * scale,

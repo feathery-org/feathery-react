@@ -412,6 +412,74 @@ describe('useCheckButtonAction behavior', () => {
   });
 });
 
+describe('enableFormTools', () => {
+  const registerTool = jest.fn(() => Promise.resolve());
+
+  afterEach(() => {
+    registerTool.mockClear();
+    delete (document as any).modelContext;
+  });
+
+  it('registers the form tools when enableFormTools is on and a WebMCP runtime exists', async () => {
+    (document as any).modelContext = { registerTool };
+
+    render(<JSForm formId='f1' _internalId='iid-tools-on' enableFormTools />);
+    await screen.findByTestId('btn');
+
+    expect(registerTool.mock.calls.map(([tool]: any) => tool.name)).toEqual([
+      'feathery_get_step',
+      'feathery_fill_step',
+      'feathery_next_step'
+    ]);
+  });
+
+  it('does not register tools when enableFormTools is left off', async () => {
+    (document as any).modelContext = { registerTool };
+
+    render(<JSForm formId='f1' _internalId='iid-tools-off' />);
+    await screen.findByTestId('btn');
+
+    expect(registerTool).not.toHaveBeenCalled();
+  });
+
+  it('does not register tools without a document.modelContext runtime', async () => {
+    render(
+      <JSForm formId='f1' _internalId='iid-tools-no-runtime' enableFormTools />
+    );
+    await screen.findByTestId('btn');
+
+    expect(registerTool).not.toHaveBeenCalled();
+  });
+
+  it("runs a tool-driven button press through the form's own click handling", async () => {
+    (internalState as any)['iid-tools-click'] = {};
+
+    render(
+      <JSForm formId='f1' _internalId='iid-tools-click' enableFormTools />
+    );
+    await screen.findByTestId('btn');
+
+    const callbacks = (internalState as any)['iid-tools-click']
+      .formToolsCallbacks;
+    expect(typeof callbacks?.buttonOnClick).toBe('function');
+
+    await act(async () => {
+      await callbacks.buttonOnClick({ id: 'b1', properties: { actions: [] } });
+    });
+
+    // The same side effect a real click on this button produces
+    expect(
+      CheckButtonActionMod._spies.updateButtonActionState
+    ).toHaveBeenCalledWith(
+      'button',
+      expect.objectContaining({ id: 'b1' }),
+      undefined
+    );
+
+    delete (internalState as any)['iid-tools-click'];
+  });
+});
+
 describe('URL action completion', () => {
   const refusal = 'Some answers are still being saved. Please try again.';
 

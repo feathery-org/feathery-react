@@ -18,7 +18,8 @@ import {
 import {
   PptxEditorEngine,
   type CommandResult,
-  type EditorSnapshot
+  type EditorSnapshot,
+  type PptxSavePoint
 } from '../engine/PptxEditorEngine';
 import type { EditorCommand } from '../engine/commands';
 
@@ -314,10 +315,11 @@ export class PptxEditorStore {
     this.set({ ...historyFields(this.engine.snapshot()) });
   };
 
-  /** After a successful host save: current state becomes the clean baseline. */
-  markSaved = (): void => {
+  /** After a successful host save: the exported state (default: current)
+   *  becomes the clean baseline. */
+  markSaved = (savePoint?: PptxSavePoint | null): void => {
     if (!this.state.deck) return;
-    this.engine.markSaved();
+    this.engine.markSaved(savePoint);
     this.set({ rev: this.state.rev + 1 });
   };
 

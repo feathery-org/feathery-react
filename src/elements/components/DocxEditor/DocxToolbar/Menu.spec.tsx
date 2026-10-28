@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { featheryWindow } from '../../../../utils/browser';
 import Menu from './Menu';
 
@@ -41,6 +41,39 @@ function renderMenu(align: 'start' | 'end' = 'end') {
 }
 
 afterEach(() => jest.restoreAllMocks());
+
+it('keeps a parent menu open while a nested portal takes focus', () => {
+  const select = jest.fn();
+  render(
+    <>
+      <Menu
+        trigger={({ toggle }) => <button onClick={toggle}>More tools</button>}
+      >
+        {() => (
+          <Menu
+            trigger={({ toggle }) => <button onClick={toggle}>Fonts</button>}
+          >
+            {() => (
+              <>
+                <input aria-label='Search fonts' autoFocus />
+                <button onClick={select}>Inter</button>
+              </>
+            )}
+          </Menu>
+        )}
+      </Menu>
+      <button>Outside toolbar</button>
+    </>
+  );
+  fireEvent.click(screen.getByText('More tools'));
+  fireEvent.click(screen.getByText('Fonts'));
+  expect(screen.getByLabelText('Search fonts')).toHaveFocus();
+  act(() => screen.getByText('Inter').focus());
+  fireEvent.click(screen.getByText('Inter'));
+  expect(select).toHaveBeenCalledTimes(1);
+  act(() => screen.getByText('Outside toolbar').focus());
+  expect(screen.queryByLabelText('Search fonts')).toBeNull();
+});
 
 describe('Menu viewport clamping', () => {
   it('shifts a panel that would overflow the left viewport edge back on-screen', () => {
