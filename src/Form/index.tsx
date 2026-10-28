@@ -1023,6 +1023,7 @@ function Form({
       triggerErrors: false,
       clearErrors: false
     });
+    return updatedValues;
   }
 
   function addRepeatedRow(
@@ -1085,7 +1086,7 @@ function Form({
       ];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
-    updateRepeatValues(curRepeatContainer, getNewVal);
+    const updatedValues = updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
 
     // HTML5-mode errors live in the DOM as setCustomValidity state, and repeat
@@ -1122,6 +1123,16 @@ function Form({
       internalState[_internalId]?.pendingInlineErrorPublish;
     if (pendingPublish) pendingPublish.then(applyShift);
     else applyShift();
+
+    // Every descendant changes position, including fields hidden by the
+    // current row's conditions. A later step submit may omit those fields, so
+    // persist the whole structural edit now.
+    return {
+      values: updatedValues,
+      repeatedFileKeys: fieldsInContainer
+        .filter((field: any) => FILE_FIELD_TYPES.includes(field.servar.type))
+        .map((field: any) => field.servar.key)
+    };
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -3075,7 +3086,21 @@ function Form({
         addRepeatedRow(container, action.max_repeats);
       } else if (type === ACTION_REMOVE_REPEATED_ROW) {
         const container = getContainerById(activeStep, action.repeat_container);
-        removeRepeatedRow(element, container);
+        // A button can submit the old step values before its actions run.
+        // Wait for that write so it cannot restore the deleted row afterward.
+        await submitPromise.catch(() => undefined);
+        const removed = removeRepeatedRow(element, container);
+        if (removed) {
+          try {
+            await client.submitCustom(removed.values, {
+              shouldFlush: true,
+              repeatedFileKeys: removed.repeatedFileKeys
+            });
+          } catch (error) {
+            setElementError(getSubmissionErrorMessage(error));
+            break;
+          }
+        }
       } else if (type === ACTION_TRIGGER_PERSONA) {
         await Promise.all([submitPromise, client.flushCustomFields()]);
         const personaMeta = integrations?.persona.metadata ?? {};
