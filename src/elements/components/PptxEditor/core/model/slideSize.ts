@@ -18,8 +18,18 @@ export const SLIDE_SIZE_PRESETS = {
   a4Portrait: { label: 'A4 portrait', cx: 7560072, cy: 10689336 }
 } as const;
 
+export function presentationSizeType(deck: Deck): string | undefined {
+  const size = child(root(deck.pkg.tree(PRESENTATION_PART)), 'p:sldSz');
+  return size ? getAttr(size, 'type') : undefined;
+}
+
 /** Resize every slide: PPTX has one presentation-wide size (p:sldSz). */
-export function setPresentationSize(deck: Deck, cx: number, cy: number): void {
+export function setPresentationSize(
+  deck: Deck,
+  cx: number,
+  cy: number,
+  type?: string
+): void {
   const size = {
     cx: Math.max(914400, Math.round(cx)),
     cy: Math.max(914400, Math.round(cy))
@@ -36,8 +46,9 @@ export function setPresentationSize(deck: Deck, cx: number, cy: number): void {
   }
   setAttr(sldSz, 'cx', String(size.cx));
   setAttr(sldSz, 'cy', String(size.cy));
-  // The preset name (screen16x9, A4, ...) no longer describes the dimensions.
-  if (getAttr(sldSz, 'type') !== undefined) removeAttr(sldSz, 'type');
+  // User resizing clears the old preset; history can restore its exact value.
+  if (type !== undefined) setAttr(sldSz, 'type', type);
+  else if (getAttr(sldSz, 'type') !== undefined) removeAttr(sldSz, 'type');
   deck.pkg.markDirty(PRESENTATION_PART);
   deck.size = size;
 }

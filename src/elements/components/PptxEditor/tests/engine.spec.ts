@@ -111,6 +111,36 @@ it('applies JSON through the same transaction path and clears redo after a new c
   expect(engine.snapshot()).toMatchObject({ undoDepth: 1, redoDepth: 0 });
 });
 
+it.each([0, 914400])(
+  'restores the native size preset after undo (delta %s)',
+  (delta) => {
+    const deck = importDeck(bulletsFixture);
+    const original = nativeSlideSize(exportDeckBytes(deck));
+    expect(original.type).toBe('screen4x3');
+    const engine = new PptxEditorEngine(deck);
+
+    engine.execute({
+      type: 'set-presentation-size',
+      cx: original.cx + delta,
+      cy: original.cy
+    });
+    expect(nativeSlideSize(exportDeckBytes(deck)).type).toBeUndefined();
+    expect(engine.isDirty()).toBe(true);
+
+    engine.undo();
+    expect(nativeSlideSize(exportDeckBytes(deck))).toEqual(original);
+    expect(engine.isDirty()).toBe(false);
+
+    engine.redo();
+    expect(nativeSlideSize(exportDeckBytes(deck))).toEqual({
+      cx: original.cx + delta,
+      cy: original.cy,
+      type: undefined
+    });
+    expect(engine.isDirty()).toBe(true);
+  }
+);
+
 it('writes a resize to the native presentation size and restores it on undo', () => {
   const deck = importDeck(fixture);
   const engine = new PptxEditorEngine(deck);
@@ -140,7 +170,15 @@ it('does not reuse the previous document snapshot when adopting another deck', (
   // Same slide paths, size and (fresh) mutation sequence as the first deck:
   // exactly what structural snapshot reuse keys on.
   const edited = importDeck(fixture);
-  addTextBox(edited, edited.slides[0], 914400, 914400, 3000000, 900000, 'Second');
+  addTextBox(
+    edited,
+    edited.slides[0],
+    914400,
+    914400,
+    3000000,
+    900000,
+    'Second'
+  );
   const second = exportDeckBytes(edited);
   engine.load(second);
   const expected = JSON.parse(JSON.stringify(deckToJSON(importDeck(second))));
