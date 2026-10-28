@@ -210,7 +210,7 @@ it('exposes toolbar buttons and keyboard shortcuts for undo and redo', async () 
   // Slide-size controls live in the Slide dropdown menu.
   await openMenu(host, 'Slide');
   const sizePreset = host.querySelector(
-    'select[title="Size preset for this slide"]'
+    'select[title="Slide size preset (applies to every slide)"]'
   ) as HTMLSelectElement;
   sizePreset.focus();
   // The POC's global Ctrl+Z handler moved onto the PptxEditor wrapper (not
@@ -563,7 +563,7 @@ it('routes slide-size toolbar edits through engine history without remounting SV
   const svg = host.querySelector('svg[data-svg-uid]');
   await openMenu(host, 'Slide');
   const preset = host.querySelector(
-    'select[title="Size preset for this slide"]'
+    'select[title="Slide size preset (applies to every slide)"]'
   ) as HTMLSelectElement;
   // Pick whichever preset differs from the current size.
   const target = before.cx === 9144000 ? 'wide' : 'standard';
@@ -579,7 +579,7 @@ it('routes slide-size toolbar edits through engine history without remounting SV
   expect(deckToJSON(deck).slides[0].sizeEMU.cx).toBe(targetCx);
   expect(
     store.getState().undoStack[store.getState().undoStack.length - 1]?.label
-  ).toBe('Resize slide');
+  ).toBe('Resize slides');
   expect(host.querySelector('svg[data-svg-uid]')).toBe(svg);
 
   await act(async () => store.undo());

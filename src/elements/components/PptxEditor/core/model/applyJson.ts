@@ -30,7 +30,7 @@ import {
 import { tableCell, tableCellText, tableColumns, tableRows } from './table';
 import { getAttr } from '../opc/xml';
 import type { Deck, Slide, Shape, Xfrm } from './types';
-import { effectiveSlideSize, setSlideSize } from './slideSize';
+import { setPresentationSize } from './slideSize';
 
 export interface JSONApplyResult {
   shapeIds: string[];
@@ -445,7 +445,7 @@ export function applySlideJSON(
     ['sizeEMU', 'background', 'shapes'],
     'slide'
   );
-  const currentSize = effectiveSlideSize(deck, slide);
+  const currentSize = deck.size;
   const proposedSize = obj(draft.sizeEMU, 'slide.sizeEMU');
   if (!same(Object.keys(proposedSize).sort(), ['cx', 'cy']))
     throw new Error('slide.sizeEMU must contain cx and cy');
@@ -539,7 +539,8 @@ export function applySlideJSON(
   // Every proposed change is valid before any XML node is touched.
   if (nextBackground)
     setSlideBackground(deck, slide, { type: 'solid', color: nextBackground });
-  if (sizeChanged) setSlideSize(deck, slide, nextSize.cx, nextSize.cy);
+  // Slide size is presentation-wide, so this resizes every slide.
+  if (sizeChanged) setPresentationSize(deck, nextSize.cx, nextSize.cy);
   for (const edit of edits) {
     const frame = edit.table
       ? (Object.fromEntries(

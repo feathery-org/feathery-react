@@ -9,6 +9,7 @@ import React, {
 import type FeatheryClient from '../../../utils/featheryClient';
 import { downloadAllFileUrls } from '../../../utils/browser';
 import { setFieldValues } from '../../../utils/init';
+import { containerToolbarOutcomes } from '../../../utils/document';
 import {
   clearDocxEditorDirty,
   setDocxEditorDirty
@@ -19,7 +20,11 @@ import { envelopeSourceUrl } from './documentPacket';
 const PptxEditor = React.lazy(
   () => import(/* webpackChunkName: "PptxEditor" */ '../PptxEditor')
 );
-type Handle = { save: () => Promise<unknown>; envelope: () => EditorEnvelope };
+type Handle = {
+  save: () => Promise<unknown>;
+  envelope: () => EditorEnvelope;
+  isDirty: () => boolean;
+};
 
 function PresentationSession({
   envelope: initial,
@@ -57,19 +62,19 @@ function PresentationSession({
   onDirty: (dirty: boolean) => void;
 }) {
   const current = useRef(initial);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [source] = useState(() => ({ url: envelopeSourceUrl(initial) ?? '' }));
   const saveRef = useRef<(() => Promise<unknown>) | null>(null);
+  const dirtyRef = useRef(false);
   const registerSave = useCallback((save: (() => Promise<unknown>) | null) => {
     saveRef.current = save;
   }, []);
   useEffect(() => {
     register(initial.id, {
-      save: () => {
-        if (!saveRef.current)
-          throw new Error(`${tab.label} is still loading. Please retry.`);
-        return saveRef.current();
-      },
-      envelope: () => current.current
+      // A session still loading has no edits to flush.
+      save: () => saveRef.current?.() ?? Promise.resolve(),
+      envelope: () => current.current,
+      isDirty: () => dirtyRef.current
     });
     return () => {
       register(initial.id, null);
@@ -107,32 +112,38 @@ function PresentationSession({
       }}
     >
       <React.Suspense fallback={<div>Loading document…</div>}>
-        <PptxEditor
-          source={source}
-          fileName={tab.label.replace(/\.pptx$/i, '') + '.pptx'}
-          readOnly={readOnly || initial.signed}
-          hideDownload={!offersDownload}
-          onSave={save}
-          onBeforeReplaceReady={registerSave}
-          onSaved={() => onSaved([current.current])}
-          onSaveAll={onSaveAll}
-          onDownloadAll={offersDownload ? onDownloadAll : undefined}
-          onExportPdf={() => client.downloadEnvelopePdf(initial.id)}
-          onError={onError}
-          onChange={
-            readOnly || initial.signed
-              ? undefined
-              : (dirty) => {
-                  onDirty(dirty);
-                  if (containerId)
-                    setDocxEditorDirty(
-                      formId,
-                      `${containerId}:${initial.id}`,
-                      dirty
-                    );
-                }
-          }
-        />
+        {loadError ? (
+          <div role='alert'>{loadError}</div>
+        ) : (
+          <PptxEditor
+            source={source}
+            fileName={tab.label.replace(/\.pptx$/i, '') + '.pptx'}
+            readOnly={readOnly || initial.signed}
+            hideDownload={!offersDownload}
+            onSave={save}
+            onBeforeReplaceReady={registerSave}
+            onSaved={() => onSaved([current.current])}
+            onSaveAll={onSaveAll}
+            onDownloadAll={offersDownload ? onDownloadAll : undefined}
+            onExportPdf={() => client.downloadEnvelopePdf(initial.id)}
+            onError={onError}
+            onLoadError={setLoadError}
+            onChange={
+              readOnly || initial.signed
+                ? undefined
+                : (dirty) => {
+                    dirtyRef.current = dirty;
+                    onDirty(dirty);
+                    if (containerId)
+                      setDocxEditorDirty(
+                        formId,
+                        `${containerId}:${initial.id}`,
+                        dirty
+                      );
+                  }
+            }
+          />
+        )}
       </React.Suspense>
     </div>
   );
@@ -160,7 +171,9 @@ export default function PptxDocumentPacket({
   containerId?: string;
   formId?: string;
   updateEnvelope: (value: EditorEnvelope) => void;
-  resolveEnvelopes: () => Promise<EditorEnvelope[]>;
+  resolveEnvelopes: (
+    onUnavailable?: (label: string, error: unknown) => void
+  ) => Promise<EditorEnvelope[]>;
   registerBeforeReplace: (save: (() => Promise<unknown>) | null) => void;
   onBusy: (busy: boolean) => void;
   onError: (message: string | null) => void;
@@ -187,36 +200,100 @@ export default function PptxDocumentPacket({
     if (activeId)
       setVisited((ids) => (ids.includes(activeId) ? ids : [...ids, activeId]));
   }, [activeId]);
-  const savePacket = useCallback(async () => {
-    const envelopes = await resolveEnvelopes();
-    const result = [];
-    for (const env of envelopes) {
-      const session = sessions.current.get(env.id);
-      if (session) await session.save();
-      result.push(session?.envelope() ?? env);
+  const currentTabs = useRef(tabs);
+  currentTabs.current = tabs;
+  const flushBeforeReplace = useCallback(async () => {
+    setBusy(true);
+    onBusy(true);
+    try {
+      // Replacement needs only the drafts that actually exist in memory.
+      // An unvisited template with no current file must not prevent regeneration.
+      do {
+        for (const session of sessions.current.values()) await session.save();
+      } while (
+        [...sessions.current.values()].some((session) => session.isDirty())
+      );
+    } finally {
+      setBusy(false);
+      onBusy(false);
     }
-    return result;
-  }, [resolveEnvelopes]);
+  }, [onBusy]);
   useEffect(() => {
-    registerBeforeReplace(savePacket);
+    registerBeforeReplace(flushBeforeReplace);
     return () => registerBeforeReplace(null);
-  }, [registerBeforeReplace, savePacket]);
-  const saved = useCallback(
-    async (envelopes: EditorEnvelope[]) => {
-      if (
-        action?.editor_toolbar_actions?.includes('save') &&
-        action?.save_document_field_key
-      ) {
-        const files = envelopes.map((env) => env.file);
-        const values = {
-          [action.save_document_field_key]:
-            files.length === 1 ? files[0] : files
-        };
-        setFieldValues(values, true, true);
-        await client.submitCustom(values);
+  }, [registerBeforeReplace, flushBeforeReplace]);
+
+  const savePacket = useCallback(async () => {
+    const failures: string[] = [];
+    const savedNames: string[] = [];
+    const failedIds = new Set<string>();
+    for (const [id, session] of sessions.current) {
+      try {
+        await session.save();
+        savedNames.push(
+          currentTabs.current.find((tab) => tab.envelope?.id === id)?.label ??
+            id
+        );
+      } catch (error) {
+        failedIds.add(id);
+        const label =
+          currentTabs.current.find((tab) => tab.envelope?.id === id)?.label ??
+          id;
+        failures.push(
+          `${label}: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
+    }
+    let unavailable = false;
+    const envelopes = await resolveEnvelopes((label, error) => {
+      unavailable = true;
+      failures.push(
+        `${label}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    });
+    return {
+      envelopes: envelopes.map(
+        (env) => sessions.current.get(env.id)?.envelope() ?? env
+      ),
+      failedIds,
+      savedNames,
+      unavailable,
+      failures
+    };
+  }, [resolveEnvelopes]);
+
+  const fieldWrites = useRef<Promise<void>>(Promise.resolve());
+  const saved = useCallback(
+    (envelopes: EditorEnvelope[], allResolved = false): Promise<void> => {
+      const write = fieldWrites.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (
+            action?.editor_toolbar_actions?.includes('save') &&
+            action?.save_document_field_key
+          ) {
+            const latest = allResolved ? envelopes : await resolveEnvelopes();
+            const files = latest.map(
+              (env) =>
+                (
+                  sessions.current.get(env.id)?.envelope() ??
+                  envelopes.find((saved) => saved.id === env.id) ??
+                  env
+                ).file
+            );
+            const values = {
+              [action.save_document_field_key]:
+                files.length === 1 ? files[0] : files
+            };
+            setFieldValues(values, true, true);
+            await client.submitCustom(values);
+          }
+          onError(null);
+        });
+      fieldWrites.current = write;
+      return write;
     },
-    [action, client]
+    [action, client, resolveEnvelopes, onError]
   );
   const run = useCallback(
     async (operation: () => Promise<void>, background = false) => {
@@ -241,7 +318,20 @@ export default function PptxDocumentPacket({
   const saveAll = useCallback(
     () =>
       run(async () => {
-        await saved(await savePacket());
+        const result = await savePacket();
+        // Never replace an existing URL list with an incomplete one.
+        if (!result.unavailable) await saved(result.envelopes, true);
+        if (result.failures.length) {
+          throw new Error(
+            `Saved: ${
+              result.savedNames.join(', ') || 'none'
+            }. Could not complete: ${result.failures.join('; ')}${
+              result.unavailable
+                ? '. Saved field links were kept unchanged.'
+                : ''
+            }`
+          );
+        }
         setFeedback('All documents saved');
       }, true),
     [run, saved, savePacket]
@@ -249,22 +339,35 @@ export default function PptxDocumentPacket({
   const downloadAll = useCallback(
     () =>
       run(async () => {
-        const envelopes = await savePacket();
+        const result = await savePacket();
+        const envelopes = result.envelopes.filter(
+          (env) => !result.failedIds.has(env.id)
+        );
         await downloadAllFileUrls(
           envelopes.map((env) => env.file as string),
           action?.envelope_zip_name,
-          { cache: 'no-store' }
+          { cache: 'no-store' },
+          true
         );
+        if (result.failures.length)
+          throw new Error(
+            `Downloaded ${
+              envelopes.length
+            } documents. Could not include: ${result.failures.join('; ')}`
+          );
         setFeedback('All documents downloaded');
       }),
     [run, savePacket, action]
   );
-  const offersDownload = !!action?.editor_toolbar_actions?.includes('download');
+  const outcomes = containerToolbarOutcomes(action ?? {});
+  const offersDownload = outcomes.offersDownload && !outcomes.savesToField;
   const readyTabs = useMemo(
     () =>
       tabs.filter(
         (tab) =>
-          tab.envelope && (tab.id === activeId || visited.includes(tab.id))
+          tab.envelope?.type === 'pptx' &&
+          tab.envelope.file &&
+          (tab.id === activeId || visited.includes(tab.id))
       ),
     [tabs, activeId, visited]
   );

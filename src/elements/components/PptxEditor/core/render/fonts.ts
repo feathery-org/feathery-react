@@ -205,7 +205,9 @@ function googleFontHref(
   return `https://fonts.googleapis.com/css2?family=${fam}:${axis}&display=swap`;
 }
 
-const injected = new Set<string>();
+// family -> weights already requested. Weights come from the current deck, so
+// a later deck (or a bold applied later) can need faces not yet requested.
+const injected = new Map<string, Set<number>>();
 
 // Inject Google Fonts <link>s per family the deck uses; an unknown family
 // just fails its stylesheet load, so this never blocks rendering.
@@ -226,14 +228,27 @@ export async function ensureDeckFontsLoaded(deck: Deck): Promise<void> {
   const injectWebFonts = () => {
     for (const [family, weights] of collectFamilyWeights(deck)) {
       if (embeddedFontFamily(deck, family)) continue;
-      if (injected.has(family)) continue;
-      injected.add(family);
-      if (doc.querySelector(`link[data-pptx-font="${family}"]`)) continue;
+      let requested = injected.get(family);
+      if (!requested) {
+        requested = new Set();
+        injected.set(family, requested);
+      }
+      const missing = [...weights].filter((w) => !requested!.has(w));
+      if (!missing.length) continue;
+      missing.forEach((w) => requested!.add(w));
+      const weightKey = [...missing].sort((a, b) => a - b).join(',');
+      if (
+        doc.querySelector(
+          `link[data-pptx-font="${family}"][data-pptx-weights="${weightKey}"]`
+        )
+      )
+        continue;
       for (const italic of [false, true]) {
         const link = doc.createElement('link');
         link.rel = 'stylesheet';
-        link.href = googleFontHref(family, [...weights], italic);
+        link.href = googleFontHref(family, missing, italic);
         link.dataset.pptxFont = family;
+        link.dataset.pptxWeights = weightKey;
         doc.head.appendChild(link);
       }
     }

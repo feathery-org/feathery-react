@@ -44,10 +44,15 @@ jest.mock('../PptxEditor', () => {
       onSaveAll,
       onDownloadAll,
       onChange,
-      onBeforeReplaceReady
+      onBeforeReplaceReady,
+      onError,
+      onLoadError
     }: any) {
       ReactActual.useEffect(() => {
-        onBeforeReplaceReady?.(mockBeforeReplace);
+        onBeforeReplaceReady?.(async () => {
+          await mockBeforeReplace();
+          onChange?.(false);
+        });
         return () => onBeforeReplaceReady?.(null);
       }, [onBeforeReplaceReady]);
       return ReactActual.createElement(
@@ -76,9 +81,19 @@ jest.mock('../PptxEditor', () => {
             key: 'save',
             'data-testid': 'pptx-save',
             onClick: async () => {
-              await onSave(new Blob(['pptx-bytes']));
-              await onSaved?.();
+              try {
+                await onSave(new Blob(['pptx-bytes']));
+                await onSaved?.();
+              } catch (err) {
+                onError?.((err as Error).message);
+              }
             }
+          }),
+        onLoadError &&
+          ReactActual.createElement('button', {
+            key: 'load-fail',
+            'data-testid': 'pptx-load-fail',
+            onClick: () => onLoadError('Could not open the deck')
           }),
         onChange &&
           ReactActual.createElement('button', {
@@ -220,6 +235,36 @@ describe('DocumentEditorContainer pptx dispatch', () => {
         'document.pptx'
       )
     );
+  });
+
+  it('keeps the editor mounted and shows an alert when a save fails', async () => {
+    stashEnvelope();
+    mockSaveEnvelopeFile.mockRejectedValueOnce(new Error('Upload rejected'));
+    render(<DocumentEditorContainer containerId={CONTAINER} formId='form-1' />);
+    (await screen.findByTestId('pptx-save')).click();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Upload rejected'
+    );
+    // The unsaved deck and its history live in this instance: it must survive.
+    expect(
+      screen.getByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('pptx-save')).toBeInTheDocument();
+    await act(async () => screen.getByTestId('pptx-save').click());
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
+  it('replaces the editor only when the document cannot be opened', async () => {
+    stashEnvelope();
+    render(<DocumentEditorContainer containerId={CONTAINER} formId='form-1' />);
+    const failLoad = await screen.findByTestId('pptx-load-fail');
+    await act(async () => failLoad.click());
+    expect(
+      await screen.findByText('Could not open the deck')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).toBeNull();
   });
 
   it('registers and clears unsaved-changes protection', async () => {
@@ -374,10 +419,10 @@ describe('presentation document tabs', () => {
     ).toHaveTextContent('All documents saved');
     fireEvent.click(screen.getAllByTestId('pptx-dirty')[0]);
     expect(screen.queryAllByText('All documents saved')).toHaveLength(0);
-    expect(mockBeforeReplace).toHaveBeenCalledTimes(3);
+    expect(mockBeforeReplace).toHaveBeenCalledTimes(4);
   });
 
-  it('saves one field URL for current Save and ordered URLs for Save all', async () => {
+  it('preserves all ordered field URLs after Save All and a later single Save', async () => {
     initState.sdkKey = 'test-key';
     const localSchema = JSON.parse(JSON.stringify(schema));
     const action = localSchema.steps[0].buttons[0].properties.actions[0];
@@ -390,7 +435,10 @@ describe('presentation document tabs', () => {
       fireEvent.click(screen.getByTestId('pptx-save'));
     });
     expect(mockSubmitCustom).toHaveBeenLastCalledWith({
-      'packet-files': 'https://example.com/saved.pptx'
+      'packet-files': [
+        'https://example.com/saved.pptx',
+        'https://example.com/second.pptx'
+      ]
     });
     fireEvent.click(
       screen.getByTestId('save-all:https://example.com/deck.pptx')
@@ -404,6 +452,166 @@ describe('presentation document tabs', () => {
       })
     );
     expect(mockBeforeReplace).toHaveBeenCalledTimes(1);
+    await act(async () => fireEvent.click(screen.getByTestId('pptx-save')));
+    expect(mockSubmitCustom).toHaveBeenLastCalledWith({
+      'packet-files': [
+        'https://example.com/saved.pptx',
+        'https://example.com/second.pptx'
+      ]
+    });
+  });
+
+  it('saves PPTX edits before leaving for DOCX and keeps the tabs available', async () => {
+    const packet = (featheryWindow() as any)[PENDING_DRAFTS_KEY][CONTAINER];
+    Object.assign(packet.envelopes[1], {
+      type: 'docx',
+      key: 'Letter.docx',
+      file: 'https://example.com/letter.docx'
+    });
+    render(
+      <DocumentEditorContainer containerId={CONTAINER} formId='mixed-tabs' />
+    );
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+    fireEvent.click(screen.getByTestId('pptx-dirty'));
+    mockBeforeReplace.mockRejectedValueOnce(new Error('Offline'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Letter.docx' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Offline');
+    expect(hasDirtyDocxEditors('mixed-tabs')).toBe(true);
+    expect(
+      screen.getByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Letter.docx' }));
+    await screen.findByTestId('docx-editor:https://example.com/letter.docx');
+    expect(mockBeforeReplace).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('tab', { name: 'Overview.pptx' }));
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+  });
+
+  it('keeps the active PPTX open when another tab has no current file', async () => {
+    const packet = (featheryWindow() as any)[PENDING_DRAFTS_KEY][CONTAINER];
+    packet.envelopes[1].file = null;
+    render(
+      <DocumentEditorContainer containerId={CONTAINER} formId='missing-tab' />
+    );
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+    fireEvent.click(screen.getByTestId('pptx-dirty'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Financials.pptx' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No generated file'
+    );
+    expect(
+      screen.getByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).toBeInTheDocument();
+    expect(hasDirtyDocxEditors('missing-tab')).toBe(true);
+    expect(mockBeforeReplace).not.toHaveBeenCalled();
+  });
+
+  it('regenerates even when an unvisited tab has no current file', async () => {
+    const packet = (featheryWindow() as any)[PENDING_DRAFTS_KEY][CONTAINER];
+    packet.envelopes[1].file = null;
+    render(<DocumentEditorContainer containerId={CONTAINER} />);
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+    await act(async () => {
+      featheryWindow().dispatchEvent(
+        new CustomEvent('feathery-docx-editor-refresh', {
+          detail: {
+            containerId: CONTAINER,
+            envelopes: [
+              {
+                ...packet.envelopes[0],
+                id: 'regenerated',
+                file: 'https://example.com/new.pptx'
+              }
+            ]
+          }
+        })
+      );
+    });
+    await screen.findByTestId('pptx-editor:https://example.com/new.pptx');
+    expect(mockBeforeReplace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('clears a mounted container and keeps it empty after remounting on overlay fallback', async () => {
+    const view = render(<DocumentEditorContainer containerId={CONTAINER} />);
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+    const cleared = { containerId: CONTAINER, documents: [], envelopes: [] };
+    (featheryWindow() as any)[PENDING_DRAFTS_KEY][CONTAINER] = cleared;
+    await act(async () => {
+      featheryWindow().dispatchEvent(
+        new CustomEvent('feathery-docx-editor-refresh', { detail: cleared })
+      );
+    });
+    expect(
+      screen.queryByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).toBeNull();
+    expect(screen.getByText(/No document yet/)).toBeInTheDocument();
+    view.unmount();
+    render(<DocumentEditorContainer containerId={CONTAINER} />);
+    expect(screen.getByText(/No document yet/)).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).toBeNull();
+  });
+
+  it('saves and downloads available decks while reporting an unavailable tab', async () => {
+    (featheryWindow() as any)[PENDING_DRAFTS_KEY][CONTAINER].envelopes[1].file =
+      null;
+    render(<DocumentEditorContainer containerId={CONTAINER} />);
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+    fireEvent.click(
+      screen.getByTestId('save-all:https://example.com/deck.pptx')
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Financials.pptx'
+    );
+    expect(mockBeforeReplace).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      screen.getByTestId('download-all:https://example.com/deck.pptx')
+    );
+    await waitFor(() =>
+      expect(mockDownloadAll).toHaveBeenCalledWith(
+        ['https://example.com/deck.pptx'],
+        undefined,
+        { cache: 'no-store' },
+        true
+      )
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Financials.pptx');
+  });
+
+  it('retains the full field list and reports which deck failed a partial Save All', async () => {
+    const localSchema = JSON.parse(JSON.stringify(schema));
+    const action = localSchema.steps[0].buttons[0].properties.actions[0];
+    action.editor_toolbar_actions = ['save', 'download'];
+    action.save_document_field_key = 'packet-files';
+    initState.formSchemas = { 'form-key': localSchema };
+    initState.sdkKey = 'test-key';
+    render(<DocumentEditorContainer containerId={CONTAINER} />);
+    const first = await screen.findByTestId(
+      'pptx-editor:https://example.com/deck.pptx'
+    );
+    expect(first).toHaveAttribute('data-hide-download', 'true');
+    await act(async () => fireEvent.click(screen.getByTestId('pptx-save')));
+    fireEvent.click(screen.getByRole('tab', { name: 'Financials.pptx' }));
+    await screen.findByTestId('pptx-editor:https://example.com/second.pptx');
+    mockBeforeReplace
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Upload rejected'));
+    fireEvent.click(
+      screen.getByTestId('save-all:https://example.com/second.pptx')
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Financials.pptx: Upload rejected'
+    );
+    expect(mockSubmitCustom).toHaveBeenLastCalledWith({
+      'packet-files': [
+        'https://example.com/saved.pptx',
+        'https://example.com/second.pptx'
+      ]
+    });
+    expect(first).toBeInTheDocument();
   });
 
   it('flushes both cached decks before downloading all with fresh bytes', async () => {
@@ -418,7 +626,8 @@ describe('presentation document tabs', () => {
       expect(mockDownloadAll).toHaveBeenCalledWith(
         ['https://example.com/deck.pptx', 'https://example.com/second.pptx'],
         undefined,
-        { cache: 'no-store' }
+        { cache: 'no-store' },
+        true
       )
     );
     expect(mockBeforeReplace).toHaveBeenCalledTimes(2);
