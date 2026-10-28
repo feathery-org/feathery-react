@@ -34,15 +34,16 @@ import {
   isDocusignSignAction,
   signsViaDocusign
 } from '../../../utils/document';
-import {
-  registerDocxEditor,
-  unregisterDocxEditor
-} from '../../../assistant/tools/docx/docxEditorRegistry';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import {
   clearDocxEditorDirty,
   setDocxEditorDirty
 } from '../DocxEditor/docxDirtyRegistry';
+import { mountRobinDocument } from '../DocxEditor/robinDocument';
+import {
+  onRobinHostChange,
+  robinHostMounted
+} from '../../../robin/document/mounts';
 import { DocxHistoryHost, DocxSaveMeta } from '../DocxEditor/history/types';
 import { fetchDocumentBytes } from '../../../utils/documentPersistence';
 
@@ -141,14 +142,12 @@ const editorWrap: WrapStyle = { ...wrap, aspectRatio: '16 / 10' };
 export default function DocumentEditorContainer({
   containerId,
   formId,
-  stepId,
   editMode,
   previewType,
   assistantEnabled
 }: {
   containerId?: string;
   formId?: string;
-  stepId?: string;
   editMode?: boolean;
   previewType?: 'docx' | 'pptx' | 'generic';
   assistantEnabled?: boolean;
@@ -200,7 +199,8 @@ export default function DocumentEditorContainer({
     editMode,
     load: loadCurrentEnvelope,
     beforeReplace,
-    saveOnSwitch: (current) => current?.type !== 'pptx'
+    saveOnSwitch: (current, next) =>
+      current?.type !== 'pptx' || next?.type !== 'pptx'
   });
   const [packetBusy, setPacketBusy] = useState(false);
   const [finalizedId, setFinalizedId] = useState<string | null>(null);
@@ -660,23 +660,19 @@ export default function DocumentEditorContainer({
     [envelope, formId, targetAction, containerId]
   );
 
-  // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
-  // point. The schema container id is stable for this editor across renders;
-  // retain the editor object as well so cleanup can only remove this exact
-  // registration, never another mounted container's editor.
+  // DocxEditor exposes its live SyncFusion instance at this exact lifecycle point
   const registeredEditor = useRef<any>(undefined);
+  // The live editor and a count of documents it has opened, as state, so Robin's document session
+  // is created for each opened document (not the blank one at create) and follows a regenerate.
+  const [liveEditor, setLiveEditor] = useState<any>(undefined);
+  const [openedDocuments, setOpenedDocuments] = useState(0);
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
       registeredEditor.current = editor;
-      registerDocxEditor(containerId, editor, {
-        formId,
-        stepId,
-        documentId: activeDocumentId,
-        envelopeId: envelope?.id
-      });
+      setLiveEditor(editor);
     },
-    [activeDocumentId, containerId, envelope?.id, formId, stepId]
+    [containerId]
   );
   // Runs after openAsync resolves — and again on every reload (openNonce), which
   // is the case that matters: the in-memory group wrappers die with the old
@@ -685,6 +681,7 @@ export default function DocumentEditorContainer({
   // Idempotent (already-bound revisions are skipped), so the blank-document
   // firing of this same callback is a harmless no-op.
   const onDocumentReady = useCallback(() => {
+    setOpenedDocuments((n) => n + 1);
     const editor = registeredEditor.current;
     if (!editor || !reviewChanges) return;
     try {
@@ -693,31 +690,54 @@ export default function DocumentEditorContainer({
       // A grouping failure must not break the opened document.
     }
   }, [reviewChanges]);
-  // Envelope identity can settle after SyncFusion's created callback. Refresh
-  // only the assistant registration; the editor itself stays mounted.
+  // Robin's document engine: where the form's Robin root is mounted, each opened document is
+  // mounted under this form instance so the form context's `liveDocument` accessor reaches it, its
+  // session created at open. A regenerate or a new envelope is a new mount (a new editor id), and
+  // unmount ends any turn. Without the Robin root (embeds, previews, custom domains) nothing is.
+  const [robinHost, setRobinHostMounted] = useState(() =>
+    formId ? robinHostMounted(formId) : false
+  );
   useEffect(() => {
-    if (!containerId || !registeredEditor.current) return;
-    registerDocxEditor(containerId, registeredEditor.current, {
-      formId,
-      stepId,
-      documentId: activeDocumentId,
-      envelopeId: envelope?.id
+    if (!formId) return undefined;
+    setRobinHostMounted(robinHostMounted(formId));
+    return onRobinHostChange(formId, setRobinHostMounted);
+  }, [formId]);
+  useEffect(() => {
+    if (
+      !assistantEnabled ||
+      !robinHost ||
+      !liveEditor ||
+      !openedDocuments ||
+      !formId ||
+      !containerId ||
+      !envelopeId
+    )
+      return undefined;
+    return mountRobinDocument({
+      formKey: formId,
+      slot: containerId,
+      editor: liveEditor,
+      envelopeId
     });
-  }, [activeDocumentId, containerId, envelope?.id, formId, stepId]);
+  }, [
+    assistantEnabled,
+    robinHost,
+    liveEditor,
+    openedDocuments,
+    formId,
+    containerId,
+    envelopeId
+  ]);
   useEffect(
     () => () => {
-      if (containerId) {
-        clearDocxEditorDirty(formId, containerId);
-        if (registeredEditor.current) {
-          unregisterDocxEditor(containerId, registeredEditor.current, formId);
-        }
-      }
+      if (containerId) clearDocxEditorDirty(formId, containerId);
     },
     [containerId, formId]
   );
 
   const tabListId = `documents-${containerId ?? 'editor'}`;
-  const showTabs = envelope?.type === 'pptx' && tabs.length > 1;
+  const showTabs =
+    tabs.length > 1 && tabs.some((tab) => tab.envelope?.type === 'pptx');
   const box = (child: React.ReactNode, style: WrapStyle = wrap) => (
     <div css={{ ...style, display: 'flex', flexDirection: 'column' }}>
       {showTabs && (

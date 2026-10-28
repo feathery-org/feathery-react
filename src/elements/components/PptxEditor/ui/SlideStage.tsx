@@ -31,7 +31,6 @@ import {
 import { snapMove, type Guide } from './snap';
 import { readBodyProps } from '../core/model/textLayout';
 import { selectedTextRanges } from './textSelection';
-import { effectiveSlideSize } from '../core/model/slideSize';
 import type { TableEditOperation } from '../engine';
 import { canUngroup } from '../core/model/groups';
 
@@ -640,8 +639,7 @@ export function SvgSlide({
   const dblPointRef = useRef<{ x: number; y: number } | null>(null); // last double-click point (caret placement)
 
   const slide = deck?.slides[activeSlide];
-  const slideSize =
-    deck && slide ? effectiveSlideSize(deck, slide) : deck?.size;
+  const slideSize = deck?.size;
   const shape = slide?.shapes.find((s) => s.id === selectedId);
   const selectedShapes = (slide?.shapes ?? []).filter(
     (s) => selectedIds.includes(s.id) && s.xfrm
@@ -1117,6 +1115,10 @@ export function SvgSlide({
         );
       setEditingCell(null);
     };
+    // Keyboard save, undo/redo and toolbar commands flush the active edit
+    // through the store, exactly like a shape text body.
+    const commitFromStore = () => commit();
+    store.setCommitSvgTextEdit(commitFromStore);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -1161,6 +1163,8 @@ export function SvgSlide({
     div.addEventListener('blur', commit);
     div.addEventListener('keydown', onKey);
     return () => {
+      if (store.commitSvgTextEdit === commitFromStore)
+        store.setCommitSvgTextEdit(null);
       div.removeEventListener('blur', commit);
       div.removeEventListener('keydown', onKey);
       div.removeAttribute('contenteditable');
@@ -1208,7 +1212,7 @@ export function SvgSlide({
             origin.y + (x.y + x.cy) * scale
           );
         }
-        const size = effectiveSlideSize(deck, slide);
+        const size = deck.size;
         snapX.push(
           origin.x,
           origin.x + (size.cx / 2) * scale,

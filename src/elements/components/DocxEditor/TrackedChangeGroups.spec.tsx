@@ -20,7 +20,10 @@ import {
 } from '@syncfusion/ej2-documenteditor';
 import TrackedChangeGroups from './TrackedChangeGroups';
 import { RailErrorBoundary } from './index';
-import { applyDocumentEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import {
+  createEditorAdapter,
+  SyncfusionEditorLike
+} from './bindings/editorAdapter';
 import {
   installRevisionGroupIsolation,
   resolveLiveRevisionGroupsAsOneUndo,
@@ -28,6 +31,7 @@ import {
   LiveEditor
 } from '../../../utils/documentEditorPrimitives';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
+import { registerCardResolver } from '../../../robin/document/mounts';
 
 DocumentEditor.Inject(
   Editor,
@@ -153,6 +157,19 @@ function makeRealEditor(text = ''): DocumentEditor {
   return editor;
 }
 
+// Robin's tracked replacement of the premium in 'Premium: $5,200'
+function suggestPremiumChange(editor: DocumentEditor, changeSetId: string) {
+  createEditorAdapter(
+    editor as unknown as SyncfusionEditorLike
+  ).withAuthoredRevisions?.(
+    { author: 'Robin', changeSetId, group: 'update-premium' },
+    () => {
+      editor.selection.select('0;0;9', '0;0;15');
+      editor.editor.insertText('$5,500');
+    }
+  );
+}
+
 function destroyRealEditor(editor: DocumentEditor): void {
   const element = editor.element;
   editor.destroy();
@@ -274,6 +291,116 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('2 changes')).toBeInTheDocument();
     expect(screen.getByText('1 change')).toBeInTheDocument();
     expect(screen.getByText('3 pending')).toBeInTheDocument();
+  });
+
+  it("shows the engine's title, and the full intent only when the card is expanded", () => {
+    const engineTag = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'turn-4',
+      group: 'robin',
+      title: 'Added a row (removes a paragraph)',
+      intent: 'Add a motor line and drop the old note.'
+    });
+    const editor = makeEditor([makeRevision({ customData: engineTag })]);
+    render(<TrackedChangeGroups editor={editor} />);
+    expect(
+      screen.getByText('Added a row (removes a paragraph)')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Add a motor line and drop the old note.')
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Expand Added a row (removes a paragraph)'
+      })
+    );
+    expect(
+      screen.getByText('Add a motor line and drop the old note.')
+    ).toBeInTheDocument();
+  });
+
+  it('a card the engine owns resolves through the engine, never natively, and leaves the rail', () => {
+    const engineTag = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'turn-5',
+      group: 'robin',
+      title: 'Moved a table'
+    });
+    const revisions = [
+      makeRevision({ customData: engineTag }),
+      makeRevision({ customData: engineTag, revisionType: 'Deletion' })
+    ];
+    const editor = makeEditor(revisions);
+    const resolve = jest.fn((changeSetIds: string[]) => {
+      expect(changeSetIds).toEqual(['turn-5']);
+      revisions.splice(0, revisions.length);
+      return true;
+    });
+    const off = registerCardResolver(editor, {
+      owns: (id) => id === 'turn-5',
+      resolve
+    });
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    expect(resolve).toHaveBeenCalledWith(['turn-5'], false, undefined);
+    for (const r of [makeRevision()]) expect(r.reject).not.toHaveBeenCalled();
+    expect(container).toBeEmptyDOMElement();
+    off();
+  });
+
+  it('Accept all resolves native cards inside the engine resolution, as one undo step', async () => {
+    const engineTag = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'turn-5',
+      group: 'robin',
+      title: 'Moved a table'
+    });
+    const deletion = makeRevision({ revisionType: 'Deletion' });
+    const revisions = [makeRevision({ customData: engineTag }), deletion];
+    deletion.accept.mockImplementation(() =>
+      revisions.splice(revisions.indexOf(deletion), 1)
+    );
+    const editor = makeEditor(revisions);
+    const resolve = jest.fn(
+      (ids: string[], accept: boolean, alongside?: () => void) => {
+        expect(deletion.accept).not.toHaveBeenCalled();
+        alongside?.();
+        revisions.splice(0, 1);
+        return true;
+      }
+    );
+    const off = registerCardResolver(editor, {
+      owns: (id) => id === 'turn-5',
+      resolve
+    });
+    render(<TrackedChangeGroups editor={editor} />);
+    acceptAllGroups();
+    await flushDeferredResolve();
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith(
+      ['turn-5'],
+      true,
+      expect.any(Function)
+    );
+    expect(deletion.accept).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it('a card the engine does not own resolves natively as before', () => {
+    const deletion = makeRevision({ revisionType: 'Deletion' });
+    const revisions = [deletion];
+    deletion.accept.mockImplementation(() => revisions.splice(0, 1));
+    const editor = makeEditor(revisions);
+    const resolve = jest.fn(() => true);
+    const off = registerCardResolver(editor, { owns: () => false, resolve });
+    render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    expect(resolve).not.toHaveBeenCalled();
+    expect(deletion.accept).toHaveBeenCalledTimes(1);
+    off();
   });
 
   it('renders one card per message, including dependent table messages', () => {
@@ -1395,7 +1522,7 @@ describe('TrackedChangeGroups', () => {
       );
       expect(screen.getByText('$6,000')).toBeInTheDocument();
 
-      // applyDocumentEdits sets this around the whole batch; contentChange
+      // Robin's writes set this around the whole batch; contentChange
       // fires once per op inside it.
       editor.__featheryAssistantWriting = true;
       act(() => editor.emit('contentChange'));
@@ -1720,23 +1847,11 @@ describe('RailErrorBoundary', () => {
     }
   });
 
-  it('real SDK: bridge-created group can be accepted again after undo', async () => {
+  it('real SDK: a Robin-authored group can be accepted again after undo', async () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
-      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-        changeSetId: 'bridge-cs',
-        edits: [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: '$5,200',
-            replace: '$5,500',
-            group: 'update-premium'
-          }
-        ]
-      });
-      expect(result.results[0]).toMatchObject({ ok: true });
+      suggestPremiumChange(editor, 'bridge-cs');
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       acceptAllGroups();
       await flushDeferredResolve();
@@ -1758,19 +1873,7 @@ describe('RailErrorBoundary', () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
-      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-        changeSetId: 'individual-button-cs',
-        edits: [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: '$5,200',
-            replace: '$5,500',
-            group: 'update-premium'
-          }
-        ]
-      });
-      expect(result.results[0]).toMatchObject({ ok: true });
+      suggestPremiumChange(editor, 'individual-button-cs');
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       fireEvent.click(
         screen.getByRole('button', { name: 'Expand Update premium' })
@@ -1794,19 +1897,7 @@ describe('RailErrorBoundary', () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
-      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-        changeSetId: 'individual-keyboard-cs',
-        edits: [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: '$5,200',
-            replace: '$5,500',
-            group: 'update-premium'
-          }
-        ]
-      });
-      expect(result.results[0]).toMatchObject({ ok: true });
+      suggestPremiumChange(editor, 'individual-keyboard-cs');
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       let panel = screen.getByLabelText('Assistant tracked changes');
       fireEvent.keyDown(panel, { key: 'j' });

@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.111.0",
+  "version": "2.112.0",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -119,14 +119,12 @@
     "umd"
   ],
   "dependencies": {
-    "@ai-sdk/react": "3.0.232",
     "@emotion/babel-preset-css-prop": "11.12.0",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "11.14.0",
     "@feathery/client-utils": "0.24.0",
     "@fingerprintjs/fingerprintjs": "5.1.0",
     "@rc-component/slider": "^1.0.0",
-    "@ricky0123/vad-web": "^0.0.30",
     "@segment/analytics-next": "^1.84.0",
     "@stripe/react-stripe-js": "3.7.0",
     "@stripe/stripe-js": "7.3.0",
@@ -137,7 +135,6 @@
     "acorn": "^8.15.0",
     "acorn-loose": "^8.5.2",
     "acorn-walk": "^8.3.4",
-    "ai": "6.0.230",
     "classnames": "^2.5.1",
     "country-flag-emoji-polyfill": "^0.1.8",
     "date-fns": "^4.1.0",
@@ -162,7 +159,6 @@
     "react-select": "5.10.1",
     "react-signature-canvas": "1.1.0-alpha.2",
     "scriptjs": "^2.5.9",
-    "streamdown": "2.4.0",
     "uuid": "^8.3.2",
     "zod": "^4.6.7"
   },

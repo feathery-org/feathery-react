@@ -65,7 +65,6 @@ import {
   type ChartSeries,
   type ChartTextStyle
 } from '../model/chart';
-import { effectiveSlideSize } from '../model/slideSize';
 import { readShapeNode } from '../model/read';
 
 let svgThemeFonts: ThemeFonts = { major: 'Helvetica', minor: 'Helvetica' };
@@ -2794,7 +2793,7 @@ function shapeGroup(
       'transform',
       `scale(${cx / childW} ${cy / childH}) translate(${-childX} ${-childY})`
     );
-    const ownerPart = curSlide?.path || '';
+    const ownerPart = shape.ownerPart || curSlide?.path || '';
     let childIndex = 0;
     for (const node of childrenOf(shape.node)) {
       const nested = readShapeNode(node, {
@@ -2803,6 +2802,7 @@ function shapeGroup(
           pkg.relTarget(ownerPart, relationshipId)
       });
       if (!nested) continue;
+      if (shape.ownerPart) nested.ownerPart = shape.ownerPart;
       const nestedGroup = shapeGroup(
         nested,
         pkg,
@@ -2872,7 +2872,7 @@ function renderBackground(
   if (!found) return null;
   const { bg, part } = found;
   const pkg = deck.pkg;
-  const { cx: w, cy: h } = effectiveSlideSize(deck, slide);
+  const { cx: w, cy: h } = deck.size;
   const rect = (paint: string) => {
     const r = featheryDoc().createElementNS(SVGNS, 'rect');
     r.setAttribute('x', '0');
@@ -2965,7 +2965,10 @@ function inheritedChromeShapes(deck: Deck, slide: Slide): Shape[] {
   const layout = pkg.layoutFor(slide.path);
   if (!layout) return [];
   const master = pkg.masterFor(layout);
-  const key = `${master || ''}|${layout}`;
+  // Master visibility is per slide (showMasterSp), so slides sharing a layout
+  // must not share one entry.
+  const slideShowsMaster = showsMaster(pkg, slide.path);
+  const key = `${master || ''}|${layout}|${slideShowsMaster ? 'm' : '-'}`;
   const inner = pkgCache(chromeCache, pkg);
   const hit = inner.get(key);
   if (hit) return hit;
@@ -2977,11 +2980,11 @@ function inheritedChromeShapes(deck: Deck, slide: Slide): Shape[] {
     for (const s of readSlide(pkg, part).shapes) {
       if (!s.xfrm || descendant(s.node, 'p:ph')) continue;
       s.id = `chrome-${tag}-${n++}`; // never collide with a slide shape id
+      s.ownerPart = part; // its r:ids belong to the master/layout, not the slide
       result.push(s);
     }
   };
-  if (showsMaster(pkg, slide.path) && showsMaster(pkg, layout))
-    collect(master, 'm');
+  if (slideShowsMaster && showsMaster(pkg, layout)) collect(master, 'm');
   collect(layout, 'l');
   inner.set(key, result);
   return result;
@@ -2994,7 +2997,7 @@ export function renderSlideSvg(deck: Deck, slide: Slide): SVGSVGElement {
   try {
     const svg = featheryDoc().createElementNS(SVGNS, 'svg') as SVGSVGElement;
     svg.dataset.svgUid = `p${svgSeq++}-`;
-    const size = effectiveSlideSize(deck, slide);
+    const size = deck.size;
     svg.setAttribute('viewBox', `0 0 ${size.cx} ${size.cy}`);
     svg.setAttribute('width', '100%');
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -3201,7 +3204,7 @@ export function reconcileSlideSvg(
   change: SvgSlideReconcileOptions
 ): void {
   if (change.slideSize) {
-    const size = effectiveSlideSize(deck, slide);
+    const size = deck.size;
     svg.setAttribute('viewBox', `0 0 ${size.cx} ${size.cy}`);
   }
   if (change.background || change.fullContent)

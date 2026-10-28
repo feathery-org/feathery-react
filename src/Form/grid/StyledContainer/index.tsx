@@ -62,7 +62,6 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       editMode = false,
       breakpoint,
       formId,
-      stepId,
       assistantEnabled,
       documentEditorPreviewType,
       ...props
@@ -149,7 +148,6 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           key={`docx:${node.id}`}
           containerId={node.id}
           formId={formId}
-          stepId={stepId}
           editMode={editMode}
           previewType={documentEditorPreviewType}
           assistantEnabled={assistantEnabled}

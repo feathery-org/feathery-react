@@ -34,7 +34,6 @@ import {
   tableRows
 } from './table';
 import type { Deck, Slide, Shape } from './types';
-import { effectiveSlideSize } from './slideSize';
 import { readChartData, type ChartData } from './chart';
 import { readShapeNode } from './read';
 
@@ -571,7 +570,8 @@ function shapeJSON(s: Shape, deck: Deck): ShapeJSON {
 }
 
 export function slideToJSON(deck: Deck, sl: Slide, i: number): SlideJSON {
-  const size = effectiveSlideSize(deck, sl);
+  // Mirrors the presentation-wide size; PPTX has no per-slide size.
+  const size = deck.size;
   return {
     index: i + 1,
     path: sl.path,
