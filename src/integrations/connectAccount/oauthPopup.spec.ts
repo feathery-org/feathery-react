@@ -75,12 +75,10 @@ describe('runOAuthPopup', () => {
 
   it('completes Salesforce only once using the initiating browser secret', async () => {
     const client = {
-      startAccountConnect: jest
-        .fn()
-        .mockResolvedValue({
-          ...authorization,
-          completion_secret: 'browser-secret'
-        }),
+      startAccountConnect: jest.fn().mockResolvedValue({
+        ...authorization,
+        completion_secret: 'browser-secret'
+      }),
       completeAccountConnect: jest
         .fn()
         .mockResolvedValue({ success: true, account_email: 'own@example.com' })
