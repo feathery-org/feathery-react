@@ -2,6 +2,29 @@ import { createPptxEditorStore } from '../state/PptxEditorStore';
 import { savePresentation } from '../persistence';
 import { sampleBytes } from './harness';
 
+it('does not upload or mark a replacement deck clean when an earlier save completes', async () => {
+  const store = createPptxEditorStore();
+  store.loadFile(sampleBytes(), 'first.pptx');
+  store.addSlide(1);
+  let finish!: () => void;
+  const save = jest
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    )
+    .mockResolvedValue(undefined);
+  const pending = savePresentation(store, save);
+  store.loadFile(sampleBytes(), 'second.pptx');
+  store.addSlide(1);
+  finish();
+  await pending;
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(store.engine.isDirty()).toBe(true);
+});
+
 it('only marks the deck saved after all edits made during a request have persisted', async () => {
   const store = createPptxEditorStore();
   store.loadFile(sampleBytes(), 'sample.pptx');

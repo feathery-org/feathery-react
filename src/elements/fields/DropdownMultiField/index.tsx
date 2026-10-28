@@ -20,7 +20,7 @@ import {
   DropdownSelect
 } from './createDropdownSelect';
 import { createSelectStyles } from './selectStyles';
-import useMobileViewport from './useMobileViewport';
+import useMobileViewport from '../../../hooks/useMobileViewport';
 import useCollapsedSelectionManager from './useCollapsedSelectionManager';
 import useDropdownOptions from './useDropdownOptions';
 import useWindowedOptions from './useWindowedOptions';

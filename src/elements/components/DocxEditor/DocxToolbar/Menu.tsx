@@ -67,7 +67,7 @@ export default function Menu({
     };
     const onFocus = (e: FocusEvent) => {
       const target = e.target as Element;
-      if (ref.current?.contains(target) || panelRef.current?.contains(target))
+      if (ref.current?.contains(target) || target.closest?.('[data-docx-menu]'))
         return;
       setOpen(false);
       onClose?.();
