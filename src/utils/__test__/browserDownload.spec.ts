@@ -83,6 +83,24 @@ describe('browser downloads', () => {
   });
 
   describe('downloadAllFileUrls', () => {
+    it('rejects failed HTTP downloads only when the caller requires every file', async () => {
+      (globalThis.fetch as jest.Mock).mockResolvedValue({
+        ok: false,
+        blob: () => new Blob(['Forbidden'])
+      });
+      await expect(
+        downloadAllFileUrls(
+          ['https://files.test/a.pdf'],
+          undefined,
+          { cache: 'no-store' },
+          true
+        )
+      ).rejects.toThrow('Could not download');
+      expect(clicks).toHaveLength(0);
+      await downloadAllFileUrls(['https://files.test/a.pdf']);
+      expect(clicks).toHaveLength(1);
+    });
+
     it('does nothing when there are no files', async () => {
       await downloadAllFileUrls([]);
 

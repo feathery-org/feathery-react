@@ -41,7 +41,10 @@ export interface PptxEditorProps {
   /** Packet-owned preparation cache; transfers the deck to this editor. */
   prepareSource?: (signal: AbortSignal) => Promise<Deck>;
   onChange?: (dirty: boolean) => void;
+  /** A failed operation (save) on a document that stays open and editable. */
   onError?: (message: string) => void;
+  /** The document could not be opened at all; falls back to onError. */
+  onLoadError?: (message: string) => void;
   onBeforeReplaceReady?: (save: (() => Promise<unknown>) | null) => void;
   onSave?: (blob: Blob) => unknown | Promise<unknown>;
   onSaved?: () => void | Promise<void>;

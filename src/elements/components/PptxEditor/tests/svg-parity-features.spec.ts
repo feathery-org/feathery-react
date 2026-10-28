@@ -19,7 +19,7 @@ import {
   autoNumberGlyph,
   bulletGlyph
 } from '../core/render/svg';
-import { setSlideSize } from '../core/model/slideSize';
+import { setPresentationSize } from '../core/model/slideSize';
 import { child, childrenOf, el } from '../core/opc/xml';
 import { readShapeNode } from '../core/model/read';
 import { applySlideJSON } from '../core/model/applyJson';
@@ -156,18 +156,17 @@ it('aligns selected table cells horizontally and vertically and exposes it in JS
   ).toMatchObject({ align: 'ctr', verticalAlign: 'b' });
 });
 
-it('preserves a per-slide A4-sized viewport through JSON and PPTX round-trip', () => {
+it('renders and round-trips an A4 presentation size through JSON and PPTX', () => {
   const deck = fixture();
   const slide = deck.slides[0];
-  setSlideSize(deck, slide, 10689336, 7560072);
+  setPresentationSize(deck, 10689336, 7560072);
   expect(renderSlideSvg(deck, slide).getAttribute('viewBox')).toBe(
     '0 0 10689336 7560072'
   );
-  expect(deckToJSON(deck).slides[0].sizeEMU).toEqual({
-    cx: 10689336,
-    cy: 7560072
-  });
-  expect(importDeck(exportDeckBytes(deck)).slides[0].size).toEqual({
+  const json = deckToJSON(deck);
+  expect(json.sizeEMU).toEqual({ cx: 10689336, cy: 7560072 });
+  expect(json.slides[0].sizeEMU).toEqual({ cx: 10689336, cy: 7560072 });
+  expect(importDeck(exportDeckBytes(deck)).size).toEqual({
     cx: 10689336,
     cy: 7560072
   });

@@ -41,7 +41,7 @@ function SlideThumbnail({
   const [inViewport, setInViewport] = useState(slideIndex < 3);
   const deck = store.getState().deck;
   const slide = deck?.slides[slideIndex];
-  const size = slide?.size ?? deck?.size;
+  const size = deck?.size;
   useEffect(() => {
     const host = hostRef.current;
     if (!active || !host || typeof IntersectionObserver === 'undefined') return;

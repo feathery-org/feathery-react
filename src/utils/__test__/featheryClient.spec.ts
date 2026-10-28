@@ -6,6 +6,11 @@ import {
   MIN_UPLOADING_MS,
   setUploadIndicatorEnabled
 } from '../fileUploadProgress';
+import { featheryWindow } from '../browser';
+import {
+  FEATHERY_INTERACTION_EVENT,
+  setInteractionDetected
+} from '../interactionState';
 
 /**
  * Tests for FeatheryClient._getFileValue method and resolveFile logic
@@ -512,6 +517,7 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
 
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
+  normalizeKnownAsciiValues: (values: any) => values,
   initFormsPromise: Promise.resolve(),
   initState: { formSessions: {} },
   fieldValues: {},
@@ -1026,5 +1032,71 @@ describe('FeatheryClient - _submitFileData upload progress', () => {
 
     // The replay engine still owns this row, so it must not read as an error
     expect(statusOf('queuedThrew')).toEqual('queued');
+  });
+});
+
+describe('FeatheryClient.registerEvent - before interaction', () => {
+  const userId = 'userId';
+  let featheryClient: FeatheryClient;
+
+  const okJson = (status: number, body: any) => ({
+    ok: status < 400,
+    status,
+    json: jest.fn().mockResolvedValue(body),
+    text: jest.fn().mockResolvedValue('')
+  });
+
+  const waitUntil = async (condition: () => boolean) => {
+    const deadline = Date.now() + 2000;
+    while (!condition()) {
+      if (Date.now() > deadline) throw new Error('condition not met');
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.fetch = jest.fn();
+    (initInfo as jest.Mock).mockReturnValue({ sdkKey: 'sdkKey', userId });
+    featheryClient = new FeatheryClient('formKey');
+  });
+
+  // Before interaction is detected, registerEvent() holds the call in the
+  // user-event queue; eventQueue is left alone (openUrl and others await it on
+  // forms nobody has touched yet) and whenUserEventsReplayed() tracks the hold.
+  it('holds a pre-interaction event until replay without touching eventQueue', async () => {
+    let resolveFetch: ((value: any) => void) | undefined;
+    (global.fetch as jest.Mock).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        })
+    );
+    const eventQueueBefore = featheryClient.eventQueue;
+
+    const registered = featheryClient.registerEvent({
+      event: 'load',
+      step_key: 'step-1'
+    });
+
+    let replayed = false;
+    featheryClient.whenUserEventsReplayed().then(() => {
+      replayed = true;
+    });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(featheryClient.eventQueue).toBe(eventQueueBefore);
+    expect(replayed).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    // Mirrors markInteraction: mark interaction detected and dispatch the
+    // event FeatheryClient listens for, which replays the queued event.
+    setInteractionDetected();
+    featheryWindow().dispatchEvent(new CustomEvent(FEATHERY_INTERACTION_EVENT));
+
+    await waitUntil(() => (global.fetch as jest.Mock).mock.calls.length > 0);
+    resolveFetch?.(okJson(200, {}));
+
+    await registered;
+    await waitUntil(() => replayed);
   });
 });

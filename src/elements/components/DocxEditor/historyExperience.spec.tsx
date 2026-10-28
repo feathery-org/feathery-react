@@ -10,7 +10,7 @@ import {
 import DocxEditor from './index';
 import { AUTOSAVE_IDLE_MS } from './history/autosaveScheduler';
 import { DocxHistoryHost, DocxSaveMeta, DocxVersion } from './history/types';
-import { setAssistantSessionActive } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { setRobinTurnActive } from './robinActivity';
 
 let mockText = 'Original';
 let mockOnEdit: (info: { assistant: boolean }) => void;
@@ -567,7 +567,7 @@ describe('version history experience', () => {
     fireEvent.click(view.getByRole('button', { name: 'History' }));
     fireEvent.click(await view.findByText('Older draft'));
     fireEvent.click(view.getByRole('button', { name: 'Restore version' }));
-    act(() => setAssistantSessionActive(mockEditor as any, true));
+    act(() => setRobinTurnActive(mockEditor as any, true));
     const restore = view.getByRole('button', { name: 'Restore version' });
     expect(restore).toBeDisabled();
     expect(restore.getAttribute('title')).toBe('Wait for Robin to finish');
@@ -579,7 +579,7 @@ describe('version history experience', () => {
     await act(async () => undefined);
     expect(host.restoreVersion).not.toHaveBeenCalled();
     expect(view.getByText('Wait for Robin to finish')).toBeTruthy();
-    act(() => setAssistantSessionActive(mockEditor as any, false));
+    act(() => setRobinTurnActive(mockEditor as any, false));
     expect(
       view.getByRole('button', { name: 'Restore version' })
     ).not.toBeDisabled();

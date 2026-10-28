@@ -9,8 +9,10 @@ import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
-import { LogicRule } from '../types/Form';
-import AssistantClient from '../assistant/AssistantClient';
+import { LogicRule, Subgrid } from '../types/Form';
+import type { FormActionHandlers } from './formActions/utils';
+import type { FormToolsStepWrites } from './formTools/types';
+import type { TableHandlers } from './formActions/tables';
 import {
   ExtractionActionOptions,
   FillQuikParams,
@@ -174,6 +176,46 @@ export type UpdateDocusignEnvelopeParams = {
   voidedReason?: string; // required by the backend when status is 'voided'
 };
 
+// Runtime changes a host embedding the form may react to
+export type FormRuntimeEvent =
+  | { type: 'step'; stepId: string; stepKey: string }
+  | { type: 'identity' };
+
+// Closures formTools uses to write a field like a user change and wait for
+// the rules it queued
+export type FormToolsCallbacks = {
+  // True when the write changed the stored value (and so re-renders the form)
+  changeValue: (value: any, field: any, index?: number | null) => boolean;
+  // Runs a change rule's pending debounced rerender now
+  flushRerender: () => void;
+  fieldOnChange: (args: {
+    fieldID: string;
+    fieldKey: string;
+    servarId: string;
+    elementRepeatIndex?: number;
+  }) => (opts?: Record<string, any>) => void;
+  getNextStepKey: (metadata: {
+    elementType: string;
+    elementIDs: string[];
+  }) => string | null | undefined;
+  buttonOnClick: (button: {
+    id: string;
+    properties: Record<string, any>;
+    repeat?: any;
+  }) => Promise<void>;
+  // Resolves once the change rules queued by the last fieldOnChange finish
+  awaitChangeRules: () => Promise<any>;
+  // limit is the add button's max_repeats
+  addRepeatedRow: (
+    container: Subgrid | undefined,
+    limit?: number | null
+  ) => void;
+  // Submits just these file/signature servars, not the rest of the step
+  submitFiles: (
+    fileEntries: { servar: any; stepKey: string }[]
+  ) => Promise<any>;
+};
+
 export interface FormInternalState {
   language: string | undefined;
   currentStep: any;
@@ -182,7 +224,18 @@ export interface FormInternalState {
   backNavMap?: Record<string, string>;
   visiblePositions: any;
   logicRules?: LogicRule[];
-  assistantClient?: AssistantClient;
+  formActions?: FormActionHandlers;
+  tables?: Map<string, TableHandlers>;
+  formToolsCallbacks?: FormToolsCallbacks;
+  // Most recent step save, so feathery_next_step's `saved` reflects its own click
+  formToolsLastSave?: Promise<any>;
+  // Bumped once per <Form/> commit; undefined when no <Form/> is mounted
+  formToolsRenderTick?: number;
+  // What fill_step wrote on the current step, across its calls
+  formToolsStepWrites?: FormToolsStepWrites;
+  // Set when a rerender is requested, cleared by the commit it produces
+  formToolsRenderOwed?: boolean;
+  runtimeListeners?: Set<(event: FormRuntimeEvent) => void>;
   client: FeatheryClient;
   formName: string;
   formId: string;

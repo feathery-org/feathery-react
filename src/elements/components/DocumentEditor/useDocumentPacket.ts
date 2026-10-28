@@ -29,7 +29,9 @@ export function useDocumentPacket({
   editMode?: boolean;
   load: (documentId: string) => Promise<any>;
   beforeReplace: () => Promise<unknown>;
-  saveOnSwitch?: boolean | ((envelope: EditorEnvelope | null) => boolean);
+  saveOnSwitch?:
+    | boolean
+    | ((envelope: EditorEnvelope | null, next: EditorEnvelope) => boolean);
 }) {
   const [tabs, setTabs] = useState(() =>
     packetTabs(pendingPacket(containerId) ?? { documents })
@@ -46,7 +48,7 @@ export function useDocumentPacket({
   const [error, setError] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const busy = useRef(false);
+  const busy = useRef<number | null>(null);
   const generation = useRef(0);
   // A background lookup and a later tab selection must use the same envelope
   // (including its presigned file URL) for the prepared presentation to match.
@@ -125,6 +127,8 @@ export function useDocumentPacket({
       });
     return () => {
       generation.current++;
+      busy.current = null;
+      setSwitching(false);
     };
   }, [containerId, editMode]);
 
@@ -132,28 +136,31 @@ export function useDocumentPacket({
     if (busy.current || id === current.current.activeId) return;
     const tab = current.current.tabs.find((item) => item.id === id);
     if (!tab) return;
-    busy.current = true;
     setSwitching(true);
     const sequence = ++generation.current;
+    busy.current = sequence;
     try {
+      const value = await resolveTab(tab);
+      if (sequence !== generation.current) return;
+      if (!value?.file) throw new Error(`No generated file for ${tab.label}`);
       const saveBeforeSwitch =
         typeof current.current.saveOnSwitch === 'function'
-          ? current.current.saveOnSwitch(current.current.envelope)
+          ? current.current.saveOnSwitch(current.current.envelope, value)
           : current.current.saveOnSwitch;
       if (saveBeforeSwitch) await current.current.beforeReplace();
-      const value = await resolveTab(tab);
       if (sequence !== generation.current) return;
       open(tab, value);
       setOperationError(null);
     } catch (err) {
+      if (sequence !== generation.current) return;
       setOperationError(
         `Could not switch documents. Your current document is still open. ${
           err instanceof Error ? err.message : ''
         }`
       );
     } finally {
-      if (sequence === generation.current) {
-        busy.current = false;
+      if (busy.current === sequence) {
+        busy.current = null;
         setSwitching(false);
       }
     }
@@ -166,7 +173,7 @@ export function useDocumentPacket({
       if (!detail || (detail.containerId && detail.containerId !== containerId))
         return;
       const sequence = ++generation.current;
-      busy.current = true;
+      busy.current = sequence;
       setSwitching(true);
       try {
         await current.current.beforeReplace();
@@ -183,14 +190,15 @@ export function useDocumentPacket({
         setOperationError(null);
         setReloadKey((key) => key + 1);
       } catch (err) {
+        if (sequence !== generation.current) return;
         setOperationError(
           `The new documents could not be opened because your current edits could not be saved. ${
             err instanceof Error ? err.message : ''
           }`
         );
       } finally {
-        if (sequence === generation.current) {
-          busy.current = false;
+        if (busy.current === sequence) {
+          busy.current = null;
           setSwitching(false);
         }
       }
@@ -248,15 +256,24 @@ export function useDocumentPacket({
     [containerId]
   );
 
-  const resolveEnvelopes = useCallback(async () => {
-    const resolved = [];
-    for (const tab of current.current.tabs) {
-      const value = await resolveTab(tab);
-      if (!value?.file) throw new Error(`No generated file for ${tab.label}`);
-      resolved.push(value);
-    }
-    return resolved;
-  }, []);
+  const resolveEnvelopes = useCallback(
+    async (onUnavailable?: (label: string, error: unknown) => void) => {
+      const resolved = [];
+      for (const tab of current.current.tabs) {
+        try {
+          const value = await resolveTab(tab);
+          if (!value?.file)
+            throw new Error(`No generated file for ${tab.label}`);
+          resolved.push(value);
+        } catch (error) {
+          if (!onUnavailable) throw error;
+          onUnavailable(tab.label, error);
+        }
+      }
+      return resolved;
+    },
+    []
+  );
 
   const filesForSave = useCallback(async (saved: EditorEnvelope) => {
     const values = await Promise.all(

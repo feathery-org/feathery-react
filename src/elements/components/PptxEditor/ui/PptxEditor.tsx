@@ -79,6 +79,7 @@ function PptxEditorInner({
   prepareSource,
   onChange,
   onError,
+  onLoadError,
   onSave,
   onSaved,
   onSaveAll,
@@ -152,7 +153,7 @@ function PptxEditorInner({
         setLoading(false);
         const message = err?.message || 'Failed to open the presentation.';
         setLoadError(message);
-        onError?.(message);
+        (onLoadError ?? onError)?.(message);
       }
     })();
     return () => {
@@ -202,10 +203,13 @@ function PptxEditorInner({
         new Error('The presentation is not ready to save.')
       );
     setSaving(true);
+    const loaded = loadSeq.current;
     const save = async () => {
       await savePresentation(store, onSave);
-      dirtyRef.current = false;
-      onChange?.(false);
+      if (loaded !== loadSeq.current) return;
+      const dirty = store.engine.isDirty();
+      dirtyRef.current = dirty;
+      onChange?.(dirty);
     };
     pendingSave.current = save().finally(() => {
       pendingSave.current = null;

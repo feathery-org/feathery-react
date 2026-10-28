@@ -4,6 +4,9 @@ import { resolve } from 'path';
 import { PptxEditorEngine, type EditorEvent } from '../engine';
 import { addTextBox, insertTable, setShapeRichText } from '../core/model/edit';
 import { importDeck } from '../core/model/import';
+import { exportDeckBytes } from '../core/model/export';
+import { deckToJSON } from '../core/model/json';
+import { child, getAttr, root } from '../core/opc/xml';
 import {
   tableCell,
   tableCellText,
@@ -14,6 +17,20 @@ import {
 const fixture = new Uint8Array(
   readFileSync(resolve(__dirname, 'fixtures/sample.pptx'))
 );
+const bulletsFixture = new Uint8Array(
+  readFileSync(resolve(__dirname, 'fixtures/bullets.pptx'))
+);
+const nativeSlideSize = (bytes: Uint8Array) => {
+  const sldSz = child(
+    root(importDeck(bytes).pkg.tree('ppt/presentation.xml')),
+    'p:sldSz'
+  )!;
+  return {
+    cx: Number(getAttr(sldSz, 'cx')),
+    cy: Number(getAttr(sldSz, 'cy')),
+    type: getAttr(sldSz, 'type')
+  };
+};
 const png = Uint8Array.from(
   atob(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
@@ -30,21 +47,19 @@ it('executes typed commands and publishes serializable snapshots and invalidatio
   const before = engine.snapshot().document!.slides[0].sizeEMU;
 
   const changed = engine.execute({
-    type: 'set-slide-size',
-    slideId: slide.path,
+    type: 'set-presentation-size',
     cx: before.cx + 914400,
     cy: before.cy
   });
   expect(changed.changed).toBe(true);
-  expect(changed.invalidations).toEqual([
-    { kind: 'slide', slideId: slide.path }
-  ]);
+  expect(changed.invalidations).toEqual([{ kind: 'deck' }]);
   expect(changed.snapshot).toMatchObject({
     dirty: true,
     canUndo: true,
     canRedo: false,
-    undoLabel: 'Resize slide'
+    undoLabel: 'Resize slides'
   });
+  expect(slide.path).toBe(deck.slides[0].path);
   expect(changed.snapshot.document!.slides[0].sizeEMU.cx).toBe(
     before.cx + 914400
   );
@@ -88,13 +103,130 @@ it('applies JSON through the same transaction path and clears redo after a new c
   expect(engine.canRedo()).toBe(true);
   const currentSize = engine.snapshot().document!.slides[0].sizeEMU;
   engine.execute({
-    type: 'set-slide-size',
-    slideId: slide.path,
+    type: 'set-presentation-size',
     cx: currentSize.cx,
     cy: currentSize.cy + 914400
   });
   expect(engine.canRedo()).toBe(false);
   expect(engine.snapshot()).toMatchObject({ undoDepth: 1, redoDepth: 0 });
+});
+
+it.each([0, 914400])(
+  'restores the native size preset after undo (delta %s)',
+  (delta) => {
+    const deck = importDeck(bulletsFixture);
+    const original = nativeSlideSize(exportDeckBytes(deck));
+    expect(original.type).toBe('screen4x3');
+    const engine = new PptxEditorEngine(deck);
+
+    engine.execute({
+      type: 'set-presentation-size',
+      cx: original.cx + delta,
+      cy: original.cy
+    });
+    expect(nativeSlideSize(exportDeckBytes(deck)).type).toBeUndefined();
+    expect(engine.isDirty()).toBe(true);
+
+    engine.undo();
+    expect(nativeSlideSize(exportDeckBytes(deck))).toEqual(original);
+    expect(engine.isDirty()).toBe(false);
+
+    engine.redo();
+    expect(nativeSlideSize(exportDeckBytes(deck))).toEqual({
+      cx: original.cx + delta,
+      cy: original.cy,
+      type: undefined
+    });
+    expect(engine.isDirty()).toBe(true);
+  }
+);
+
+it('writes a resize to the native presentation size and restores it on undo', () => {
+  const deck = importDeck(fixture);
+  const engine = new PptxEditorEngine(deck);
+  const original = { ...deck.size };
+  const a4Portrait = { cx: 7560072, cy: 10689336 };
+
+  engine.execute({ type: 'set-presentation-size', ...a4Portrait });
+  expect(deck.size).toEqual(a4Portrait);
+  // Every slide's projection follows the presentation-wide size.
+  for (const slide of engine.snapshot().document!.slides)
+    expect(slide.sizeEMU).toEqual(a4Portrait);
+  const exported = exportDeckBytes(deck);
+  expect(importDeck(exported).size).toEqual(a4Portrait);
+  // PowerPoint reads p:sldSz, and a stale preset name must not contradict it.
+  expect(nativeSlideSize(exported)).toEqual({ ...a4Portrait, type: undefined });
+
+  const undone = engine.undo();
+  expect(undone.invalidations).toEqual([{ kind: 'deck' }]);
+  expect(deck.size).toEqual(original);
+  expect(undone.snapshot.dirty).toBe(false);
+  expect(nativeSlideSize(exportDeckBytes(deck))).toMatchObject(original);
+});
+
+it('does not reuse the previous document snapshot when adopting another deck', () => {
+  const engine = new PptxEditorEngine();
+  engine.load(fixture);
+  // Same slide paths, size and (fresh) mutation sequence as the first deck:
+  // exactly what structural snapshot reuse keys on.
+  const edited = importDeck(fixture);
+  addTextBox(
+    edited,
+    edited.slides[0],
+    914400,
+    914400,
+    3000000,
+    900000,
+    'Second'
+  );
+  const second = exportDeckBytes(edited);
+  engine.load(second);
+  const expected = JSON.parse(JSON.stringify(deckToJSON(importDeck(second))));
+  expect(engine.snapshot().document).toEqual(expected);
+
+  // Also when the other deck differs in size (no path/sequence overlap).
+  engine.load(bulletsFixture);
+  expect(engine.snapshot().document).toEqual(
+    JSON.parse(JSON.stringify(deckToJSON(importDeck(bulletsFixture))))
+  );
+  engine.load(second);
+  expect(engine.snapshot().document).toEqual(expected);
+
+  // Undo after an edit must restore the second deck, not the first one.
+  const slide = engine.snapshot().document!.slides[0];
+  engine.execute({
+    type: 'set-slide-background',
+    slideId: slide.path,
+    background: { type: 'solid', color: '112233' }
+  });
+  engine.undo();
+  expect(engine.snapshot().document).toEqual(expected);
+  expect(engine.isDirty()).toBe(false);
+});
+
+it('marks only the exported save point clean, keeping later edits dirty', () => {
+  const deck = importDeck(fixture);
+  const engine = new PptxEditorEngine(deck);
+  const slide = deck.slides[0];
+  const paint = (color: string) =>
+    engine.execute({
+      type: 'set-slide-background',
+      slideId: slide.path,
+      background: { type: 'solid', color }
+    });
+
+  paint('112233');
+  const savePoint = engine.savePoint();
+  engine.exportPptx();
+  paint('445566'); // typed while the host request is still pending
+  engine.markSaved(savePoint);
+  expect(engine.isDirty()).toBe(true);
+  engine.undo();
+  expect(engine.isDirty()).toBe(false);
+  engine.redo();
+  expect(engine.isDirty()).toBe(true);
+  engine.markSaved();
+  expect(engine.isDirty()).toBe(false);
 });
 
 it('routes solid, gradient, and image backgrounds through typed history', () => {
