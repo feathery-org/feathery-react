@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { comparable, comparableText } from '../../../proof';
+import { comparable, comparableText, toFixedPoint } from '../../../proof';
 import { NfNode, NormalForm, canonicalJson, walk } from '../../../tree';
 import { docxPack } from '../index';
 import { toNormalForm } from '../adapter/toNormalForm';
@@ -18,6 +18,7 @@ import {
   N11,
   N12,
   N13,
+  N14,
   NORMALIZATIONS,
   UNDO_NORMALIZATIONS,
   accept,
@@ -347,6 +348,56 @@ describe('normalizations (each a true positive and a true negative)', () => {
     const once = N9.apply(nf);
     expect(N9.apply(once)).toBe(once);
     expect(UNDO_NORMALIZATIONS.map((n) => n.name)).toEqual(['N7', 'N9']);
+  });
+
+  it('N14 with N6 reads a control split into bare and explicitly inherited runs as one run (dts seq 4 fee cell)', () => {
+    const nf = fresh();
+    const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string' && nf.formats[String(n.style)]?.styleName === 'Normal') as NfNode;
+    const withControl = (explicit: Record<string, unknown>, texts: string[]) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.explicit = explicit;
+      (all(d).find((n) => n.id === para.id) as NfNode).inlines = [
+        {
+          id: 'fee',
+          kind: 'control',
+          inlines: texts.map((text, i) => ({ id: `fee${i}`, kind: 'run', text, ...(i % 2 ? { style: 'explicit' } : {}) }))
+        }
+      ];
+      return d;
+    };
+    const fee = (d: NormalForm) => {
+      const runs = (all(toFixedPoint([N6, N14], d)).find((n) => n.id === 'fee') as NfNode).inlines as NfNode[];
+      return runs.map(({ id, ...run }) => run);
+    };
+    const whole = fee(withControl({}, ['$996.75']));
+    // Normal gives fontSize 11 and the document default Calibri: restating both is no difference (true negative)
+    expect(fee(withControl({ fontSize: 11, fontFamily: 'Calibri' }, ['$', '996', '.', '75']))).toEqual(whole);
+    // A font the run does not inherit is a real difference (true positive)
+    expect(fee(withControl({ fontSize: 11, fontFamily: 'Arial' }, ['$', '996', '.', '75']))).not.toEqual(whole);
+    const once = N14.apply(nf);
+    expect(N14.apply(once)).toBe(once);
+  });
+
+  it('N14 keeps a shared run format apart when its runs sit in paragraphs of different styles', () => {
+    const nf = fresh();
+    const normals = all(nf).filter((n) => n.kind === 'paragraph' && typeof n.style === 'string' && nf.formats[String(n.style)]?.styleName === 'Normal');
+    const runFormats = (headingFirst: boolean) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.headingChar = { bold: true };
+      d.formats.headingPara = { styleName: 'Bold Heading' };
+      d.formats.shared = { bold: true, italic: true, fontSize: 11 };
+      d.root.styles = [...((d.root.styles as unknown[]) ?? []), { name: 'Bold Heading', basedOn: 'Normal', characterFormat: 'headingChar' }];
+      const [first, second] = normals.map((p) => all(d).find((n) => n.id === p.id) as NfNode);
+      (headingFirst ? first : second).style = 'headingPara';
+      first.inlines = [{ id: 'r1', kind: 'run', text: 'one', style: 'shared' }];
+      second.inlines = [{ id: 'r2', kind: 'run', text: 'two', style: 'shared' }];
+      const out = N14.apply(d);
+      const format = (id: string) => out.formats[String((all(out).find((n) => n.id === id) as NfNode).style)] ?? {};
+      return headingFirst ? [format('r1'), format('r2')] : [format('r2'), format('r1')];
+    };
+    // [heading run, normal run]: each keeps only what its own paragraph does not give it
+    for (const headingFirst of [true, false])
+      expect(runFormats(headingFirst)).toEqual([{ italic: true }, { bold: true, italic: true }]);
   });
 });
 

@@ -239,6 +239,7 @@ import {
   verifyConnectivity
 } from '../utils/offlineRequestHandler';
 import {
+  isFetchNetworkError,
   removeCustomErrorHandler,
   setCustomErrorHandler
 } from '../utils/error';
@@ -304,10 +305,10 @@ const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
 const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
 
 // Shown instead of the closed-form copy when the session request itself fails
-// while an access link is open. A token this device kept for the form makes
-// that path reachable on an ordinary connectivity failure, where the form is
-// not closed at all and a reload is all the user needs.
-const LINK_SESSION_FAILED_MESSAGE =
+// on a form only the session can open (an access link, or a session-gated
+// form). That path is reachable on an ordinary connectivity failure, where the
+// form is not closed at all and a reload is all the user needs.
+const SESSION_FAILED_MESSAGE =
   "We couldn't load this form. Please refresh the page.";
 
 // Bottom-right overlays stack rather than overlap: each one clears the boxes
@@ -370,7 +371,7 @@ export interface ClickActionElement {
 }
 
 const getSubmissionErrorMessage = (error: unknown): string => {
-  if (error instanceof TypeError && error.message === 'Failed to fetch') {
+  if (isFetchNetworkError(error)) {
     return 'Unable to upload files. Please check your connection and try again.';
   }
   if (error instanceof Error) {
@@ -531,6 +532,9 @@ function Form({
   const extractionFileFields = useRef<Record<string, Record<string, string[]>>>(
     {}
   );
+  // Whether only the session decides if this form may open (link required,
+  // collaboration, business email). Gated until the form payload says otherwise
+  const sessionGated = useRef(true);
   const [inlineErrors, setInlineErrors] = useState<InlineErrors>({});
   const [, setRepeatChanged] = useState(false);
 
@@ -1992,6 +1996,8 @@ function Form({
         setLogicRules(res.logic_rules);
         setSharedCodes((prev) => res.shared_codes || prev);
         extractionFileFields.current = res.extraction_file_fields || {};
+        // A payload from before the flag existed can't vouch for the form
+        sessionGated.current = res.session_gated ?? true;
         trackHashes.current =
           hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 
@@ -2088,20 +2094,31 @@ function Form({
       })
       .catch(async (error: any) => {
         console.warn(error);
-        // Only the session resolves which submission an access link opens, so
-        // without one there is no user id to write against. Block instead of
-        // opening the origin step on an empty submission.
-        if (initState.linkToken) {
+        // The session can fail before the form payload sets sessionGated. An
+        // origin outage can fail both, and a missing payload is treated as gated.
+        const data = await formPromise.catch(() => null);
+        // Only the session resolves which submission an access link opens, and
+        // whether a gated form may open at all. Block instead of opening the
+        // origin step past checks that never ran. After a login redirect the
+        // auth hook picks the step, but it waits on integrations that only a
+        // loaded session provides, so it would never pick one.
+        if (
+          !data ||
+          initState.linkToken ||
+          sessionGated.current ||
+          authState.redirectAfterLogin ||
+          authState.hasRedirected
+        ) {
           formOffReason.current = CLOSED;
-          formOffMessage.current = LINK_SESSION_FAILED_MESSAGE;
+          formOffMessage.current = SESSION_FAILED_MESSAGE;
           setRender((render) => ({ ...render }));
           return;
         }
+        if (stepKey) return;
         // Go to first step if origin fails
-        const [data] = await formPromise;
         const newKey = (getOrigin as any)(data).key;
-        if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
-        else setStepKey(newKey);
+        if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
+        setStepKey(newKey);
       });
   }, [activeStep, setSteps, updateFieldValues]);
 
@@ -2204,18 +2221,20 @@ function Form({
     repeat: number | undefined,
     hasNext: boolean
   ): Promise<[Promise<any>] | undefined> => {
-    const formattedFields = formatStepFields(
+    let formattedFields = formatStepFields(
       activeStep,
       formSettings.saveHideIfFields ? null : visiblePositions,
       false
     );
-    const trigger = lookUpTrigger(
-      activeStep,
-      metadata.elementIDs[0],
-      metadata.elementType
-    );
-    // Legacy callback contract is numeric, so fall back to 0 here only.
-    trigger.repeatIndex = repeat ?? 0;
+    const trigger = {
+      ...lookUpTrigger(
+        activeStep,
+        metadata.elementIDs[0],
+        metadata.elementType
+      ),
+      // Legacy callback contract is numeric, so fall back to 0 here only.
+      repeatIndex: repeat ?? 0
+    } as Trigger;
 
     if (
       activeStep.servar_fields.find(
@@ -2249,13 +2268,12 @@ function Form({
     const customSubmitCode = async (beforeSubmit: boolean) => {
       let invalid = false;
       // Execute user-provided onSubmit function or submit rules if present
-      if (
-        await runUserLogic('submit', () => ({
-          submitFields: formattedFields,
-          trigger,
-          beforeSubmit
-        }))
-      ) {
+      const logicRan = await runUserLogic('submit', () => ({
+        submitFields: formattedFields,
+        trigger,
+        beforeSubmit
+      }));
+      if (logicRan) {
         // do validation check in case user has manually invalidated the step
         invalid = await setFormElementError({
           formRef,
@@ -2267,11 +2285,39 @@ function Form({
           triggerErrors: true
         });
       }
-      return invalid;
+      return { invalid, logicRan };
     };
 
-    let invalid = await customSubmitCode(true);
+    let { invalid, logicRan } = await customSubmitCode(true);
     if (invalid) return;
+
+    if (logicRan) {
+      // Submit logic can update field values and hide-if state. Validate and
+      // snapshot both from the completed rule's state before persisting it.
+      const latestVisiblePositions = getVisiblePositions(
+        activeStep,
+        _internalId
+      );
+      const { invalid: latestValuesInvalid } = validateElements({
+        step: activeStep,
+        visiblePositions: latestVisiblePositions,
+        triggerErrors: true,
+        errorType: formSettings.errorType,
+        formRef,
+        errorCallback: getErrorCallback({ trigger }),
+        setInlineErrors,
+        trigger
+      });
+      if (latestValuesInvalid) {
+        setAutoValidate(true);
+        return;
+      }
+      formattedFields = formatStepFields(
+        activeStep,
+        formSettings.saveHideIfFields ? null : latestVisiblePositions,
+        false
+      );
+    }
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       const servar = servarByKey.get(key);
@@ -2334,7 +2380,7 @@ function Form({
       // If running submit logic rule after, must finish
       // submit data first
       await stepPromise;
-      invalid = await customSubmitCode(false);
+      ({ invalid } = await customSubmitCode(false));
       if (invalid) return;
     }
 

@@ -925,6 +925,39 @@ describe('document session: the four verbs end to end', () => {
     });
   });
 
+  it('a write with no changes whose refresh fails is refused instead of reporting the document current', () => {
+    const host = new ToyHost(doc);
+    const pack = makeToyPack();
+    const session = new DocumentSession({
+      pack,
+      host,
+      target,
+      editorId: 'ed-1'
+    });
+    pack.reconcile = {
+      ...pack.reconcile,
+      refresh: () => {
+        throw new Error('refresh broke');
+      }
+    };
+    const out = session.dispatch('write', {
+      turnId: 't',
+      editorId: 'ed-1',
+      target,
+      input: { intent: 'Update the contents.', scope: { ids: [] }, changes: [] }
+    });
+    expect(out.status).toBe('ok');
+    expect(out.result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ code: 'document.refused' }),
+        refusal: expect.objectContaining({ invariant: 'refresh-failed' })
+      })
+    );
+    expect(validateVerbResult('write', out.result)).toEqual({ ok: true });
+    expect(host.serialize()).toBe(doc);
+  });
+
   it("an id the user's edit made ambiguous is a conflict until it is read again (review: two identical paragraphs)", () => {
     const twin = toyNative(
       para('Title'),

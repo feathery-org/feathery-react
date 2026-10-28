@@ -280,6 +280,9 @@ export function composeTracked(
           result.push(gone, kid);
           continue;
         }
+        // a write never carries pending, so a kept node keeps the revision it already had
+        if (kid.pending === undefined && old.pending !== undefined)
+          kid.pending = clone(old.pending);
         merge(kid, old);
         result.push(kid);
       }

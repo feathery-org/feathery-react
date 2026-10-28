@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fieldValues } from '../../utils/init';
 import { getRenderData } from '../../utils/image';
+import { hasIconGlyph, IconGlyph } from '../components/icons/iconGlyph';
 import { getImageAltText } from '../../utils/accessibility';
 
 export const PLACEHOLDER_IMAGE =
@@ -13,6 +14,7 @@ function applyImageStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyObjectFit('image');
   responsiveStyles.applyObjectPosition('image');
   responsiveStyles.applyWidth('dimension');
+  responsiveStyles.applyColor('image', 'icon_color', 'color');
   return responsiveStyles;
 }
 
@@ -82,6 +84,34 @@ function ImageElement({
   const displayPDF = documentUrl && documentType === 'application/pdf';
 
   const altText = getImageAltText(element.properties);
+  const iconGlyph = element.properties.icon_glyph;
+  if (hasIconGlyph(iconGlyph)) {
+    return (
+      <div
+        css={{
+          width: '100%',
+          height: '100%',
+          ...styles.getTarget('imageContainer'),
+          maxHeight: '100%',
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          ...styles.getTarget('image')
+        }}
+      >
+        {children}
+        <IconGlyph
+          glyph={iconGlyph}
+          size='100%'
+          role='img'
+          aria-label={altText || undefined}
+          style={{ maxWidth: '100%', maxHeight: '100%' }}
+          {...elementProps}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
