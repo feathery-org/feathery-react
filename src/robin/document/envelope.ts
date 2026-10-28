@@ -520,7 +520,7 @@ const writeShapeSchema = z.strictObject({
   intent: z.string().min(1).max(INTENT_MAX),
   scope: scopeSchema,
   formats: z.record(tempIdSchema, jsonObjectSchema).optional(),
-  changes: z.array(changeSchema).min(1).max(WRITE_CHANGES_MAX),
+  changes: z.array(changeSchema).max(WRITE_CHANGES_MAX),
   dryRun: z.boolean().optional()
 });
 
@@ -589,7 +589,7 @@ const writeInputSchema = writeShapeSchema.superRefine((write, ctx) => {
       }
     }
     if (
-      (change.kind === 'replace' || change.kind === 'delete') &&
+      change.kind === 'replace' &&
       isNodeId(change.id) &&
       change.base === undefined
     ) {
@@ -606,18 +606,6 @@ const writeInputSchema = writeShapeSchema.superRefine((write, ctx) => {
       issue(
         [...at, 'shape'],
         `move of ${change.id} must carry the shape read for it`
-      );
-    }
-    if (
-      (change.kind === 'insert_before' ||
-        change.kind === 'insert_after' ||
-        change.kind === 'move') &&
-      isNodeId(change.anchor) &&
-      change.container === undefined
-    ) {
-      issue(
-        [...at, 'container'],
-        `${change.kind} next to ${change.anchor} must carry container, the shape of the node that owns the list ${change.anchor} is in`
       );
     }
     if (change.kind === 'set') {

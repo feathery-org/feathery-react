@@ -789,7 +789,9 @@ export default class FeatheryClient extends IntegrationClient {
     // `_fetch` sends nothing once any form on the page is blocked, and the error
     // it leaves is page-wide, so only this request's own token can be at fault
     const sentToken = initState.authenticationError ? '' : initState.linkToken;
-    const response = await this._fetch(url, options);
+    // Network errors propagate so the form falls back to its origin step,
+    // rather than reading a missing session as a closed form
+    const response = await this._fetch(url, options, true, true);
     if (!response) {
       if (sentToken && isRejectedLinkMessage(initState.authenticationError))
         this.forgetRejectedLink(sentToken);

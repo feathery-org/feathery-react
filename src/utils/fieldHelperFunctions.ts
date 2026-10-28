@@ -1,3 +1,4 @@
+import type { IconEmbedData } from '../elements/components/icons/iconGlyph';
 import { findCountryByID } from '../elements/components/data/countries';
 import { formatDateString } from '../elements/fields/DateSelectorField/utils';
 import { LINK_TOKEN_PARAM } from './accessLink';
@@ -271,7 +272,12 @@ export function getDefaultFormFieldValue(field: any, asciiOnly = false) {
 
 export type OptionType =
   | string
-  | { value: string; label?: string; image?: string };
+  | {
+      value: string;
+      label?: string;
+      image?: string;
+      icon?: IconEmbedData | null;
+    };
 // TODO: remove string[] for backcompat
 export type FieldOptions = Record<string, OptionType[] | null>;
 
@@ -295,6 +301,10 @@ export function updateStepFieldOptions(
         servar.metadata.option_images = options.map((option) =>
           typeof option === 'object' ? option.image ?? '' : ''
         );
+        if (servar.type === 'button_group')
+          servar.metadata.option_icons = options.map((option) =>
+            typeof option === 'object' ? option.icon ?? null : null
+          );
       } else {
         if (!servar.metadata.repeat_options)
           servar.metadata.repeat_options = [];

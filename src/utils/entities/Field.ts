@@ -222,7 +222,10 @@ export default class Field {
       (option: string, index: number) => ({
         value: option,
         label: (meta.option_labels ?? [])[index],
-        image: (meta.option_images ?? [])[index]
+        image: (meta.option_images ?? [])[index],
+        ...(field.servar.type === 'button_group' && {
+          icon: meta.option_icons?.[index] ?? null
+        })
       })
     );
     if (!field.servar.repeated) return defaultOptions;
