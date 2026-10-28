@@ -1127,7 +1127,6 @@ export function Toolbar({
               >
                 <ShadingIcon width={14} height={14} />
               </ColorControl>
-              <span css={styles.sep} />
             </>
           )}
           {sh?.type === 'pic' && pictureCrop && (
