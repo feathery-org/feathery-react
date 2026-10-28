@@ -56,7 +56,7 @@ it('renders and serializes highlight, superscript, and subscript run formatting'
   // (jsdom's CSSOM can't parse linear-gradient, so read the raw style string.)
   const runCss = (span.getAttribute('style') || '').toLowerCase();
   expect(runCss).toContain('linear-gradient(#f7b801,#f7b801)');
-  expect(runCss).toContain('background-size:100% 0.65em');
+  expect(runCss).toContain('background-size:100% calc(1lh - 0.06em)');
   expect(span.style.verticalAlign).toBe('30%');
   const run = deckToJSON(deck).slides[0].shapes.find(
     (candidate) => candidate.id === shape.id
