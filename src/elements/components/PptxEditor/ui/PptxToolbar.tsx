@@ -1671,13 +1671,19 @@ export function Toolbar({
               </>
             )}
           </div>
-          <span css={{ flex: 1 }} />
-          {devJson && (
-            <B on={showJson} onClick={toggleJson} title='Live JSON panel'>
-              {'{ }'}
-            </B>
-          )}
-          {rightActions}
+          {/* Host actions. The contextual div already flex-grows, so a divider
+            (not a second flex:1, which would split the space and strand the
+            delete button mid-bar) sets this group off; the gap spaces the
+            "unsaved" indicator from the Save button. */}
+          <span css={styles.sep} />
+          <div css={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {devJson && (
+              <B on={showJson} onClick={toggleJson} title='Live JSON panel'>
+                {'{ }'}
+              </B>
+            )}
+            {rightActions}
+          </div>
         </div>
         {/* Hidden file inputs live outside the menus: closing a menu must
           not unmount the input while the OS file dialog is still open. */}
