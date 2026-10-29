@@ -30,17 +30,19 @@ export type ProviderConfigProps = {
  *  this map connects with no further configuration and never shows the modal on
  *  a fresh connect - only on a repeat click, where the modal's sole purpose is
  *  the "Change account" option. */
+export const SALESFORCE_PROVIDER = 'salesforce-client-credentials';
+
 export const CONFIG_COMPONENTS: Record<
   string,
   React.ComponentType<ProviderConfigProps>
 > = {
   box: BoxFolderPicker,
-  'salesforce-client-credentials': SalesforceConnection
+  [SALESFORCE_PROVIDER]: SalesforceConnection
 };
 
 export const PROVIDER_LABELS: Record<string, string> = {
   box: 'Box',
-  'salesforce-client-credentials': 'Salesforce',
+  [SALESFORCE_PROVIDER]: 'Salesforce',
   'charles-schwab': 'Charles Schwab'
 };
 
