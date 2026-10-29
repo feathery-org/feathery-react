@@ -1510,7 +1510,9 @@ function Form({
                 // completion signal, so all that's left is telling the filler.
                 showEnvelopeOutcome(
                   ENVELOPE_FLOW_TOAST_ID,
-                  draft ? 'Saved as Draft' : 'Sent for Signature',
+                  draft || data.docusign_status === 'created'
+                    ? 'Saved as Draft'
+                    : 'Sent for Signature',
                   action.documents
                 );
                 return;
@@ -3564,12 +3566,15 @@ function Form({
               //
               // Create Draft finalizes as a sign too, so the label comes off
               // the request — a draft is saved in the sender's DocuSign
-              // account, not delivered to anyone. Not off the response: the
-              // poll endpoint overwrites its status with "complete", so
-              // DocuSign's own "created" never reaches here.
+              // account, not delivered to anyone. A Sign can end as a draft
+              // too (the Quik Joint Agreements hold), which only
+              // `docusign_status` reports: the poll endpoint overwrites
+              // `status` with "complete".
               showEnvelopeOutcome(
                 envelopeId,
-                draft ? 'Saved as Draft' : 'Sent for Signature',
+                draft || data.docusign_status === 'created'
+                  ? 'Saved as Draft'
+                  : 'Sent for Signature',
                 action.documents
               );
               return;
@@ -3704,11 +3709,10 @@ function Form({
                 );
                 return result;
               },
-              onComplete: () => {
+              onComplete: () =>
                 flowOnSuccess(i)().then(() => {
                   setTimeout(() => setReviewViewerPayload(null), 500);
-                });
-              }
+                })
             });
             break;
           } else {

@@ -167,6 +167,8 @@ export default function DocumentCanvas({
   useEffect(() => {
     const root = rootRef.current;
     if (!root || !onUserEdit) return undefined;
+    // User-only because pdf.js 5.4.296 dispatches no input/change while
+    // rendering (only `resetform`). Recheck on a pdf.js upgrade.
     root.addEventListener('input', onUserEdit);
     root.addEventListener('change', onUserEdit);
     return () => {

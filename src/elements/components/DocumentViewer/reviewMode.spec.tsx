@@ -6,6 +6,7 @@ import DocumentViewer, {
   finalizeOutcome,
   isToolbarActionDisabled,
   needsDraftRefresh,
+  recordAttempt,
   ReviewSession
 } from './index';
 import { featheryDoc } from '../../../utils/browser';
@@ -413,6 +414,25 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       expect(onComplete).toHaveBeenCalledTimes(1);
     });
 
+    it('lets the filler close again when the flow fails after a close', async () => {
+      const { onComplete, setShow } = renderKeepOpen(['sign', 'draft']);
+      onComplete
+        .mockRejectedValueOnce(new Error('Flow failed'))
+        .mockResolvedValueOnce(undefined);
+
+      await press('Create Draft');
+      fireEvent.click(button('Back'));
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent('Flow failed')
+      );
+      expect(button('Back')).toBeEnabled();
+      fireEvent.click(button('Back'));
+
+      expect(onComplete).toHaveBeenCalledTimes(2);
+      expect(setShow).not.toHaveBeenCalled();
+    });
+
     it('cancels on Back when nothing completed yet', () => {
       const { onComplete, setShow } = renderKeepOpen(['sign', 'draft']);
 
@@ -568,8 +588,15 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       pendingCompletion: false,
       sent: false,
       editRevision: 0,
-      draftedRevision: null
+      draftedRevision: null,
+      draftAttempted: false
     };
+    const pressed = (
+      session: ReviewSession,
+      action: 'draft' | 'sign',
+      docusignStatus?: 'sent' | 'created'
+    ) =>
+      deferCompletion(recordAttempt(session, action), action, docusignStatus);
 
     it('completes a closing action at once unless the screen stays open', () => {
       expect(finalizeOutcome('sign', ['sign'], false)).toBe('complete');
@@ -592,12 +619,13 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
     });
 
     it('marks the draft current until the next edit', () => {
-      const drafted = deferCompletion({ ...fresh, editRevision: 3 }, 'draft');
+      const drafted = pressed({ ...fresh, editRevision: 3 }, 'draft');
       expect(drafted).toEqual({
         pendingCompletion: true,
         sent: false,
         editRevision: 3,
-        draftedRevision: 3
+        draftedRevision: 3,
+        draftAttempted: true
       });
       expect(isToolbarActionDisabled(drafted, 'draft')).toBe(true);
       expect(needsDraftRefresh(drafted, 'sign')).toBe(false);
@@ -609,15 +637,40 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       expect(needsDraftRefresh(edited, 'download')).toBe(false);
     });
 
-    it('never refreshes without a draft', () => {
-      expect(needsDraftRefresh({ ...fresh, editRevision: 2 }, 'sign')).toBe(
+    it('never refreshes before a Draft or Sign was pressed', () => {
+      const edited = { ...fresh, editRevision: 2 };
+      expect(needsDraftRefresh(edited, 'sign')).toBe(false);
+      expect(needsDraftRefresh(recordAttempt(edited, 'download'), 'sign')).toBe(
         false
       );
       expect(isToolbarActionDisabled(fresh, 'draft')).toBe(false);
     });
 
+    it('refreshes after a Draft or Sign whose outcome never arrived', () => {
+      ['draft', 'sign'].forEach((first) => {
+        const attempted = recordAttempt(fresh, first as 'draft' | 'sign');
+        expect(needsDraftRefresh(attempted, 'draft')).toBe(true);
+        expect(needsDraftRefresh(attempted, 'sign')).toBe(true);
+        expect(needsDraftRefresh(attempted, 'download')).toBe(false);
+        // A failed draft leaves Create Draft available to retry.
+        expect(isToolbarActionDisabled(attempted, 'draft')).toBe(false);
+      });
+    });
+
+    it('treats a Sign held as a DocuSign draft as a draft', () => {
+      const held = pressed({ ...fresh, editRevision: 2 }, 'sign', 'created');
+      expect(held.sent).toBe(false);
+      expect(isToolbarActionDisabled(held, 'sign')).toBe(false);
+      expect(isToolbarActionDisabled(held, 'draft')).toBe(true);
+      expect(needsDraftRefresh(held, 'sign')).toBe(false);
+      expect(needsDraftRefresh({ ...held, editRevision: 3 }, 'sign')).toBe(
+        true
+      );
+      expect(pressed(fresh, 'sign', 'sent').sent).toBe(true);
+    });
+
     it('ends signing and drafting once sent', () => {
-      const sent = deferCompletion(fresh, 'sign');
+      const sent = pressed(fresh, 'sign');
       expect(sent.sent).toBe(true);
       expect(isToolbarActionDisabled(sent, 'sign')).toBe(true);
       expect(isToolbarActionDisabled(sent, 'draft')).toBe(true);

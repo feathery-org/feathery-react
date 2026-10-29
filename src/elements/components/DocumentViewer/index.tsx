@@ -104,14 +104,29 @@ export interface ReviewSession {
   // siblings), which would read as an edit nobody made.
   editRevision: number;
   draftedRevision: number | null;
+  // A Draft or Sign was pressed, so a DocuSign draft may exist even though no
+  // response confirmed it (a lost response, or a failure after finalize).
+  draftAttempted: boolean;
 }
 
 const INITIAL_REVIEW_SESSION: ReviewSession = {
   pendingCompletion: false,
   sent: false,
   editRevision: 0,
-  draftedRevision: null
+  draftedRevision: null,
+  draftAttempted: false
 };
+
+export interface FinalizeResult {
+  status?: string;
+  message?: string;
+  // What DocuSign reported for the envelope. `status` cannot carry it: the
+  // async poll overwrites it with "complete". Absent from older backends.
+  docusign_status?: 'sent' | 'created';
+}
+
+const errorMessage = (e: unknown) =>
+  e instanceof Error ? e.message : 'Something went wrong';
 
 type FinalizeOutcome = 'stay' | 'complete' | 'defer';
 
@@ -127,16 +142,30 @@ export const finalizeOutcome = (
   return keepOpen && action !== 'fill' ? 'defer' : 'complete';
 };
 
-export const deferCompletion = (
+const isDocusignPress = (action: EditorToolbarAction) =>
+  action === 'draft' || action === 'sign';
+
+export const recordAttempt = (
   session: ReviewSession,
   action: EditorToolbarAction
-): ReviewSession => ({
-  ...session,
-  pendingCompletion: true,
-  sent: session.sent || action === 'sign',
-  draftedRevision:
-    action === 'draft' ? session.editRevision : session.draftedRevision
-});
+): ReviewSession =>
+  isDocusignPress(action) ? { ...session, draftAttempted: true } : session;
+
+export const deferCompletion = (
+  session: ReviewSession,
+  action: EditorToolbarAction,
+  docusignStatus?: FinalizeResult['docusign_status']
+): ReviewSession => {
+  // The Quik integration's Joint Agreements hold keeps a Sign as a draft.
+  const drafted =
+    action === 'draft' || (action === 'sign' && docusignStatus === 'created');
+  return {
+    ...session,
+    pendingCompletion: true,
+    sent: session.sent || (action === 'sign' && !drafted),
+    draftedRevision: drafted ? session.editRevision : session.draftedRevision
+  };
+};
 
 const draftIsCurrent = (session: ReviewSession) =>
   session.draftedRevision === session.editRevision;
@@ -145,9 +174,7 @@ export const needsDraftRefresh = (
   session: ReviewSession,
   action: EditorToolbarAction
 ) =>
-  (action === 'draft' || action === 'sign') &&
-  session.draftedRevision !== null &&
-  !draftIsCurrent(session);
+  isDocusignPress(action) && session.draftAttempted && !draftIsCurrent(session);
 
 export const isToolbarActionDisabled = (
   session: ReviewSession,
@@ -168,7 +195,9 @@ interface DocumentViewerProps {
   // toolbar, `editor_read_only` locks the PDFs' form fields.
   action: Record<string, any>;
   setShow: (show: boolean) => void;
-  onComplete: () => void;
+  // May return the flow it continues, so a kept-open close can recover when
+  // that flow fails.
+  onComplete: () => void | Promise<unknown>;
   // The toolbar exposes a single Continue action (label varies by
   // `envelope_action`) that calls this to finalize the reviewed envelopes.
   onFinalize?: (params: {
@@ -182,7 +211,7 @@ interface DocumentViewerProps {
     // Whether this press is the one a completion would report, now or on a
     // later close, so the caller can tell its outcome from a Download's.
     completes: boolean;
-  }) => Promise<{ status?: string; message?: string } | void>;
+  }) => Promise<FinalizeResult | void>;
   // Persist a PDF the filler edited in the viewer back to its envelope.
   // Called before finalize for every document with unsaved field edits, so
   // whatever outcome finalize runs (download, sign, ...) acts on the edited
@@ -221,7 +250,11 @@ export default function DocumentViewer({
     // The opener keeps the viewer mounted while the flow runs on, and a
     // second close or press in that window would complete twice.
     setBusyKey('closing');
-    onComplete();
+    // Left frozen, a flow that failed after the close would strand the filler.
+    Promise.resolve(onComplete()).catch((e) => {
+      setError(errorMessage(e));
+      setBusyKey(null);
+    });
   };
   // Read by the once-bound Escape handler, which must call the latest close.
   const closeRef = useRef(close);
@@ -462,6 +495,8 @@ export default function DocumentViewer({
       orderedToolbarActions,
       keepOpen
     );
+    const refreshDraft = needsDraftRefresh(session, toolbarAction);
+    if (keepOpen) setSession((s) => recordAttempt(s, toolbarAction));
     setBusyKey(busyActionKey);
     setError('');
     try {
@@ -478,7 +513,7 @@ export default function DocumentViewer({
         envelopes: reviewedEnvelopes,
         envelopeAction: TOOLBAR_ACTION_ENVELOPE_ACTION[toolbarAction],
         draft: toolbarAction === 'draft',
-        refreshDraft: needsDraftRefresh(session, toolbarAction),
+        refreshDraft,
         completes: outcome !== 'stay'
       });
       if (result?.status === 'error') {
@@ -486,11 +521,13 @@ export default function DocumentViewer({
         else setError(result.message ?? 'Something went wrong');
       } else if (outcome === 'complete') onComplete();
       else if (outcome === 'defer')
-        setSession((s) => deferCompletion(s, toolbarAction));
+        setSession((s) =>
+          deferCompletion(s, toolbarAction, result?.docusign_status)
+        );
       // 'stay': the outcome has run (file downloaded, field saved) and the
       // filler stays here to reach the conclusive action.
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Something went wrong';
+      const message = errorMessage(e);
       if (/expired/i.test(message)) setExpiredBanner(true);
       else setError(message);
     } finally {
