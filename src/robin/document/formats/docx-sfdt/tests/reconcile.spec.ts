@@ -94,6 +94,21 @@ describe('composeTracked', () => {
     expect(p.landed).toBe('card');
   });
 
+  it('a deleted text box is itself a tracked Deletion, so accepting removes the box (92d19295 t1)', () => {
+    const intended = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
+    let holder: NfNode | undefined;
+    walk(intended.root, docxTree, ({ node }) => {
+      if (!holder && arr<NfNode>(node.inlines).some((i) => i.kind === 'shape')) holder = node;
+    });
+    const shape = arr<NfNode>(holder?.inlines).find((i) => i.kind === 'shape') as NfNode;
+    (holder as NfNode).inlines = arr<NfNode>(holder?.inlines).filter((i) => i !== shape);
+    const { tracked } = composeTracked(s.view, intended, 't');
+    const [deleted] = occurrences(tracked, shape.id);
+    expect(deleted.pending).toEqual(expect.objectContaining({ kind: 'Deletion', group: 't' }));
+    expect(occurrences(accept(tracked), shape.id)).toHaveLength(0);
+    expect(occurrences(reject(tracked), shape.id)).toHaveLength(1);
+  });
+
   it('a deleted node that is not moved keeps its bookmarks', () => {
     const intended = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
     const blocks = arr<NfNode>(arr<NfNode>(intended.root.sections)[1].blocks);

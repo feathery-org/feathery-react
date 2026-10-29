@@ -658,7 +658,7 @@ const TABLE_PART_DEFAULTS: Readonly<
 
 /**
  * N12: a table, row or cell format the editor fills in is the same as one written without the
- * fill: borders with every side empty, an empty shading, a shading's `empty` foreground and
+ * fill: an empty border side, an empty shading, a shading's `empty` foreground and
  * `TextureNone` texture, a cell spanning one column and one row, no grid before or after a row,
  * and a table's default margins (measured: a table written with only widths and a fill reads back
  * with exactly these). A value the write set to anything else still counts.
@@ -676,6 +676,12 @@ export const N12: Normalization = {
         if (k in defaults && JSON.stringify(v) === JSON.stringify(defaults[k]))
           continue;
         if (k === 'borders' && emptyDeep(v)) continue;
+        if (k === 'borders' && isObject(v)) {
+          next[k] = Object.fromEntries(
+            Object.entries(v).filter(([, side]) => !emptyDeep(side))
+          );
+          continue;
+        }
         if (k === 'shading' && isObject(v)) {
           const shading = { ...v };
           if (shading.foregroundColor === 'empty')
@@ -932,8 +938,12 @@ export function conservedResidue(entry: unknown): unknown {
       .map((h) => ({ k: h.k, v: h.v }));
     if (kept.length) hiddenIn[k] = kept;
   }
+  // Only residue-held keys are conserved, a shown key follows the node
   const keys = arr<string>(entry.keys).filter(
-    (k) => k !== 'revisionIds' && k !== 'lastParagraphMarkCopied'
+    (k) =>
+      k !== 'revisionIds' &&
+      k !== 'lastParagraphMarkCopied' &&
+      (k in hidden || k in hiddenIn)
   );
   return { hidden, hiddenIn, keys };
 }

@@ -207,7 +207,8 @@ export const tableIdentityFinalizer: Finalizer = {
       const keeper =
         group.find((c) => tableOf(before.get(c.id)) === table) ?? group[0];
       for (const c of group) {
-        if (c === keeper) continue;
+        // Only copies this change added, a pending move's two copies were already there
+        if (c === keeper || tableOf(before.get(c.id)) === table) continue;
         let k = 2;
         while (used.has(`${table}_${k}`)) k += 1;
         const fresh = `${table}_${k}`;

@@ -9,6 +9,7 @@ import type { DocumentView, FeatureMark } from '../../pack';
 import type { NfNode } from '../../tree';
 import { hasPendingInside } from '../../tree';
 import { HEADER_FOOTER, INLINE_KINDS, KIND } from './adapter/keys';
+import { revisionsIn } from './adapter/revisions';
 import { bindingMarks } from './features/formula';
 import { sectionMarkerMark } from './features/sectionMarker';
 import { viewToc } from './toc';
@@ -70,8 +71,11 @@ const frameText = (node: NfNode): string =>
 const pendingTag = (n: NfNode): string => {
   if (!isObject(n.pending)) return '';
   const p = n.pending;
-  const parts = [p.kind, p.author && `by ${p.author}`].filter(Boolean);
-  return ` [pending ${parts.join(' ')}${
+  // A later card's deletion stacked on an insertion shows as both
+  const parts = revisionsIn(p).map((r) =>
+    [r.kind, r.author && `by ${r.author}`].filter(Boolean).join(' ')
+  );
+  return ` [pending ${parts.join(', then ')}${
     isObject(p.mark) ? `${parts.length ? ', ' : ''}mark ${p.mark.kind}` : ''
   }]`;
 };

@@ -1,10 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { comparable, comparableText, toFixedPoint } from '../../../proof';
+import { comparable, comparableText, prove, toFixedPoint } from '../../../proof';
 import { NfNode, NormalForm, canonicalJson, walk } from '../../../tree';
 import { docxPack } from '../index';
+import { makeView } from '../../../view';
 import { toNormalForm } from '../adapter/toNormalForm';
-import { ownText } from '../outline';
+import { detail, ownText } from '../outline';
 import { docxTree } from '../tree';
 import {
   N1,
@@ -313,6 +314,21 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(NORMALIZATIONS.map((n) => n.name)).toContain('N12');
   });
 
+  it('N12 the empty sides the editor adds beside a written border are the same as none (7164f8e6 t2)', () => {
+    const nf = fresh();
+    const cell = all(nf).find((n) => n.kind === 'cell' && typeof n.style === 'string') as NfNode;
+    const apply = (borders: Record<string, unknown>) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.probe = { borders };
+      (all(d).find((n) => n.id === cell.id) as NfNode).style = 'probe';
+      const out = N12.apply(d);
+      return out.formats[String((all(out).find((n) => n.id === cell.id) as NfNode).style)];
+    };
+    const top = { lineStyle: 'Single', lineWidth: 0.5, color: '#000000FF' };
+    expect(apply({ top, diagonalDown: {}, diagonalUp: {}, horizontal: {}, vertical: {} })).toEqual(apply({ top }));
+    expect(apply({ top, bottom: { lineStyle: 'Single' } })).not.toEqual(apply({ top }));
+  });
+
   it('N13 an empty text run is the same as none (troy-1: a moved cell came back without it)', () => {
     const nf = fresh();
     const para = all(nf).find((n) => n.kind === 'paragraph' && Array.isArray(n.inlines) && (n.inlines as NfNode[]).some((i) => i.kind === 'run')) as NfNode;
@@ -402,6 +418,47 @@ describe('normalizations (each a true positive and a true negative)', () => {
 });
 
 describe('authorship, residue and the expected rejection', () => {
+  it('the outline names every card on a row, so one deleted after it was inserted reads as deleted (76b6047e)', () => {
+    const nf = fresh();
+    const row = all(nf).find((n) => n.kind === 'row') as NfNode;
+    row.pending = { ...ins('A'), revisions: [ins('A'), del('B')] };
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Robin, then Deletion by Robin]');
+    row.pending = ins('A');
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Robin]');
+  });
+
+  // Another card's inserted heading, then this turn's write over it, as the live document reads back
+  const cardRuns = (live: Array<{ text: string; pending: unknown }>) => {
+    const before = fresh();
+    const para = all(before).find((n) => n.kind === 'paragraph' && (n.inlines as NfNode[]).some((i) => i.kind === 'run')) as NfNode;
+    const run = (para.inlines as NfNode[]).find((i) => i.kind === 'run') as NfNode;
+    para.inlines = [{ ...run, text: 'Garage State', pending: ins('A') }];
+    const after = JSON.parse(JSON.stringify(before)) as NormalForm;
+    (all(after).find((n) => n.id === para.id) as NfNode).inlines = live.map((r, i) => ({ ...run, id: `${run.id}-${i}`, ...r }));
+    return prove(docxPack, { before, intended: after, live: after, turnId: 't', intendedResidue: {}, liveResidue: {} });
+  };
+
+  it("a deletion inside another card's inserted run keeps that card whole (3c41412c t46)", () => {
+    const p = cardRuns([
+      { text: 'Garage ', pending: { ...ins('A'), revisions: [ins('A'), del('t')] } },
+      { text: 'State', pending: ins('A') }
+    ]);
+    expect(p.authorshipDiff).toEqual([]);
+  });
+
+  it("text the editor tagged with another card is still not this change's (3c41412c t37, 5a5796c5 t7)", () => {
+    const merged = cardRuns([
+      { text: 'Garage State', pending: ins('A') },
+      { text: '$1,171.00', pending: ins('A') }
+    ]);
+    expect(merged.authorshipDiff).toEqual(expect.arrayContaining([expect.stringContaining('not grouped under this change')]));
+    const moved = cardRuns([
+      { text: 'Garage State', pending: ins('A') },
+      { text: '$16,904.91', pending: { ...ins('A'), move: 'n3115' } }
+    ]);
+    expect(moved.authorship).toBe(false);
+  });
+
   it('a pending view is this turn\'s only when every revision in it is', () => {
     expect(authoredBy(ins('t1'), 't1')).toBe(true);
     expect(authoredBy({ mark: del('t1') }, 't1')).toBe(true);
@@ -416,6 +473,14 @@ describe('authorship, residue and the expected rejection', () => {
     const c = { ...b, hiddenIn: { contentControlProperties: [{ at: 3, k: 'color', v: '#FFF' }] } };
     expect(conservedResidue(a)).not.toEqual(conservedResidue(c));
     expect(conservedResidue({ keys: [], hidden: { images: { 0: 'data' } }, hiddenIn: {} })).not.toEqual(conservedResidue({ keys: [], hidden: {}, hiddenIn: {} }));
+  });
+
+  it('a rebuilt table conserves only the keys its residue holds, not shown keys the write left out (ae748313 t7)', () => {
+    const read = { keys: ['rows', 'grid', 'tableFormat', 'description', 'title', 'columnCount', 'bidi'], hidden: { grid: [], columnCount: 3, bidi: false }, hiddenIn: {} };
+    const rebuilt = { ...read, keys: ['rows', 'grid', 'tableFormat', 'columnCount', 'bidi'] };
+    expect(conservedResidue(read)).toEqual(conservedResidue(rebuilt));
+    const lost = { ...rebuilt, keys: ['rows', 'grid', 'tableFormat', 'columnCount'], hidden: { grid: [], columnCount: 3 } };
+    expect(conservedResidue(read)).not.toEqual(conservedResidue(lost));
   });
 
   it('rejecting restores the text but keeps formatting applied untracked', () => {

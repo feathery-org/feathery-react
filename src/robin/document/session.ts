@@ -340,6 +340,7 @@ export class DocumentSession {
       };
     }
 
+    const restoreGuesses = this.ids.checkpointUncertain();
     const outcome = this.writing(() => {
       const out = reconcile({
         pack: this.pack,
@@ -416,6 +417,8 @@ export class DocumentSession {
       };
     }
     if (outcome.outcome !== 'committed') {
+      // Drop the id guesses made while reading back the refused write
+      restoreGuesses();
       const rolledBack =
         outcome.rollback.byteEqual || outcome.rollback.equivalent;
       trace.committed('rolled-back', outcome.seams, 0);
