@@ -8,13 +8,7 @@ import type { Deck, Shape } from '../core/model/types';
 import { Toolbar } from '../ui/PptxToolbar';
 import { SvgSlide } from '../ui/SlideStage';
 import { JsonPanel } from '../ui/JsonPanel';
-import {
-  act,
-  mountEditor,
-  openMenu,
-  sampleBytes,
-  type Mounted
-} from './harness';
+import { act, mountEditor, sampleBytes, type Mounted } from './harness';
 
 const PNG_DATA =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -207,10 +201,10 @@ it('exposes toolbar buttons and keyboard shortcuts for undo and redo', async () 
     'button[title^="Undo Move shape"]'
   ) as HTMLButtonElement;
   expect(undo.disabled).toBe(false);
-  // Slide-size controls live in the Slide dropdown menu.
-  await openMenu(host, 'Slide');
+  // Slide-size lives inline in the slide settings, shown with no selection.
+  await act(async () => store.select(null));
   const sizePreset = host.querySelector(
-    'select[title="Slide size preset (applies to every slide)"]'
+    'select[title="Slide size (applies to every slide)"]'
   ) as HTMLSelectElement;
   sizePreset.focus();
   // The POC's global Ctrl+Z handler moved onto the PptxEditor wrapper (not
@@ -561,9 +555,9 @@ it('routes slide-size toolbar edits through engine history without remounting SV
   );
   const before = deckToJSON(deck).slides[0].sizeEMU;
   const svg = host.querySelector('svg[data-svg-uid]');
-  await openMenu(host, 'Slide');
+  // Slide-size lives inline in the slide settings, shown with no selection.
   const preset = host.querySelector(
-    'select[title="Slide size preset (applies to every slide)"]'
+    'select[title="Slide size (applies to every slide)"]'
   ) as HTMLSelectElement;
   // Pick whichever preset differs from the current size.
   const target = before.cx === 9144000 ? 'wide' : 'standard';

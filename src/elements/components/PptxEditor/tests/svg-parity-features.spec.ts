@@ -51,7 +51,12 @@ it('renders and serializes highlight, superscript, and subscript run formatting'
   const span = renderSlideSvg(deck, slide).querySelector(
     `[data-shape-id="${shape.id}"] [data-source-run]`
   ) as HTMLElement;
-  expect(span.style.backgroundColor).toBe('rgb(247, 184, 1)');
+  // Highlight paints as a gradient band clamped to the line box (so wrapped
+  // lines don't overlap at our tight line spacing), carrying the same color.
+  // (jsdom's CSSOM can't parse linear-gradient, so read the raw style string.)
+  const runCss = (span.getAttribute('style') || '').toLowerCase();
+  expect(runCss).toContain('linear-gradient(#f7b801,#f7b801)');
+  expect(runCss).toContain('background-size:100% calc(1lh - 0.06em)');
   expect(span.style.verticalAlign).toBe('30%');
   const run = deckToJSON(deck).slides[0].shapes.find(
     (candidate) => candidate.id === shape.id
@@ -89,7 +94,9 @@ it('renders theme-based run highlights after import and preserves them on export
   const span = Array.from(rendered.querySelectorAll('[data-source-run]')).find(
     (node) => node.textContent === 'Accountable'
   ) as HTMLElement;
-  expect(span.style.backgroundColor).toBe('rgb(0, 162, 255)');
+  expect((span.getAttribute('style') || '').toLowerCase()).toContain(
+    'linear-gradient(#00a2ff,#00a2ff)'
+  );
   const reopened = importDeck(exportDeckBytes(imported));
   const restored = reopened.slides[0].shapes.find(
     (node) => node.id === shape.id

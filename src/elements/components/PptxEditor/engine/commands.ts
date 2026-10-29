@@ -146,6 +146,7 @@ export type EditorCommand =
   | { type: 'insert-shape'; slideId: string; shape: ShapeInsertion }
   | { type: 'toggle-deck-slide-numbers'; enabled: boolean }
   | { type: 'set-shape-fill'; slideId: string; shapeId: string; color: string }
+  | { type: 'set-line-color'; slideId: string; shapeId: string; color: string }
   | { type: 'delete-shapes'; slideId: string; shapeIds: string[] }
   | { type: 'ungroup-shape'; slideId: string; shapeId: string }
   | {

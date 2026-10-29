@@ -5,6 +5,7 @@ import {
   usePptxEditorStore
 } from '../state/PptxEditorContext';
 import { readPictureCrop, type TextStyle } from '../core/model/edit';
+import { resolveColorAt } from '../core/render/color';
 import { resolveListProps } from '../core/model/resolve';
 import {
   tableCell,
@@ -181,6 +182,22 @@ export function Toolbar({
   const canFillShape = sh?.type === 'shape' || sh?.type === 'text';
   const isTable = sh?.type === 'table';
   const isPicture = sh?.type === 'pic';
+  // Lines/connectors are colored by their stroke (a:ln), not a shape fill, so
+  // the color control recolors the line instead. A line is a connector or an
+  // sp whose geometry is a line/connector preset.
+  const isLine =
+    sh?.type === 'connector' ||
+    (sh?.type === 'shape' &&
+      !!sh.geom &&
+      (sh.geom === 'line' || /Connector/i.test(sh.geom)));
+  // Resolve the stroke the same way the renderer draws it (theme/scheme colors
+  // included) so the swatch matches the line instead of showing the black
+  // fallback whenever the stroke isn't a plain srgbClr.
+  const lineLn = isLine && sh?.spPr ? child(sh.spPr, 'a:ln') : undefined;
+  const lineColor =
+    lineLn && deck
+      ? resolveColorAt(child(lineLn, 'a:solidFill'), deck.pkg, slide?.path)
+      : undefined;
   // Hide the text/fill cluster when it does not apply: a picture (crop tools
   // only) or a table with no cell context. Font editing appears for a table
   // only once a cell is clicked into or its content is selected.
@@ -371,25 +388,6 @@ export function Toolbar({
     );
   };
 
-  const reorder = (op: 'front' | 'back' | 'forward' | 'backward') => {
-    if (!slide || !sh) return;
-    const labels = {
-      front: 'Bring shape to front',
-      back: 'Send shape to back',
-      forward: 'Bring shape forward',
-      backward: 'Send shape backward'
-    };
-    executeCommand(
-      {
-        type: 'reorder-shape',
-        slideId: slide.path,
-        shapeId: sh.id,
-        operation: op
-      },
-      labels[op]
-    );
-  };
-
   const onImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !deck || !slide) return;
@@ -484,10 +482,34 @@ export function Toolbar({
           }
         }}
       >
-        {/* Top row: history, the Insert / Slide menus, host actions. The
-          styling row below stays persistent, so a just-inserted element can
-          be styled immediately. */}
-        <div css={styles.topRow} role='toolbar' aria-label='Editor actions'>
+        {/* One combined toolbar: a fixed left group (add slide, history,
+          insert) then a contextual middle that shows slide settings when
+          nothing is selected and shape settings otherwise. The text-selection
+          capture (moved off the old styling row) stays so styling a live text
+          selection still works. */}
+        <div
+          css={styles.bar}
+          role='toolbar'
+          aria-label='Editor actions'
+          onMouseDownCapture={captureTextRangeForToolbar}
+          onMouseUpCapture={(e) => {
+            if (
+              (e.target as HTMLElement).matches('input[type="color"], select')
+            )
+              return;
+            store.setTextToolbarPointer(false);
+          }}
+        >
+          <B
+            disabled={!deck}
+            onClick={() => store.addSlide(activeSlide + 1)}
+            title='Add slide after the current one'
+          >
+            <span css={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span css={{ fontSize: 15, lineHeight: 1 }}>+</span>Slide
+            </span>
+          </B>
+          <span css={styles.sep} />
           <B
             historyAction
             disabled={!undoStack.length && !commitSvgTextEdit}
@@ -709,274 +731,13 @@ export function Toolbar({
               </>
             )}
           </MenuButton>
-          <MenuButton title='Slide' label='Slide' disabled={!slide} width={250}>
-            {(close) => (
+          <span css={styles.sep} />
+          <div css={styles.contextual}>
+            {hasSel ? (
               <>
-                <span css={styles.tableLabel}>Dimensions</span>
-                <div css={styles.menuRow}>
-                  <select
-                    disabled={!slide}
-                    value={currentPreset}
-                    onChange={(e) => {
-                      const preset =
-                        SLIDE_SIZE_PRESETS[
-                          e.target.value as keyof typeof SLIDE_SIZE_PRESETS
-                        ];
-                      if (preset) resizeSlide(preset.cx, preset.cy);
-                    }}
-                    css={{ ...styles.select, width: '100%' }}
-                    title='Slide size preset (applies to every slide)'
-                    aria-label='Slide size preset (applies to every slide)'
-                  >
-                    {Object.entries(SLIDE_SIZE_PRESETS).map(([key, preset]) => (
-                      <option key={key} value={key}>
-                        {preset.label}
-                      </option>
-                    ))}
-                    <option value='custom'>Custom</option>
-                  </select>
-                </div>
-                <div css={styles.menuDivider} />
-                <span css={styles.tableLabel}>Background</span>
-                <div css={styles.menuRow}>
-                  <select
-                    value={backgroundMode}
-                    onChange={(event) =>
-                      setBackgroundMode(
-                        event.target.value as 'solid' | 'gradient' | 'image'
-                      )
-                    }
-                    css={styles.select}
-                    title='Background type'
-                    aria-label='Background type'
-                  >
-                    <option value='solid'>Solid</option>
-                    <option value='gradient'>Gradient</option>
-                    <option value='image'>Image</option>
-                  </select>
-                  {backgroundMode === 'solid' && (
-                    <ColorControl
-                      value={backgroundColor1}
-                      onCommit={setSolidBg}
-                      title='Solid background color'
-                    >
-                      <span
-                        css={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: 2,
-                          background: backgroundColor1,
-                          boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
-                        }}
-                      />
-                    </ColorControl>
-                  )}
-                  {backgroundMode === 'image' && (
-                    <B
-                      disabled={!slide}
-                      onClick={() => bgImgRef.current?.click()}
-                      title='Choose background image'
-                    >
-                      Choose image…
-                    </B>
-                  )}
-                </div>
-                {backgroundMode === 'gradient' && (
-                  <div css={styles.menuRow}>
-                    {/* Figma-style gradient editor: a live preview bar with a
-                      color stop at each end; picking a stop's color applies
-                      at once. */}
-                    <span
-                      css={{
-                        position: 'relative',
-                        width: 118,
-                        height: 24,
-                        flex: '0 0 auto',
-                        borderRadius: 12,
-                        // CSS 0deg points up; the deck's 0deg points right.
-                        background: `linear-gradient(${
-                          backgroundAngle + 90
-                        }deg, ${backgroundColor1}, ${backgroundColor2})`,
-                        boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
-                      }}
-                    >
-                      {(
-                        [
-                          ['start', backgroundColor1, { left: 3 }],
-                          ['end', backgroundColor2, { right: 3 }]
-                        ] as const
-                      ).map(([stop, color, pos]) => (
-                        <span
-                          key={stop}
-                          css={{
-                            position: 'absolute',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            boxSizing: 'border-box',
-                            width: 18,
-                            height: 18,
-                            borderRadius: '50%',
-                            background: color,
-                            border: '2px solid #fff',
-                            boxShadow: '0 0 0 1px rgba(23,26,28,.35)',
-                            ...pos
-                          }}
-                        >
-                          <CommitColorInput
-                            value={color}
-                            onCommit={(value) => {
-                              if (stop === 'start') {
-                                setBackgroundColor1(value);
-                                setGradientBg({ color1: value });
-                              } else {
-                                setBackgroundColor2(value);
-                                setGradientBg({ color2: value });
-                              }
-                            }}
-                            title={
-                              stop === 'start'
-                                ? 'Gradient start color'
-                                : 'Gradient end color'
-                            }
-                            bare
-                          />
-                        </span>
-                      ))}
-                    </span>
-                    <select
-                      value={backgroundAngle}
-                      onChange={(event) => {
-                        const angleDeg = Number(event.target.value);
-                        setBackgroundAngle(angleDeg);
-                        setGradientBg({ angleDeg });
-                      }}
-                      css={styles.select}
-                      title='Gradient direction'
-                      aria-label='Gradient direction'
-                    >
-                      <option value='0'>→</option>
-                      <option value='45'>↘</option>
-                      <option value='90'>↓</option>
-                      <option value='135'>↙</option>
-                      <option value='270'>↑</option>
-                    </select>
-                  </div>
-                )}
-                <div css={styles.menuDivider} />
-                <button
-                  type='button'
-                  css={styles.menuItem}
-                  title={
-                    slideNumberShape
-                      ? 'Remove slide numbers from every slide'
-                      : 'Add slide numbers to every slide (delete the box on a slide to opt just that slide out)'
-                  }
-                  onClick={() => {
-                    executeCommand(
-                      {
-                        type: 'toggle-deck-slide-numbers',
-                        enabled: !slideNumberShape
-                      },
-                      slideNumberShape
-                        ? 'Remove slide numbers'
-                        : 'Add slide numbers'
-                    );
-                    close();
-                  }}
-                >
-                  <span
-                    css={{
-                      width: 18,
-                      textAlign: 'center',
-                      fontWeight: 600,
-                      flex: '0 0 auto'
-                    }}
-                  >
-                    #
-                  </span>
-                  Slide numbers
-                  {/* On/off switch, Feathery red when enabled. */}
-                  <span
-                    aria-hidden='true'
-                    css={{
-                      marginLeft: 'auto',
-                      flex: '0 0 auto',
-                      position: 'relative',
-                      width: 30,
-                      height: 16,
-                      borderRadius: 999,
-                      background: slideNumberShape ? FEATHERY_RED : ZINC[300],
-                      transition: 'background .15s'
-                    }}
-                  >
-                    <span
-                      css={{
-                        position: 'absolute',
-                        top: 2,
-                        left: slideNumberShape ? 16 : 2,
-                        width: 12,
-                        height: 12,
-                        borderRadius: '50%',
-                        background: '#fff',
-                        transition: 'left .15s',
-                        boxShadow: '0 1px 2px rgba(23,26,28,.35)'
-                      }}
-                    />
-                  </span>
-                </button>
-              </>
-            )}
-          </MenuButton>
-
-          {devJson && (
-            <B on={showJson} onClick={toggleJson} title='Live JSON panel'>
-              {'{ }'}
-            </B>
-          )}
-          <div
-            css={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginLeft: 'auto'
-            }}
-          >
-            {rightActions}
-          </div>
-        </div>
-        {/* Hidden file inputs live outside the menus: closing a menu must not
-          unmount the input while the OS file dialog is still open. */}
-        <input
-          ref={imgRef}
-          type='file'
-          accept='image/*'
-          hidden
-          onChange={onImage}
-        />
-        <input
-          ref={bgImgRef}
-          type='file'
-          accept='image/*'
-          hidden
-          onChange={onBgImage}
-        />
-
-        {/* Persistent styling row. */}
-        <div
-          css={styles.pane}
-          role='toolbar'
-          aria-label='Text formatting'
-          onMouseDownCapture={captureTextRangeForToolbar}
-          onMouseUpCapture={(e) => {
-            if (
-              (e.target as HTMLElement).matches('input[type="color"], select')
-            )
-              return;
-            store.setTextToolbarPointer(false);
-          }}
-        >
-          {/* The text/fill cluster is hidden when it does not apply (a picture,
-            or a table with no active cell) so the contextual tools have room. */}
+                {/* Shape settings: the text/fill cluster (hidden for a
+                  picture or an inactive table) plus the contextual shape
+                  tools below. */}
           {!hideTextCluster && (
             <>
               <select
@@ -999,12 +760,23 @@ export function Toolbar({
                 ))}
               </select>
               <input
+                // Uncontrolled + commit on blur/Enter: each size change runs a
+                // full shape re-render, so committing per keystroke made typing
+                // lag. `key` resets the field when the resolved size changes.
+                key={`size-${sh?.id ?? 'none'}-${effectiveSize}`}
                 disabled={!isText}
                 type='number'
                 min={6}
                 max={200}
-                value={effectiveSize}
-                onChange={(e) => applyText({ sizePt: Number(e.target.value) })}
+                defaultValue={effectiveSize}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                }}
+                onBlur={(e) => {
+                  const next = Number(e.target.value);
+                  if (next && next !== effectiveSize)
+                    applyText({ sizePt: next });
+                }}
                 css={styles.num()}
                 title='Size'
                 aria-label='Size'
@@ -1206,164 +978,155 @@ export function Toolbar({
                 <AlignJustifyIcon width={16} height={16} />
               </B>
               <span css={styles.sep} />
-              <B
-                disabled={!sh?.text}
-                on={bulletValue.startsWith('char:')}
-                onClick={() =>
-                  applyBullet(
-                    bulletValue.startsWith('char:') ? 'none' : 'char:•'
-                  )
-                }
-                title='Bullets'
-              >
-                <BulletListIcon width={16} height={16} />
-              </B>
-              <MenuButton
-                title='Bullet style'
-                label=''
-                disabled={!sh?.text}
-                width={176}
-              >
-                {(close) => (
-                  <>
-                    <div css={styles.menuHeading}>Bullets</div>
-                    <div css={styles.bulletGrid}>
-                      {BULLET_CHARS.map((c) => (
-                        <button
-                          key={c}
-                          type='button'
-                          title={`Bullet ${c}`}
-                          css={styles.bulletCell(bulletValue === `char:${c}`)}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => {
-                            applyBullet(`char:${c}`);
-                            close();
-                          }}
-                        >
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                    <div css={styles.menuDivider} />
-                    <button
-                      type='button'
-                      css={styles.menuItem}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        applyBullet('none');
-                        close();
-                      }}
-                    >
-                      No bullet
-                    </button>
-                  </>
-                )}
-              </MenuButton>
-              <B
-                disabled={!sh?.text}
-                on={bulletValue.startsWith('auto:')}
-                onClick={() =>
-                  applyBullet(
-                    bulletValue.startsWith('auto:')
-                      ? 'none'
-                      : 'auto:arabicPeriod'
-                  )
-                }
-                title='Numbering'
-              >
-                <NumberListIcon width={16} height={16} />
-              </B>
-              <MenuButton
-                title='Numbering style'
-                label=''
-                disabled={!sh?.text}
-                width={200}
-              >
-                {(close) => (
-                  <>
-                    <div css={styles.menuHeading}>Numbering</div>
-                    {NUMBER_SCHEMES.map((n) => (
+              <span css={{ display: 'inline-flex', alignItems: 'stretch' }}>
+                <B
+                  attached='left'
+                  disabled={!sh?.text}
+                  on={bulletValue.startsWith('char:')}
+                  onClick={() =>
+                    applyBullet(
+                      bulletValue.startsWith('char:') ? 'none' : 'char:•'
+                    )
+                  }
+                  title='Bullets'
+                >
+                  <BulletListIcon width={16} height={16} />
+                </B>
+                <MenuButton
+                  attached='right'
+                  title='Bullet style'
+                  label=''
+                  disabled={!sh?.text}
+                  width={176}
+                >
+                  {(close) => (
+                    <>
+                      <div css={styles.menuHeading}>Bullets</div>
+                      <div css={styles.bulletGrid}>
+                        {BULLET_CHARS.map((c) => (
+                          <button
+                            key={c}
+                            type='button'
+                            title={`Bullet ${c}`}
+                            css={styles.bulletCell(bulletValue === `char:${c}`)}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              applyBullet(`char:${c}`);
+                              close();
+                            }}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                      <div css={styles.menuDivider} />
                       <button
-                        key={n.scheme}
                         type='button'
-                        title={n.label}
-                        css={styles.numItem(bulletValue === `auto:${n.scheme}`)}
+                        css={styles.menuItem}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
-                          applyBullet(`auto:${n.scheme}`);
+                          applyBullet('none');
                           close();
                         }}
                       >
-                        <span css={styles.numPreview}>{n.sample}</span>
-                        <span>{n.label}</span>
+                        No bullet
                       </button>
-                    ))}
-                    <div css={styles.menuDivider} />
-                    <button
-                      type='button'
-                      css={styles.menuItem}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        applyBullet('none');
-                        close();
-                      }}
-                    >
-                      No numbering
-                    </button>
-                  </>
-                )}
-              </MenuButton>
+                    </>
+                  )}
+                </MenuButton>
+              </span>
+              <span css={{ display: 'inline-flex', alignItems: 'stretch' }}>
+                <B
+                  attached='left'
+                  disabled={!sh?.text}
+                  on={bulletValue.startsWith('auto:')}
+                  onClick={() =>
+                    applyBullet(
+                      bulletValue.startsWith('auto:')
+                        ? 'none'
+                        : 'auto:arabicPeriod'
+                    )
+                  }
+                  title='Numbering'
+                >
+                  <NumberListIcon width={16} height={16} />
+                </B>
+                <MenuButton
+                  attached='right'
+                  title='Numbering style'
+                  label=''
+                  disabled={!sh?.text}
+                  width={200}
+                >
+                  {(close) => (
+                    <>
+                      <div css={styles.menuHeading}>Numbering</div>
+                      {NUMBER_SCHEMES.map((n) => (
+                        <button
+                          key={n.scheme}
+                          type='button'
+                          title={n.label}
+                          css={styles.numItem(
+                            bulletValue === `auto:${n.scheme}`
+                          )}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            applyBullet(`auto:${n.scheme}`);
+                            close();
+                          }}
+                        >
+                          <span css={styles.numPreview}>{n.sample}</span>
+                          <span>{n.label}</span>
+                        </button>
+                      ))}
+                      <div css={styles.menuDivider} />
+                      <button
+                        type='button'
+                        css={styles.menuItem}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          applyBullet('none');
+                          close();
+                        }}
+                      >
+                        No numbering
+                      </button>
+                    </>
+                  )}
+                </MenuButton>
+              </span>
               <span css={styles.sep} />
               <ColorControl
-                disabled={!canFillShape}
-                value={`#${sh?.fillColor || 'FFFFFF'}`}
+                disabled={!canFillShape && !isLine}
+                value={`#${
+                  isLine ? lineColor || '000000' : sh?.fillColor || 'FFFFFF'
+                }`}
                 onCommit={(value) => {
                   if (!slide || !sh) return;
+                  const color = value.replace('#', '').toUpperCase();
                   executeCommand(
-                    {
-                      type: 'set-shape-fill',
-                      slideId: slide.path,
-                      shapeId: sh.id,
-                      color: value.replace('#', '').toUpperCase()
-                    },
-                    'Change fill color'
+                    isLine
+                      ? {
+                          type: 'set-line-color',
+                          slideId: slide.path,
+                          shapeId: sh.id,
+                          color
+                        }
+                      : {
+                          type: 'set-shape-fill',
+                          slideId: slide.path,
+                          shapeId: sh.id,
+                          color
+                        },
+                    isLine ? 'Change line color' : 'Change fill color'
                   );
                 }}
-                title='Shape fill color'
+                title={isLine ? 'Line color' : 'Shape fill color'}
               >
                 <ShadingIcon width={14} height={14} />
               </ColorControl>
-              <span css={styles.sep} />
             </>
           )}
-          <B
-            disabled={!hasSel}
-            onClick={() => reorder('front')}
-            title='Bring to front'
-          >
-            ⤒
-          </B>
-          <B
-            disabled={!hasSel}
-            onClick={() => reorder('forward')}
-            title='Forward'
-          >
-            ↑
-          </B>
-          <B
-            disabled={!hasSel}
-            onClick={() => reorder('backward')}
-            title='Backward'
-          >
-            ↓
-          </B>
-          <B
-            disabled={!hasSel}
-            onClick={() => reorder('back')}
-            title='Send to back'
-          >
-            ⤓
-          </B>
           {sh?.type === 'pic' && pictureCrop && (
             <>
               <span css={styles.sep} />
@@ -1689,11 +1452,10 @@ export function Toolbar({
                 </>
               );
             })()}
-          {/* Delete is pinned to the end of the row, after any contextual
-            tools, so it stays in a predictable place for every selection. */}
-          {hasSel && (
-            <>
-              <span css={{ flex: 1, minWidth: 8 }} />
+              {/* Delete closes the shape group, right after the color picker
+                and the contextual tools — grouped with them, not floated to an
+                edge (no flex spacer). */}
+              <span css={styles.sep} />
               <B
                 disabled={!hasSel}
                 onClick={() => {
@@ -1729,9 +1491,210 @@ export function Toolbar({
                   <path d='M10 11v6M14 11v6' />
                 </svg>
               </B>
-            </>
-          )}
+              </>
+            ) : (
+              <>
+                {/* Slide settings: shown when nothing is selected. */}
+                <select
+                  disabled={!slide}
+                  value={currentPreset}
+                  onChange={(e) => {
+                    const preset =
+                      SLIDE_SIZE_PRESETS[
+                        e.target.value as keyof typeof SLIDE_SIZE_PRESETS
+                      ];
+                    if (preset) resizeSlide(preset.cx, preset.cy);
+                  }}
+                  css={styles.select}
+                  title='Slide size (applies to every slide)'
+                  aria-label='Slide size (applies to every slide)'
+                >
+                  {Object.entries(SLIDE_SIZE_PRESETS).map(([key, preset]) => (
+                    <option key={key} value={key}>
+                      {preset.label}
+                    </option>
+                  ))}
+                  <option value='custom'>Custom</option>
+                </select>
+                <span css={styles.sep} />
+                <select
+                  disabled={!slide}
+                  value={backgroundMode}
+                  onChange={(event) =>
+                    setBackgroundMode(
+                      event.target.value as 'solid' | 'gradient' | 'image'
+                    )
+                  }
+                  css={styles.select}
+                  title='Slide background type'
+                  aria-label='Slide background type'
+                >
+                  <option value='solid'>Background</option>
+                  <option value='gradient'>Gradient</option>
+                  <option value='image'>Image</option>
+                </select>
+                {backgroundMode === 'solid' && (
+                  <ColorControl
+                    value={backgroundColor1}
+                    onCommit={setSolidBg}
+                    title='Solid background color'
+                  >
+                    <span
+                      css={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 2,
+                        background: backgroundColor1,
+                        boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
+                      }}
+                    />
+                  </ColorControl>
+                )}
+                {backgroundMode === 'image' && (
+                  <B
+                    disabled={!slide}
+                    onClick={() => bgImgRef.current?.click()}
+                    title='Choose background image'
+                  >
+                    Choose image…
+                  </B>
+                )}
+                {backgroundMode === 'gradient' && (
+                  <>
+                    {/* Figma-style gradient editor: a live preview bar with a
+                      color stop at each end; picking a stop's color applies at
+                      once. */}
+                    <span
+                      css={{
+                        position: 'relative',
+                        width: 118,
+                        height: 24,
+                        flex: '0 0 auto',
+                        borderRadius: 12,
+                        background: `linear-gradient(${
+                          backgroundAngle + 90
+                        }deg, ${backgroundColor1}, ${backgroundColor2})`,
+                        boxShadow: `inset 0 0 0 1px ${ZINC[300]}`
+                      }}
+                    >
+                      {(
+                        [
+                          ['start', backgroundColor1, { left: 3 }],
+                          ['end', backgroundColor2, { right: 3 }]
+                        ] as const
+                      ).map(([stop, color, pos]) => (
+                        <span
+                          key={stop}
+                          css={{
+                            position: 'absolute',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            boxSizing: 'border-box',
+                            width: 18,
+                            height: 18,
+                            borderRadius: '50%',
+                            background: color,
+                            border: '2px solid #fff',
+                            boxShadow: '0 0 0 1px rgba(23,26,28,.35)',
+                            ...pos
+                          }}
+                        >
+                          <CommitColorInput
+                            value={color}
+                            onCommit={(value) => {
+                              if (stop === 'start') {
+                                setBackgroundColor1(value);
+                                setGradientBg({ color1: value });
+                              } else {
+                                setBackgroundColor2(value);
+                                setGradientBg({ color2: value });
+                              }
+                            }}
+                            title={
+                              stop === 'start'
+                                ? 'Gradient start color'
+                                : 'Gradient end color'
+                            }
+                            bare
+                          />
+                        </span>
+                      ))}
+                    </span>
+                    <select
+                      value={backgroundAngle}
+                      onChange={(event) => {
+                        const angleDeg = Number(event.target.value);
+                        setBackgroundAngle(angleDeg);
+                        setGradientBg({ angleDeg });
+                      }}
+                      css={styles.select}
+                      title='Gradient direction'
+                      aria-label='Gradient direction'
+                    >
+                      <option value='0'>→</option>
+                      <option value='45'>↘</option>
+                      <option value='90'>↓</option>
+                      <option value='135'>↙</option>
+                      <option value='270'>↑</option>
+                    </select>
+                  </>
+                )}
+                <span css={styles.sep} />
+                <B
+                  on={!!slideNumberShape}
+                  disabled={!slide}
+                  onClick={() =>
+                    executeCommand(
+                      {
+                        type: 'toggle-deck-slide-numbers',
+                        enabled: !slideNumberShape
+                      },
+                      slideNumberShape
+                        ? 'Remove slide numbers'
+                        : 'Add slide numbers'
+                    )
+                  }
+                  title={
+                    slideNumberShape
+                      ? 'Remove slide numbers from every slide'
+                      : 'Add slide numbers to every slide (delete the box on a slide to opt just that slide out)'
+                  }
+                >
+                  # Numbers
+                </B>
+              </>
+            )}
+          </div>
+          {/* Host actions. The contextual div already flex-grows, so a divider
+            (not a second flex:1, which would split the space and strand the
+            delete button mid-bar) sets this group off; the gap spaces the
+            "unsaved" indicator from the Save button. */}
+          <span css={styles.sep} />
+          <div css={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {devJson && (
+              <B on={showJson} onClick={toggleJson} title='Live JSON panel'>
+                {'{ }'}
+              </B>
+            )}
+            {rightActions}
+          </div>
         </div>
+        {/* Hidden file inputs live outside the menus: closing a menu must
+          not unmount the input while the OS file dialog is still open. */}
+        <input
+          ref={imgRef}
+          type='file'
+          accept='image/*'
+          hidden
+          onChange={onImage}
+        />
+        <input
+          ref={bgImgRef}
+          type='file'
+          accept='image/*'
+          hidden
+          onChange={onBgImage}
+        />
       </div>
     </InstantTooltips>
   );

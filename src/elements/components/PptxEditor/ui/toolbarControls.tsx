@@ -10,6 +10,8 @@ export function B(props: {
   children: React.ReactNode;
   title?: string;
   historyAction?: boolean;
+  /** Fuse to a neighbor by squaring the touching corners (split control). */
+  attached?: 'left' | 'right';
 }) {
   return (
     <button
@@ -25,7 +27,27 @@ export function B(props: {
       // scroll-to-focus and the stage's text selection survives.
       onMouseDown={(e) => e.preventDefault()}
       data-history-action={props.historyAction ? '' : undefined}
-      css={styles.btn(props.on, props.disabled)}
+      css={{
+        ...styles.btn(props.on, props.disabled),
+        // Toolbar buttons are borderless, so squaring corners alone is
+        // invisible; drop the touching-side padding/min-width too so the pair
+        // reads as one split control instead of two spaced buttons.
+        ...(props.attached === 'left'
+          ? {
+              borderTopRightRadius: 0,
+              borderBottomRightRadius: 0,
+              minWidth: 'auto',
+              padding: '0 2px 0 7px'
+            }
+          : props.attached === 'right'
+          ? {
+              borderTopLeftRadius: 0,
+              borderBottomLeftRadius: 0,
+              minWidth: 'auto',
+              padding: '0 7px 0 2px'
+            }
+          : {})
+      }}
     >
       {props.children}
     </button>

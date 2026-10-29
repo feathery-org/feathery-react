@@ -853,7 +853,18 @@ function runStyle(r: Run, def?: ParaDefault, fontScale = 1): string {
     : curDeck && r.rPr
     ? resolveColor(child(r.rPr, 'a:highlight'), curDeck.pkg)
     : undefined;
-  if (highlight) parts.push(`background-color:${highlight}`);
+  if (highlight)
+    // Paint the highlight as a band just shy of one line box (1lh - 0.06em), not
+    // the font's full ~1.2em content box, which overflows our tight (PowerPoint)
+    // line spacing and bleeds into the next wrapped line. Sizing off 1lh keeps a
+    // constant 0.06em gap at any line spacing: tight like Google Slides on packed
+    // lines, never overlapping, and the gap scales with the font.
+    parts.push(
+      `background-image:linear-gradient(${highlight},${highlight})`,
+      'background-repeat:no-repeat',
+      'background-position:0 50%',
+      'background-size:100% calc(1lh - 0.06em)'
+    );
   if (r.baselinePct) parts.push(`vertical-align:${r.baselinePct}%`);
   return parts.join(';');
 }
