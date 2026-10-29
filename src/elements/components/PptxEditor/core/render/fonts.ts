@@ -1,3 +1,4 @@
+import { clearThumbnailCache } from '../../loading/thumbnailCache';
 import { featheryDoc } from '../../../../../utils/browser';
 import { themeFonts } from '../model/theme';
 import { resolveListProps } from '../model/resolve';
@@ -74,6 +75,7 @@ const topLeadingCache = new Map<string, number>();
 // they capture fallback metrics; flush them (and re-render) once fonts settle.
 const fontSettleListeners = new Set<() => void>();
 function notifyFontsSettled(): void {
+  clearThumbnailCache();
   topLeadingCache.clear();
   fontSettleListeners.forEach((listener) => listener());
 }

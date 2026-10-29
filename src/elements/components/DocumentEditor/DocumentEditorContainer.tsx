@@ -192,7 +192,8 @@ export default function DocumentEditorContainer({
     selectTab,
     filesForSave,
     updateTabEnvelope,
-    resolveEnvelopes
+    resolveEnvelopes,
+    resolveTabEnvelope
   } = useDocumentPacket({
     containerId,
     documents: targetAction?.documents,
@@ -815,6 +816,7 @@ export default function DocumentEditorContainer({
         containerId={containerId}
         formId={formId}
         updateEnvelope={updateTabEnvelope}
+        resolveTabEnvelope={resolveTabEnvelope}
         resolveEnvelopes={resolveEnvelopes}
         registerBeforeReplace={registerBeforeReplace}
         onBusy={setPacketBusy}

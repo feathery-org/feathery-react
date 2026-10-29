@@ -129,7 +129,11 @@ export function rebuildSlides(deck: Deck): void {
 }
 
 export function importDeck(bytes: Uint8Array): Deck {
-  const pkg = OPCPackage.open(bytes);
+  return importPreparedDeck(OPCPackage.open(bytes));
+}
+
+/** Adopt prepared XML without reparsing or losing raw-node identity. */
+export function importPreparedDeck(pkg: OPCPackage): Deck {
   const size = pkg.slideSize();
   const slides = pkg.slidePaths().map((p) => readSlide(pkg, p));
   const deck: Deck = { size, slides, pkg };

@@ -54,8 +54,9 @@ export class OPCPackage {
   private dirty = new Set<string>();
   private mutationSeqs = new Map<string, number>();
 
-  constructor(parts: ZipParts) {
+  constructor(parts: ZipParts, trees = new Map<string, OTree>()) {
     this.parts = parts;
+    this.trees = trees;
   }
 
   static open(bytes: Uint8Array): OPCPackage {

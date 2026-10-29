@@ -6,6 +6,7 @@
 // consumed by React through useSyncExternalStore - no state library dependency.
 
 import { importDeck } from '../core/model/import';
+import { releaseThumbnails } from '../loading/thumbnailCache';
 import type { Deck, Shape } from '../core/model/types';
 import type { TextRange } from '../core/model/edit';
 import {
@@ -134,6 +135,7 @@ export class PptxEditorStore {
    * afterwards (StrictMode remounts reload through loadFile).
    */
   dispose(): void {
+    if (this.state.deck) releaseThumbnails(this.state.deck.pkg);
     this.engine.dispose();
     this.svgRoot = null;
     this.commitSvgTextEdit = null;
@@ -205,7 +207,12 @@ export class PptxEditorStore {
   // ---- engine actions ----
 
   loadFile = (bytes: Uint8Array, name: string): void => {
-    const deck = importDeck(bytes);
+    this.loadDeck(importDeck(bytes), name);
+  };
+
+  loadDeck = (deck: Deck, name: string): void => {
+    if (this.state.deck && this.state.deck !== deck)
+      releaseThumbnails(this.state.deck.pkg);
     this.engine.adopt(deck);
     this.set({
       deck,

@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { featheryDoc } from '../../../../utils/browser';
 import { renderSlideSvg } from '../core/render/svg';
+import { cachedThumbnail, cacheThumbnail } from '../loading/thumbnailCache';
+import { schedulePreview } from '../loading/previewScheduler';
+import type { Deck } from '../core/model/types';
 import { useOutsideClose } from './useOutsideClose';
 import {
   INK,
@@ -14,41 +17,93 @@ import {
   usePptxEditorStore
 } from '../state/PptxEditorContext';
 
-// Left slide navigator: real SVG thumbnails from the same renderer, cached per
-// slide revision. Virtualize only if large decks show a measurable need.
-
+// Every slide keeps a lightweight navigation target; only nearby previews
+// construct SVG. Hiding a tab cancels preview jobs without touching its store.
 const NAV_WIDTH = 200;
 
 function SlideThumbnail({
   slideIndex,
-  rev
+  rev,
+  active,
+  selected
 }: {
   slideIndex: number;
   rev: number;
+  active: boolean;
+  selected: boolean;
 }) {
   const store = usePptxEditorStore();
   const hostRef = useRef<HTMLDivElement>(null);
-  const cacheRef = useRef<{ rev: number; svg: SVGSVGElement } | null>(null);
-
+  const mountedSourceRef = useRef<{
+    deck: Deck;
+    path: string;
+  } | null>(null);
+  const [inViewport, setInViewport] = useState(slideIndex < 3);
+  const deck = store.getState().deck;
+  const slide = deck?.slides[slideIndex];
+  const size = deck?.size;
   useEffect(() => {
     const host = hostRef.current;
-    const { deck } = store.getState();
-    const slide = deck?.slides[slideIndex];
-    if (!host || !deck || !slide) return;
-    if (!cacheRef.current || cacheRef.current.rev !== rev) {
-      const svg = renderSlideSvg(deck, slide);
+    if (!active || !host || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setInViewport(entry.isIntersecting);
+      },
+      { root: host.closest('[data-slide-navigator]'), rootMargin: '120px 0px' }
+    );
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [active]);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    if (
+      !deck ||
+      !slide ||
+      !active ||
+      (!selected && !inViewport) ||
+      (mountedSourceRef.current &&
+        (mountedSourceRef.current.deck !== deck ||
+          mountedSourceRef.current.path !== slide.path))
+    )
+      host.replaceChildren();
+    if (!deck || !slide || !active || (!selected && !inViewport)) {
+      mountedSourceRef.current = null;
+      return;
+    }
+    mountedSourceRef.current = { deck, path: slide.path };
+    const mount = (svg: SVGSVGElement) => {
       svg.setAttribute('width', '100%');
       svg.style.pointerEvents = 'none';
-      cacheRef.current = { rev, svg };
-    }
-    host.replaceChildren(cacheRef.current.svg);
-  }, [store, slideIndex, rev]);
-
+      if (host.firstChild !== svg) host.replaceChildren(svg);
+    };
+    const cached = cachedThumbnail(deck.pkg, slide.path, rev);
+    let cancel = () => {};
+    if (cached) mount(cached);
+    else
+      cancel = schedulePreview(() => {
+        try {
+          const svg = renderSlideSvg(deck, slide);
+          cacheThumbnail(deck.pkg, slide.path, rev, svg);
+          mount(svg);
+        } catch {
+          // A failed preview must not prevent opening or editing the slide.
+          host.replaceChildren();
+        }
+      });
+    return () => {
+      cancel();
+      // Keep the previous preview painted until the replacement is ready.
+      // Clearing here left every visible thumbnail blank for a task on each
+      // undo/redo (and on unrelated state revisions).
+    };
+  }, [store, deck, slide, rev, active, selected, inViewport]);
   return (
     <div
       ref={hostRef}
       css={{
         width: '100%',
+        aspectRatio: size ? `${size.cx} / ${size.cy}` : '4 / 3',
         background: PAPER,
         borderRadius: 4,
         overflow: 'hidden',
@@ -58,7 +113,13 @@ function SlideThumbnail({
   );
 }
 
-export function SlideNavigator({ readOnly = false }: { readOnly?: boolean }) {
+export function SlideNavigator({
+  readOnly = false,
+  active = true
+}: {
+  readOnly?: boolean;
+  active?: boolean;
+}) {
   const store = usePptxEditorStore();
   const state = usePptxEditorState();
   const { deck, activeSlide, rev } = state;
@@ -97,7 +158,7 @@ export function SlideNavigator({ readOnly = false }: { readOnly?: boolean }) {
   const canDelete = deck.slides.length > 1;
 
   return (
-    <div ref={navRef} css={navStyle}>
+    <div ref={navRef} data-slide-navigator css={navStyle}>
       {!readOnly && (
         <button
           type='button'
@@ -224,7 +285,12 @@ export function SlideNavigator({ readOnly = false }: { readOnly?: boolean }) {
                 display: 'block'
               }}
             >
-              <SlideThumbnail slideIndex={i} rev={rev} />
+              <SlideThumbnail
+                slideIndex={i}
+                rev={rev}
+                active={active}
+                selected={i === activeSlide}
+              />
             </span>
           </button>
         </React.Fragment>

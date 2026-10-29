@@ -1,4 +1,5 @@
 import DocumentToast from './DocumentToast';
+import { PresentationLoader } from '../PptxEditor/loading/PresentationLoader';
 import React, {
   useCallback,
   useEffect,
@@ -42,8 +43,12 @@ function PresentationSession({
   onSaveAll,
   onDownloadAll,
   onError,
-  onDirty
+  onDirty,
+  loader,
+  onReady
 }: {
+  loader: PresentationLoader;
+  onReady: (id: string) => void;
   envelope: EditorEnvelope;
   active: boolean;
   busy: boolean;
@@ -64,6 +69,10 @@ function PresentationSession({
   const current = useRef(initial);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [source] = useState(() => ({ url: envelopeSourceUrl(initial) ?? '' }));
+  const prepareSource = useCallback(
+    (signal: AbortSignal) => loader.load(initial.id, source.url, signal),
+    [loader, initial.id, source.url]
+  );
   const saveRef = useRef<(() => Promise<unknown>) | null>(null);
   const dirtyRef = useRef(false);
   const registerSave = useCallback((save: (() => Promise<unknown>) | null) => {
@@ -117,6 +126,9 @@ function PresentationSession({
         ) : (
           <PptxEditor
             source={source}
+            visible={active}
+            prepareSource={prepareSource}
+            onReady={() => onReady(tab.id)}
             fileName={tab.label.replace(/\.pptx$/i, '') + '.pptx'}
             readOnly={readOnly || initial.signed}
             hideDownload={!offersDownload}
@@ -158,6 +170,7 @@ export default function PptxDocumentPacket({
   containerId,
   formId,
   updateEnvelope,
+  resolveTabEnvelope,
   resolveEnvelopes,
   registerBeforeReplace,
   onBusy,
@@ -171,6 +184,7 @@ export default function PptxDocumentPacket({
   containerId?: string;
   formId?: string;
   updateEnvelope: (value: EditorEnvelope) => void;
+  resolveTabEnvelope: (tab: DocumentTab) => Promise<EditorEnvelope | null>;
   resolveEnvelopes: (
     onUnavailable?: (label: string, error: unknown) => void
   ) => Promise<EditorEnvelope[]>;
@@ -179,7 +193,17 @@ export default function PptxDocumentPacket({
   onError: (message: string | null) => void;
 }) {
   const sessions = useRef(new Map<string, Handle>());
+  const selectedId = useRef(activeId);
+  selectedId.current = activeId;
+  const loader = useMemo(() => new PresentationLoader(), [reloadKey]);
+  useEffect(() => () => loader.dispose(), [loader]);
+  const [ready, setReady] = useState<Set<string>>(() => new Set());
+  useEffect(() => setReady(new Set()), [loader]);
+  const markReady = useCallback((id: string) => {
+    setReady((ids) => new Set([...ids, id]));
+  }, []);
   const [visited, setVisited] = useState<string[]>(activeId ? [activeId] : []);
+  useEffect(() => setVisited(activeId ? [activeId] : []), [loader]);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [feedback, setFeedback] = useState('');
@@ -200,6 +224,65 @@ export default function PptxDocumentPacket({
     if (activeId)
       setVisited((ids) => (ids.includes(activeId) ? ids : [...ids, activeId]));
   }, [activeId]);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const visitedRef = useRef(visited);
+  visitedRef.current = visited;
+  // Depend on stable identities (ids + ready/visited keys), not the tabs/ready
+  // object identities that change on every save, so saving doesn't tear down
+  // and restart in-flight background prefetching.
+  const activePrefetchReady = !!activeId && ready.has(activeId);
+  const tabIdKey = tabs.map((tab) => tab.id).join('|');
+  const visitedKey = visited.join('|');
+  useEffect(() => {
+    if (!activeId || !activePrefetchReady) return;
+    const controller = new AbortController();
+    const preparedIdByTab = new Map<string, string>();
+    // Let the active slide paint before preparing at most two likely next tabs.
+    const timer = setTimeout(async () => {
+      const currentTabsList = tabsRef.current;
+      const visitedNow = visitedRef.current;
+      const start = currentTabsList.findIndex((tab) => tab.id === activeId);
+      const candidates = [
+        ...currentTabsList.slice(start + 1),
+        ...currentTabsList.slice(0, start)
+      ]
+        .filter(
+          (tab) =>
+            (tab.envelope || tab.documentId) && !visitedNow.includes(tab.id)
+        )
+        .slice(0, 2);
+      for (const tab of candidates) {
+        if (controller.signal.aborted) return;
+        try {
+          const envelope = tab.envelope ?? (await resolveTabEnvelope(tab));
+          if (controller.signal.aborted) return;
+          const url = envelopeSourceUrl(envelope);
+          if (envelope?.type === 'pptx' && url) {
+            preparedIdByTab.set(tab.id, envelope.id);
+            await loader.prefetch(envelope.id, url, controller.signal);
+          }
+        } catch {
+          // Speculative failures should not block the active document or the
+          // next candidate; selecting the tab surfaces the real error.
+        }
+      }
+    }, 100);
+    return () => {
+      clearTimeout(timer);
+      // Reopened tabs use document-based tab IDs, while the loader keys jobs
+      // by envelope ID. Preserve the selected job before cancelling the rest.
+      loader.prioritize(preparedIdByTab.get(selectedId.current ?? ''));
+      controller.abort();
+    };
+  }, [
+    activeId,
+    activePrefetchReady,
+    tabIdKey,
+    visitedKey,
+    loader,
+    resolveTabEnvelope
+  ]);
   const currentTabs = useRef(tabs);
   currentTabs.current = tabs;
   const flushBeforeReplace = useCallback(async () => {
@@ -380,6 +463,8 @@ export default function PptxDocumentPacket({
           <PresentationSession
             key={`${reloadKey}:${envelope.id}`}
             envelope={envelope}
+            loader={loader}
+            onReady={markReady}
             active={tab.id === activeId}
             busy={busy}
             tab={tab}
