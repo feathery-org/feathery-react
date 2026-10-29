@@ -28,8 +28,6 @@ import {
   downloadBtn,
   menuItem,
   terminalBtn,
-  FEATHERY_RED,
-  FEATHERY_RED_HOVER,
   ZINC
 } from '../../DocxEditor/DocxToolbar/styles';
 import {
@@ -462,23 +460,7 @@ function PptxEditorInner({
               !readOnly && (
                 <button
                   type='button'
-                  css={{
-                    display: 'flex',
-                    height: 32,
-                    alignItems: 'center',
-                    gap: 6,
-                    borderRadius: 6,
-                    border: 'none',
-                    background: FEATHERY_RED,
-                    padding: '0 12px',
-                    fontSize: 14,
-                    fontWeight: 500,
-                    color: '#fff',
-                    cursor: saving ? 'default' : 'pointer',
-                    '&:hover': {
-                      background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
-                    }
-                  }}
+                  css={terminalBtn(saving)}
                   disabled={saving}
                   onClick={handleSave}
                   title={withShortcut('Save', 'S')}

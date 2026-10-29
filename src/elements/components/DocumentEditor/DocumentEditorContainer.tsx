@@ -777,7 +777,10 @@ export default function DocumentEditorContainer({
   if (editMode) {
     if (!previewType || previewType === 'docx')
       return box(<DocxEditor preview hideDownload />);
-    return box(<EditorPreview type={previewType} />);
+    return box(
+      <EditorPreview type={previewType} />,
+      previewType === 'pptx' ? editorWrap : wrap
+    );
   }
   if (!activeDocumentId && !envelope) {
     return box(
