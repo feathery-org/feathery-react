@@ -1,6 +1,20 @@
 import { featheryWindow } from './browser';
 export { SDKKeyError } from '@feathery/client-utils';
 
+const FETCH_NETWORK_ERROR_MESSAGES = [
+  // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
+  'Failed to fetch',
+  // e.g. https://sentry.io/organizations/feathery-forms/issues/3529742129/
+  'Load failed'
+];
+
+// Prefix match: a host page running Sentry's browser SDK appends " (<host>)"
+export const isFetchNetworkError = (error: unknown): error is TypeError =>
+  error instanceof TypeError &&
+  FETCH_NETWORK_ERROR_MESSAGES.some((message) =>
+    error.message.startsWith(message)
+  );
+
 export class UserIdError extends Error {
   constructor() {
     super('Invalid User ID');

@@ -1,0 +1,809 @@
+import internalState from './internalState';
+import { getCompletedStepKeys, initState } from './init';
+import { replaceTextVariables } from '../elements/components/TextNodes';
+import {
+  availableRowOptions,
+  getRepeatedContainer,
+  getRepeatedContainers
+} from './repeat';
+import { getPositionKey } from './hideAndRepeats';
+import { getDefaultFieldValue } from './fieldHelperFunctions';
+import { isButtonDisabled } from './button';
+import { ACTION_BACK, ACTION_NEXT } from './elementActions';
+import { getPrevStepKey, nextStepKey } from './stepHelperFunctions';
+import { isStepperStepReachable, isStepperStepVisible } from './stepper';
+import { sanitizeTransportValue } from './transportValue';
+import {
+  fieldTypesByKey,
+  maskFieldValue,
+  maskFieldValues
+} from './sensitiveFieldValues';
+import { getImageAltText } from './accessibility';
+import type { TableRowRead, TableSelection } from './formActions/tables';
+
+export type PanelRuntimeFieldEntry = {
+  key: string;
+  type: string;
+  value: unknown;
+  visible: boolean;
+  disabled: boolean;
+  required: boolean;
+  rowCount?: number;
+  repeatContainerId?: string;
+  hasLogicRules?: boolean;
+  clickableAncestorIds?: string[];
+  placeholder?: string;
+  tooltip?: string;
+  // Field-wide validation message only (never a copy of a row's message).
+  error?: string;
+  // Per-repeat-row validation messages, keyed by zero-based row index.
+  errorRows?: Record<string, string>;
+  options?: Array<{ value: string; label: string }>;
+  rowOptions?: Array<Array<{ value: string; label: string }> | null>;
+  questions?: Array<{ id: string; label: string; readOnly?: true }>;
+  minLength?: number;
+  maxLength?: number;
+  format?: string;
+  fileTypes?: string[];
+  multipleFiles?: boolean;
+  multiple?: boolean;
+  sliderLabels?: { min?: string; max?: string };
+  stepSize?: number;
+};
+
+type PanelRuntimeElementEntry =
+  | {
+      type: 'text';
+      id?: string;
+      text: string;
+      templateText?: string;
+      visible: boolean;
+      actions?: Array<Record<string, unknown>>;
+      hasLogicRules?: boolean;
+      clickableAncestorIds?: string[];
+      repeatContainerId?: string;
+    }
+  | {
+      type: 'image';
+      text: string;
+      visible: boolean;
+      clickableAncestorIds?: string[];
+    }
+  | {
+      type: 'button';
+      id: string;
+      text: string;
+      visible: boolean;
+      disabled: boolean;
+      submit: boolean;
+      actions: Array<Record<string, unknown>>;
+      navigatesTo?: string | null;
+      hasLogicRules?: boolean;
+      repeatContainerId?: string;
+    }
+  | {
+      type: 'container';
+      id: string;
+      visible: boolean;
+      actions: Array<Record<string, unknown>>;
+      hasLogicRules?: boolean;
+      clickableAncestorIds?: string[];
+      repeatContainerId?: string;
+    };
+
+type PanelRuntimeNavigationSurface = {
+  surface: 'stepper' | 'tab';
+  id: string;
+  submitsCurrentStep: boolean;
+  steps: Array<{
+    stepKey?: string;
+    label: string;
+    position: number;
+    active?: boolean;
+    reachable: boolean;
+  }>;
+};
+
+// Field-backed rows ride in every snapshot, so only the first few do
+export const SNAPSHOT_TABLE_ROWS = 10;
+
+type PanelRuntimeTableEntry = {
+  id: string;
+  hubId?: string;
+  columns: Array<{ name: string; fieldKey: string; readOnly?: boolean }>;
+  rowCount: number;
+  rows?: TableRowRead[];
+  rowsOmitted?: number;
+  actions?: Array<{ label: string }>;
+  canAddRows?: boolean;
+  canDeleteRows?: boolean;
+  canEditCells?: boolean;
+  pending?: { edits: number; deletions: number };
+  selection?: TableSelection;
+  viewport?: { visibleRowIndexes: number[] };
+  ruleErrors?: { total: number };
+  findings?: number;
+  hasLogicRules?: boolean;
+  visible: boolean;
+};
+
+export type PanelRuntimeSnapshot = {
+  currentStep: { id: string; key: string };
+  previousStepName?: string;
+  activeStepKey: string;
+  navigationSurfaces: PanelRuntimeNavigationSurface[];
+  currentStepFields: PanelRuntimeFieldEntry[];
+  currentStepElements: PanelRuntimeElementEntry[];
+  currentStepTables: PanelRuntimeTableEntry[];
+  values: Record<string, unknown>;
+  hiddenFieldValues: Record<string, unknown>;
+  hiddenFieldsEmpty: string[];
+};
+
+const extractRawText = (props: Record<string, unknown>): string => {
+  const plain = props.text;
+  if (typeof plain === 'string' && plain.trim()) return plain;
+  const formatted = props.text_formatted as
+    | { ops?: Array<{ insert?: unknown }> }
+    | Array<{ insert?: unknown }>
+    | undefined;
+  const ops = Array.isArray(formatted) ? formatted : formatted?.ops;
+  if (!Array.isArray(ops)) return '';
+  return ops
+    .map((op) => (typeof op?.insert === 'string' ? op.insert : ''))
+    .join('')
+    .trim();
+};
+
+const sanitizeRuntimeValue = (value: unknown): unknown =>
+  sanitizeTransportValue(value);
+
+const isMeaningful = (value: unknown): boolean => {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string' && value === '') return false;
+  if (Array.isArray(value) && value.length === 0) return false;
+  return true;
+};
+
+const isElementVisible = (state: any, el: any): boolean => {
+  const positionKey = el.position?.join(',') || 'root';
+  const flags = (state.visiblePositions ?? {})[positionKey];
+  return Array.isArray(flags) ? flags.some(Boolean) : true;
+};
+
+export const collectNavigableSteps = (
+  state: any
+): Array<{
+  stepKey: string;
+  element: any;
+  elementType: 'progress_bar' | 'tab';
+}> => {
+  const step = state?.currentStep;
+  if (!step) return [];
+  const out: Array<{
+    stepKey: string;
+    element: any;
+    elementType: 'progress_bar' | 'tab';
+  }> = [];
+  const seen = new Set<string>();
+  const completedStepKeys = getCompletedStepKeys();
+  (step.progress_bars ?? []).forEach((el: any) => {
+    if (!el?.properties?.stepper || !isElementVisible(state, el)) return;
+    const allowAll = !!el.properties?.navigate_to_all_steps;
+    (el.properties?.entries ?? []).forEach((s: any) => {
+      const stepKey = s?.step_key;
+      if (!stepKey || seen.has(stepKey) || !isStepperStepVisible(s)) return;
+      const active = stepKey === step.key;
+      if (
+        !isStepperStepReachable(
+          active,
+          allowAll,
+          completedStepKeys.has(stepKey)
+        )
+      )
+        return;
+      seen.add(stepKey);
+      out.push({ stepKey, element: el, elementType: 'progress_bar' });
+    });
+  });
+  // Tabs jump freely to any tab's step, no completed-step gating
+  (step.tabs ?? []).forEach((el: any) => {
+    if (!isElementVisible(state, el)) return;
+    (el.properties?.entries ?? []).forEach((s: any) => {
+      const stepKey = s?.step_key;
+      if (!stepKey || stepKey === step.key || seen.has(stepKey)) return;
+      seen.add(stepKey);
+      out.push({ stepKey, element: el, elementType: 'tab' });
+    });
+  });
+  return out;
+};
+
+const collectNavigationSurfaces = (
+  state: any
+): PanelRuntimeNavigationSurface[] => {
+  const step = state?.currentStep;
+  if (!step) return [];
+  const out: PanelRuntimeNavigationSurface[] = [];
+  const seenSurfaceIds = new Set<string>();
+  const completedStepKeys = getCompletedStepKeys();
+  (step.progress_bars ?? []).forEach((el: any) => {
+    if (!el?.properties?.stepper || !isElementVisible(state, el)) return;
+    const surfaceId = el.properties?.link_id || el.id;
+    if (seenSurfaceIds.has(surfaceId)) return;
+    seenSurfaceIds.add(surfaceId);
+    const allowAll = !!el.properties?.navigate_to_all_steps;
+    const steps = (el.properties?.entries ?? [])
+      .filter((s: any) => isStepperStepVisible(s))
+      .map((s: any, idx: number) => {
+        const stepKey = s?.step_key;
+        const label = String(s?.label ?? '');
+        const position = idx + 1;
+        if (!stepKey) return { label, position, reachable: false };
+        const active = stepKey === step.key;
+        return {
+          stepKey,
+          label,
+          position,
+          ...(active ? { active: true } : {}),
+          reachable: isStepperStepReachable(
+            active,
+            allowAll,
+            completedStepKeys.has(stepKey)
+          )
+        };
+      });
+    if (steps.length > 0)
+      out.push({
+        surface: 'stepper',
+        id: surfaceId,
+        // Stepper clicks navigate without validating or submitting the current step
+        submitsCurrentStep: false,
+        steps
+      });
+  });
+  (step.tabs ?? []).forEach((el: any) => {
+    if (!isElementVisible(state, el)) return;
+    const surfaceId = el.properties?.link_id || el.id;
+    if (seenSurfaceIds.has(surfaceId)) return;
+    seenSurfaceIds.add(surfaceId);
+    const steps = (el.properties?.entries ?? []).map((s: any, idx: number) => {
+      const stepKey = s?.step_key;
+      const label = String(s?.label ?? '');
+      const position = idx + 1;
+      if (!stepKey) return { label, position, reachable: false };
+      const active = stepKey === step.key;
+      return {
+        stepKey,
+        label,
+        position,
+        ...(active ? { active: true } : {}),
+        // Any tab is reachable, no completed-step gating
+        reachable: !active
+      };
+    });
+    if (steps.length > 0)
+      out.push({
+        surface: 'tab',
+        id: surfaceId,
+        // A tab with submit validates and submits the current step before switching
+        submitsCurrentStep: !!el.properties?.submit,
+        steps
+      });
+  });
+  return out;
+};
+
+// Mirrors canRunAction in utils/elementActions.ts; step events run for every in-scope step, element events require elementId in rule.elements.
+const STEP_EVENTS = new Set(['submit', 'load']);
+const elementHasLogicRules = (
+  logicRules: any[] | undefined,
+  triggerEvent: string,
+  stepId: string,
+  elementId: string
+): boolean =>
+  (logicRules ?? []).some((rule) => {
+    if (rule?.trigger_event !== triggerEvent) return false;
+    if (rule.enabled === false || rule.valid === false) return false;
+    const { steps, elements } = rule;
+    if (Array.isArray(steps) && steps.length > 0 && !steps.includes(stepId))
+      return false;
+    if (STEP_EVENTS.has(triggerEvent)) return true;
+    return Array.isArray(elements) && elements.includes(elementId);
+  });
+
+export const getPanelRuntimeSnapshot = (
+  formId: string,
+  { masked = false }: { masked?: boolean } = {}
+): PanelRuntimeSnapshot | null => {
+  const state = internalState[formId];
+  if (!state || !state.currentStep) return null;
+  // An agent's read hides sensitive values, the form's own reads keep them
+  const servarTypes = fieldTypesByKey(state.steps);
+  const shown = (type: string | undefined, value: unknown) =>
+    masked ? maskFieldValue(type, value) : value;
+  const resolveText = (text: string, repeat?: number): string => {
+    if (!text) return '';
+    try {
+      return replaceTextVariables(
+        text,
+        repeat,
+        true,
+        masked
+          ? (key, value) => maskFieldValue(servarTypes.get(key), value)
+          : undefined
+      );
+    } catch {
+      return text;
+    }
+  };
+
+  const step = state.currentStep;
+  const visiblePositions = state.visiblePositions ?? {};
+  const fieldsMap = state.fields ?? {};
+  const inlineErrors = state.inlineErrors ?? {};
+  const logicRules = state.logicRules;
+  const formReadOnly = !!(
+    state.formSettings?.readOnly || initState.collaboratorReview === 'readOnly'
+  );
+
+  // Every subgrid has onClick wired so its handler fires on bubble; include any that'll do something - actions or an action-trigger rule scoped to its id.
+  const clickableSubgrids = ((step.subgrids ?? []) as any[]).filter((sg) => {
+    const acts = sg?.properties?.actions;
+    if (Array.isArray(acts) && acts.length > 0) return true;
+    return elementHasLogicRules(logicRules, 'action', step.id, sg.id ?? '');
+  });
+  const findClickableAncestorIds = (el: any): string[] =>
+    findClickableAncestorSubgrids(
+      clickableSubgrids,
+      Array.isArray(el?.position) ? el.position : []
+    ).map((sg: any) => sg.id ?? '');
+
+  // Match the renderer (fields + text-variable arrays) by reading the same flags it builds
+  const rowCountByContainer: Record<string, number> = {};
+  getRepeatedContainers(step as any).forEach((container: any) => {
+    const id = container?.id;
+    if (!id) return;
+    const flags = visiblePositions[getPositionKey(container)];
+    if (Array.isArray(flags)) rowCountByContainer[id] = flags.length;
+  });
+
+  // Build per-field entries for the current step
+  const currentStepFields: PanelRuntimeFieldEntry[] = (
+    step.servar_fields ?? []
+  ).map((field: any) => {
+    const positionKey = field.position?.join(',') || 'root';
+    const visibilityFlags = visiblePositions[positionKey];
+    const visible = Array.isArray(visibilityFlags)
+      ? visibilityFlags.some(Boolean)
+      : true;
+    const fieldEntity = fieldsMap[field.servar.key];
+    const props = field.properties ?? {};
+    const placeholder =
+      typeof props.placeholder === 'string' && props.placeholder.trim()
+        ? resolveText(props.placeholder)
+        : undefined;
+    const tooltip =
+      typeof props.tooltipText === 'string' && props.tooltipText.trim()
+        ? resolveText(props.tooltipText)
+        : undefined;
+    // `error` is the FIELD-WIDE message ONLY; per-row messages live in
+    // `errorRows`. Keeping the two disjoint means a field-wide failure and a
+    // row failure can both be reported without either masking the other, and
+    // `error` is never an ambiguous copy of some row's message.
+    const errorEntry = inlineErrors[field.servar.key];
+    const error = errorEntry?.message;
+    // Expose which repeat row(s) own errors so per-row state isn't collapsed.
+    const errorRows: Record<string, string> = {};
+    for (const [idx, data] of Object.entries<any>(errorEntry?.byIndex ?? {})) {
+      if (typeof data?.message === 'string' && data.message.length > 0)
+        errorRows[idx] = data.message;
+    }
+    const hasErrorRows = Object.keys(errorRows).length > 0;
+    const servar = field.servar ?? {};
+    const meta = servar.metadata ?? {};
+    const repeated = !!servar.repeated;
+    const repeatAncestor = repeated
+      ? getRepeatedContainer(step as any, field)
+      : undefined;
+    const repeatAncestorId = repeatAncestor?.id ?? '';
+    const rawOptions = Array.isArray(meta.options) ? meta.options : null;
+    const rawLabels = Array.isArray(meta.option_labels)
+      ? meta.option_labels
+      : [];
+    const options = rawOptions
+      ? rawOptions.map((value: any, i: number) => ({
+          value: String(value ?? ''),
+          label: String(rawLabels[i] || value || '')
+        }))
+      : undefined;
+    // Per-row option overrides for repeated choice fields
+    const rawRowOptions = Array.isArray(meta.repeat_options)
+      ? meta.repeat_options.map((row: any) =>
+          Array.isArray(row)
+            ? row.map((o: any) => ({
+                value: String(o?.value ?? o ?? ''),
+                label: String(o?.label ?? o?.value ?? o ?? '')
+              }))
+            : null
+        )
+      : undefined;
+    const padTarget =
+      rowCountByContainer[repeatAncestorId] ?? rawRowOptions?.length ?? 0;
+    const rowOptions = Array.from({ length: padTarget }, (_, i) => {
+      if (Array.isArray(rawRowOptions?.[i])) return rawRowOptions[i];
+      if (!options) return null;
+      const available = availableRowOptions(
+        servar,
+        options,
+        fieldEntity?.value,
+        i
+      );
+      return available.length < options.length ? available : null;
+    });
+    const rawQuestions = Array.isArray(meta.questions) ? meta.questions : null;
+    const questions = rawQuestions
+      ? rawQuestions
+          .map((q: any) => ({
+            id: String(q?.id ?? ''),
+            label: String(q?.label ?? ''),
+            ...(q?.read_only ? { readOnly: true as const } : {})
+          }))
+          .filter((q: { id: string; label: string }) => q.id || q.label)
+      : undefined;
+    const fileTypes = [
+      ...(Array.isArray(meta.file_types) ? meta.file_types : []),
+      ...(Array.isArray(meta.custom_file_types)
+        ? meta.custom_file_types.map((t: string) => `.${t}`)
+        : [])
+    ];
+    const sliderLabels =
+      meta.min_val_label || meta.max_val_label
+        ? {
+            ...(meta.min_val_label ? { min: String(meta.min_val_label) } : {}),
+            ...(meta.max_val_label ? { max: String(meta.max_val_label) } : {})
+          }
+        : undefined;
+    const disabled = !!(props.disabled || formReadOnly);
+    const hasLogicRules = elementHasLogicRules(
+      logicRules,
+      'change',
+      step.id,
+      servar.id ?? ''
+    );
+    const clickableAncestorIds = findClickableAncestorIds(field);
+    let value = fieldEntity?.value ?? null;
+    const rowCount = repeated
+      ? rowCountByContainer[repeatAncestorId] ??
+        (Array.isArray(value) ? (value as unknown[]).length : 0)
+      : undefined;
+    // Pad to rowCount so trailing rendered-but-unwritten rows read as blank
+    if (typeof rowCount === 'number' && rowCount > 0) {
+      const base = Array.isArray(value) ? value : [];
+      if (base.length < rowCount) {
+        value = [
+          ...base,
+          ...Array(rowCount - base.length).fill(getDefaultFieldValue(field))
+        ];
+      }
+    }
+    return {
+      key: servar.key,
+      type: servar.type,
+      value: shown(servar.type, sanitizeRuntimeValue(value)),
+      visible,
+      disabled,
+      required: !!servar.required,
+      ...(typeof rowCount === 'number' ? { rowCount } : {}),
+      ...(repeatAncestor?.id ? { repeatContainerId: repeatAncestor.id } : {}),
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
+      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {}),
+      ...(placeholder ? { placeholder } : {}),
+      ...(tooltip ? { tooltip } : {}),
+      ...(error ? { error } : {}),
+      ...(hasErrorRows ? { errorRows } : {}),
+      ...(options ? { options } : {}),
+      ...(rawRowOptions || rowOptions.some(Boolean) ? { rowOptions } : {}),
+      ...(questions ? { questions } : {}),
+      ...(typeof servar.min_length === 'number'
+        ? { minLength: servar.min_length }
+        : {}),
+      ...(typeof servar.max_length === 'number'
+        ? { maxLength: servar.max_length }
+        : {}),
+      ...(servar.format ? { format: String(servar.format) } : {}),
+      ...(fileTypes.length > 0 ? { fileTypes } : {}),
+      ...(meta.multiple ? { multipleFiles: true } : {}),
+      ...(servar.type === 'button_group' || servar.type === 'matrix'
+        ? { multiple: !!meta.multiple }
+        : {}),
+      ...(sliderLabels ? { sliderLabels } : {}),
+      ...(typeof meta.step_size === 'number'
+        ? { stepSize: meta.step_size }
+        : {})
+    };
+  });
+
+  // Split values into servars and hidden fields at the transport source. Every
+  // value is JSON-shaped here so File/Promise-like runtime objects become
+  // explicit presence descriptors before any assistant context can retain the
+  // live reference. An empty hidden key is carried by name only, so empty stays
+  // distinguishable from not present without a value entry per org hidden field.
+  const values: Record<string, unknown> = {};
+  const hiddenFieldValues: Record<string, unknown> = {};
+  const hiddenFieldsEmpty: string[] = [];
+  for (const key of Object.keys(fieldsMap)) {
+    const v = sanitizeRuntimeValue(fieldsMap[key]?.value ?? null);
+    if (servarTypes.has(key)) {
+      values[key] = shown(servarTypes.get(key), v);
+    } else if (isMeaningful(v)) {
+      hiddenFieldValues[key] = v;
+    } else {
+      hiddenFieldsEmpty.push(key);
+    }
+  }
+
+  const currentStepElements: PanelRuntimeElementEntry[] = [];
+  const visibilityFor = (el: any): boolean => isElementVisible(state, el);
+
+  clickableSubgrids.forEach((sg: any) => {
+    const actions = sg.properties.actions;
+    const hasLogicRules = elementHasLogicRules(
+      logicRules,
+      'action',
+      step.id,
+      sg.id ?? ''
+    );
+    const clickableAncestorIds = findClickableAncestorIds(sg);
+    // A repeated subgrid is its own repeat container (one clickable instance per row)
+    const containerRepeatContainer = !sg.repeated
+      ? getRepeatedContainer(step as any, sg)?.id
+      : sg.id;
+    currentStepElements.push({
+      type: 'container',
+      id: sg.id ?? '',
+      visible: visibilityFor(sg),
+      actions,
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
+      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {}),
+      ...(containerRepeatContainer
+        ? { repeatContainerId: containerRepeatContainer }
+        : {})
+    });
+  });
+
+  (step.texts ?? []).forEach((el: any) => {
+    const raw = extractRawText(el?.properties ?? {});
+    if (!raw) return;
+    const resolved = resolveText(raw);
+    const props = el?.properties ?? {};
+    const actions = Array.isArray(props.actions) ? props.actions : [];
+    const hasLogicRules = elementHasLogicRules(
+      logicRules,
+      'action',
+      step.id,
+      el.id ?? ''
+    );
+    const clickableAncestorIds = findClickableAncestorIds(el);
+    const textRepeatContainer = getRepeatedContainer(step as any, el)?.id;
+    currentStepElements.push({
+      type: 'text',
+      text: resolved,
+      visible: visibilityFor(el),
+      ...(el.id ? { id: el.id } : {}),
+      ...(raw !== resolved ? { templateText: raw } : {}),
+      ...(actions.length > 0 ? { actions } : {}),
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
+      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {}),
+      ...(textRepeatContainer ? { repeatContainerId: textRepeatContainer } : {})
+    });
+  });
+  (step.buttons ?? []).forEach((el: any) => {
+    const raw = extractRawText(el?.properties ?? {});
+    const props = el?.properties ?? {};
+    const actions = Array.isArray(props.actions) ? props.actions : [];
+    // submit-flagged buttons also fire submit-trigger and form_complete-trigger rules on this step
+    const hasLogicRules =
+      elementHasLogicRules(logicRules, 'action', step.id, el.id ?? '') ||
+      (!!props.submit &&
+        (elementHasLogicRules(logicRules, 'submit', step.id, '') ||
+          elementHasLogicRules(logicRules, 'form_complete', step.id, '')));
+    if (!raw && actions.length === 0 && !props.submit && !hasLogicRules) return;
+    const buttonRepeatContainer = getRepeatedContainer(step as any, el)?.id;
+    const actionTypes = actions.map((a: any) => a?.type);
+    let navigatesTo: string | null | undefined;
+    if (actionTypes.includes(ACTION_BACK)) {
+      navigatesTo = getPrevStepKey(step, state.backNavMap ?? {}) || undefined;
+    } else if (actionTypes.includes(ACTION_NEXT)) {
+      navigatesTo =
+        nextStepKey(step.next_conditions ?? [], {
+          elementType: 'button',
+          elementIDs: [el.id]
+        }) || undefined;
+    } else if (props.submit) {
+      // Submit without a navigation action cannot move pages
+      navigatesTo = null;
+    }
+    currentStepElements.push({
+      type: 'button',
+      id: el.id ?? '',
+      text: resolveText(raw),
+      visible: visibilityFor(el),
+      disabled: isButtonDisabled(el, step, visiblePositions, formReadOnly),
+      submit: !!props.submit,
+      actions,
+      ...(navigatesTo !== undefined ? { navigatesTo } : {}),
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
+      ...(buttonRepeatContainer
+        ? { repeatContainerId: buttonRepeatContainer }
+        : {})
+    });
+  });
+  (step.images ?? []).forEach((el: any) => {
+    const props = el?.properties ?? {};
+    const altRaw =
+      getImageAltText(props) ||
+      (typeof props.caption === 'string' && props.caption) ||
+      '';
+    if (!altRaw) return;
+    const clickableAncestorIds = findClickableAncestorIds(el);
+    currentStepElements.push({
+      type: 'image',
+      text: resolveText(altRaw),
+      visible: visibilityFor(el),
+      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {})
+    });
+  });
+
+  // Tables as the mounted grid reports them, from stored props until one mounts
+  const currentStepTables: PanelRuntimeTableEntry[] = [];
+  (step.tables ?? []).forEach((el: any) => {
+    const props = el?.properties ?? {};
+    const live = state.tables?.get(el.id ?? '');
+    const isHub = props.data_source === 'hub';
+    const storedColumns = (props.columns ?? []) as Array<{
+      name?: string;
+      field_key?: string;
+      hub_field_key?: string;
+    }>;
+    const liveState = live?.getLiveState();
+    const columns =
+      liveState?.columns ??
+      storedColumns.map((c) => ({
+        name: c.name ?? c.field_key ?? '',
+        fieldKey: (isHub ? c.hub_field_key : c.field_key) ?? ''
+      }));
+    if (columns.length === 0) return;
+    const hubId = liveState?.hubId ?? (isHub ? props.hub_id : undefined);
+    const rawActions = Array.isArray(props.actions) ? props.actions : [];
+    const actions = rawActions
+      .map((a: any) => ({ label: typeof a?.label === 'string' ? a.label : '' }))
+      .filter((a: { label: string }) => a.label.trim().length > 0);
+    const hasLogicRules = elementHasLogicRules(
+      logicRules,
+      'action',
+      step.id,
+      el.id ?? ''
+    );
+
+    // Hub rows stay out of the snapshot, the host reads them on demand
+    let rowCount = 0;
+    let rows: TableRowRead[] | undefined;
+    let rowsOmitted = 0;
+    if (live && liveState) {
+      rowCount = liveState.rowCount;
+      if (!isHub) {
+        const read = live.getRows({ offset: 0, limit: SNAPSHOT_TABLE_ROWS });
+        rows = read.rows;
+        rowsOmitted = read.rowCount - rows.length;
+      }
+    } else if (!isHub) {
+      rowCount = columns.reduce((max, col) => {
+        const v = fieldsMap[col.fieldKey]?.value;
+        return Array.isArray(v) ? Math.max(max, v.length) : max;
+      }, 0);
+      rows = Array.from(
+        { length: Math.min(rowCount, SNAPSHOT_TABLE_ROWS) },
+        (_, rowIndex) => ({
+          rowIndex,
+          values: Object.fromEntries(
+            columns.map((col) => {
+              const v = fieldsMap[col.fieldKey]?.value;
+              return [
+                col.fieldKey,
+                Array.isArray(v) ? v[rowIndex] ?? null : v ?? null
+              ];
+            })
+          )
+        })
+      );
+      rowsOmitted = rowCount - rows.length;
+    }
+    currentStepTables.push({
+      id: el.id ?? '',
+      ...(hubId ? { hubId } : {}),
+      columns,
+      rowCount,
+      ...(rows
+        ? {
+            rows: masked
+              ? rows.map((row) => ({
+                  ...row,
+                  values: maskFieldValues(row.values, servarTypes)
+                }))
+              : rows
+          }
+        : {}),
+      ...(rowsOmitted > 0 ? { rowsOmitted } : {}),
+      ...(actions.length > 0 && (liveState?.showsActions ?? true)
+        ? { actions }
+        : {}),
+      ...(liveState?.canAddRows ? { canAddRows: true } : {}),
+      ...(liveState?.canDeleteRows ? { canDeleteRows: true } : {}),
+      ...(liveState?.canEditCells ? { canEditCells: true } : {}),
+      ...(liveState?.pending ? { pending: liveState.pending } : {}),
+      // What the person has in front of them in a spreadsheet grid, this turn only
+      ...(liveState?.selection
+        ? {
+            selection: masked
+              ? {
+                  ...liveState.selection,
+                  value: maskFieldValue(
+                    servarTypes.get(liveState.selection.fieldKey),
+                    liveState.selection.value
+                  ),
+                  row: maskFieldValues(liveState.selection.row, servarTypes)
+                }
+              : liveState.selection
+          }
+        : {}),
+      ...(liveState?.viewport ? { viewport: liveState.viewport } : {}),
+      ...(liveState?.ruleErrors ? { ruleErrors: liveState.ruleErrors } : {}),
+      ...(liveState?.findings ? { findings: liveState.findings } : {}),
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
+      visible: visibilityFor(el)
+    });
+  });
+
+  return {
+    currentStep: { id: step.id, key: step.key },
+    previousStepName: state.previousStepName || undefined,
+    activeStepKey: step.key,
+    navigationSurfaces: collectNavigationSurfaces(state),
+    currentStepFields,
+    currentStepElements,
+    currentStepTables,
+    values,
+    hiddenFieldValues,
+    hiddenFieldsEmpty
+  };
+};
+
+// Subgrids whose position is a strict prefix of `position` (callers pre-filter to those whose handler does anything), innermost first.
+export const findClickableAncestorSubgrids = (
+  subgrids: any[] | undefined,
+  position: number[]
+): any[] => {
+  if (
+    !Array.isArray(subgrids) ||
+    !Array.isArray(position) ||
+    position.length === 0
+  )
+    return [];
+  const matches: any[] = [];
+  for (const sg of subgrids) {
+    const pos = Array.isArray(sg?.position) ? sg.position : [];
+    if (pos.length >= position.length) continue;
+    let isPrefix = true;
+    for (let i = 0; i < pos.length; i++) {
+      if (pos[i] !== position[i]) {
+        isPrefix = false;
+        break;
+      }
+    }
+    if (!isPrefix) continue;
+    matches.push(sg);
+  }
+  matches.sort((a, b) => b.position.length - a.position.length);
+  return matches;
+};

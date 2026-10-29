@@ -173,6 +173,9 @@ export default class FeatheryClient extends IntegrationClient {
    */
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
   customSubmitInFlight: Record<string, any>;
+  // A Robin form-fill driver's session, whose saves and events never complete
+  // the form
+  formFill: boolean;
 
   /**
    * Queue for events triggered before user interaction
@@ -183,9 +186,11 @@ export default class FeatheryClient extends IntegrationClient {
     formKey = '',
     ignoreNetworkErrors?: any,
     draft = false,
-    bypassCDN = false
+    bypassCDN = false,
+    formFill = false
   ) {
     super(formKey, ignoreNetworkErrors, draft, bypassCDN);
+    this.formFill = formFill;
     this.pendingCustomFieldUpdates = {};
     this.customSubmitInFlight = {};
     this.debouncedSubmitCustom = debounce(
@@ -233,6 +238,11 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
+  // Resolves once events held for the first interaction have been replayed
+  public whenUserEventsReplayed() {
+    return this.userEventQueue.whenIdle();
+  }
+
   public destroy() {
     featheryWindow().removeEventListener?.(
       FEATHERY_INTERACTION_EVENT,
@@ -267,6 +277,7 @@ export default class FeatheryClient extends IntegrationClient {
       no_complete: noComplete
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
+    if (this.formFill) data.robin_fill = true;
 
     const options: RequestOptions = {
       headers: { 'Content-Type': 'application/json' },
@@ -778,7 +789,9 @@ export default class FeatheryClient extends IntegrationClient {
     // `_fetch` sends nothing once any form on the page is blocked, and the error
     // it leaves is page-wide, so only this request's own token can be at fault
     const sentToken = initState.authenticationError ? '' : initState.linkToken;
-    const response = await this._fetch(url, options);
+    // Network errors propagate so the form falls back to its origin step,
+    // rather than reading a missing session as a closed form
+    const response = await this._fetch(url, options, true, true);
     if (!response) {
       if (sentToken && isRejectedLinkMessage(initState.authenticationError))
         this.forgetRejectedLink(sentToken);
@@ -1213,7 +1226,7 @@ export default class FeatheryClient extends IntegrationClient {
     const { userId, collaboratorId } = initInfo();
 
     const url = `${API_URL}event/`;
-    const data: Record<string, string> = {
+    const data: Record<string, any> = {
       form_key: this.formKey,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {}),
@@ -1221,6 +1234,7 @@ export default class FeatheryClient extends IntegrationClient {
       event_id: uuidv4()
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
+    if (this.formFill) data.robin_fill = true;
     if (this.version) data.__feathery_version = this.version;
     const options = {
       headers: { 'Content-Type': 'application/json' },

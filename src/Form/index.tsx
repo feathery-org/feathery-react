@@ -3,10 +3,10 @@ import React, {
   ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
-  useState,
-  useSyncExternalStore
+  useState
 } from 'react';
 
 import debounce from 'lodash.debounce';
@@ -91,7 +91,7 @@ import {
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
 import { InlineErrors, shiftInlineErrorRows } from '../utils/inlineErrors';
-import FeatheryClient, { API_URL } from '../utils/featheryClient';
+import FeatheryClient from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
 import {
@@ -156,10 +156,12 @@ import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
+import { FormWebMCPTools, hasWebMCPRuntime } from '../utils/formTools/webmcp';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   CreateEgnyteFolderParams,
+  FormToolsCallbacks,
   GetDocusignEnvelopeParams,
   UploadFileToEgnyteParams,
   RunComputerAgentOptions,
@@ -231,11 +233,13 @@ import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils/utils';
 import { triggerPersona } from '../integrations/persona';
 import Collaborator from '../utils/entities/Collaborator';
+import { flushFormRerender } from '../utils/entities/Field';
 import {
   useOfflineRequestHandler,
   verifyConnectivity
 } from '../utils/offlineRequestHandler';
 import {
+  isFetchNetworkError,
   removeCustomErrorHandler,
   setCustomErrorHandler
 } from '../utils/error';
@@ -279,24 +283,10 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
 import FileUploadToast from './components/FileUploadToast';
-import {
-  getUploadToastHeight,
-  setUploadIndicatorEnabled,
-  subscribeToUploadToastHeight
-} from '../utils/fileUploadProgress';
+import { setUploadIndicatorEnabled } from '../utils/fileUploadProgress';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
-import { AssistantChat } from '../assistant';
-import type {
-  AssistantLayoutState,
-  AssistantStepSettings
-} from '../assistant/AssistantChat';
-import AssistantClient from '../assistant/AssistantClient';
-import {
-  getActiveDocxEditorEnvelopeTarget,
-  getActiveDocxEditorTarget
-} from '../assistant/tools/docx/docxEditorRegistry';
 import { confirmLeavingUnsavedWork } from '../utils/unsavedWork';
 import {
   STEP_EVENT_BACK,
@@ -315,10 +305,10 @@ const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
 const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
 
 // Shown instead of the closed-form copy when the session request itself fails
-// while an access link is open. A token this device kept for the form makes
-// that path reachable on an ordinary connectivity failure, where the form is
-// not closed at all and a reload is all the user needs.
-const LINK_SESSION_FAILED_MESSAGE =
+// on a form only the session can open (an access link, or a session-gated
+// form). That path is reachable on an ordinary connectivity failure, where the
+// form is not closed at all and a reload is all the user needs.
+const SESSION_FAILED_MESSAGE =
   "We couldn't load this form. Please refresh the page.";
 
 // Bottom-right overlays stack rather than overlap: each one clears the boxes
@@ -362,6 +352,9 @@ export interface Props {
   _draft?: boolean;
   readOnly?: boolean;
   hashNavigation?: boolean;
+  // Registers feathery_get_step/fill_step/next_step on document.modelContext
+  // when present
+  enableFormTools?: boolean;
 }
 
 interface InternalProps {
@@ -378,7 +371,7 @@ export interface ClickActionElement {
 }
 
 const getSubmissionErrorMessage = (error: unknown): string => {
-  if (error instanceof TypeError && error.message === 'Failed to fetch') {
+  if (isFetchNetworkError(error)) {
     return 'Unable to upload files. Please check your connection and try again.';
   }
   if (error instanceof Error) {
@@ -469,13 +462,13 @@ function Form({
   className = '',
   children,
   readOnly = false,
-  hashNavigation
+  hashNavigation,
+  enableFormTools = false
 }: InternalProps & Props) {
   const [formName, setFormName] = useState('');
   const [formId, setFormId] = useState(formIdProp);
   const clientRef = useRef<any>(undefined);
   const client = clientRef.current;
-  const assistantClientRef = useRef<AssistantClient | undefined>(undefined);
   const navigate = useNavigate();
   const location = useLocation();
   const session = initState.formSessions[formId];
@@ -506,7 +499,7 @@ function Form({
     autocomplete: 'on',
     autofocus: true,
     showBrand: false,
-    brandPosition: undefined,
+    brandPosition: undefined as string | undefined,
     autoscroll: 'top_of_form',
     rightToLeft: false,
     allowEdits: true,
@@ -519,10 +512,7 @@ function Form({
     completionBehavior: '',
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
-    assistantEnabled: false,
-    assistantColor: '#6b7280',
-    assistantWorkflowActions: [],
-    assistantStepSettings: {} as AssistantStepSettings
+    assistantEnabled: false
   });
   const trackHashes = useRef(false);
   const curLanguage = useRef<undefined | string>(undefined);
@@ -542,6 +532,9 @@ function Form({
   const extractionFileFields = useRef<Record<string, Record<string, string[]>>>(
     {}
   );
+  // Whether only the session decides if this form may open (link required,
+  // collaboration, business email). Gated until the form payload says otherwise
+  const sessionGated = useRef(true);
   const [inlineErrors, setInlineErrors] = useState<InlineErrors>({});
   const [, setRepeatChanged] = useState(false);
 
@@ -667,6 +660,13 @@ function Form({
     getViewport(formSettings.mobileBreakpoint)
   );
 
+  // A bottom badge follows mobile content so it cannot cover the last action.
+  const inlineWatermark =
+    viewport === 'mobile' &&
+    formSettings.showBrand &&
+    (!formSettings.brandPosition ||
+      formSettings.brandPosition.startsWith('bottom'));
+
   const prevAuthId = usePrevious(authState.authId);
   const prevStepKey = usePrevious(stepKey);
 
@@ -716,46 +716,6 @@ function Form({
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
-  const [assistantLayout, setAssistantLayout] = useState<AssistantLayoutState>({
-    mode: 'current',
-    isOpen: false,
-    side: null,
-    width: 0,
-    isResizing: false
-  });
-  const handleAssistantLayoutChange = useCallback(
-    (state: AssistantLayoutState) => setAssistantLayout(state),
-    []
-  );
-  const assistantOffsetCSS = useMemo(() => {
-    const { side, width, isResizing } = assistantLayout;
-    const root = activeStep?.subgrids?.find(
-      (g: any) => g.position?.length === 0
-    );
-    const isFillWidth = root?.width === 'fill' || root?.mobile_width === 'fill';
-    const transition = isResizing
-      ? 'none'
-      : 'max-width 0.25s ease, min-width 0.25s ease, margin 0.25s ease';
-    const left = side === 'left' ? width : 0;
-    const right = side === 'right' ? width : 0;
-    if (isFillWidth) {
-      const calc = `calc(100% - ${left + right}px)`;
-      const sidebarOpen = !!side && width > 0;
-      return {
-        minWidth: calc,
-        maxWidth: calc,
-        marginLeft: `${left}px`,
-        marginRight: `${right}px`,
-        transition,
-        ...(sidebarOpen ? { height: '100vh', overflowY: 'auto' } : {})
-      };
-    }
-    if (!side || !width) return {};
-    return {
-      marginLeft: side === 'left' ? `${width}px` : 'auto',
-      marginRight: side === 'right' ? `${width}px` : 'auto'
-    };
-  }, [assistantLayout, activeStep]);
   const globalCSS = useMemo(
     () => calculateGlobalCSS(formSettings.globalStyles),
     [formSettings.globalStyles]
@@ -887,14 +847,6 @@ function Form({
     }
   }, []);
 
-  // The file upload box is page-level and may be rendered by another form
-  // instance, so its height comes from the shared tracker rather than a ref
-  const fileUploadToastHeight = useSyncExternalStore(
-    subscribeToUploadToastHeight,
-    getUploadToastHeight,
-    getUploadToastHeight
-  );
-
   // The Feathery badge sits in the bottom-right corner, so overlays there start
   // above it
   const bottomRightBase =
@@ -923,6 +875,8 @@ function Form({
   // All mount and unmount logic should live here
   useEffect(() => {
     registerRenderCallback(_internalId, 'form', () => {
+      if (enableFormTools && internalState[_internalId])
+        internalState[_internalId].formToolsRenderOwed = true;
       setRender((render) => ({ ...render }));
     });
     if (
@@ -934,6 +888,8 @@ function Form({
     return () => {
       delete initState.renderCallbacks[_internalId];
       delete initState.redirectCallbacks[_internalId];
+      if (internalState[_internalId])
+        delete internalState[_internalId].formActions;
     };
   }, []);
 
@@ -982,6 +938,10 @@ function Form({
       })
     );
     setRequiredStepAction(requiredStepAction);
+
+    internalState[_internalId]?.runtimeListeners?.forEach((listener) =>
+      listener({ type: 'step', stepId: activeStep.id, stepKey: activeStep.key })
+    );
   }, [activeStep?.id]);
 
   // viewElements state
@@ -1065,7 +1025,10 @@ function Form({
     });
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
+  function addRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    limit: number | null = null
+  ) {
     const getNewVal = (field: any) => {
       const val = fieldValues[field.servar.key];
       if (limit && val && Array.isArray(val) && val.length >= limit) return val;
@@ -1197,22 +1160,6 @@ function Form({
     }),
     [setRender]
   );
-
-  const getAssistantTargets = useCallback(() => {
-    const targets: { type: string; id: string }[] = [];
-    if (formId) targets.push({ type: 'panel', id: formId });
-    if (initState.userId) targets.push({ type: 'fuser', id: initState.userId });
-    // The mounted editor is the only source of truth. Generation commonly
-    // happens on a previous step, so scanning the current step's actions loses
-    // the document exactly when the editor is open. This is still only the
-    // document template target; the editor separately publishes its real
-    // envelope as the only per-submission index scope.
-    const documentTarget = getActiveDocxEditorTarget(_internalId);
-    if (documentTarget) targets.push(documentTarget);
-    const envelopeTarget = getActiveDocxEditorEnvelopeTarget(_internalId);
-    if (envelopeTarget) targets.push(envelopeTarget);
-    return targets;
-  }, [formId]);
 
   useEffect(() => {
     return () => {
@@ -1988,6 +1935,14 @@ function Form({
     }
   }
 
+  // Commit signal for formTools' fillStep (see renderTick.ts)
+  useLayoutEffect(() => {
+    if (!enableFormTools || !internalState[_internalId]) return;
+    internalState[_internalId].formToolsRenderTick =
+      (internalState[_internalId].formToolsRenderTick ?? 0) + 1;
+    internalState[_internalId].formToolsRenderOwed = false;
+  });
+
   useEffect(() => {
     if (clientRef.current) return;
 
@@ -1995,7 +1950,8 @@ function Form({
       formId,
       hasRedirected,
       _draft,
-      _bypassCDN
+      _bypassCDN,
+      enableFormTools
     );
     const newClient = clientRef.current;
     let saveUrlParamsFormSetting = false;
@@ -2040,6 +1996,8 @@ function Form({
         setLogicRules(res.logic_rules);
         setSharedCodes((prev) => res.shared_codes || prev);
         extractionFileFields.current = res.extraction_file_fields || {};
+        // A payload from before the flag existed can't vouch for the form
+        sessionGated.current = res.session_gated ?? true;
         trackHashes.current =
           hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 
@@ -2136,20 +2094,31 @@ function Form({
       })
       .catch(async (error: any) => {
         console.warn(error);
-        // Only the session resolves which submission an access link opens, so
-        // without one there is no user id to write against. Block instead of
-        // opening the origin step on an empty submission.
-        if (initState.linkToken) {
+        // The session can fail before the form payload sets sessionGated. An
+        // origin outage can fail both, and a missing payload is treated as gated.
+        const data = await formPromise.catch(() => null);
+        // Only the session resolves which submission an access link opens, and
+        // whether a gated form may open at all. Block instead of opening the
+        // origin step past checks that never ran. After a login redirect the
+        // auth hook picks the step, but it waits on integrations that only a
+        // loaded session provides, so it would never pick one.
+        if (
+          !data ||
+          initState.linkToken ||
+          sessionGated.current ||
+          authState.redirectAfterLogin ||
+          authState.hasRedirected
+        ) {
           formOffReason.current = CLOSED;
-          formOffMessage.current = LINK_SESSION_FAILED_MESSAGE;
+          formOffMessage.current = SESSION_FAILED_MESSAGE;
           setRender((render) => ({ ...render }));
           return;
         }
+        if (stepKey) return;
         // Go to first step if origin fails
-        const [data] = await formPromise;
         const newKey = (getOrigin as any)(data).key;
-        if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
-        else setStepKey(newKey);
+        if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
+        setStepKey(newKey);
       });
   }, [activeStep, setSteps, updateFieldValues]);
 
@@ -2252,18 +2221,20 @@ function Form({
     repeat: number | undefined,
     hasNext: boolean
   ): Promise<[Promise<any>] | undefined> => {
-    const formattedFields = formatStepFields(
+    let formattedFields = formatStepFields(
       activeStep,
       formSettings.saveHideIfFields ? null : visiblePositions,
       false
     );
-    const trigger = lookUpTrigger(
-      activeStep,
-      metadata.elementIDs[0],
-      metadata.elementType
-    );
-    // Legacy callback contract is numeric, so fall back to 0 here only.
-    trigger.repeatIndex = repeat ?? 0;
+    const trigger = {
+      ...lookUpTrigger(
+        activeStep,
+        metadata.elementIDs[0],
+        metadata.elementType
+      ),
+      // Legacy callback contract is numeric, so fall back to 0 here only.
+      repeatIndex: repeat ?? 0
+    } as Trigger;
 
     if (
       activeStep.servar_fields.find(
@@ -2297,13 +2268,12 @@ function Form({
     const customSubmitCode = async (beforeSubmit: boolean) => {
       let invalid = false;
       // Execute user-provided onSubmit function or submit rules if present
-      if (
-        await runUserLogic('submit', () => ({
-          submitFields: formattedFields,
-          trigger,
-          beforeSubmit
-        }))
-      ) {
+      const logicRan = await runUserLogic('submit', () => ({
+        submitFields: formattedFields,
+        trigger,
+        beforeSubmit
+      }));
+      if (logicRan) {
         // do validation check in case user has manually invalidated the step
         invalid = await setFormElementError({
           formRef,
@@ -2315,11 +2285,39 @@ function Form({
           triggerErrors: true
         });
       }
-      return invalid;
+      return { invalid, logicRan };
     };
 
-    let invalid = await customSubmitCode(true);
+    let { invalid, logicRan } = await customSubmitCode(true);
     if (invalid) return;
+
+    if (logicRan) {
+      // Submit logic can update field values and hide-if state. Validate and
+      // snapshot both from the completed rule's state before persisting it.
+      const latestVisiblePositions = getVisiblePositions(
+        activeStep,
+        _internalId
+      );
+      const { invalid: latestValuesInvalid } = validateElements({
+        step: activeStep,
+        visiblePositions: latestVisiblePositions,
+        triggerErrors: true,
+        errorType: formSettings.errorType,
+        formRef,
+        errorCallback: getErrorCallback({ trigger }),
+        setInlineErrors,
+        trigger
+      });
+      if (latestValuesInvalid) {
+        setAutoValidate(true);
+        return;
+      }
+      formattedFields = formatStepFields(
+        activeStep,
+        formSettings.saveHideIfFields ? null : latestVisiblePositions,
+        false
+      );
+    }
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       const servar = servarByKey.get(key);
@@ -2337,6 +2335,8 @@ function Form({
     });
 
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);
+    if (enableFormTools)
+      internalState[_internalId].formToolsLastSave = stepPromise;
 
     const fieldData: Record<string, any> = {};
     if (integrations?.segment?.metadata.track_fields)
@@ -2380,7 +2380,7 @@ function Form({
       // If running submit logic rule after, must finish
       // submit data first
       await stepPromise;
-      invalid = await customSubmitCode(false);
+      ({ invalid } = await customSubmitCode(false));
       if (invalid) return;
     }
 
@@ -2694,8 +2694,8 @@ function Form({
       // when loaders are showing
       clearLoaders();
       // Set asynchronously since loaders need to unrender first. Publish the
-      // pending write on internalState so programmatic callers (assistant
-      // tools) can await it instead of racing the timer.
+      // pending write on internalState so programmatic callers (Robin form
+      // actions) can await it instead of racing the timer.
       const publication = new Promise<void>((resolve) => {
         setTimeout(() => {
           // Promise.resolve tolerates a non-promise return (e.g. a mocked
@@ -2718,7 +2718,7 @@ function Form({
           )
             .catch((err) => {
               // Still resolve so awaiters never hang, but leave a trail: a
-              // swallowed failure here means assistant tools snapshot inline
+              // swallowed failure here means Robin form actions snapshot inline
               // errors believing the write landed.
               console.warn('Failed to set button error', err);
             })
@@ -3884,6 +3884,32 @@ function Form({
     clearButtonActionState();
   };
 
+  const runFieldChangeLogic = ({
+    fieldKey,
+    servarId,
+    elementRepeatIndex = 0,
+    triggerType = 'field',
+    integrationData = {},
+    relatedServarIds = [],
+    valueRepeatIndex = null
+  }: any) => {
+    if (!eventHasUserLogic('change')) return;
+    const logic = runUserLogic('change', () => ({
+      trigger: {
+        id: fieldKey,
+        _servarId: servarId,
+        _relatedServarIds: relatedServarIds,
+        repeatIndex: elementRepeatIndex,
+        type: triggerType
+      },
+      integrationData,
+      valueRepeatIndex
+    }));
+    callbackRef.current.addCallback(logic);
+    setShouldScrollToTop(false);
+    return logic;
+  };
+
   const fieldOnChange =
     ({ fieldID, fieldKey, servarId, elementRepeatIndex = 0 }: any) =>
     ({
@@ -3896,22 +3922,15 @@ function Form({
       // Multi-file upload is not a repeated row but a repeated field
       valueRepeatIndex = null
     } = {}) => {
-      if (eventHasUserLogic('change')) {
-        callbackRef.current.addCallback(
-          runUserLogic('change', () => ({
-            trigger: {
-              id: fieldKey,
-              _servarId: servarId,
-              _relatedServarIds: relatedServarIds,
-              repeatIndex: elementRepeatIndex,
-              type: triggerType
-            },
-            integrationData,
-            valueRepeatIndex
-          }))
-        );
-        setShouldScrollToTop(false);
-      }
+      runFieldChangeLogic({
+        fieldKey,
+        servarId,
+        elementRepeatIndex,
+        triggerType,
+        integrationData,
+        relatedServarIds,
+        valueRepeatIndex
+      });
 
       let triggered = false;
       if (submitData) {
@@ -3963,13 +3982,39 @@ function Form({
       buttonOnClick,
       runElementActions,
       tableOnClick,
-      changeValue
+      changeValue,
+      runFieldChangeLogic: (
+        field: any,
+        index: number | null,
+        valueRepeatIndex?: number
+      ) =>
+        runFieldChangeLogic({
+          fieldKey: field.servar.key,
+          servarId: field.servar.id,
+          elementRepeatIndex: index ?? 0,
+          valueRepeatIndex: valueRepeatIndex ?? null
+        }),
+      submitFiles: (fileEntries: { servar: any; stepKey: string }[]) =>
+        client.submitFiles(fileEntries)
     };
-    if (assistantClientRef.current) {
-      assistantClientRef.current.updateCallbacks(callbacks);
-    } else {
-      assistantClientRef.current = new AssistantClient(callbacks);
-      internalState[_internalId].assistantClient = assistantClientRef.current;
+    internalState[_internalId].formActions = callbacks;
+    // Merged into one object: a running tool call holds the object it read at
+    // its start, and still gets each later render's callbacks through it
+    if (enableFormTools) {
+      const formToolsCallbacks: FormToolsCallbacks = {
+        changeValue,
+        flushRerender: flushFormRerender,
+        fieldOnChange,
+        getNextStepKey,
+        buttonOnClick,
+        awaitChangeRules: () => callbackRef.current.all(),
+        addRepeatedRow,
+        submitFiles: (fileEntries) => client.submitFiles(fileEntries)
+      };
+      internalState[_internalId].formToolsCallbacks = Object.assign(
+        internalState[_internalId].formToolsCallbacks ?? {},
+        formToolsCallbacks
+      );
     }
   }
 
@@ -4005,8 +4050,7 @@ function Form({
     setCardElement,
     visiblePositions,
     calendly: integrations?.calendly?.metadata,
-    featheryContext: getFormContext(_internalId),
-    assistantClient: internalState[_internalId]?.assistantClient
+    featheryContext: getFormContext(_internalId)
   };
 
   // If form was completed in a previous session and edits are disabled,
@@ -4110,9 +4154,9 @@ function Form({
           ...globalCSS.getTarget('form'),
           ...stepCSS,
           ...style,
-          ...assistantOffsetCSS,
           position: 'relative',
           display: 'flex',
+          ...(inlineWatermark ? { flexDirection: 'column' } : {}),
           ...(popupOptions ? { borderRadius: '10px' } : {})
         }}
         dir={formSettings.rightToLeft ? 'rtl' : 'ltr'}
@@ -4164,6 +4208,9 @@ function Form({
         )}
         {flinksFrame}
         <Grid step={activeStep} form={form} viewport={viewport} />
+        {enableFormTools && hasWebMCPRuntime() && (
+          <FormWebMCPTools formUuid={_internalId} />
+        )}
         {popupOptions && (
           <CloseIcon
             fill='white'
@@ -4198,6 +4245,7 @@ function Form({
         <Watermark
           show={formSettings.showBrand}
           brandPosition={formSettings.brandPosition}
+          inline={inlineWatermark}
         />
         <ActionToast
           ref={setActionToastRef}
@@ -4210,23 +4258,6 @@ function Form({
           bottom={bottomRightBase + stackAbove(actionToastHeight)}
         />
 
-        {formSettings.assistantEnabled && (
-          <AssistantChat
-            instanceId={_internalId}
-            baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
-            getTargets={getAssistantTargets}
-            bottom={
-              bottomRightBase +
-              stackAbove(actionToastHeight) +
-              stackAbove(fileUploadToastHeight)
-            }
-            color={formSettings.assistantColor}
-            workflowActions={formSettings.assistantWorkflowActions}
-            stepSettings={formSettings.assistantStepSettings}
-            activeStepId={activeStep?.id}
-            onLayoutChange={handleAssistantLayoutChange}
-          />
-        )}
         {connectAccountModal && (
           <ConnectAccountModal
             show

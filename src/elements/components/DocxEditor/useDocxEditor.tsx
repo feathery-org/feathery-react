@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { installHistoryRouting } from './historyRouting';
 import { featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
 import {
@@ -6,14 +7,14 @@ import {
   findReplaceCounterpart,
   installRevisionGroupIsolation,
   installTrackedContentControlDeletion,
-  preserveDocumentViewDuring,
-  registerWrappingDocumentEditorContainer
+  preserveDocumentViewDuring
 } from '../../../utils/documentEditorPrimitives';
-import { isAssistantApplyingEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinWriting, onDocumentReplaced } from './robinActivity';
 import { EJ2_SCRIPT_URL } from './constants';
 import { loadStyles, waitForDocumentLoad, waitForEj } from './ejLoader';
 import { stampMissingContentControlColors } from './contentControlSafety';
 import { installDocumentTailInvariant } from './documentTailInvariant';
+import { installTableColumnInsertFix } from './tableColumnInsertFix';
 import { DocxSource } from './types';
 import {
   DocxBindingsState,
@@ -1032,11 +1033,6 @@ export function useDocxEditor({
         if (!ed) {
           throw new Error('Document editor instance missing after create');
         }
-        // Assistant batches operate on the inner editor, but SyncFusion also
-        // caches track-changes on this wrapping container. Keep that ownership
-        // relationship available at the common batch boundary so both flags
-        // can always return to user-editing mode together.
-        registerWrappingDocumentEditorContainer(ed, instance);
         installDocumentTailInvariant(
           ed,
           ej.documenteditor.HelperMethods?.getSfdtDocument?.bind(
@@ -1057,7 +1053,7 @@ export function useDocxEditor({
         // Suppress Syncfusion's native review pane for every host (not just
         // review-gated ones) — we render our own tracked-change UI.
         closeTrackedChangeReviewPane();
-        ed.addEventListener('contentChange', () => {
+        const contentChanged = () => {
           // A tracked edit (e.g. the assistant's) can spawn/reopen the native
           // pane; keep it suppressed. Idempotent once patched.
           closeTrackedChangeReviewPane();
@@ -1066,8 +1062,12 @@ export function useDocxEditor({
           onDirtyRef.current?.();
           // Unlike onDirty (edge-only), onEdit fires on every change so the
           // session tracker can debounce autosave and attribute each edit.
-          onEditRef.current?.({ assistant: isAssistantApplyingEdits(ed) });
-        });
+          onEditRef.current?.({ assistant: isRobinWriting(ed) });
+        };
+        ed.addEventListener('contentChange', contentChanged);
+        // Opening a document fires no contentChange; Robin's engine reports a
+        // document it replaced whole, and it is handled as any change.
+        onDocumentReplaced(ed, contentChanged);
         // Ctrl/Cmd+S: Syncfusion's default saves the document as a downloaded
         // SFDT file. Intercept it, stop that default (isHandled + preventDefault),
         // and route to the host's Save so the shortcut persists like the toolbar.
@@ -1100,6 +1100,9 @@ export function useDocxEditor({
           // Engine-level fixes to the editing surface itself, not review
           // customizations: every host gets them, gated or not.
           installTableRowResizeFix(ed);
+          installTableColumnInsertFix(ed);
+          // Ctrl+Z / Ctrl+Y through Robin's undo routing where a document session is mounted
+          installHistoryRouting(ed);
           installTrackedContentControlDeletion(ed);
           // Status bar (bottom right): hide the Web-layout toggle — it flips
           // the document into continuous view, which breaks the paginated

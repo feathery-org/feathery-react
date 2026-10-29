@@ -25,7 +25,28 @@ import internalState, {
   UpdateDocusignEnvelopeParams,
   setFormInternalState
 } from './internalState';
+import type { FormRuntimeEvent } from './internalState';
 import { validateElements } from './validation';
+import { getPanelRuntimeSnapshot } from './panelRuntime';
+import { linkRequestHeaders } from './accessLink';
+import { fillFields, FillFieldInput } from './formActions/fillFields';
+import { liveDocumentAccessor } from '../robin/document/mounts';
+import { navigateToStep } from './formActions/navigateToStep';
+import { clickElement } from './formActions/clickElement';
+import { runLogicRule, RunLogicRuleParams } from './formActions/runLogicRule';
+import {
+  addTableRow,
+  deleteTableRow,
+  focusTableCell,
+  getTableIssues,
+  getTableRows,
+  setTableCells,
+  SetTableCellsInput,
+  setTableFindings,
+  SetTableFindingsInput,
+  TableRowTarget,
+  triggerTableAction
+} from './formActions/tables';
 import { STEP_EVENT_SKIP } from './stepEvents';
 import { AnswersPendingError } from './offlineRequestHandler';
 import {
@@ -47,6 +68,14 @@ const uploadFieldIdByKey = (steps: any, fieldKey: string): string | null => {
   }
   return null;
 };
+
+/** Whether any step of the form holds a document editor container, the current step or not. */
+const formHasDocumentElement = (steps: any): boolean =>
+  (Object.values(steps ?? {}) as any[]).some((step) =>
+    (step?.subgrids ?? []).some(
+      (container: any) => !!container?.properties?.document_editor
+    )
+  );
 
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
@@ -113,6 +142,69 @@ export const getFormContext = (formUuid: string) => {
       if (changed) formState.latestStepName = stepKey;
     },
     isTestForm: () => initState.isTestEnv,
+    // What the person sees right now: current step, every field's value, hidden fields
+    snapshot: () => getPanelRuntimeSnapshot(formUuid, { masked: true }),
+    // What a host sends with its own backend requests to act as this submission, read when the request is made
+    requestIdentity: (): {
+      fuserKey?: string;
+      headers: Record<string, string>;
+    } => ({
+      fuserKey: initState.userId,
+      headers: {
+        ...linkRequestHeaders(initState.linkToken, initState.linkSecret),
+        ...(initState.collaboratorId
+          ? { 'X-Feathery-Collaborator': initState.collaboratorId }
+          : {})
+      }
+    }),
+    subscribe: (listener: (event: FormRuntimeEvent) => void) => {
+      const listeners = (formState.runtimeListeners ??= new Set());
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    // Acting for the person on the current step, with the same checks as their own edits and clicks
+    fillFields: (fields: FillFieldInput[]) => fillFields(formUuid, fields),
+    // Robin's document editing: the mounted document's descriptor for the request context, one bridge
+    // payload in and its response out, and the end of the editing turn when Robin's turn settles
+    liveDocument: liveDocumentAccessor(formUuid, {
+      hasDocumentElement: () =>
+        formHasDocumentElement(internalState[formUuid]?.steps)
+    }),
+    // Moves through the step's own navigation like the person's click, unlike goToStep
+    navigateToStep: (stepKey: string) => navigateToStep(formUuid, stepKey),
+    clickElement: (elementId: string, repeatIndex?: number) =>
+      clickElement(formUuid, elementId, repeatIndex),
+    // Runs one of the designer's tool rules for the person and reports what it changed
+    runLogicRule: (ruleId: string, params?: RunLogicRuleParams) =>
+      runLogicRule(formUuid, ruleId, params),
+    // Reads and edits a table on the current step through its own grid, where the person's edits land
+    getTableRows: (
+      tableId: string,
+      query?: { offset?: number; limit?: number; search?: string }
+    ) => getTableRows(formUuid, tableId, query),
+    setTableCells: (tableId: string, cells: SetTableCellsInput[]) =>
+      setTableCells(formUuid, tableId, cells),
+    addTableRow: (tableId: string) => addTableRow(formUuid, tableId),
+    deleteTableRow: (tableId: string, target: TableRowTarget) =>
+      deleteTableRow(formUuid, tableId, target),
+    triggerTableAction: (
+      tableId: string,
+      target: TableRowTarget,
+      actionLabel?: string
+    ) => triggerTableAction(formUuid, tableId, target, actionLabel),
+    // Marks, focuses and reads the cells of a spreadsheet table the person is looking at
+    setTableFindings: (tableId: string, findings: SetTableFindingsInput[]) =>
+      setTableFindings(formUuid, tableId, findings),
+    focusTableCell: (
+      tableId: string,
+      target: TableRowTarget & { fieldKey?: string }
+    ) => focusTableCell(formUuid, tableId, target),
+    getTableIssues: (
+      tableId: string,
+      query: TableRowTarget & { scope: 'table' | 'row' }
+    ) => getTableIssues(formUuid, tableId, query),
     isLastStep: () => {
       const step = formState.currentStep;
       return step.next_conditions.length === 0;
@@ -419,8 +511,27 @@ export const getFormContext = (formUuid: string) => {
                 ...(form.signerIds ? { signerIds: { ...form.signerIds } } : {})
               }))
             }
+          : typeof doc !== 'string' && doc.kind === 'template'
+          ? {
+              ...doc,
+              ...(doc.references ? { references: [...doc.references] } : {})
+            }
           : doc
       );
+      const hasReferences = documentIds.some(
+        (doc) =>
+          typeof doc !== 'string' &&
+          ((doc.kind === 'template' && doc.references !== undefined) ||
+            (doc.kind === 'quik' &&
+              doc.forms?.some((form) => form.reference !== undefined)))
+      );
+      if (hasReferences && (signMethod !== 'docusign' || merge)) {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: references require signMethod 'docusign' and cannot be merged"
+          )
+        );
+      }
       const unknownUploadKeys: string[] = [];
       let missingUploadField = false;
       documentIds = documentIds.map((doc) => {

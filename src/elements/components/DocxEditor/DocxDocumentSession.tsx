@@ -18,10 +18,11 @@ import useRefreshOnFocus from '../../../utils/useRefreshOnFocus';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import { containerToolbarOutcomes, getSignUrl } from '../../../utils/document';
+import { mountRobinDocument } from './robinDocument';
 import {
-  registerDocxEditor,
-  unregisterDocxEditor
-} from '../../../assistant/tools/docx/docxEditorRegistry';
+  robinHostMounted,
+  onRobinHostChange
+} from '../../../robin/document/mounts';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
 import { DocxHistoryHost, DocxSaveMeta } from './history/types';
@@ -68,7 +69,6 @@ export interface DocxDocumentSessionHandle {
 export default function DocxDocumentSession({
   containerId,
   formId,
-  stepId,
   assistantEnabled,
   targetAction,
   client,
@@ -431,23 +431,25 @@ export default function DocxDocumentSession({
   // retain the editor object as well so cleanup can only remove this exact
   // registration, never another mounted container's editor.
   const registeredEditor = useRef<any>(undefined);
-  const registeredEnvelopeId = useRef<string | undefined>(undefined);
   const activeRef = useRef(active);
   activeRef.current = active;
+  const [robinHost, setRobinHost] = useState(() =>
+    formId ? robinHostMounted(formId) : false
+  );
+  useEffect(() => {
+    if (!formId) return undefined;
+    setRobinHost(robinHostMounted(formId));
+    return onRobinHostChange(formId, setRobinHost);
+  }, [formId]);
+  // Bumped when the document finishes opening (and on each reload), so Robin
+  // mounts the opened document rather than the blank editor.
+  const [documentOpened, setDocumentOpened] = useState(0);
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
       registeredEditor.current = editor;
-      registeredEnvelopeId.current = envelope?.id;
-      if (activeRef.current)
-        registerDocxEditor(containerId, editor, {
-          formId,
-          stepId,
-          documentId: activeDocumentId,
-          envelopeId: envelope?.id
-        });
     },
-    [activeDocumentId, containerId, envelope?.id, formId, stepId]
+    [containerId]
   );
   // Runs after openAsync resolves — and again on every reload (openNonce), which
   // is the case that matters: the in-memory group wrappers die with the old
@@ -456,6 +458,7 @@ export default function DocxDocumentSession({
   // Idempotent (already-bound revisions are skipped), so the blank-document
   // firing of this same callback is a harmless no-op.
   const onDocumentReady = useCallback(() => {
+    setDocumentOpened((n) => n + 1);
     const editor = registeredEditor.current;
     if (!editor || !reviewChanges) return;
     try {
@@ -464,48 +467,46 @@ export default function DocxDocumentSession({
       // A grouping failure must not break the opened document.
     }
   }, [reviewChanges]);
-  // Envelope identity can settle after SyncFusion's created callback. Refresh
-  // only the assistant registration; the editor itself stays mounted.
+  // Robin v8: mount only the ACTIVE tab's document under the container slot, so
+  // the assistant describes and acts on the document in view. Switching tabs
+  // unmounts the old one (effect cleanup) and mounts the new, and a cached but
+  // hidden tab stays unmounted for Robin.
   useEffect(() => {
-    if (!containerId || !registeredEditor.current) return;
-    if (!active || finalized) {
-      unregisterDocxEditor(containerId, registeredEditor.current, formId);
-      return;
-    }
-    // Cached tabs retain their layout size while hidden. Opening and the
-    // editor's ResizeObserver own layout; resizing here can touch the caret
-    // before its page exists and crash a newly selected document.
-    registerDocxEditor(containerId, registeredEditor.current, {
-      formId,
-      stepId,
-      documentId: activeDocumentId,
-      envelopeId: envelope?.id
+    const editor = registeredEditor.current;
+    if (
+      !assistantEnabled ||
+      !robinHost ||
+      !active ||
+      finalized ||
+      !editor ||
+      !containerId ||
+      !formId ||
+      !envelope?.id
+    )
+      return undefined;
+    return mountRobinDocument({
+      formKey: formId,
+      slot: containerId,
+      editor,
+      envelopeId: envelope.id
     });
   }, [
+    assistantEnabled,
+    robinHost,
     active,
     finalized,
-    activeDocumentId,
     containerId,
     envelope?.id,
     formId,
-    stepId
+    documentOpened
   ]);
   useEffect(() => {
-    const ownerId = envelope?.id;
     return () => {
       bindingValuesRef.current = {};
-      if (containerId) {
+      if (containerId)
         clearDocxEditorDirty(formId, `${containerId}:${initialEnvelope.id}`);
-        if (
-          registeredEnvelopeId.current === ownerId &&
-          registeredEditor.current
-        ) {
-          unregisterDocxEditor(containerId, registeredEditor.current, formId);
-          registeredEditor.current = undefined;
-        }
-      }
     };
-  }, [containerId, formId, envelope?.id]);
+  }, [containerId, formId, initialEnvelope.id]);
 
   if (envelope.type === 'pdf' && envelope.file) {
     return (

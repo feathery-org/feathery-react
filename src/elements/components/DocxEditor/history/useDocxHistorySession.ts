@@ -5,10 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
 import { featheryDoc } from '../../../../utils/browser';
 
-import {
-  isAssistantWriting,
-  onAssistantSessionChange
-} from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinEditing, onRobinTurnChange } from '../robinActivity';
 import { isOpeningDocument } from '../useDocxEditor';
 import { runHistoryTask } from './historyWorkerClient';
 import { createAutosaveScheduler } from './autosaveScheduler';
@@ -224,7 +221,7 @@ export function useDocxHistorySession(
         !loadingRef.current &&
         !readOnlyRef.current &&
         !isOpeningDocument(ed) &&
-        !isAssistantWriting(ed)
+        !isRobinEditing(ed)
       );
     };
     const isSessionConflict = (error: unknown) =>
@@ -792,7 +789,7 @@ export function useDocxHistorySession(
   // leaves the session open so user + assistant edits share it.
   useEffect(() => {
     if (!editor || !host || readOnly) return undefined;
-    return onAssistantSessionChange(editor, (active) => {
+    return onRobinTurnChange(editor, (active) => {
       if (active) {
         try {
           lastSnapshotRef.current = editor.serialize();

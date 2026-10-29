@@ -50,10 +50,7 @@ import {
   VersionAuthor
 } from './history/types';
 import { DocxSource } from './types';
-import {
-  isAssistantWriting,
-  onAssistantSessionChange
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinEditing, onRobinTurnChange } from './robinActivity';
 
 const DEFAULT_CURRENT_USER: VersionAuthor = {
   kind: 'user',
@@ -291,10 +288,6 @@ function DocxEditor({
   const saveToastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined
   );
-  // Mirror the toast into a ref so editor-event callbacks can read the current
-  // type without re-subscribing.
-  const saveToastRef = useRef(saveToast);
-  saveToastRef.current = saveToast;
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   // Debounces the DOCX download: a double-click must not race two exports
@@ -436,11 +429,9 @@ function DocxEditor({
     });
   }, []);
 
-  // The caret left the locked spot: hide the hint now, but never clobber a save
-  // success/error toast that happens to be showing.
+  // Show and resolve can land in one batch: decide on pending state, never clobber a save toast.
   const handleLockedEditResolved = useCallback(() => {
-    if (saveToastRef.current?.type !== 'info') return;
-    setSaveToast(null);
+    setSaveToast((toast) => (toast?.type === 'info' ? null : toast));
   }, []);
 
   const handleEditorReady = useCallback(
@@ -713,8 +704,8 @@ function DocxEditor({
   }, [onBeforeReplaceReady]);
 
   useEffect(() => {
-    setAssistantWriting(isAssistantWriting(editor));
-    return onAssistantSessionChange(editor, setAssistantWriting);
+    setAssistantWriting(isRobinEditing(editor));
+    return onRobinTurnChange(editor, setAssistantWriting);
   }, [editor]);
 
   const historyRefreshKey = `${
@@ -1165,7 +1156,7 @@ function DocxEditor({
   const restoreBlockedReason = () =>
     readOnly
       ? "Signed or read-only documents can't be restored"
-      : assistantWriting || isAssistantWriting(editor)
+      : assistantWriting || isRobinEditing(editor)
       ? 'Wait for Robin to finish'
       : null;
 

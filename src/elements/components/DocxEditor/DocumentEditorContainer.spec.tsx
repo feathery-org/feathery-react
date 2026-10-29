@@ -9,11 +9,6 @@ import {
 import { fieldValues, initState } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { featheryWindow } from '../../../utils/browser';
-import {
-  _clearDocxEditors,
-  getActiveDocxEditorEnvelopeTarget,
-  getDocxEditor
-} from '../../../assistant/tools/docx/docxEditorRegistry';
 import { setFormInternalState } from '../../../utils/internalState';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
@@ -21,6 +16,7 @@ import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors
 } from './docxDirtyRegistry';
+import { setRobinHost } from '../../../robin/document/mounts';
 
 const mockDownloadAll = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../../utils/browser', () => ({
@@ -30,6 +26,15 @@ jest.mock('../../../utils/browser', () => ({
 
 jest.mock('../../../utils/documentEditorPrimitives', () => ({
   rebindRevisionGroups: jest.fn()
+}));
+
+// Robin v8 document mount: assert which tab's document is mounted without the
+// real engine (it needs a live SyncFusion editor).
+const mockMountRobinDocument = jest.fn(() => jest.fn());
+jest.mock('./robinDocument', () => ({
+  __esModule: true,
+  mountRobinDocument: (...args: any[]) =>
+    (mockMountRobinDocument as any)(...args)
 }));
 
 // Mirrors the real lifecycle in useDocxEditor: `onEditorReady` fires from
@@ -284,229 +289,6 @@ const draftFor = (containerId: string) => ({
   ]
 });
 
-describe('DocumentEditorContainer registry lifecycle', () => {
-  beforeEach(() => {
-    _clearDocxEditors();
-    initState.formSchemas = {
-      'form-key': schemaFor(['document-container-a', 'document-container-b'])
-    };
-    (featheryWindow() as any)[PENDING_DRAFTS_KEY] = {
-      'document-container-a': draftFor('document-container-a'),
-      'document-container-b': draftFor('document-container-b')
-    };
-  });
-
-  afterEach(() => {
-    _clearDocxEditors();
-    initState.formSchemas = {};
-    delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
-    jest.restoreAllMocks();
-  });
-
-  it('shows a blank editor preview without connecting it to a generated envelope', () => {
-    const { getByTestId } = render(
-      <DocumentEditorContainer
-        containerId='document-container-a'
-        formId='form-1'
-        editMode
-      />
-    );
-
-    const preview = getByTestId('editor:none');
-    expect(preview).toHaveAttribute('data-preview', 'true');
-    expect(getDocxEditor('form-1')).toBeUndefined();
-    expect(hasDirtyDocxEditors('form-1')).toBe(false);
-  });
-
-  it('keeps both same-step editors usable and silently selects one assistant target', async () => {
-    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const first = render(
-      <DocumentEditorContainer
-        containerId='document-container-b'
-        formId='form-1'
-        stepId='step-same'
-      />
-    );
-
-    await waitFor(() =>
-      expect(getDocxEditor('form-1')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-b.docx'
-      })
-    );
-
-    const second = render(
-      <DocumentEditorContainer
-        containerId='document-container-a'
-        formId='form-1'
-        stepId='step-same'
-      />
-    );
-
-    await waitFor(() => {
-      expect(
-        second.getByTestId(
-          'editor:https://example.com/document-container-a.docx'
-        )
-      ).toBeInTheDocument();
-      expect(
-        first.getByTestId(
-          'editor:https://example.com/document-container-b.docx'
-        )
-      ).toBeInTheDocument();
-      expect(getDocxEditor('form-1')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-a.docx'
-      });
-    });
-    expect(error).not.toHaveBeenCalled();
-    expect(getActiveDocxEditorEnvelopeTarget('form-1')).toEqual({
-      type: 'envelope',
-      id: 'envelope-document-container-a'
-    });
-
-    second.unmount();
-    expect(getDocxEditor('form-1')).toMatchObject({
-      sourceUrl: 'https://example.com/document-container-b.docx'
-    });
-    expect(getActiveDocxEditorEnvelopeTarget('form-1')?.id).toBe(
-      'envelope-document-container-b'
-    );
-
-    first.unmount();
-    expect(getDocxEditor('form-1')).toBeUndefined();
-  });
-
-  it('hands off to the next step before the previous step unmounts', async () => {
-    const outgoing = render(
-      <DocumentEditorContainer
-        containerId='document-container-a'
-        formId='form-1'
-        stepId='step-a'
-      />
-    );
-    await waitFor(() =>
-      expect(getDocxEditor('form-1')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-a.docx'
-      })
-    );
-
-    // This is React's real transition ordering: incoming mount first.
-    const incoming = render(
-      <DocumentEditorContainer
-        containerId='document-container-b'
-        formId='form-1'
-        stepId='step-b'
-      />
-    );
-    await waitFor(() =>
-      expect(getDocxEditor('form-1')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-b.docx'
-      })
-    );
-    expect(getActiveDocxEditorEnvelopeTarget('form-1')?.id).toBe(
-      'envelope-document-container-b'
-    );
-
-    // Then the outgoing cleanup arrives late.
-    outgoing.unmount();
-    expect(getDocxEditor('form-1')).toMatchObject({
-      sourceUrl: 'https://example.com/document-container-b.docx'
-    });
-    incoming.unmount();
-    expect(getDocxEditor('form-1')).toBeUndefined();
-  });
-
-  it('keeps editors mounted by different forms isolated', async () => {
-    const formA = render(
-      <DocumentEditorContainer
-        containerId='document-container-a'
-        formId='form-a'
-        stepId='step-a'
-      />
-    );
-    const formB = render(
-      <DocumentEditorContainer
-        containerId='document-container-b'
-        formId='form-b'
-        stepId='step-b'
-      />
-    );
-
-    await waitFor(() => {
-      expect(getDocxEditor('form-a')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-a.docx'
-      });
-      expect(getDocxEditor('form-b')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-b.docx'
-      });
-    });
-
-    formA.unmount();
-    expect(getDocxEditor('form-a')).toBeUndefined();
-    expect(getDocxEditor('form-b')).toMatchObject({
-      sourceUrl: 'https://example.com/document-container-b.docx'
-    });
-    formB.unmount();
-  });
-
-  describe('dirty state tracking', () => {
-    beforeEach(() => _clearDocxDirtyRegistry());
-    afterEach(() => _clearDocxDirtyRegistry());
-
-    const url = 'https://example.com/document-container-a.docx';
-
-    it('mirrors editor onChange into the dirty registry', async () => {
-      const { getByTestId } = render(
-        <DocumentEditorContainer
-          containerId='document-container-a'
-          formId='form-1'
-          stepId='step-a'
-        />
-      );
-      await waitFor(() => getByTestId(`editor:${url}`));
-      expect(hasDirtyDocxEditors('form-1')).toBe(false);
-
-      fireEvent.click(getByTestId(`dirty:${url}`));
-      expect(hasDirtyDocxEditors('form-1')).toBe(true);
-
-      fireEvent.click(getByTestId(`clean:${url}`));
-      expect(hasDirtyDocxEditors('form-1')).toBe(false);
-    });
-
-    it('clears dirty state when the editor unmounts', async () => {
-      const view = render(
-        <DocumentEditorContainer
-          containerId='document-container-a'
-          formId='form-1'
-          stepId='step-a'
-        />
-      );
-      await waitFor(() => view.getByTestId(`editor:${url}`));
-
-      fireEvent.click(view.getByTestId(`dirty:${url}`));
-      expect(hasDirtyDocxEditors('form-1')).toBe(true);
-
-      view.unmount();
-      expect(hasDirtyDocxEditors('form-1')).toBe(false);
-    });
-
-    it('never registers dirty state for readOnly (signed) envelopes', async () => {
-      (featheryWindow() as any)[PENDING_DRAFTS_KEY][
-        'document-container-a'
-      ].envelopes[0].signed = true;
-
-      const { getByTestId, queryByTestId } = render(
-        <DocumentEditorContainer
-          containerId='document-container-a'
-          formId='form-1'
-          stepId='step-a'
-        />
-      );
-      await waitFor(() => getByTestId(`editor:${url}`));
-      expect(queryByTestId(`dirty:${url}`)).toBeNull();
-    });
-  });
-});
-
 describe('DocumentEditorContainer revision group binding', () => {
   // How many revisions the document had at each rebind call. This is the
   // load-bearing signal: a rebind at `created` sees 0 and silently binds
@@ -514,7 +296,6 @@ describe('DocumentEditorContainer revision group binding', () => {
   let seenRevisionCounts: number[];
 
   beforeEach(() => {
-    _clearDocxEditors();
     jest.clearAllMocks();
     OPEN_STATE.opened = false;
     seenRevisionCounts = [];
@@ -618,11 +399,6 @@ describe('DocumentEditorContainer revision group binding', () => {
       />
     );
 
-    await waitFor(() => {
-      expect(getDocxEditor('form-1')).toMatchObject({
-        sourceUrl: 'https://example.com/document-container-a.docx'
-      });
-    });
     view.unmount();
   });
 
@@ -706,7 +482,6 @@ describe('DocumentEditorContainer signing outcomes', () => {
     );
 
   beforeEach(() => {
-    _clearDocxEditors();
     mockFinalizeEnvelope
       .mockReset()
       .mockResolvedValue({ file: 'signable.pdf', type: 'pdf' });
@@ -720,7 +495,6 @@ describe('DocumentEditorContainer signing outcomes', () => {
   });
 
   afterEach(() => {
-    _clearDocxEditors();
     initState.formSchemas = {};
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
     jest.restoreAllMocks();
@@ -1713,8 +1487,44 @@ describe('document tab navigation', () => {
   afterEach(() => {
     initState.formSchemas = {};
     delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
-    _clearDocxEditors();
     _clearDocxDirtyRegistry();
+    setRobinHost('tabs-form', false);
+    mockMountRobinDocument.mockClear();
+  });
+
+  it('mounts the active tab for Robin and re-mounts on tab switch', async () => {
+    setRobinHost('tabs-form', true);
+    const view = render(
+      <DocumentEditorContainer
+        containerId={containerId}
+        formId='tabs-form'
+        assistantEnabled
+      />
+    );
+    await view.findByTestId('editor:a.editor.docx');
+    // Robin mounts the active (first) tab's document under the container slot.
+    await waitFor(() =>
+      expect(mockMountRobinDocument).toHaveBeenCalledWith(
+        expect.objectContaining({
+          formKey: 'tabs-form',
+          slot: containerId,
+          envelopeId: 'env-a'
+        })
+      )
+    );
+    mockMountRobinDocument.mockClear();
+    fireEvent.click(view.getByRole('tab', { name: 'Schedule.docx' }));
+    await view.findByTestId('editor:b.docx');
+    // Switching tabs mounts the newly active document for Robin instead.
+    await waitFor(() =>
+      expect(mockMountRobinDocument).toHaveBeenCalledWith(
+        expect.objectContaining({
+          formKey: 'tabs-form',
+          slot: containerId,
+          envelopeId: 'env-b'
+        })
+      )
+    );
   });
 
   it('saves all in the background without an overlay or blocking navigation', async () => {
@@ -1898,12 +1708,6 @@ describe('document tab navigation', () => {
         });
         fireEvent.click(view.getByTestId('clean:b.docx'));
         expect(hasDirtyDocxEditors('tabs-form')).toBe(true);
-        // The editor DOM can commit before its registration effect runs.
-        await waitFor(() =>
-          expect(getDocxEditor('tabs-form')).toMatchObject({
-            sourceUrl: 'b.docx'
-          })
-        );
         fireEvent.click(view.getByRole('tab', { name: 'Agreement.docx' }));
         expect(view.getByTestId('editor:a.editor.docx')).toBe(firstEditor);
         expect(view.getByLabelText('local:a.editor.docx')).toHaveValue(
@@ -1914,11 +1718,6 @@ describe('document tab navigation', () => {
         );
         expect(mockBeforeReplace).not.toHaveBeenCalled();
         expect(mockSaveEnvelopeFile).not.toHaveBeenCalled();
-        await waitFor(() =>
-          expect(getDocxEditor('tabs-form')).toMatchObject({
-            sourceUrl: 'a.editor.docx'
-          })
-        );
       } finally {
         renderClock?.mockRestore();
       }

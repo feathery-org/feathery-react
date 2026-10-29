@@ -222,7 +222,10 @@ export default class Field {
       (option: string, index: number) => ({
         value: option,
         label: (meta.option_labels ?? [])[index],
-        image: (meta.option_images ?? [])[index]
+        image: (meta.option_images ?? [])[index],
+        ...(field.servar.type === 'button_group' && {
+          icon: meta.option_icons?.[index] ?? null
+        })
       })
     );
     if (!field.servar.repeated) return defaultOptions;
@@ -474,3 +477,6 @@ export function parseUserVal(
 // debounce is still needed for long running async logic rules that could
 // complete after the event handling is done.
 const debouncedFormRerender = debounce(() => rerenderAllForms(), 100);
+
+// Runs a pending rule-triggered rerender now
+export const flushFormRerender = () => debouncedFormRerender.flush();

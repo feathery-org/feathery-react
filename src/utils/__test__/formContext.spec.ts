@@ -1,6 +1,15 @@
 import { getFormContext } from '../formContext';
+import { defaultClient, initState } from '../init';
 import { setFormInternalState } from '../internalState';
 import Field from '../entities/Field';
+import { mountDocument, robinHostMounted } from '../../robin/document/mounts';
+import { DocumentSession } from '../../robin/document/session';
+import {
+  ToyHost,
+  makeToyPack,
+  para,
+  toyNative
+} from '../../robin/document/tests/toyPack';
 import { featheryWindow } from '../browser';
 import { AnswersPendingError } from '../offlineRequestHandler';
 
@@ -492,6 +501,40 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     ).rejects.toThrow(/per-role signers require a mounted <Form \/>/);
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
+
+  it('snapshots per-copy references before saving and rejects ambiguous merging', async () => {
+    const references = ['account-a', 'account-b'];
+    client.flushCustomFields.mockImplementation(async () => {
+      references[0] = 'changed';
+    });
+    await getFormContext(uuid).generateDocuments({
+      documentIds: [
+        { kind: 'template', document_id: 'tpl-1', references },
+        {
+          kind: 'quik',
+          forms: [{ id: 44252, fields: {}, reference: 'account-c' }]
+        }
+      ],
+      signMethod: 'docusign',
+      envelopeAction: 'open_in_editor',
+      repeatable: true,
+      toolbarActions: ['download', 'draft']
+    });
+    expect(flow.mock.calls[0][0].documents[0].references).toEqual([
+      'account-a',
+      'account-b'
+    ]);
+    expect(flow.mock.calls[0][0].documents[1].forms[0].reference).toBe(
+      'account-c'
+    );
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: [{ kind: 'template', document_id: 'tpl-1', references }],
+        signMethod: 'docusign',
+        merge: true
+      })
+    ).rejects.toThrow('cannot be merged');
+  });
 });
 
 describe('feathery.runComputerAgent return shape', () => {
@@ -509,6 +552,160 @@ describe('feathery.runComputerAgent return shape', () => {
     await expect(
       getFormContext(uuid).runComputerAgent('agent_1')
     ).resolves.toEqual({ status: 'error', message: 'nope' });
+  });
+});
+
+describe('requestIdentity', () => {
+  const uuid = 'formContext-identity-test';
+
+  beforeEach(() => {
+    setFormInternalState(uuid, { fields: {} } as any);
+    initState.userId = 'cookie-id';
+    initState.linkToken = '';
+    initState.collaboratorId = '';
+  });
+
+  it('reads the fuser the session resolved, not the id at mount', () => {
+    const context = getFormContext(uuid);
+    initState.userId = 'server-id';
+
+    expect(context.requestIdentity().fuserKey).toBe('server-id');
+  });
+
+  it('names the collaborator a link-bound submission belongs to', () => {
+    initState.collaboratorId = 'collab-1';
+
+    expect(getFormContext(uuid).requestIdentity().headers).toEqual({
+      'X-Feathery-Collaborator': 'collab-1'
+    });
+  });
+});
+
+describe('subscribe', () => {
+  const uuid = 'formContext-subscribe-test';
+  let originalUserId: string | undefined;
+
+  beforeEach(() => {
+    setFormInternalState(uuid, { fields: {} } as any);
+    originalUserId = initState.userId;
+    jest
+      .spyOn(defaultClient, 'updateUserId')
+      .mockResolvedValue(undefined as any);
+  });
+
+  afterEach(() => {
+    initState.userId = originalUserId;
+    jest.restoreAllMocks();
+  });
+
+  it('delivers runtime events until the host unsubscribes', async () => {
+    const context = getFormContext(uuid);
+    const listener = jest.fn();
+    const unsubscribe = context.subscribe(listener);
+
+    await context.updateUserId('merged-fuser', true);
+    unsubscribe();
+    await context.updateUserId('second-fuser', true);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the host when a merge swaps the submission in place', async () => {
+    const context = getFormContext(uuid);
+    const listener = jest.fn();
+    context.subscribe(listener);
+
+    await context.updateUserId('merged-fuser', true);
+
+    expect(listener).toHaveBeenCalledWith({ type: 'identity' });
+    expect(context.requestIdentity().fuserKey).toBe('merged-fuser');
+  });
+});
+
+describe('liveDocument', () => {
+  const uuid = 'formContext-live-document';
+  const session = () =>
+    new DocumentSession({
+      pack: makeToyPack(),
+      host: new ToyHost(toyNative(para('Motor'))),
+      target: { type: 'envelope', id: 'env-1' },
+      editorId: 'ed-1'
+    });
+
+  it('describes nothing until a document mounts in this form', () => {
+    expect(getFormContext(uuid).liveDocument.descriptor()).toBeNull();
+  });
+
+  it('describes, dispatches to and finishes the turn of the document mounted in this form', () => {
+    const s = session();
+    const unmount = mountDocument(uuid, 'container-1', s);
+    const doc = getFormContext(uuid).liveDocument;
+    const d = doc.descriptor();
+    expect(d).toEqual(
+      expect.objectContaining({
+        protocolVersion: 2,
+        editorId: 'ed-1',
+        target: { type: 'envelope', id: 'env-1' },
+        readOnly: false
+      })
+    );
+    expect(typeof d?.outlineHash).toBe('string');
+    const out = doc.write({
+      turnId: 'turn-1',
+      editorId: 'ed-1',
+      target: { type: 'envelope', id: 'env-1' },
+      input: { intent: 'Nothing.', scope: { ids: [] }, changes: [] }
+    });
+    expect(out.status).toBe('ok');
+    expect(s.activeTurn).toBe('turn-1');
+    doc.finishTurn();
+    expect(s.activeTurn).toBeNull();
+    expect(getFormContext('another-form').liveDocument.descriptor()).toBeNull();
+    unmount();
+  });
+});
+
+describe('liveDocument.hasDocumentElement', () => {
+  it('is true when any step of the form has a document editor, the current step or not', () => {
+    const uuid = 'formContext-has-document';
+    setFormInternalState(uuid, {
+      fields: {},
+      currentStep: { key: 'intro', subgrids: [{ id: 'c0', properties: {} }] },
+      steps: {
+        intro: { key: 'intro', subgrids: [{ id: 'c0', properties: {} }] },
+        review: {
+          key: 'review',
+          subgrids: [
+            { id: 'c1', properties: {} },
+            { id: 'c2', properties: { document_editor: true } }
+          ]
+        }
+      }
+    } as any);
+    expect(getFormContext(uuid).liveDocument.hasDocumentElement()).toBe(true);
+  });
+
+  it('is false when no step has one, and before the form has loaded its steps', () => {
+    const uuid = 'formContext-no-document';
+    expect(getFormContext(uuid).liveDocument.hasDocumentElement()).toBe(false);
+    setFormInternalState(uuid, {
+      fields: {},
+      steps: {
+        only: { key: 'only', subgrids: [{ id: 'c0', properties: {} }] }
+      }
+    } as any);
+    expect(getFormContext(uuid).liveDocument.hasDocumentElement()).toBe(false);
+  });
+});
+
+describe('liveDocument.setHostMounted', () => {
+  it("marks the form's Robin root mounted and gone, for this form only", () => {
+    const uuid = 'formContext-robin-host';
+    getFormContext(uuid).liveDocument.setHostMounted(true);
+    expect(robinHostMounted(uuid)).toBe(true);
+    expect(robinHostMounted('another-form')).toBe(false);
+    getFormContext(uuid).liveDocument.setHostMounted(false);
+    expect(robinHostMounted(uuid)).toBe(false);
   });
 });
 

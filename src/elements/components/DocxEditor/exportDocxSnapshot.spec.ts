@@ -1,6 +1,9 @@
 import JSZip from 'jszip';
 import { exportDocxSnapshot } from './useDocxEditor';
-import { applyDocumentEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import {
+  createEditorAdapter,
+  SyncfusionEditorLike
+} from './bindings/editorAdapter';
 import {
   listRevisionGroups,
   resolveLiveRevisionGroupsAsOneUndo,
@@ -31,18 +34,15 @@ it('can accept a Robin suggestion after exporting its pending snapshot', async (
   );
   const live = editor as unknown as LiveEditor;
   try {
-    applyDocumentEdits(live, {
-      changeSetId: 'save-accept',
-      edits: [
-        {
-          op: 'replace_text',
-          anchor: '0;0',
-          find: '$5,200',
-          replace: '$5,500',
-          group: 'update-premium'
-        }
-      ]
-    });
+    createEditorAdapter(
+      editor as unknown as SyncfusionEditorLike
+    ).withAuthoredRevisions?.(
+      { author: 'Robin', changeSetId: 'save-accept', group: 'update-premium' },
+      () => {
+        editor.selection.select('0;0;9', '0;0;15');
+        editor.editor.insertText('$5,500');
+      }
+    );
     const pending = await exportDocxSnapshot(editor);
     expect(await documentXml(pending)).toContain('<w:ins');
     expect(listRevisionGroups(live)).toHaveLength(1);
