@@ -25,6 +25,7 @@ describe('browser downloads', () => {
   beforeEach(() => {
     clicks = [];
     (globalThis as any).fetch = jest.fn().mockResolvedValue({
+      ok: true,
       blob: async () => new Blob(['pdf-bytes'], { type: 'application/pdf' })
     });
     featheryWindow().URL.createObjectURL = jest.fn(() => 'blob:stub');

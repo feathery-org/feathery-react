@@ -20,12 +20,19 @@ function nextActivePanel(input: {
 
 /** Applies the pending-edit transition rule across renders. */
 export function useReviewPanelPresentation(input: {
+  enabled?: boolean;
   activePanel: ActivePanel;
   count: number;
   reviewChanges: boolean;
   setActivePanel: (panel: ActivePanel) => void;
 }): void {
-  const { activePanel, count, reviewChanges, setActivePanel } = input;
+  const {
+    enabled = true,
+    activePanel,
+    count,
+    reviewChanges,
+    setActivePanel
+  } = input;
   const previousCount = useRef(0);
   useEffect(() => {
     const next = nextActivePanel({
@@ -35,6 +42,7 @@ export function useReviewPanelPresentation(input: {
       reviewChanges
     });
     previousCount.current = count;
-    if (next !== undefined && next !== activePanel) setActivePanel(next);
-  }, [activePanel, count, reviewChanges, setActivePanel]);
+    if (enabled && next !== undefined && next !== activePanel)
+      setActivePanel(next);
+  }, [enabled, activePanel, count, reviewChanges, setActivePanel]);
 }

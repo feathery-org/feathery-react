@@ -1,3 +1,5 @@
+import { loadVersionList } from './versionList';
+import useRefreshOnFocus from '../../../../utils/useRefreshOnFocus';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -29,6 +31,7 @@ import {
 } from './types';
 
 interface Props {
+  active?: boolean;
   host: DocxHistoryHost;
   currentUser: VersionAuthor;
   /** Selecting a version opens it in the viewer. */
@@ -418,6 +421,7 @@ const Message = ({ children }: { children: React.ReactNode }) => (
 );
 
 export default function HistoryPanel({
+  active = true,
   host,
   onSelect,
   onVersionsLoaded,
@@ -429,26 +433,72 @@ export default function HistoryPanel({
   const [versions, setVersions] = useState<DocxVersion[] | null>(null);
   const [error, setError] = useState(false);
   const reqId = useRef(0);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const versionsRef = useRef(versions);
+  versionsRef.current = versions;
+  const loaded = useRef<{
+    host: DocxHistoryHost;
+    refreshKey: Props['refreshKey'];
+  } | null>(null);
+  const inFlight = useRef<typeof loaded.current>(null);
   const onVersionsLoadedRef = useRef(onVersionsLoaded);
   onVersionsLoadedRef.current = onVersionsLoaded;
 
-  const load = useCallback(async () => {
-    const id = ++reqId.current;
-    setError(false);
-    try {
-      const rows = await host.listVersions();
-      if (id === reqId.current) {
-        setVersions(rows);
-        onVersionsLoadedRef.current?.(rows);
+  // revalidate: bypass the cached list but keep showing it until fresh rows
+  // land (another tab or collaborator may have saved since it was fetched)
+  const load = useCallback(
+    async (revalidate = false) => {
+      if (
+        inFlight.current?.host === host &&
+        inFlight.current?.refreshKey === refreshKey
+      )
+        return;
+      inFlight.current = { host, refreshKey };
+      const id = ++reqId.current;
+      setError(false);
+      try {
+        const rows = await loadVersionList(host, refreshKey, revalidate);
+        if (id === reqId.current) {
+          setVersions(rows);
+          loaded.current = { host, refreshKey };
+          if (activeRef.current) onVersionsLoadedRef.current?.(rows);
+        }
+      } catch {
+        // Show error + Retry only when there are no rows to fall back on;
+        // a failed background revalidate keeps the stale list visible.
+        // Show error + Retry only when there are no rows to fall back on;
+        // a failed background revalidate keeps the stale list visible.
+        if (id === reqId.current && !versionsRef.current) setError(true);
+      } finally {
+        if (id === reqId.current) inFlight.current = null;
       }
-    } catch {
-      if (id === reqId.current) setError(true);
-    }
-  }, [host]);
+    },
+    [host, refreshKey]
+  );
 
   useEffect(() => {
-    load();
-  }, [load, refreshKey]);
+    if (!active) return;
+    if (
+      loaded.current?.host !== host ||
+      loaded.current?.refreshKey !== refreshKey
+    )
+      // First open: revalidate for fresh rows instead of serving the prefetch.
+      load(true);
+    else {
+      if (versions) onVersionsLoadedRef.current?.(versions);
+      load(true);
+    }
+  }, [active, load]);
+  useRefreshOnFocus(() => load(true), active);
+
+  useEffect(
+    () => () => {
+      reqId.current++;
+      inFlight.current = null;
+    },
+    []
+  );
 
   if (error) {
     return (
@@ -456,7 +506,7 @@ export default function HistoryPanel({
         <div>Couldn’t load version history.</div>
         <button
           type='button'
-          onClick={load}
+          onClick={() => load(true)}
           css={{
             marginTop: 8,
             border: `1px solid ${LINE}`,

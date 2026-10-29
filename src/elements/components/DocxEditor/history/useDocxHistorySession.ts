@@ -7,19 +7,10 @@ import { featheryDoc } from '../../../../utils/browser';
 
 import { isRobinEditing, onRobinTurnChange } from '../robinActivity';
 import { isOpeningDocument } from '../useDocxEditor';
+import { runHistoryTask } from './historyWorkerClient';
 import { createAutosaveScheduler } from './autosaveScheduler';
 import { createDocumentSaveQueue } from './documentSaveQueue';
-import {
-  applyHunks,
-  collectRobinRuns,
-  contentHash,
-  countEditGroups,
-  countPendingGroups,
-  diffSession,
-  normalizeForDiff,
-  RevisionRun,
-  trackedAuthorKeys
-} from './sfdtDiff/index';
+import { collectRobinRuns, RevisionRun } from './sfdtDiff/index';
 import { createSessionTracker } from './sessionTracker';
 import { createSliceStore } from './sliceStore';
 import {
@@ -53,6 +44,8 @@ export interface UseDocxHistorySessionOptions {
   editor: any;
   loading: boolean;
   readOnly?: boolean;
+  /** No background persistence; document edits and revision sessions stay local. */
+  manualSave?: boolean;
   /** I/O adapter; absent → history disabled (autosave still runs via `save`). */
   host?: DocxHistoryHost | null;
   /** The current viewer's identity (always kind 'user', key 'you'). */
@@ -106,7 +99,7 @@ export interface UseDocxHistorySessionResult {
   /** Diff the OPEN session live (same inputs as the close-time diff) and return
    *  a highlighted display document for the in-progress current version, which
    *  has no stored files yet. Null when no session is open or the diff fails. */
-  previewSession: () => SessionPreview | null;
+  previewSession: () => Promise<SessionPreview | null>;
   /** Whether the current document still has an in-progress editing session. */
   isSessionOpen: () => boolean;
   /** Close any preceding edits, apply the native accept operation, then save
@@ -126,16 +119,6 @@ async function gzip(text: string): Promise<Blob> {
   return new Response(stream).blob();
 }
 
-function uniqueRevisionRuns(runs: RevisionRun[]): RevisionRun[] {
-  const seen = new Set<string>();
-  return runs.filter((run) => {
-    const key = JSON.stringify([run.kind, run.text, run.group ?? null]);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 export function useDocxHistorySession(
   opts: UseDocxHistorySessionOptions
 ): UseDocxHistorySessionResult {
@@ -143,6 +126,7 @@ export function useDocxHistorySession(
     editor,
     loading,
     readOnly,
+    manualSave = false,
     host,
     currentUser,
     envelopeId,
@@ -332,102 +316,33 @@ export function useDocxHistorySession(
       const h = snap.host;
       if (!h || !snap.fStr) return;
       const fStr = snap.fStr;
-      const fDoc = JSON.parse(fStr);
-      const finalSha256 = contentHash(normalizeForDiff(fDoc));
-      const confirmedStart = snap.acceptance
-        ? normalizeForDiff(JSON.parse(snap.acceptance.beforeSfdt), {
-            rejectRevisionIds: snap.acceptance.revisionIds
-          })
-        : null;
-      const startSha256 = confirmedStart
-        ? contentHash(confirmedStart)
-        : snap.s0
-        ? contentHash(normalizeForDiff(JSON.parse(snap.s0)))
-        : '';
-
-      // Diff the session into per-author hunks. The stored slices are the
-      // author-boundary snapshots; F is the closing state. A tab-death session
-      // (no S0) or a diff failure degrades to docx-only (no highlights).
-      let changesJson: Blob | undefined;
-      let changeCount: number | null = null;
-      let formatChangeCount: number | null = null;
-      try {
-        if (snap.s0) {
-          // Missing author boundaries cannot produce trustworthy attribution.
-          if (!snap.slicesComplete)
-            throw new Error('History slice limit reached');
-          const diffSlices = snap.acceptance
-            ? [{ sfdt: fDoc, author: ROBIN.key }]
-            : [
-                ...snap.slices.map((s) => ({
-                  sfdt: JSON.parse(s.sfdt as string),
-                  author: s.author,
-                  endedAt: s.endedAt
-                })),
-                { sfdt: fDoc, author: snap.fAuthor }
-              ];
-          const changes = diffSession(
-            confirmedStart ?? JSON.parse(snap.s0),
-            diffSlices,
-            sessionId,
-            {
-              timeBudgetMs: 4000
-            }
-          );
-          if (changes.degraded?.includes('time-budget'))
-            throw new Error('History diff timed out');
-          changes.attribution = 'slices';
-          if (snap.acceptance) changes.confirmed = true;
-          changeCount = changes.changeCount;
-          formatChangeCount = changes.formatChangeCount;
-          // Kept well under the backend's 512KB limit; over budget, all runs
-          // are dropped rather than risk the upload being rejected.
-          const ROBIN_RUNS_BUDGET = 100_000;
-          // On accept the pending-edit version already closed (runs reset), so
-          // recover Robin's groups from the acceptance snapshot.
-          const acceptanceRuns = snap.acceptance
-            ? collectRobinRuns(
-                JSON.parse(snap.acceptance.beforeSfdt),
-                snap.acceptance.revisionIds
-              )
-            : [];
-          const robinRuns = uniqueRevisionRuns([
-            ...snap.robinRuns,
-            ...acceptanceRuns
-          ]);
-          if (robinRuns.length) {
-            const capped: RevisionRun[] = [];
-            let used = 0;
-            for (const r of robinRuns) {
-              used += r.text.length;
-              if (used > ROBIN_RUNS_BUDGET) break;
-              capped.push(r);
-            }
-            if (capped.length === robinRuns.length && capped.length)
-              changes.robinRuns = capped;
+      const { finalSha256, startSha256, changes } = await runHistoryTask(
+        'close',
+        {
+          sessionId,
+          snapshot: {
+            fStr,
+            fAuthor: snap.fAuthor,
+            s0: snap.s0,
+            slices: snap.slices,
+            slicesComplete: snap.slicesComplete,
+            robinRuns: snap.robinRuns,
+            acceptance: snap.acceptance
           }
-          // Session activity includes accepts and edits that were later undone.
-          // Persist only authors whose final revisions the viewer can render.
-          const display = applyHunks(fDoc, changes);
-          changes.trackedAuthors = trackedAuthorKeys(display);
-          changesJson = await gzip(JSON.stringify(changes));
-          // Serve this exact document from memory while the upload is pending.
-          // Upgrade-only: an older checkpoint draining from the queue must not
-          // clobber a newer close's registration for the same session.
-          const existing = localVersionArtifactsFor(sessionId);
-          if (mountedRef.current && (!existing || existing.finalSfdt === fStr))
-            registerLocalVersionArtifacts(sessionId, {
-              finalSfdt: fStr,
-              changes
-            });
         }
-      } catch {
-        // Diff failed (unexpected SFDT shape, over budget): upload F alone so
-        // the version still opens, with the one-colour fallback at view time.
-        changesJson = undefined;
-        changeCount = null;
-        formatChangeCount = null;
-      }
+      );
+      const changesJson = changes
+        ? await gzip(JSON.stringify(changes))
+        : undefined;
+      const changeCount = changes?.changeCount ?? null;
+      const formatChangeCount = changes?.formatChangeCount ?? null;
+      const existing = localVersionArtifactsFor(sessionId);
+      if (
+        changes &&
+        mountedRef.current &&
+        (!existing || existing.finalSfdt === fStr)
+      )
+        registerLocalVersionArtifacts(sessionId, { finalSfdt: fStr, changes });
 
       await uploadArtifacts(
         h,
@@ -863,9 +778,10 @@ export function useDocxHistorySession(
           /* best-effort; attribution falls back to the diff's slice author */
         }
       }
-      scheduler.touch();
+      if (manualSave) setStatus('dirty');
+      else scheduler.touch();
     },
-    [readOnly, scheduler, tracker]
+    [readOnly, manualSave, scheduler, tracker]
   );
 
   // Assistant turn START snapshots the pre-batch document (the user→Robin
@@ -883,26 +799,26 @@ export function useDocxHistorySession(
       } else {
         // Turn end checkpoints but keeps the session open (versions cut on
         // save/idle/restore); skips the throttle, not the gate or save queue.
-        checkpointSession();
+        if (!manualSave) checkpointSession();
       }
     });
-  }, [editor, host, readOnly, checkpointSession]);
+  }, [editor, host, readOnly, manualSave, checkpointSession]);
 
   // Idle sessions close on their own.
   useEffect(() => {
-    if (!host || readOnly) return undefined;
+    if (!host || readOnly || manualSave) return undefined;
     const iv = setInterval(() => {
       if (engine.canPersist() && (!canSaveRef.current || canSaveRef.current()))
         tracker.checkIdle();
     }, IDLE_CHECK_MS);
     return () => clearInterval(iv);
-  }, [host, readOnly, tracker, engine]);
+  }, [host, readOnly, manualSave, tracker, engine]);
 
   // Finalization/signing can make the editor read-only while a retry timer is
   // armed. No further autosave is valid once that transition happens.
   useEffect(() => {
-    if (readOnly) scheduler.cancel();
-  }, [readOnly, scheduler]);
+    if (readOnly || manualSave) scheduler.cancel();
+  }, [readOnly, manualSave, scheduler]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -924,6 +840,7 @@ export function useDocxHistorySession(
   }, [scheduler, engine]);
 
   useEffect(() => {
+    if (manualSave) return undefined;
     const doc = featheryDoc();
     const checkpointBeforeHide = () => {
       if (
@@ -936,7 +853,7 @@ export function useDocxHistorySession(
     doc.addEventListener('visibilitychange', checkpointBeforeHide);
     return () =>
       doc.removeEventListener('visibilitychange', checkpointBeforeHide);
-  }, [scheduler, tracker, engine]);
+  }, [scheduler, tracker, engine, manualSave]);
 
   const explicitSave = useCallback(async () => {
     if (!tracker.isOpen() && !engine.documentWrites.pending()) {
@@ -985,6 +902,14 @@ export function useDocxHistorySession(
 
   const acceptTrackedChanges = useCallback(
     async (acceptance: TrackedChangeAcceptance, accept: () => void) => {
+      if (manualSave) {
+        // Preserve Robin attribution before native acceptance removes revisions.
+        // All snapshots remain in this document session until explicit Save.
+        onEdit({ assistant: true });
+        accept();
+        onEdit({ assistant: true });
+        return;
+      }
       const documentEpoch = documentEpochRef.current;
       // Cut the preceding editing session while the suggestion is still
       // pending. The confirmation then becomes a distinct version.
@@ -1046,7 +971,7 @@ export function useDocxHistorySession(
         throw error;
       }
     },
-    [preservePendingCurrentVersion, tracker]
+    [preservePendingCurrentVersion, tracker, manualSave, onEdit]
   );
 
   const retry = useCallback(() => {
@@ -1056,57 +981,31 @@ export function useDocxHistorySession(
   // Live equivalent of closeSession's diff, but returns the display document
   // instead of uploading. Used to show highlights for the in-progress current
   // version (no stored files yet). Reuses the exact same inputs and engine.
-  const previewSession = useCallback((): SessionPreview | null => {
-    const ed = editorRef.current;
-    const sessionId = tracker.currentMeta()?.sessionId;
-    if (!ed || !sessionId || !s0Ref.current || !engine.slices.isComplete())
-      return null;
-    try {
-      const fDoc = JSON.parse(ed.serialize());
-      const diffSlices = [
-        ...engine.slices.all().map((s) => ({
-          sfdt: JSON.parse(s.sfdt as string),
-          author: s.author,
-          endedAt: s.endedAt
-        })),
-        { sfdt: fDoc, author: currentAuthorRef.current }
-      ];
-      const startDoc = JSON.parse(s0Ref.current);
-      // Do not display intermediate author-boundary edits after the document
-      // has been fully undone.
-      const unchanged =
-        contentHash(normalizeForDiff(startDoc)) ===
-        contentHash(normalizeForDiff(fDoc));
-      const changes = diffSession(
-        startDoc,
-        unchanged
-          ? [{ sfdt: fDoc, author: currentAuthorRef.current }]
-          : diffSlices,
-        sessionId,
-        { timeBudgetMs: 4000 }
-      );
-      changes.attribution = 'slices';
-      if (changes.degraded?.includes('time-budget')) return null;
-      // As in closeSession: keeps Robin edits accepted this session coloured
-      // as Robin in the live preview.
-      if (robinRunsRef.current.length) changes.robinRuns = robinRunsRef.current;
-      const display = applyHunks(fDoc, changes);
-      return {
-        sessionId,
-        authors: trackedAuthorKeys(display).map((key) =>
-          key === ROBIN.key ? ROBIN : { ...currentUserRef.current, key }
-        ),
-        artifacts: { finalSfdt: JSON.stringify(fDoc), changes },
-        sfdt: JSON.stringify(display),
-        // Same grouping as the steppers: a Robin turn counts as one edit.
-        editCount: countEditGroups(display, { includeFormatting: true }),
-        formatCount: changes.formatChangeCount,
-        pendingCount: countPendingGroups(display)
-      };
-    } catch {
-      return null;
-    }
-  }, [engine, tracker]);
+  const previewSession =
+    useCallback(async (): Promise<SessionPreview | null> => {
+      const ed = editorRef.current;
+      const sessionId = tracker.currentMeta()?.sessionId;
+      if (!ed || !sessionId || !s0Ref.current || !engine.slices.isComplete())
+        return null;
+      try {
+        // Snapshot before awaiting: typing and document switches may continue during computation.
+        return await runHistoryTask('preview', {
+          sessionId,
+          currentUser: { ...currentUserRef.current },
+          snapshot: {
+            fStr: ed.serialize(),
+            fAuthor: currentAuthorRef.current,
+            s0: s0Ref.current,
+            slices: engine.slices.all(),
+            slicesComplete: engine.slices.isComplete(),
+            robinRuns: [...robinRunsRef.current],
+            acceptance: null
+          }
+        });
+      } catch {
+        return null;
+      }
+    }, [engine, tracker]);
 
   const isSessionOpen = useCallback(() => tracker.isOpen(), [tracker]);
 

@@ -58,6 +58,7 @@ export const versionPreviewHarness = {
     globalThis.document.body.appendChild(host);
     props = {
       host: {},
+      viewportRef: { current: null },
       version: { id: 'scroll-preview', authors: [] },
       liveDoc: { sfdt, loading: false, error: false, degraded: false },
       zoomFactor: 1.25,
@@ -93,6 +94,18 @@ export const versionPreviewHarness = {
     }
     if (displayed <= prior) throw new Error('Preview did not toggle');
     return { frames, sfdt: editor.serialize() };
+  },
+
+  async remountVersionPreview() {
+    if (!root) throw new Error('Preview is not mounted');
+    const before = snapshot();
+    const prior = displayed;
+    root.render(null);
+    for (let i = 0; i < 3; i++) await frame();
+    root.render(React.createElement(VersionViewer, props));
+    for (let i = 0; i < 300 && displayed <= prior; i++) await frame();
+    for (let i = 0; i < 15; i++) await frame();
+    return { before, after: snapshot() };
   },
 
   closeVersionPreview() {
