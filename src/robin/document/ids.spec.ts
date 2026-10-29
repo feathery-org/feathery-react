@@ -278,3 +278,28 @@ describe('format references', () => {
     });
   });
 });
+
+describe('id table: a write read back', () => {
+  it("gives the siblings a write deleted their own ids, not a kept node's (tracked deletions still in the document)", () => {
+    const table = new IdTable();
+    const before = adopt(
+      table,
+      toyNative(para('a'), para('b'), para('c'), para('total'))
+    );
+    const intended = JSON.parse(JSON.stringify(before.nf)) as NormalForm;
+    const kids = intended.root.blocks as NfNode[];
+    intended.root.blocks = [kids[0], { ...kids[3], text: 'total 2' }];
+    const live = adopt(
+      table,
+      toyNative(para('a'), para('b gone'), para('c gone'), para('total 3')),
+      [intended, before.nf]
+    );
+    expect(ids(live.nf)).toEqual([
+      'root:doc:',
+      'n1:para:a',
+      'n2:para:b gone',
+      'n3:para:c gone',
+      'n4:para:total 3'
+    ]);
+  });
+});

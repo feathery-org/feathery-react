@@ -97,7 +97,8 @@ function tagMove(node: NfNode, turnId: string, move: string): void {
 
 /** Mark every revision anchor inside a node: runs and other text inlines, paragraph marks, rows. */
 export function markSubtree(node: NfNode, p: Pending): void {
-  if (node.kind === KIND.run) node.pending = withRevision(node.pending, p);
+  if (node.kind === KIND.run || node.kind === KIND.shape)
+    node.pending = withRevision(node.pending, p);
   if (node.kind === KIND.paragraph) {
     const mark = isObject(node.pending) ? node.pending.mark : undefined;
     node.pending = {
