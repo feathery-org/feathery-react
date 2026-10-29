@@ -161,6 +161,23 @@ function parseInviteError(body?: string) {
   return body;
 }
 
+// Step answers still being submitted, shared across clients because rule
+// field writes go through defaultClient while the step submits on the form's
+// own client. Custom field writes wait on it so a value set while a step is
+// submitting (e.g. by a logic rule that runs before the response) lands after
+// the step's older answer for the same field instead of racing it.
+let stepAnswersInFlight: Promise<void> | null = null;
+
+const trackStepAnswers = (answers: Promise<unknown>) => {
+  const settled: Promise<void> = Promise.all([
+    stepAnswersInFlight,
+    answers.catch(() => undefined)
+  ]).then(() => {
+    if (stepAnswersInFlight === settled) stepAnswersInFlight = null;
+  });
+  stepAnswersInFlight = settled;
+};
+
 export default class FeatheryClient extends IntegrationClient {
   /**
    * Used to aggregate field value updates for successive calls to
@@ -963,6 +980,16 @@ export default class FeatheryClient extends IntegrationClient {
       return;
     }
 
+    // Held as in flight while waiting so concurrent cycles queue behind it
+    // rather than sending ahead of the step answers.
+    const stepAnswers = stepAnswersInFlight;
+    if (stepAnswers) {
+      const waitId = uuidv4();
+      this.customSubmitInFlight[waitId] = stepAnswers;
+      await stepAnswers;
+      delete this.customSubmitInFlight[waitId];
+    }
+
     const customKeyValues = { ...this.pendingCustomFieldUpdates };
     this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
 
@@ -1143,6 +1170,14 @@ export default class FeatheryClient extends IntegrationClient {
 
     this.releaseHeldEvents();
     const earlierSubmissions = this.submitQueue;
+    // Resolved once this step's own answers are sent. Registered before
+    // anything is awaited so a rule that runs right after this call sees it.
+    let answersSent: () => void = () => {};
+    trackStepAnswers(
+      new Promise<void>((resolve) => {
+        answersSent = resolve;
+      })
+    );
     const submission = (async () => {
       // A step submission is the user's manual retry for answers still queued
       // from earlier steps, including a confirmation step with no fields.
@@ -1151,15 +1186,20 @@ export default class FeatheryClient extends IntegrationClient {
         .catch((error) =>
           console.warn('Error resetting saved answer retries', error)
         );
-      return Promise.all([
-        earlierSubmissions.catch(() => undefined),
-        this.submitCustom(hiddenFields, { shouldFlush: true }),
+      const answers = Promise.all([
         this._submitJSONData(jsonServars, step.key, hasNext),
         ...fileServars.map((servar: any) =>
           this._submitFileData(servar, step.key)
         )
       ]);
+      answers.then(answersSent, answersSent);
+      return Promise.all([
+        earlierSubmissions.catch(() => undefined),
+        this.submitCustom(hiddenFields, { shouldFlush: true }),
+        answers
+      ]);
     })();
+    submission.then(answersSent, answersSent);
 
     // Maintain submitQueue semantics so downstream consumers (like registerEvent)
     // still see actual success/failure while preventing previous rejections
