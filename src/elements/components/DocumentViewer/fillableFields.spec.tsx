@@ -486,4 +486,14 @@ describe('with editor_close_on_action false', () => {
     widgetLayers().forEach((layer) => expect(layer).toHaveAttribute('inert'));
     expect(button('Download')).toBeEnabled();
   });
+
+  it('does not re-save documents after they are sent', async () => {
+    const { onSaveEnvelopeFile, proxyA } = await renderKeepOpen();
+
+    await press('Sign');
+    act(() => proxyA.annotationStorage.onSetModified());
+    await press('Download');
+
+    expect(onSaveEnvelopeFile).not.toHaveBeenCalled();
+  });
 });

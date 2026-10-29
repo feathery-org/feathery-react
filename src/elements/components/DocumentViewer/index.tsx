@@ -466,7 +466,9 @@ export default function DocumentViewer({
     setError('');
     try {
       // Persist any edited field values first, so the outcome acts on them.
-      await saveEditedDocuments();
+      // Once sent, the widgets are locked, so a dirty doc can only be pdf.js's
+      // own render-time write, and re-saving would rewrite a sent envelope.
+      if (!session.sent) await saveEditedDocuments();
       // No required-field gate here: filling fields in the editor is
       // optional — the generated documents were already completable without
       // it, so blocking on empty required fields would leave the user with no
