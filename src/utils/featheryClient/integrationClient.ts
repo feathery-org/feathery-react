@@ -1284,7 +1284,8 @@ export default class IntegrationClient {
     {
       envelopes,
       envelopeAction,
-      draft = false
+      draft = false,
+      refreshDraft = false
     }: {
       // signerId: the filler's own signing token for that envelope, as handed
       // back by generate. Keeps finalize from emailing them an invite to a
@@ -1293,6 +1294,9 @@ export default class IntegrationClient {
       envelopeAction: 'sign' | 'fill' | 'download' | 'save';
       // DocuSign sign only: create the envelope as a draft instead of sending.
       draft?: boolean;
+      // Replace the documents on a DocuSign draft created earlier in the same
+      // review, so it carries the filler's later edits.
+      refreshDraft?: boolean;
     }
   ) {
     if (!envelopes.length) {
@@ -1317,6 +1321,8 @@ export default class IntegrationClient {
     if (action.merged_file_name)
       payload.merged_file_name = action.merged_file_name;
     if (action.sign_method) payload.sign_method = action.sign_method;
+    // Omitted unless set, so a backend without the flag sees the old body.
+    if (refreshDraft) payload.refresh_draft = true;
     // Carried to finalize too: an open_in_editor flow does not build the
     // DocuSign envelope until the filler presses Sign.
     if (action.email_subject) payload.email_subject = action.email_subject;
