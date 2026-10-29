@@ -96,9 +96,12 @@ export interface ViewerDocument {
 // With `editor_close_on_action: false` a closing action leaves the screen open,
 // so the viewer tracks whether a later close completes the flow, whether the
 // envelopes were sent, and whether the DocuSign draft predates the latest edit.
-interface ReviewSession {
+export interface ReviewSession {
   pendingCompletion: boolean;
   sent: boolean;
+  // Counts the filler's own widget edits, not pdf.js storage writes: pdf.js
+  // also writes storage while rendering (unchecking a checked radio's
+  // siblings), which would read as an edit nobody made.
   editRevision: number;
   draftedRevision: number | null;
 }
@@ -108,6 +111,50 @@ const INITIAL_REVIEW_SESSION: ReviewSession = {
   sent: false,
   editRevision: 0,
   draftedRevision: null
+};
+
+type FinalizeOutcome = 'stay' | 'complete' | 'defer';
+
+/** What a successful press of `action` does: leave the filler here, complete
+ * the flow now, or record a completion that the next close carries out. */
+export const finalizeOutcome = (
+  action: EditorToolbarAction,
+  available: EditorToolbarAction[],
+  keepOpen: boolean
+): FinalizeOutcome => {
+  if (!closesEditor(action, available)) return 'stay';
+  // Continue is the only way forward, so it never stays open.
+  return keepOpen && action !== 'fill' ? 'defer' : 'complete';
+};
+
+export const deferCompletion = (
+  session: ReviewSession,
+  action: EditorToolbarAction
+): ReviewSession => ({
+  ...session,
+  pendingCompletion: true,
+  sent: session.sent || action === 'sign',
+  draftedRevision:
+    action === 'draft' ? session.editRevision : session.draftedRevision
+});
+
+const draftIsCurrent = (session: ReviewSession) =>
+  session.draftedRevision === session.editRevision;
+
+export const needsDraftRefresh = (
+  session: ReviewSession,
+  action: EditorToolbarAction
+) =>
+  (action === 'draft' || action === 'sign') &&
+  session.draftedRevision !== null &&
+  !draftIsCurrent(session);
+
+export const isToolbarActionDisabled = (
+  session: ReviewSession,
+  action: EditorToolbarAction
+) => {
+  if (action === 'draft') return session.sent || draftIsCurrent(session);
+  return action === 'sign' && session.sent;
 };
 
 export interface DocumentViewerPayload {
@@ -132,6 +179,9 @@ interface DocumentViewerProps {
     // Replace the documents on the DocuSign draft this session already
     // created, because the filler edited them since.
     refreshDraft: boolean;
+    // Whether this press is the one a completion would report, now or on a
+    // later close, so the caller can tell its outcome from a Download's.
+    completes: boolean;
   }) => Promise<{ status?: string; message?: string } | void>;
   // Persist a PDF the filler edited in the viewer back to its envelope.
   // Called before finalize for every document with unsaved field edits, so
@@ -160,15 +210,19 @@ export default function DocumentViewer({
     portalElRef.current = featheryDoc().createElement('div');
   }
   // Key of the toolbar action currently running (spinner + disable-all), or
-  // null when idle. Keys: 'primary', 'draft', 'download'.
+  // null when idle. Keys: 'primary', each toolbar action, and 'closing'.
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [session, setSession] = useState(INITIAL_REVIEW_SESSION);
   const keepOpen = action.editor_close_on_action === false;
-  const draftIsCurrent = session.draftedRevision === session.editRevision;
   // A close after a deferred completion finishes the flow; otherwise it
   // cancels the review, as it always has.
-  const close = () =>
-    session.pendingCompletion ? onComplete() : setShow(false);
+  const close = () => {
+    if (!session.pendingCompletion) return setShow(false);
+    // The opener keeps the viewer mounted while the flow runs on, and a
+    // second close or press in that window would complete twice.
+    setBusyKey('closing');
+    onComplete();
+  };
   // Read by the once-bound Escape handler, which must call the latest close.
   const closeRef = useRef(close);
   closeRef.current = close;
@@ -403,6 +457,11 @@ export default function DocumentViewer({
     toolbarAction: EditorToolbarAction,
     busyActionKey: string
   ) => {
+    const outcome = finalizeOutcome(
+      toolbarAction,
+      orderedToolbarActions,
+      keepOpen
+    );
     setBusyKey(busyActionKey);
     setError('');
     try {
@@ -417,27 +476,16 @@ export default function DocumentViewer({
         envelopes: reviewedEnvelopes,
         envelopeAction: TOOLBAR_ACTION_ENVELOPE_ACTION[toolbarAction],
         draft: toolbarAction === 'draft',
-        refreshDraft:
-          (toolbarAction === 'draft' || toolbarAction === 'sign') &&
-          session.draftedRevision !== null &&
-          !draftIsCurrent
+        refreshDraft: needsDraftRefresh(session, toolbarAction),
+        completes: outcome !== 'stay'
       });
       if (result?.status === 'error') {
         if (/expired/i.test(result.message ?? '')) setExpiredBanner(true);
         else setError(result.message ?? 'Something went wrong');
-      } else if (closesEditor(toolbarAction, orderedToolbarActions)) {
-        // Continue is the only way forward, so it never stays open.
-        if (keepOpen && toolbarAction !== 'fill') {
-          setSession((s) => ({
-            ...s,
-            pendingCompletion: true,
-            sent: s.sent || toolbarAction === 'sign',
-            draftedRevision:
-              toolbarAction === 'draft' ? s.editRevision : s.draftedRevision
-          }));
-        } else onComplete();
-      }
-      // Otherwise the outcome has run (file downloaded, field saved) and the
+      } else if (outcome === 'complete') onComplete();
+      else if (outcome === 'defer')
+        setSession((s) => deferCompletion(s, toolbarAction));
+      // 'stay': the outcome has run (file downloaded, field saved) and the
       // filler stays here to reach the conclusive action.
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Something went wrong';
@@ -455,10 +503,7 @@ export default function DocumentViewer({
         label: TOOLBAR_ACTION_LABELS[toolbarAction],
         variant:
           i === orderedToolbarActions.length - 1 ? 'primary' : 'secondary',
-        disabled:
-          toolbarAction === 'draft'
-            ? session.sent || draftIsCurrent
-            : toolbarAction === 'sign' && session.sent,
+        disabled: isToolbarActionDisabled(session, toolbarAction),
         onClick: () => finalizeWith(toolbarAction, toolbarAction)
       }))
     : [

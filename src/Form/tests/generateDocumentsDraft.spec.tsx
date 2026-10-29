@@ -1,4 +1,4 @@
-import './testMocks';
+import { BrowserMod, GridMod } from './testMocks';
 import {
   act,
   cleanup,
@@ -132,5 +132,104 @@ it('runs document_review on Create Draft while the review screen stays open', as
   await expect(flow).resolves.toEqual({
     ...draftResult,
     reviewAction: 'draft'
+  });
+});
+
+describe('a kept-open review screen', () => {
+  const reviewPayload = {
+    documents: [
+      { type: 'form', pdf_url: 'http://x/a.pdf', envelope_id: 'env-1' }
+    ],
+    expires_at: '2999-01-01T00:00:00Z'
+  };
+  const draftResult = { docusign_envelope_id: 'ds-1', status: 'complete' };
+  const signResult = { docusign_envelope_id: 'ds-1', status: 'complete' };
+  const downloadResult = { files: ['http://x/a.pdf'] };
+  const keepOpenAction = {
+    documents: ['tpl-1'],
+    envelope_action: 'open_in_editor',
+    editor_toolbar_actions: ['sign', 'draft', 'download'],
+    editor_close_on_action: false,
+    sign_method: 'docusign'
+  };
+  const button = (name: string) => screen.getByRole('button', { name });
+  const press = async (name: string) => {
+    fireEvent.click(button(name));
+    await waitFor(() => expect(button('Back')).toBeEnabled());
+  };
+
+  const renderForm = async (id: string) => {
+    render(<JSForm formId='f1' _internalId={id} />);
+    await screen.findByTestId('btn');
+    const state = (setFormInternalState as jest.Mock).mock.calls.find(
+      ([formId, values]) => formId === id && values.generateEnvelopeFlow
+    )[1];
+    state.client.generateEnvelopes = jest.fn().mockResolvedValue(reviewPayload);
+    state.client.finalizeEnvelopeReview = jest.fn(
+      async (_: any, { envelopeAction, draft }: any) => {
+        if (draft) return draftResult;
+        return envelopeAction === 'sign' ? signResult : downloadResult;
+      }
+    );
+    return state;
+  };
+
+  const openFromRule = async (state: any) => {
+    let flow: Promise<any> = Promise.resolve();
+    await act(async () => {
+      flow = state.generateEnvelopeFlow!(keepOpenAction);
+    });
+    await screen.findByRole('button', { name: 'Create Draft' });
+    // Boxed: an async function returning the promise would wait on it.
+    return { flow };
+  };
+
+  it('resolves with the draft, not a later Download', async () => {
+    const { flow } = await openFromRule(await renderForm('keep-open-download'));
+
+    await press('Create Draft');
+    await press('Download');
+    fireEvent.click(button('Back'));
+
+    await expect(flow).resolves.toEqual({
+      ...draftResult,
+      reviewAction: 'draft'
+    });
+  });
+
+  it('resolves with a Sign that follows the draft', async () => {
+    const { flow } = await openFromRule(await renderForm('keep-open-sign'));
+
+    await press('Create Draft');
+    await press('Sign');
+    fireEvent.click(button('Back'));
+
+    await expect(flow).resolves.toEqual({
+      ...signResult,
+      reviewAction: 'sign'
+    });
+  });
+
+  it('continues a button flow once on close', async () => {
+    await renderForm('keep-open-button');
+    GridMod._spies.actions = [
+      { type: 'open_fuser_envelopes', ...keepOpenAction },
+      { type: 'url', url: 'example.com/next', open_tab: true }
+    ];
+    GridMod._spies.submit = false;
+
+    fireEvent.click(screen.getByTestId('btn'));
+    await screen.findByRole('button', { name: 'Create Draft' });
+    await press('Create Draft');
+    fireEvent.click(button('Back'));
+    fireEvent.click(button('Back'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => expect(BrowserMod.openTab).toHaveBeenCalledTimes(1));
+    expect(BrowserMod.openTab).toHaveBeenCalledWith('https://example.com/next');
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    );
+    expect(BrowserMod.openTab).toHaveBeenCalledTimes(1);
   });
 });
