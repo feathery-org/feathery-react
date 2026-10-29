@@ -435,6 +435,8 @@ export default function HistoryPanel({
   const reqId = useRef(0);
   const activeRef = useRef(active);
   activeRef.current = active;
+  const versionsRef = useRef(versions);
+  versionsRef.current = versions;
   const loaded = useRef<{
     host: DocxHistoryHost;
     refreshKey: Props['refreshKey'];
@@ -463,7 +465,11 @@ export default function HistoryPanel({
           if (activeRef.current) onVersionsLoadedRef.current?.(rows);
         }
       } catch {
-        if (id === reqId.current && !revalidate) setError(true);
+        // Show error + Retry only when there are no rows to fall back on;
+        // a failed background revalidate keeps the stale list visible.
+        // Show error + Retry only when there are no rows to fall back on;
+        // a failed background revalidate keeps the stale list visible.
+        if (id === reqId.current && !versionsRef.current) setError(true);
       } finally {
         if (id === reqId.current) inFlight.current = null;
       }
@@ -477,7 +483,8 @@ export default function HistoryPanel({
       loaded.current?.host !== host ||
       loaded.current?.refreshKey !== refreshKey
     )
-      load();
+      // First open: revalidate for fresh rows instead of serving the prefetch.
+      load(true);
     else {
       if (versions) onVersionsLoadedRef.current?.(versions);
       load(true);

@@ -302,6 +302,9 @@ export default function DocumentEditorContainer({
         } as EditorEnvelope & { signer_id?: string; invited?: boolean };
         preparedForSigning.current.set(envelope.id, next);
         session.markFinalized();
+        // Finalize converts the DOCX to a PDF; point the tab at it now so a
+        // draft save or a failed send doesn't leave Download All/field on the deleted DOCX.
+        updateTabEnvelope(next);
         let result: Record<string, any> = { files: [next.file] };
         if (viaDocusign) {
           result = await client.finalizeEnvelopeReview(action ?? {}, {

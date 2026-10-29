@@ -1164,6 +1164,39 @@ describe('DocumentEditorContainer signing outcomes', () => {
     expect(getByTestId('terminal:sign')).toBeTruthy();
   });
 
+  it('saves the finalized PDF, not the converted-away DOCX, after Save as Draft', async () => {
+    mockFinalizeEnvelope.mockResolvedValue(finalizedPdf());
+    mockFinalizeEnvelopeReview.mockResolvedValue({ status: 'created' });
+    seed({
+      sign_method: 'docusign',
+      editor_toolbar_actions: ['sign', 'draft', 'save'],
+      save_document_field_key: 'doc_url_field'
+    });
+    const { getByTestId } = mount();
+
+    await waitFor(() =>
+      expect(getByTestId('terminal:draft-menu')).toBeTruthy()
+    );
+    await act(async () => {
+      getByTestId('terminal:draft-menu').click();
+    });
+    await waitFor(() =>
+      expect(showEnvelopeOutcome).toHaveBeenCalledWith('Saved as Draft', [
+        `document-${CONTAINER}`
+      ])
+    );
+    // Finalize converted the DOCX to a PDF, so a later save-to-field must
+    // publish that PDF, not the deleted DOCX.
+    await act(async () => {
+      getByTestId('saved').click();
+    });
+    await waitFor(() =>
+      expect(mockSubmitCustom).toHaveBeenCalledWith({
+        doc_url_field: 'https://x/signable.pdf'
+      })
+    );
+  });
+
   it('labels a DocuSign send and does not poll it on focus', async () => {
     mockFinalizeEnvelope.mockResolvedValue(finalizedPdf());
     seed({ sign_method: 'docusign', editor_toolbar_actions: ['sign'] });

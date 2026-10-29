@@ -2,6 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
 import HistoryPanel from './HistoryPanel';
+import { loadVersionList } from './versionList';
 import {
   DocxHistoryHost,
   DocxVersion,
@@ -464,5 +465,32 @@ describe('HistoryPanel', () => {
     expect(await findByText('Couldn’t load version history.')).toBeTruthy();
     fireEvent.click(getByText('Retry'));
     expect(await findByText('Back')).toBeTruthy();
+  });
+
+  it('restores the error and Retry when a retry also fails with nothing cached', async () => {
+    const host = makeHost([]);
+    host.listVersions
+      .mockRejectedValueOnce(new Error('network'))
+      .mockRejectedValueOnce(new Error('still down'));
+    const { findByText, getByText, queryByText } = renderPanel(host);
+
+    expect(await findByText('Couldn’t load version history.')).toBeTruthy();
+    fireEvent.click(getByText('Retry'));
+    // The retry also fails and there are no rows to fall back on, so the panel
+    // must stay on the error/Retry rather than get stuck on "Loading…".
+    expect(await findByText('Couldn’t load version history.')).toBeTruthy();
+    expect(queryByText(/Loading/)).toBeNull();
+  });
+
+  it('revalidates on first open instead of serving the prefetched cache', async () => {
+    const host = makeHost([v({ name: 'Prefetched' })]);
+    // Warm the shared prefetch cache the way background preparation does.
+    loadVersionList(host, '');
+    await act(async () => {});
+    host.listVersions.mockResolvedValueOnce([v({ name: 'Fresh' })]);
+    const { findByText } = renderPanel(host);
+
+    expect(await findByText('Fresh')).toBeTruthy();
+    expect(host.listVersions).toHaveBeenCalledTimes(2);
   });
 });
