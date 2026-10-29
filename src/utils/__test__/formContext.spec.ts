@@ -200,6 +200,23 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
+  it('maps closeOnAction to editor_close_on_action and omits it when unset', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      envelopeAction: 'open_in_editor',
+      toolbarActions: ['sign'],
+      closeOnAction: false
+    });
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      envelopeAction: 'open_in_editor',
+      toolbarActions: ['sign']
+    });
+
+    expect(flow.mock.calls[0][0].editor_close_on_action).toBe(false);
+    expect(flow.mock.calls[1][0]).not.toHaveProperty('editor_close_on_action');
+  });
+
   it('captures independent Quik copies before flushing saved fields', async () => {
     const signerIds = { '1own': 'person-first' };
     const source = {

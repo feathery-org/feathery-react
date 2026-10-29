@@ -1549,12 +1549,14 @@ function Form({
                 onFinalize: async ({
                   envelopes,
                   envelopeAction,
-                  draft
+                  draft,
+                  refreshDraft
                 }: any) => {
                   const result = await client.finalizeEnvelopeReview(action, {
                     envelopes,
                     envelopeAction,
-                    draft
+                    draft,
+                    refreshDraft
                   });
                   if (!result) {
                     return { status: 'error', message: 'Finalize failed' };
@@ -3661,16 +3663,19 @@ function Form({
               onFinalize: async ({
                 envelopes,
                 envelopeAction,
-                draft
+                draft,
+                refreshDraft
               }: {
                 envelopes: { envelopeId: string }[];
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
                 draft: boolean;
+                refreshDraft: boolean;
               }) => {
                 const result = await client.finalizeEnvelopeReview(action, {
                   envelopes,
                   envelopeAction,
-                  draft
+                  draft,
+                  refreshDraft
                 });
                 // A missing result is a failure, not a success: _fetch
                 // resolves undefined on a network blip / 403 / 409, and
