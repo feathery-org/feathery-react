@@ -1550,9 +1550,9 @@ function Form({
           if (data.status === 'error') throw new Error(data.message);
           if (action.envelope_action === 'open_in_editor') {
             return await new Promise((resolve, reject) => {
-              // What finalize returned, so the method resolves with the real
-              // outcome ({files: [...]}) — the generate payload here only holds
-              // {documents, expires_at}.
+              // What the completing finalize returned, so the method resolves
+              // with the real outcome ({files: [...]}) — the generate payload
+              // here only holds {documents, expires_at}.
               let finalized: any;
               setReviewViewerPayload({
                 payload: data,
@@ -1561,7 +1561,8 @@ function Form({
                   envelopes,
                   envelopeAction,
                   draft,
-                  refreshDraft
+                  refreshDraft,
+                  completes
                 }: any) => {
                   const result = await client.finalizeEnvelopeReview(action, {
                     envelopes,
@@ -1584,12 +1585,14 @@ function Form({
                       result
                     })
                   );
-                  // The toolbar action that produced this outcome rides along
-                  // so the awaiting rule can branch on it.
-                  finalized = {
-                    ...result,
-                    reviewAction: draft ? 'draft' : envelopeAction
-                  };
+                  // A kept-open screen can Download after a Draft; the flow
+                  // still completes with the draft. The toolbar action rides
+                  // along so the awaiting rule can branch on it.
+                  if (completes)
+                    finalized = {
+                      ...result,
+                      reviewAction: draft ? 'draft' : envelopeAction
+                    };
                   return result;
                 },
                 onComplete: () => {

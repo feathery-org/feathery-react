@@ -1,6 +1,13 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import DocumentViewer, { closesEditor } from './index';
+import DocumentViewer, {
+  closesEditor,
+  deferCompletion,
+  finalizeOutcome,
+  isToolbarActionDisabled,
+  needsDraftRefresh,
+  ReviewSession
+} from './index';
 import { featheryDoc } from '../../../utils/browser';
 
 // The viewer lazily loads pdf.js via this module; keep it pending so
@@ -109,7 +116,8 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       ],
       envelopeAction: 'download',
       draft: false,
-      refreshDraft: false
+      refreshDraft: false,
+      completes: true
     });
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
   });
@@ -165,7 +173,8 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       envelopes: [{ envelopeId: 'env-1' }],
       envelopeAction: 'sign',
       draft: false,
-      refreshDraft: false
+      refreshDraft: false,
+      completes: true
     });
   });
 
@@ -197,7 +206,8 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       envelopes: [{ envelopeId: 'env-1' }],
       envelopeAction: 'sign',
       draft: true,
-      refreshDraft: false
+      refreshDraft: false,
+      completes: true
     });
   });
 
@@ -230,7 +240,8 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       envelopes: [{ envelopeId: 'env-1' }],
       envelopeAction: 'sign',
       draft: true,
-      refreshDraft: false
+      refreshDraft: false,
+      completes: true
     });
   });
 
@@ -348,7 +359,8 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
         envelopes: [{ envelopeId: 'env-1' }],
         envelopeAction: 'sign',
         draft: false,
-        refreshDraft: false
+        refreshDraft: false,
+        completes: true
       });
       expect(button('Create Draft')).toBeDisabled();
       expect(onComplete).not.toHaveBeenCalled();
@@ -417,6 +429,86 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
 
       await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
     });
+
+    it('completes once and freezes the screen when closed twice', async () => {
+      const { onComplete, setShow } = renderKeepOpen([
+        'sign',
+        'draft',
+        'download'
+      ]);
+
+      await press('Create Draft');
+      fireEvent.click(button('Back'));
+      fireEvent.click(button('Back'));
+      fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(setShow).not.toHaveBeenCalled();
+      ['Back', 'Download', 'Sign', 'Create Draft'].forEach((name) =>
+        expect(button(name)).toBeDisabled()
+      );
+    });
+
+    it('completes once on Escape then Back', async () => {
+      const { onComplete } = renderKeepOpen(['sign', 'draft']);
+
+      await press('Create Draft');
+      fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
+      fireEvent.click(button('Back'));
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays open after Download when it is the only action', async () => {
+      const { onFinalize, onComplete } = renderKeepOpen(['download'], {
+        files: ['f.pdf']
+      });
+
+      await press('Download');
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(onFinalize).toHaveBeenLastCalledWith(
+        expect.objectContaining({ completes: true })
+      );
+      fireEvent.click(button('Back'));
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays open after Save when it is the highest action', async () => {
+      const { onFinalize, onComplete } = renderKeepOpen(['save', 'download'], {
+        files: ['f.pdf']
+      });
+
+      await press('Save');
+      await press('Download');
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(onFinalize.mock.calls.map(([p]) => p.completes)).toEqual([
+        true,
+        false
+      ]);
+      fireEvent.click(button('Back'));
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it('still completes on close after the session expired', async () => {
+      const { onFinalize, onComplete, setShow } = renderKeepOpen([
+        'sign',
+        'draft'
+      ]);
+
+      await press('Create Draft');
+      onFinalize.mockResolvedValueOnce({
+        status: 'error',
+        message: 'Session expired'
+      });
+      await press('Sign');
+      expect(screen.getByRole('alert')).toHaveTextContent(/expired/);
+      fireEvent.click(button('Back'));
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(setShow).not.toHaveBeenCalled();
+    });
   });
 
   it('leaves Create Draft enabled when the editor closes on action', async () => {
@@ -468,6 +560,69 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
 
     it('closes for the unconfigured Continue button', () => {
       expect(closesEditor('fill', [])).toBe(true);
+    });
+  });
+
+  describe('review session', () => {
+    const fresh: ReviewSession = {
+      pendingCompletion: false,
+      sent: false,
+      editRevision: 0,
+      draftedRevision: null
+    };
+
+    it('completes a closing action at once unless the screen stays open', () => {
+      expect(finalizeOutcome('sign', ['sign'], false)).toBe('complete');
+      expect(finalizeOutcome('sign', ['sign'], true)).toBe('defer');
+      expect(finalizeOutcome('download', ['download'], true)).toBe('defer');
+      expect(finalizeOutcome('save', ['save', 'download'], true)).toBe('defer');
+    });
+
+    it('never keeps the screen open on Continue', () => {
+      expect(finalizeOutcome('fill', [], true)).toBe('complete');
+    });
+
+    it('leaves the filler on a non-closing action either way', () => {
+      expect(finalizeOutcome('download', ['sign', 'download'], true)).toBe(
+        'stay'
+      );
+      expect(finalizeOutcome('download', ['sign', 'download'], false)).toBe(
+        'stay'
+      );
+    });
+
+    it('marks the draft current until the next edit', () => {
+      const drafted = deferCompletion({ ...fresh, editRevision: 3 }, 'draft');
+      expect(drafted).toEqual({
+        pendingCompletion: true,
+        sent: false,
+        editRevision: 3,
+        draftedRevision: 3
+      });
+      expect(isToolbarActionDisabled(drafted, 'draft')).toBe(true);
+      expect(needsDraftRefresh(drafted, 'sign')).toBe(false);
+
+      const edited = { ...drafted, editRevision: 4 };
+      expect(isToolbarActionDisabled(edited, 'draft')).toBe(false);
+      expect(needsDraftRefresh(edited, 'draft')).toBe(true);
+      expect(needsDraftRefresh(edited, 'sign')).toBe(true);
+      expect(needsDraftRefresh(edited, 'download')).toBe(false);
+    });
+
+    it('never refreshes without a draft', () => {
+      expect(needsDraftRefresh({ ...fresh, editRevision: 2 }, 'sign')).toBe(
+        false
+      );
+      expect(isToolbarActionDisabled(fresh, 'draft')).toBe(false);
+    });
+
+    it('ends signing and drafting once sent', () => {
+      const sent = deferCompletion(fresh, 'sign');
+      expect(sent.sent).toBe(true);
+      expect(isToolbarActionDisabled(sent, 'sign')).toBe(true);
+      expect(isToolbarActionDisabled(sent, 'draft')).toBe(true);
+      expect(isToolbarActionDisabled(sent, 'download')).toBe(false);
+      expect(isToolbarActionDisabled(sent, 'save')).toBe(false);
     });
   });
 });
