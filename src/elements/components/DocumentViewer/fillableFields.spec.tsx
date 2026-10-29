@@ -67,8 +67,16 @@ const makePdfProxy = () => {
 };
 
 // Constructed once per rendered page by the editable viewer; a read-only
-// viewer never mounts it.
-const AnnotationLayer = jest.fn(() => ({ render: () => Promise.resolve() }));
+// viewer never mounts it. Renders one text widget that writes the filler's
+// input into annotationStorage, as pdf.js's own widget listener does.
+const AnnotationLayer = jest.fn(({ div, annotationStorage }: any) => ({
+  render: () => {
+    const widget = featheryDoc().createElement('input');
+    widget.addEventListener('input', () => annotationStorage.onSetModified());
+    div.append(widget);
+    return Promise.resolve();
+  }
+}));
 
 const setupPdfjs = (proxies: Record<string, any>) => {
   loadPdfjs.mockResolvedValue({
@@ -374,8 +382,10 @@ describe('with editor_close_on_action false', () => {
     fireEvent.click(button(name));
     await waitFor(() => expect(button('Back')).toBeEnabled());
   };
-  const edit = (proxy: any) =>
-    act(() => proxy.annotationStorage.onSetModified());
+  // Widgets render in document order: a.pdf's first.
+  const widgetA = () =>
+    featheryDoc().querySelector('.annotationLayer input') as HTMLInputElement;
+  const edit = () => fireEvent.input(widgetA(), { target: { value: 'x' } });
 
   const renderKeepOpen = async () => {
     const proxyA = makePdfProxy();
@@ -386,13 +396,14 @@ describe('with editor_close_on_action false', () => {
     );
     viewer.onFinalize.mockResolvedValue({ status: 'created' });
     await waitForLoad(proxyA, proxyB);
+    await waitFor(() => expect(widgetA()).toBeInstanceOf(HTMLInputElement));
     return { ...viewer, proxyA };
   };
 
   it('re-enables Create Draft only after an edit and then refreshes the draft', async () => {
-    const { onFinalize, onSaveEnvelopeFile, proxyA } = await renderKeepOpen();
+    const { onFinalize, onSaveEnvelopeFile } = await renderKeepOpen();
 
-    edit(proxyA);
+    edit();
     await press('Create Draft');
     expect(onFinalize).toHaveBeenLastCalledWith(
       expect.objectContaining({ draft: true, refreshDraft: false })
@@ -403,7 +414,7 @@ describe('with editor_close_on_action false', () => {
     await press('Download');
     expect(button('Create Draft')).toBeDisabled();
 
-    edit(proxyA);
+    edit();
     expect(button('Create Draft')).toBeEnabled();
     await press('Create Draft');
 
@@ -415,10 +426,10 @@ describe('with editor_close_on_action false', () => {
   });
 
   it('refreshes the draft when Sign follows edits made after it', async () => {
-    const { onFinalize, proxyA } = await renderKeepOpen();
+    const { onFinalize } = await renderKeepOpen();
 
     await press('Create Draft');
-    edit(proxyA);
+    edit();
     await press('Sign');
 
     expect(onFinalize).toHaveBeenLastCalledWith(
@@ -428,6 +439,29 @@ describe('with editor_close_on_action false', () => {
         refreshDraft: true
       })
     );
+  });
+
+  it('ignores storage writes that pdf.js makes while rendering', async () => {
+    const { onFinalize, proxyA } = await renderKeepOpen();
+
+    await press('Create Draft');
+    // A prefilled radio group's render unchecks the siblings in storage,
+    // which flips the modified flag with no edit from the filler.
+    act(() => proxyA.annotationStorage.onSetModified());
+    expect(button('Create Draft')).toBeDisabled();
+    await press('Sign');
+    expect(onFinalize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ envelopeAction: 'sign', refreshDraft: false })
+    );
+  });
+
+  it('counts a checkbox or radio change as an edit', async () => {
+    await renderKeepOpen();
+
+    await press('Create Draft');
+    fireEvent.change(widgetA());
+
+    expect(button('Create Draft')).toBeEnabled();
   });
 
   it('does not refresh on Sign when nothing changed since the draft', async () => {
