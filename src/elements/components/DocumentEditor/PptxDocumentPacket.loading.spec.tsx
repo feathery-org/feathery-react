@@ -184,3 +184,52 @@ it('hands an in-flight reopened-tab prefetch to the selected editor', async () =
   );
   expect(props.onError).not.toHaveBeenCalled();
 });
+
+it('does not restart background prefetch when a save replaces the tabs array', async () => {
+  const response = () => ({
+    ok: true,
+    arrayBuffer: async () => sampleBytes().buffer
+  });
+  let prefetchSignal: AbortSignal | undefined;
+  const requests = jest.fn(
+    (url: string, { signal }: { signal: AbortSignal }) => {
+      if (url !== '/2.pptx') return Promise.resolve(response());
+      if (!prefetchSignal) prefetchSignal = signal; // capture the first job only
+      return new Promise(() => {}); // keep the background prefetch in flight
+    }
+  );
+  global.fetch = requests as unknown as typeof fetch;
+  const makeTabs = () =>
+    ['1', '2'].map((id) => ({
+      id,
+      label: `Deck ${id}`,
+      envelope: { id, file: `/${id}.pptx`, type: 'pptx', signed: false }
+    }));
+  const props = {
+    reloadKey: 0,
+    client: {} as FeatheryClient,
+    updateEnvelope: jest.fn(),
+    resolveTabEnvelope: async (tab: DocumentTab) => tab.envelope ?? null,
+    resolveEnvelopes: async () => makeTabs().map((tab) => tab.envelope),
+    registerBeforeReplace: jest.fn(),
+    onBusy: jest.fn(),
+    onError: jest.fn()
+  };
+  const { rerender } = render(
+    <PptxDocumentPacket {...props} tabs={makeTabs()} activeId='1' />
+  );
+  await screen.findByRole('button', { name: 'Slide 9' });
+  await waitFor(() => expect(prefetchSignal).toBeDefined());
+  expect(prefetchSignal?.aborted).toBe(false);
+  // A save re-renders with a fresh tabs array (same ids). The prefetch effect
+  // must not tear down and abort the in-flight background job.
+  rerender(<PptxDocumentPacket {...props} tabs={makeTabs()} activeId='1' />);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  });
+  expect(prefetchSignal?.aborted).toBe(false);
+  expect(
+    requests.mock.calls.filter(([url]) => url === '/2.pptx')
+  ).toHaveLength(1);
+  expect(props.onError).not.toHaveBeenCalled();
+});

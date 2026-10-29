@@ -39,9 +39,9 @@ export function cacheThumbnail(
   for (let i = entries.length - 1; i >= 0; i--)
     if (entries[i].owner === owner && entries[i].path === path)
       entries.splice(i, 1);
-  // Conservative accounting for markup and DOM nodes, not an exact heap size.
-  const bytes =
-    svg.outerHTML.length * 2 + svg.querySelectorAll('*').length * 128;
+  // Conservative accounting from the serialized markup, not an exact heap size.
+  // Avoids a second full DOM walk (querySelectorAll) on every cached thumbnail.
+  const bytes = svg.outerHTML.length * 3;
   if (bytes > MAX_BYTES) return;
   entries.push({ owner, path, revision, svg, bytes });
   let total = entries.reduce((sum, entry) => sum + entry.bytes, 0);

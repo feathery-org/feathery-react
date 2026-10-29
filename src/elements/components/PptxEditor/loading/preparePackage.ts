@@ -17,7 +17,9 @@ export function preparePackage(bytes: Uint8Array): PreparedPackage {
     try {
       const tree = parseXml(text);
       trees.set(path, tree);
-      estimatedBytes += JSON.stringify(tree).length * 2;
+      // Parsed-tree memory scales with the source; estimate from text.length
+      // instead of a second full serialization (JSON.stringify) per part.
+      estimatedBytes += text.length * 2;
     } catch {
       // Preserve the importer's lazy error semantics. Opaque/unused XML parts
       // must round-trip unchanged; a required part still fails when tree()

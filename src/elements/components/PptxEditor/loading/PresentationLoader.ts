@@ -3,6 +3,7 @@ import { releaseObjectUrls } from '../core/opc/objectUrls';
 import { releaseEmbeddedFonts } from '../core/render/embeddedFonts';
 import { releaseThumbnails, cacheThumbnail } from './thumbnailCache';
 import { schedulePreview } from './previewScheduler';
+import { abortError } from './abortError';
 
 export function releasePreparedDeck(deck: Deck) {
   releaseThumbnails(deck.pkg);
@@ -60,8 +61,12 @@ export class PresentationLoader {
       if (!this.pending.get(id)?.foreground && contentLength > this.maxBytes)
         throw new Error('Document exceeds the background preparation budget');
       const bytes = new Uint8Array(await response.arrayBuffer());
-      const { prepareInWorker, abortError } = await import('./packageWorker');
-      const prepared = await prepareInWorker(bytes, controller.signal);
+      const { prepareInWorker } = await import('./packageWorker');
+      const prepared = await prepareInWorker(
+        bytes,
+        controller.signal,
+        () => !!this.pending.get(id)?.foreground
+      );
       if (
         !this.pending.get(id)?.foreground &&
         prepared.estimatedBytes > this.maxBytes
@@ -99,8 +104,9 @@ export class PresentationLoader {
   }
 
   async load(id: string, url: string, signal: AbortSignal): Promise<Deck> {
+    // No await between prioritize and start: a settling prefetch must not slip
+    // in and drop its prepared deck (leak + re-fetch) before we take/claim it.
     this.prioritize(id);
-    const { abortError } = await import('./packageWorker');
     if (signal.aborted) throw abortError();
     const cached = this.take(id, url);
     if (cached) return cached.deck;

@@ -2,9 +2,36 @@ import {
   PresentationLoader,
   releasePreparedDeck
 } from '../loading/PresentationLoader';
+import { preparePackage } from '../loading/preparePackage';
 import { sampleBytes } from './harness';
 
+jest.mock('../loading/pptxWorkerSource', () => ({
+  __esModule: true,
+  default: 'worker code'
+}));
+
+// Mirrors production: the worker prepares off the caller and posts the result
+// back, so a background prefetch is cached instead of parsed on the main thread.
+class FakeWorker {
+  onmessage: ((event: any) => void) | null = null;
+  onerror: ((event: any) => void) | null = null;
+  onmessageerror: (() => void) | null = null;
+  postMessage({ id, bytes }: { id: number; bytes: Uint8Array }) {
+    Promise.resolve().then(() => {
+      try {
+        this.onmessage?.({ data: { id, result: preparePackage(bytes) } });
+      } catch (error) {
+        this.onmessage?.({ data: { id, error: String(error) } });
+      }
+    });
+  }
+  terminate() {}
+}
+
 const originalFetch = global.fetch;
+const OriginalWorker = global.Worker;
+const originalCreate = URL.createObjectURL;
+const originalRevoke = URL.revokeObjectURL;
 let loader: PresentationLoader;
 let fetchMock: jest.Mock;
 const controller = () => new AbortController();
@@ -15,10 +42,16 @@ beforeEach(() => {
     arrayBuffer: async () => sampleBytes().buffer
   }));
   global.fetch = fetchMock;
+  global.Worker = jest.fn(() => new FakeWorker()) as unknown as typeof Worker;
+  URL.createObjectURL = jest.fn(() => 'blob:worker');
+  URL.revokeObjectURL = jest.fn();
 });
 afterEach(() => {
   loader.dispose();
   global.fetch = originalFetch;
+  global.Worker = OriginalWorker;
+  URL.createObjectURL = originalCreate;
+  URL.revokeObjectURL = originalRevoke;
 });
 
 it('reuses prepared thumbnails and package bytes without refetching on first selection', async () => {
@@ -89,6 +122,17 @@ it('skips oversized speculative decks while allowing the user to open them', asy
   loader = new PresentationLoader(1);
   await loader.prefetch('large', '/large', controller().signal);
   const deck = await loader.load('large', '/large', controller().signal);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(deck.slides).toHaveLength(9);
+  releasePreparedDeck(deck);
+});
+
+it('skips a background prefetch instead of parsing on the main thread when no worker is available', async () => {
+  global.Worker = undefined as unknown as typeof Worker;
+  // A speculative prefetch must not fall back to a main-thread parse: nothing is
+  // cached, so the first real selection fetches and parses it in the foreground.
+  await loader.prefetch('a', '/a.pptx', controller().signal);
+  const deck = await loader.load('a', '/a.pptx', controller().signal);
   expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(deck.slides).toHaveLength(9);
   releasePreparedDeck(deck);

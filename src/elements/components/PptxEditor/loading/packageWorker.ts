@@ -1,16 +1,19 @@
 import source from './pptxWorkerSource';
+import { abortError } from './abortError';
 import type { PreparedPackage } from './preparePackage';
 
-export const abortError = () =>
-  new DOMException('Loading cancelled', 'AbortError');
-
-/** One preparation worker per packet. Cancellation releases speculative work. */
+/** One preparation worker per packet. Cancellation releases speculative work.
+ * isForeground: only the interactive document falls back to a main-thread parse
+ * when the worker is unavailable; a speculative background job rejects instead. */
 export async function prepareInWorker(
   bytes: Uint8Array,
-  signal: AbortSignal
+  signal: AbortSignal,
+  isForeground: () => boolean = () => true
 ): Promise<PreparedPackage> {
   if (signal.aborted) throw abortError();
   const fallback = async () => {
+    if (!isForeground())
+      throw new Error('Background preparation needs the worker');
     const { preparePackage } = await import('./preparePackage');
     if (signal.aborted) throw abortError();
     return preparePackage(bytes);
