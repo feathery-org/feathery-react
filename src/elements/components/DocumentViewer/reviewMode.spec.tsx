@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DocumentViewer, { closesEditor } from './index';
+import { featheryDoc } from '../../../utils/browser';
 
 // The viewer lazily loads pdf.js via this module; keep it pending so
 // DocumentCanvas just shows its loading skeleton — these tests only care
@@ -107,7 +108,8 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
         { envelopeId: 'env-2', signerId: undefined }
       ],
       envelopeAction: 'download',
-      draft: false
+      draft: false,
+      refreshDraft: false
     });
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
   });
@@ -162,7 +164,8 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
     expect(onFinalize).toHaveBeenCalledWith({
       envelopes: [{ envelopeId: 'env-1' }],
       envelopeAction: 'sign',
-      draft: false
+      draft: false,
+      refreshDraft: false
     });
   });
 
@@ -193,7 +196,8 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
     expect(onFinalize).toHaveBeenCalledWith({
       envelopes: [{ envelopeId: 'env-1' }],
       envelopeAction: 'sign',
-      draft: true
+      draft: true,
+      refreshDraft: false
     });
   });
 
@@ -225,7 +229,8 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
     expect(onFinalize).toHaveBeenCalledWith({
       envelopes: [{ envelopeId: 'env-1' }],
       envelopeAction: 'sign',
-      draft: true
+      draft: true,
+      refreshDraft: false
     });
   });
 
@@ -287,6 +292,154 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
 
       await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
     });
+  });
+
+  describe('with editor_close_on_action false', () => {
+    const renderKeepOpen = (
+      toolbarActions: string[],
+      result: Record<string, any> = { status: 'created' }
+    ) => {
+      const onFinalize = jest.fn().mockResolvedValue(result);
+      const onComplete = jest.fn();
+      const setShow = jest.fn();
+      render(
+        <DocumentViewer
+          payload={basePayload}
+          action={{
+            envelope_action: 'open_in_editor',
+            editor_toolbar_actions: toolbarActions,
+            sign_method: 'docusign',
+            editor_close_on_action: false
+          }}
+          setShow={setShow}
+          onComplete={onComplete}
+          onFinalize={onFinalize}
+        />
+      );
+      return { onFinalize, onComplete, setShow };
+    };
+    const button = (name: string) => screen.getByRole('button', { name });
+    // Every button is disabled while an action runs, Back included, so Back
+    // turning enabled again marks the action as settled.
+    const press = async (name: string) => {
+      fireEvent.click(button(name));
+      await waitFor(() => expect(button('Back')).toBeEnabled());
+    };
+
+    it('stays open after Create Draft and disables it', async () => {
+      const { onFinalize, onComplete } = renderKeepOpen(['sign', 'draft']);
+
+      await press('Create Draft');
+
+      expect(button('Create Draft')).toBeDisabled();
+      expect(onFinalize).toHaveBeenCalledTimes(1);
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(button('Sign')).toBeEnabled();
+    });
+
+    it('lets Sign follow a draft, then disables Sign and Create Draft', async () => {
+      const { onFinalize, onComplete } = renderKeepOpen(['sign', 'draft']);
+
+      await press('Create Draft');
+      await press('Sign');
+
+      expect(button('Sign')).toBeDisabled();
+      expect(onFinalize).toHaveBeenLastCalledWith({
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'sign',
+        draft: false,
+        refreshDraft: false
+      });
+      expect(button('Create Draft')).toBeDisabled();
+      expect(onComplete).not.toHaveBeenCalled();
+    });
+
+    it('keeps Download available after Sign', async () => {
+      const { onFinalize } = renderKeepOpen(['sign', 'download'], {
+        status: 'sent'
+      });
+
+      await press('Sign');
+      expect(button('Download')).toBeEnabled();
+      await press('Download');
+
+      expect(onFinalize).toHaveBeenCalledTimes(2);
+      expect(onFinalize).toHaveBeenLastCalledWith(
+        expect.objectContaining({ envelopeAction: 'download' })
+      );
+    });
+
+    it('completes instead of cancelling on Back after a draft', async () => {
+      const { onComplete, setShow } = renderKeepOpen(['sign', 'draft']);
+
+      await press('Create Draft');
+      fireEvent.click(button('Back'));
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(setShow).not.toHaveBeenCalled();
+    });
+
+    it('completes instead of cancelling on Escape after a draft', async () => {
+      const { onComplete, setShow } = renderKeepOpen(['sign', 'draft']);
+
+      await press('Create Draft');
+      fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(setShow).not.toHaveBeenCalled();
+    });
+
+    it('still completes on close when a later action failed', async () => {
+      const { onFinalize, onComplete } = renderKeepOpen(['sign', 'draft']);
+
+      await press('Create Draft');
+      onFinalize.mockResolvedValueOnce({ status: 'error', message: 'Boom' });
+      await press('Sign');
+      expect(screen.getByRole('alert')).toHaveTextContent('Boom');
+      fireEvent.click(button('Back'));
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels on Back when nothing completed yet', () => {
+      const { onComplete, setShow } = renderKeepOpen(['sign', 'draft']);
+
+      fireEvent.click(button('Back'));
+
+      expect(setShow).toHaveBeenCalledWith(false);
+      expect(onComplete).not.toHaveBeenCalled();
+    });
+
+    it('closes on Continue for an unconfigured toolbar', async () => {
+      const { onComplete } = renderKeepOpen([], { files: ['f.pdf'] });
+
+      fireEvent.click(button('Continue'));
+
+      await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    });
+  });
+
+  it('leaves Create Draft enabled when the editor closes on action', async () => {
+    const onComplete = jest.fn();
+    render(
+      <DocumentViewer
+        payload={basePayload}
+        action={{
+          envelope_action: 'open_in_editor',
+          editor_toolbar_actions: ['sign', 'draft'],
+          sign_method: 'docusign',
+          editor_close_on_action: true
+        }}
+        setShow={jest.fn()}
+        onComplete={onComplete}
+        onFinalize={jest.fn().mockResolvedValue({ status: 'created' })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Draft' }));
+
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'Create Draft' })).toBeEnabled();
   });
 
   describe('closesEditor', () => {
