@@ -299,6 +299,30 @@ function isFieldValueEmpty(value: any, servar: any) {
   return noVal;
 }
 
+// The value of a linked field, or undefined if it doesn't hold a number
+function getLinkedValue(fieldKey: string | undefined) {
+  if (!fieldKey) return undefined;
+  const value = fieldValues[fieldKey];
+  if (value === '' || typeof value === 'object') return undefined;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : undefined;
+}
+
+// Static bounds are left to the input mask; only linked bounds are checked here
+function getValueBoundError(
+  value: number,
+  servar: any,
+  defaultErrors: Record<string, string>
+) {
+  const min = getLinkedValue(servar.metadata?.min_value_field_key);
+  const max = getLinkedValue(servar.metadata?.max_value_field_key);
+  if (min !== undefined && value < min)
+    return defaultErrors.minimum_value.replace('{value}', String(min));
+  if (max !== undefined && value > max)
+    return defaultErrors.maximum_value.replace('{value}', String(max));
+  return '';
+}
+
 /**
  * Default validations.
  * Returns the error message for a field value if it's invalid.
@@ -365,6 +389,8 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
       return msg('lowercase letter');
     if (meta.number_required && !NUMBER_MATCH.test(value)) return msg('number');
     if (meta.symbol_required && !SYMBOL_MATCH.test(value)) return msg('symbol');
+  } else if (servar.type === 'integer_field') {
+    return getValueBoundError(Number(value), servar, defaultErrors);
   }
 
   // No error
