@@ -251,6 +251,7 @@ import ConnectAccountModal, {
 import {
   CONFIG_COMPONENTS,
   PROVIDER_LABELS,
+  SALESFORCE_PROVIDER,
   configFieldKey,
   connectionFieldKey,
   hasEmailIdentity
@@ -412,7 +413,7 @@ function preOpenActionWindows(actions: any[]) {
   actions.forEach((action, idx) => {
     if (
       action.type === ACTION_CONNECT_ACCOUNT &&
-      !['box', 'salesforce-client-credentials'].includes(action.provider)
+      !['box', SALESFORCE_PROVIDER].includes(action.provider)
     ) {
       windows.set(
         idx,
@@ -3157,7 +3158,7 @@ function Form({
         let canSaveCredential = false;
         let lockedByOwner = false;
         try {
-          if (['box', 'salesforce-client-credentials'].includes(provider)) {
+          if (['box', SALESFORCE_PROVIDER].includes(provider)) {
             // Listing saved accounts is optional; a throttle or temporary outage
             // must not prevent the existing OAuth or change-account flow.
             const saved = await client
@@ -3186,7 +3187,10 @@ function Form({
             canSaveCredential = !!saved && saved.can_save !== false;
             lockedByOwner =
               alreadyConnected && saved?.attached?.owner === false;
-            if (provider === 'salesforce-client-credentials') {
+            if (provider === SALESFORCE_PROVIDER) {
+              // A failed credential lookup leaves `saved` undefined, so the
+              // modal opens as "not connected" with an empty list on purpose:
+              // Salesforce requires a reconnect rather than trusting the field.
               alreadyConnected =
                 saved?.attached?.status === 'connected' &&
                 saved?.attached?.owner === true;

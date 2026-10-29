@@ -13,7 +13,10 @@ import {
 } from '../internalState';
 import { featheryWindow } from '../browser';
 import { isFetchNetworkError } from '../error';
-import { PROVIDER_LABELS } from '../../integrations/connectAccount/providers';
+import {
+  PROVIDER_LABELS,
+  SALESFORCE_PROVIDER
+} from '../../integrations/connectAccount/providers';
 import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
@@ -328,7 +331,7 @@ export default class IntegrationClient {
     const params = encodeGetParams({
       form_key: this.formKey,
       fuser_key: userId,
-      provider: 'salesforce-client-credentials'
+      provider: SALESFORCE_PROVIDER
     });
     const response = await this._fetch(
       `${API_URL}account-connect/salesforce-sync/?${params}`,
@@ -339,6 +342,13 @@ export default class IntegrationClient {
     const payload = await response.json();
     if (!response.ok) throw new Error(parseAPIError(payload));
     return payload;
+  }
+
+  async retrySalesforceDocumentSync(runId: string) {
+    return this._accountConnectPost('salesforce-sync', {
+      provider: SALESFORCE_PROVIDER,
+      run_id: runId
+    });
   }
 
   async listAccountCredentials(provider: string) {
@@ -495,7 +505,7 @@ export default class IntegrationClient {
     const payload = await response.json();
     if (response.status === 200) {
       if (
-        body.provider === 'salesforce-client-credentials' &&
+        body.provider === SALESFORCE_PROVIDER &&
         ['complete', 'select', 'disconnect'].includes(path)
       ) {
         featheryWindow().dispatchEvent(

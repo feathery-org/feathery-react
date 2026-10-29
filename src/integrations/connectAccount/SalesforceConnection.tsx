@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { ProviderConfigProps } from './providers';
 
 type SyncRun = {
@@ -10,23 +10,21 @@ type SyncRun = {
 
 export default function SalesforceConnection({
   client,
-  provider,
   onError,
   onSaved,
   onFooterActionChange
 }: ProviderConfigProps) {
   const [runs, setRuns] = useState<SyncRun[]>([]);
   const [busy, setBusy] = useState(false);
-  const load = async () => {
-    const result = await client.listSalesforceDocumentSync();
-    setRuns(result.runs);
-  };
+  const load = useCallback(
+    async () => (await client.listSalesforceDocumentSync()).runs as SyncRun[],
+    [client]
+  );
   useEffect(() => {
     let active = true;
-    client
-      .listSalesforceDocumentSync()
-      .then((result: { runs: SyncRun[] }) => {
-        if (active) setRuns(result.runs);
+    load()
+      .then((loaded) => {
+        if (active) setRuns(loaded);
       })
       .catch((error: Error) => {
         if (active) onError(error.message);
@@ -34,7 +32,7 @@ export default function SalesforceConnection({
     return () => {
       active = false;
     };
-  }, [client, onError]);
+  }, [load, onError]);
   useEffect(() => {
     onFooterActionChange?.({
       label: 'Done',
@@ -46,11 +44,8 @@ export default function SalesforceConnection({
   const retry = async (id: string) => {
     setBusy(true);
     try {
-      await client._accountConnectPost('salesforce-sync', {
-        provider,
-        run_id: id
-      });
-      await load();
+      await client.retrySalesforceDocumentSync(id);
+      setRuns(await load());
     } catch (error) {
       onError(
         error instanceof Error
