@@ -328,10 +328,7 @@ export default function DocumentViewer({
     loadedDocs.current[pdfUrl] = pdfProxy;
     const storage = pdfProxy.annotationStorage;
     if (storage) {
-      storage.onSetModified = () => {
-        dirtyDocs.current.add(pdfUrl);
-        setSession((s) => ({ ...s, editRevision: s.editRevision + 1 }));
-      };
+      storage.onSetModified = () => dirtyDocs.current.add(pdfUrl);
       storage.onResetModified = () => dirtyDocs.current.delete(pdfUrl);
     }
     setPageCounts((prev) => ({ ...prev, [pdfUrl]: pdfProxy.numPages }));
@@ -365,6 +362,11 @@ export default function DocumentViewer({
       }
     }
   };
+
+  const onUserEdit = useCallback(
+    () => setSession((s) => ({ ...s, editRevision: s.editRevision + 1 })),
+    []
+  );
 
   const registerPageRef = useCallback(
     (pdfUrl: string, pageIndex: number, el: HTMLDivElement | null) => {
@@ -513,6 +515,7 @@ export default function DocumentViewer({
             documents={payload.documents}
             pageWidth={pageWidth}
             onDocLoad={onDocLoad}
+            onUserEdit={onUserEdit}
             registerPageRef={registerPageRef}
             inputLocked={isInputLocked}
             readOnly={readOnly}
