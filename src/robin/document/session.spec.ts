@@ -1019,6 +1019,43 @@ describe('document session: the four verbs end to end', () => {
     ).toBe(true);
   });
 
+  it('a refused write leaves no id guesses behind: the next write on a read node lands (ebe5a6ff 27-node conflict)', () => {
+    const { host, call, nextTurn } = mount(
+      toyNative(para('stray'), para('stray'), para('End'))
+    );
+    const read = call('read', { ids: ['root', 'n1'] });
+    const first = nodeOf(read, 'n1');
+    // The landing adds a third equal sibling, so reading it back guesses which stray is which
+    host.corruptNextSeam = true;
+    const refused = call('write', {
+      intent: 'Add a line.',
+      scope: { ids: [] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: 'n2',
+          container: nodeOf(read, 'root').shape,
+          node: { text: 'Cyber', style: first.style }
+        }
+      ]
+    }) as { refusal: { invariant: string } };
+    expect(refused.refusal.invariant).toBe('proof-failed');
+    nextTurn();
+    const r = call('write', {
+      intent: 'x',
+      scope: { ids: ['n1'] },
+      changes: [
+        {
+          kind: 'replace',
+          id: 'n1',
+          base: first.base,
+          node: { text: 'Changed', style: first.style }
+        }
+      ]
+    });
+    expect(r).toEqual(expect.objectContaining({ ok: true }));
+  });
+
   it('an unambiguous user edit leaves ids writable without a fresh read', () => {
     const { host, call, nextTurn } = mount();
     const first = nodeOf(call('read', { ids: ['n1'] }), 'n1');

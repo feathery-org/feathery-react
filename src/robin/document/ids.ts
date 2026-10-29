@@ -45,6 +45,13 @@ export class IdTable {
     return this.uncertain.has(id);
   }
 
+  checkpointUncertain(): () => void {
+    const kept = new Set(this.uncertain);
+    return () => {
+      this.uncertain = kept;
+    };
+  }
+
   /** The model has seen these nodes as they are now (a read, or a conflict's live node). */
   settle(ids: Iterable<string>): void {
     for (const id of ids) this.uncertain.delete(id);
@@ -132,11 +139,18 @@ export class IdTable {
       for (const p of previous) {
         const plist = listAt(p, key);
         if (!plist) continue;
-        for (const c of plist as NfNode[])
-          if (isPlainObject(c) && !seen.has(c.id)) {
-            seen.add(c.id);
-            candidates.push(c);
+        // Document order, so a node the write deleted cannot take a kept node's id
+        let at = 0;
+        for (const c of plist as NfNode[]) {
+          if (!isPlainObject(c)) continue;
+          if (seen.has(c.id)) {
+            at = Math.max(at, candidates.findIndex((x) => x.id === c.id) + 1);
+            continue;
           }
+          seen.add(c.id);
+          candidates.splice(at, 0, c);
+          at += 1;
+        }
       }
       // equal siblings counted against the most recent tree (the commit's intended document, or
       // the document as last read): a different count means the matches among them are guesses
