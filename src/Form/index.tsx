@@ -1353,7 +1353,14 @@ function Form({
         if (canRunAction(logicRule, currentStepId, props, altMatchId)) {
           logicRan = true;
 
-          if (toAwait) await toAwait;
+          // Client-side rules that run before click actions don't wait on the
+          // step response; the client holds their field writes until the step
+          // answers land. Server-side rules read saved answers, so they wait.
+          if (
+            toAwait &&
+            (logicRule.server_side || logicRule.metadata?.after_click)
+          )
+            await toAwait;
 
           try {
             if (logicRule.server_side) {

@@ -623,4 +623,43 @@ describe('step save and completion ordering', () => {
     expect(uploads).toEqual(['older.png', 'newer.png']);
     expect(fileRetryStatus.card).toBe(true);
   });
+
+  it('persists click-rule custom fields after the button step answers', async () => {
+    const { client: formClient } = createClientWithStorage();
+    const ruleClient: any = new FeatheryClient('form');
+    let finishStepAnswers!: () => void;
+    let signalStepAnswers!: () => void;
+    const stepStarted = new Promise<void>((resolve) => {
+      signalStepAnswers = resolve;
+    });
+    const sent: string[] = [];
+    jest.spyOn(formClient, 'flushCustomFields').mockResolvedValue(undefined);
+    jest.spyOn(ruleClient, '_fetch').mockImplementation(async (url: any) => {
+      sent.push(url.includes('/custom/submit/') ? 'custom fields' : 'step');
+      return {};
+    });
+    jest.spyOn(formClient, '_fetch').mockImplementation(async () => {
+      sent.push('step');
+      signalStepAnswers();
+      return new Promise((resolve) => {
+        finishStepAnswers = () => resolve({});
+      });
+    });
+
+    const stepSubmission = formClient.submitStep(
+      [{ key: 'name', text_field: 'before click action' }],
+      { key: 'first', buttons: [], subgrids: [] },
+      true
+    );
+    await stepStarted;
+
+    ruleClient.pendingCustomFieldUpdates.name = 'after click action';
+    const ruleSubmission = ruleClient._debouncedSubmitCustom(true);
+    await Promise.resolve();
+    expect(sent).toEqual(['step']);
+
+    finishStepAnswers();
+    await Promise.all([stepSubmission, ruleSubmission]);
+    expect(sent).toEqual(['step', 'custom fields']);
+  });
 });
