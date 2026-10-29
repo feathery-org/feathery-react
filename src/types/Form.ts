@@ -138,7 +138,10 @@ interface LogicRuleBase {
   elements: string[];
   enabled: boolean;
   valid: boolean;
-  metadata?: { tool?: { parameters?: ToolRuleParameter[] } };
+  metadata?: {
+    tool?: { parameters?: ToolRuleParameter[] };
+    after_click?: boolean;
+  };
 }
 // the server_side code is not exposed to the form
 export type ServerSideLogicRule = LogicRuleBase & {
