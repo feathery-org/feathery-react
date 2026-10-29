@@ -1,5 +1,11 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+  waitFor
+} from '@testing-library/react';
 import DocumentViewer from './index';
 import { featheryDoc } from '../../../utils/browser';
 
@@ -354,4 +360,96 @@ it('shows the documents read-only when the action sets editor_read_only', async 
   // The live form layer was never mounted (the freeze test above shows the
   // editable viewer constructs one per page), so there is nothing to edit.
   expect(AnnotationLayer).not.toHaveBeenCalled();
+});
+
+describe('with editor_close_on_action false', () => {
+  const keepOpenAction = {
+    envelope_action: 'open_in_editor',
+    editor_toolbar_actions: ['sign', 'draft', 'download'],
+    sign_method: 'docusign',
+    editor_close_on_action: false
+  };
+  const button = (name: string) => screen.getByRole('button', { name });
+  const press = async (name: string) => {
+    fireEvent.click(button(name));
+    await waitFor(() => expect(button('Back')).toBeEnabled());
+  };
+  const edit = (proxy: any) =>
+    act(() => proxy.annotationStorage.onSetModified());
+
+  const renderKeepOpen = async () => {
+    const proxyA = makePdfProxy();
+    const proxyB = makePdfProxy();
+    const viewer = renderViewer(
+      { 'http://x/a.pdf': proxyA, 'http://x/b.pdf': proxyB },
+      { action: keepOpenAction }
+    );
+    viewer.onFinalize.mockResolvedValue({ status: 'created' });
+    await waitForLoad(proxyA, proxyB);
+    return { ...viewer, proxyA };
+  };
+
+  it('re-enables Create Draft only after an edit and then refreshes the draft', async () => {
+    const { onFinalize, onSaveEnvelopeFile, proxyA } = await renderKeepOpen();
+
+    edit(proxyA);
+    await press('Create Draft');
+    expect(onFinalize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ draft: true, refreshDraft: false })
+    );
+    expect(button('Create Draft')).toBeDisabled();
+
+    // Download saves nothing to the DocuSign draft, so it stays current.
+    await press('Download');
+    expect(button('Create Draft')).toBeDisabled();
+
+    edit(proxyA);
+    expect(button('Create Draft')).toBeEnabled();
+    await press('Create Draft');
+
+    expect(onFinalize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ draft: true, refreshDraft: true })
+    );
+    expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(2);
+    expect(button('Create Draft')).toBeDisabled();
+  });
+
+  it('refreshes the draft when Sign follows edits made after it', async () => {
+    const { onFinalize, proxyA } = await renderKeepOpen();
+
+    await press('Create Draft');
+    edit(proxyA);
+    await press('Sign');
+
+    expect(onFinalize).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        envelopeAction: 'sign',
+        draft: false,
+        refreshDraft: true
+      })
+    );
+  });
+
+  it('does not refresh on Sign when nothing changed since the draft', async () => {
+    const { onFinalize } = await renderKeepOpen();
+
+    await press('Create Draft');
+    await press('Sign');
+
+    expect(onFinalize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ draft: false, refreshDraft: false })
+    );
+  });
+
+  it('locks the form widgets once the documents are sent', async () => {
+    await renderKeepOpen();
+    const widgetLayers = () =>
+      Array.from(featheryDoc().querySelectorAll('.annotationLayer'));
+    await waitFor(() => expect(AnnotationLayer).toHaveBeenCalledTimes(2));
+
+    await press('Sign');
+
+    widgetLayers().forEach((layer) => expect(layer).toHaveAttribute('inert'));
+    expect(button('Download')).toBeEnabled();
+  });
 });

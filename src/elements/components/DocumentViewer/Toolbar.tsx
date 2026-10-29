@@ -12,6 +12,7 @@ export interface ToolbarAction {
   key: string;
   label: string;
   variant?: 'primary' | 'secondary';
+  disabled?: boolean;
   onClick: () => void;
 }
 
@@ -95,7 +96,7 @@ export default function Toolbar({
           <button
             key={action.key}
             type='button'
-            disabled={busy}
+            disabled={busy || action.disabled}
             onClick={action.onClick}
             css={
               action.variant === 'primary'

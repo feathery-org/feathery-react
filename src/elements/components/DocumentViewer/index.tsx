@@ -93,6 +93,23 @@ export interface ViewerDocument {
   name?: string;
 }
 
+// With `editor_close_on_action: false` a closing action leaves the screen open,
+// so the viewer tracks whether a later close completes the flow, whether the
+// envelopes were sent, and whether the DocuSign draft predates the latest edit.
+interface ReviewSession {
+  pendingCompletion: boolean;
+  sent: boolean;
+  editRevision: number;
+  draftedRevision: number | null;
+}
+
+const INITIAL_REVIEW_SESSION: ReviewSession = {
+  pendingCompletion: false,
+  sent: false,
+  editRevision: 0,
+  draftedRevision: null
+};
+
 export interface DocumentViewerPayload {
   documents: ViewerDocument[];
   expires_at: string;
@@ -112,6 +129,9 @@ interface DocumentViewerProps {
     envelopeAction: ReviewEnvelopeAction;
     // DocuSign sign only: save the envelope as a draft instead of sending it.
     draft: boolean;
+    // Replace the documents on the DocuSign draft this session already
+    // created, because the filler edited them since.
+    refreshDraft: boolean;
   }) => Promise<{ status?: string; message?: string } | void>;
   // Persist a PDF the filler edited in the viewer back to its envelope.
   // Called before finalize for every document with unsaved field edits, so
@@ -132,10 +152,6 @@ export default function DocumentViewer({
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // Keep the keydown listener (bound once) calling the latest setShow, which
-  // the parent passes as a fresh closure on every render.
-  const setShowRef = useRef(setShow);
-  setShowRef.current = setShow;
   // Dedicated body-level node so the viewer renders in its own subtree and the
   // rest of the page can be made `inert` while it is open (see the portal
   // effect below).
@@ -146,12 +162,24 @@ export default function DocumentViewer({
   // Key of the toolbar action currently running (spinner + disable-all), or
   // null when idle. Keys: 'primary', 'draft', 'download'.
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [session, setSession] = useState(INITIAL_REVIEW_SESSION);
+  const keepOpen = action.editor_close_on_action === false;
+  const draftIsCurrent = session.draftedRevision === session.editRevision;
+  // A close after a deferred completion finishes the flow; otherwise it
+  // cancels the review, as it always has.
+  const close = () =>
+    session.pendingCompletion ? onComplete() : setShow(false);
+  // Read by the once-bound Escape handler, which must call the latest close.
+  const closeRef = useRef(close);
+  closeRef.current = close;
   // Freeze the PDF widgets while an action runs. pdf.js only fires
   // onSetModified when the modified flag flips false→true, and during a save
   // it is already true — so an edit made mid-save never re-marks the doc
   // dirty, then saveDocument()'s finally resets the flag and the doc looks
   // clean. The edit would stay on screen but never be persisted.
-  const isInputLocked = busyKey !== null;
+  // Also frozen once the envelopes are sent: edits could no longer reach them.
+  // Not via readOnly, which would repaint the canvas under the live widgets.
+  const isInputLocked = busyKey !== null || session.sent;
   // A read-only editor shows the documents without the live form layer:
   // nothing is editable, so nothing dirties and nothing is saved back.
   const readOnly = !!action.editor_read_only;
@@ -246,7 +274,7 @@ export default function DocumentViewer({
         // pdfProxy.destroy() against a saveDocument() still in flight. The
         // toolbar's Back button applies the same gate.
         if (busyKeyRef.current !== null) return;
-        setShowRef.current(false);
+        closeRef.current();
       } else if (e.key === 'PageDown' || e.key === 'PageUp') {
         // Let focused inputs/textareas handle paging keys natively.
         if (isEditableTarget(e.target)) return;
@@ -268,8 +296,8 @@ export default function DocumentViewer({
       doc.removeEventListener('keydown', onKeyDown);
       previouslyFocused?.focus?.();
     };
-    // onNavigate is stable; setShow is read via ref, so the listener binds
-    // once and always calls the latest setShow.
+    // onNavigate is stable; close is read via ref, so the listener binds
+    // once and always calls the latest close.
   }, []);
 
   // The envelopes finalize acts on: every reviewed form document, in order.
@@ -300,7 +328,10 @@ export default function DocumentViewer({
     loadedDocs.current[pdfUrl] = pdfProxy;
     const storage = pdfProxy.annotationStorage;
     if (storage) {
-      storage.onSetModified = () => dirtyDocs.current.add(pdfUrl);
+      storage.onSetModified = () => {
+        dirtyDocs.current.add(pdfUrl);
+        setSession((s) => ({ ...s, editRevision: s.editRevision + 1 }));
+      };
       storage.onResetModified = () => dirtyDocs.current.delete(pdfUrl);
     }
     setPageCounts((prev) => ({ ...prev, [pdfUrl]: pdfProxy.numPages }));
@@ -383,13 +414,26 @@ export default function DocumentViewer({
       const result = await onFinalize?.({
         envelopes: reviewedEnvelopes,
         envelopeAction: TOOLBAR_ACTION_ENVELOPE_ACTION[toolbarAction],
-        draft: toolbarAction === 'draft'
+        draft: toolbarAction === 'draft',
+        refreshDraft:
+          (toolbarAction === 'draft' || toolbarAction === 'sign') &&
+          session.draftedRevision !== null &&
+          !draftIsCurrent
       });
       if (result?.status === 'error') {
         if (/expired/i.test(result.message ?? '')) setExpiredBanner(true);
         else setError(result.message ?? 'Something went wrong');
       } else if (closesEditor(toolbarAction, orderedToolbarActions)) {
-        onComplete();
+        // Continue is the only way forward, so it never stays open.
+        if (keepOpen && toolbarAction !== 'fill') {
+          setSession((s) => ({
+            ...s,
+            pendingCompletion: true,
+            sent: s.sent || toolbarAction === 'sign',
+            draftedRevision:
+              toolbarAction === 'draft' ? s.editRevision : s.draftedRevision
+          }));
+        } else onComplete();
       }
       // Otherwise the outcome has run (file downloaded, field saved) and the
       // filler stays here to reach the conclusive action.
@@ -409,6 +453,10 @@ export default function DocumentViewer({
         label: TOOLBAR_ACTION_LABELS[toolbarAction],
         variant:
           i === orderedToolbarActions.length - 1 ? 'primary' : 'secondary',
+        disabled:
+          toolbarAction === 'draft'
+            ? session.sent || draftIsCurrent
+            : toolbarAction === 'sign' && session.sent,
         onClick: () => finalizeWith(toolbarAction, toolbarAction)
       }))
     : [
@@ -440,7 +488,7 @@ export default function DocumentViewer({
     >
       <Toolbar
         title={VIEWER_TITLE}
-        onBack={() => setShow(false)}
+        onBack={close}
         actions={toolbarActions}
         busyKey={busyKey}
       />
