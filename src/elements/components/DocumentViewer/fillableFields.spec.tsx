@@ -464,6 +464,44 @@ describe('with editor_close_on_action false', () => {
     expect(button('Create Draft')).toBeEnabled();
   });
 
+  it('refreshes the next draft when the first one failed to report back', async () => {
+    const { onFinalize } = await renderKeepOpen();
+    onFinalize.mockRejectedValueOnce(new Error('Network error'));
+
+    await press('Create Draft');
+    expect(screen.getByRole('alert')).toHaveTextContent('Network error');
+    expect(button('Create Draft')).toBeEnabled();
+    edit();
+    await press('Create Draft');
+
+    expect(onFinalize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ draft: true, refreshDraft: true })
+    );
+  });
+
+  it('keeps the documents editable after a Sign held as a draft', async () => {
+    const { onFinalize, onSaveEnvelopeFile } = await renderKeepOpen();
+    onFinalize.mockResolvedValue({
+      status: 'complete',
+      docusign_status: 'created'
+    });
+
+    await press('Sign');
+    expect(button('Sign')).toBeEnabled();
+    expect(button('Create Draft')).toBeDisabled();
+    Array.from(featheryDoc().querySelectorAll('.annotationLayer')).forEach(
+      (layer) => expect(layer).not.toHaveAttribute('inert')
+    );
+    edit();
+    expect(button('Create Draft')).toBeEnabled();
+    await press('Sign');
+
+    expect(onFinalize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ envelopeAction: 'sign', refreshDraft: true })
+    );
+    expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(1);
+  });
+
   it('does not refresh on Sign when nothing changed since the draft', async () => {
     const { onFinalize } = await renderKeepOpen();
 

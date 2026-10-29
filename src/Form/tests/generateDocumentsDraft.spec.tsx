@@ -38,6 +38,10 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+const toastSpies = () =>
+  jest.requireMock('../components/ActionToast/useEnvelopeGenerationToast')
+    ._spies;
+
 it.each([
   [true, 'created', 'Saved as Draft'],
   [false, 'sent', 'Sent for Signature']
@@ -210,6 +214,67 @@ describe('a kept-open review screen', () => {
     });
   });
 
+  it('reports a Sign held as a draft and keeps it editable', async () => {
+    const state = await renderForm('keep-open-held-sign');
+    const heldResult = { ...signResult, docusign_status: 'created' };
+    state.client.finalizeEnvelopeReview.mockResolvedValue(heldResult);
+    const { flow } = await openFromRule(state);
+
+    await press('Sign');
+
+    expect(toastSpies().showEnvelopeOutcome).toHaveBeenCalledWith(
+      expect.any(String),
+      'Saved as Draft',
+      ['tpl-1']
+    );
+    expect(button('Sign')).toBeEnabled();
+    expect(button('Create Draft')).toBeDisabled();
+    fireEvent.click(button('Back'));
+    await expect(flow).resolves.toEqual({
+      ...heldResult,
+      reviewAction: 'sign'
+    });
+  });
+
+  it('lets the filler retry a close whose button flow failed', async () => {
+    const onAction = jest
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Flow failed'));
+    const id = 'keep-open-flow-fails';
+    render(<JSForm formId='f1' _internalId={id} onAction={onAction} />);
+    await screen.findByTestId('btn');
+    const state = (setFormInternalState as jest.Mock).mock.calls.find(
+      ([formId, values]) => formId === id && values.generateEnvelopeFlow
+    )[1];
+    state.client.generateEnvelopes = jest.fn().mockResolvedValue(reviewPayload);
+    state.client.finalizeEnvelopeReview = jest
+      .fn()
+      .mockResolvedValue(draftResult);
+    GridMod._spies.actions = [
+      { type: 'open_fuser_envelopes', ...keepOpenAction },
+      { type: 'url', url: 'example.com/next', open_tab: true }
+    ];
+    GridMod._spies.submit = false;
+
+    fireEvent.click(screen.getByTestId('btn'));
+    await screen.findByRole('button', { name: 'Create Draft' });
+    await press('Create Draft');
+    fireEvent.click(button('Back'));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Flow failed')
+    );
+    expect(BrowserMod.openTab).not.toHaveBeenCalled();
+    fireEvent.click(button('Back'));
+
+    await waitFor(() =>
+      expect(BrowserMod.openTab).toHaveBeenCalledWith(
+        'https://example.com/next'
+      )
+    );
+  });
+
   it('continues a button flow once on close', async () => {
     await renderForm('keep-open-button');
     GridMod._spies.actions = [
@@ -233,3 +298,51 @@ describe('a kept-open review screen', () => {
     expect(BrowserMod.openTab).toHaveBeenCalledTimes(1);
   });
 });
+
+it.each([
+  ['created', 'Saved as Draft'],
+  ['sent', 'Sent for Signature'],
+  [undefined, 'Sent for Signature']
+])(
+  'labels a review-screen Sign whose DocuSign status is %s',
+  async (docusignStatus, label) => {
+    const id = `button-sign-${docusignStatus}`;
+    render(<JSForm formId='f1' _internalId={id} />);
+    await screen.findByTestId('btn');
+    const state = (setFormInternalState as jest.Mock).mock.calls.find(
+      ([formId, values]) => formId === id && values.generateEnvelopeFlow
+    )[1];
+    state.client.generateEnvelopes = jest.fn().mockResolvedValue({
+      documents: [
+        { type: 'form', pdf_url: 'http://x/a.pdf', envelope_id: 'env-1' }
+      ],
+      expires_at: '2999-01-01T00:00:00Z'
+    });
+    state.client.finalizeEnvelopeReview = jest.fn().mockResolvedValue({
+      docusign_envelope_id: 'ds-1',
+      status: 'complete',
+      docusign_status: docusignStatus
+    });
+    GridMod._spies.actions = [
+      {
+        type: 'open_fuser_envelopes',
+        documents: ['tpl-1'],
+        envelope_action: 'open_in_editor',
+        editor_toolbar_actions: ['sign'],
+        sign_method: 'docusign'
+      }
+    ];
+    GridMod._spies.submit = false;
+
+    fireEvent.click(screen.getByTestId('btn'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign' }));
+
+    await waitFor(() =>
+      expect(toastSpies().showEnvelopeOutcome).toHaveBeenCalledWith(
+        expect.any(String),
+        label,
+        ['tpl-1']
+      )
+    );
+  }
+);
