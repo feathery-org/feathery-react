@@ -393,7 +393,7 @@ export class OfflineRequestHandler {
   // Whether the current user still has an answer write queued, optionally for
   // one step. Rows from another user of a shared device, or from SDK builds
   // that did not record the user, still replay but never hold this user back.
-  private async hasQueuedAnswerWrite(stepKey?: string): Promise<boolean> {
+  public async hasQueuedAnswerWrite(stepKey?: string): Promise<boolean> {
     const { userId } = initInfo();
     if (!userId) return false;
     const queuedRequests = await this.readQueuedRequests();

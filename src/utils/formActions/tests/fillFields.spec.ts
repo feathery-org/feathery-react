@@ -1,6 +1,10 @@
 import internalState from '../../internalState';
 import { fillFields } from '../fillFields';
 import * as formActionUtils from '../utils';
+import {
+  mountFieldInput,
+  registerFieldInputChange
+} from '../../../Form/fieldInputPresentation';
 
 // The real first-interaction release needs a configured client, covered in utils.spec
 let markInteraction: jest.SpyInstance;
@@ -82,6 +86,87 @@ describe('fillFields', () => {
     expect(state.formActions.changeValue).toHaveBeenCalledTimes(1);
     expect(runFieldChangeLogic.mock.calls[0][0].servar.key).toBe('name');
     expect(settled).toBe(true);
+  });
+
+  it('preserves a different existing answer when applying an early answer', async () => {
+    const state = makeState(jest.fn());
+    state.fields.name.value = 'Casey';
+    const result: any = await fillFields(formUuid, [
+      { key: 'name', value: 'Ada', onlyIfEmpty: true }
+    ]);
+    expect(result.rejected).toEqual([
+      expect.objectContaining({ key: 'name', reason: 'already_answered' })
+    ]);
+    expect(state.formActions.changeValue).not.toHaveBeenCalled();
+    const identical: any = await fillFields(formUuid, [
+      { key: 'name', value: 'Casey', onlyIfEmpty: true }
+    ]);
+    expect(identical.applied).toEqual([
+      expect.objectContaining({ key: 'name', value: 'Casey' })
+    ]);
+  });
+
+  it.each([
+    ['checkbox', false, true],
+    ['integer_field', 0, 3]
+  ])(
+    'keeps an existing %s answer including false or zero',
+    async (type, previous, next) => {
+      const state = makeState(jest.fn());
+      state.currentStep.servar_fields[0].servar.type = type;
+      state.fields.name.value = previous;
+      const result: any = await fillFields(formUuid, [
+        { key: 'name', value: next, onlyIfEmpty: true }
+      ]);
+      expect(result.rejected[0]?.reason).toBe('already_answered');
+      expect(state.formActions.changeValue).not.toHaveBeenCalled();
+    }
+  );
+
+  it('flushes a pending card edit before applying the conversation answer', async () => {
+    const state = makeState(jest.fn());
+    const events: string[] = [];
+    state.formActions.awaitChangeRules = jest.fn(async () => {
+      events.push('rules');
+    });
+    state.formActions.changeValue.mockImplementation(() => {
+      events.push('write');
+      return true;
+    });
+    const release = mountFieldInput(
+      formUuid,
+      'name',
+      0,
+      document.createElement('div')
+    );
+    const unregister = registerFieldInputChange(formUuid, 'name', 0, () =>
+      events.push('flush')
+    );
+    try {
+      await fillFields(formUuid, [{ key: 'name', value: 'Ada' }]);
+      expect(events).toEqual(['flush', 'rules', 'write']);
+    } finally {
+      unregister();
+      release();
+    }
+  });
+
+  it('does not write over a card that has not finished loading', async () => {
+    const state = makeState(jest.fn());
+    const release = mountFieldInput(
+      formUuid,
+      'name',
+      0,
+      document.createElement('div')
+    );
+    try {
+      await expect(
+        fillFields(formUuid, [{ key: 'name', value: 'Ada' }])
+      ).rejects.toThrow('still loading');
+      expect(state.formActions.changeValue).not.toHaveBeenCalled();
+    } finally {
+      release();
+    }
   });
 
   it('counts a fill as the person interacting with the form', async () => {
@@ -313,10 +398,9 @@ describe('fillFields value checks', () => {
       { key: 'age', value: null }
     ]);
 
-    expect(state.formActions.changeValue.mock.calls.map((c: any) => c[0])).toEqual([
-      [],
-      ''
-    ]);
+    expect(
+      state.formActions.changeValue.mock.calls.map((c: any) => c[0])
+    ).toEqual([[], '']);
     expect(result.applied.map((f: any) => f.value)).toEqual([[], '']);
   });
 
@@ -339,7 +423,13 @@ describe('fillFields value checks', () => {
 
   it('requires a time for a date with a time', async () => {
     makeState(
-      [{ key: 'meeting', type: 'date_selector', metadata: { choose_time: true } }],
+      [
+        {
+          key: 'meeting',
+          type: 'date_selector',
+          metadata: { choose_time: true }
+        }
+      ],
       { meeting: '' }
     );
 
@@ -354,7 +444,13 @@ describe('fillFields value checks', () => {
 
   it('stores a date with a time in the form date-time format', async () => {
     const state = makeState(
-      [{ key: 'meeting', type: 'date_selector', metadata: { choose_time: true } }],
+      [
+        {
+          key: 'meeting',
+          type: 'date_selector',
+          metadata: { choose_time: true }
+        }
+      ],
       { meeting: '' }
     );
 
@@ -463,7 +559,9 @@ describe('fillFields value checks', () => {
       ]);
 
       expect(result.rejected).toEqual([]);
-      expect(state.formActions.changeValue.mock.calls.map((c: any) => c[0])).toEqual([
+      expect(
+        state.formActions.changeValue.mock.calls.map((c: any) => c[0])
+      ).toEqual([
         { q1: ['Good'], q2: ['Good'] },
         { q1: ['Good'], q2: ['Good'] },
         { q2: ['Good'] }
@@ -494,10 +592,9 @@ describe('fillFields value checks', () => {
       ]);
 
       expect(result.rejected).toEqual([]);
-      expect(state.formActions.changeValue.mock.calls.map((c: any) => c[0])).toEqual([
-        { q1: ['Bad'], q2: ['Bad'] },
-        { q2: ['Bad'] }
-      ]);
+      expect(
+        state.formActions.changeValue.mock.calls.map((c: any) => c[0])
+      ).toEqual([{ q1: ['Bad'], q2: ['Bad'] }, { q2: ['Bad'] }]);
     });
 
     it('fills around a read-only answer that is not one of the columns', async () => {
@@ -628,7 +725,8 @@ describe('fillFields unique repeat options', () => {
         key: 'plan',
         repeatIndex: 1,
         reason: 'invalid_value',
-        message: "'pro' is already chosen in another row. Still open: basic, max."
+        message:
+          "'pro' is already chosen in another row. Still open: basic, max."
       }
     ]);
   });

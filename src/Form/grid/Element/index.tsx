@@ -1,5 +1,19 @@
-import React, { useCallback, useMemo } from 'react';
+import React, {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore
+} from 'react';
+import { createPortal } from 'react-dom';
+import {
+  fieldInputContainer,
+  fieldInputCheckboxRenderer,
+  registerFieldInputChange,
+  subscribeFieldInput
+} from '../../fieldInputPresentation';
 import Elements from '../../../elements';
+import type { CheckboxRenderer } from '../../../elements/fields/CheckboxGroupField';
 import {
   clearFilePathMapEntry,
   setFormElementError
@@ -41,7 +55,27 @@ import {
 } from '../../../utils/addressState';
 import { asciiElement, optionValue } from '../../../utils/asciiOptions';
 
-const Element = ({ node, form }: any) => {
+const NativeElement = ({
+  node,
+  form,
+  inlineCalendar = false,
+  renderCheckbox
+}: {
+  node: any;
+  form: any;
+  inlineCalendar?: boolean;
+  renderCheckbox?: CheckboxRenderer;
+}) => {
+  const flushChange = useRef<() => void>(() => {});
+  useLayoutEffect(() => {
+    if (!inlineCalendar || !node.servar?.key) return;
+    return registerFieldInputChange(
+      form.formInstanceId,
+      node.servar.key,
+      node.repeat ?? 0,
+      () => flushChange.current()
+    );
+  }, [inlineCalendar, form.formInstanceId, node.servar?.key, node.repeat]);
   const el = useMemo(
     () => asciiElement(node, form.formSettings.asciiOnly),
     [
@@ -238,6 +272,7 @@ const Element = ({ node, form }: any) => {
     });
 
     const debouncedOnChange = useCallback(debounce(onChange, 500), []);
+    flushChange.current = () => debouncedOnChange.flush();
 
     const required = isFieldActuallyRequired(el, activeStep);
 
@@ -317,6 +352,7 @@ const Element = ({ node, form }: any) => {
         return (
           <Elements.DateSelectorField
             {...fieldProps}
+            inlineCalendar={inlineCalendar}
             value={fieldVal}
             onComplete={(val: any) => {
               const change = changeValue(val, el, index);
@@ -523,6 +559,7 @@ const Element = ({ node, form }: any) => {
         return (
           <Elements.CheckboxGroupField
             {...fieldProps}
+            renderCheckbox={renderCheckbox}
             fieldVal={fieldVal}
             otherVal={otherVal}
             onChange={(e: any) => {
@@ -754,5 +791,33 @@ const Element = ({ node, form }: any) => {
 
   return null;
 };
+
+function Element({ node, form }: any) {
+  const key = node.servar?.key ?? '';
+  const repeatIndex = node.repeat ?? 0;
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      subscribeFieldInput(form.formInstanceId, key, repeatIndex, listener),
+    [form.formInstanceId, key, repeatIndex]
+  );
+  const getContainer = useCallback(
+    () => fieldInputContainer(form.formInstanceId, key, repeatIndex),
+    [form.formInstanceId, key, repeatIndex]
+  );
+  const container = useSyncExternalStore(subscribe, getContainer, () => null);
+  const input = (
+    <NativeElement
+      node={node}
+      form={form}
+      inlineCalendar={Boolean(container)}
+      renderCheckbox={
+        container
+          ? fieldInputCheckboxRenderer(form.formInstanceId, key, repeatIndex)
+          : undefined
+      }
+    />
+  );
+  return container ? createPortal(input, container) : input;
+}
 
 export default Element;

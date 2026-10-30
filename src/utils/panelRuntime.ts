@@ -6,7 +6,8 @@ import {
   getRepeatedContainer,
   getRepeatedContainers
 } from './repeat';
-import { getPositionKey } from './hideAndRepeats';
+import { getMatchingHideIfGroups, getPositionKey } from './hideAndRepeats';
+import type { ResolvedComparisonRule } from './logic';
 import { getDefaultFieldValue } from './fieldHelperFunctions';
 import { isButtonDisabled } from './button';
 import { ACTION_BACK, ACTION_NEXT } from './elementActions';
@@ -20,10 +21,13 @@ import {
 } from './sensitiveFieldValues';
 import { getImageAltText } from './accessibility';
 import type { TableRowRead, TableSelection } from './formActions/tables';
+import { presentedFieldInputs } from '../Form/fieldInputPresentation';
 
 export type PanelRuntimeFieldEntry = {
   key: string;
+  label?: string;
   type: string;
+  signatureMethods?: ('draw' | 'type')[];
   value: unknown;
   visible: boolean;
   disabled: boolean;
@@ -80,6 +84,14 @@ type PanelRuntimeElementEntry =
       navigatesTo?: string | null;
       hasLogicRules?: boolean;
       repeatContainerId?: string;
+      hiddenBy?: Array<
+        Array<{
+          fieldKey: string;
+          fieldType: ResolvedComparisonRule['field_type'];
+          comparison: ResolvedComparisonRule['comparison'];
+          values: unknown[];
+        }>
+      >;
     }
   | {
       type: 'container';
@@ -128,7 +140,10 @@ type PanelRuntimeTableEntry = {
 };
 
 export type PanelRuntimeSnapshot = {
+  supportsConditionalFill?: boolean;
   currentStep: { id: string; key: string };
+  formCompleted: boolean;
+  presentedFields: { key: string; repeatIndex: number }[];
   previousStepName?: string;
   activeStepKey: string;
   navigationSurfaces: PanelRuntimeNavigationSurface[];
@@ -314,7 +329,13 @@ const elementHasLogicRules = (
 
 export const getPanelRuntimeSnapshot = (
   formId: string,
-  { masked = false }: { masked?: boolean } = {}
+  {
+    masked = false,
+    includeVisibilityConditions = false
+  }: {
+    masked?: boolean;
+    includeVisibilityConditions?: boolean;
+  } = {}
 ): PanelRuntimeSnapshot | null => {
   const state = internalState[formId];
   if (!state || !state.currentStep) return null;
@@ -402,6 +423,12 @@ export const getPanelRuntimeSnapshot = (
     const hasErrorRows = Object.keys(errorRows).length > 0;
     const servar = field.servar ?? {};
     const meta = servar.metadata ?? {};
+    let signatureMethods: PanelRuntimeFieldEntry['signatureMethods'];
+    if (servar.type === 'signature') {
+      signatureMethods = ['draw', 'type'];
+      if (meta.sign_methods === 'draw' || meta.sign_methods === 'type')
+        signatureMethods = [meta.sign_methods];
+    }
     const repeated = !!servar.repeated;
     const repeatAncestor = repeated
       ? getRepeatedContainer(step as any, field)
@@ -489,7 +516,11 @@ export const getPanelRuntimeSnapshot = (
     }
     return {
       key: servar.key,
+      ...(typeof servar.name === 'string' && servar.name
+        ? { label: servar.name }
+        : {}),
       type: servar.type,
+      ...(signatureMethods ? { signatureMethods } : {}),
       value: shown(servar.type, sanitizeRuntimeValue(value)),
       visible,
       disabled,
@@ -624,16 +655,43 @@ export const getPanelRuntimeSnapshot = (
       // Submit without a navigation action cannot move pages
       navigatesTo = null;
     }
+    const visible = visibilityFor(el);
+    const hiddenBy =
+      includeVisibilityConditions &&
+      !visible &&
+      actionTypes.includes(ACTION_NEXT) &&
+      !buttonRepeatContainer &&
+      el.show_logic === false &&
+      !(
+        el.styles?.visibility === 'hidden' &&
+        el.mobile_styles?.visibility !== 'visible'
+      )
+        ? getMatchingHideIfGroups(el.hide_ifs ?? [], undefined, formId)
+            .filter((group) => group.length > 0)
+            .map((group) =>
+              group.map((rule) => ({
+                fieldKey: rule.field_key,
+                fieldType: rule.field_type,
+                comparison: rule.comparison,
+                values: rule.values.map((value) =>
+                  value !== null && typeof value === 'object'
+                    ? { fieldKey: value.field_key, fieldType: value.field_type }
+                    : shown(servarTypes.get(rule.field_key), value)
+                )
+              }))
+            )
+        : [];
     currentStepElements.push({
       type: 'button',
       id: el.id ?? '',
       text: resolveText(raw),
-      visible: visibilityFor(el),
+      visible,
       disabled: isButtonDisabled(el, step, visiblePositions, formReadOnly),
       submit: !!props.submit,
       actions,
       ...(navigatesTo !== undefined ? { navigatesTo } : {}),
       ...(hasLogicRules ? { hasLogicRules: true } : {}),
+      ...(hiddenBy.length ? { hiddenBy } : {}),
       ...(buttonRepeatContainer
         ? { repeatContainerId: buttonRepeatContainer }
         : {})
@@ -767,10 +825,19 @@ export const getPanelRuntimeSnapshot = (
 
   return {
     currentStep: { id: step.id, key: step.key },
+    supportsConditionalFill: true,
+    formCompleted: Boolean(
+      initState.formSessions[state.client?.formKey]?.form_completed
+    ),
     previousStepName: state.previousStepName || undefined,
     activeStepKey: step.key,
     navigationSurfaces: collectNavigationSurfaces(state),
     currentStepFields,
+    presentedFields: presentedFieldInputs(formId).filter((target) =>
+      currentStepFields.some(
+        (field) => field.key === target.key && field.visible && !field.disabled
+      )
+    ),
     currentStepElements,
     currentStepTables,
     values,

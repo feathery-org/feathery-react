@@ -35,7 +35,7 @@ jest.mock('../useDateLocale', () => ({
 }));
 
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, waitFor, screen } from '@testing-library/react';
 import DateSelectorField from '../index';
 import {
   createDateSelectorElement,
@@ -56,6 +56,97 @@ import {
   getDateISO,
   formatDateForInput
 } from './test-utils';
+
+describe('inline date questions', () => {
+  it('shows a calendar and applies a permitted day without waiting for a popover to close', async () => {
+    const onComplete = jest.fn();
+    const element = createDateSelectorElement('date', {
+      max_date: '2020-10-20'
+    });
+    const props = createDateSelectorProps(element, {
+      value: '2020-10-15',
+      inlineCalendar: true,
+      onComplete
+    });
+    const { container } = render(<DateSelectorField {...props} />);
+    expect(
+      container.querySelector('.feathery-inline-date-picker')
+    ).toBeTruthy();
+    expect(container.querySelector('input')).toBeNull();
+
+    const unavailable = container.querySelector(
+      '.react-datepicker__day--021:not(.react-datepicker__day--outside-month)'
+    );
+    if (!unavailable) throw new Error('The October calendar is missing a day.');
+    expect(unavailable).toHaveClass('react-datepicker__day--disabled');
+    fireEvent.click(unavailable);
+    expect(onComplete).not.toHaveBeenCalled();
+
+    const permitted = container.querySelector(
+      '.react-datepicker__day--020:not(.react-datepicker__day--outside-month)'
+    );
+    if (!permitted) throw new Error('The October calendar is missing a day.');
+    fireEvent.click(permitted);
+    await waitFor(() => expect(onComplete).toHaveBeenCalledWith('2020-10-20'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear date' }));
+    expect(onComplete).toHaveBeenLastCalledWith('');
+  });
+
+  it('lets a person jump to a past year and month', async () => {
+    const onComplete = jest.fn();
+    const element = createDateSelectorElement();
+    const props = createDateSelectorProps(element, {
+      value: '2020-10-15',
+      inlineCalendar: true,
+      onComplete
+    });
+    const { container } = render(<DateSelectorField {...props} />);
+
+    fireEvent.change(screen.getByLabelText('Year'), {
+      target: { value: '2019' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'September 2019' }));
+    const day = container.querySelector(
+      '.react-datepicker__day--012:not(.react-datepicker__day--outside-month)'
+    );
+    if (!day) throw new Error('The September calendar is missing a day.');
+    fireEvent.click(day);
+    await waitFor(() => expect(onComplete).toHaveBeenCalledWith('2019-09-12'));
+  });
+
+  it('moves keyboard focus to the next day and selects it', async () => {
+    const onComplete = jest.fn();
+    const element = createDateSelectorElement();
+    const props = createDateSelectorProps(element, {
+      value: '2020-10-15',
+      inlineCalendar: true,
+      onComplete
+    });
+    const { container } = render(<DateSelectorField {...props} />);
+    const current = container.querySelector<HTMLElement>(
+      '.react-datepicker__day--015:not(.react-datepicker__day--outside-month)'
+    );
+    const next = container.querySelector<HTMLElement>(
+      '.react-datepicker__day--016:not(.react-datepicker__day--outside-month)'
+    );
+    if (!current || !next) throw new Error('The October days are missing.');
+    current.focus();
+    fireEvent.keyDown(current, { key: 'ArrowRight' });
+    await waitFor(() => expect(next).toHaveFocus());
+    fireEvent.keyDown(next, { key: 'Enter' });
+    await waitFor(() => expect(onComplete).toHaveBeenCalledWith('2020-10-16'));
+  });
+
+  it('keeps the existing picker for questions that also require a time', () => {
+    const element = createDateSelectorElement('date', { choose_time: true });
+    const props = createDateSelectorProps(element, { inlineCalendar: true });
+    const { container } = render(<DateSelectorField {...props} />);
+
+    expect(container.querySelector('.feathery-inline-date-picker')).toBeNull();
+    expect(container.querySelector('input')).toBeTruthy();
+  });
+});
 
 describe('DateSelectorField', () => {
   beforeEach(() => {

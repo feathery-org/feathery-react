@@ -8,7 +8,7 @@ import DateSelectorStyles, {
   PORTAL_CONTAINER_CLASS
 } from './styles';
 import { inputBoxAttrs, resetStyles } from '../../styles';
-import { parseISO, add } from 'date-fns';
+import { parseISO, add, format } from 'date-fns';
 import useBorder from '../../components/useBorder';
 import {
   featheryDoc,
@@ -19,6 +19,7 @@ import {
 import { useCustomDateLocale } from './useDateLocale';
 import { formatDateString } from './utils';
 import DatePicker from 'react-datepicker';
+import type { ReactDatePickerCustomHeaderProps } from 'react-datepicker';
 import { IMask, IMaskInput } from 'react-imask';
 
 type InternalDate = Date | null;
@@ -44,6 +45,7 @@ export interface DateSelectorProps {
   setRef: any;
   value: string;
   inlineError?: any;
+  inlineCalendar?: boolean;
   children?: any;
 }
 
@@ -91,9 +93,12 @@ function DateSelectorField({
   setRef = () => {},
   value = '',
   inlineError,
+  inlineCalendar = false,
   children
 }: DateSelectorProps) {
   const servarMeta = element.servar.metadata;
+  const showInlineCalendar =
+    inlineCalendar && !servarMeta.choose_time && !disabled && !editMode;
 
   const pickerRef = useRef<any>(undefined);
   const [internalDate, setInternalDate] = useState<InternalDate>(null);
@@ -135,6 +140,35 @@ function DateSelectorField({
     if (isEmbedded && isMobile) {
       setCurPointerY(e.clientY);
     }
+  };
+
+  const handleInlineKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (
+      !showInlineCalendar ||
+      !target.classList.contains('react-datepicker__day') ||
+      ![
+        'ArrowLeft',
+        'ArrowRight',
+        'ArrowUp',
+        'ArrowDown',
+        'Home',
+        'End',
+        'PageUp',
+        'PageDown'
+      ].includes(event.key)
+    )
+      return;
+
+    // The inline picker updates its keyboard date without always moving focus.
+    requestAnimationFrame(() => {
+      if (target.ownerDocument.activeElement !== target) return;
+      containerRef.current
+        ?.querySelector<HTMLElement>(
+          '.feathery-inline-date-picker .react-datepicker__day[tabindex="0"]'
+        )
+        ?.focus();
+    });
   };
 
   useEffect(() => {
@@ -230,6 +264,92 @@ function DateSelectorField({
   let dateMask = servarMeta.display_format ? 'dd/MM/yyyy' : 'MM/dd/yyyy';
   const timeMask = servarMeta.time_format === '24hr' ? 'HH:mm' : 'hh:mm aa';
   if (servarMeta.choose_time) dateMask = `${dateMask} ${timeMask}`;
+  const maxDate = editMode
+    ? undefined
+    : parseDateConfig(servarMeta.max_date) ??
+      (servarMeta.no_future ? new Date() : undefined);
+  const minDate = editMode
+    ? undefined
+    : parseDateConfig(servarMeta.min_date) ??
+      (servarMeta.no_past ? new Date() : undefined);
+
+  const renderInlineHeader = ({
+    date,
+    changeMonth,
+    changeYear,
+    decreaseMonth,
+    increaseMonth,
+    prevMonthButtonDisabled,
+    nextMonthButtonDisabled
+  }: ReactDatePickerCustomHeaderProps) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstMonth = Math.max(0, Math.min(month - 2, 7));
+    const firstYear = Math.min(minDate?.getFullYear() ?? 1900, year);
+    const lastYear = Math.max(maxDate?.getFullYear() ?? 2100, year);
+    return (
+      <div className='feathery-inline-calendar-header'>
+        <div className='feathery-inline-calendar-months'>
+          <button
+            type='button'
+            aria-label='Previous month'
+            disabled={prevMonthButtonDisabled}
+            onClick={decreaseMonth}
+          >
+            ‹
+          </button>
+          {Array.from({ length: 5 }, (_, index) => firstMonth + index).map(
+            (monthIndex) => {
+              const firstDay = new Date(year, monthIndex, 1);
+              const lastDay = new Date(year, monthIndex + 1, 0, 23, 59, 59);
+              const unavailable =
+                (!!minDate && lastDay < minDate) ||
+                (!!maxDate && firstDay > maxDate);
+              const label = format(firstDay, 'LLLL', { locale });
+              return (
+                <button
+                  key={monthIndex}
+                  type='button'
+                  aria-label={`${label} ${year}`}
+                  aria-pressed={monthIndex === month}
+                  data-distant={Math.abs(monthIndex - month) > 1 || undefined}
+                  disabled={unavailable}
+                  onClick={() => changeMonth(monthIndex)}
+                >
+                  {label}
+                </button>
+              );
+            }
+          )}
+          <button
+            type='button'
+            aria-label='Next month'
+            disabled={nextMonthButtonDisabled}
+            onClick={increaseMonth}
+          >
+            ›
+          </button>
+        </div>
+        <label className='feathery-inline-calendar-year'>
+          <span>Year</span>
+          <select
+            aria-label='Year'
+            value={year}
+            onChange={(event) => changeYear(Number(event.target.value))}
+          >
+            {Array.from(
+              { length: lastYear - firstYear + 1 },
+              (_, index) => firstYear + index
+            ).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -244,6 +364,7 @@ function DateSelectorField({
       }}
       {...elementProps}
       onPointerDown={handlePointerDown}
+      onKeyDown={handleInlineKeyDown}
     >
       {children}
       {fieldLabel}
@@ -276,7 +397,7 @@ function DateSelectorField({
         }}
         {...inputBoxAttrs(element.servar.type)}
       >
-        {customBorder}
+        {!showInlineCalendar && customBorder}
         <DateSelectorStyles />
         <DatePicker
           id={element.servar.key}
@@ -287,6 +408,13 @@ function DateSelectorField({
           // @See: https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion
           autoComplete='new-password'
           locale={locale}
+          inline={showInlineCalendar}
+          calendarClassName={
+            showInlineCalendar ? 'feathery-inline-date-picker' : undefined
+          }
+          renderCustomHeader={
+            showInlineCalendar ? renderInlineHeader : undefined
+          }
           timeCaption={translation.time_label}
           preventOpenOnFocus={isMobile}
           onCalendarOpen={handleCalendarOpen}
@@ -298,7 +426,7 @@ function DateSelectorField({
             onDateChange(internalDate, true);
           }}
           onSelect={(date) => onDateChange(date)} // when day is clicked
-          onChange={(date) => onDateChange(date)} // only when value has changed
+          onChange={(date) => onDateChange(date, showInlineCalendar)}
           onFocus={(e: any) => {
             // select all text on focus
             e.target.select();
@@ -316,25 +444,17 @@ function DateSelectorField({
           timeIntervals={servarMeta.time_interval || 30}
           dateFormat={dateMask}
           timeFormat={timeMask}
-          maxDate={
-            editMode
-              ? undefined
-              : parseDateConfig(servarMeta.max_date) ??
-                (servarMeta.no_future ? new Date() : undefined)
-          }
-          minDate={
-            editMode
-              ? undefined
-              : parseDateConfig(servarMeta.min_date) ??
-                (servarMeta.no_past ? new Date() : undefined)
-          }
+          maxDate={maxDate}
+          minDate={minDate}
           showMonthDropdown
           showYearDropdown
           forceShowMonthNavigation={false}
           dropdownMode='select'
           // Open up calendar as a modal in mobile
-          withPortal={isMobile}
-          portalId={isMobile ? 'feathery-portal' : undefined}
+          withPortal={isMobile && !showInlineCalendar}
+          portalId={
+            isMobile && !showInlineCalendar ? 'feathery-portal' : undefined
+          }
           aria-label={element.properties.aria_label}
           css={{
             height: '100%',
@@ -359,13 +479,24 @@ function DateSelectorField({
             />
           }
         />
-        <Placeholder
-          value={value}
-          element={element}
-          responsiveStyles={responsiveStyles}
-          inputFocused={focused}
-          repeatIndex={repeatIndex}
-        />
+        {showInlineCalendar && internalDate && (
+          <button
+            type='button'
+            className='feathery-inline-calendar-clear'
+            onClick={() => onDateChange(null, true)}
+          >
+            Clear date
+          </button>
+        )}
+        {!showInlineCalendar && (
+          <Placeholder
+            value={value}
+            element={element}
+            responsiveStyles={responsiveStyles}
+            inputFocused={focused}
+            repeatIndex={repeatIndex}
+          />
+        )}
         <InlineTooltip
           containerRef={containerRef}
           id={element.id}

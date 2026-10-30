@@ -19,6 +19,8 @@ export type ClickElementResult =
   | {
       ok: true;
       navigated: { fromStepKey: string; toStepKey: string } | null;
+      // The native session marks completion only after its completion request succeeds.
+      formCompleted?: true;
       buttonError?: string;
       fieldErrors?: InlineErrorReport[];
     }
@@ -169,10 +171,12 @@ export async function clickElement(
     typeof repeatIndex === 'number'
       ? { ...found.element, repeat: repeatIndex }
       : found.element;
+  let nativeButtonError: string | undefined;
 
   try {
     if (found.elementType === 'button') {
-      await handlers.buttonOnClick(elementForDispatch);
+      const outcome = await handlers.buttonOnClick(elementForDispatch);
+      nativeButtonError = outcome?.buttonError;
     } else {
       // Capture ancestors before the child's action runs, it may navigate
       const ancestors = findClickableAncestorSubgrids(
@@ -217,12 +221,15 @@ export async function clickElement(
     found.elementType === 'button' &&
     e.key === elementId &&
     (e.repeatIndex === undefined || e.repeatIndex === repeatIndex);
-  const buttonError = newErrors.find(isOwnError)?.message;
+  const buttonError = nativeButtonError || newErrors.find(isOwnError)?.message;
   const fieldErrors = newErrors.filter((e) => !isOwnError(e));
 
   return {
     ok: true,
     navigated: toStepKey !== fromStepKey ? { fromStepKey, toStepKey } : null,
+    ...(initState.formSessions[state.client?.formKey]?.form_completed
+      ? { formCompleted: true as const }
+      : {}),
     ...(buttonError ? { buttonError } : {}),
     ...(fieldErrors.length > 0 ? { fieldErrors } : {})
   };

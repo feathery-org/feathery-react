@@ -45,11 +45,13 @@ export function isButtonDisabled(
     const elementsHaveValues =
       storeElements.length === 0 ||
       storeElements.some(({ properties }: any) =>
-        (properties.actions ?? []).some(
-          (action: any) =>
+        (properties.actions ?? []).some((action: any) => {
+          const value = fieldValues[action.custom_store_field_key];
+          return (
             action.type === ACTION_STORE_FIELD &&
-            fieldValues[action.custom_store_field_key]
-        )
+            (Boolean(value) || value === false || value === 0)
+          );
+        })
       );
     disabled = fieldsMissingValue || !elementsHaveValues;
   }

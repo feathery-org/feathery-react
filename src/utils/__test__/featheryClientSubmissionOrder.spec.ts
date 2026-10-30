@@ -1,7 +1,13 @@
 import FeatheryClient, { API_URL } from '../featheryClient';
-import { featheryWindow } from '../browser';
+import { featheryDoc, featheryWindow } from '../browser';
 import { FetchError } from '@feathery/client-utils';
 import { FEATHERY_INTERACTION_EVENT } from '../interactionState';
+import { FieldInputValidationError, getFormContext } from '../formContext';
+import {
+  mountFieldInput,
+  registerFieldInputChange
+} from '../../Form/fieldInputPresentation';
+import internalState, { setFormInternalState } from '../internalState';
 import {
   FakeRequest,
   fakeResponse,
@@ -25,21 +31,32 @@ jest.mock('@feathery/client-utils', () => ({
   setRequestHeaderProvider: jest.fn()
 }));
 
-jest.mock('../init', () => ({
-  initInfo: () => ({ sdkKey: 'key', userId: 'user' }),
-  initFormsPromise: Promise.resolve(),
-  initState: { defaultErrors: {}, language: '', formSessions: {} },
-  fieldValues: {},
-  filePathMap: {},
-  fileDeduplicationCount: {},
-  fileRetryStatus: {},
-  restoredFileKeys: new Set(),
-  setFieldValues: () => {},
-  normalizeKnownAsciiValues: (values: Record<string, any>) => values,
-  markStepCompleted: () => {},
-  registerKnownFieldKeys: () => {},
-  registerTextVariableFields: () => {}
-}));
+jest.mock('../init', () => {
+  const state = {
+    sdkKey: 'key',
+    userId: 'user',
+    defaultErrors: {},
+    language: '',
+    formSessions: {},
+    renderCallbacks: {}
+  };
+  return {
+    initInfo: () => state,
+    initFormsPromise: Promise.resolve(),
+    initState: state,
+    fieldValues: {},
+    filePathMap: {},
+    fileDeduplicationCount: {},
+    fileRetryStatus: {},
+    restoredFileKeys: new Set(),
+    setFieldValues: () => {},
+    normalizeKnownAsciiValues: (values: Record<string, any>) => values,
+    markStepCompleted: () => {},
+    getCompletedStepKeys: () => new Set(),
+    registerKnownFieldKeys: () => {},
+    registerTextVariableFields: () => {}
+  };
+});
 
 describe('step save and completion ordering', () => {
   let originalFetch: any;
@@ -85,6 +102,149 @@ describe('step save and completion ordering', () => {
     retryAttempts: 4,
     ...row
   });
+
+  it.each([
+    'visible',
+    'hidden',
+    'hidden-strict',
+    'step-change',
+    'tool-unmounted',
+    'required'
+  ])(
+    'saves an edited chat input against its committed rules (%s)',
+    async (state) => {
+      // Continue can be the first interaction, outside the native form DOM.
+      mockInteraction.isDetected = false;
+      jest.spyOn(featheryWindow(), 'dispatchEvent').mockReturnValue(true);
+      const { client } = createClientWithStorage();
+      const formId = 'chat-input-save-test';
+      const { fieldValues } = jest.requireMock('../init');
+      const field = {
+        servar: {
+          id: 'first-name-field',
+          key: 'first_name',
+          type: 'text_field',
+          required: state === 'required',
+          metadata: {}
+        },
+        position: [0],
+        properties: {},
+        styles: {}
+      };
+      const step = {
+        id: 'intake-step',
+        key: 'Intake',
+        servar_fields: [field],
+        subgrids: [],
+        buttons: [],
+        texts: [],
+        images: [],
+        tables: [],
+        tabs: [],
+        progress_bars: [],
+        next_conditions: []
+      };
+      fieldValues.first_name = 'Jordan';
+      if (state === 'required') fieldValues.first_name = '';
+      let finishRules: () => void = () => {};
+      const rules = new Promise<void>((resolve) => {
+        finishRules = resolve;
+      });
+      const awaitChangeRules = jest.fn(() => rules);
+      const flushChange = jest.fn();
+      setFormInternalState(formId, {
+        currentStep: step,
+        steps: { Intake: step },
+        fields: { first_name: { value: 'Jordan' } },
+        visiblePositions: { '0': [true] },
+        logicRules: [],
+        formActions: { awaitChangeRules },
+        client
+      } as any);
+      const { initState } = jest.requireMock('../init');
+      initState.defaultErrors.required = 'Please answer this question.';
+      initState.renderCallbacks[formId] = {
+        form: () => {
+          internalState[formId].formToolsRenderTick =
+            (internalState[formId].formToolsRenderTick ?? 0) + 1;
+        }
+      };
+      const release = mountFieldInput(
+        formId,
+        'first_name',
+        0,
+        featheryDoc().createElement('div')
+      );
+      const unregister = registerFieldInputChange(
+        formId,
+        'first_name',
+        0,
+        flushChange
+      );
+      if (state === 'tool-unmounted') {
+        unregister();
+        release();
+      }
+      const send = jest
+        .spyOn(client, '_fetch')
+        .mockResolvedValue({ ok: true, status: 200 });
+      try {
+        const save = getFormContext(formId).saveFieldInputs(
+          [{ key: 'first_name' }],
+          state === 'tool-unmounted'
+            ? { source: 'tool', stepId: step.id }
+            : state === 'visible' || state === 'hidden-strict'
+            ? {}
+            : { skipHidden: true, stepId: step.id }
+        );
+        expect(flushChange).toHaveBeenCalledTimes(
+          state === 'tool-unmounted' ? 0 : 1
+        );
+        expect(awaitChangeRules).toHaveBeenCalledTimes(1);
+        expect(send).not.toHaveBeenCalled();
+        if (state === 'hidden' || state === 'hidden-strict')
+          internalState[formId].visiblePositions = { '0': [false] };
+        if (state === 'step-change')
+          internalState[formId].currentStep = { ...step, id: 'other-step' };
+        finishRules();
+        if (state === 'required') {
+          await expect(save).rejects.toBeInstanceOf(FieldInputValidationError);
+          await expect(save).rejects.toMatchObject({
+            fieldKey: 'first_name',
+            message: expect.not.stringContaining('first_name')
+          });
+          expect(send).not.toHaveBeenCalled();
+          return;
+        }
+        if (state === 'step-change' || state === 'hidden-strict') {
+          await expect(save).rejects.toThrow(/current step/);
+          expect(send).not.toHaveBeenCalled();
+          return;
+        }
+        await save;
+        if (state === 'hidden') {
+          expect(send).not.toHaveBeenCalled();
+          return;
+        }
+        const saved = send.mock.calls.find(([url]) =>
+          String(url).includes('custom/submit')
+        );
+        if (!saved) throw new Error('The native save request was not sent.');
+        const body = (saved[1] as any).body as FormData;
+        expect(JSON.parse(body.get('custom_key_values') as string)).toEqual({
+          first_name: 'Jordan'
+        });
+        // Without override, the backend deliberately keeps the previous answer.
+        expect(body.get('override')).toBe('true');
+      } finally {
+        unregister();
+        release();
+        delete initState.renderCallbacks[formId];
+        delete internalState[formId];
+        delete fieldValues.first_name;
+      }
+    }
+  );
 
   it('clears an optional empty file with a persisted rejection before mount replay', async () => {
     const { client, store } = createClientWithStorage();
