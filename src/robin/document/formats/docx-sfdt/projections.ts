@@ -894,6 +894,14 @@ export function expectedRejection(
   Object.assign(out.formats, clone(intended.formats));
   const rec = (n: NfNode) => {
     const m = later.get(n.id);
+    // a changed feature replaces the whole node, so rejecting brings the node back as it was
+    if (
+      m &&
+      FEATURE_KEYS.some(
+        (k) => canonicalJson(n[k] ?? null) !== canonicalJson(m[k] ?? null)
+      )
+    )
+      return;
     if (m && m.kind === n.kind) {
       const lists = new Set(
         [...docxTree.childLists(n), ...docxTree.childLists(m)].map(

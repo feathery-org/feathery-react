@@ -67,6 +67,7 @@ export function comparableText(pack: Pack, nf: NormalForm): string {
       .filter(
         (k) =>
           obj[k] !== undefined &&
+          obj[k] !== null &&
           k !== 'id' &&
           k !== 'base' &&
           !READ_ONLY_BUT_PENDING.has(k)

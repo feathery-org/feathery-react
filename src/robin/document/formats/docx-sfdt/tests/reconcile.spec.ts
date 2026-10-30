@@ -231,6 +231,8 @@ describe('composeTracked: feature attributes are content, not formatting', () =>
       const next = change(target.binding as Record<string, unknown>);
       if (next === undefined) delete target.binding;
       else target.binding = next;
+      // a write that replaces the binding may leave the title out (acd4ca62 #10)
+      delete target.title;
       const { tracked, untracked } = composeTracked(s.view, intended, 't');
       expect(untracked).not.toContain(control.id);
       const copies = find(tracked, control.id);
@@ -240,6 +242,9 @@ describe('composeTracked: feature attributes are content, not formatting', () =>
       expect(bindingIn(accept(tracked))).toEqual([JSON.stringify(next ?? null)]);
       // what rejecting should restore keeps the feature as it was (formatting would stay applied)
       expect(bindingIn(expectedRejection(s.view.nf, intended))).toEqual([JSON.stringify(control.binding)]);
+      const titled = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
+      find(titled, control.id)[0].title = 'Total Annual Premium';
+      expect(find(expectedRejection(titled, intended), control.id)[0].title).toBe('Total Annual Premium');
     });
 });
 
