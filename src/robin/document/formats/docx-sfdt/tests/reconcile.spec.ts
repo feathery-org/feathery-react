@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WriteInput } from '../../../envelope';
 import { DocumentSession } from '../../../session';
-import { NfNode, NormalForm, baseOf, shapeOf, walk } from '../../../tree';
+import { NfNode, NormalForm, baseOf, clone, shapeOf, walk } from '../../../tree';
 import { makeView } from '../../../view';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
@@ -328,6 +328,30 @@ describe('editor offsets from the normal form', () => {
     const p = plan({ turnId: 't', before: s.view, intended: makeView(r.intended, docxPack), beforeResidue: s.residue, intendedResidue: r.intendedResidue, beforeNative: flagship });
     const [op] = p.steps[0].payload as Array<{ a: number; at: number }>;
     expect(op.at).toBe(op.a + 2);
+  });
+});
+
+describe('plan: text beside another card\'s pending change', () => {
+  it('edits the runs on each side alone and never retypes the pending text (Hilb t2)', () => {
+    const s = state();
+    const nf = clone(s.view.nf);
+    let before = makeView(nf, docxPack);
+    // a plain one-run paragraph split into three runs, the middle one pending another card's deletion
+    const para = before.nodes().find((n) => n.kind === 'paragraph' && hierOf(before, n.id) !== null && arr<NfNode>(n.inlines).length === 1 && String(arr<NfNode>(n.inlines)[0].text).split(' ').length >= 4) as NfNode;
+    const [run] = arr<NfNode>(para.inlines);
+    const words = String(run.text).split(' ');
+    const [first, middle, last] = [words[0], ` ${words.slice(1, -1).join(' ')} `, words[words.length - 1]].map((text, k) => ({ ...clone(run), id: `${run.id}s${k}`, text }));
+    para.inlines = [first, middle, last];
+    middle.pending = { kind: 'Deletion', author: 'Robin', group: 'earlier' };
+    before = makeView(nf, docxPack);
+    const intendedNf = clone(nf);
+    const runs = arr<NfNode>(makeView(intendedNf, docxPack).get(para.id)?.inlines);
+    runs[0].text = 'Berkley Southwest';
+    runs[runs.length - 1].text = '10 Even Payment';
+    const p = plan({ turnId: 't', before, intended: makeView(intendedNf, docxPack), beforeResidue: s.residue, intendedResidue: s.residue, beforeNative: flagship });
+    expect(p.steps[0].seam).toBe('text');
+    const ops = p.steps[0].payload as Array<{ oldMid: string; newMid: string }>;
+    expect(ops.map((o) => [o.oldMid, o.newMid])).toEqual([[first.text, 'Berkley Southwest'], [last.text, '10 Even Payment']]);
   });
 });
 

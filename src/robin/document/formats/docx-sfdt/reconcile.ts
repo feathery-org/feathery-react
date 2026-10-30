@@ -587,11 +587,16 @@ function nativePlan(
     }
     if (!ownSame) return null;
   }
-  for (const id of textParagraphs) {
+  // each stretch of runs under one pending change is edited alone, so no edit retypes another card's text
+  const stretches = [...textParagraphs].flatMap((id) =>
+    pendingStretches(before, intended, id)
+  );
+  for (const { id, from, to, text: stretchText } of stretches) {
     const hi = hierOf(before, id);
     if (!hi) return null;
     const oldText = ownText(before.get(id) as NfNode) ?? '';
-    const newText = ownText(intended.get(id) as NfNode) ?? '';
+    const newText = oldText.slice(0, from) + stretchText + oldText.slice(to);
+    if (newText === oldText) continue;
     let a = 0;
     while (
       a < oldText.length &&
@@ -611,9 +616,9 @@ function nativePlan(
     // ... but never across an inline that is not text (a marker parts the words for the editor)
     const joined = (k: number) =>
       editorOffset(before, id, k) - editorOffset(before, id, k - 1) === 1;
-    while (a > 0 && !ws(oldText[a - 1]) && joined(a)) a -= 1;
+    while (a > from && !ws(oldText[a - 1]) && joined(a)) a -= 1;
     while (
-      z > 0 &&
+      z > oldText.length - to &&
       !ws(oldText[oldText.length - z]) &&
       joined(oldText.length - z)
     )
@@ -639,6 +644,32 @@ function nativePlan(
   }
   if (text.length && format.length) return null; // the lab's rule: one native seam per change set
   return { text, format };
+}
+
+/** A paragraph's runs grouped where they carry the same pending change, each group's span and new text */
+function pendingStretches(
+  before: DocumentView,
+  intended: DocumentView,
+  id: string
+) {
+  const stretches: Array<{
+    id: string;
+    pending: string;
+    from: number;
+    to: number;
+    text: string;
+  }> = [];
+  walkPositions(before.get(id), (run, own) => {
+    const pending = canonicalJson(run.pending ?? null);
+    const to = own + String(run.text ?? '').length;
+    const text = String(intended.get(run.id)?.text ?? '');
+    const last = stretches[stretches.length - 1];
+    if (last && last.pending === pending) {
+      last.to = to;
+      last.text += text;
+    } else stretches.push({ id, pending, from: own, to, text });
+  });
+  return stretches;
 }
 
 function enclosingParagraph(view: DocumentView, id: string): NfNode | null {
