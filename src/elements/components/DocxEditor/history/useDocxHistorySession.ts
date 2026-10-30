@@ -8,7 +8,12 @@ import {
 } from '../../../../utils/documentPersistence';
 import { featheryDoc } from '../../../../utils/browser';
 
-import { isRobinEditing, onRobinTurnChange } from '../robinActivity';
+import {
+  isRobinEditing,
+  isRobinWriting,
+  onRobinTurnChange,
+  onRobinWriteStart
+} from '../robinActivity';
 import { isOpeningDocument } from '../useDocxEditor';
 import { createAutosaveScheduler } from './autosaveScheduler';
 import { createDocumentSaveQueue } from './documentSaveQueue';
@@ -49,6 +54,9 @@ const IDLE_CHECK_MS = 30_000;
 // Min spacing of autosave-piggybacked highlight checkpoints; bounds how stale
 // an abandoned session's stored highlights can be.
 export const CHECKPOINT_MIN_INTERVAL_MS = 20_000;
+// How long autosave may be held back (the binding gate, a document still
+// opening) before the editor tells the person their changes are not saved.
+export const SAVE_HELD_NOTICE_MS = 30_000;
 const ARTIFACT_UPLOAD_ERROR =
   'Document saved, but version details could not be uploaded. Retry to preserve its highlights.';
 
@@ -94,6 +102,8 @@ export interface UseDocxHistorySessionResult {
   error: string | null;
   status: SaveStatus;
   savedAt: Date | null;
+  /** Autosave has been held back for SAVE_HELD_NOTICE_MS with changes unsaved. */
+  saveHeld: boolean;
   /** Fire on every editor content change; index.tsx forwards useDocxEditor's
    *  onEdit here. */
   onEdit: (info: { assistant: boolean }) => void;
@@ -161,6 +171,10 @@ export function useDocxHistorySession(
   const [status, updateStatus] = useState<SaveStatus>('clean');
   const [savedAt, updateSavedAt] = useState<Date | null>(null);
   const [saveError, updateSaveError] = useState<string | null>(null);
+  const [saveHeld, updateSaveHeld] = useState(false);
+  // Each edit flips a held autosave back to 'dirty', so the hold is timed from
+  // its first 'blocked' until a save actually starts or the session resets.
+  const heldSinceRef = useRef<number | null>(null);
   const setStatus = (value: SaveStatus) => {
     if (mountedRef.current) updateStatus(value);
   };
@@ -203,6 +217,10 @@ export function useDocxHistorySession(
   // contentChange is emitted AFTER an edit. Retain the previous document for
   // BOTH directions of author switch, including typing between Robin batches.
   const lastSnapshotRef = useRef<string | null>(null);
+  // Serializing a long proposal on every keystroke blocks the main thread, so
+  // the person's edits only mark the snapshot stale. It is retaken before Robin
+  // writes: the person→Robin switch is the one boundary that reads it.
+  const snapshotStaleRef = useRef(false);
   // Robin's text, captured while its revision is live so accepted Robin edits
   // still render as Robin's at view time.
   const robinRunsRef = useRef<RevisionRun[]>([]);
@@ -231,7 +249,10 @@ export function useDocxHistorySession(
       );
       setStatus('error');
     };
-    const canPersist = () => {
+    // Each Robin write runs synchronously and leaves the document committed or
+    // rolled back, so autosave may run between writes: a frozen or reloaded tab
+    // keeps the turn's work. Only closing a version waits for the turn to end.
+    const canAutosave = () => {
       const ed = editorRef.current;
       return (
         mountedRef.current &&
@@ -240,9 +261,11 @@ export function useDocxHistorySession(
         !loadingRef.current &&
         !readOnlyRef.current &&
         !isOpeningDocument(ed) &&
-        !isRobinEditing(ed)
+        !isRobinWriting(ed)
       );
     };
+    const canPersist = () =>
+      canAutosave() && !isRobinEditing(editorRef.current);
     const isSessionConflict = (error: unknown) =>
       isDocumentPersistenceError(error) && error.kind === 'conflict';
     const freshSession = (meta: DocxSaveMeta): DocxSaveMeta => ({
@@ -631,7 +654,7 @@ export function useDocxHistorySession(
         }
       },
       canSave: () => {
-        if (!canPersist()) return false;
+        if (!canAutosave()) return false;
         return canSaveRef.current ? canSaveRef.current() : true;
       },
       onError: reportError,
@@ -682,6 +705,10 @@ export function useDocxHistorySession(
     const prepareCheckpoint = (force = false): (() => void) | undefined => {
       if (!force && Date.now() - lastCheckpointAt < CHECKPOINT_MIN_INTERVAL_MS)
         return;
+      // A mid-turn autosave only needs the DOCX to survive a lost tab. The
+      // turn's highlights upload when it ends, so the session diff stays off
+      // the main thread between Robin's writes.
+      if (!force && isRobinEditing(editorRef.current)) return;
       const meta = tracker.currentMeta();
       if (!meta || !s0Ref.current) return;
       let fStr: string | null = null;
@@ -779,6 +806,7 @@ export function useDocxHistorySession(
         }
       },
       reportError,
+      canAutosave,
       canPersist,
       scheduler,
       tracker,
@@ -818,6 +846,7 @@ export function useDocxHistorySession(
     try {
       baselineRef.current = editor.serialize();
       lastSnapshotRef.current = baselineRef.current;
+      snapshotStaleRef.current = false;
     } catch {
       /* keep whatever baseline we had */
     }
@@ -842,6 +871,12 @@ export function useDocxHistorySession(
         : currentUserRef.current;
       currentAuthorRef.current = actor.key;
       tracker.noteEdit(actor);
+      if (actor.key !== ROBIN.key) {
+        snapshotStaleRef.current = true;
+        scheduler.touch();
+        return;
+      }
+      snapshotStaleRef.current = false;
       let snapshot: string | null = null;
       try {
         snapshot = ed?.serialize() ?? null;
@@ -882,20 +917,47 @@ export function useDocxHistorySession(
   // leaves the session open so user + assistant edits share it.
   useEffect(() => {
     if (!editor || !host || readOnly) return undefined;
-    return onRobinTurnChange(editor, (active) => {
-      if (active) {
-        try {
-          lastSnapshotRef.current = editor.serialize();
-        } catch {
-          lastSnapshotRef.current = null;
-        }
-      } else {
+    const takeSnapshot = () => {
+      snapshotStaleRef.current = false;
+      try {
+        lastSnapshotRef.current = editor.serialize();
+      } catch {
+        lastSnapshotRef.current = null;
+      }
+    };
+    const offTurn = onRobinTurnChange(editor, (active) => {
+      if (active) takeSnapshot();
+      else {
         // Turn end checkpoints but keeps the session open (versions cut on
         // save/idle/restore); skips the throttle, not the gate or save queue.
         checkpointSession();
       }
     });
+    const offWrite = onRobinWriteStart(editor, () => {
+      if (snapshotStaleRef.current) takeSnapshot();
+    });
+    return () => {
+      offTurn();
+      offWrite();
+    };
   }, [editor, host, readOnly, checkpointSession]);
+
+  useEffect(() => {
+    if (status === 'blocked') {
+      heldSinceRef.current ??= Date.now();
+      const remaining = heldSinceRef.current + SAVE_HELD_NOTICE_MS - Date.now();
+      const timer = setTimeout(
+        () => updateSaveHeld(true),
+        Math.max(0, remaining)
+      );
+      return () => clearTimeout(timer);
+    }
+    if (status !== 'dirty') {
+      heldSinceRef.current = null;
+      updateSaveHeld(false);
+    }
+    return undefined;
+  }, [status]);
 
   // Idle sessions close on their own.
   useEffect(() => {
@@ -938,7 +1000,7 @@ export function useDocxHistorySession(
       if (
         doc.visibilityState === 'hidden' &&
         tracker.isOpen() &&
-        engine.canPersist()
+        engine.canAutosave()
       )
         scheduler.flush().catch(() => undefined);
     };
@@ -1019,6 +1081,8 @@ export function useDocxHistorySession(
       };
       acceptanceRef.current = acceptance;
       baselineRef.current = acceptance.beforeSfdt;
+      lastSnapshotRef.current = acceptance.beforeSfdt;
+      snapshotStaleRef.current = false;
       try {
         accept();
         // A native resolve can stall or settle only part of a group. Confirm
@@ -1124,6 +1188,7 @@ export function useDocxHistorySession(
       error: saveError,
       status,
       savedAt,
+      saveHeld,
       onEdit,
       save: explicitSave,
       saveForRestore,
@@ -1137,6 +1202,7 @@ export function useDocxHistorySession(
       saveError,
       status,
       savedAt,
+      saveHeld,
       onEdit,
       explicitSave,
       saveForRestore,

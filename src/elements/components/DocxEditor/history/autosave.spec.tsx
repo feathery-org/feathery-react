@@ -1,10 +1,12 @@
 import { act, renderHook } from '@testing-library/react';
 
-import { setRobinTurnActive } from '../robinActivity';
+import { setRobinTurnActive, whileRobinWrites } from '../robinActivity';
 import { AUTOSAVE_IDLE_MS } from './autosaveScheduler';
 import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
+import { featheryDoc } from '../../../../utils/browser';
 import { applyHunks } from './sfdtDiff';
 import {
+  SAVE_HELD_NOTICE_MS,
   useDocxHistorySession,
   UseDocxHistorySessionOptions
 } from './useDocxHistorySession';
@@ -984,8 +986,12 @@ describe('useDocxHistorySession', () => {
     const { view } = setup({}, editor);
     text = 'hello human';
     act(() => view.result.current.onEdit({ assistant: false }));
-    text = 'hello human robin';
-    act(() => view.result.current.onEdit({ assistant: true }));
+    act(() =>
+      whileRobinWrites(editor, () => {
+        text = 'hello human robin';
+        view.result.current.onEdit({ assistant: true });
+      })
+    );
     expect(view.result.current.previewSession()?.authors).toEqual([
       YOU,
       { kind: 'assistant', key: 'robin', label: 'Robin' }
@@ -1132,6 +1138,158 @@ describe('useDocxHistorySession', () => {
     const [, meta] = save.mock.calls[0];
     expect(meta.sessionId).toBeTruthy();
     expect(meta.closeSession).toBeUndefined();
+  });
+
+  it('autosaves Robin’s writes during a turn that has not settled, without closing', async () => {
+    jest.useFakeTimers();
+    const { view, editor, save, host } = setup();
+
+    act(() => setRobinTurnActive(editor, true));
+    act(() =>
+      whileRobinWrites(editor, () =>
+        view.result.current.onEdit({ assistant: true })
+      )
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+
+    // The turn is still open (its settle signal never came), yet the write is
+    // on the server: a frozen or reloaded tab no longer loses it.
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][1].closeSession).toBeUndefined();
+    expect(view.result.current.isSessionOpen()).toBe(true);
+    // The session diff waits for the turn to end.
+    expect(host.closeVersion).not.toHaveBeenCalled();
+    act(() => setRobinTurnActive(editor, false));
+    await act(async () => {
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves a Robin turn in progress when the tab is hidden', async () => {
+    const { view, editor, save } = setup();
+    act(() => setRobinTurnActive(editor, true));
+    act(() =>
+      whileRobinWrites(editor, () =>
+        view.result.current.onEdit({ assistant: true })
+      )
+    );
+    const doc = featheryDoc();
+    const visibility = jest
+      .spyOn(doc, 'visibilityState', 'get')
+      .mockReturnValue('hidden');
+    act(() => {
+      doc.dispatchEvent(new Event('visibilitychange'));
+    });
+    await flush();
+    visibility.mockRestore();
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][1].closeSession).toBeUndefined();
+    act(() => setRobinTurnActive(editor, false));
+  });
+
+  it('still waits for Robin’s turn to settle before closing a version', async () => {
+    const { view, editor, save } = setup();
+    act(() => setRobinTurnActive(editor, true));
+    act(() =>
+      whileRobinWrites(editor, () =>
+        view.result.current.onEdit({ assistant: true })
+      )
+    );
+    await expect(view.result.current.save()).rejects.toMatchObject({
+      kind: 'blocked'
+    });
+    expect(save.mock.calls.some((c) => c[1]?.closeSession === true)).toBe(
+      false
+    );
+    act(() => setRobinTurnActive(editor, false));
+  });
+
+  it('does not serialize the document on the person’s keystrokes', async () => {
+    let text = 'hello';
+    const serialize = jest.fn(() =>
+      JSON.stringify({ sections: [{ blocks: [{ inlines: [{ text }] }] }] })
+    );
+    const { view } = setup({}, { serialize });
+    await flush();
+    const afterOpen = serialize.mock.calls.length;
+    for (let i = 0; i < 50; i++) {
+      text += 'x';
+      act(() => view.result.current.onEdit({ assistant: false }));
+    }
+    expect(serialize).toHaveBeenCalledTimes(afterOpen);
+  });
+
+  it('keeps the person’s typing theirs when Robin writes with no turn mark', async () => {
+    (globalThis as any).CompressionStream = undefined;
+    let text = 'hello';
+    const editor = {
+      serialize: () =>
+        JSON.stringify({ sections: [{ blocks: [{ inlines: [{ text }] }] }] })
+    };
+    const { view, host } = setup({}, editor);
+    await flush();
+    text = 'hello human';
+    act(() => view.result.current.onEdit({ assistant: false }));
+    // The stale snapshot is retaken before the change lands, not after.
+    act(() =>
+      whileRobinWrites(editor, () => {
+        text = 'hello human robin';
+        view.result.current.onEdit({ assistant: true });
+      })
+    );
+    await act(async () => {
+      await view.result.current.save();
+    });
+    const changes = JSON.parse(
+      await blobText(host.closeVersion.mock.calls[0][1].changesJson)
+    );
+    // ' human' is inserted at 5 and ' robin' at 11, six characters each.
+    expect(
+      changes.hunks.map((h: any) => [h.author, h.at.offset, h.at.length])
+    ).toEqual([
+      ['you', 5, 6],
+      ['robin', 11, 6]
+    ]);
+  });
+
+  it('flags changes held back from autosave, and clears once they save', async () => {
+    jest.useFakeTimers();
+    // The hold is timed with Date.now, which legacy fake timers leave alone.
+    let now = 1_000_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const advance = async (ms: number) => {
+      await act(async () => {
+        now += ms;
+        jest.advanceTimersByTime(ms);
+        for (let i = 0; i < 8; i++) await Promise.resolve();
+      });
+    };
+    let gateOpen = false;
+    const { view, save } = setup({ canSave: () => gateOpen });
+
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await advance(AUTOSAVE_IDLE_MS);
+    expect(view.result.current.status).toBe('blocked');
+    expect(view.result.current.saveHeld).toBe(false);
+
+    // Typing keeps flipping the status back to dirty; the hold still counts.
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await advance(SAVE_HELD_NOTICE_MS);
+    // The notice timer is armed by an effect that runs after the advance.
+    await advance(1);
+    expect(save).not.toHaveBeenCalled();
+    expect(view.result.current.saveHeld).toBe(true);
+
+    gateOpen = true;
+    await advance(AUTOSAVE_IDLE_MS);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(view.result.current.saveHeld).toBe(false);
+    clock.mockRestore();
   });
 
   it('piggybacks a throttled redline checkpoint on the autosave, without closing', async () => {

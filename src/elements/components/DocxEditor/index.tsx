@@ -9,7 +9,11 @@ import { createPortal } from 'react-dom';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
 import { CheckIcon, CloseIcon, SpinnerIcon } from './icons';
-import { FEATHERY_RED, TOOLBAR_HEIGHT } from './DocxToolbar/styles';
+import {
+  downloadBtn,
+  FEATHERY_RED,
+  TOOLBAR_HEIGHT
+} from './DocxToolbar/styles';
 import DocumentPanel from './DocumentPanel';
 import {
   ActivePanel,
@@ -166,6 +170,24 @@ const overlay = {
   fontSize: 14,
   background: 'rgba(255,255,255,0.75)',
   color: '#3f3f46'
+};
+
+// The save error and unsaved-changes notices above the toolbar.
+const saveBanner = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  padding: '6px 12px',
+  background: '#fff4e5',
+  color: '#7a4100',
+  fontSize: 13
+};
+// The toolbar's secondary button, sized down to the banner.
+const saveBannerBtn = {
+  ...downloadBtn,
+  flex: '0 0 auto',
+  height: 28,
+  fontSize: 13
 };
 
 const PREVIEW_DOCUMENT = JSON.stringify({
@@ -1172,18 +1194,35 @@ function DocxEditor({
       }}
     >
       {historySession.error && (
-        <div
-          role='alert'
-          css={{
-            padding: '8px 12px',
-            background: '#fff4e5',
-            color: '#7a4100',
-            fontSize: 13
-          }}
-        >
-          {historySession.error}{' '}
-          <button type='button' onClick={historySession.retry}>
+        <div role='alert' css={saveBanner}>
+          <span>{historySession.error}</span>
+          <button
+            type='button'
+            css={saveBannerBtn}
+            onClick={historySession.retry}
+          >
             Retry save
+          </button>
+        </div>
+      )}
+      {!historySession.error && historySession.saveHeld && (
+        <div role='status' css={saveBanner}>
+          <span>
+            Your latest changes aren&apos;t saved yet.{' '}
+            {bindingsState.blocked
+              ? `Fix this to resume saving: ${
+                  bindingsState.diagnostics.find(
+                    (entry) => entry.severity === 'error'
+                  )?.message ?? 'a document field has an error'
+                }`
+              : 'Keep this tab open until they are.'}
+          </span>
+          <button
+            type='button'
+            css={saveBannerBtn}
+            onClick={historySession.retry}
+          >
+            Save now
           </button>
         </div>
       )}
