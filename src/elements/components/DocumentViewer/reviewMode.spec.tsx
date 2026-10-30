@@ -318,3 +318,126 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
     });
   });
 });
+
+describe('DocumentViewer — packet editing (editor_allow_attachments)', () => {
+  const twoDocs = {
+    ...basePayload,
+    documents: [
+      { ...basePayload.documents[0], name: 'A' },
+      {
+        type: 'form' as const,
+        pdf_url: 'http://x/b.pdf',
+        envelope_id: 'env-2',
+        name: 'B'
+      }
+    ]
+  };
+  const attachment = {
+    type: 'attachment' as const,
+    envelope_id: 'att-1',
+    name: 'bundle',
+    file_name: 'bundle.zip',
+    file_url: 'http://x/bundle.zip',
+    size: 2048
+  };
+  const action = {
+    envelope_action: 'open_in_editor',
+    editor_toolbar_actions: ['download'],
+    editor_allow_attachments: true
+  };
+
+  const renderViewer = (overrides: Record<string, any> = {}) => {
+    const props = {
+      payload: twoDocs,
+      action,
+      setShow: jest.fn(),
+      onComplete: jest.fn(),
+      onFinalize: jest.fn().mockResolvedValue({ files: [] }),
+      onUploadAttachment: jest.fn().mockResolvedValue(attachment),
+      ...overrides
+    };
+    render(<DocumentViewer {...props} />);
+    return props;
+  };
+
+  const attach = async (name = 'bundle.zip') => {
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: [new File(['zip'], name)] }
+    });
+    await screen.findByText('Attachment');
+  };
+
+  const finalizedIds = (onFinalize: jest.Mock) =>
+    onFinalize.mock.calls[0][0].envelopes.map((e: any) => e.envelopeId);
+
+  it('offers no packet editing unless the action enables it', () => {
+    renderViewer({ action: { ...action, editor_allow_attachments: false } });
+    expect(
+      screen.queryByRole('button', { name: 'Add attachment' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows an unrenderable attachment as a file card and finalizes it in the chosen order', async () => {
+    const { onFinalize, onUploadAttachment } = renderViewer();
+
+    await attach();
+    expect(onUploadAttachment).toHaveBeenCalledWith(expect.any(File));
+    expect(screen.getByText('ZIP file · 2 KB — no preview available'));
+    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute(
+      'href',
+      'http://x/bundle.zip'
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move bundle up' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move A down' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+    await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+    expect(finalizedIds(onFinalize)).toEqual(['att-1', 'env-1', 'env-2']);
+  });
+
+  it('drops a removed attachment from finalize', async () => {
+    const { onFinalize } = renderViewer();
+
+    await attach();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+    await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+    expect(finalizedIds(onFinalize)).toEqual(['env-1', 'env-2']);
+  });
+
+  it('surfaces a failed upload', async () => {
+    renderViewer({
+      onUploadAttachment: jest
+        .fn()
+        .mockRejectedValue(new Error('Attachments can be at most 20MB.'))
+    });
+
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: [new File(['x'], 'big.zip')] }
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't attach big.zip: Attachments can be at most 20MB."
+    );
+  });
+
+  it('keeps the files that uploaded when another fails', async () => {
+    const { onFinalize } = renderViewer({
+      onUploadAttachment: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Upload failed'))
+        .mockResolvedValueOnce(attachment)
+    });
+
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: [new File(['x'], 'bad.zip'), new File(['y'], 'ok.zip')] }
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('bad.zip');
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+    expect(finalizedIds(onFinalize)).toEqual(['env-1', 'env-2', 'att-1']);
+  });
+});

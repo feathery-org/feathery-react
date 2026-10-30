@@ -7,7 +7,7 @@ import { loadPdfjs, PDFJS_STANDARD_FONT_DATA_URL } from './pdfjsLoader';
 import { LINK_SERVICE_STUB } from './linkServiceStub';
 import { color, radius, shadow, fontSize } from './tokens';
 import { secondaryButtonCss } from './buttonStyles';
-import { AlertIcon } from './icons';
+import { AlertIcon, DownloadIcon, FileIcon } from './icons';
 import { featheryWindow } from '../../../utils/browser';
 import { scopeReviewAnnotations } from './fieldIsolation';
 
@@ -58,7 +58,9 @@ export default function DocumentCanvas({
   // destroy() leaks it for the life of the page, so every open/close cycle of
   // the viewer would accumulate another full document.
   const openDocsRef = useRef<Set<any>>(new Set());
-  const docUrlsKey = documents.map((d) => d.pdf_url).join('|');
+  // File-card attachments have nothing for pdf.js to load.
+  const pdfUrls = documents.flatMap((d) => (d.pdf_url ? [d.pdf_url] : []));
+  const docUrlsKey = pdfUrls.join('|');
 
   const destroyDoc = useCallback((pdfProxy: any) => {
     if (!pdfProxy) return;
@@ -75,19 +77,19 @@ export default function DocumentCanvas({
   }, []);
 
   const loadDoc = useCallback(
-    (doc: ViewerDocument) => {
+    (pdfUrl: string) => {
       const generation = generationRef.current;
-      loadedRef.current.add(doc.pdf_url);
+      loadedRef.current.add(pdfUrl);
       setDocStates((prev) => {
         const next = { ...prev };
-        delete next[doc.pdf_url];
+        delete next[pdfUrl];
         return next;
       });
       loadPdfjs()
         .then(
           (pdfjs: any) =>
             pdfjs.getDocument({
-              url: doc.pdf_url,
+              url: pdfUrl,
               standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL
             }).promise
         )
@@ -101,15 +103,15 @@ export default function DocumentCanvas({
           openDocsRef.current.add(pdfProxy);
           setDocStates((prev) => ({
             ...prev,
-            [doc.pdf_url]: { pdfProxy, error: '' }
+            [pdfUrl]: { pdfProxy, error: '' }
           }));
-          onDocLoad(doc.pdf_url, pdfProxy);
+          onDocLoad(pdfUrl, pdfProxy);
         })
         .catch(() => {
           if (generationRef.current !== generation) return;
           setDocStates((prev) => ({
             ...prev,
-            [doc.pdf_url]: { pdfProxy: null, error: 'failed' }
+            [pdfUrl]: { pdfProxy: null, error: 'failed' }
           }));
         });
     },
@@ -134,7 +136,7 @@ export default function DocumentCanvas({
   );
 
   useEffect(() => {
-    const urlSet = new Set(documents.map((d) => d.pdf_url));
+    const urlSet = new Set(pdfUrls);
 
     // Load only documents that aren't loaded yet, and release any that are no
     // longer shown. Re-fetching an on-screen document would discard its
@@ -151,8 +153,8 @@ export default function DocumentCanvas({
     loadedRef.current.forEach((u) => {
       if (!urlSet.has(u)) loadedRef.current.delete(u);
     });
-    documents.forEach((doc) => {
-      if (!loadedRef.current.has(doc.pdf_url)) loadDoc(doc);
+    pdfUrls.forEach((url) => {
+      if (!loadedRef.current.has(url)) loadDoc(url);
     });
     // Keyed on docUrlsKey rather than `documents`: re-running on every render
     // would restart in-flight loads.
@@ -172,11 +174,22 @@ export default function DocumentCanvas({
       <TextLayerStyles />
       <AnnotationLayerStyles />
       {documents.map((doc) => {
-        const state = docStates[doc.pdf_url];
+        if (!doc.pdf_url) {
+          return (
+            <FileCard
+              key={doc.file_url}
+              doc={doc}
+              pageWidth={pageWidth}
+              registerPageRef={registerPageRef}
+            />
+          );
+        }
+        const pdfUrl = doc.pdf_url;
+        const state = docStates[pdfUrl];
         if (!state) {
           return (
             <div
-              key={doc.pdf_url}
+              key={pdfUrl}
               role='status'
               aria-label='Loading document'
               css={{
@@ -198,7 +211,7 @@ export default function DocumentCanvas({
         if (state.error) {
           return (
             <div
-              key={doc.pdf_url}
+              key={pdfUrl}
               role='alert'
               css={{
                 width: pageWidth,
@@ -223,7 +236,7 @@ export default function DocumentCanvas({
               <button
                 type='button'
                 css={secondaryButtonCss}
-                onClick={() => loadDoc(doc)}
+                onClick={() => loadDoc(pdfUrl)}
               >
                 Retry
               </button>
@@ -232,9 +245,9 @@ export default function DocumentCanvas({
         }
         return (
           <DocumentPages
-            key={doc.pdf_url}
+            key={pdfUrl}
             pdfProxy={state.pdfProxy}
-            pdfUrl={doc.pdf_url}
+            pdfUrl={pdfUrl}
             pageWidth={pageWidth}
             registerPageRef={registerPageRef}
             inputLocked={inputLocked}
@@ -242,6 +255,105 @@ export default function DocumentCanvas({
           />
         );
       })}
+    </div>
+  );
+}
+
+const formatSize = (bytes?: number) => {
+  if (bytes === undefined) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const fileExtension = (fileName?: string) =>
+  fileName?.includes('.') ? fileName.split('.').pop()?.toUpperCase() : '';
+
+interface FileCardProps {
+  doc: ViewerDocument;
+  pageWidth: number;
+  registerPageRef: DocumentCanvasProps['registerPageRef'];
+}
+
+/** An attachment the viewer can't render: shown as itself, with a download. */
+function FileCard({ doc, pageWidth, registerPageRef }: FileCardProps) {
+  const url = doc.file_url ?? '';
+  const extension = fileExtension(doc.file_name);
+  return (
+    <div
+      ref={(el) => registerPageRef(url, 0, el)}
+      css={{
+        width: pageWidth,
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 16,
+        padding: 24,
+        borderRadius: radius.sm,
+        backgroundColor: color.surface,
+        boxShadow: shadow.page
+      }}
+    >
+      <span
+        aria-hidden
+        css={{
+          position: 'relative',
+          display: 'flex',
+          flexShrink: 0,
+          color: color.textMuted
+        }}
+      >
+        <FileIcon size={48} />
+        {extension && (
+          <span
+            css={{
+              position: 'absolute',
+              bottom: 6,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              padding: '0 3px',
+              borderRadius: 3,
+              backgroundColor: color.accent,
+              color: 'white',
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: 0.3
+            }}
+          >
+            {extension.slice(0, 4)}
+          </span>
+        )}
+      </span>
+      <div css={{ flex: 1, minWidth: 0 }}>
+        <div
+          css={{
+            fontSize: fontSize.lg,
+            fontWeight: 600,
+            color: color.text,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          {doc.file_name ?? doc.name}
+        </div>
+        <div css={{ fontSize: fontSize.md, color: color.textMuted }}>
+          {[extension && `${extension} file`, formatSize(doc.size)]
+            .filter(Boolean)
+            .join(' · ')}
+          {' — no preview available'}
+        </div>
+      </div>
+      <a
+        href={url}
+        target='_blank'
+        rel='noopener noreferrer'
+        download={doc.file_name}
+        css={{ ...secondaryButtonCss, textDecoration: 'none' }}
+      >
+        <DownloadIcon size={16} />
+        Download
+      </a>
     </div>
   );
 }
