@@ -333,6 +333,55 @@ describe('validation', () => {
       });
     });
 
+    describe('slider linked bounds', () => {
+      const servar = (overrides = {}) => ({
+        key: 'amount',
+        required: false,
+        type: 'slider',
+        metadata: {
+          min_value_field_key: 'floor',
+          max_value_field_key: 'limit'
+        },
+        ...overrides
+      });
+
+      // The slider can't show a value past its range, so submit stores what it shows
+      it.each([
+        ['below the min', 5, 10],
+        ['above the max', 150, 100],
+        ['inside the bounds', 50, 50]
+      ])(
+        'stores a value %s within the range',
+        (_: string, value: number, stored: number) => {
+          Object.assign(fieldValues, { floor: 10, limit: 100, amount: value });
+          expect(getStandardFieldError(value, servar(), null)).toEqual('');
+          expect(fieldValues.amount).toEqual(stored);
+        }
+      );
+
+      it('clamps only the submitted row of a repeated slider', () => {
+        Object.assign(fieldValues, { floor: 10, limit: 100, amount: [5, 150] });
+        getStandardFieldError(150, servar({ repeated: true }), 1);
+        expect(fieldValues.amount).toEqual([5, 100]);
+      });
+
+      it('keeps a min above the max as the value', () => {
+        Object.assign(fieldValues, { floor: 60, limit: 40, amount: 70 });
+        getStandardFieldError(70, servar(), null);
+        expect(fieldValues.amount).toEqual(60);
+      });
+
+      it('leaves fixed bounds alone', () => {
+        Object.assign(fieldValues, { amount: 500 });
+        getStandardFieldError(
+          500,
+          servar({ metadata: {}, max_length: 100 }),
+          null
+        );
+        expect(fieldValues.amount).toEqual(500);
+      });
+    });
+
     describe('audio_recording validation', () => {
       it('detects null as empty', () => {
         // Arrange

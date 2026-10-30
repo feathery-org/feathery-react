@@ -7,6 +7,7 @@ import React from 'react';
 import { stateFieldHasNoOptions } from './addressState';
 import { fieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
+import { clampToLinkedBounds, getLinkedValue } from './valueBounds';
 import { Trigger } from '../types/Form';
 // @ts-ignore
 import isUrl from 'is-url';
@@ -299,15 +300,6 @@ function isFieldValueEmpty(value: any, servar: any) {
   return noVal;
 }
 
-// The value of a linked field, or undefined if it doesn't hold a number
-function getLinkedValue(fieldKey: string | undefined) {
-  if (!fieldKey) return undefined;
-  const value = fieldValues[fieldKey];
-  if (value === '' || typeof value === 'object') return undefined;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : undefined;
-}
-
 // Static bounds are left to the input mask; only linked bounds are checked here
 function getValueBoundError(
   value: number,
@@ -391,6 +383,15 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
     if (meta.symbol_required && !SYMBOL_MATCH.test(value)) return msg('symbol');
   } else if (servar.type === 'integer_field') {
     return getValueBoundError(Number(value), servar, defaultErrors);
+  } else if (servar.type === 'slider') {
+    // A slider shows its value within its linked range, so submit what it shows
+    const clamped = clampToLinkedBounds(Number(value), servar);
+    if (clamped !== Number(value)) {
+      if (servar.repeated) {
+        // @ts-ignore
+        fieldValues[servar.key][repeat] = clamped;
+      } else fieldValues[servar.key] = clamped;
+    }
   }
 
   // No error
