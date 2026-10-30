@@ -10,7 +10,7 @@ import {
 import DocxEditor from './index';
 import { AUTOSAVE_IDLE_MS } from './history/autosaveScheduler';
 import { DocxHistoryHost, DocxSaveMeta, DocxVersion } from './history/types';
-import { setRobinTurnActive } from './robinActivity';
+import { setRobinTurnActive, whileRobinWrites } from './robinActivity';
 
 let mockText = 'Original';
 let mockOnEdit: (info: { assistant: boolean }) => void;
@@ -309,8 +309,12 @@ describe('version history experience', () => {
     expect(view.queryByText('1 edit')).not.toBeNull();
     fireEvent.click(view.getByText('Just now'));
     expect(view.queryByText('1 edit')).not.toBeNull();
-    mockText += ' Robin edit';
-    act(() => mockOnEdit({ assistant: true }));
+    act(() =>
+      whileRobinWrites(mockEditor, () => {
+        mockText += ' Robin edit';
+        mockOnEdit({ assistant: true });
+      })
+    );
     await act(async () => finishCheckpoint(null));
     // The checkpoint response is older than the live document. Refreshing it
     // must recompute both the preview and avatars, without losing the human.
