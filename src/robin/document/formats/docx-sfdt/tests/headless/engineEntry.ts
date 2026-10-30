@@ -28,6 +28,7 @@ import TrackedChangeGroups from '../../../../../../elements/components/DocxEdito
 import HistoryGroup from '../../../../../../elements/components/DocxEditor/DocxToolbar/groups/HistoryGroup';
 import { installHistoryRouting } from '../../../../../../elements/components/DocxEditor/historyRouting';
 import { registerCardResolver, registerHistoryRoute } from '../../../../mounts';
+import { installDocumentTailInvariant } from '../../../../../../elements/components/DocxEditor/documentTailInvariant';
 import { robinMarks } from '../../../../../../elements/components/DocxEditor/robinDocument';
 import { isRobinWriting, onDocumentReplaced } from '../../../../../../elements/components/DocxEditor/robinActivity';
 
@@ -119,6 +120,7 @@ function makeEditor(id: string): DocumentEditor {
     documentEditorSettings: { optimizeSfdt: false }
   });
   instance.appendTo(host);
+  installDocumentTailInvariant(instance as any);
   return instance;
 }
 

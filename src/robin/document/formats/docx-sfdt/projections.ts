@@ -129,6 +129,8 @@ function removedBy(node: NfNode, kind: string): boolean {
   // inserted column's cells and an inserted section; WP1, measured in the headless lane)
   if (node.kind === KIND.cell || node.kind === KIND.section) {
     const blocks = arr<NfNode>(node.blocks);
+    // a section left with no blocks is no section, the editor cannot hold one
+    if (node.kind === KIND.section && !blocks.length) return true;
     return blocks.length > 0 && blocks.every((b) => removedBy(b, kind));
   }
   return false;
@@ -727,6 +729,28 @@ export const N13: Normalization = {
     })
 };
 
+/**
+ * N15: an empty paragraph ending a section other than the last holds the section break and no
+ * format of its own: the editor reads none for it on open
+ */
+export const N15: Normalization = {
+  name: 'N15',
+  apply: (nf) =>
+    eachNode(nf, (n) => {
+      const sections = arr<NfNode>(n.sections);
+      let changed = false;
+      for (const section of sections.slice(0, -1)) {
+        const last = arr<NfNode>(section.blocks).at(-1);
+        if (last?.kind !== KIND.paragraph || arr(last.inlines).length) continue;
+        if (last.style === undefined && last.markStyle === undefined) continue;
+        delete last.style;
+        delete last.markStyle;
+        changed = true;
+      }
+      return changed;
+    })
+};
+
 const ROW_UNDO_DEFAULTS = [
   'gridBefore',
   'gridAfter',
@@ -866,7 +890,8 @@ export const NORMALIZATIONS: readonly Normalization[] = [
   N11,
   N12,
   N13,
-  N14
+  N14,
+  N15
 ];
 export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7, N9];
 

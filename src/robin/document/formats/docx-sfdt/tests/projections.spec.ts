@@ -20,6 +20,7 @@ import {
   N12,
   N13,
   N14,
+  N15,
   NORMALIZATIONS,
   UNDO_NORMALIZATIONS,
   accept,
@@ -80,6 +81,13 @@ describe('accept and reject projections', () => {
     for (const r of table.rows as NfNode[]) r.pending = del();
     expect(all(accept(nf)).some((n) => n.id === table.id)).toBe(false);
     expect(all(reject(nf)).some((n) => n.id === table.id)).toBe(true);
+  });
+
+  it('a section left with no blocks goes on accept, as the editor holds no empty section (55dfaa75 t7)', () => {
+    const nf = fresh();
+    const section = (nf.root.sections as NfNode[])[1];
+    section.blocks = [];
+    expect(all(accept(nf)).some((n) => n.id === section.id)).toBe(false);
   });
 
   it('a cell or section whose every block is inserted goes on reject; an untouched one stays', () => {
@@ -408,6 +416,19 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(fee(withControl({ fontSize: 11, fontFamily: 'Arial' }, ['$', '996', '.', '75']))).not.toEqual(whole);
     const once = N14.apply(nf);
     expect(N14.apply(once)).toBe(once);
+  });
+
+  it('N15 drops the format of an empty paragraph ending a section, which the editor reads as the break (55dfaa75 t7)', () => {
+    const nf = fresh();
+    const sections = nf.root.sections as NfNode[];
+    const ending = { id: 'end', kind: 'paragraph', style: 'f1', markStyle: 'f1', inlines: [] } as unknown as NfNode;
+    const last = { id: 'last', kind: 'paragraph', style: 'f1', inlines: [] } as unknown as NfNode;
+    (sections[0].blocks as NfNode[]).push(ending);
+    (sections[sections.length - 1].blocks as NfNode[]).push(last);
+    const out = all(N15.apply(nf));
+    const end = out.find((n) => n.id === 'end') as NfNode;
+    expect([end.style, end.markStyle]).toEqual([undefined, undefined]);
+    expect((out.find((n) => n.id === 'last') as NfNode).style).toBe('f1');
   });
 
   it('N14 keeps a shared run format apart when its runs sit in paragraphs of different styles', () => {

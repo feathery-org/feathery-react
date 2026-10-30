@@ -235,3 +235,20 @@ export const tableIdentityFinalizer: Finalizer = {
     };
   }
 };
+
+/** A section ending in a table gets an empty paragraph after it, as the editor adds on every open */
+export const sectionTailFinalizer: Finalizer = {
+  name: 'section-tail',
+  run(after) {
+    const endsInTable = (b: NfNode | undefined): boolean =>
+      b?.kind === KIND.table ||
+      (b?.kind === KIND.control && endsInTable(arr<NfNode>(b.blocks).at(-1)));
+    for (const section of arr<NfNode>(after.root.sections))
+      if (endsInTable(arr<NfNode>(section.blocks).at(-1)))
+        (section.blocks as NfNode[]).push({
+          kind: KIND.paragraph,
+          inlines: []
+        } as unknown as NfNode);
+    return { ids: [] };
+  }
+};
