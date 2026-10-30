@@ -293,15 +293,16 @@ describe('validation', () => {
       it.each([
         ['inside the bounds', 50, ''],
         ['at the min', 10, ''],
-        ['at the max', 100.5, ''],
+        ['at the max', 100, ''],
         ['below the min', 9, atLeast(10)],
-        ['above the max', 101, atMost(100.5)],
-        ['stored as a string', '101', atMost(100.5)]
+        ['above the max', 101, atMost(100)],
+        ['stored as a string', '101', atMost(100)]
       ])(
         'checks a value %s',
         (_: string, value: number | string, error: string) => {
-          // The max arrives as a string, as text-like stored values do
-          Object.assign(fieldValues, { floor: 10, limit: '100.5' });
+          // Linked bounds round to integers (9.5 up to 10, 100.4 down to 100), and
+          // the max arrives as a string, as text-like stored values do
+          Object.assign(fieldValues, { floor: 9.5, limit: '100.4' });
           expect(getStandardFieldError(value, servar(), null)).toEqual(error);
         }
       );
@@ -312,15 +313,24 @@ describe('validation', () => {
         expect(getStandardFieldError(1, servar(), null)).toEqual(atMost(0));
       });
 
-      // '' must not become 0, and non-numbers can't bound anything
-      it.each([[''], [null], [undefined], [[5]], [{}], ['abc'], ['Infinity']])(
-        'ignores a linked value of %p',
-        (linked: unknown) => {
-          Object.assign(fieldValues, { floor: linked, limit: linked });
-          expect(getStandardFieldError(-1e9, servar(), null)).toEqual('');
-          expect(getStandardFieldError(1e9, servar(), null)).toEqual('');
-        }
-      );
+      // Blank text and booleans must not become 0 or 1, and non-numbers can't
+      // bound anything
+      it.each([
+        [''],
+        ['  '],
+        [true],
+        [false],
+        [null],
+        [undefined],
+        [[5]],
+        [{}],
+        ['abc'],
+        ['Infinity']
+      ])('ignores a linked value of %p', (linked: unknown) => {
+        Object.assign(fieldValues, { floor: linked, limit: linked });
+        expect(getStandardFieldError(-1e9, servar(), null)).toEqual('');
+        expect(getStandardFieldError(1e9, servar(), null)).toEqual('');
+      });
 
       it('ignores missing links', () => {
         Object.assign(fieldValues, { floor: 10, limit: 100 });
