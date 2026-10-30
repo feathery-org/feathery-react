@@ -140,6 +140,33 @@ describe('composeTracked', () => {
   });
 });
 
+describe('composeTracked: moving text still pending in an earlier card', () => {
+  it('the moved copy is the mover\'s alone, the copy left behind keeps the earlier insertion (ece57233 t3)', () => {
+    const nf = JSON.parse(JSON.stringify(state().view.nf)) as NormalForm;
+    const blocks = arr<NfNode>(arr<NfNode>(nf.root.sections)[1].blocks);
+    const at = blocks.findIndex((b, i) => i > 3 && b.kind === 'paragraph' && arr<NfNode>(b.inlines).length > 0 && arr<NfNode>(b.inlines).every((r) => r.kind === 'run'));
+    const moving = blocks[at];
+    const earlier = { kind: 'Insertion', author: 'Robin', group: 'X' };
+    moving.pending = { mark: { ...earlier } };
+    for (const r of arr<NfNode>(moving.inlines)) r.pending = { ...earlier };
+    const intended = JSON.parse(JSON.stringify(nf)) as NormalForm;
+    const list = arr<NfNode>(arr<NfNode>(intended.root.sections)[1].blocks);
+    list.splice(2, 0, ...list.splice(at, 1));
+    const { tracked } = composeTracked(makeView(nf, docxPack), intended, 'Y');
+    const [placed, left] = occurrences(tracked, moving.id);
+    const groups = (n: NfNode) => {
+      const out = new Set<string>();
+      walk(n, docxTree, ({ node }) => {
+        for (const p of [node.pending, (node.pending as NfNode | undefined)?.mark])
+          for (const r of arr<NfNode>((p as NfNode | undefined)?.revisions ?? (p ? [p] : []))) if (r.kind) out.add(`${r.kind} ${r.group}`);
+      });
+      return [...out].sort();
+    };
+    expect(groups(placed)).toEqual(['Insertion Y']);
+    expect(groups(left)).toEqual(['Deletion Y', 'Insertion X']);
+  });
+});
+
 describe('inOrder: which ids a reordering moved', () => {
   const size = (id: string) => (id === 'T' ? 1000 : 1);
   it('the fewest nodes move: a large node carried past four small ones is the one that moved', () => {
