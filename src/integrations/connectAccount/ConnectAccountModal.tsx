@@ -458,6 +458,21 @@ function ConnectAccountModal({
                 ? 'This connection was set up by another user and is locked to them. Choose one of your saved accounts or connect a new one to use your own instead.'
                 : 'Select a saved account or connect a new one.'}
             </p>
+            {!credentials.length && !canSaveCredential && connected && !locked && (
+              // Without a saved-account menu, this is the only place the current account shows
+              <p
+                css={{
+                  margin: '12px 0 0',
+                  color: '#18181b',
+                  fontSize: '14px',
+                  lineHeight: 1.5
+                }}
+              >
+                {accountEmail
+                  ? `Connected as ${accountEmail}`
+                  : `Your ${providerLabel} account is connected.`}
+              </p>
+            )}
             {!credentials.length && !canSaveCredential && (
               <button
                 type='button'
