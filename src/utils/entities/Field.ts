@@ -5,7 +5,7 @@ import {
   normalizeKnownAsciiValues
 } from '../init';
 import debounce from 'lodash.debounce';
-import { rerenderAllForms } from '../formHelperFunctions';
+import { realignFilePathMap, rerenderAllForms } from '../formHelperFunctions';
 import {
   FieldStyles,
   getDefaultFormFieldValue,
@@ -87,11 +87,17 @@ export default class Field {
     )
       return new Proxy(fieldVal as object, {
         set: (target: any, property: any, value) => {
-          target[property] = parseUserVal(
+          const parsed = parseUserVal(
             value,
             this._fieldKey,
             internalState[this._formUuid]?.client.formKey
           );
+          if (Array.isArray(target) && isArrayIndex(property)) {
+            const next = [...target];
+            next[Number(property)] = parsed;
+            realignFilePathMap(this._fieldKey, target, next);
+          }
+          target[property] = parsed;
           this._runFieldUpdate();
           return true;
         }
@@ -101,20 +107,12 @@ export default class Field {
 
   // set raw field value
   set value(val: FeatheryFieldTypes) {
-    if (Array.isArray(val))
-      fieldValues[this._fieldKey] = val.map((entry) =>
-        parseUserVal(
-          entry,
-          this._fieldKey,
-          internalState[this._formUuid]?.client.formKey
-        )
-      );
-    else
-      fieldValues[this._fieldKey] = parseUserVal(
-        val,
-        this._fieldKey,
-        internalState[this._formUuid]?.client.formKey
-      );
+    const formKey = internalState[this._formUuid]?.client.formKey;
+    const next = Array.isArray(val)
+      ? val.map((entry) => parseUserVal(entry, this._fieldKey, formKey))
+      : parseUserVal(val, this._fieldKey, formKey);
+    realignFilePathMap(this._fieldKey, fieldValues[this._fieldKey], next);
+    fieldValues[this._fieldKey] = next;
     this._runFieldUpdate();
   }
 
@@ -454,6 +452,11 @@ export default class Field {
   doesNotHaveSameLengthAs(...values: ({ id: string } | string)[]): boolean {
     return this._executeLogic('not_equal_length', values);
   }
+}
+
+// Proxy set traps see every property name; only numeric keys are repeat rows.
+function isArrayIndex(property: unknown): boolean {
+  return typeof property === 'string' && /^\d+$/.test(property);
 }
 
 export function parseUserVal(
