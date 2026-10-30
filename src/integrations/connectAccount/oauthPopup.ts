@@ -62,6 +62,7 @@ export async function runOAuthPopup(
   return new Promise<Record<string, any>>((resolve, reject) => {
     const win = featheryWindow();
     let settled = false;
+    let completing = false;
     let checkingClosedPopup = false;
 
     const cleanup = () => {
@@ -76,10 +77,27 @@ export async function runOAuthPopup(
       cleanup();
       callback();
     };
-    const handleResult = (payload: Record<string, any>) => {
+    const handleResult = async (payload: Record<string, any>) => {
+      if (settled || completing) return;
       if (payload.success || payload.status === 'connected') {
         popup.close();
-        finish(() => resolve(payload));
+        if (payload.requires_completion) {
+          completing = true;
+          try {
+            const result = await client.completeAccountConnect(
+              provider,
+              state,
+              authorization.completion_secret
+            );
+            finish(() => resolve(result));
+          } catch (error) {
+            finish(() => reject(error));
+          } finally {
+            completing = false;
+          }
+        } else {
+          finish(() => resolve(payload));
+        }
       } else if (payload.status === 'error' || payload.success === false) {
         popup.close();
         finish(() =>
@@ -102,7 +120,7 @@ export async function runOAuthPopup(
     const checkStatus = async () => {
       try {
         const result = await client.getAccountConnectStatus(state);
-        handleResult(result);
+        await handleResult(result);
       } catch (_error) {
         // postMessage remains the primary path; transient polling errors can retry.
       }
@@ -111,7 +129,7 @@ export async function runOAuthPopup(
 
     win.addEventListener('message', handleMessage);
     const closePoll = win.setInterval(async () => {
-      if (popup.closed && !checkingClosedPopup) {
+      if (popup.closed && !checkingClosedPopup && !completing) {
         checkingClosedPopup = true;
         const completed = await checkStatus();
         if (!completed) {

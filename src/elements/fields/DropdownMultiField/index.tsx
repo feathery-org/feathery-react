@@ -56,7 +56,7 @@ export default function DropdownMultiField({
   const servar = element.servar;
   const fieldKey = servar.key;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode, asciiOnly);
+    useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
 
   const properties = element.properties || {};
   const translation = properties.translate || {};

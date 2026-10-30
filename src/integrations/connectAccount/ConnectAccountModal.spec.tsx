@@ -62,6 +62,23 @@ describe('ConnectAccountModal', () => {
     ).toHaveTextContent('Current Charles Schwab account');
   });
 
+  it('names the connected account for a guest with no saved-account menu', () => {
+    const { rerender } = render(<ConnectAccountModal {...baseProps} />);
+    expect(
+      screen.getByText('Connected as respondent@example.com')
+    ).toBeTruthy();
+    expect(screen.getByText('Change account')).toBeTruthy();
+
+    rerender(<ConnectAccountModal {...baseProps} accountEmail='' />);
+    expect(screen.getByText('Your Box account is connected.')).toBeTruthy();
+  });
+
+  it('does not show another user’s account to a guest replacing it', () => {
+    render(<ConnectAccountModal {...baseProps} lockedByOwner />);
+    expect(screen.queryByText(/Connected as/)).toBeNull();
+    expect(screen.getByText('Connect your own account')).toBeTruthy();
+  });
+
   it('calls onChangeAccount when Change account is clicked', async () => {
     const onChangeAccount = jest.fn();
     render(

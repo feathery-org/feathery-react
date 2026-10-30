@@ -1,5 +1,6 @@
 import React from 'react';
 import BoxFolderPicker from './BoxFolderPicker';
+import SalesforceConnection from './SalesforceConnection';
 import { fieldValues } from '../../utils/init';
 import { ACTION_CONNECT_ACCOUNT } from '../../utils/elementActions';
 
@@ -29,15 +30,19 @@ export type ProviderConfigProps = {
  *  this map connects with no further configuration and never shows the modal on
  *  a fresh connect - only on a repeat click, where the modal's sole purpose is
  *  the "Change account" option. */
+export const SALESFORCE_PROVIDER = 'salesforce-client-credentials';
+
 export const CONFIG_COMPONENTS: Record<
   string,
   React.ComponentType<ProviderConfigProps>
 > = {
-  box: BoxFolderPicker
+  box: BoxFolderPicker,
+  [SALESFORCE_PROVIDER]: SalesforceConnection
 };
 
 export const PROVIDER_LABELS: Record<string, string> = {
   box: 'Box',
+  [SALESFORCE_PROVIDER]: 'Salesforce',
   'charles-schwab': 'Charles Schwab'
 };
 

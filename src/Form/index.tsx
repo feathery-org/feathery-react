@@ -251,6 +251,7 @@ import ConnectAccountModal, {
 import {
   CONFIG_COMPONENTS,
   PROVIDER_LABELS,
+  SALESFORCE_PROVIDER,
   configFieldKey,
   connectionFieldKey,
   hasEmailIdentity
@@ -410,7 +411,10 @@ function isRequiredFlowSatisfied(action: RequiredFlowAction) {
 function preOpenActionWindows(actions: any[]) {
   const windows = new Map<number, Window | null>();
   actions.forEach((action, idx) => {
-    if (action.type === ACTION_CONNECT_ACCOUNT && action.provider !== 'box') {
+    if (
+      action.type === ACTION_CONNECT_ACCOUNT &&
+      !['box', SALESFORCE_PROVIDER].includes(action.provider)
+    ) {
       windows.set(
         idx,
         featheryWindow().open(
@@ -493,6 +497,7 @@ function Form({
   // stays behind the Continue screen until the user redeems it.
   const [linkConfirmRequired, setLinkConfirmRequired] = useState(false);
   const [formSettings, setFormSettings] = useState({
+    formKey: formIdProp,
     readOnly,
     authSensitiveActionsOnly: false,
     errorType: 'html5',
@@ -1984,7 +1989,11 @@ function Form({
           };
         if (res.save_url_params) saveUrlParamsFormSetting = true;
         const mappedSettings = mapFormSettingsResponse(res);
-        setFormSettings({ ...formSettings, ...mappedSettings });
+        setFormSettings({
+          ...formSettings,
+          ...mappedSettings,
+          formKey: newClient.formKey
+        });
         // The upload tracker is keyed by formKey since upload reporting
         // happens in FeatheryClient, outside React state. Read the mapped
         // setting rather than the raw response so the default lives in one place
@@ -3142,14 +3151,14 @@ function Form({
         // that a connection exists. Either way a value here means connected.
         const connectionKey = connectionFieldKey(provider);
 
-        const alreadyConnected = !!fieldValues[connectionKey];
+        let alreadyConnected = !!fieldValues[connectionKey];
         let connected = false;
         let credentials: SavedAccountCredential[] = [];
         let chooseCredential = false;
         let canSaveCredential = false;
         let lockedByOwner = false;
         try {
-          if (provider === 'box') {
+          if (['box', SALESFORCE_PROVIDER].includes(provider)) {
             // Listing saved accounts is optional; a throttle or temporary outage
             // must not prevent the existing OAuth or change-account flow.
             const saved = await client
@@ -3175,9 +3184,18 @@ function Form({
               );
             }
             credentials = saved?.credentials ?? [];
-            canSaveCredential = !!saved;
+            canSaveCredential = !!saved && saved.can_save !== false;
             lockedByOwner =
               alreadyConnected && saved?.attached?.owner === false;
+            if (provider === SALESFORCE_PROVIDER) {
+              // A failed credential lookup leaves `saved` undefined, so the
+              // modal opens as "not connected" with an empty list on purpose:
+              // Salesforce requires a reconnect rather than trusting the field.
+              alreadyConnected =
+                saved?.attached?.status === 'connected' &&
+                saved?.attached?.owner === true;
+              lockedByOwner = saved?.attached?.owner === false;
+            }
             // Always open Box's picker first. If the saved-account lookup is
             // unavailable, the picker still offers an explicit new-account
             // action instead of pre-opening and dismissing an OAuth window.
@@ -3216,7 +3234,11 @@ function Form({
           // connect the modal is worth showing only for a provider with setup
           // to collect; otherwise connecting is the whole job and the flow
           // continues straight away.
-          if (alreadyConnected || CONFIG_COMPONENTS[provider]) {
+          if (
+            alreadyConnected ||
+            chooseCredential ||
+            CONFIG_COMPONENTS[provider]
+          ) {
             // The flow advances from the modal's onSaved, which only a
             // provider's config component calls - the respondent has not
             // finished configuring the account yet.
