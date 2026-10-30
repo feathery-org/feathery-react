@@ -589,8 +589,20 @@ export const N5: Normalization = {
 export const N6: Normalization = {
   name: 'N6',
   apply: (nf) =>
-    eachNode(nf, (n) => {
+    eachNode(nf, (n, _s, out) => {
       if (!Array.isArray(n.inlines)) return false;
+      // a format reference compares by the entry it names: typed text gets its own equal entry
+      const props = (run: Obj) =>
+        canonicalJson(
+          Object.fromEntries(
+            Object.entries(run).map(([k, v]) => [
+              k,
+              REF_KEYS.includes(k) && typeof v === 'string'
+                ? out.formats[v] ?? v
+                : v
+            ])
+          )
+        );
       const before = (n.inlines as NfNode[]).length;
       const merged: NfNode[] = [];
       for (const inline of n.inlines as NfNode[]) {
@@ -598,11 +610,7 @@ export const N6: Normalization = {
         if (prev && prev.kind === KIND.run && inline.kind === KIND.run) {
           const { text: a, id: ia, ...pa } = prev;
           const { text: b, id: ib, ...pb } = inline;
-          if (
-            ia !== undefined &&
-            ib !== undefined &&
-            JSON.stringify(pa) === JSON.stringify(pb)
-          ) {
+          if (ia !== undefined && ib !== undefined && props(pa) === props(pb)) {
             prev.text = `${String(a)}${String(b)}`;
             continue;
           }

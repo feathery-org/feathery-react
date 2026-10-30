@@ -253,6 +253,22 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(texts(N6.apply(split))).not.toEqual(texts(N6.apply(nf)));
   });
 
+  it('N6 merges runs whose formats are equal entries under different keys, as text typed into a run reads back (R16)', () => {
+    const nf = fresh();
+    const para = all(nf).find((n) => n.kind === 'paragraph' && (n.inlines as NfNode[]).some((i) => i.kind === 'run' && typeof i.style === 'string')) as NfNode;
+    const split = JSON.parse(JSON.stringify(nf)) as NormalForm;
+    const p = all(split).find((n) => n.id === para.id) as NfNode;
+    const inlines = p.inlines as NfNode[];
+    const k = inlines.findIndex((i) => i.kind === 'run' && typeof i.style === 'string');
+    const text = String(inlines[k].text);
+    split.formats.typed = { ...split.formats[inlines[k].style as string] };
+    inlines.splice(k, 1, { ...inlines[k], text: text.slice(0, 2) }, { ...inlines[k], id: 'typed', style: 'typed', text: text.slice(2) });
+    const texts = (d: NormalForm) => ((all(d).find((n) => n.id === para.id) as NfNode).inlines as NfNode[]).map((i) => i.text);
+    expect(texts(N6.apply(split))).toEqual(texts(N6.apply(nf)));
+    split.formats.typed = { ...split.formats.typed, fontColor: '#123456' };
+    expect(texts(N6.apply(split))).not.toEqual(texts(N6.apply(nf)));
+  });
+
   it('N7 row defaults an undo adds, only in undo comparisons', () => {
     const nf = fresh();
     const row = all(nf).find((n) => n.kind === 'row' && typeof n.style === 'string') as NfNode;
