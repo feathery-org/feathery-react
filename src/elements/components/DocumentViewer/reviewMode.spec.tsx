@@ -594,7 +594,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
     const pressed = (
       session: ReviewSession,
       action: 'draft' | 'sign',
-      docusignStatus?: 'sent' | 'created'
+      docusignStatus?: string
     ) =>
       deferCompletion(recordAttempt(session, action), action, docusignStatus);
 
@@ -667,6 +667,22 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
         true
       );
       expect(pressed(fresh, 'sign', 'sent').sent).toBe(true);
+    });
+
+    it('locks a retried Draft that finds the envelope already sent', () => {
+      // Sign reached DocuSign but its response was lost, so the filler retried
+      // with Create Draft and the backend reported the envelope as sent.
+      const lostSign = recordAttempt(fresh, 'sign');
+      const retried = pressed(lostSign, 'draft', 'sent');
+      expect(retried.sent).toBe(true);
+      expect(retried.draftedRevision).toBeNull();
+      expect(isToolbarActionDisabled(retried, 'sign')).toBe(true);
+      expect(isToolbarActionDisabled(retried, 'draft')).toBe(true);
+    });
+
+    it('falls back to the press when the backend reports no status', () => {
+      expect(pressed(fresh, 'draft').sent).toBe(false);
+      expect(pressed(fresh, 'sign').sent).toBe(true);
     });
 
     it('ends signing and drafting once sent', () => {
