@@ -4,7 +4,6 @@
 import {
   BindingIndex,
   getAt,
-  hasOnlyRevisionIds,
   hasRevisionId,
   revisionIdsOfType,
   inlineText,
@@ -86,7 +85,7 @@ export function createPositionalGrid(
 
   const deletionRevisionIds = revisionIdsOfType(sfdt, 'Deletion');
   const isDeletedInline = (inline: any): boolean =>
-    hasOnlyRevisionIds(inline, deletionRevisionIds);
+    hasRevisionId(inline, deletionRevisionIds);
 
   /** Physical position of an occurrence in a table (span-aware column). */
   function positionIn(

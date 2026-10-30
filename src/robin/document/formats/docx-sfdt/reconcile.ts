@@ -257,7 +257,20 @@ export function composeTracked(
           // the new text is this change's alone, whatever revision the old text carried
           delete kid.pending;
           markSubtree(kid, ins);
-          result.push(gone, kid);
+          result.push(gone);
+          // the rest of the old text stays beside it, so the new text never splits another card's run
+          while (
+            w < was.length &&
+            !keep.has(was[w].id) &&
+            was[w].kind === KIND.run
+          ) {
+            const rest = clone(was[w]);
+            markSubtree(rest, del);
+            removedCopies.push(rest);
+            result.push(rest);
+            w += 1;
+          }
+          result.push(kid);
           continue;
         }
         if (
