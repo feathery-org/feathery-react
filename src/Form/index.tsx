@@ -163,6 +163,8 @@ import internalState, {
   CreateEgnyteFolderParams,
   FormToolsCallbacks,
   GetDocusignEnvelopeParams,
+  GetEgnyteFileParams,
+  ListEgnyteFolderParams,
   UploadFileToEgnyteParams,
   RunComputerAgentOptions,
   SendDocusignParams,
@@ -1713,6 +1715,10 @@ function Form({
           client.uploadFileToEgnyte(params),
         createEgnyteFolder: (params: CreateEgnyteFolderParams) =>
           client.createEgnyteFolder(params),
+        listEgnyteFolder: (params: ListEgnyteFolderParams = {}) =>
+          client.listEgnyteFolder(params),
+        getEgnyteFile: (params: GetEgnyteFileParams) =>
+          client.getEgnyteFile(params),
         getDocusignBrands: async () => {
           await Promise.all([
             client.flushCustomFields(),
