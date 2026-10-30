@@ -7,6 +7,7 @@ import React from 'react';
 import { stateFieldHasNoOptions } from './addressState';
 import { fieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
+import { clampToLinkedBounds, getLinkedValue } from './valueBounds';
 import { Trigger } from '../types/Form';
 // @ts-ignore
 import isUrl from 'is-url';
@@ -299,6 +300,21 @@ function isFieldValueEmpty(value: any, servar: any) {
   return noVal;
 }
 
+// Static bounds are left to the input mask; only linked bounds are checked here
+function getValueBoundError(
+  value: number,
+  servar: any,
+  defaultErrors: Record<string, string>
+) {
+  const min = getLinkedValue(servar.metadata?.min_value_field_key);
+  const max = getLinkedValue(servar.metadata?.max_value_field_key);
+  if (min !== undefined && value < min)
+    return defaultErrors.minimum_value.replace('{value}', String(min));
+  if (max !== undefined && value > max)
+    return defaultErrors.maximum_value.replace('{value}', String(max));
+  return '';
+}
+
 /**
  * Default validations.
  * Returns the error message for a field value if it's invalid.
@@ -365,6 +381,17 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
       return msg('lowercase letter');
     if (meta.number_required && !NUMBER_MATCH.test(value)) return msg('number');
     if (meta.symbol_required && !SYMBOL_MATCH.test(value)) return msg('symbol');
+  } else if (servar.type === 'integer_field') {
+    return getValueBoundError(Number(value), servar, defaultErrors);
+  } else if (servar.type === 'slider') {
+    // A slider shows its value within its linked range, so submit what it shows
+    const clamped = clampToLinkedBounds(Number(value), servar);
+    if (clamped !== Number(value)) {
+      if (servar.repeated) {
+        // @ts-ignore
+        fieldValues[servar.key][repeat] = clamped;
+      } else fieldValues[servar.key] = clamped;
+    }
   }
 
   // No error

@@ -4,6 +4,7 @@ import { hoverStylesGuard } from '../../../utils/browser';
 
 import SliderStyles from './styles';
 import HiddenValueInput from '../../components/HiddenValueInput';
+import { getSliderRange } from '../../../utils/valueBounds';
 
 export default function SliderField({
   element,
@@ -24,8 +25,13 @@ export default function SliderField({
   }, [fieldVal]);
 
   const servar = element.servar;
-  const minVal = servar.min_length ?? 0;
-  const maxVal = servar.max_length ?? 100;
+  const { min: minVal, max: maxVal } = getSliderRange(servar);
+  // A linked range can move past the value; rc-slider keeps the handle in range,
+  // so show the label and input the same way, as submit will store it
+  const shownValue =
+    typeof internalValue === 'number'
+      ? Math.min(Math.max(internalValue, minVal), maxVal)
+      : internalValue;
   const minLabel = servar.metadata.min_val_label || minVal;
   const maxLabel = servar.metadata.max_val_label || maxVal;
   const stepSize = servar.metadata.step_size || 1;
@@ -88,7 +94,7 @@ export default function SliderField({
             React.cloneElement(handle, { name: servar.key } as any)
           }
         />
-        <HiddenValueInput name={servar.key} value={internalValue} />
+        <HiddenValueInput name={servar.key} value={shownValue} />
       </div>
       <div
         css={{
@@ -102,7 +108,7 @@ export default function SliderField({
           css={{ opacity: 0, transition: '0.2s ease opacity 0.3s' }}
           className='current-value'
         >
-          {internalValue}
+          {shownValue}
         </span>
         <span>{maxLabel}</span>
       </div>

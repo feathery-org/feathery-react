@@ -18,7 +18,9 @@ jest.mock('../init', () => ({
       email: 'Invalid email format',
       url: 'Invalid URL',
       ssn: 'Invalid social security number',
-      pin_input: 'Please enter a full code'
+      pin_input: 'Please enter a full code',
+      minimum_value: 'Your entry must be at least {value}',
+      maximum_value: 'Your entry must be at most {value}'
     }
   }),
   fieldValues: {}
@@ -271,6 +273,122 @@ describe('validation', () => {
 
         // Assert
         expect(actual).toEqual(expected);
+      });
+    });
+
+    describe('integer_field linked bounds', () => {
+      const servar = (overrides = {}) => ({
+        required: false,
+        type: 'integer_field',
+        metadata: {
+          min_value_field_key: 'floor',
+          max_value_field_key: 'limit'
+        },
+        ...overrides
+      });
+
+      const atLeast = (n: number) => `Your entry must be at least ${n}`;
+      const atMost = (n: number) => `Your entry must be at most ${n}`;
+
+      it.each([
+        ['inside the bounds', 50, ''],
+        ['at the min', 10, ''],
+        ['at the max', 100, ''],
+        ['below the min', 9, atLeast(10)],
+        ['above the max', 101, atMost(100)],
+        ['stored as a string', '101', atMost(100)]
+      ])(
+        'checks a value %s',
+        (_: string, value: number | string, error: string) => {
+          // Linked bounds round to integers (9.5 up to 10, 100.4 down to 100), and
+          // the max arrives as a string, as text-like stored values do
+          Object.assign(fieldValues, { floor: 9.5, limit: '100.4' });
+          expect(getStandardFieldError(value, servar(), null)).toEqual(error);
+        }
+      );
+
+      it('enforces a bound of 0', () => {
+        Object.assign(fieldValues, { floor: 0, limit: 0 });
+        expect(getStandardFieldError(-1, servar(), null)).toEqual(atLeast(0));
+        expect(getStandardFieldError(1, servar(), null)).toEqual(atMost(0));
+      });
+
+      // Blank text and booleans must not become 0 or 1, and non-numbers can't
+      // bound anything
+      it.each([
+        [''],
+        ['  '],
+        [true],
+        [false],
+        [null],
+        [undefined],
+        [[5]],
+        [{}],
+        ['abc'],
+        ['Infinity']
+      ])('ignores a linked value of %p', (linked: unknown) => {
+        Object.assign(fieldValues, { floor: linked, limit: linked });
+        expect(getStandardFieldError(-1e9, servar(), null)).toEqual('');
+        expect(getStandardFieldError(1e9, servar(), null)).toEqual('');
+      });
+
+      it('ignores missing links', () => {
+        Object.assign(fieldValues, { floor: 10, limit: 100 });
+        expect(
+          getStandardFieldError(1e9, servar({ metadata: {} }), null)
+        ).toEqual('');
+        expect(
+          getStandardFieldError(1e9, servar({ metadata: undefined }), null)
+        ).toEqual('');
+      });
+    });
+
+    describe('slider linked bounds', () => {
+      const servar = (overrides = {}) => ({
+        key: 'amount',
+        required: false,
+        type: 'slider',
+        metadata: {
+          min_value_field_key: 'floor',
+          max_value_field_key: 'limit'
+        },
+        ...overrides
+      });
+
+      // The slider can't show a value past its range, so submit stores what it shows
+      it.each([
+        ['below the min', 5, 10],
+        ['above the max', 150, 100],
+        ['inside the bounds', 50, 50]
+      ])(
+        'stores a value %s within the range',
+        (_: string, value: number, stored: number) => {
+          Object.assign(fieldValues, { floor: 10, limit: 100, amount: value });
+          expect(getStandardFieldError(value, servar(), null)).toEqual('');
+          expect(fieldValues.amount).toEqual(stored);
+        }
+      );
+
+      it('clamps only the submitted row of a repeated slider', () => {
+        Object.assign(fieldValues, { floor: 10, limit: 100, amount: [5, 150] });
+        getStandardFieldError(150, servar({ repeated: true }), 1);
+        expect(fieldValues.amount).toEqual([5, 100]);
+      });
+
+      it('keeps a min above the max as the value', () => {
+        Object.assign(fieldValues, { floor: 60, limit: 40, amount: 70 });
+        getStandardFieldError(70, servar(), null);
+        expect(fieldValues.amount).toEqual(60);
+      });
+
+      it('leaves fixed bounds alone', () => {
+        Object.assign(fieldValues, { amount: 500 });
+        getStandardFieldError(
+          500,
+          servar({ metadata: {}, max_length: 100 }),
+          null
+        );
+        expect(fieldValues.amount).toEqual(500);
       });
     });
 
