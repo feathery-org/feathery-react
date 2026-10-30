@@ -93,6 +93,105 @@ export interface ViewerDocument {
   name?: string;
 }
 
+// With `editor_close_on_action: false` a closing action leaves the screen open,
+// so the viewer tracks whether a later close completes the flow, whether the
+// envelopes were sent, and whether the DocuSign draft predates the latest edit.
+export interface ReviewSession {
+  pendingCompletion: boolean;
+  sent: boolean;
+  // Counts the filler's own widget edits, not pdf.js storage writes: pdf.js
+  // also writes storage while rendering (unchecking a checked radio's
+  // siblings), which would read as an edit nobody made.
+  editRevision: number;
+  draftedRevision: number | null;
+  // A Draft or Sign was pressed, so a DocuSign draft may exist even though no
+  // response confirmed it (a lost response, or a failure after finalize).
+  draftAttempted: boolean;
+}
+
+const INITIAL_REVIEW_SESSION: ReviewSession = {
+  pendingCompletion: false,
+  sent: false,
+  editRevision: 0,
+  draftedRevision: null,
+  draftAttempted: false
+};
+
+export interface FinalizeResult {
+  status?: string;
+  message?: string;
+  // What DocuSign reported for the envelope. `status` cannot carry it: the
+  // async poll overwrites it with "complete". Absent from older backends.
+  // "created" is a draft; anything else means DocuSign no longer holds one.
+  docusign_status?: string;
+}
+
+const errorMessage = (e: unknown) =>
+  e instanceof Error ? e.message : 'Something went wrong';
+
+type FinalizeOutcome = 'stay' | 'complete' | 'defer';
+
+/** What a successful press of `action` does: leave the filler here, complete
+ * the flow now, or record a completion that the next close carries out. */
+export const finalizeOutcome = (
+  action: EditorToolbarAction,
+  available: EditorToolbarAction[],
+  keepOpen: boolean
+): FinalizeOutcome => {
+  if (!closesEditor(action, available)) return 'stay';
+  // Continue is the only way forward, so it never stays open.
+  return keepOpen && action !== 'fill' ? 'defer' : 'complete';
+};
+
+const isDocusignPress = (action: EditorToolbarAction) =>
+  action === 'draft' || action === 'sign';
+
+export const recordAttempt = (
+  session: ReviewSession,
+  action: EditorToolbarAction
+): ReviewSession =>
+  isDocusignPress(action) ? { ...session, draftAttempted: true } : session;
+
+export const deferCompletion = (
+  session: ReviewSession,
+  action: EditorToolbarAction,
+  docusignStatus?: FinalizeResult['docusign_status']
+): ReviewSession => {
+  // DocuSign's own status wins over the button pressed: a Joint Agreements
+  // hold keeps a Sign as a draft, and a Draft retried after a Sign whose
+  // response was lost finds the envelope already sent. Older backends send
+  // no status, so the press decides.
+  const drafted = docusignStatus
+    ? docusignStatus === 'created'
+    : action === 'draft';
+  const sent = docusignStatus
+    ? docusignStatus !== 'created'
+    : action === 'sign';
+  return {
+    ...session,
+    pendingCompletion: true,
+    sent: session.sent || sent,
+    draftedRevision: drafted ? session.editRevision : session.draftedRevision
+  };
+};
+
+const draftIsCurrent = (session: ReviewSession) =>
+  session.draftedRevision === session.editRevision;
+
+export const needsDraftRefresh = (
+  session: ReviewSession,
+  action: EditorToolbarAction
+) =>
+  isDocusignPress(action) && session.draftAttempted && !draftIsCurrent(session);
+
+export const isToolbarActionDisabled = (
+  session: ReviewSession,
+  action: EditorToolbarAction
+) => {
+  if (action === 'draft') return session.sent || draftIsCurrent(session);
+  return action === 'sign' && session.sent;
+};
+
 export interface DocumentViewerPayload {
   documents: ViewerDocument[];
   expires_at: string;
@@ -104,7 +203,9 @@ interface DocumentViewerProps {
   // toolbar, `editor_read_only` locks the PDFs' form fields.
   action: Record<string, any>;
   setShow: (show: boolean) => void;
-  onComplete: () => void;
+  // May return the flow it continues, so a kept-open close can recover when
+  // that flow fails.
+  onComplete: () => void | Promise<unknown>;
   // The toolbar exposes a single Continue action (label varies by
   // `envelope_action`) that calls this to finalize the reviewed envelopes.
   onFinalize?: (params: {
@@ -112,7 +213,13 @@ interface DocumentViewerProps {
     envelopeAction: ReviewEnvelopeAction;
     // DocuSign sign only: save the envelope as a draft instead of sending it.
     draft: boolean;
-  }) => Promise<{ status?: string; message?: string } | void>;
+    // Replace the documents on the DocuSign draft this session already
+    // created, because the filler edited them since.
+    refreshDraft: boolean;
+    // Whether this press is the one a completion would report, now or on a
+    // later close, so the caller can tell its outcome from a Download's.
+    completes: boolean;
+  }) => Promise<FinalizeResult | void>;
   // Persist a PDF the filler edited in the viewer back to its envelope.
   // Called before finalize for every document with unsaved field edits, so
   // whatever outcome finalize runs (download, sign, ...) acts on the edited
@@ -132,10 +239,6 @@ export default function DocumentViewer({
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // Keep the keydown listener (bound once) calling the latest setShow, which
-  // the parent passes as a fresh closure on every render.
-  const setShowRef = useRef(setShow);
-  setShowRef.current = setShow;
   // Dedicated body-level node so the viewer renders in its own subtree and the
   // rest of the page can be made `inert` while it is open (see the portal
   // effect below).
@@ -144,14 +247,34 @@ export default function DocumentViewer({
     portalElRef.current = featheryDoc().createElement('div');
   }
   // Key of the toolbar action currently running (spinner + disable-all), or
-  // null when idle. Keys: 'primary', 'draft', 'download'.
+  // null when idle. Keys: 'primary', each toolbar action, and 'closing'.
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [session, setSession] = useState(INITIAL_REVIEW_SESSION);
+  const keepOpen = action.editor_close_on_action === false;
+  // A close after a deferred completion finishes the flow; otherwise it
+  // cancels the review, as it always has.
+  const close = () => {
+    if (!session.pendingCompletion) return setShow(false);
+    // The opener keeps the viewer mounted while the flow runs on, and a
+    // second close or press in that window would complete twice.
+    setBusyKey('closing');
+    // Left frozen, a flow that failed after the close would strand the filler.
+    Promise.resolve(onComplete()).catch((e) => {
+      setError(errorMessage(e));
+      setBusyKey(null);
+    });
+  };
+  // Read by the once-bound Escape handler, which must call the latest close.
+  const closeRef = useRef(close);
+  closeRef.current = close;
   // Freeze the PDF widgets while an action runs. pdf.js only fires
   // onSetModified when the modified flag flips false→true, and during a save
   // it is already true — so an edit made mid-save never re-marks the doc
   // dirty, then saveDocument()'s finally resets the flag and the doc looks
   // clean. The edit would stay on screen but never be persisted.
-  const isInputLocked = busyKey !== null;
+  // Also frozen once the envelopes are sent: edits could no longer reach them.
+  // Not via readOnly, which would repaint the canvas under the live widgets.
+  const isInputLocked = busyKey !== null || session.sent;
   // A read-only editor shows the documents without the live form layer:
   // nothing is editable, so nothing dirties and nothing is saved back.
   const readOnly = !!action.editor_read_only;
@@ -246,7 +369,7 @@ export default function DocumentViewer({
         // pdfProxy.destroy() against a saveDocument() still in flight. The
         // toolbar's Back button applies the same gate.
         if (busyKeyRef.current !== null) return;
-        setShowRef.current(false);
+        closeRef.current();
       } else if (e.key === 'PageDown' || e.key === 'PageUp') {
         // Let focused inputs/textareas handle paging keys natively.
         if (isEditableTarget(e.target)) return;
@@ -268,8 +391,8 @@ export default function DocumentViewer({
       doc.removeEventListener('keydown', onKeyDown);
       previouslyFocused?.focus?.();
     };
-    // onNavigate is stable; setShow is read via ref, so the listener binds
-    // once and always calls the latest setShow.
+    // onNavigate is stable; close is read via ref, so the listener binds
+    // once and always calls the latest close.
   }, []);
 
   // The envelopes finalize acts on: every reviewed form document, in order.
@@ -335,6 +458,11 @@ export default function DocumentViewer({
     }
   };
 
+  const onUserEdit = useCallback(
+    () => setSession((s) => ({ ...s, editRevision: s.editRevision + 1 })),
+    []
+  );
+
   const registerPageRef = useCallback(
     (pdfUrl: string, pageIndex: number, el: HTMLDivElement | null) => {
       pageRefs.current[pageKey(pdfUrl, pageIndex)] = el;
@@ -370,11 +498,20 @@ export default function DocumentViewer({
     toolbarAction: EditorToolbarAction,
     busyActionKey: string
   ) => {
+    const outcome = finalizeOutcome(
+      toolbarAction,
+      orderedToolbarActions,
+      keepOpen
+    );
+    const refreshDraft = needsDraftRefresh(session, toolbarAction);
+    if (keepOpen) setSession((s) => recordAttempt(s, toolbarAction));
     setBusyKey(busyActionKey);
     setError('');
     try {
       // Persist any edited field values first, so the outcome acts on them.
-      await saveEditedDocuments();
+      // Once sent, the widgets are locked, so a dirty doc can only be pdf.js's
+      // own render-time write, and re-saving would rewrite a sent envelope.
+      if (!session.sent) await saveEditedDocuments();
       // No required-field gate here: filling fields in the editor is
       // optional — the generated documents were already completable without
       // it, so blocking on empty required fields would leave the user with no
@@ -383,18 +520,22 @@ export default function DocumentViewer({
       const result = await onFinalize?.({
         envelopes: reviewedEnvelopes,
         envelopeAction: TOOLBAR_ACTION_ENVELOPE_ACTION[toolbarAction],
-        draft: toolbarAction === 'draft'
+        draft: toolbarAction === 'draft',
+        refreshDraft,
+        completes: outcome !== 'stay'
       });
       if (result?.status === 'error') {
         if (/expired/i.test(result.message ?? '')) setExpiredBanner(true);
         else setError(result.message ?? 'Something went wrong');
-      } else if (closesEditor(toolbarAction, orderedToolbarActions)) {
-        onComplete();
-      }
-      // Otherwise the outcome has run (file downloaded, field saved) and the
+      } else if (outcome === 'complete') onComplete();
+      else if (outcome === 'defer')
+        setSession((s) =>
+          deferCompletion(s, toolbarAction, result?.docusign_status)
+        );
+      // 'stay': the outcome has run (file downloaded, field saved) and the
       // filler stays here to reach the conclusive action.
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Something went wrong';
+      const message = errorMessage(e);
       if (/expired/i.test(message)) setExpiredBanner(true);
       else setError(message);
     } finally {
@@ -409,6 +550,7 @@ export default function DocumentViewer({
         label: TOOLBAR_ACTION_LABELS[toolbarAction],
         variant:
           i === orderedToolbarActions.length - 1 ? 'primary' : 'secondary',
+        disabled: isToolbarActionDisabled(session, toolbarAction),
         onClick: () => finalizeWith(toolbarAction, toolbarAction)
       }))
     : [
@@ -440,7 +582,7 @@ export default function DocumentViewer({
     >
       <Toolbar
         title={VIEWER_TITLE}
-        onBack={() => setShow(false)}
+        onBack={close}
         actions={toolbarActions}
         busyKey={busyKey}
       />
@@ -465,6 +607,7 @@ export default function DocumentViewer({
             documents={payload.documents}
             pageWidth={pageWidth}
             onDocLoad={onDocLoad}
+            onUserEdit={onUserEdit}
             registerPageRef={registerPageRef}
             inputLocked={isInputLocked}
             readOnly={readOnly}
