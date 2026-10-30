@@ -533,6 +533,28 @@ describe('presentation document tabs', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('clears a mounted container and keeps it empty after remounting on overlay fallback', async () => {
+    const view = render(<DocumentEditorContainer containerId={CONTAINER} />);
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+    const cleared = { containerId: CONTAINER, documents: [], envelopes: [] };
+    (featheryWindow() as any)[PENDING_DRAFTS_KEY][CONTAINER] = cleared;
+    await act(async () => {
+      featheryWindow().dispatchEvent(
+        new CustomEvent('feathery-docx-editor-refresh', { detail: cleared })
+      );
+    });
+    expect(
+      screen.queryByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).toBeNull();
+    expect(screen.getByText(/No document yet/)).toBeInTheDocument();
+    view.unmount();
+    render(<DocumentEditorContainer containerId={CONTAINER} />);
+    expect(screen.getByText(/No document yet/)).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('pptx-editor:https://example.com/deck.pptx')
+    ).toBeNull();
+  });
+
   it('saves and downloads available decks while reporting an unavailable tab', async () => {
     (featheryWindow() as any)[PENDING_DRAFTS_KEY][CONTAINER].envelopes[1].file =
       null;

@@ -3463,6 +3463,7 @@ function Form({
         // with, and runEnvelopeAction plus the review-viewer wiring below are
         // self-contained enough to move behind a small interface.
         const envelopeId = `envelope-${i}`;
+        let containerId = editorContainerId(action);
         updateEnvelopeGeneration(envelopeId, { status: 'incomplete' });
         await Promise.all([submitPromise, client.flushCustomFields()]);
         // Shared with the editor's finalize response: runs the same
@@ -3478,7 +3479,7 @@ function Form({
           actingAction?: string,
           draft = false
         ) => {
-          if (editorContainerId(action)) return;
+          if (containerId) return;
           const envAction = actingAction ?? action.envelope_action;
           if (!envAction || envAction === 'sign') {
             if (isDocusignSignAction(action, envAction)) {
@@ -3560,7 +3561,23 @@ function Form({
           }
           updateEnvelopeGeneration(envelopeId, { status: 'complete' });
 
-          const containerId = editorContainerId(action);
+          // The server can override a saved container target for mixed types.
+          if (data.editor_mode === 'overlay' && containerId) {
+            const win = featheryWindow() as any;
+            const cleared = { containerId, documents: [], envelopes: [] };
+            // Keep an explicitly empty packet so remounting the old container
+            // cannot fall back to its templates' previous generated envelopes.
+            win.__featheryDocxEditorDrafts = {
+              ...(win.__featheryDocxEditorDrafts ?? {}),
+              [containerId]: cleared
+            };
+            win.dispatchEvent(
+              new CustomEvent('feathery-docx-editor-refresh', {
+                detail: cleared
+              })
+            );
+            containerId = '';
+          }
           if (containerId) {
             const refreshDetail = {
               containerId,
@@ -3589,7 +3606,7 @@ function Form({
             // editing surface (and needs the plain generate response).
             setReviewViewerPayload({
               payload: data,
-              action,
+              action: { ...action, editor_mode: 'overlay' },
               onFinalize: async ({
                 envelopes,
                 envelopeAction,
