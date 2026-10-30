@@ -134,6 +134,9 @@ function removedBy(node: NfNode, kind: string): boolean {
   return false;
 }
 
+export const goneOnAccept = (node: NfNode): boolean =>
+  removedBy(node, 'Deletion');
+
 function project(nf: NormalForm, drop: string, group?: string): NormalForm {
   const out = clone(nf);
   const rec = (n: NfNode) => {

@@ -236,11 +236,12 @@ function alignList(
   // 2. equal content, in sequence: the next unused equal candidate after the last match. Where
   // the tree before had a different number of siblings with that content, which of them a fresh
   // one continues is a guess
-  const keys = candidates.map((c) => contentKey(c));
+  const keyOf = (n: NfNode) => contentKey(joinedText(n, shape));
+  const keys = candidates.map(keyOf);
   const counts = (nodes: NfNode[]) => {
     const m = new Map<string, number>();
     for (const n of nodes) {
-      const k = contentKey(n);
+      const k = keyOf(n);
       m.set(k, (m.get(k) ?? 0) + 1);
     }
     return m;
@@ -258,7 +259,7 @@ function alignList(
       cursor = candidates.indexOf(out[i] as NfNode);
       return;
     }
-    const key = contentKey(kid);
+    const key = keyOf(kid);
     let j = keys.findIndex(
       (k, idx) => idx > cursor && k === key && available(idx)
     );
@@ -285,13 +286,41 @@ function alignList(
         hi = candidates.indexOf(out[k] as NfNode);
         break;
       }
+    // a deleted copy still on the page continues only a node that was deleted too
+    const gone = (n: NfNode) => shape.goneOnAccept?.(n) ?? false;
     for (let j = lo + 1; j < hi; j += 1)
-      if (available(j) && candidates[j].kind === kid.kind) {
+      if (
+        available(j) &&
+        candidates[j].kind === kid.kind &&
+        gone(candidates[j]) === gone(kid)
+      ) {
         take(i, j);
         break;
       }
   });
   return { match: out, ambiguous };
+}
+
+/** A copy of `node` with the text pieces the pack treats as one joined, so where text breaks is not content */
+function joinedText(node: NfNode, shape: PackTree): NfNode {
+  const continues = shape.continuesText;
+  if (!continues) return node;
+  const copy = clone(node);
+  walk(copy, shape, ({ node: n }) => {
+    for (const key of shape.childLists(n)) {
+      const list = listAt(n, key);
+      if (!list) continue;
+      const joined: NfNode[] = [];
+      for (const child of list as NfNode[]) {
+        const previous = joined[joined.length - 1];
+        if (previous && continues(previous, child))
+          previous.text = `${previous.text}${child.text}`;
+        else joined.push(child);
+      }
+      list.splice(0, list.length, ...joined);
+    }
+  });
+  return copy;
 }
 
 /** Rewrite format references (string values under the pack's reference keys) by `rename`. */
