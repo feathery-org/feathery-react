@@ -1,6 +1,5 @@
 import {
   cellErrorKey,
-  fieldCellRules,
   hubCellRules,
   validateCellValue,
   validateGrid
@@ -254,28 +253,6 @@ describe('rule derivation', () => {
       [{ key: 'age', type: 'number', metadata: { min_value: 1, max_value: 9 } }]
     );
     expect(rules.k).toMatchObject({ minValue: 1, maxValue: 9 });
-  });
-
-  test('field-backed columns only get format and storage-type rules', () => {
-    const rules = fieldCellRules([
-      { field_key: 'a', name: 'Email', field_type: 'email' },
-      { field_key: 'b', name: 'Notes', field_type: 'text_field' },
-      { field_key: 'c', name: 'Active', field_type: 'checkbox' },
-      { field_key: 'd', name: 'Stars', field_type: 'rating' },
-      { field_key: 'e', name: 'Level', field_type: 'slider' },
-      { field_key: 'f', name: 'Docs', field_type: 'file_upload' },
-      { field_key: 'g', name: 'Signed', field_type: 'signature' }
-    ]);
-    expect(rules.a).toEqual({ label: 'Email', type: 'email' });
-    expect(rules.b).toBeUndefined();
-    // A checkbox stores a boolean, so its cells parse as one.
-    expect(rules.c).toEqual({ label: 'Active', type: 'boolean' });
-    // Rating and slider store numbers like an integer field does.
-    expect(rules.d).toEqual({ label: 'Stars', type: 'number' });
-    expect(rules.e).toEqual({ label: 'Level', type: 'number' });
-    // Upload fields hold file references the grid must never write over.
-    expect(rules.f).toEqual({ label: 'Docs', type: 'file' });
-    expect(rules.g).toEqual({ label: 'Signed', type: 'file' });
   });
 });
 

@@ -5,7 +5,7 @@ import { choiceMenuStyle, choiceOptionStyle, HEADER_HEIGHT } from './styles';
 import { placeCellTooltip } from './tooltipPlacement';
 
 /** The value a menu row stands for: a choice, or '' to clear the cell. */
-const EMPTY_CHOICE_LABEL = '(empty)';
+export const EMPTY_CHOICE_LABEL = '(empty)';
 
 /** The menu's rows in order: a clear-the-cell row, then every choice. The grid's
  * keyboard handling walks this same list, so what it highlights is what is drawn. */
@@ -16,6 +16,8 @@ type ChoiceMenuProps = {
   /** The highlighted row; the value Enter would commit. */
   value: string;
   label: string;
+  /** What to show for a choice; defaults to the choice itself. */
+  labelFor?: (choice: string) => string;
   onPick: (choice: string) => void;
   onCancel: () => void;
 };
@@ -26,6 +28,7 @@ export function ChoiceMenu({
   choices,
   value,
   label,
+  labelFor,
   onPick,
   onCancel
 }: ChoiceMenuProps) {
@@ -97,7 +100,7 @@ export function ChoiceMenu({
             onPick(choice);
           }}
         >
-          {choice || EMPTY_CHOICE_LABEL}
+          {choice ? labelFor?.(choice) ?? choice : EMPTY_CHOICE_LABEL}
         </div>
       ))}
     </div>
