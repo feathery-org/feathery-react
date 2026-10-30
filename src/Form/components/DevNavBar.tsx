@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getStepDepthMap } from '../../utils/stepHelperFunctions';
 import {
   DiagonalArrowIcon,
@@ -24,6 +24,18 @@ export default function DevNavBar({
 }: any) {
   const [activeNav, setActiveNav] = useState('');
   const [isVisible, setIsVisible] = useState(visible);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const previousVisibilityRef = useRef(isVisible);
+
+  useLayoutEffect(() => {
+    if (isVisible && !previousVisibilityRef.current) {
+      toolbarRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }
+    previousVisibilityRef.current = isVisible;
+  }, [isVisible]);
 
   const [prevStepKeys, nextStepKeys] = useMemo(() => {
     const [prevStepKeys, nextStepKeys] = handleBoth(
@@ -91,7 +103,7 @@ export default function DevNavBar({
       <div
         css={{
           position: 'absolute',
-          bottom: '-10px',
+          top: 'calc(100% + 8px)',
           maxHeight: '300px',
           width: '200px',
           backgroundColor: 'white',
@@ -99,15 +111,21 @@ export default function DevNavBar({
           boxShadow: '0 4px 14px #00000040',
           borderRadius: '6px',
           overflowY: 'scroll',
-          ...(isForward ? { left: '300px' } : { right: '300px' })
+          ...(isForward ? { right: 0 } : { left: 0 })
         }}
       >
         {stepKeys.map((key) => (
-          <div
+          <button
+            type='button'
             // @ts-expect-error TS(2322): Type 'unknown' is not assignable to type 'Key | nu... Remove this comment to see the full error message
             key={key}
             css={{
+              width: '100%',
               minHeight: '38px',
+              border: 0,
+              backgroundColor: 'white',
+              font: 'inherit',
+              textAlign: 'left',
               borderBottom: `1px solid ${lightGrey}`,
               display: 'flex',
               alignItems: 'center',
@@ -119,91 +137,61 @@ export default function DevNavBar({
           >
             {/* @ts-expect-error TS(2322): Type 'unknown' is not assignable to type 'ReactNod... Remove this comment to see the full error message */}
             {key}
-          </div>
+          </button>
         ))}
       </div>
     );
   }, [prevStepKeys, nextStepKeys, activeNav]);
 
   return isVisible ? (
-    <>
-      <div
-        css={{
-          zIndex: DEV_NAV_BAR_Z_INDEX,
-          position: 'fixed',
-          left: '0',
-          top: '0',
-          height: '55px',
-          width: '100%',
-          backgroundColor: 'white',
-          boxShadow: '-3px 3px 4px #575c8214',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center'
-        }}
-      >
+    <div
+      ref={toolbarRef}
+      css={{
+        zIndex: DEV_NAV_BAR_Z_INDEX,
+        position: 'relative',
+        minHeight: '55px',
+        width: '100%',
+        padding: '8px 16px',
+        boxSizing: 'border-box',
+        backgroundColor: 'white',
+        boxShadow: '-3px 3px 4px #575c8214',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px 16px',
+        alignItems: 'center'
+      }}
+    >
+      <span css={{ flex: '1 1 240px', minWidth: 0, fontWeight: 700 }}>
         <span
           css={{
-            fontWeight: 700
+            color: '#e2626e',
+            paddingRight: '8px',
+            borderRight: '2px solid #cfd4dd'
           }}
         >
-          <span
-            css={{
-              color: '#e2626e',
-              paddingRight: '8px',
-              borderRight: '2px solid #cfd4dd'
-            }}
-          >
-            {formName}
-          </span>
-          <span
-            css={{
-              paddingLeft: '8px'
-            }}
-          >
-            {draft ? 'Draft Preview' : 'Test Form'}
-          </span>
+          {formName}
         </span>
-        <div
-          css={{
-            position: 'absolute',
-            top: '12px',
-            right: '16px',
-            width: '32px',
-            height: '32px',
-            border: '1px solid #DBDFE8',
-            boxSizing: 'border-box',
-            boxShadow: '0px 1px 2px #2b364726',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'white'
-          }}
-          onClick={() => setIsVisible(false)}
-        >
-          <DiagonalArrowIcon />
-        </div>
-      </div>
+        <span css={{ paddingLeft: '8px' }}>
+          {draft ? 'Draft Preview' : 'Test Form'}
+        </span>
+      </span>
       <div
         css={{
-          zIndex: DEV_NAV_BAR_Z_INDEX,
-          position: 'fixed',
-          bottom: '30px',
-          left: '50%',
-          transform: 'translateX(-50%)',
+          position: 'relative',
           width: '288px',
-          height: '56px',
-          backgroundColor: 'white',
+          maxWidth: '100%',
+          height: '40px',
+          marginLeft: 'auto',
+          border: '1px solid #DBDFE8',
           borderRadius: '6px',
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center',
-          boxShadow: '0 4px 14px #00000040'
+          alignItems: 'center'
         }}
       >
-        <div
+        <button
+          type='button'
+          aria-label='Previous test step'
           css={navArrowCSS}
           onClick={() => {
             if (prevStepKeys.length === 1) navigate(prevStepKeys[0]);
@@ -214,13 +202,23 @@ export default function DevNavBar({
           }}
         >
           <LeftChevronIcon />
-        </div>
+        </button>
         <span
-          css={{ marginBottom: '4px', color: 'black', ...noTextSelectStyles }}
+          title={curStep.key}
+          css={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            color: 'black',
+            ...noTextSelectStyles
+          }}
         >
           {curStep.key}
         </span>
-        <div
+        <button
+          type='button'
+          aria-label='Next test step'
           css={navArrowCSS}
           onClick={() => {
             if (nextStepKeys.length === 1) navigate(nextStepKeys[0]);
@@ -231,13 +229,39 @@ export default function DevNavBar({
           }}
         >
           <RightChevronIcon />
-        </div>
+        </button>
         {stepSelector}
       </div>
-    </>
+      <button
+        type='button'
+        aria-label='Hide test controls'
+        css={{
+          width: '32px',
+          height: '32px',
+          flexShrink: 0,
+          padding: 0,
+          border: '1px solid #DBDFE8',
+          boxSizing: 'border-box',
+          boxShadow: '0px 1px 2px #2b364726',
+          borderRadius: '6px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'white'
+        }}
+        onClick={() => setIsVisible(false)}
+      >
+        <DiagonalArrowIcon />
+      </button>
+    </div>
   ) : (
-    <div
+    <button
+      type='button'
+      aria-label='Show test controls'
       css={{
+        border: 0,
+        padding: 0,
         zIndex: DEV_NAV_BAR_Z_INDEX,
         position: 'fixed',
         top: '0',
@@ -262,14 +286,18 @@ export default function DevNavBar({
       >
         <DiagonalArrowIcon color='white' />
       </div>
-    </div>
+    </button>
   );
 }
 
 const navArrowCSS = {
   width: '32px',
   height: '32px',
-  margin: '8px',
+  margin: '4px',
+  padding: 0,
+  border: 0,
+  backgroundColor: 'white',
+  flexShrink: 0,
   borderRadius: '6px',
   cursor: 'pointer',
   display: 'flex',
