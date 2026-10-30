@@ -86,6 +86,51 @@ describe('step save and completion ordering', () => {
     ...row
   });
 
+  it('saves repeated file values with their row indices, including empty rows', async () => {
+    const { client } = createClientWithStorage();
+    const { filePathMap } = jest.requireMock('../init');
+    filePathMap.owner_id_front = [null, 's3/old-ubo.pdf', null];
+    const sent: FormData[] = [];
+    jest
+      .spyOn(client, '_fetch')
+      .mockImplementation(async (_url: any, options: any) => {
+        sent.push(options.body);
+        return { ok: true };
+      });
+
+    await client.submitCustom(
+      {
+        owner_id_front: [
+          null,
+          Promise.resolve(new File(['id'], 'ubo.pdf')),
+          null
+        ],
+        owner_name: ['Director', 'UBO', 'Director']
+      },
+      { shouldFlush: true, repeatedFileKeys: ['owner_id_front'] }
+    );
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].getAll('files')).toHaveLength(1);
+    expect(sent[0].getAll('file_keys')).toEqual(['owner_id_front']);
+    expect(
+      JSON.parse(sent[0].get('__feathery_custom_file_indices') as string)
+    ).toEqual({ owner_id_front: { length: 3, indices: [1] } });
+    expect(JSON.parse(sent[0].get('custom_key_values') as string)).toEqual({
+      owner_name: ['Director', 'UBO', 'Director']
+    });
+    expect(filePathMap.owner_id_front).toBeNull();
+
+    await client.submitCustom(
+      { owner_id_front: [null, null] },
+      { shouldFlush: true, repeatedFileKeys: ['owner_id_front'] }
+    );
+    expect(sent[1].getAll('files')).toEqual([]);
+    expect(
+      JSON.parse(sent[1].get('__feathery_custom_file_indices') as string)
+    ).toEqual({ owner_id_front: { length: 2, indices: [] } });
+  });
+
   it('clears an optional empty file with a persisted rejection before mount replay', async () => {
     const { client, store } = createClientWithStorage();
     const url = `${API_URL}panel/step/submit/file/user/`;
