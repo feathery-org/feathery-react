@@ -320,6 +320,12 @@ const stackAbove = (height: number) =>
 
 export * from './grid/StyledContainer';
 
+// DocuSign's own status, when the backend reports it, says whether the press
+// ended as a draft: a Sign can be held as one, and a retried Draft can find
+// the envelope already sent. Older backends report none, so the press decides.
+const isDocusignDraft = (draft: boolean, data: any) =>
+  data?.docusign_status ? data.docusign_status === 'created' : draft;
+
 export interface Props {
   formId: string;
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
@@ -1510,7 +1516,7 @@ function Form({
                 // completion signal, so all that's left is telling the filler.
                 showEnvelopeOutcome(
                   ENVELOPE_FLOW_TOAST_ID,
-                  draft || data.docusign_status === 'created'
+                  isDocusignDraft(draft, data)
                     ? 'Saved as Draft'
                     : 'Sent for Signature',
                   action.documents
@@ -3572,7 +3578,7 @@ function Form({
               // `status` with "complete".
               showEnvelopeOutcome(
                 envelopeId,
-                draft || data.docusign_status === 'created'
+                isDocusignDraft(draft, data)
                   ? 'Saved as Draft'
                   : 'Sent for Signature',
                 action.documents

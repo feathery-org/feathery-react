@@ -122,7 +122,8 @@ export interface FinalizeResult {
   message?: string;
   // What DocuSign reported for the envelope. `status` cannot carry it: the
   // async poll overwrites it with "complete". Absent from older backends.
-  docusign_status?: 'sent' | 'created';
+  // "created" is a draft; anything else means DocuSign no longer holds one.
+  docusign_status?: string;
 }
 
 const errorMessage = (e: unknown) =>
@@ -156,13 +157,20 @@ export const deferCompletion = (
   action: EditorToolbarAction,
   docusignStatus?: FinalizeResult['docusign_status']
 ): ReviewSession => {
-  // The Quik integration's Joint Agreements hold keeps a Sign as a draft.
-  const drafted =
-    action === 'draft' || (action === 'sign' && docusignStatus === 'created');
+  // DocuSign's own status wins over the button pressed: a Joint Agreements
+  // hold keeps a Sign as a draft, and a Draft retried after a Sign whose
+  // response was lost finds the envelope already sent. Older backends send
+  // no status, so the press decides.
+  const drafted = docusignStatus
+    ? docusignStatus === 'created'
+    : action === 'draft';
+  const sent = docusignStatus
+    ? docusignStatus !== 'created'
+    : action === 'sign';
   return {
     ...session,
     pendingCompletion: true,
-    sent: session.sent || (action === 'sign' && !drafted),
+    sent: session.sent || sent,
     draftedRevision: drafted ? session.editRevision : session.draftedRevision
   };
 };

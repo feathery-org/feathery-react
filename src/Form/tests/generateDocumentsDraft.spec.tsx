@@ -300,13 +300,15 @@ describe('a kept-open review screen', () => {
 });
 
 it.each([
-  ['created', 'Saved as Draft'],
-  ['sent', 'Sent for Signature'],
-  [undefined, 'Sent for Signature']
+  ['Sign', 'created', 'Saved as Draft'],
+  ['Sign', 'sent', 'Sent for Signature'],
+  ['Sign', undefined, 'Sent for Signature'],
+  ['Create Draft', 'sent', 'Sent for Signature'],
+  ['Create Draft', undefined, 'Saved as Draft']
 ])(
-  'labels a review-screen Sign whose DocuSign status is %s',
-  async (docusignStatus, label) => {
-    const id = `button-sign-${docusignStatus}`;
+  'labels a review-screen %s whose DocuSign status is %s',
+  async (button, docusignStatus, label) => {
+    const id = `button-${button}-${docusignStatus}`;
     render(<JSForm formId='f1' _internalId={id} />);
     await screen.findByTestId('btn');
     const state = (setFormInternalState as jest.Mock).mock.calls.find(
@@ -328,14 +330,14 @@ it.each([
         type: 'open_fuser_envelopes',
         documents: ['tpl-1'],
         envelope_action: 'open_in_editor',
-        editor_toolbar_actions: ['sign'],
+        editor_toolbar_actions: ['sign', 'draft'],
         sign_method: 'docusign'
       }
     ];
     GridMod._spies.submit = false;
 
     fireEvent.click(screen.getByTestId('btn'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign' }));
+    fireEvent.click(await screen.findByRole('button', { name: button }));
 
     await waitFor(() =>
       expect(toastSpies().showEnvelopeOutcome).toHaveBeenCalledWith(
