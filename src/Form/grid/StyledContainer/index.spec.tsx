@@ -198,6 +198,156 @@ describe('StyledContainer alignment', () => {
 });
 
 describe('StyledContainer document editor', () => {
+  it.each([
+    ['no', []],
+    ['one', [{}]]
+  ])(
+    'bounds a fill-height document editor with %s builder children',
+    (_, builderChildren) => {
+      const { container } = render(
+        <StyledContainer
+          node={{
+            ...baseNode,
+            height: 'fill',
+            parent: { height: 'fill', axis: 'row', styles: {} },
+            children: builderChildren,
+            properties: { document_editor: true },
+            styles: { axis: 'column', width: 'fill', width_unit: 'fill' }
+          }}
+          editMode
+          breakpoint={480}
+        />
+      );
+
+      expect(container.querySelector('.styled-container')).toHaveStyle({
+        height: '100%',
+        maxHeight: '100%',
+        minHeight: '0',
+        overflow: 'hidden',
+        flexGrow: '1',
+        flexShrink: '1',
+        flexBasis: '0'
+      });
+      expect(container.querySelector('.inner-container')).toHaveStyle({
+        minHeight: '0'
+      });
+    }
+  );
+
+  it('keeps a fit-height document editor content-sized', () => {
+    const { container } = render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          height: 'fit',
+          children: [{}],
+          properties: { document_editor: true },
+          styles: { axis: 'column', width: 'fill', width_unit: 'fill' }
+        }}
+        editMode
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      height: 'auto',
+      maxHeight: 'fit-content',
+      minHeight: 'fit-content'
+    });
+  });
+
+  it('preserves content sizing for a regular fill-height container', () => {
+    const { container } = render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          height: 'fill',
+          children: [{}],
+          styles: { axis: 'column', width: 'fill', width_unit: 'fill' }
+        }}
+        breakpoint={480}
+      >
+        <span>Regular contents</span>
+      </StyledContainer>
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      height: 'auto',
+      maxHeight: '100%',
+      minHeight: 'fit-content'
+    });
+  });
+
+  it('keeps a document editor inside its configured pixel dimensions', () => {
+    const { container } = render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          width: '640px',
+          height: '360px',
+          children: [{}],
+          properties: { document_editor: true },
+          styles: {
+            ...baseNode.styles,
+            width: 640,
+            width_unit: 'px',
+            height: 360
+          }
+        }}
+        editMode
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      minWidth: '0',
+      height: '360px',
+      maxHeight: '360px'
+    });
+    expect(container.querySelector('.inner-container')).toHaveStyle({
+      minHeight: '0'
+    });
+  });
+
+  it('uses the mobile fill behavior while preserving the desktop pixel height', () => {
+    const node = {
+      ...baseNode,
+      height: '360px',
+      mobile_height: 'fill',
+      properties: { document_editor: true },
+      styles: { ...baseNode.styles, height: 360 },
+      mobile_styles: { height: 'fill', height_unit: 'fill' }
+    };
+    const { container, rerender } = render(
+      <StyledContainer
+        node={node}
+        breakpoint={480}
+        viewportOnly
+        viewport='desktop'
+      />
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      height: '360px',
+      maxHeight: '360px'
+    });
+
+    rerender(
+      <StyledContainer
+        node={node}
+        breakpoint={480}
+        viewportOnly
+        viewport='mobile'
+      />
+    );
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      height: '100%',
+      maxHeight: '100%',
+      minHeight: '0',
+      overflow: 'hidden'
+    });
+  });
+
   it('mounts the document editor preview when document_editor is set', () => {
     const { getByTestId } = render(
       <StyledContainer

@@ -486,17 +486,43 @@ function extractRichText(
   return paras.length ? paras : [{ runs: [] }];
 }
 
-export const ZOOM_MIN = 50;
+// Fit can go below 50% in short containers; manual controls share its range.
+export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 400;
+
+// At 100%, the slide frame spans the stage's content width. Leave the same
+// 16px padding on all sides that styles.wrap applies and cap fit at 100%.
+export function fitSlideZoom(
+  stageWidth: number,
+  stageHeight: number,
+  slideWidth: number,
+  slideHeight: number
+): number | null {
+  const width = stageWidth - 32;
+  const height = stageHeight - 32;
+  if (width <= 0 || height <= 0 || slideWidth <= 0 || slideHeight <= 0)
+    return null;
+  return Math.max(
+    ZOOM_MIN,
+    Math.min(
+      100,
+      Math.floor((100 * height * slideWidth) / (width * slideHeight))
+    )
+  );
+}
 
 export function SvgSlide({
   readOnly = false,
   zoom = 100,
-  onZoomChange
+  onZoomChange,
+  fitToContainer = false,
+  onFitZoomChange
 }: {
   readOnly?: boolean;
   zoom?: number;
   onZoomChange?: (zoom: number) => void;
+  fitToContainer?: boolean;
+  onFitZoomChange?: (zoom: number) => void;
 } = {}) {
   const store = usePptxEditorStore();
   const state = usePptxEditorState();
@@ -583,22 +609,38 @@ export function SvgSlide({
     host.scrollTop = anchor.contentY * scale - anchor.ay;
   }, [zoom]);
 
-  // The stage is sized by its container, not the window: observe the host and
-  // reposition the selection overlay on any size change.
-  useEffect(() => {
+  // The stage is sized by its container, not the window. Refit the active
+  // slide and reposition selection overlays when it is shown or resized.
+  useLayoutEffect(() => {
     const host = hostRef.current;
-    if (!host || typeof ResizeObserver === 'undefined') return;
+    if (!host) return;
     let frame = 0;
-    const observer = new ResizeObserver(() => {
+    const update = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => setLayoutTick((t) => t + 1));
-    });
-    observer.observe(host);
+      frame = requestAnimationFrame(() => {
+        setLayoutTick((t) => t + 1);
+        if (!fitToContainer || !deck || !onFitZoomChange) return;
+        const slide = deck.slides[activeSlide];
+        if (!slide) return;
+        const size = deck.size;
+        const fitted = fitSlideZoom(
+          host.clientWidth,
+          host.clientHeight,
+          size.cx,
+          size.cy
+        );
+        if (fitted !== null) onFitZoomChange(fitted);
+      });
+    };
+    update();
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(host);
     return () => {
       cancelAnimationFrame(frame);
-      observer.disconnect();
+      observer?.disconnect();
     };
-  }, []);
+  }, [deck, activeSlide, structureRev, fitToContainer, onFitZoomChange]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
@@ -3068,6 +3110,8 @@ export function SvgSlide({
 const styles: Record<string, React.CSSProperties> = {
   wrap: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 0,
     position: 'relative',
     overflow: 'auto',
     display: 'flex',

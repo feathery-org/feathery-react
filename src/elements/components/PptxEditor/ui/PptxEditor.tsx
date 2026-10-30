@@ -100,7 +100,12 @@ function PptxEditorInner({
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const downloadMenuRef = useRef<HTMLSpanElement>(null);
   const [activePanel, setActivePanel] = useState<PptxPanelKind | null>(null);
-  const [zoomPct, setZoomPct] = useState(75);
+  const [zoomPct, setZoomPct] = useState(100);
+  const [fitToContainer, setFitToContainer] = useState(true);
+  const setManualZoom = useCallback((next: number) => {
+    setFitToContainer(false);
+    setZoomPct(next);
+  }, []);
   const loadSeq = useRef(0);
   const loadedSource = useRef<string | null>(null);
   const [loader] = useState(() => new PresentationLoader());
@@ -603,7 +608,9 @@ function PptxEditorInner({
           <SvgSlide
             readOnly={readOnly}
             zoom={zoomPct}
-            onZoomChange={setZoomPct}
+            onZoomChange={setManualZoom}
+            fitToContainer={fitToContainer}
+            onFitZoomChange={setZoomPct}
           />
         </div>
         {devJsonPanel && state.showJson && <JsonPanel />}
@@ -692,7 +699,7 @@ function PptxEditorInner({
             css={statusButton}
             title='Zoom out'
             disabled={zoomPct <= ZOOM_MIN}
-            onClick={() => setZoomPct((z) => Math.max(ZOOM_MIN, z - 25))}
+            onClick={() => setManualZoom(Math.max(ZOOM_MIN, zoomPct - 25))}
           >
             <MinusIcon width={14} height={14} />
           </button>
@@ -710,7 +717,7 @@ function PptxEditorInner({
             css={statusButton}
             title='Zoom in'
             disabled={zoomPct >= ZOOM_MAX}
-            onClick={() => setZoomPct((z) => Math.min(ZOOM_MAX, z + 25))}
+            onClick={() => setManualZoom(Math.min(ZOOM_MAX, zoomPct + 25))}
           >
             <PlusIcon width={14} height={14} />
           </button>
@@ -718,7 +725,7 @@ function PptxEditorInner({
             type='button'
             css={statusButton}
             title='Fit to container'
-            onClick={() => setZoomPct(100)}
+            onClick={() => setFitToContainer(true)}
           >
             <FitToPageIcon width={14} height={14} />
           </button>
