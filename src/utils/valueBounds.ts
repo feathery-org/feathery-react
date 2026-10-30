@@ -1,12 +1,15 @@
 import { fieldValues } from './init';
 
-// The value of a linked field, or undefined if it doesn't hold a number
+// The value of a linked field rounded to an integer, or undefined if it doesn't hold
+// a number. Any hidden field type can be linked, so only numbers and numeric text count
 export function getLinkedValue(fieldKey: string | undefined) {
   if (!fieldKey) return undefined;
   const value = fieldValues[fieldKey];
-  if (value === '' || typeof value === 'object') return undefined;
+  // Number() would turn true into 1 and blank text into 0
+  if (typeof value === 'string' ? !value.trim() : typeof value !== 'number')
+    return undefined;
   const num = Number(value);
-  return Number.isFinite(num) ? num : undefined;
+  return Number.isFinite(num) ? Math.round(num) : undefined;
 }
 
 // A min above the max wins, so the range never inverts
