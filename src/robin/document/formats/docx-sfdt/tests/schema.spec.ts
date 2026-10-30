@@ -53,6 +53,8 @@ describe('property schema', () => {
     expect(spec(KIND.cell, 'shading')?.validate({ backgroundColor: 'light blue' })).not.toBeNull();
     expect(spec(KIND.table, 'borders')?.validate({ top: { lineStyle: 'Single', lineWidth: 0.5, color: '#000000' } })).toBeNull();
     expect(spec(KIND.table, 'borders')?.validate({ middle: {} })).toMatch(/unknown side/);
+    expect(spec(KIND.section, 'breakCode')?.validate('NoBreak')).toBeNull();
+    expect(spec(KIND.section, 'breakCode')?.validate('Continuous')).toMatch(/NoBreak/);
   });
 });
 
