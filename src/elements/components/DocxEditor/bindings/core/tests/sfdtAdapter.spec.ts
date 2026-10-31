@@ -91,6 +91,16 @@ describe('scanBindings: tracked deletions', () => {
     expect(scanBindings(doc(false) as any).formulas.get('total')).toHaveLength(2);
   });
 
+  it('skips a control whose text an earlier card inserted and this one deleted', () => {
+    const earlier = JSON.stringify({ v: 1, source: 'robin', changeSetId: 'turn-0', group: 'robin' });
+    const layered = doc(true);
+    layered.revisions.push({ revisionId: 'r-old', revisionType: 'Insertion', author: 'Robin', customData: earlier });
+    (layered.sections[0].blocks[0].inlines[0].inlines[0] as { revisionIds?: string[] }).revisionIds = ['r-old', 'r-del'];
+    const index = scanBindings(layered as any);
+    expect(index.occurrences).toHaveLength(1);
+    expect(index.occurrences[0].path).toEqual(['sections', 0, 'blocks', 0, 'inlines', 1]);
+  });
+
   // review regression: the same name is no evidence of a replacement; only the replacement's marker is
   it('keeps both of two adjacent controls binding one name when the user deleted the first one\'s text', () => {
     const twins = {

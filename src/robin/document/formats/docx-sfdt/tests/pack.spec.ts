@@ -11,6 +11,7 @@ import { baseOf, NfNode, shapeOf } from '../../../tree';
 import { makeView } from '../../../view';
 import { prepareWrite } from '../../../verbs';
 import { docxPack } from '../index';
+import { cardAuthor } from '../adapter/revisions';
 import { scanBindings } from '../../../../../elements/components/DocxEditor/bindings/core/sfdtAdapter';
 
 const corpus = path.join(__dirname, 'corpus');
@@ -243,7 +244,7 @@ describe('the format pack', () => {
     expect(host.opens).toBe(1);
     // the spliced document carries Robin's insertion, grouped under the turn
     const doc = JSON.parse(host.doc);
-    expect(doc.revisions).toEqual(expect.arrayContaining([expect.objectContaining({ revisionType: 'Insertion', author: 'Robin', customData: expect.stringContaining('"changeSetId":"turn-0"') })]));
+    expect(doc.revisions).toEqual(expect.arrayContaining([expect.objectContaining({ revisionType: 'Insertion', author: cardAuthor('turn-0'), customData: expect.stringContaining('"changeSetId":"turn-0"') })]));
     const outline = (call('outline', { depth: 4 }) as { lines: string }).lines;
     expect(outline).toMatch(/row=property-r4/);
   });

@@ -15,6 +15,7 @@ export interface BindingRecord {
   view: Record<string, unknown>;
   /** The tag's key order, so an unchanged binding expands to the same bytes. */
   order: string[];
+  seed: Record<string, unknown>;
   tag: string;
   title: unknown;
 }

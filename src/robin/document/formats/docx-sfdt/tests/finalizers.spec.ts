@@ -12,7 +12,7 @@ import { prepareWrite } from '../../../verbs';
 import { makeView } from '../../../view';
 import { docxPack } from '../index';
 import { setControlText } from '../finalizers/formulas';
-import { tableIdentityFinalizer } from '../finalizers/structure';
+import { sectionTailFinalizer, tableIdentityFinalizer } from '../finalizers/structure';
 import { arr } from '../util';
 
 const flagship = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4b.sfdt.json'), 'utf8');
@@ -114,6 +114,21 @@ describe('a new table takes the look of the document\'s tables (Codex review D5)
   it('a header fill the write gives is kept', () => {
     const { fills } = newTableAfter(5, true);
     expect(fills[0].every((f) => f === '#123456')).toBe(true);
+  });
+});
+
+describe('section tail finalizer', () => {
+  it('ends a section that would end in a table with an empty paragraph, as the editor does on open (55dfaa75 t7)', () => {
+    const s = state();
+    const after = JSON.parse(JSON.stringify(s.view.nf));
+    const sections = arr<NfNode>(after.root.sections);
+    const table = arr<NfNode>(sections[1].blocks).find((b) => b.kind === 'table') as NfNode;
+    sections[0].blocks = [...arr<NfNode>(sections[0].blocks), table];
+    const untouched = arr<NfNode>(sections[2]?.blocks).length;
+    sectionTailFinalizer.run(after, { before: s.view, formats: after.formats, residue: s.residue });
+    const tail = arr<NfNode>(sections[0].blocks).at(-1) as NfNode;
+    expect([tail.kind, arr(tail.inlines).length]).toEqual(['paragraph', 0]);
+    expect(arr<NfNode>(sections[2]?.blocks).length).toBe(untouched);
   });
 });
 

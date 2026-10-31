@@ -6,9 +6,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WriteInput } from '../../../envelope';
 import { DocumentSession } from '../../../session';
-import { NfNode, NormalForm, baseOf, shapeOf, walk } from '../../../tree';
+import { NfNode, NormalForm, baseOf, clone, shapeOf, walk } from '../../../tree';
 import { makeView } from '../../../view';
 import { prepareWrite } from '../../../verbs';
+import { fromNormalForm } from '../adapter/fromNormalForm';
 import { docxPack } from '../index';
 import { accept, expectedRejection, reject } from '../projections';
 import { ownText } from '../outline';
@@ -140,6 +141,33 @@ describe('composeTracked', () => {
   });
 });
 
+describe('composeTracked: moving text still pending in an earlier card', () => {
+  it('the moved copy is the mover\'s alone, the copy left behind keeps the earlier insertion (ece57233 t3)', () => {
+    const nf = JSON.parse(JSON.stringify(state().view.nf)) as NormalForm;
+    const blocks = arr<NfNode>(arr<NfNode>(nf.root.sections)[1].blocks);
+    const at = blocks.findIndex((b, i) => i > 3 && b.kind === 'paragraph' && arr<NfNode>(b.inlines).length > 0 && arr<NfNode>(b.inlines).every((r) => r.kind === 'run'));
+    const moving = blocks[at];
+    const earlier = { kind: 'Insertion', author: 'Robin', group: 'X' };
+    moving.pending = { mark: { ...earlier } };
+    for (const r of arr<NfNode>(moving.inlines)) r.pending = { ...earlier };
+    const intended = JSON.parse(JSON.stringify(nf)) as NormalForm;
+    const list = arr<NfNode>(arr<NfNode>(intended.root.sections)[1].blocks);
+    list.splice(2, 0, ...list.splice(at, 1));
+    const { tracked } = composeTracked(makeView(nf, docxPack), intended, 'Y');
+    const [placed, left] = occurrences(tracked, moving.id);
+    const groups = (n: NfNode) => {
+      const out = new Set<string>();
+      walk(n, docxTree, ({ node }) => {
+        for (const p of [node.pending, (node.pending as NfNode | undefined)?.mark])
+          for (const r of arr<NfNode>((p as NfNode | undefined)?.revisions ?? (p ? [p] : []))) if (r.kind) out.add(`${r.kind} ${r.group}`);
+      });
+      return [...out].sort();
+    };
+    expect(groups(placed)).toEqual(['Insertion Y']);
+    expect(groups(left)).toEqual(['Deletion Y', 'Insertion X']);
+  });
+});
+
 describe('inOrder: which ids a reordering moved', () => {
   const size = (id: string) => (id === 'T' ? 1000 : 1);
   it('the fewest nodes move: a large node carried past four small ones is the one that moved', () => {
@@ -204,6 +232,8 @@ describe('composeTracked: feature attributes are content, not formatting', () =>
       const next = change(target.binding as Record<string, unknown>);
       if (next === undefined) delete target.binding;
       else target.binding = next;
+      // a write that replaces the binding may leave the title out (acd4ca62 #10)
+      delete target.title;
       const { tracked, untracked } = composeTracked(s.view, intended, 't');
       expect(untracked).not.toContain(control.id);
       const copies = find(tracked, control.id);
@@ -213,6 +243,9 @@ describe('composeTracked: feature attributes are content, not formatting', () =>
       expect(bindingIn(accept(tracked))).toEqual([JSON.stringify(next ?? null)]);
       // what rejecting should restore keeps the feature as it was (formatting would stay applied)
       expect(bindingIn(expectedRejection(s.view.nf, intended))).toEqual([JSON.stringify(control.binding)]);
+      const titled = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
+      find(titled, control.id)[0].title = 'Total Annual Premium';
+      expect(find(expectedRejection(titled, intended), control.id)[0].title).toBe('Total Annual Premium');
     });
 });
 
@@ -301,6 +334,80 @@ describe('editor offsets from the normal form', () => {
     const p = plan({ turnId: 't', before: s.view, intended: makeView(r.intended, docxPack), beforeResidue: s.residue, intendedResidue: r.intendedResidue, beforeNative: flagship });
     const [op] = p.steps[0].payload as Array<{ a: number; at: number }>;
     expect(op.at).toBe(op.a + 2);
+  });
+});
+
+describe('plan: text beside another card\'s pending change', () => {
+  it('edits the runs on each side alone and never retypes the pending text (Hilb t2)', () => {
+    const s = state();
+    const nf = clone(s.view.nf);
+    let before = makeView(nf, docxPack);
+    // a plain one-run paragraph split into three runs, the middle one pending another card's deletion
+    const para = before.nodes().find((n) => n.kind === 'paragraph' && hierOf(before, n.id) !== null && arr<NfNode>(n.inlines).length === 1 && String(arr<NfNode>(n.inlines)[0].text).split(' ').length >= 4) as NfNode;
+    const [run] = arr<NfNode>(para.inlines);
+    const words = String(run.text).split(' ');
+    const [first, middle, last] = [words[0], ` ${words.slice(1, -1).join(' ')} `, words[words.length - 1]].map((text, k) => ({ ...clone(run), id: `${run.id}s${k}`, text }));
+    para.inlines = [first, middle, last];
+    middle.pending = { kind: 'Deletion', author: 'Robin', group: 'earlier' };
+    before = makeView(nf, docxPack);
+    const intendedNf = clone(nf);
+    const runs = arr<NfNode>(makeView(intendedNf, docxPack).get(para.id)?.inlines);
+    runs[0].text = 'Berkley Southwest';
+    runs[runs.length - 1].text = '10 Even Payment';
+    const p = plan({ turnId: 't', before, intended: makeView(intendedNf, docxPack), beforeResidue: s.residue, intendedResidue: s.residue, beforeNative: flagship });
+    expect(p.steps[0].seam).toBe('text');
+    const ops = p.steps[0].payload as Array<{ oldMid: string; newMid: string }>;
+    expect(ops.map((o) => [o.oldMid, o.newMid])).toEqual([[first.text, 'Berkley Southwest'], [last.text, '10 Even Payment']]);
+  });
+});
+
+describe('a binding\'s import seed (`value`)', () => {
+  const seeded = () => {
+    let doc = flagship.split('[[name=property_limit|type=currency]]').join('[[name=property_limit|type=currency|value=4373]]');
+    const host = { serialize: () => doc, open: (s: string) => { doc = s; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const target = { type: 'envelope', id: 'e' };
+    const session = new DocumentSession({ pack: docxPack, host, target, editorId: 'ed' });
+    const call = (verb: 'read' | 'write', input: unknown) => {
+      const out = session.dispatch(verb, { turnId: 'turn-1', editorId: 'ed', target, input });
+      if (out.status !== 'ok') throw new Error(JSON.stringify(out));
+      return out.result as Record<string, unknown>;
+    };
+    const para = session.state.view.nodes().find((n) => n.kind === 'paragraph' && arr<NfNode>(n.inlines).some((i) => (i.binding as { name?: string } | undefined)?.name === 'property_limit')) as NfNode;
+    const control = arr<NfNode>(para.inlines).find((i) => i.kind === 'control') as NfNode;
+    return { session, call, para, control };
+  };
+
+  it('is not shown by the normal form, so a read never offers it as what the control holds (ae748313 t8/t9)', () => {
+    const { call, para } = seeded();
+    const read = (call('read', { ids: [para.id] }).nodes as NfNode[])[0];
+    const binding = arr<NfNode>(read.inlines).find((i) => i.kind === 'control')?.binding;
+    expect(binding).toEqual(expect.objectContaining({ name: 'property_limit', type: 'currency' }));
+    expect(binding).not.toHaveProperty('value');
+  });
+
+  it('survives a paragraph rewritten from its read, which tracks only the text, and a rewrite of the binding', () => {
+    const { session, call, para, control } = seeded();
+    const read = (call('read', { ids: [para.id] }).nodes as NfNode[])[0];
+    const rewrite = (edit: (node: NfNode) => void) => {
+      const node = clone(read);
+      edit(node);
+      const r = prepareWrite(session.state, { intent: 'x', scope: { ids: [para.id] }, changes: [{ kind: 'replace', id: para.id, base: read.base, node }] } as WriteInput);
+      if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 500));
+      return r;
+    };
+
+    const reworded = rewrite((node) => {
+      (arr<NfNode>(node.inlines).find((i) => i.text === 'Limit of indemnity ') as NfNode).text = 'Limit of cover ';
+    });
+    const [copy] = occurrences(composeTracked(session.state.view, reworded.intended, 't').tracked, control.id);
+    expect(JSON.stringify(copy)).not.toContain('"pending"');
+    expect(fromNormalForm(reworded.intended, reworded.intendedResidue as never)).toContain('value=4373');
+
+    const labelled = rewrite((node) => {
+      const c = arr<NfNode>(node.inlines).find((i) => i.kind === 'control') as NfNode;
+      c.binding = { ...(c.binding as object), label: 'Limit' };
+    });
+    expect(fromNormalForm(labelled.intended, labelled.intendedResidue as never)).toContain('[[name=property_limit|type=currency|value=4373|label=Limit]]');
   });
 });
 

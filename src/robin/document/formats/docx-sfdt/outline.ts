@@ -12,6 +12,7 @@ import { HEADER_FOOTER, INLINE_KINDS, KIND } from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
 import { bindingMarks } from './features/formula';
 import { sectionMarkerMark } from './features/sectionMarker';
+import { SECTION_BREAKS } from './schema';
 import { viewToc } from './toc';
 import { docxTree } from './tree';
 import { arr } from './util';
@@ -141,10 +142,15 @@ export function detail(node: NfNode, view: DocumentView): string {
       const index = arr<NfNode>(view.nf.root.sections).findIndex(
         (s) => s.id === node.id
       );
-      const brk =
+      const written =
         typeof node.style === 'string'
           ? formats[node.style]?.breakCode
           : undefined;
+      // the editor lays out any break it does not know as a new page
+      const brk =
+        written === undefined || SECTION_BREAKS.includes(String(written))
+          ? written
+          : 'NewPage';
       return `${index + 1}${brk ? ` (break: ${brk})` : ''}${pendingTag(node)}`;
     }
     case KIND.paragraph: {

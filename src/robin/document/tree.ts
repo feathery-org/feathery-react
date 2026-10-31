@@ -127,8 +127,8 @@ export function hash64(text: string): string {
 const READ_ONLY = new Set<string>(READ_ONLY_NODE_KEYS);
 
 /**
- * A node's content without engine bookkeeping: `id`, `base` and the read-only annotations removed
- * at every depth. With `keepPending`, `pending` stays (it is content of the live document).
+ * A node's content without engine bookkeeping: `id`, `base`, the read-only annotations and keys
+ * written as null removed at every depth. With `keepPending`, `pending` stays (it is content of the live document).
  */
 export function contentOf(
   value: unknown,
@@ -139,7 +139,7 @@ export function contentOf(
   if (!isPlainObject(value)) return value;
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
-    if (key === 'id' || key === 'base') continue;
+    if (key === 'id' || key === 'base' || child === null) continue;
     if (READ_ONLY.has(key) && !(keepPending && key === 'pending')) continue;
     out[key] = contentOf(child, { keepPending });
   }

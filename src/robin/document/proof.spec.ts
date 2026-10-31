@@ -55,6 +55,21 @@ describe('proof', () => {
     });
   });
 
+  it('reads a key written as null as absent: an unbinding lands though the live node has no binding', () => {
+    const live = nf(
+      toyNative(
+        para('a'),
+        para('b', { rev: 'del', by: 't' }),
+        para('B', { rev: 'ins', by: 't' })
+      )
+    );
+    const unbound: NormalForm = JSON.parse(JSON.stringify(intended));
+    (unbound.root.blocks as NfNode[])[1].binding = null;
+    expect(
+      prove(pack, { before, intended: unbound, live, ...nothingElse }).landed
+    ).toBe(true);
+  });
+
   it('fails when the change landed beside the target (true positive for landed)', () => {
     const live = nf(
       toyNative(para('a'), para('b'), para('B', { rev: 'ins', by: 't' }))

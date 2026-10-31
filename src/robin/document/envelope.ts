@@ -920,6 +920,12 @@ export const writeSuccessResultSchema = z.looseObject({
     z.string().refine((v) => isNodeId(v) || isFormatId(v))
   ),
   touched: z.array(nodeIdSchema.or(z.literal(ROOT_ID))),
+  fingerprints: z
+    .record(
+      nodeIdSchema.or(z.literal(ROOT_ID)),
+      z.looseObject({ base: z.string().min(1), shape: z.string().min(1) })
+    )
+    .optional(),
   finalizerScope: z.array(finalizerScopeSchema),
   facts: z.array(factSchema),
   warnings: z.array(warningSchema),

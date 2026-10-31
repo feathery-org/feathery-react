@@ -67,6 +67,7 @@ export function comparableText(pack: Pack, nf: NormalForm): string {
       .filter(
         (k) =>
           obj[k] !== undefined &&
+          obj[k] !== null &&
           k !== 'id' &&
           k !== 'base' &&
           !READ_ONLY_BUT_PENDING.has(k)
@@ -268,7 +269,7 @@ function authorshipKept(pack: Pack, input: ProofInput): string[] {
 
 export function prove(pack: Pack, input: ProofInput): ProofOutcome {
   const { before, intended, live } = input;
-  const { accept, reject, expectedRejection } = pack.projections;
+  const { accept, reject, expectedRejection, resolveGroup } = pack.projections;
   const landed = compareWithNormalizations(
     pack,
     accept(live),
@@ -279,7 +280,8 @@ export function prove(pack: Pack, input: ProofInput): ProofOutcome {
     : before;
   const reversible = compareWithNormalizations(
     pack,
-    reject(live),
+    // this card rejected the way its card's reject does, carrying a move's bookmarks back
+    reject(resolveGroup ? resolveGroup(live, input.turnId, false) : live),
     reject(restores)
   );
   const conservedDiff = residueConserved(pack, input);
