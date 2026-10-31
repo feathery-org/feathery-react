@@ -173,6 +173,45 @@ it('shows what a matrix lets the person answer', () => {
   });
 });
 
+it("carries each item's layout position so a host can list the step in page order", () => {
+  const currentStep = {
+    id: 'step-1',
+    key: 'intro',
+    subgrids: [],
+    texts: [
+      { id: 'heading', properties: { text: 'About you' }, position: [0] }
+    ],
+    images: [],
+    buttons: [{ id: 'next', properties: { text: 'Next' }, position: [2] }],
+    tables: [],
+    tabs: [],
+    progress_bars: [],
+    next_conditions: [],
+    servar_fields: [
+      {
+        servar: { id: 'field-1', key: 'first_name', type: 'text_field' },
+        properties: {},
+        position: [1, 0]
+      }
+    ]
+  };
+  (internalState as any)[FORM] = {
+    currentStep,
+    steps: { intro: currentStep },
+    fields: { first_name: { value: '' } },
+    visiblePositions: {},
+    inlineErrors: {},
+    logicRules: []
+  };
+
+  const snapshot = getPanelRuntimeSnapshot(FORM)!;
+
+  expect(snapshot.currentStepFields[0].position).toEqual([1, 0]);
+  expect(
+    snapshot.currentStepElements.map((element) => element.position)
+  ).toEqual(expect.arrayContaining([[0], [2]]));
+});
+
 describe('tables in the snapshot', () => {
   const stepWithTables = (tables: any[]) => ({
     id: 'step-1',
