@@ -6,7 +6,7 @@
  */
 import type { LiveEditor } from '../host';
 import { closeUndoGroups, historyOf, openUndoGroups } from '../host';
-import { CardText, groupTag } from '../adapter/revisions';
+import { CardText, cardAuthor, groupTag } from '../adapter/revisions';
 import { AUTHOR } from '../reconcile';
 
 export function inGroup<T>(
@@ -23,7 +23,7 @@ export function inGroup<T>(
     custom: settings?.customData
   };
   editor.enableTrackChanges = tracked;
-  editor.currentUser = AUTHOR;
+  editor.currentUser = cardAuthor(turnId, AUTHOR);
   if (settings) settings.customData = groupTag(turnId, card);
   const module = editor.editorModule as Record<string, any> | undefined;
   const depth = openUndoGroups(editor);

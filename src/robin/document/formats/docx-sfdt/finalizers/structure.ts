@@ -207,7 +207,8 @@ export const tableIdentityFinalizer: Finalizer = {
       const keeper =
         group.find((c) => tableOf(before.get(c.id)) === table) ?? group[0];
       for (const c of group) {
-        if (c === keeper) continue;
+        // Only copies this change added, a pending move's two copies were already there
+        if (c === keeper || tableOf(before.get(c.id)) === table) continue;
         let k = 2;
         while (used.has(`${table}_${k}`)) k += 1;
         const fresh = `${table}_${k}`;
@@ -232,5 +233,22 @@ export const tableIdentityFinalizer: Finalizer = {
           ]
         : []
     };
+  }
+};
+
+/** A section ending in a table gets an empty paragraph after it, as the editor adds on every open */
+export const sectionTailFinalizer: Finalizer = {
+  name: 'section-tail',
+  run(after) {
+    const endsInTable = (b: NfNode | undefined): boolean =>
+      b?.kind === KIND.table ||
+      (b?.kind === KIND.control && endsInTable(arr<NfNode>(b.blocks).at(-1)));
+    for (const section of arr<NfNode>(after.root.sections))
+      if (endsInTable(arr<NfNode>(section.blocks).at(-1)))
+        (section.blocks as NfNode[]).push({
+          kind: KIND.paragraph,
+          inlines: []
+        } as unknown as NfNode);
+    return { ids: [] };
   }
 };

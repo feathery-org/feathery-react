@@ -1,6 +1,8 @@
 // Stable per-actor colours: the same person gets the same colour in every
 // version and session, for avatar dots and highlight washes.
 
+import { displayAuthor } from '../../../../robin/document/formats/docx-sfdt/adapter/revisions';
+
 export const CURRENT_USER_COLOR = '#f97316'; // orange — first human editor
 export const ASSISTANT_COLOR = '#e2626e'; // Feathery red — always Robin
 
@@ -85,7 +87,8 @@ export function colorForRevisionAuthor(
   let key = author || '';
   if (key.startsWith(FMT_PREFIX)) key = key.slice(FMT_PREFIX.length);
   // Diffs use 'robin' but live tracked changes use 'Robin', so match case-insensitively
-  const kind = key.toLowerCase() === 'robin' ? 'assistant' : 'user';
+  const kind =
+    displayAuthor(key).toLowerCase() === 'robin' ? 'assistant' : 'user';
   if (kind === 'user' && key.toLowerCase() === 'you' && versionActorKey) {
     key = versionActorKey;
   }

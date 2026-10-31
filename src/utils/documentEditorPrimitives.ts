@@ -890,6 +890,49 @@ export function installRevisionGroupIsolation(editor: LiveEditor): void {
   }
 }
 
+const EXPORT_CONTENT_CONTROL_RECOVERY_INSTALLED =
+  '__featheryExportContentControlRecovery';
+
+// Vendored override, 34.1.31: the exporter never clears open inline content
+// controls, so one unmatched start empties every later save
+export function installExportContentControlRecovery(editor: LiveEditor): void {
+  const module: any = (editor as any).sfdtExportModule;
+  if (
+    !module ||
+    typeof module.write !== 'function' ||
+    typeof module.writeParagraph !== 'function'
+  )
+    return;
+  if (module[EXPORT_CONTENT_CONTROL_RECOVERY_INSTALLED]) return;
+  module[EXPORT_CONTENT_CONTROL_RECOVERY_INSTALLED] = true;
+  const write = module.write.bind(module);
+  module.write = (...args: any[]): any => {
+    module.inlineContentControls = [];
+    return write(...args);
+  };
+  const writeParagraph = module.writeParagraph.bind(module);
+  module.writeParagraph = (
+    widget: any,
+    paragraph: any,
+    ...rest: any[]
+  ): any => {
+    const depth = module.inlineContentControls.length;
+    const next = writeParagraph(widget, paragraph, ...rest);
+    const optimized = module.keywordIndex === 1;
+    const inlines = paragraph[optimized ? 'i' : 'inlines'];
+    // Close what this paragraph opened, as the SDK does for a selection export
+    while (module.inlineContentControls.length > depth) {
+      const open = module.inlineContentControls.pop();
+      module.AddInlineToBlock(inlines, {
+        [optimized ? 'i' : 'inlines']: open.inlines,
+        [optimized ? 'ccp' : 'contentControlProperties']:
+          module.contentControlProperty(open.props)
+      });
+    }
+    return next;
+  };
+}
+
 const CONTENT_CONTROL_DELETION_INSTALLED =
   '__robinTrackedContentControlDeletion';
 

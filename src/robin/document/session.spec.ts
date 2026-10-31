@@ -1019,6 +1019,129 @@ describe('document session: the four verbs end to end', () => {
     ).toBe(true);
   });
 
+  it('a refused write leaves no id guesses behind: the next write on a read node lands (ebe5a6ff 27-node conflict)', () => {
+    const { host, call, nextTurn } = mount(
+      toyNative(para('stray'), para('stray'), para('End'))
+    );
+    const read = call('read', { ids: ['root', 'n1'] });
+    const first = nodeOf(read, 'n1');
+    // The landing adds a third equal sibling, so reading it back guesses which stray is which
+    host.corruptNextSeam = true;
+    const refused = call('write', {
+      intent: 'Add a line.',
+      scope: { ids: [] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: 'n2',
+          container: nodeOf(read, 'root').shape,
+          node: { text: 'Cyber', style: first.style }
+        }
+      ]
+    }) as { refusal: { invariant: string } };
+    expect(refused.refusal.invariant).toBe('proof-failed');
+    nextTurn();
+    const r = call('write', {
+      intent: 'x',
+      scope: { ids: ['n1'] },
+      changes: [
+        {
+          kind: 'replace',
+          id: 'n1',
+          base: first.base,
+          node: { text: 'Changed', style: first.style }
+        }
+      ]
+    });
+    expect(r).toEqual(expect.objectContaining({ ok: true }));
+  });
+
+  it('an equal paragraph the user adds elsewhere leaves the other twins writable without a fresh read (Hilb empty paragraphs)', () => {
+    const { host, call, nextTurn } = mount(
+      toyNative(para('Title'), para(''), para('Mid'), para(''), para('End'))
+    );
+    const read = call('read', { ids: ['n2', 'n4'] });
+    // the user adds an empty paragraph after End: the two between Title and End are untouched
+    host.userEdit((d) => d.body.push(para('')));
+    nextTurn();
+    const r = call('write', {
+      intent: 'x',
+      scope: { ids: ['n2', 'n4'] },
+      changes: ['n2', 'n4'].map((id) => {
+        const seen = nodeOf(read, id);
+        return {
+          kind: 'replace',
+          id,
+          base: seen.base,
+          node: { text: `Filled ${id}`, style: seen.style }
+        };
+      })
+    });
+    expect(r).toEqual(expect.objectContaining({ ok: true }));
+  });
+
+  it('a committed write returns fresh fingerprints, so a second write in the turn is not a conflict (3c41412c own-write conflicts)', () => {
+    const { call } = mount();
+    const first = nodeOf(call('read', { ids: ['n1'] }), 'n1');
+    const write = (base: string, text: string) =>
+      call('write', {
+        intent: 'x',
+        scope: { ids: ['n1'] },
+        changes: [
+          {
+            kind: 'replace',
+            id: 'n1',
+            base,
+            node: { text, style: first.style }
+          }
+        ]
+      }) as {
+        ok: boolean;
+        fingerprints?: Record<string, { base: string }>;
+        trace: { verified: { checks: Array<{ name: string; pass: boolean }> } };
+      };
+    const once = write(first.base as string, 'Once');
+    expect(once.ok).toBe(true);
+    expect(once.fingerprints?.root).toBeDefined();
+    const bases = (r: ReturnType<typeof write>) =>
+      r.trace.verified.checks.find((c) => c.name === 'base-hashes')?.pass;
+    expect(bases(write(first.base as string, 'Stale'))).toBe(false);
+    expect(bases(write(once.fingerprints?.n1.base as string, 'Twice'))).toBe(
+      true
+    );
+  });
+
+  it('fingerprints cover the nodes nested inside an insert', () => {
+    const { call } = mount();
+    const root = nodeOf(call('read', { ids: ['root'] }), 'root');
+    const result = call('write', {
+      intent: 'x',
+      scope: { ids: ['n1'] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: 'n1',
+          container: root.shape,
+          node: {
+            id: 'tmp:box',
+            items: [{ id: 'tmp:auto', text: 'Auto', style: 'f2' }]
+          }
+        }
+      ]
+    }) as {
+      ok: boolean;
+      mapping: Record<string, string>;
+      fingerprints?: Record<string, unknown>;
+    };
+    expect(result.ok).toBe(true);
+    expect(Object.keys(result.fingerprints ?? {})).toEqual(
+      expect.arrayContaining([
+        result.mapping['tmp:box'],
+        result.mapping['tmp:auto']
+      ])
+    );
+  });
+
   it('an unambiguous user edit leaves ids writable without a fresh read', () => {
     const { host, call, nextTurn } = mount();
     const first = nodeOf(call('read', { ids: ['n1'] }), 'n1');

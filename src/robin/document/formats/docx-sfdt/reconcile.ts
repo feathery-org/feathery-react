@@ -95,9 +95,28 @@ function tagMove(node: NfNode, turnId: string, move: string): void {
     for (const child of listOf(node, key) ?? []) tagMove(child, turnId, move);
 }
 
+/** Drop the insertions a node's subtree carries: a moved copy is the mover's alone */
+function dropInsertions(node: NfNode): void {
+  const kept = (pending: unknown): Obj | null => {
+    const rest = revisionsIn(pending).filter((r) => r.kind !== 'Insertion');
+    if (!rest.length) return null;
+    return rest.length > 1 ? { ...rest[0], revisions: rest } : { ...rest[0] };
+  };
+  if (isObject(node.pending)) {
+    const own = kept(node.pending);
+    const mark = kept(node.pending.mark);
+    if (own || mark)
+      node.pending = { ...(own ?? {}), ...(mark ? { mark } : {}) };
+    else delete node.pending;
+  }
+  for (const key of docxTree.childLists(node))
+    for (const child of listOf(node, key) ?? []) dropInsertions(child);
+}
+
 /** Mark every revision anchor inside a node: runs and other text inlines, paragraph marks, rows. */
 export function markSubtree(node: NfNode, p: Pending): void {
-  if (node.kind === KIND.run) node.pending = withRevision(node.pending, p);
+  if (node.kind === KIND.run || node.kind === KIND.shape)
+    node.pending = withRevision(node.pending, p);
   if (node.kind === KIND.paragraph) {
     const mark = isObject(node.pending) ? node.pending.mark : undefined;
     node.pending = {
@@ -242,6 +261,7 @@ export function composeTracked(
         if (old && was[w]?.id === kid.id) w += 1;
         if (!old) {
           // new here, or moved here from elsewhere: an insertion in this list
+          if (before.get(kid.id)) dropInsertions(kid);
           markSubtree(kid, ins);
           result.push(kid);
           if (before.get(kid.id)) {
@@ -256,7 +276,20 @@ export function composeTracked(
           // the new text is this change's alone, whatever revision the old text carried
           delete kid.pending;
           markSubtree(kid, ins);
-          result.push(gone, kid);
+          result.push(gone);
+          // the rest of the old text stays beside it, so the new text never splits another card's run
+          while (
+            w < was.length &&
+            !keep.has(was[w].id) &&
+            was[w].kind === KIND.run
+          ) {
+            const rest = clone(was[w]);
+            markSubtree(rest, del);
+            removedCopies.push(rest);
+            result.push(rest);
+            w += 1;
+          }
+          result.push(kid);
           continue;
         }
         if (
@@ -554,11 +587,16 @@ function nativePlan(
     }
     if (!ownSame) return null;
   }
-  for (const id of textParagraphs) {
+  // each stretch of runs under one pending change is edited alone, so no edit retypes another card's text
+  const stretches = [...textParagraphs].flatMap((id) =>
+    pendingStretches(before, intended, id)
+  );
+  for (const { id, from, to, text: stretchText } of stretches) {
     const hi = hierOf(before, id);
     if (!hi) return null;
     const oldText = ownText(before.get(id) as NfNode) ?? '';
-    const newText = ownText(intended.get(id) as NfNode) ?? '';
+    const newText = oldText.slice(0, from) + stretchText + oldText.slice(to);
+    if (newText === oldText) continue;
     let a = 0;
     while (
       a < oldText.length &&
@@ -578,9 +616,9 @@ function nativePlan(
     // ... but never across an inline that is not text (a marker parts the words for the editor)
     const joined = (k: number) =>
       editorOffset(before, id, k) - editorOffset(before, id, k - 1) === 1;
-    while (a > 0 && !ws(oldText[a - 1]) && joined(a)) a -= 1;
+    while (a > from && !ws(oldText[a - 1]) && joined(a)) a -= 1;
     while (
-      z > 0 &&
+      z > oldText.length - to &&
       !ws(oldText[oldText.length - z]) &&
       joined(oldText.length - z)
     )
@@ -606,6 +644,32 @@ function nativePlan(
   }
   if (text.length && format.length) return null; // the lab's rule: one native seam per change set
   return { text, format };
+}
+
+/** A paragraph's runs grouped where they carry the same pending change, each group's span and new text */
+function pendingStretches(
+  before: DocumentView,
+  intended: DocumentView,
+  id: string
+) {
+  const stretches: Array<{
+    id: string;
+    pending: string;
+    from: number;
+    to: number;
+    text: string;
+  }> = [];
+  walkPositions(before.get(id), (run, own) => {
+    const pending = canonicalJson(run.pending ?? null);
+    const to = own + String(run.text ?? '').length;
+    const text = String(intended.get(run.id)?.text ?? '');
+    const last = stretches[stretches.length - 1];
+    if (last && last.pending === pending) {
+      last.to = to;
+      last.text += text;
+    } else stretches.push({ id, pending, from: own, to, text });
+  });
+  return stretches;
 }
 
 function enclosingParagraph(view: DocumentView, id: string): NfNode | null {

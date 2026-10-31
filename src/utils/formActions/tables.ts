@@ -209,10 +209,15 @@ export type FocusTableCellResult =
 
 type ReadIssue = Omit<TableCellIssue, 'rowIndex' | 'entryId'>;
 
-type IssueGroup = ReadIssue & { count: number; rowIndexes: number[] };
+type CellValue = { value?: unknown };
+
+type IssueGroup = ReadIssue & {
+  count: number;
+  rows: ({ rowIndex: number } & CellValue)[];
+};
 
 export type GetTableIssuesResult =
-  | (ResolvedRow & { ok: true; issues: ReadIssue[] })
+  | (ResolvedRow & { ok: true; issues: (ReadIssue & CellValue)[] })
   | { ok: true; total: number; groups: IssueGroup[] }
   | TableActionFailure;
 
@@ -614,8 +619,8 @@ export function focusTableCell(
   };
 }
 
-// Enough of a group's rows to act on without spending the reply on row numbers
-const ROW_INDEXES_PER_GROUP = 50;
+// Enough of a group's rows to act on without spending the reply on them
+const ROWS_PER_GROUP = 50;
 
 const withoutRow = (cell: TableCellIssue): ReadIssue => ({
   ...(cell.fieldKey === undefined ? {} : { fieldKey: cell.fieldKey }),
@@ -634,6 +639,16 @@ export function getTableIssues(
   if (!found.ok) return found;
   const { handlers, live } = found;
   if (!live.showsGrid) return tableNotShown(tableId);
+  const types = fieldTypesByKey(found.state.steps);
+  const valueOf = (cell: TableCellIssue): CellValue =>
+    cell.fieldKey !== undefined
+      ? {
+          value: maskFieldValue(
+            types.get(cell.fieldKey),
+            handlers.getRow(cell.rowIndex)?.[cell.fieldKey] ?? null
+          )
+        }
+      : {};
 
   if (query.scope === 'row') {
     const row = resolveRow(query, live);
@@ -643,7 +658,9 @@ export function getTableIssues(
       ok: true,
       rowIndex: row.rowIndex,
       ...('entryId' in row ? { entryId: row.entryId } : {}),
-      issues: handlers.getIssues(row.rowIndex).map(withoutRow)
+      issues: handlers
+        .getIssues(row.rowIndex)
+        .map((cell) => ({ ...withoutRow(cell), ...valueOf(cell) }))
     };
   }
 
@@ -654,18 +671,15 @@ export function getTableIssues(
     const key = `${cell.source}|${cell.severity}|${cell.message}|${
       cell.fieldKey ?? ''
     }`;
-    const group = groups.get(key);
-    if (!group) {
-      groups.set(key, {
-        ...withoutRow(cell),
-        count: 1,
-        rowIndexes: [cell.rowIndex]
-      });
-      return;
-    }
+    const group = groups.get(key) ?? {
+      ...withoutRow(cell),
+      count: 0,
+      rows: []
+    };
+    groups.set(key, group);
     group.count += 1;
-    if (group.rowIndexes.length < ROW_INDEXES_PER_GROUP) {
-      group.rowIndexes.push(cell.rowIndex);
+    if (group.rows.length < ROWS_PER_GROUP) {
+      group.rows.push({ rowIndex: cell.rowIndex, ...valueOf(cell) });
     }
   });
   return {

@@ -19,6 +19,7 @@ import { cardCollections } from './card';
 import {
   copiedBookmarksFinalizer,
   rowIdentityFinalizer,
+  sectionTailFinalizer,
   tableIdentityFinalizer
 } from './finalizers/structure';
 import { bindingConsistency } from './invariants/bindings';
@@ -103,6 +104,7 @@ export const docxPack: Pack = {
     restripeFinalizer,
     columnFitFinalizer,
     widthUnitsFinalizer,
+    sectionTailFinalizer,
     tableGeometryReport
   ],
   projections: {

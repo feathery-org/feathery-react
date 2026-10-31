@@ -192,7 +192,7 @@ describe.each(documents)('%s', (_name, make) => {
       expect([name, ours.length > 0]).toEqual([name, true]);
       const revisions = await lane.call<Array<{ group: string | null; author: string }>>('revisions');
       expect([name, revisions.some((x) => x.group === `fr-${turn}`)]).toEqual([name, true]);
-      expect([name, revisions.filter((x) => x.group === `fr-${turn}`).every((x) => x.author === 'Robin')]).toEqual([name, true]);
+      expect([name, revisions.filter((x) => x.group === `fr-${turn}`).every((x) => x.author.replace(/[\u2060\u2061]/g, '') === 'Robin')]).toEqual([name, true]);
       // in the rail, theirs stay as they were and ours is one card of its own
       const cardsAfter = (await lane.call<Array<{ title: string }>>('rail')).map((c) => c.title);
       const ourTitle = cardsAfter.find((t) => !cardsBefore.some((c) => c.title === t));

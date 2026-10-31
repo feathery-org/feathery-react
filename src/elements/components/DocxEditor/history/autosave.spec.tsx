@@ -9,6 +9,7 @@ import {
   UseDocxHistorySessionOptions
 } from './useDocxHistorySession';
 import { DocxHistoryHost, VersionAuthor } from './types';
+import { localVersionArtifactsFor } from './useVersionDocument';
 
 const must = <T,>(value: T | null | undefined): T => {
   if (value == null) throw new Error('Expected a value');
@@ -516,6 +517,28 @@ describe('useDocxHistorySession', () => {
     });
   });
 
+  it('drops the superseded session snapshot when a closing save moves to a fresh id', async () => {
+    const save = jest
+      .fn()
+      .mockRejectedValueOnce(
+        new DocumentPersistenceError(
+          'Session is no longer current',
+          'conflict',
+          400
+        )
+      )
+      .mockResolvedValue(undefined);
+    const { view } = setup({ save });
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+    const stale = save.mock.calls[0][1].sessionId;
+    const renewed = save.mock.calls[1][1].sessionId;
+    expect(renewed).not.toBe(stale);
+    expect(localVersionArtifactsFor(stale)).toBeUndefined();
+  });
+
   it('does not wedge later saves when the fresh-session retry also fails', async () => {
     const conflict = () =>
       new DocumentPersistenceError(
@@ -536,6 +559,9 @@ describe('useDocxHistorySession', () => {
       });
     });
     expect(view.result.current.error).toBe('Session is already closed');
+    expect(
+      localVersionArtifactsFor(save.mock.calls[0][1].sessionId)
+    ).toBeUndefined();
     act(() => view.result.current.onEdit({ assistant: false }));
     await act(async () => {
       await view.result.current.save();
@@ -562,6 +588,30 @@ describe('useDocxHistorySession', () => {
       await view.result.current.save();
     });
     expect(view.result.current.error).toBeNull();
+    await act(async () => {
+      await view.result.current.save();
+    });
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a finalized conflict whose error class did not survive compilation', async () => {
+    const { view, host } = setup();
+    // What the es5 build throws: the right name and kind on a plain Error
+    host.closeVersion.mockRejectedValue(
+      Object.assign(new Error('Version artifacts are already finalized'), {
+        name: 'DocumentPersistenceError',
+        kind: 'conflict',
+        status: 400
+      })
+    );
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await view.result.current.save();
+    });
+    expect(view.result.current.error).toBeNull();
+    expect(
+      localVersionArtifactsFor(host.closeVersion.mock.calls[0][0])
+    ).toBeUndefined();
     await act(async () => {
       await view.result.current.save();
     });

@@ -2,7 +2,10 @@
 // DocumentEditor: editor signals in, autosave and version-close uploads out.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
+import {
+  DocumentPersistenceError,
+  isDocumentPersistenceError
+} from '../../../../utils/documentPersistence';
 import { featheryDoc } from '../../../../utils/browser';
 
 import { isRobinEditing, onRobinTurnChange } from '../robinActivity';
@@ -241,7 +244,7 @@ export function useDocxHistorySession(
       );
     };
     const isSessionConflict = (error: unknown) =>
-      error instanceof DocumentPersistenceError && error.kind === 'conflict';
+      isDocumentPersistenceError(error) && error.kind === 'conflict';
     const freshSession = (meta: DocxSaveMeta): DocxSaveMeta => ({
       ...meta,
       sessionId: uuidv4(),
@@ -297,6 +300,7 @@ export function useDocxHistorySession(
       } catch (error) {
         // Another tab closed or finalized this row; its highlights are gone.
         if (isSessionConflict(error)) {
+          clearLocalVersionArtifacts(sessionId, finalSfdt);
           failedArtifacts.delete(sessionId);
           return;
         }
@@ -533,13 +537,18 @@ export function useDocxHistorySession(
             closeSession: true
           } as DocxSaveMeta
         };
+        // The abandoned session can never receive this snapshot, so stop previewing it
+        const renewClose = (stale: DocxSaveMeta) => {
+          if (fStr) clearLocalVersionArtifacts(stale.sessionId, fStr);
+          return freshSession(stale);
+        };
         const result = await documentWrites.submit(async () => {
           const blob = await exported;
           const result = await saveInSession(
             saveSnapshot,
             blob,
             sent,
-            freshSession
+            renewClose
           );
           const { sessionId } = sent.current;
           if (sessionId !== meta.sessionId) {

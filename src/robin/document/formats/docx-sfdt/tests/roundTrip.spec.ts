@@ -13,6 +13,7 @@ import { walk } from '../../../tree';
 import { fromNormalForm } from '../adapter/fromNormalForm';
 import { toNormalForm } from '../adapter/toNormalForm';
 import { FORMAT_REF_KEYS } from '../adapter/keys';
+import { cardAuthor } from '../adapter/revisions';
 import { docxTree } from '../tree';
 
 const corpusDir = path.join(__dirname, 'corpus');
@@ -82,9 +83,11 @@ describe('pending changes both ways', () => {
     const out = fromNormalForm(nf, residue);
     const doc = JSON.parse(out);
     expect(doc.revisions).toEqual([
-      expect.objectContaining({ revisionType: 'Deletion', author: 'Robin', customData: expect.stringContaining('"changeSetId":"turn-7"') }),
-      expect.objectContaining({ revisionType: 'Insertion', author: 'Robin' })
+      expect.objectContaining({ revisionType: 'Deletion', author: cardAuthor('turn-7'), customData: expect.stringContaining('"changeSetId":"turn-7"') }),
+      expect.objectContaining({ revisionType: 'Insertion', author: cardAuthor('turn-7') })
     ]);
+    // each change set writes under its own author, read back as the shown name
+    expect(cardAuthor('turn-7')).not.toBe(cardAuthor('turn-8'));
     const again = toNormalForm(out);
     const back: Array<Record<string, unknown>> = [];
     walk(again.nf.root, docxTree, ({ node }) => {
