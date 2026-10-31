@@ -866,7 +866,7 @@ interface Props {
 }
 
 interface Result {
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: React.RefObject<HTMLDivElement>;
   editor: any;
   loading: boolean;
   error: string | null;

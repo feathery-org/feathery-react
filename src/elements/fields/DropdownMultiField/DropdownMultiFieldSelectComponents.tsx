@@ -140,17 +140,17 @@ const Control = (props: ControlProps<OptionData, boolean>) => {
       {...props}
       innerProps={{
         ...props.innerProps,
-        onPointerDown: (event) => {
+        onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
           if (!toggleCollapse(event, event.pointerType === 'touch')) {
             props.innerProps?.onPointerDown?.(event);
           }
         },
-        onMouseDown: (event) => {
+        onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => {
           if (!toggleCollapse(event, false)) {
             props.innerProps?.onMouseDown?.(event);
           }
         },
-        onTouchStart: (event) => {
+        onTouchStart: (event: React.TouchEvent<HTMLDivElement>) => {
           if (!toggleCollapse(event, true)) {
             props.innerProps?.onTouchStart?.(event);
           }
@@ -284,7 +284,9 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, boolean>) => {
     'data-feathery-multi-value': 'true'
   };
   const shouldBubblePointer = selectProps.collapseSelected;
-  mergedInnerProps.onPointerDown = (event) => {
+  mergedInnerProps.onPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>
+  ) => {
     if (shouldBubblePointer) {
       if (event.pointerType === 'touch') {
         event.preventDefault();
@@ -297,7 +299,7 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, boolean>) => {
     event.stopPropagation();
     originalPointerDown?.(event);
   };
-  mergedInnerProps.onMouseDown = (event) => {
+  mergedInnerProps.onMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (shouldBubblePointer) {
       event.preventDefault();
       event.stopPropagation();
@@ -308,7 +310,7 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, boolean>) => {
     event.stopPropagation();
     props.innerProps?.onMouseDown?.(event);
   };
-  mergedInnerProps.onTouchStart = (event) => {
+  mergedInnerProps.onTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
     if (shouldBubblePointer) {
       event.stopPropagation();
       selectProps.onCollapsedChipPress?.(event);

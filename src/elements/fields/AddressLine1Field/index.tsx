@@ -38,7 +38,7 @@ function AddressLine1({
   const options = useAddressSearch(value, servar);
   const [showOptions, setShowOptions] = useState(false);
   const [focused, setFocused] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const containerRef = useRef<HTMLElement>(null);
   const fieldWrapperRef = useRef<HTMLDivElement>(null);
   const { width: dropdownWidth } = useElementSize(fieldWrapperRef);
