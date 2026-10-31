@@ -248,10 +248,24 @@ function alignList(
   };
   const fresh = counts(kids);
   const before = counts(primary);
-  const guess = (key: string) => {
+  const kidKeys = kids.map(keyOf);
+  const primaryKeys = primary.map(keyOf);
+  const unique = (key: string) => fresh.get(key) === 1 && before.get(key) === 1;
+  // Equal siblings count only between the same unique neighbours
+  const guess = (i: number, key: string) => {
     const a = fresh.get(key) ?? 0;
     const b = before.get(key) ?? 0;
-    return a !== b && Math.max(a, b) > 1;
+    if (a === b || Math.max(a, b) <= 1) return false;
+    let lo = i - 1;
+    while (lo >= 0 && !unique(kidKeys[lo])) lo -= 1;
+    let hi = i + 1;
+    while (hi < kids.length && !unique(kidKeys[hi])) hi += 1;
+    const from = lo < 0 ? -1 : primaryKeys.indexOf(kidKeys[lo]);
+    const to =
+      hi < kids.length ? primaryKeys.indexOf(kidKeys[hi]) : primaryKeys.length;
+    const among = (list: string[], start: number, end: number) =>
+      list.slice(start + 1, end).filter((k) => k === key).length;
+    return from > to || among(kidKeys, lo, hi) !== among(primaryKeys, from, to);
   };
   let cursor = -1;
   kids.forEach((kid, i) => {
@@ -267,7 +281,7 @@ function alignList(
     if (j >= 0) {
       take(i, j);
       cursor = j;
-      if (guess(key)) ambiguous.add(i);
+      if (guess(i, key)) ambiguous.add(i);
     }
   });
 

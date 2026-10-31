@@ -1056,6 +1056,30 @@ describe('document session: the four verbs end to end', () => {
     expect(r).toEqual(expect.objectContaining({ ok: true }));
   });
 
+  it('an equal paragraph the user adds elsewhere leaves the other twins writable without a fresh read (Hilb empty paragraphs)', () => {
+    const { host, call, nextTurn } = mount(
+      toyNative(para('Title'), para(''), para('Mid'), para(''), para('End'))
+    );
+    const read = call('read', { ids: ['n2', 'n4'] });
+    // the user adds an empty paragraph after End: the two between Title and End are untouched
+    host.userEdit((d) => d.body.push(para('')));
+    nextTurn();
+    const r = call('write', {
+      intent: 'x',
+      scope: { ids: ['n2', 'n4'] },
+      changes: ['n2', 'n4'].map((id) => {
+        const seen = nodeOf(read, id);
+        return {
+          kind: 'replace',
+          id,
+          base: seen.base,
+          node: { text: `Filled ${id}`, style: seen.style }
+        };
+      })
+    });
+    expect(r).toEqual(expect.objectContaining({ ok: true }));
+  });
+
   it('an unambiguous user edit leaves ids writable without a fresh read', () => {
     const { host, call, nextTurn } = mount();
     const first = nodeOf(call('read', { ids: ['n1'] }), 'n1');
