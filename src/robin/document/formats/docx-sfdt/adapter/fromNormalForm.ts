@@ -162,7 +162,10 @@ export function fromNormalForm(
         original && JSON.stringify(n.binding) === JSON.stringify(original.view);
       tag = same
         ? original.tag
-        : formatBinding(n.binding, original?.order ?? []);
+        : formatBinding(
+            { ...original?.seed, ...n.binding },
+            original?.order ?? []
+          );
       if (!record) drop('color');
       put('tag', tag, ['lockContents', 'lockContentControl']);
       if (!record) put('color', DEFAULT_COLOUR, ['tag']);

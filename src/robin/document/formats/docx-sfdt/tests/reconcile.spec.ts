@@ -9,6 +9,7 @@ import { DocumentSession } from '../../../session';
 import { NfNode, NormalForm, baseOf, clone, shapeOf, walk } from '../../../tree';
 import { makeView } from '../../../view';
 import { prepareWrite } from '../../../verbs';
+import { fromNormalForm } from '../adapter/fromNormalForm';
 import { docxPack } from '../index';
 import { accept, expectedRejection, reject } from '../projections';
 import { ownText } from '../outline';
@@ -357,6 +358,56 @@ describe('plan: text beside another card\'s pending change', () => {
     expect(p.steps[0].seam).toBe('text');
     const ops = p.steps[0].payload as Array<{ oldMid: string; newMid: string }>;
     expect(ops.map((o) => [o.oldMid, o.newMid])).toEqual([[first.text, 'Berkley Southwest'], [last.text, '10 Even Payment']]);
+  });
+});
+
+describe('a binding\'s import seed (`value`)', () => {
+  const seeded = () => {
+    let doc = flagship.split('[[name=property_limit|type=currency]]').join('[[name=property_limit|type=currency|value=4373]]');
+    const host = { serialize: () => doc, open: (s: string) => { doc = s; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const target = { type: 'envelope', id: 'e' };
+    const session = new DocumentSession({ pack: docxPack, host, target, editorId: 'ed' });
+    const call = (verb: 'read' | 'write', input: unknown) => {
+      const out = session.dispatch(verb, { turnId: 'turn-1', editorId: 'ed', target, input });
+      if (out.status !== 'ok') throw new Error(JSON.stringify(out));
+      return out.result as Record<string, unknown>;
+    };
+    const para = session.state.view.nodes().find((n) => n.kind === 'paragraph' && arr<NfNode>(n.inlines).some((i) => (i.binding as { name?: string } | undefined)?.name === 'property_limit')) as NfNode;
+    const control = arr<NfNode>(para.inlines).find((i) => i.kind === 'control') as NfNode;
+    return { session, call, para, control };
+  };
+
+  it('is not shown by the normal form, so a read never offers it as what the control holds (ae748313 t8/t9)', () => {
+    const { call, para } = seeded();
+    const read = (call('read', { ids: [para.id] }).nodes as NfNode[])[0];
+    const binding = arr<NfNode>(read.inlines).find((i) => i.kind === 'control')?.binding;
+    expect(binding).toEqual(expect.objectContaining({ name: 'property_limit', type: 'currency' }));
+    expect(binding).not.toHaveProperty('value');
+  });
+
+  it('survives a paragraph rewritten from its read, which tracks only the text, and a rewrite of the binding', () => {
+    const { session, call, para, control } = seeded();
+    const read = (call('read', { ids: [para.id] }).nodes as NfNode[])[0];
+    const rewrite = (edit: (node: NfNode) => void) => {
+      const node = clone(read);
+      edit(node);
+      const r = prepareWrite(session.state, { intent: 'x', scope: { ids: [para.id] }, changes: [{ kind: 'replace', id: para.id, base: read.base, node }] } as WriteInput);
+      if (r.outcome !== 'verified') throw new Error(JSON.stringify(r).slice(0, 500));
+      return r;
+    };
+
+    const reworded = rewrite((node) => {
+      (arr<NfNode>(node.inlines).find((i) => i.text === 'Limit of indemnity ') as NfNode).text = 'Limit of cover ';
+    });
+    const [copy] = occurrences(composeTracked(session.state.view, reworded.intended, 't').tracked, control.id);
+    expect(JSON.stringify(copy)).not.toContain('"pending"');
+    expect(fromNormalForm(reworded.intended, reworded.intendedResidue as never)).toContain('value=4373');
+
+    const labelled = rewrite((node) => {
+      const c = arr<NfNode>(node.inlines).find((i) => i.kind === 'control') as NfNode;
+      c.binding = { ...(c.binding as object), label: 'Limit' };
+    });
+    expect(fromNormalForm(labelled.intended, labelled.intendedResidue as never)).toContain('[[name=property_limit|type=currency|value=4373|label=Limit]]');
   });
 });
 
