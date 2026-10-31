@@ -24,6 +24,7 @@ import type { TableRowRead, TableSelection } from './formActions/tables';
 export type PanelRuntimeFieldEntry = {
   key: string;
   type: string;
+  position?: number[];
   value: unknown;
   visible: boolean;
   disabled: boolean;
@@ -55,6 +56,7 @@ type PanelRuntimeElementEntry =
   | {
       type: 'text';
       id?: string;
+      position?: number[];
       text: string;
       templateText?: string;
       visible: boolean;
@@ -66,12 +68,14 @@ type PanelRuntimeElementEntry =
   | {
       type: 'image';
       text: string;
+      position?: number[];
       visible: boolean;
       clickableAncestorIds?: string[];
     }
   | {
       type: 'button';
       id: string;
+      position?: number[];
       text: string;
       visible: boolean;
       disabled: boolean;
@@ -84,6 +88,7 @@ type PanelRuntimeElementEntry =
   | {
       type: 'container';
       id: string;
+      position?: number[];
       visible: boolean;
       actions: Array<Record<string, unknown>>;
       hasLogicRules?: boolean;
@@ -157,6 +162,10 @@ const extractRawText = (props: Record<string, unknown>): string => {
 
 const sanitizeRuntimeValue = (value: unknown): unknown =>
   sanitizeTransportValue(value);
+
+// Where an item sits in the step layout, so a host can list the step in page order
+const layoutPosition = (el: any): { position?: number[] } =>
+  Array.isArray(el?.position) ? { position: el.position } : {};
 
 const isMeaningful = (value: unknown): boolean => {
   if (value === null || value === undefined) return false;
@@ -490,6 +499,7 @@ export const getPanelRuntimeSnapshot = (
     return {
       key: servar.key,
       type: servar.type,
+      ...layoutPosition(field),
       value: shown(servar.type, sanitizeRuntimeValue(value)),
       visible,
       disabled,
@@ -562,6 +572,7 @@ export const getPanelRuntimeSnapshot = (
     currentStepElements.push({
       type: 'container',
       id: sg.id ?? '',
+      ...layoutPosition(sg),
       visible: visibilityFor(sg),
       actions,
       ...(hasLogicRules ? { hasLogicRules: true } : {}),
@@ -589,6 +600,7 @@ export const getPanelRuntimeSnapshot = (
     currentStepElements.push({
       type: 'text',
       text: resolved,
+      ...layoutPosition(el),
       visible: visibilityFor(el),
       ...(el.id ? { id: el.id } : {}),
       ...(raw !== resolved ? { templateText: raw } : {}),
@@ -627,6 +639,7 @@ export const getPanelRuntimeSnapshot = (
     currentStepElements.push({
       type: 'button',
       id: el.id ?? '',
+      ...layoutPosition(el),
       text: resolveText(raw),
       visible: visibilityFor(el),
       disabled: isButtonDisabled(el, step, visiblePositions, formReadOnly),
@@ -650,6 +663,7 @@ export const getPanelRuntimeSnapshot = (
     currentStepElements.push({
       type: 'image',
       text: resolveText(altRaw),
+      ...layoutPosition(el),
       visible: visibilityFor(el),
       ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {})
     });
