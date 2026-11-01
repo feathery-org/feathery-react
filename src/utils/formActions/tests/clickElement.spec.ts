@@ -1,4 +1,5 @@
 import internalState from '../../internalState';
+import { initState } from '../../init';
 import { clickElement } from '../clickElement';
 import * as formActionUtils from '../utils';
 
@@ -51,6 +52,41 @@ describe('clickElement repeated button error contract', () => {
     jest.useRealTimers();
   });
 
+  it('reports completion only after the native click acknowledges it', async () => {
+    const formKey = 'completion-test';
+    initState.formSessions[formKey] = { form_completed: false };
+    try {
+      const state = makeState(() => {});
+      state.client = { formKey };
+      expect(await clickElement(formUuid, 'btn', 0)).not.toHaveProperty(
+        'formCompleted'
+      );
+      state.formActions.buttonOnClick = async () => {
+        await Promise.resolve();
+        initState.formSessions[formKey].form_completed = true;
+      };
+      expect(await clickElement(formUuid, 'btn', 0)).toMatchObject({
+        ok: true,
+        navigated: null,
+        formCompleted: true
+      });
+    } finally {
+      delete initState.formSessions[formKey];
+    }
+  });
+
+  it('reports a native button failure without relying on inline or HTML5 controls', async () => {
+    const state = makeState(() => {});
+    state.formSettings.errorType = 'html5';
+    state.formActions.buttonOnClick = async () => ({
+      buttonError: 'Email delivery failed'
+    });
+    expect(await clickElement(formUuid, 'btn', 0)).toMatchObject({
+      ok: true,
+      buttonError: 'Email delivery failed'
+    });
+  });
+
   it("awaits the async publication and returns the clicked row's error as buttonError", async () => {
     makeState((state) => {
       publishLater(state, { btn: { byIndex: { 1: { message: 'Required' } } } });
@@ -75,7 +111,9 @@ describe('clickElement repeated button error contract', () => {
 
   it("does not treat another row's error as the clicked button's error", async () => {
     makeState((state) => {
-      publishLater(state, { btn: { byIndex: { 0: { message: 'Other row' } } } });
+      publishLater(state, {
+        btn: { byIndex: { 0: { message: 'Other row' } } }
+      });
     });
 
     const result: any = await clickElement(formUuid, 'btn', 1);
@@ -117,7 +155,11 @@ describe('clickElement text links', () => {
       currentStep: {
         buttons: [],
         texts: [
-          { id: 'txt', position: [0], properties: { actions: [{ type: 'next' }] } }
+          {
+            id: 'txt',
+            position: [0],
+            properties: { actions: [{ type: 'next' }] }
+          }
         ],
         subgrids: [],
         servar_fields: [],

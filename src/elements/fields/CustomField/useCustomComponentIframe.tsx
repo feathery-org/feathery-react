@@ -11,7 +11,7 @@ interface Props {
 }
 
 interface Result {
-  iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  iframeRef: React.RefObject<HTMLIFrameElement>;
   error: string | null;
   loading: boolean;
 }

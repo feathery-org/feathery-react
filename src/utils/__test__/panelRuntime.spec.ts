@@ -1,11 +1,249 @@
 import internalState from '../internalState';
 import { getPanelRuntimeSnapshot } from '../panelRuntime';
-import { fieldValues } from '../init';
+import { fieldValues, initState } from '../init';
+import { mountFieldInput } from '../../Form/fieldInputPresentation';
+import { shouldElementHide } from '../hideAndRepeats';
+import { featheryDoc } from '../browser';
 
 const FORM = 'panel-runtime-form';
 
 afterEach(() => {
   delete (internalState as any)[FORM];
+});
+
+it('reports only matched native groups hiding forward navigation and masks comparison values', () => {
+  const usage = 'requirement_usage';
+  const route = 'requirement_route';
+  const secret = 'requirement_secret';
+  const rule = (
+    key: string,
+    values: string[],
+    index = 0,
+    fieldType = 'servar'
+  ) => ({
+    field_id: key,
+    field_key: key,
+    field_type: fieldType,
+    comparison: 'equal',
+    index,
+    values
+  });
+  const next = {
+    id: 'next',
+    position: [2],
+    show_logic: false,
+    properties: { text: 'Next', actions: [{ type: 'next' }] },
+    hide_ifs: [
+      rule(route, ['standard'], 0, 'hidden'),
+      rule(usage, ['0-1 hours', '2 hours']),
+      rule(usage, ['7+ hours'], 1)
+    ]
+  };
+  const secretNext = {
+    ...next,
+    id: 'secret-next',
+    position: [3],
+    hide_ifs: [rule(secret, ['private-password'])]
+  };
+  const step = {
+    id: 'requirements',
+    key: 'Requirements',
+    subgrids: [],
+    texts: [],
+    images: [],
+    tables: [],
+    tabs: [],
+    progress_bars: [],
+    next_conditions: [],
+    buttons: [next, secretNext],
+    servar_fields: [
+      {
+        position: [0],
+        properties: {},
+        servar: { key: usage, type: 'select', metadata: {} }
+      },
+      {
+        position: [1],
+        properties: {},
+        servar: { key: secret, type: 'password', metadata: {} }
+      }
+    ]
+  };
+  const keys = [usage, route, secret];
+  const previous = keys.map((key) => fieldValues[key]);
+  Object.assign(fieldValues, {
+    [usage]: '2 hours',
+    [route]: 'standard',
+    [secret]: 'private-password'
+  });
+  const state = {
+    currentStep: step,
+    steps: { Requirements: step },
+    logicRules: [],
+    fields: {
+      [usage]: {
+        value: '2 hours',
+        _getFormSpecificProps: () => ({ type: 'select' })
+      },
+      [secret]: {
+        value: 'private-password',
+        _getFormSpecificProps: () => ({ type: 'password' })
+      }
+    },
+    visiblePositions: {
+      '0': [true],
+      '1': [true],
+      '2': [!shouldElementHide(next)],
+      '3': [!shouldElementHide(secretNext)]
+    }
+  };
+  (internalState as any)[FORM] = state;
+  try {
+    const snapshot = getPanelRuntimeSnapshot(FORM, {
+      masked: true,
+      includeVisibilityConditions: true
+    });
+    if (!snapshot) throw new Error('The runtime fixture is not available.');
+    const button = snapshot.currentStepElements.find(
+      (element) => element.type === 'button' && element.id === 'next'
+    );
+    expect(button).toMatchObject({
+      visible: false,
+      hiddenBy: [
+        [
+          {
+            fieldKey: route,
+            fieldType: 'hidden',
+            comparison: 'equal',
+            values: ['standard']
+          },
+          {
+            fieldKey: usage,
+            fieldType: 'servar',
+            comparison: 'equal',
+            values: ['0-1 hours', '2 hours']
+          }
+        ]
+      ]
+    });
+    const secretButton = snapshot.currentStepElements.find(
+      (element) => element.type === 'button' && element.id === 'secret-next'
+    );
+    expect(secretButton).toMatchObject({
+      hiddenBy: [[{ fieldKey: secret, values: ['••••'] }]]
+    });
+    expect(JSON.stringify(snapshot)).not.toContain('private-password');
+    expect(
+      getPanelRuntimeSnapshot(FORM)?.currentStepElements.find(
+        (element) => element.type === 'button' && element.id === 'next'
+      )
+    ).not.toHaveProperty('hiddenBy');
+    fieldValues[usage] = '4 hours';
+    state.fields[usage].value = '4 hours';
+    state.visiblePositions['2'] = [!shouldElementHide(next)];
+    expect(
+      getPanelRuntimeSnapshot(FORM)?.currentStepElements.find(
+        (element) => element.type === 'button' && element.id === 'next'
+      )
+    ).toMatchObject({ visible: true });
+    expect(
+      getPanelRuntimeSnapshot(FORM)?.currentStepElements.find(
+        (element) => element.type === 'button' && element.id === 'next'
+      )
+    ).not.toHaveProperty('hiddenBy');
+  } finally {
+    keys.forEach((key, index) => {
+      if (previous[index] === undefined) delete fieldValues[key];
+      else fieldValues[key] = previous[index];
+    });
+  }
+});
+
+it('reports the displayed input and the signature methods supported by its native control', () => {
+  const signature = {
+    id: 'signature-1',
+    key: 'signature',
+    type: 'signature',
+    metadata: { sign_methods: '' }
+  };
+  const step = {
+    id: 'step-1',
+    key: 'intro',
+    subgrids: [],
+    texts: [],
+    images: [],
+    buttons: [],
+    tables: [],
+    tabs: [],
+    progress_bars: [],
+    next_conditions: [],
+    servar_fields: [{ servar: signature, properties: {}, position: [] }]
+  };
+  (internalState as any)[FORM] = {
+    currentStep: step,
+    steps: { intro: step },
+    fields: {},
+    logicRules: []
+  };
+  const release = mountFieldInput(
+    FORM,
+    'signature',
+    0,
+    featheryDoc().createElement('div')
+  );
+  try {
+    expect(getPanelRuntimeSnapshot(FORM)?.presentedFields).toEqual([
+      { key: 'signature', repeatIndex: 0 }
+    ]);
+    for (const [setting, expected] of [
+      ['', ['draw', 'type']],
+      ['draw', ['draw']],
+      ['type', ['type']]
+    ] as const) {
+      signature.metadata.sign_methods = setting;
+      expect(
+        getPanelRuntimeSnapshot(FORM)?.currentStepFields[0].signatureMethods
+      ).toEqual(expected);
+    }
+    release();
+    expect(getPanelRuntimeSnapshot(FORM)?.presentedFields).toEqual([]);
+  } finally {
+    release();
+  }
+});
+
+it('reports acknowledged completion for this form, independently of filled answers', () => {
+  const formKey = 'runtime-completion-fixture';
+  const previous = initState.formSessions[formKey];
+  const step = {
+    id: 'step-1',
+    key: 'intro',
+    subgrids: [],
+    texts: [],
+    images: [],
+    buttons: [],
+    tables: [],
+    tabs: [],
+    progress_bars: [],
+    servar_fields: [],
+    next_conditions: []
+  };
+  (internalState as any)[FORM] = {
+    currentStep: step,
+    steps: { intro: step },
+    client: { formKey },
+    fields: {},
+    logicRules: []
+  };
+  try {
+    initState.formSessions[formKey] = { form_completed: true };
+    expect(getPanelRuntimeSnapshot(FORM)?.formCompleted).toBe(true);
+    initState.formSessions[formKey] = { form_completed: false };
+    expect(getPanelRuntimeSnapshot(FORM)?.formCompleted).toBe(false);
+  } finally {
+    if (previous) initState.formSessions[formKey] = previous;
+    else delete initState.formSessions[formKey];
+  }
 });
 
 it('normalizes runtime-only values at the panelRuntime source and retains empty hidden keys', () => {
@@ -61,6 +299,7 @@ it('normalizes runtime-only values at the panelRuntime source and retains empty 
     nested: { pending: { kind: 'promise', present: true } }
   });
   expect(snapshot.currentStepFields[0].value).toEqual(snapshot.values.upload);
+  expect(snapshot.currentStepFields[0]).not.toHaveProperty('label');
   expect(snapshot.hiddenFieldValues).toEqual({ hidden_file: filePresence });
   expect(snapshot.hiddenFieldsEmpty).toEqual([
     'hidden_null',
@@ -72,7 +311,7 @@ it('normalizes runtime-only values at the panelRuntime source and retains empty 
   expect(() => JSON.stringify(snapshot)).not.toThrow();
 });
 
-it('labels choice options with what the person sees, falling back to the value', () => {
+it('labels fields and choices with what the person sees, falling back to the choice value', () => {
   const currentStep = {
     id: 'step-1',
     key: 'billing',
@@ -89,6 +328,7 @@ it('labels choice options with what the person sees, falling back to the value',
         servar: {
           id: 'field-1',
           key: 'frequency',
+          name: 'How often?',
           type: 'dropdown',
           metadata: {
             options: ['opt_1', 'opt_2'],
@@ -111,6 +351,7 @@ it('labels choice options with what the person sees, falling back to the value',
 
   const snapshot = getPanelRuntimeSnapshot(FORM)!;
 
+  expect(snapshot.currentStepFields[0].label).toBe('How often?');
   expect(snapshot.currentStepFields[0].options).toEqual([
     { value: 'opt_1', label: 'Monthly' },
     { value: 'opt_2', label: 'opt_2' }

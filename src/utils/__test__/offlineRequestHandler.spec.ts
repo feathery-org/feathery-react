@@ -123,6 +123,20 @@ describe('OfflineRequestHandler - Integration Tests', () => {
     fakeIndexedDB = undefined;
   });
 
+  it('reports queued answers only for the current filler before advancing a chat card', async () => {
+    const { store, queue } = createQueueWithStorage();
+    const answer = {
+      type: 'submit',
+      stepKey: 'intake',
+      url: '/save/',
+      body: 'synthetic answer'
+    };
+    store.seed({ ...answer, userId: 'previous-user' });
+    expect(await queue.hasQueuedAnswerWrite()).toBe(false);
+    store.seed({ ...answer, userId: 'user-1' });
+    expect(await queue.hasQueuedAnswerWrite()).toBe(true);
+  });
+
   describe('Request execution behavior', () => {
     describe('storage failure recovery', () => {
       let originalFetch: any;

@@ -1,4 +1,8 @@
 import internalState from '../internalState';
+import {
+  flushFieldInputChanges,
+  presentedFieldInputs
+} from '../../Form/fieldInputPresentation';
 import { initState } from '../init';
 import { loadPhoneValidator, phoneLib, phoneLibPromise } from '../validation';
 import { stateMap } from '../../elements/components/data/states';
@@ -148,6 +152,7 @@ function checkMatrixValue(
 }
 
 type FillRejectReason =
+  | 'already_answered'
   | 'not_on_step'
   | 'hidden'
   | 'disabled'
@@ -164,6 +169,7 @@ export type FillFieldInput = {
   key: string;
   value: unknown;
   repeatIndex?: number;
+  onlyIfEmpty?: boolean;
 };
 
 type AppliedField = {
@@ -584,6 +590,34 @@ export async function fillFields(
     return { ok: false, reason: 'not_loaded', message: NOT_LOADED_MESSAGE };
   }
 
+  // Flush a person's pending card edits before the tool replaces their values.
+  const startingStep = state.currentStep.id;
+  const presented = presentedFieldInputs(formUuid).filter((target) =>
+    fields.some(
+      (field) =>
+        field.key === target.key &&
+        (field.repeatIndex ?? 0) === target.repeatIndex
+    )
+  );
+  if (presented.length) {
+    flushFieldInputChanges(formUuid, presented);
+    await handlers.awaitChangeRules();
+    if (
+      internalState[formUuid] !== state ||
+      state.currentStep?.id !== startingStep
+    )
+      return {
+        ok: true,
+        applied: [],
+        rejected: fields.map(({ key, repeatIndex }) => ({
+          key,
+          repeatIndex,
+          reason: 'not_on_step',
+          message: 'The form moved to another step. Read it before continuing.'
+        }))
+      };
+  }
+
   const priorValues = new Map<string, unknown>(
     ((state.currentStep.servar_fields ?? []) as any[])
       .filter((f: any) => requestedKeys.has(f?.servar?.key))
@@ -605,7 +639,7 @@ export async function fillFields(
   // Resolve every value first so the writes below land in a single render
   const pendingValues = new Map(priorValues);
   const prepared: Array<PreparedWrite | RejectedField> = fields.map(
-    ({ key, value, repeatIndex }) => {
+    ({ key, value, repeatIndex, onlyIfEmpty }) => {
       const validation = validateFill(
         state,
         key,
@@ -652,6 +686,24 @@ export async function fillFields(
       ) {
         normalized = formatDateString(new Date(normalized), servar.metadata);
       }
+      const previous = pendingValues.get(key);
+      const current =
+        typeof repeatIndex === 'number' && Array.isArray(previous)
+          ? previous[repeatIndex]
+          : previous;
+      if (
+        onlyIfEmpty &&
+        current !== undefined &&
+        !isEmptyValue(current) &&
+        JSON.stringify(current) !== JSON.stringify(normalized)
+      )
+        return {
+          key,
+          repeatIndex,
+          reason: 'already_answered',
+          message:
+            'This question already has a different answer. Ask before replacing it.'
+        };
       // Later rows in this call see the options earlier rows took
       if (typeof repeatIndex === 'number') {
         const prior = pendingValues.get(key);

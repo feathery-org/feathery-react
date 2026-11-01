@@ -10,7 +10,7 @@ import {
 } from './utils/init';
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
-import { getFormContext } from './utils/formContext';
+import { FieldInputValidationError, getFormContext } from './utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import { FormContext } from './types/Form';
 import LoginForm from './auth/LoginForm';
@@ -74,6 +74,7 @@ const Feathery = {
 };
 
 export {
+  FieldInputValidationError,
   Form,
   Elements,
   init,

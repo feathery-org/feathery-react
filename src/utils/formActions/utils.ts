@@ -8,7 +8,8 @@ import {
 } from '../interactionState';
 
 export type FormActionHandlers = {
-  buttonOnClick: (button: any) => Promise<void>;
+  buttonOnClick: FormToolsCallbacks['buttonOnClick'];
+  awaitChangeRules: () => Promise<unknown>;
   runElementActions: (args: {
     actions: any[];
     element: any;

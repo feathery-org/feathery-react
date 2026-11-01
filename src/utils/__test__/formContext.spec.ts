@@ -13,6 +13,73 @@ import {
 import { featheryWindow } from '../browser';
 import { AnswersPendingError } from '../offlineRequestHandler';
 
+describe('native input completeness', () => {
+  it('uses native required, empty-value and visibility rules without saving', () => {
+    const field = (
+      key: string,
+      type: string,
+      required = true,
+      metadata = {}
+    ) => ({
+      id: key,
+      properties: {},
+      styles: {},
+      servar: { key, type, required, repeated: false, metadata }
+    });
+    const fields = [
+      field('username', 'text_field'),
+      field('optional', 'text_field', false),
+      field('number', 'integer_field'),
+      field('choice', 'checkbox', true, { must_check: false }),
+      field('platforms', 'multiselect')
+    ].map((entry, index) => ({ ...entry, position: [index] }));
+    const step = {
+      id: 'completeness',
+      key: 'Completeness',
+      servar_fields: fields,
+      subgrids: [],
+      texts: [],
+      buttons: [],
+      images: [],
+      tables: [],
+      tabs: [],
+      progress_bars: [],
+      next_conditions: []
+    };
+    const state = {
+      currentStep: step,
+      steps: { Completeness: step },
+      fields: {
+        username: { value: '' },
+        optional: { value: '' },
+        number: { value: 0 },
+        choice: { value: false },
+        platforms: { value: [] as string[] }
+      },
+      visiblePositions: Object.fromEntries(
+        fields.map((_, index) => [String(index), [true]])
+      ),
+      logicRules: []
+    };
+    setFormInternalState('completeness', state as any);
+    const context = getFormContext('completeness');
+    const target = (key: string) => [{ key }];
+    expect(context.areFieldInputsComplete(target('username'))).toBe(false);
+    state.fields.username.value = '   ';
+    expect(context.areFieldInputsComplete(target('username'))).toBe(false);
+    state.fields.username.value = 'na';
+    expect(context.areFieldInputsComplete(target('username'))).toBe(true);
+    for (const key of ['optional', 'number', 'choice'])
+      expect(context.areFieldInputsComplete(target(key))).toBe(true);
+    expect(context.areFieldInputsComplete(target('platforms'))).toBe(false);
+    state.fields.platforms.value = ['Instagram'];
+    expect(context.areFieldInputsComplete(target('platforms'))).toBe(true);
+    state.visiblePositions['0'] = [false];
+    expect(context.areFieldInputsComplete(target('username'))).toBe(false);
+    expect(context.areFieldInputsComplete(target('missing'))).toBe(false);
+  });
+});
+
 describe('feathery.generateDocuments logic-rule method routing', () => {
   const uuid = 'formContext-test';
   let client: any;

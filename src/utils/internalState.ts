@@ -179,7 +179,8 @@ export type UpdateDocusignEnvelopeParams = {
 // Runtime changes a host embedding the form may react to
 export type FormRuntimeEvent =
   | { type: 'step'; stepId: string; stepKey: string }
-  | { type: 'identity' };
+  | { type: 'identity' }
+  | { type: 'fields' };
 
 // Closures formTools uses to write a field like a user change and wait for
 // the rules it queued
@@ -202,7 +203,7 @@ export type FormToolsCallbacks = {
     id: string;
     properties: Record<string, any>;
     repeat?: any;
-  }) => Promise<void>;
+  }) => Promise<void | { buttonError?: string }>;
   // Resolves once the change rules queued by the last fieldOnChange finish
   awaitChangeRules: () => Promise<any>;
   // limit is the add button's max_repeats

@@ -55,6 +55,24 @@ function reshapeHideIfs(hideIfs: any): ResolvedComparisonRule[][] {
   });
   return reshaped;
 }
+
+function getMatchingHideIfGroups(
+  hideIfs: FlatHideRule[],
+  repeat?: number,
+  internalId?: string
+) {
+  return reshapeHideIfs(hideIfs).filter((rules) =>
+    matchesHideIfGroup(rules, repeat, internalId)
+  );
+}
+
+function matchesHideIfGroup(
+  rules: ResolvedComparisonRule[],
+  repeat?: number,
+  internalId?: string
+) {
+  return rules.every((rule) => evalComparisonRule(rule, repeat, internalId));
+}
 /**
  * Determines if the provided element should be hidden based on its "hide-if" rules.
  */
@@ -76,10 +94,8 @@ function shouldElementHide(
   // If there are no hide_if rules, then the default is to show.
   // Otherwise, the rules are evaluated and if true then the show behavior is followed.
   if (!hideIfs || hideIfs.length === 0) return false;
-  const reshapedHideIfs = reshapeHideIfs(hideIfs ?? []);
-
-  const result = reshapedHideIfs.some((hideIfRules: ResolvedComparisonRule[]) =>
-    hideIfRules.every((rule) => evalComparisonRule(rule, repeat, internalId))
+  const result = reshapeHideIfs(hideIfs).some((rules) =>
+    matchesHideIfGroup(rules, repeat, internalId)
   );
   return show ? !result : result;
 }
@@ -296,6 +312,7 @@ function getVisibleElements(
 }
 
 export {
+  getMatchingHideIfGroups,
   shouldElementHide,
   getHideIfReferences,
   getTextVariableReferences,

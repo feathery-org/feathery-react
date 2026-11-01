@@ -10,6 +10,15 @@ import InlineTooltip from '../../components/InlineTooltip';
 import { iosScrollOnFocus } from '../../../utils/browser';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
 
+export type CheckboxRendererProps =
+  React.InputHTMLAttributes<HTMLInputElement> & {
+    label: React.ReactNode;
+    inputRef?: React.Ref<HTMLInputElement>;
+  };
+export type CheckboxRenderer = (
+  props: CheckboxRendererProps
+) => React.ReactNode;
+
 const applyCheckboxGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('checkboxGroup');
   applyHeightWidthMarginByFontSize(responsiveStyles, 'checkboxGroup');
@@ -31,6 +40,7 @@ function CheckboxGroupField({
   onEnter = () => {},
   elementProps = {},
   disabled = false,
+  renderCheckbox,
   children
 }: any) {
   const asciiOnly = formSettings?.asciiOnly ?? false;
@@ -135,43 +145,59 @@ function CheckboxGroupField({
               pointerEvents: selectAllDisabled ? 'none' : 'auto'
             }}
           >
-            <label style={{ display: 'contents' }}>
-              <input
-                ref={selectAllRef}
-                type='checkbox'
-                id={`${servar.key}-select-all`}
-                checked={allSelected}
-                onChange={() => onSelectAllChange(optionValues, !allSelected)}
-                onFocus={iosScrollOnFocus}
-                style={{ padding: 0, lineHeight: 'normal' }}
-                css={{
-                  ...composeCheckableInputStyle(styles, selectAllDisabled),
-                  ...styles.getTarget('checkboxGroup'),
-                  ...(selectAllDisabled
-                    ? responsiveStyles.getTarget('disabled')
-                    : {}),
-                  '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' },
-                  '&:indeterminate': {
-                    ...styles.getTarget('checkboxSelected')
-                  },
-                  '&:indeterminate::before': {
-                    transform: 'scale(1)',
-                    clipPath: 'inset(45% 15%)'
-                  }
-                }}
-                disabled={selectAllDisabled}
-                aria-label={selectAllLabel}
-              />
-              <span
-                css={{
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere',
-                  ...styles.getTarget('checkboxLabel')
-                }}
-              >
-                {selectAllLabel}
-              </span>
-            </label>
+            {renderCheckbox ? (
+              renderCheckbox({
+                inputRef: selectAllRef,
+                type: 'checkbox',
+                id: `${servar.key}-select-all`,
+                checked: allSelected,
+                disabled: selectAllDisabled,
+                label: selectAllLabel,
+                'aria-label': selectAllLabel,
+                onChange: () => onSelectAllChange(optionValues, !allSelected),
+                onFocus: iosScrollOnFocus
+              })
+            ) : (
+              <label style={{ display: 'contents' }}>
+                <input
+                  ref={selectAllRef}
+                  type='checkbox'
+                  id={`${servar.key}-select-all`}
+                  checked={allSelected}
+                  onChange={() => onSelectAllChange(optionValues, !allSelected)}
+                  onFocus={iosScrollOnFocus}
+                  style={{ padding: 0, lineHeight: 'normal' }}
+                  css={{
+                    ...composeCheckableInputStyle(styles, selectAllDisabled),
+                    ...styles.getTarget('checkboxGroup'),
+                    ...(selectAllDisabled
+                      ? responsiveStyles.getTarget('disabled')
+                      : {}),
+                    '&:focus-visible': {
+                      border: '1px solid rgb(74, 144, 226)'
+                    },
+                    '&:indeterminate': {
+                      ...styles.getTarget('checkboxSelected')
+                    },
+                    '&:indeterminate::before': {
+                      transform: 'scale(1)',
+                      clipPath: 'inset(45% 15%)'
+                    }
+                  }}
+                  disabled={selectAllDisabled}
+                  aria-label={selectAllLabel}
+                />
+                <span
+                  css={{
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                    ...styles.getTarget('checkboxLabel')
+                  }}
+                >
+                  {selectAllLabel}
+                </span>
+              </label>
+            )}
           </div>
         )}
         {options.map((option: any, i: number) => {
@@ -188,36 +214,52 @@ function CheckboxGroupField({
                 pointerEvents: optionDisabled ? 'none' : 'auto'
               }}
             >
-              <label style={{ display: 'contents' }}>
-                <input
-                  type='checkbox'
-                  id={`${servar.key}-${i}`}
-                  name={value}
-                  checked={checked}
-                  onChange={onChange}
-                  onFocus={iosScrollOnFocus}
-                  style={{ padding: 0, lineHeight: 'normal' }}
-                  css={{
-                    ...composeCheckableInputStyle(styles, optionDisabled),
-                    ...styles.getTarget('checkboxGroup'),
-                    ...(optionDisabled
-                      ? responsiveStyles.getTarget('disabled')
-                      : {}),
-                    '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
-                  }}
-                  disabled={optionDisabled}
-                  aria-label={element.properties.aria_label}
-                />
-                <span
-                  css={{
-                    whiteSpace: 'pre-wrap',
-                    overflowWrap: 'anywhere',
-                    ...styles.getTarget('checkboxLabel')
-                  }}
-                >
-                  {label}
-                </span>
-              </label>
+              {renderCheckbox ? (
+                renderCheckbox({
+                  type: 'checkbox',
+                  id: `${servar.key}-${i}`,
+                  name: value,
+                  checked,
+                  disabled: optionDisabled,
+                  label,
+                  'aria-label': element.properties.aria_label,
+                  onChange,
+                  onFocus: iosScrollOnFocus
+                })
+              ) : (
+                <label style={{ display: 'contents' }}>
+                  <input
+                    type='checkbox'
+                    id={`${servar.key}-${i}`}
+                    name={value}
+                    checked={checked}
+                    onChange={onChange}
+                    onFocus={iosScrollOnFocus}
+                    style={{ padding: 0, lineHeight: 'normal' }}
+                    css={{
+                      ...composeCheckableInputStyle(styles, optionDisabled),
+                      ...styles.getTarget('checkboxGroup'),
+                      ...(optionDisabled
+                        ? responsiveStyles.getTarget('disabled')
+                        : {}),
+                      '&:focus-visible': {
+                        border: '1px solid rgb(74, 144, 226)'
+                      }
+                    }}
+                    disabled={optionDisabled}
+                    aria-label={element.properties.aria_label}
+                  />
+                  <span
+                    css={{
+                      whiteSpace: 'pre-wrap',
+                      overflowWrap: 'anywhere',
+                      ...styles.getTarget('checkboxLabel')
+                    }}
+                  >
+                    {label}
+                  </span>
+                </label>
+              )}
               <InlineTooltip
                 containerRef={containerRef}
                 id={`${element.id}-${value}`}
@@ -231,34 +273,49 @@ function CheckboxGroupField({
         })}
         {servar.metadata.other && (
           <div style={{ display: 'flex', flexGrow: 1 }}>
-            <input
-              type='checkbox'
-              id={`${servar.key}-`}
-              key={`${servar.key}-`}
-              name={otherVal}
-              checked={otherChecked}
-              disabled={otherDisabled}
-              onChange={onChange}
-              onFocus={iosScrollOnFocus}
-              style={{
-                padding: 0,
-                lineHeight: 'normal'
-              }}
-              css={{
-                ...composeCheckableInputStyle(styles, otherDisabled),
-                ...styles.getTarget('checkboxGroup'),
-                ...(otherDisabled
-                  ? responsiveStyles.getTarget('disabled')
-                  : {}),
-                '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
-              }}
-            />
-            <label
-              htmlFor={`${servar.key}-`}
-              css={styles.getTarget('checkboxLabel')}
-            >
-              {otherLabel}
-            </label>
+            {renderCheckbox ? (
+              renderCheckbox({
+                type: 'checkbox',
+                id: `${servar.key}-`,
+                name: otherVal,
+                checked: otherChecked,
+                disabled: otherDisabled,
+                label: otherLabel,
+                onChange,
+                onFocus: iosScrollOnFocus
+              })
+            ) : (
+              <>
+                <input
+                  type='checkbox'
+                  id={`${servar.key}-`}
+                  key={`${servar.key}-`}
+                  name={otherVal}
+                  checked={otherChecked}
+                  disabled={otherDisabled}
+                  onChange={onChange}
+                  onFocus={iosScrollOnFocus}
+                  style={{
+                    padding: 0,
+                    lineHeight: 'normal'
+                  }}
+                  css={{
+                    ...composeCheckableInputStyle(styles, otherDisabled),
+                    ...styles.getTarget('checkboxGroup'),
+                    ...(otherDisabled
+                      ? responsiveStyles.getTarget('disabled')
+                      : {}),
+                    '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
+                  }}
+                />
+                <label
+                  htmlFor={`${servar.key}-`}
+                  css={styles.getTarget('checkboxLabel')}
+                >
+                  {otherLabel}
+                </label>
+              </>
+            )}
             <FormControl
               type='text'
               // Paired with flex grow, will not expand parent width

@@ -871,7 +871,7 @@ function Form({
   // All mount and unmount logic should live here
   useEffect(() => {
     registerRenderCallback(_internalId, 'form', () => {
-      if (enableFormTools && internalState[_internalId])
+      if (internalState[_internalId])
         internalState[_internalId].formToolsRenderOwed = true;
       setRender((render) => ({ ...render }));
     });
@@ -1931,12 +1931,15 @@ function Form({
     }
   }
 
-  // Commit signal for formTools' fillStep (see renderTick.ts)
+  // Runtime readers need visibility from a committed form render.
   useLayoutEffect(() => {
-    if (!enableFormTools || !internalState[_internalId]) return;
+    if (!internalState[_internalId]) return;
     internalState[_internalId].formToolsRenderTick =
       (internalState[_internalId].formToolsRenderTick ?? 0) + 1;
     internalState[_internalId].formToolsRenderOwed = false;
+    internalState[_internalId].runtimeListeners?.forEach((listener) =>
+      listener({ type: 'fields' })
+    );
   });
 
   useEffect(() => {
@@ -2634,6 +2637,7 @@ function Form({
   } = useCheckButtonAction(setButtonLoader, clearLoaders);
 
   const buttonOnClick = async (button: ClickActionElement) => {
+    let buttonError: string | undefined;
     // Opened synchronously within the click's user-gesture call stack, before
     // any await, so the browser doesn't treat the popup as unsolicited.
     const actions = prioritizeActions(button.properties.actions ?? []);
@@ -2644,6 +2648,7 @@ function Form({
     }
 
     const setButtonError = (message: string) => {
+      buttonError = message;
       // Clear loaders before setting errors since buttons are disabled
       // when loaders are showing
       clearLoaders();
@@ -2698,7 +2703,7 @@ function Form({
           closePreOpenedWindows(preOpenedWindows);
           setButtonError("You didn't pass CAPTCHA verification");
 
-          return;
+          return { buttonError };
         }
       }
 
@@ -2726,6 +2731,8 @@ function Form({
       if (e) setButtonError(e.toString());
       else clearLoaders();
     }
+    // HTML5 errors can have no rendered control in a chat-only form.
+    return { buttonError };
   };
 
   const tableOnClick = async (table: any, payload: any) => {
@@ -3934,6 +3941,7 @@ function Form({
   if (internalState[_internalId]) {
     const callbacks = {
       buttonOnClick,
+      awaitChangeRules: () => callbackRef.current.all(),
       runElementActions,
       tableOnClick,
       changeValue,
@@ -4099,6 +4107,19 @@ function Form({
 
   return (
     <ReactPortal options={popupOptions}>
+      {initState.isTestEnv && (
+        <DevNavBar
+          allSteps={steps}
+          curStep={activeStep}
+          changeStep={(stepKey: string) => {
+            if (trackHashes.current) navigate(getNewStepUrl(stepKey));
+            else setStepKey(stepKey);
+          }}
+          formName={formName}
+          draft={_draft}
+          visible={!hideTestUI}
+        />
+      )}
       <form
         {...formProps}
         autoComplete={formSettings.autocomplete}
@@ -4175,19 +4196,6 @@ function Form({
               cursor: 'pointer'
             }}
             onClick={() => popupOptions.onHide && popupOptions.onHide()}
-          />
-        )}
-        {initState.isTestEnv && (
-          <DevNavBar
-            allSteps={steps}
-            curStep={activeStep}
-            changeStep={(stepKey: string) => {
-              if (trackHashes.current) navigate(getNewStepUrl(stepKey));
-              else setStepKey(stepKey);
-            }}
-            formName={formName}
-            draft={_draft}
-            visible={!hideTestUI}
           />
         )}
         {global.firebase && (

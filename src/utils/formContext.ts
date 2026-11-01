@@ -2,8 +2,13 @@ import type { GenerateDocumentRef } from './featheryClient/integrationClient';
 import Field from './entities/Field';
 import { featheryWindow } from './browser';
 import { getAllElements } from './formHelperFunctions';
+import { getVisibleElements } from './hideAndRepeats';
 import { changeStep } from './stepHelperFunctions';
-import { FieldOptions, formatAllFormFields } from './fieldHelperFunctions';
+import {
+  FILE_FIELD_TYPES,
+  FieldOptions,
+  formatAllFormFields
+} from './fieldHelperFunctions';
 import {
   defaultClient,
   FieldValues,
@@ -26,7 +31,12 @@ import internalState, {
   setFormInternalState
 } from './internalState';
 import type { FormRuntimeEvent } from './internalState';
-import { validateElements } from './validation';
+import {
+  isFieldValueEmpty,
+  validateElement,
+  validateElements
+} from './validation';
+import { isFieldActuallyRequired } from '../Form/grid/Element/utils/utils';
 import { getPanelRuntimeSnapshot } from './panelRuntime';
 import { linkRequestHeaders } from './accessLink';
 import { fillFields, FillFieldInput } from './formActions/fillFields';
@@ -49,6 +59,22 @@ import {
 } from './formActions/tables';
 import { STEP_EVENT_SKIP } from './stepEvents';
 import { AnswersPendingError } from './offlineRequestHandler';
+import {
+  flushFieldInputChanges,
+  mountFieldInput
+} from '../Form/fieldInputPresentation';
+import type { FieldInputOptions } from '../Form/fieldInputPresentation';
+import {
+  captureRenderTick,
+  isFormMounted,
+  waitForNextCommit
+} from './formTools/renderTick';
+import { markInteraction } from './formActions/utils';
+import {
+  getIntakeNameFields,
+  saveIntakeNames,
+  IntakeNameFieldIds
+} from './intakeNameFields';
 import {
   FillQuikParams,
   ForwardInboxEmailOptions,
@@ -76,6 +102,14 @@ const formHasDocumentElement = (steps: any): boolean =>
       (container: any) => !!container?.properties?.document_editor
     )
   );
+
+export class FieldInputValidationError extends Error {
+  constructor(public readonly fieldKey: string, message: string) {
+    super(message);
+    this.name = 'FieldInputValidationError';
+    Object.setPrototypeOf(this, FieldInputValidationError.prototype);
+  }
+}
 
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
@@ -142,8 +176,162 @@ export const getFormContext = (formUuid: string) => {
       if (changed) formState.latestStepName = stepKey;
     },
     isTestForm: () => initState.isTestEnv,
+    isComplete: () =>
+      Boolean(
+        initState.formSessions[formState.client?.formKey]?.form_completed
+      ),
     // What the person sees right now: current step, every field's value, hidden fields
-    snapshot: () => getPanelRuntimeSnapshot(formUuid, { masked: true }),
+    snapshot: (options: { includeVisibilityConditions?: boolean } = {}) =>
+      getPanelRuntimeSnapshot(formUuid, { ...options, masked: true }),
+    intakeNameFields: (ids: IntakeNameFieldIds) =>
+      getIntakeNameFields(formUuid, ids),
+    saveIntakeNames: (
+      ids: IntakeNameFieldIds,
+      names: { first: string; last: string }
+    ) => saveIntakeNames(formUuid, ids, names),
+    // Move the existing native input into a host card; its change/save handlers stay native.
+    mountFieldInput: (
+      target: { key: string; repeatIndex?: number },
+      container: HTMLElement,
+      options?: FieldInputOptions
+    ) => {
+      const snapshot = getPanelRuntimeSnapshot(formUuid, { masked: true });
+      if (!snapshot) throw new Error('The form has not loaded yet.');
+      const fields = snapshot.currentStepFields.filter(
+        (field) => field.key === target.key && field.visible && !field.disabled
+      );
+      if (fields.length !== 1)
+        throw new Error(
+          'Choose one visible, editable field on the current step.'
+        );
+      if (fields[0].rowCount !== undefined && target.repeatIndex === undefined)
+        throw new Error('Choose which repeated row to open.');
+      if (
+        target.repeatIndex !== undefined &&
+        (!Number.isInteger(target.repeatIndex) ||
+          target.repeatIndex < 0 ||
+          target.repeatIndex >= (fields[0].rowCount ?? 1))
+      )
+        throw new Error('That field row is not available.');
+      const visibleInputs = getVisibleElements(
+        formState.currentStep,
+        formState.visiblePositions,
+        ['servar_fields'],
+        true
+      ).filter(
+        ({ element, repeat }: any) =>
+          element.servar.key === target.key &&
+          (repeat ?? 0) === (target.repeatIndex ?? 0)
+      );
+      if (visibleInputs.length !== 1)
+        throw new Error('That field row is not available.');
+      return mountFieldInput(
+        formUuid,
+        target.key,
+        target.repeatIndex ?? 0,
+        container,
+        options
+      );
+    },
+    areFieldInputsComplete: (
+      targets: readonly { key: string; repeatIndex?: number }[]
+    ) => {
+      const state = internalState[formUuid];
+      const snapshot = getPanelRuntimeSnapshot(formUuid);
+      if (!state?.currentStep || !snapshot || !targets.length) return false;
+      const visible = getVisibleElements(
+        state.currentStep,
+        state.visiblePositions,
+        ['servar_fields'],
+        true
+      );
+      return targets.every(({ key, repeatIndex }) => {
+        const field = snapshot.currentStepFields.find(
+          (entry) => entry.key === key
+        );
+        const source = visible.find(
+          ({ element, repeat }: any) =>
+            element.servar.key === key && (repeat ?? 0) === (repeatIndex ?? 0)
+        )?.element;
+        if (!source || !field?.visible || field.disabled) return false;
+        if (!isFieldActuallyRequired(source, state.currentStep)) return true;
+        const value = state.fields[key]?.value;
+        const rowValue = source.servar.repeated
+          ? Array.isArray(value)
+            ? value[repeatIndex ?? 0]
+            : undefined
+          : value;
+        return !isFieldValueEmpty(rowValue, source.servar);
+      });
+    },
+    saveFieldInputs: async (
+      targets: readonly { key: string; repeatIndex?: number }[],
+      options: { skipHidden?: boolean; stepId?: string; source?: 'tool' } = {}
+    ) => {
+      const state = internalState[formUuid];
+      if (!state?.currentStep || !state.formActions)
+        throw new Error('The form has not loaded yet.');
+      if (options.source !== 'tool') flushFieldInputChanges(formUuid, targets);
+      await state.formActions.awaitChangeRules();
+      const render = initState.renderCallbacks[formUuid]?.form;
+      if (!render) throw new Error('The form has not loaded yet.');
+      const tick = captureRenderTick(formUuid);
+      render();
+      await waitForNextCommit(formUuid, tick, () => !isFormMounted(formUuid));
+      if (!isFormMounted(formUuid))
+        throw new Error('The form closed before the answers could be saved.');
+      const snapshot = getPanelRuntimeSnapshot(formUuid);
+      if (!snapshot) throw new Error('The form has not loaded yet.');
+      if (options.stepId && snapshot.currentStep.id !== options.stepId)
+        throw new Error('These questions are no longer on the current step.');
+      const values: Record<string, unknown> = {};
+      const files: { servar: any; stepKey: string }[] = [];
+      for (const { key, repeatIndex } of targets) {
+        const field = snapshot.currentStepFields.find(
+          (entry) => entry.key === key
+        );
+        if (
+          !field ||
+          ((!field.visible || field.disabled) && !options.skipHidden)
+        )
+          throw new Error(
+            'This question is no longer available on the current step.'
+          );
+        if (!field.visible || field.disabled) continue;
+        const source = getVisibleElements(
+          state.currentStep,
+          state.visiblePositions,
+          ['servar_fields'],
+          true
+        ).find(
+          ({ element, repeat }: any) =>
+            element.servar.key === key && (repeat ?? 0) === (repeatIndex ?? 0)
+        )?.element;
+        if (!source) throw new Error('That field row is not available.');
+        const validation = validateElement(source, repeatIndex ?? null);
+        if (validation) throw new FieldInputValidationError(key, validation);
+        const value = state.fields[key]?.value;
+        if (FILE_FIELD_TYPES.includes(field.type)) {
+          files.push({
+            servar: {
+              key,
+              [field.type]: value,
+              repeated: field.rowCount !== undefined
+            },
+            stepKey: state.currentStep.key
+          });
+        } else values[key] = value;
+      }
+      if (!Object.keys(values).length && !files.length) return;
+      markInteraction();
+      await state.client.submitCustom(values, {
+        override: true,
+        shouldFlush: true
+      });
+      await state.client.submitFiles(files);
+      if (await state.client.offlineRequestHandler.hasQueuedAnswerWrite())
+        throw new AnswersPendingError();
+    },
     // What a host sends with its own backend requests to act as this submission, read when the request is made
     requestIdentity: (): {
       fuserKey?: string;
