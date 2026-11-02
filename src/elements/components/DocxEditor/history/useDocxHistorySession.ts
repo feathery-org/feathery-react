@@ -475,10 +475,11 @@ export function useDocxHistorySession(
     const queueClose = (
       sessionId: string,
       authors: DocxSaveMeta['authors'],
-      snap: CloseSnapshot
+      snap: CloseSnapshot,
+      superseded?: () => boolean
     ): Promise<void> => {
       const next = closeQueue.then(() =>
-        closeSession(sessionId, authors, snap)
+        superseded?.() ? undefined : closeSession(sessionId, authors, snap)
       );
       closeQueue = next.catch(() => undefined);
       return next;
@@ -709,6 +710,8 @@ export function useDocxHistorySession(
     // Upload the open session's highlights without closing it (closeSession
     // only uploads artifacts; the backend row stays open).
     let lastCheckpointAt = 0;
+    let checkpointSeq = 0;
+    let latestCheckpoint = { sessionId: '', seq: 0 };
     const prepareCheckpoint = (
       force: boolean,
       serialized: string | null
@@ -746,10 +749,25 @@ export function useDocxHistorySession(
       // refresh on the DOCX autosave alone can read the pre-checkpoint row and
       // leave an already-selected Current version without its stepper.
       return () => {
-        const pending = queueClose(meta.sessionId, meta.authors, snap);
+        // The backend keeps only a row's latest checkpoint. One still waiting
+        // behind a slow upload is dropped once a newer one queues after it, so
+        // the queue (and a close draining it) never backs up on a slow network.
+        const seq = ++checkpointSeq;
+        latestCheckpoint = { sessionId: meta.sessionId, seq };
+        const superseded = () =>
+          latestCheckpoint.sessionId === meta.sessionId &&
+          latestCheckpoint.seq !== seq;
+        const pending = queueClose(
+          meta.sessionId,
+          meta.authors,
+          snap,
+          superseded
+        );
         pendingArtifacts.add(pending);
         pending
           .then(() => {
+            // The newer checkpoint refreshes the list when it lands.
+            if (superseded()) return;
             setSavedAt(new Date());
             if (!failedArtifacts.size && scheduler.status() === 'saved')
               setStatus('saved');

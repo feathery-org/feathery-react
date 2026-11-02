@@ -1242,6 +1242,51 @@ describe('useDocxHistorySession', () => {
     act(() => setRobinTurnActive(editor, false));
   });
 
+  it('drops a waiting checkpoint once a newer one queues behind a slow upload', async () => {
+    jest.useFakeTimers();
+    (globalThis as any).CompressionStream = undefined;
+    const sfdt = (text: string) =>
+      JSON.stringify({ sections: [{ blocks: [{ inlines: [{ text }] }] }] });
+    let doc = sfdt('hello');
+    const editor: any = { serialize: () => doc };
+    const { view, save, host } = setup({}, editor);
+    let finishUpload: () => void = () => undefined;
+    host.closeVersion.mockImplementationOnce(
+      () =>
+        new Promise<any>((resolve) => {
+          finishUpload = () => resolve(null);
+        })
+    );
+
+    act(() => setRobinTurnActive(editor, true));
+    for (const text of ['one', 'two', 'three']) {
+      act(() =>
+        whileRobinWrites(editor, () => {
+          doc = sfdt(text);
+          view.result.current.onEdit({ assistant: true });
+        })
+      );
+      await act(async () => {
+        jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+        for (let i = 0; i < 8; i++) await Promise.resolve();
+      });
+    }
+    // Every save landed; only the first checkpoint is uploading.
+    expect(save).toHaveBeenCalledTimes(3);
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishUpload();
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    // 'two' was superseded while waiting; only the latest follows.
+    expect(host.closeVersion).toHaveBeenCalledTimes(2);
+    expect(
+      await blobText(host.closeVersion.mock.calls[1][1].finalSfdtGz)
+    ).toContain('three');
+    act(() => setRobinTurnActive(editor, false));
+  });
+
   it('saves a Robin turn in progress when the tab is hidden', async () => {
     const { view, editor, save } = setup();
     act(() => setRobinTurnActive(editor, true));
