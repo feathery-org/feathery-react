@@ -72,6 +72,7 @@ jest.mock('./index', () => {
     terminalAction,
     onTerminalAction,
     onTerminalActionDraft,
+    terminalActionDisabled,
     onSaved,
     onDownloaded
   }: any) {
@@ -132,6 +133,9 @@ jest.mock('./index', () => {
         React.createElement('button', {
           key: 'terminal',
           'data-testid': `terminal:${terminalAction}`,
+          // Mirror the real toolbar: the terminal action is disabled until the
+          // session handle registers (and while saving/running).
+          disabled: terminalActionDisabled,
           // DocxEditor routes a failed terminal action to onError.
           onClick: () =>
             Promise.resolve(onTerminalAction()).catch((e: Error) =>
@@ -142,6 +146,7 @@ jest.mock('./index', () => {
         React.createElement('button', {
           key: 'draft',
           'data-testid': 'terminal:draft-menu',
+          disabled: terminalActionDisabled,
           onClick: () =>
             Promise.resolve(onTerminalActionDraft()).catch((e: Error) =>
               onError?.(e.message)
@@ -643,7 +648,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     });
     const { getByTestId } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:sign')).not.toBeDisabled());
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -694,7 +699,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() =>
-      expect(getByTestId('terminal:draft-menu')).toBeTruthy()
+      expect(getByTestId('terminal:draft-menu')).not.toBeDisabled()
     );
     await act(async () => {
       getByTestId('terminal:draft-menu').click();
@@ -711,7 +716,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     seed({ sign_method: 'docusign', editor_toolbar_actions: ['draft'] });
     const { getByTestId } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:draft')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:draft')).not.toBeDisabled());
     getByTestId('terminal:draft').click();
 
     await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
@@ -782,7 +787,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     const { getByTestId } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:sign')).not.toBeDisabled());
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -813,6 +818,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId, queryByTestId } = mount();
 
     await waitFor(() => expect(getByTestId(`editor:${url}`)).toBeTruthy());
+    await waitFor(() =>
+      expect(getByTestId('terminal:sign')).not.toBeDisabled()
+    );
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -843,6 +851,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId(`editor:${url}`)).toBeTruthy());
+    await waitFor(() =>
+      expect(getByTestId('terminal:sign')).not.toBeDisabled()
+    );
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -901,6 +912,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId, getByRole, queryByTestId } = mount();
 
     await waitFor(() => expect(getByTestId(`editor:${url}`)).toBeTruthy());
+    await waitFor(() =>
+      expect(getByTestId('terminal:sign')).not.toBeDisabled()
+    );
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -923,7 +937,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() =>
-      expect(getByTestId('terminal:draft-menu')).toBeTruthy()
+      expect(getByTestId('terminal:draft-menu')).not.toBeDisabled()
     );
     await act(async () => {
       getByTestId('terminal:draft-menu').click();
@@ -935,7 +949,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
       ])
     );
     expect(getByTestId(`editor:${url}`)).toBeTruthy();
-    expect(getByTestId('terminal:sign')).toBeTruthy();
+    expect(getByTestId('terminal:sign')).not.toBeDisabled();
   });
 
   it('saves the finalized PDF, not the converted-away DOCX, after Save as Draft', async () => {
@@ -949,7 +963,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     const { getByTestId } = mount();
 
     await waitFor(() =>
-      expect(getByTestId('terminal:draft-menu')).toBeTruthy()
+      expect(getByTestId('terminal:draft-menu')).not.toBeDisabled()
     );
     await act(async () => {
       getByTestId('terminal:draft-menu').click();
@@ -976,7 +990,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     seed({ sign_method: 'docusign', editor_toolbar_actions: ['sign'] });
     const { getByTestId } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:sign')).not.toBeDisabled());
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -997,7 +1011,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     const { getByTestId, queryByRole } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:sign')).not.toBeDisabled());
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -1028,7 +1042,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     const { getByTestId } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:sign')).not.toBeDisabled());
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -1054,7 +1068,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     const { getByTestId } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:sign')).not.toBeDisabled());
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -1082,7 +1096,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     const { getByTestId } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:sign')).not.toBeDisabled());
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -1114,7 +1128,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     const { getByTestId } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:sign')).not.toBeDisabled());
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -1401,7 +1415,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     const { getByTestId, queryByTestId } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:sign')).not.toBeDisabled());
     await act(async () => {
       getByTestId('terminal:sign').click();
     });
@@ -1432,7 +1446,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     const { getByTestId } = mount();
 
-    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('terminal:sign')).not.toBeDisabled());
     await act(async () => {
       getByTestId('terminal:sign').click();
     });

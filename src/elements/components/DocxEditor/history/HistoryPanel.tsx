@@ -467,8 +467,6 @@ export default function HistoryPanel({
       } catch {
         // Show error + Retry only when there are no rows to fall back on;
         // a failed background revalidate keeps the stale list visible.
-        // Show error + Retry only when there are no rows to fall back on;
-        // a failed background revalidate keeps the stale list visible.
         if (id === reqId.current && !versionsRef.current) setError(true);
       } finally {
         if (id === reqId.current) inFlight.current = null;

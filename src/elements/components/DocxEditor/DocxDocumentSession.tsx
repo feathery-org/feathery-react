@@ -117,6 +117,10 @@ export default function DocxDocumentSession({
 }) {
   const editMode = false;
   const [envelope, updateEnvelope] = useState(initialEnvelope);
+  // The session handle registers in an effect, after the first render. Gate the
+  // terminal action on it so Sign can't run (and throw "Please wait…") before
+  // the container has the handle.
+  const [registered, setRegistered] = useState(false);
   const [finalizedForSigning, setFinalizedForSigning] = useState(false);
   const finalizedRef = useRef(false);
   const [sentThisSession, setSentThisSession] = useState(
@@ -170,7 +174,11 @@ export default function DocxDocumentSession({
         setEnvelope(value);
       }
     });
-    return () => onSessionReady(initialEnvelope.id, null);
+    setRegistered(true);
+    return () => {
+      setRegistered(false);
+      onSessionReady(initialEnvelope.id, null);
+    };
   }, [initialEnvelope.id, label, onSessionReady, setEnvelope]);
   const finalized = envelope.type !== 'docx' || finalizedForSigning;
 
@@ -578,7 +586,7 @@ export default function DocxDocumentSession({
         onTerminalActionDraft={offersDraft ? runTerminalActionDraft : undefined}
         // Signing needs a signer to open as, which only finalizing an unsigned
         // envelope hands back - so there's nothing behind the button once signed.
-        terminalActionDisabled={!envelope.file || envelope.signed}
+        terminalActionDisabled={!registered || !envelope.file || envelope.signed}
         // Without this a failed send is swallowed: DocxEditor routes terminal
         // errors here and there is nothing else listening.
         onError={setOperationError}
